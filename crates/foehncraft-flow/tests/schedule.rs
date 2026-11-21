@@ -287,3 +287,50 @@ fn reread_keeps_fired_entries() {
     assert_eq!(rr.case.solver.momentum.relaxation, Some(0.4));
     let _ = std::fs::remove_dir_all(&d);
 }
+
+/// The scalar and energy sub-tables of the boundaries are kept by the
+/// reader outside the TOML of the case; a schedule entry, which re-reads
+/// the case with its settings, keeps them (an inlet of an energy case
+/// needs its temperature).
+#[test]
+fn a_schedule_keeps_the_energy_conditions_of_the_boundaries() {
+    let text = r#"
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [2.0, 1.0, 0.05]
+cells = [8, 4, 1]
+[fluid]
+viscosity = 0.01
+specific_heat = 1000.0
+conductivity = 0.1
+[energy]
+initial = 300.0
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [1.0, 0.0, 0.0]
+[boundary.xmin.energy]
+temperature = 300.0
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymin]
+type = "wall"
+[boundary.ymin.energy]
+heat_flux = 100.0
+[boundary.ymax]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+[[schedule]]
+at_iteration = 10
+set = { solver.momentum.relaxation = 0.8 }
+"#;
+    let c = parse(text).unwrap();
+    assert_eq!(c.boundary_energy.len(), 2);
+    let e = foehncraft_flow::schedule::apply_entry(&c, &c.schedule[0], None).unwrap();
+    assert_eq!(e.boundary_energy.len(), 2);
+    assert_eq!(e.solver.momentum.relaxation, Some(0.8));
+}

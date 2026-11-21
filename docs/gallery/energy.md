@@ -6,6 +6,7 @@ Part of the [Example gallery](../gallery.md): the energy equation of the fluid (
 |---|---|---|---|
 | 154 | [A heated cavity, conduction with k(T) and a Couette flow heated by its friction](#energy-fluid) | 7 | `[energy]`, `[boundary.<name>.energy]`, `[fluid] specific_heat`, `conductivity`, `viscous_heating`, `temperature_dependent`, `[solver.energy]` |
 | 156 | [A heated wall cooled by a channel flow, and a composite wall](#cht-solids) | 7 | `[regions.<name>] kind = "solid"`, `[materials.<name>] kind = "solid"`, `[mesh.generate] zones`, `interface-<region>` |
+| 158 | [A finned heat sink in a turbulent air channel, and a turbulent channel over a conducting wall](#cht-turbulent) | 7 | `[turbulence]` with solid regions, `[energy] wall_function`, `turbulent_prandtl` |
 
 ---
 
@@ -128,5 +129,65 @@ for r in 0.1 10 100; do
       --set "materials.wall-solid.conductivity=$k" --set output.vtkhdf=true
 done
 python3 -m tools.plot.cht_fields docs/figures/gallery output/cht
+```
+
+<a id="cht-turbulent"></a>
+## 158. A finned heat sink in a turbulent air channel, and a turbulent channel over a conducting wall
+
+<img src="../figures/gallery/cht_heat_sink.png" alt="Top: the temperature around an aluminium heat sink with three fins in a turbulent air channel, with streamlines in white; the metal is almost isothermal at about 329 K, warm air collects in the slow vortices between the fins and a long recirculation behind the last fin. Bottom: the speed, with the air accelerated to about 15 m/s over the fin tips and nearly at rest between the fins" width="800" height="440">
+
+**A finned heat sink.** `cht_heat_sink_turbulent.toml` puts an aluminium
+heat sink (k = 167 W/(m K)) on the floor of a plane channel 50 mm high:
+a base 100 mm long and 5 mm thick with three fins 3 mm thick and 20 mm
+tall. Air enters at 5 m/s and 300 K (k-ω SST with the automatic wall
+treatment), and a chip under the base puts 2000 W/m² into the metal.
+One mesh of 300 × 50 cells holds both: the flow runs on the air, the
+temperature on everything, and every face between the air and the
+aluminium takes the thermal wall function of Kader in series with the
+half cell of the metal. The run converges in 1007 outer iterations
+(2.5 min on 4 threads). All 2.000 W of the chip (per 10 mm of depth)
+cross the interface and leave with the air, 0.68 K warmer on average;
+the heat balance closes to 4·10⁻⁷. The aluminium conducts so well that
+its top varies by only 0.7 K (328.5 to 329.2 K); the mean heat transfer
+coefficient over the wetted surface is
+q/(T_i − T_in) = 869.6 W/m² / 28.45 K = 30.6 W/(m² K). The fins block
+half of the channel, so the air speeds up to 15 m/s over their tips,
+while slow vortices fill the gaps between them, hold the warm air and
+cool the inner fin faces poorly. The first-cell y⁺ on the metal runs
+from 0.2 in the gaps to 24 at the fin tips, which the automatic wall
+treatment and the thermal law bridge.
+
+<img src="../figures/gallery/cht_turbulent_channel.png" alt="Left: the temperature of a turbulent channel flow over a solid wall held at 350 K on its outer face, the lowest 0.45 m of the 1.1 m high channel, stretched in height; the wall is warm and the fluid warms in a thin layer above it. Right: the cell temperatures across the wall and the fluid at x = 15 m for k-epsilon and k-omega SST: linear in the wall, a jump at the interface carried by the wall function, and the turbulent profile in the fluid" width="800" height="254">
+
+**A turbulent channel over a conducting wall (check V7.36).**
+`cht_turbulent_channel.toml` is half of a plane channel (H = 1 m, a
+symmetry plane on top, Re = 2·10⁵, Pr = 0.71) over a solid wall 0.1 m
+thick whose outer face is held at 350 K. The wall's resistance
+t/k_s = 0.5 m²K/W is of the order of the fluid side's 1/h_w, so both
+matter. The same channel without the solid, whose wall carries the
+wall function in series with a convection condition h = k_s/t to 350 K,
+is the independent path of the fluid-only code (stage 6f); the two must
+agree, since the solid's axial conduction is negligible here
+(`tests/cht.rs`):
+
+| Model | Outer iterations | Heat flow, conjugate (W) | Heat flow, fluid only (W) | Interface, conjugate (K) | Wall, fluid only (K) |
+|---|---|---|---|---|---|
+| k-ε, scalable | 56 | 107.692 | 107.681 | 323.077 | 323.080 |
+| k-ω SST, automatic | 64 | 106.023 | 106.006 | 323.494 | 323.498 |
+
+The heat flow through the interface equals that of the outer face to
+10⁻⁶, the drop across the wall is q t/k_s to 10⁻³, and the heat balance
+closes to 10⁻¹⁰. On the right the temperature is linear in the wall and
+jumps at the interface by the wall function's 1/h_w (first-cell y⁺ 70
+to 85).
+
+```
+cargo build --release -p foehncraft-cli
+target/release/foehn flow examples/cases/flow/cht_heat_sink_turbulent.toml --out output/cht_sink
+target/release/foehn flow examples/cases/flow/cht_turbulent_channel.toml --out output/cht_channel_keps
+target/release/foehn flow examples/cases/flow/cht_turbulent_channel.toml --out output/cht_channel_sst \
+    --set turbulence.model=k-omega-sst --set turbulence.wall_treatment=automatic
+python3 -m tools.plot.cht_turbulent docs/figures/gallery output/cht_sink \
+    output/cht_channel_keps output/cht_channel_sst
 ```
 

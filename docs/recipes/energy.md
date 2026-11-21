@@ -6,6 +6,7 @@ Part of the [Recipes](../recipes.md): the energy equation of the fluid (stage 7,
 |---|---|
 | 154 | [Solve the temperature of a flow with temperature-dependent properties](#energy-fluid) |
 | 156 | [Couple the temperature of a fluid and a solid (conjugate heat transfer)](#cht-solids) |
+| 158 | [Couple a turbulent flow with a solid (turbulent conjugate heat transfer)](#cht-turbulent) |
 
 ---
 
@@ -171,9 +172,9 @@ refuses:
   density, specific heat or conductivity (MAT006);
 - a zone the mesh does not have (REG002);
 - solid regions without `[energy]` (REG001);
-- solids together with a time loop, turbulence, a restart or passive
-  scalars, an orthotropic solid conductivity, a periodic mesh, or a mesh
-  with no fluid cell (ENE006).
+- solids together with a time loop, a restart or passive scalars, an
+  orthotropic solid conductivity, a periodic mesh, or a mesh with no fluid
+  cell (ENE006). A turbulence model is allowed since PR 158 (recipe 158).
 
 ```
 cargo build --release -p foehncraft-cli
@@ -183,7 +184,8 @@ target/release/foehn flow examples/cases/flow/cht_heated_wall.toml --out output/
     --set 'materials.wall-solid.conductivity=1408.45'
 ```
 
-**Limits of this step.** Steady laminar conjugate cases only. The
+**Limits of this step.** Steady conjugate cases only (turbulent ones
+since PR 158, recipe 158). The
 gradients next to an interface still use the cell across it, so the
 interface is exact on orthogonal meshes; the one-sided gradients of D157
 follow. No contact resistance and no orthotropic k yet (7d2), no
@@ -192,3 +194,58 @@ fields are mapped between the fluid and the whole mesh on the host in
 every outer iteration. The material database has no solids yet, so cases
 define their own.
 
+<a id="cht-turbulent"></a>
+## 158. Couple a turbulent flow with a solid (turbulent conjugate heat transfer)
+
+**The case.** A conjugate case of recipe 156 with a `[turbulence]`
+model. Nothing else changes: the solid region, its material and the
+thermal conditions of the outer walls stay as they are, and the
+interfaces `interface-<region>` still need no `[boundary]` table. The
+thermal wall law and Pr_t come from `[energy]`, as for every wall of a
+turbulent flow (recipe 154):
+
+```toml
+[turbulence]
+model = "k-omega-sst"          # or k-epsilon, ..., with their wall treatments
+wall_treatment = "automatic"
+
+[energy]
+initial = 300.0
+turbulent_prandtl = 0.85       # c_p μ_t/Pr_t in the fluid
+wall_function = "kader"        # or "jayatilleke", or "none" (laminar k/y)
+```
+
+**What happens at an interface.** The fluid side of a face between a
+fluid and a solid cell is the thermal wall function of the turbulent
+flow, h_w = Γ_w/y_P with Γ_w = μ c_p y*/T⁺(ỹ*) (D135; ỹ* = max(y*, 11.06)
+with the scalable treatment), in series with the half cell of the solid:
+q = (T_P − T_N)/(1/h_w + δ_N/k_s). y* and μ of the first fluid cell come
+from the flow in every outer iteration, so the conductance follows the
+boundary layer as it develops. With a resolved wall (y⁺ ≈ 1, `low-re`
+or the automatic treatment near the wall) the law gives back the laminar
+k/y_P. Inside the fluid the conductivity is k + c_p μ_t/Pr_t; inside the
+solid it stays k_s.
+
+**The report.** As in recipe 156: the heat flow and mean temperature of
+every interface, the heat balance of the whole domain, and the first-cell
+y⁺ of `interface-<region>` in the log (the wall-function range applies
+there as at any wall of the flow).
+
+**Starting the flow.** A case where the flow meets a solid head on (fins,
+ribs, a block in the channel) starts from rest, `[initial] velocity =
+[0, 0, 0]`: a uniform inlet velocity pushed into the solid's front face
+upsets the first SIMPLEC iterations (the pressure-correction matrix stops
+being positive definite). A lower momentum relaxation for the first
+iterations (`[[schedule]]`, [recipe 39](runs.md#schedule)) helps further.
+
+```
+cargo build --release -p foehncraft-cli
+target/release/foehn flow examples/cases/flow/cht_turbulent_channel.toml --out output/cht_channel
+target/release/foehn flow examples/cases/flow/cht_heat_sink_turbulent.toml --out output/cht_sink
+```
+
+**Limits of this step.** Steady only (transient conjugate heat transfer
+is PR 7d6). The interface takes the wall function of the momentum
+treatment of the flow; a wall-resolved mesh on the fluid side needs
+y⁺ ≲ 1 like any wall. The turbulence fields are not written on the whole
+mesh yet (velocity, pressure and temperature are).

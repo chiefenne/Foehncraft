@@ -3185,6 +3185,13 @@ pub fn run_steered(
         let scalars = crate::scalar::summaries(&mut fl, &case, &mesh, &geo, dimension(&case), 0.0)?;
         for sm in &scalars {
             lg.line(&crate::scalar::summary_line(sm));
+            if let Some(d) = converged
+                .then(|| crate::scalar::heat_balance_finding(sm))
+                .flatten()
+            {
+                lg.note(&d.message);
+                rep.warnings.push(d);
+            }
         }
         let periodic = periodic_summaries(&mut fl, &mesh, &mut lg)?;
         let turbulence = turbulence_summary(&mut fl, &mesh, &mut lg, &mut rep.warnings)?;

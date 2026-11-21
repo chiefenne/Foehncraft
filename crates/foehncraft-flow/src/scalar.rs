@@ -686,6 +686,42 @@ struct EnergyField {
     h: Vec<crate::energy::Enthalpy>,
     /// The temperature of the properties when they do not follow T.
     t_ref: f64,
+    /// The thermal wall function on the fluid side of the interface faces
+    /// of a turbulent conjugate case (stage 7d5), with the slot of each
+    /// face of the mesh (`u32::MAX`: none).
+    iface: Option<(InterfaceWall, Vec<u32>)>,
+    /// The thermal law, its Pr_t (of the log layer) and the floor of ỹ⁺ at
+    /// the interfaces.
+    iface_law: (u32, f64),
+    /// Per interface face of the last refresh: the conductance of the fluid
+    /// side times d_n (the `k_P/(1 − w)` of the series), for the face
+    /// temperature of the report.
+    iface_g: Vec<f64>,
+}
+
+/// The fluid side of the interface faces of a turbulent conjugate case
+/// (stage 7d5, stage 7 specification §9.4): the y⁺ of the fluid view's
+/// wall treatment per face, with which the energy view puts the wall
+/// conductance h_w = ρ c_p u*/T⁺ of the thermal wall function (D135) in
+/// series with the solid half cell, q = (T_P − T_N)/(1/h_w + δ_N/k_N).
+#[derive(Debug, Clone, Default)]
+pub struct InterfaceWall {
+    /// The interface faces (interior faces of the full mesh).
+    pub faces: Vec<u32>,
+    /// True where the fluid cell is the owner of the face.
+    pub fluid_owner: Vec<bool>,
+    /// The wall distance y_P of the fluid cell (that of the wall
+    /// treatment).
+    pub y: Vec<f64>,
+    /// The distance of the two centroids normal to the face.
+    pub dn: Vec<f64>,
+    /// y* of the thermal law per face (the fluid view's wall data).
+    pub y_star: Vec<f64>,
+    /// The laminar viscosity per face (the fluid view's).
+    pub mu: Vec<f64>,
+    /// The thermal law is taken at ỹ* = max(y*, `y_floor`) (the scalable
+    /// treatment).
+    pub y_floor: f64,
 }
 
 /// The buffers of the flow the energy equation reads (stage 7a1).
@@ -1687,7 +1723,18 @@ impl Scalars {
                     .k
                     .at(if e.dependent { x } else { e.t_ref })
             };
-            let (gp, gn) = (at(mo, t[o]) / (1.0 - w), at(mn, t[n]) / w);
+            let (mut gp, mut gn) = (at(mo, t[o]) / (1.0 - w), at(mn, t[n]) / w);
+            // a turbulent fluid side: its wall conductance (stage 7d5)
+            if let Some((iw, slot)) = &e.iface {
+                let i = slot[fi];
+                if i != u32::MAX && !e.iface_g.is_empty() {
+                    if iw.fluid_owner[i as usize] {
+                        gp = e.iface_g[i as usize];
+                    } else {
+                        gn = e.iface_g[i as usize];
+                    }
+                }
+            }
             let tf = (gp * t[o] + gn * t[n]) / (gp + gn);
             let (solid, into_fluid) = if mo == 0 { (mn, q) } else { (mo, -q) };
             let r = &mut out[solid as usize - 1];
@@ -1709,6 +1756,25 @@ impl Scalars {
         self.fields
             .iter()
             .find_map(|f| f.energy.as_deref().and_then(|e| e.mu_face.as_deref()))
+    }
+
+    /// The fluid side of the interface faces for the next energy solves
+    /// (a turbulent conjugate case, stage 7d5): the faces and distances
+    /// once, y* and μ of the fluid view every outer iteration.
+    pub fn set_energy_interfaces(&mut self, w: InterfaceWall) {
+        if let Some(e) = self.fields.iter_mut().find_map(|f| f.energy.as_deref_mut()) {
+            let slot = match e.iface.take() {
+                Some((_, slot)) => slot,
+                None => {
+                    let mut slot = vec![u32::MAX; e.owner.len()];
+                    for (i, &f) in w.faces.iter().enumerate() {
+                        slot[f as usize] = i as u32;
+                    }
+                    slot
+                }
+            };
+            e.iface = Some((w, slot));
+        }
     }
 
     /// The minimum and maximum of each scalar.
@@ -1921,6 +1987,9 @@ impl Scalars {
             mu_face: None,
             h: enthalpy,
             t_ref,
+            iface: None,
+            iface_law: (turb.law, turb.prt),
+            iface_g: Vec::new(),
             fluid,
             mats,
             mat_cell,
@@ -2010,6 +2079,7 @@ fn refresh_energy(
         .collect();
     let mut cp_face = Vec::with_capacity(nf);
     let mut k_face = Vec::with_capacity(nf);
+    let mut iface_g = vec![0.0; e.iface.as_ref().map_or(0, |(w, _)| w.faces.len())];
     for f in 0..nf {
         let o = e.owner[f] as usize;
         let mo = &mats[mc[o] as usize];
@@ -2021,11 +2091,43 @@ fn refresh_energy(
             let w = e.weight[f];
             let kp = at(&mo.k, tv[o]);
             let kn = at(&mats[mc[n] as usize].k, tv[n]);
-            k_face.push(1.0 / ((1.0 - w) / kp + w / kn));
+            match e.iface.as_ref().map(|(iw, slot)| (iw, slot[f])) {
+                Some((iw, i)) if i != u32::MAX => {
+                    // a turbulent fluid side (§9.4): 1/h_w in place of
+                    // δ_P/k_P, h_w = Γ_w/y_P with the wall diffusivity
+                    // Γ_w = μ c_p y*/T⁺(ỹ*) of the thermal law (D135); the
+                    // solid half cell keeps δ/k
+                    let i = i as usize;
+                    let (cf, fs, ws) = if iw.fluid_owner[i] {
+                        (o, n, w)
+                    } else {
+                        (n, o, 1.0 - w)
+                    };
+                    let fl = &mats[0];
+                    let cpf = at(&fl.cp, tv[cf]);
+                    let kf = at(&fl.k, tv[cf]);
+                    let ks = at(&mats[mc[fs] as usize].k, tv[fs]);
+                    let muc = iw.mu[i] * cpf;
+                    let yp = iw.y_star[i];
+                    let gw = thermal::wall_conductance_at(
+                        e.iface_law.0,
+                        muc,
+                        yp,
+                        yp.max(iw.y_floor),
+                        muc / kf,
+                        e.iface_law.1,
+                    );
+                    let g = gw / iw.y[i] * iw.dn[i];
+                    iface_g[i] = g;
+                    k_face.push(1.0 / (1.0 / g + ws / ks));
+                }
+                _ => k_face.push(1.0 / ((1.0 - w) / kp + w / kn)),
+            }
         } else {
             k_face.push(at(&mo.k, tf[f]));
         }
     }
+    e.iface_g = iface_g;
     e.cp_face = cp_face;
     e.k_face = k_face;
     for (what, vals, ts, cell) in [
@@ -2629,6 +2731,28 @@ pub fn summary_line(s: &ScalarSummary) -> String {
         ));
     }
     l
+}
+
+/// ENE007: the heat balance of a converged steady run that does not close
+/// to 1 % of its largest heat flow. The scaled residual of the temperature
+/// can be small while the solve is far from converged, e.g. in a conjugate
+/// case, whose solid coefficients dominate the scaling. (The reported
+/// boundary fluxes take the orthogonal part of the gradient, so a coarse
+/// perturbed mesh shows a gap of up to a few 10⁻³; 1 % stays clear of it.)
+pub fn heat_balance_finding(s: &ScalarSummary) -> Option<crate::diag::Diagnostic> {
+    let e = s.energy.as_ref()?;
+    (e.relative > 1e-2).then(|| {
+        crate::diag::Diagnostic::new(
+            crate::diag::ENE_BALANCE,
+            format!(
+                "the run converged, but its heat balance closes only to {:.2e} of the largest \
+                 heat flow ({:.3e} W): the temperature is not converged although its residual \
+                 is; tighten [solver.energy] tolerance and raise max_iter (conjugate cases: \
+                 1e-10 and 300)",
+                e.relative, e.imbalance
+            ),
+        )
+    })
 }
 
 /// The exact solution of a scalar or of the temperature, with its key.

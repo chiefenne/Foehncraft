@@ -2496,6 +2496,22 @@ impl Flow {
             self.timings.scalars += t.elapsed().as_secs_f64();
             return Ok(());
         }
+        let coupling = self
+            .turbulence
+            .as_ref()
+            .map(|t| t.scalar_coupling(self.dev.as_ref()));
+        self.solve_scalar_fields(step, res, coupling)
+    }
+
+    /// The scalar solves with the turbulent coupling `coupling` (that of
+    /// the flow's own turbulence model, or, in the energy view of a
+    /// conjugate case, the fluid view's mapped onto the full mesh).
+    pub(crate) fn solve_scalar_fields(
+        &mut self,
+        step: Option<crate::scalar::StepTime>,
+        res: &mut Residuals,
+        coupling: Option<crate::scalar::TurbCoupling>,
+    ) -> Result<()> {
         if self.scalars.is_none() {
             return Ok(());
         }
@@ -2513,10 +2529,6 @@ impl Flow {
         let Some(sc) = self.scalars.as_mut() else {
             return Ok(());
         };
-        let coupling = self
-            .turbulence
-            .as_ref()
-            .map(|t| t.scalar_coupling(self.dev.as_ref()));
         let link = crate::scalar::EnergyLink {
             grad_u: self.f.grad_u,
             mu_face: self.dev.face_viscosity(),

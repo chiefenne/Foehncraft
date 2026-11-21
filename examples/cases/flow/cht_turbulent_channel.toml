@@ -1,0 +1,116 @@
+# A turbulent channel flow over a conducting wall: conjugate heat transfer
+# with the thermal wall function at the interface (stage 7d5, D157 §9.4,
+# check V7.36 of the stage 7 specification).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/cht_turbulent_channel.toml
+#
+# Half of a plane channel (height 2H, H = 1 m, symmetry plane at the top)
+# over a solid wall t = 0.1 m thick, 20 m long. An air-like fluid enters at
+# 300 K with a uniform 1 m/s (Re = U 2H/ν = 2·10⁵, Pr = 0.71); the outer
+# face of the wall is held at 350 K, the ends of the wall are adiabatic.
+# Standard k-ε with scalable wall functions (y⁺ ≈ 70 to 85 at the
+# interface). The flow runs on the fluid cells, where the faces against the
+# wall become the wall boundary `interface-wall`; the temperature runs on
+# all cells. At the interface the fluid side is the thermal wall function of
+# Kader (1981), h_w = ρ c_p u*/T⁺, in series with the half cell of the
+# solid, q = (T_P − T_N)/(1/h_w + δ_N/k_s); inside the fluid the
+# conductivity is k + c_p μ_t/Pr_t.
+#
+# The wall's resistance t/k_s = 0.5 m²K/W is of the order of the fluid
+# side's 1/h_w (about 0.4 m²K/W), so both matter. The same channel without
+# the solid, with the wall function in series with a convection condition
+# h = k_s/t to 350 K on the wall (`tests/cht.rs`), gives the same heat flux
+# (the solid's axial conduction is negligible here): the interface
+# treatment against the independent one of the fluid-only code.
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [20.0, 1.1, 0.1]
+cells = [40, 33, 1]
+split = [
+  { boundary = "xmin", axis = "y", at = 0.1, name = "inlet" },
+  { boundary = "xmax", axis = "y", at = 0.1, name = "outlet" },
+]
+zones = [{ name = "wall", lower = [0.0, 0.0, 0.0], upper = [20.0, 0.1, 0.1] }]
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 1.0e-5                   # Re = U 2H/ν = 2·10⁵
+specific_heat = 1000.0
+conductivity = 0.014084507042253521  # Pr = μ c_p/k = 0.71
+
+[materials.wall-solid]
+kind = "solid"
+description = "a made-up insulating solid, t/k_s = 0.5 m²K/W (not a database material)"
+density = 1200.0
+specific_heat = 1500.0
+conductivity = 0.2
+
+[regions.wall]
+kind = "solid"
+zones = ["wall"]
+material = "wall-solid"
+
+[turbulence]
+model = "k-epsilon"
+wall_treatment = "scalable"
+
+[energy]
+initial = 300.0
+turbulent_prandtl = 0.85
+wall_function = "kader"
+
+[initial]
+velocity = [1.0, 0.0, 0.0]
+k = 3.75e-3
+epsilon = 1.265625e-3
+
+[boundary.inlet]
+type = "velocity-inlet"
+velocity = [1.0, 0.0, 0.0]
+k = 3.75e-3                          # 5 % intensity
+epsilon = 1.265625e-3                # ν_t/ν = 100
+[boundary.inlet.energy]
+temperature = 300.0
+[boundary.outlet]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymax]
+type = "symmetry"                    # the middle of the channel
+[boundary.ymin]
+type = "wall"                        # the outer face of the solid
+[boundary.ymin.energy]
+temperature = 350.0
+[boundary.xmin]
+type = "wall"                        # the upstream end of the solid
+[boundary.xmax]
+type = "wall"                        # the downstream end of the solid
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-7
+max_iterations = 2500
+log_every = 250
+
+[solver.energy]
+relaxation = 1.0
+tolerance = 1e-10
+max_iter = 300
+
+[verification]
+require_convergence = true
+
+[output]
+wall_csv = false
+lines = [
+  { name = "across", from = [15.0, 0.0, 0.05], to = [15.0, 1.1, 0.05], points = 111 },
+]

@@ -298,6 +298,11 @@ pub fn apply_entry(
     c.source = case.source.clone();
     c.overrides = case.overrides.clone();
     c.notes = case.notes.clone();
+    // the fields the round trip through TOML drops: the scalar and energy
+    // sub-tables of the boundaries and the fluid view of a conjugate case
+    c.boundary_scalar = case.boundary_scalar.clone();
+    c.boundary_energy = case.boundary_energy.clone();
+    c.fluid_view = case.fluid_view.clone();
     // the schedule was checked with the case; validating the setting values
     // must not check it again
     let sched = std::mem::take(&mut c.schedule);

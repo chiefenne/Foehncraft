@@ -2959,6 +2959,14 @@ impl Turbulence {
         }
     }
 
+    /// The wall faces of the flow (the face index of each wall face, in the
+    /// order of the per-wall-face buffers such as the y⁺ of
+    /// [`scalar_coupling`](Self::scalar_coupling)) and their first-cell
+    /// distances y_P (conjugate heat transfer, stage 7d5).
+    pub(crate) fn wall_faces(&self) -> (&[u32], &[f64]) {
+        (&self.walls.stat.faces, &self.walls.y)
+    }
+
     /// The velocity gradient of `u` with the boundary values `ub`.
     fn velocity_gradient(&self, dev: &mut dyn FlowDevice, u: Buf3, ub: Buf3) -> Result<()> {
         for ((ui, bi), g) in u.all().into_iter().zip(ub.all()).zip(self.gu) {

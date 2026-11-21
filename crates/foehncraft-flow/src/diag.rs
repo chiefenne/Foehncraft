@@ -137,7 +137,8 @@ codes! {
     MAT_THERMAL = "MAT007", Error, "A fluid without specific heat or thermal conductivity in a run with the energy equation.";
     MAT_AXES = "MAT008", Error, "An orthotropic thermal conductivity without both axes, or with parallel axes.";
     MAT_FILE = "MAT009", Error, "A user material database file (`[materials] include`, `FOEHN_MATERIALS`) or a property data file (NASA-7 record, table file) that cannot be read or has the wrong format.";
-    ENE_UNSUPPORTED = "ENE006", Error, "An energy setting this version does not have: a passive scalar named `temperature` beside `[energy]`, `[energy]` with `[regions]` (7d1), or an orthotropic conductivity of a fluid.";
+    ENE_UNSUPPORTED = "ENE006", Error, "An energy setting this version does not have: a passive scalar named `temperature` beside `[energy]`, solid regions with a time loop, a restart, passive scalars or a periodic mesh, or an orthotropic conductivity.";
+    ENE_BALANCE = "ENE007", Warning, "A steady run that converged while its heat balance does not close (imbalance above 1 % of the largest heat flow): the temperature residual is small but the energy solve is not converged; tighten `[solver.energy] tolerance` and raise `max_iter`.";
     THM_LEVEL = "THM001", Error, "A steady run whose boundaries leave the temperature level undetermined: no inlet and no `temperature` or convection boundary, and no net heat input.";
     THM_DRIFT = "THM002", Error, "A steady run with a net heat input (heat flux, heat flow, source or viscous heating) and no way for the heat to leave: no inlet and no `temperature` or convection boundary.";
     THM_SIDE = "THM003", Error, "A thermal condition on a boundary that cannot carry it: a flux or convection at an inlet, any condition at an outlet, a periodic boundary, a symmetry plane or a wedge.";

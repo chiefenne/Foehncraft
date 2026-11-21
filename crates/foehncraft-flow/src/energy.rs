@@ -313,12 +313,6 @@ pub fn validate(case: &crate::case::FlowCase, env: &Env) -> Result<()> {
              version"
         );
         crate::need!(
-            case.turbulence.is_laminar(),
-            ENE_UNSUPPORTED,
-            "solid regions with a turbulence model: conjugate heat transfer is laminar in this \
-             version (the wall-function conductance at interfaces is a later step)"
-        );
-        crate::need!(
             case.run.restart.is_none(),
             ENE_UNSUPPORTED,
             "a restart with solid regions is not in this version"

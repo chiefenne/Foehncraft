@@ -868,6 +868,11 @@ pub struct MaterialProperties {
 /// monotonic interpolation in one dimension*, A&A 239, 443–450.
 pub fn steffen(xs: &[f64], ys: &[f64], x: f64) -> f64 {
     let n = xs.len();
+    // a diverging run: the NaN goes on to the residual check, which reports
+    // the divergence (D202), instead of an index out of bounds here
+    if x.is_nan() {
+        return f64::NAN;
+    }
     if x <= xs[0] {
         return ys[0];
     }
@@ -1957,6 +1962,7 @@ mod tests {
             assert!((0.0..=5.2).contains(&v));
             prev = v;
         }
+        assert!(steffen(&x, &y, f64::NAN).is_nan());
     }
 
     #[test]

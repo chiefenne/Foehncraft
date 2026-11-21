@@ -556,7 +556,11 @@ With a wall function on the fluid side, R_P = 1/h_w,P with
 h_w = ρ c_p u_τ / T⁺(y⁺, Pr) from D135 (Kader 1981 by default); the solid
 side keeps δ_N/k_N. With the compound wall treatment (D13) the blending is
 inside h_w. y⁺ and T⁺ per interface face are derived fields (D72). Built
-in PR 7d5 (V7.36). For periodic flows with a slow structure (engine exhaust
+in PR 7d5 (#158, V7.36): the conductance of an interface face is
+1/(1/(h_w d_n) + w_s/k_s), with h_w = Γ_w/y_P, Γ_w = μ c_p y*/T⁺(ỹ*) from
+y* and μ of the fluid view's first cell, taken in every outer iteration
+(ỹ* = max(y*, 11.06) with the scalable treatment, as at the fluid's other
+walls); inside the fluid the conductivity is k + c_p μ_t/Pr_t. For periodic flows with a slow structure (engine exhaust
 manifolds) the cycle-averaged coupling of §9d (D204) uses this conductance.
 
 ### 9.5 Ledger
@@ -1275,7 +1279,7 @@ Added 2026-11-21 (maintainer: turbulent and transient CHT before 7b1 and
 
 | # | Case | Checks | Pass band |
 |---|---|---|---|
-| V7.36 | Turbulent pipe flow (air, Re 10⁵, the heated pipe of stage 6f) inside a meshed steel tube wall, uniform heat flux on the outer tube surface, k-ε and SST with the thermal wall function at the interface (7d5) | heat flow through the interface, outer wall temperature, Nu at the interface | interface heat flow equal to the input to the solver tolerance; T_o − T_i = q_o r_o ln(r_o/r_i)/k_s within 0.5 % (exact for the 1D tube wall in the fully developed part); Nu equal to the heat-flux wall of the same pipe within 1 % and to Gnielinski (1976) within ±10 % |
+| V7.36 | Turbulent channel (Re 2·10⁵, Pr 0.71) over a meshed solid wall whose resistance t/k_s is of the order of the fluid side's 1/h_w, outer face of the wall at a fixed temperature, k-ε (scalable) and SST (automatic) with the thermal wall function at the interface (7d5, `cht_turbulent_channel.toml`); against the same channel without the solid, whose wall carries the wall function in series with a convection condition h = k_s/t (the fluid-only path of 6f) | heat flow through the interface and the outer face; interface temperature; outlet bulk temperature; temperature drop across the wall; heat balance | interface heat flow equal to that of the outer face to 10⁻⁶; heat flow within 10⁻³ and interface temperature within 0.02 K of the fluid-only run; T_o − T_i = q t/k_s to 10⁻³; balance below 10⁻⁸ (`tests/cht.rs`). Changed from the first draft (a pipe in a steel tube against Gnielinski ±10 %): the comparison with the independent path tests the interface itself to 10⁻³, the Nusselt numbers of the wall function are checked in 6f |
 | V7.37 | Heated solid wall under a laminar channel flow, heater switched on at t = 0 (the 7d1 case `cht_heated_wall` run transient, 7d6) | heat balance per step: input = outflow + storage in fluid and solid; approach to the steady solution | balance to the solver tolerance in every step; the end state within 0.1 % of ΔT of the steady 7d1 result |
 | V7.38 | Slab with a periodic gas temperature and heat-transfer coefficient on one face, a fixed temperature on the other (D204) | mean temperature profile after the loop; surface swing with `skin = "effusivity"` | mean profile within 0.5 % of ΔT of the fully coupled transient run in its periodic state after ≤ 3 updates; swing amplitude within 2 % of the Fourier solution |
 | V7.39 | Pulsating laminar channel flow (inlet velocity and temperature periodic) over a thick conducting wall (D204) | interface heat flow, wall temperature | within 1 % of the fully coupled transient conjugate run in its periodic state; wall-clock time of both reported |
@@ -1467,7 +1471,7 @@ CHT lane (C) run in parallel.
 | C | 7d3 | General static non-conformal interfaces by imprinting (D58 beyond surfaces of revolution, which `imprint.rs` already handles) | D58 cases, V7.4 on non-matching layers |
 | C | 7d4 | METIS with two constraints, per-view halo plans | V7.24 |
 | C | 7t2 | Shell conduction and baffles (D189), surface mesh W1 and wall-face halo W2, film slots (D190) | V7.28–V7.32 |
-| C | 7d5 | Turbulent CHT: thermal wall function (D135) on the fluid side of every interface in series with the solid half cell (§9.4), turbulent conductivity c_p μ_t/Pr_t in the energy view | V7.36 |
+| C | 7d5 | Turbulent CHT: thermal wall function (D135) on the fluid side of every interface in series with the solid half cell (§9.4), turbulent conductivity c_p μ_t/Pr_t in the energy view (done, #158) | V7.36 |
 | C | 7d6 | Transient CHT: time terms of the fluid and the solids in the one energy matrix, heat storage in the balance, output and probes on the full mesh | V7.6, V7.37 |
 | C | later | Cycle-averaged coupling of periodic flows (D204, §9d), after 7d6; not sized yet | V7.38–V7.40 |
 | D | 7e1 | `buoyancy_production` hook in k, ε, ω, ζ/φ (not delivered by stage 6), G_b with SGDH, C_ε3 | V7.25, V7.18 (SGDH, reported) |
@@ -1497,6 +1501,21 @@ PR: one-sided gradients (§9.2, exact on orthogonal meshes until then),
 V7.5 and V7.6, the AMG with strength on the scaled matrix over the energy
 view, transient, turbulent and restarted conjugate runs, passive scalars
 with solids, periodic meshes with solids, and maps on the device.
+
+**7d5 done 2026-11-21 (#158):** turbulent conjugate heat transfer. The
+fluid side of every interface face is the thermal wall function of the
+flow's turbulence model in series with the solid half cell (§9.4), the
+fluid conducts with k + c_p μ_t/Pr_t, and the fluid's outer walls keep
+their wall functions in the energy view; μ(T) goes back to the laminar
+viscosity of the turbulence model. V7.36 against the fluid-only path for
+k-ε and SST, and a finned heat sink in a turbulent air channel (gallery
+158). Found on the way: a `[[schedule]]` entry dropped the energy and
+scalar sub-tables of the boundaries (fixed), and a uniform start velocity
+against a solid's front face can make the SIMPLEC pressure-correction
+matrix indefinite in the first iterations (a flow-solver item, not of the
+conjugate coupling; the gallery case starts from rest). Moved to a later
+PR: the turbulence fields on the whole mesh in the output, y⁺ and T⁺ of
+the interfaces as derived fields (D72).
 
 **Decided 2026-11-21 (maintainer):** turbulent and transient conjugate heat
 transfer (7d5, 7d6) come before 7b1 and 7d2, as the more industry-relevant

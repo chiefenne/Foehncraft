@@ -150,3 +150,109 @@ fn solid_regions_are_checked() {
     let (code, msg) = refused(&transient);
     assert_eq!(code, "ENE006", "{msg}");
 }
+
+/// The turbulent channel over a conducting wall as the fluid alone: the
+/// mesh of the fluid cells, the wall with the convection condition
+/// h = k_s/t = 2 W/(m² K) to the 350 K of the wall's outer face, in series
+/// with the thermal wall function of the fluid-only code (the convection
+/// condition takes the final face conductance, D135).
+fn turbulent_reference(base: &str) -> String {
+    let mut s = base.replace(
+        "upper = [20.0, 1.1, 0.1]\ncells = [40, 33, 1]",
+        "lower = [0.0, 0.1, 0.0]\nupper = [20.0, 1.1, 0.1]\ncells = [40, 30, 1]",
+    );
+    // the text from `from` up to the next `to` (kept) replaced by `with`
+    let cut = |s: &str, from: &str, to: &str, with: &str| {
+        let a = s.find(from).unwrap();
+        let b = a + s[a..].find(to).unwrap();
+        format!("{}{with}{}", &s[..a], &s[b..])
+    };
+    s = cut(&s, "split = [", "[mesh]\n", "\n");
+    s = cut(&s, "[materials.wall-solid]", "[turbulence]", "");
+    s = cut(
+        &s,
+        "[boundary.ymin]",
+        "[boundary.zmin]",
+        "[boundary.ymin]\ntype = \"wall\"\n[boundary.ymin.energy]\n\
+         heat_transfer_coefficient = 2.0\nambient_temperature = 350.0\n",
+    );
+    s = cut(&s, "lines = [", "\n]\n", "");
+    s.replace("\n]\n", "\n")
+        .replace("[boundary.inlet]", "[boundary.xmin]")
+        .replace("[boundary.inlet.energy]", "[boundary.xmin.energy]")
+        .replace("[boundary.outlet]", "[boundary.xmax]")
+}
+
+/// V7.36 (stage 7d5, specification §9.4): a turbulent channel flow over a
+/// conducting wall, k-ε with scalable wall functions and SST with the
+/// automatic treatment. The fluid side of the interface is the thermal
+/// wall function in series with the solid half cell. Against the fluid
+/// alone with the wall function in series with h = k_s/t (an independent
+/// path of the fluid-only code): the same heat flow, interface temperature
+/// and outlet temperature (the solid's axial conduction, absent in the
+/// reference, is about 10⁻⁴ of the heat flow); the temperature drop
+/// across the wall is q t/k_s; every watt of the outer face crosses the
+/// interface.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn turbulent_interface_is_the_wall_function_in_series() {
+    let base = text("cht_turbulent_channel.toml");
+    for (name, model) in [
+        ("keps", ""),
+        (
+            "sst",
+            "model = \"k-omega-sst\"\nwall_treatment = \"automatic\"\n",
+        ),
+    ] {
+        let set = |t: &str| {
+            if model.is_empty() {
+                t.to_string()
+            } else {
+                t.replace(
+                    "model = \"k-epsilon\"\nwall_treatment = \"scalable\"\n",
+                    model,
+                )
+            }
+        };
+        let a = run_case(&parse(&set(&base)), &format!("turb_{name}"));
+        let b = run_case(
+            &parse(&set(&turbulent_reference(&base))),
+            &format!("turb_{name}_ref"),
+        );
+        for r in [&a, &b] {
+            assert!(r.failures.is_empty(), "{name}: {:?}", r.failures);
+            assert!(r.solves[0].converged, "{name}");
+        }
+        let sa = &a.solves[0].scalars[0];
+        let sb = &b.solves[0].scalars[0];
+        let ba = |n: &str| sa.boundaries.iter().find(|b| b.boundary == n).unwrap();
+        let bb = |n: &str| sb.boundaries.iter().find(|b| b.boundary == n).unwrap();
+        let qa = ba("interface-wall").heat_flow.unwrap();
+        let qo = ba("ymin").heat_flow.unwrap();
+        let qb = bb("ymin").heat_flow.unwrap();
+        eprintln!(
+            "{name}: interface {qa:.6} W (outer face {qo:.6} W), fluid alone {qb:.6} W; \
+             T_i {:.4} K against {:.4} K",
+            ba("interface-wall").mean,
+            bb("ymin").mean
+        );
+        assert!((qa - qo).abs() < 1e-6 * qo, "{name}: {qa} against {qo}");
+        assert!((qa / qb - 1.0).abs() < 1e-3, "{name}: {qa} against {qb}");
+        let ti = ba("interface-wall").mean;
+        assert!((ti - bb("ymin").mean).abs() < 0.02, "{name}: T_i {ti}");
+        assert!(
+            (ba("outlet").mixed_mean.unwrap() - bb("xmax").mixed_mean.unwrap()).abs() < 1e-3,
+            "{name}: outlet"
+        );
+        // the 1D wall: T_o − T_i = q t/k_s (q per area of the 20 m × 0.1 m face)
+        let q = qo / 2.0;
+        let drop = 350.0 - ti;
+        assert!(
+            (drop / (q * 0.1 / 0.2) - 1.0).abs() < 1e-3,
+            "{name}: {drop} K against {}",
+            q * 0.5
+        );
+        let e = sa.energy.as_ref().unwrap();
+        assert!(e.relative < 1e-8, "{name}: {e:?}");
+    }
+}

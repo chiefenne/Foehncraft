@@ -52,11 +52,12 @@ FLOW = {
         "axial_stage_uniform", "pot_solid_body", "pot_solid_body_viscous",
         "naca0012_su2_re1000", "backstep_outlet_backflow", "taylor_couette_su2_zones",
         "cavity_heated", "conduction_mms", "couette_viscous_heating", "cht_composite_wall",
-        "cht_heated_wall",
+        "cht_heated_wall", "cht_turbulent_channel",
     ],
     "long": [
         "cylinder_re100", "cylinder_re100_short", "cylinder_re100_statistics", "cylinder_re100_convective", "cylinder_re20_gci",
         "tmr_plate_zeta_f", "backstep_zeta_f0", "tmr_plate_eb", "backstep_eb", "impinging_jet",
+        "cht_heat_sink_turbulent",
     ],
     "quick": [
         "cavity_re100_budget", "couette_hex", "couette_mixed", "couette_poly", "couette_tet",

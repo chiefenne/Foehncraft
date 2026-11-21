@@ -1,0 +1,116 @@
+# A finned heat sink in a turbulent air channel: conjugate heat transfer
+# with the thermal wall function on every face between the air and the
+# aluminium (stage 7d5, D157 §9.4).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/cht_heat_sink_turbulent.toml
+#
+# A plane channel 50 mm high and 300 mm long, air at 5 m/s and 300 K
+# (Re = U 2H/ν ≈ 3.3·10⁴ on the hydraulic diameter 2H), k-ω SST with the
+# automatic wall treatment. On the lower wall sits an aluminium heat sink:
+# a base 100 mm long and 5 mm thick with three fins 3 mm thick and 20 mm
+# tall, 40 mm apart. A chip under the base puts 2000 W/m² into it (200 W
+# per metre of depth); the rest of the lower wall and the upper wall are
+# adiabatic. One mesh of 300 × 50 cells holds both regions; the flow runs
+# on the air, the temperature on everything. Every face between the air
+# and the aluminium takes the thermal wall function h_w = ρ c_p u*/T⁺ of
+# Kader (1981) in series with the half cell of the metal, and the air
+# conducts with k + c_p μ_t/Pr_t. All of the chip's heat crosses the
+# interface and leaves with the air. The flow starts from rest with the
+# momentum relaxed by 0.5 for the first 100 iterations.
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [0.3, 0.05, 0.01]
+cells = [300, 50, 1]
+split = [{ boundary = "ymin", axis = "x", at = 0.08, name = "floor" }]
+zones = [
+  { name = "base", lower = [0.08, 0.0, 0.0], upper = [0.18, 0.005, 0.01] },
+  { name = "fin_1", lower = [0.088, 0.005, 0.0], upper = [0.091, 0.025, 0.01] },
+  { name = "fin_2", lower = [0.128, 0.005, 0.0], upper = [0.131, 0.025, 0.01] },
+  { name = "fin_3", lower = [0.168, 0.005, 0.0], upper = [0.171, 0.025, 0.01] },
+]
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+material = "air"
+temperature = 300.0
+
+[materials.aluminium-6061]
+kind = "solid"
+description = "Aluminium alloy 6061-T6 at room temperature (ASM Handbook vol. 2, 1990)"
+density = 2700.0
+specific_heat = 896.0
+conductivity = 167.0
+
+[regions.sink]
+kind = "solid"
+zones = ["base", "fin_1", "fin_2", "fin_3"]
+material = "aluminium-6061"
+
+[turbulence]
+model = "k-omega-sst"
+wall_treatment = "automatic"
+
+[energy]
+initial = 300.0
+turbulent_prandtl = 0.85
+wall_function = "kader"
+
+[initial]
+velocity = [0.0, 0.0, 0.0]           # from rest: a uniform 5 m/s into the fins upsets SIMPLEC
+k = 0.09375
+omega = 62.5
+
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [5.0, 0.0, 0.0]
+k = 0.09375                          # 5 % intensity
+omega = 62.5                         # ν_t/ν ≈ 100
+[boundary.xmin.energy]
+temperature = 300.0
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymin]
+type = "wall"                        # the floor upstream of the sink
+[boundary.floor]
+type = "wall"                        # the bottom of the base, then the floor downstream
+[boundary.floor.energy]
+heat_flux = "if(x < 0.18, 2000.0, 0.0)"   # W/m²: the chip under the base
+[boundary.ymax]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-6
+max_iterations = 2500
+log_every = 250
+
+[solver.momentum]
+relaxation = 0.5                     # while the flow sets up around the fins
+
+[[schedule]]
+at_iteration = 100
+set = { solver.momentum.relaxation = 0.7 }
+
+[solver.energy]
+relaxation = 1.0
+tolerance = 1e-10                    # the solid's coefficients dominate the
+max_iter = 300                       # scaled residual: solve tightly (ENE007)
+
+[verification]
+require_convergence = true
+
+[output]
+wall_csv = false
+lines = [
+  { name = "base_top", from = [0.0805, 0.0045, 0.005], to = [0.1795, 0.0045, 0.005], points = 100 },
+]

@@ -292,6 +292,115 @@ pub struct Cht {
     pub fe: crate::simplec::Flow,
     /// The maps between the views.
     pub view: Arc<FluidView>,
+    /// The turbulent coupling of the energy view (stage 7d5), set up at
+    /// the first energy solve of a turbulent flow.
+    turb: Option<ChtTurb>,
+}
+
+/// The turbulence of the fluid view in the energy view (stage 7d5): the
+/// turbulent conductivity c_p μ_t/Pr_t on the fluid faces, the thermal
+/// wall function on the walls of the fluid that are boundaries of the full
+/// mesh, and the y⁺ of the interface faces, where the wall function goes
+/// in series with the solid half cell ([`crate::scalar::InterfaceWall`]).
+struct ChtTurb {
+    /// Laminar μ per face of the full mesh (1 in the solids).
+    mu: crate::device::Buf,
+    /// μ_eff per face of the full mesh for the turbulent conductivity: 0 on
+    /// the interfaces and in the solids, so that no μ_t is added there.
+    mu_eff: crate::device::Buf,
+    /// 1 on the fluid's walls, per boundary face of the full mesh.
+    wall: crate::device::Buf,
+    /// y* per wall face of the full mesh.
+    y_plus: crate::device::Buf,
+    y_floor: f64,
+    /// Per wall face of the full mesh: the wall face of the fluid view.
+    outer: Vec<usize>,
+    /// Per interface face: the wall face and the face of the fluid view.
+    iface: Vec<(usize, usize)>,
+    /// The interface faces with their geometry (y* and μ are set per
+    /// iteration).
+    walls: crate::scalar::InterfaceWall,
+}
+
+impl ChtTurb {
+    /// The coupling of the walls of the fluid view `fl` (with its
+    /// turbulence model) onto the full mesh of `view`.
+    fn new(
+        fl: &crate::simplec::Flow,
+        fe: &mut crate::simplec::Flow,
+        view: &FluidView,
+    ) -> Result<Option<Self>> {
+        let Some(t) = fl.turbulence.as_ref() else {
+            return Ok(None);
+        };
+        let tc = t.scalar_coupling(fl.dev.as_ref());
+        let (faces, y) = t.wall_faces();
+        let (mesh, geo) = (&view.mesh, &view.geo);
+        let ni = mesh.n_interior_faces();
+        let mut outer: Vec<(u32, usize)> = Vec::new();
+        let mut iface = Vec::new();
+        let mut walls = crate::scalar::InterfaceWall {
+            y_floor: tc.y_floor,
+            ..Default::default()
+        };
+        for (j, &fv) in faces.iter().enumerate() {
+            let fv = fv as usize;
+            let full = view.face[fv];
+            if (full as usize) >= ni {
+                outer.push((full, j));
+            } else {
+                let f = full as usize;
+                let (s, _) = geo.normal_area(f);
+                let (o, n) = (mesh.owner[f] as usize, mesh.neighbour[f] as usize);
+                let dn: f64 = (0..3)
+                    .map(|k| (geo.cell_centroid[n][k] - geo.cell_centroid[o][k]) * s[k])
+                    .sum();
+                iface.push((j, fv));
+                walls.faces.push(full);
+                walls.fluid_owner.push(!view.flip[fv]);
+                walls.y.push(y[j]);
+                walls.dn.push(dn);
+            }
+        }
+        outer.sort_unstable();
+        // the device arrays of the wall faces of the full mesh (face order)
+        let mut stat = crate::device::WallStatic::default();
+        let mut cells: Vec<(u32, u32)> = Vec::new();
+        for (i, &(f, _)) in outer.iter().enumerate() {
+            stat.faces.push(f);
+            cells.push((mesh.owner[f as usize], i as u32));
+        }
+        cells.sort_unstable();
+        for (k, &(c, i)) in cells.iter().enumerate() {
+            if k == 0 || cells[k - 1].0 != c {
+                stat.cells.push(c);
+                stat.ptr.push(k as u32);
+            }
+            stat.slots.push(i);
+        }
+        stat.ptr.push(cells.len() as u32);
+        fe.dev.wall_setup(&stat)?;
+        let nb = mesh.n_boundary_faces();
+        let mut mask = vec![0.0; nb];
+        for &(f, _) in &outer {
+            mask[f as usize - ni] = 1.0;
+        }
+        let nf = mesh.n_faces();
+        let dev = fe.dev.as_mut();
+        let wall = dev.alloc(nb)?;
+        dev.upload(wall, &mask)?;
+        let y_plus = dev.alloc(outer.len().max(1))?;
+        Ok(Some(Self {
+            mu: dev.alloc(nf)?,
+            mu_eff: dev.alloc(nf)?,
+            wall,
+            y_plus,
+            y_floor: tc.y_floor,
+            outer: outer.iter().map(|&(_, j)| j).collect(),
+            iface,
+            walls,
+        }))
+    }
 }
 
 /// Attaches the energy equation on the full mesh to the flow of the fluid
@@ -325,7 +434,11 @@ pub fn attach(fl: &mut crate::simplec::Flow, view: Arc<FluidView>) -> Result<()>
         },
     )?;
     crate::scalar::attach(&mut fe, full, mesh, geo)?;
-    fl.cht = Some(Box::new(Cht { fe, view }));
+    fl.cht = Some(Box::new(Cht {
+        fe,
+        view,
+        turb: None,
+    }));
     Ok(())
 }
 
@@ -354,11 +467,50 @@ pub fn solve(
         let mu_full = v.faces_to_full(&mu, false, 0.0);
         let target = fe.dev.face_viscosity();
         fe.dev.upload(target, &mu_full)?;
-        fe.solve_scalars(step, res)?;
+        // a turbulent flow (stage 7d5): μ, μ_eff and y* of the fluid view
+        // on the full mesh, the interface faces with their y* and μ
+        if c.turb.is_none() && fl.turbulence.is_some() {
+            c.turb = ChtTurb::new(fl, fe, &v)?;
+        }
+        let mut coupling = None;
+        let mut lam_target = fl.dev.face_viscosity();
+        if let (Some(ct), Some(t)) = (c.turb.as_mut(), fl.turbulence.as_ref()) {
+            let tc = t.scalar_coupling(fl.dev.as_ref());
+            lam_target = tc.mu;
+            let lam = fl.dev.download(tc.mu)?;
+            let ys = match tc.y_plus {
+                Some(b) => fl.dev.download(b)?,
+                None => Vec::new(),
+            };
+            fe.dev.upload(ct.mu, &v.faces_to_full(&lam, false, 1.0))?;
+            let mut me = v.faces_to_full(&mu, false, 0.0);
+            for &f in &ct.walls.faces {
+                me[f as usize] = 0.0;
+            }
+            fe.dev.upload(ct.mu_eff, &me)?;
+            if !ct.outer.is_empty() {
+                let yo: Vec<f64> = ct.outer.iter().map(|&j| ys[j]).collect();
+                fe.dev.upload(ct.y_plus, &yo)?;
+            }
+            ct.walls.y_star = ct.iface.iter().map(|&(j, _)| ys[j]).collect();
+            ct.walls.mu = ct.iface.iter().map(|&(_, fv)| lam[fv]).collect();
+            if let Some(sc) = fe.scalars.as_mut() {
+                sc.set_energy_interfaces(ct.walls.clone());
+            }
+            coupling = Some(crate::scalar::TurbCoupling {
+                mu: ct.mu,
+                mu_eff: ct.mu_eff,
+                wall: ct.wall,
+                y_plus: (!ct.outer.is_empty()).then_some(ct.y_plus),
+                y_floor: ct.y_floor,
+            });
+        }
+        fe.solve_scalar_fields(step, res, coupling)?;
+        // μ(T) back to the fluid view: the face viscosity of a laminar
+        // flow, the laminar viscosity of a turbulence model (which adds μ_t)
         if let Some(mu) = fe.scalars.as_ref().and_then(|s| s.energy_viscosity()) {
             let back = v.faces_from_full(mu);
-            let target = fl.dev.face_viscosity();
-            fl.dev.upload(target, &back)?;
+            fl.dev.upload(lam_target, &back)?;
             fl.phys.mu_face = Some(Arc::new(back));
         }
         Ok(())
