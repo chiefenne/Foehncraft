@@ -56,6 +56,13 @@ class Result:
         return self.exit_code == 0
 
     @property
+    def limitations(self) -> list[dict]:
+        """What to know before trusting the result (D199): `code` (LIM001 to
+        LIM006), `feature` and `message`. A run with limitations is still
+        `finished` with exit code 0."""
+        return self.summary.get("limitations", [])
+
+    @property
     def solves(self) -> list[dict]:
         """One entry per level or time step of a sweep."""
         return self.summary.get("solves", [])

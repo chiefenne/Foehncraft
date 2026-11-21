@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**92 features: 40 verified, 48 partial, 4 unverified.**
+**93 features: 41 verified, 48 partial, 4 unverified.**
 
 ## How a grade is computed
 
@@ -45,6 +45,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Pressure–velocity coupling | [Coupled pressure–velocity algorithm with pseudo-time steps](#coupling-coupled) | partial |
 | Pressure–velocity coupling | [PISO with outer correctors, transient](#coupling-piso) | verified |
 | Pressure–velocity coupling | [SIMPLEC-type correctors on thin wedge cells at an axis](#coupling-wedge-corrector) | verified |
+| Time stepping | [BDF1 (backward Euler)](#time-bdf1) | verified |
 | Time stepping | [BDF2](#time-bdf2) | verified |
 | Time stepping | [Crank–Nicolson](#time-crank-nicolson) | verified |
 | Time stepping | [Time step from the time-integration error](#time-error-controlled-step) | partial |
@@ -393,6 +394,18 @@ Gaps:
 - exact: [`solid_body_rotation_is_kept_at_high_viscosity_on_the_axis_wedges`](../../crates/foehncraft-flow/tests/sliding.rs): solid-body rotation kept
 
 ## Time stepping
+
+<a id="time-bdf1"></a>
+
+### BDF1 (backward Euler)
+
+**verified** · id `time.bdf1` · switch `time.scheme = "bdf1"`
+
+- exact: [`taylor_green_time_order`](../../crates/foehncraft-flow/tests/transient.rs): first order in time on the Taylor–Green vortex (band 0.9 to 1.6)
+
+Notes:
+
+- first order by design: a time-accurate run should use BDF2 or Crank–Nicolson
 
 <a id="time-bdf2"></a>
 
