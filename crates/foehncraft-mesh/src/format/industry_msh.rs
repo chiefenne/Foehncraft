@@ -42,7 +42,7 @@
 //!   Periodic zones are ordinary boundaries.
 //! - It shares the extension `.msh` with Gmsh: the first bytes decide.
 
-use super::{MeshFile, MeshFormat, ReadOptions};
+use super::{MeshFile, MeshFormat, ReadOptions, declared};
 use crate::builder::MeshBuilder;
 use crate::geometry::{polygon_area_centroid, sub};
 use std::collections::HashMap;
@@ -215,6 +215,7 @@ fn parse(bytes: &[u8]) -> Result<MeshFile, String> {
                         "line {line}: nodes with {nd} coordinates: only 3D meshes are read"
                     ));
                 }
+                let last = declared(last, t.len(), &format!("line {line}: nodes"))?;
                 if zone == 0 {
                     n_nodes = last;
                     points.resize(n_nodes, [0.0; 3]);
@@ -253,6 +254,7 @@ fn parse(bytes: &[u8]) -> Result<MeshFile, String> {
                     )
                 };
                 let (zone, first, last) = (h(0)?, h(1)?, h(2)?);
+                let last = declared(last, t.len(), &format!("line {line}: cells"))?;
                 if zone == 0 {
                     n_cells = last;
                     continue;
@@ -284,7 +286,10 @@ fn parse(bytes: &[u8]) -> Result<MeshFile, String> {
                 let (bc, ftype) = (h(3)?, h(4)?);
                 face_zone_type.insert(zone, bc);
                 let Some(d) = s.data else { continue };
-                let count = last + 1 - h(1)?;
+                let count = (last + 1)
+                    .checked_sub(h(1)?)
+                    .ok_or_else(|| format!("line {line}: a face section ends before it starts"))?;
+                let count = declared(count, d.len(), &format!("line {line}: faces"))?;
                 let mut it = d.split_ascii_whitespace();
                 faces.reserve(count);
                 let mut num = |what: &str| -> Result<usize, String> {
@@ -307,8 +312,8 @@ fn parse(bytes: &[u8]) -> Result<MeshFile, String> {
                     let mut nodes = Vec::with_capacity(nn);
                     for _ in 0..nn {
                         let n = num("node")?;
-                        if n == 0 {
-                            return Err(format!("line {line}: a face refers to node 0"));
+                        if n == 0 || n > u32::MAX as usize {
+                            return Err(format!("line {line}: a face refers to node {n}"));
                         }
                         nodes.push((n - 1) as u32);
                     }
@@ -351,7 +356,7 @@ fn parse(bytes: &[u8]) -> Result<MeshFile, String> {
     }
     let max_cell = faces.iter().map(|f| f.c0.max(f.c1)).max().unwrap_or(0);
     if n_cells == 0 {
-        n_cells = max_cell;
+        n_cells = declared(max_cell, t.len(), "cells")?;
     }
     if max_cell > n_cells {
         return Err(format!(

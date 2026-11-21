@@ -1,0 +1,6 @@
+# vtk DataFile Version 5.1
+broken
+ASCII
+DATASET UNSTRUCTURED_GRID
+POINTS 99999999999 double
+0 0 0

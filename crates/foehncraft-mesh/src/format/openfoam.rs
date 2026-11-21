@@ -34,7 +34,7 @@
 //! - `cellZones` give the cell zones (cells in none are in `default`).
 //!   Compressed files (`points.gz`) are not read: `gunzip` them.
 
-use super::{MeshFile, MeshFormat, ReadOptions};
+use super::{MeshFile, MeshFormat, ReadOptions, declared};
 use crate::builder::MeshBuilder;
 use std::path::{Path, PathBuf};
 
@@ -192,6 +192,9 @@ impl<'a> Scan<'a> {
             while self.pos < self.b.len() && self.b[self.pos] != b'"' {
                 self.pos += 1;
             }
+            if self.pos >= self.b.len() {
+                return Err(self.err("a quoted word without its closing quote"));
+            }
             let w = std::str::from_utf8(&self.b[s..self.pos]).map_err(|_| self.err("bad text"))?;
             self.pos += 1;
             return Ok(w);
@@ -259,6 +262,7 @@ impl<'a> Scan<'a> {
     /// `N{value}` is returned as `Err(Some(value))`.
     fn open_list(&mut self) -> Result<usize, String> {
         let n: usize = self.number()?;
+        let n = declared(n, self.b.len(), &self.err("a list"))?;
         self.expect(b'(')?;
         Ok(n)
     }
@@ -293,6 +297,7 @@ impl<'a> Scan<'a> {
     /// A list of labels: `N(a b c)`, `N{a}` (ASCII), or `N(` raw `)`.
     fn labels(&mut self) -> Result<Vec<u32>, String> {
         let n: usize = self.number()?;
+        let n = declared(n, self.b.len(), &self.err("a list of labels"))?;
         if self.eat(b'{') {
             let v: u32 = self.number()?;
             self.expect(b'}')?;
@@ -518,7 +523,15 @@ pub fn read_dir(dir: &Path) -> Result<MeshFile, String> {
     let mut s = Scan::new(&boundary_b, "boundary")?;
     let patches = patches(&mut s)?;
 
-    let n_faces = offsets.len() - 1;
+    let Some(n_faces) = offsets.len().checked_sub(1) else {
+        return Err("faces: an empty offset list".into());
+    };
+    if offsets[0] != 0 || offsets.windows(2).any(|w| w[0] > w[1]) {
+        return Err("faces: the offsets of the compact face list do not rise from 0".into());
+    }
+    if offsets[n_faces] as usize > nodes.len() {
+        return Err("faces: an offset beyond the node list".into());
+    }
     let n_inner = neighbour.len();
     if owner.len() != n_faces {
         return Err(format!(
@@ -546,6 +559,14 @@ pub fn read_dir(dir: &Path) -> Result<MeshFile, String> {
     if n_cells == 0 {
         return Err("the mesh has no cells".into());
     }
+    // every cell owns a face or is the neighbour of one
+    if n_cells > n_faces + n_inner {
+        return Err(format!(
+            "owner or neighbour refers to cell {}, but {n_faces} faces bound at most {} cells",
+            n_cells - 1,
+            n_faces + n_inner
+        ));
+    }
 
     // patches must tile the faces behind the internal ones
     let mut next = n_inner;
@@ -564,7 +585,15 @@ pub fn read_dir(dir: &Path) -> Result<MeshFile, String> {
                 p.name, p.start
             ));
         }
-        next += p.n_faces;
+        next = next
+            .checked_add(p.n_faces)
+            .filter(|&n| n <= n_faces)
+            .ok_or_else(|| {
+                format!(
+                    "patch '{}' with {} faces reaches beyond the {n_faces} faces",
+                    p.name, p.n_faces
+                )
+            })?;
     }
     if next != n_faces {
         return Err(format!(
