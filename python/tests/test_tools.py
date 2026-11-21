@@ -46,6 +46,20 @@ def test_every_tool_through_call(tmp_path):
         "flow.run": {"case": case, "out": out},
         "result.read": {"dir": out},
         "post.derive": {"case": case, "out": out, "fields": ["vorticity"]},
+        "study.scalar": {
+            "case": ROOT / "examples/cases/scalar/mms_poly_2d.toml",
+            "out": tmp_path / "scalar",
+        },
+        "study.poisson": {
+            "case": ROOT / "examples/cases/poisson/poisson_hex_box.toml",
+            "levels": [0],
+            "solvers": ["amg"],
+            "out": tmp_path / "poisson",
+        },
+        "study.g1": {
+            "case": ROOT / "examples/cases/bench/g1_ci_small.toml",
+            "out": tmp_path / "g1",
+        },
     }
     listed = [t["id"] for t in fc.commands()["tools"]]
     assert sorted(listed) == sorted(inputs), "a tool of the catalogue has no call here"

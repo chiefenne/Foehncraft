@@ -1,0 +1,4 @@
+{"source": "u0 * min(t / t_ramp, 1) * 4 * y * (1 - y)",
+ "env": "[constants]\nu0 = 1.5\nt_ramp = 2.0\n",
+ "allowed": "yt",
+ "points": [[0, 0.5, 0, 0.5], [0, 0.5, 0, 1.0], [0, 0.25, 0, 4.0]]}

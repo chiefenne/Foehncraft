@@ -11,6 +11,7 @@ Part of the [Example gallery](../gallery.md): adjoint-ready kernels, runs that a
 | 28 | [A table with the columns you choose](#log-columns) | 5 | `[log] columns`: probes, cells, extremes with their cells, boundary mass flow; the same content in `run.jsonl` (D125) |
 | 29 | [Settings that change during the run](#schedule) | 5 | `[[schedule]]`: under-relaxation, tolerances and cadences change at prepared iterations, steps or times; every change in the log and in `run.jsonl` (D128) |
 | 166 | [Iteration budget, diagnosis and study budgets](#budgets) | 7 | the iteration budget before the run, a steady run diagnosed at 2000 iterations (trend, verdict, advice, stop), cell-hour, GPU-hour and output budgets per study beside the D81 estimate (D198) |
+| 171 | [Every function as a tool: the catalogue an agent reads](#tool-registry) | 7 | one registry of typed tools with ids, versions, JSON Schemas and action kinds; `foehn commands`, `foehn call`, `fc.call`; front ends checked by `cargo xtask layering` (D196, D203) |
 
 ---
 
@@ -444,6 +445,82 @@ independent of the threads. Without these keys nothing changes.
 target/release/foehn flow examples/cases/flow/cylinder_steady_diagnosis.toml --check
 target/release/foehn flow examples/cases/flow/cylinder_steady_diagnosis.toml
 grep '"type":"diagnosis"' output/cylinder_steady_diagnosis/run.jsonl
+```
+
+[↑ back to top](#run-control-health-and-adjoint-readiness)
+
+---
+
+<a id="tool-registry"></a>
+## 171. Every function as a tool: the catalogue an agent reads
+
+<img src="../figures/gallery/tool_catalogue.svg" alt="The tools of the registry by category, coloured by action kind: read, writes files, starts a run" width="760" height="560">
+
+Everything a front end can do is a tool of one registry (D196): a stable
+id (`case.check`), a contract version, a typed input and output whose JSON
+Schemas come from the same structs, and an action kind that says whether
+it only reads, writes files or starts a run (the approvals of an agent
+host follow it, D198). The chart is the catalogue of this version, drawn
+from `foehn commands`: 19 tools in 10 categories, 12 that only read, 3
+that write files and 4 that start a run. The command line, the Python
+package and later the MCP server (L18) and the desktop app (L7) reach
+exactly these tools; `cargo xtask layering` fails when a front end calls
+the engine past them.
+
+An agent learns the tools from the catalogue and calls any of them with
+JSON. The result is one envelope with the status and exit code of D64,
+the tool's output and, for a call that failed, its diagnostic:
+
+```
+$ foehn call case.check --input examples/cases/tools/check_cavity.json
+{
+  "format": "foehn.tool-result",
+  "version": 1,
+  "tool": "case.check",
+  "tool_version": 1,
+  "status": "finished",
+  "exit_code": 0,
+  "result": {
+    "format": "foehncraft.check",
+    ...
+    "ok": true,
+    "diagnostics": [],
+    "estimate": { "cells": 4096, ... }
+  },
+  "diagnostics": [],
+  "limitations": []
+}
+$ foehn call case.chek
+Error TOOL001: unknown tool `case.chek`; did you mean `case.check`? (`foehn commands` lists the tools)
+```
+
+The same call from Python, in process:
+
+```python
+import foehncraft as fc
+
+r = fc.call("flow.run", case="examples/cases/flow/cavity_re100.toml", out="output/tools/cavity")
+r["status"], r["result"]["solves"][0]["iterations"]      # ('finished', 439)
+fc.call("post.derive", case="examples/cases/flow/cavity_re100.toml",
+        out="output/tools/cavity", fields=["vorticity", "q-criterion"])
+```
+
+`foehn flow`, `foehn mesh`, `foehn materials` and the other commands are
+the same tools with flags: their text, `--json` objects, exit codes and
+results are unchanged (a test compares each command with `foehn call` of
+its tool, and the runs give byte-identical files).
+
+| | |
+|---|---|
+| Code | `crates/foehncraft-tools/` (registry, tools), `crates/foehncraft-cli/src/main.rs` (`commands`, `call`), `crates/foehncraft-py/src/lib.rs`, `python/foehncraft/tools.py`, `xtask/` (layering) |
+| Tests | `crates/foehncraft-tools/src/lib.rs` (ids, schemas, envelope, `docs/tools.md` current), `crates/foehncraft-cli/tests/tools_contract.rs`, `python/tests/test_tools.py` (every tool once through `call`) |
+| Case files | `tools/*.json` (inputs of `foehn call`) |
+| Catalogue | [tools.md](../tools.md) |
+
+```
+target/release/foehn commands | head -40
+target/release/foehn call flow.run --input examples/cases/tools/run_cavity.json
+python3 -m tools.plot.tools_chart docs/figures/gallery/tool_catalogue.svg target/release/foehn
 ```
 
 [↑ back to top](#run-control-health-and-adjoint-readiness)
