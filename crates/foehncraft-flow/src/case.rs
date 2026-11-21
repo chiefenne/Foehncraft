@@ -750,6 +750,10 @@ pub struct FlowCase {
     /// region are fluid with the `[fluid]` material.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub regions: BTreeMap<String, crate::materials::RegionSection>,
+    /// Contact resistances and thin walls between two regions of a
+    /// conjugate case (stage 7d2, D157): `[interfaces.<name>]`.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub interfaces: BTreeMap<String, crate::conduction::InterfaceSection>,
     /// Named constants of the expressions (D53): numbers, or expressions
     /// of other constants.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]

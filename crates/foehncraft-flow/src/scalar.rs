@@ -232,7 +232,17 @@ pub struct ScalarSettings {
     /// Solves of each scalar per outer iteration (each with new deferred
     /// corrections).
     pub sweeps: usize,
+    /// Preconditioner of the BiCGStab solves: `jacobi` or `amg` (the
+    /// aggregation multigrid on the symmetric part of the matrix); default
+    /// `amg` for the energy equation of a conjugate case (stage 7d2),
+    /// `jacobi` elsewhere.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preconditioner: Option<Preconditioner>,
 }
+
+/// The multigrid slot of the scalar solves (the pressure keeps slot 0,
+/// the turbulence and momentum equations theirs).
+const ENERGY_SLOT: usize = 12;
 
 impl Default for ScalarSettings {
     fn default() -> Self {
@@ -246,6 +256,7 @@ impl Default for ScalarSettings {
             tolerance: None,
             max_iter: 50,
             sweeps: 1,
+            preconditioner: None,
         }
     }
 }
@@ -697,6 +708,26 @@ struct EnergyField {
     /// side times d_n (the `k_P/(1 − w)` of the series), for the face
     /// temperature of the report.
     iface_g: Vec<f64>,
+    /// The conduction across region interfaces and in orthotropic solids
+    /// (stage 7d2): contact resistances, one-sided gradients, cross terms.
+    cond: Option<crate::conduction::Conduction>,
+    /// The heat sources of single regions (`[[energy.sources]]`): the
+    /// cells and the power density (W/m³) as a value of x, y, z, t.
+    region_src: Vec<(Vec<u32>, RegionSrc)>,
+    /// Unit normals of the faces (the normal conductivity of an
+    /// orthotropic solid), when the case has one.
+    normals: Vec<[f64; 3]>,
+    /// The face area vectors S, when the case has an orthotropic solid.
+    areas: Vec<[f64; 3]>,
+}
+
+/// The power density of a region source.
+#[derive(Debug, Clone)]
+enum RegionSrc {
+    /// W/m³ as a value of x, y, z (t).
+    Density(Value),
+    /// W over the region (a value of t) and the region's volume.
+    Power(Value, f64),
 }
 
 /// The fluid side of the interface faces of a turbulent conjugate case
@@ -1352,6 +1383,16 @@ impl Scalars {
             let mut first = 0;
             for sweep in 0..s.sweeps {
                 dev.gradient_with(f.lsq, f.phi, f.bc_a, f.bc_b, f.jump, f.grad)?;
+                // the one-sided gradients of the interface cells (stage 7d2)
+                let (phi_b, grad_b, bca, bcb) = (f.phi, f.grad, f.bc_a, f.bc_b);
+                if let Some(cd) = f
+                    .energy
+                    .as_deref_mut()
+                    .and_then(|e| e.cond.as_mut())
+                    .filter(|c| c.is_active())
+                {
+                    cd.one_sided(dev, phi_b, grad_b, bca, bcb)?;
+                }
                 if s.scheme != Scheme::Upwind && s.limiter != LimiterKind::None {
                     let eps2 = match (s.limiter, f.eps2) {
                         (LimiterKind::Venkatakrishnan, Some(b)) => Eps2::Cells(b),
@@ -1384,6 +1425,16 @@ impl Scalars {
                     cn: w_cn,
                     bf: w_bf,
                 })?;
+                // the exact interface flux and the orthotropic cross terms
+                let gamma_b = f.gamma;
+                if let Some(cd) = f
+                    .energy
+                    .as_deref_mut()
+                    .and_then(|e| e.cond.as_mut())
+                    .filter(|c| c.is_active())
+                {
+                    cd.correct(dev, gamma_b, w_bf)?;
+                }
                 let time = match (step, f.old) {
                     (Some(st), Some((o1, o2, _))) => Some(ScalarTime {
                         inv_dt: 1.0 / st.dt,
@@ -1414,15 +1465,33 @@ impl Scalars {
                     order: w_order,
                 })?;
                 let scale = dev.scalar_scale(f.phi, w_rhs, w_diag, alpha, None)?;
-                let (it, r0) = dev.solve(
-                    w_val,
-                    w_rhs,
-                    f.phi,
-                    Preconditioner::Jacobi,
-                    false,
-                    s.tol(tr),
-                    s.max_iter,
-                )?;
+                // the preconditioner: by default the aggregation multigrid
+                // for the energy equation of a conjugate case (conductivity
+                // ratios up to 10⁴, §10.2), Jacobi elsewhere
+                let conjugate = f.energy.as_deref().is_some_and(|e| e.mats.len() > 1);
+                let mut pc = s.preconditioner.unwrap_or(if conjugate {
+                    Preconditioner::Amg
+                } else {
+                    Preconditioner::Jacobi
+                });
+                if pc == Preconditioner::Amg
+                    && dev
+                        .amg_setup_slot(
+                            ENERGY_SLOT,
+                            w_val,
+                            &foehncraft_fv::amg::AmgSettings::default(),
+                            true,
+                        )
+                        .is_err()
+                {
+                    dev.amg_select(0)?;
+                    pc = Preconditioner::Jacobi;
+                }
+                let solved = dev.solve(w_val, w_rhs, f.phi, pc, false, s.tol(tr), s.max_iter);
+                if pc == Preconditioner::Amg {
+                    dev.amg_select(0)?;
+                }
+                let (it, r0) = solved?;
                 if sweep == 0 {
                     res = r0 / scale;
                     if time.is_some() {
@@ -1734,71 +1803,32 @@ impl Scalars {
         ))
     }
 
-    /// The heat flow into the fluid through the faces between the fluid
-    /// and each solid region (W, the orthogonal part of the conduction, as
-    /// the boundary report), with the area and the area-mean face
-    /// temperature: (solid region, heat flow, area, mean temperature).
-    pub fn energy_interfaces(
-        &self,
-        dev: &mut dyn FlowDevice,
-        geo: &Geometry,
-    ) -> Result<Vec<(String, f64, f64, f64)>> {
-        let Some((f, e)) = self
-            .fields
+    /// The heat flow through the faces between two regions of the energy
+    /// equation (W, the flux of the last assembly, exact with the one-sided
+    /// gradients and the contact resistance of stage 7d2), with the area
+    /// and the area-mean face temperature: (name, heat flow, area, mean
+    /// temperature). Between the fluid and a solid region the name is
+    /// `interface-<solid>`, the heat flows into the fluid and the
+    /// temperature is the fluid side's; between two solids
+    /// `interface-<a>-<b>`, into `a`.
+    pub fn energy_interfaces(&self) -> Vec<(String, f64, f64, f64)> {
+        self.fields
             .iter()
-            .find_map(|f| f.energy.as_deref().map(|e| (f, e)))
-        else {
-            return Ok(Vec::new());
-        };
-        let t = dev.download(f.phi)?;
-        let mut out: Vec<(String, f64, f64, f64)> = e.regions[1..]
+            .find_map(|f| f.energy.as_deref())
+            .and_then(|e| e.cond.as_ref())
+            .map(|c| c.report())
+            .unwrap_or_default()
+    }
+
+    /// The heat flow into the domain per boundary face that the cross
+    /// terms of orthotropic solids add (W, of the last assembly).
+    fn energy_boundary_cross(&self) -> Option<&[f64]> {
+        self.fields
             .iter()
-            .map(|r| (r.clone(), 0.0, 0.0, 0.0))
-            .collect();
-        for (fi, &n) in e.neighbour.iter().enumerate() {
-            let (o, n) = (e.owner[fi] as usize, n as usize);
-            let (mo, mn) = (e.mat_cell[o], e.mat_cell[n]);
-            if (mo == 0) == (mn == 0) {
-                continue;
-            }
-            let (s, a) = geo.normal_area(fi);
-            let d: f64 = (0..3)
-                .map(|k| (geo.cell_centroid[n][k] - geo.cell_centroid[o][k]) * s[k])
-                .sum();
-            let q = e.k_face[fi] * a * (t[n] - t[o]) / d;
-            // the face temperature of the series (D157 §9.1): the
-            // conductances k/δ of the two half cells, δ_P ∝ 1 − w
-            let w = e.weight[fi];
-            let at = |m: u16, x: f64| {
-                e.mats[m as usize]
-                    .k
-                    .at(if e.dependent { x } else { e.t_ref })
-            };
-            let (mut gp, mut gn) = (at(mo, t[o]) / (1.0 - w), at(mn, t[n]) / w);
-            // a turbulent fluid side: its wall conductance (stage 7d5)
-            if let Some((iw, slot)) = &e.iface {
-                let i = slot[fi];
-                if i != u32::MAX && !e.iface_g.is_empty() {
-                    if iw.fluid_owner[i as usize] {
-                        gp = e.iface_g[i as usize];
-                    } else {
-                        gn = e.iface_g[i as usize];
-                    }
-                }
-            }
-            let tf = (gp * t[o] + gn * t[n]) / (gp + gn);
-            let (solid, into_fluid) = if mo == 0 { (mn, q) } else { (mo, -q) };
-            let r = &mut out[solid as usize - 1];
-            r.1 += into_fluid;
-            r.2 += a;
-            r.3 += tf * a;
-        }
-        for r in &mut out {
-            if r.2 > 0.0 {
-                r.3 /= r.2;
-            }
-        }
-        Ok(out)
+            .find_map(|f| f.energy.as_deref())
+            .and_then(|e| e.cond.as_ref())
+            .filter(|c| !c.cross.is_empty())
+            .map(|c| c.boundary_cross.as_slice())
     }
 
     /// The regions of the energy equation (`fluid` first, then the solid
@@ -1908,6 +1938,7 @@ impl Scalars {
             rho: fluid.rho,
             cp: fluid.cp.clone(),
             k: fluid.k.clone(),
+            aniso: None,
         }];
         let mut zone_mat = vec![0u16; mesh.zones.len()];
         let mut regions = vec!["fluid".to_string()];
@@ -1981,7 +2012,10 @@ impl Scalars {
             })
             .collect();
         let su =
-            if source.is_some() || sec.viscous_heating || enthalpy.iter().any(|h| !h.is_constant())
+            if source.is_some()
+                || sec.viscous_heating
+                || !sec.sources.is_empty()
+                || enthalpy.iter().any(|h| !h.is_constant())
             {
                 Some(put(&vec![0.0; nc])?)
             } else {
@@ -2026,6 +2060,89 @@ impl Scalars {
         } else {
             None
         };
+        // the region interfaces (stage 7d2): contact resistances, thin
+        // walls, one-sided gradients
+        let cond = if regions.len() > 1 {
+            let specs = crate::cht::interface_specs(case, env, mesh, &mat_cell, &regions)?;
+            let fixed: Vec<bool> = conds
+                .iter()
+                .map(|c| matches!(c, ECond::Temperature(_) | ECond::Convection(..)))
+                .collect();
+            let (res, of_face) = specs;
+            Some(crate::conduction::Conduction::new(
+                mesh,
+                geo,
+                disc,
+                &mat_cell,
+                &regions,
+                &|f| of_face.get(&(f as u32)).copied(),
+                res,
+                &fixed,
+            )?)
+        } else {
+            None
+        };
+        // the heat sources of regions
+        let mut region_src = Vec::new();
+        for (i, src) in sec.sources.iter().enumerate() {
+            let key = format!("energy.sources[{i}]");
+            let cells = crate::cht::region_cells(case, mesh, &mat_cell, &regions, &src.region)
+                .ok_or_else(|| {
+                    diag::err(
+                        Diagnostic::new(
+                            diag::ENE_SOURCE,
+                            format!(
+                                "[[energy.sources]] region `{}` is not a region of the case \
+                                 (`fluid` or a key of [regions]: {})",
+                                src.region,
+                                case.regions.keys().cloned().collect::<Vec<_>>().join(", ")
+                            ),
+                        )
+                        .key(format!("{key}.region")),
+                    )
+                })?;
+            let v = match (&src.power, &src.power_density) {
+                (Some(p), None) => {
+                    let vol: f64 = cells.iter().map(|&c| geo.cell_volume[c as usize]).sum();
+                    crate::need!(
+                        vol > 0.0,
+                        ENE_SOURCE,
+                        "[[energy.sources]] region `{}` has no cells",
+                        src.region
+                    );
+                    RegionSrc::Power(expr::value(p, env, time, &format!("{key}.power"))?, vol)
+                }
+                (None, Some(d)) => RegionSrc::Density(expr::value(
+                    d,
+                    env,
+                    Vars::SPACE.with(time),
+                    &format!("{key}.power_density"),
+                )?),
+                _ => {
+                    return Err(diag::err(
+                        Diagnostic::new(
+                            diag::ENE_SOURCE,
+                            format!(
+                                "[[energy.sources]] region `{}`: give one of `power` (W) and \
+                                 `power_density` (W/m³)",
+                                src.region
+                            ),
+                        )
+                        .key(key),
+                    ));
+                }
+            };
+            region_src.push((cells, v));
+        }
+        let aniso = mats.iter().any(|m| m.aniso.is_some());
+        let (normals, areas) = if aniso {
+            (
+                (0..nf).map(|f| geo.normal_area(f).0).collect(),
+                geo.face_area[..nf].to_vec(),
+            )
+        } else {
+            (Vec::new(), Vec::new())
+        };
         let energy = EnergyField {
             dependent: sec.temperature_dependent,
             viscous_heating: sec.viscous_heating,
@@ -2051,6 +2168,10 @@ impl Scalars {
             iface: None,
             iface_law: (turb.law, turb.prt),
             iface_g: Vec::new(),
+            cond,
+            region_src,
+            normals,
+            areas,
             fluid,
             mats,
             mat_cell,
@@ -2141,17 +2262,42 @@ fn refresh_energy(
     let mut cp_face = Vec::with_capacity(nf);
     let mut k_face = Vec::with_capacity(nf);
     let mut iface_g = vec![0.0; e.iface.as_ref().map_or(0, |(w, _)| w.faces.len())];
+    let tt = |x: f64| if dep { x } else { t_ref };
+    let aniso = !e.normals.is_empty();
+    let mut cross = Vec::new();
+    // the cross vector K n̂ − k_n n̂ of a cell's material at a face
+    let side_cross = |m: &crate::energy::Material, t: f64, n: [f64; 3]| -> [f64; 3] {
+        if m.aniso.is_none() {
+            return [0.0; 3];
+        }
+        let k = m.tensor(t);
+        let kn = m.k_normal(t, n);
+        let mut v = [0.0; 3];
+        for i in 0..3 {
+            v[i] = (0..3).map(|j| k[i][j] * n[j]).sum::<f64>() - kn * n[i];
+        }
+        v
+    };
     for f in 0..nf {
         let o = e.owner[f] as usize;
         let mo = &mats[mc[o] as usize];
         cp_face.push(at(&mo.cp, tf[f]));
         if f < ni && mc[e.neighbour[f] as usize] != mc[o] {
-            // two materials: the series conductance of the two half cells
-            // (D157 §9.1), δ_P/(δ_P+δ_N) = 1 − w
+            // two regions: the series of the two half cells and the
+            // contact resistance (D157 §9.1), δ_P/(δ_P+δ_N) = 1 − w
             let n = e.neighbour[f] as usize;
             let w = e.weight[f];
-            let kp = at(&mo.k, tv[o]);
-            let kn = at(&mats[mc[n] as usize].k, tv[n]);
+            let cd = e.cond.as_mut().expect("the interfaces of a conjugate case");
+            let slot = cd.slot[f] as usize;
+            let (nrm, dn, spec) = {
+                let fa = &cd.faces[slot];
+                (fa.normal, fa.area / fa.dgeo, fa.spec)
+            };
+            let mn = &mats[mc[n] as usize];
+            let kp = mo.k_normal(tt(tv[o]), nrm);
+            let kn = mn.k_normal(tt(tv[n]), nrm);
+            let rc = spec.map_or(0.0, |i| cd.specs[i].at(tt(0.5 * (tv[o] + tv[n]))));
+            let (mut r_p, mut r_n) = ((1.0 - w) * dn / kp, w * dn / kn);
             match e.iface.as_ref().map(|(iw, slot)| (iw, slot[f])) {
                 Some((iw, i)) if i != u32::MAX => {
                     // a turbulent fluid side (§9.4): 1/h_w in place of
@@ -2159,15 +2305,10 @@ fn refresh_energy(
                     // Γ_w = μ c_p y*/T⁺(ỹ*) of the thermal law (D135); the
                     // solid half cell keeps δ/k
                     let i = i as usize;
-                    let (cf, fs, ws) = if iw.fluid_owner[i] {
-                        (o, n, w)
-                    } else {
-                        (n, o, 1.0 - w)
-                    };
+                    let cf = if iw.fluid_owner[i] { o } else { n };
                     let fl = &mats[0];
                     let cpf = at(&fl.cp, tv[cf]);
                     let kf = at(&fl.k, tv[cf]);
-                    let ks = at(&mats[mc[fs] as usize].k, tv[fs]);
                     let muc = iw.mu[i] * cpf;
                     let yp = iw.y_star[i];
                     let gw = thermal::wall_conductance_at(
@@ -2180,13 +2321,47 @@ fn refresh_energy(
                     );
                     let g = gw / iw.y[i] * iw.dn[i];
                     iface_g[i] = g;
-                    k_face.push(1.0 / (1.0 / g + ws / ks));
+                    if iw.fluid_owner[i] {
+                        r_p = dn / g;
+                    } else {
+                        r_n = dn / g;
+                    }
                 }
-                _ => k_face.push(1.0 / ((1.0 - w) / kp + w / kn)),
+                _ => {}
             }
+            k_face.push(dn / (r_p + rc + r_n));
+            let fa = &mut cd.faces[slot];
+            fa.r_p = r_p;
+            fa.r_c = rc;
+            fa.r_n = r_n;
+            fa.a_p = side_cross(mo, tt(tv[o]), nrm);
+            fa.a_n = side_cross(mn, tt(tv[n]), nrm);
+        } else if aniso && mo.aniso.is_some() {
+            // an orthotropic region: k_n of the face normal in the matrix,
+            // the tangential rest K S − k_n S as a deferred correction
+            let nrm = e.normals[f];
+            let t = tt(tf[f]);
+            let kn = mo.k_normal(t, nrm);
+            k_face.push(kn);
+            let k = mo.tensor(t);
+            let sv = e.areas[f];
+            let mut tv3 = [0.0; 3];
+            for i in 0..3 {
+                tv3[i] = (0..3).map(|j| k[i][j] * sv[j]).sum::<f64>() - kn * sv[i];
+            }
+            cross.push(crate::conduction::CrossFace {
+                f: f as u32,
+                o: o as u32,
+                n: if f < ni { e.neighbour[f] } else { u32::MAX },
+                w: if f < ni { e.weight[f] } else { 1.0 },
+                t: tv3,
+            });
         } else {
             k_face.push(at(&mo.k, tf[f]));
         }
+    }
+    if let Some(cd) = e.cond.as_mut() {
+        cd.cross = cross;
     }
     e.iface_g = iface_g;
     e.cp_face = cp_face;
@@ -2268,6 +2443,22 @@ fn refresh_energy(
         if let Some(src) = &e.source {
             for (c, h) in heat.iter_mut().enumerate() {
                 *h = src.at(e.cells[c], t);
+            }
+        }
+        for (cells, src) in &e.region_src {
+            match src {
+                RegionSrc::Density(v) => {
+                    for &c in cells {
+                        let c = c as usize;
+                        heat[c] += v.at(e.cells[c], t);
+                    }
+                }
+                RegionSrc::Power(p, vol) => {
+                    let q = p.at([0.0; 3], t) / vol;
+                    for &c in cells {
+                        heat[c as usize] += q;
+                    }
+                }
             }
         }
         if let (true, Some(l)) = (e.viscous_heating, link) {
@@ -2641,6 +2832,11 @@ pub fn summaries(
         } else {
             None
         };
+        let cross = if heat.is_some() {
+            sc.energy_boundary_cross()
+        } else {
+            None
+        };
         let mut bal = EnergyBalance::default();
         let mut largest = 0.0f64;
         for p in &mesh.boundaries {
@@ -2657,6 +2853,18 @@ pub fn summaries(
                 // whole flux at a flux face): ρΓ |S|²/(d·S) (φ_f − φ_P)
                 let dgeo = fl.disc.dgeo[f];
                 flux += gamma[f] / div * dgeo * (pf - phi[o]);
+                if let (Some(w), true) = (&outflow, heat.is_some()) {
+                    // the energy equation: the whole flux of the assembly,
+                    // with its non-orthogonal part (1 − a) k ∇T_P·k_f and the
+                    // cross term of an orthotropic solid (stage 7d2), so that
+                    // the balance closes on skewed meshes too
+                    let kv = [fl.disc.k.x[f], fl.disc.k.y[f], fl.disc.k.z[f]];
+                    let g: f64 = (0..3).map(|d| w.grad[d][o] * kv[d]).sum();
+                    flux += (1.0 - a[fb]) * gamma[f] * g;
+                    if let Some(x) = cross {
+                        flux += x[fb];
+                    }
+                }
                 mf += m[f].abs();
                 msum += m[f].abs() * pf;
                 if let Some((h, _)) = &heat {

@@ -483,3 +483,141 @@ fn turbulent_interface_is_the_wall_function_in_series() {
         assert!(e.relative < 1e-8, "{name}: {e:?}");
     }
 }
+
+/// Stage 7d2, V7.4 with resistance: the composite wall with a contact
+/// resistance at the lower interface and a thin wall (t/k) at the upper
+/// one; the series heat flux with both and the temperature jumps q R″.
+#[test]
+fn composite_wall_with_contact_resistance_and_thin_wall() {
+    let (rc, t, k) = (2.0e-3, 1.0e-3, 0.5);
+    let case = text("cht_composite_wall.toml").replace(
+        "[energy]",
+        &format!(
+            "[interfaces.a-air]\nregions = [\"a\", \"fluid\"]\ncontact_resistance = {rc}\n\n\
+             [interfaces.b-air]\nregions = [\"fluid\", \"b\"]\n\
+             thin_wall = {{ thickness = {t}, conductivity = {k} }}\n\n[energy]"
+        ),
+    );
+    let r = run_case(&parse(&case), "wall_contact");
+    assert!(r.failures.is_empty(), "{:?}", r.failures);
+    let s = temperature(&r);
+    let q = 100.0 / (0.4 / 200.0 + 0.4 / 2.0 + 0.4 / 20000.0 + rc + t / k);
+    for (name, sign) in [
+        ("ymin", -1.0),
+        ("ymax", 1.0),
+        ("interface-a", -1.0),
+        ("interface-b", 1.0),
+    ] {
+        let f = boundary(s, name).flux;
+        assert!(
+            (f - sign * q).abs() < 1e-9 * q,
+            "{name}: {f} against {}",
+            sign * q
+        );
+    }
+    // the fluid-side face temperatures: above the solid's by q R″ at a,
+    // below it by q t/k at b
+    let ta = 300.0 + q * (0.4 / 200.0 + rc);
+    let tb = 400.0 - q * (0.4 / 20000.0 + t / k);
+    let (ma, mb) = (boundary(s, "interface-a").mean, boundary(s, "interface-b").mean);
+    assert!((ma - ta).abs() < 1e-9, "{ma} against {ta}");
+    assert!((mb - tb).abs() < 1e-9, "{mb} against {tb}");
+}
+
+/// Stage 7d2: the patch test of `cht_orthotropic_patch.toml` (an
+/// orthotropic laminate with axes turned by 30°, a fluid at rest, a block
+/// behind a contact resistance, on a mesh with nodes moved by 25 %):
+/// piecewise-linear T exact to round-off, the same heat flux 200 W/m²
+/// through both outer walls and both interfaces, and a closed balance.
+/// The same with the axes of the region in place of the material's.
+#[test]
+fn orthotropic_patch_is_exact_on_a_skewed_mesh() {
+    let base = text("cht_orthotropic_patch.toml");
+    let region_axes = base
+        .replace(
+            ", axes = [[0.8660254037844387, 0.5, 0.0], [-0.5, 0.8660254037844387, 0.0]] }",
+            " }",
+        )
+        .replace(
+            "material = \"fibre-composite\"\n",
+            "material = \"fibre-composite\"\naxes = [[0.8660254037844387, 0.5, 0.0], [-0.5, 0.8660254037844387, 0.0]]\n",
+        );
+    for (name, text) in [("patch", &base), ("patch_region_axes", &region_axes)] {
+        let r = run_case(&parse(text), name);
+        assert!(r.failures.is_empty(), "{name}: {:?}", r.failures);
+        let s = temperature(&r);
+        assert!(s.linf.unwrap() < 1e-9, "{name}: max error {:?} K", s.linf);
+        for (b, sign) in [
+            ("xmin", -1.0),
+            ("xmax", 1.0),
+            ("interface-laminate", -1.0),
+            ("interface-block", 1.0),
+        ] {
+            let f = boundary(s, b).flux;
+            assert!(
+                (f - sign * 200.0).abs() < 1e-8 * 200.0,
+                "{name} {b}: {f} W/m²"
+            );
+        }
+        // the fluid side of the contact: 2 K below the block
+        let t = boundary(s, "interface-block").mean;
+        assert!((t - (320.0 + 50.0 * 0.5)).abs() < 1e-9, "{name}: {t}");
+        let e = s.energy.as_ref().unwrap();
+        assert!(e.relative < 1e-10, "{name}: {e:?}");
+    }
+}
+
+/// Stage 7d2: `[interfaces]` and `[[energy.sources]]` are checked.
+#[test]
+fn interfaces_and_region_sources_are_checked() {
+    let base = text("cht_composite_wall.toml");
+    let with = |extra: &str| base.replace("[energy]", &format!("{extra}\n[energy]"));
+    for (extra, code) in [
+        // an unknown region
+        ("[interfaces.x]\nregions = [\"a\", \"c\"]\ncontact_resistance = 1e-3\n", "CHT004"),
+        // two solids that do not touch
+        ("[interfaces.x]\nregions = [\"a\", \"b\"]\ncontact_resistance = 1e-3\n", "CHT004"),
+        // neither a resistance nor a thin wall
+        ("[interfaces.x]\nregions = [\"a\", \"fluid\"]\n", "CHT004"),
+        // a negative resistance
+        ("[interfaces.x]\nregions = [\"a\", \"fluid\"]\ncontact_resistance = -1.0\n", "CHT004"),
+        // the same region twice
+        ("[interfaces.x]\nregions = [\"a\", \"a\"]\ncontact_resistance = 1e-3\n", "CHT004"),
+    ] {
+        let (c, msg) = refused(&with(extra));
+        assert_eq!(c, code, "{extra}: {msg}");
+    }
+    let src = |s: &str| base.replace("initial = 350.0\n", &format!("initial = 350.0\n{s}"));
+    for s in [
+        "[[energy.sources]]\nregion = \"c\"\npower = 1.0\n",
+        "[[energy.sources]]\nregion = \"a\"\n",
+        "[[energy.sources]]\nregion = \"a\"\npower = 1.0\npower_density = 2.0\n",
+    ] {
+        let (c, msg) = refused(&src(s));
+        assert_eq!(c, "ENE008", "{s}: {msg}");
+    }
+}
+
+/// Stage 7d2: a region source of 5 W in the lower solid of the composite
+/// wall: the balance closes with it, and the heat leaving through the two
+/// walls is 5 W more than without it.
+#[test]
+fn region_source_enters_the_balance() {
+    let base = text("cht_composite_wall.toml");
+    let r0 = run_case(&parse(&base), "src0");
+    let heated = base.replace(
+        "initial = 350.0\n",
+        "initial = 350.0\n\n[[energy.sources]]\nregion = \"a\"\npower = 5.0\n",
+    );
+    let r = run_case(&parse(&heated), "src");
+    assert!(r.failures.is_empty(), "{:?}", r.failures);
+    let s = temperature(&r);
+    let e = s.energy.as_ref().unwrap();
+    assert!((e.source - 5.0).abs() < 1e-12, "{e:?}");
+    assert!(e.relative < 1e-9, "{e:?}");
+    let out = |s: &foehncraft_flow::scalar::ScalarSummary| {
+        boundary(s, "ymin").heat_flow.unwrap() + boundary(s, "ymax").heat_flow.unwrap()
+    };
+    let d = out(temperature(&r0)) - out(s);
+    assert!((d - 5.0).abs() < 1e-8, "{d}");
+}
