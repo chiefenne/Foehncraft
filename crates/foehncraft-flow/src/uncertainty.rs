@@ -24,7 +24,7 @@ use serde::Serialize;
 use std::fmt::Write as _;
 
 /// The verdict of the ratio of the successive differences.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum Verdict {
     /// 0 < R < 1.
@@ -50,7 +50,7 @@ impl Verdict {
 }
 
 /// The estimate for one quantity.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, schemars::JsonSchema)]
 pub struct Estimate {
     /// The quantity (`boundaries.<name>.force_x`, `benchmark.C_D` …).
     pub quantity: String,

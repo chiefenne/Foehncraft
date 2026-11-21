@@ -186,6 +186,8 @@ jobs:
       - run: cargo clippy --workspace --all-targets --locked --features foehncraft-cuda/cuda,foehncraft-cli/cuda
       - name: CUDA only in the CUDA backend crate (D60)
         run: python3 -m tools.check.backend
+      - name: Crate layering; front ends through the tool registry (D203, D196)
+        run: cargo xtask layering
       - run: cargo doc --workspace --no-deps --locked
 
   msrv:

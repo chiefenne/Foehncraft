@@ -25,8 +25,11 @@ use serde_json::{Value, json};
 
 pub mod case;
 pub mod expression;
+pub mod flow;
 pub mod markdown;
 pub mod materials;
+pub mod mesh;
+pub mod post;
 pub mod system;
 
 /// Format of the result envelope.
@@ -42,7 +45,7 @@ pub const FORMAT_VERSION: u32 = 1;
 pub enum Category {
     /// Build, platform, the catalogue itself.
     System,
-    /// Case files: schema, check, resolve, upgrade, estimate.
+    /// Case files: schema, check, resolve, estimate, upgrade.
     Case,
     /// Diagnostic codes (D78).
     Diag,
@@ -54,7 +57,9 @@ pub enum Category {
     Mesh,
     /// Flow runs.
     Flow,
-    /// Results and post-processing.
+    /// Results of earlier runs.
+    Result,
+    /// Post-processing.
     Post,
     /// Verification and solver studies.
     Study,
@@ -71,6 +76,7 @@ impl Category {
             Self::Expression => "expression",
             Self::Mesh => "mesh",
             Self::Flow => "flow",
+            Self::Result => "result",
             Self::Post => "post",
             Self::Study => "study",
         }
@@ -274,10 +280,16 @@ pub fn registry() -> Vec<Entry> {
         entry::<case::Schema>(),
         entry::<case::Check>(),
         entry::<case::Resolve>(),
+        entry::<case::EstimateTool>(),
+        entry::<case::Upgrade>(),
         entry::<diag_codes::Codes>(),
         entry::<materials::List>(),
         entry::<materials::Show>(),
         entry::<expression::Eval>(),
+        entry::<mesh::Process>(),
+        entry::<flow::Run>(),
+        entry::<flow::Read>(),
+        entry::<post::Derive>(),
     ]
 }
 

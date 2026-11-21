@@ -25,7 +25,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use foehncraft_bench::G1Case;
 use foehncraft_flow::diag;
-use foehncraft_flow::engine::{self, BuildInfo, Interrupts, Roots, RunOptions};
+use foehncraft_flow::engine::{self, BuildInfo, Interrupts, Roots};
 use foehncraft_tools::{self as tools, Ctx, NoInput};
 use serde_json::json;
 use std::path::PathBuf;
@@ -77,12 +77,6 @@ fn stdout(l: &str) {
 struct Done {
     code: i32,
     json: serde_json::Value,
-}
-
-impl Done {
-    fn ok(json: serde_json::Value) -> Self {
-        Self { code: 0, json }
-    }
 }
 
 #[derive(Subcommand)]
@@ -567,84 +561,20 @@ fn main() {
 
 /// `foehn post derive`.
 fn derive(a: DeriveArgs, out: Out) -> Result<Done> {
-    use foehncraft_flow::case::output_dir;
-    use foehncraft_flow::derived::{self, Derived};
     let roots = Roots {
-        read: a.read_root.clone(),
-        write: a.write_root.clone(),
+        read: a.read_root,
+        write: a.write_root,
     };
-    let case = engine::load(&a.case, &a.set, &roots)?;
-    case.validate()?;
-    let (_, dir) = output_dir(&case, &a.case, a.out.clone());
-    let restart = if a.restart == std::path::Path::new("latest") {
-        engine::latest_restart(&dir)?.ok_or_else(|| {
-            diag::err(diag::Diagnostic::new(
-                diag::RUN_NO_RESTART,
-                format!(
-                    "--restart latest: no restart file (restart.h5, restart_<N>.h5) in {}",
-                    dir.display()
-                ),
-            ))
-        })?
-    } else {
-        a.restart.clone()
+    let input = tools::post::DeriveInput {
+        case: a.case,
+        restart: a.restart,
+        fields: a.fields,
+        file: a.file,
+        set: a.set,
+        out: a.out,
     };
-    roots.check_read(&restart, "the restart file")?;
-    let list: Vec<Derived> = match &a.fields {
-        Some(names) => names
-            .iter()
-            .map(|n| {
-                Derived::parse(n.trim()).ok_or_else(|| {
-                    let all: Vec<&str> = Derived::ALL.iter().map(|d| d.name()).collect();
-                    diag::err(diag::Diagnostic::new(
-                        diag::CASE_BAD_VALUE,
-                        format!("unknown derived field `{n}`; known: {}", all.join(", ")),
-                    ))
-                })
-            })
-            .collect::<Result<_>>()?,
-        None if !case.output.derived.is_empty() => case.output.derived.clone(),
-        // every field; the pressure coefficient only with a reference
-        None => Derived::ALL
-            .into_iter()
-            .filter(|d| {
-                *d != Derived::PressureCoefficient || derived::validate_list(&case, &[*d]).is_ok()
-            })
-            .collect(),
-    };
-    let file = a.file.clone().unwrap_or_else(|| {
-        let stem = restart
-            .file_stem()
-            .map_or("restart".into(), |s| s.to_string_lossy().into_owned());
-        let name = match stem.strip_prefix("restart") {
-            Some(rest) => format!("derived{rest}.vtkhdf"),
-            None => format!("{stem}_derived.vtkhdf"),
-        };
-        restart.with_file_name(name)
-    });
-    if let Some(d) = file.parent().filter(|d| !d.as_os_str().is_empty()) {
-        roots.check_write(d)?;
-    }
-    let rep = derived::from_restart(&case, &restart, &list, &file)?;
-    let at = match (rep.step, rep.time) {
-        (Some(n), Some(t)) => format!("step {n}, t = {t} s"),
-        _ => format!("iteration {}", rep.iteration),
-    };
-    out.line(&format!(
-        "{}: {} cells at {at} from {}",
-        rep.file.display(),
-        rep.cells,
-        rep.restart.display()
-    ));
-    out.line(&format!(
-        "  derived: {}",
-        rep.derived
-            .iter()
-            .map(|d| d.name())
-            .collect::<Vec<_>>()
-            .join(", ")
-    ));
-    Ok(Done::ok(serde_json::to_value(&rep)?))
+    let (o, code) = tools::run::<tools::post::Derive>(input, &mut ctx(out).roots(roots))?;
+    Ok(Done { code, json: o })
 }
 
 /// The features of this build.
@@ -850,70 +780,14 @@ fn call(a: CallArgs, out: Out) -> Result<Done> {
 
 /// `foehn case upgrade`.
 fn upgrade(a: UpgradeArgs, out: Out) -> Result<Done> {
-    use anyhow::Context as _;
-    use foehncraft_mesh::case_format as cf;
-    let mut pending = 0usize;
-    let mut failed = 0usize;
-    let mut rows = Vec::new();
-    for f in &a.files {
-        let text =
-            std::fs::read_to_string(f).with_context(|| format!("reading {}", f.display()))?;
-        match cf::upgrade_text(&text) {
-            Err(e) => {
-                failed += 1;
-                out.line(&format!("{}: {e}", f.display()));
-                rows.push(json!({ "file": f.display().to_string(), "error": e }));
-            }
-            Ok((new, notes)) => {
-                let changed = new != text;
-                if changed {
-                    pending += 1;
-                }
-                if !changed {
-                    out.line(&format!(
-                        "{}: format {}, nothing to do",
-                        f.display(),
-                        cf::CURRENT
-                    ));
-                } else {
-                    out.line(&format!("{}:", f.display()));
-                    for n in &notes {
-                        out.line(&format!("  {n}"));
-                    }
-                    if notes.is_empty() {
-                        out.line(&format!(
-                            "  the line case_format = \"{}\" is added",
-                            cf::CURRENT
-                        ));
-                    }
-                    if a.write {
-                        std::fs::write(f, &new)
-                            .with_context(|| format!("writing {}", f.display()))?;
-                        out.line("  written");
-                    }
-                }
-                rows.push(json!({
-                    "file": f.display().to_string(),
-                    "changed": changed,
-                    "written": changed && a.write,
-                    "notes": notes,
-                }));
-            }
-        }
-    }
-    let code = i32::from(failed > 0 || (a.check && pending > 0));
-    if pending > 0 && !a.write {
-        out.line("run again with --write to rewrite the files");
-    }
-    Ok(Done {
-        code,
-        json: json!({
-            "format": "foehncraft.case_upgrade",
-            "format_version": engine::FORMAT_VERSION,
-            "current": cf::CURRENT,
-            "files": rows,
-        }),
-    })
+    typed::<tools::case::Upgrade>(
+        tools::case::UpgradeInput {
+            files: a.files,
+            write: a.write,
+            check: a.check,
+        },
+        out,
+    )
 }
 
 fn schema(a: SchemaArgs, out: Out) -> Result<Done> {
@@ -926,7 +800,8 @@ fn schema(a: SchemaArgs, out: Out) -> Result<Done> {
         });
     }
     if a.schema_only || !out.json {
-        stdout(&serde_json::to_string_pretty(&schema::json_schema())?);
+        let (env, _) = tools::run::<tools::case::Schema>(NoInput {}, &mut ctx(out))?;
+        stdout(&serde_json::to_string_pretty(&env["schema"])?);
         return Ok(Done {
             code: 0,
             json: serde_json::Value::Null,
@@ -940,58 +815,23 @@ fn info(out: Out) -> Result<Done> {
 }
 
 fn mesh(a: MeshArgs, out: Out) -> Result<Done> {
-    use foehncraft_mesh::case::MeshCase;
-    let mut case = if foehncraft_mesh::format::is_mesh_file(&a.input) {
-        MeshCase::for_file(&a.input)
-    } else {
-        MeshCase::from_file(&a.input)?
+    let input = tools::mesh::MeshInput {
+        input: a.input,
+        parts: a.parts,
+        method: a.method,
+        renumber: a.renumber,
+        locate: a.locate,
+        no_vtkhdf: a.no_vtkhdf,
+        vtu: a.vtu,
+        out: a.out,
     };
-    let name = a
-        .input
-        .file_stem()
-        .map_or("mesh".into(), |s| s.to_string_lossy().into_owned());
-    if let Some(p) = a.parts {
-        case.partition.parts = p;
-    }
-    if let Some(m) = a.method {
-        case.partition.method = match m.as_str() {
-            "metis" => foehncraft_mesh::partition::Method::Metis,
-            "rcb" => foehncraft_mesh::partition::Method::Rcb,
-            _ => anyhow::bail!("--method: metis or rcb"),
-        };
-    }
-    if let Some(r) = a.renumber {
-        use foehncraft_mesh::renumber::Ordering;
-        case.mesh.renumber = match r.as_str() {
-            "none" => Ordering::None,
-            "rcm" => Ordering::Rcm,
-            "shuffle" => Ordering::Shuffle,
-            _ => anyhow::bail!("--renumber: none, rcm or shuffle"),
-        };
-    }
-    if let Some(n) = a.locate {
-        case.check.locate_points = n;
-    }
-    if a.no_vtkhdf {
-        case.output.vtkhdf = false;
-    }
-    if a.vtu {
-        case.output.vtu = true;
-    }
-    if a.out.is_some() {
-        case.output.directory = a.out;
-    }
-    let (report, files) = foehncraft_mesh::case::run(&case, &name, &mut |l| out.line(l))?;
-    for f in &files {
-        out.line(&format!("wrote {}", f.display()));
-    }
-    let ok = report.quality.ok();
-    if !ok {
+    let (o, code) = tools::run::<tools::mesh::Process>(input, &mut ctx(out))?;
+    if !o.valid {
         eprintln!("the mesh is invalid (see the report)");
     }
     Ok(Done {
-        code: if ok { 0 } else { 2 },
-        json: json!({ "valid": ok, "files": files }),
+        code,
+        json: serde_json::to_value(o)?,
     })
 }
 
@@ -1062,7 +902,6 @@ fn flow_input(a: &FlowArgs) -> tools::case::FlowInput {
 }
 
 fn flow(a: FlowArgs, out: Out) -> Result<Done> {
-    use foehncraft_flow::case::output_dir;
     let roots = Roots {
         read: a.read_root.clone(),
         write: a.write_root.clone(),
@@ -1076,19 +915,9 @@ fn flow(a: FlowArgs, out: Out) -> Result<Done> {
             json: serde_json::to_value(&rep)?,
         });
     }
-    let build = build_info();
-    let case = engine::load(&a.case, &a.set, &roots).and_then(|mut c| {
-        input.apply(&mut c)?;
-        Ok(c)
-    })?;
-    let (name, dir) = output_dir(&case, &a.case, a.out.clone());
-    let opts = RunOptions {
-        interrupts: signals(),
-        build,
-        roots,
-        observer: None,
-    };
-    let o = engine::run(&case, &name, &dir, &opts, |l| out.line(l))?;
+    let mut c = ctx(out).roots(roots);
+    c.interrupts = signals();
+    let o = tools::flow::run_outcome(&input, &mut c)?;
     let s = &o.summary;
     for d in s
         .diagnostics

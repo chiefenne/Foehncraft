@@ -154,6 +154,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c66915cc5391097de7a2b0b972e8505aa33c0df401fd3a6811dbdb32881ba48"
 
 [[package]]
+name = "foehncraft-bench"
+version = "0.6.0"
+dependencies = [
+ "anyhow",
+ "foehncraft-core",
+ "foehncraft-kernels",
+ "foehncraft-mesh",
+ "rayon",
+ "serde",
+ "serde_json",
+ "toml",
+]
+
+[[package]]
 name = "foehncraft-core"
 version = "0.6.0"
 
@@ -228,7 +242,23 @@ version = "0.6.0"
 dependencies = [
  "anyhow",
  "foehncraft-flow",
+ "foehncraft-tools",
  "pyo3",
+ "serde_json",
+]
+
+[[package]]
+name = "foehncraft-tools"
+version = "0.6.0"
+dependencies = [
+ "anyhow",
+ "foehncraft-bench",
+ "foehncraft-core",
+ "foehncraft-flow",
+ "foehncraft-mesh",
+ "foehncraft-parallel",
+ "rayon",
+ "schemars",
  "serde",
  "serde_json",
  "toml",
