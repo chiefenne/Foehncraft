@@ -41,6 +41,29 @@ the dead zones of the tank.
 | Dead-volume fraction (speed below 5 % of the tip speed) | 13 % | – |
 | Mean speed over tip speed | 0.13 | – |
 
+### Images
+
+Rendered from the level-1 run (800 iterations, kept in the project files;
+the 2 500-iteration run is the one of the table, with the same flow
+pattern); the script is `examples/applications/stirred_tank/images.py`.
+The run is a frozen-rotor demonstration: the flow is not settled to the
+check level, so read the images as the structure of the flow, not as
+numbers.
+
+<img src="../figures/applications/stirred_tank_speed_section.png" alt="Speed and streamlines in the vertical plane y = 0 of the stirred tank" width="800" height="826">
+
+The impeller (centre) pumps the liquid down and outward along the dished
+bottom; the liquid climbs along the wall and returns along the shaft, two
+large recirculation loops on each side. The dark patch above the sparger is
+the slow liquid between the sparger legs.
+
+<img src="../figures/applications/stirred_tank_speed_horizontal.png" alt="Speed in the horizontal plane z = 0.22 m below the impeller of the stirred tank" width="800" height="723">
+
+Below the impeller the discharge forms a ring of fast liquid around a slow
+core; the three slow patches are the wakes between the baffles.
+
+<img src="../figures/applications/stirred_tank_impeller.png" alt="Pressure on the three-blade hydrofoil impeller, with the hub, shaft, baffles and the sparger ring" width="800" height="738">
+
 ### Check card
 
 | Check | Result |
@@ -80,4 +103,4 @@ python3 examples/applications/stirred_tank/post.py output/case
 - The steady frozen rotor on this geometry does not settle; a longer
   averaging run, a sliding mesh, or a mesh-independence study (levels 2 and
   3) are the next steps.
-- Images of the tank (velocity and the rotor frame) are not in this entry yet.
+- The images come from a 800-iteration run; they are re-rendered from the finished run by `images.py`.
