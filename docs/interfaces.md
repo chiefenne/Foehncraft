@@ -373,7 +373,9 @@ A code keeps its meaning; a retired code stays in the table.
 
 ## Engine API (D86)
 
-The command line is a thin layer on `foehncraft_flow::engine`; a Rust
+The tool registry (`foehncraft-tools`, above) sits on `foehncraft_flow::engine`,
+and the command line and the Python module call only the registry
+(`cargo xtask layering` checks it); a Rust
 program (and the Python package, D61, through its native module) drives
 a run the same way:
 
@@ -437,6 +439,11 @@ command line: `check(path, sets, out)` (`foehncraft.check`),
 `case_schema()` (D77), `codes()` (D78), `resolved(path, sets)` (the
 resolved case as TOML), `expression(source, env, allowed, points, base)`
 (values of an expression); errors are `FoehncraftError(code, message)`.
+Each of these functions is a one-line wrapper of its tool of the
+registry (D196); `call(id, input, observer, log)` runs any tool by id
+from JSON text and returns the envelope, `commands()` the catalogue. In
+the package: `foehncraft.call("case.check", case=path)` and
+`foehncraft.commands()` (through `foehn call` without the native module).
 The Python API is in [recipe 33](recipes/python.md#python-api).
 
 ## C-free core (D87)

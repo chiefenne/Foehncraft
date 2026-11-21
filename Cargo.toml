@@ -11,6 +11,7 @@ members = [
     "crates/foehncraft-cuda",
     "crates/foehncraft-tools",
     "crates/foehncraft-cli",
+    "xtask",
 ]
 # Built separately with the nightly toolchain for the NVIDIA PTX target
 # (see gpu/ptx-kernels/README.md).

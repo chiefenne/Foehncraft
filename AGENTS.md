@@ -19,6 +19,11 @@ detail are in [CONTRIBUTING.md](CONTRIBUTING.md).
   with structured (TOML, JSON) inputs and outputs, no interactive-only
   paths. The engine is driven by the CLI, the Python package, the MCP
   server and later the desktop app through the same calls (D86, D196).
+- **MUST** add every engine function a front end calls as a tool of
+  `foehncraft-tools` (D196) and call it from the front ends through the
+  registry; `cargo xtask layering` fails on a direct engine call in the
+  CLI or the Python module, and on a crate dependency against the layers.
+  Regenerate `docs/tools.md` with `foehn commands --markdown`.
 - **SHOULD** flag known flaws of industry behaviour when a feature mirrors
   it, so the maintainer can decide; do not copy flaws.
 
@@ -148,6 +153,7 @@ Repository checks:
 python3 -m tools.check.ci_cases --check   # every flow case is in a CI case set
 python3 -m tools.check.backend            # CUDA only in the CUDA backend crate
 python3 -m tools.check.unsafe_modules     # unsafe only in the named modules (D202)
+cargo xtask layering                      # crate layering, front ends through foehncraft-tools
 python3 -m tools.check.c_free             # build without C libraries
 ```
 

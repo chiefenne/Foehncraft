@@ -190,6 +190,8 @@ jobs:
         run: python3 -m tools.check.backend
       - name: unsafe only in the named GPU and SIMD modules (D202)
         run: python3 -m tools.check.unsafe_modules
+      - name: Crate layering; front ends through the tool registry (D203, D196)
+        run: cargo xtask layering
       - run: cargo doc --workspace --no-deps --locked
 
   msrv:

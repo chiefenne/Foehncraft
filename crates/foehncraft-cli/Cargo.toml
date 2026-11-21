@@ -22,7 +22,7 @@ hdf5 = [
     "foehncraft-tools/hdf5",
 ]
 # METIS partitioning (built from source).
-metis = ["foehncraft-mesh/metis"]
+metis = ["foehncraft-mesh/metis", "foehncraft-tools/metis"]
 # NVIDIA GPU backends (crate foehncraft-cuda, D60); no CUDA toolkit needed
 # to build, the driver is loaded at run time.
 cuda = ["foehncraft-cuda/cuda"]

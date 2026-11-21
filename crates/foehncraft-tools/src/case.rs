@@ -299,3 +299,148 @@ impl Tool for Resolve {
         })
     }
 }
+
+/// `case.estimate`.
+pub struct EstimateTool;
+
+impl Tool for EstimateTool {
+    const ID: &'static str = "case.estimate";
+    const VERSION: u32 = 1;
+    const SUMMARY: &'static str = "What a run of a flow case will cost before it starts (D81): cells, steps, memory, output volume, wall time.";
+    const CATEGORY: Category = Category::Case;
+    const ACTION: Action = Action::Read;
+    type Input = FlowInput;
+    type Output = Estimate;
+
+    fn call(a: FlowInput, ctx: &mut Ctx<'_>) -> Result<Estimate> {
+        let case = a.load(ctx)?;
+        let (_, dir) = foehncraft_flow::case::output_dir(&case, &a.case, a.out.clone());
+        let e = engine::estimate(&case, &dir, &ctx.build)?;
+        ctx.line(&estimate_text(&e));
+        Ok(e)
+    }
+}
+
+/// Input of `case.upgrade`, the options of `foehn case upgrade`.
+#[derive(Debug, Clone, Default, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct UpgradeInput {
+    /// Case files (TOML) of any kind: flow, mesh, scalar or Poisson.
+    pub files: Vec<PathBuf>,
+    /// Write the files (default: list the changes only).
+    #[serde(default)]
+    pub write: bool,
+    /// Exit code 1 when a file is not in the current format.
+    #[serde(default)]
+    pub check: bool,
+}
+
+/// The upgrade of case files.
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+pub struct UpgradeOutput {
+    /// `foehncraft.case_upgrade`.
+    pub format: &'static str,
+    /// Format version of the engine.
+    pub format_version: &'static str,
+    /// The current case format.
+    pub current: &'static str,
+    /// One row per file: `file`, and `changed`, `written`, `notes`, or
+    /// `error`.
+    pub files: Vec<serde_json::Value>,
+    /// Files that need an upgrade.
+    #[serde(skip)]
+    pub pending: usize,
+    /// Files that cannot be upgraded.
+    #[serde(skip)]
+    pub failed: usize,
+    #[serde(skip)]
+    check: bool,
+}
+
+/// `case.upgrade`.
+pub struct Upgrade;
+
+impl Tool for Upgrade {
+    const ID: &'static str = "case.upgrade";
+    const VERSION: u32 = 1;
+    const SUMMARY: &'static str = "Bring case files of an older case format to the current one (renamed keys, `case_format`), keeping their comments; writes them with `write`.";
+    const CATEGORY: Category = Category::Case;
+    const ACTION: Action = Action::WriteFiles;
+    type Input = UpgradeInput;
+    type Output = UpgradeOutput;
+
+    fn call(a: UpgradeInput, ctx: &mut Ctx<'_>) -> Result<UpgradeOutput> {
+        use anyhow::Context as _;
+        use foehncraft_mesh::case_format as cf;
+        use serde_json::json;
+        let mut pending = 0usize;
+        let mut failed = 0usize;
+        let mut rows = Vec::new();
+        for f in &a.files {
+            ctx.roots.check_read(f, "the case file")?;
+            let text =
+                std::fs::read_to_string(f).with_context(|| format!("reading {}", f.display()))?;
+            match cf::upgrade_text(&text) {
+                Err(e) => {
+                    failed += 1;
+                    ctx.line(&format!("{}: {e}", f.display()));
+                    rows.push(json!({ "file": f.display().to_string(), "error": e }));
+                }
+                Ok((new, notes)) => {
+                    let changed = new != text;
+                    if changed {
+                        pending += 1;
+                    }
+                    if !changed {
+                        ctx.line(&format!(
+                            "{}: format {}, nothing to do",
+                            f.display(),
+                            cf::CURRENT
+                        ));
+                    } else {
+                        ctx.line(&format!("{}:", f.display()));
+                        for n in &notes {
+                            ctx.line(&format!("  {n}"));
+                        }
+                        if notes.is_empty() {
+                            ctx.line(&format!(
+                                "  the line case_format = \"{}\" is added",
+                                cf::CURRENT
+                            ));
+                        }
+                        if a.write {
+                            if let Some(d) = f.parent().filter(|d| !d.as_os_str().is_empty()) {
+                                ctx.roots.check_write(d)?;
+                            }
+                            std::fs::write(f, &new)
+                                .with_context(|| format!("writing {}", f.display()))?;
+                            ctx.line("  written");
+                        }
+                    }
+                    rows.push(json!({
+                        "file": f.display().to_string(),
+                        "changed": changed,
+                        "written": changed && a.write,
+                        "notes": notes,
+                    }));
+                }
+            }
+        }
+        if pending > 0 && !a.write {
+            ctx.line("run again with --write to rewrite the files");
+        }
+        Ok(UpgradeOutput {
+            format: "foehncraft.case_upgrade",
+            format_version: engine::FORMAT_VERSION,
+            current: cf::CURRENT,
+            files: rows,
+            pending,
+            failed,
+            check: a.check,
+        })
+    }
+
+    fn exit_code(o: &UpgradeOutput) -> i32 {
+        i32::from(o.failed > 0 || (o.check && o.pending > 0))
+    }
+}

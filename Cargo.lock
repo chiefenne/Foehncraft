@@ -460,6 +460,7 @@ dependencies = [
  "foehncraft-bench",
  "foehncraft-core",
  "foehncraft-flow",
+ "foehncraft-mesh",
  "foehncraft-parallel",
  "rayon",
  "schemars",
@@ -1278,6 +1279,13 @@ dependencies = [
  "cfg-if",
  "serde",
  "windows-sys",
+]
+
+[[package]]
+name = "xtask"
+version = "0.0.0"
+dependencies = [
+ "serde_json",
 ]
 
 [[package]]

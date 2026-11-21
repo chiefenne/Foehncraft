@@ -214,3 +214,76 @@ fn markdown_is_docs_tools_md() {
         "regenerate docs/tools.md with foehn commands --markdown"
     );
 }
+
+#[test]
+fn runs_and_files_match() {
+    let d = dir("runs");
+    let case = d.join("cavity.toml");
+    std::fs::write(&case, CAVITY).unwrap();
+    let c = case.to_str().unwrap();
+    let a_out = d.join("cli");
+    let b_out = d.join("call");
+    let (c1, a) = cli(&["flow", c, "--out", a_out.to_str().unwrap()]);
+    let (c2, b) = call("flow.run", &json!({"case": c, "out": b_out}));
+    assert_eq!(c1, c2);
+    let b = &b["result"];
+    for k in [
+        "format",
+        "status",
+        "exit_code",
+        "solves",
+        "orders",
+        "diagnostics",
+    ] {
+        assert_eq!(a[k], b[k], "{k}");
+    }
+    let bytes = |p: &Path| std::fs::read(p).unwrap();
+    assert_eq!(
+        bytes(&a_out.join("restart.h5")),
+        bytes(&b_out.join("restart.h5")),
+        "the same solution, bitwise"
+    );
+
+    let (_, r) = call("result.read", &json!({"dir": b_out}));
+    assert_eq!(r["result"]["solves"], b["solves"]);
+
+    let (_, e) = call("case.estimate", &json!({"case": c}));
+    let (_, k) = cli(&["flow", c, "--check"]);
+    assert_eq!(e["result"], k["estimate"]);
+
+    let (c1, a) = cli(&[
+        "post",
+        "derive",
+        c,
+        "--out",
+        a_out.to_str().unwrap(),
+        "--fields",
+        "vorticity",
+        "--file",
+        d.join("a.vtkhdf").to_str().unwrap(),
+    ]);
+    let (c2, b) = call(
+        "post.derive",
+        &json!({"case": c, "out": a_out, "fields": ["vorticity"], "file": d.join("b.vtkhdf")}),
+    );
+    assert_eq!((c1, c2), (0, 0));
+    assert_eq!(a["derived"], b["result"]["derived"]);
+    assert_eq!(bytes(&d.join("a.vtkhdf")), bytes(&d.join("b.vtkhdf")));
+
+    let (c1, a) = cli(&["case", "upgrade", c]);
+    let (c2, b) = call("case.upgrade", &json!({"files": [c]}));
+    assert_eq!(c1, c2);
+    assert_eq!(a["files"], b["result"]["files"]);
+
+    let mesh = d.join("mesh.toml");
+    std::fs::write(
+        &mesh,
+        "[mesh.generate]\ntype = \"hex\"\ndimension = 2\ncells = [4, 4, 1]\n",
+    )
+    .unwrap();
+    let m = mesh.to_str().unwrap();
+    let (c1, a) = cli(&["mesh", m, "--out", d.join("ma").to_str().unwrap()]);
+    let (c2, b) = call("mesh.process", &json!({"input": m, "out": d.join("mb")}));
+    assert_eq!((c1, c2), (0, 0));
+    assert_eq!(a["valid"], b["result"]["valid"]);
+}

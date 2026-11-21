@@ -140,9 +140,11 @@ partial or unverified, with the evidence and the known gaps) is on the
 - **Tools for scripts and agents.** One registry of typed tools (D196):
   `foehn commands` prints the catalogue of every tool with its input and
   output schemas and action kind, `foehn call <id> --input file.json` runs
-  any of them from JSON ([tools.md](docs/tools.md)); the system, case-check,
-  resolve, schema, diagnostic-code, material and expression tools are in,
-  runs and files follow.
+  any of them from JSON ([tools.md](docs/tools.md)): system, case check,
+  estimate, resolve, schema and upgrade, diagnostic codes, materials,
+  expressions, meshes, flow runs (streaming their run record, stoppable),
+  results and derived fields. The Python package reaches the same tools
+  (`foehncraft.call`, `foehncraft.commands`).
 - **GPU and Python.** The flow loop on NVIDIA GPUs with results bitwise
   equal to the CPU; the Python package `foehncraft` that builds, runs and
   studies cases; the grid convergence index of every mesh sweep.

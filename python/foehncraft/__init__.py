@@ -18,12 +18,15 @@ from . import expr, materials, study
 from .case import Case
 from .results import Result, read_csv
 from .run import FoehncraftError, check, find_foehn, native_available, run
+from .tools import call, commands
 
 __all__ = [
     "Case",
     "FoehncraftError",
     "Result",
+    "call",
     "check",
+    "commands",
     "expr",
     "find_foehn",
     "materials",

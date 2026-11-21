@@ -57,7 +57,7 @@ pub const MEASURED_FILES: &[&str] = &[
 // interrupts and stops (D64, D83)
 
 /// A request to stop, by signal or from the API.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, schemars::JsonSchema)]
 pub enum StopSignal {
     /// SIGTERM (a scheduler ends the job).
     #[serde(rename = "SIGTERM")]
@@ -151,7 +151,7 @@ impl Interrupts {
 }
 
 /// Why a run stopped before its end (exit code 3, D64).
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, schemars::JsonSchema)]
 pub struct Stop {
     /// Diagnostic code (`RUN001` … `RUN005`, or `BAL001` … `BAL003`).
     pub code: &'static str,
@@ -553,7 +553,7 @@ pub struct BuildInfo {
 
 /// Where a result comes from (D85): enough to tell whether two results
 /// are comparable.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
 pub struct Provenance {
     /// Foehncraft version.
     pub version: String,
@@ -704,7 +704,7 @@ pub fn mesh_hash(m: &Mesh) -> String {
 }
 
 /// One output file of `result.json`.
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, schemars::JsonSchema)]
 pub struct FileHash {
     /// Name in the output directory.
     pub name: String,
@@ -1588,7 +1588,7 @@ pub fn check_case(
 // run and result (D62, D64)
 
 /// How a run ended.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum Status {
     /// Finished, every check passed (exit code 0).
@@ -1628,7 +1628,7 @@ pub struct RunOptions {
 
 /// The result summary (`result.json`, D62): what a study or an agent needs
 /// from a run, without timings.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
 pub struct ResultSummary {
     /// `foehncraft.result`.
     pub format: &'static str,
