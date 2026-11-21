@@ -465,6 +465,10 @@ fn cgns_int_nodes(g: &hdf5_metno::Group, at: &str, out: &mut Vec<String>) {
     }
 }
 
+/// A change of the `i`-th value `v` of a node.
+#[cfg(feature = "hdf5")]
+type Damage = fn(usize, i64) -> i64;
+
 /// The CGNS nodes themselves damaged: every integer node (sizes, ranges,
 /// connectivity, offsets, BC lists) set to values out of range.
 #[cfg(feature = "hdf5")]
@@ -488,7 +492,7 @@ fn cgns_reader_survives_damaged_nodes() {
             nodes.len()
         );
         let picks = spread(nodes.len(), 48);
-        let damage: [(&str, fn(usize, i64) -> i64); 6] = [
+        let damage: [(&str, Damage); 6] = [
             ("all -1", |_, _| -1),
             ("all 0", |_, _| 0),
             ("all i32::MAX", |_, _| i32::MAX as i64),

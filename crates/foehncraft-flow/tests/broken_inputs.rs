@@ -28,7 +28,7 @@ fn guarded(label: &str, f: impl FnOnce() -> anyhow::Result<()> + Send + 'static)
         .stack_size(64 << 20)
         .spawn(move || {
             let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                f().map_err(|e| diag::of_error(&e))
+                f().map_err(|e| Box::new(diag::of_error(&e)))
             }));
             let _ = tx.send(r);
         })
