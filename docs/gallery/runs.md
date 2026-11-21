@@ -10,6 +10,7 @@ Part of the [Example gallery](../gallery.md): adjoint-ready kernels, runs that a
 | 27 | [A log that can be circulated](#log) | 5 | frames, blocks of settings, tables with headers, summaries, closing frame with exit code (D125) |
 | 28 | [A table with the columns you choose](#log-columns) | 5 | `[log] columns`: probes, cells, extremes with their cells, boundary mass flow; the same content in `run.jsonl` (D125) |
 | 29 | [Settings that change during the run](#schedule) | 5 | `[[schedule]]`: under-relaxation, tolerances and cadences change at prepared iterations, steps or times; every change in the log and in `run.jsonl` (D128) |
+| 166 | [Iteration budget, diagnosis and study budgets](#budgets) | 7 | the iteration budget before the run, a steady run diagnosed at 2000 iterations (trend, verdict, advice, stop), cell-hour, GPU-hour and output budgets per study beside the D81 estimate (D198) |
 
 ---
 
@@ -370,6 +371,79 @@ Which keys may be scheduled: those that a re-read of the case file may change du
 
 ```
 target/release/foehn flow examples/cases/flow/cavity_re100_schedule.toml
+```
+
+[↑ back to top](#run-control-health-and-adjoint-readiness)
+
+---
+
+<a id="budgets"></a>
+## 166. Iteration budget, diagnosis and study budgets
+
+<img src="../figures/gallery/diagnosis_cylinder.svg" alt="Residuals of a steady run of the cylinder at Re 400 that stall; the diagnosis at iteration 2000 fits their trends over the last 500 iterations, finds them stalled and stops the run before the rest of its 3000-iteration budget" width="840" height="426">
+
+A steady run must not go on for 10 000 iterations when it is not going
+anywhere (D198 (d)). The iteration budget is a visible setting: `foehn flow
+--check` and the log show it with the key it comes from
+(`solver.max_iterations` or `[run.limits] max_iterations`), and at
+`[run.limits] diagnose_at` (default 2000) a steady run that has not
+converged is diagnosed from its residual history. For each equation the
+trend over the last 500 iterations is fitted (decades per 1000 iterations
+and the scatter about it), classified as falling, stalled, rising or
+oscillating, and for a falling residual the iteration is projected at which
+it reaches the tolerance. The verdict (on track, slow, stalled, rising,
+oscillating) and advice go into the log and into the run record
+(`run.jsonl`, row type `diagnosis`, event `RUN016`); with `diagnosis =
+"stop"` a run off track stops there with its restart file and results (exit
+code 3, `RUN017`).
+
+The chart is `examples/cases/flow/cylinder_steady_diagnosis.toml`: the
+cylinder in a channel of Schäfer & Turek at Re = 400 (24 576 cells), run
+steady on purpose. The flow sheds vortices, so the residuals stall at
+1e-2: the diagnosis says so at iteration 2000 (about 0.00 decades per 1000
+iterations for momentum and continuity), advises to run it transient, and
+stops it a third of its budget early. The same case at Re = 100 converges
+in 993 iterations and is never diagnosed. The diagnosis only reads the
+residuals: the fields and residuals of a run with and without it are
+bitwise equal.
+
+```
+ Diagnosis at iteration 2000
+   Verdict          STALLED
+   Budget           3000 iterations
+   Controlling      momentum_x
+   Window           last 500 iterations
+   momentum_x       1.27e-2, stalled, +0.00 decades per 1000 iterations
+   momentum_y       1.06e-2, stalled, +0.00 decades per 1000 iterations
+   continuity       1.72e-3, stalled, -0.01 decades per 1000 iterations
+ %FOEHN-W-CASE, diagnosis at iteration 2000: momentum_x stalls at 1.3e-2: ... A stall this far
+   above the tolerance often means the flow has no steady solution (vortex shedding): run it transient
+```
+
+**Study budgets** (D198 (c)). `[run.limits] study_cell_hours`,
+`study_gpu_hours` and `study_output` bound what all runs of one study spend
+together. A study is the set of output directories under one parent, as the
+variants of `foehncraft.study.Study` are; each finished run adds a line with
+its spend to `study_budget.jsonl` there. The run record shows, in its
+`budget` row right after the header, the D81 estimate of the run (cells,
+wall time, cell-hours, GPU-hours, output) beside each budget, what the
+earlier runs spent and what is left. A run whose estimate does not fit warns
+(`RUN020`), a run that spends the rest stops as at a limit (`RUN018`, exit
+code 3), and the next run of a spent study does not start (`RUN019`, also
+reported by `--check`). A cell-hour is one cell for one hour of wall time,
+independent of the threads. Without these keys nothing changes.
+
+| | |
+|---|---|
+| Code | `crates/foehncraft-flow/src/budget.rs`, `engine.rs` (`start_budgets`, `Steer::poll`, the estimate), `case.rs` (`[run.limits]`, the steady loop) |
+| Tests | `crates/foehncraft-cli/tests/budgets.rs` (budget in `--check`, diagnosis recorded with bitwise equal fields, stop by the diagnosis, study ledger, stop and refusal), unit tests in `budget.rs` |
+| Case files | `flow/cylinder_steady_diagnosis.toml` (CI set `long`, expected exit code 3) |
+| Chart | `python3 -m tools.plot.diagnosis_chart docs/figures/gallery/diagnosis_cylinder.svg output/cylinder_steady_diagnosis` |
+
+```
+target/release/foehn flow examples/cases/flow/cylinder_steady_diagnosis.toml --check
+target/release/foehn flow examples/cases/flow/cylinder_steady_diagnosis.toml
+grep '"type":"diagnosis"' output/cylinder_steady_diagnosis/run.jsonl
 ```
 
 [↑ back to top](#run-control-health-and-adjoint-readiness)

@@ -374,9 +374,21 @@ impl Steer {
             && let Some((k, b, used)) = {
                 let now = self.spent();
                 [
-                    ("study_cell_hours", limits.study_cell_hours, before.cell_hours + now.cell_hours),
-                    ("study_gpu_hours", limits.study_gpu_hours, before.gpu_hours + now.gpu_hours),
-                    ("study_output", limits.study_output, before.output_bytes + now.output_bytes),
+                    (
+                        "study_cell_hours",
+                        limits.study_cell_hours,
+                        before.cell_hours + now.cell_hours,
+                    ),
+                    (
+                        "study_gpu_hours",
+                        limits.study_gpu_hours,
+                        before.gpu_hours + now.gpu_hours,
+                    ),
+                    (
+                        "study_output",
+                        limits.study_output,
+                        before.output_bytes + now.output_bytes,
+                    ),
                 ]
                 .into_iter()
                 .find_map(|(k, b, u)| b.filter(|&b| u >= b).map(|b| (k, b, u)))
@@ -385,7 +397,9 @@ impl Steer {
             Some(stop(
                 diag::RUN_STUDY_BUDGET,
                 "study-budget",
-                format!("stopped at the study budget ([run.limits] {k} = {b}; spent {used:.4} with this run)"),
+                format!(
+                    "stopped at the study budget ([run.limits] {k} = {b}; spent {used:.4} with this run)"
+                ),
             ))
         } else {
             None
@@ -1370,7 +1384,11 @@ fn study_budget(case: &FlowCase, e: &Estimate, out: &Path) -> crate::budget::Stu
 
 /// The `"budget"` row of the run record: the iteration budget, the D81
 /// estimate and the study budgets (D198).
-fn budget_row(case: &FlowCase, e: Option<&Estimate>, study: Option<&crate::budget::StudyBudget>) -> serde_json::Value {
+fn budget_row(
+    case: &FlowCase,
+    e: Option<&Estimate>,
+    study: Option<&crate::budget::StudyBudget>,
+) -> serde_json::Value {
     let mut row = serde_json::json!({"type": "budget"});
     if case.time.is_none() {
         row["iterations"] = serde_json::to_value(crate::budget::IterationBudget::of(
@@ -1454,7 +1472,8 @@ fn start_budgets(
         ));
     }
     for k in sb.over_estimate() {
-        let m = format!("the estimate of this run does not fit into what is left of [run.limits] {k}");
+        let m =
+            format!("the estimate of this run does not fit into what is left of [run.limits] {k}");
         steer.event(diag::RUN_STUDY_ESTIMATE, 0, &m);
         steer.notes.push(m);
     }

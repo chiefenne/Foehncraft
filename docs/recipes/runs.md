@@ -10,6 +10,7 @@ Part of the [Recipes](../recipes.md): restart, stop and steer runs, drive runs f
 | 37 | [Read the log and upgrade a case file](#log) |
 | 38 | [Choose the columns of the log table](#log-columns) |
 | 39 | [Prepare changes of settings before the run](#schedule) |
+| 166 | [Set an iteration budget and a budget per study](#budgets) |
 
 ---
 
@@ -305,5 +306,65 @@ grep schedule output/cavity_re100_schedule/flow.log
 ```
 
 Keys: `schedule[].at_iteration`, `schedule[].at_step`, `schedule[].at_time`, `schedule[].set`.
+
+[↑ back to top](#run-control-and-health)
+
+---
+
+<a id="budgets"></a>
+## 166. Set an iteration budget and a budget per study
+
+The iteration budget of a steady case is `solver.max_iterations` (or a
+smaller `[run.limits] max_iterations`); keep it at about 3000, a steady case
+needs hundreds, at most a few thousand (a budget above 10 000 draws
+`RUN021` in the check). Look at the diagnosis instead of running longer
+(gallery 166):
+
+```toml
+[solver]
+max_iterations = 3000
+
+[run.limits]
+diagnose_at = 2000        # the default; 0 switches the diagnosis off
+diagnosis = "stop"        # default "record": write it and go on
+```
+
+```
+target/release/foehn flow case.toml --check        # "iteration budget 3000 (solver.max_iterations); diagnosis at iteration 2000 (stop)"
+target/release/foehn flow case.toml
+grep diagnosis output/case/flow.log
+```
+
+Read the verdict: `on-track` needs nothing; `slow` falls but would reach
+the tolerance only after the budget (the residual is no stop measure: if
+the monitored quantities have settled, the run is done, otherwise ramp the
+relaxation up with `[[schedule]]` or use the coupled algorithm); `stalled`
+and `oscillating` point at the relaxation, the mesh or an unsteady flow;
+`rising` asks for a lower relaxation before the run diverges. A run stopped
+by the diagnosis continues with `--restart latest` after the change.
+
+For a study, give each variant the same budgets; the ledger is the
+`study_budget.jsonl` next to the variant directories:
+
+```python
+import foehncraft as fc
+from foehncraft.study import Study, grid
+
+base = fc.Case.load("examples/cases/flow/cavity_re100.toml")
+base = base.with_values({"run.limits.study_cell_hours": 50.0, "run.limits.study_output": 2e9})
+rows = Study(base, grid({"fluid.viscosity": [0.01, 0.005, 0.002]}), "output/study").run()
+```
+
+Each run shows its estimate and what the study has left in the `budget`
+row of `run.jsonl` and in the log; a variant that spends the rest stops
+with exit code 3 (`RUN018`), the ones after it do not start (`RUN019`), and
+`foehn flow --check` reports a spent study before anything runs. To raise a
+budget, raise the key (it may also change during a run through
+`.read_toml_N`); to start the study's account again, delete
+`study_budget.jsonl`.
+
+Keys: `run.limits.diagnose_at`, `run.limits.diagnosis`,
+`run.limits.study_cell_hours`, `run.limits.study_gpu_hours`,
+`run.limits.study_output`.
 
 [↑ back to top](#run-control-and-health)

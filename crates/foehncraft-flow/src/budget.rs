@@ -88,6 +88,10 @@ pub fn diagnose_at(limits: &Limits) -> Option<usize> {
     }
 }
 
+/// log10 of a residual at round-off: such an equation is not diagnosed (w
+/// of a 2D case).
+const NEGLIGIBLE: f64 = -12.0;
+
 /// Iterations of the window the trend is fitted over.
 fn window(at: usize) -> usize {
     (at / 4).clamp(10, 500)
@@ -247,13 +251,18 @@ pub fn diagnose(h: &History, tolerance: f64, budget: usize) -> Option<Diagnosis>
                 (v.is_finite() && v > 0.0).then(|| (*xi, v.log10()))
             })
             .collect();
-        // an equation not solved (w in 2D) has no residual
-        if vals.len() < 5 {
+        // an equation not solved (w in 2D) has no residual, or one at
+        // round-off
+        if vals.len() < 5 || vals.iter().all(|v| v.1 < NEGLIGIBLE) {
             continue;
         }
         let (xs, ys): (Vec<f64>, Vec<f64>) = vals.into_iter().unzip();
         let (s, scatter) = fit(&xs, &ys);
-        let last = h.rows.last().and_then(|(_, r)| r.get(k).copied()).unwrap_or(0.0);
+        let last = h
+            .rows
+            .last()
+            .and_then(|(_, r)| r.get(k).copied())
+            .unwrap_or(0.0);
         let per_1000 = 1000.0 * s;
         let trend = if per_1000 < -0.5 {
             Trend::Falling
@@ -281,7 +290,9 @@ pub fn diagnose(h: &History, tolerance: f64, budget: usize) -> Option<Diagnosis>
         .iter()
         .max_by(|a, b| a.residual.total_cmp(&b.residual))?
         .clone();
-    let rising = eqs.iter().find(|e| e.trend == Trend::Rising);
+    let rising = eqs
+        .iter()
+        .find(|e| e.trend == Trend::Rising && e.residual > tolerance);
     let verdict = if rising.is_some() {
         Verdict::Rising
     } else {
@@ -322,9 +333,14 @@ pub fn diagnose(h: &History, tolerance: f64, budget: usize) -> Option<Diagnosis>
         Verdict::Stalled => format!(
             "{} stalls at {}: look at the monitored quantities first (a run whose quantities have settled is done). A stall at a level comes \
              from a relaxation set too high, from limiters switching, or from mesh quality; lower the momentum relaxation, check the mesh \
-             (non-orthogonality, skewness) and the scheme before running longer",
+             (non-orthogonality, skewness) and the scheme before running longer{}",
             ctl.equation,
-            sci(ctl.residual)
+            sci(ctl.residual),
+            if ctl.residual > 1e-3 {
+                ". A stall this far above the tolerance often means the flow has no steady solution (vortex shedding): run it transient"
+            } else {
+                ""
+            }
         ),
         Verdict::Rising => {
             let e = rising.unwrap_or(&ctl);
@@ -529,7 +545,8 @@ impl StudyBudget {
                 unit(l.budget),
                 self.runs,
                 unit(l.remaining),
-                l.estimate.map_or("? (no benchmark of this hardware)".into(), unit)
+                l.estimate
+                    .map_or("? (no benchmark of this hardware)".into(), unit)
             )
         };
         let hours = |x: f64| format!("{x:.3} h");
@@ -568,21 +585,33 @@ mod tests {
     #[test]
     fn trends_of_model_histories() {
         // 2 decades per 1000 iterations from 1e-2: 1e-6 at iteration 2000 + 0
-        let d = diagnose(&history(|i| 1e-2 * 10f64.powf(-2e-3 * i as f64), 2000), 1e-8, 3000)
-            .unwrap();
+        let d = diagnose(
+            &history(|i| 1e-2 * 10f64.powf(-2e-3 * i as f64), 2000),
+            1e-8,
+            3000,
+        )
+        .unwrap();
         assert_eq!(d.equations[0].trend, Trend::Falling);
         assert!((d.equations[0].decades_per_1000 + 2.0).abs() < 1e-6);
         // 1e-6 at 2000, 1e-8 two decades later: iteration 3000
         let t = d.equations[0].tolerance_at.unwrap();
         assert!((2999..=3001).contains(&t), "{t}");
         assert_eq!(d.verdict, Verdict::OnTrack);
-        let slow = diagnose(&history(|i| 1e-2 * 10f64.powf(-2e-3 * i as f64), 2000), 1e-8, 2500)
-            .unwrap();
+        let slow = diagnose(
+            &history(|i| 1e-2 * 10f64.powf(-2e-3 * i as f64), 2000),
+            1e-8,
+            2500,
+        )
+        .unwrap();
         assert_eq!(slow.verdict, Verdict::Slow);
         let flat = diagnose(&history(|_| 1e-4, 2000), 1e-8, 3000).unwrap();
         assert_eq!(flat.verdict, Verdict::Stalled);
-        let up = diagnose(&history(|i| 1e-4 * 10f64.powf(1e-3 * i as f64), 2000), 1e-8, 3000)
-            .unwrap();
+        let up = diagnose(
+            &history(|i| 1e-4 * 10f64.powf(1e-3 * i as f64), 2000),
+            1e-8,
+            3000,
+        )
+        .unwrap();
         assert_eq!(up.verdict, Verdict::Rising);
         let osc = diagnose(
             &history(|i| if i % 2 == 0 { 1e-3 } else { 1e-4 }, 2000),
@@ -598,7 +627,10 @@ mod tests {
     fn unsolved_equations_are_left_out() {
         let mut h = History::new(vec!["momentum_z".into(), "continuity".into()], Some(100));
         for it in 1..=100 {
-            h.push(it, &[0.0, 1e-3]);
+            h.push(
+                it,
+                &[if it % 2 == 0 { 0.0 } else { 1e-20 * it as f64 }, 1e-3],
+            );
         }
         let d = diagnose(&h, 1e-8, 200).unwrap();
         assert_eq!(d.equations.len(), 1);
@@ -614,7 +646,10 @@ mod tests {
         assert_eq!(b.diagnose_at, Some(DEFAULT_DIAGNOSE_AT));
         l.max_iterations = Some(1500);
         let b = IterationBudget::of(3000, &l);
-        assert_eq!((b.iterations, b.source), (1500, "run.limits.max_iterations"));
+        assert_eq!(
+            (b.iterations, b.source),
+            (1500, "run.limits.max_iterations")
+        );
         // the diagnosis after the budget does not happen
         assert_eq!(b.diagnose_at, None);
         l.diagnose_at = Some(0);

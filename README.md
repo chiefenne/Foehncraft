@@ -131,7 +131,10 @@ Everything below is on `main`, verified by the cases of the
   statistics of transient runs (time mean, RMS, covariance, phase averages,
   a confidence interval that says whether the window is long enough), mass and
   kinetic-energy ledgers (named terms per quantity, ready for further quantities), a divergence report, a log that can be
-  circulated, JSON records for scripts and agents.
+  circulated, JSON records for scripts and agents; an iteration budget
+  shown before the run and a diagnosis of a steady run at 2000 iterations
+  (trend of each residual, verdict, advice, optional stop), and budgets
+  per study (cell-hours, GPU-hours, output volume) beside the estimate.
 - **GPU and Python.** The flow loop on NVIDIA GPUs with results bitwise
   equal to the CPU; the Python package `foehncraft` that builds, runs and
   studies cases; the grid convergence index of every mesh sweep.

@@ -294,7 +294,9 @@ pub struct Limits {
 }
 
 /// `[run.limits] diagnosis` (D198 (d)).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
 #[serde(rename_all = "kebab-case")]
 pub enum DiagnosisAction {
     /// Write the diagnosis into the run record and the log; go on.
@@ -347,7 +349,9 @@ impl Limits {
 
     /// A study budget is set.
     pub fn has_study_budget(&self) -> bool {
-        self.study_cell_hours.is_some() || self.study_gpu_hours.is_some() || self.study_output.is_some()
+        self.study_cell_hours.is_some()
+            || self.study_gpu_hours.is_some()
+            || self.study_output.is_some()
     }
 
     /// True when no limit is set.

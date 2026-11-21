@@ -1,19 +1,18 @@
 # Iteration budget and diagnosis of a steady run (D198 (d)): the cylinder
-# of Schäfer & Turek at Re = 100 (benchmark 2D-2) run STEADY on purpose.
-# The flow sheds vortices at this Reynolds number, so a steady solution
-# that satisfies the equations to the tolerance does not exist and the
-# residual cannot fall to it. Instead of letting such a run go on for
-# 10 000 iterations, it is diagnosed at iteration 2000: the trend of each
-# residual over the last 500 iterations, the verdict and advice go into the
-# run record (`run.jsonl`, row type "diagnosis") and the log, and with
-# `diagnosis = "stop"` the run stops there (restart file and results
-# written, exit code 3, RUN017).
+# in a channel of Schäfer & Turek, here at Re = 400 (mean velocity 4 on
+# D = 0.1), run STEADY on purpose. The flow sheds vortices at this Reynolds
+# number, so the steady iteration cannot settle and the residuals stall.
+# Instead of letting such a run go on for 10 000 iterations, it is
+# diagnosed at iteration 2000: the trend of each residual over the last 500
+# iterations, the verdict and advice go into the run record (`run.jsonl`,
+# row type "diagnosis") and the log, and with `diagnosis = "stop"` the run
+# stops there (restart file and results written, exit code 3, RUN017).
 #
-#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/cylinder_re100_steady_diagnosis.toml
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/cylinder_steady_diagnosis.toml
 #
 # `foehn flow --check` shows the iteration budget, its source and the
 # iteration of the diagnosis next to the D81 estimate. The transient run of
-# the same flow is cylinder_re100.toml. Gallery and recipe 164.
+# a cylinder that sheds is cylinder_re100.toml. Gallery and recipe 166.
 
 case_format = "0.6"
 
@@ -33,7 +32,7 @@ convection = true
 [boundary.inlet]
 type = "velocity-inlet"
 profile = "parabolic"
-max_velocity = 1.5               # mean 1.0: Re = 100 on D = 0.1
+max_velocity = 6.0               # mean 4.0: Re = 400 on D = 0.1
 profile_axes = ["y"]
 [boundary.outlet]
 type = "static-pressure-outlet"

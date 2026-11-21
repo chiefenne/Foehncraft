@@ -1135,10 +1135,11 @@ fn estimate_text(e: &engine::Estimate) -> String {
             "\n  iteration budget {} ({}); {}",
             b.iterations,
             b.source,
-            b.diagnose_at.map_or("no diagnosis".to_string(), |n| format!(
-                "diagnosis at iteration {n} ({})",
-                b.diagnosis
-            ))
+            b.diagnose_at
+                .map_or("no diagnosis".to_string(), |n| format!(
+                    "diagnosis at iteration {n} ({})",
+                    b.diagnosis
+                ))
         ));
     }
     s
