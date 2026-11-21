@@ -1132,6 +1132,20 @@ evidence = [
 ]
 
 [[feature]]
+id = "run.budgets"
+area = "Runs and results"
+title = "Iteration budget, diagnosis of steady runs, study budgets"
+switch = "[run.limits] diagnose_at, diagnosis, study_cell_hours"
+decisions = ["D198"]
+evidence = [
+  { kind = "consistency", case = "cylinder_steady_diagnosis", what = "a steady run of a cylinder that sheds is diagnosed stalled at iteration 2000 and stopped (exit code 3)", doc = "docs/gallery/runs.md#budgets" },
+  { kind = "consistency", test = "crates/foehncraft-cli/tests/budgets.rs::diagnosis_is_recorded_and_changes_no_result", what = "the diagnosis is recorded and the residuals and fields are bitwise those of a run without it" },
+  { kind = "consistency", test = "crates/foehncraft-cli/tests/budgets.rs::diagnosis_stops_a_run_off_track", what = "a run off track stops with RUN017" },
+  { kind = "consistency", test = "crates/foehncraft-cli/tests/budgets.rs::study_budget_stops_and_refuses", what = "the study ledger: a run stops at the budget, the next one does not start" },
+  { kind = "exact", test = "crates/foehncraft-flow/src/budget.rs::trends_of_model_histories", what = "trend classes and the projected iteration of model residual histories" },
+]
+
+[[feature]]
 id = "run.gci"
 area = "Runs and results"
 title = "Grid convergence index of every mesh sweep"
