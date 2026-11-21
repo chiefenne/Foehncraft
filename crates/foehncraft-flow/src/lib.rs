@@ -33,6 +33,7 @@
 mod adjoint_tests;
 pub mod analytic;
 pub mod balance;
+pub mod budget;
 pub mod banner_art;
 pub mod bc;
 pub mod case;

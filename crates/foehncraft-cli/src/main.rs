@@ -1122,6 +1122,25 @@ fn estimate_text(e: &engine::Estimate) -> String {
         )),
         None => s.push_str(&format!("\n  wall time: {}", e.wall_time_basis)),
     }
+    if let Some(c) = e.cell_hours {
+        s.push_str(&format!(
+            "\n  cell-hours about {c:.3}{}",
+            e.gpu_hours
+                .filter(|g| *g > 0.0)
+                .map_or(String::new(), |g| format!(", GPU-hours about {g:.3}"))
+        ));
+    }
+    if let Some(b) = &e.iteration_budget {
+        s.push_str(&format!(
+            "\n  iteration budget {} ({}); {}",
+            b.iterations,
+            b.source,
+            b.diagnose_at.map_or("no diagnosis".to_string(), |n| format!(
+                "diagnosis at iteration {n} ({})",
+                b.diagnosis
+            ))
+        ));
+    }
     s
 }
 

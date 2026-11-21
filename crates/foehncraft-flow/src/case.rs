@@ -270,6 +270,39 @@ pub struct Limits {
     pub max_iterations: Option<usize>,
     /// Largest volume of the output directory (bytes).
     pub max_output: Option<f64>,
+    /// Steady: the outer iteration at which a run that has not converged is
+    /// diagnosed from its residual history (D198 (d); default 2000, 0
+    /// switches it off). The diagnosis goes into the run record and the
+    /// log.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub diagnose_at: Option<usize>,
+    /// What a diagnosis that finds the run off track does: `record`
+    /// (default) or `stop` (restart and final output written, exit code 3).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub diagnosis: Option<DiagnosisAction>,
+    /// Cell-hours (cells times wall hours) that all runs of the study may
+    /// spend together (D198 (c)); the study is the parent of the output
+    /// directory, its ledger `study_budget.jsonl`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub study_cell_hours: Option<f64>,
+    /// GPU-hours that all runs of the study may spend together.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub study_gpu_hours: Option<f64>,
+    /// Bytes that all runs of the study may write together.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub study_output: Option<f64>,
+}
+
+/// `[run.limits] diagnosis` (D198 (d)).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum DiagnosisAction {
+    /// Write the diagnosis into the run record and the log; go on.
+    #[default]
+    Record,
+    /// Stop a run that is not on its way to the tolerance within its
+    /// budget.
+    Stop,
 }
 
 impl Limits {
@@ -295,7 +328,26 @@ impl Limits {
         if let Some(b) = self.max_output {
             crate::need!(b > 0.0, CASE_RANGE, "[run.limits] max_output must be > 0");
         }
+        for (k, v) in [
+            ("study_cell_hours", self.study_cell_hours),
+            ("study_gpu_hours", self.study_gpu_hours),
+            ("study_output", self.study_output),
+        ] {
+            if let Some(b) = v {
+                crate::need!(b > 0.0, CASE_RANGE, "[run.limits] {k} must be > 0");
+            }
+        }
         Ok(())
+    }
+
+    /// A diagnosis off track stops the run.
+    pub fn stops_at_diagnosis(&self) -> bool {
+        self.diagnosis == Some(DiagnosisAction::Stop)
+    }
+
+    /// A study budget is set.
+    pub fn has_study_budget(&self) -> bool {
+        self.study_cell_hours.is_some() || self.study_gpu_hours.is_some() || self.study_output.is_some()
     }
 
     /// True when no limit is set.
@@ -2438,6 +2490,66 @@ pub fn time_dependent(case: &FlowCase, values: &bc::Compiled) -> Result<(bool, b
     Ok((source, boundary))
 }
 
+/// The names of the residuals of a steady run, in the order of
+/// [`residual_values`] (D198 (d)).
+fn residual_names(case: &FlowCase) -> Vec<String> {
+    let mut v: Vec<String> = ["momentum_x", "momentum_y", "momentum_z", "continuity"]
+        .iter()
+        .map(|s| (*s).to_string())
+        .collect();
+    if !case.turbulence.is_laminar() {
+        v.extend(
+            crate::turbulence::equations(case.turbulence.model)
+                .iter()
+                .map(|s| (*s).to_string()),
+        );
+    }
+    v.extend(case.scalars.keys().map(|s| format!("scalar_{s}")));
+    if case.energy.is_some() {
+        v.push("energy".into());
+    }
+    v
+}
+
+/// The residuals of one iteration in the order of [`residual_names`].
+fn residual_values(r: &Residuals) -> Vec<f64> {
+    let mut v = r.momentum.to_vec();
+    v.push(r.continuity);
+    v.extend(&r.turbulence.residual);
+    v.extend(&r.scalars.residual);
+    v
+}
+
+/// The log frame of a diagnosis (D198 (d)).
+fn diagnosis_frame(d: &crate::budget::Diagnosis) -> crate::console::Frame {
+    let verdict = serde_json::to_value(d.verdict)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_uppercase))
+        .unwrap_or_default();
+    let mut f = crate::console::Frame::new(format!("Diagnosis at iteration {}", d.iteration))
+        .kv("Verdict", verdict)
+        .kv("Budget", format!("{} iterations", d.budget))
+        .kv("Controlling", &d.controlling)
+        .kv("Window", format!("last {} iterations", d.window));
+    for e in &d.equations {
+        let trend = serde_json::to_value(e.trend)
+            .ok()
+            .and_then(|v| v.as_str().map(str::to_string))
+            .unwrap_or_default();
+        f.push_kv(
+            &e.equation,
+            format!(
+                "{:.2e}, {trend}, {:+.2} decades per 1000 iterations{}",
+                e.residual,
+                e.decades_per_1000,
+                e.tolerance_at
+                    .map_or(String::new(), |n| format!(", tolerance at about {n}"))
+            ),
+        );
+    }
+    f
+}
+
 /// As [`run`], with the requests, limits and run record of `steer`
 /// (crate::engine).
 pub fn run_steered(
@@ -2510,8 +2622,12 @@ pub fn run_steered(
         let (fluid_case, mesh, geo) = crate::cht::view(&case, mesh, geo)?;
         case = fluid_case;
         let nc = mesh.n_cells;
+        steer.set_cells(nc, usize::from(case.run.backend != "cpu"));
         if li == 0 {
             lg.frame(&crate::logblocks::banner(steer.build.as_ref(), &case));
+            for n in std::mem::take(&mut steer.notes) {
+                lg.note(&n);
+            }
         }
         // boundary-condition check (D30)
         let mut findings = bc::check(
@@ -2716,6 +2832,14 @@ pub fn run_steered(
         lg.line("");
         lg.sync(&mut steer.record);
         let mut sched = crate::schedule::Runner::default();
+        // the iteration budget and its diagnosis (D198 (d)): reads the
+        // residuals only
+        let budget =
+            crate::budget::IterationBudget::of(case.solver.max_iterations, &case.run.limits);
+        let mut diag_hist = crate::budget::History::new(
+            residual_names(&case),
+            budget.diagnose_at.filter(|&n| n > first),
+        );
         loop {
             if !case.schedule.is_empty() {
                 let restarted = case.run.restart.is_some();
@@ -2801,6 +2925,20 @@ pub fn run_steered(
             }
             let it = fl.iteration();
             let done = res.max() < case.solver.tolerance;
+            diag_hist.push(it, &residual_values(&res));
+            if diag_hist.due(it)
+                && !done
+                && let Some(d) =
+                    crate::budget::diagnose(&diag_hist, case.solver.tolerance, budget.iterations)
+            {
+                lg.frame(&diagnosis_frame(&d));
+                if d.verdict.off_track() {
+                    lg.warn(&format!("diagnosis at iteration {it}: {}", d.advice));
+                } else {
+                    lg.note(&format!("diagnosis at iteration {it}: {}", d.advice));
+                }
+                steer.diagnosis(&d, case.run.limits.stops_at_diagnosis());
+            }
             if it % case.output.history_every == 0 || done {
                 let _ = write!(
                     csv,
