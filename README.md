@@ -46,7 +46,9 @@
 
 Everything below is on `main`, verified by the cases of the
 [verification manual](docs/verification/manual.md) and shown in the
-[gallery](docs/gallery.md).
+[gallery](docs/gallery.md). How well each feature is checked (verified,
+partial or unverified, with the evidence and the known gaps) is on the
+[verification status](docs/verification/status.md) page.
 
 - **Meshes.** Arbitrary polyhedral cells in 2D and 3D; the Gmsh v4, SU2, CGNS (HDF5),
   OpenFOAM polyMesh, industry `.msh` and VTK (`.vtk`, `.vtu`) readers behind one
@@ -205,7 +207,7 @@ target/release/foehn flow examples/cases/flow/taylor_couette_mrf.toml
 | Engineering Gallery | industrial cases with complex geometry and the checks that trust them (demonstration entries, no reference data) | [docs/applications.md](docs/applications.md) |
 | Sayings | the small words of the trade, for example *Residuen-gaffen* | [docs/sayings.md](docs/sayings.md) |
 | Contributing | the documentation every feature ships with (gallery example, case files, recipe) and where it goes | [CONTRIBUTING.md](CONTRIBUTING.md) |
-| Explanation | requirements, decisions, benchmark and verification results and their reading | [docs/requirements.md](docs/requirements.md), [G1](docs/benchmarks/g1.md), [stage 2](docs/verification/stage2.md), [stage 3](docs/verification/stage3.md), [stage 4](docs/verification/stage4.md), [stage 5](docs/verification/stage5.md), [stage 6](docs/verification/stage6.md), [verification manual](docs/verification/manual.md) |
+| Explanation | requirements, decisions, benchmark and verification results and their reading | [docs/requirements.md](docs/requirements.md), [G1](docs/benchmarks/g1.md), [stage 2](docs/verification/stage2.md), [stage 3](docs/verification/stage3.md), [stage 4](docs/verification/stage4.md), [stage 5](docs/verification/stage5.md), [stage 6](docs/verification/stage6.md), [verification manual](docs/verification/manual.md), [verification status](docs/verification/status.md) |
 
 The [changelog](CHANGELOG.md) lists every release.
 

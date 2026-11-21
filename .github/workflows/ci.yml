@@ -83,10 +83,12 @@ jobs:
       - uses: actions/checkout@v4
       # also on docs-only changes: the number tables can be generated (no
       # number used twice, every topic page listed) and the changelog
-      # fragments are well named
-      - name: Docs indexes, image sizes and changelog fragments
+      # fragments are well named, and the verification status page matches
+      # its feature table (D199)
+      - name: Docs indexes, image sizes, changelog fragments, verification status
         run: |
           python3 -m tools.docs.indexes
+          python3 -m tools.release.verification_status --check
           python3 -m tools.docs.images --check
           python3 -m tools.release.changelog --print > /dev/null
       - uses: dorny/paths-filter@v3

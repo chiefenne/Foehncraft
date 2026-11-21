@@ -213,6 +213,7 @@ same `case_hash` and `commit` are comparable bit for bit.
 | `foehncraft.info` | `foehn info --json` |
 | `foehncraft.command` | the other commands with `--json` (`mesh`, `scalar`, `poisson`, ...): `command` and the report; `post derive`: `file`, `restart`, `cells`, `iteration`, `step`, `time`, `derived`, `datasets` |
 | `foehncraft.divergence` | `divergence.json` after a divergence (above) |
+| `foehncraft.verification-grades` | `docs/verification/grades.json` (D199, generated): per feature `id`, `title`, `grade` (`verified`, `partial`, `unverified`), `gaps`, `range` (validated range: `y_plus_first`, `reynolds`, `prandtl`, `courant`, `skewness`, `mach`) |
 
 ## Diagnostics (D78)
 
