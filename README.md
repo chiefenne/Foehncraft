@@ -48,7 +48,9 @@ Everything below is on `main`, verified by the cases of the
 [verification manual](docs/verification/manual.md) and shown in the
 [gallery](docs/gallery.md). How well each feature is checked (verified,
 partial or unverified, with the evidence and the known gaps) is on the
-[verification status](docs/verification/status.md) page.
+[verification status](docs/verification/status.md) page, and every run
+lists its limitations (a partial feature in use, a value outside the
+validated range, one mesh only, …) in its report and its JSON result.
 
 - **Meshes.** Arbitrary polyhedral cells in 2D and 3D; the Gmsh v4, SU2, CGNS (HDF5),
   OpenFOAM polyMesh, industry `.msh` and VTK (`.vtk`, `.vtu`) readers behind one
@@ -133,7 +135,8 @@ partial or unverified, with the evidence and the known gaps) is on the
   statistics of transient runs (time mean, RMS, covariance, phase averages,
   a confidence interval that says whether the window is long enough), mass and
   kinetic-energy ledgers (named terms per quantity, ready for further quantities), a divergence report, a log that can be
-  circulated, JSON records for scripts and agents.
+  circulated, JSON records for scripts and agents, and the limitations of
+  every run (LIM001 to LIM006, D199).
 - **Tools for scripts and agents.** One registry of typed tools (D196):
   `foehn commands` prints the catalogue of every tool with its input and
   output schemas and action kind, `foehn call <id> --input file.json` runs
