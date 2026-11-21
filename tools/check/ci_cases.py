@@ -58,7 +58,7 @@ FLOW = {
     "long": [
         "cylinder_re100", "cylinder_re100_short", "cylinder_re100_statistics", "cylinder_re100_convective", "cylinder_re20_gci",
         "tmr_plate_zeta_f", "backstep_zeta_f0", "tmr_plate_eb", "backstep_eb", "impinging_jet",
-        "cht_heat_sink_turbulent",
+        "cht_heat_sink_turbulent", "cylinder_steady_diagnosis",
     ],
     "quick": [
         "cavity_re100_budget", "couette_hex", "couette_mixed", "couette_poly", "couette_tet",
@@ -70,6 +70,10 @@ FLOW = {
     ],
 }
 LINUX = ("linux-1", "linux-2", "linux-3", "long")
+
+# Cases whose expected exit code is not 0: the steady cylinder that sheds is
+# stopped by its diagnosis on purpose (D198, exit code 3 = stopped).
+EXPECTED_EXIT = {F + "cylinder_steady_diagnosis.toml": 3}
 
 
 def _files(pattern: str) -> list[str]:
@@ -123,8 +127,9 @@ def run(name: str, foehn: str) -> int:
     for cmd, f in cases(name):
         print(f"::group::{cmd} {f}", flush=True)
         start = time.monotonic()
-        if subprocess.run([foehn, cmd, f], cwd=ROOT).returncode != 0:
-            print(f"::error::{cmd} {f} failed", flush=True)
+        code = subprocess.run([foehn, cmd, f], cwd=ROOT).returncode
+        if code != EXPECTED_EXIT.get(f, 0):
+            print(f"::error::{cmd} {f} failed (exit code {code})", flush=True)
             status = 1
         print("::endgroup::")
         print(f"{cmd} {f}: {int(time.monotonic() - start)} s", flush=True)

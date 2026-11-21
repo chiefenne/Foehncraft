@@ -24,7 +24,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | [Python](gallery/python.md) | cases built, run and studied from Python: expressions with Python operators, callbacks, study tables | 24 |
 | [Verification](gallery/verification.md) | the discretisation uncertainty of mesh sweeps (grid convergence index) and the generated verification manual | 25 |
 | [Post-processing](gallery/post-processing.md) | derived fields: vorticity, Q, λ₂, wall shear stress, y⁺, from the run or a restart file | 22, 108, 110 |
-| [Run control, health and adjoint readiness](gallery/runs.md) | adjoint-ready kernels, runs that a program drives, balances and the divergence report, the log, the table columns, scheduled changes | 17, 18, 19, 27, 28, 29 |
+| [Run control, health and adjoint readiness](gallery/runs.md) | adjoint-ready kernels, runs that a program drives, balances and the divergence report, the log, the table columns, scheduled changes | 17, 18, 19, 27, 28, 29, 166 |
 
 ## All examples by number
 
@@ -99,6 +99,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | <a id="cht-turbulent"></a>158 | [A finned heat sink in a turbulent air channel, and a turbulent channel over a conducting wall](gallery/energy.md#cht-turbulent) | [Energy equation and heat transfer](gallery/energy.md) |
 | <a id="cht-transient"></a>159 | [A heated wall switched on, and two bodies brought into contact](gallery/energy.md#cht-transient) | [Energy equation and heat transfer](gallery/energy.md) |
 | <a id="cht-contact"></a>160 | [A chip on a circuit board with a thermal pad, and an orthotropic patch test](gallery/energy.md#cht-contact) | [Energy equation and heat transfer](gallery/energy.md) |
+| <a id="budgets"></a>166 | [Iteration budget, diagnosis and study budgets](gallery/runs.md#budgets) | [Run control, health and adjoint readiness](gallery/runs.md) |
 
 ## Adding a feature
 

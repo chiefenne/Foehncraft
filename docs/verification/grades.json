@@ -760,6 +760,13 @@
    "range": {}
   },
   {
+   "id": "run.budgets",
+   "title": "Iteration budget, diagnosis of steady runs, study budgets",
+   "grade": "verified",
+   "gaps": [],
+   "range": {}
+  },
+  {
    "id": "run.gci",
    "title": "Grid convergence index of every mesh sweep",
    "grade": "verified",

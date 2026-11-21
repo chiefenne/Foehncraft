@@ -185,6 +185,13 @@ codes! {
     RUN_IO = "RUN013", Error, "An output file could not be written.";
     RUN_SCHEDULED = "RUN015", Note, "A setting changed by an entry of `[[schedule]]` (D128): key, old and new value.";
     RUN_DIVERGED = "RUN014", Error, "The solution diverged (a value that is not finite); see `divergence.md` (D63).";
+    // iteration and study budgets (D198 (c), (d))
+    RUN_DIAGNOSIS = "RUN016", Note, "The diagnosis of a steady run at `[run.limits] diagnose_at` (default 2000 iterations): the trend of each residual, the verdict and advice (D198).";
+    RUN_DIAGNOSIS_STOP = "RUN017", Warning, "Stopped by the diagnosis: the steady run is not on its way to the tolerance within its iteration budget (`[run.limits] diagnosis = \"stop\"`).";
+    RUN_STUDY_BUDGET = "RUN018", Warning, "Stopped at a study budget (`[run.limits] study_cell_hours`, `study_gpu_hours`, `study_output`).";
+    RUN_STUDY_SPENT = "RUN019", Error, "A study budget is already spent by the earlier runs of the study (`study_budget.jsonl`): the run does not start.";
+    RUN_STUDY_ESTIMATE = "RUN020", Warning, "The estimate of the run (D81) does not fit into what is left of a study budget.";
+    RUN_LARGE_BUDGET = "RUN021", Warning, "A steady iteration budget above 10 000 iterations: a steady case needs hundreds, at most a few thousand; look at the run after 2000 to 3000 iterations instead.";
     // the causes of a divergence (D63)
     DIV_TIME_STEP = "DIV001", Note, "Divergence cause: the Courant number near the failing cells is large; reduce the time step.";
     DIV_RELAXATION = "DIV002", Note, "Divergence cause: under-relaxation factors too large for the case.";

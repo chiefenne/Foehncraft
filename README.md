@@ -133,7 +133,10 @@ partial or unverified, with the evidence and the known gaps) is on the
   statistics of transient runs (time mean, RMS, covariance, phase averages,
   a confidence interval that says whether the window is long enough), mass and
   kinetic-energy ledgers (named terms per quantity, ready for further quantities), a divergence report, a log that can be
-  circulated, JSON records for scripts and agents.
+  circulated, JSON records for scripts and agents; an iteration budget
+  shown before the run and a diagnosis of a steady run at 2000 iterations
+  (trend of each residual, verdict, advice, optional stop), and budgets
+  per study (cell-hours, GPU-hours, output volume) beside the estimate.
 - **Tools for scripts and agents.** One registry of typed tools (D196):
   `foehn commands` prints the catalogue of every tool with its input and
   output schemas and action kind, `foehn call <id> --input file.json` runs
