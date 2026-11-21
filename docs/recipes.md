@@ -23,6 +23,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | [Python](recipes/python.md) | the `foehncraft` package: cases, expressions, runs with callbacks, results, materials, studies | 33 |
 | [Verification](recipes/verification.md) | the discretisation uncertainty of a sweep (GCI), the generated verification manual | 34, 35 |
 | [Post-processing](recipes/post-processing.md) | derived fields with the output and from restart files (`foehn post derive`) | 30, 108, 110 |
+| [Engineering gallery](recipes/applications.md) | run an application of the Engineering Gallery and compare it with published data | 161 |
 | [Run control and health](recipes/runs.md) | restart, stop and steer runs, drive runs from a script or an agent, balances and divergence reports, the log, scheduled changes and case upgrades | 22, 26, 27, 37, 38, 39 |
 
 ## All recipes by number
@@ -107,6 +108,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="cht-solids"></a>156 | [Couple the temperature of a fluid and a solid (conjugate heat transfer)](recipes/energy.md#cht-solids) | [Energy equation and heat transfer](recipes/energy.md) |
 | <a id="cht-turbulent"></a>158 | [Couple a turbulent flow with a solid (turbulent conjugate heat transfer)](recipes/energy.md#cht-turbulent) | [Energy equation and heat transfer](recipes/energy.md) |
 | <a id="cht-transient"></a>159 | [Follow how a solid and a fluid heat up together (transient conjugate heat transfer)](recipes/energy.md#cht-transient) | [Energy equation and heat transfer](recipes/energy.md) |
+| <a id="fyfe-stirred-tank-recipe"></a>161 | [Run the 2 L stirred tank of Fyfe et al. and compare it with the published CFD plane](recipes/applications.md#fyfe-stirred-tank-recipe) | [Engineering gallery](recipes/applications.md) |
 
 ## Adding a feature
 
