@@ -1,0 +1,1 @@
+- **Limitations in the tool-result envelope (D199, D196).** `foehn call` and `foehncraft.call` now copy the `limitations` of a tool's output (`flow.run`, `result.read`: LIM001 to LIM006 of the result summary) into the envelope's `limitations`, so an agent sees them without opening the result. Status, exit codes and results are unchanged.
