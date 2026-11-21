@@ -16,7 +16,9 @@ run, and writes
 - DOCS/verification/results.json: the same as data (format
   `foehncraft.verification-manual`, version 1.0);
 - DOCS/figures/verification/orders.svg: the observed orders against their
-  bands.
+  bands;
+- with the default DOCS, docs/verification/status.md and grades.json: the
+  grades of the features (D199, tools/release/verification_status.py).
 
 DOCS defaults to `docs`. Regenerate it for every release and after a
 change of a scheme, from a run of all catalogue sets:
@@ -379,6 +381,12 @@ def main(argv: list[str]) -> int:
     (docs / "verification" / "results.json").write_text(
         json.dumps(data, indent=1, ensure_ascii=False, allow_nan=False, default=str) + "\n", encoding="utf-8")
     (docs / "figures" / "verification" / "orders.svg").write_text(svg(data), encoding="utf-8")
+    if docs.resolve() == (ROOT / "docs").resolve():
+        # the grades of D199 follow the new results (docs/verification/status.md)
+        sys.path.insert(0, str(ROOT))
+        from tools.release import verification_status  # noqa: PLC0415
+
+        verification_status.write()
     cases = [c for f in data["families"] for c in f["cases"]]
     ran = [c for c in cases if c["status"] != "not run"]
     bad = [c["case"] for c in ran if c["status"] != "passed"]

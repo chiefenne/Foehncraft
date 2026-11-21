@@ -1,6 +1,9 @@
 //! hypre as the reference solver (D20, feature `hypre`): BoomerAMG as the
 //! preconditioner of hypre's PCG, through the C shim `hypre/shim.c` over
 //! hypre's public interface. Never needed to build or run Foehncraft.
+// D202: a named unsafe module (tools/check/unsafe_modules.py);
+// every unsafe block has a `// SAFETY:` comment.
+#![allow(unsafe_code)]
 
 use crate::amg::Csr;
 pub use crate::poisson::HypreSettings;

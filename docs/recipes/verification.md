@@ -6,6 +6,7 @@ Part of the [Recipes](../recipes.md): the discretisation uncertainty of a sweep 
 |---|---|
 | 34 | [Estimate the discretisation uncertainty of a mesh or time-step sweep](#gci) |
 | 35 | [Regenerate the verification manual](#manual) |
+| 165 | [Grade a feature on the verification status page](#status) |
 
 ---
 
@@ -89,3 +90,49 @@ git diff --stat docs/verification docs/figures/verification
 The script exits with 1 when a case failed and lists the cases without a
 report (for example when the `long` set was not run). It writes no dates
 and no timings, so the same reports give the same files.
+
+---
+
+<a id="status"></a>
+## 165. Grade a feature on the verification status page
+
+The status page ([docs/verification/status.md](../verification/status.md),
+D199) gives every feature a grade, verified, partial or unverified,
+computed from the feature table
+[docs/verification/features.toml](../verification/features.toml) and the
+last verification manual. The grade is never written by hand: add the
+evidence and the gaps, and the script computes it.
+
+A new feature, or new evidence for one, is a row or an item in the table:
+
+```toml
+[[feature]]
+id = "bc.mass-flow-inlet"
+area = "Boundary conditions"
+title = "Mass-flow inlet"
+switch = 'type = "mass-flow-inlet"'
+evidence = [
+  # kind: exact | manufactured | reference-data | consistency
+  { kind = "exact", case = "poiseuille_mass_flow", what = "Poiseuille flow from its mass flow, second order" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/bcs.rs::checks_of_the_new_conditions", what = "input checks" },
+]
+gaps = []                       # every missing check or band not met
+range = { reynolds = [0.0, 2300.0] }
+```
+
+`case` is a case of the catalogue, `test` a Rust `#[test]` or pytest
+function as `path::function`, `run` a recorded run outside CI with the
+`doc` page that records it. A model (`model = true`) needs reference data
+to be verified. Then regenerate and check:
+
+```
+python3 -m tools.release.verification_status          # writes status.md and grades.json
+python3 -m tools.release.verification_status --check  # what CI runs
+git diff docs/verification/status.md
+```
+
+The check refuses a case, test, page or anchor that does not exist, a
+catalogue case that checks no feature, and a page that is out of date.
+`tools/release/verification_manual.py` regenerates the page as well, so a
+new manual run updates the grades (a case that failed makes its features
+unverified).

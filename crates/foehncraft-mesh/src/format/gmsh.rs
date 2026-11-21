@@ -14,7 +14,7 @@
 //! The format is described in the Gmsh reference manual, section "MSH file
 //! format" (<https://gmsh.info/doc/texinfo/gmsh.html#MSH-file-format>).
 
-use super::{CellKind, ElementMesh, MeshFile, MeshFormat, ReadOptions};
+use super::{CellKind, ElementMesh, MeshFile, MeshFormat, ReadOptions, declared};
 use crate::mesh::Mesh;
 use std::collections::HashMap;
 use std::path::Path;
@@ -261,7 +261,7 @@ pub fn parse(bytes: &[u8]) -> Result<GmshMesh, String> {
                 c.size_t = ds;
                 if c.binary {
                     // one newline, then the integer 1 in the writer's byte order
-                    while c.b[c.pos] != b'\n' {
+                    while c.pos < c.b.len() && c.b[c.pos] != b'\n' {
                         c.pos += 1;
                     }
                     c.pos += 1;
@@ -303,7 +303,11 @@ pub fn parse(bytes: &[u8]) -> Result<GmshMesh, String> {
                             c.double()?;
                         }
                         let np = c.size()?;
-                        let mut tags = Vec::with_capacity(np as usize);
+                        let mut tags = Vec::with_capacity(declared(
+                            np as usize,
+                            bytes.len(),
+                            "physical tags of an entity",
+                        )?);
                         for _ in 0..np {
                             tags.push(c.int()?);
                         }
@@ -320,7 +324,7 @@ pub fn parse(bytes: &[u8]) -> Result<GmshMesh, String> {
             }
             "Nodes" => {
                 let nblocks = c.size()?;
-                let nnodes = c.size()? as usize;
+                let nnodes = declared(c.size()? as usize, bytes.len(), "nodes")?;
                 c.size()?;
                 c.size()?;
                 node_tag.reserve(nnodes);
@@ -353,9 +357,14 @@ pub fn parse(bytes: &[u8]) -> Result<GmshMesh, String> {
                     let dim = c.int()? as u8;
                     let entity = c.int()?;
                     let etype = c.int()?;
-                    let n = c.size()? as usize;
+                    let n = declared(c.size()? as usize, bytes.len(), "elements of a block")?;
                     let (nn, edim) = element_info(etype)?;
-                    debug_assert_eq!(edim, dim);
+                    if edim != dim {
+                        return Err(format!(
+                            "an element block of dimension {dim} holds elements of type {etype} \
+                             (dimension {edim})"
+                        ));
+                    }
                     let mut nodes = Vec::with_capacity(if dim >= 2 { n * nn } else { 0 });
                     for _ in 0..n {
                         c.size()?;
@@ -384,12 +393,14 @@ pub fn parse(bytes: &[u8]) -> Result<GmshMesh, String> {
                     let tag = c.int()?;
                     let master = c.int()?;
                     let na = c.size()?;
-                    let mut aff = Vec::with_capacity(na as usize);
+                    let mut aff =
+                        Vec::with_capacity(declared(na as usize, bytes.len(), "affine values")?);
                     for _ in 0..na {
                         aff.push(c.double()?);
                     }
                     let nn = c.size()?;
-                    let mut pairs = Vec::with_capacity(nn as usize);
+                    let mut pairs =
+                        Vec::with_capacity(declared(nn as usize, bytes.len(), "periodic nodes")?);
                     for _ in 0..nn {
                         pairs.push((c.size()?, c.size()?));
                     }
@@ -417,17 +428,26 @@ pub fn parse(bytes: &[u8]) -> Result<GmshMesh, String> {
     }
 
     // node tag -> index
+    // (a table for dense tags, a map for sparse ones: the same indices)
     let max_tag = node_tag.iter().copied().max().unwrap_or(0) as usize;
-    let mut tag_index = vec![u32::MAX; max_tag + 1];
+    let dense = max_tag <= 4 * node_tag.len() + 1024;
+    let mut tag_index = vec![u32::MAX; if dense { max_tag + 1 } else { 0 }];
+    let mut tag_map: HashMap<u64, u32> = HashMap::new();
     for (i, &t) in node_tag.iter().enumerate() {
-        tag_index[t as usize] = i as u32;
+        if dense {
+            tag_index[t as usize] = i as u32;
+        } else {
+            tag_map.insert(t, i as u32);
+        }
     }
     let idx = |t: u64| -> Result<u32, String> {
-        tag_index
-            .get(t as usize)
-            .copied()
-            .filter(|&i| i != u32::MAX)
-            .ok_or_else(|| format!("element refers to unknown node {t}"))
+        if dense {
+            tag_index.get(t as usize).copied()
+        } else {
+            tag_map.get(&t).copied()
+        }
+        .filter(|&i| i != u32::MAX)
+        .ok_or_else(|| format!("element refers to unknown node {t}"))
     };
     if !blocks.iter().any(|b| b.dim == 3 && !b.nodes.is_empty()) {
         return Err(

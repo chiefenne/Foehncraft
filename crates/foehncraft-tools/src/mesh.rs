@@ -68,7 +68,7 @@ impl Tool for Process {
         let mut case = if foehncraft_mesh::format::is_mesh_file(&a.input) {
             MeshCase::for_file(&a.input)
         } else {
-            MeshCase::from_file(&a.input)?
+            MeshCase::from_file(&a.input).map_err(foehncraft_flow::diag::case_error)?
         };
         let name = a
             .input

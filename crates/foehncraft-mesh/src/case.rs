@@ -183,6 +183,20 @@ impl Default for OutputSection {
     }
 }
 
+/// A mesh file that cannot be read: missing, of an unknown format,
+/// truncated or damaged (D202). It carries the message of the reader; the
+/// flow layer gives it the diagnostic code `MESH003`.
+#[derive(Debug, Clone)]
+pub struct ReadError(pub String);
+
+impl std::fmt::Display for ReadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for ReadError {}
+
 impl MeshCase {
     /// Reads a case file.
     pub fn from_file(path: &Path) -> Result<Self> {
@@ -302,7 +316,7 @@ pub fn build_mesh(case: &MeshSection) -> Result<(Mesh, String, Vec<String>)> {
                 merge_nodes: case.merge_nodes,
             };
             let g = crate::format::read_with(f, case.format.as_deref(), &options)
-                .map_err(anyhow::Error::msg)?;
+                .map_err(|e| anyhow::Error::new(ReadError(e)))?;
             let mut mesh = g.mesh;
             if case.scale != 1.0 {
                 for p in &mut mesh.points {

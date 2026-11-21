@@ -213,6 +213,7 @@ same `case_hash` and `commit` are comparable bit for bit.
 | `foehncraft.info` | `foehn info --json` |
 | `foehncraft.command` | the other commands with `--json` (`mesh`, `scalar`, `poisson`, ...): `command` and the report; `post derive`: `file`, `restart`, `cells`, `iteration`, `step`, `time`, `derived`, `datasets` |
 | `foehncraft.divergence` | `divergence.json` after a divergence (above) |
+| `foehncraft.verification-grades` | `docs/verification/grades.json` (D199, generated): per feature `id`, `title`, `grade` (`verified`, `partial`, `unverified`), `gaps`, `range` (validated range: `y_plus_first`, `reynolds`, `prandtl`, `courant`, `skewness`, `mach`) |
 
 ## Diagnostics (D78)
 
@@ -246,6 +247,7 @@ A code keeps its meaning; a retired code stays in the table.
 | `CASE007` | error | A path outside the read roots or the write roots (D82). |
 | `CASE008` | error | A `--set key=value` that cannot be applied. |
 | `CASE009` | error | A key that the case needs is missing. |
+| `CASE010` | error | A case file that its reader refuses for a reason without a more specific code yet (the message says which); D202. |
 | `SCHED001` | error | An entry of `[[schedule]]` that is not valid: its trigger, its order, a key that cannot change during a run, or a value that does not validate (D128). |
 | `BC001` | error | A mesh boundary without a boundary condition. |
 | `BC002` | error | A boundary condition for a boundary the mesh does not have. |
@@ -330,6 +332,7 @@ A code keeps its meaning; a retired code stays in the table.
 | `ROT002` | error | A `walls` entry of `[[mrf]]` or `[[sliding]]` that is not a wall of the case, or an `[[output.machines]]` table without a turning zone, with a `rotor` that is no turning zone (or none where there are several), without an inlet or an outlet, with a boundary the case does not have, or with a name used twice. |
 | `MESH001` | warning | Faces whose skewness exceeds `solver.skewness_limit` (poor cells, typically tetrahedra of a mesh that was not optimised). |
 | `MESH002` | note | Cell-quality remediation (D50): the run uses other schemes than set because of poor cells. |
+| `MESH003` | error | A mesh file that cannot be read: missing, of an unknown format, truncated or damaged (the reader says where); D202. |
 | `RUN001` | note | Stopped by the `.stop` control file. |
 | `RUN002` | note | Stopped by a signal (SIGTERM, SIGINT or SIGUSR2). |
 | `RUN003` | warning | Stopped at the wall-time limit (`[run.limits] max_wall_time`). |

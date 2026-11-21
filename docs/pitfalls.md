@@ -14,6 +14,7 @@ instead.
 - [Observers must not change the run](#observers)
 - [Timing small meshes](#timing)
 - [Iteration counts in tests](#counts)
+- [Counts a file declares](#declared-counts)
 
 <a id="steady-runs"></a>
 ## Steady runs: budget and stopping
@@ -136,3 +137,16 @@ digit of an input (one ulp in the pseudo-time step: 423 against 452
 iterations on the cavity), because of loose linear tolerances, truncated
 sweeps and single-precision multigrid cycles. Quote counts to about 10 %
 and never assert exact counts in tests.
+
+<a id="declared-counts"></a>
+## Counts a file declares
+
+A mesh reader that trusts a count of the file (`NELEM= 99999999999999`,
+`(10 (0 1 ffffffffffff 0 3))`, a Gmsh node tag of 2^63) and calls
+`Vec::with_capacity`, `resize` or `vec![x; n]` with it aborts the whole
+program: a failed allocation is not a panic and cannot be caught. The
+broken-input corpus (D202) found this in four of the six readers. Check
+the count against the size of the file first (`format::declared`: every
+item takes one byte at least), map sparse tags with a hash map instead of
+a table up to the largest tag, and compute `last - first + 1` with checked
+arithmetic (tests run in debug, where an overflow panics).

@@ -4,6 +4,9 @@
 //! `solver.remediation = "auto"` the solver switches to the Gauss pressure
 //! gradient, the Venkatakrishnan limiter and the bounded face velocity of
 //! the mass flux, reports it and converges.
+// D202: a named unsafe module (tools/check/unsafe_modules.py);
+// every unsafe block has a `// SAFETY:` comment.
+#![allow(unsafe_code)]
 
 use foehncraft_flow::case::{FlowCase, run};
 use foehncraft_flow::diag;

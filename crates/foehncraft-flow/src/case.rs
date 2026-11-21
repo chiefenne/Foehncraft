@@ -873,9 +873,8 @@ pub fn toml_diagnostic(text: &str, e: &toml::de::Error) -> diag::Diagnostic {
     };
     let mut d = diag::Diagnostic::new(code, explain_toml_error(&e.to_string()));
     if let Some(span) = e.span()
-        && span.start <= text.len()
+        && let Some(before) = text.get(..span.start)
     {
-        let before = &text[..span.start];
         let line = before.matches('\n').count() + 1;
         let col = before.rsplit('\n').next().map_or(0, |l| l.chars().count()) + 1;
         d.location = Some([line, col]);
@@ -886,7 +885,7 @@ pub fn toml_diagnostic(text: &str, e: &toml::de::Error) -> diag::Diagnostic {
             .map(str::trim)
             .find(|l| l.starts_with('[') && !l.starts_with("[["))
             .map(|l| l.trim_matches(|c| c == '[' || c == ']').trim().to_string());
-        let at = text[span.clone()].trim();
+        let at = text.get(span.clone()).unwrap_or("").trim();
         let key: String = at
             .chars()
             .take_while(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-' || *c == '.')
@@ -973,6 +972,10 @@ impl FlowCase {
     /// their paths first (read roots, D82) and then calls
     /// [`load_tables`](Self::load_tables).
     pub fn from_file_unloaded(path: &Path, sets: &[String]) -> Result<Self> {
+        Self::from_file_unloaded_inner(path, sets).map_err(diag::case_error)
+    }
+
+    fn from_file_unloaded_inner(path: &Path, sets: &[String]) -> Result<Self> {
         let text = std::fs::read_to_string(path).map_err(|e| {
             diag::err(diag::Diagnostic::new(
                 diag::CASE_FILE,
@@ -988,6 +991,10 @@ impl FlowCase {
     /// Reads the profile tables of the boundary conditions (their paths are
     /// resolved against the case file already).
     pub fn load_tables(&mut self) -> Result<()> {
+        self.load_tables_inner().map_err(diag::case_error)
+    }
+
+    fn load_tables_inner(&mut self) -> Result<()> {
         for b in self.boundary.values_mut() {
             b.load_table(Path::new(""))?;
         }
@@ -1009,7 +1016,7 @@ impl FlowCase {
     /// Parses a case from TOML text, applies the `key=value` overrides and
     /// validates it.
     pub fn from_toml_with(text: &str, dir: &Path, sets: &[String]) -> Result<Self> {
-        let mut c = Self::from_toml_parts(text, dir, sets)?;
+        let mut c = Self::from_toml_parts(text, dir, sets).map_err(diag::case_error)?;
         c.load_tables()?;
         Ok(c)
     }

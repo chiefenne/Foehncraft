@@ -202,11 +202,17 @@ fn section(name: &str, n: &Node) -> Result<Section, String> {
         return Err(format!("section '{name}': ElementRange needs two numbers"));
     }
     let (first, last) = (range[0], range[1]);
-    let count = (last - first + 1).max(0) as usize;
+    let count = last.saturating_sub(first).saturating_add(1).max(0) as usize;
     let conn = match n.child("ElementConnectivity") {
         Some(c) => c.ints()?,
         None => Vec::new(),
     };
+    // every element has one entry in the connectivity at least (D202)
+    let count = super::declared(
+        count,
+        conn.len(),
+        &format!("section '{name}': elements of the ElementRange"),
+    )?;
     let mut elems = Vec::with_capacity(count);
     match ty {
         MIXED => {
@@ -223,6 +229,9 @@ fn section(name: &str, n: &Node) -> Result<Section, String> {
                         type_name(t)
                     ));
                 };
+                if at + 1 + nn > conn.len() {
+                    return Err(format!("section '{name}': connectivity ends early"));
+                }
                 elems.push((t, at + 1, nn));
                 at += 1 + nn;
             }
@@ -285,7 +294,7 @@ impl Sections {
         if id > s.last {
             return None;
         }
-        let (t, a, n) = *s.elems.get((id - s.first) as usize)?;
+        let (t, a, n) = *s.elems.get(id.checked_sub(s.first)? as usize)?;
         Some((t, &s.conn[a..a + n]))
     }
 }
@@ -466,6 +475,7 @@ fn read_zone(
             n_cells += 1;
         }
     }
+    let n_elements: usize = secs.0.iter().map(|s| s.elems.len()).sum();
     if n_cells == 0 {
         return Err("zone has no 3D cells (TETRA_4, PYRA_5, PENTA_6, HEXA_8, NFACE_n)".into());
     }
@@ -487,6 +497,8 @@ fn read_zone(
                 if r.len() < 2 {
                     return Err(format!("BC '{name}': a range needs two numbers"));
                 }
+                let len = r[1].saturating_sub(r[0]).saturating_add(1).max(0) as usize;
+                super::declared(len, n_elements, &format!("BC '{name}': the range"))?;
                 (r[0]..=r[1]).collect()
             } else if let Some(l) = bc.child("PointList").or_else(|| bc.child("ElementList")) {
                 l.ints()?

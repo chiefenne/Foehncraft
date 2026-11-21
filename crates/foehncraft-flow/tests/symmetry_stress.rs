@@ -8,6 +8,9 @@
 //! A linear velocity field with u_n = 0 and no shear on the planes has a
 //! constant stress, so the discrete viscous operator of the momentum rows
 //! must vanish in every cell, with the transposed part and without it.
+// D202: a named unsafe module (tools/check/unsafe_modules.py);
+// every unsafe block has a `// SAFETY:` comment.
+#![allow(unsafe_code)]
 
 use foehncraft_fv::Discretisation;
 use foehncraft_fv::problem::{Boundary, Problem};

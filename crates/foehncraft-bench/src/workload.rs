@@ -1,4 +1,7 @@
 //! Benchmark data: mesh, fields and matrices, built once on the host.
+// D202: a named unsafe module (tools/check/unsafe_modules.py);
+// every unsafe block has a `// SAFETY:` comment.
+#![allow(unsafe_code)]
 
 use crate::matrix::{Csr, SellCs};
 use crate::mesh::{FaceMesh, Ordering};

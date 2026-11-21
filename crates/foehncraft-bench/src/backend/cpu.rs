@@ -8,6 +8,9 @@
 //!
 //! Each output value is written by exactly one iteration, so all three give
 //! bitwise the same results for any number of threads (D31).
+// D202: a named unsafe module (tools/check/unsafe_modules.py);
+// every unsafe block has a `// SAFETY:` comment.
+#![allow(unsafe_code)]
 
 use super::Backend;
 use crate::workload::{Kernel, Workload};
@@ -101,24 +104,40 @@ impl Backend for CpuBackend {
             // SAFETY (all bodies): the mesh and matrices were validated when
             // the workload was built, and `i` ranges over the outputs.
             match k {
-                Kernel::FaceFlux => for_each_out(mode, &mut out, |f| unsafe {
-                    face::face_flux(f, &m.owner, &m.neighbour, &w.phi, &w.gamma, &w.mass_flux)
+                Kernel::FaceFlux => for_each_out(mode, &mut out, |f| {
+                    // SAFETY: as above.
+                    unsafe {
+                        face::face_flux(f, &m.owner, &m.neighbour, &w.phi, &w.gamma, &w.mass_flux)
+                    }
                 }),
-                Kernel::CellGather => for_each_out(mode, &mut out, |c| unsafe {
-                    face::cell_net_flux(c, &m.cell_ptr, &m.cell_faces, &w.flux)
+                Kernel::CellGather => for_each_out(mode, &mut out, |c| {
+                    // SAFETY: as above.
+                    unsafe { face::cell_net_flux(c, &m.cell_ptr, &m.cell_faces, &w.flux) }
                 }),
                 Kernel::SpmvCsr => {
                     let a = &w.csr;
-                    for_each_out(mode, &mut out, |r| unsafe {
-                        spmv::csr_row(r, &a.row_ptr, &a.col, &a.val, &w.x)
+                    for_each_out(mode, &mut out, |r| {
+                        // SAFETY: as above.
+                        unsafe { spmv::csr_row(r, &a.row_ptr, &a.col, &a.val, &w.x) }
                     })
                 }
                 Kernel::SpmvSell => {
                     // Results in sorted order; scattered back by `perm` after
                     // timing when σ > 1 (identity otherwise).
                     let a = &w.sell;
-                    for_each_out(mode, &mut out, |r| unsafe {
-                        spmv::sell_row(r, a.chunk, &a.slice_ptr, &a.slice_len, &a.col, &a.val, &w.x)
+                    for_each_out(mode, &mut out, |r| {
+                        // SAFETY: as above.
+                        unsafe {
+                            spmv::sell_row(
+                                r,
+                                a.chunk,
+                                &a.slice_ptr,
+                                &a.slice_len,
+                                &a.col,
+                                &a.val,
+                                &w.x,
+                            )
+                        }
                     })
                 }
             }
