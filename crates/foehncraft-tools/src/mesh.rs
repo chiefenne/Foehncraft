@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 /// Input of `mesh.process`, the options of `foehn mesh`.
-#[derive(Debug, Clone, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct MeshInput {
     /// Mesh case file (TOML) or a mesh file (Gmsh or industry `.msh`, SU2,

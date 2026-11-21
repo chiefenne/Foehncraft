@@ -43,6 +43,11 @@ struct Cli {
     /// No human text.
     #[arg(long, global = true)]
     quiet: bool,
+    /// Append every tool call to this journal (D197; default: the
+    /// environment variable `FOEHN_JOURNAL`); `foehn run --script`
+    /// replays it.
+    #[arg(long, global = true, value_name = "FILE")]
+    journal: Option<PathBuf>,
     #[command(subcommand)]
     command: Command,
 }
@@ -139,6 +144,26 @@ enum Command {
     /// Run any tool of the catalogue from JSON input and print the result
     /// envelope (`foehn.tool-result`); human text goes to standard error.
     Call(CallArgs),
+    /// Replay the tool calls of a journal (`--journal`) or of a run record
+    /// (`run.jsonl`) in order, without a window (D197); exit 1 when a call
+    /// ends differently from its record.
+    Run(RunArgs),
+}
+
+#[derive(clap::Args)]
+struct RunArgs {
+    /// The journal or run record to replay.
+    #[arg(long, value_name = "FILE")]
+    script: PathBuf,
+    /// Go on after a call that ends differently from its record.
+    #[arg(long)]
+    keep_going: bool,
+    /// Allow reading only below this directory (repeatable, D82).
+    #[arg(long, value_name = "DIR")]
+    read_root: Vec<PathBuf>,
+    /// Allow writing only below this directory (repeatable, D82).
+    #[arg(long, value_name = "DIR")]
+    write_root: Vec<PathBuf>,
 }
 
 #[derive(Subcommand)]
@@ -466,6 +491,7 @@ fn main() {
     // GPU backends (feature `cuda`; nothing without it)
     foehncraft_cuda::register();
     let cli = Cli::parse();
+    let _ = JOURNAL.set(cli.journal.clone());
     let out = Out {
         json: cli.json,
         quiet: cli.quiet,
@@ -485,6 +511,7 @@ fn main() {
         Command::Expression(_) => "expression",
         Command::Commands(_) => "commands",
         Command::Call(_) => "call",
+        Command::Run(_) => "run",
     };
     let res = match cli.command {
         Command::Info => info(out),
@@ -506,6 +533,7 @@ fn main() {
         Command::Expression(a) => expression(a, out),
         Command::Commands(a) => commands(a),
         Command::Call(a) => call(a, out),
+        Command::Run(a) => replay(a, out),
         Command::Post {
             post: Post::Derive(a),
         } => derive(a, out),
@@ -659,8 +687,39 @@ fn materials(a: MaterialsArgs, out: Out) -> Result<Done> {
 
 /// The context of a tool call: the build of this binary, the human text
 /// to `out`.
+/// The journal of `--journal` (D197).
+static JOURNAL: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
+
+/// The journal of this command: `--journal`, else `FOEHN_JOURNAL`.
+fn journal() -> Option<tools::journal::Journal> {
+    match JOURNAL.get().cloned().flatten() {
+        Some(p) => Some(tools::journal::Journal::new(p, "cli")),
+        None => tools::journal::Journal::from_env("cli"),
+    }
+}
+
 fn ctx(out: Out) -> Ctx<'static> {
-    Ctx::new(build_info()).text(move |l| out.line(l))
+    Ctx::new(build_info())
+        .journal(journal())
+        .text(move |l| out.line(l))
+}
+
+/// `foehn run --script`.
+fn replay(a: RunArgs, out: Out) -> Result<Done> {
+    let mut c = ctx(out).roots(Roots {
+        read: a.read_root,
+        write: a.write_root,
+    });
+    c.interrupts = signals();
+    let input = tools::journal::ReplayInput {
+        script: a.script,
+        keep_going: a.keep_going,
+    };
+    let (o, code) = tools::run::<tools::journal::Replay>(input, &mut c)?;
+    Ok(Done {
+        code,
+        json: serde_json::to_value(o)?,
+    })
 }
 
 /// Runs tool `T` with a typed input; its output is the `--json` object.
@@ -754,6 +813,7 @@ fn call(a: CallArgs, out: Out) -> Result<Done> {
     };
     let quiet = out.quiet;
     let mut c = Ctx::new(build_info())
+        .journal(journal())
         .roots(Roots {
             read: a.read_root,
             write: a.write_root,
@@ -891,7 +951,7 @@ fn flow(a: FlowArgs, out: Out) -> Result<Done> {
     }
     let mut c = ctx(out).roots(roots);
     c.interrupts = signals();
-    let o = tools::flow::run_outcome(&input, &mut c)?;
+    let o = tools::flow::run_outcome(input, &mut c)?;
     let s = &o.summary;
     for d in s
         .diagnostics

@@ -215,6 +215,9 @@ codes! {
     // the tool registry (D196)
     TOOL_UNKNOWN = "TOOL001", Error, "A tool id that the registry does not have (with the nearest id as a hint); `foehn commands` lists them.";
     TOOL_INPUT = "TOOL002", Error, "A tool input that does not match the input schema of the tool (unknown field, wrong type, missing field).";
+    TOOL_JOURNAL = "TOOL003", Warning, "The journal of tool calls (D197) could not be written: the calls run, but the journal misses them.";
+    TOOL_SCRIPT = "TOOL004", Error, "A script to replay (`foehn run --script`) that cannot be read: not a file of JSON lines, or without calls.";
+    TOOL_REPLAY_DIFFERS = "TOOL005", Warning, "A replayed call (`foehn run --script`) that ended with another status or exit code than in its record; the replay stops there unless `--keep-going`.";
     // anything else
     GENERAL = "GEN001", Error, "An error without a more specific code.";
 }

@@ -16,7 +16,7 @@ fn all_variables() -> String {
 }
 
 /// Input of `expression.eval`.
-#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct EvalInput {
     /// The expression, as in a case file.

@@ -12,6 +12,7 @@ Part of the [Example gallery](../gallery.md): adjoint-ready kernels, runs that a
 | 29 | [Settings that change during the run](#schedule) | 5 | `[[schedule]]`: under-relaxation, tolerances and cadences change at prepared iterations, steps or times; every change in the log and in `run.jsonl` (D128) |
 | 166 | [Iteration budget, diagnosis and study budgets](#budgets) | 7 | the iteration budget before the run, a steady run diagnosed at 2000 iterations (trend, verdict, advice, stop), cell-hour, GPU-hour and output budgets per study beside the D81 estimate (D198) |
 | 171 | [Every function as a tool: the catalogue an agent reads](#tool-registry) | 7 | one registry of typed tools with ids, versions, JSON Schemas and action kinds; `foehn commands`, `foehn call`, `fc.call`; front ends checked by `cargo xtask layering` (D196, D203) |
+| 172 | [A session that can be replayed: the journal of tool calls](#journal) | 7 | every tool call into a journal with its typed input, the call that started a run in `run.jsonl`, `foehn run --script` replays a journal or a run record and reports each call that ends otherwise (D197) |
 
 ---
 
@@ -454,15 +455,16 @@ grep '"type":"diagnosis"' output/cylinder_steady_diagnosis/run.jsonl
 <a id="tool-registry"></a>
 ## 171. Every function as a tool: the catalogue an agent reads
 
-<img src="../figures/gallery/tool_catalogue.svg" alt="The tools of the registry by category, coloured by action kind: read, writes files, starts a run" width="760" height="560">
+<img src="../figures/gallery/tool_catalogue.svg" alt="The tools of the registry by category, coloured by action kind: read, writes files, starts a run" width="760" height="604">
 
 Everything a front end can do is a tool of one registry (D196): a stable
 id (`case.check`), a contract version, a typed input and output whose JSON
 Schemas come from the same structs, and an action kind that says whether
 it only reads, writes files or starts a run (the approvals of an agent
 host follow it, D198). The chart is the catalogue of this version, drawn
-from `foehn commands`: 19 tools in 10 categories, 12 that only read, 3
-that write files and 4 that start a run. The command line, the Python
+from `foehn commands`: 20 tools in 11 categories, 12 that only read, 3
+that write files and 5 that start a run (the replay of a journal, D197,
+counts as one: it may start runs). The command line, the Python
 package and later the MCP server (L18) and the desktop app (L7) reach
 exactly these tools; `cargo xtask layering` fails when a front end calls
 the engine past them.
@@ -521,6 +523,61 @@ its tool, and the runs give byte-identical files).
 target/release/foehn commands | head -40
 target/release/foehn call flow.run --input examples/cases/tools/run_cavity.json
 python3 -m tools.plot.tools_chart docs/figures/gallery/tool_catalogue.svg target/release/foehn
+```
+
+[↑ back to top](#run-control-health-and-adjoint-readiness)
+
+---
+
+<a id="journal"></a>
+## 172. A session that can be replayed: the journal of tool calls
+
+<img src="../figures/gallery/journal_replay.svg" alt="The four calls of a journaled session, check, run, derive and read, with the time each took when recorded and when replayed; every call ended as recorded" width="760" height="386">
+
+With `--journal FILE` (or `FOEHN_JOURNAL`, which the Python package reads
+too), every tool call of a session goes into one JSON-lines file with its
+typed input: the input after parsing, with every default filled in, so a
+later version with other defaults still replays the same call (D197). A
+person at the command line, a Python script and later an agent through
+the MCP server (L18) leave the same journal. A run also writes the call
+that started it into its run record, so `run.jsonl` alone says how the run
+was started.
+
+`foehn run --script` runs the calls again, in order and without a window,
+and compares each with its record. The chart is the session of
+`examples/cases/tools/cavity_session.jsonl`, each call recorded and then
+replayed: the check, the lid-driven cavity at Re = 100 (439 iterations),
+the vorticity and Q-criterion, and the result summary; every call ended as
+recorded, and the replayed restart file is bitwise the recorded one (a
+test checks it). A replay stops at the first call that ends otherwise
+(`TOOL005`), unless `--keep-going`; calls refused when recorded (an
+unknown id, a bad input) are skipped.
+
+```
+$ foehn --journal session.jsonl flow examples/cases/flow/cavity_re100.toml --out output/tools/cavity
+$ head -c 400 session.jsonl
+{"type":"header","format":"foehn.journal","format_version":1,"version":"0.6.0","commit":"…"}
+{"type":"call","seq":1,"date":"…","via":"cli","tool":"flow.run","tool_version":1,
+ "input":{"case":"examples/cases/flow/cavity_re100.toml","set":[],"out":"output/tools/cavity",
+ "threads":null,…},"status":"finished","exit_code":0,"seconds":2.4}
+$ foehn run --script session.jsonl
+   1  flow.run
+   …
+      finished (exit 0), as recorded
+replayed 1 of 1 calls, 0 skipped, 0 different
+```
+
+| | |
+|---|---|
+| Code | `crates/foehncraft-tools/src/journal.rs` (journal, `journal.replay`), `crates/foehncraft-tools/src/lib.rs` (`run_as`: every call through the journal), `crates/foehncraft-flow/src/engine.rs` (the call row of `run.jsonl`), `crates/foehncraft-cli/src/main.rs` (`--journal`, `foehn run --script`) |
+| Tests | `crates/foehncraft-tools/src/journal.rs` (typed input, refused calls, nested calls, replay that differs), `crates/foehncraft-cli/tests/tools_contract.rs` (`journal_and_replay`: bitwise the same restart file), `python/tests/test_tools.py` (`FOEHN_JOURNAL` from Python) |
+| Case files | `tools/cavity_session.jsonl` (a script of four calls) |
+| Interfaces | [Journal and replay](../interfaces.md#journal-and-replay-d197) |
+
+```
+target/release/foehn --journal output/tools/session.jsonl run --script examples/cases/tools/cavity_session.jsonl
+target/release/foehn run --script output/tools/cavity/run.jsonl
+python3 -m tools.plot.journal_chart docs/figures/gallery/journal_replay.svg target/release/foehn
 ```
 
 [↑ back to top](#run-control-health-and-adjoint-readiness)

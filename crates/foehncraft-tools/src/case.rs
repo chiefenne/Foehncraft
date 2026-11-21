@@ -11,7 +11,7 @@ use std::path::PathBuf;
 
 /// A flow case file with its overrides: the input of `case.check`,
 /// `case.resolve` and `flow.run`, the same options as `foehn flow`.
-#[derive(Debug, Clone, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct FlowInput {
     /// Flow case file (TOML).
@@ -322,7 +322,7 @@ impl Tool for EstimateTool {
 }
 
 /// Input of `case.upgrade`, the options of `foehn case upgrade`.
-#[derive(Debug, Clone, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct UpgradeInput {
     /// Case files (TOML) of any kind: flow, mesh, scalar or Poisson.

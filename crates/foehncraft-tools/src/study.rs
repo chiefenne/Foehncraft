@@ -14,7 +14,7 @@ fn code_of(failures: &[String]) -> i32 {
 }
 
 /// Input of `study.scalar`, the options of `foehn scalar`.
-#[derive(Debug, Clone, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ScalarInput {
     /// Scalar case file (TOML).
@@ -102,7 +102,7 @@ impl Tool for Scalar {
 }
 
 /// Input of `study.poisson`, the options of `foehn poisson`.
-#[derive(Debug, Clone, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PoissonInput {
     /// Poisson case file (TOML).
@@ -200,7 +200,7 @@ impl Tool for Poisson {
 }
 
 /// Input of `study.g1`, the options of `foehn bench g1`.
-#[derive(Debug, Clone, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct G1Input {
     /// Case file (TOML); every key is optional.

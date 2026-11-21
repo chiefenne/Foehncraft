@@ -1,0 +1,4 @@
+{"type": "call", "tool": "case.check", "input": {"case": "examples/cases/flow/cavity_re100.toml"}}
+{"type": "call", "tool": "flow.run", "input": {"case": "examples/cases/flow/cavity_re100.toml", "out": "output/tools/cavity"}}
+{"type": "call", "tool": "post.derive", "input": {"case": "examples/cases/flow/cavity_re100.toml", "out": "output/tools/cavity", "fields": ["vorticity", "q-criterion"]}}
+{"type": "call", "tool": "result.read", "input": {"dir": "output/tools/cavity"}}

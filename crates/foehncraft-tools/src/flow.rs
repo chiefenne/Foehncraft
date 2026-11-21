@@ -6,14 +6,18 @@ use anyhow::Result;
 use foehncraft_flow::case::output_dir;
 use foehncraft_flow::engine::{self, Outcome, ResultSummary, RunOptions};
 use schemars::JsonSchema;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-/// Runs a flow case: the case read inside the roots with the overrides,
-/// the interrupts, observer and build of `ctx`, the log lines to its text.
-/// The outcome keeps the report for the front ends that print its failed
-/// checks.
-pub fn run_outcome(a: &FlowInput, ctx: &mut Ctx<'_>) -> Result<Outcome> {
+/// Runs a flow case as the call `flow.run` (journaled, D197): the case
+/// read inside the roots with the overrides, the interrupts, observer and
+/// build of `ctx`, the log lines to its text. The outcome keeps the report
+/// for the front ends that print its failed checks.
+pub fn run_outcome(a: FlowInput, ctx: &mut Ctx<'_>) -> Result<Outcome> {
+    crate::run_as::<Run, _>(a, ctx, |a, c| outcome(&a, c), |o| o.summary.exit_code)
+}
+
+fn outcome(a: &FlowInput, ctx: &mut Ctx<'_>) -> Result<Outcome> {
     let case = a.load(ctx)?;
     let (name, dir) = output_dir(&case, &a.case, a.out.clone());
     let opts = RunOptions {
@@ -21,6 +25,7 @@ pub fn run_outcome(a: &FlowInput, ctx: &mut Ctx<'_>) -> Result<Outcome> {
         build: ctx.build.clone(),
         roots: ctx.roots.clone(),
         observer: ctx.observer.clone(),
+        call: ctx.call.clone(),
     };
     engine::run(&case, &name, &dir, &opts, |l| ctx.line(l))
 }
@@ -39,7 +44,7 @@ impl Tool for Run {
     type Output = ResultSummary;
 
     fn call(a: FlowInput, ctx: &mut Ctx<'_>) -> Result<ResultSummary> {
-        Ok(run_outcome(&a, ctx)?.summary)
+        Ok(outcome(&a, ctx)?.summary)
     }
 
     fn exit_code(s: &ResultSummary) -> i32 {
@@ -48,7 +53,7 @@ impl Tool for Run {
 }
 
 /// Input of `result.read`.
-#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ReadInput {
     /// Output directory of a finished or stopped run.
