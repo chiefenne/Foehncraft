@@ -15,34 +15,30 @@ path = "src/main.rs"
 [features]
 default = ["hdf5", "metis"]
 # VTKHDF output (HDF5 built from source; needs CMake and a C compiler).
-hdf5 = [
-    "foehncraft-mesh/hdf5",
-    "foehncraft-fv/hdf5",
-    "foehncraft-flow/hdf5",
-    "foehncraft-tools/hdf5",
-]
+hdf5 = ["foehncraft-flow/hdf5", "foehncraft-tools/hdf5"]
 # METIS partitioning (built from source).
-metis = ["foehncraft-mesh/metis", "foehncraft-tools/metis"]
+metis = ["foehncraft-tools/metis"]
 # NVIDIA GPU backends (crate foehncraft-cuda, D60); no CUDA toolkit needed
 # to build, the driver is loaded at run time.
 cuda = ["foehncraft-cuda/cuda"]
 # hypre as the reference solver of `foehn poisson` (needs HYPRE_DIR).
-hypre = ["foehncraft-fv/hypre"]
-mpi = ["foehncraft-parallel/mpi"]
-checked-indexing = ["foehncraft-bench/checked-indexing"]
+hypre = ["foehncraft-tools/hypre", "foehncraft-fv/hypre"]
+mpi = ["foehncraft-tools/mpi"]
+checked-indexing = ["foehncraft-tools/checked-indexing"]
 
 [dependencies]
-foehncraft-core.workspace = true
-foehncraft-bench.workspace = true
-foehncraft-mesh.workspace = true
-foehncraft-fv.workspace = true
-foehncraft-flow.workspace = true
-foehncraft-cuda.workspace = true
-foehncraft-parallel.workspace = true
+# Every engine function through the tool registry (D196); `cargo xtask
+# layering` checks that the sources call nothing else of the engine.
 foehncraft-tools.workspace = true
+# Types of the engine: diagnostics, build information, interrupts, roots.
+foehncraft-flow.workspace = true
+# Registers the GPU backends.
+foehncraft-cuda.workspace = true
+# Only for the hypre library directory its build script reports (the
+# rpath of `foehn`, build.rs); no calls.
+foehncraft-fv.workspace = true
 clap.workspace = true
 anyhow = "1"
-rayon.workspace = true
 serde_json.workspace = true
 
 [target.'cfg(unix)'.dependencies]

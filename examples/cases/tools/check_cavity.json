@@ -1,0 +1,1 @@
+{"case": "examples/cases/flow/cavity_re100.toml", "set": ["solver.momentum.relaxation=0.8"]}

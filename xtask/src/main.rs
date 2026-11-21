@@ -65,20 +65,16 @@ const ALLOWED: &[(&str, &[&str])] = &[
     ),
     // The front ends. `foehncraft-flow` for its types (diagnostics, build
     // information, interrupts), `foehncraft-cuda` to register the GPU
-    // backends. The CLI's scalar, Poisson and G1 studies still call
-    // `foehncraft-fv` and `foehncraft-bench` directly until they become
-    // tools (D196 part 3).
+    // backends, `foehncraft-fv` only for the hypre library directory its
+    // build script reports to the CLI's build script (no calls: the
+    // crate paths of FORBIDDEN_PATHS are refused in the sources).
     (
         "foehncraft-cli",
         &[
             "foehncraft-tools",
-            "foehncraft-core",
             "foehncraft-flow",
             "foehncraft-cuda",
-            "foehncraft-parallel",
-            "foehncraft-mesh",
             "foehncraft-fv",
-            "foehncraft-bench",
         ],
     ),
     ("foehncraft-py", &["foehncraft-tools", "foehncraft-flow"]),
@@ -87,6 +83,16 @@ const ALLOWED: &[(&str, &[&str])] = &[
 
 /// The front ends and their sources.
 const FRONT_ENDS: &[&str] = &["crates/foehncraft-cli/src", "crates/foehncraft-py/src"];
+
+/// Crates whose items front ends never use directly (every function of
+/// them is a tool).
+const FORBIDDEN_PATHS: &[&str] = &[
+    "foehncraft_fv::",
+    "foehncraft_mesh::",
+    "foehncraft_bench::",
+    "foehncraft_parallel::",
+    "foehncraft_kernels::",
+];
 
 /// Engine entry points that front ends call only through a tool.
 const ENGINE_CALLS: &[&str] = &[
@@ -190,6 +196,17 @@ fn layering(root: &Path) -> Result<Vec<String>, String> {
             let text = std::fs::read_to_string(&f).map_err(|e| format!("{}: {e}", f.display()))?;
             for (n, line) in text.lines().enumerate() {
                 let code = line.split("//").next().unwrap_or("");
+                for p in FORBIDDEN_PATHS {
+                    if code.contains(p) {
+                        let rel = f.strip_prefix(root).unwrap_or(&f);
+                        found.push(format!(
+                            "{}:{}: the front end uses `{}` directly; go through foehncraft-tools (D196)",
+                            rel.display(),
+                            n + 1,
+                            p.trim_end_matches(':')
+                        ));
+                    }
+                }
                 for call in ENGINE_CALLS {
                     if code.contains(call) {
                         let rel = f.strip_prefix(root).unwrap_or(&f);

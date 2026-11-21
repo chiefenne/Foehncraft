@@ -30,6 +30,7 @@ pub mod markdown;
 pub mod materials;
 pub mod mesh;
 pub mod post;
+pub mod study;
 pub mod system;
 
 /// Format of the result envelope.
@@ -290,6 +291,9 @@ pub fn registry() -> Vec<Entry> {
         entry::<flow::Run>(),
         entry::<flow::Read>(),
         entry::<post::Derive>(),
+        entry::<study::Scalar>(),
+        entry::<study::Poisson>(),
+        entry::<study::G1>(),
     ]
 }
 

@@ -11,15 +11,22 @@ authors.workspace = true
 [features]
 default = ["hdf5"]
 # VTKHDF output and restart files (HDF5 built from source).
-hdf5 = ["foehncraft-flow/hdf5", "foehncraft-mesh/hdf5"]
+hdf5 = ["foehncraft-flow/hdf5", "foehncraft-mesh/hdf5", "foehncraft-fv/hdf5"]
 # METIS partitioning in `mesh.process` (built from source).
 metis = ["foehncraft-mesh/metis"]
+# hypre as the reference solver of `study.poisson` (needs HYPRE_DIR).
+hypre = ["foehncraft-fv/hypre"]
+# MPI communicator.
+mpi = ["foehncraft-parallel/mpi"]
+# The single-source CPU route of G1 with bounds-checked loads.
+checked-indexing = ["foehncraft-bench/checked-indexing"]
 
 [dependencies]
 foehncraft-core.workspace = true
 foehncraft-bench.workspace = true
 foehncraft-flow.workspace = true
 foehncraft-mesh.workspace = true
+foehncraft-fv.workspace = true
 foehncraft-parallel.workspace = true
 rayon.workspace = true
 serde.workspace = true

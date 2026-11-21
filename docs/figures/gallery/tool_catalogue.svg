@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 560" width="760" height="560" font-family="Helvetica, Arial, sans-serif" font-size="12">
+<rect width="760" height="560" fill="#ffffff"/>
+<text x="380.0" y="26" text-anchor="middle" font-size="15">The tool registry: 19 tools in 10 categories (foehn commands, Foehncraft 0.6.0)</text>
+<text x="100" y="83.0" text-anchor="end" font-size="13">system</text>
+<rect x="111.0" y="64" width="124.0" height="30" rx="3" fill="#1f6fb4"><title>system.info: Version, commit, platform, threads, features and backends of this build.</title></rect>
+<text x="173.0" y="83.0" text-anchor="middle" fill="#ffffff" font-size="12">info</text>
+<rect x="237.0" y="64" width="124.0" height="30" rx="3" fill="#1f6fb4"><title>system.backends: The kernel backends compiled into this build.</title></rect>
+<text x="299.0" y="83.0" text-anchor="middle" fill="#ffffff" font-size="12">backends</text>
+<rect x="363.0" y="64" width="124.0" height="30" rx="3" fill="#1f6fb4"><title>system.commands: The catalogue of every tool with its input and output schemas.</title></rect>
+<text x="425.0" y="83.0" text-anchor="middle" fill="#ffffff" font-size="12">commands</text>
+<text x="100" y="127.0" text-anchor="end" font-size="13">case</text>
+<rect x="111.0" y="108" width="124.0" height="30" rx="3" fill="#1f6fb4"><title>case.schema: The JSON Schema of the flow case file (D77) in its format envelope.</title></rect>
+<text x="173.0" y="127.0" text-anchor="middle" fill="#ffffff" font-size="12">schema</text>
+<rect x="237.0" y="108" width="124.0" height="30" rx="3" fill="#1f6fb4"><title>case.check: Check a flow case: validation, boundary conditions on the first mesh and the cost estimate (D78, D81).</title></rect>
+<text x="299.0" y="127.0" text-anchor="middle" fill="#ffffff" font-size="12">check</text>
+<rect x="363.0" y="108" width="124.0" height="30" rx="3" fill="#1f6fb4"><title>case.resolve: Read a flow case the way a run does and return it with the defaults filled in and the overrides applied, as TOML.</title></rect>
+<text x="425.0" y="127.0" text-anchor="middle" fill="#ffffff" font-size="12">resolve</text>
+<rect x="489.0" y="108" width="124.0" height="30" rx="3" fill="#1f6fb4"><title>case.estimate: What a run of a flow case will cost before it starts (D81): cells, steps, memory, output volume, wall time.</title></rect>
+<text x="551.0" y="127.0" text-anchor="middle" fill="#ffffff" font-size="12">estimate</text>
+<rect x="615.0" y="108" width="124.0" height="30" rx="3" fill="#d9822b"><title>case.upgrade: Bring case files of an older case format to the current one (renamed keys, `case_format`), keeping their comments; writes them with `write`.</title></rect>
+<text x="677.0" y="127.0" text-anchor="middle" fill="#ffffff" font-size="12">upgrade</text>
+<text x="100" y="171.0" text-anchor="end" font-size="13">diag</text>
+<rect x="111.0" y="152" width="124.0" height="30" rx="3" fill="#1f6fb4"><title>diag.codes: The diagnostic codes (D78) with their usual severity and meaning.</title></rect>
+<text x="173.0" y="171.0" text-anchor="middle" fill="#ffffff" font-size="12">codes</text>
+<text x="100" y="215.0" text-anchor="end" font-size="13">materials</text>
+<rect x="111.0" y="196" width="124.0" height="30" rx="3" fill="#1f6fb4"><title>materials.list: Every material of the database with its properties at a temperature and a pressure.</title></rect>
+<text x="173.0" y="215.0" text-anchor="middle" fill="#ffffff" font-size="12">list</text>
+<rect x="237.0" y="196" width="124.0" height="30" rx="3" fill="#1f6fb4"><title>materials.show: One material with its property forms, values, data range and sources.</title></rect>
+<text x="299.0" y="215.0" text-anchor="middle" fill="#ffffff" font-size="12">show</text>
+<text x="100" y="259.0" text-anchor="end" font-size="13">expression</text>
+<rect x="111.0" y="240" width="124.0" height="30" rx="3" fill="#1f6fb4"><title>expression.eval: Compile an expression (D53) with constants and tables and evaluate it at points.</title></rect>
+<text x="173.0" y="259.0" text-anchor="middle" fill="#ffffff" font-size="12">eval</text>
+<text x="100" y="303.0" text-anchor="end" font-size="13">mesh</text>
+<rect x="111.0" y="284" width="124.0" height="30" rx="3" fill="#d9822b"><title>mesh.process: Build or read a mesh, check it, partition it and write the quality report and a VTKHDF file.</title></rect>
+<text x="173.0" y="303.0" text-anchor="middle" fill="#ffffff" font-size="12">process</text>
+<text x="100" y="347.0" text-anchor="end" font-size="13">flow</text>
+<rect x="111.0" y="328" width="124.0" height="30" rx="3" fill="#c23b3b"><title>flow.run: Run a flow case (steady, transient, sweeps) and return the result summary of `result.json`; streams the rows of the run record and stops on request.</title></rect>
+<text x="173.0" y="347.0" text-anchor="middle" fill="#ffffff" font-size="12">run</text>
+<text x="100" y="391.0" text-anchor="end" font-size="13">result</text>
+<rect x="111.0" y="372" width="124.0" height="30" rx="3" fill="#1f6fb4"><title>result.read: The result summary (`result.json`, `foehncraft.result`) of an earlier run.</title></rect>
+<text x="173.0" y="391.0" text-anchor="middle" fill="#ffffff" font-size="12">read</text>
+<text x="100" y="435.0" text-anchor="end" font-size="13">post</text>
+<rect x="111.0" y="416" width="124.0" height="30" rx="3" fill="#d9822b"><title>post.derive: Write the fields with derived fields (vorticity, Q, lambda2, wall shear stress, y+ ...) from a restart file of a case (D72).</title></rect>
+<text x="173.0" y="435.0" text-anchor="middle" fill="#ffffff" font-size="12">derive</text>
+<text x="100" y="479.0" text-anchor="end" font-size="13">study</text>
+<rect x="111.0" y="460" width="124.0" height="30" rx="3" fill="#c23b3b"><title>study.scalar: Solve a steady scalar convection-diffusion case (stage 2): one mesh, an order-of-accuracy sweep or solver variants, on the CPU and the GPU.</title></rect>
+<text x="173.0" y="479.0" text-anchor="middle" fill="#ffffff" font-size="12">scalar</text>
+<rect x="237.0" y="460" width="124.0" height="30" rx="3" fill="#c23b3b"><title>study.poisson: Study the pressure solver on a Poisson problem (stage 3): CG with multigrid, Jacobi and hypre over refinement levels, on the CPU and the GPU.</title></rect>
+<text x="299.0" y="479.0" text-anchor="middle" fill="#ffffff" font-size="12">poisson</text>
+<rect x="363.0" y="460" width="124.0" height="30" rx="3" fill="#c23b3b"><title>study.g1: Gate G1: the kernel benchmark, the single-source route against hand-written references (docs/benchmarks/g1.md).</title></rect>
+<text x="425.0" y="479.0" text-anchor="middle" fill="#ffffff" font-size="12">g1</text>
+<rect x="110" y="523" width="14" height="14" rx="2" fill="#1f6fb4"/>
+<text x="130" y="534">read (12)</text>
+<rect x="280" y="523" width="14" height="14" rx="2" fill="#d9822b"/>
+<text x="300" y="534">writes files (3)</text>
+<rect x="450" y="523" width="14" height="14" rx="2" fill="#c23b3b"/>
+<text x="470" y="534">starts a run (4)</text>
+</svg>

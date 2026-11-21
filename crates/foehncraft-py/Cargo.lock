@@ -255,6 +255,7 @@ dependencies = [
  "foehncraft-bench",
  "foehncraft-core",
  "foehncraft-flow",
+ "foehncraft-fv",
  "foehncraft-mesh",
  "foehncraft-parallel",
  "rayon",

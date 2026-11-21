@@ -23,7 +23,6 @@
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use foehncraft_bench::G1Case;
 use foehncraft_flow::diag;
 use foehncraft_flow::engine::{self, BuildInfo, Interrupts, Roots};
 use foehncraft_tools::{self as tools, Ctx, NoInput};
@@ -598,8 +597,8 @@ fn build_info() -> BuildInfo {
     BuildInfo {
         commit: env!("FOEHNCRAFT_GIT_COMMIT").into(),
         features: features(),
-        platform: foehncraft_bench::sysinfo::platform(),
-        cpu: foehncraft_bench::sysinfo::cpu_model(),
+        platform: tools::system::platform(),
+        cpu: tools::system::cpu_model(),
         gpu: None,
     }
 }
@@ -836,41 +835,16 @@ fn mesh(a: MeshArgs, out: Out) -> Result<Done> {
 }
 
 fn scalar(a: ScalarArgs, out: Out) -> Result<Done> {
-    use foehncraft_fv::case::{ScalarCase, output_dir, run};
-    let mut case = ScalarCase::from_file(&a.case).map_err(diag::case_error)?;
-    if let Some(b) = a.backends {
-        case.run.backends = b;
-    }
-    if a.threads.is_some() {
-        case.run.threads = a.threads;
-    }
-    if let Some(p) = a.rust_ptx {
-        case.run.rust_ptx = p;
-    }
-    if let Some(l) = a.levels {
-        case.verification.levels = l;
-    }
-    let (name, dir) = output_dir(&case, &a.case, a.out);
-    let rep = run(&case, &name, &dir, |l| out.line(l))?;
-    if !rep.orders.is_empty() {
-        out.line(&format!(
-            "observed order: {}",
-            rep.orders
-                .iter()
-                .map(|o| format!("{o:.3}"))
-                .collect::<Vec<_>>()
-                .join(", ")
-        ));
-    }
-    out.line(&format!("wrote {}", dir.join("scalar.md").display()));
-    Ok(failures(
-        &rep.failures,
-        json!({
-            "orders": rep.orders,
-            "failures": rep.failures,
-            "report": dir.join("scalar.md"),
-        }),
-    ))
+    let input = tools::study::ScalarInput {
+        case: a.case,
+        backends: a.backends,
+        threads: a.threads,
+        rust_ptx: a.rust_ptx,
+        levels: a.levels,
+        out: a.out,
+    };
+    let (o, _) = tools::run::<tools::study::Scalar>(input, &mut ctx(out))?;
+    Ok(failures(&o.failures, serde_json::to_value(&o)?))
 }
 
 /// Exit code 2 with the failed checks on standard error, else 0.
@@ -942,106 +916,31 @@ fn flow(a: FlowArgs, out: Out) -> Result<Done> {
 }
 
 fn poisson(a: PoissonArgs, out: Out) -> Result<Done> {
-    use foehncraft_fv::poisson::{PoissonCase, StudySolver, output_dir, run};
-    let mut case = PoissonCase::from_file(&a.case).map_err(diag::case_error)?;
-    if let Some(b) = a.backends {
-        case.study.backends = b;
-    }
-    if let Some(s) = a.solvers {
-        case.study.solvers = s
-            .iter()
-            .map(|n| n.parse::<StudySolver>())
-            .collect::<Result<_>>()?;
-    }
-    if a.threads.is_some() {
-        case.study.threads = a.threads;
-    }
-    if let Some(p) = a.rust_ptx {
-        case.study.rust_ptx = p;
-    }
-    if let Some(l) = a.levels {
-        case.study.levels = l;
-    }
-    if let Some(r) = a.repeat {
-        case.study.repeat = r;
-    }
-    case.validate()?;
-    let (name, dir) = output_dir(&case, &a.case, a.out);
-    let rep = run(&case, &name, &dir, |l| out.line(l))?;
-    for (n, r) in &rep.iteration_ratios {
-        out.line(&format!("iterations finest / coarsest level, {n}: {r:.2}"));
-    }
-    out.line(&format!("wrote {}", dir.join("poisson.md").display()));
-    Ok(failures(
-        &rep.failures,
-        json!({
-            "iteration_ratios": rep.iteration_ratios,
-            "failures": rep.failures,
-            "report": dir.join("poisson.md"),
-        }),
-    ))
+    let input = tools::study::PoissonInput {
+        case: a.case,
+        backends: a.backends,
+        solvers: a.solvers,
+        threads: a.threads,
+        rust_ptx: a.rust_ptx,
+        levels: a.levels,
+        repeat: a.repeat,
+        out: a.out,
+    };
+    let (o, _) = tools::run::<tools::study::Poisson>(input, &mut ctx(out))?;
+    Ok(failures(&o.failures, serde_json::to_value(&o)?))
 }
 
 fn g1(a: G1Args, out: Out) -> Result<Done> {
-    let mut case = match &a.case {
-        Some(p) => G1Case::from_file(p).map_err(diag::case_error)?,
-        None => G1Case::default(),
+    let input = tools::study::G1Input {
+        case: a.case,
+        cells: a.cells,
+        ordering: a.ordering,
+        backends: a.backends,
+        repeat: a.repeat,
+        threads: a.threads,
+        rust_ptx: a.rust_ptx,
+        out: a.out,
     };
-    if let Some(n) = a.cells {
-        case.mesh.cells = n;
-        case.mesh.nx = None;
-    }
-    if let Some(o) = a.ordering {
-        case.mesh.ordering = match o.as_str() {
-            "natural" => foehncraft_bench::mesh::Ordering::Natural,
-            "shuffled" => foehncraft_bench::mesh::Ordering::Shuffled,
-            _ => anyhow::bail!("--ordering: natural or shuffled"),
-        };
-    }
-    if let Some(b) = a.backends {
-        case.run.backends = b;
-    }
-    if let Some(r) = a.repeat {
-        case.run.repeat = r;
-    }
-    if a.threads.is_some() {
-        case.run.threads = a.threads;
-    }
-    if let Some(p) = a.rust_ptx {
-        case.run.rust_ptx = p;
-    }
-    if let Some(o) = a.out {
-        case.output.directory = o;
-    }
-    let report = foehncraft_bench::run_g1(&case, &mut |line| out.line(line))?;
-    for v in &report.verdicts {
-        out.line(&format!(
-            "G1 {} against {}: {}",
-            v.candidate,
-            v.reference,
-            if v.pass { "PASS" } else { "FAIL" }
-        ));
-    }
-    let files = report.write(&case.output.directory, &case.output.name)?;
-    for f in &files {
-        out.line(&format!("wrote {}", f.display()));
-    }
-    let all_correct = report
-        .results
-        .iter()
-        .all(|b| b.kernels.iter().all(|k| k.within_tolerance));
-    let f: Vec<String> = if all_correct {
-        Vec::new()
-    } else {
-        vec!["a backend did not reproduce the reference results".into()]
-    };
-    Ok(failures(
-        &f,
-        json!({
-            "verdicts": report.verdicts.iter().map(|v| json!({
-                "candidate": v.candidate, "reference": v.reference, "pass": v.pass,
-            })).collect::<Vec<_>>(),
-            "files": files,
-        }),
-    ))
+    let (o, _) = tools::run::<tools::study::G1>(input, &mut ctx(out))?;
+    Ok(failures(&o.failures, serde_json::to_value(&o)?))
 }

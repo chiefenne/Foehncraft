@@ -353,15 +353,10 @@ version = "0.6.0"
 dependencies = [
  "anyhow",
  "clap",
- "foehncraft-bench",
- "foehncraft-core",
  "foehncraft-cuda",
  "foehncraft-flow",
  "foehncraft-fv",
- "foehncraft-mesh",
- "foehncraft-parallel",
  "foehncraft-tools",
- "rayon",
  "serde_json",
  "signal-hook",
 ]
@@ -460,6 +455,7 @@ dependencies = [
  "foehncraft-bench",
  "foehncraft-core",
  "foehncraft-flow",
+ "foehncraft-fv",
  "foehncraft-mesh",
  "foehncraft-parallel",
  "rayon",

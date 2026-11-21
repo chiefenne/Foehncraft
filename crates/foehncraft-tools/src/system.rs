@@ -140,3 +140,14 @@ impl Tool for Commands {
         Ok(crate::catalogue())
     }
 }
+
+/// Operating system and architecture of this host, for the build
+/// information of a front end (D85).
+pub fn platform() -> String {
+    foehncraft_bench::sysinfo::platform()
+}
+
+/// CPU model of this host.
+pub fn cpu_model() -> String {
+    foehncraft_bench::sysinfo::cpu_model()
+}

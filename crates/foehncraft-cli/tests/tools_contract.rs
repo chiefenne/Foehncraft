@@ -287,3 +287,31 @@ fn runs_and_files_match() {
     assert_eq!((c1, c2), (0, 0));
     assert_eq!(a["valid"], b["result"]["valid"]);
 }
+
+#[test]
+fn studies_match() {
+    let d = dir("studies");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let scalar = root.join("examples/cases/scalar/mms_poly_2d.toml");
+    let s = scalar.to_str().unwrap();
+    let (c1, a) = cli(&["scalar", s, "--out", d.join("a").to_str().unwrap()]);
+    let (c2, b) = call("study.scalar", &json!({"case": s, "out": d.join("b")}));
+    assert_eq!(c1, c2);
+    assert_eq!(a["orders"], b["result"]["orders"], "bitwise the same orders");
+    assert_eq!(a["failures"], b["result"]["failures"]);
+
+    let g1 = root.join("examples/cases/bench/g1_ci_small.toml");
+    let g = g1.to_str().unwrap();
+    let (c1, a) = cli(&["bench", "g1", g, "--out", d.join("ga").to_str().unwrap()]);
+    let (c2, b) = call("study.g1", &json!({"case": g, "out": d.join("gb")}));
+    assert_eq!(c1, c2);
+    let pass = |v: &Value| -> Vec<Value> {
+        v["verdicts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|x| json!([x["candidate"], x["reference"]]))
+            .collect()
+    };
+    assert_eq!(pass(&a), pass(&b["result"]));
+}
