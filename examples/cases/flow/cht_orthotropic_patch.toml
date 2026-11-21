@@ -1,0 +1,116 @@
+# Patch test of conjugate conduction on a skewed mesh: an orthotropic solid,
+# a fluid layer at rest and an isotropic solid behind a contact resistance
+# (stage 7d2, D157 §9.1–9.2, D116; the V7.4 variant of the stage 7
+# specification with a rotated K and a contact resistance).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/cht_orthotropic_patch.toml
+#
+# Three layers along x on a unit square whose nodes are moved at random by
+# up to 25 % of a cell (the two interface planes x = 0.4 and x = 0.6 stay
+# planes):
+#
+# - solid `laminate` (x < 0.4): k₁ = 20, k₂ = 2 W/(m K) along axes turned by
+#   30° about z (a fibre composite), so K has the cross term
+#   K_xy = 18 sin 30° cos 30° = 7.794;
+# - a fluid layer at rest (k = 2), walls all round;
+# - solid `block` (x > 0.6, k = 50) behind a contact resistance
+#   R″_c = 0.01 m²K/W at the fluid–block interface.
+#
+# The exact temperature is linear in every region, with the same
+# tangential gradient ∂T/∂y = 50 K/m everywhere and the same normal heat
+# flux q_x = −k ∂T/∂x = −200 W/m² through every layer: in the fluid
+# ∂T/∂x = 100, in the block 200/50 = 4 and in the laminate
+# (200 − K_xy·50)/K_xx = −12.239 K/m (its heat flux has the cross part
+# K_xy ∂T/∂y); across the contact the temperature jumps by
+# q R″_c = 2 K. The boundaries take the exact temperature. With the
+# one-sided gradients, the series conductance and the cross terms the
+# solution is exact to round-off on this mesh: the report gives the L2 and
+# max errors against `[energy] exact` (3·10⁻¹¹ K after 49 iterations) and the heat flux 200 W/m²
+# at x = 0, x = 1 and through both interfaces.
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [1.0, 1.0, 0.05]
+cells = [20, 20, 1]
+perturb = 0.25
+zones = [
+  { name = "laminate", lower = [0.0, 0.0, 0.0], upper = [0.4, 1.0, 0.05] },
+  { name = "block", lower = [0.6, 0.0, 0.0], upper = [1.0, 1.0, 0.05] },
+]
+
+[constants]
+kxx = 15.5                          # 20 cos² 30° + 2 sin² 30°
+kxy = 7.794228634059948             # (20 − 2) sin 30° cos 30°
+ax = "(200.0 - kxy * 50.0) / kxx"   # ∂T/∂x in the laminate
+
+[fluid]
+density = 1.0
+viscosity = 0.01
+specific_heat = 1000.0
+conductivity = 2.0
+
+[materials.fibre-composite]
+kind = "solid"
+density = 1600.0
+specific_heat = 1100.0
+conductivity = { form = "orthotropic", values = [20.0, 2.0, 2.0], axes = [[0.8660254037844387, 0.5, 0.0], [-0.5, 0.8660254037844387, 0.0]] }
+
+[materials.block-metal]
+kind = "solid"
+density = 2700.0
+specific_heat = 900.0
+conductivity = 50.0
+
+[regions.laminate]
+kind = "solid"
+zones = ["laminate"]
+material = "fibre-composite"
+
+[regions.block]
+kind = "solid"
+zones = ["block"]
+material = "block-metal"
+
+[interfaces.fluid-block]
+regions = ["fluid", "block"]
+contact_resistance = 0.01           # m²K/W
+
+[energy]
+initial = 310.0
+exact = "if(x < 0.4, 300.0 + ax * (x - 0.4), if(x < 0.6, 300.0 + 100.0 * (x - 0.4), 322.0 + 4.0 * (x - 0.6))) + 50.0 * y"
+
+[boundary.xmin]
+type = "wall"
+[boundary.xmin.energy]
+temperature = "300.0 + ax * (x - 0.4) + 50.0 * y"
+[boundary.xmax]
+type = "wall"
+[boundary.xmax.energy]
+temperature = "322.0 + 4.0 * (x - 0.6) + 50.0 * y"
+[boundary.ymin]
+type = "wall"
+[boundary.ymin.energy]
+temperature = "if(x < 0.4, 300.0 + ax * (x - 0.4), if(x < 0.6, 300.0 + 100.0 * (x - 0.4), 322.0 + 4.0 * (x - 0.6))) + 50.0 * y"
+[boundary.ymax]
+type = "wall"
+[boundary.ymax.energy]
+temperature = "if(x < 0.4, 300.0 + ax * (x - 0.4), if(x < 0.6, 300.0 + 100.0 * (x - 0.4), 322.0 + 4.0 * (x - 0.6))) + 50.0 * y"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-15                   # the deferred corrections converge by 0.6 per iteration
+max_iterations = 300
+
+[solver.energy]
+relaxation = 1.0
+tolerance = 1e-13
+max_iter = 200
+
+[output]
+wall_csv = false

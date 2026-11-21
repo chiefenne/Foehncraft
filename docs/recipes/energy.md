@@ -8,6 +8,7 @@ Part of the [Recipes](../recipes.md): the energy equation of the fluid (stage 7,
 | 156 | [Couple the temperature of a fluid and a solid (conjugate heat transfer)](#cht-solids) |
 | 158 | [Couple a turbulent flow with a solid (turbulent conjugate heat transfer)](#cht-turbulent) |
 | 159 | [Follow how a solid and a fluid heat up together (transient conjugate heat transfer)](#cht-transient) |
+| 160 | [Put a contact resistance between two parts, orient an orthotropic solid, heat a component](#cht-contact) |
 
 ---
 
@@ -326,3 +327,107 @@ conjugate run yet, and the turbulence fields are not written on the whole
 mesh. A periodic flow whose solid only follows the cycle-average (an
 exhaust manifold over an engine cycle) is the cycle-averaged coupling of
 D204, which comes later; until then such a case runs the full transient.
+
+<a id="cht-contact"></a>
+## 160. Put a contact resistance between two parts, orient an orthotropic solid, heat a component
+
+**Contact resistance and thin walls.** Every face between two regions of
+a conjugate case is found from the cell zones; an `[interfaces.<name>]`
+table only adds a resistance to the faces between two of them:
+
+```toml
+[interfaces.pad]
+regions = ["chip", "board"]         # solid regions, a fluid region, or "fluid"
+contact_resistance = 2.0e-4         # m²K/W
+
+[interfaces.coating]
+regions = ["fluid", "housing"]
+thin_wall = { thickness = 5.0e-4, conductivity = 0.2 }   # t/k; or material = "<name>"
+```
+
+The face conductance is then the series
+|S|/(R_P + R″_c + R_N) of the two half cells and the resistance (D157
+§9.1); the heat flow is the same on both sides of the face, and the two
+face temperatures differ by q R″_c. A `thin_wall` here is a resistance
+without heat capacity; a `material` gives k(T) at the face temperature.
+Two fluids cannot have an interface (a wall between two fluids is the thin
+wall of D189, later), and an entry whose regions do not touch is refused
+(CHT004). Typical values: a thermal pad or grease 10⁻⁵ to 10⁻⁴ m²K/W, two
+machined metal faces pressed together 10⁻⁴ to 10⁻³, an oxide or paint
+layer t/k.
+
+**Orthotropic solids.** A solid material may have three principal
+conductivities along two axes (the third is normal to both):
+
+```toml
+[materials.board-laminate]
+kind = "solid"
+density = 1900.0
+specific_heat = 1100.0
+conductivity = { form = "orthotropic", values = [25.0, 0.35, 25.0], axes = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]] }
+
+[regions.board_2]                   # the same material, turned
+kind = "solid"
+zones = ["board_2"]
+material = "board-laminate"
+axes = [[0.0, 1.0, 0.0], [-1.0, 0.0, 0.0]]
+```
+
+`axes` of a region replace those of its material, so one winding or
+laminate material can be oriented differently in every part (MAT008
+without axes). Each value can be a form of T. The matrix takes the
+conductivity of the face normal, n̂·K·n̂; the rest of the flux, the part
+that the tangential gradient drives through an inclined K, is a deferred
+correction, so that a linear temperature in an orthotropic solid is exact
+on any mesh (`cht_orthotropic_patch.toml`). Frames that follow the
+geometry (cylindrical frames of e-motor windings, frames from fields) come
+later (L48).
+
+**Heat sources of a region.** `[[energy.sources]]` heats a single
+region, in addition to `[energy] source`:
+
+```toml
+[[energy.sources]]
+region = "chip"
+power = 1.0                         # W over the region, spread by volume (a number or an expression of t)
+
+[[energy.sources]]
+region = "winding"
+power_density = "2.0e5 * (1 + 0.004 * (t - 10))"   # W/m³, of x, y, z, t
+```
+
+The power enters the heat balance as a source (`sources` in the report
+and in `heat.csv`); ENE008 for an unknown region or without exactly one
+of the two keys. In a 2D case `power` is the power of the slice, so give
+the depth of the mesh the value it has.
+
+**Interface faces and their gradients.** Next to an interface the
+gradient of T jumps; a cell there takes the face temperature of its own
+side in place of the cell across in its least-squares gradient (one-sided
+gradients, §9.2), and the flux through the face uses the face-normal
+temperatures of both sides, so that skewed cells at an interface give no
+error for a piecewise-linear temperature. This is automatic in every
+conjugate case and needs no key. The report gives each pair of regions:
+`interface-<solid>` between the fluid and a solid (heat into the fluid,
+temperature of the fluid side) and `interface-<a>-<b>` between two solids
+(heat into `a`, the first in alphabetical order, temperature of its side).
+
+**Converge the energy solve.** A conjugate matrix with large conductivity
+ratios needs more BiCGStab iterations than a fluid alone; if the run
+converges with a heat balance that does not close (ENE007), raise
+`[solver.energy] max_iter` (300 to 500) and tighten its `tolerance`
+(10⁻¹⁰): the circuit board of entry 160 closes to 10⁻¹² with 500.
+
+```
+cargo build --release -p foehncraft-cli
+target/release/foehn flow examples/cases/flow/cht_circuit_board.toml --out output/cht_board
+target/release/foehn flow examples/cases/flow/cht_orthotropic_patch.toml --out output/cht_patch
+```
+
+**Limits of this step.** The cross terms of an orthotropic solid at a
+convection boundary are taken with the weight of the face value (exact
+at a fixed temperature, a flux boundary carries its given flux); thin walls
+with heat capacity, layers and in-plane conduction (D189), fluid–fluid
+walls, and the entropy production of a contact resistance in the
+second-law check come later. Periodic meshes with solids (the thick-walled
+channel of V7.10) are not yet possible (ENE006).

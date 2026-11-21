@@ -700,6 +700,11 @@ pub struct RegionSection {
     /// The material; default the material of `[fluid]`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub material: Option<String>,
+    /// The first two principal axes of an orthotropic conductivity in this
+    /// region (stage 7d2, L48): one material oriented differently in every
+    /// part; default the axes of the material.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub axes: Option<[[f64; 3]; 2]>,
 }
 
 /// The JSON Schema of `[materials]`: the include list and, for every other
@@ -1360,7 +1365,7 @@ fn normalised(v: [f64; 3]) -> Option<[f64; 3]> {
 
 /// The orthonormal axes of an orthotropic conductivity (MAT008 without
 /// both axes, or with parallel ones).
-fn axes_of(o: &Orthotropic, key: &str) -> Result<[[f64; 3]; 3]> {
+pub(crate) fn axes_of(o: &Orthotropic, key: &str) -> Result<[[f64; 3]; 3]> {
     let bad = |m: String| mat_err(diag::MAT_AXES, key, m);
     let Some([a1, a2]) = o.axes else {
         return Err(bad(format!(
