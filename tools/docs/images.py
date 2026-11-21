@@ -27,7 +27,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-PAGES = sorted((ROOT / "docs" / "gallery").glob("*.md")) + [ROOT / "README.md"]
+PAGES = (sorted((ROOT / "docs" / "gallery").glob("*.md"))
+         + sorted((ROOT / "docs" / "applications").glob("*.md")) + [ROOT / "README.md"])
 
 MAX_WIDTH = 800
 MAX_WIDTH_TABLE = 200

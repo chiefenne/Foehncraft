@@ -1,0 +1,66 @@
+# Engineering gallery: the 2 L lab stirred tank of Fyfe et al. (Org. Process
+# Res. Dev. 2024, 28, 3661-3673, doi:10.1021/acs.oprd.4c00229, CC BY 4.0):
+# four-blade 45 degree pitched-blade turbine, four baffle plates, water,
+# 200 rpm. Steady, in the frame of the rotor (D55). The geometry is theirs.
+#
+#   pip install gmsh h5py scipy matplotlib
+#   python3 examples/applications/stirred_tank_fyfe/mesh.py --level 0
+#   target/release/foehn flow examples/applications/stirred_tank_fyfe/case.toml
+#
+# D = 45 mm, N = 200/60 1/s: tip speed 0.47 m/s, Re = N D^2 / nu = 7 500.
+# Transitional to low-Re turbulent: k-omega SST with the automatic wall
+# treatment is an approximation there. The liquid level is a flat symmetry
+# plane (the baffled tank has no deep vortex).
+
+case_format = "0.6"
+
+[mesh]
+file = "fyfe_L0.msh"
+renumber = "rcm"
+
+[fluid]
+density = 998.2
+viscosity = 0.0009
+
+[constants]
+spin = 20.943951023931955   # rad/s = 200 rpm
+
+[turbulence]
+model = "k-omega-sst"
+wall_treatment = "automatic"
+
+[initial]
+turbulence_intensity = 0.05
+viscosity_ratio = 10.0
+
+[flow]
+convection = true
+
+[[mrf]]
+zone = "rotor"
+axis = [0.0, 0.0, 1.0]
+rpm = 200.0
+walls = ["impeller", "shaft"]
+
+[boundary.impeller]
+type = "wall"
+velocity = ["-spin * y", "spin * x", 0.0]
+[boundary.shaft]
+type = "wall"
+velocity = ["-spin * y", "spin * x", 0.0]
+[boundary.vessel]
+type = "wall"
+[boundary.baffles]
+type = "wall"
+[boundary.surface]
+type = "symmetry"
+
+[solver]
+algorithm = "coupled"
+tolerance = 1e-5
+max_iterations = 2500
+
+[output]
+vtkhdf = true
+wall_csv = false
+derived = ["vorticity", "relative-velocity", "wall-shear-stress", "y-plus"]
