@@ -200,6 +200,9 @@ Category `case`, action `read`, version 1.
 | `outputs` | array of object | Output files. |
 | `wall_time` | number | Wall time (s), when a benchmark of this hardware exists. |
 | `wall_time_basis` | string | Where the wall time comes from, or why there is none. |
+| `cell_hours` | number | Cell-hours (cells times wall hours, summed over the levels), with the wall time (D198 (c)). |
+| `gpu_hours` | number | GPU-hours, with the wall time (0 on the CPU). |
+| `iteration_budget` | object | Steady: the iteration budget, its source and the diagnosis (D198 (d)). |
 
 ## `case.upgrade`
 
