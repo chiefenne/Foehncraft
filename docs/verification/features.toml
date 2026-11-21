@@ -1,0 +1,1199 @@
+# The feature table of the verification status page (D199).
+#
+# One row per feature a user can switch on, written by hand and reviewed in
+# pull requests. The grade (verified, partial, unverified) is computed by
+# `python3 -m tools.release.verification_status` from this table and the
+# last verification manual (results.json); it is never written here.
+# The generated page is docs/verification/status.md; CI fails when it is
+# out of date, when a case, test or page named here does not exist, or when
+# a catalogue case checks no feature.
+#
+# Keys of a row:
+#   id         area.name, stable (the limitations of a run name it)
+#   area       section of the status page
+#   title      what the user sees
+#   switch     the case key that turns it on (optional)
+#   decisions  decisions of docs/requirements.md (optional)
+#   model      true for a physical model: verified needs reference data too
+#   evidence   items with `kind` (exact | manufactured | reference-data |
+#              consistency), `what` (the check and its result), and one or
+#              more of `case` (catalogue case name), `test`
+#              (path::function), `run` (a recorded run outside CI, with the
+#              `doc` that records it); `doc` points to the results
+#   gaps       missing checks and bands that are not met; each one lowers
+#              the grade to partial at most
+#   notes      findings that do not lower the grade (model-form behaviour
+#              against a reference whose spread is known)
+#   range      validated range, read by the run check of D199 (LIM002):
+#              y_plus_first, reynolds, prandtl, courant, skewness, mach
+
+# ---------------------------------------------------------------- meshes
+
+[[feature]]
+id = "mesh.generated"
+area = "Meshes"
+title = "Built-in test mesher (hexahedra, tetrahedra, prisms, polyhedra)"
+switch = "[mesh.generate] type"
+evidence = [
+  { kind = "consistency", test = "crates/foehncraft-mesh/tests/generated.rs::generated_meshes_are_closed_and_fill_the_box", what = "every cell type closed, the volumes fill the box" },
+  { kind = "consistency", test = "crates/foehncraft-mesh/tests/golden.rs::golden_values_of_mesher_and_partitioner", what = "golden values of the mesher and the partitioner" },
+  { kind = "exact", case = "poiseuille_poly", what = "second order of the flow solver on generated polyhedra", doc = "docs/verification/stage4.md#couette-and-poiseuille-flow" },
+  { kind = "exact", case = "mms_mixed_box", what = "second order of convection-diffusion on mixed cells", doc = "docs/verification/stage2.md#order-of-accuracy" },
+]
+
+[[feature]]
+id = "mesh.gmsh"
+area = "Meshes"
+title = "Gmsh v4 reader"
+switch = 'mesh.format = "gmsh"'
+evidence = [
+  { kind = "consistency", test = "crates/foehncraft-mesh/tests/gmsh.rs::box_tet_ascii_and_binary_are_equal", what = "ASCII and binary files give the same mesh" },
+  { kind = "consistency", test = "crates/foehncraft-mesh/tests/gmsh_fingerprint.rs::gmsh_meshes_are_unchanged", what = "fingerprints of the Gmsh meshes of the catalogue" },
+  { kind = "reference-data", case = "pipe_gmsh_raw", what = "developing laminar pipe flow on raw Gmsh tetrahedra converges (with the automatic remediation)" },
+]
+
+[[feature]]
+id = "mesh.su2"
+area = "Meshes"
+title = "SU2 reader (2D extruded, multi-zone)"
+switch = 'mesh.format = "su2"'
+evidence = [
+  { kind = "consistency", test = "crates/foehncraft-mesh/tests/su2.rs::mixed_3d_cells_and_markers", what = "mixed 3D cells and markers" },
+  { kind = "consistency", test = "crates/foehncraft-mesh/tests/multizone.rs::su2_zones_kept_apart_non_matching", what = "zones kept apart for a sliding interface" },
+  { kind = "reference-data", case = "naca0012_su2_re1000", what = "laminar NACA 0012 at Re 1000 converges on the SU2 mesh" },
+  { kind = "exact", case = "taylor_couette_su2_zones", what = "Taylor–Couette on an SU2 two-zone mesh against the exact profile" },
+]
+
+[[feature]]
+id = "mesh.cgns"
+area = "Meshes"
+title = "CGNS (HDF5) reader"
+switch = 'mesh.format = "cgns"'
+evidence = [
+  { kind = "consistency", test = "crates/foehncraft-mesh/tests/cgns.rs::ngon_nface_equals_openfoam_dual", what = "NGON/NFACE file equals the OpenFOAM-format dual mesh" },
+  { kind = "consistency", test = "crates/foehncraft-mesh/tests/multizone.rs::cgns_zones", what = "zones of a multi-zone file" },
+]
+gaps = ["no flow case of the catalogue reads a CGNS file"]
+
+[[feature]]
+id = "mesh.openfoam"
+area = "Meshes"
+title = "OpenFOAM polyMesh reader"
+switch = 'mesh.format = "openfoam"'
+evidence = [
+  { kind = "consistency", test = "crates/foehncraft-mesh/tests/openfoam.rs::binary_equals_ascii", what = "binary and ASCII give the same mesh" },
+  { kind = "consistency", test = "crates/foehncraft-mesh/tests/openfoam.rs::polyhedral_dual_mesh", what = "polyhedral dual mesh" },
+]
+gaps = ["no flow case of the catalogue reads a polyMesh"]
+
+[[feature]]
+id = "mesh.industry-msh"
+area = "Meshes"
+title = "Industry face-based .msh reader"
+switch = 'mesh.format = "industry_msh"'
+evidence = [
+  { kind = "consistency", test = "crates/foehncraft-mesh/tests/industry_msh.rs::polyhedral_cells_and_mixed_faces", what = "polyhedral cells and mixed faces" },
+  { kind = "consistency", test = "crates/foehncraft-mesh/tests/industry_msh.rs::face_orientation_does_not_matter", what = "face orientation does not change the mesh" },
+]
+gaps = ["no flow case of the catalogue reads an industry .msh file"]
+
+[[feature]]
+id = "mesh.vtk"
+area = "Meshes"
+title = "VTK reader (.vtk, .vtu) and VTU writer"
+switch = 'mesh.format = "vtk"'
+evidence = [
+  { kind = "consistency", test = "crates/foehncraft-mesh/tests/vtk.rs::every_encoding_reads_the_same_mesh", what = "every encoding reads the same mesh" },
+  { kind = "consistency", test = "crates/foehncraft-mesh/tests/vtk.rs::round_trip_through_write_vtu", what = "round trip through the VTU writer" },
+]
+gaps = ["no flow case of the catalogue reads a VTK file"]
+
+[[feature]]
+id = "mesh.partition"
+area = "Meshes"
+title = "Partitioning with METIS and halos"
+evidence = [
+  { kind = "consistency", test = "crates/foehncraft-mesh/tests/decompose.rs::decompositions_are_consistent", what = "decompositions consistent, halos complete" },
+]
+gaps = ["multi-node runs are designed for, not run (no cluster yet)"]
+
+[[feature]]
+id = "mesh.quality-remediation"
+area = "Meshes"
+title = "Quality report and automatic remediation of skewed cells"
+switch = 'solver.remediation = "auto"'
+decisions = ["D50"]
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-flow/tests/quality.rs::the_bounded_face_velocity_is_exact_for_a_linear_field_and_bounded_on_skewed_faces", what = "bounded face velocity exact for a linear field" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/quality.rs::the_gauss_weights_give_the_exact_gradient_of_a_linear_field_without_skewness", what = "Gauss gradient exact for a linear field" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/quality.rs::raw_gmsh_tetrahedra_converge_with_the_remediation", what = "raw Gmsh tetrahedra converge with it and fail without it" },
+]
+gaps = ["no order of accuracy on remediated meshes (the remediation is first order on the skewed faces by design)"]
+
+[[feature]]
+id = "mesh.vtkhdf"
+area = "Meshes"
+title = "VTKHDF output for ParaView"
+switch = "output.vtkhdf"
+evidence = [
+  { kind = "consistency", test = "crates/foehncraft-mesh/tests/vtkhdf.rs::write_all_types", what = "every cell type written; CI checks the files of the cases" },
+]
+
+# ---------------------------------------------------------------- numerics
+
+[[feature]]
+id = "numerics.gradient-ls"
+area = "Numerics"
+title = "Weighted least-squares gradients"
+switch = 'solver.pressure_gradient = "least-squares"'
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-fv/tests/stage2.rs::gradient_of_a_linear_field_is_exact_on_every_mesh_type", what = "exact for a linear field on every cell type" },
+  { kind = "manufactured", case = "mms_poly_box", what = "second order of convection-diffusion on polyhedra", doc = "docs/verification/stage2.md#order-of-accuracy" },
+  { kind = "manufactured", case = "mms_tet_box", what = "second order on tetrahedra" },
+  { kind = "manufactured", case = "mms_hex_box", what = "second order on hexahedra" },
+  { kind = "manufactured", case = "mms_poly_2d", what = "second order on 2D polygons" },
+]
+
+[[feature]]
+id = "numerics.convection-schemes"
+area = "Numerics"
+title = "Linear upwind and bounded central convection"
+switch = "solver.momentum.scheme"
+evidence = [
+  { kind = "manufactured", test = "crates/foehncraft-fv/tests/stage2.rs::order_of_accuracy_on_all_mesh_types", what = "second order on every cell type" },
+  { kind = "exact", case = "poiseuille_hex", what = "second order of the flow solver" },
+]
+
+[[feature]]
+id = "numerics.limiters"
+area = "Numerics"
+title = "Venkatakrishnan(-Wang) limiters"
+switch = "solver.momentum.limiter"
+evidence = [
+  { kind = "exact", case = "oblique_step_2d", what = "a discontinuity at 30° stays within its bounds with every limiter", doc = "docs/verification/stage2.md#limiters-on-the-oblique-step" },
+  { kind = "consistency", test = "crates/foehncraft-fv/tests/stage2.rs::limited_face_values_create_no_new_extrema", what = "limited face values create no new extrema" },
+]
+gaps = ["no observed order with a limiter switched on in a smooth flow"]
+
+[[feature]]
+id = "numerics.reproducible"
+area = "Numerics"
+title = "Reproducible (gather-based) assembly"
+decisions = ["D93"]
+evidence = [
+  { kind = "consistency", test = "crates/foehncraft-fv/tests/stage2.rs::results_are_bitwise_reproducible", what = "bitwise equal results" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/stage4.rs::results_are_bitwise_equal_on_1_and_4_threads", what = "flow results bitwise equal on 1 and 4 threads" },
+  { kind = "consistency", test = "crates/foehncraft-parallel/src/repro.rs::independent_of_thread_count", what = "reductions independent of the thread count" },
+]
+notes = ["a consistency property by nature: partial is its highest grade under the rules, which ask for an exact solution"]
+
+# ---------------------------------------------------------------- linear solvers
+
+[[feature]]
+id = "linear.amg-pressure"
+area = "Linear solvers"
+title = "Aggregation multigrid with CG for the pressure (mixed precision)"
+switch = 'solver.pressure.preconditioner = "amg"'
+evidence = [
+  { kind = "exact", case = "poisson_hex_box", what = "difference to the reference solution and iterations over the mesh size", doc = "docs/verification/stage3.md#iterations-over-the-mesh-size" },
+  { kind = "exact", case = "poisson_poly_box", what = "the same on polyhedra" },
+  { kind = "exact", case = "poisson_tet_box", what = "the same on tetrahedra" },
+  { kind = "exact", case = "poisson_mixed_box", what = "the same on mixed cells" },
+  { kind = "manufactured", case = "poisson_amg_poly_box", what = "second order of a manufactured Poisson problem solved with AMG" },
+  { kind = "consistency", test = "crates/foehncraft-fv/tests/stage3.rs::same_converged_result_as_hypre", what = "the converged result of hypre" },
+  { kind = "consistency", test = "crates/foehncraft-fv/tests/stage3.rs::mixed_precision_gives_the_float64_result", what = "mixed precision gives the double-precision result" },
+]
+
+[[feature]]
+id = "linear.reduction-multigrid"
+area = "Linear solvers"
+title = "Reduction multigrid for momentum and turbulence"
+switch = 'solver.coupled.momentum_sweep = "multigrid"'
+decisions = ["D180"]
+evidence = [
+  { kind = "consistency", test = "crates/foehncraft-fv/tests/reduction.rs::cycles_converge_on_every_mesh_type", what = "cycles converge on every cell type" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/coupled.rs::momentum_sweeps_give_the_same_result", what = "the same converged flow as the other sweeps" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/coupled.rs::turbulence_multigrid_gives_the_same_result", what = "the same turbulence result as Jacobi" },
+]
+notes = ["a solver of the discrete equations: it is checked by giving the same converged result, so consistency is its natural evidence"]
+
+[[feature]]
+id = "linear.bicgstab"
+area = "Linear solvers"
+title = "BiCGStab"
+evidence = [
+  { kind = "consistency", test = "crates/foehncraft-fv/tests/stage2.rs::bicgstab_reaches_its_tolerance", what = "reaches its tolerance" },
+  { kind = "consistency", test = "crates/foehncraft-fv/tests/stage3.rs::cg_amg_in_the_scalar_solver_matches_bicgstab", what = "the same result as CG with AMG" },
+]
+
+# ---------------------------------------------------------------- pressure-velocity coupling
+
+[[feature]]
+id = "coupling.simplec"
+area = "Pressure–velocity coupling"
+title = "SIMPLEC and SIMPLE, steady"
+switch = 'solver.algorithm = "simplec"'
+evidence = [
+  { kind = "exact", case = "couette_hex", what = "Couette flow exact on hexahedra", doc = "docs/verification/stage4.md#couette-and-poiseuille-flow" },
+  { kind = "exact", case = "couette_poly", what = "exact on polyhedra" },
+  { kind = "exact", case = "couette_tet", what = "exact on tetrahedra" },
+  { kind = "exact", case = "couette_mixed", what = "exact on mixed cells" },
+  { kind = "exact", case = "poiseuille_tet", what = "second order on tetrahedra" },
+  { kind = "exact", case = "poiseuille_mixed", what = "second order on mixed cells" },
+  { kind = "reference-data", case = "cavity_re100", what = "lid-driven cavity against Ghia et al. (1982)", doc = "docs/verification/stage4.md#lid-driven-cavity" },
+  { kind = "reference-data", case = "cavity_re1000", what = "the cavity at Re 1000 against Ghia et al." },
+  { kind = "reference-data", case = "cavity_re100_tet3d", what = "the cavity on 3D tetrahedra" },
+  { kind = "reference-data", case = "cavity_re100_poly3d", what = "the cavity on 3D polyhedra" },
+  { kind = "reference-data", case = "cavity_re1000_poly3d", what = "the cavity at Re 1000 on 3D polyhedra" },
+  { kind = "reference-data", case = "cylinder_re20", what = "the cylinder of Schäfer & Turek (1996), 2D-1" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/stage4.rs::converged_result_does_not_depend_on_relaxation", what = "the converged result does not depend on the relaxation" },
+]
+notes = ["SIMPLE (without C) shares the code path and is not checked by a case of its own"]
+
+[[feature]]
+id = "coupling.coupled"
+area = "Pressure–velocity coupling"
+title = "Coupled pressure–velocity algorithm with pseudo-time steps"
+switch = 'solver.algorithm = "coupled"'
+decisions = ["D178"]
+evidence = [
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/coupled.rs::coupled_result_is_the_simplec_result", what = "the converged SIMPLEC result" },
+  { kind = "reference-data", case = "cavity_re1000_coupled", what = "the cavity at Re 1000 against Ghia et al." },
+  { kind = "reference-data", case = "cylinder_re20_gci", what = "the cylinder at Re 20 on three meshes, with the GCI" },
+  { kind = "reference-data", case = "backstep_zeta_f0_coupled", what = "the step: x_r/H 6.44, the SIMPLEC value", doc = "docs/verification/stage6.md#backward-facing-step-against-the-experiment-part-6g-95" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/coupled.rs::coupled_results_are_bitwise_equal_on_1_and_4_threads", what = "bitwise equal on 1 and 4 threads" },
+]
+gaps = [
+  "no exact solution run with the coupled algorithm itself (it is checked by giving the SIMPLEC result)",
+  "SST on 1 536 cells and the elliptic-blending k-ε on 768 and 1 536 cells of the channel stop near 10⁻⁷ within 3 000 iterations (stage 6, channel study)",
+]
+
+[[feature]]
+id = "coupling.piso"
+area = "Pressure–velocity coupling"
+title = "PISO with outer correctors, transient"
+switch = "[time]"
+evidence = [
+  { kind = "exact", case = "taylor_green_space", what = "second order in space", doc = "docs/verification/stage5.md#taylorgreen-vortex" },
+  { kind = "exact", case = "taylor_green_cfl10", what = "second order in time at Courant number 9 with outer correctors" },
+  { kind = "exact", case = "channel_ramp", what = "channel start-up against the exact solution" },
+  { kind = "reference-data", case = "cylinder_re100", what = "the vortex street of Schäfer & Turek (1996), 2D-2", doc = "docs/verification/stage5.md#cylinder-in-a-channel-schäfer--turek-1996" },
+  { kind = "reference-data", case = "cylinder_re100_short", what = "the same in a short channel" },
+  { kind = "consistency", case = "cavity_re100_transient", what = "time stepping to the steady state gives the Ghia cavity" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/transient.rs::steady_state_of_the_time_stepping_is_the_simplec_solution", what = "the steady state of the time stepping is the SIMPLEC solution" },
+]
+
+[[feature]]
+id = "coupling.wedge-corrector"
+area = "Pressure–velocity coupling"
+title = "SIMPLEC-type correctors on thin wedge cells at an axis"
+switch = "solver.corrector"
+evidence = [
+  { kind = "exact", case = "pot_solid_body_viscous", what = "solid-body rotation at high viscosity through the axis wedges", doc = "docs/verification/stage6.md#the-piso-corrector-on-thin-wedge-cells-at-an-axis-pr-106" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/sliding.rs::solid_body_rotation_is_kept_at_high_viscosity_on_the_axis_wedges", what = "solid-body rotation kept" },
+]
+
+# ---------------------------------------------------------------- time stepping
+
+[[feature]]
+id = "time.bdf2"
+area = "Time stepping"
+title = "BDF2"
+switch = 'time.scheme = "bdf2"'
+evidence = [
+  { kind = "exact", case = "taylor_green_bdf2", what = "second order in time with plain PISO" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/scalars.rs::scalar_time_order", what = "second order in time of a scalar" },
+  { kind = "exact", case = "scalar_front_bdf2", what = "a bounded scalar front entering a uniform flow stays bounded" },
+]
+
+[[feature]]
+id = "time.crank-nicolson"
+area = "Time stepping"
+title = "Crank–Nicolson"
+switch = 'time.scheme = "crank-nicolson"'
+evidence = [
+  { kind = "exact", case = "taylor_green_cn", what = "second order in time with plain PISO" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/stage5.rs::restart_crank_nicolson_outer", what = "restart with outer correctors continues bitwise" },
+]
+
+[[feature]]
+id = "time.error-controlled-step"
+area = "Time stepping"
+title = "Time step from the time-integration error"
+switch = "time.error_tolerance"
+evidence = [
+  { kind = "exact", case = "taylor_green_error", what = "the Taylor–Green vortex with the step from the error estimate" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/stage5.rs::error_controlled_steps_restart_bit_identically", what = "restart continues bitwise" },
+]
+gaps = ["the manual has no band of its own for this case (only mass and the run itself)"]
+
+[[feature]]
+id = "time.potential-start"
+area = "Time stepping"
+title = "Potential-flow start"
+switch = "initial.potential_flow"
+evidence = [
+  { kind = "consistency", case = "cylinder_potential", what = "the cylinder of Schäfer & Turek started from potential flow" },
+]
+gaps = ["no comparison of the potential field with the exact potential flow"]
+
+# ---------------------------------------------------------------- boundary conditions
+
+[[feature]]
+id = "bc.velocity-inlet"
+area = "Boundary conditions"
+title = "Velocity inlet (constant, analytic, parabolic)"
+switch = 'type = "velocity-inlet"'
+evidence = [
+  { kind = "exact", case = "poiseuille_expression", what = "inlet profile, outlet pressure and viscosity as expressions, second order" },
+  { kind = "exact", case = "couette_transpiration", what = "Couette flow with transpiration, second order" },
+]
+
+[[feature]]
+id = "bc.inlet-table"
+area = "Boundary conditions"
+title = "Inlet profiles from tables"
+switch = 'profile = "table"'
+evidence = [
+  { kind = "exact", case = "poiseuille_table", what = "the Poiseuille profile read from a table" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/bcs.rs::table_inlet_matches_the_exact_profile", what = "matches the exact profile" },
+  { kind = "reference-data", case = "jet_pipe_profile", what = "the developed pipe profile that feeds the impinging jet" },
+]
+
+[[feature]]
+id = "bc.mass-flow-inlet"
+area = "Boundary conditions"
+title = "Mass-flow inlet"
+switch = 'type = "mass-flow-inlet"'
+evidence = []
+notes = ["the input checks of `tests/bcs.rs` (`checks_of_the_new_conditions`) cover the keys, not the flow"]
+gaps = ["no case of the catalogue and no flow test uses a mass-flow inlet"]
+
+[[feature]]
+id = "bc.static-pressure-inlet"
+area = "Boundary conditions"
+title = "Static-pressure inlet"
+switch = 'type = "static-pressure-inlet"'
+evidence = []
+notes = ["the input checks of `tests/bcs.rs` (`checks_of_the_new_conditions`) cover the keys, not the flow"]
+gaps = ["no case of the catalogue and no flow test uses a static-pressure inlet"]
+
+[[feature]]
+id = "bc.total-pressure-inlet"
+area = "Boundary conditions"
+title = "Total-pressure inlet"
+switch = 'type = "total-pressure-inlet"'
+evidence = [
+  { kind = "reference-data", case = "impinging_jet", what = "the entrainment boundary of the impinging jet" },
+]
+gaps = ["no exact solution with a total-pressure inlet (for example Poiseuille flow driven by p₀)"]
+
+[[feature]]
+id = "bc.static-pressure-outlet"
+area = "Boundary conditions"
+title = "Static-pressure outlet with backflow handling"
+switch = 'type = "static-pressure-outlet"'
+evidence = [
+  { kind = "exact", case = "poiseuille_hex", what = "second order with the outlet pressure" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/bcs.rs::backflow_takes_the_outlet_pressure_as_total_pressure", what = "backflow takes the outlet pressure as total pressure" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/bcs.rs::suppressed_backflow_closes_the_outlet", what = "suppressed backflow closes the outlet" },
+]
+
+[[feature]]
+id = "bc.total-pressure-outlet"
+area = "Boundary conditions"
+title = "Total-pressure outlet"
+switch = 'type = "total-pressure-outlet"'
+evidence = []
+notes = ["the input checks of `tests/bcs.rs` (`checks_of_the_new_conditions`) cover the keys, not the flow"]
+gaps = ["no case of the catalogue and no flow test uses a total-pressure outlet"]
+
+[[feature]]
+id = "bc.convective-outlet"
+area = "Boundary conditions"
+title = "Convective outlet"
+switch = 'type = "convective-outlet"'
+evidence = [
+  { kind = "reference-data", case = "cylinder_re100_convective", what = "the vortex street of Schäfer & Turek in a short channel with a convective outlet" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/bcs.rs::convective_outlet_balances_the_flow_and_lets_the_start_leave", what = "balances the flow and lets the start leave" },
+]
+gaps = ["no exact solution with a convective outlet"]
+
+[[feature]]
+id = "bc.wall"
+area = "Boundary conditions"
+title = "Walls (moving, turning, blowing and suction)"
+switch = 'type = "wall"'
+evidence = [
+  { kind = "exact", case = "couette_hex", what = "a moving wall: Couette flow exact" },
+  { kind = "exact", case = "couette_viscosity", what = "Couette flow with a viscosity growing across the gap, second order" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/expressions.rs::wall_mass_flux_in_a_closed_volume", what = "a wall mass flux in a closed volume" },
+]
+
+[[feature]]
+id = "bc.slip-wall"
+area = "Boundary conditions"
+title = "Slip walls"
+switch = 'type = "slip-wall"'
+evidence = [
+  { kind = "exact", case = "channel_slip", what = "uniform flow between slip walls" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/bcs.rs::slip_walls_hold_the_uniform_flow_on_every_mesh_type", what = "uniform flow held on every cell type" },
+]
+
+[[feature]]
+id = "bc.symmetry"
+area = "Boundary conditions"
+title = "Symmetry planes"
+switch = 'type = "symmetry"'
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-flow/tests/symmetry_stress.rs::the_stress_of_a_stagnation_flow_balances_on_a_symmetry_plane", what = "the stress of a stagnation flow balances on a symmetry plane" },
+  { kind = "exact", case = "couette_tet", what = "Couette flow exact with symmetry sides" },
+]
+
+[[feature]]
+id = "bc.wedge"
+area = "Boundary conditions"
+title = "Axisymmetric wedges"
+switch = 'type = "wedge"'
+evidence = [
+  { kind = "exact", case = "pipe_wedge", what = "Hagen–Poiseuille flow, second order" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/symmetry_stress.rs::the_stress_of_a_radial_flow_balances_on_a_wedge", what = "the stress of a radial flow balances" },
+]
+
+[[feature]]
+id = "bc.periodic"
+area = "Boundary conditions"
+title = "Periodic pairs driven by a mass flow or a pressure gradient"
+switch = 'type = "periodic"'
+evidence = [
+  { kind = "exact", case = "poiseuille_periodic", what = "periodic Poiseuille flow, second order", doc = "docs/verification/stage6.md#periodic-boundaries-part-6p" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/periodic.rs::periodic_poiseuille_equals_the_open_channel", what = "equals the open channel" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/periodic.rs::periodic_restart_continues_bit_identically", what = "restart continues bitwise" },
+]
+
+# ---------------------------------------------------------------- turbulence models
+
+[[feature]]
+id = "turbulence.sst"
+area = "Turbulence models"
+title = "k-ω SST (2003)"
+switch = 'turbulence.model = "k-omega-sst"'
+decisions = ["D130"]
+model = true
+evidence = [
+  { kind = "manufactured", test = "crates/foehncraft-flow/src/turbulence/mms.rs::sst_manufactured_solution_orders", what = "orders 2.04 to 2.17 of k and ω on hexahedra, polyhedra and tetrahedra", doc = "docs/verification/stage6.md#manufactured-solutions-of-every-model-spec-92-pr-148" },
+  { kind = "reference-data", case = "tmr_plate_sst", what = "TMR flat plate: C_f(0.97) +0.37 % from the TMR value, GCI 1.87 %", doc = "docs/verification/stage6.md#tmr-flat-plate-re_l--510⁶" },
+  { kind = "reference-data", case = "channel_sst", what = "channel at Re_τ 395: U_b⁺ −1.3 % from the DNS of Moser, Kim & Mansour (1999)", doc = "docs/verification/stage6.md#channel-re_τ--395" },
+  { kind = "reference-data", case = "backstep_outlet_backflow", what = "backward-facing step with the outlet inside the recirculation" },
+  { kind = "reference-data", run = "level sweep of backstep_validation with SST, 3 meshes", doc = "docs/verification/stage6.md#backward-facing-step-against-the-experiment-part-6g-95", what = "step of Driver & Seegmiller (1985): x_r/H 6.747, +7.8 % (band ±10 %)" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/turbulence.rs::sst_results_are_bitwise_equal_on_1_and_4_threads", what = "bitwise equal on 1 and 4 threads" },
+]
+notes = [
+  "plate C_f against White's correlation −8.7 to −5.3 % (band ±5 %): the TMR value of SST itself is −6.4 %, so the correlation is the outlier",
+  "plate C_f is oscillatory over three meshes (p 0.43); it meets the 2 % GCI band without an order",
+]
+range = { y_plus_first = [0.0, 1.0] }
+
+[[feature]]
+id = "turbulence.k-epsilon"
+area = "Turbulence models"
+title = "Standard k-ε"
+switch = 'turbulence.model = "k-epsilon"'
+decisions = ["D131"]
+model = true
+evidence = [
+  { kind = "manufactured", test = "crates/foehncraft-flow/src/turbulence/mms.rs::standard_k_epsilon_manufactured_solution_orders", what = "orders 2.04 to 2.24 on hexahedra, polyhedra and tetrahedra", doc = "docs/verification/stage6.md#manufactured-solutions-of-every-model-spec-92-pr-148" },
+  { kind = "reference-data", case = "tmr_plate_keps", what = "TMR flat plate: C_f −2.4 % from White", doc = "docs/verification/stage6.md#tmr-flat-plate-re_l--510⁶" },
+  { kind = "reference-data", case = "channel_keps", what = "channel at Re_τ 395 against the DNS", doc = "docs/verification/stage6.md#channel-re_τ--395" },
+  { kind = "reference-data", test = "crates/foehncraft-flow/tests/keps.rs::keps_channel_meets_its_band", what = "channel within its band at first-cell y⁺ about 30" },
+  { kind = "reference-data", case = "pipe_rough_keps", what = "rough pipe against Colebrook", doc = "docs/verification/stage6.md#k-ε-family-part-6c" },
+]
+gaps = [
+  "channel refined towards the wall (24 to 192 cells): U_b⁺ +5.7 % on the finest mesh, outside the ±5 % band",
+  "rough pipe fully rough +8 to +11 % from Colebrook (band ±5 %; C_s = 0.4 gives +1 to +3 %)",
+]
+range = { y_plus_first = [11.06, 300.0] }
+
+[[feature]]
+id = "turbulence.realizable-k-epsilon"
+area = "Turbulence models"
+title = "Realizable k-ε"
+switch = 'turbulence.model = "realizable-k-epsilon"'
+decisions = ["D131"]
+model = true
+evidence = [
+  { kind = "manufactured", test = "crates/foehncraft-flow/src/turbulence/mms.rs::realizable_k_epsilon_manufactured_solution_orders", what = "orders 1.82 to 2.12 on hexahedra, polyhedra and tetrahedra", doc = "docs/verification/stage6.md#manufactured-solutions-of-every-model-spec-92-pr-148" },
+  { kind = "reference-data", run = "channel and plate studies of stage 6 with the realizable model", doc = "docs/verification/stage6.md#channel-re_τ--395", what = "channel U_b⁺ +11.8 %, plate 10 % below White" },
+]
+gaps = [
+  "no case file of the catalogue uses the realizable model",
+  "channel U_b⁺ +11.8 % and plate C_f −10 % from the references, outside their ±5 % bands",
+  "step x_r/H grows with every mesh, no order and no GCI",
+]
+range = { y_plus_first = [11.06, 300.0] }
+
+[[feature]]
+id = "turbulence.zeta-f"
+area = "Turbulence models"
+title = "k-ε-ζ-f (Hanjalić, Popovac & Hadžiabdić 2004)"
+switch = 'turbulence.model = "k-epsilon-zeta-f"'
+decisions = ["D132"]
+model = true
+evidence = [
+  { kind = "manufactured", test = "crates/foehncraft-flow/src/turbulence/mms.rs::zeta_f_manufactured_solution_orders", what = "orders 1.89 to 2.29 of k, ε, ζ, f on three cell types", doc = "docs/verification/stage6.md#manufactured-solutions-of-every-model-spec-92-pr-148" },
+  { kind = "reference-data", case = "channel_zeta_f", what = "channel at Re_τ 395: U_b⁺ +2.1 % from the DNS, p 2.8", doc = "docs/verification/stage6.md#channel-re_τ--395" },
+  { kind = "reference-data", case = "tmr_plate_zeta_f", what = "TMR flat plate: C_f +0.03 % from White on 128 × 96", doc = "docs/verification/stage6.md#the-wall-sink-of-k-for-both-ζ-f-models-pr-141" },
+  { kind = "reference-data", test = "crates/foehncraft-flow/tests/zeta_f.rs::zeta_f_channel_meets_its_band", what = "channel within its band" },
+]
+gaps = ["backward-facing step x_r/H +23.7 % from the experiment (band ±10 %)"]
+range = { y_plus_first = [0.0, 1.0] }
+
+[[feature]]
+id = "turbulence.zeta-f0"
+area = "Turbulence models"
+title = "k-ε-ζ-f₀ (Popovac 2023)"
+switch = 'turbulence.model = "k-epsilon-zeta-f0"'
+decisions = ["D133", "D141"]
+model = true
+evidence = [
+  { kind = "reference-data", case = "channel_zeta_f0", what = "channel at Re_τ 395: U_b⁺ +0.2 % from the DNS, p 2.2", doc = "docs/verification/stage6.md#channel-re_τ--395" },
+  { kind = "reference-data", case = "tmr_plate_zeta_f0", what = "TMR flat plate: C_f +0.2 % from White", doc = "docs/verification/stage6.md#the-wall-sink-of-k-for-both-ζ-f-models-pr-141" },
+  { kind = "reference-data", case = "backstep_zeta_f0", what = "backward-facing step: x_r/H 6.44, +3 %" },
+  { kind = "reference-data", case = "backstep_validation", what = "the step in the TMR layout on three meshes, coupled", doc = "docs/verification/stage6.md#backward-facing-step-against-the-experiment-part-6g-95" },
+  { kind = "reference-data", case = "impinging_jet", what = "impinging jet at H/D 2: Nu₀ converges with the mesh (GCI 0.01 %)", doc = "docs/verification/stage6.md#impinging-jet-at-hd--2-part-6g-96" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/zeta_f0.rs::zeta_f0_results_are_bitwise_equal_on_1_and_4_threads", what = "bitwise equal on 1 and 4 threads" },
+]
+gaps = [
+  "no manufactured-solution order check (the ζ-f₀ form is not in the MMS of PR #148)",
+  "impinging jet Nu₀ 196, +38 % from the experiment's 141 (k at the stagnation point; no production limiter there yet)",
+]
+range = { y_plus_first = [0.0, 30.0] }
+
+[[feature]]
+id = "turbulence.elliptic-blending"
+area = "Turbulence models"
+title = "Elliptic-blending k-ε (Billard & Laurence 2012)"
+switch = 'turbulence.model = "elliptic-blending-k-epsilon"'
+decisions = ["D133"]
+model = true
+evidence = [
+  { kind = "manufactured", test = "crates/foehncraft-flow/src/turbulence/mms.rs::elliptic_blending_manufactured_solution_orders", what = "orders 1.93 to 2.25 of k, ε, φ, α on three cell types", doc = "docs/verification/stage6.md#manufactured-solutions-of-every-model-spec-92-pr-148" },
+  { kind = "reference-data", case = "channel_eb", what = "channel at Re_τ 395: U_b⁺ +0.9 % from the DNS, p 2.05", doc = "docs/verification/stage6.md#channel-re_τ--395" },
+  { kind = "reference-data", test = "crates/foehncraft-flow/tests/eb.rs::eb_channel_meets_the_paper", what = "channel against the paper" },
+  { kind = "reference-data", case = "tmr_plate_eb", what = "TMR flat plate" },
+  { kind = "reference-data", case = "backstep_eb", what = "backward-facing step", doc = "docs/verification/stage6.md#backward-facing-step-against-the-experiment-part-6g-95" },
+]
+gaps = ["backward-facing step x_r/H +20.7 % from the experiment (band ±10 %)"]
+range = { y_plus_first = [0.0, 1.0] }
+
+[[feature]]
+id = "turbulence.curvature-correction"
+area = "Turbulence models"
+title = "Curvature and rotation correction of SST (Smirnov & Menter 2009)"
+switch = "turbulence.curvature_correction = true"
+decisions = ["D170"]
+model = true
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-kernels/src/turb/sst.rs::absolute_and_relative_frames_agree", what = "f_r1 the same in the inertial and the turning frame to 10⁻¹⁴", doc = "docs/verification/stage6.md#curvature-and-rotation-correction-of-sst-6h-d170-pr-113" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/curvature.rs::pure_shear_is_unchanged", what = "a channel without rotation unchanged to the last digit" },
+  { kind = "reference-data", case = "channel_rotating_sst", what = "channel in spanwise rotation, Ro 0.15: the unstable side marked" },
+]
+gaps = [
+  "the DNS of Kristoffersen & Andersson (1993) for the rotating channel is not compared (its data are not in the repository)",
+  "no manufactured-solution order check with the correction",
+]
+
+[[feature]]
+id = "turbulence.qcr"
+area = "Turbulence models"
+title = "Quadratic constitutive relation QCR2000 and QCR2013"
+switch = 'turbulence.qcr = "qcr2000"'
+decisions = ["D170"]
+model = true
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-kernels/src/turb/sst.rs::qcr_of_a_shear_flow", what = "the six components in simple shear to 10⁻¹²", doc = "docs/verification/stage6.md#quadratic-constitutive-relation-of-sst-6h-d170-pr-115" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/curvature.rs::qcr_drives_the_secondary_flow_of_a_duct", what = "secondary flow of a square duct appears with QCR, not without" },
+  { kind = "reference-data", case = "square_duct_qcr", what = "square duct, Re_b 3 500: secondary velocity 1.55 % of U_b, the vortex pair into the corner" },
+]
+gaps = [
+  "the DNS of Pinelli et al. (2010) is not compared within a band (its data are not in the repository)",
+  "no manufactured-solution order check with QCR",
+]
+
+[[feature]]
+id = "turbulence.smooth-limits"
+area = "Turbulence models"
+title = "Smooth limits of the models"
+switch = "turbulence.smooth_limits = true"
+evidence = [
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/turbulence.rs::smooth_limits_change_the_plate_friction_below_a_tenth_percent", what = "plate C_f within 0.1 % of the hard limits", doc = "docs/verification/stage6.md#smooth-limits-against-the-hard-form-spec-26-pr-136" },
+  { kind = "exact", test = "crates/foehncraft-kernels/src/turb/sst.rs::smooth_switches_stay_close_to_the_hard_ones", what = "smooth switches within their bound of min and max" },
+]
+
+[[feature]]
+id = "turbulence.wall-distance"
+area = "Turbulence models"
+title = "Exact wall distance"
+switch = 'turbulence.wall_distance = "exact"'
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-mesh/src/query/bvh.rs::channel_walls_give_the_exact_distance", what = "exact distance in a channel" },
+  { kind = "exact", test = "crates/foehncraft-flow/src/turbulence/wall.rs::poisson_distance_is_exact_for_a_plane_wall", what = "the Poisson distance exact for a plane wall" },
+]
+
+[[feature]]
+id = "turbulence.backflow-values"
+area = "Turbulence models"
+title = "Turbulence values of the backflow at outlets"
+switch = "turbulence values of a pressure outlet"
+evidence = [
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/turbulence.rs::outlet_backflow_takes_the_given_turbulence_values", what = "the backflow takes the given values" },
+]
+
+# ---------------------------------------------------------------- wall treatments
+
+[[feature]]
+id = "wall.low-re"
+area = "Wall treatments"
+title = "low-re (resolved to the wall)"
+switch = 'turbulence.wall_treatment = "low-re"'
+decisions = ["D134"]
+model = true
+evidence = [
+  { kind = "manufactured", test = "crates/foehncraft-flow/src/turbulence/mms.rs::sst_manufactured_solution_orders", what = "the model equations to second order (the wall values are the boundary data)" },
+  { kind = "reference-data", case = "tmr_plate_sst", what = "TMR flat plate with SST, first-cell y⁺ 0.09" },
+]
+range = { y_plus_first = [0.0, 1.0] }
+
+[[feature]]
+id = "wall.automatic"
+area = "Wall treatments"
+title = "automatic (SST, any y⁺)"
+switch = 'turbulence.wall_treatment = "automatic"'
+decisions = ["D134"]
+model = true
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-kernels/src/turb/wall.rs::automatic_treatment_tends_to_its_limits", what = "tends to the viscous and the log limit" },
+  { kind = "reference-data", run = "plate with automatic, first-cell y⁺ 1.7 to 92", doc = "docs/verification/stage6.md#the-sst-automatic-treatment-in-the-buffer-layer-6g-pr-112", what = "C_f(0.97) +2.3 % at y⁺ 1.7, −0.2 % at 27, −0.7 % at 92" },
+]
+gaps = ["buffer layer: C_f +15.6 % and +14.8 % at first-cell y⁺ 4.6 and 9.3 (band ±2 %; TURB001 warns there)"]
+range = { y_plus_first = [0.0, 2.0] }
+
+[[feature]]
+id = "wall.scalable"
+area = "Wall treatments"
+title = "scalable wall functions (k-ε family)"
+switch = 'turbulence.wall_treatment = "scalable"'
+decisions = ["D134"]
+model = true
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-kernels/src/turb/wall.rs::keps_wall_functions_in_the_log_layer", what = "the log law in the log layer" },
+  { kind = "reference-data", case = "tmr_plate_keps", what = "TMR flat plate, C_f changes 0.4 % over three meshes" },
+  { kind = "reference-data", test = "crates/foehncraft-flow/tests/keps.rs::keps_channel_meets_its_band", what = "channel within its band" },
+]
+range = { y_plus_first = [11.06, 300.0] }
+
+[[feature]]
+id = "wall.standard"
+area = "Wall treatments"
+title = "standard wall functions"
+switch = 'turbulence.wall_treatment = "standard"'
+decisions = ["D134"]
+model = true
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-kernels/src/turb/wall.rs::keps_wall_treatments_in_the_viscous_sublayer", what = "the wall treatments of the k-ε family in the viscous sublayer" },
+]
+gaps = ["no case of the catalogue uses the standard wall functions", "no reference-data comparison"]
+range = { y_plus_first = [30.0, 300.0] }
+
+[[feature]]
+id = "wall.compound"
+area = "Wall treatments"
+title = "compound (ζ-f and elliptic-blending k-ε)"
+switch = 'turbulence.wall_treatment = "compound"'
+decisions = ["D134"]
+model = true
+evidence = [
+  { kind = "manufactured", test = "crates/foehncraft-flow/src/turbulence/mms.rs::zeta_f_manufactured_solution_orders", what = "the model equations to second order" },
+  { kind = "reference-data", case = "channel_zeta_f", what = "channel with ζ-f against the DNS" },
+  { kind = "reference-data", case = "channel_eb", what = "channel with the elliptic-blending k-ε against the DNS" },
+]
+gaps = ["only checked with the first cell in the viscous sublayer; no y⁺ sweep as for compound-2023"]
+range = { y_plus_first = [0.0, 1.0] }
+
+[[feature]]
+id = "wall.compound-2023"
+area = "Wall treatments"
+title = "compound-2023 (ζ-f₀, any y⁺)"
+switch = 'turbulence.wall_treatment = "compound-2023"'
+decisions = ["D133"]
+model = true
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-kernels/src/turb/wall.rs::compound_2023_tends_to_its_limits", what = "tends to its limits" },
+  { kind = "reference-data", case = "channel_zeta_f0", what = "channel: −3.4 % and −1.2 % at first-cell y⁺ 10 and 30", doc = "docs/verification/stage6.md#the-wall-sink-of-k-for-both-ζ-f-models-pr-141" },
+  { kind = "reference-data", case = "tmr_plate_zeta_f0", what = "plate: −0.3 % and −2.7 % from White at y⁺ 10 and 30" },
+]
+gaps = ["inherits the open items of ζ-f₀ (no manufactured-solution check)"]
+range = { y_plus_first = [0.0, 30.0] }
+
+[[feature]]
+id = "wall.roughness"
+area = "Wall treatments"
+title = "Rough walls (Aupoix 2015 for SST, Cebeci & Bradshaw 1977 for k-ε)"
+switch = "boundary.<name>.roughness"
+decisions = ["D134"]
+model = true
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-kernels/src/turb/wall.rs::aupoix_values_of_fully_rough_and_smooth_limits", what = "the fully rough and smooth limits of Aupoix" },
+  { kind = "exact", test = "crates/foehncraft-kernels/src/turb/wall.rs::cebeci_bradshaw_shift_is_continuous", what = "the shift of Cebeci & Bradshaw is continuous" },
+  { kind = "reference-data", case = "pipe_rough_keps", what = "rough pipe against Colebrook (Moody study)", doc = "docs/verification/stage6.md#k-ε-family-part-6c" },
+]
+gaps = [
+  "fully rough pipe +8 to +11 % from Colebrook, transitional −17 to +8 % (band ±5 %)",
+  "SST roughness has no reference-data case",
+]
+
+# ---------------------------------------------------------------- heat and scalars
+
+[[feature]]
+id = "scalar.passive"
+area = "Heat and passive scalars"
+title = "Passive scalars carried by laminar flow"
+switch = "[scalars.<name>]"
+evidence = [
+  { kind = "manufactured", test = "crates/foehncraft-flow/tests/scalars.rs::manufactured_solution_orders", what = "second order of a manufactured scalar" },
+  { kind = "exact", case = "channel_heated", what = "laminar heated channel, second order of θ" },
+  { kind = "exact", case = "channel_heated_periodic", what = "periodic heated channel, second order" },
+  { kind = "exact", case = "pipe_heated_periodic", what = "periodic heated pipe, second order" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/periodic.rs::periodic_heated_channel_nusselt_number", what = "the Nusselt number of the periodic heated channel" },
+]
+
+[[feature]]
+id = "scalar.turbulent-prandtl"
+area = "Heat and passive scalars"
+title = "Turbulent Prandtl number (constant, Kays–Crawford)"
+switch = "turbulent_prandtl_model"
+model = true
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-kernels/src/turb/thermal.rs::kays_crawford_values_and_limits", what = "values and limits of Kays–Crawford" },
+  { kind = "reference-data", test = "crates/foehncraft-flow/tests/thermal.rs::heated_channel_meets_the_dns_nusselt_number", what = "Nu of the heated channel against the DNS at eight points, Re_τ 180 to 1020, Pr 0.71 and 0.025", doc = "docs/verification/stage6.md#thermal-wall-function-and-turbulent-prandtl-number-part-6f" },
+  { kind = "reference-data", case = "channel_heated_pr0025", what = "liquid metal, Pr 0.025, with Kays–Crawford" },
+]
+gaps = ["Pr 0.025 with the constant Pr_t: +12 to +21 % from the DNS (Kays–Crawford is the model for liquid metals)"]
+range = { prandtl = [0.025, 7.0] }
+
+[[feature]]
+id = "scalar.thermal-wall-function"
+area = "Heat and passive scalars"
+title = "Thermal wall functions (Kader, Jayatilleke)"
+switch = "wall_function"
+model = true
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-kernels/src/turb/thermal.rs::kader_matches_the_formula_evaluated_apart", what = "T⁺ of Kader to 10⁻¹² against an independent evaluation" },
+  { kind = "exact", test = "crates/foehncraft-kernels/src/turb/thermal.rs::jayatilleke_matches_the_formula_evaluated_apart", what = "the same for Jayatilleke" },
+  { kind = "reference-data", test = "crates/foehncraft-flow/tests/thermal.rs::heated_pipe_meets_gnielinski", what = "heated pipe within 1.6 % (Kader) of Gnielinski (1976)" },
+  { kind = "reference-data", test = "crates/foehncraft-flow/tests/thermal.rs::heated_plate_meets_the_stanton_correlation", what = "heated plate within 9 % of the Stanton correlation" },
+  { kind = "reference-data", case = "channel_heated_keps", what = "heated channel at Re_τ 395 against the DNS, −1.8 %" },
+  { kind = "reference-data", case = "pipe_heated_keps", what = "heated pipe" },
+  { kind = "reference-data", case = "plate_heated_keps", what = "heated flat plate" },
+  { kind = "reference-data", test = "crates/foehncraft-flow/tests/impinging_jet.rs::the_jet_has_its_secondary_maximum", what = "the impinging jet has its secondary maximum of Nu" },
+]
+gaps = ["heated plate +14 % from the Stanton correlation at x 0.29 (band ±10 % holds from x 0.4)"]
+range = { y_plus_first = [11.06, 300.0], prandtl = [0.01, 100.0] }
+
+# ---------------------------------------------------------------- energy
+
+[[feature]]
+id = "energy.fluid"
+area = "Energy"
+title = "Energy equation of the fluid"
+switch = "[energy]"
+decisions = ["D150"]
+evidence = [
+  { kind = "manufactured", case = "conduction_mms", what = "conduction with k(T), second order", doc = "docs/gallery/energy.md#energy-fluid" },
+  { kind = "exact", case = "couette_viscous_heating", what = "Couette flow heated by its friction, second order" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/energy.rs::conduction_with_temperature_dependent_k_is_second_order", what = "second order with k(T)" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/energy.rs::couette_viscous_heating_is_second_order", what = "viscous heating second order" },
+  { kind = "consistency", case = "cavity_heated", what = "lid-driven cavity with a warm lid: the heat balance closes" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/energy.rs::heat_balance_closes_with_inflow_and_outflow", what = "the heat balance closes with inflow and outflow" },
+]
+
+[[feature]]
+id = "energy.temperature-dependent"
+area = "Energy"
+title = "c_p(T), k(T) and μ(T) from the material database"
+switch = "energy.temperature_dependent"
+decisions = ["D150"]
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-flow/src/energy.rs::enthalpy_integrates_the_specific_heat", what = "the enthalpy integrates c_p(T)" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/energy.rs::viscosity_follows_the_temperature", what = "μ follows T" },
+  { kind = "manufactured", case = "conduction_mms", what = "k(T) to second order" },
+]
+
+[[feature]]
+id = "energy.wall-conditions"
+area = "Energy"
+title = "Temperature, heat-flux, heat-flow and convection walls"
+switch = "[boundary.<name>.energy]"
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-flow/tests/energy.rs::convection_condition_is_the_series_resistance", what = "the convection condition is the series resistance" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/energy.rs::heat_flow_is_spread_over_the_boundary", what = "a heat flow is spread over the boundary" },
+]
+
+[[feature]]
+id = "energy.turbulent"
+area = "Energy"
+title = "Energy with a turbulence model (thermal wall function, Pr_t)"
+switch = "energy.wall_function"
+model = true
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-flow/tests/cht.rs::turbulent_interface_is_the_wall_function_in_series", what = "the turbulent interface is the wall function in series with the solid's half cell" },
+  { kind = "consistency", case = "cht_turbulent_channel", what = "the heat flow of the independent wall-function path to 10⁻⁴", doc = "docs/gallery/energy.md#cht-turbulent" },
+]
+gaps = ["no reference-data case of the energy equation with turbulence (the passive-scalar path has them; the energy path is checked against it)"]
+
+# ---------------------------------------------------------------- conjugate heat transfer
+
+[[feature]]
+id = "cht.steady"
+area = "Conjugate heat transfer"
+title = "Solid regions, steady"
+switch = 'regions.<name>.kind = "solid"'
+decisions = ["D150"]
+evidence = [
+  { kind = "exact", case = "cht_composite_wall", what = "composite wall exact to round-off", doc = "docs/gallery/energy.md#cht-solids" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/cht.rs::composite_wall_gives_the_series_heat_flux", what = "the series heat flux" },
+  { kind = "consistency", case = "cht_heated_wall", what = "the heater power reaches the fluid" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/cht.rs::heated_wall_passes_its_power_to_the_fluid", what = "the heat balance closes" },
+]
+
+[[feature]]
+id = "cht.transient"
+area = "Conjugate heat transfer"
+title = "Transient conjugate heat transfer"
+switch = "[time] with solid regions"
+evidence = [
+  { kind = "exact", case = "cht_contact_transient", what = "two bodies in contact: the exact contact temperature, erf profiles at second order in space and time", doc = "docs/gallery/energy.md#cht-transient" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/cht.rs::contact_converges_at_second_order_in_space_and_time", what = "second order in space and time" },
+  { kind = "consistency", case = "cht_heated_wall_transient", what = "heat balance closes to 10⁻¹¹ in every step" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/cht.rs::heated_wall_switched_on_reaches_the_steady_state", what = "reaches the steady state" },
+]
+
+[[feature]]
+id = "cht.turbulent"
+area = "Conjugate heat transfer"
+title = "Conjugate heat transfer with a turbulence model"
+switch = "[turbulence] with solid regions"
+model = true
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-flow/tests/cht.rs::turbulent_interface_is_the_wall_function_in_series", what = "the interface conductance is the wall function in series" },
+  { kind = "consistency", case = "cht_turbulent_channel", what = "the heat flow of the independent wall-function path to 10⁻⁴", doc = "docs/gallery/energy.md#cht-turbulent" },
+  { kind = "consistency", case = "cht_heat_sink_turbulent", what = "a finned heat sink in a turbulent air channel: the heat balance closes" },
+]
+gaps = ["no reference-data case (a heat sink or a conjugate channel against an experiment or a correlation)"]
+
+[[feature]]
+id = "cht.contact-thin-wall"
+area = "Conjugate heat transfer"
+title = "Contact resistances and thin walls"
+switch = "[interfaces.<name>] contact_resistance, thin_wall"
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-flow/tests/cht.rs::composite_wall_with_contact_resistance_and_thin_wall", what = "exact series resistance", doc = "docs/gallery/energy.md#cht-contact" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/cht.rs::transient_contact_resistance_closes_the_balance", what = "the transient balance closes" },
+  { kind = "consistency", case = "cht_circuit_board", what = "a chip on a thermal pad on a circuit board: the heat balance closes" },
+]
+
+[[feature]]
+id = "cht.orthotropic"
+area = "Conjugate heat transfer"
+title = "Orthotropic solids (axes per region)"
+switch = "orthotropic conductivity, [regions.<name>] axes"
+evidence = [
+  { kind = "exact", case = "cht_orthotropic_patch", what = "a piecewise-linear temperature exact on a skewed mesh to 3·10⁻¹¹ K", doc = "docs/gallery/energy.md#cht-contact" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/cht.rs::orthotropic_patch_is_exact_on_a_skewed_mesh", what = "the patch test" },
+]
+
+[[feature]]
+id = "cht.region-source"
+area = "Conjugate heat transfer"
+title = "Heat sources per region"
+switch = "[[energy.sources]]"
+evidence = [
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/cht.rs::region_source_enters_the_balance", what = "the source enters the heat balance" },
+  { kind = "consistency", case = "cht_circuit_board", what = "the chip power reaches the air" },
+]
+gaps = ["no exact solution with a volumetric source (for example the parabolic temperature of a heated slab)"]
+
+# ---------------------------------------------------------------- rotating machinery
+
+[[feature]]
+id = "rotating.mrf"
+area = "Rotating machinery"
+title = "Moving reference frame (steady frozen rotor)"
+switch = "[[mrf]]"
+decisions = ["D55", "D56"]
+evidence = [
+  { kind = "exact", case = "taylor_couette_mrf", what = "laminar Taylor–Couette, second order", doc = "docs/verification/stage6.md#moving-reference-frame-part-6g-97" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/mrf.rs::taylor_couette_does_not_depend_on_the_frame", what = "the result does not depend on the frame" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/mrf.rs::turbulent_taylor_couette_does_not_depend_on_the_frame", what = "turbulent: the result does not depend on the frame" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/mrf.rs::torque_and_shaft_power_of_taylor_couette_flow", what = "torque and shaft power of Taylor–Couette flow" },
+]
+gaps = [
+  "no reference-data case of a bladed rotor: the stirred tank (application 131) is a demonstration, its torque moves 7 % over the last tenth of the iterations (frozen-rotor non-closure)",
+]
+
+[[feature]]
+id = "rotating.mrf-transient"
+area = "Rotating machinery"
+title = "Transient frozen rotor"
+switch = "[[mrf]] with [time]"
+decisions = ["D185"]
+evidence = [
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/mrf.rs::the_spin_up_does_not_depend_on_the_frame", what = "the spin-up does not depend on the frame" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/mrf.rs::a_transient_frame_is_accepted", what = "the case is accepted and checked" },
+]
+
+[[feature]]
+id = "rotating.whole-domain-frame"
+area = "Rotating machinery"
+title = "A whole domain in a turning frame"
+switch = "[[mrf]] without zone"
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-flow/tests/mrf.rs::solid_body_rotation_in_its_own_frame", what = "solid-body rotation at rest in its own frame" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/mrf.rs::a_turning_box_carries_its_fluid", what = "a turning box carries its fluid" },
+  { kind = "reference-data", case = "channel_rotating_sst", what = "the channel in spanwise rotation" },
+]
+gaps = ["inherits the open DNS comparison of the rotating channel"]
+
+[[feature]]
+id = "rotating.sliding-conformal"
+area = "Rotating machinery"
+title = "Sliding mesh by conformal stepping"
+switch = "[[sliding]]"
+decisions = ["D58"]
+evidence = [
+  { kind = "exact", case = "taylor_couette_sliding", what = "Taylor–Couette against the exact profile", doc = "docs/verification/stage6.md#sliding-mesh-with-conformal-stepping-part-6g-97" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/sliding.rs::taylor_couette_converges_with_second_order", what = "second order" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/sliding.rs::a_passive_scalar_ends_in_the_exact_solution", what = "a passive scalar ends in the exact solution" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/sliding.rs::turbulent_spin_up_agrees_with_a_fixed_mesh", what = "turbulent spin-up agrees with a fixed mesh" },
+]
+
+[[feature]]
+id = "rotating.sliding-imprint"
+area = "Rotating machinery"
+title = "Sliding mesh by imprinting the interface"
+switch = "sliding[].rotor_interface"
+decisions = ["D58"]
+evidence = [
+  { kind = "exact", case = "taylor_couette_imprint", what = "Taylor–Couette with unequal pitch against the exact profile", doc = "docs/verification/stage6.md#sliding-mesh-by-imprinting-part-6g-97" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/sliding.rs::taylor_couette_with_unequal_pitch_converges_with_second_order", what = "second order" },
+  { kind = "exact", case = "pot_solid_body", what = "solid-body rotation through the axis with a pot-shaped rotor" },
+  { kind = "exact", case = "axial_stage_uniform", what = "uniform axial flow through an interface that is a surface of revolution" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/sliding.rs::equal_pitch_agrees_with_conformal_stepping", what = "equal pitch agrees with conformal stepping" },
+]
+
+[[feature]]
+id = "rotating.several-rotors"
+area = "Rotating machinery"
+title = "Several rotors at their own speeds"
+switch = "several [[sliding]] or [[mrf]] tables"
+decisions = ["D185"]
+evidence = [
+  { kind = "exact", case = "couette_two_rotors", what = "two cylinders turning in opposite sense end in their Couette flow", doc = "docs/verification/stage6.md#several-rotors-and-the-transient-frozen-rotor-d185-pr-102" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/sliding.rs::two_rotors_end_in_the_couette_flow_of_their_speeds", what = "the Couette flow of their speeds" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/mrf.rs::two_independent_frames", what = "two independent frames" },
+]
+
+[[feature]]
+id = "rotating.machine-values"
+area = "Rotating machinery"
+title = "Torque, shaft power, head and hydraulic efficiency"
+switch = "[[output.machines]]"
+decisions = ["D184"]
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-flow/tests/mrf.rs::torque_and_shaft_power_of_taylor_couette_flow", what = "torque and shaft power of Taylor–Couette flow" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/mrf.rs::machine_values_of_poiseuille_flow", what = "head and efficiency of Poiseuille flow" },
+]
+gaps = ["no machine of published performance (a pump or fan curve) is compared"]
+
+[[feature]]
+id = "rotating.frame-fields"
+area = "Rotating machinery"
+title = "Relative and frame velocities, flow angles, rothalpy"
+switch = "output.derived"
+decisions = ["D183"]
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-flow/tests/mrf.rs::relative_and_frame_velocities_of_taylor_couette", what = "relative and frame velocities of Taylor–Couette flow" },
+]
+
+# ---------------------------------------------------------------- cases and properties
+
+[[feature]]
+id = "case.expressions"
+area = "Cases and properties"
+title = "Boundary values, sources and viscosities as expressions"
+switch = "expressions of x, y, z, t"
+decisions = ["D53"]
+evidence = [
+  { kind = "exact", case = "poiseuille_expression", what = "inlet profile, outlet pressure and viscosity as expressions, second order" },
+  { kind = "exact", case = "taylor_green_expression", what = "the exact velocity on the sides as expressions" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/expressions.rs::expressions_match_the_analytic_profile_and_the_pressure_gradient", what = "the analytic profile and the pressure gradient" },
+]
+
+[[feature]]
+id = "case.materials"
+area = "Cases and properties"
+title = "Material database (air, water, oils, glycols)"
+switch = "[materials]"
+decisions = ["D94"]
+evidence = [
+  { kind = "reference-data", case = "poiseuille_water", what = "Poiseuille flow of water at 40 °C with the database viscosity" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/expressions.rs::materials_and_regions", what = "materials and regions read and resolved" },
+]
+gaps = ["the property data themselves await the maintainer's spot check (D94 to D103)"]
+
+[[feature]]
+id = "case.schedule"
+area = "Cases and properties"
+title = "Settings that change on a schedule"
+switch = "[[schedule]]"
+evidence = [
+  { kind = "consistency", case = "cavity_re100_schedule", what = "the Ghia cavity with a schedule" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/schedule.rs::steady_schedule_logs_changes_and_noop_changes_nothing", what = "a no-op schedule changes nothing" },
+]
+
+[[feature]]
+id = "case.checks-guidance"
+area = "Cases and properties"
+title = "Case checks and guidance (unknown keys, boundary checks)"
+evidence = [
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/stage4.rs::unknown_keys_and_values_get_a_hint", what = "unknown keys and values get a hint" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/stage4.rs::boundary_check_rejects_an_unbalanced_closed_domain", what = "an unbalanced closed domain is refused" },
+]
+
+# ---------------------------------------------------------------- runs and results
+
+[[feature]]
+id = "run.restart-control"
+area = "Runs and results"
+title = "Restart and control files (.stop, .result_N, .read_toml_N)"
+evidence = [
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/stage5.rs::restart_continues_bit_identically", what = "restart continues bitwise" },
+  { kind = "consistency", test = "crates/foehncraft-cli/tests/run_contract.rs::sigterm_stops_cleanly_and_restart_latest_continues_bitwise", what = "SIGTERM stops cleanly, restart continues bitwise" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/stage5.rs::stop_file_ends_the_run", what = "a stop file ends the run" },
+]
+
+[[feature]]
+id = "run.derived-fields"
+area = "Runs and results"
+title = "Derived fields (vorticity, Q, λ₂, wall shear, y⁺, turbulence fields)"
+switch = "output.derived"
+decisions = ["D72"]
+evidence = [
+  { kind = "exact", case = "couette_derived", what = "derived fields of plane Couette flow on perturbed polyhedra" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/derived.rs::couette_derived_fields_are_exact_on_every_mesh_type", what = "exact on every cell type" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/derived.rs::taylor_green_vortex_criteria_converge", what = "vortex criteria of the Taylor–Green vortex converge" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/turbulence_derived.rs::turbulence_fields_of_every_model", what = "the fields of every turbulence model" },
+]
+
+[[feature]]
+id = "run.statistics"
+area = "Runs and results"
+title = "Statistics of transient runs (mean, RMS, phase averages, confidence)"
+switch = "[output.statistics]"
+decisions = ["D71"]
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-flow/tests/statistics.rs::taylor_green_statistics_meet_the_exact_time_moments", what = "the exact time moments of the Taylor–Green vortex" },
+  { kind = "reference-data", case = "cylinder_re100_statistics", what = "statistics of the vortex street behind the Schäfer & Turek cylinder", doc = "docs/verification/stage6.md#statistics-of-transient-runs-d71-pr-110" },
+]
+
+[[feature]]
+id = "run.ledgers"
+area = "Runs and results"
+title = "Mass and kinetic-energy ledgers, divergence report"
+switch = "[balance]"
+decisions = ["D88"]
+evidence = [
+  { kind = "consistency", case = "cavity_re100_energy", what = "the kinetic-energy budget of the cavity" },
+  { kind = "consistency", case = "cavity_re100_budget", what = "the cavity with a budget" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/health.rs::cavity_energy_budget_on_three_meshes", what = "the budget closes better with the mesh" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/health.rs::balance_every_leaves_the_solution_unchanged", what = "writing balances leaves the solution unchanged" },
+]
+
+[[feature]]
+id = "run.log-records"
+area = "Runs and results"
+title = "Log columns and JSON records for scripts and agents"
+switch = "[log]"
+decisions = ["D77"]
+evidence = [
+  { kind = "consistency", case = "cavity_re100_columns", what = "the Ghia cavity with a chosen iteration table" },
+  { kind = "consistency", test = "crates/foehncraft-cli/tests/run_contract.rs::configurable_log_columns_change_no_result", what = "log columns change no result" },
+  { kind = "consistency", test = "crates/foehncraft-cli/tests/run_contract.rs::json_result_and_byte_identical_files", what = "the JSON result and byte-identical files" },
+]
+
+[[feature]]
+id = "run.gci"
+area = "Runs and results"
+title = "Grid convergence index of every mesh sweep"
+switch = "[verification] levels"
+decisions = ["D67"]
+evidence = [
+  { kind = "exact", case = "cylinder_re20_gci", what = "the cylinder at Re 20 on three meshes, Celik et al. (2008)", doc = "docs/verification/stage5.md#discretisation-uncertainty-and-the-verification-manual-part-6c" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/uncertainty.rs::sweeps_without_an_exact_solution", what = "sweeps without an exact solution" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/wall_crossing.rs::level_sweep_gives_the_uncertainty_of_a_crossing", what = "the uncertainty of a wall crossing" },
+]
+
+# ---------------------------------------------------------------- backends and interfaces
+
+[[feature]]
+id = "backend.cuda"
+area = "Backends and interfaces"
+title = "Flow loop on NVIDIA GPUs"
+switch = 'run.backend = "cuda"'
+decisions = ["D60"]
+evidence = [
+  { kind = "consistency", run = "Tesla T4, 8 stage 5 cases and 14 stage 6 cases bitwise equal to the CPU (2026-11-15, 2026-11-20)", doc = "docs/verification/stage6.md#cpugpu-parity-of-the-turbulence-models-66-pr-109", what = "fields, residual histories, forces, reports and restart files bitwise equal to the CPU" },
+  { kind = "consistency", case = "cavity_poly3d_gpu", what = "the steady flow loop on the GPU", doc = "docs/verification/stage5.md#gpu-flow-loop-part-2" },
+  { kind = "consistency", case = "cylinder_re100_gpu", what = "the transient flow loop on the GPU" },
+  { kind = "consistency", case = "mms_poly_gpu", what = "the scalar solver of stage 2 on the GPU", doc = "docs/verification/stage2.md#gpu-against-cpu-tesla-t4-2026-11-14" },
+  { kind = "consistency", case = "poisson_poly_gpu", what = "the pressure solver of stage 3 on the GPU", doc = "docs/verification/stage3.md#gpu-against-cpu-and-hypre-tesla-t4" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/ptx_entries.rs::the_ptx_module_has_every_entry", what = "the PTX module has every kernel entry" },
+]
+gaps = [
+  "verified on one device only, the Tesla T4 (sm_75); every other GPU is unverified (D199 Q5)",
+  "the two SST options of D170 (curvature correction, QCR) have no GPU parity run yet",
+  "energy and conjugate heat transfer have no GPU parity run",
+]
+
+[[feature]]
+id = "interface.python"
+area = "Backends and interfaces"
+title = "Python package foehncraft (cases, runs, studies)"
+switch = "import foehncraft"
+decisions = ["D86"]
+evidence = [
+  { kind = "consistency", test = "python/tests/test_run.py::test_the_command_line_gives_the_same_run", what = "the command line gives the same run" },
+  { kind = "consistency", test = "python/tests/test_case.py::test_every_example_case_round_trips", what = "every example case round-trips" },
+  { kind = "consistency", test = "python/tests/test_run.py::test_uncertainty_of_a_sweep", what = "the uncertainty of a sweep" },
+]
+
+[[feature]]
+id = "interface.cli-contract"
+area = "Backends and interfaces"
+title = "Run contract of the command line (exit codes, JSON, schema)"
+decisions = ["D64", "D77"]
+evidence = [
+  { kind = "consistency", test = "crates/foehncraft-cli/tests/run_contract.rs::exit_codes", what = "exit codes" },
+  { kind = "consistency", test = "crates/foehncraft-cli/tests/run_contract.rs::schema_is_json_schema", what = "the schema is a JSON Schema" },
+]
+
+# ---------------------------------------------------------------- planned
+
+[[feature]]
+id = "planned.buoyancy"
+area = "Planned"
+title = "Buoyancy (Boussinesq and variable density)"
+switch = "not built"
+decisions = ["D150"]
+evidence = []
+gaps = ["not built (stage 7b, after the CHT work)"]
