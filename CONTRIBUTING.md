@@ -1,5 +1,10 @@
 # Contributing
 
+The standing rules (MUST and SHOULD) and the exact checks to run before
+pushing are in [AGENTS.md](AGENTS.md); lessons from earlier work, including
+experiments not to repeat, are in [docs/pitfalls.md](docs/pitfalls.md).
+This page explains the documentation conventions in detail.
+
 ## Documentation for every feature (D18)
 
 A feature is not done without three pieces of documentation, in the same
