@@ -53,7 +53,7 @@ def main(argv):
     at, win = diag["iteration"], diag["window"]
     o = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{x0 + w + 200}" height="{y0 + h + 60}" '
          f'viewBox="0 0 {x0 + w + 200} {y0 + h + 60}" font-family="sans-serif" font-size="12">',
-         f'<rect width="100%" height="100%" fill="white"/>']
+         '<rect width="100%" height="100%" fill="white"/>']
     # window of the diagnosis and the remaining budget
     o.append(f'<rect x="{fx(at - win + 1):.1f}" y="{y0}" width="{fx(at) - fx(at - win + 1):.1f}" height="{h}" fill="#f2e6c9"/>')
     o.append(f'<rect x="{fx(at):.1f}" y="{y0}" width="{fx(n) - fx(at):.1f}" height="{h}" fill="#eeeeee"/>')
