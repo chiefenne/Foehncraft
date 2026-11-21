@@ -196,6 +196,13 @@ codes! {
     BAL_NEGATIVE_DISSIPATION = "BAL003", Warning, "A numerical dissipation of kinetic energy below `[balance] tolerance_energy`: the discretisation adds energy (D90).";
     // statistics of transient runs (D71)
     STAT_WINDOW = "STAT001", Warning, "The averaging window of a statistic of `[output.statistics]` is too short: the batch means are correlated (lag-1 autocorrelation above 0.3), so the confidence interval of the mean is too narrow; run longer or use fewer batches (D71).";
+    // limitations of a run (D199): never a failure, the exit code stays
+    LIM_GRADE = "LIM001", Note, "A feature in use is graded partial or unverified on the verification status page (docs/verification/status.md); the message names its first gap.";
+    LIM_RANGE = "LIM002", Note, "A feature in use ran outside its validated range (first-cell y⁺, Reynolds, Prandtl or Courant number, skewness), as `range` of docs/verification/features.toml gives it.";
+    LIM_NOT_SETTLED = "LIM003", Note, "A steady solve that stopped before its tolerance (iteration limit): the result may still change with more iterations.";
+    LIM_ONE_MESH = "LIM004", Note, "One mesh only: the discretisation uncertainty is not estimated (a level sweep gives the GCI, D67).";
+    LIM_DEVICE = "LIM005", Note, "The GPU backend ran on a device that is not in the list of verified devices (Tesla T4 so far).";
+    LIM_REMEDIATION = "LIM006", Note, "Automatic mesh remediation (D50, MESH002) changed the schemes on poor faces: first order there.";
     // the tool registry (D196)
     TOOL_UNKNOWN = "TOOL001", Error, "A tool id that the registry does not have (with the nearest id as a hint); `foehn commands` lists them.";
     TOOL_INPUT = "TOOL002", Error, "A tool input that does not match the input schema of the tool (unknown field, wrong type, missing field).";
@@ -408,7 +415,7 @@ mod tests {
                 [
                     "CASE", "SCHED", "BC", "SCAL", "RUN", "GEN", "DIV", "BAL", "EXPR", "MAT",
                     "REG", "MESH", "TURB", "MRF", "SLD", "ROT", "STAT", "ENE", "THM", "CHT",
-                    "TOOL"
+                    "TOOL", "LIM"
                 ]
                 .contains(&p),
                 "{}",

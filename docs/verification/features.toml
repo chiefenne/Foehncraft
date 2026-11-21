@@ -296,6 +296,16 @@ evidence = [
 # ---------------------------------------------------------------- time stepping
 
 [[feature]]
+id = "time.bdf1"
+area = "Time stepping"
+title = "BDF1 (backward Euler)"
+switch = 'time.scheme = "bdf1"'
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-flow/tests/transient.rs::taylor_green_time_order", what = "first order in time on the Taylor–Green vortex (band 0.9 to 1.6)" },
+]
+notes = ["first order by design: a time-accurate run should use BDF2 or Crank–Nicolson"]
+
+[[feature]]
 id = "time.bdf2"
 area = "Time stepping"
 title = "BDF2"

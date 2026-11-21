@@ -50,6 +50,7 @@ pub mod energy;
 pub mod engine;
 pub mod expr;
 pub mod frame;
+pub mod limitations;
 pub mod logblocks;
 pub mod logcols;
 pub mod materials;

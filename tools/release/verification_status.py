@@ -333,6 +333,7 @@ def build(rows: list[dict]) -> tuple[str, dict]:
                 "id": r["id"],
                 "title": r["title"],
                 "grade": x["grade"],
+                "why": x["why"],
                 "gaps": x["gaps"],
                 "range": r.get("range", {}),
             }

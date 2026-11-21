@@ -1367,6 +1367,10 @@ pub struct ResultSummary {
     pub uncertainty: Vec<crate::uncertainty::Estimate>,
     /// Output files with sizes and SHA-256 hashes (D84).
     pub files: Vec<FileHash>,
+    /// What the user must know before trusting the result (D199): codes
+    /// LIM001 to LIM006, the feature and a message. They change neither
+    /// `status` nor the exit code.
+    pub limitations: Vec<crate::limitations::Limitation>,
 }
 
 /// The outcome of [`run`].
@@ -1430,6 +1434,7 @@ pub fn error_summary(
         scalar_orders: Vec::new(),
         uncertainty: Vec::new(),
         files: Vec::new(),
+        limitations: Vec::new(),
     }
 }
 
@@ -1544,7 +1549,12 @@ fn closing_frame(
         .diagnostics
         .iter()
         .find(|d| d.severity == diag::Severity::Error);
+    let n = s.limitations.len();
     let title = match s.status {
+        Status::Finished if n > 0 => format!(
+            "Run finished with {n} limitation{}: every check passed",
+            if n == 1 { "" } else { "s" }
+        ),
         Status::Finished => "Run finished: every check passed".to_string(),
         Status::FailedChecks => "Run finished with failed checks".to_string(),
         Status::Stopped => format!(
@@ -1566,6 +1576,9 @@ fn closing_frame(
         .kv("Results in", dir.display());
     if dir.join("flow.md").exists() {
         f.push_kv("Report", "flow.md, result.json");
+    }
+    for l in &s.limitations {
+        f.push_kv(l.code, &l.message);
     }
     let mut lines = vec![String::new()];
     lines.extend(f.render(case.log.style));
@@ -1612,6 +1625,16 @@ pub fn summary_of(
     } else {
         Status::Finished
     };
+    let limitations = crate::limitations::of_run(case, rep);
+    if !limitations.is_empty() {
+        // the list goes to the top of the report (D199)
+        let md = dir.join("flow.md");
+        if let Ok(text) = std::fs::read_to_string(&md) {
+            let block = crate::limitations::markdown(&limitations);
+            let at = text.find("\n\n").map_or(0, |i| i + 2);
+            let _ = std::fs::write(&md, format!("{}{block}{}", &text[..at], &text[at..]));
+        }
+    }
     let gpu = rep
         .solves
         .iter()
@@ -1643,6 +1666,7 @@ pub fn summary_of(
         scalar_orders: rep.scalar_orders.clone(),
         uncertainty: rep.uncertainty.clone(),
         files: file_hashes(dir)?,
+        limitations,
     })
 }
 

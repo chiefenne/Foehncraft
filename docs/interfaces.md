@@ -65,7 +65,7 @@ The limits may change during a run (a re-read of the case file, D40).
 
 | File | Format | Contents |
 |---|---|---|
-| `result.json` | `foehncraft.result` | The result summary (D62): status, exit code, stop, overrides, provenance, diagnostics, one entry per solve (mesh hash, iterations, residuals, mass imbalance, boundaries, coefficients, errors, transient summary), observed orders, the discretisation uncertainty of a sweep of three or more meshes or time steps (`uncertainty`, D67: per quantity the values, ratios, order, extrapolated value, band, GCI and verdict), and the output files with sizes and SHA-256 hashes. No timings: two identical runs give the same bytes. |
+| `result.json` | `foehncraft.result` | The result summary (D62): status, exit code, stop, overrides, provenance, diagnostics, one entry per solve (mesh hash, iterations, residuals, mass imbalance, boundaries, coefficients, errors, transient summary), observed orders, the discretisation uncertainty of a sweep of three or more meshes or time steps (`uncertainty`, D67: per quantity the values, ratios, order, extrapolated value, band, GCI and verdict), the output files with sizes and SHA-256 hashes, and `limitations` (D199: `code` LIM001 to LIM006, `feature`, `message`; below). No timings: two identical runs give the same bytes. |
 | `run.jsonl` | `foehncraft.run_record` | The run record (D69), one JSON object per line, flushed at every log line, so it can be followed while the run goes on (`tail -f`). |
 | `flow.log`, `flow.md`, `flow.json` | | The log and the report for people, with timings. |
 | `fields.vtkhdf`, `fields_N.vtkhdf` | VTKHDF 2.x | Fields, with the root attributes `foehncraft_format`, `foehncraft_format_version`, `foehncraft_version`, `case`, `units` and `step`/`time` or `iteration`. The derived fields of `[output] derived` (D72) are cell datasets of the `internal` block, as the passive scalars (`[scalars.<name>]`, one dataset per scalar under its name, and `<name>_error` with an `exact` solution); the wall shear stress and y⁺ are cell datasets of the boundary blocks (one value per boundary face, zero off walls). `units` names every dataset. |
@@ -213,7 +213,38 @@ same `case_hash` and `commit` are comparable bit for bit.
 | `foehncraft.info` | `foehn info --json` |
 | `foehncraft.command` | the other commands with `--json` (`mesh`, `scalar`, `poisson`, ...): `command` and the report; `post derive`: `file`, `restart`, `cells`, `iteration`, `step`, `time`, `derived`, `datasets` |
 | `foehncraft.divergence` | `divergence.json` after a divergence (above) |
-| `foehncraft.verification-grades` | `docs/verification/grades.json` (D199, generated): per feature `id`, `title`, `grade` (`verified`, `partial`, `unverified`), `gaps`, `range` (validated range: `y_plus_first`, `reynolds`, `prandtl`, `courant`, `skewness`, `mach`) |
+| `foehncraft.verification-grades` | `docs/verification/grades.json` (D199, generated): per feature `id`, `title`, `grade` (`verified`, `partial`, `unverified`), `why` (the reasons for a lower grade), `gaps`, `range` (validated range: `y_plus_first`, `reynolds`, `prandtl`, `courant`, `skewness`, `mach`) |
+
+## Limitations of a run (D199)
+
+Every result summary (`result.json`, `foehn flow --json`, the Python
+`Result.limitations`) carries a list `limitations`, computed at the end of
+the run from the case, the report and the grades of the
+[verification status](verification/status.md) page compiled into the
+binary (`docs/verification/grades.json`). Each entry has `code`,
+`feature` (an id of `docs/verification/features.toml`, where one applies)
+and `message`:
+
+```json
+"limitations": [
+  {"code": "LIM001", "feature": "mesh.gmsh", "message": "Gmsh v4 reader is graded partial: ..."},
+  {"code": "LIM004", "message": "one mesh only: the discretisation uncertainty is not estimated ..."}
+]
+```
+
+| Code | Limitation | Taken from |
+|---|---|---|
+| `LIM001` | a feature in use is graded partial or unverified | the switches of the case against the grades |
+| `LIM002` | a feature in use ran outside its validated range | `range` of the feature against the run: mean first-cell y⁺ of the walls, Reynolds number, Prandtl number (energy, passive scalars), largest Courant number, largest face skewness |
+| `LIM003` | a steady solve did not settle | a steady solve that stopped at its iteration limit before its tolerance, when no check already failed for it |
+| `LIM004` | one mesh only | no level sweep, so no discretisation uncertainty (D67) |
+| `LIM005` | a GPU not verified | a GPU not in the verified devices (Tesla T4) |
+| `LIM006` | automatic mesh remediation active | the remediation of D50 changed the schemes (MESH002) |
+
+Limitations change neither `status` nor the exit code (D199 Q1, Q2): a
+run with limitations is `finished` with exit code 0. The human text says
+so: the last frame of the log reads "Run finished with N limitations" and
+lists them, and `flow.md` starts with a "Limitations" section.
 
 ## Diagnostics (D78)
 
@@ -356,6 +387,12 @@ A code keeps its meaning; a retired code stays in the table.
 | `BAL002` | warning | A relative mass imbalance over the run above `[balance] tolerance_run` (D89). |
 | `BAL003` | warning | A numerical dissipation of kinetic energy below `[balance] tolerance_energy`: the discretisation adds energy (D90). |
 | `STAT001` | warning | The averaging window of a statistic of `[output.statistics]` is too short: the batch means are correlated (lag-1 autocorrelation above 0.3), so the confidence interval of the mean is too narrow; run longer or use fewer batches (D71). |
+| `LIM001` | note | A feature in use is graded partial or unverified on the verification status page (docs/verification/status.md); the message names its first gap. |
+| `LIM002` | note | A feature in use ran outside its validated range (first-cell y⁺, Reynolds, Prandtl or Courant number, skewness), as `range` of docs/verification/features.toml gives it. |
+| `LIM003` | note | A steady solve that stopped before its tolerance (iteration limit): the result may still change with more iterations. |
+| `LIM004` | note | One mesh only: the discretisation uncertainty is not estimated (a level sweep gives the GCI, D67). |
+| `LIM005` | note | The GPU backend ran on a device that is not in the list of verified devices (Tesla T4 so far). |
+| `LIM006` | note | Automatic mesh remediation (D50, MESH002) changed the schemes on poor faces: first order there. |
 | `TOOL001` | error | A tool id that the registry does not have (with the nearest id as a hint); `foehn commands` lists them. |
 | `TOOL002` | error | A tool input that does not match the input schema of the tool (unknown field, wrong type, missing field). |
 | `GEN001` | error | An error without a more specific code. |
@@ -411,8 +448,9 @@ commands whose object has no `format`, the same fields without the
 `foehncraft.command` wrapper). `status` and `exit_code` follow the exit
 codes above. A call that fails has `result: null` and its diagnostic in
 `diagnostics`: an unknown id is `TOOL001` (with the nearest id), an input
-that does not match the schema `TOOL002`. `limitations` is reserved for
-D199. A breaking change of a tool's input or output raises its version.
+that does not match the schema `TOOL002`. `limitations` carries the
+limitations of a run (D199, below) once the run tools of D196 part 2
+fill it from the result summary. A breaking change of a tool's input or output raises its version.
 Human text of a tool goes to standard error (`--quiet` silences it).
 
 ## Python package (D61)
