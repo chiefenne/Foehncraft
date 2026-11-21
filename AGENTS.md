@@ -80,6 +80,11 @@ detail are in [CONTRIBUTING.md](CONTRIBUTING.md).
   crate table) and the docs describing main as it is after the merge.
 - **MUST** update the "Implemented" note of the decision or stage row in
   `docs/requirements.md`.
+- **MUST** add a new feature to `docs/verification/features.toml` with its
+  evidence and gaps, and write every gap found (a missing check, a band not
+  met) there; regenerate the status page with
+  `python3 -m tools.release.verification_status`. Never write a grade by
+  hand (D199).
 
 ## Code
 
@@ -140,6 +145,7 @@ Documentation, for any docs change:
 python3 -m tools.docs.indexes            # tables can be generated (no number twice)
 git checkout docs/gallery.md docs/recipes.md docs/applications.md   # do not commit them
 python3 -m tools.docs.images --check      # images carry their size
+python3 -m tools.release.verification_status --check   # status page matches features.toml
 python3 -m tools.release.changelog --print > /dev/null   # fragments parse
 ```
 

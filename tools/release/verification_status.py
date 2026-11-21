@@ -99,7 +99,7 @@ def test_exists(ref: str) -> bool:
         return False
     text = p.read_text(encoding="utf-8")
     if p.suffix == ".py":
-        return name.startswith("test_") and re.search(rf"^def {re.escape(name)}\(", text, re.M) is not None
+        return name.startswith("test_") and re.search(rf"^def {re.escape(name)}\(", text, re.MULTILINE) is not None
     pattern = rf"#\[test\](?:\s*#\[[^\]]*\])*\s*(?:pub\s+)?fn {re.escape(name)}\s*\("
     return re.search(pattern, text) is not None
 
