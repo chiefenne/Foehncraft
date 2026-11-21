@@ -11,6 +11,7 @@ Part of the [Recipes](../recipes.md): restart, stop and steer runs, drive runs f
 | 38 | [Choose the columns of the log table](#log-columns) |
 | 39 | [Prepare changes of settings before the run](#schedule) |
 | 166 | [Set an iteration budget and a budget per study](#budgets) |
+| 171 | [Call any tool from a script or an agent](#tools) |
 
 ---
 
@@ -366,5 +367,54 @@ budget, raise the key (it may also change during a run through
 Keys: `run.limits.diagnose_at`, `run.limits.diagnosis`,
 `run.limits.study_cell_hours`, `run.limits.study_gpu_hours`,
 `run.limits.study_output`.
+
+[↑ back to top](#run-control-and-health)
+
+---
+
+<a id="tools"></a>
+## 171. Call any tool from a script or an agent
+
+Every function of `foehn` is a tool with an id (D196); [tools.md](../tools.md)
+lists them with their input fields. From the repository root, after
+`cargo build --release`:
+
+```
+target/release/foehn commands > catalogue.json                     # ids, schemas, action kinds
+target/release/foehn call system.info                              # no input: no fields
+target/release/foehn call case.check --input examples/cases/tools/check_cavity.json
+echo '{"name": "water", "temperature": 330}' | target/release/foehn call materials.show --input -
+target/release/foehn call flow.run --input examples/cases/tools/run_cavity.json; echo "exit $?"
+target/release/foehn call result.read --input examples/cases/tools/read_cavity.json
+target/release/foehn call post.derive --input examples/cases/tools/derive_cavity.json
+target/release/foehn call expression.eval --input examples/cases/tools/ramp_expression.json
+```
+
+The envelope on standard output has `status` and `exit_code` (the exit
+codes of [recipe 26](#run-contract)), `result` (the tool's output, the
+object of the command's `--json`) and `diagnostics` (the error of a call
+that failed: `TOOL001` an unknown id, `TOOL002` an input that does not
+match the schema, or the code of the tool's error). Human text goes to
+standard error; `--quiet` silences it. `--read-root` and `--write-root`
+confine the files of the call (D82).
+
+From Python, with the native module in process, else through `foehn call`:
+
+```python
+import foehncraft as fc
+
+cat = fc.commands()
+[t["id"] for t in cat["tools"] if t["action"] == "read"]       # what an agent may call without asking
+r = fc.call("case.estimate", case="examples/cases/flow/cavity_re100.toml")
+r["result"]["cells"], r["result"]["host_memory"]
+r = fc.call("flow.run", case="examples/cases/flow/cavity_re100.toml",
+            out="output/tools/cavity", observer=lambda row: False)   # sees every row of run.jsonl
+```
+
+A new engine function becomes a tool in `crates/foehncraft-tools` (a type
+implementing `Tool`, one line in `registry()`), then gets its clap command
+and Python wrapper; regenerate the catalogue with
+`target/release/foehn commands --markdown > docs/tools.md`, and run
+`cargo xtask layering`.
 
 [↑ back to top](#run-control-and-health)

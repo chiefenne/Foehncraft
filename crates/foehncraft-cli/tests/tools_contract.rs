@@ -297,7 +297,10 @@ fn studies_match() {
     let (c1, a) = cli(&["scalar", s, "--out", d.join("a").to_str().unwrap()]);
     let (c2, b) = call("study.scalar", &json!({"case": s, "out": d.join("b")}));
     assert_eq!(c1, c2);
-    assert_eq!(a["orders"], b["result"]["orders"], "bitwise the same orders");
+    assert_eq!(
+        a["orders"], b["result"]["orders"],
+        "bitwise the same orders"
+    );
     assert_eq!(a["failures"], b["result"]["failures"]);
 
     let g1 = root.join("examples/cases/bench/g1_ci_small.toml");

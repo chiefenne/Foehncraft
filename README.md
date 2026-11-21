@@ -143,8 +143,11 @@ partial or unverified, with the evidence and the known gaps) is on the
   any of them from JSON ([tools.md](docs/tools.md)): system, case check,
   estimate, resolve, schema and upgrade, diagnostic codes, materials,
   expressions, meshes, flow runs (streaming their run record, stoppable),
-  results and derived fields. The Python package reaches the same tools
-  (`foehncraft.call`, `foehncraft.commands`).
+  results, derived fields and the scalar, Poisson and G1 studies. Every
+  command and Python function goes through these tools, and `cargo xtask
+  layering` checks that no front end reaches the engine past them. The
+  Python package reaches the same tools (`foehncraft.call`,
+  `foehncraft.commands`); [gallery 171](docs/gallery/runs.md#tool-registry).
 - **GPU and Python.** The flow loop on NVIDIA GPUs with results bitwise
   equal to the CPU; the Python package `foehncraft` that builds, runs and
   studies cases; the grid convergence index of every mesh sweep.

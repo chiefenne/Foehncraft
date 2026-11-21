@@ -510,7 +510,9 @@ mod tests {
             assert!(
                 parts
                     .iter()
-                    .all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_lowercase())),
+                    .all(|p| p.starts_with(|c: char| c.is_ascii_lowercase())
+                        && p.chars()
+                            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())),
                 "{id}"
             );
             assert_eq!(
