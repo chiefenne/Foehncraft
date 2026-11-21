@@ -232,17 +232,7 @@ pub struct ScalarSettings {
     /// Solves of each scalar per outer iteration (each with new deferred
     /// corrections).
     pub sweeps: usize,
-    /// Preconditioner of the BiCGStab solves: `jacobi` or `amg` (the
-    /// aggregation multigrid on the symmetric part of the matrix); default
-    /// `amg` for the energy equation of a conjugate case (stage 7d2),
-    /// `jacobi` elsewhere.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub preconditioner: Option<Preconditioner>,
 }
-
-/// The multigrid slot of the scalar solves (the pressure keeps slot 0,
-/// the turbulence and momentum equations theirs).
-const ENERGY_SLOT: usize = 12;
 
 impl Default for ScalarSettings {
     fn default() -> Self {
@@ -256,7 +246,6 @@ impl Default for ScalarSettings {
             tolerance: None,
             max_iter: 50,
             sweeps: 1,
-            preconditioner: None,
         }
     }
 }
@@ -1465,33 +1454,15 @@ impl Scalars {
                     order: w_order,
                 })?;
                 let scale = dev.scalar_scale(f.phi, w_rhs, w_diag, alpha, None)?;
-                // the preconditioner: by default the aggregation multigrid
-                // for the energy equation of a conjugate case (conductivity
-                // ratios up to 10⁴, §10.2), Jacobi elsewhere
-                let conjugate = f.energy.as_deref().is_some_and(|e| e.mats.len() > 1);
-                let mut pc = s.preconditioner.unwrap_or(if conjugate {
-                    Preconditioner::Amg
-                } else {
-                    Preconditioner::Jacobi
-                });
-                if pc == Preconditioner::Amg
-                    && dev
-                        .amg_setup_slot(
-                            ENERGY_SLOT,
-                            w_val,
-                            &foehncraft_fv::amg::AmgSettings::default(),
-                            true,
-                        )
-                        .is_err()
-                {
-                    dev.amg_select(0)?;
-                    pc = Preconditioner::Jacobi;
-                }
-                let solved = dev.solve(w_val, w_rhs, f.phi, pc, false, s.tol(tr), s.max_iter);
-                if pc == Preconditioner::Amg {
-                    dev.amg_select(0)?;
-                }
-                let (it, r0) = solved?;
+                let (it, r0) = dev.solve(
+                    w_val,
+                    w_rhs,
+                    f.phi,
+                    Preconditioner::Jacobi,
+                    false,
+                    s.tol(tr),
+                    s.max_iter,
+                )?;
                 if sweep == 0 {
                     res = r0 / scale;
                     if time.is_some() {
@@ -1499,6 +1470,16 @@ impl Scalars {
                     }
                 }
                 its += it;
+            }
+            // the interface report from the solved temperature
+            let phi_b = f.phi;
+            if let Some(cd) = f
+                .energy
+                .as_deref_mut()
+                .and_then(|e| e.cond.as_mut())
+                .filter(|c| c.is_active())
+            {
+                cd.settle(dev, phi_b)?;
             }
             out.residual.push(res);
             out.iterations.push(its);
@@ -2011,16 +1992,15 @@ impl Scalars {
                 }
             })
             .collect();
-        let su =
-            if source.is_some()
-                || sec.viscous_heating
-                || !sec.sources.is_empty()
-                || enthalpy.iter().any(|h| !h.is_constant())
-            {
-                Some(put(&vec![0.0; nc])?)
-            } else {
-                None
-            };
+        let su = if source.is_some()
+            || sec.viscous_heating
+            || !sec.sources.is_empty()
+            || enthalpy.iter().any(|h| !h.is_constant())
+        {
+            Some(put(&vec![0.0; nc])?)
+        } else {
+            None
+        };
         let settings = case.solver.energy.clone();
         let eps2 = if settings.limiter == LimiterKind::Venkatakrishnan {
             Some(put(&disc.venkat_eps2(settings.limiter_k))?)

@@ -214,7 +214,7 @@ fn inverse3(m: [[f64; 3]; 3]) -> Option<[[f64; 3]; 3]> {
         - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
         + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
     let scale: f64 = m.iter().flatten().map(|v| v.abs()).fold(0.0, f64::max);
-    if !(det.abs() > 1e-14 * scale * scale * scale) {
+    if !det.is_finite() || det.abs() <= 1e-14 * scale * scale * scale {
         return None;
     }
     let inv = 1.0 / det;
@@ -245,7 +245,7 @@ impl Conduction {
     /// where the face value is a fixed temperature or a convection
     /// condition (the stencil point is the face centroid, else its
     /// projection on the normal, as in the device's least squares).
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, clippy::needless_range_loop)]
     pub fn new(
         mesh: &Mesh,
         geo: &Geometry,
@@ -420,11 +420,7 @@ impl Conduction {
         let cn = -dot(fa.a_n, gn);
         let rt = fa.r_p + fa.r_c + fa.r_n;
         let q = (tp - tn + cp * fa.r_p + cn * fa.r_n) / rt;
-        (
-            q * fa.area,
-            tp - fa.r_p * (q - cp),
-            tn + fa.r_n * (q - cn),
-        )
+        (q * fa.area, tp - fa.r_p * (q - cp), tn + fa.r_n * (q - cn))
     }
 
     /// The gradient of cell `c` (one-sided where it has a stencil).
@@ -504,8 +500,8 @@ impl Conduction {
         self.cell_slot = cell_slot;
         for (oc, g) in self.cells.iter().zip(&self.grad) {
             let c = oc.c as usize;
-            for d in 0..3 {
-                self.g[d][c] = g[d];
+            for (d, v) in g.iter().enumerate() {
+                self.g[d][c] = *v;
             }
         }
         dev.upload(grad.x, &self.g[0])?;
@@ -576,7 +572,29 @@ impl Conduction {
         Ok(())
     }
 
-    /// The face temperatures and heat flows of the last correction, per
+    /// The heat flows and face temperatures of the interface faces from
+    /// the temperature `phi` after the solve (with the gradients of the
+    /// last sweep), so that the report is not one solve behind.
+    pub fn settle(&mut self, dev: &mut dyn FlowDevice, phi: Buf) -> Result<()> {
+        if self.faces.is_empty() {
+            return Ok(());
+        }
+        self.phi = dev.download(phi)?;
+        let cs = std::mem::take(&mut self.cell_slot);
+        for i in 0..self.faces.len() {
+            let fa = &self.faces[i];
+            let gp = self.grad_of(&cs, fa.o as usize);
+            let gn = self.grad_of(&cs, fa.n as usize);
+            let (q, a, b) = self.face(i, gp, gn);
+            self.heat[i] = q;
+            self.t_o[i] = a;
+            self.t_n[i] = b;
+        }
+        self.cell_slot = cs;
+        Ok(())
+    }
+
+    /// The face temperatures and heat flows of the last solve, per
     /// report pair: (name, heat flow into the pair's `into` region (W),
     /// area, area-mean face temperature on that side).
     pub fn report(&self) -> Vec<(String, f64, f64, f64)> {

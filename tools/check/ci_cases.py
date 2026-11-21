@@ -53,7 +53,7 @@ FLOW = {
         "naca0012_su2_re1000", "backstep_outlet_backflow", "taylor_couette_su2_zones",
         "cavity_heated", "conduction_mms", "couette_viscous_heating", "cht_composite_wall",
         "cht_heated_wall", "cht_turbulent_channel", "cht_contact_transient",
-        "cht_heated_wall_transient",
+        "cht_heated_wall_transient", "cht_orthotropic_patch", "cht_circuit_board",
     ],
     "long": [
         "cylinder_re100", "cylinder_re100_short", "cylinder_re100_statistics", "cylinder_re100_convective", "cylinder_re20_gci",

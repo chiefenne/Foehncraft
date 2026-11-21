@@ -8,6 +8,7 @@ Part of the [Example gallery](../gallery.md): the energy equation of the fluid (
 | 156 | [A heated wall cooled by a channel flow, and a composite wall](#cht-solids) | 7 | `[regions.<name>] kind = "solid"`, `[materials.<name>] kind = "solid"`, `[mesh.generate] zones`, `interface-<region>` |
 | 158 | [A finned heat sink in a turbulent air channel, and a turbulent channel over a conducting wall](#cht-turbulent) | 7 | `[turbulence]` with solid regions, `[energy] wall_function`, `turbulent_prandtl` |
 | 159 | [A heated wall switched on, and two bodies brought into contact](#cht-transient) | 7 | `[time]` with solid regions, `heat.csv`, `<probe>_T`, `[energy] exact` with `erf` |
+| 160 | [A chip on a circuit board with a thermal pad, and an orthotropic patch test](#cht-contact) | 7 | `[interfaces.<name>] contact_resistance`, `thin_wall`, orthotropic `conductivity`, `[regions.<name>] axes`, `[[energy.sources]]` |
 
 ---
 
@@ -246,4 +247,64 @@ target/release/foehn flow examples/cases/flow/cht_contact_transient.toml --out o
     --set 'verification.time_steps=[20.0, 10.0, 5.0, 2.5]'
 python3 -m tools.plot.cht_transient docs/figures/gallery output/cht_wall_t output/cht_contact \
     output/cht_contact_space output/cht_contact_time
+```
+
+<a id="cht-contact"></a>
+## 160. A chip on a circuit board with a thermal pad, and an orthotropic patch test
+
+<img src="../figures/gallery/cht_circuit_board.png" alt="Top: the temperature of a circuit board 1.6 mm thick with a 1 W chip on it in an air channel, with copper planes in the board; the board is warm along its whole length and the chip reaches 363.7 K. Middle: the same with a plain laminate; the heat stays in and around the chip, which reaches 423.7 K, and the board upstream stays at the air temperature. Bottom: the temperature along the top of the board for both boards and for the copper board without the thermal pad, which lies on the curve with the pad; the plain laminate peaks at 423 K under the chip, the copper board at 362 K with a broad hump" width="800" height="480">
+
+**A chip on a circuit board (stage 7d2).** `cht_circuit_board.toml` is a
+2D slice 1 cm deep: a board 1.6 mm thick and 12 cm long carries a silicon
+chip 20 mm long and 1.6 mm high that dissipates 1 W
+(`[[energy.sources]]` with `power`), cooled by air at 300 K and 1 m/s in
+a channel 12 mm high (laminar) and, below the board, by the still air of
+the enclosure (h = 5 W/(m² K)). The board is a glass-fibre laminate with
+copper planes, an **orthotropic** conductivity of 25 W/(m K) along the
+board and 0.35 W/(m K) through it; the chip sits on a **thermal pad** of
+R″ = 2·10⁻⁴ m²K/W (`[interfaces.pad]`). 250 iterations take 12 s on 4
+threads, and the heat balance closes to 7·10⁻¹³ of the chip's power.
+With the copper planes 74 % of the heat goes down into the board, which
+spreads it over its whole length: 48 % reaches the air through the top of
+the board, 26 % leaves through the bottom, and the chip stays at
+363.7 K. With a plain laminate (0.35 W/(m K) in every direction, the
+same case with `--set`) only 29 % enters the board, the chip has to pass
+71 % to the air over its own small surface, and it runs at 423.7 K, 60 K
+hotter. The pad costs 0.6 K: without it the chip is at 363.1 K, and the
+two faces of the pad differ by the heat flux through it times R″
+(363.6 K on the chip side, 362.8 K on the board side, in the report as
+`interface-board-chip`).
+
+<img src="../figures/gallery/cht_orthotropic_patch.png" alt="Left: the temperature on a unit square whose mesh nodes are moved at random by up to 25 percent of a cell, with white isotherms; in the left part, an orthotropic laminate with axes turned by 30 degrees, the isotherms tilt, in the fluid layer in the middle they are steep, and at x = 0.6 they jump where a contact resistance separates the fluid from a block. Right: the error against the exact piecewise-linear temperature, at most 2.7e-11 K" width="800" height="343">
+
+**The orthotropic patch test (V7.4 variant of the stage 7
+specification).** `cht_orthotropic_patch.toml` puts three layers side by
+side on a unit square whose nodes are moved by up to 25 % of a cell (the
+two interface planes stay planes): a laminate with k₁ = 20 and
+k₂ = 2 W/(m K) along axes turned by 30°, a fluid layer at rest
+(k = 2), and a block (k = 50) behind a contact resistance of
+0.01 m²K/W. The exact temperature is linear in every region, with the same
+tangential gradient everywhere, the same heat flux of 200 W/m² through
+every layer (in the laminate part of it comes from the cross term
+K_xy ∂T/∂y) and a jump of 2 K across the contact. A scheme with the
+two-sided gradient of an ordinary face, the harmonic mean or k of the
+face normal alone misses this on a skewed mesh; with the **one-sided
+gradients** of the interface cells, the series conductance with R″_c and
+the deferred **cross terms** of K the solution is exact: the largest error
+is 2.7·10⁻¹¹ K after 49 iterations, and the heat flux is 200 W/m² to
+10⁻⁸ at both outer walls and through both interfaces. tests/cht.rs also
+gives the laminate its axes in the region in place of the material
+(`[regions.laminate] axes`), with the same result.
+
+```
+cargo build --release -p foehncraft-cli
+target/release/foehn flow examples/cases/flow/cht_circuit_board.toml --out output/cht_board
+target/release/foehn flow examples/cases/flow/cht_circuit_board.toml --out output/cht_board_plain \
+    --set 'materials.board-laminate.conductivity=0.35'
+target/release/foehn flow examples/cases/flow/cht_circuit_board.toml --out output/cht_board_nopad \
+    --set 'interfaces.pad.contact_resistance=0.0'
+target/release/foehn flow examples/cases/flow/cht_orthotropic_patch.toml --out output/cht_patch
+pip install matplotlib h5py numpy
+python3 -m tools.plot.cht_contact docs/figures/gallery output/cht_board output/cht_board_plain \
+    output/cht_board_nopad output/cht_patch
 ```

@@ -519,7 +519,10 @@ fn composite_wall_with_contact_resistance_and_thin_wall() {
     // below it by q t/k at b
     let ta = 300.0 + q * (0.4 / 200.0 + rc);
     let tb = 400.0 - q * (0.4 / 20000.0 + t / k);
-    let (ma, mb) = (boundary(s, "interface-a").mean, boundary(s, "interface-b").mean);
+    let (ma, mb) = (
+        boundary(s, "interface-a").mean,
+        boundary(s, "interface-b").mean,
+    );
     assert!((ma - ta).abs() < 1e-9, "{ma} against {ta}");
     assert!((mb - tb).abs() < 1e-9, "{mb} against {tb}");
 }
@@ -574,15 +577,27 @@ fn interfaces_and_region_sources_are_checked() {
     let with = |extra: &str| base.replace("[energy]", &format!("{extra}\n[energy]"));
     for (extra, code) in [
         // an unknown region
-        ("[interfaces.x]\nregions = [\"a\", \"c\"]\ncontact_resistance = 1e-3\n", "CHT004"),
+        (
+            "[interfaces.x]\nregions = [\"a\", \"c\"]\ncontact_resistance = 1e-3\n",
+            "CHT004",
+        ),
         // two solids that do not touch
-        ("[interfaces.x]\nregions = [\"a\", \"b\"]\ncontact_resistance = 1e-3\n", "CHT004"),
+        (
+            "[interfaces.x]\nregions = [\"a\", \"b\"]\ncontact_resistance = 1e-3\n",
+            "CHT004",
+        ),
         // neither a resistance nor a thin wall
         ("[interfaces.x]\nregions = [\"a\", \"fluid\"]\n", "CHT004"),
         // a negative resistance
-        ("[interfaces.x]\nregions = [\"a\", \"fluid\"]\ncontact_resistance = -1.0\n", "CHT004"),
+        (
+            "[interfaces.x]\nregions = [\"a\", \"fluid\"]\ncontact_resistance = -1.0\n",
+            "CHT004",
+        ),
         // the same region twice
-        ("[interfaces.x]\nregions = [\"a\", \"a\"]\ncontact_resistance = 1e-3\n", "CHT004"),
+        (
+            "[interfaces.x]\nregions = [\"a\", \"a\"]\ncontact_resistance = 1e-3\n",
+            "CHT004",
+        ),
     ] {
         let (c, msg) = refused(&with(extra));
         assert_eq!(c, code, "{extra}: {msg}");
@@ -620,4 +635,31 @@ fn region_source_enters_the_balance() {
     };
     let d = out(temperature(&r0)) - out(s);
     assert!((d - 5.0).abs() < 1e-8, "{d}");
+}
+
+/// Stage 7d2: the two bodies of V7.6 with a contact resistance between
+/// them (R″_c = 10⁻³ m²K/W, the conductance 1000 W/(m² K) of the gap
+/// against √(kρc/t) ≈ 140 at 500 s): the heat balance closes in every
+/// step, what the solid loses the fluid stores, and the two sides of the
+/// contact differ by q R″_c.
+#[test]
+fn transient_contact_resistance_closes_the_balance() {
+    let base = text("cht_contact_transient.toml")
+        .replace("end_time = 500.0", "end_time = 50.0")
+        .replace("scalar_max_error = 0.01 ", "scalar_max_error = 100.0 ")
+        .replace(
+            "\n[energy]\n",
+            "\n[interfaces.gap]\nregions = [\"bar\", \"fluid\"]\ncontact_resistance = 1e-3\n\n[energy]\n",
+        );
+    let r = run_case(&parse(&base), "contact_gap");
+    let s = temperature(&r);
+    let e = s.energy.as_ref().unwrap();
+    let st: Vec<f64> = e.storage_regions.iter().map(|r| r.storage).collect();
+    assert!((st[0] + st[1]).abs() < 1e-9 * st[0].abs(), "{e:?}");
+    let h = r.solves[0].transient.as_ref().unwrap();
+    assert!(h.heat_relative_max.unwrap() < 1e-9, "{h:?}");
+    // the fluid side of the gap is below the contact temperature without it
+    let ti = contact_temperature([10.0, 1.0], [1e6, 1e6], [400.0, 300.0]);
+    let t = boundary(s, "interface-bar").mean;
+    assert!(t < ti - 1.0, "{t} against {ti}");
 }

@@ -674,7 +674,9 @@ impl BoxSpec {
         let mut pts = Vec::with_capacity(n1[0] * n1[1] * n1[2]);
         // nodes on a face plane of a zone box move only along it, so that
         // the interfaces between the zones stay planes (stage 7d2)
-        let ext: Vec<f64> = (0..3).map(|d| (self.upper[d] - self.lower[d]).abs()).collect();
+        let ext: Vec<f64> = (0..3)
+            .map(|d| (self.upper[d] - self.lower[d]).abs())
+            .collect();
         let on_zone_plane = |d: usize, x: f64| {
             self.zones.iter().any(|z| {
                 (z.lower[d] - x).abs() <= 1e-12 * ext[d] || (z.upper[d] - x).abs() <= 1e-12 * ext[d]

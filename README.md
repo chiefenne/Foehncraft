@@ -15,9 +15,9 @@
 > plan and every decision are in [docs/requirements.md](docs/requirements.md);
 > [What works today](#what-works-today) lists what is on `main` now. Stage 7 is
 > under way: the energy equation of the fluid and conjugate heat transfer
-> with solid regions, steady and transient, laminar and turbulent, are in;
-> contact resistance and orthotropic solids come next, buoyancy and
-> variable density later.
+> with solid regions, steady and transient, laminar and turbulent, with
+> contact resistances and orthotropic solids, are in; buoyancy and
+> variable density come later.
 
 [![CI](https://github.com/chiefenne/Foehncraft/actions/workflows/ci.yml/badge.svg)](https://github.com/chiefenne/Foehncraft/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/chiefenne/Foehncraft)](https://github.com/chiefenne/Foehncraft/releases)
@@ -103,7 +103,13 @@ Everything below is on `main`, verified by the cases of the
   temperature and follow the erf profiles at second order in space and
   time, and a heated wall switched on closes its heat balance (input,
   outflow, heat stored per region, written every step) to 10⁻¹¹ in every
-  step.
+  step. Contact resistances and thin walls sit in the faces between two
+  regions, solids may conduct orthotropically (axes per region), a region
+  can carry its own heat source, and with one-sided gradients at the
+  interfaces a piecewise-linear temperature is exact on a skewed mesh (a
+  rotated laminate, a fluid and a block behind a contact resistance, to
+  3·10⁻¹¹ K); a chip on a thermal pad on a circuit board with copper
+  planes is the gallery example.
 - **Rotating machinery.** The moving reference frame (steady and transient
   frozen rotor), the sliding mesh by conformal stepping and by imprinting
   the interface in every step, several rotors at their own speeds,

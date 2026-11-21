@@ -99,7 +99,11 @@ pub(crate) fn region_cells(
     name: &str,
 ) -> Option<Vec<u32>> {
     let m = member(case, mesh, mat_cell, regions, name)?;
-    Some((0..mat_cell.len() as u32).filter(|&c| m(c as usize)).collect())
+    Some(
+        (0..mat_cell.len() as u32)
+            .filter(|&c| m(c as usize))
+            .collect(),
+    )
 }
 
 /// Whether a cell is in region `name` (see [`region_cells`]), and whether
@@ -190,9 +194,7 @@ pub(crate) fn interface_specs(
                 if !(r.is_finite() && *r >= 0.0) {
                     return Err(bad(
                         name,
-                        format!(
-                            "[interfaces.{name}] contact_resistance must be ≥ 0 m²K/W, is {r}"
-                        ),
+                        format!("[interfaces.{name}] contact_resistance must be ≥ 0 m²K/W, is {r}"),
                     ));
                 }
                 Resistance::Fixed(*r)
@@ -263,7 +265,12 @@ pub(crate) fn interface_specs(
             let (o, n) = (mesh.owner[f] as usize, mesh.neighbour[f] as usize);
             if (ma(o) && mb(n)) || (mb(o) && ma(n)) {
                 if let Some(other) = of_face.insert(f as u32, idx) {
-                    let other = case.interfaces.keys().nth(other).cloned().unwrap_or_default();
+                    let other = case
+                        .interfaces
+                        .keys()
+                        .nth(other)
+                        .cloned()
+                        .unwrap_or_default();
                     return Err(bad(
                         name,
                         format!(
