@@ -38,7 +38,7 @@
 //!   entries (`MARKER_TAG= SEND_RECEIVE`) are not read.
 //! - Higher-order elements are refused.
 
-use super::{CellKind, ElementMesh, MeshFile, MeshFormat, ReadOptions};
+use super::{CellKind, ElementMesh, MeshFile, MeshFormat, ReadOptions, declared};
 
 /// The SU2 format in the registry of [`crate::format`](mod@crate::format).
 #[derive(Debug, Clone, Copy)]
@@ -110,6 +110,8 @@ struct Element {
 struct Lines<'a> {
     it: std::iter::Enumerate<std::str::Lines<'a>>,
     line: usize,
+    /// Size of the file in bytes (a count may not exceed it, D202).
+    len: usize,
 }
 
 impl<'a> Lines<'a> {
@@ -173,10 +175,12 @@ fn parse_num<T: std::str::FromStr>(s: &str) -> Option<T> {
 }
 
 fn count(lines: &Lines, key: &str, v: &str) -> Result<usize, String> {
-    v.split_whitespace()
+    let n = v
+        .split_whitespace()
         .next()
         .and_then(parse_num)
-        .ok_or_else(|| lines.err(format!("{key}= needs a count, found '{v}'")))
+        .ok_or_else(|| lines.err(format!("{key}= needs a count, found '{v}'")))?;
+    declared(n, lines.len, &lines.err(format!("{key}=")))
 }
 
 /// Parses the bytes of a `.su2` file.
@@ -185,6 +189,7 @@ pub fn parse(bytes: &[u8], options: &ReadOptions) -> Result<MeshFile, String> {
     let mut lines = Lines {
         it: text.lines().enumerate(),
         line: 0,
+        len: text.len(),
     };
     let mut ndime: Option<usize> = None;
     let mut cells: Option<Vec<Element>> = None;

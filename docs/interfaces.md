@@ -93,6 +93,9 @@ The limits may change during a run (a re-read of the case file, D40).
 | `event` | `code`, `severity`, `message`, `at` (iteration or step); a change by `[[schedule]]` (`RUN015`) also has `key`, `old`, `new` (1.1) |
 | `balance` | `iteration` (steady) or `step` and `time` (transient), `mass_outflow`, `mass_relative`, `kinetic_energy`, `storage`, `boundary_power`, `body_force_power`, `viscous_dissipation`, `numerical_dissipation`, `numerical_relative`, `pressure_dissipation`, `scheme_dissipation` |
 | `balance_run` | the same fields for the whole transient run (time integrals: kg, J) |
+| `budget` | (1.1, D198) after the header: `iterations` (steady: the iteration budget with `iterations`, `source`, `diagnose_at`, `diagnosis`), `estimate` (the D81 estimate: `cells`, `wall_time`, `cell_hours`, `gpu_hours`, `output_bytes`) and, with a study budget, `study` (`ledger`, `runs`, and per budget `cell_hours`, `gpu_hours`, `output`: `budget`, `spent`, `remaining`, `estimate`, `fits`) |
+| `diagnosis` | (1.1, D198) a steady run at `[run.limits] diagnose_at` that has not converged: `iteration`, `window`, `budget`, `tolerance`, `controlling` (equation with the largest residual), `verdict` (`on-track`, `slow`, `stalled`, `rising`, `oscillating`), `equations` (per equation `equation`, `residual`, `decades_per_1000`, `scatter`, `trend`, `tolerance_at`), `advice` |
+| `spend` | (1.1, D198) with a study budget, before `result`: `cell_hours`, `gpu_hours`, `output_bytes` of this run, as written to the study ledger |
 | `timings` | `seconds`, `cells`, `steps`, `ns_per_cell_step`, `solves` (per solve: `mesh`, `device`, `timings`, `ns_per_cell_iteration`, `ns_per_cell_step`) |
 | `result` | `result` (the object of `result.json`) |
 | `end` | `status`, `exit_code` |
@@ -278,6 +281,7 @@ A code keeps its meaning; a retired code stays in the table.
 | `CASE007` | error | A path outside the read roots or the write roots (D82). |
 | `CASE008` | error | A `--set key=value` that cannot be applied. |
 | `CASE009` | error | A key that the case needs is missing. |
+| `CASE010` | error | A case file that its reader refuses for a reason without a more specific code yet (the message says which); D202. |
 | `SCHED001` | error | An entry of `[[schedule]]` that is not valid: its trigger, its order, a key that cannot change during a run, or a value that does not validate (D128). |
 | `BC001` | error | A mesh boundary without a boundary condition. |
 | `BC002` | error | A boundary condition for a boundary the mesh does not have. |
@@ -362,6 +366,7 @@ A code keeps its meaning; a retired code stays in the table.
 | `ROT002` | error | A `walls` entry of `[[mrf]]` or `[[sliding]]` that is not a wall of the case, or an `[[output.machines]]` table without a turning zone, with a `rotor` that is no turning zone (or none where there are several), without an inlet or an outlet, with a boundary the case does not have, or with a name used twice. |
 | `MESH001` | warning | Faces whose skewness exceeds `solver.skewness_limit` (poor cells, typically tetrahedra of a mesh that was not optimised). |
 | `MESH002` | note | Cell-quality remediation (D50): the run uses other schemes than set because of poor cells. |
+| `MESH003` | error | A mesh file that cannot be read: missing, of an unknown format, truncated or damaged (the reader says where); D202. |
 | `RUN001` | note | Stopped by the `.stop` control file. |
 | `RUN002` | note | Stopped by a signal (SIGTERM, SIGINT or SIGUSR2). |
 | `RUN003` | warning | Stopped at the wall-time limit (`[run.limits] max_wall_time`). |
@@ -377,6 +382,12 @@ A code keeps its meaning; a retired code stays in the table.
 | `RUN013` | error | An output file could not be written. |
 | `RUN014` | error | The solution diverged (a value that is not finite); see `divergence.md` (D63). |
 | `RUN015` | note | A setting changed by an entry of `[[schedule]]` (D128): key, old and new value. |
+| `RUN016` | note | The diagnosis of a steady run at `[run.limits] diagnose_at` (default 2000 iterations): the trend of each residual, the verdict and advice (D198). |
+| `RUN017` | warning | Stopped by the diagnosis: the steady run is not on its way to the tolerance within its iteration budget (`[run.limits] diagnosis = "stop"`). |
+| `RUN018` | warning | Stopped at a study budget (`[run.limits] study_cell_hours`, `study_gpu_hours`, `study_output`). |
+| `RUN019` | error | A study budget is already spent by the earlier runs of the study (`study_budget.jsonl`): the run does not start. |
+| `RUN020` | warning | The estimate of the run (D81) does not fit into what is left of a study budget. |
+| `RUN021` | warning | A steady iteration budget above 10 000 iterations: a steady case needs hundreds, at most a few thousand; look at the run after 2000 to 3000 iterations instead. |
 | `DIV001` | note | Divergence cause: the Courant number near the failing cells is large; reduce the time step. |
 | `DIV002` | note | Divergence cause: under-relaxation factors too large for the case. |
 | `DIV003` | note | Divergence cause: poor cells (skewness, non-orthogonality, volume ratio) at the failing cells. |

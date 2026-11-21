@@ -95,7 +95,18 @@ detail are in [CONTRIBUTING.md](CONTRIBUTING.md).
   AMG, CPU backends).
 - **MUST** keep CUDA code in the CUDA backend crate (D60).
 - **MUST** use `unsafe` only in the named GPU and SIMD modules, each block
-  with a `// SAFETY:` comment (D202).
+  with a `// SAFETY:` comment (D202). The workspace denies `unsafe_code`
+  and clippy's `undocumented_unsafe_blocks`; the named modules and their
+  reasons are listed in `tools/check/unsafe_modules.py`, and a new one needs
+  the maintainer's go.
+- **MUST** make a mesh or case reader end every broken input in an error
+  with a diagnostic code, never a panic, an abort or a hang: check a count
+  a file declares against its size (`format::declared`) before allocating,
+  and use checked arithmetic on indices and ranges from the file. A new
+  reader or format joins the broken-input corpus
+  (`crates/foehncraft-mesh/tests/broken_inputs.rs`,
+  `crates/foehncraft-flow/tests/broken_inputs.rs`) in the same pull request
+  (D202).
 - **SHOULD** avoid `unwrap` and `panic!` in new code of the case,
   mesh-reader and engine crates and return a diagnostic code instead;
   fix old code when it is touched (D202).
@@ -136,6 +147,7 @@ Repository checks:
 ```sh
 python3 -m tools.check.ci_cases --check   # every flow case is in a CI case set
 python3 -m tools.check.backend            # CUDA only in the CUDA backend crate
+python3 -m tools.check.unsafe_modules     # unsafe only in the named modules (D202)
 python3 -m tools.check.c_free             # build without C libraries
 ```
 

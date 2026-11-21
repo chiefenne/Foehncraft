@@ -76,6 +76,7 @@ codes! {
     CASE_OUTSIDE_ROOT = "CASE007", Error, "A path outside the read roots or the write roots (D82).";
     CASE_SET = "CASE008", Error, "A `--set key=value` that cannot be applied.";
     CASE_MISSING_KEY = "CASE009", Error, "A key that the case needs is missing.";
+    CASE_REFUSED = "CASE010", Error, "A case file that its reader refuses for a reason without a more specific code yet (the message says which); D202.";
     // the boundary conditions (D30)
     BC_NO_CONDITION = "BC001", Error, "A mesh boundary without a boundary condition.";
     BC_NO_BOUNDARY = "BC002", Error, "A boundary condition for a boundary the mesh does not have.";
@@ -167,6 +168,7 @@ codes! {
     // the mesh quality (D50)
     MESH_SKEWED = "MESH001", Warning, "Faces whose skewness exceeds `solver.skewness_limit` (poor cells, typically tetrahedra of a mesh that was not optimised).";
     MESH_REMEDIATION = "MESH002", Note, "Cell-quality remediation (D50): the run uses other schemes than set because of poor cells.";
+    MESH_READ = "MESH003", Error, "A mesh file that cannot be read: missing, of an unknown format, truncated or damaged (the reader says where); D202.";
     // the run (D40, D62, D64, D83)
     RUN_STOP_FILE = "RUN001", Note, "Stopped by the `.stop` control file.";
     RUN_SIGNAL = "RUN002", Note, "Stopped by a signal (SIGTERM, SIGINT or SIGUSR2).";
@@ -183,6 +185,13 @@ codes! {
     RUN_IO = "RUN013", Error, "An output file could not be written.";
     RUN_SCHEDULED = "RUN015", Note, "A setting changed by an entry of `[[schedule]]` (D128): key, old and new value.";
     RUN_DIVERGED = "RUN014", Error, "The solution diverged (a value that is not finite); see `divergence.md` (D63).";
+    // iteration and study budgets (D198 (c), (d))
+    RUN_DIAGNOSIS = "RUN016", Note, "The diagnosis of a steady run at `[run.limits] diagnose_at` (default 2000 iterations): the trend of each residual, the verdict and advice (D198).";
+    RUN_DIAGNOSIS_STOP = "RUN017", Warning, "Stopped by the diagnosis: the steady run is not on its way to the tolerance within its iteration budget (`[run.limits] diagnosis = \"stop\"`).";
+    RUN_STUDY_BUDGET = "RUN018", Warning, "Stopped at a study budget (`[run.limits] study_cell_hours`, `study_gpu_hours`, `study_output`).";
+    RUN_STUDY_SPENT = "RUN019", Error, "A study budget is already spent by the earlier runs of the study (`study_budget.jsonl`): the run does not start.";
+    RUN_STUDY_ESTIMATE = "RUN020", Warning, "The estimate of the run (D81) does not fit into what is left of a study budget.";
+    RUN_LARGE_BUDGET = "RUN021", Warning, "A steady iteration budget above 10 000 iterations: a steady case needs hundreds, at most a few thousand; look at the run after 2000 to 3000 iterations instead.";
     // the causes of a divergence (D63)
     DIV_TIME_STEP = "DIV001", Note, "Divergence cause: the Courant number near the failing cells is large; reduce the time step.";
     DIV_RELAXATION = "DIV002", Note, "Divergence cause: under-relaxation factors too large for the case.";
@@ -387,16 +396,51 @@ macro_rules! need {
 }
 
 /// The diagnostic of an error: the first one in its chain, with the full
-/// message of the chain (context included); `GEN001` when there is none.
+/// message of the chain (context included). An error without one gets its
+/// code from what failed (D202): a mesh file that cannot be read `MESH003`,
+/// a TOML error of a case file `CASE001`, `CASE002`, `CASE003` or `CASE009`
+/// (the readers of the mesh, scalar, Poisson and benchmark cases), a file
+/// that cannot be read `CASE006`; `GEN001` otherwise.
 pub fn of_error(e: &anyhow::Error) -> Diagnostic {
     let msg = format!("{e:#}");
     let mut d = e
         .chain()
         .find_map(|c| c.downcast_ref::<Diagnostic>())
         .cloned()
+        .or_else(|| {
+            e.chain()
+                .any(|c| c.is::<foehncraft_mesh::case::ReadError>())
+                .then(|| Diagnostic::new(MESH_READ, ""))
+        })
+        .or_else(|| {
+            e.chain()
+                .find_map(|c| c.downcast_ref::<toml::de::Error>())
+                .map(|t| crate::case::toml_diagnostic("", t))
+        })
+        .or_else(|| {
+            e.chain()
+                .any(|c| c.is::<std::io::Error>())
+                .then(|| Diagnostic::new(CASE_FILE, ""))
+        })
         .unwrap_or_else(|| Diagnostic::new(GENERAL, ""));
     d.message = msg;
     d
+}
+
+/// An error of a case reader (flow, mesh, scalar, Poisson and benchmark
+/// cases) with its diagnostic (D202): the one of [`of_error`], or
+/// `CASE010` when that finds no specific code. The message is that of the
+/// whole chain, as before.
+pub fn case_error(e: anyhow::Error) -> anyhow::Error {
+    let mut d = of_error(&e);
+    if d.code == GENERAL {
+        d.code = CASE_REFUSED;
+        d.severity = Severity::Error;
+        if d.key.is_none() {
+            d.key = key_of(&d.message);
+        }
+    }
+    err(d)
 }
 
 #[cfg(test)]

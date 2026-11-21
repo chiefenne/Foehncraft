@@ -135,8 +135,11 @@ validated range, one mesh only, …) in its report and its JSON result.
   statistics of transient runs (time mean, RMS, covariance, phase averages,
   a confidence interval that says whether the window is long enough), mass and
   kinetic-energy ledgers (named terms per quantity, ready for further quantities), a divergence report, a log that can be
-  circulated, JSON records for scripts and agents, and the limitations of
-  every run (LIM001 to LIM006, D199).
+  circulated, JSON records for scripts and agents; an iteration budget
+  shown before the run and a diagnosis of a steady run at 2000 iterations
+  (trend of each residual, verdict, advice, optional stop), budgets
+  per study (cell-hours, GPU-hours, output volume) beside the estimate, and
+  the limitations of every run (LIM001 to LIM006, D199).
 - **Tools for scripts and agents.** One registry of typed tools (D196):
   `foehn commands` prints the catalogue of every tool with its input and
   output schemas and action kind, `foehn call <id> --input file.json` runs

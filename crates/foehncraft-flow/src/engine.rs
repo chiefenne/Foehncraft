@@ -156,7 +156,7 @@ pub struct Stop {
     /// Diagnostic code (`RUN001` … `RUN005`, or `BAL001` … `BAL003`).
     pub code: &'static str,
     /// `control-file`, `signal`, `wall-time`, `steps`, `iterations`,
-    /// `output`, `balance`.
+    /// `output`, `balance`, `diagnosis`, `study-budget`.
     pub kind: &'static str,
     /// The signal, for `signal`.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -179,6 +179,40 @@ pub struct Steer {
     pending: Option<Stop>,
     /// The build and host, for the banner of the log.
     pub(crate) build: Option<BuildInfo>,
+    /// The spend of this run against the study budgets (D198 (c)).
+    spend: SpendMeter,
+    /// Lines for the log after its banner (the budgets, D198).
+    pub(crate) notes: Vec<String>,
+}
+
+/// What a run has spent so far (cell-seconds, GPUs), and what the earlier
+/// runs of its study spent (D198 (c)).
+#[derive(Debug, Clone)]
+struct SpendMeter {
+    cells: usize,
+    gpus: usize,
+    cell_seconds: f64,
+    last: Instant,
+    /// The spend of the earlier runs of the study (only with a budget).
+    before: Option<crate::budget::Spend>,
+}
+
+impl SpendMeter {
+    fn new() -> Self {
+        Self {
+            cells: 0,
+            gpus: 0,
+            cell_seconds: 0.0,
+            last: Instant::now(),
+            before: None,
+        }
+    }
+
+    fn tick(&mut self) {
+        let now = Instant::now();
+        self.cell_seconds += self.cells as f64 * (now - self.last).as_secs_f64();
+        self.last = now;
+    }
 }
 
 impl Steer {
@@ -197,6 +231,8 @@ impl Steer {
             stop: None,
             pending: None,
             build: None,
+            spend: SpendMeter::new(),
+            notes: Vec::new(),
         })
     }
 
@@ -210,6 +246,52 @@ impl Steer {
             stop: None,
             pending: None,
             build: None,
+            spend: SpendMeter::new(),
+            notes: Vec::new(),
+        }
+    }
+
+    /// The solve now runs on `cells` cells and `gpus` GPUs (the spend of a
+    /// study budget counts from here, D198 (c)).
+    pub(crate) fn set_cells(&mut self, cells: usize, gpus: usize) {
+        self.spend.tick();
+        self.spend.cells = cells;
+        self.spend.gpus = gpus;
+    }
+
+    /// What this run has spent so far.
+    fn spent(&mut self) -> crate::budget::Spend {
+        self.spend.tick();
+        crate::budget::Spend {
+            cell_hours: self.spend.cell_seconds / 3600.0,
+            gpu_hours: self.spend.gpus as f64 * self.start.elapsed().as_secs_f64() / 3600.0,
+            output_bytes: dir_bytes(&self.out) as f64,
+        }
+    }
+
+    /// The diagnosis of a steady run (D198 (d)) into the run record; with
+    /// `stop` and a verdict off track the run stops at the next
+    /// [`poll`](Self::poll).
+    pub(crate) fn diagnosis(&mut self, d: &crate::budget::Diagnosis, stop: bool) {
+        let mut row = serde_json::to_value(d).unwrap_or_default();
+        row["type"] = "diagnosis".into();
+        self.record.row(&row);
+        self.event(
+            diag::RUN_DIAGNOSIS,
+            d.iteration,
+            &format!("diagnosis at iteration {}: {}", d.iteration, d.advice),
+        );
+        if stop && d.verdict.off_track() && self.pending.is_none() {
+            self.pending = Some(Stop {
+                code: diag::RUN_DIAGNOSIS_STOP,
+                kind: "diagnosis",
+                signal: None,
+                message: format!(
+                    "stopped by the diagnosis at iteration {} ({:?}; [run.limits] diagnosis = \"stop\")",
+                    d.iteration, d.verdict
+                )
+                .to_lowercase(),
+            });
         }
     }
 
@@ -286,6 +368,38 @@ impl Steer {
                 diag::RUN_LIMIT_OUTPUT,
                 "output",
                 format!("stopped at the output limit of {b:e} bytes ([run.limits] max_output)"),
+            ))
+        } else if let Some(before) = self.spend.before.clone()
+            && limits.has_study_budget()
+            && let Some((k, b, used)) = {
+                let now = self.spent();
+                [
+                    (
+                        "study_cell_hours",
+                        limits.study_cell_hours,
+                        before.cell_hours + now.cell_hours,
+                    ),
+                    (
+                        "study_gpu_hours",
+                        limits.study_gpu_hours,
+                        before.gpu_hours + now.gpu_hours,
+                    ),
+                    (
+                        "study_output",
+                        limits.study_output,
+                        before.output_bytes + now.output_bytes,
+                    ),
+                ]
+                .into_iter()
+                .find_map(|(k, b, u)| b.filter(|&b| u >= b).map(|b| (k, b, u)))
+            }
+        {
+            Some(stop(
+                diag::RUN_STUDY_BUDGET,
+                "study-budget",
+                format!(
+                    "stopped at the study budget ([run.limits] {k} = {b}; spent {used:.4} with this run)"
+                ),
             ))
         } else {
             None
@@ -874,6 +988,15 @@ pub struct Estimate {
     pub wall_time: Option<f64>,
     /// Where the wall time comes from, or why there is none.
     pub wall_time_basis: String,
+    /// Cell-hours (cells times wall hours, summed over the levels), with
+    /// the wall time (D198 (c)).
+    pub cell_hours: Option<f64>,
+    /// GPU-hours, with the wall time (0 on the CPU).
+    pub gpu_hours: Option<f64>,
+    /// Steady: the iteration budget, its source and the diagnosis
+    /// (D198 (d)).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub iteration_budget: Option<crate::budget::IterationBudget>,
 }
 
 /// Host memory of a run: a base and bytes per interior and per boundary
@@ -1089,6 +1212,7 @@ pub fn estimate(case: &FlowCase, dir: &Path, build: &BuildInfo) -> Result<Estima
     let mut level_cells = Vec::new();
     let (mut faces, mut interior_faces) = (0usize, 0usize);
     let (mut host, mut dev, mut work) = (0.0f64, 0.0f64, 0.0f64);
+    let mut cell_work = 0.0f64;
     let mut outs = Vec::new();
     let gpu = case.run.backend != "cpu";
     let mut steps = Vec::new();
@@ -1121,6 +1245,7 @@ pub fn estimate(case: &FlowCase, dir: &Path, build: &BuildInfo) -> Result<Estima
         };
         for s in &level_steps {
             work += nc * *s as f64;
+            cell_work += nc * nc * *s as f64;
             steps.push(*s);
         }
         if i == levels.len() - 1 {
@@ -1165,7 +1290,25 @@ pub fn estimate(case: &FlowCase, dir: &Path, build: &BuildInfo) -> Result<Estima
             ),
         )
     };
+    // cell-hours: each level's cells for its share of the wall time
+    // (the time is proportional to cells times steps, so the sum of
+    // cells times its time is the work-weighted mean)
+    let cell_hours = wall_time.map(|w| {
+        if work > 0.0 {
+            w / work * cell_work / 3600.0
+        } else {
+            0.0
+        }
+    });
+    let gpu_hours = wall_time.map(|w| f64::from(u8::from(gpu)) * w / 3600.0);
+    let iteration_budget = case
+        .time
+        .is_none()
+        .then(|| crate::budget::IterationBudget::of(case.solver.max_iterations, &case.run.limits));
     Ok(Estimate {
+        cell_hours,
+        gpu_hours,
+        iteration_budget,
         cells: level_cells.iter().copied().max().unwrap_or(0),
         faces,
         interior_faces,
@@ -1181,6 +1324,161 @@ pub fn estimate(case: &FlowCase, dir: &Path, build: &BuildInfo) -> Result<Estima
         wall_time,
         wall_time_basis: basis,
     })
+}
+
+/// The findings of the iteration and study budgets (D198) for a run of
+/// `case` into `out` with the estimate `e`.
+fn budget_findings(case: &FlowCase, e: &Estimate, out: &Path) -> Vec<Diagnostic> {
+    let mut v = Vec::new();
+    if let Some(b) = &e.iteration_budget
+        && b.iterations > crate::budget::LARGE_ITERATION_BUDGET
+    {
+        v.push(
+            Diagnostic::new(
+                diag::RUN_LARGE_BUDGET,
+                format!(
+                    "the steady iteration budget is {} iterations ({}); a steady case needs hundreds, at most a few thousand: \
+                     set it to about 3000 and look at the diagnosis at [run.limits] diagnose_at",
+                    b.iterations, b.source
+                ),
+            )
+            .key(b.source),
+        );
+    }
+    if case.run.limits.has_study_budget() {
+        let sb = study_budget(case, e, out);
+        if let Some((k, b, used)) = sb.exhausted() {
+            v.push(
+                Diagnostic::new(
+                    diag::RUN_STUDY_SPENT,
+                    format!(
+                        "[run.limits] {k} = {b} is spent: the earlier runs of the study spent {used:.4} ({})",
+                        sb.ledger
+                    ),
+                )
+                .key(format!("run.limits.{k}")),
+            );
+        } else {
+            for k in sb.over_estimate() {
+                v.push(
+                    Diagnostic::new(
+                        diag::RUN_STUDY_ESTIMATE,
+                        format!("the estimate of this run does not fit into what is left of [run.limits] {k}"),
+                    )
+                    .key(format!("run.limits.{k}")),
+                );
+            }
+        }
+    }
+    v
+}
+
+/// The study budgets of `case` against the ledger of the study of `out`.
+fn study_budget(case: &FlowCase, e: &Estimate, out: &Path) -> crate::budget::StudyBudget {
+    crate::budget::StudyBudget::new(
+        &case.run.limits,
+        &crate::budget::ledger_path(out),
+        (e.cell_hours, e.gpu_hours, e.output_bytes),
+    )
+}
+
+/// The `"budget"` row of the run record: the iteration budget, the D81
+/// estimate and the study budgets (D198).
+fn budget_row(
+    case: &FlowCase,
+    e: Option<&Estimate>,
+    study: Option<&crate::budget::StudyBudget>,
+) -> serde_json::Value {
+    let mut row = serde_json::json!({"type": "budget"});
+    if case.time.is_none() {
+        row["iterations"] = serde_json::to_value(crate::budget::IterationBudget::of(
+            case.solver.max_iterations,
+            &case.run.limits,
+        ))
+        .unwrap_or_default();
+    }
+    if let Some(e) = e {
+        row["estimate"] = serde_json::json!({
+            "cells": e.cells,
+            "steps": e.steps,
+            "wall_time": e.wall_time,
+            "wall_time_basis": e.wall_time_basis,
+            "cell_hours": e.cell_hours,
+            "gpu_hours": e.gpu_hours,
+            "output_bytes": e.output_bytes,
+        });
+    }
+    if let Some(s) = study {
+        row["study"] = serde_json::to_value(s).unwrap_or_default();
+    }
+    row
+}
+
+/// The budgets at the start of a run (D198): the `"budget"` row of the run
+/// record, the log lines, and with a study budget its ledger; a spent
+/// study budget stops the run before it starts (`RUN019`).
+fn start_budgets(
+    case: &FlowCase,
+    dir: &Path,
+    build: &BuildInfo,
+    roots: &Roots,
+    steer: &mut Steer,
+) -> Result<()> {
+    let limits = &case.run.limits;
+    if let Some(b) = case
+        .time
+        .is_none()
+        .then(|| crate::budget::IterationBudget::of(case.solver.max_iterations, limits))
+    {
+        steer.notes.push(format!(
+            "iteration budget {} ({}); {}",
+            b.iterations,
+            b.source,
+            match b.diagnose_at {
+                Some(n) => format!(
+                    "diagnosis at iteration {n} ([run.limits] diagnose_at, {})",
+                    if b.diagnosis == "stop" {
+                        "stops a run off track"
+                    } else {
+                        "recorded"
+                    }
+                ),
+                None => "no diagnosis".into(),
+            }
+        ));
+    }
+    if !limits.has_study_budget() {
+        if case.time.is_none() {
+            steer.record.row(&budget_row(case, None, None));
+        }
+        return Ok(());
+    }
+    // the ledger is in the parent of the output directory (D82)
+    roots.check_write(&crate::budget::ledger_path(dir))?;
+    let e = estimate(case, dir, build)?;
+    let sb = study_budget(case, &e, dir);
+    steer.record.row(&budget_row(case, Some(&e), Some(&sb)));
+    steer.notes.extend(sb.lines());
+    if let Some((k, b, used)) = sb.exhausted() {
+        return Err(diag::err(
+            Diagnostic::new(
+                diag::RUN_STUDY_SPENT,
+                format!(
+                    "[run.limits] {k} = {b} is spent: the earlier runs of the study spent {used:.4} ({}); the run does not start",
+                    sb.ledger
+                ),
+            )
+            .key(format!("run.limits.{k}")),
+        ));
+    }
+    for k in sb.over_estimate() {
+        let m =
+            format!("the estimate of this run does not fit into what is left of [run.limits] {k}");
+        steer.event(diag::RUN_STUDY_ESTIMATE, 0, &m);
+        steer.notes.push(m);
+    }
+    steer.spend.before = Some(crate::budget::spent(&crate::budget::ledger_path(dir)));
+    Ok(())
 }
 
 /// The report of `foehn flow --check` (D78, D81).
@@ -1274,7 +1572,10 @@ pub fn check_case(
         Err(e) => rep.diagnostics.push(diag::of_error(&e)),
     }
     match estimate(case, &out, build) {
-        Ok(e) => rep.estimate = Some(e),
+        Ok(e) => {
+            rep.diagnostics.extend(budget_findings(case, &e, &out));
+            rep.estimate = Some(e);
+        }
         Err(e) => rep.diagnostics.push(diag::of_error(&e)),
     }
     rep.ok = !rep
@@ -1477,9 +1778,26 @@ pub fn run(
                 "case_file": case.source.as_ref().map(|p| p.display().to_string()),
                 "settings": case,
             }));
+            start_budgets(&case, dir, &opts.build, &opts.roots, &mut steer)?;
             steer.record.flush();
             crate::case::run_steered(&case, name, dir, &mut steer, &mut log)
         });
+    // the spend of this run into the study ledger (D198 (c))
+    if case.run.limits.has_study_budget() && steer.spend.before.is_some() {
+        let s = steer.spent();
+        steer.record.row(&serde_json::json!({
+            "type": "spend",
+            "cell_hours": s.cell_hours,
+            "gpu_hours": s.gpu_hours,
+            "output_bytes": s.output_bytes,
+        }));
+        if let Err(e) = crate::budget::append(&crate::budget::ledger_path(dir), name, dir, &s) {
+            log(&crate::console::tagged(
+                "warning",
+                &format!("the study ledger could not be written: {e}"),
+            ));
+        }
+    }
     let summary = match &res {
         Ok(rep) => summary_of(&case, rep, dir, &opts.build)?,
         Err(e) => {

@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 568" width="800" height="568" font-family="Helvetica, Arial, sans-serif" font-size="12">
 <rect width="800" height="568" fill="white"/>
-<text x="400.0" y="22" text-anchor="middle" font-size="15" font-weight="bold">Verification grades of 92 features (D199)</text>
+<text x="400.0" y="22" text-anchor="middle" font-size="15" font-weight="bold">Verification grades of 93 features (D199)</text>
 <rect x="230" y="36" width="14" height="14" fill="#2e9d5b"/>
-<text x="250" y="48">verified (40)</text>
+<text x="250" y="48">verified (41)</text>
 <rect x="380" y="36" width="14" height="14" fill="#e9a23b"/>
 <text x="400" y="48">partial (48)</text>
 <rect x="530" y="36" width="14" height="14" fill="#d64541"/>
@@ -75,10 +75,10 @@
 <rect x="270.8" y="406" width="122.3" height="20" fill="#e9a23b"/>
 <text x="331.9" y="420.0" text-anchor="middle" fill="white" font-weight="bold">3</text>
 <text x="220" y="448.0" text-anchor="end">Runs and results</text>
-<rect x="230.0" y="434" width="122.3" height="20" fill="#2e9d5b"/>
-<text x="291.2" y="448.0" text-anchor="middle" fill="white" font-weight="bold">3</text>
-<rect x="352.3" y="434" width="122.3" height="20" fill="#e9a23b"/>
-<text x="413.5" y="448.0" text-anchor="middle" fill="white" font-weight="bold">3</text>
+<rect x="230.0" y="434" width="163.1" height="20" fill="#2e9d5b"/>
+<text x="311.5" y="448.0" text-anchor="middle" fill="white" font-weight="bold">4</text>
+<rect x="393.1" y="434" width="122.3" height="20" fill="#e9a23b"/>
+<text x="454.2" y="448.0" text-anchor="middle" fill="white" font-weight="bold">3</text>
 <text x="220" y="476.0" text-anchor="end">Backends and interfaces</text>
 <rect x="230.0" y="462" width="122.3" height="20" fill="#e9a23b"/>
 <text x="291.2" y="476.0" text-anchor="middle" fill="white" font-weight="bold">3</text>

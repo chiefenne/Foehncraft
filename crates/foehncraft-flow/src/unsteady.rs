@@ -373,9 +373,13 @@ pub fn run(
         );
         findings.extend(crate::turbulence::setup_findings(case));
         findings.extend(crate::energy::setup_findings(case));
+        steer.set_cells(mesh.n_cells, usize::from(case.run.backend != "cpu"));
         if ri == 0 {
             rep.findings = findings.clone();
             lg.frame(&crate::logblocks::banner(steer.build.as_ref(), case));
+            for n in std::mem::take(&mut steer.notes) {
+                lg.note(&n);
+            }
         }
         if findings.iter().any(|f| f.level == Level::Error) {
             let msg: Vec<String> = findings

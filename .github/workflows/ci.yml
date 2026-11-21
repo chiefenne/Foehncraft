@@ -188,6 +188,8 @@ jobs:
       - run: cargo clippy --workspace --all-targets --locked --features foehncraft-cuda/cuda,foehncraft-cli/cuda
       - name: CUDA only in the CUDA backend crate (D60)
         run: python3 -m tools.check.backend
+      - name: unsafe only in the named GPU and SIMD modules (D202)
+        run: python3 -m tools.check.unsafe_modules
       - run: cargo doc --workspace --no-deps --locked
 
   msrv:

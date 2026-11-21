@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**92 features: 40 verified, 48 partial, 4 unverified.**
+**93 features: 41 verified, 48 partial, 4 unverified.**
 
 ## How a grade is computed
 
@@ -111,6 +111,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Runs and results | [Statistics of transient runs (mean, RMS, phase averages, confidence)](#run-statistics) | verified |
 | Runs and results | [Mass and kinetic-energy ledgers, divergence report](#run-ledgers) | partial |
 | Runs and results | [Log columns and JSON records for scripts and agents](#run-log-records) | partial |
+| Runs and results | [Iteration budget, diagnosis of steady runs, study budgets](#run-budgets) | verified |
 | Runs and results | [Grid convergence index of every mesh sweep](#run-gci) | verified |
 | Backends and interfaces | [Flow loop on NVIDIA GPUs](#backend-cuda) | partial |
 | Backends and interfaces | [Python package foehncraft (cases, runs, studies)](#interface-python) | partial |
@@ -1223,6 +1224,18 @@ Gaps:
 - consistency: [`cavity_re100_columns`](../../examples/cases/flow/cavity_re100_columns.toml): the Ghia cavity with a chosen iteration table (manual: largest deviation from Ghia et al. (1982), Re = 100 ≤ 0.02)
 - consistency: [`configurable_log_columns_change_no_result`](../../crates/foehncraft-cli/tests/run_contract.rs): log columns change no result
 - consistency: [`json_result_and_byte_identical_files`](../../crates/foehncraft-cli/tests/run_contract.rs): the JSON result and byte-identical files
+
+<a id="run-budgets"></a>
+
+### Iteration budget, diagnosis of steady runs, study budgets
+
+**verified** · id `run.budgets` · switch `[run.limits] diagnose_at, diagnosis, study_cell_hours` · decisions D198
+
+- consistency: [`cylinder_steady_diagnosis`](../../examples/cases/flow/cylinder_steady_diagnosis.toml): a steady run of a cylinder that sheds is diagnosed stalled at iteration 2000 and stopped (exit code 3) (passes in CI (set long), not yet in the manual) ([results](../gallery/runs.md#budgets))
+- consistency: [`diagnosis_is_recorded_and_changes_no_result`](../../crates/foehncraft-cli/tests/budgets.rs): the diagnosis is recorded and the residuals and fields are bitwise those of a run without it
+- consistency: [`diagnosis_stops_a_run_off_track`](../../crates/foehncraft-cli/tests/budgets.rs): a run off track stops with RUN017
+- consistency: [`study_budget_stops_and_refuses`](../../crates/foehncraft-cli/tests/budgets.rs): the study ledger: a run stops at the budget, the next one does not start
+- exact: [`trends_of_model_histories`](../../crates/foehncraft-flow/src/budget.rs): trend classes and the projected iteration of model residual histories
 
 <a id="run-gci"></a>
 

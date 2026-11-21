@@ -10,6 +10,9 @@
 //! together. The data are random on a perturbed mixed mesh of hexahedra,
 //! prisms, tetrahedra and polyhedra, with every boundary kind and update
 //! rule present.
+// D202: a named unsafe module (tools/check/unsafe_modules.py);
+// every unsafe block has a `// SAFETY:` comment.
+#![allow(unsafe_code)]
 
 use foehncraft_core::{Dual, Real};
 use foehncraft_fv::Discretisation;
