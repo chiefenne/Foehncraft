@@ -1,0 +1,808 @@
+{
+ "format": "foehncraft.verification-grades",
+ "format_version": "1.0",
+ "features": [
+  {
+   "id": "mesh.generated",
+   "title": "Built-in test mesher (hexahedra, tetrahedra, prisms, polyhedra)",
+   "grade": "verified",
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "mesh.gmsh",
+   "title": "Gmsh v4 reader",
+   "grade": "partial",
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "mesh.su2",
+   "title": "SU2 reader (2D extruded, multi-zone)",
+   "grade": "verified",
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "mesh.cgns",
+   "title": "CGNS (HDF5) reader",
+   "grade": "partial",
+   "gaps": [
+    "no flow case of the catalogue reads a CGNS file"
+   ],
+   "range": {}
+  },
+  {
+   "id": "mesh.openfoam",
+   "title": "OpenFOAM polyMesh reader",
+   "grade": "partial",
+   "gaps": [
+    "no flow case of the catalogue reads a polyMesh"
+   ],
+   "range": {}
+  },
+  {
+   "id": "mesh.industry-msh",
+   "title": "Industry face-based .msh reader",
+   "grade": "partial",
+   "gaps": [
+    "no flow case of the catalogue reads an industry .msh file"
+   ],
+   "range": {}
+  },
+  {
+   "id": "mesh.vtk",
+   "title": "VTK reader (.vtk, .vtu) and VTU writer",
+   "grade": "partial",
+   "gaps": [
+    "no flow case of the catalogue reads a VTK file"
+   ],
+   "range": {}
+  },
+  {
+   "id": "mesh.partition",
+   "title": "Partitioning with METIS and halos",
+   "grade": "partial",
+   "gaps": [
+    "multi-node runs are designed for, not run (no cluster yet)"
+   ],
+   "range": {}
+  },
+  {
+   "id": "mesh.quality-remediation",
+   "title": "Quality report and automatic remediation of skewed cells",
+   "grade": "partial",
+   "gaps": [
+    "no order of accuracy on remediated meshes (the remediation is first order on the skewed faces by design)"
+   ],
+   "range": {}
+  },
+  {
+   "id": "mesh.vtkhdf",
+   "title": "VTKHDF output for ParaView",
+   "grade": "partial",
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "numerics.gradient-ls",
+   "title": "Weighted least-squares gradients",
+   "grade": "verified",
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "numerics.convection-schemes",
+   "title": "Linear upwind and bounded central convection",
+   "grade": "verified",
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "numerics.limiters",
+   "title": "Venkatakrishnan(-Wang) limiters",
+   "grade": "partial",
+   "gaps": [
+    "no observed order with a limiter switched on in a smooth flow"
+   ],
+   "range": {}
+  },
+  {
+   "id": "numerics.reproducible",
+   "title": "Reproducible (gather-based) assembly",
+   "grade": "partial",
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "linear.amg-pressure",
+   "title": "Aggregation multigrid with CG for the pressure (mixed precision)",
+   "grade": "verified",
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "linear.reduction-multigrid",
+   "title": "Reduction multigrid for momentum and turbulence",
+   "grade": "partial",
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "linear.bicgstab",
+   "title": "BiCGStab",
+   "grade": "partial",
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "coupling.simplec",
+   "title": "SIMPLEC and SIMPLE, steady",
+   "grade": "verified",
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "coupling.coupled",
+   "title": "Coupled pressure–velocity algorithm with pseudo-time steps",
+   "grade": "partial",
+   "gaps": [
+    "no exact solution run with the coupled algorithm itself (it is checked by giving the SIMPLEC result)",
+    "SST on 1 536 cells and the elliptic-blending k-ε on 768 and 1 536 cells of the channel stop near 10⁻⁷ within 3 000 iterations (stage 6, channel study)"
+   ],
+   "range": {}
+  },
+  {
+   "id": "coupling.piso",
+   "title": "PISO with outer correctors, transient",
+   "grade": "verified",
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "coupling.wedge-corrector",
+   "title": "SIMPLEC-type correctors on thin wedge cells at an axis",
+   "grade": "verified",
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "time.bdf2",
+   "title": "BDF2",
+   "grade": "verified",
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "time.crank-nicolson",
+   "title": "Crank–Nicolson",
+   "grade": "verified",
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "time.error-controlled-step",
+   "title": "Time step from the time-integration error",
+   "grade": "partial",
+   "gaps": [
+    "the manual has no band of its own for this case (only mass and the run itself)"
+   ],
+   "range": {}
+  },
+  {
+   "id": "time.potential-start",
+   "title": "Potential-flow start",
+   "grade": "partial",
+   "gaps": [
+    "no comparison of the potential field with the exact potential flow"
+   ],
+   "range": {}
+  },
+  {
+   "id": "bc.velocity-inlet",
+   "title": "Velocity inlet (constant, analytic, parabolic)",
+   "grade": "verified",
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "bc.inlet-table",
+   "title": "Inlet profiles from tables",
+   "grade": "verified",
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "bc.mass-flow-inlet",
+   "title": "Mass-flow inlet",
+   "grade": "unverified",
+   "gaps": [
+    "no case of the catalogue and no flow test uses a mass-flow inlet"
+   ],
+   "range": {}
+  },
+  {
+   "id": "bc.static-pressure-inlet",
+   "title": "Static-pressure inlet",
+   "grade": "unverified",
+   "gaps": [
+    "no case of the catalogue and no flow test uses a static-pressure inlet"
+   ],
+   "range": {}
+  },
+  {
+   "id": "bc.total-pressure-inlet",
+   "title": "Total-pressure inlet",
+   "grade": "partial",
+   "gaps": [
+    "no exact solution with a total-pressure inlet (for example Poiseuille flow driven by p₀)"
+   ],
+   "range": {}
+  },
+  {
+   "id": "bc.static-pressure-outlet",
+   "title": "Static-pressure outlet with backflow handling",
+   "grade": "verified",
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "bc.total-pressure-outlet",
+   "title": "Total-pressure outlet",
+   "grade": "unverified",
+   "gaps": [
+    "no case of the catalogue and no flow test uses a total-pressure outlet"
+   ],
+   "range": {}
+  },
+  {
+   "id": "bc.convective-outlet",
+   "title": "Convective outlet",
+   "grade": "partial",
+   "gaps": [
+    "no exact solution with a convective outlet"
+   ],
+   "range": {}
+  },
+  {
+   "id": "bc.wall",
+   "title": "Walls (moving, turning, blowing and suction)",
+   "grade": "verified",
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "bc.slip-wall",
+   "title": "Slip walls",
+   "grade": "verified",
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "bc.symmetry",
+   "title": "Symmetry planes",
+   "grade": "verified",
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "bc.wedge",
+   "title": "Axisymmetric wedges",
+   "grade": "verified",
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "bc.periodic",
+   "title": "Periodic pairs driven by a mass flow or a pressure gradient",
+   "grade": "verified",
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "turbulence.sst",
+   "title": "k-ω SST (2003)",
+   "grade": "verified",
+   "gaps": [],
+   "range": {
+    "y_plus_first": [
+     0.0,
+     1.0
+    ]
+   }
+  },
+  {
+   "id": "turbulence.k-epsilon",
+   "title": "Standard k-ε",
+   "grade": "partial",
+   "gaps": [
+    "channel refined towards the wall (24 to 192 cells): U_b⁺ +5.7 % on the finest mesh, outside the ±5 % band",
+    "rough pipe fully rough +8 to +11 % from Colebrook (band ±5 %; C_s = 0.4 gives +1 to +3 %)"
+   ],
+   "range": {
+    "y_plus_first": [
+     11.06,
+     300.0
+    ]
+   }
+  },
+  {
+   "id": "turbulence.realizable-k-epsilon",
+   "title": "Realizable k-ε",
+   "grade": "partial",
+   "gaps": [
+    "no case file of the catalogue uses the realizable model",
+    "channel U_b⁺ +11.8 % and plate C_f −10 % from the references, outside their ±5 % bands",
+    "step x_r/H grows with every mesh, no order and no GCI"
+   ],
+   "range": {
+    "y_plus_first": [
+     11.06,
+     300.0
+    ]
+   }
+  },
+  {
+   "id": "turbulence.zeta-f",
+   "title": "k-ε-ζ-f (Hanjalić, Popovac & Hadžiabdić 2004)",
+   "grade": "partial",
+   "gaps": [
+    "backward-facing step x_r/H +23.7 % from the experiment (band ±10 %)"
+   ],
+   "range": {
+    "y_plus_first": [
+     0.0,
+     1.0
+    ]
+   }
+  },
+  {
+   "id": "turbulence.zeta-f0",
+   "title": "k-ε-ζ-f₀ (Popovac 2023)",
+   "grade": "partial",
+   "gaps": [
+    "no manufactured-solution order check (the ζ-f₀ form is not in the MMS of PR #148)",
+    "impinging jet Nu₀ 196, +38 % from the experiment's 141 (k at the stagnation point; no production limiter there yet)"
+   ],
+   "range": {
+    "y_plus_first": [
+     0.0,
+     30.0
+    ]
+   }
+  },
+  {
+   "id": "turbulence.elliptic-blending",
+   "title": "Elliptic-blending k-ε (Billard & Laurence 2012)",
+   "grade": "partial",
+   "gaps": [
+    "backward-facing step x_r/H +20.7 % from the experiment (band ±10 %)"
+   ],
+   "range": {
+    "y_plus_first": [
+     0.0,
+     1.0
+    ]
+   }
+  },
+  {
+   "id": "turbulence.curvature-correction",
+   "title": "Curvature and rotation correction of SST (Smirnov & Menter 2009)",
+   "grade": "partial",
+   "gaps": [
+    "the DNS of Kristoffersen & Andersson (1993) for the rotating channel is not compared (its data are not in the repository)",
+    "no manufactured-solution order check with the correction"
+   ],
+   "range": {}
+  },
+  {
+   "id": "turbulence.qcr",
+   "title": "Quadratic constitutive relation QCR2000 and QCR2013",
+   "grade": "partial",
+   "gaps": [
+    "the DNS of Pinelli et al. (2010) is not compared within a band (its data are not in the repository)",
+    "no manufactured-solution order check with QCR"
+   ],
+   "range": {}
+  },
+  {
+   "id": "turbulence.smooth-limits",
+   "title": "Smooth limits of the models",
+   "grade": "verified",
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "turbulence.wall-distance",
+   "title": "Exact wall distance",
+   "grade": "verified",
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "turbulence.backflow-values",
+   "title": "Turbulence values of the backflow at outlets",
+   "grade": "partial",
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "wall.low-re",
+   "title": "low-re (resolved to the wall)",
+   "grade": "verified",
+   "gaps": [],
+   "range": {
+    "y_plus_first": [
+     0.0,
+     1.0
+    ]
+   }
+  },
+  {
+   "id": "wall.automatic",
+   "title": "automatic (SST, any y⁺)",
+   "grade": "partial",
+   "gaps": [
+    "buffer layer: C_f +15.6 % and +14.8 % at first-cell y⁺ 4.6 and 9.3 (band ±2 %; TURB001 warns there)"
+   ],
+   "range": {
+    "y_plus_first": [
+     0.0,
+     2.0
+    ]
+   }
+  },
+  {
+   "id": "wall.scalable",
+   "title": "scalable wall functions (k-ε family)",
+   "grade": "verified",
+   "gaps": [],
+   "range": {
+    "y_plus_first": [
+     11.06,
+     300.0
+    ]
+   }
+  },
+  {
+   "id": "wall.standard",
+   "title": "standard wall functions",
+   "grade": "partial",
+   "gaps": [
+    "no case of the catalogue uses the standard wall functions",
+    "no reference-data comparison"
+   ],
+   "range": {
+    "y_plus_first": [
+     30.0,
+     300.0
+    ]
+   }
+  },
+  {
+   "id": "wall.compound",
+   "title": "compound (ζ-f and elliptic-blending k-ε)",
+   "grade": "partial",
+   "gaps": [
+    "only checked with the first cell in the viscous sublayer; no y⁺ sweep as for compound-2023"
+   ],
+   "range": {
+    "y_plus_first": [
+     0.0,
+     1.0
+    ]
+   }
+  },
+  {
+   "id": "wall.compound-2023",
+   "title": "compound-2023 (ζ-f₀, any y⁺)",
+   "grade": "partial",
+   "gaps": [
+    "inherits the open items of ζ-f₀ (no manufactured-solution check)"
+   ],
+   "range": {
+    "y_plus_first": [
+     0.0,
+     30.0
+    ]
+   }
+  },
+  {
+   "id": "wall.roughness",
+   "title": "Rough walls (Aupoix 2015 for SST, Cebeci & Bradshaw 1977 for k-ε)",
+   "grade": "partial",
+   "gaps": [
+    "fully rough pipe +8 to +11 % from Colebrook, transitional −17 to +8 % (band ±5 %)",
+    "SST roughness has no reference-data case"
+   ],
+   "range": {}
+  },
+  {
+   "id": "scalar.passive",
+   "title": "Passive scalars carried by laminar flow",
+   "grade": "verified",
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "scalar.turbulent-prandtl",
+   "title": "Turbulent Prandtl number (constant, Kays–Crawford)",
+   "grade": "partial",
+   "gaps": [
+    "Pr 0.025 with the constant Pr_t: +12 to +21 % from the DNS (Kays–Crawford is the model for liquid metals)"
+   ],
+   "range": {
+    "prandtl": [
+     0.025,
+     7.0
+    ]
+   }
+  },
+  {
+   "id": "scalar.thermal-wall-function",
+   "title": "Thermal wall functions (Kader, Jayatilleke)",
+   "grade": "partial",
+   "gaps": [
+    "heated plate +14 % from the Stanton correlation at x 0.29 (band ±10 % holds from x 0.4)"
+   ],
+   "range": {
+    "y_plus_first": [
+     11.06,
+     300.0
+    ],
+    "prandtl": [
+     0.01,
+     100.0
+    ]
+   }
+  },
+  {
+   "id": "energy.fluid",
+   "title": "Energy equation of the fluid",
+   "grade": "verified",
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "energy.temperature-dependent",
+   "title": "c_p(T), k(T) and μ(T) from the material database",
+   "grade": "verified",
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "energy.wall-conditions",
+   "title": "Temperature, heat-flux, heat-flow and convection walls",
+   "grade": "verified",
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "energy.turbulent",
+   "title": "Energy with a turbulence model (thermal wall function, Pr_t)",
+   "grade": "partial",
+   "gaps": [
+    "no reference-data case of the energy equation with turbulence (the passive-scalar path has them; the energy path is checked against it)"
+   ],
+   "range": {}
+  },
+  {
+   "id": "cht.steady",
+   "title": "Solid regions, steady",
+   "grade": "verified",
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "cht.transient",
+   "title": "Transient conjugate heat transfer",
+   "grade": "verified",
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "cht.turbulent",
+   "title": "Conjugate heat transfer with a turbulence model",
+   "grade": "partial",
+   "gaps": [
+    "no reference-data case (a heat sink or a conjugate channel against an experiment or a correlation)"
+   ],
+   "range": {}
+  },
+  {
+   "id": "cht.contact-thin-wall",
+   "title": "Contact resistances and thin walls",
+   "grade": "verified",
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "cht.orthotropic",
+   "title": "Orthotropic solids (axes per region)",
+   "grade": "verified",
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "cht.region-source",
+   "title": "Heat sources per region",
+   "grade": "partial",
+   "gaps": [
+    "no exact solution with a volumetric source (for example the parabolic temperature of a heated slab)"
+   ],
+   "range": {}
+  },
+  {
+   "id": "rotating.mrf",
+   "title": "Moving reference frame (steady frozen rotor)",
+   "grade": "partial",
+   "gaps": [
+    "no reference-data case of a bladed rotor: the stirred tank (application 131) is a demonstration, its torque moves 7 % over the last tenth of the iterations (frozen-rotor non-closure)"
+   ],
+   "range": {}
+  },
+  {
+   "id": "rotating.mrf-transient",
+   "title": "Transient frozen rotor",
+   "grade": "partial",
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "rotating.whole-domain-frame",
+   "title": "A whole domain in a turning frame",
+   "grade": "partial",
+   "gaps": [
+    "inherits the open DNS comparison of the rotating channel"
+   ],
+   "range": {}
+  },
+  {
+   "id": "rotating.sliding-conformal",
+   "title": "Sliding mesh by conformal stepping",
+   "grade": "verified",
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "rotating.sliding-imprint",
+   "title": "Sliding mesh by imprinting the interface",
+   "grade": "verified",
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "rotating.several-rotors",
+   "title": "Several rotors at their own speeds",
+   "grade": "verified",
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "rotating.machine-values",
+   "title": "Torque, shaft power, head and hydraulic efficiency",
+   "grade": "partial",
+   "gaps": [
+    "no machine of published performance (a pump or fan curve) is compared"
+   ],
+   "range": {}
+  },
+  {
+   "id": "rotating.frame-fields",
+   "title": "Relative and frame velocities, flow angles, rothalpy",
+   "grade": "verified",
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "case.expressions",
+   "title": "Boundary values, sources and viscosities as expressions",
+   "grade": "verified",
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "case.materials",
+   "title": "Material database (air, water, oils, glycols)",
+   "grade": "partial",
+   "gaps": [
+    "the property data themselves await the maintainer's spot check (D94 to D103)"
+   ],
+   "range": {}
+  },
+  {
+   "id": "case.schedule",
+   "title": "Settings that change on a schedule",
+   "grade": "partial",
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "case.checks-guidance",
+   "title": "Case checks and guidance (unknown keys, boundary checks)",
+   "grade": "partial",
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "run.restart-control",
+   "title": "Restart and control files (.stop, .result_N, .read_toml_N)",
+   "grade": "partial",
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "run.derived-fields",
+   "title": "Derived fields (vorticity, Q, λ₂, wall shear, y⁺, turbulence fields)",
+   "grade": "verified",
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "run.statistics",
+   "title": "Statistics of transient runs (mean, RMS, phase averages, confidence)",
+   "grade": "verified",
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "run.ledgers",
+   "title": "Mass and kinetic-energy ledgers, divergence report",
+   "grade": "partial",
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "run.log-records",
+   "title": "Log columns and JSON records for scripts and agents",
+   "grade": "partial",
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "run.gci",
+   "title": "Grid convergence index of every mesh sweep",
+   "grade": "verified",
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "backend.cuda",
+   "title": "Flow loop on NVIDIA GPUs",
+   "grade": "partial",
+   "gaps": [
+    "verified on one device only, the Tesla T4 (sm_75); every other GPU is unverified (D199 Q5)",
+    "the two SST options of D170 (curvature correction, QCR) have no GPU parity run yet",
+    "energy and conjugate heat transfer have no GPU parity run",
+    "`cavity_poly3d_gpu` has no run in the verification manual or in CI",
+    "`cylinder_re100_gpu` has no run in the verification manual or in CI",
+    "`mms_poly_gpu` has no run in the verification manual or in CI",
+    "`poisson_poly_gpu` has no run in the verification manual or in CI"
+   ],
+   "range": {}
+  },
+  {
+   "id": "interface.python",
+   "title": "Python package foehncraft (cases, runs, studies)",
+   "grade": "partial",
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "interface.cli-contract",
+   "title": "Run contract of the command line (exit codes, JSON, schema)",
+   "grade": "partial",
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "planned.buoyancy",
+   "title": "Buoyancy (Boussinesq and variable density)",
+   "grade": "unverified",
+   "gaps": [
+    "not built (stage 7b, after the CHT work)"
+   ],
+   "range": {}
+  }
+ ]
+}

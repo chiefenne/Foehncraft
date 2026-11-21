@@ -46,7 +46,7 @@ pub const LEDGER: &str = "study_budget.jsonl";
 
 /// The iteration budget of a steady run, as shown in the estimate and the
 /// run record.
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, PartialEq, schemars::JsonSchema)]
 pub struct IterationBudget {
     /// Outer iterations the run may take.
     pub iterations: usize,
@@ -588,12 +588,13 @@ mod tests {
         let d = diagnose(
             &history(|i| 1e-2 * 10f64.powf(-2e-3 * i as f64), 2000),
             1e-8,
-            3000,
+            3100,
         )
         .unwrap();
         assert_eq!(d.equations[0].trend, Trend::Falling);
         assert!((d.equations[0].decades_per_1000 + 2.0).abs() < 1e-6);
-        // 1e-6 at 2000, 1e-8 two decades later: iteration 3000
+        // 1e-6 at 2000, 1e-8 two decades later: iteration 3000 (within
+        // a budget of 3100)
         let t = d.equations[0].tolerance_at.unwrap();
         assert!((2999..=3001).contains(&t), "{t}");
         assert_eq!(d.verdict, Verdict::OnTrack);

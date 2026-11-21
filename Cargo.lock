@@ -360,6 +360,7 @@ dependencies = [
  "foehncraft-fv",
  "foehncraft-mesh",
  "foehncraft-parallel",
+ "foehncraft-tools",
  "rayon",
  "serde_json",
  "signal-hook",
@@ -448,6 +449,22 @@ dependencies = [
  "foehncraft-core",
  "mpi",
  "rayon",
+]
+
+[[package]]
+name = "foehncraft-tools"
+version = "0.6.0"
+dependencies = [
+ "anyhow",
+ "foehncraft-bench",
+ "foehncraft-core",
+ "foehncraft-flow",
+ "foehncraft-parallel",
+ "rayon",
+ "schemars",
+ "serde",
+ "serde_json",
+ "toml",
 ]
 
 [[package]]

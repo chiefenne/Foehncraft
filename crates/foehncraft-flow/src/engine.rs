@@ -944,7 +944,7 @@ pub fn resolve_latest(case: &mut FlowCase, dir: &Path) -> Result<()> {
 // check and estimate (D78, D81)
 
 /// One output file of the estimate.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
 pub struct OutputEstimate {
     /// File name (`fields_<step>.vtkhdf` for a series).
     pub name: String,
@@ -955,7 +955,7 @@ pub struct OutputEstimate {
 }
 
 /// What a run will cost (D81), before it starts.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
 pub struct Estimate {
     /// Cells of the largest level.
     pub cells: usize,
@@ -1482,7 +1482,7 @@ fn start_budgets(
 }
 
 /// The report of `foehn flow --check` (D78, D81).
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
 pub struct CheckReport {
     /// `foehncraft.check`.
     pub format: &'static str,

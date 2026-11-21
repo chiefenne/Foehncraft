@@ -46,7 +46,9 @@
 
 Everything below is on `main`, verified by the cases of the
 [verification manual](docs/verification/manual.md) and shown in the
-[gallery](docs/gallery.md).
+[gallery](docs/gallery.md). How well each feature is checked (verified,
+partial or unverified, with the evidence and the known gaps) is on the
+[verification status](docs/verification/status.md) page.
 
 - **Meshes.** Arbitrary polyhedral cells in 2D and 3D; the Gmsh v4, SU2, CGNS (HDF5),
   OpenFOAM polyMesh, industry `.msh` and VTK (`.vtk`, `.vtu`) readers behind one
@@ -135,6 +137,12 @@ Everything below is on `main`, verified by the cases of the
   shown before the run and a diagnosis of a steady run at 2000 iterations
   (trend of each residual, verdict, advice, optional stop), and budgets
   per study (cell-hours, GPU-hours, output volume) beside the estimate.
+- **Tools for scripts and agents.** One registry of typed tools (D196):
+  `foehn commands` prints the catalogue of every tool with its input and
+  output schemas and action kind, `foehn call <id> --input file.json` runs
+  any of them from JSON ([tools.md](docs/tools.md)); the system, case-check,
+  resolve, schema, diagnostic-code, material and expression tools are in,
+  runs and files follow.
 - **GPU and Python.** The flow loop on NVIDIA GPUs with results bitwise
   equal to the CPU; the Python package `foehncraft` that builds, runs and
   studies cases; the grid convergence index of every mesh sweep.
@@ -202,7 +210,7 @@ target/release/foehn flow examples/cases/flow/taylor_couette_mrf.toml
 | Engineering Gallery | industrial cases with complex geometry and the checks that trust them (demonstration entries, no reference data) | [docs/applications.md](docs/applications.md) |
 | Sayings | the small words of the trade, for example *Residuen-gaffen* | [docs/sayings.md](docs/sayings.md) |
 | Contributing | the documentation every feature ships with (gallery example, case files, recipe) and where it goes | [CONTRIBUTING.md](CONTRIBUTING.md) |
-| Explanation | requirements, decisions, benchmark and verification results and their reading | [docs/requirements.md](docs/requirements.md), [G1](docs/benchmarks/g1.md), [stage 2](docs/verification/stage2.md), [stage 3](docs/verification/stage3.md), [stage 4](docs/verification/stage4.md), [stage 5](docs/verification/stage5.md), [stage 6](docs/verification/stage6.md), [verification manual](docs/verification/manual.md) |
+| Explanation | requirements, decisions, benchmark and verification results and their reading | [docs/requirements.md](docs/requirements.md), [G1](docs/benchmarks/g1.md), [stage 2](docs/verification/stage2.md), [stage 3](docs/verification/stage3.md), [stage 4](docs/verification/stage4.md), [stage 5](docs/verification/stage5.md), [stage 6](docs/verification/stage6.md), [verification manual](docs/verification/manual.md), [verification status](docs/verification/status.md) |
 
 The [changelog](CHANGELOG.md) lists every release.
 
@@ -216,6 +224,7 @@ The [changelog](CHANGELOG.md) lists every release.
 | `foehncraft-flow` | incompressible flow: SIMPLEC and SIMPLE (steady), PISO with BDF2 and Crank–Nicolson (transient), the coupled algorithm, the Rhie–Chow interpolation, boundary conditions and their check, turbulence models and wall treatments, passive scalars and thermal wall functions, the moving reference frame and sliding meshes, torque and machine performance, restart and control files, probes and force coefficients, the flow device written once over a CPU or GPU executor, the `foehn flow` case, exact solutions, reference and benchmark data |
 | `foehncraft-bench` | gate G1: kernel benchmark, CPU backends |
 | `foehncraft-cuda` | all NVIDIA GPU code (D60): the flow executor, the scalar and multigrid backend, the G1 backends with the CUDA C reference |
+| `foehncraft-tools` | the tool registry (D196): every engine function as a typed tool with a stable id, its JSON schemas, the catalogue and `call` by id; the front ends call it |
 | `foehncraft-cli` | the `foehn` command |
 | `foehncraft-py` | the Python package `foehncraft` (in `python/`) |
 | `gpu/ptx-kernels` | the kernels compiled to NVIDIA PTX (nightly toolchain) |
