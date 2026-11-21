@@ -1,6 +1,7 @@
 """The tool registry from Python (D196): every tool once through `call`,
 and the catalogue."""
 
+import json
 import shutil
 
 from conftest import CASES, needs_native
@@ -60,6 +61,8 @@ def test_every_tool_through_call(tmp_path):
             "case": ROOT / "examples/cases/bench/g1_ci_small.toml",
             "out": tmp_path / "g1",
         },
+        # the call of flow.run in its run record, run again
+        "journal.replay": {"script": out / "run.jsonl"},
     }
     listed = [t["id"] for t in fc.commands()["tools"]]
     assert sorted(listed) == sorted(inputs), "a tool of the catalogue has no call here"
@@ -99,3 +102,27 @@ def test_a_bad_call_is_a_diagnostic():
     assert r["diagnostics"][0]["code"] == "TOOL001"
     r = fc.call("case.check", cas="x.toml")
     assert r["diagnostics"][0]["code"] == "TOOL002"
+
+
+@needs_native
+def test_calls_go_into_the_journal_and_replay(tmp_path, monkeypatch):
+    journal = tmp_path / "session.jsonl"
+    monkeypatch.setenv("FOEHN_JOURNAL", str(journal))
+    fc.call("materials.show", name="water", temperature=330.0)
+    fc.call("expression.eval", source="2*x", points=[[1.0, 0.0, 0.0, 0.0]])
+    fc.call("case.chek")
+    monkeypatch.delenv("FOEHN_JOURNAL")
+    rows = [json.loads(line) for line in journal.read_text().splitlines()]
+    assert rows[0]["format"] == "foehn.journal"
+    calls = rows[1:]
+    assert [c["tool"] for c in calls] == ["materials.show", "expression.eval", "case.chek"]
+    assert [c["seq"] for c in calls] == [1, 2, 3]
+    assert calls[0]["via"] == "python"
+    # the typed input: defaults filled in
+    assert calls[0]["input"]["pressure"] == 101325.0
+    assert calls[2]["diagnostic"]["code"] == "TOOL001"
+    r = fc.call("journal.replay", script=journal)
+    assert r["exit_code"] == 0, r
+    assert (r["result"]["replayed"], r["result"]["skipped"]) == (2, 1)
+    # nothing journaled after the variable is gone
+    assert len(journal.read_text().splitlines()) == 4

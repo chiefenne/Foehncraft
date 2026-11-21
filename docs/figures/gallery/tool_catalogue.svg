@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 560" width="760" height="560" font-family="Helvetica, Arial, sans-serif" font-size="12">
-<rect width="760" height="560" fill="#ffffff"/>
-<text x="380.0" y="26" text-anchor="middle" font-size="15">The tool registry: 19 tools in 10 categories (foehn commands, Foehncraft 0.6.0)</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 604" width="760" height="604" font-family="Helvetica, Arial, sans-serif" font-size="12">
+<rect width="760" height="604" fill="#ffffff"/>
+<text x="380.0" y="26" text-anchor="middle" font-size="15">The tool registry: 20 tools in 11 categories (foehn commands, Foehncraft 0.6.0)</text>
 <text x="100" y="83.0" text-anchor="end" font-size="13">system</text>
 <rect x="111.0" y="64" width="124.0" height="30" rx="3" fill="#1f6fb4"><title>system.info: Version, commit, platform, threads, features and backends of this build.</title></rect>
 <text x="173.0" y="83.0" text-anchor="middle" fill="#ffffff" font-size="12">info</text>
@@ -49,10 +49,13 @@
 <text x="299.0" y="479.0" text-anchor="middle" fill="#ffffff" font-size="12">poisson</text>
 <rect x="363.0" y="460" width="124.0" height="30" rx="3" fill="#c23b3b"><title>study.g1: Gate G1: the kernel benchmark, the single-source route against hand-written references (docs/benchmarks/g1.md).</title></rect>
 <text x="425.0" y="479.0" text-anchor="middle" fill="#ffffff" font-size="12">g1</text>
-<rect x="110" y="523" width="14" height="14" rx="2" fill="#1f6fb4"/>
-<text x="130" y="534">read (12)</text>
-<rect x="280" y="523" width="14" height="14" rx="2" fill="#d9822b"/>
-<text x="300" y="534">writes files (3)</text>
-<rect x="450" y="523" width="14" height="14" rx="2" fill="#c23b3b"/>
-<text x="470" y="534">starts a run (4)</text>
+<text x="100" y="523.0" text-anchor="end" font-size="13">journal</text>
+<rect x="111.0" y="504" width="124.0" height="30" rx="3" fill="#c23b3b"><title>journal.replay: Replay the tool calls of a journal or a run record in order, without a window, and report each call that ends differently from its record (D197).</title></rect>
+<text x="173.0" y="523.0" text-anchor="middle" fill="#ffffff" font-size="12">replay</text>
+<rect x="110" y="567" width="14" height="14" rx="2" fill="#1f6fb4"/>
+<text x="130" y="578">read (12)</text>
+<rect x="280" y="567" width="14" height="14" rx="2" fill="#d9822b"/>
+<text x="300" y="578">writes files (3)</text>
+<rect x="450" y="567" width="14" height="14" rx="2" fill="#c23b3b"/>
+<text x="470" y="578">starts a run (5)</text>
 </svg>

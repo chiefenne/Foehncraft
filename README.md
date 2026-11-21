@@ -151,6 +151,10 @@ validated range, one mesh only, …) in its report and its JSON result.
   layering` checks that no front end reaches the engine past them. The
   Python package reaches the same tools (`foehncraft.call`,
   `foehncraft.commands`); [gallery 171](docs/gallery/runs.md#tool-registry).
+  With `--journal FILE` every call goes into a journal with its typed
+  input, a run keeps the call that started it in `run.jsonl`, and
+  `foehn run --script` replays a journal or a run record without a window
+  (D197).
 - **GPU and Python.** The flow loop on NVIDIA GPUs with results bitwise
   equal to the CPU; the Python package `foehncraft` that builds, runs and
   studies cases; the grid convergence index of every mesh sweep.

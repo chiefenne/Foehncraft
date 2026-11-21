@@ -318,3 +318,88 @@ fn studies_match() {
     };
     assert_eq!(pass(&a), pass(&b["result"]));
 }
+
+/// D197: `--journal` records every call with its typed input, a run writes
+/// its call into `run.jsonl`, and `foehn run --script` replays both to the
+/// same files.
+#[test]
+fn journal_and_replay() {
+    let d = dir("journal");
+    let case = d.join("cavity.toml");
+    std::fs::write(&case, CAVITY).unwrap();
+    let c = case.to_str().unwrap();
+    let j = d.join("session.jsonl");
+    let js = j.to_str().unwrap();
+    let out = d.join("run");
+    let o = out.to_str().unwrap();
+    assert!(
+        foehn(&["--quiet", "--journal", js, "flow", c, "--check"])
+            .status
+            .success()
+    );
+    assert!(
+        foehn(&["--quiet", "--journal", js, "flow", c, "--out", o])
+            .status
+            .success()
+    );
+    let first = std::fs::read(out.join("restart.h5")).unwrap();
+    let rows: Vec<Value> = std::fs::read_to_string(&j)
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    assert_eq!(rows[0]["format"], "foehn.journal");
+    assert_eq!(rows[1]["tool"], "case.check");
+    assert_eq!(rows[2]["tool"], "flow.run");
+    assert_eq!(rows[2]["via"], "cli");
+    assert_eq!(rows[2]["input"]["out"], o);
+    assert_eq!(
+        rows[2]["input"]["no_vtkhdf"], false,
+        "typed: defaults filled in"
+    );
+    assert_eq!(rows[2]["exit_code"], 0);
+
+    // the run record holds the call that started the run
+    let record = std::fs::read_to_string(out.join("run.jsonl")).unwrap();
+    let call_row = record
+        .lines()
+        .map(|l| serde_json::from_str::<Value>(l).unwrap())
+        .find(|v| v["type"] == "call")
+        .expect("a call row in run.jsonl");
+    assert_eq!(call_row["tool"], "flow.run");
+    assert_eq!(call_row["input"], rows[2]["input"]);
+
+    std::fs::remove_dir_all(&out).unwrap();
+    let (code, r) = cli(&["run", "--script", js]);
+    assert_eq!(code, 0, "{r}");
+    assert_eq!(r["format"], "foehn.replay");
+    assert_eq!(
+        (r["replayed"].clone(), r["different"].clone()),
+        (json!(2), json!(0))
+    );
+    assert_eq!(
+        std::fs::read(out.join("restart.h5")).unwrap(),
+        first,
+        "the replayed run, bitwise"
+    );
+    // a replay without --journal adds nothing to the journal
+    let rows_after = std::fs::read_to_string(&j).unwrap().lines().count();
+    assert_eq!(
+        rows_after,
+        rows.len(),
+        "the replay without --journal adds nothing"
+    );
+
+    let rec = out.join("run.jsonl");
+    let (code, r) = cli(&["run", "--script", rec.to_str().unwrap()]);
+    assert_eq!(code, 0, "{r}");
+    assert_eq!(r["calls"][0]["tool"], "flow.run");
+    assert_eq!(std::fs::read(out.join("restart.h5")).unwrap(), first);
+
+    let (code, r) = call(
+        "journal.replay",
+        &json!({"script": d.join("missing.jsonl")}),
+    );
+    assert_eq!(code, 1);
+    assert_eq!(r["diagnostics"][0]["code"], "TOOL004");
+}

@@ -23,7 +23,10 @@ detail are in [CONTRIBUTING.md](CONTRIBUTING.md).
   `foehncraft-tools` (D196) and call it from the front ends through the
   registry; `cargo xtask layering` fails on a direct engine call in the
   CLI or the Python module, and on a crate dependency against the layers.
-  Regenerate `docs/tools.md` with `foehn commands --markdown`.
+  Regenerate `docs/tools.md` with `foehn commands --markdown`. A front
+  end calls a tool through `tools::run`, `tools::run_as` or `tools::call`,
+  never `Tool::call` directly, so that the call reaches the journal
+  (D197).
 - **SHOULD** flag known flaws of industry behaviour when a feature mirrors
   it, so the maintainer can decide; do not copy flaws.
 

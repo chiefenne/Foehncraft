@@ -18,7 +18,7 @@ fn default_pressure() -> f64 {
 }
 
 /// Input of `materials.list`.
-#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ListInput {
     /// Temperature (K) at which the properties are evaluated.
@@ -45,7 +45,7 @@ impl Default for ListInput {
 }
 
 /// Input of `materials.show`.
-#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ShowInput {
     /// The material.

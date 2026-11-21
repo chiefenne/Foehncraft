@@ -17,3 +17,4 @@ envelope is on standard output ([gallery 171](../gallery/runs.md#tool-registry),
 | `water_at_330.json` | `materials.show` | water from the material database at 330 K |
 | `ramp_expression.json` | `expression.eval` | a ramped parabolic inlet profile with constants, at three points |
 | `scalar_mms.json` | `study.scalar` | the manufactured-solution sweep of scalar transport on polygons (observed order about 2) |
+| `cavity_session.jsonl` | `journal.replay` | a script of four calls (check, run, derive, read) for `foehn run --script` (D197); not an input of `foehn call` but its `script` |

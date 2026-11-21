@@ -1624,6 +1624,10 @@ pub struct RunOptions {
     pub roots: Roots,
     /// Sees every row of the run record ([`Observer`]).
     pub observer: Option<Observer>,
+    /// The tool call that started the run (tool, version, typed input,
+    /// D197): written into the run record after its header, so that
+    /// `foehn run --script run.jsonl` runs it again.
+    pub call: Option<serde_json::Value>,
 }
 
 /// The result summary (`result.json`, D62): what a study or an agent needs
@@ -1778,6 +1782,13 @@ pub fn run(
                 "case_file": case.source.as_ref().map(|p| p.display().to_string()),
                 "settings": case,
             }));
+            if let Some(c) = &opts.call {
+                let mut row = serde_json::json!({"type": "call"});
+                if let (Some(r), Some(c)) = (row.as_object_mut(), c.as_object()) {
+                    r.extend(c.clone());
+                }
+                steer.record.row(&row);
+            }
             start_budgets(&case, dir, &opts.build, &opts.roots, &mut steer)?;
             steer.record.flush();
             crate::case::run_steered(&case, name, dir, &mut steer, &mut log)

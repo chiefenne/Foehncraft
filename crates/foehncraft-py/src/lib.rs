@@ -62,7 +62,7 @@ fn version() -> &'static str {
 
 /// The context of a call: the build of this module, no roots, no text.
 fn ctx() -> Ctx<'static> {
-    Ctx::new(build_info())
+    Ctx::new(build_info()).journal(tools::journal::Journal::from_env("python"))
 }
 
 /// The output of tool `T` as JSON text.

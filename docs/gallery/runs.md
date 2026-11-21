@@ -454,15 +454,16 @@ grep '"type":"diagnosis"' output/cylinder_steady_diagnosis/run.jsonl
 <a id="tool-registry"></a>
 ## 171. Every function as a tool: the catalogue an agent reads
 
-<img src="../figures/gallery/tool_catalogue.svg" alt="The tools of the registry by category, coloured by action kind: read, writes files, starts a run" width="760" height="560">
+<img src="../figures/gallery/tool_catalogue.svg" alt="The tools of the registry by category, coloured by action kind: read, writes files, starts a run" width="760" height="604">
 
 Everything a front end can do is a tool of one registry (D196): a stable
 id (`case.check`), a contract version, a typed input and output whose JSON
 Schemas come from the same structs, and an action kind that says whether
 it only reads, writes files or starts a run (the approvals of an agent
 host follow it, D198). The chart is the catalogue of this version, drawn
-from `foehn commands`: 19 tools in 10 categories, 12 that only read, 3
-that write files and 4 that start a run. The command line, the Python
+from `foehn commands`: 20 tools in 11 categories, 12 that only read, 3
+that write files and 5 that start a run (the replay of a journal, D197,
+counts as one: it may start runs). The command line, the Python
 package and later the MCP server (L18) and the desktop app (L7) reach
 exactly these tools; `cargo xtask layering` fails when a front end calls
 the engine past them.

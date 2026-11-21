@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 386" width="760" height="386" font-family="Helvetica, Arial, sans-serif" font-size="12">
+<rect width="760" height="386" fill="#ffffff"/>
+<text x="380.0" y="26" text-anchor="middle" font-size="15">A journaled session and its replay: 4 calls, 0 different (foehn run --script)</text>
+<line x1="150.0" y1="56" x2="150.0" y2="336" stroke="#e3e3e3"/>
+<text x="150.0" y="52" text-anchor="middle" fill="#666">0.0001 s</text>
+<line x1="257.7" y1="56" x2="257.7" y2="336" stroke="#e3e3e3"/>
+<text x="257.7" y="52" text-anchor="middle" fill="#666">0.001 s</text>
+<line x1="365.3" y1="56" x2="365.3" y2="336" stroke="#e3e3e3"/>
+<text x="365.3" y="52" text-anchor="middle" fill="#666">0.01 s</text>
+<line x1="473.0" y1="56" x2="473.0" y2="336" stroke="#e3e3e3"/>
+<text x="473.0" y="52" text-anchor="middle" fill="#666">0.1 s</text>
+<line x1="580.7" y1="56" x2="580.7" y2="336" stroke="#e3e3e3"/>
+<text x="580.7" y="52" text-anchor="middle" fill="#666">1 s</text>
+<text x="140" y="90" text-anchor="end" font-size="13">1. case.check</text>
+<rect x="150" y="76" width="254.7" height="18" rx="2" fill="#1f6fb4"><title>0.023 s</title></rect>
+<rect x="150" y="98" width="250.5" height="18" rx="2" fill="#2e9e5b"><title>0.021 s</title></rect>
+<text x="644" y="90" fill="#2e7d32">finished</text>
+<text x="644" y="108" fill="#666">as recorded</text>
+<text x="140" y="154" text-anchor="end" font-size="13">2. flow.run</text>
+<rect x="150" y="140" width="461.0" height="18" rx="2" fill="#1f6fb4"><title>1.915 s</title></rect>
+<rect x="150" y="162" width="460.1" height="18" rx="2" fill="#2e9e5b"><title>1.876 s</title></rect>
+<text x="644" y="154" fill="#2e7d32">finished</text>
+<text x="644" y="172" fill="#666">as recorded</text>
+<text x="140" y="218" text-anchor="end" font-size="13">3. post.derive</text>
+<rect x="150" y="204" width="261.4" height="18" rx="2" fill="#1f6fb4"><title>0.027 s</title></rect>
+<rect x="150" y="226" width="273.5" height="18" rx="2" fill="#2e9e5b"><title>0.035 s</title></rect>
+<text x="644" y="218" fill="#2e7d32">finished</text>
+<text x="644" y="236" fill="#666">as recorded</text>
+<text x="140" y="282" text-anchor="end" font-size="13">4. result.read</text>
+<rect x="150" y="268" width="3.0" height="18" rx="2" fill="#1f6fb4"><title>0.000 s</title></rect>
+<rect x="150" y="290" width="32.4" height="18" rx="2" fill="#2e9e5b"><title>0.000 s</title></rect>
+<text x="644" y="282" fill="#2e7d32">finished</text>
+<text x="644" y="300" fill="#666">as recorded</text>
+<rect x="150" y="353" width="14" height="14" rx="2" fill="#1f6fb4"/>
+<text x="170" y="364">recorded (journal)</text>
+<rect x="370" y="353" width="14" height="14" rx="2" fill="#2e9e5b"/>
+<text x="390" y="364">replayed (run --script)</text>
+</svg>

@@ -26,6 +26,7 @@ use serde_json::{Value, json};
 pub mod case;
 pub mod expression;
 pub mod flow;
+pub mod journal;
 pub mod markdown;
 pub mod materials;
 pub mod mesh;
@@ -64,6 +65,8 @@ pub enum Category {
     Post,
     /// Verification and solver studies.
     Study,
+    /// Journals of tool calls and their replay (D197).
+    Journal,
 }
 
 impl Category {
@@ -80,6 +83,7 @@ impl Category {
             Self::Result => "result",
             Self::Post => "post",
             Self::Study => "study",
+            Self::Journal => "journal",
         }
     }
 }
@@ -139,7 +143,7 @@ pub trait Tool {
     /// Streams events.
     const STREAMS: bool = false;
     /// The input (read from JSON; unknown fields are refused).
-    type Input: DeserializeOwned + JsonSchema;
+    type Input: DeserializeOwned + Serialize + JsonSchema;
     /// The output.
     type Output: Serialize + JsonSchema;
 
@@ -168,7 +172,7 @@ pub trait Tool {
 
 /// What every call gets from its front end: roots (D82), interrupts and the
 /// observer of a run, the build information (D85) and the sink of the
-/// human text (D79). The journal of D197 hooks in here later.
+/// human text (D79), and the journal of the calls (D197).
 pub struct Ctx<'a> {
     /// File confinement.
     pub roots: Roots,
@@ -178,6 +182,11 @@ pub struct Ctx<'a> {
     pub observer: Option<Observer>,
     /// Build and host.
     pub build: BuildInfo,
+    /// Where every top-level call is journaled (D197).
+    pub journal: Option<journal::Journal>,
+    /// The call being run (tool, version, typed input): a run writes it
+    /// into its run record (D69).
+    pub call: Option<Value>,
     text: Box<dyn FnMut(&str) + Send + 'a>,
 }
 
@@ -189,6 +198,8 @@ impl<'a> Ctx<'a> {
             interrupts: Interrupts::new(),
             observer: None,
             build,
+            journal: None,
+            call: None,
             text: Box::new(|_| {}),
         }
     }
@@ -196,6 +207,12 @@ impl<'a> Ctx<'a> {
     /// With the read and write roots.
     pub fn roots(mut self, roots: Roots) -> Self {
         self.roots = roots;
+        self
+    }
+
+    /// With a journal of the calls (D197).
+    pub fn journal(mut self, j: Option<journal::Journal>) -> Self {
+        self.journal = j;
         self
     }
 
@@ -212,7 +229,7 @@ impl<'a> Ctx<'a> {
 }
 
 /// An input without fields.
-#[derive(Debug, Clone, Default, serde::Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, serde::Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct NoInput {}
 
@@ -255,8 +272,17 @@ pub fn input_of<T: Tool>(input: Value) -> Result<T::Input> {
 }
 
 fn run_erased<T: Tool>(input: Value, ctx: &mut Ctx<'_>) -> Result<(Value, i32)> {
-    let out = T::call(input_of::<T>(input)?, ctx)?;
-    let code = T::exit_code(&out);
+    let typed = match input_of::<T>(input.clone()) {
+        Ok(t) => t,
+        Err(e) => {
+            if ctx.call.is_none() {
+                let c = journal::call_row(T::ID, T::VERSION, input);
+                journal::record(ctx, &c, 1, Some(&diag::of_error(&e)), 0.0);
+            }
+            return Err(e);
+        }
+    };
+    let (out, code) = run::<T>(typed, ctx)?;
     Ok((serde_json::to_value(&out)?, code))
 }
 
@@ -294,6 +320,7 @@ pub fn registry() -> Vec<Entry> {
         entry::<study::Scalar>(),
         entry::<study::Poisson>(),
         entry::<study::G1>(),
+        entry::<journal::Replay>(),
     ]
 }
 
@@ -445,14 +472,14 @@ pub fn call(id: &str, input: Value, ctx: &mut Ctx<'_>) -> ToolResult {
             .map(|e| e.spec.id)
             .min_by_key(|n| distance(id, n));
         let hint = near.map_or(String::new(), |n| format!("; did you mean `{n}`?"));
-        return failed(
-            id,
-            0,
-            Diagnostic::new(
-                diag::TOOL_UNKNOWN,
-                format!("unknown tool `{id}`{hint} (`foehn commands` lists the tools)"),
-            ),
+        let d = Diagnostic::new(
+            diag::TOOL_UNKNOWN,
+            format!("unknown tool `{id}`{hint} (`foehn commands` lists the tools)"),
         );
+        if ctx.call.is_none() {
+            journal::record(ctx, &journal::call_row(id, 0, input), 1, Some(&d), 0.0);
+        }
+        return failed(id, 0, d);
     };
     match (e.run)(input, ctx) {
         Ok((result, code)) => ToolResult {
@@ -488,11 +515,50 @@ fn failed(id: &str, version: u32, d: Diagnostic) -> ToolResult {
     }
 }
 
-/// Runs tool `T` with a typed input (what the clap commands do).
+/// Runs tool `T` with a typed input (what the clap commands do). A
+/// top-level call (not one made by another tool) goes into the journal of
+/// `ctx` with its typed input (D197).
 pub fn run<T: Tool>(input: T::Input, ctx: &mut Ctx<'_>) -> Result<(T::Output, i32)> {
-    let out = T::call(input, ctx)?;
-    let code = T::exit_code(&out);
-    Ok((out, code))
+    run_as::<T, _>(
+        input,
+        ctx,
+        |i, c| {
+            let out = T::call(i, c)?;
+            let code = T::exit_code(&out);
+            Ok((out, code))
+        },
+        |(_, code)| *code,
+    )
+}
+
+/// Runs `f` as the call of tool `T` with `input`: the call is the current
+/// one of `ctx` (a run writes it into its run record) and, at the top
+/// level, goes into the journal with the exit code `code` of the result.
+/// For a front end that needs more of the result than the tool's output
+/// (`foehn flow` prints the failed checks of the report).
+pub fn run_as<T: Tool, R>(
+    input: T::Input,
+    ctx: &mut Ctx<'_>,
+    f: impl FnOnce(T::Input, &mut Ctx<'_>) -> Result<R>,
+    code: impl Fn(&R) -> i32,
+) -> Result<R> {
+    let call = journal::call_row(
+        T::ID,
+        T::VERSION,
+        serde_json::to_value(&input).unwrap_or(Value::Null),
+    );
+    let outer = ctx.call.replace(call.clone());
+    let t0 = std::time::Instant::now();
+    let res = f(input, ctx);
+    ctx.call = outer;
+    if ctx.call.is_none() {
+        let secs = t0.elapsed().as_secs_f64();
+        match &res {
+            Ok(r) => journal::record(ctx, &call, code(r), None, secs),
+            Err(e) => journal::record(ctx, &call, 1, Some(&diag::of_error(e)), secs),
+        }
+    }
+    res
 }
 
 #[cfg(test)]

@@ -5,7 +5,7 @@ use anyhow::Result;
 use foehncraft_flow::diag;
 use foehncraft_flow::engine;
 use schemars::JsonSchema;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 fn latest() -> PathBuf {
@@ -13,7 +13,7 @@ fn latest() -> PathBuf {
 }
 
 /// Input of `post.derive`, the options of `foehn post derive`.
-#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DeriveInput {
     /// Flow case file (TOML) of the run.

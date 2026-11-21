@@ -25,6 +25,7 @@ code by `foehn schema --markdown`).
 | `foehn expression SOURCE` | Compiles an expression (D53) with `[constants]` and `[tables]` of `--env FILE` and evaluates it at each `--point x,y,z,t`; `--allowed` names the variables it may use (default `xyzt`). |
 | `foehn commands` | The catalogue of the tool registry (D196) as JSON (`foehn.tool-catalogue`); `--markdown` prints [tools.md](tools.md). |
 | `foehn call ID` | Runs a tool from JSON (`--input FILE`, `-` for standard input, default no fields) and prints the result envelope; see [Tool registry](#tool-registry-d196). |
+| `foehn run --script FILE` | Replays the tool calls of a journal or a run record in order (`--keep-going` past a call that ends differently from its record); exit 1 when one does; see [Journal and replay](#journal-and-replay-d197). |
 | `foehn post derive CASE` | Writes the fields with derived fields (D72) from a restart file of the case (`--restart`, default `latest`), the file the run writes with `[output] derived` at that iteration or step (byte for byte). `--fields a,b` picks the fields (default `output.derived`, or all), `--file` the output (default `derived.vtkhdf`, `derived_<N>.vtkhdf` for `restart_<N>.h5`, next to the restart file). `--set`, `--out`, `--read-root` and `--write-root` as for `flow`. |
 
 ## Exit codes (D64)
@@ -406,6 +407,9 @@ A code keeps its meaning; a retired code stays in the table.
 | `LIM006` | note | Automatic mesh remediation (D50, MESH002) changed the schemes on poor faces: first order there. |
 | `TOOL001` | error | A tool id that the registry does not have (with the nearest id as a hint); `foehn commands` lists them. |
 | `TOOL002` | error | A tool input that does not match the input schema of the tool (unknown field, wrong type, missing field). |
+| `TOOL003` | warning | The journal of tool calls (D197) could not be written: the calls run, but the journal misses them. |
+| `TOOL004` | error | A script to replay (`foehn run --script`) that cannot be read: not a file of JSON lines, or without calls. |
+| `TOOL005` | warning | A replayed call (`foehn run --script`) that ended with another status or exit code than in its record; the replay stops there unless `--keep-going`. |
 | `GEN001` | error | An error without a more specific code. |
 
 ## Engine API (D86)
@@ -465,6 +469,34 @@ that does not match the schema `TOOL002`. `limitations` carries the
 limitations of a run (D199, below) once the run tools of D196 part 2
 fill it from the result summary. A breaking change of a tool's input or output raises its version.
 Human text of a tool goes to standard error (`--quiet` silences it).
+
+## Journal and replay (D197)
+
+With `--journal FILE` on any command (or the environment variable
+`FOEHN_JOURNAL`, which the Python package reads too), every tool call is
+appended to the journal as one JSON line (`foehn.journal`): a header with
+the version and commit, then per call `seq`, `date` (when it ended), `via`
+(`cli`, `python`), `tool`, `tool_version`, `input` (the typed input: the
+input after parsing, defaults filled in), `status`, `exit_code`,
+`seconds`, and for a failed call its `diagnostic`. A call refused before it
+ran (`TOOL001`, `TOOL002`) keeps its input as it came. Calls that a tool
+makes itself (the calls of a replay) are not journaled again. A journal
+that cannot be written is the warning `TOOL003`; the call stands.
+
+A run started by a call writes that call (tool, version, typed input) into
+its run record (`run.jsonl`) as the row `{"type": "call", ...}` after the
+header, so the record says how the run was started, also without a
+journal.
+
+`foehn run --script FILE` (the tool `journal.replay`) runs the call rows of
+a journal or a run record again, in order, in the working directory of the
+replay and inside its roots (`--read-root`, `--write-root`). Refused calls
+are skipped. Each call is compared with its record (status and exit code;
+a row without them is expected to finish); the replay stops at the first
+call that differs (`TOOL005`) unless `--keep-going`, and exits 1 when one
+did. The output is `foehn.replay`: every call with its recorded and
+replayed status, and the counts replayed, skipped and different. A script
+that is not JSON lines or has no calls is `TOOL004`.
 
 ## Python package (D61)
 
