@@ -1,0 +1,29 @@
+[package]
+name = "foehncraft-tools"
+description = "The tool registry of Foehncraft (D196): every function of the engine as a typed tool with a stable id, shared by the command line, the Python package and the MCP server"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[features]
+default = ["hdf5"]
+# VTKHDF output and restart files (HDF5 built from source).
+hdf5 = ["foehncraft-flow/hdf5"]
+
+[dependencies]
+foehncraft-core.workspace = true
+foehncraft-bench.workspace = true
+foehncraft-flow.workspace = true
+foehncraft-parallel.workspace = true
+rayon.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+schemars.workspace = true
+toml.workspace = true
+anyhow = "1"
+
+[lints]
+workspace = true
