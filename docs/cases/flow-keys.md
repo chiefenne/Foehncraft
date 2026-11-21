@@ -486,9 +486,25 @@ every output file (`properties_hash`, `materials_database`).
 
 | Key | Meaning |
 |---|---|
-| `regions.<name>.kind` | `fluid`; `solid` and `porous` are refused until the energy equation (REG001) |
+| `regions.<name>.kind` | `fluid` or `solid` (with `[energy]`, conjugate heat transfer); `porous` is refused (REG001) |
 | `regions.<name>.zones` | cell zones of the mesh (each zone in one region; unknown zones are REG002) |
 | `regions.<name>.material` | its material (default: that of `[fluid]`) |
+| `regions.<name>.axes` | the first two principal axes of an orthotropic conductivity in this region, `[[..], [..]]` in the mesh frame (default: those of the material; one material oriented differently in every part) |
+
+**Interfaces** (conjugate cases, stage 7d2, [recipe 160](../recipes/energy.md#cht-contact)).
+`[interfaces.<name>]` puts a resistance into the faces between two regions:
+
+| Key | Meaning |
+|---|---|
+| `interfaces.<name>.regions` | the two regions: solid regions, a fluid region of `[regions]`, or `fluid` (every fluid cell); not two fluids (CHT004) |
+| `interfaces.<name>.contact_resistance` | R″_c (m² K/W, ≥ 0) |
+| `interfaces.<name>.thin_wall` | `{ thickness, conductivity }` or `{ thickness, material }`: the resistance t/k of a wall that is not meshed (no heat capacity) |
+
+**Region heat sources.** `[[energy.sources]]` with `region` (a solid or
+fluid region, or `fluid`) and one of `power` (W over the region, spread by
+volume; a number or an expression of t) and `power_density` (W/m³, a
+number or an expression of x, y, z, t), added to `[energy] source`
+(ENE008).
 
 Regions with different viscosities give a viscosity per face, the harmonic
 mean across a zone boundary.

@@ -38,6 +38,7 @@ pub mod bc;
 pub mod case;
 pub mod checkpoint;
 pub mod cht;
+pub mod conduction;
 pub mod console;
 pub mod control;
 pub mod coupled;

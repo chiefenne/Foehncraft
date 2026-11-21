@@ -57,8 +57,9 @@
 //! **Perturbation.** Each node moves by up to `perturb` times the smaller
 //! adjacent interval in each direction, from a counter-based random number
 //! keyed by the seed and the node position (D47), so it is reproducible.
-//! Boundary nodes move only along the boundary; in 2D the nodes move in x
-//! and y only.
+//! Boundary nodes move only along the boundary, and so do the nodes on a
+//! face plane of a `zones` box (the interfaces of a conjugate case stay
+//! planes); in 2D the nodes move in x and y only.
 
 use crate::builder::{BoundaryFace, CellSoup, MeshBuilder};
 use crate::geometry::{add, dot, polygon_area_centroid, scale, sub};
@@ -671,6 +672,16 @@ impl BoxSpec {
             .collect();
         let n1 = [n[0] + 1, n[1] + 1, n[2] + 1];
         let mut pts = Vec::with_capacity(n1[0] * n1[1] * n1[2]);
+        // nodes on a face plane of a zone box move only along it, so that
+        // the interfaces between the zones stay planes (stage 7d2)
+        let ext: Vec<f64> = (0..3)
+            .map(|d| (self.upper[d] - self.lower[d]).abs())
+            .collect();
+        let on_zone_plane = |d: usize, x: f64| {
+            self.zones.iter().any(|z| {
+                (z.lower[d] - x).abs() <= 1e-12 * ext[d] || (z.upper[d] - x).abs() <= 1e-12 * ext[d]
+            })
+        };
         let dims = if self.dimension == 2 { 2 } else { 3 };
         for k in 0..n1[2] {
             for j in 0..n1[1] {
@@ -693,7 +704,7 @@ impl BoxSpec {
                         let (ki, kj) = (wrap(0, i), wrap(1, j));
                         for d in 0..dims {
                             let m = idx[d];
-                            if m == 0 || m == n[d] {
+                            if m == 0 || m == n[d] || on_zone_plane(d, coords[d][m]) {
                                 continue;
                             }
                             let h = (coords[d][m] - coords[d][m - 1])

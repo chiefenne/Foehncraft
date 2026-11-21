@@ -1,0 +1,130 @@
+# A chip on a circuit board in an air channel: an orthotropic board, a
+# contact resistance under the chip and the chip's power as a region source
+# (stage 7d2, D157, D116; gallery and recipe 160).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/cht_circuit_board.toml
+#
+# 2D, 1 cm deep: a board 1.6 mm thick and 12 cm long carries a silicon chip
+# 20 mm long and 1.6 mm high that dissipates 1 W. Air at 300 K flows over
+# them at 1 m/s through a channel 12 mm high (Re ≈ 700, laminar); below,
+# the board loses heat to the still air of the enclosure (h = 5 W/(m² K),
+# 300 K).
+#
+# - The board is a glass-fibre laminate with copper planes: k = 25 W/(m K)
+#   along the board and 0.35 W/(m K) through it, an orthotropic
+#   conductivity (the axes of the material are those of the board).
+# - The chip sits on a thermal pad of R″_c = 2·10⁻⁴ m²K/W
+#   (`[interfaces.pad]`); at 1 W over 2·10⁻⁴ m² the pad alone raises the
+#   chip by 1 K.
+# - The chip's 1 W is `[[energy.sources]]` with `power`, spread over its
+#   volume.
+#
+# The copper planes spread the heat along the board, so that a good part of
+# it reaches the air upstream and downstream of the chip and the enclosure
+# below; recipe 160 compares the board with a plain laminate (k = 0.35 in
+# every direction): `--set` the board's conductivity to 0.35.
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [0.12, 0.012, 0.01]
+cells = [120, 30, 1]
+split = [
+  { boundary = "xmin", axis = "y", at = 0.0016, name = "inlet" },
+  { boundary = "xmax", axis = "y", at = 0.0016, name = "outlet" },
+]
+zones = [
+  { name = "board", lower = [0.0, 0.0, 0.0], upper = [0.12, 0.0016, 0.01] },
+  { name = "chip", lower = [0.04, 0.0016, 0.0], upper = [0.06, 0.0032, 0.01] },
+]
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+material = "air"
+temperature = 300.0
+
+[materials.board-laminate]
+kind = "solid"
+description = "glass-fibre laminate with copper planes (typical values, not a database material)"
+density = 1900.0
+specific_heat = 1100.0
+conductivity = { form = "orthotropic", values = [25.0, 0.35, 25.0], axes = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]] }
+
+[materials.chip-silicon]
+kind = "solid"
+description = "silicon (k at 300 K, Incropera Table A.1: 148 W/(m K))"
+density = 2330.0
+specific_heat = 712.0
+conductivity = 148.0
+
+[regions.board]
+kind = "solid"
+zones = ["board"]
+material = "board-laminate"
+
+[regions.chip]
+kind = "solid"
+zones = ["chip"]
+material = "chip-silicon"
+
+[interfaces.pad]
+regions = ["chip", "board"]
+contact_resistance = 2.0e-4         # m²K/W, a thermal pad
+
+[energy]
+initial = 300.0
+temperature_dependent = false
+
+[[energy.sources]]
+region = "chip"
+power = 1.0                         # W
+
+[boundary.inlet]
+type = "velocity-inlet"
+velocity = [1.0, 0.0, 0.0]
+[boundary.inlet.energy]
+temperature = 300.0
+[boundary.outlet]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymax]
+type = "wall"                       # the lid of the channel, adiabatic
+[boundary.ymin]
+type = "wall"
+[boundary.ymin.energy]
+heat_transfer_coefficient = 5.0     # the enclosure below the board
+ambient_temperature = 300.0
+[boundary.xmin]
+type = "wall"                       # the ends of the board, adiabatic
+[boundary.xmax]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-10
+max_iterations = 2000
+
+[solver.momentum]
+relaxation = 0.9
+
+[solver.energy]
+relaxation = 1.0
+tolerance = 1e-10
+max_iter = 500
+
+[verification]
+require_convergence = true
+
+[output]
+wall_csv = false
+lines = [
+  { name = "board_bottom", from = [0.0005, 0.0002, 0.005], to = [0.1195, 0.0002, 0.005], points = 120 },
+  { name = "board_top", from = [0.0005, 0.0014, 0.005], to = [0.1195, 0.0014, 0.005], points = 120 },
+]

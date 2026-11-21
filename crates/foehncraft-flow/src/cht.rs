@@ -87,6 +87,214 @@ fn solid_cells(case: &FlowCase, mesh: &Mesh) -> Vec<Option<String>> {
         .collect()
 }
 
+/// The cells of region `name` of the energy equation: `fluid` (every
+/// fluid cell), a solid region (`mat_cell` indexes `regions`, the fluid
+/// first) or a fluid region of `[regions]` (its zones); `None` for a name
+/// the case does not have.
+pub(crate) fn region_cells(
+    case: &FlowCase,
+    mesh: &Mesh,
+    mat_cell: &[u16],
+    regions: &[String],
+    name: &str,
+) -> Option<Vec<u32>> {
+    let m = member(case, mesh, mat_cell, regions, name)?;
+    Some(
+        (0..mat_cell.len() as u32)
+            .filter(|&c| m(c as usize))
+            .collect(),
+    )
+}
+
+/// Whether a cell is in region `name` (see [`region_cells`]), and whether
+/// the region is a fluid.
+#[allow(clippy::type_complexity)]
+fn member<'a>(
+    case: &'a FlowCase,
+    mesh: &'a Mesh,
+    mat_cell: &'a [u16],
+    regions: &'a [String],
+    name: &str,
+) -> Option<Box<dyn Fn(usize) -> bool + 'a>> {
+    if name == "fluid" {
+        return Some(Box::new(move |c| mat_cell[c] == 0));
+    }
+    if let Some(i) = regions.iter().skip(1).position(|r| r == name) {
+        let i = (i + 1) as u16;
+        return Some(Box::new(move |c| mat_cell[c] == i));
+    }
+    let r = case.regions.get(name)?;
+    if r.kind != RegionKind::Fluid {
+        return None;
+    }
+    let zones: Vec<bool> = mesh.zones.iter().map(|z| r.zones.contains(z)).collect();
+    Some(Box::new(move |c| {
+        mat_cell[c] == 0 && zones[mesh.cell_zone[c] as usize]
+    }))
+}
+
+/// The `[interfaces]` entries of a conjugate case (stage 7d2): their
+/// resistances and, per interior face of the full mesh on one of them, the
+/// entry; CHT004 for an entry that is not on a region interface.
+#[allow(clippy::type_complexity)]
+pub(crate) fn interface_specs(
+    case: &FlowCase,
+    env: &crate::expr::Env,
+    mesh: &Mesh,
+    mat_cell: &[u16],
+    regions: &[String],
+) -> Result<(
+    Vec<crate::conduction::Resistance>,
+    std::collections::HashMap<u32, usize>,
+)> {
+    use crate::conduction::Resistance;
+    use crate::diag::{self, Diagnostic};
+    let bad = |name: &str, msg: String| {
+        diag::err(Diagnostic::new(diag::CHT_INTERFACE, msg).key(format!("interfaces.{name}")))
+    };
+    let ni = mesh.n_interior_faces();
+    let mut res = Vec::new();
+    let mut of_face = std::collections::HashMap::new();
+    let is_fluid = |n: &str| {
+        n == "fluid"
+            || case
+                .regions
+                .get(n)
+                .is_some_and(|r| r.kind == RegionKind::Fluid)
+    };
+    for (name, sec) in &case.interfaces {
+        let [a, b] = &sec.regions;
+        let known: Vec<&str> = std::iter::once("fluid")
+            .chain(case.regions.keys().map(|k| k.as_str()))
+            .collect();
+        let ma = member(case, mesh, mat_cell, regions, a);
+        let mb = member(case, mesh, mat_cell, regions, b);
+        let (Some(ma), Some(mb)) = (ma, mb) else {
+            return Err(bad(
+                name,
+                format!(
+                    "[interfaces.{name}] regions = [\"{a}\", \"{b}\"]: a region the case does not \
+                     have; the regions are {}",
+                    known.join(", ")
+                ),
+            ));
+        };
+        if a == b || (is_fluid(a) && is_fluid(b)) {
+            return Err(bad(
+                name,
+                format!(
+                    "[interfaces.{name}] regions = [\"{a}\", \"{b}\"]: an interface is between two \
+                     different regions, not two fluids (a wall between two fluids is a thin wall \
+                     of D189)"
+                ),
+            ));
+        }
+        let r = match (&sec.contact_resistance, &sec.thin_wall) {
+            (Some(r), None) => {
+                if !(r.is_finite() && *r >= 0.0) {
+                    return Err(bad(
+                        name,
+                        format!("[interfaces.{name}] contact_resistance must be ≥ 0 m²K/W, is {r}"),
+                    ));
+                }
+                Resistance::Fixed(*r)
+            }
+            (None, Some(w)) => {
+                if !(w.thickness.is_finite() && w.thickness > 0.0) {
+                    return Err(bad(
+                        name,
+                        format!(
+                            "[interfaces.{name}] thin_wall thickness must be > 0 m, is {}",
+                            w.thickness
+                        ),
+                    ));
+                }
+                match (&w.conductivity, &w.material) {
+                    (Some(k), None) if k.is_finite() && *k > 0.0 => {
+                        Resistance::Fixed(w.thickness / k)
+                    }
+                    (None, Some(m)) => {
+                        let sec_m = crate::materials::lookup(m, &case.materials)?;
+                        let owner = format!("materials.{m}");
+                        let Some(crate::materials::Conductivity::Isotropic(p)) =
+                            &sec_m.conductivity
+                        else {
+                            return Err(bad(
+                                name,
+                                format!(
+                                    "[interfaces.{name}] thin_wall material `{m}` needs one \
+                                     conductivity (an isotropic k)"
+                                ),
+                            ));
+                        };
+                        let k = crate::materials::curve(
+                            p,
+                            "conductivity",
+                            &owner,
+                            &sec_m,
+                            env,
+                            case.fluid.conditions(),
+                        )?;
+                        Resistance::Wall(w.thickness, k)
+                    }
+                    _ => {
+                        return Err(bad(
+                            name,
+                            format!(
+                                "[interfaces.{name}] thin_wall needs one of `conductivity` (> 0 \
+                                 W/(m K)) and `material`"
+                            ),
+                        ));
+                    }
+                }
+            }
+            _ => {
+                return Err(bad(
+                    name,
+                    format!(
+                        "[interfaces.{name}] needs one of `contact_resistance` (m²K/W) and \
+                         `thin_wall`"
+                    ),
+                ));
+            }
+        };
+        let idx = res.len();
+        res.push(r);
+        let mut count = 0usize;
+        for f in 0..ni {
+            let (o, n) = (mesh.owner[f] as usize, mesh.neighbour[f] as usize);
+            if (ma(o) && mb(n)) || (mb(o) && ma(n)) {
+                if let Some(other) = of_face.insert(f as u32, idx) {
+                    let other = case
+                        .interfaces
+                        .keys()
+                        .nth(other)
+                        .cloned()
+                        .unwrap_or_default();
+                    return Err(bad(
+                        name,
+                        format!(
+                            "[interfaces.{name}] and [interfaces.{other}] share faces: one entry \
+                             per pair of regions"
+                        ),
+                    ));
+                }
+                count += 1;
+            }
+        }
+        if count == 0 {
+            return Err(bad(
+                name,
+                format!(
+                    "[interfaces.{name}]: regions `{a}` and `{b}` do not touch (no face between \
+                     them)"
+                ),
+            ));
+        }
+    }
+    Ok((res, of_face))
+}
+
 /// The fluid view of a case on its full mesh: the case of the flow (the
 /// boundaries of the fluid cells and the interface walls, with the view
 /// attached), its mesh and geometry. A case without solid regions comes
@@ -97,6 +305,12 @@ pub fn view(case: &FlowCase, mesh: Mesh, geo: Geometry) -> Result<(FlowCase, Mes
         None => case.clone(),
     };
     if !is_cht(&full_case) {
+        crate::need!(
+            full_case.interfaces.is_empty(),
+            CHT_INTERFACE,
+            "[interfaces] needs the energy equation and a solid region ([energy] and \
+             [regions.<name>] kind = \"solid\")"
+        );
         return Ok((full_case, mesh, geo));
     }
     for (name, r) in &full_case.regions {
@@ -550,11 +764,11 @@ pub fn summaries(
     let Some(sc) = c.fe.scalars.as_ref() else {
         return Ok(out);
     };
-    let faces = sc.energy_interfaces(c.fe.dev.as_mut(), &v.geo)?;
+    let faces = sc.energy_interfaces();
     if let Some(s) = out.iter_mut().find(|s| s.name == crate::energy::FIELD) {
-        for (region, q, area, mean) in faces {
+        for (name, q, area, mean) in faces {
             s.boundaries.push(crate::scalar::ScalarBoundarySummary {
-                boundary: interface_name(&region),
+                boundary: name,
                 mean,
                 mixed_mean: None,
                 flux: if area > 0.0 { q / area } else { 0.0 },

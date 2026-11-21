@@ -1541,6 +1541,31 @@ mesh only (fixed before it could be hit). Still open: restart of a
 conjugate run, solids with a sliding mesh, the turbulence fields on the
 whole mesh.
 
+**7d2 done 2026-11-21 (#160):** contact resistances and thin walls (t/k,
+no heat capacity) at `[interfaces.<name>]` between fluid and solid or two
+solids, orthotropic solid conductivity with axes per material or region
+(the matrix takes n̂·K·n̂ of the face, the tangential rest is deferred, as
+are the cross terms c = −(K n̂ − k_n n̂)·∇T of an orthotropic side in the
+interface series of §9.1), one-sided gradients of §9.2 iterated three
+times per sweep from the last values, `[[energy.sources]]` per region,
+CHT004 and ENE008. Results: the patch test with a laminate turned by 30°,
+a fluid at rest and a block behind R″_c = 0.01 m²K/W on a mesh perturbed
+by 25 % (the V7.4 variant of §9.1) exact to 3·10⁻¹¹ K and 200 W/m² to 10⁻⁸
+through every wall and interface; V7.4 with a contact resistance and a
+thin wall equal to the series formula to 10⁻⁹; a chip on a thermal pad on
+a circuit board with copper planes (gallery 160). The aggregation AMG of
+the pressure as the preconditioner of the conjugate energy matrix was
+tried and left out: on the heated wall of 7d1 it took 206 BiCGStab
+iterations against 233 with Jacobi at four times the cost per iteration,
+and on the circuit board it did not reach the tolerance; it needs the
+strength on the scaled matrix of D158 (§10.2) first. A loose energy solve
+that converges with an open heat balance (ENE007) is a matter of
+`max_iter`: the circuit board closes to 7·10⁻¹³ with 500 Jacobi
+iterations. Still open: V7.10 (periodic meshes with solids, ENE006), the
+entropy production of a contact resistance in the second-law check, the
+cross terms at convection boundaries (taken with the weight of the face
+value), frames that follow the geometry (L48).
+
 **Decided 2026-11-21 (maintainer):** turbulent and transient conjugate heat
 transfer (7d5, 7d6) come before 7b1 and 7d2, as the more industry-relevant
 steps; buoyancy (lane B) comes much later. The cycle-averaged coupling of

@@ -90,6 +90,30 @@ pub struct EnergySection {
     /// Thermal wall function at the walls of a turbulent flow (D135).
     #[serde(default)]
     pub wall_function: crate::scalar::ThermalWallFunction,
+    /// Heat sources of single regions (stage 7d2), in addition to
+    /// `source`: `[[energy.sources]]` with a `region` and `power` (W over
+    /// the region, spread by volume) or `power_density` (W/m³).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sources: Vec<RegionSource>,
+}
+
+/// `[[energy.sources]]`: the heat source of one region (stage 7d2, §15 of
+/// the stage 7 specification): an electronic component, a heater, the
+/// losses of a winding.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RegionSource {
+    /// The region: a solid or fluid region of `[regions]`, or `fluid` for
+    /// all fluid cells.
+    pub region: String,
+    /// The heat released in the region (W), spread over its cells by
+    /// volume; a number or, in a transient case, an expression of t.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub power: Option<Scalar>,
+    /// The power density (W/m³): a number or an expression of x, y, z and,
+    /// in a transient case, t.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub power_density: Option<Scalar>,
 }
 
 fn yes() -> bool {
@@ -601,8 +625,9 @@ pub fn fluid(case: &crate::case::FlowCase, env: &Env) -> Result<Fluid> {
 }
 
 /// The thermal properties of a solid region (stage 7d1): ρ at the case
-/// temperature, c_p(T) and k(T) of its material; MAT006 without one of
-/// them, ENE006 for an orthotropic k (7d2).
+/// temperature, c_p(T) and k(T) of its material, an orthotropic k with the
+/// axes of the region or of the material (7d2); MAT006 without one of
+/// them, MAT008 for an orthotropic k without axes.
 pub fn solid(case: &crate::case::FlowCase, env: &Env, region: &str) -> Result<Material> {
     let cond: Conditions = case.fluid.conditions();
     let key = format!("regions.{region}.material");
@@ -620,22 +645,49 @@ pub fn solid(case: &crate::case::FlowCase, env: &Env, region: &str) -> Result<Ma
     };
     let m = lookup(&name, &case.materials)?;
     let owner = format!("materials.{name}");
+    let mut aniso = None;
     let k = match &m.conductivity {
         Some(Conductivity::Isotropic(p)) => Some(p.clone()),
-        Some(Conductivity::Orthotropic(_)) => {
-            return Err(diag::err(
-                Diagnostic::new(
-                    diag::ENE_UNSUPPORTED,
-                    format!(
-                        "{owner}: an orthotropic conductivity in a solid region comes with PR \
-                         7d2; give one value"
-                    ),
-                )
-                .key(format!("{owner}.conductivity")),
-            ));
+        Some(Conductivity::Orthotropic(o)) => {
+            // the axes of the region (an oriented part of one material),
+            // else those of the material (MAT008 without either)
+            let region_axes = case.regions.get(region).and_then(|r| r.axes);
+            let mut oo = (**o).clone();
+            if region_axes.is_some() {
+                oo.axes = region_axes;
+            }
+            let key = if region_axes.is_some() {
+                format!("regions.{region}.axes")
+            } else {
+                format!("{owner}.conductivity")
+            };
+            let axes = crate::materials::axes_of(&oo, &key)?;
+            let mut ks = Vec::with_capacity(3);
+            for (i, p) in o.values.iter().enumerate() {
+                ks.push(curve(
+                    p,
+                    &format!("conductivity.values[{i}]"),
+                    &owner,
+                    &m,
+                    env,
+                    cond,
+                )?);
+            }
+            aniso = Some(Aniso {
+                k: [ks[0].clone(), ks[1].clone(), ks[2].clone()],
+                axes,
+            });
+            // (the first principal value stands for k where one number is
+            // asked for; the energy equation takes the tensor)
+            o.values.first().cloned()
         }
         None => None,
     };
+    crate::need!(
+        aniso.is_some() || case.regions.get(region).and_then(|r| r.axes).is_none(),
+        MAT_AXES,
+        "[regions.{region}] axes orient an orthotropic conductivity; material `{name}` has one value"
+    );
     let missing: Vec<&str> = [
         ("density", m.density.is_none()),
         ("specific_heat", m.specific_heat.is_none()),
@@ -684,6 +736,7 @@ pub fn solid(case: &crate::case::FlowCase, env: &Env, region: &str) -> Result<Ma
             cond,
         )?,
         k: curve(k.as_ref().unwrap(), "conductivity", &owner, &m, env, cond)?,
+        aniso,
     })
 }
 
@@ -696,8 +749,57 @@ pub struct Material {
     pub rho: f64,
     /// c_p(T) (J/(kg K)).
     pub cp: Curve,
-    /// k(T) (W/(m K)).
+    /// k(T) (W/(m K)); of an orthotropic solid the first principal value
+    /// (the equation takes [`Material::tensor`]).
     pub k: Curve,
+    /// An orthotropic conductivity (stage 7d2).
+    pub aniso: Option<Aniso>,
+}
+
+/// An orthotropic conductivity K = Σᵢ kᵢ(T) eᵢ eᵢᵀ (D116, L48): the three
+/// principal values and the orthonormal axes.
+#[derive(Debug, Clone)]
+pub struct Aniso {
+    /// k₁(T), k₂(T), k₃(T) (W/(m K)).
+    pub k: [Curve; 3],
+    /// e₁, e₂, e₃.
+    pub axes: [[f64; 3]; 3],
+}
+
+impl Material {
+    /// The conductivity tensor at `t` (K): K = Σᵢ kᵢ eᵢ eᵢᵀ, or k I.
+    pub fn tensor(&self, t: f64) -> [[f64; 3]; 3] {
+        match &self.aniso {
+            None => {
+                let k = self.k.at(t);
+                [[k, 0.0, 0.0], [0.0, k, 0.0], [0.0, 0.0, k]]
+            }
+            Some(a) => {
+                let mut m = [[0.0; 3]; 3];
+                for (c, e) in a.k.iter().zip(&a.axes) {
+                    let ki = c.at(t);
+                    for i in 0..3 {
+                        for j in 0..3 {
+                            m[i][j] += ki * e[i] * e[j];
+                        }
+                    }
+                }
+                m
+            }
+        }
+    }
+
+    /// The conductivity along the unit normal `n` at `t`: n·K·n (k of an
+    /// isotropic material).
+    pub fn k_normal(&self, t: f64, n: [f64; 3]) -> f64 {
+        if self.aniso.is_none() {
+            return self.k.at(t);
+        }
+        let m = self.tensor(t);
+        (0..3)
+            .map(|i| n[i] * (0..3).map(|j| m[i][j] * n[j]).sum::<f64>())
+            .sum()
+    }
 }
 
 /// The temperature of zero sensible enthalpy (K).
