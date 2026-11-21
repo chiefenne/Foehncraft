@@ -944,7 +944,7 @@ fn mesh(a: MeshArgs, out: Out) -> Result<Done> {
     let mut case = if foehncraft_mesh::format::is_mesh_file(&a.input) {
         MeshCase::for_file(&a.input)
     } else {
-        MeshCase::from_file(&a.input)?
+        MeshCase::from_file(&a.input).map_err(diag::case_error)?
     };
     let name = a
         .input
@@ -997,7 +997,7 @@ fn mesh(a: MeshArgs, out: Out) -> Result<Done> {
 
 fn scalar(a: ScalarArgs, out: Out) -> Result<Done> {
     use foehncraft_fv::case::{ScalarCase, output_dir, run};
-    let mut case = ScalarCase::from_file(&a.case)?;
+    let mut case = ScalarCase::from_file(&a.case).map_err(diag::case_error)?;
     if let Some(b) = a.backends {
         case.run.backends = b;
     }
@@ -1114,7 +1114,7 @@ fn flow(a: FlowArgs, out: Out) -> Result<Done> {
 
 fn poisson(a: PoissonArgs, out: Out) -> Result<Done> {
     use foehncraft_fv::poisson::{PoissonCase, StudySolver, output_dir, run};
-    let mut case = PoissonCase::from_file(&a.case)?;
+    let mut case = PoissonCase::from_file(&a.case).map_err(diag::case_error)?;
     if let Some(b) = a.backends {
         case.study.backends = b;
     }
@@ -1155,7 +1155,7 @@ fn poisson(a: PoissonArgs, out: Out) -> Result<Done> {
 
 fn g1(a: G1Args, out: Out) -> Result<Done> {
     let mut case = match &a.case {
-        Some(p) => G1Case::from_file(p)?,
+        Some(p) => G1Case::from_file(p).map_err(diag::case_error)?,
         None => G1Case::default(),
     };
     if let Some(n) = a.cells {

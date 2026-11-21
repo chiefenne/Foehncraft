@@ -388,6 +388,7 @@ name = "foehncraft-flow"
 version = "0.6.0"
 dependencies = [
  "anyhow",
+ "foehncraft-bench",
  "foehncraft-core",
  "foehncraft-fv",
  "foehncraft-kernels",

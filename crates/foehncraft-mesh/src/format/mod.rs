@@ -103,6 +103,21 @@ pub static FORMATS: &[&dyn MeshFormat] = &[
     &openfoam::OpenFoam,
 ];
 
+/// A count, size or index that a file declares, checked before anything
+/// is allocated for it (D202): every item a file declares takes at least
+/// one byte of it, so a count above the size of the file (`len` bytes) is a
+/// broken or hostile file, refused with a message instead of an allocation
+/// that aborts the program.
+pub(crate) fn declared(n: usize, len: usize, what: &str) -> Result<usize, String> {
+    if n > len {
+        Err(format!(
+            "{what}: {n} declared, more than the file of {len} bytes can hold (a damaged file?)"
+        ))
+    } else {
+        Ok(n)
+    }
+}
+
 /// The format of a name.
 pub fn by_name(name: &str) -> Result<&'static dyn MeshFormat, String> {
     FORMATS

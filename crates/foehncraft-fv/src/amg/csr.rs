@@ -5,6 +5,9 @@
 //! Every product and transpose works row by row with a fixed order of the
 //! entries (columns ascending), so the setup is deterministic and does not
 //! depend on the number of threads (D31).
+// D202: a named unsafe module (tools/check/unsafe_modules.py);
+// every unsafe block has a `// SAFETY:` comment.
+#![allow(unsafe_code)]
 
 use crate::disc::CHUNK;
 use foehncraft_core::Real;

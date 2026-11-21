@@ -34,6 +34,9 @@
 //! on the host when they are built (`foehncraft-bench`: `FaceMesh::validate`,
 //! `Csr::validate`, `SellCs::validate`); the bodies are `unsafe fn` and their
 //! callers guarantee that every index lies inside its array.
+// D202: a named unsafe module (tools/check/unsafe_modules.py);
+// every unsafe block has a `// SAFETY:` comment.
+#![allow(unsafe_code)]
 #![no_std]
 
 pub mod adjoint;

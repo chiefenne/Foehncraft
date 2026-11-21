@@ -14,6 +14,9 @@
 //!
 //! All PTX entries come from `gpu/ptx-kernels`, built with
 //! `python3 gpu/ptx-kernels/build.py` (nightly Rust, sm_70 and newer).
+// D202: a named unsafe module (tools/check/unsafe_modules.py);
+// every unsafe block has a `// SAFETY:` comment.
+#![allow(unsafe_code)]
 
 #[cfg(feature = "cuda")]
 pub mod bench;

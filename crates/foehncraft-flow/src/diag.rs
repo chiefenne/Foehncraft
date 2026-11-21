@@ -76,6 +76,7 @@ codes! {
     CASE_OUTSIDE_ROOT = "CASE007", Error, "A path outside the read roots or the write roots (D82).";
     CASE_SET = "CASE008", Error, "A `--set key=value` that cannot be applied.";
     CASE_MISSING_KEY = "CASE009", Error, "A key that the case needs is missing.";
+    CASE_REFUSED = "CASE010", Error, "A case file that its reader refuses for a reason without a more specific code yet (the message says which); D202.";
     // the boundary conditions (D30)
     BC_NO_CONDITION = "BC001", Error, "A mesh boundary without a boundary condition.";
     BC_NO_BOUNDARY = "BC002", Error, "A boundary condition for a boundary the mesh does not have.";
@@ -167,6 +168,7 @@ codes! {
     // the mesh quality (D50)
     MESH_SKEWED = "MESH001", Warning, "Faces whose skewness exceeds `solver.skewness_limit` (poor cells, typically tetrahedra of a mesh that was not optimised).";
     MESH_REMEDIATION = "MESH002", Note, "Cell-quality remediation (D50): the run uses other schemes than set because of poor cells.";
+    MESH_READ = "MESH003", Error, "A mesh file that cannot be read: missing, of an unknown format, truncated or damaged (the reader says where); D202.";
     // the run (D40, D62, D64, D83)
     RUN_STOP_FILE = "RUN001", Note, "Stopped by the `.stop` control file.";
     RUN_SIGNAL = "RUN002", Note, "Stopped by a signal (SIGTERM, SIGINT or SIGUSR2).";
@@ -380,16 +382,51 @@ macro_rules! need {
 }
 
 /// The diagnostic of an error: the first one in its chain, with the full
-/// message of the chain (context included); `GEN001` when there is none.
+/// message of the chain (context included). An error without one gets its
+/// code from what failed (D202): a mesh file that cannot be read `MESH003`,
+/// a TOML error of a case file `CASE001`, `CASE002`, `CASE003` or `CASE009`
+/// (the readers of the mesh, scalar, Poisson and benchmark cases), a file
+/// that cannot be read `CASE006`; `GEN001` otherwise.
 pub fn of_error(e: &anyhow::Error) -> Diagnostic {
     let msg = format!("{e:#}");
     let mut d = e
         .chain()
         .find_map(|c| c.downcast_ref::<Diagnostic>())
         .cloned()
+        .or_else(|| {
+            e.chain()
+                .any(|c| c.is::<foehncraft_mesh::case::ReadError>())
+                .then(|| Diagnostic::new(MESH_READ, ""))
+        })
+        .or_else(|| {
+            e.chain()
+                .find_map(|c| c.downcast_ref::<toml::de::Error>())
+                .map(|t| crate::case::toml_diagnostic("", t))
+        })
+        .or_else(|| {
+            e.chain()
+                .any(|c| c.is::<std::io::Error>())
+                .then(|| Diagnostic::new(CASE_FILE, ""))
+        })
         .unwrap_or_else(|| Diagnostic::new(GENERAL, ""));
     d.message = msg;
     d
+}
+
+/// An error of a case reader (flow, mesh, scalar, Poisson and benchmark
+/// cases) with its diagnostic (D202): the one of [`of_error`], or
+/// `CASE010` when that finds no specific code. The message is that of the
+/// whole chain, as before.
+pub fn case_error(e: anyhow::Error) -> anyhow::Error {
+    let mut d = of_error(&e);
+    if d.code == GENERAL {
+        d.code = CASE_REFUSED;
+        d.severity = Severity::Error;
+        if d.key.is_none() {
+            d.key = key_of(&d.message);
+        }
+    }
+    err(d)
 }
 
 #[cfg(test)]

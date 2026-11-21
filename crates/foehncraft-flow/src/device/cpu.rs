@@ -3,6 +3,9 @@
 //! CPU backend of `foehncraft-fv`. Each output is written by one index, so
 //! the result is the same for any number of threads (D31), and the same as
 //! on the GPU, which runs the same bodies.
+// D202: a named unsafe module (tools/check/unsafe_modules.py);
+// every unsafe block has a `// SAFETY:` comment.
+#![allow(unsafe_code)]
 
 use super::kernel::{Exec, KernelFlow};
 use super::{Buf, Setup};

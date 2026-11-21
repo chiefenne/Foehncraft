@@ -208,10 +208,12 @@ impl Default for OutputSection {
 impl G1Case {
     /// Reads and validates a case file.
     pub fn from_file(path: &Path) -> anyhow::Result<Self> {
+        use anyhow::Context;
+        // the errors keep their types, so that a front end finds their
+        // diagnostic codes (D202)
         let text = std::fs::read_to_string(path)
-            .map_err(|e| anyhow::anyhow!("cannot read {}: {e}", path.display()))?;
-        let case: Self =
-            toml::from_str(&text).map_err(|e| anyhow::anyhow!("{}: {e}", path.display()))?;
+            .with_context(|| format!("cannot read {}", path.display()))?;
+        let case: Self = toml::from_str(&text).with_context(|| path.display().to_string())?;
         case.validate()?;
         Ok(case)
     }

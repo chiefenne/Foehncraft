@@ -1,4 +1,7 @@
 //! Sparse matrices for the SpMV benchmark (D37): CSR and SELL-C-σ.
+// D202: a named unsafe module (tools/check/unsafe_modules.py);
+// every unsafe block has a `// SAFETY:` comment.
+#![allow(unsafe_code)]
 
 use crate::mesh::FaceMesh;
 use foehncraft_core::Real;
@@ -210,12 +213,14 @@ mod tests {
         let x: Vec<f64> = (0..a.n).map(|i| (i as f64).sin()).collect();
         let mut y = vec![0.0; a.n];
         for (r, yr) in y.iter_mut().enumerate() {
+            // SAFETY: r < n; `from_mesh` builds a valid CSR matrix.
             *yr = unsafe { foehncraft_kernels::spmv::csr_row(r, &a.row_ptr, &a.col, &a.val, &x) };
         }
         for (chunk, sigma) in [(1, 1), (4, 1), (32, 1), (8, 16)] {
             let s = SellCs::from_csr(&a, chunk, sigma);
             let mut ys = vec![0.0; a.n];
             for r in 0..a.n {
+                // SAFETY: r < n; `from_csr` builds a valid SELL-C matrix.
                 ys[s.perm[r] as usize] = unsafe {
                     foehncraft_kernels::spmv::sell_row(
                         r,

@@ -2,6 +2,9 @@
 //!
 //! Each output value is computed by one iteration from its index, so the
 //! results are bitwise the same for any number of threads (D31).
+// D202: a named unsafe module (tools/check/unsafe_modules.py);
+// every unsafe block has a `// SAFETY:` comment.
+#![allow(unsafe_code)]
 
 use super::{Backend, FaceSettings, Limiter, V};
 use crate::amg::cycle::LevelOps;
