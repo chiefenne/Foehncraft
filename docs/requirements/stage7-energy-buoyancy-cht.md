@@ -1421,6 +1421,9 @@ registry and `foehn explain <code>` (D78) carry the guidance text.
 
 ## 16. Implementation plan (D164)
 
+The working plan of stage 7 (finer PR cut, lanes, status per PR) is on
+the [stage 7 plan page](stage7-plan.md).
+
 Six pull requests, each with its tests, its verification page section
 (`docs/verification/stage7.md`), gallery examples, case files and recipes
 on a new topic page `energy.md` in `docs/gallery/`, `docs/recipes/` and
