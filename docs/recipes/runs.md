@@ -12,6 +12,7 @@ Part of the [Recipes](../recipes.md): restart, stop and steer runs, drive runs f
 | 39 | [Prepare changes of settings before the run](#schedule) |
 | 166 | [Set an iteration budget and a budget per study](#budgets) |
 | 171 | [Call any tool from a script or an agent](#tools) |
+| 172 | [Record a session and replay it](#journal) |
 
 ---
 
@@ -416,5 +417,57 @@ implementing `Tool`, one line in `registry()`), then gets its clap command
 and Python wrapper; regenerate the catalogue with
 `target/release/foehn commands --markdown > docs/tools.md`, and run
 `cargo xtask layering`.
+
+[↑ back to top](#run-control-and-health)
+
+---
+
+<a id="journal"></a>
+## 172. Record a session and replay it
+
+Every tool call can go into a journal (D197). From the repository root,
+after `cargo build --release`:
+
+```
+export FOEHN_JOURNAL=output/tools/session.jsonl                 # or --journal FILE on each command
+target/release/foehn flow examples/cases/flow/cavity_re100.toml --check
+target/release/foehn flow examples/cases/flow/cavity_re100.toml --out output/tools/cavity
+target/release/foehn post derive examples/cases/flow/cavity_re100.toml --out output/tools/cavity --fields vorticity
+unset FOEHN_JOURNAL
+target/release/foehn run --script output/tools/session.jsonl; echo "exit $?"   # 0: every call as recorded
+```
+
+Each line of the journal is one call: `tool`, `input` (typed, every
+default filled in), `status`, `exit_code`, `seconds` and `via` (`cli`,
+`python`). A run started by a call also holds that call in its run record,
+so one run can be replayed from its output directory:
+
+```
+target/release/foehn run --script output/tools/cavity/run.jsonl
+```
+
+A script can be written by hand: one JSON object per line with
+`"type": "call"`, `tool` and `input`, as in
+`examples/cases/tools/cavity_session.jsonl`; without a recorded status a
+call is expected to finish.
+
+```
+target/release/foehn run --script examples/cases/tools/cavity_session.jsonl
+target/release/foehn --json run --script examples/cases/tools/cavity_session.jsonl --keep-going   # foehn.replay
+```
+
+The replay runs in the working directory and inside `--read-root` and
+`--write-root` (D82); it stops at the first call that ends otherwise than
+recorded (`TOOL005`, exit 1) unless `--keep-going`. From Python:
+
+```python
+import os
+import foehncraft as fc
+
+os.environ["FOEHN_JOURNAL"] = "output/tools/py_session.jsonl"
+fc.call("case.check", case="examples/cases/flow/cavity_re100.toml")
+del os.environ["FOEHN_JOURNAL"]
+fc.call("journal.replay", script="output/tools/py_session.jsonl")["result"]["different"]   # 0
+```
 
 [↑ back to top](#run-control-and-health)
