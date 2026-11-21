@@ -2,7 +2,10 @@
 
 Requirements step 26 (2026-11-21), maintainer request: a design-optimisation
 strategy for expensive, agent-driven CFD. Decisions D205–D212, L49 and the
-amended L13 are in [requirements.md](../requirements.md). No code. Clean room (D201): literature only, no copyleft
+amended L13 are in [requirements.md](../requirements.md). No code.
+
+
+Assessment, 2026-11-21. Clean room (D201): literature only, no copyleft
 source, no commercial solver names. Estimates are agent time.
 
 Next free ids at the time of writing: D205, L49, P19, O25, step 26.
@@ -372,3 +375,229 @@ study-layer code minutes to an hour each; L17 and L13 not sized yet.
 - Conservative Cartesian cut cells for incompressible flow,
   [arXiv 2211.10698](https://arxiv.org/pdf/2211.10698).
 - Second-order thermal IBM for CHT, [arXiv 1411.1004](https://arxiv.org/pdf/1411.1004).
+
+## 8. Addendum 2026-11-21 (evening): distance-field layer mesh around the body
+
+Owner idea: build a signed distance field around the immersed body, use
+its iso-distance surfaces as a few body-fitted layers meshed at program
+start, and take the outermost iso-surface as the immersed (cut) boundary.
+Status: discussion, not yet in the requirements.
+
+### 8.1 Assessment: this is the right structure
+
+- The wall sits on a body-fitted layer mesh: wall functions, low-Re
+  treatment and thermal wall laws see regular cells, sharp features of the
+  body are kept exactly.
+- The cut moves to the outermost iso-surface. Iso-surfaces of a distance
+  field never self-intersect and get smoother with distance (sharp convex
+  edges become rounded), so the cut works on a smooth surface: the
+  sharp-feature caveat of section 3 disappears and a sampled distance field
+  is good enough for the cutting.
+- Cut cells and merged small cells are then interior cells of the flow, not
+  wall cells. Their irregularity costs far less accuracy there.
+- Joined by imprinting (D58): ordinary internal faces, exact conservation.
+  The literature relative is the near-body/off-body idea of strand and
+  Cartesian methods (Meakin, Wissink, Katz and co-workers), which couple by
+  overset interpolation and are not conservative. Ours would be.
+- CHT: grow layers to negative distances inside the solid too; the wall is
+  then a conformal interface with layers on both sides.
+- Optimisation: a shape change regrows the layers in seconds, or morphs
+  them with the distance field at fixed topology, so the mesh near the wall
+  is smooth in the design parameters; only the smooth outer cut changes
+  topology, far from where the sensitivities are large.
+- Moving bodies later (L4): the layer mesh moves rigidly with the body and
+  only the outer cut changes per step.
+
+### 8.2 Where it gets hard
+
+1. **Concave corners and the medial axis.** Lines along the distance
+   gradient meet where two walls are equally near. Layer columns must
+   merge or stop there. Polyhedral cells (D23) allow merged columns; the
+   local layer height is limited by the local feature size.
+2. **Convex sharp edges.** The gradient lines fan out; cells become wide
+   in the outer layers. Needs extra columns (a fan) or accepted coarsening.
+3. **Narrow gaps** between bodies or walls thinner than twice the layer
+   height: layers shrink to what fits; below the first-layer height the
+   method falls back to plain cut cells there and reports a limitation
+   (D199).
+4. **Surface mesh quality.** The layers inherit the surface tessellation.
+   STL triangles are often slivers, so the surface must be remeshed
+   (isotropic remeshing, Botsch & Kobbelt 2004; or a polygonal mesh from a
+   centroidal Voronoi tessellation; or the footprint of the background
+   mesh projected on the surface).
+5. **Size jump at the cut.** The last layer and the background cells must
+   have similar size, so the background needs refinement near the body
+   (D57) and the layer growth must end near the background size.
+6. **First-layer height** is unknown at start: flat-plate estimate first,
+   regrow after the first run from the measured wall shear (cheap, since
+   meshing is automatic).
+
+### 8.3 Graphics algorithms to benchmark here
+
+Fast winding numbers and narrow-band distance grids for the field;
+medial-axis detection from the gradient discontinuity of the distance
+field; isotropic and Voronoi surface remeshing; dual contouring against
+marching cubes for the outer iso-surface; robust mesh Booleans for the
+cut.
+
+### 8.4 Consequence for D211
+
+If this works, the layered immersed mesh may be accurate enough for final
+results in many cases; the automatic hand-off rule stays, but as a
+measured check that often says "no switch needed".
+
+### 8.5 Heat-method fields for the layer growth (owner question, 2026-11-21)
+
+From memory of the papers, not re-read. Heat method (Crane, Weischedel &
+Wardetzky 2013): short-time heat diffusion from the wall, normalised
+gradient, one Poisson solve; two linear solves that the AMG handles.
+Concave corners: the kink of the exact distance at the medial axis is
+rounded, growth lines merge gently. Convex sharp edges: the plain method
+keeps the singular fan; the signed heat method (Feng & Crane 2024), which
+diffuses the surface normals (vector heat method, Sharp, Soliman & Crane
+2019), blends them across the edge and works on dirty geometry. Narrow
+gaps: no extra room, but |grad phi| < 1 near the mid-gap ridge is a free
+local-feature-size detector to cap the layer height. Proposed split of
+roles: exact closest-point distance (D108) for values (turbulence wall
+distance), heat-method field for growth directions and the detector.
+Prototype comparison: exact distance, heat method, signed heat method as
+growth fields on an airfoil, a fin section and a narrow gap (2D, mesh
+only).
+
+### 8.6 Check against the papers on Keenan Crane's site (read 2026-11-21)
+
+Read: publication list at cs.cmu.edu/~kmcrane (complete); Feng & Crane
+2024 "A Heat Method for Generalized Signed Distance" (sections 1-7.2
+verbatim, sections 7.3-10 only through a summary, numbers from there
+unverified); Feng, Gkioulekas & Crane 2026 "Points as Tori" (sections 1-6);
+Corman & Crane 2025 "Rectangular Surface Parameterization" (abstract and
+keyword scan). This replaces 8.5 where they differ.
+
+- **Signed heat method (2024).** Diffuse the oriented normals one
+  backward-Euler step with t = h^2 (h = mean node spacing), normalise,
+  solve one Poisson problem with natural boundary conditions; level sets
+  can be pinned by a hard or soft constraint. Works on triangle, tet and
+  polygonal meshes, point clouds and regular grids. Paper's claims:
+  "well-behaved and evenly-spaced offset surfaces" from badly broken input;
+  inside/outside more robust than generalised winding numbers; across gaps
+  "diffusion averages together normals at nearby points". It is an
+  approximation: convergence about first order in edge length (reported
+  median order 0.83, unverified), t cannot be made arbitrarily small. The
+  paper does **not** analyse sharp convex edges, concave corners or the
+  medial axis; the statement in 8.5 that it spreads the fan at convex edges
+  was my inference and must be tested, not assumed.
+- **Points as Tori (2026).** Signed distance for point clouds by fitting a
+  torus per point with a pre-trained network. Output is always smooth, so
+  sharp features are not captured, and it overestimates distance. For a
+  CAD or STL body the exact mesh distance is better. Useful for us only
+  for scan data. Its theory section is the useful part: signed distance is
+  the log transform of a screened Poisson solution, and the screening
+  parameter moves continuously between winding number (smooth, robust) and
+  distance (sharp). That is one scalar solve of our own solver with one
+  smoothing knob, and the direct relative of the PDE wall distance (D48).
+- **Rectangular Surface Parameterization (2025).** Anisotropic quad surface
+  meshes aligned with curvature and sharp features, with control of sizing
+  and aspect ratio at boundaries, seconds to minutes, optimal convergence
+  shown in end-to-end simulations. This is the strongest candidate for the
+  surface mesh under the layers (hard point 4 of 8.2): extruded quads give
+  hexahedral layers, stretched along edges where the flow needs it.
+- **Repulsive Shells (2024), Untangling Surfaces (2026).** Collision-aware
+  surface optimisation; candidates for keeping grown layers from
+  intersecting in gaps and concave regions. Not yet read in detail.
+- **Differential Walk on Spheres (2024).** Shape derivatives of screened
+  Poisson problems without a mesh, shown on thermal design. Only linear
+  elliptic problems, so at most a tool for conduction-only pre-studies.
+
+Net result: the graphics work gives robust, smooth, evenly spaced offset
+fields from dirty geometry and a high-quality aligned surface mesh. None of
+the papers read handles layer columns at concave corners, convex edges or
+gaps explicitly; that logic stays ours and the prototype has to show it.
+
+### 8.7 2D prototype result (2026-11-21, owner go on the prototype)
+
+Mesh-only 2D prototype on a finned wall (gaps 0.30, 0.12, 0.05) and two bodies with a
+0.055 gap: code, images and numbers in the prototype of section 9 below. Summary: heat and signed heat fields give layer surfaces within 0.3 to 2
+first-layer thicknesses of the exact offset if sqrt(t) >= d_total/16; the heat dip of
+|grad phi| at the medial axis works as the feature-size detector; the fan at convex edges is
+reduced about 3.7 times (33 -> 9), not removed; narrow gaps need sqrt(t) well below the gap;
+columns at concave corners and gaps still have to merge or stop in the mesher. Not decided:
+whether to record the layered immersed boundary in L13 (owner: prototype first, record later).
+
+## 9. Prototype of the layered distance-field boundary, 2D (2026-11-21)
+
+Mesh-only prototype, no solver and no repository change. The code (`layers2d.py`, `run.py`, numpy and scipy, run time 2 minutes), images and `metrics.json` are in the project files, not in this repository. Clean room: written from the papers' equations.
+
+Setup. Regular grid, h = 0.0025 (483k cells for the fins). Layer surfaces at
+distances d_k = h1 (r^k - 1)/(r - 1), h1 = 0.01 (4 cells), r = 1.2, k = 1..8, outer cut
+d_8 = 0.165. Fields: exact signed distance (closest point on the polyline), heat method (Crane
+et al. 2013) with the sign from point-in-polygon, signed heat method (Feng & Crane 2024).
+Reconstruction by least squares on staggered faces. Diffusion time t = (c h)^2, c = 2, 4, 8.
+Cases: finned wall (4 fins, gaps 0.30, 0.12, 0.05 wide: concave corners, convex edges, narrow
+gaps) and two bodies (ellipse and circle, minimum gap 0.055).
+
+### 9.1 What the numbers say
+
+Contour error = max |exact distance on the field's iso-contour - d_k|, in units of h1 (0.01).
+
+| case | field | k = 1 | k = 4 | k = 8 |
+|---|---|---|---|---|
+| fins | heat c=2 | 0.52 | 0.40 | not reached |
+| fins | heat c=4 | 0.75 | 0.77 | 1.07 |
+| fins | heat c=8 | 1.22 | 1.36 | 1.94 |
+| fins | signed c=2 | 0.85 | 1.03 | not reached |
+| fins | signed c=4 | 1.00 | 1.81 | 2.04 |
+| fins | signed c=8 | 1.49 | 2.97 | 3.30 |
+| bodies | heat c=4 | 0.74 | 0.62 | 0.47 |
+| bodies | signed c=2 | 0.21 | 0.23 | not reached |
+| bodies | signed c=4 | 0.44 | 0.44 | 0.33 |
+
+1. **The fields work.** All layer surfaces are within 1 to 2 first-layer thicknesses of the
+   exact offset at c = 4 (0.3 to 2.0 h1 over the 8 layers; 2 to 12 % of d_8 on the fins, 2 to
+   3 % for the smooth bodies), with smooth, orthogonal columns away from corners.
+2. **Diffusion time must scale with the total layer thickness.** Heat decays as
+   exp(-d/sqrt(t)); at c = 2 (sqrt t = 0.005) it falls below round-off before 0.165 and the field
+   is lost there (no k = 8 contour). A working rule from these runs: sqrt(t) >= d_total / 16
+   (here c >= 4). Error grows with t (k = 4: 0.4, 0.8, 1.4 h1 for the heat method at c = 2, 4, 8).
+   So t is a choice per layer stack, not a constant. In the first run the plain heat method
+   returned garbage far from the body for the same reason.
+3. **Neither method is better everywhere.** The signed method is more accurate for the smooth
+   bodies, the plain heat method (with the sign from the exact inside test) for the fins. The
+   plain method also shows grid stair-steps at curved walls (visible on the circle in
+   `gap_ridge.png`) because its source is a splat on the cell grid.
+4. **The feature-size detector works.** In both heat fields the medial axis (where columns from
+   two walls meet) is a narrow dip of |grad phi| from 1 to about 0.5, in every gap and at the
+   concave corners (`fins_ridge.png`, `gap_ridge.png`). The exact field shows the same line as a
+   direction jump of its gradient. A threshold of 0.6 stops columns there. This is the free
+   local layer-height limit.
+5. **A narrow gap needs sqrt(t) well below the gap.** In the 0.05 gap the heat dip spreads over
+   most of the gap at c = 4 (sqrt t = 0.01), so the detector fires at the wall and the columns in
+   that gap stop at once (0 layers). Median layers that fit in the 0.05 gap: exact 2, signed
+   heat 1, plain heat 0. In the 0.12 gap: 4, 4, 4. In the 0.30 gap: 7, 7, 7. (The worst single
+   column of the signed field in the 0.12 gap fits 3, in the 0.05 gap 1.)
+6. **Convex edges: smoothing helps by a factor of three to four, not more.** Columns from the
+   two faces of a 90 degree edge end up to 33 times further apart (exact distance) or 9 times
+   (signed heat, c = 4) than at the wall, measured at the outer cut. About 65 respectively 102
+   extra columns are needed over the whole fin outline to keep the widening below 1.5 (my count
+   of excess spacing divided by 1.5; the counts are rough). The fan is not removed.
+7. **Concave corners and gaps: the columns converge and stop in a Y.** The exact and signed
+   fields give the same picture: columns from the two walls meet on a line, all columns that
+   reach it have to merge or stop there (the orange triangles in `fins_layers.png`).
+
+### 9.2 Not reliable, not reported
+- The column statistics of the plain heat method on the fins (reached 122 of 696, median
+  0 layers): columns outside the gaps stop at once for a reason I did not find. Do not use.
+- All "reached" counts use a first-order tracing with a 20 degree turning limit; they count
+  columns that reach the outer cut and drop the others from the widening measure.
+- One resolution (h = 0.0025), no grid-convergence study of the fields.
+
+### 9.3 What this means for the layered immersed boundary
+- Smooth offset layers from either heat-type field are accurate enough to grow layers, if the
+  diffusion time follows the layer stack: sqrt(t) about d_total / 16.
+- The medial-axis detector gives the local number of layers that fit.
+- The convex-edge fan and the layer merge at concave corners and gaps are NOT solved by the
+  fields; they need explicit column insertion and merging in the mesher.
+- For the mesh itself the exact closest-point distance (D108) stays the source of the
+  first-cell values; the heat-type field is for directions and the detector.
+- Open: 3D, corners with a curved surface mesh, resolution of the grid versus the layer
+  height (h1 = 4 cells here), cost at scale (the grid solves took 10 to 15 s per 500k cells in
+  scipy).
