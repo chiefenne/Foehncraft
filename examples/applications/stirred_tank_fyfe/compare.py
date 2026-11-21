@@ -36,7 +36,7 @@ def paper_plane(path):
         d = np.genfromtxt(f, delimiter=",", filling_values=np.nan)
     i = hdr.index("Velocity in Stn Frame u [ m s^-1 ]")
     y, z = d[:, 1], -d[:, 2]
-    return y, z, d[:, i], d[:, i + 1], -d[:, i + 2]   # u (tangential at x=0), v (radial), w up
+    return y, z, -d[:, i], d[:, i + 1], -d[:, i + 2]   # tangential (counter-clockwise: -u at x=0), radial, w up
 
 
 def ours(run):
@@ -56,6 +56,9 @@ def sample(tree, u, y, z, phi):
     p = np.stack([y * e_r[0], y * e_r[1], z], -1)
     d, i = tree.query(p)
     ok = d < 0.004
+    if abs(np.sin(2 * phi)) < 1e-9:      # the plane cuts a baffle plate (and the shaft)
+        ok &= ~((np.abs(y) > 0.035) & (np.abs(y) < 0.047) & (z > 0.050))
+    ok &= ~((np.abs(y) < 0.0035) & (z > 0.038))
     v = u[i]
     return (np.where(ok, v @ e_t, np.nan), np.where(ok, v @ e_r, np.nan), np.where(ok, v[:, 2], np.nan))
 
