@@ -162,6 +162,7 @@ The dots are the paper's CFD (one snapshot, t = 60 s); the red line is the plane
 
 - The agreement is best close to the impeller (axial velocity below the blades, the jets): the shape and size of the jets match. Far from it, at 100 mm, the profiles differ in detail; the paper's snapshot is unsteady and ours is a steady frozen rotor.
 - The tangential velocity has the same sense and shape as the paper's below the blades; our peak is about twice as high there (0.28 against 0.14 tip speeds), which the frozen rotor and the coarse mesh may explain.
+- **Geometry caveat:** the SI drawings (primitive list) put the hub (z 38–50 mm above the bottom) on top of the blade box (26–41 mm) and the shaft above it; this first model has the hub at 26–38 mm, below the blades' upper half. The entry will be rebuilt from the SI primitives before it is called checked.
 - Our impeller blades are flat plates with square edges at an assumed azimuth; the paper does not state the rotor phase of its snapshot.
 - The experiments of the paper are mixing times, not velocities; there is no experimental velocity comparison here.
 
