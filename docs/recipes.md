@@ -21,7 +21,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | [Boundary conditions](recipes/boundary-conditions.md) | slip walls, wedges for axisymmetric flow, inlet profiles from tables, backflow at pressure outlets, convective outlets, periodic modules | 29, 67 |
 | [Expressions and materials](recipes/properties.md) | values as expressions of x, y, z and t, constants and tables, wall mass flux, the material database, regions | 31, 32 |
 | [Python](recipes/python.md) | the `foehncraft` package: cases, expressions, runs with callbacks, results, materials, studies | 33 |
-| [Verification](recipes/verification.md) | the discretisation uncertainty of a sweep (GCI), the generated verification manual | 34, 35, 165 |
+| [Verification](recipes/verification.md) | the discretisation uncertainty of a sweep (GCI), the generated verification manual | 34, 35, 165, 170 |
 | [Post-processing](recipes/post-processing.md) | derived fields with the output and from restart files (`foehn post derive`) | 30, 108, 110 |
 | [Engineering gallery](recipes/applications.md) | run an application of the Engineering Gallery and compare it with published data | 161 |
 | [Run control and health](recipes/runs.md) | restart, stop and steer runs, drive runs from a script or an agent, balances and divergence reports, the log, scheduled changes and case upgrades | 22, 26, 27, 37, 38, 39, 166 |
@@ -112,6 +112,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="fyfe-stirred-tank-recipe"></a>161 | [Run the 2 L stirred tank of Fyfe et al. and compare it with the published CFD plane](recipes/applications.md#fyfe-stirred-tank-recipe) | [Engineering gallery](recipes/applications.md) |
 | <a id="status"></a>165 | [Grade a feature on the verification status page](recipes/verification.md#status) | [Verification](recipes/verification.md) |
 | <a id="budgets"></a>166 | [Set an iteration budget and a budget per study](recipes/runs.md#budgets) | [Run control and health](recipes/runs.md) |
+| <a id="limitations"></a>170 | [Read and act on the limitations of a run](recipes/verification.md#limitations) | [Verification](recipes/verification.md) |
 
 ## Adding a feature
 
