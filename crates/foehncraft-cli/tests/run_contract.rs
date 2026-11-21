@@ -105,6 +105,20 @@ fn json_result_and_byte_identical_files() {
         assert_eq!(v["status"], "finished");
         assert_eq!(v["exit_code"], 0);
         assert_eq!(v["solves"][0]["cells"], 256);
+        // one mesh: a limitation (D199) that changes neither status nor exit code
+        assert!(
+            v["limitations"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|l| l["code"] == "LIM004"),
+            "{}",
+            v["limitations"]
+        );
+        let log = std::fs::read_to_string(out.join("flow.log")).unwrap();
+        assert!(log.contains("Run finished with"), "{log}");
+        let md = std::fs::read_to_string(out.join("flow.md")).unwrap();
+        assert!(md.contains("## Limitations ("), "{md}");
         assert!(v["provenance"]["case_hash"].as_str().unwrap().len() == 64);
         // result.json is the object on standard output
         let file: Value = serde_json::from_slice(&bytes(&out.join("result.json"))).unwrap();

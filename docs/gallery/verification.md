@@ -1,10 +1,11 @@
 # Verification
 
-Part of the [Example gallery](../gallery.md): the discretisation uncertainty of mesh and time-step sweeps (D67) and the verification manual generated from the cases (D68).
+Part of the [Example gallery](../gallery.md): the discretisation uncertainty of mesh and time-step sweeps (D67) and the verification manual generated from the cases (D68), and the grades of every feature with the limitations they give a run (D199).
 
 | # | Example | Stage | Feature |
 |---|---|---|---|
 | 25 | [Grid convergence index: Couette flow and the cylinder at Re = 20](#gci) | 5 | `[verification] levels` with three or more meshes, `uncertainty` in `result.json`, `tools/release/verification_manual.py` |
+| 170 | [Verification grades and the limitations of a run: the raw Gmsh pipe](#limitations) | 7 | `docs/verification/status.md`, `features.toml`, `limitations` in `result.json`, LIM001 to LIM006 |
 
 ---
 
@@ -65,3 +66,60 @@ uncertainty tables of its sweeps into
 `results.json` and a chart of the observed orders against their bands).
 
 How to use it: [recipes 34 and 35](../recipes/verification.md).
+
+---
+
+<a id="limitations"></a>
+## 170. Verification grades and the limitations of a run: the raw Gmsh pipe
+
+<img src="../figures/verification/grades.svg" alt="Stacked bars of the verification grades per area: verified in green, partial in amber, unverified in red; most areas have both verified and partial features, the boundary conditions three unverified ones" width="800" height="514">
+
+**The grades.** Every feature a case can switch on has a row in
+[features.toml](../verification/features.toml): the cases, tests and
+recorded runs that check it, with their kind (exact, manufactured,
+reference data, consistency), the known gaps and the validated range.
+`tools/release/verification_status.py` computes the grade of every row
+and writes the [verification status](../verification/status.md) page and
+the chart above; CI refuses a table that names a case or test that does
+not exist, or a page that is out of date. A gap written into the table,
+or a case that fails in the verification manual, lowers the grade at
+once.
+
+**The limitations of a run.** At the end of a run the engine compares the
+case with these grades and the result with the validated ranges. The raw
+Gmsh pipe of [gallery 26](meshes.md) (`examples/cases/flow/pipe_gmsh_raw.toml`,
+1 572 tetrahedra) finishes with every check passed, and the last frame of the
+log says what to keep in mind:
+
+```
+******************************************************************************************************
+*                                                                                                    *
+*   Run finished with 3 limitations: every check passed                                              *
+*                                                                                                    *
+*   Exit code                          0                                                             *
+*   Elapsed time                       0:00:00                                                       *
+*   Results in                         output/pipe_gmsh_raw                                          *
+*   Report                             flow.md, result.json                                          *
+*   LIM001                             Gmsh v4 reader is graded partial: no exact or manufactured    *
+*                                      solution (docs/verification/status.md)                        *
+*   LIM004                             one mesh only: the discretisation uncertainty is not          *
+*                                      estimated (a level sweep with `[verification] levels` gives   *
+*                                      the GCI)                                                      *
+*   LIM006                             automatic mesh remediation active (28 skewed faces, 44 poor   *
+*                                      cells): solver.pressure_gradient: "least-squares" ->          *
+*                                      "gauss", solver.momentum.limiter: "none" ->                   *
+*                                      "venkatakrishnan", solver.face_velocity: "interpolated" ->    *
+*                                      "bounded"; the scheme is first order on those faces           *
+*                                                                                                    *
+******************************************************************************************************
+```
+
+The same list is at the top of `flow.md`, in `result.json` under
+`limitations` (code, feature, message) and in Python as
+`Result.limitations`. The run is still `finished` with exit code 0: a
+limitation is not a failed check (exit code 2 stays for those). A
+k-ε channel refined to a first-cell y⁺ of 3.9
+(`--set 'mesh.generate.cells=[2,96,1]'` on `channel_keps.toml`) adds
+LIM002 for its scalable wall functions, validated from y⁺ 11.06 to 300,
+and LIM003 when the solve stops at its iteration limit.
+

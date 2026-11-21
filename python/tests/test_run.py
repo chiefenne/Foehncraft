@@ -43,6 +43,9 @@ def test_a_case_built_in_python_is_its_case_file(tmp_path):
     c["output.vtkhdf"] = True
     a = run(c, out=tmp_path / "py")
     assert a.ok, a.diagnostics
+    # one mesh: a limitation (D199), the run still finished with exit code 0
+    assert a.status == "finished"
+    assert [lim["code"] for lim in a.limitations] == ["LIM004"]
     # the same case written by hand as TOML strings
     text = (CASES / "poiseuille_hex.toml").read_text()
     text = text.replace(

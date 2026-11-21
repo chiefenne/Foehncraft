@@ -51,6 +51,8 @@ TABLE = ROOT / "docs" / "verification" / "features.toml"
 RESULTS = ROOT / "docs" / "verification" / "results.json"
 PAGE = ROOT / "docs" / "verification" / "status.md"
 GRADES = ROOT / "docs" / "verification" / "grades.json"
+FIGURE = ROOT / "docs" / "figures" / "verification" / "grades.svg"
+COLOURS = {"verified": "#2e9d5b", "partial": "#e9a23b", "unverified": "#d64541"}
 FORMAT, VERSION = "foehncraft.verification-grades", "1.0"
 KINDS = ("exact", "manufactured", "reference-data", "consistency")
 GRADE_ORDER = ("verified", "partial", "unverified")
@@ -333,6 +335,7 @@ def build(rows: list[dict]) -> tuple[str, dict]:
                 "id": r["id"],
                 "title": r["title"],
                 "grade": x["grade"],
+                "why": x["why"],
                 "gaps": x["gaps"],
                 "range": r.get("range", {}),
             }
@@ -342,26 +345,72 @@ def build(rows: list[dict]) -> tuple[str, dict]:
     return "\n".join(out).rstrip("\n") + "\n", data
 
 
-def render() -> tuple[str, str]:
-    page, data = build(load_table())
-    return page, json.dumps(data, indent=1, ensure_ascii=False) + "\n"
+def svg(rows: list[dict], data: dict) -> str:
+    """The grades per area as stacked bars (gallery 170)."""
+    grade_of = {f["id"]: f["grade"] for f in data["features"]}
+    areas: list[str] = []
+    for r in rows:
+        if r["area"] not in areas:
+            areas.append(r["area"])
+    counts = [(a, [sum(1 for r in rows if r["area"] == a and grade_of[r["id"]] == g) for g in GRADE_ORDER])
+              for a in areas]
+    w, left, right, top, bar, gap = 800, 230, 40, 70, 20, 8
+    h = top + len(areas) * (bar + gap) + 50
+    most = max(sum(c) for _, c in counts)
+    scale = (w - left - right) / most
+    total = [sum(c[i] for _, c in counts) for i in range(3)]
+    out = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {h}" width="{w}" height="{h}" '
+        'font-family="Helvetica, Arial, sans-serif" font-size="12">',
+        f'<rect width="{w}" height="{h}" fill="white"/>',
+        f'<text x="{w / 2}" y="22" text-anchor="middle" font-size="15" font-weight="bold">'
+        f"Verification grades of {len(rows)} features (D199)</text>",
+    ]
+    x = left
+    for g, n in zip(GRADE_ORDER, total, strict=True):
+        out.append(f'<rect x="{x}" y="36" width="14" height="14" fill="{COLOURS[g]}"/>')
+        out.append(f'<text x="{x + 20}" y="48">{g} ({n})</text>')
+        x += 150
+    for i, (a, c) in enumerate(counts):
+        y = top + i * (bar + gap)
+        out.append(f'<text x="{left - 10}" y="{y + bar * 0.7:.1f}" text-anchor="end">{a}</text>')
+        x0 = left
+        for g, n in zip(GRADE_ORDER, c, strict=True):
+            if n:
+                out.append(f'<rect x="{x0:.1f}" y="{y}" width="{n * scale:.1f}" height="{bar}" '
+                           f'fill="{COLOURS[g]}"/>')
+                out.append(f'<text x="{x0 + n * scale / 2:.1f}" y="{y + bar * 0.7:.1f}" '
+                           f'text-anchor="middle" fill="white" font-weight="bold">{n}</text>')
+            x0 += n * scale
+    out.append(f'<text x="{(left + w - right) / 2}" y="{h - 16}" text-anchor="middle" fill="#555">'
+               "features per area, grades computed from docs/verification/features.toml</text>")
+    out.append("</svg>")
+    return "\n".join(out) + "\n"
+
+
+def render() -> tuple[str, str, str]:
+    rows = load_table()
+    page, data = build(rows)
+    return page, json.dumps(data, indent=1, ensure_ascii=False) + "\n", svg(rows, data)
 
 
 def write() -> None:
     """Regenerate the page and the grades (also called by verification_manual.py)."""
-    page, grades = render()
+    page, grades, figure = render()
     PAGE.write_text(page, encoding="utf-8", newline="\n")
     GRADES.write_text(grades, encoding="utf-8", newline="\n")
+    FIGURE.parent.mkdir(parents=True, exist_ok=True)
+    FIGURE.write_text(figure, encoding="utf-8", newline="\n")
 
 
 def main(argv: list[str]) -> int:
     try:
-        page, grades = render()
+        page, grades, figure = render()
     except TableError as e:
         print(f"docs/verification/features.toml:\n{e}", file=sys.stderr)
         return 1
     if "--check" in argv:
-        stale = [p.relative_to(ROOT).as_posix() for p, text in ((PAGE, page), (GRADES, grades))
+        stale = [p.relative_to(ROOT).as_posix() for p, text in ((PAGE, page), (GRADES, grades), (FIGURE, figure))
                  if not p.is_file() or p.read_text(encoding="utf-8").replace("\r\n", "\n") != text]
         if stale:
             print("out of date: " + ", ".join(stale)

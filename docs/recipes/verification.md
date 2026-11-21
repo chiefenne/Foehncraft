@@ -7,6 +7,7 @@ Part of the [Recipes](../recipes.md): the discretisation uncertainty of a sweep 
 | 34 | [Estimate the discretisation uncertainty of a mesh or time-step sweep](#gci) |
 | 35 | [Regenerate the verification manual](#manual) |
 | 165 | [Grade a feature on the verification status page](#status) |
+| 170 | [Read and act on the limitations of a run](#limitations) |
 
 ---
 
@@ -136,3 +137,38 @@ catalogue case that checks no feature, and a page that is out of date.
 `tools/release/verification_manual.py` regenerates the page as well, so a
 new manual run updates the grades (a case that failed makes its features
 unverified).
+
+---
+
+<a id="limitations"></a>
+## 170. Read and act on the limitations of a run
+
+Every run lists what to know before trusting its result (D199). They are
+in the last frame of the log ("Run finished with N limitations"), at the
+top of `flow.md`, and as data:
+
+```
+foehn --json --quiet flow examples/cases/flow/pipe_gmsh_raw.toml | python3 -c "import json,sys; [print(l['code'], l['message']) for l in json.load(sys.stdin)['limitations']]"
+```
+
+```python
+from foehncraft import run
+res = run("examples/cases/flow/pipe_gmsh_raw.toml")
+for lim in res.limitations:
+    print(lim["code"], lim.get("feature"), lim["message"])
+```
+
+What each code asks for:
+
+| Code | Means | What to do |
+|---|---|---|
+| LIM001 | a feature in use is graded partial or unverified | read its row on the [verification status](../verification/status.md) page; check the result against your own data, or add a case that raises the grade (recipe 165) |
+| LIM002 | outside the validated range (first-cell y⁺, Re, Pr, Courant number, skewness) | change the mesh or the model so the run is inside the range, or treat the result as an extrapolation |
+| LIM003 | a steady solve stopped before its tolerance | raise `solver.max_iterations`, check the monitors (AGENTS.md: diagnose at 2 000 to 3 000 iterations) |
+| LIM004 | one mesh only | run a level sweep with `[verification] levels` for the GCI (recipe 34) |
+| LIM005 | a GPU that is not verified | run the GPU checks on it (`tools/notebooks/stage6_colab.ipynb`), then add it to `VERIFIED_DEVICES` |
+| LIM006 | automatic remediation of poor cells | improve the mesh (optimised tetrahedra, prisms at walls); the remediated faces are first order |
+
+Limitations never change the exit code (0 stays 0), so scripts that test
+the exit code keep working; an agent reads the list.
+
