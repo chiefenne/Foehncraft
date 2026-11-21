@@ -18,7 +18,7 @@ use serde::Serialize;
 use std::fmt;
 
 /// Severity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum Severity {
     /// Information.
@@ -41,7 +41,7 @@ impl Severity {
 }
 
 /// One entry of the registry.
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize, schemars::JsonSchema)]
 pub struct CodeInfo {
     /// The code.
     pub code: &'static str,
@@ -196,6 +196,9 @@ codes! {
     BAL_NEGATIVE_DISSIPATION = "BAL003", Warning, "A numerical dissipation of kinetic energy below `[balance] tolerance_energy`: the discretisation adds energy (D90).";
     // statistics of transient runs (D71)
     STAT_WINDOW = "STAT001", Warning, "The averaging window of a statistic of `[output.statistics]` is too short: the batch means are correlated (lag-1 autocorrelation above 0.3), so the confidence interval of the mean is too narrow; run longer or use fewer batches (D71).";
+    // the tool registry (D196)
+    TOOL_UNKNOWN = "TOOL001", Error, "A tool id that the registry does not have (with the nearest id as a hint); `foehn commands` lists them.";
+    TOOL_INPUT = "TOOL002", Error, "A tool input that does not match the input schema of the tool (unknown field, wrong type, missing field).";
     // anything else
     GENERAL = "GEN001", Error, "An error without a more specific code.";
 }
@@ -207,14 +210,14 @@ pub fn info(code: &str) -> Option<&'static CodeInfo> {
 
 /// A fix: case keys and the values that resolve the finding, as
 /// `--set key=value` arguments.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, schemars::JsonSchema)]
 pub struct Fix {
     /// `key=value` (TOML values), in order.
     pub set: Vec<String>,
 }
 
 /// One finding.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, schemars::JsonSchema)]
 pub struct Diagnostic {
     /// Code of [`CODES`].
     pub code: &'static str,
@@ -404,7 +407,8 @@ mod tests {
             assert!(
                 [
                     "CASE", "SCHED", "BC", "SCAL", "RUN", "GEN", "DIV", "BAL", "EXPR", "MAT",
-                    "REG", "MESH", "TURB", "MRF", "SLD", "ROT", "STAT", "ENE", "THM", "CHT"
+                    "REG", "MESH", "TURB", "MRF", "SLD", "ROT", "STAT", "ENE", "THM", "CHT",
+                    "TOOL"
                 ]
                 .contains(&p),
                 "{}",

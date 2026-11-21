@@ -132,6 +132,12 @@ Everything below is on `main`, verified by the cases of the
   a confidence interval that says whether the window is long enough), mass and
   kinetic-energy ledgers (named terms per quantity, ready for further quantities), a divergence report, a log that can be
   circulated, JSON records for scripts and agents.
+- **Tools for scripts and agents.** One registry of typed tools (D196):
+  `foehn commands` prints the catalogue of every tool with its input and
+  output schemas and action kind, `foehn call <id> --input file.json` runs
+  any of them from JSON ([tools.md](docs/tools.md)); the system, case-check,
+  resolve, schema, diagnostic-code, material and expression tools are in,
+  runs and files follow.
 - **GPU and Python.** The flow loop on NVIDIA GPUs with results bitwise
   equal to the CPU; the Python package `foehncraft` that builds, runs and
   studies cases; the grid convergence index of every mesh sweep.
@@ -213,6 +219,7 @@ The [changelog](CHANGELOG.md) lists every release.
 | `foehncraft-flow` | incompressible flow: SIMPLEC and SIMPLE (steady), PISO with BDF2 and Crank–Nicolson (transient), the coupled algorithm, the Rhie–Chow interpolation, boundary conditions and their check, turbulence models and wall treatments, passive scalars and thermal wall functions, the moving reference frame and sliding meshes, torque and machine performance, restart and control files, probes and force coefficients, the flow device written once over a CPU or GPU executor, the `foehn flow` case, exact solutions, reference and benchmark data |
 | `foehncraft-bench` | gate G1: kernel benchmark, CPU backends |
 | `foehncraft-cuda` | all NVIDIA GPU code (D60): the flow executor, the scalar and multigrid backend, the G1 backends with the CUDA C reference |
+| `foehncraft-tools` | the tool registry (D196): every engine function as a typed tool with a stable id, its JSON schemas, the catalogue and `call` by id; the front ends call it |
 | `foehncraft-cli` | the `foehn` command |
 | `foehncraft-py` | the Python package `foehncraft` (in `python/`) |
 | `gpu/ptx-kernels` | the kernels compiled to NVIDIA PTX (nightly toolchain) |

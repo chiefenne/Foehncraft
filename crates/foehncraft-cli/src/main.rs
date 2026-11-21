@@ -7,7 +7,11 @@
 //! 3), `flow` (steady incompressible laminar flow with SIMPLEC; stage 4)
 //! and `bench g1` (the GPU kernel gate of stage 0), `schema` (the JSON
 //! Schema of the flow case file, D77), `post derive` (derived fields from
-//! a restart file, D72), `materials` (the material database, D94).
+//! a restart file, D72), `materials` (the material database, D94),
+//! `case resolve`, `diag codes`, `expression`, and `commands` and `call`
+//! (the tool registry, D196: the catalogue of every tool, and any tool run
+//! from JSON). The commands build the typed input of their tool of
+//! `foehncraft-tools` and call it.
 //!
 //! Output streams (D79): human text on standard output, or with `--json`
 //! on standard error and one JSON object on standard output (the result
@@ -22,6 +26,7 @@ use clap::{Parser, Subcommand};
 use foehncraft_bench::G1Case;
 use foehncraft_flow::diag;
 use foehncraft_flow::engine::{self, BuildInfo, Interrupts, Roots, RunOptions};
+use foehncraft_tools::{self as tools, Ctx, NoInput};
 use serde_json::json;
 use std::path::PathBuf;
 
@@ -127,6 +132,65 @@ enum Command {
         #[command(subcommand)]
         post: Post,
     },
+    /// Diagnostic codes (D78).
+    Diag {
+        #[command(subcommand)]
+        diag: DiagCmd,
+    },
+    /// Compile an expression (D53) with the solver's own compiler and
+    /// evaluate it at points.
+    Expression(ExpressionArgs),
+    /// Print the catalogue of every tool (D196) as JSON: ids, versions,
+    /// summaries, action kinds, input and output schemas.
+    Commands(CommandsArgs),
+    /// Run any tool of the catalogue from JSON input and print the result
+    /// envelope (`foehn.tool-result`); human text goes to standard error.
+    Call(CallArgs),
+}
+
+#[derive(Subcommand)]
+enum DiagCmd {
+    /// List the diagnostic codes with their usual severity and meaning.
+    Codes,
+}
+
+#[derive(clap::Args)]
+struct ExpressionArgs {
+    /// The expression, as in a case file.
+    source: String,
+    /// A TOML file with `[constants]` and `[tables]` the expression may
+    /// refer to (relative table files from its directory).
+    #[arg(long, value_name = "FILE")]
+    env: Option<PathBuf>,
+    /// The variables it may use: a string of x, y, z, t.
+    #[arg(long, default_value = "xyzt")]
+    allowed: String,
+    /// A point `x,y,z,t` at which it is evaluated (repeatable).
+    #[arg(long = "point", value_name = "X,Y,Z,T")]
+    points: Vec<String>,
+}
+
+#[derive(clap::Args)]
+struct CommandsArgs {
+    /// The catalogue as Markdown (docs/tools.md) instead of JSON.
+    #[arg(long)]
+    markdown: bool,
+}
+
+#[derive(clap::Args)]
+struct CallArgs {
+    /// Tool id (`foehn commands` lists them), e.g. `case.check`.
+    id: String,
+    /// JSON file with the input of the tool, `-` for standard input
+    /// (default: no fields).
+    #[arg(long, value_name = "FILE")]
+    input: Option<PathBuf>,
+    /// Allow reading only below this directory (repeatable, D82).
+    #[arg(long, value_name = "DIR")]
+    read_root: Vec<PathBuf>,
+    /// Allow writing only below this directory (repeatable, D82).
+    #[arg(long, value_name = "DIR")]
+    write_root: Vec<PathBuf>,
 }
 
 #[derive(Subcommand)]
@@ -135,6 +199,21 @@ enum CaseCmd {
     /// line `case_format`), keeping their comments. Without `--write` only
     /// the changes are listed; `--check` fails when a file needs one.
     Upgrade(UpgradeArgs),
+    /// Print a flow case the way a run reads it: defaults filled in,
+    /// overrides applied (the `case.resolved.toml` of a run).
+    Resolve(ResolveArgs),
+}
+
+#[derive(clap::Args)]
+struct ResolveArgs {
+    /// Flow case file (TOML).
+    case: PathBuf,
+    /// Override a case key, `--set fluid.viscosity=1e-3` (repeatable, D62).
+    #[arg(long = "set", value_name = "KEY=VALUE")]
+    set: Vec<String>,
+    /// Allow reading only below this directory (repeatable, D82).
+    #[arg(long, value_name = "DIR")]
+    read_root: Vec<PathBuf>,
 }
 
 #[derive(clap::Args)]
@@ -409,6 +488,10 @@ fn main() {
         Command::Materials(_) => "materials",
         Command::Case { .. } => "case",
         Command::Post { .. } => "post",
+        Command::Diag { .. } => "diag",
+        Command::Expression(_) => "expression",
+        Command::Commands(_) => "commands",
+        Command::Call(_) => "call",
     };
     let res = match cli.command {
         Command::Info => info(out),
@@ -421,18 +504,21 @@ fn main() {
         Command::Case {
             case: CaseCmd::Upgrade(a),
         } => upgrade(a, out),
+        Command::Case {
+            case: CaseCmd::Resolve(a),
+        } => resolve(a, out),
+        Command::Diag {
+            diag: DiagCmd::Codes,
+        } => typed::<tools::diag_codes::Codes>(NoInput {}, out),
+        Command::Expression(a) => expression(a, out),
+        Command::Commands(a) => commands(a),
+        Command::Call(a) => call(a, out),
         Command::Post {
             post: Post::Derive(a),
         } => derive(a, out),
         Command::Bench {
             bench: Bench::Backends,
-        } => {
-            let b = foehncraft_bench::backend::available();
-            for x in &b {
-                out.line(x);
-            }
-            Ok(Done::ok(json!({ "backends": b })))
-        }
+        } => typed::<tools::system::Backends>(NoInput {}, out),
         Command::Bench {
             bench: Bench::G1(a),
         } => g1(a, out),
@@ -620,94 +706,146 @@ fn signals() -> Interrupts {
 }
 
 fn materials(a: MaterialsArgs, out: Out) -> Result<Done> {
-    use foehncraft_flow::materials as m;
-    anyhow::ensure!(
-        a.temperature > 0.0 && a.pressure > 0.0,
-        "--temperature and --pressure must be > 0"
-    );
-    let cond = m::Conditions {
-        temperature: a.temperature,
-        pressure: a.pressure,
-    };
-    let mut lib = m::CaseMaterials {
-        include: a.include.clone(),
-        ..Default::default()
-    };
-    lib.load()?;
-    let names: Vec<String> = match &a.name {
-        Some(n) => vec![n.clone()],
-        None => lib.names(),
-    };
-    let mut list = Vec::new();
-    for n in &names {
-        list.push(m::describe_in(n, &lib, cond)?);
+    use tools::materials as m;
+    match a.name {
+        Some(name) => typed::<m::Show>(
+            m::ShowInput {
+                name,
+                temperature: a.temperature,
+                pressure: a.pressure,
+                include: a.include,
+            },
+            out,
+        ),
+        None => typed::<m::List>(
+            m::ListInput {
+                temperature: a.temperature,
+                pressure: a.pressure,
+                include: a.include,
+            },
+            out,
+        ),
     }
-    let num = |d: &serde_json::Value, k: &str| -> Option<f64> {
-        d[k]["value"]
-            .as_f64()
-            .or_else(|| d[k]["tensor"][0][0].as_f64())
+}
+
+/// The context of a tool call: the build of this binary, the human text
+/// to `out`.
+fn ctx(out: Out) -> Ctx<'static> {
+    Ctx::new(build_info()).text(move |l| out.line(l))
+}
+
+/// Runs tool `T` with a typed input; its output is the `--json` object.
+fn typed<T: tools::Tool>(input: T::Input, out: Out) -> Result<Done> {
+    let (o, code) = tools::run::<T>(input, &mut ctx(out))?;
+    Ok(Done {
+        code,
+        json: serde_json::to_value(o)?,
+    })
+}
+
+/// `foehn case resolve`.
+fn resolve(a: ResolveArgs, out: Out) -> Result<Done> {
+    let input = tools::case::FlowInput {
+        set: a.set,
+        ..tools::case::FlowInput::new(a.case)
     };
-    let cell = |v: Option<f64>, w: usize, p: usize| match v {
-        Some(x) => format!("{x:>w$.p$e}"),
-        None => format!("{:>w$}", "–"),
+    let roots = Roots {
+        read: a.read_root,
+        write: Vec::new(),
     };
-    if a.name.is_none() {
-        out.line(&format!(
-            "material database ({} materials) at T = {} K, p = {} Pa",
-            list.len(),
-            a.temperature,
-            a.pressure
-        ));
-        out.line(&format!(
-            "  {:<18} {:<7} {:>11} {:>11} {:>11} {:>11}  {:<16} description",
-            "name", "kind", "ρ (kg/m³)", "μ (Pa s)", "c_p (J/kgK)", "k (W/mK)", "range (K)"
-        ));
-        for d in &list {
-            let range = d["temperature_range"]
-                .as_array()
-                .map(|r| format!("{}–{}", r[0], r[1]))
-                .unwrap_or_default();
-            out.line(&format!(
-                "  {:<18} {:<7} {} {} {} {}  {:<16} {}",
-                d["name"].as_str().unwrap_or(""),
-                d["kind"].as_str().unwrap_or(""),
-                cell(num(d, "density"), 11, 4),
-                cell(num(d, "viscosity"), 11, 3),
-                cell(num(d, "specific_heat"), 11, 4),
-                cell(num(d, "conductivity"), 11, 3),
-                range,
-                d["description"].as_str().unwrap_or("")
-            ));
+    let (o, code) = tools::run::<tools::case::Resolve>(input, &mut ctx(out).roots(roots))?;
+    Ok(Done {
+        code,
+        json: serde_json::to_value(o)?,
+    })
+}
+
+/// `foehn expression`.
+fn expression(a: ExpressionArgs, out: Out) -> Result<Done> {
+    use anyhow::Context as _;
+    let mut input = tools::expression::EvalInput::new(a.source);
+    input.allowed = a.allowed;
+    if let Some(f) = &a.env {
+        input.env =
+            std::fs::read_to_string(f).with_context(|| format!("reading {}", f.display()))?;
+        input.base = f.parent().map(std::path::Path::to_path_buf);
+    }
+    for p in &a.points {
+        let v: Vec<f64> = p
+            .split(',')
+            .map(|x| x.trim().parse::<f64>())
+            .collect::<std::result::Result<_, _>>()
+            .with_context(|| format!("--point {p}: four numbers x,y,z,t"))?;
+        anyhow::ensure!(v.len() == 4, "--point {p}: four numbers x,y,z,t");
+        input.points.push([v[0], v[1], v[2], v[3]]);
+    }
+    typed::<tools::expression::Eval>(input, out)
+}
+
+/// `foehn commands`.
+fn commands(a: CommandsArgs) -> Result<Done> {
+    if a.markdown {
+        stdout(tools::markdown::catalogue().trim_end_matches('\n'));
+    } else {
+        stdout(&serde_json::to_string_pretty(&tools::catalogue())?);
+    }
+    Ok(Done {
+        code: 0,
+        json: serde_json::Value::Null,
+    })
+}
+
+/// `foehn call`: the envelope on standard output, human text on standard
+/// error.
+fn call(a: CallArgs, out: Out) -> Result<Done> {
+    use anyhow::Context as _;
+    use std::io::Read as _;
+    let text = match &a.input {
+        None => String::new(),
+        Some(p) if p.as_os_str() == "-" => {
+            let mut t = String::new();
+            std::io::stdin()
+                .read_to_string(&mut t)
+                .context("reading the input from standard input")?;
+            t
         }
-    } else if let Some(d) = list.first() {
-        out.line(&format!(
-            "{}: {}",
-            d["name"].as_str().unwrap_or(""),
-            d["description"].as_str().unwrap_or("")
-        ));
-        for what in ["density", "viscosity", "specific_heat", "conductivity"] {
-            if d[what].is_null() {
-                continue;
+        Some(p) => {
+            std::fs::read_to_string(p).with_context(|| format!("reading {}", p.display()))?
+        }
+    };
+    let input: serde_json::Value = if text.trim().is_empty() {
+        serde_json::Value::Null
+    } else {
+        serde_json::from_str(&text).map_err(|e| {
+            diag::err(diag::Diagnostic::new(
+                diag::TOOL_INPUT,
+                format!("the input is not JSON: {e}"),
+            ))
+        })?
+    };
+    let quiet = out.quiet;
+    let mut c = Ctx::new(build_info())
+        .roots(Roots {
+            read: a.read_root,
+            write: a.write_root,
+        })
+        .text(move |l| {
+            if !quiet {
+                eprintln!("{l}");
             }
-            let v = match num(d, what) {
-                Some(x) => format!("{x}"),
-                None => "–".into(),
-            };
-            out.line(&format!(
-                "  {what:<14} {v} ({})",
-                d[what]["origin"].as_str().unwrap_or("")
-            ));
-        }
-        for w in d["warnings"].as_array().into_iter().flatten() {
-            out.line(&format!("  warning: {}", w.as_str().unwrap_or("")));
+        });
+    c.interrupts = signals();
+    let r = tools::call(&a.id, input, &mut c);
+    for d in &r.diagnostics {
+        if !quiet {
+            eprintln!("Error {}: {}", d.code, d.message);
         }
     }
-    Ok(Done::ok(json!({
-        "format": "foehncraft.materials",
-        "format_version": engine::FORMAT_VERSION,
-        "database_sha256": m::database_hash(),
-        "materials": list,
-    })))
+    stdout(&serde_json::to_string_pretty(&r)?);
+    Ok(Done {
+        code: r.exit_code,
+        json: serde_json::Value::Null,
+    })
 }
 
 /// `foehn case upgrade`.
@@ -787,58 +925,18 @@ fn schema(a: SchemaArgs, out: Out) -> Result<Done> {
             json: serde_json::Value::Null,
         });
     }
-    let s = schema::json_schema();
     if a.schema_only || !out.json {
-        stdout(&serde_json::to_string_pretty(&s)?);
+        stdout(&serde_json::to_string_pretty(&schema::json_schema())?);
         return Ok(Done {
             code: 0,
             json: serde_json::Value::Null,
         });
     }
-    Ok(Done::ok(schema::envelope(s)))
+    typed::<tools::case::Schema>(NoInput {}, out)
 }
 
 fn info(out: Out) -> Result<Done> {
-    let b = build_info();
-    out.line(&format!("Foehncraft {}", foehncraft_core::VERSION));
-    out.line(&format!("commit       {}", b.commit));
-    out.line(&format!("platform     {}", b.platform));
-    out.line(&format!("cpu          {}", b.cpu));
-    out.line(&format!("threads      {}", rayon::current_num_threads()));
-    out.line("precision    f64 (reference path, D7)");
-    let ranks = {
-        use foehncraft_parallel::Communicator as _;
-        let c = foehncraft_parallel::SerialComm;
-        out.line(&format!(
-            "ranks        {} ({} communicator; MPI runs start with mpirun)",
-            c.size(),
-            c.name()
-        ));
-        c.size()
-    };
-    out.line(&format!(
-        "features     {}",
-        if b.features.is_empty() {
-            "none".to_string()
-        } else {
-            b.features.join(", ")
-        }
-    ));
-    let backends = foehncraft_bench::backend::available();
-    out.line(&format!("backends     {}", backends.join(", ")));
-    Ok(Done::ok(json!({
-        "format": "foehncraft.info",
-        "format_version": engine::FORMAT_VERSION,
-        "version": foehncraft_core::VERSION,
-        "commit": b.commit,
-        "platform": b.platform,
-        "cpu": b.cpu,
-        "threads": rayon::current_num_threads(),
-        "ranks": ranks,
-        "features": b.features,
-        "backends": backends,
-        "flow_backends": foehncraft_flow::device::available(),
-    })))
+    typed::<tools::system::Info>(NoInput {}, out)
 }
 
 fn mesh(a: MeshArgs, out: Out) -> Result<Done> {
@@ -946,41 +1044,21 @@ fn failures(f: &[String], json: serde_json::Value) -> Done {
     }
 }
 
-/// The CLI options that override case keys.
-fn flow_overrides(case: &mut foehncraft_flow::case::FlowCase, a: &FlowArgs) -> Result<()> {
-    if a.threads.is_some() {
-        case.run.threads = a.threads;
+/// The typed input of `case.check` and `flow.run` from the options.
+fn flow_input(a: &FlowArgs) -> tools::case::FlowInput {
+    tools::case::FlowInput {
+        case: a.case.clone(),
+        set: a.set.clone(),
+        out: a.out.clone(),
+        threads: a.threads,
+        levels: a.levels.clone(),
+        max_iterations: a.max_iterations,
+        no_vtkhdf: a.no_vtkhdf,
+        restart: a.restart.clone(),
+        end_time: a.end_time,
+        backend: a.backend.clone(),
+        ptx: a.ptx.clone(),
     }
-    if let Some(l) = &a.levels {
-        case.verification.levels = l.clone();
-    }
-    if let Some(n) = a.max_iterations {
-        case.solver.max_iterations = n;
-    }
-    if a.no_vtkhdf {
-        case.output.vtkhdf = false;
-    }
-    if let Some(b) = &a.backend {
-        case.run.backend = b.clone();
-    }
-    if let Some(p) = &a.ptx {
-        case.run.ptx = p.clone();
-    }
-    if let Some(r) = &a.restart {
-        case.run.restart = Some(r.clone());
-    }
-    if let Some(e) = a.end_time {
-        let Some(t) = case.time.as_mut() else {
-            return Err(diag::err(diag::Diagnostic::new(
-                diag::CASE_INCONSISTENT,
-                "--end-time needs a transient case (a [time] table)",
-            )));
-        };
-        t.end_time = Some(e);
-        t.steps = None;
-        t.validate()?;
-    }
-    case.validate()
 }
 
 fn flow(a: FlowArgs, out: Out) -> Result<Done> {
@@ -989,55 +1067,20 @@ fn flow(a: FlowArgs, out: Out) -> Result<Done> {
         read: a.read_root.clone(),
         write: a.write_root.clone(),
     };
-    let build = build_info();
-    let loaded = engine::load(&a.case, &a.set, &roots).and_then(|mut c| {
-        flow_overrides(&mut c, &a)?;
-        Ok(c)
-    });
+    let input = flow_input(&a);
     if a.check {
-        let mut rep = engine::CheckReport {
-            format: "foehncraft.check",
-            format_version: engine::FORMAT_VERSION,
-            case_file: a.case.display().to_string(),
-            ok: false,
-            diagnostics: Vec::new(),
-            estimate: None,
-        };
-        match &loaded {
-            Ok(case) => {
-                engine::check_case(case, &a.case, a.out.as_deref(), &roots, &build, &mut rep)
-            }
-            Err(e) => rep.diagnostics.push(diag::of_error(e)),
-        }
-        out.line(&format!("{}:", a.case.display()));
-        for d in &rep.diagnostics {
-            out.line(&format!(
-                "{} {}: {}{}",
-                d.severity.name(),
-                d.code,
-                d.boundary
-                    .as_ref()
-                    .map_or(String::new(), |b| format!("boundary `{b}`: ")),
-                d.message
-            ));
-            if let Some(f) = &d.fix {
-                out.line(&format!("  fix: --set {}", f.set.join(" --set ")));
-            }
-        }
-        if let Some(e) = &rep.estimate {
-            out.line(&estimate_text(e));
-        }
-        out.line(if rep.ok {
-            "the case can be run"
-        } else {
-            "the case cannot be run"
-        });
+        let (rep, code) =
+            tools::run::<tools::case::Check>(input, &mut ctx(out).roots(roots.clone()))?;
         return Ok(Done {
-            code: if rep.ok { 0 } else { 1 },
+            code,
             json: serde_json::to_value(&rep)?,
         });
     }
-    let case = loaded?;
+    let build = build_info();
+    let case = engine::load(&a.case, &a.set, &roots).and_then(|mut c| {
+        input.apply(&mut c)?;
+        Ok(c)
+    })?;
     let (name, dir) = output_dir(&case, &a.case, a.out.clone());
     let opts = RunOptions {
         interrupts: signals(),
@@ -1067,62 +1110,6 @@ fn flow(a: FlowArgs, out: Out) -> Result<Done> {
         code: s.exit_code,
         json: serde_json::to_value(s)?,
     })
-}
-
-/// The estimate of `--check` as text.
-fn estimate_text(e: &engine::Estimate) -> String {
-    let mb = |b: f64| {
-        if b >= 1e9 {
-            format!("{:.1} GB", b / 1e9)
-        } else {
-            format!("{:.1} MB", b / 1e6)
-        }
-    };
-    let mut s = format!(
-        "estimate: {} cells{}, {} rank(s), {} GPU(s); {} {}; host memory about {}{}; output about {}",
-        e.cells,
-        if e.level_cells.len() > 1 {
-            format!(" (levels {:?})", e.level_cells)
-        } else {
-            String::new()
-        },
-        e.ranks,
-        e.gpus,
-        if e.steps_approximate { "up to" } else { "" },
-        e.steps
-            .iter()
-            .map(|n| n.to_string())
-            .collect::<Vec<_>>()
-            .join(" + ")
-            + " iterations or steps",
-        mb(e.host_memory),
-        if e.device_memory > 0.0 {
-            format!(", device memory about {}", mb(e.device_memory))
-        } else {
-            String::new()
-        },
-        mb(e.output_bytes),
-    );
-    for o in &e.outputs {
-        s.push_str(&format!(
-            "\n  {}{}: {}",
-            o.name,
-            if o.count > 1 {
-                format!(" ×{}", o.count)
-            } else {
-                String::new()
-            },
-            mb(o.bytes)
-        ));
-    }
-    match e.wall_time {
-        Some(t) => s.push_str(&format!(
-            "\n  wall time about {t:.0} s ({})",
-            e.wall_time_basis
-        )),
-        None => s.push_str(&format!("\n  wall time: {}", e.wall_time_basis)),
-    }
-    s
 }
 
 fn poisson(a: PoissonArgs, out: Out) -> Result<Done> {
