@@ -85,7 +85,9 @@ pub enum Model {
     /// ρ = ρ₀ everywhere except in the body force
     /// −ρ₀ β (T − T_ref) g.
     Boussinesq,
-    /// ρ(T, p₀) everywhere (stage 7c, not yet available).
+    /// ρ(T, p₀) everywhere (stage 7c, D151): the body force (ρ − ρ_ref) g
+    /// with the variable density of `[energy] density = "variable"`, which
+    /// this model switches on.
     VariableDensity,
 }
 
@@ -93,7 +95,8 @@ pub enum Model {
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct BuoyancySection {
-    /// `none` (default) or `boussinesq`.
+    /// `none` (default), `boussinesq` or `variable-density` (the body force
+    /// (ρ − ρ_ref) g with ρ(T, p₀) in every cell, stage 7c).
     #[serde(default)]
     pub model: Model,
     /// T_ref (K) of the body force; default the `[fluid] temperature`, at
@@ -401,8 +404,8 @@ pub fn setup_findings(
                 format!(
                     "β ΔT = {d:.3} above 0.1 (β = {:.4e} 1/K, temperatures {lo} K to {hi} K, \
                      T_ref = {} K): the density changes by more than 10 %, outside the range of \
-                     the Boussinesq model (Gray & Giorgini 1976); the variable-density model \
-                     (stage 7c) is the right one",
+                     the Boussinesq model (Gray & Giorgini 1976); `[buoyancy] model = \
+                     \"variable-density\"` (stage 7c) takes ρ(T, p₀) in every cell",
                     c.beta, c.t_ref
                 ),
             ));
