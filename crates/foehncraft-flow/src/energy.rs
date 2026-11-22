@@ -100,6 +100,104 @@ pub struct EnergySection {
     /// a factor until their temperatures settle, then restored.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub acceleration: Option<Acceleration>,
+    /// Cycle-averaged coupling of a periodic flow with its solids (D204,
+    /// [`crate::cycle`]): the flow runs over cycles with the solids held,
+    /// the cycle-mean interface heat transfer goes to a steady solve of the
+    /// solids, and the two alternate until the wall temperatures settle.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cycle: Option<CycleCoupling>,
+}
+
+/// `[energy.cycle]`: cycle-averaged conjugate coupling of a periodic flow
+/// (D204, §9d of the stage 7 specification). Fluid phase: the flow and the
+/// fluid energy run `warmup_cycles` + `average_cycles` periods with the
+/// solid temperatures held; per interface face the run accumulates the
+/// conductance G (fluid side, contact and solid half cell in series) and
+/// the heat flow, which give the Robin pair (Ḡ, T̄_ref) that reproduces the
+/// cycle-mean heat flow of the face exactly. Solid phase: a steady solve of
+/// the solids with these Robin conditions. The new solid temperatures
+/// (under-relaxed) are held in the next fluid phase, which continues from
+/// the last flow state. The run stops when the wall temperatures and the
+/// interface heat flows settle.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CycleCoupling {
+    /// The period of the flow (s); a whole number of time steps.
+    pub period: f64,
+    /// Cycles run before the averaging, after every update (default 1).
+    #[serde(default = "default_one")]
+    pub warmup_cycles: u32,
+    /// Cycles averaged (default 1).
+    #[serde(default = "default_one")]
+    pub average_cycles: u32,
+    /// Cycles of one fluid phase at most, when the flow is not yet periodic
+    /// (default 6).
+    #[serde(default = "default_max_cycles")]
+    pub max_cycles: u32,
+    /// The flow counts as periodic when the mean interface heat flow of
+    /// the last cycle differs from the cycle before by less than this
+    /// fraction (default 0.005).
+    #[serde(default = "default_cycle_tolerance")]
+    pub cycle_tolerance: f64,
+    /// Updates of the solid temperatures at most (default 5).
+    #[serde(default = "default_max_updates")]
+    pub max_updates: u32,
+    /// K: the loop has converged when the largest change of a wall
+    /// temperature in an update is below this (default 0.5) ...
+    #[serde(default = "default_cycle_tolerance_k")]
+    pub tolerance: f64,
+    /// ... and the interface heat flow changes by less than this fraction
+    /// (default 0.005).
+    #[serde(default = "default_cycle_tolerance")]
+    pub heat_tolerance: f64,
+    /// Under-relaxation of the solid temperatures per update, in (0, 1]
+    /// (default 1).
+    #[serde(default = "default_relaxation_one")]
+    pub relaxation: f64,
+    /// The solid phase: `"steady"` (the only one in this version).
+    #[serde(default = "default_solid_phase")]
+    pub solid: String,
+    /// How the solid temperatures are updated from the second update on:
+    /// `"quasi-newton"` (default: a least-squares model of the loop's
+    /// response from all earlier updates, IQN-ILS), `"aitken"` (a dynamic
+    /// relaxation factor) or `"relaxation"` (the fixed `relaxation`).
+    #[serde(default = "default_cycle_update")]
+    pub update: String,
+    /// The model of the solid phase: `"mean-flow"` (default: the steady
+    /// energy equation of fluid and solids with the cycle-mean mass flux,
+    /// corrected per face to the measured cycle-mean heat flow) or
+    /// `"robin"` (the solids alone with the Robin pair (Ḡ, T̄_ref) of the
+    /// first fluid cell).
+    #[serde(default = "default_solid_model")]
+    pub solid_model: String,
+}
+
+fn default_one() -> u32 {
+    1
+}
+fn default_max_cycles() -> u32 {
+    6
+}
+fn default_cycle_tolerance() -> f64 {
+    0.005
+}
+fn default_max_updates() -> u32 {
+    5
+}
+fn default_cycle_tolerance_k() -> f64 {
+    0.5
+}
+fn default_relaxation_one() -> f64 {
+    1.0
+}
+fn default_solid_model() -> String {
+    "mean-flow".into()
+}
+fn default_cycle_update() -> String {
+    "quasi-newton".into()
+}
+fn default_solid_phase() -> String {
+    "steady".into()
 }
 
 /// `[energy.acceleration]`: thermal acceleration of the solids (D213). The
@@ -223,6 +321,109 @@ fn default_settle_tolerance() -> f64 {
 
 fn default_settle_windows() -> u32 {
     2
+}
+
+/// Checks `[energy.cycle]` (CYC001).
+fn validate_cycle(case: &crate::case::FlowCase, c: &CycleCoupling, accel: bool) -> Result<()> {
+    let key = "energy.cycle";
+    let Some(t) = case.time.as_ref() else {
+        crate::need!(
+            false,
+            CYC_SETTING,
+            "[{key}] in a steady case: the loop couples a periodic flow with its solids; a steady \
+             conjugate case is solved monolithically and needs no loop"
+        );
+        unreachable!()
+    };
+    crate::need!(
+        crate::cht::is_cht(case),
+        CYC_SETTING,
+        "[{key}] without solid regions: the loop alternates between the flow and the solids"
+    );
+    crate::need!(
+        !accel,
+        CYC_SETTING,
+        "[{key}] with [energy.acceleration]: the steady solid phase of the loop is already the \
+         limit of a vanishing ρ c_p of the solids; use one of the two"
+    );
+    crate::need!(
+        c.period > 0.0 && c.period.is_finite(),
+        CYC_SETTING,
+        "[{key}] period must be > 0 s, is {}",
+        c.period
+    );
+    crate::need!(
+        !t.adaptive,
+        CYC_SETTING,
+        "[{key}] with an adaptive time step: the cycles need a fixed time step that divides the \
+         period"
+    );
+    let n = c.period / t.time_step;
+    crate::need!(
+        n >= 2.0 && (n - n.round()).abs() <= 1e-6 * n,
+        CYC_SETTING,
+        "[{key}] period {} s is not a whole number (>= 2) of time steps of {} s",
+        c.period,
+        t.time_step
+    );
+    crate::need!(
+        c.average_cycles >= 1,
+        CYC_SETTING,
+        "[{key}] average_cycles must be >= 1"
+    );
+    crate::need!(
+        c.max_cycles >= (c.warmup_cycles + c.average_cycles).max(2),
+        CYC_SETTING,
+        "[{key}] max_cycles ({}) must be at least warmup_cycles + average_cycles and at least 2",
+        c.max_cycles
+    );
+    crate::need!(
+        c.max_updates >= 1,
+        CYC_SETTING,
+        "[{key}] max_updates must be >= 1"
+    );
+    for (name, v) in [
+        ("cycle_tolerance", c.cycle_tolerance),
+        ("heat_tolerance", c.heat_tolerance),
+    ] {
+        crate::need!(
+            v > 0.0 && v < 1.0,
+            CYC_SETTING,
+            "[{key}] {name} must be in (0, 1), is {v}"
+        );
+    }
+    crate::need!(
+        c.tolerance > 0.0 && c.tolerance.is_finite(),
+        CYC_SETTING,
+        "[{key}] tolerance must be > 0 K, is {}",
+        c.tolerance
+    );
+    crate::need!(
+        c.relaxation > 0.0 && c.relaxation <= 1.0,
+        CYC_SETTING,
+        "[{key}] relaxation must be in (0, 1], is {}",
+        c.relaxation
+    );
+    crate::need!(
+        ["quasi-newton", "aitken", "relaxation"].contains(&c.update.as_str()),
+        CYC_SETTING,
+        "[{key}] update must be \"quasi-newton\", \"aitken\" or \"relaxation\", is \"{}\"",
+        c.update
+    );
+    crate::need!(
+        ["mean-flow", "robin"].contains(&c.solid_model.as_str()),
+        CYC_SETTING,
+        "[{key}] solid_model must be \"mean-flow\" or \"robin\", is \"{}\"",
+        c.solid_model
+    );
+    crate::need!(
+        c.solid == "steady",
+        CYC_SETTING,
+        "[{key}] solid must be \"steady\" in this version (a transient march of the solids with \
+         large steps follows with the frozen-flow coupling), is \"{}\"",
+        c.solid
+    );
+    Ok(())
 }
 
 /// Checks `[energy.acceleration]` (ACC001).
@@ -554,6 +755,9 @@ pub fn validate(case: &crate::case::FlowCase, env: &Env) -> Result<()> {
     case.solver.energy.validate(transient)?;
     if let Some(a) = &e.acceleration {
         validate_acceleration(case, a)?;
+    }
+    if let Some(c) = &e.cycle {
+        validate_cycle(case, c, e.acceleration.is_some())?;
     }
     for (b, t) in &case.boundary_energy {
         let key = format!("boundary.{b}.energy");

@@ -44,6 +44,7 @@ pub mod conduction;
 pub mod console;
 pub mod control;
 pub mod coupled;
+pub mod cycle;
 pub mod derived;
 pub mod device;
 pub mod diag;

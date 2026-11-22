@@ -691,12 +691,30 @@ pub(crate) fn solve_with(
     res: &mut crate::simplec::Residuals,
     back: bool,
 ) -> Result<()> {
+    solve_with_flux(fl, step, res, back, None)
+}
+
+/// [`solve_with`]; `flux`: the face mass flux of the fluid view to convect
+/// with in place of the current one (the cycle-mean flux of the mean-flow
+/// model of the cycle loop, D204).
+pub(crate) fn solve_with_flux(
+    fl: &mut crate::simplec::Flow,
+    step: Option<crate::scalar::StepTime>,
+    res: &mut crate::simplec::Residuals,
+    back: bool,
+    flux: Option<&[f64]>,
+) -> Result<()> {
     let mut c = fl.cht.take().expect("a conjugate heat transfer case");
     let r = (|| -> Result<()> {
         let v = c.view.clone();
         let fe = &mut c.fe;
-        let conv = fl.convecting_flux()?;
-        let m = fl.dev.download(conv)?;
+        let m = match flux {
+            Some(f) => f.to_vec(),
+            None => {
+                let conv = fl.convecting_flux()?;
+                fl.dev.download(conv)?
+            }
+        };
         fe.dev
             .upload(fe.f.mass_flux, &v.faces_to_full(&m, true, 0.0))?;
         for i in 0..3 {

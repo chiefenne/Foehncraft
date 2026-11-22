@@ -715,6 +715,15 @@ struct EnergyField {
     /// Fixed temperatures (mask, values) of the energy rows: the solids
     /// held while the conductance of the fluid side is measured (D213).
     frozen: Option<(Buf, Buf)>,
+    /// Host copy of the mask of `frozen` (the ledger books the heat into
+    /// the held cells, D204).
+    held: Option<Vec<bool>>,
+    /// S_p of the Robin conditions of the solid phase of the cycle loop
+    /// (D204), per cell; allocated with the first solid phase.
+    robin_sp: Option<Buf>,
+    /// Heat added to cells (W per cell): the defect of the mean-flow model
+    /// of the cycle loop's solid phase (D204).
+    extra_heat: Option<Vec<f64>>,
 }
 
 /// The power density of a region source.
@@ -1303,6 +1312,11 @@ impl Scalars {
             let mut conv = mass_flux;
             let mut capacity = None;
             let frozen = f.energy.as_deref().and_then(|e| e.frozen);
+            let robin_sp = f
+                .energy
+                .as_deref()
+                .filter(|e| e.cond.as_ref().is_some_and(|c| c.robin.is_some()))
+                .and_then(|e| e.robin_sp);
             let mut mus = turb.map(|tc| (tc.mu, tc.mu_eff));
             if let Some(e) = f.energy.as_deref_mut() {
                 refresh_energy(
@@ -1449,7 +1463,7 @@ impl Scalars {
                     mass_flux: conv,
                     phi: f.phi,
                     su: f.su,
-                    sp: None,
+                    sp: robin_sp,
                     alpha,
                     time,
                     fix: frozen,
@@ -1901,6 +1915,188 @@ impl Scalars {
             .collect()
     }
 
+    /// The fluid–solid interface faces of the energy equation with their
+    /// state of the last solve (D204): (slot, face, whether the solid cell
+    /// is the owner, [area, G, G_fluid, heat into the solid, T_s*, T_w])
+    /// as [`crate::conduction::Conduction::face_states`].
+    pub fn energy_fluid_solid_faces(&self) -> Vec<(usize, u32, bool, [f64; 6])> {
+        let Some(e) = self.fields.iter().find_map(|f| f.energy.as_deref()) else {
+            return Vec::new();
+        };
+        let Some(cd) = e.cond.as_ref() else {
+            return Vec::new();
+        };
+        let mc = &e.mat_cell;
+        let fo: Vec<Option<bool>> = cd
+            .faces
+            .iter()
+            .map(
+                |fa| match (mc[fa.o as usize] == 0, mc[fa.n as usize] == 0) {
+                    (true, false) => Some(true),
+                    (false, true) => Some(false),
+                    _ => None,
+                },
+            )
+            .collect();
+        cd.face_states(&fo)
+            .into_iter()
+            .enumerate()
+            .zip(&cd.faces)
+            .filter_map(|((i, st), fa)| st.map(|x| (i, fa.f, !fo[i].unwrap_or(true), x)))
+            .collect()
+    }
+
+    /// The report pair (index of [`Scalars::energy_interfaces`]) of the
+    /// interface face in `slot`.
+    pub fn energy_interface_pair(&self, slot: usize) -> usize {
+        self.fields
+            .iter()
+            .find_map(|f| f.energy.as_deref())
+            .and_then(|e| e.cond.as_ref())
+            .map_or(0, |c| c.faces[slot].pair)
+    }
+
+    /// The owner and neighbour cells of the interface face in `slot`.
+    pub fn energy_interface_cells(&self, slot: usize) -> (u32, u32) {
+        self.fields
+            .iter()
+            .find_map(|f| f.energy.as_deref())
+            .and_then(|e| e.cond.as_ref())
+            .map_or((0, 0), |c| (c.faces[slot].o, c.faces[slot].n))
+    }
+
+    /// The sum of the heat added to cells from outside (W, D204), if any.
+    fn energy_extra_total(&self) -> Option<f64> {
+        self.fields
+            .iter()
+            .find_map(|f| f.energy.as_deref())
+            .and_then(|e| e.extra_heat.as_ref())
+            .map(|x| x.iter().sum())
+    }
+
+    /// Sets or clears the heat added to cells (W per cell, D204).
+    pub(crate) fn set_energy_extra_heat(&mut self, x: Option<Vec<f64>>) {
+        if let Some(e) = self.fields.iter_mut().find_map(|f| f.energy.as_deref_mut()) {
+            e.extra_heat = x;
+        }
+    }
+
+    /// The temperature of the energy equation and its old time levels
+    /// (φ, φⁿ, φⁿ⁻¹; the levels are φ without a time step).
+    pub fn energy_levels(
+        &self,
+        dev: &mut dyn FlowDevice,
+    ) -> Result<(Vec<f64>, Vec<f64>, Vec<f64>)> {
+        let Some(f) = self.fields.iter().find(|f| f.energy.is_some()) else {
+            return Ok((Vec::new(), Vec::new(), Vec::new()));
+        };
+        let t = dev.download(f.phi)?;
+        Ok(match f.old {
+            Some((o1, o2, _)) => (t, dev.download(o1)?, dev.download(o2)?),
+            None => (t.clone(), t.clone(), t),
+        })
+    }
+
+    /// Sets the temperature and its old time levels (D204).
+    pub fn set_energy_levels3(
+        &mut self,
+        dev: &mut dyn FlowDevice,
+        t: &[f64],
+        o1: &[f64],
+        o2: &[f64],
+    ) -> Result<()> {
+        if let Some(f) = self.fields.iter().find(|f| f.energy.is_some()) {
+            dev.upload(f.phi, t)?;
+            if let Some((b1, b2, _)) = f.old {
+                dev.upload(b1, o1)?;
+                dev.upload(b2, o2)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// The number of interface faces (slots) of the energy equation.
+    pub fn energy_interface_slots(&self) -> usize {
+        self.fields
+            .iter()
+            .find_map(|f| f.energy.as_deref())
+            .and_then(|e| e.cond.as_ref())
+            .map_or(0, |c| c.faces.len())
+    }
+
+    /// Sets (`Some`, per interface slot) or clears the Robin conditions of
+    /// the solid phase of the cycle loop (D204).
+    pub(crate) fn set_energy_robin(
+        &mut self,
+        dev: &mut dyn FlowDevice,
+        robin: Option<Vec<Option<crate::conduction::RobinFace>>>,
+    ) -> Result<()> {
+        let nc = self.nc;
+        let Some(e) = self.fields.iter_mut().find_map(|f| f.energy.as_deref_mut()) else {
+            return Ok(());
+        };
+        if robin.is_some() && e.robin_sp.is_none() {
+            e.robin_sp = Some(dev.alloc(nc)?);
+        }
+        if let Some(cd) = e.cond.as_mut() {
+            cd.robin = robin;
+        }
+        Ok(())
+    }
+
+    /// Sets the temperature and its old time levels (φ, φⁿ, φⁿ⁻¹) of the
+    /// energy equation, so that the next time step stores nothing in the
+    /// cells whose value did not change since (D204: the solids updated
+    /// between two fluid phases).
+    pub fn set_energy_levels(&mut self, dev: &mut dyn FlowDevice, t: &[f64]) -> Result<()> {
+        if let Some(f) = self.fields.iter().find(|f| f.energy.is_some()) {
+            dev.upload(f.phi, t)?;
+            if let Some((o1, o2, _)) = f.old {
+                dev.upload(o1, t)?;
+                dev.upload(o2, t)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// The held cells of the energy equation (D204) and, per held set, the
+    /// heat into them through the interface faces from the cells that are
+    /// solved (W, the faces without a Robin condition), their heat sources
+    /// (W) and the heat into the solids through the Robin conditions (W).
+    fn energy_held(&self) -> Option<(&[bool], f64, f64, f64)> {
+        let e = self.fields.iter().find_map(|f| f.energy.as_deref())?;
+        let held = e.held.as_deref()?;
+        let mut iface = 0.0;
+        let mut robin = 0.0;
+        if let Some(cd) = e.cond.as_ref() {
+            for (i, fa) in cd.faces.iter().enumerate() {
+                let rb = cd.robin.as_ref().and_then(|r| r[i]);
+                // heat[i]: from the owner to the neighbour
+                if let Some(r) = rb {
+                    robin += if r.solid_owner {
+                        -cd.heat[i]
+                    } else {
+                        cd.heat[i]
+                    };
+                    continue;
+                }
+                match (held[fa.o as usize], held[fa.n as usize]) {
+                    (false, true) => iface += cd.heat[i],
+                    (true, false) => iface -= cd.heat[i],
+                    _ => {}
+                }
+            }
+        }
+        let src: f64 = held
+            .iter()
+            .zip(&e.heat)
+            .zip(&e.volume)
+            .filter(|((h, _), _)| **h)
+            .map(|((_, q), v)| q * v)
+            .sum();
+        Some((held, iface, src, robin))
+    }
+
     /// The material (region index) of every cell of the energy equation.
     pub fn energy_cell_regions(&self) -> Vec<u16> {
         self.fields
@@ -1936,6 +2132,7 @@ impl Scalars {
         let Some(e) = self.fields.iter_mut().find_map(|f| f.energy.as_deref_mut()) else {
             return Ok(());
         };
+        e.held = fixed.map(|v| v.iter().map(Option::is_some).collect());
         match fixed {
             None => e.frozen = None,
             Some(v) => {
@@ -2154,6 +2351,7 @@ impl Scalars {
             || sec.viscous_heating
             || !sec.sources.is_empty()
             || enthalpy.iter().any(|h| !h.is_constant())
+            || sec.cycle.is_some()
         {
             Some(put(&vec![0.0; nc])?)
         } else {
@@ -2312,6 +2510,9 @@ impl Scalars {
             areas,
             inertia: vec![1.0; mats.len()],
             frozen: None,
+            held: None,
+            robin_sp: None,
+            extra_heat: None,
             fluid,
             mats,
             mat_cell,
@@ -2545,8 +2746,24 @@ fn refresh_energy(
     let m = dev.download(mass_flux)?;
     let cf: Vec<f64> = m.iter().zip(&e.cp_face).map(|(m, c)| m * c).collect();
     dev.upload(e.cflux, &cf)?;
-    dev.upload(gamma, &e.k_face)?;
-    dev.upload(gamma0, &e.k_face)?;
+    // the solid phase of the cycle loop (D204): the fluid–solid faces with
+    // a Robin condition carry no conduction in the matrix
+    let robin = e
+        .cond
+        .as_ref()
+        .and_then(|cd| cd.robin.as_ref().map(|r| (cd, r)))
+        .map(|(cd, r)| {
+            let mut kf = e.k_face.clone();
+            for (fa, x) in cd.faces.iter().zip(r) {
+                if x.is_some() {
+                    kf[fa.f as usize] = 0.0;
+                }
+            }
+            (kf, cd.robin_sources())
+        });
+    let kf = robin.as_ref().map_or(&e.k_face, |r| &r.0);
+    dev.upload(gamma, kf)?;
+    dev.upload(gamma0, kf)?;
     // μ(T) for the next momentum solve (the laminar viscosity of a
     // turbulence model, which adds μ_t to it)
     if let (true, Some(mu)) = (dep, &e.fluid.mu) {
@@ -2681,9 +2898,26 @@ fn refresh_energy(
                 }
             }
         }
-        let v: Vec<f64> = (0..nc)
+        let mut v: Vec<f64> = (0..nc)
             .map(|c| (heat[c] + corr[c] / e.volume[c]) / cap[c])
             .collect();
+        // the Robin conditions of the cycle loop's solid phase (D204):
+        // Ḡ (T̄_ref − δT) explicit, −Ḡ on the diagonal, per unit heat capacity
+        if let Some(x) = &e.extra_heat {
+            for (c, q) in x.iter().enumerate() {
+                v[c] += q / (e.volume[c] * cap[c]);
+            }
+        }
+        if let (Some((_, rs)), Some(spb)) = (&robin, e.robin_sp) {
+            let mut sp = vec![0.0; nc];
+            for &(c, q, g) in rs {
+                let c = c as usize;
+                let w = e.volume[c] * cap[c];
+                v[c] += q / w;
+                sp[c] -= g / w;
+            }
+            dev.upload(spb, &sp)?;
+        }
         dev.upload(su, &v)?;
         e.heat = heat;
     }
@@ -2872,6 +3106,17 @@ pub struct EnergyBalance {
     /// the true solids, which the accelerated run does not close.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub inertia_scaling: Option<f64>,
+    /// The heat into the cells held at fixed temperatures (W, D204): the
+    /// solids in a fluid phase of the cycle-averaged loop, the fluid in its
+    /// solid phase (their heat flows in through faces and boundaries and
+    /// their sources, and is not stored).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub held: Option<f64>,
+    /// The heat into the solids from outside the model in the solid phase
+    /// of the cycle-averaged loop (W, D204): through the Robin conditions,
+    /// or the defect of the mean-flow model.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub robin: Option<f64>,
     /// conduction + convection + source − storage (W): zero in a
     /// converged steady run and in every converged time step.
     pub imbalance: f64,
@@ -2999,6 +3244,12 @@ pub fn summaries(
         };
         let mut bal = EnergyBalance::default();
         let mut largest = 0.0f64;
+        let held = if heat.is_some() {
+            sc.energy_held()
+        } else {
+            None
+        };
+        let mut held_b = 0.0;
         for p in &mesh.boundaries {
             let (mut area, mut sum, mut flux, mut mf, mut msum) = (0.0, 0.0, 0.0, 0.0, 0.0);
             let mut enthalpy = 0.0;
@@ -3007,6 +3258,7 @@ pub fn summaries(
                 let o = mesh.owner[f] as usize;
                 let (_, ar) = geo.normal_area(f);
                 let pf = a[fb] * phi[o] + b[fb];
+                let (flux0, enthalpy0) = (flux, enthalpy);
                 area += ar;
                 sum += ar * pf;
                 // the diffusive flux into the domain, orthogonal part (the
@@ -3035,6 +3287,9 @@ pub fn summaries(
                         _ => pf,
                     };
                     enthalpy -= m[f] * h.at(tc);
+                }
+                if held.is_some_and(|h| h.0[o]) {
+                    held_b += flux - flux0 + enthalpy - enthalpy0;
                 }
             }
             if area > 0.0 {
@@ -3076,7 +3331,28 @@ pub fn summaries(
                     bal.inertia_scaling = Some(rs.iter().map(|r| r.inertia_scaling).sum());
                 }
             }
-            bal.imbalance = bal.conduction + bal.convection + bal.source - total;
+            // the held cells of the cycle loop (D204): what flows into them
+            // is not stored; the Robin heat comes from outside the mesh
+            let mut out = 0.0;
+            // the defect of the cycle loop's mean-flow model (D204), heat
+            // from outside the model like the Robin heat
+            if let Some(x) = sc.energy_extra_total() {
+                bal.robin = Some(x);
+                largest = largest.max(x.abs());
+                out -= x;
+            }
+            if let Some((_, iface, src_held, robin)) = held {
+                let h = held_b + iface + src_held;
+                bal.held = Some(h);
+                largest = largest.max(h.abs());
+                out += h;
+                if robin != 0.0 {
+                    bal.robin = Some(bal.robin.unwrap_or(0.0) + robin);
+                    largest = largest.max(robin.abs());
+                    out -= robin;
+                }
+            }
+            bal.imbalance = bal.conduction + bal.convection + bal.source - total - out;
             bal.relative = if largest > 0.0 {
                 bal.imbalance.abs() / largest
             } else {

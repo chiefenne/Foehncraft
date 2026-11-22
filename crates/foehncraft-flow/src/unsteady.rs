@@ -148,6 +148,10 @@ pub struct TransientSummary {
     /// The thermal acceleration of the solids (D213).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub acceleration: Option<crate::acceleration::AccelerationSummary>,
+    /// The cycle-averaged coupling loop of a periodic conjugate case
+    /// (D204).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cycle_coupling: Option<crate::cycle::CycleSummary>,
 }
 
 /// The heat balance of one time step (stage 7d6): the balance of the
@@ -1453,6 +1457,17 @@ fn run_one<F: FnMut(&str)>(
         Some(a) => crate::acceleration::Controller::new(&mut fl, &a, tr.clock.time)?,
         None => None,
     };
+    // the cycle-averaged coupling of a periodic flow with its solids (D204)
+    let mut cycle = match case.energy.as_ref().and_then(|e| e.cycle.clone()) {
+        Some(c) => Some(crate::cycle::Controller::new(
+            &mut fl,
+            &c,
+            tr.clock.time,
+            dt,
+            crate::case::dimension(&case),
+        )?),
+        None => None,
+    };
     loop {
         // [[schedule]] (D128): the entries due before this step
         if !case.schedule.is_empty() {
@@ -1743,6 +1758,14 @@ fn run_one<F: FnMut(&str)>(
                 lg.line(&l);
                 steer.event(crate::diag::ACC_PHASE, n, &l);
             }
+        }
+        let mut cycle_done = false;
+        if let Some(cy) = cycle.as_mut() {
+            for l in cy.after_step(&mut fl, rp.time, rp.time - t0)? {
+                lg.line(&l);
+                steer.event(crate::diag::CYC_PHASE, n, &l);
+            }
+            cycle_done = cy.done();
         }
         if n.is_multiple_of(case.output.history_every) {
             let mut sc = String::new();
@@ -2194,6 +2217,12 @@ fn run_one<F: FnMut(&str)>(
             stopped = true;
             break;
         }
+        if cycle_done {
+            lg.note(&format!(
+                "step {n}: the cycle-averaged loop ended ([energy.cycle]); the run stops"
+            ));
+            break;
+        }
     }
     // the mesh of the last rotor angle (D182 variant B)
     let (mesh, geo) = current(&work, mesh0, geo0);
@@ -2289,6 +2318,73 @@ fn run_one<F: FnMut(&str)>(
                 warnings.push(d);
             }
             Some(acc.summary(tr.clock.time))
+        }
+        None => None,
+    };
+    // the cycle-averaged loop (D204): its updates and the faces of the
+    // last update, the warnings of the loop (CYC002, CYC004)
+    let cycle_summary = match cycle.as_mut() {
+        Some(cy) => {
+            let sm = cy.summary();
+            for d in cy.diagnostics.drain(..) {
+                lg.warn(&format!("{}: {}", d.code, d.message));
+                steer.event(d.code, steps_total, &d.message);
+                warnings.push(d);
+            }
+            if last {
+                let (head, rows) = cy.csv();
+                let mut f = History::new(
+                    out,
+                    "cycle_coupling.csv",
+                    &crate::case::csv_preamble(
+                        "cycle_coupling",
+                        name,
+                        None,
+                        "update -, time s (end of the fluid phase), cycles - (of the fluid \
+                         phase), periodic - (1: within cycle_tolerance), cycle_change - \
+                         (relative change of the mean interface heat flow, last two cycles), \
+                         <interface>_heat W (cycle mean, into the fluid), heat_change - \
+                         (against the fluid phase before), wall_change_max K, wall_change_mean K \
+                         (solid side of the interface faces, solid phase against the update \
+                         before), wall_mean K, solid_iterations -, relaxation - (of the \
+                         update), solid_imbalance W, solid_relative - (balance of the solids with \
+                         the Robin heat or the defect of the mean-flow model)",
+                    ),
+                    &head,
+                    None,
+                )?;
+                for r in rows {
+                    f.row(&r);
+                }
+                f.flush()?;
+                let centroids = fl
+                    .cht
+                    .as_deref()
+                    .map(|c| c.view.geo.face_centroid.clone())
+                    .unwrap_or_default();
+                let (head, rows) = cy.faces_csv(&centroids);
+                let mut f = History::new(
+                    out,
+                    "cycle_faces.csv",
+                    &crate::case::csv_preamble(
+                        "cycle_faces",
+                        name,
+                        None,
+                        "face - (of the full mesh), interface -, x y z m (face centroid), area \
+                         m², h_fluid W/(m² K) (cycle mean of the fluid side), conductance W/(m² \
+                         K) (fluid side, contact and solid half cell in series), t_ref K, \
+                         heat_flux W/m² (cycle mean, into the solid), t_wall K (solid side \
+                         after the last solid phase)",
+                    ),
+                    &head,
+                    None,
+                )?;
+                for r in rows {
+                    f.row(&r);
+                }
+                f.flush()?;
+            }
+            Some(sm)
         }
         None => None,
     };
@@ -2582,6 +2678,7 @@ fn run_one<F: FnMut(&str)>(
             ns_per_cell_step: 1e9 * secs / (nc as f64 * nsteps.max(1) as f64),
             heat_relative_max,
             acceleration: accel_summary,
+            cycle_coupling: cycle_summary,
         }),
         benchmark,
     };
