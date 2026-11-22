@@ -11,6 +11,7 @@ Part of the [Example gallery](../gallery.md): the energy equation of the fluid (
 | 160 | [A chip on a circuit board with a thermal pad, and an orthotropic patch test](#cht-contact) | 7 | `[interfaces.<name>] contact_resistance`, `thin_wall`, orthotropic `conductivity`, `[regions.<name>] axes`, `[[energy.sources]]` |
 | 180 | [A heated wall brought to its steady and periodic state with thermal acceleration](#cht-acceleration) | 7 | `[energy.acceleration]` `inertia_scale`, `period`, `restore`, `restore_ramp`, `heat.csv` `inertia_scaling` |
 | 190 | [A pulsating channel over a heated wall, coupled by the cycle-averaged loop](#cht-cycle) | 7 | `[energy.cycle]` `period`, `solid_model`, `update`, `enabled`, `cycle_coupling.csv`, `cycle_faces.csv` |
+| 202 | [A thin-skin wall under a pulsating channel: the skin swing, fully coupled cycles at the end and the CHT restart](#cht-cycle-skin) | 7 | `[energy.cycle]` `skin`, `skin_harmonics`, `resolved_cycles`, `cycle_faces.csv` `t_wall_amplitude`, CHT `restart.h5` |
 | 186 | [A warm strip in a closed air enclosure, and a stratified box that stays at rest](#buoyancy) | 7 | `[gravity]`, `[buoyancy] model = "boussinesq"`, `expansion_coefficient`, `static_pressure` |
 | 195 | [Air between walls at 960 K and 240 K, a heated duct and two closed boxes](#variable-density) | 7 | `[energy] density = "variable"`, `thermodynamic_pressure`, `pressure_work`, `[buoyancy] model = "variable-density"`, `density` |
 
@@ -427,8 +428,19 @@ saves a factor of 2 to 3. The gain grows with the ratio of the solid's
 time constant to the period: an exhaust manifold needs thousands of
 cycles of 40 ms fully coupled and the same few updates in the loop. The
 loop leaves out the swing of the wall temperature over a cycle (LIM009);
-the skin swing from the solid's effusivity and a few fully coupled cycles
-at the end come next.
+gallery 202 adds the skin swing from the solid's effusivity and a few
+fully coupled cycles at the end.
+
+**The classic loop with a better h.** The offline coupling of industry
+practice maps a heat-transfer coefficient and a reference temperature
+onto the structure, solves it and maps the wall temperature back, two to
+four times. How fast that converges depends on which h goes over. The
+conductance of the first fluid cell (above) is the stiffest choice; an h
+against the bulk temperature is about h A, much closer to the flow's
+answer, and converges in a few passes when ṁ c_p is large against h A
+(a turbulent flow with a large mass flow). This channel is the adverse
+case on purpose: laminar, ṁ c_p ≈ 8 W/K, and all of the heat put in must
+leave through the fluid. The mean-flow solid phase needs no choice of h.
 
 ```
 cargo build --release -p foehncraft-cli
@@ -439,6 +451,89 @@ target/release/foehn flow examples/cases/flow/cht_pulsating_channel_cycle.toml -
     --set energy.cycle.enabled=false --set time.end_time=4000.0
 pip install matplotlib h5py numpy
 python3 -m tools.plot.cht_cycle docs/figures/gallery output/cyc output/cyc_robin output/cyc_ref
+```
+
+<a id="cht-cycle-skin"></a>
+## 202. A thin-skin wall under a pulsating channel: the skin swing, fully coupled cycles at the end and the CHT restart
+
+<img src="../figures/gallery/cht_pulsating_channel_skin.png" alt="Top: the temperature at the end of the run at 1250 s, after the cycle-averaged loop and three fully coupled cycles: the wall below y = 0.2 m warms from about 305 K at the inlet end to 345 K at the heated face downstream, the channel above it cooler near the inlet; the vertical scale is stretched 2.5 times. Bottom left: the cycle mean of a probe 2.5 mm below the wall surface at x = 2 m minus the periodic state over time: the loop with the skin swing is within 0.1 K after 400 s and ends at 1250 s at minus 0.006 K, the fully coupled run approaches it exponentially and is within 0.1 K only at 4400 s. Bottom right: the temperature over the last cycle 2.5 mm below the surface at x = 0.5, 2.0 and 3.5 m: the fully coupled run as lines, the loop's last cycles as circles on top of them; the swing is about 5.7 K upstream, 1.5 K in the middle and 0.5 K downstream" width="990" height="738">
+
+**The case.** `cht_pulsating_channel_skin.toml` is the pulsating channel
+of gallery 190 (inlet velocity 1 ± 0.5 m/s and temperature 300 ± 50 K
+over 50 s, 1000 W/m² into the wall from below) over a wall with a thin
+skin: k = 14.08 W/(m K) (the fluid's), ρ c_p = 2.5·10⁵ J/(m³ K). The swing
+of the period then reaches δ = √(2k/(ρ c_p ω)) = 0.030 m into the wall
+0.2 m thick, resolved by 6 cells of 5 mm; the wall as a whole settles with
+a time constant of about 700 s. In the loop of gallery 190 the held wall
+has no swing at all.
+
+**The skin swing (`skin = "effusivity"`).** Over the averaged cycle the
+loop also takes the harmonics q̂ₙ of the heat flux into the solid per face
+(up to `skin_harmonics`, 10, and half the steps of a cycle). A
+semi-infinite solid answers a periodic flux with the surface swing
+θₙ = Zₙ q̂ₙ, Zₙ = (1 − i)/(√2 e √ωₙ), e = √(k ρ c_p) its effusivity
+(Carslaw and Jaeger, *Conduction of Heat in Solids*, §2.6). In the next
+fluid phase the held solid cell at the interface swings by
+(Zₙ − r_s) q̂ₙ around its mean, r_s the resistance of its half cell from
+the cycle, so that the flow sees the swing of the surface. The swing
+changes the flux it is made of, so its amplitudes join the wall
+temperatures in the unknowns of the quasi-Newton update. The loop
+converges after 10 updates (1100 s, 22 cycles): the mean wall within
+0.0005 K and the harmonics of the swing within 0.0075 K per update.
+Where δ is more than a third of a wall's thickness V/A the
+semi-infinite answer does not hold, and CYC003 says so (the thick wall of
+gallery 190 has δ = 0.17 m).
+
+**Fully coupled cycles at the end (`resolved_cycles = 3`).** The loop
+then releases the solids and runs three cycles fully coupled. It starts
+them from the periodic state of the skin: every solid cell within six
+skin depths of an interface takes the swing of its held cell damped and
+delayed by its depth d beyond it, e^{−(1+i) d/δₙ}, on its temperature and
+on its old time levels. Released from the mean alone the solids would
+lack the energy of the swing in the skin, and that error leaves only with
+the 700 s time constant of the whole wall (0.3 K after three cycles, as a
+first version showed). The three cycles give the exact swing and the heat
+flow (159.99 W, the 160 W put in).
+
+| | Loop (end of the loop, 1100 s) | After three fully coupled cycles (1250 s) | Fully coupled, periodic (10 000 s) |
+|---|---|---|---|
+| Heated face, cycle mean | 346.333 K | 346.335 K | 346.329 K |
+| 2.5 mm below the surface at x = 0.5 m | 313.177 ± 5.780 K | 313.162 ± 5.664 K | 313.178 ± 5.665 K |
+| same, x = 2.0 m | 326.191 ± 1.571 K | 326.182 ± 1.515 K | 326.188 ± 1.514 K |
+| same, x = 3.5 m | 335.316 ± 0.574 K | 335.314 ± 0.547 K | 335.311 ± 0.547 K |
+| 97.5 mm below the surface at x = 2.0 m | 332.914 K | 332.908 ± 0.047 K | 332.909 ± 0.047 K |
+
+The loop ends within 0.016 K of the periodic state and within 0.1 % on
+the swing. The fully coupled run comes within 0.1 K of it at 4400 s in
+the skin and at 5550 s at the heated face: 1250 s against 5550 s
+simulated, 96 s against about 6.5 minutes on 4 threads. The heat the
+held cells store while they swing is booked with the `held` heat, and the
+balance closes to 2·10⁻⁵ of the largest flow in every step, set by the
+energy solver's 300 iterations on this mesh (the fully coupled run:
+4·10⁻⁴; 10⁻¹¹ on the 40 × 40 mesh of the test).
+
+<img src="../figures/gallery/cht_skin_swing.png" alt="Left: half the range of the wall surface temperature over a cycle along the channel: 25 K at the inlet end, 6 K at x = 0.5 m, 1.7 K at 2 m and 0.6 K at the outlet end; the loop's estimate from the effusivity lies on the curve of the fully coupled cycles at the end, about 3 percent above it. Right: the largest change per update on a log scale: the mean wall temperature falls from 36 K to 0.0005 K over 10 updates, the harmonics of the swing from 38 K to 0.0075 K, both below the 0.01 K tolerance at the last update" width="990" height="378">
+
+**The CHT restart.** A conjugate run now writes the temperature of the
+solids and its old time level into `restart.h5`, by cell identity of the
+full mesh, and with `[energy.cycle]` the state of the loop: the averages
+of the running fluid phase, the history of the quasi-Newton update, the
+held means, the swing and the fully coupled cycles. A run continued from
+it is bit-identical to one run through, checked for a plain transient
+conjugate run, for the loop stopped in a fluid phase, and for the skin
+loop stopped in a fluid phase and in the fully coupled cycles
+(`tests/cht_cycle.rs`). A steady conjugate run continues from its solids
+as well. A restart with `[energy.acceleration]` is still refused.
+
+```
+cargo build --release -p foehncraft-cli
+target/release/foehn flow examples/cases/flow/cht_pulsating_channel_skin.toml --out output/skin
+target/release/foehn flow examples/cases/flow/cht_pulsating_channel_skin.toml --out output/skin_ref \
+    --set energy.cycle.enabled=false --set time.end_time=10000.0 --set output.fields_every=4000
+pip install matplotlib h5py numpy
+python3 -m tools.plot.cht_skin docs/figures/gallery output/skin output/skin_ref
+```
+
 <a id="buoyancy"></a>
 ## 186. A warm strip in a closed air enclosure, and a stratified box that stays at rest
 

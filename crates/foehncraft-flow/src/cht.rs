@@ -631,6 +631,95 @@ pub(crate) fn energy_fields(
     Some((fe.scalars.as_mut()?, fe.dev.as_mut()))
 }
 
+/// The energy equation of a conjugate case for a restart file: the
+/// temperature on the full mesh, its level before (transient) and the
+/// state of the cycle-averaged loop, if given; `None` for a case without
+/// solids.
+pub(crate) fn restart_part(
+    fl: &mut crate::simplec::Flow,
+    cycle: Option<Vec<u8>>,
+) -> anyhow::Result<Option<crate::restart::ChtRestart>> {
+    let Some(c) = fl.cht.as_deref() else {
+        return Ok(None);
+    };
+    let cell_id = c.view.mesh.cell_id[..c.view.mesh.n_cells].to_vec();
+    let Some((sc, dev)) = energy_fields(fl) else {
+        return Ok(None);
+    };
+    let Some(st) = sc
+        .states(dev)?
+        .into_iter()
+        .find(|s| s.name == crate::energy::FIELD)
+    else {
+        return Ok(None);
+    };
+    Ok(Some(crate::restart::ChtRestart {
+        cell_id,
+        t: st.phi,
+        t_old: st.old,
+        cycle,
+    }))
+}
+
+/// Loads the temperature of a conjugate case from a restart file (mapped
+/// by the identities of the full mesh); a conjugate case needs it, a case
+/// without solids ignores it.
+pub(crate) fn load_restart(
+    fl: &mut crate::simplec::Flow,
+    r: Option<&crate::restart::ChtRestart>,
+    path: &std::path::Path,
+) -> anyhow::Result<()> {
+    let Some(c) = fl.cht.as_deref() else {
+        return Ok(());
+    };
+    let Some(r) = r else {
+        anyhow::bail!(
+            "{} holds no temperatures of the solids (written by a run without solid regions or \
+             by an older version); a conjugate case needs them",
+            path.display()
+        );
+    };
+    let ids = &c.view.mesh.cell_id[..c.view.mesh.n_cells];
+    anyhow::ensure!(
+        r.cell_id.len() == ids.len(),
+        "{}: the restart file has {} cells of the full mesh, the case {}",
+        path.display(),
+        r.cell_id.len(),
+        ids.len()
+    );
+    let map: Option<Vec<usize>> = if r.cell_id == ids {
+        None
+    } else {
+        let pos: std::collections::HashMap<u64, usize> =
+            r.cell_id.iter().enumerate().map(|(i, &g)| (g, i)).collect();
+        Some(
+            ids.iter()
+                .map(|g| pos.get(g).copied())
+                .collect::<Option<Vec<_>>>()
+                .ok_or_else(|| {
+                    anyhow!(
+                        "{}: the restart file belongs to another mesh",
+                        path.display()
+                    )
+                })?,
+        )
+    };
+    let remap = |v: &[f64]| match &map {
+        Some(m) => m.iter().map(|&i| v[i]).collect(),
+        None => v.to_vec(),
+    };
+    let st = crate::scalar::ScalarState {
+        name: crate::energy::FIELD.into(),
+        phi: remap(&r.t),
+        old: r.t_old.as_deref().map(remap),
+        wall: None,
+    };
+    if let Some((sc, dev)) = energy_fields(fl) {
+        sc.load(dev, &[st])?;
+    }
+    Ok(())
+}
+
 /// Attaches the energy equation on the full mesh to the flow of the fluid
 /// view.
 pub fn attach(fl: &mut crate::simplec::Flow, view: Arc<FluidView>) -> Result<()> {

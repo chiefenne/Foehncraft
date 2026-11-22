@@ -1060,12 +1060,15 @@ Gaps:
 - consistency: [`loop_matches_the_fully_coupled_periodic_state`](../../crates/foehncraft-flow/tests/cht_cycle.rs): V7.39: heat flow and wall temperatures within 1 % of the fully coupled periodic state; V7.40: heat balance of every fluid step and every solid phase to 10⁻⁹
 - consistency: [`robin_solid_phase_is_slower_and_says_so`](../../crates/foehncraft-flow/tests/cht_cycle.rs): the first-cell Robin solid phase converges slowly and says so (CYC004); its balance closes
 - consistency: [`wrong_settings_are_refused`](../../crates/foehncraft-flow/tests/cht_cycle.rs): settings that cannot be used are refused (CYC001)
+- consistency: [`cht_pulsating_channel_skin`](../../examples/cases/flow/cht_pulsating_channel_skin.toml): thin-skin wall (δ = 0.03 m): the loop with the skin swing and three fully coupled cycles ends at 1250 s within 0.016 K of the fully coupled periodic state (10 000 s) and within 0.1 % on the swing (passes in CI (set long), not yet in the manual) ([results](../gallery/energy.md#cht-cycle-skin))
+- consistency: [`skin_swing_and_resolved_cycles`](../../crates/foehncraft-flow/tests/cht_cycle.rs): the skin swing converges with the wall temperatures, the fully coupled cycles give the heat put in, the estimated swing is within 10 % of theirs, the ledger closes to 10⁻⁹ in every step
+- consistency: [`skin_deeper_than_the_wall_warns`](../../crates/foehncraft-flow/tests/cht_cycle.rs): CYC003 where the skin depth reaches through the wall
 
 Gaps:
 
-- V7.38 not built: no exact solution of a slab under a periodic gas temperature and heat transfer coefficient
-- the swing of the wall temperature over a cycle is not resolved (the skin of the solids, CYC003, comes later)
+- V7.38 not built: no exact solution of a slab under a periodic gas temperature and heat transfer coefficient (the skin swing is checked against the fully coupled run only)
 - laminar case only; no turbulent periodic case yet
+- a restart with [energy.acceleration] is refused
 
 <a id="cht-turbulent"></a>
 
@@ -1327,6 +1330,8 @@ Gaps:
 - contract (control): [`stop_file_ends_the_run`](../../crates/foehncraft-flow/tests/stage5.rs): a stop file ends the run
 - contract (control): [`transient_run_starts_from_a_steady_restart`](../../crates/foehncraft-flow/tests/stage5.rs): a transient run starts from a steady restart file and a converged state stays
 - contract (control): [`sigterm_stops_cleanly_and_restart_latest_continues_bitwise`](../../crates/foehncraft-cli/tests/run_contract.rs): SIGTERM writes a restart file and exits cleanly
+- contract (bitwise): [`cht_restart_continues_bit_identically`](../../crates/foehncraft-flow/tests/cht_cycle.rs): conjugate runs: a transient run, the cycle loop in a fluid phase, with the skin swing and in the fully coupled cycles continue bitwise (#202)
+- contract (bitwise): [`steady_cht_restart_keeps_the_solid_temperatures`](../../crates/foehncraft-flow/tests/cht_cycle.rs): a steady conjugate run continues from the temperatures of its solids (#202)
 
 Contracts: `bitwise`, `control`.
 

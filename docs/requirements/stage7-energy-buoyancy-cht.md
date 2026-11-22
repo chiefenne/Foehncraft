@@ -934,7 +934,9 @@ interfaces are found automatically from the cell zones; named interfaces
 
 ## 9d. Cycle-averaged coupling of periodic flows (D204)
 
-**Core implemented (#190)**: the loop with the mean-flow solid phase (§9d.7).
+**Core implemented (#190)**: the loop with the mean-flow solid phase (§9d.7);
+the skin swing, the fully coupled cycles at the end and the restart (#202,
+§9d.8).
 Added 2026-11-21 at the maintainer's request as a **requirement for later**:
 it is built after transient conjugate heat transfer (PR 7d6) and is not part
 of the 7d5 and 7d6 pull requests. Those two are designed so that it fits
@@ -1042,9 +1044,9 @@ being guessed.
 
 ### 9d.4 Keys
 
-As built (#190) the table is `[energy.cycle]` (beside `[energy.acceleration]`,
-which it excludes); `skin` and `resolved_cycles` come with PR C, a
-transient `solid` phase with the frozen-flow march (D118, PR D).
+As built (#190, #202) the table is `[energy.cycle]` (beside
+`[energy.acceleration]`, which it excludes); a transient `solid` phase
+comes with the frozen-flow march (D118, PR D).
 
 ```toml
 [energy.cycle]
@@ -1061,14 +1063,16 @@ relaxation = 1.0           # of the first update
 update = "quasi-newton"    # later updates: "quasi-newton" | "aitken" | "relaxation"
 solid_model = "mean-flow"  # "mean-flow" | "robin" (the first-cell Robin pair)
 solid = "steady"           # "transient" with D118 (PR D)
-# planned (PR C): skin = "effusivity", resolved_cycles = 1
+skin = "none"              # "effusivity": the surface swing of a thin skin (#202)
+skin_harmonics = 10        # harmonics of the period for the swing
+resolved_cycles = 0        # fully coupled cycles after the loop (#202)
 ```
 
 Codes: CYC001 error (a setting that cannot be used: a steady case, no
 solid, with `[energy.acceleration]`, an adaptive step, a period that is
 not a whole number of steps, a value out of range), CYC002 warning (the
 fluid phase is not periodic after `max_cycles`), CYC003 warning (skin depth
-not small against the wall thickness; PR C), CYC004 warning (stopped at
+larger than a third of the wall thickness V/A), CYC004 warning (stopped at
 `max_updates` before the tolerances), CYC005 note (a step of the loop);
 LIM009 in the limitations of every run with the loop.
 
@@ -1121,6 +1125,56 @@ Vierendeels 2009) on the wall temperatures by default, Aitken (Irons &
 Tuck 1969; Küttler & Wall 2008) or fixed relaxation on request. Checks:
 V7.39 and V7.40 pass (`tests/cht_cycle.rs`); V7.38 is not built yet (a gap
 in features.toml).
+
+### 9d.8 As built: skin swing, fully coupled cycles and restart (#202)
+
+**Skin swing (`skin = "effusivity"`).** Over the averaged cycle the loop
+accumulates per interface face the harmonics c_n = (2/T)∫q e^{−iω_n t} dt
+of the heat flux into the solid per area (n ≤ `skin_harmonics` and half
+the steps of a cycle), and ∫q² and ∫(T_w − T_s*) q for the resistance of
+the solid half cell r_s (least squares). A semi-infinite solid of
+effusivity e = √(k ρ c_p) answers with the surface swing θ_n = Z_n c_n,
+Z_n = (1 − i)/(√2 e √ω_n) (Carslaw and Jaeger, §2.6); the held cell takes
+(Z_n − r_s) c_n, area-weighted over its faces, around its mean at every
+step of the next fluid phase. The swing changes the flux it comes from,
+so its amplitudes are unknowns of the quasi-Newton update next to the
+wall temperatures (a lagged swing alone oscillated: 0.16, 0.49, 0.34,
+0.08 K); the loop converges when the change of the swing (`swing_change`)
+is also below `tolerance`. ρ c_p and k come from the materials at the
+current temperature (the face values of the energy equation hold the
+fluid's until the first refresh, which made a first version 12 % off).
+CYC003 where δ = √(2k/(ρ c_p ω)) exceeds a third of V/A. The heat the
+swinging held cells store is booked with the `held` heat, so the ledger
+closes in every step.
+
+**Fully coupled cycles (`resolved_cycles`).** When the loop ends the
+solids are released and run that many cycles fully coupled; per face the
+heat flow and the range of T_w over the last cycle are reported
+(`resolved_t_wall_min`, `resolved_t_wall_max`). With the skin swing every
+solid cell within six skin depths of a held cell (found by a
+breadth-first walk through the solid cells, depth along the normal of the
+held cell's interface face) starts from s_n e^{−(1+i) d/δ_n} around its
+mean, on its temperature and both old time levels. Released from the mean
+alone the energy of the missing swing left only with the time constant of
+the whole wall: 0.3 K off after three cycles on the gallery wall, against
+0.016 K with the profile.
+
+**Restart.** `restart.h5` holds for a conjugate case the temperature of
+the full mesh and its old level by cell identity (`cht_cell_id`,
+`cht_temperature`, `cht_temperature_old`) and the state of the loop as
+JSON bytes (`cht_cycle_state`: accumulators, IQN history, held means,
+swing, resolved cycles), floats round-tripped exactly. Continuations are
+bit-identical in a fluid phase, with the swing and in the resolved
+cycles; a loop state with another cell or face order is refused, a
+restart with `[energy.acceleration]` too (ENE006).
+
+Results on `cht_pulsating_channel_skin.toml` (80 × 80 cells, δ = 0.030 m in
+a 0.2 m wall, time constant about 700 s): 10 updates (1100 s), then three
+fully coupled cycles; at 1250 s every probe is within 0.016 K of the
+fully coupled run's periodic state (10 000 s) and the swing within 0.1 %;
+the fully coupled run is within 0.1 K from 4400 s (skin) to 5550 s (heated
+face). Checks: `tests/cht_cycle.rs` (skin swing and resolved cycles,
+CYC003, bit-identical restarts, steady restart).
 
 ### 9d.6 What 7d5 and 7d6 keep open for it
 
@@ -1664,7 +1718,7 @@ CHT lane (C) run in parallel.
 | C | 7t2 | Shell conduction and baffles (D189), surface mesh W1 and wall-face halo W2, film slots (D190) | V7.28–V7.32 |
 | C | 7d5 | Turbulent CHT: thermal wall function (D135) on the fluid side of every interface in series with the solid half cell (§9.4), turbulent conductivity c_p μ_t/Pr_t in the energy view (done, #158) | V7.36 |
 | C | 7d6 | Transient CHT: time terms of the fluid and the solids in the one energy matrix, heat storage in the balance, output and probes on the full mesh (done, #159) | V7.6, V7.37 |
-| C | later | Cycle-averaged coupling of periodic flows (D204, §9d), after 7d6; core implemented (#190), skin and resolved cycles next | V7.38–V7.40 |
+| C | later | Cycle-averaged coupling of periodic flows (D204, §9d), after 7d6; core implemented (#190), skin swing, resolved cycles and restart (#202); frozen-flow march next | V7.38–V7.40 |
 | D | 7e1 | `buoyancy_production` hook in k, ε, ω, ζ/φ (not delivered by stage 6), G_b with SGDH, C_ε3 | V7.25, V7.18 (SGDH, reported) |
 | D | 7e2 | GGDH, G_b with GGDH | V7.18, V7.19, V7.21 |
 | D | 7e3 | Heated backward-facing step | V7.20 |
