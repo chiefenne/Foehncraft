@@ -260,7 +260,7 @@ impl TimeValues {
                     values: &self.values,
                     t,
                     turning: &case.turning(),
-                    hydrostatic: crate::buoyancy::hydrostatic(&case),
+                    hydrostatic: crate::buoyancy::hydrostatic(case),
                 },
             )?;
             fl.set_boundary_velocity(&arr.ub)?;
@@ -372,7 +372,7 @@ pub fn run(
                 values: &values,
                 t: case.time.map_or(0.0, |t| t.start_time),
                 turning: &case.turning(),
-                hydrostatic: crate::buoyancy::hydrostatic(&case),
+                hydrostatic: crate::buoyancy::hydrostatic(case),
             },
             case.check_context(),
         );
@@ -884,7 +884,7 @@ fn rebuild_flow(
             values: &tv.values,
             t,
             turning: &case.turning(),
-            hydrostatic: crate::buoyancy::hydrostatic(&case),
+            hydrostatic: crate::buoyancy::hydrostatic(case),
         },
     )?;
     let disc = simplec::discretisation(mesh, geo, &arrays)?;

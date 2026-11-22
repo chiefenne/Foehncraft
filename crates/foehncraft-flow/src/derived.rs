@@ -1333,7 +1333,7 @@ fn with_restart<R>(
             values: &values,
             t: t_now,
             turning: &case.turning(),
-            hydrostatic: crate::buoyancy::hydrostatic(&case),
+            hydrostatic: crate::buoyancy::hydrostatic(case),
         },
     )?;
     let (disc, _) = crate::simplec::discretisation(&mesh, &geo, &arrays)?;

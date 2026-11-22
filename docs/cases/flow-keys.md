@@ -18,6 +18,12 @@ line (recipe 26).
 | `fluid.operating_pressure` | 101325 | the pressure at which they are evaluated (Pa) |
 | `flow.convection` | true | false: Stokes flow |
 | `flow.body_force` | `[0, 0, 0]` | body force per unit volume (N/m³); each component a number or an expression of x, y, z, t |
+| `gravity.vector` | none | the gravitational acceleration g (m/s²); with it the solved pressure is the reduced pressure p′ = p − ρ_ref g·(x − x_ref) and the output has `static_pressure` p as well (D153, [recipe 186](../recipes/energy.md#buoyancy)) |
+| `gravity.reference_point` | `[0, 0, 0]` | x_ref of the reduced pressure (m) |
+| `buoyancy.model` | `"none"` | `"boussinesq"`: the body force [(ρ₀ − ρ_ref) − ρ₀ β (T − T_ref)] g with the balanced force of D154; needs `[gravity]` and `[energy]` |
+| `buoyancy.expansion_coefficient` | from the material | β (1/K); default −(1/ρ) dρ/dT of the fluid's density at T_ref (1/T_ref for an ideal gas) |
+| `buoyancy.reference_temperature` | `fluid.temperature` | T_ref (K) |
+| `buoyancy.reference_density` | ρ₀ | ρ_ref (kg/m³) of the reduced pressure |
 | `flow.frame_rotation` | `[0, 0, 0]` | angular velocity Ω (rad/s) of a frame in which the whole domain is solved: the velocity is the one relative to the frame, the momentum equations take the Coriolis force −2ρ Ω × u, the centrifugal force stays in the pressure (p − ½ρ\|Ω × r\|² is solved); for periodic flows in system rotation (the rotating channel of 9.8); not with `[[mrf]]` or `[[sliding]]` |
 | `initial.velocity` | `[0, 0, 0]` | start velocity (m/s) |
 | `initial.pressure` | 0 | start pressure (Pa) |
@@ -311,6 +317,18 @@ section is refused for a steady run (CASE005), and `batches` < 2 or a
 | `symmetry` | none | no shear stress, zero normal component | extrapolated | 0 |
 | `wedge` | none | as `symmetry`: the two side planes of an axisymmetric wedge mesh ([`mesh.generate.wedge`](meshes.md)) | extrapolated | 0 |
 | `periodic` | `partner`, one of `mass_flow` (kg/s) and `pressure_gradient` (Pa/m) on one side of the pair, `translation` (m) | across the pair: the partner's cells are the neighbours, translated by the period | periodic, with the driving as a uniform body force along the translation | through the pair |
+
+**Pressure boundaries with gravity** (`pressure_kind`, D153). With
+`[gravity]` the solver works with the reduced pressure
+p′ = p − ρ_ref g·(x − x_ref). The values of the four pressure boundaries
+are p′ by default (`pressure_kind = "reduced"`): 0 is an opening to an
+ambient at rest at ρ_ref, at every height. `pressure_kind = "static"`
+reads the value as the static pressure p and converts it per face,
+p′_b = p_b − ρ_ref g·(x_f − x_ref). A uniform static value over a tall
+opening therefore pushes fluid in at the bottom and out at the top
+(BUO006); give the hydrostatic profile as an expression, or the reduced
+value. Without gravity the key changes nothing ([recipe
+186](../recipes/energy.md#buoyancy)).
 
 **Backflow at pressure outlets** (`backflow`). Where the flow enters
 through an outlet face (a vortex crossing the outlet, a recirculation

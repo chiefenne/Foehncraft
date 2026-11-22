@@ -4546,7 +4546,7 @@ pub fn check_case(case: &FlowCase, path: &Path, mut log: impl FnMut(&str)) -> Re
             values: &case.compiled_boundaries()?,
             t: case.time.map_or(0.0, |t| t.start_time),
             turning: &case.turning(),
-            hydrostatic: crate::buoyancy::hydrostatic(&case),
+            hydrostatic: crate::buoyancy::hydrostatic(case),
         },
         case.check_context(),
     );

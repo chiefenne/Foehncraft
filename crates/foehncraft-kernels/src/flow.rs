@@ -1073,7 +1073,11 @@ pub unsafe fn boundary_pressure<T: Real>(
         if rule == PB_EXTRAPOLATE || closed {
             let r = sub(inp.geo.face_centroid.at(f), inp.geo.cell_centroid.at(c));
             let pb = ld(p, c) + dot(grad_p.at(c), r);
-            if offset.is_empty() { pb } else { pb + ld(offset, fb) }
+            if offset.is_empty() {
+                pb
+            } else {
+                pb + ld(offset, fb)
+            }
         } else if rule == PB_TOTAL
             || rule == PB_TOTAL_NO_BACKFLOW
             || (rule == PB_OUTLET && m < T::ZERO)

@@ -1605,7 +1605,7 @@ pub fn check_case(
                     values: &values,
                     t: t0,
                     turning: &case.turning(),
-                    hydrostatic: crate::buoyancy::hydrostatic(&case),
+                    hydrostatic: crate::buoyancy::hydrostatic(case),
                 },
                 case.check_context(),
             );

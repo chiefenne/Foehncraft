@@ -17,8 +17,8 @@
 > under way: the energy equation of the fluid and conjugate heat transfer
 > with solid regions, steady and transient, laminar and turbulent, with
 > contact resistances, orthotropic solids and thermal acceleration of the
-> solids, are in; buoyancy and
-> variable density come later.
+> solids, are in, and so are gravity and the Boussinesq buoyancy; variable
+> density comes next.
 
 [![CI](https://github.com/chiefenne/Foehncraft/actions/workflows/ci.yml/badge.svg)](https://github.com/chiefenne/Foehncraft/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/chiefenne/Foehncraft)](https://github.com/chiefenne/Foehncraft/releases)
@@ -121,6 +121,16 @@ validated range, one mesh only, …) in its report and its JSON result.
   then the true ρ c_p comes back, at once or ramped over a few periods in a
   periodic flow; the heated wall reaches its steady state five times sooner,
   and the heat the true solid would have stored is booked in the balance.
+- **Gravity and buoyancy.** `[gravity]` and the Boussinesq buoyancy
+  (`[buoyancy] model = "boussinesq"`) in SIMPLEC and the coupled algorithm.
+  The solver works with the reduced pressure p′ = p − ρ_ref g·(x − x_ref)
+  and writes the static pressure beside it. Values of pressure boundaries
+  are p′ by default, or the static pressure with
+  `pressure_kind = "static"`. The buoyancy enters the faces like the
+  pressure gradient (balanced force), so a stratified box at rest on a
+  perturbed hex, tet, poly or mixed mesh stays at rest to 10⁻¹⁵ m/s; the
+  buoyant slot meets its exact profile at second order, and a warm strip
+  in a closed air enclosure drives a laminar plume (gallery 186).
 - **Rotating machinery.** The moving reference frame (steady and transient
   frozen rotor), the sliding mesh by conformal stepping and by imprinting
   the interface in every step, several rotors at their own speeds,
