@@ -835,6 +835,29 @@
    "range": {}
   },
   {
+   "id": "buoyancy.variable-density",
+   "title": "Low-Mach variable density ρ(T, p₀)",
+   "grade": "partial",
+   "why": [
+    "a model without reference data",
+    "gaps written"
+   ],
+   "gaps": [
+    "no reference-data case (a measured flow with a large temperature difference)",
+    "not yet with passive scalars, a restart, periodic meshes, convective outlets, mass-flow inlets, wall mass fluxes or rotating zones (ENE006)",
+    "the turbulence outlet value ⅔ρk uses the reference density"
+   ],
+   "range": {}
+  },
+  {
+   "id": "buoyancy.closed-volume",
+   "title": "Thermodynamic pressure of a closed volume",
+   "grade": "verified",
+   "why": [],
+   "gaps": [],
+   "range": {}
+  },
+  {
    "id": "rotating.mrf",
    "title": "Moving reference frame (steady frozen rotor)",
    "grade": "partial",
@@ -1068,18 +1091,6 @@
    "grade": "verified",
    "why": [],
    "gaps": [],
-   "range": {}
-  },
-  {
-   "id": "planned.variable-density",
-   "title": "Low-Mach variable density ρ(T, p₀)",
-   "grade": "unverified",
-   "why": [
-    "no evidence holds"
-   ],
-   "gaps": [
-    "not built (stage 7c; the Boussinesq buoyancy is in, buoyancy.boussinesq)"
-   ],
    "range": {}
   }
  ]

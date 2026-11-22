@@ -982,6 +982,40 @@ evidence = [
   { kind = "consistency", test = "crates/foehncraft-flow/tests/buoyancy.rs::static_outlet_without_hydrostatics_drives_a_false_flow", what = "a uniform static value over the opening drives a flow and warns BUO006" },
 ]
 
+[[feature]]
+id = "buoyancy.variable-density"
+area = "Buoyancy"
+title = "Low-Mach variable density ρ(T, p₀)"
+switch = "[energy] density = \"variable\", [buoyancy] model = \"variable-density\""
+decisions = ["D151"]
+model = true
+evidence = [
+  { kind = "exact", case = "vd_heated_duct", what = "gas heated by 100 K in a slip-wall duct: equal mass flows to 10⁻¹², the outlet ΔT of ṁ c_p ΔT = Q to 10⁻⁴, the inlet pressure G²(1/ρ_out − 1/ρ_in) to 2·10⁻³", doc = "docs/cases/flow.md#variable-density" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/variable_density.rs::heated_duct_meets_the_one_dimensional_balances", what = "the three balances of the duct and the heat ledger to 10⁻⁸" },
+  { kind = "manufactured", case = "vd_mms_steady", what = "ρ = 1/T, a divergence-free mass flux, the full stress, a closed volume: observed orders 2.22 and 1.92 (velocity), 1.86 and 1.90 (temperature)", doc = "docs/cases/flow.md#variable-density" },
+  { kind = "manufactured", test = "crates/foehncraft-flow/tests/variable_density.rs::manufactured_solution_converges_at_second_order", what = "second order on hexahedra and polygons; SIMPLEC and the coupled algorithm on the same discrete solution" },
+  { kind = "consistency", case = "vd_cavity_large_dt", what = "air in a cavity with walls at 960 K and 240 K: heat flow order 2.13, GCI 0.020 %; p₀ order 2.2, GCI 0.003 %", doc = "docs/gallery/energy.md#variable-density" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/variable_density.rs::variable_density_settings_are_checked", what = "the settings without a low-Mach meaning or not built yet are refused with their codes" },
+]
+gaps = [
+  "no reference-data case (a measured flow with a large temperature difference)",
+  "not yet with passive scalars, a restart, periodic meshes, convective outlets, mass-flow inlets, wall mass fluxes or rotating zones (ENE006)",
+  "the turbulence outlet value ⅔ρk uses the reference density",
+]
+
+[[feature]]
+id = "buoyancy.closed-volume"
+area = "Buoyancy"
+title = "Thermodynamic pressure of a closed volume"
+switch = "[energy] thermodynamic_pressure = \"closed-volume\""
+decisions = ["D151"]
+evidence = [
+  { kind = "exact", case = "vd_closed_box_heating", what = "a closed box at rest heated uniformly: T and p₀(t) linear in t, exact to 10⁻¹⁰ at any Δt; with pressure_work = \"none\" it warms with c_p", doc = "docs/cases/flow.md#variable-density" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/variable_density.rs::closed_box_heated_uniformly_warms_with_c_v", what = "p₀ and T exact, the mass to 10⁻¹³" },
+  { kind = "consistency", case = "vd_closed_box_side_heated", what = "a closed box heated through one wall: the mass to round-off, the mass ledger of every step closes with the storage", doc = "docs/cases/flow.md#variable-density" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/variable_density.rs::closed_box_heated_on_one_side_keeps_its_mass", what = "mass to 10⁻¹³, step mass imbalance below 10⁻⁸, heat ledger below 10⁻⁶" },
+]
+
 # ---------------------------------------------------------------- rotating machinery
 
 [[feature]]
@@ -1326,11 +1360,3 @@ evidence = [
 
 # ---------------------------------------------------------------- planned
 
-[[feature]]
-id = "planned.variable-density"
-area = "Planned"
-title = "Low-Mach variable density ρ(T, p₀)"
-switch = "not built"
-decisions = ["D151"]
-evidence = []
-gaps = ["not built (stage 7c; the Boussinesq buoyancy is in, buoyancy.boussinesq)"]

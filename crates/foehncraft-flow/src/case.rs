@@ -4363,6 +4363,14 @@ pub(crate) fn write_fields(
             values: &static_p,
         });
     }
+    // the variable density (stage 7c): ρ(T, p₀) of the cells
+    let rho_var = fl.phys.rho_var.clone();
+    if let Some(r) = &rho_var {
+        fields.push(CellField {
+            name: "density",
+            values: &r.0,
+        });
+    }
     let err: Vec<f64>;
     if let Some(a) = analytic {
         err = (0..mesh.n_cells)

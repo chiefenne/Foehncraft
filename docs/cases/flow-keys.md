@@ -20,7 +20,7 @@ line (recipe 26).
 | `flow.body_force` | `[0, 0, 0]` | body force per unit volume (N/m³); each component a number or an expression of x, y, z, t |
 | `gravity.vector` | none | the gravitational acceleration g (m/s²); with it the solved pressure is the reduced pressure p′ = p − ρ_ref g·(x − x_ref) and the output has `static_pressure` p as well (D153, [recipe 186](../recipes/energy.md#buoyancy)) |
 | `gravity.reference_point` | `[0, 0, 0]` | x_ref of the reduced pressure (m) |
-| `buoyancy.model` | `"none"` | `"boussinesq"`: the body force [(ρ₀ − ρ_ref) − ρ₀ β (T − T_ref)] g with the balanced force of D154; needs `[gravity]` and `[energy]` |
+| `buoyancy.model` | `"none"` | `"boussinesq"`: the body force [(ρ₀ − ρ_ref) − ρ₀ β (T − T_ref)] g with the balanced force of D154; needs `[gravity]` and `[energy]`. `"variable-density"`: the body force (ρ − ρ_ref) g with ρ(T, p₀) in every cell, and the variable density of `[energy] density = "variable"` with it (stage 7c, D151, [recipe 195](../recipes/energy.md#variable-density)) |
 | `buoyancy.expansion_coefficient` | from the material | β (1/K); default −(1/ρ) dρ/dT of the fluid's density at T_ref (1/T_ref for an ideal gas) |
 | `buoyancy.reference_temperature` | `fluid.temperature` | T_ref (K) |
 | `buoyancy.reference_density` | ρ₀ | ρ_ref (kg/m³) of the reduced pressure |

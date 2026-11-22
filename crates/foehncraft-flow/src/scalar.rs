@@ -305,6 +305,7 @@ const RESERVED: &[&str] = &[
     "speed",
     "pressure",
     "static_pressure",
+    "density",
     "velocity_error",
     "wall_distance",
     "x",

@@ -863,6 +863,7 @@ pub fn close_backflow<T: Real>(kind: u32, m: T) -> (T, T) {
 /// # Safety
 /// As [`crate::fv::assemble_row`].
 #[inline(always)]
+#[allow(clippy::too_many_arguments)]
 pub unsafe fn pressure_row<T: Real>(
     c: usize,
     topo: &Topology,
