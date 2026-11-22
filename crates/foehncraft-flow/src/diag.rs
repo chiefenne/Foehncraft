@@ -484,7 +484,7 @@ mod tests {
                 [
                     "CASE", "SCHED", "BC", "SCAL", "RUN", "GEN", "DIV", "BAL", "EXPR", "MAT",
                     "REG", "MESH", "TURB", "MRF", "SLD", "ROT", "STAT", "ENE", "THM", "CHT",
-                    "TOOL", "LIM", "MCP"
+                    "TOOL", "LIM", "MCP", "ACC"
                 ]
                 .contains(&p),
                 "{}",
