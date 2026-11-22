@@ -769,9 +769,6 @@ target/release/foehn flow examples/cases/flow/cavity_sst_operator_check.toml --c
   layer at the walls; inside the mesh the gradient is already exact.
 - The curvature correction (`turbulence.curvature_correction`) takes S_ij
   from the same fit (recipe 197).
-- The curvature correction (`turbulence.curvature_correction`) still
-  takes the gradient of the face-neighbour gradient; `MESH005` warns where
-  that is inconsistent (the next step of D236).
 
 ```
 target/release/foehn flow examples/cases/flow/cavity_sst_operator_check.toml
