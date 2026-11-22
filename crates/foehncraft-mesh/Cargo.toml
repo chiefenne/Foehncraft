@@ -36,5 +36,9 @@ metis = { workspace = true, optional = true }
 name = "mpi_halo"
 required-features = ["mpi"]
 
+[[example]]
+name = "mpi_matrix"
+required-features = ["mpi"]
+
 [lints]
 workspace = true

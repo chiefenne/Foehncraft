@@ -388,6 +388,13 @@ jobs:
         run: |
           mpirun --oversubscribe -n 4 target/release/examples/mpi_halo
           mpirun --oversubscribe -n 2 target/release/examples/mpi_halo
+      - run: cargo build --release -p foehncraft-mesh --features mpi --example mpi_matrix --locked
+      - name: Geometry and diffusion-matrix rows bitwise equal to one rank (spike, 1 to 4 ranks)
+        run: |
+          for n in 1 2 3 4; do
+            mpirun --oversubscribe -n $n target/release/examples/mpi_matrix
+            SPIKE_KIND=hex mpirun --oversubscribe -n $n target/release/examples/mpi_matrix
+          done
 
   ptx:
     name: Single-source GPU kernels compile to PTX (G1, stages 2, 3 and 5)
