@@ -757,11 +757,12 @@ Gaps:
 - consistency: [`qcr_drives_the_secondary_flow_of_a_duct`](../../crates/foehncraft-flow/tests/curvature.rs): secondary flow of a square duct appears with QCR, not without
 - reference-data: [`square_duct_qcr`](../../examples/cases/flow/square_duct_qcr.toml): square duct, Re_b 3 500: secondary velocity 1.55 % of U_b, the vortex pair into the corner
 - manufactured: [`qcr_stress_manufactured_solution_orders`](../../crates/foehncraft-flow/src/turbulence/mms.rs): the explicit stress force of QCR2000 and QCR2013 against the divergence of the written-out stress: order 2.0 to 2.1 on regular hexahedra and polyhedra ([results](stage6.md#manufactured-solutions-of-k-ε-ζ-f₀-the-curvature-correction-and-the-qcr-pr-184))
+- manufactured: [`qcr_stress_on_perturbed_meshes_converges`](../../crates/foehncraft-flow/src/turbulence/mms.rs): the stress force on 15 % perturbed hexahedra and tetrahedra converges (hexahedra 4.6 %, 1.5 %, 0.65 %; tetrahedra order 1) with the quadratic least-squares gradient and the skewness-corrected face stress (D236) ([results](stage6.md#consistent-qcr-stress-on-irregular-meshes-d236-pr-194))
 
 Gaps:
 
 - the DNS of Pinelli et al. (2010) is not compared within a band (its data are not in the repository)
-- the divergence of the explicit QCR stress is first order on tetrahedra and does not converge on meshes with randomly perturbed vertices (error 5 % of the largest force at 15 % perturbation): Green-Gauss with the linear interpolation of cell values; the coupled momentum equations are not in the manufactured solution
+- the divergence of the explicit QCR stress is first order on tetrahedra, regular or perturbed (the midpoint rule of the face sum on irregular cells), and second order only on regular hexahedra and polyhedra; the coupled momentum equations are not in the manufactured solution
 
 <a id="turbulence-smooth-limits"></a>
 

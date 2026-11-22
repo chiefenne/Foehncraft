@@ -1013,6 +1013,14 @@ fn qcr_errors(model: &str, mesh: &str, perturb: f64, levels: &[u32]) -> Vec<(f64
                 assert!(it < 2500, "level {level}: no convergence");
             }
             let force = fl.explicit_stress_force().unwrap();
+            // FOEHN_MMS_QCR_DUMP=<folder>: the force error of every cell
+            // (x, y, error of f_x and f_y, exact f_x and f_y) for the
+            // gallery figure (tools/plot/qcr_consistency.py)
+            let mut dump = std::env::var_os("FOEHN_MMS_QCR_DUMP").map(|d| {
+                let mut s = String::from("x,y,ex,ey,fx,fy\n");
+                s.reserve(64 * xc.len());
+                (std::path::PathBuf::from(d), s)
+            });
             let (mut num, mut vt, mut big) = (0.0, 0.0, 0.0f64);
             for (c, &x) in xc.iter().enumerate() {
                 // S = 0 on the centre lines: |S| of the isotropic stress of
@@ -1023,9 +1031,24 @@ fn qcr_errors(model: &str, mesh: &str, perturb: f64, levels: &[u32]) -> Vec<(f64
                 }
                 let f = qcr_force(x, c2013);
                 let e = (force[c][0] - f[0]).powi(2) + (force[c][1] - f[1]).powi(2);
+                if let Some((_, s)) = dump.as_mut() {
+                    s.push_str(&format!(
+                        "{},{},{},{},{},{}\n",
+                        x[0],
+                        x[1],
+                        force[c][0] - f[0],
+                        force[c][1] - f[1],
+                        f[0],
+                        f[1]
+                    ));
+                }
                 num += vol[c] * e;
                 vt += vol[c];
                 big = big.max(f[0].abs()).max(f[1].abs());
+            }
+            if let Some((d, s)) = dump {
+                let name = format!("{model}_{mesh}_{perturb}_{level}.csv");
+                std::fs::write(d.join(name), s).unwrap();
             }
             let nc = vol.len() as f64;
             let h = (vol.iter().sum::<f64>() / nc).sqrt();

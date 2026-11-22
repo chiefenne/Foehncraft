@@ -529,7 +529,7 @@
    ],
    "gaps": [
     "the DNS of Pinelli et al. (2010) is not compared within a band (its data are not in the repository)",
-    "the divergence of the explicit QCR stress is first order on tetrahedra and does not converge on meshes with randomly perturbed vertices (error 5 % of the largest force at 15 % perturbation): Green-Gauss with the linear interpolation of cell values; the coupled momentum equations are not in the manufactured solution"
+    "the divergence of the explicit QCR stress is first order on tetrahedra, regular or perturbed (the midpoint rule of the face sum on irregular cells), and second order only on regular hexahedra and polyhedra; the coupled momentum equations are not in the manufactured solution"
    ],
    "range": {}
   },

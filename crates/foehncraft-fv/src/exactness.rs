@@ -301,12 +301,15 @@ pub struct QuadraticGradient {
 /// largest, for a fit to count as full rank.
 pub const QUADRATIC_PIVOT: f64 = 1e-9;
 
+/// The points of a fitted stencil with their gradient weights.
+type Stencil = Vec<(u32, [f64; 3])>;
+
 /// Cholesky solve of the symmetric positive definite `n`×`n` matrix `a`
 /// (row major) for the columns of `b` (`n` × `m`), in place; `None` when a
 /// pivot falls below `QUADRATIC_PIVOT` times the largest diagonal entry.
 fn cholesky_solve(a: &mut [f64], n: usize, b: &mut [f64], m: usize) -> Option<()> {
     let big = (0..n).map(|i| a[i * n + i]).fold(0.0, f64::max);
-    if !(big > 0.0) {
+    if big.is_nan() || big <= 0.0 {
         return None;
     }
     for j in 0..n {
@@ -314,7 +317,7 @@ fn cholesky_solve(a: &mut [f64], n: usize, b: &mut [f64], m: usize) -> Option<()
         for k in 0..j {
             d -= a[j * n + k] * a[j * n + k];
         }
-        if !(d > QUADRATIC_PIVOT * big) {
+        if d.is_nan() || d <= QUADRATIC_PIVOT * big {
             return None;
         }
         let d = d.sqrt();
@@ -438,7 +441,7 @@ pub fn quadratic_gradient(
     let nq = dims * (dims + 1) / 2;
     let m = dims + nq;
     let xc = &geo.cell_centroid;
-    let fits: Vec<Option<Vec<(u32, [f64; 3])>>> = cells
+    let fits: Vec<Option<Stencil>> = cells
         .par_iter()
         .map(|&c| {
             let pts = quadratic_points(mesh, geo, kind, c, 2 * m);
@@ -447,7 +450,7 @@ pub fn quadratic_gradient(
             }
             let ds: Vec<[f64; 3]> = pts.iter().map(|(_, x)| sub(*x, xc[c])).collect();
             let h = ds.iter().map(|d| norm(*d)).fold(0.0, f64::max);
-            if !(h > 0.0) {
+            if h.is_nan() || h <= 0.0 {
                 return None;
             }
             let n = pts.len();
