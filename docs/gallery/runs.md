@@ -13,6 +13,7 @@ Part of the [Example gallery](../gallery.md): adjoint-ready kernels, runs that a
 | 166 | [Iteration budget, diagnosis and study budgets](#budgets) | 7 | the iteration budget before the run, a steady run diagnosed at 2000 iterations (trend, verdict, advice, stop), cell-hour, GPU-hour and output budgets per study beside the D81 estimate (D198) |
 | 171 | [Every function as a tool: the catalogue an agent reads](#tool-registry) | 7 | one registry of typed tools with ids, versions, JSON Schemas and action kinds; `foehn commands`, `foehn call`, `fc.call`; front ends checked by `cargo xtask layering` (D196, D203) |
 | 172 | [A session that can be replayed: the journal of tool calls](#journal) | 7 | every tool call into a journal with its typed input, the call that started a run in `run.jsonl`, `foehn run --script` replays a journal or a run record and reports each call that ends otherwise (D197) |
+| 175 | [An assistant at the controls: the MCP server](#mcp) | 7 | `foehn mcp`: every registry tool to an assistant over MCP, inside required roots, with an action table that allows, asks or refuses each kind of action, mandatory run limits, progress and cancellation, summaries first, histories paged by cursor, the session journaled for replay (L18, D198) |
 
 ---
 
@@ -578,6 +579,75 @@ replayed 1 of 1 calls, 0 skipped, 0 different
 target/release/foehn --journal output/tools/session.jsonl run --script examples/cases/tools/cavity_session.jsonl
 target/release/foehn run --script output/tools/cavity/run.jsonl
 python3 -m tools.plot.journal_chart docs/figures/gallery/journal_replay.svg target/release/foehn
+```
+
+[↑ back to top](#run-control-health-and-adjoint-readiness)
+
+---
+
+<a id="mcp"></a>
+## 175. An assistant at the controls: the MCP server
+
+<img src="../figures/gallery/mcp_session.svg" alt="Left: the transcript of an assistant session through foehn mcp on the finned heat sink: the check of the case, a run refused because the case has no run limits with the fix, the run with the limits, the question to the person with the case, the folder, the estimate and the limits, the answer allow once, the result summary with its limitations, and the residual history read page by page. Right: the residual history the assistant read, 1007 outer iterations" width="1000" height="961">
+
+`foehn mcp` serves every tool of the registry to an assistant over the
+Model Context Protocol, on standard input and output (L18). The MCP
+tools are exactly the ids of `foehn commands`, with their input schemas,
+and each call runs through the same `tools::call` as `foehn call`: there
+is no logic of the server's own between the assistant and the engine.
+What the server adds is the safety of D198:
+
+- it refuses to start without `--read-root` and `--write-root`;
+- before a call that writes or runs, it asks the tool what the call would
+  write (its output folder, for a run the estimate of D81 and the
+  `[run.limits]`) and the project's action table `foehn-mcp.toml` what to
+  do with each kind of action: start a run, exceed the estimate caps,
+  write outside the write roots, overwrite results, publish. Each kind is
+  allowed, asked or refused; a question goes to the person through the
+  host (MCP elicitation), answered once or always;
+- a run must bound itself with `[run.limits] max_wall_time` and
+  `max_output`;
+- results come as summaries with their limitations (D199); the histories
+  are paged by cursor with the new tool `result.page`; fields are named
+  by path, never sent;
+- every call, refused ones and the person's answers included, goes into
+  the journal, which `foehn run --script` replays.
+
+The figure is a session on the finned heat sink of gallery 158. A
+scripted client stands in for the assistant here, so that the session is
+the same at every run of the figure; with a real assistant the calls are
+its own choice ([agents.md](../agents.md)). The check finds 15 000 cells
+and the estimate; the first run is refused (`MCP002`) with the fix as
+`set` overrides; with the limits the server asks, the person allows it
+once, and the run converges in 1007 outer iterations (about 2 min on 4
+threads) with its limitations listed first: the automatic wall treatment
+and the energy equation with a turbulence model are graded partial, the
+first-cell y⁺ leaves the validated range, and there is one mesh only. The
+assistant then lists the series of the run and reads the residual
+history in pages of 400 rows. The run gives the same files as
+`foehn flow` (a test compares the residual history byte for byte).
+
+| Call | Answer of the server |
+|---|---|
+| `case.check` | finished: 15 000 cells, the estimate |
+| `flow.run` | `MCP002`: no `[run.limits]`; fix `run.limits.max_wall_time=…`, `run.limits.max_output=…` |
+| `flow.run` with the limits | question: start-run; answer allow-once; finished, 1007 iterations, 7 limitations |
+| `result.page` | the series: residuals, record, the line of the base top, boundaries, balance |
+| `result.page` × 3 | the residual history, rows 0 to 1007, by cursor |
+
+| | |
+|---|---|
+| Code | `crates/foehncraft-cli/src/mcp.rs` (protocol, questions, progress, cancellation), `crates/foehncraft-tools/src/approval.rs` (the action table), `crates/foehncraft-tools/src/lib.rs` (`effects`), `crates/foehncraft-tools/src/flow.rs` (`result.page`) |
+| Tests | `crates/foehncraft-cli/tests/mcp.rs` (roots, the tool list against `foehn commands`, questions once and always, refusals, a host that cannot ask, cancellation, paging, the replay of the journal, the same residuals as the command line), `crates/foehncraft-tools/src/approval.rs` |
+| Case files | `tools/mcp/foehn-mcp.toml`, `tools/mcp/heat_sink_session.jsonl`, `tools/page_cavity.json` |
+| Guides | [Connect an assistant](../agents.md), [Troubleshooting](../troubleshooting.md), [Install and update](../install.md) |
+| Interfaces | [MCP server](../interfaces.md#mcp-server-l18) |
+
+```
+cargo build --release -p foehncraft-cli
+python3 -m tools.plot.mcp_session docs/figures/gallery/mcp_session.svg target/release/foehn
+target/release/foehn run --script output/tools/mcp-journal.jsonl \
+    --read-root examples/cases --read-root output/tools --write-root output/tools/mcp
 ```
 
 [↑ back to top](#run-control-health-and-adjoint-readiness)

@@ -62,6 +62,14 @@ impl Tool for Process {
     type Input = MeshInput;
     type Output = MeshOutput;
 
+    /// The output directory, when the input names one.
+    fn effects(a: &MeshInput, _: &mut Ctx<'_>) -> Result<crate::Effects> {
+        Ok(crate::Effects {
+            writes: a.out.iter().cloned().collect(),
+            ..Default::default()
+        })
+    }
+
     fn call(a: MeshInput, ctx: &mut Ctx<'_>) -> Result<MeshOutput> {
         use foehncraft_mesh::case::MeshCase;
         ctx.roots.check_read(&a.input, "the mesh input")?;

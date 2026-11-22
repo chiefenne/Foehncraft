@@ -13,6 +13,7 @@ Part of the [Recipes](../recipes.md): restart, stop and steer runs, drive runs f
 | 166 | [Set an iteration budget and a budget per study](#budgets) |
 | 171 | [Call any tool from a script or an agent](#tools) |
 | 172 | [Record a session and replay it](#journal) |
+| 175 | [Connect an assistant through the MCP server](#mcp) |
 
 ---
 
@@ -468,6 +469,72 @@ os.environ["FOEHN_JOURNAL"] = "output/tools/py_session.jsonl"
 fc.call("case.check", case="examples/cases/flow/cavity_re100.toml")
 del os.environ["FOEHN_JOURNAL"]
 fc.call("journal.replay", script="output/tools/py_session.jsonl")["result"]["different"]   # 0
+```
+
+[↑ back to top](#run-control-and-health)
+
+---
+
+<a id="mcp"></a>
+## 175. Connect an assistant through the MCP server
+
+`foehn mcp` serves every tool to an assistant over MCP on standard input
+and output (L18); [agents.md](../agents.md) is the full guide with the
+safety advice. From the repository root, after `cargo build --release`:
+
+```
+mkdir -p output/agent/runs
+target/release/foehn mcp --read-root examples/cases --read-root output/agent \
+    --write-root output/agent/runs --policy output/agent/foehn-mcp.toml
+```
+
+Both roots are required (`MCP001`); the action table must lie outside the
+write roots. Register the same command with the assistant host (absolute
+paths, working folder the repository root). Then let it work, or try the
+protocol by hand: the server reads one JSON-RPC message per line.
+
+```
+printf '%s\n' \
+ '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"me","version":"0"}}}' \
+ '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"case.check","arguments":{"case":"examples/cases/flow/cavity_re100.toml","out":"output/agent/runs/cavity"}}}' \
+ | target/release/foehn --quiet mcp --read-root examples/cases --write-root output/agent/runs \
+     --policy output/agent/foehn-mcp.toml
+```
+
+Runs need `[run.limits] max_wall_time` and `max_output` (`MCP002`, with the
+fix as `set`), and each kind of action follows the table:
+
+```toml
+# output/agent/foehn-mcp.toml
+[actions]
+start-run = "ask"            # the host asks you; "allow" for a host without elicitation
+overwrite-results = "ask"
+write-outside-root = "refuse"
+
+[estimate]
+max_cells = 2000000          # above it, a run is the kind exceed-estimate
+```
+
+A host that cannot ask gets `MCP005` for a call of kind `ask`; set the
+kind to `"allow"` (the table is read at every call). Histories come page
+by page:
+
+```
+target/release/foehn call result.page --input examples/cases/tools/page_cavity.json   # after recipe 171's run
+```
+
+and the session replays from its journal (default
+`foehn-mcp-journal.jsonl` beside the table):
+
+```
+target/release/foehn run --script output/agent/foehn-mcp-journal.jsonl \
+    --read-root examples/cases --read-root output/agent --write-root output/agent/runs
+```
+
+The scripted session of gallery 175 on the heat sink:
+
+```
+python3 -m tools.plot.mcp_session docs/figures/gallery/mcp_session.svg target/release/foehn
 ```
 
 [↑ back to top](#run-control-and-health)

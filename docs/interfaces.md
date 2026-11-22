@@ -26,6 +26,7 @@ code by `foehn schema --markdown`).
 | `foehn commands` | The catalogue of the tool registry (D196) as JSON (`foehn.tool-catalogue`); `--markdown` prints [tools.md](tools.md). |
 | `foehn call ID` | Runs a tool from JSON (`--input FILE`, `-` for standard input, default no fields) and prints the result envelope; see [Tool registry](#tool-registry-d196). |
 | `foehn run --script FILE` | Replays the tool calls of a journal or a run record in order (`--keep-going` past a call that ends differently from its record); exit 1 when one does; see [Journal and replay](#journal-and-replay-d197). |
+| `foehn mcp --read-root DIR --write-root DIR` | Serves every tool to an assistant as an MCP server on standard input and output (L18); refuses to start without both roots; see [MCP server](#mcp-server-l18) and [agents.md](agents.md). |
 | `foehn post derive CASE` | Writes the fields with derived fields (D72) from a restart file of the case (`--restart`, default `latest`), the file the run writes with `[output] derived` at that iteration or step (byte for byte). `--fields a,b` picks the fields (default `output.derived`, or all), `--file` the output (default `derived.vtkhdf`, `derived_<N>.vtkhdf` for `restart_<N>.h5`, next to the restart file). `--set`, `--out`, `--read-root` and `--write-root` as for `flow`. |
 
 ## Exit codes (D64)
@@ -410,6 +411,13 @@ A code keeps its meaning; a retired code stays in the table.
 | `TOOL003` | warning | The journal of tool calls (D197) could not be written: the calls run, but the journal misses them. |
 | `TOOL004` | error | A script to replay (`foehn run --script`) that cannot be read: not a file of JSON lines, or without calls. |
 | `TOOL005` | warning | A replayed call (`foehn run --script`) that ended with another status or exit code than in its record; the replay stops there unless `--keep-going`. |
+| `TOOL006` | error | A series of `result.page` that the run directory does not have, or a cursor that does not belong to it; the call without `series` lists the series. |
+| `MCP001` | error | `foehn mcp` started without `--read-root` and `--write-root`, or with an action table (`--policy`) inside a write root, where a tool could rewrite it. |
+| `MCP002` | error | A run started through MCP without `[run.limits] max_wall_time` and `max_output`; the fix sets them with `set`. |
+| `MCP003` | error | A call that the action table of the project (`foehn-mcp.toml`) refuses: start a run, exceed the estimate caps, write outside the write roots, overwrite results, publish. |
+| `MCP004` | error | A call that the person declined when the server asked for approval. |
+| `MCP005` | error | A call that needs the person's approval (`ask`), from a host that cannot ask (no MCP elicitation); the person allows it in `foehn-mcp.toml` or uses a host that asks. |
+| `MCP006` | error | The action table `foehn-mcp.toml` cannot be read or written: not TOML, an unknown action kind or setting. |
 | `GEN001` | error | An error without a more specific code. |
 
 ## Engine API (D86)
@@ -499,6 +507,55 @@ call that differs (`TOOL005`) unless `--keep-going`, and exits 1 when one
 did. The output is `foehn.replay`: every call with its recorded and
 replayed status, and the counts replayed, skipped and different. A script
 that is not JSON lines or has no calls is `TOOL004`.
+
+## MCP server (L18)
+
+`foehn mcp` speaks the Model Context Protocol on standard input and
+output: JSON-RPC 2.0, one message per line, nothing else on standard
+output; log lines go to standard error (none with `--quiet`). It speaks
+the protocol versions 2025-11-25, 2025-06-18, 2025-03-26 and 2024-11-05
+and answers with the client's version when it has it, else 2025-06-18.
+The guide for people is [agents.md](agents.md).
+
+| Message | Answer |
+|---|---|
+| `initialize` | server `foehn` with its version, the capability `tools` and short instructions; the client's capability `elicitation` is noted |
+| `tools/list` | every tool of the registry in catalogue order: `name` = the tool id (`--names underscore`: the first dot as `_`), `title`, `description` (summary and action kind), `inputSchema` (the input schema of [tools.md](tools.md)), `annotations` (`readOnlyHint` for tools of kind read, `destructiveHint` otherwise, `openWorldHint` false) |
+| `tools/call` | the envelope `foehn.tool-result` of the call as `structuredContent` (protocol 2025-06-18 or newer) and as text after a first line with the status, exit code, limitations and the first diagnostic with its fix; `isError` when the status is `error` |
+| `notifications/cancelled` | the running call is asked to stop (a run writes a restart file and the final output, exit code 3); a queued call is dropped |
+| `ping`, `resources/list`, `prompts/list` | empty answers |
+| server → client `notifications/progress` | for a call with a `progressToken`: the outer iteration or time step of a run, at most one a second |
+| server → client `elicitation/create` | the approval question of a call (below); the answer `allow-once`, `allow-always`, `refuse-once` or `refuse-always` |
+
+Calls run one after another on one worker. Before a call of a tool that
+is not of kind read, the server asks the tool what it would write
+(`effects`: the output folder or files, for a run its estimate, D81, and
+its `[run.limits]`) and the action table (`--policy`, default
+`foehn-mcp.toml`, outside every write root) what to do. The kinds are
+`start-run`, `exceed-estimate` (the estimate over a cap of `[estimate]`:
+`max_cells`, `max_host_memory`, `max_output`, `max_wall_time`),
+`write-outside-root`, `overwrite-results` and `publish`, each `default`,
+`allow`, `ask` or `refuse` (defaults: ask, ask, refuse, ask, refuse). An
+"always" answer is written into the table; the table is read at every
+call. A run without `[run.limits] max_wall_time` and `max_output` is
+refused (`MCP002`) with the fix; a refused call (`MCP003`), a declined
+question (`MCP004`) and a question the host cannot ask (`MCP005`) run
+nothing. Every call is journaled with `"via": "mcp"` (D197); an approved
+call carries `approval` (`kinds`, `by`: `person` or `action table`,
+`answer`); `foehn run --script` skips the refused calls.
+
+### `result.page`
+
+The histories of a run, paged by cursor (D198 (e)): `{"dir": …}` lists
+the series of the run folder (`available`: the CSV files by name without
+`.csv`, and `record` for the rows of `run.jsonl`, each with its row count
+and columns); `{"dir": …, "series": "residuals", "limit": 200}` returns
+`foehn.result-page` with `columns`, `rows` (numbers where a cell is one),
+`first`, `total` and `next_cursor` (`"residuals:200"`, none on the last
+page), which the next call passes as `cursor`. For `record`, `types`
+filters the rows (`iteration`, `table_row`, …). An unknown series or a
+cursor of another series is `TOOL006`. Fields are never paged: their
+files are named in the result summary.
 
 ## Python package (D61)
 

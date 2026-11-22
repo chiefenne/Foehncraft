@@ -17,9 +17,12 @@
 //! {"type":"call","seq":1,"date":"…","via":"cli","tool":"case.check","tool_version":1,"input":{…},"status":"finished","exit_code":0,"seconds":0.01}
 //! ```
 //!
-//! A call refused before it ran (an unknown id, `TOOL001`, or an input that
-//! does not match the schema, `TOOL002`) is journaled with the input as it
-//! came and its code under `diagnostic`; replay skips such calls.
+//! A call refused before it ran (an unknown id, `TOOL001`, an input that
+//! does not match the schema, `TOOL002`, or a call that the MCP server
+//! refused or the person declined, `MCP002` to `MCP005`) is journaled with
+//! the input as it came and its code under `diagnostic`; replay skips such
+//! calls. A call that the person approved carries the answer under
+//! `approval`.
 
 use crate::{Action, Category, Ctx, Tool};
 use anyhow::Result;
@@ -147,6 +150,9 @@ pub(crate) fn record(
     if let Some(d) = diagnostic {
         row["diagnostic"] = json!({"code": d.code, "message": d.message});
     }
+    if let Some(a) = &ctx.approval {
+        row["approval"] = a.clone();
+    }
     if let Err(e) = j.append(&ctx.build, row) {
         let msg = format!(
             "{}: the journal {} could not be written: {e}",
@@ -156,6 +162,14 @@ pub(crate) fn record(
         ctx.line(&foehncraft_flow::console::tagged("warning", &msg));
     }
     ctx.journal = Some(j);
+}
+
+/// Journals a call of the tool `tool` that a host refused before it ran
+/// (the action table of `foehn mcp`, a declined approval: `MCP002` to
+/// `MCP005`), with its input as it came; a replay skips it.
+pub fn record_refused(ctx: &mut Ctx<'_>, tool: &str, input: Value, d: &Diagnostic) {
+    let version = crate::spec(tool).map_or(0, |s| s.version);
+    record(ctx, &call_row(tool, version, input), 1, Some(d), 0.0);
 }
 
 /// Input of `journal.replay`.
@@ -289,10 +303,9 @@ impl Tool for Replay {
                 same: false,
                 diagnostic: None,
             };
-            let refused = matches!(
-                c["diagnostic"]["code"].as_str(),
-                Some(diag::TOOL_UNKNOWN | diag::TOOL_INPUT)
-            );
+            let refused = c["diagnostic"]["code"]
+                .as_str()
+                .is_some_and(diag::refused_before_run);
             if refused {
                 r.status = "skipped".into();
                 r.same = true;

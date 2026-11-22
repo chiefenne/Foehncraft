@@ -27,6 +27,11 @@ detail are in [CONTRIBUTING.md](CONTRIBUTING.md).
   end calls a tool through `tools::run`, `tools::run_as` or `tools::call`,
   never `Tool::call` directly, so that the call reaches the journal
   (D197).
+- **MUST** give a tool that writes files or starts a run its `effects`
+  (the folders and files it writes, for a run the estimate and
+  `[run.limits]`), so that the action table of `foehn mcp` (D198 (b)) can
+  judge the call before it runs; MCP tools stay exactly the registry ids,
+  with no logic of their own in the server.
 - **SHOULD** flag known flaws of industry behaviour when a feature mirrors
   it, so the maintainer can decide; do not copy flaws.
 

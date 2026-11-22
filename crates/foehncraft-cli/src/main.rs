@@ -21,6 +21,8 @@
 //! codes (D64): 0 finished with every check passed, 1 error, 2 finished
 //! with failed checks, 3 stopped on request (signal, `.stop`, a limit).
 
+mod mcp;
+
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use foehncraft_flow::diag;
@@ -148,6 +150,31 @@ enum Command {
     /// (`run.jsonl`) in order, without a window (D197); exit 1 when a call
     /// ends differently from its record.
     Run(RunArgs),
+    /// Serve the tools to an assistant as an MCP server on standard input
+    /// and output (L18). Needs `--read-root` and `--write-root`; the action
+    /// table `foehn-mcp.toml` says which calls run, which ask the person and
+    /// which are refused (D198); every call is journaled (default
+    /// `foehn-mcp-journal.jsonl` beside the table). docs/agents.md says how
+    /// to connect an assistant.
+    Mcp(McpArgs),
+}
+
+#[derive(clap::Args)]
+struct McpArgs {
+    /// Allow reading only below this directory (repeatable; required, D198 (a)).
+    #[arg(long, value_name = "DIR")]
+    read_root: Vec<PathBuf>,
+    /// Allow writing only below this directory (repeatable; required).
+    #[arg(long, value_name = "DIR")]
+    write_root: Vec<PathBuf>,
+    /// The action table of the project (default: foehn-mcp.toml in the
+    /// working directory; must lie outside the write roots).
+    #[arg(long, value_name = "FILE")]
+    policy: Option<PathBuf>,
+    /// How tool ids appear as MCP tool names: `dotted` (the registry ids)
+    /// or `underscore` (for hosts that refuse dots in names).
+    #[arg(long, value_enum, default_value = "dotted")]
+    names: mcp::Names,
 }
 
 #[derive(clap::Args)]
@@ -512,6 +539,7 @@ fn main() {
         Command::Commands(_) => "commands",
         Command::Call(_) => "call",
         Command::Run(_) => "run",
+        Command::Mcp(_) => "mcp",
     };
     let res = match cli.command {
         Command::Info => info(out),
@@ -534,6 +562,7 @@ fn main() {
         Command::Commands(a) => commands(a),
         Command::Call(a) => call(a, out),
         Command::Run(a) => replay(a, out),
+        Command::Mcp(a) => mcp_serve(a, out),
         Command::Post {
             post: Post::Derive(a),
         } => derive(a, out),
@@ -584,6 +613,28 @@ fn main() {
         }
     };
     std::process::exit(code);
+}
+
+/// `foehn mcp`.
+fn mcp_serve(a: McpArgs, out: Out) -> Result<Done> {
+    let journal = JOURNAL
+        .get()
+        .cloned()
+        .flatten()
+        .or_else(|| tools::journal::Journal::from_env("mcp").map(|j| j.path().to_path_buf()));
+    let code = mcp::serve(mcp::Options {
+        read_roots: a.read_root,
+        write_roots: a.write_root,
+        policy: a.policy,
+        journal,
+        names: a.names,
+        quiet: out.quiet,
+        build: build_info(),
+    })?;
+    Ok(Done {
+        code,
+        json: serde_json::Value::Null,
+    })
 }
 
 /// `foehn post derive`.

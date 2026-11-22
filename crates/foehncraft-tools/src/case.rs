@@ -369,6 +369,14 @@ impl Tool for Upgrade {
     type Input = UpgradeInput;
     type Output = UpgradeOutput;
 
+    /// The files, when `write` rewrites them.
+    fn effects(a: &UpgradeInput, _: &mut Ctx<'_>) -> Result<crate::Effects> {
+        Ok(crate::Effects {
+            writes: if a.write { a.files.clone() } else { Vec::new() },
+            ..Default::default()
+        })
+    }
+
     fn call(a: UpgradeInput, ctx: &mut Ctx<'_>) -> Result<UpgradeOutput> {
         use anyhow::Context as _;
         use foehncraft_mesh::case_format as cf;

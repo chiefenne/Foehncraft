@@ -155,6 +155,15 @@ validated range, one mesh only, …) in its report and its JSON result.
   input, a run keeps the call that started it in `run.jsonl`, and
   `foehn run --script` replays a journal or a run record without a window
   (D197).
+- **An MCP server for assistants.** `foehn mcp` serves every tool to an
+  assistant over the Model Context Protocol (L18): only inside the read and
+  write roots it is started with, with an action table per project that
+  allows, asks the person or refuses each kind of action (start a run,
+  exceed the estimate, write outside the roots, overwrite results), run
+  limits required, progress and cancellation, summaries with their
+  limitations first and histories paged by `result.page`, and every call
+  journaled for `foehn run --script`. [Connect an assistant](docs/agents.md),
+  [gallery 175](docs/gallery/runs.md#mcp).
 - **GPU and Python.** The flow loop on NVIDIA GPUs with results bitwise
   equal to the CPU; the Python package `foehncraft` that builds, runs and
   studies cases; the grid convergence index of every mesh sweep.
@@ -216,6 +225,7 @@ target/release/foehn flow examples/cases/flow/taylor_couette_mrf.toml
 | Kind | What it is for | Where |
 |---|---|---|
 | Tutorial | a first mesh, end to end, in about ten minutes | [docs/tutorial.md](docs/tutorial.md) |
+| Guides | install and update, connect an assistant to `foehn mcp` with safety advice, troubleshooting | [docs/install.md](docs/install.md), [docs/agents.md](docs/agents.md), [docs/troubleshooting.md](docs/troubleshooting.md) |
 | How-to | steps for one task: build, run, check, partition, rerun G1, order of accuracy, pressure solver and hypre, GPU runs, flow cases and boundary conditions, transient runs, turbulence models and wall treatments, scalars and heat transfer, the coupled algorithm, rotating machinery, derived fields, restart and control files, scripts and agents, balances and divergence reports | [docs/recipes.md](docs/recipes.md) (index of topic pages) |
 | Reference | every case file, its keys and defaults; the machine interfaces (JSON formats, exit codes, signals, diagnostic codes, balance and divergence files) | [docs/cases.md](docs/cases.md) (index of topic pages), [docs/keys.md](docs/keys.md), [docs/interfaces.md](docs/interfaces.md) |
 | Examples | what each feature computes, with pictures and the commands | [docs/gallery.md](docs/gallery.md) (index of topic pages) |
@@ -236,8 +246,8 @@ The [changelog](CHANGELOG.md) lists every release.
 | `foehncraft-flow` | incompressible flow: SIMPLEC and SIMPLE (steady), PISO with BDF2 and Crank–Nicolson (transient), the coupled algorithm, the Rhie–Chow interpolation, boundary conditions and their check, turbulence models and wall treatments, passive scalars and thermal wall functions, the moving reference frame and sliding meshes, torque and machine performance, restart and control files, probes and force coefficients, the flow device written once over a CPU or GPU executor, the `foehn flow` case, exact solutions, reference and benchmark data |
 | `foehncraft-bench` | gate G1: kernel benchmark, CPU backends |
 | `foehncraft-cuda` | all NVIDIA GPU code (D60): the flow executor, the scalar and multigrid backend, the G1 backends with the CUDA C reference |
-| `foehncraft-tools` | the tool registry (D196): every engine function as a typed tool with a stable id, its JSON schemas, the catalogue and `call` by id; the front ends call it |
-| `foehncraft-cli` | the `foehn` command |
+| `foehncraft-tools` | the tool registry (D196): every engine function as a typed tool with a stable id, its JSON schemas, the catalogue and `call` by id, what a call would write and the action table of agent calls (D198); the front ends call it |
+| `foehncraft-cli` | the `foehn` command, with the MCP server `foehn mcp` |
 | `foehncraft-py` | the Python package `foehncraft` (in `python/`) |
 | `gpu/ptx-kernels` | the kernels compiled to NVIDIA PTX (nightly toolchain) |
 
