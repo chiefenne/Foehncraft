@@ -335,7 +335,14 @@ impl<E: Exec> KernelFlow<E> {
     /// The ε² array of a limiter.
     fn eps2_raw(&mut self, eps2: Eps2) -> Result<Raw<f64>> {
         Ok(match eps2 {
-            Eps2::PerCell => self.r(self.eps2),
+            Eps2::PerCell => {
+                let r = self.r(self.eps2);
+                ensure!(
+                    r.len as usize >= self.nc,
+                    "flow device: the limiter has no per-cell epsilon (it was not set up)"
+                );
+                r
+            }
             Eps2::Single(v) => {
                 self.x.upload(self.eps2_one, &[v])?;
                 self.r(self.eps2_one)
