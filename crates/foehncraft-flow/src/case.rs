@@ -1127,6 +1127,13 @@ impl FlowCase {
         crate::expr::resolve_paths(&mut c.tables, dir);
         c.materials.resolve_paths(dir);
         c.solver.reduction_defaults = crate::turbulence::reduction_defaults(&c);
+        // `[energy.cycle] enabled = false` runs the case fully coupled (the
+        // reference of the loop, `--set energy.cycle.enabled=false`)
+        if let Some(e) = &mut c.energy
+            && e.cycle.as_ref().is_some_and(|y| !y.enabled)
+        {
+            e.cycle = None;
+        }
         c.validate()?;
         Ok(c)
     }

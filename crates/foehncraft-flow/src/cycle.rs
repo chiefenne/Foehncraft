@@ -840,12 +840,14 @@ fn solve_small(mut a: Vec<Vec<f64>>, mut b: Vec<f64>) -> Vec<f64> {
         if d == 0.0 {
             continue;
         }
-        for i in k + 1..n {
-            let f = a[i][k] / d;
-            for j in k..n {
-                a[i][j] -= f * a[k][j];
+        let (top, rest) = a.split_at_mut(k + 1);
+        let pivot = &top[k];
+        for (i, row) in rest.iter_mut().enumerate() {
+            let f = row[k] / d;
+            for (x, p) in row[k..].iter_mut().zip(&pivot[k..]) {
+                *x -= f * p;
             }
-            b[i] -= f * b[k];
+            b[k + 1 + i] -= f * b[k];
         }
     }
     let mut x = vec![0.0; n];

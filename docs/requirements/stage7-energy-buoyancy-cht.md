@@ -864,6 +864,7 @@ interfaces are found automatically from the cell zones; named interfaces
 
 ## 9d. Cycle-averaged coupling of periodic flows (D204)
 
+**Core implemented (#190)**: the loop with the mean-flow solid phase (§9d.7).
 Added 2026-11-21 at the maintainer's request as a **requirement for later**:
 it is built after transient conjugate heat transfer (PR 7d6) and is not part
 of the 7d5 and 7d6 pull requests. Those two are designed so that it fits
@@ -969,11 +970,16 @@ and the loop stops by itself; start-up cycles are excluded and the cycle
 periodicity is checked; the surface swing comes as a result instead of
 being guessed.
 
-### 9d.4 Keys (planned)
+### 9d.4 Keys
+
+As built (#190) the table is `[energy.cycle]` (beside `[energy.acceleration]`,
+which it excludes); `skin` and `resolved_cycles` come with PR C, a
+transient `solid` phase with the frozen-flow march (D118, PR D).
 
 ```toml
-[cht.cycle]
-period = 0.04              # s; or speed = 3000.0 (rpm) with strokes = 4 (720° per cycle)
+[energy.cycle]
+period = 0.04              # s, a whole number (>= 2) of time steps
+# enabled = true           # false: the same case fully coupled (its reference)
 warmup_cycles = 1          # cycles before the averaging, after every update
 average_cycles = 1
 max_cycles = 6             # per fluid phase, when the flow is not yet periodic
@@ -981,20 +987,70 @@ cycle_tolerance = 0.005    # relative change of the mean interface heat flow bet
 max_updates = 5
 tolerance = 0.5            # K, largest change of T_w per update
 heat_tolerance = 0.005     # relative change of the interface heat flow per update
-relaxation = 1.0           # of T_w
-solid = "steady"           # "steady" | "transient" (with solid_time_step)
-skin = "none"              # "none" | "effusivity"
-resolved_cycles = 0        # fully coupled cycles at the end
+relaxation = 1.0           # of the first update
+update = "quasi-newton"    # later updates: "quasi-newton" | "aitken" | "relaxation"
+solid_model = "mean-flow"  # "mean-flow" | "robin" (the first-cell Robin pair)
+solid = "steady"           # "transient" with D118 (PR D)
+# planned (PR C): skin = "effusivity", resolved_cycles = 1
 ```
 
-Codes: CYC001 error (no period or a steady case), CYC002 warning (the fluid
-phase is not periodic after `max_cycles`), CYC003 warning (skin depth not
-small against the wall thickness at some faces, with their number), CYC004
-warning (stopped at `max_updates` before the tolerances).
+Codes: CYC001 error (a setting that cannot be used: a steady case, no
+solid, with `[energy.acceleration]`, an adaptive step, a period that is
+not a whole number of steps, a value out of range), CYC002 warning (the
+fluid phase is not periodic after `max_cycles`), CYC003 warning (skin depth
+not small against the wall thickness; PR C), CYC004 warning (stopped at
+`max_updates` before the tolerances), CYC005 note (a step of the loop);
+LIM008 in the limitations of every run with the loop.
 
 ### 9d.5 Checks (planned)
 
 V7.38–V7.40 in §14.3c.
+
+### 9d.7 As built: the mean-flow solid phase (#190)
+
+The first build used the Robin pair of item 3 with h̄ the conductance of
+the first fluid cell. It converges, but slowly: in the gallery channel,
+with the quasi-Newton update, the wall change per update grows from 1.6 K
+to 6.7 K over the first six updates and is still 0.14 K after twelve; its
+cycle mean is within 0.1 K of the periodic state at 1450 s simulated,
+later than the fully coupled run itself (1350 s). The first-cell conductance (205 W/K for the whole wall there) says
+how the heat flux answers a change of T_w with the fluid held; the fluid
+does not hold: the near-wall fluid follows the wall and the bulk warms
+downstream, so the true response of the cycle-mean heat flow is that of
+the flow (about ṁ c_p = 8 W/K and h A = 30 W/K there). A solid phase that
+sees 25 times the true conductance moves the wall too little per update.
+This is the known weak point of the mapped Robin loop of the industry
+practice, and it is why it needs relaxation and many repetitions.
+
+The default solid phase (`solid_model = "mean-flow"`) therefore solves the
+whole conjugate energy equation, fluid and solid, steady, with the fluid
+convected by the cycle-mean mass flux of the averaging cycles (∫ṁ dt per
+face over the cycles): solve A holds the solids at their current T_w and
+gives the mean-flow heat flow Q_m per interface face; solve B frees
+everything and adds the defect Q̄ − Q_m of each face (the cycle-mean heat
+flow of the transient phase minus that of the mean flow) as a source to
+the solid cell of the face. B's wall then answers its own temperature with
+the response of the mean flow, and at the converged T_w the defect makes
+its heat flows those of the periodic flow. The fluid temperatures of A and
+B are thrown away; the fluid phase continues from its own last state.
+
+Results on the gallery case (`cht_pulsating_channel_cycle.toml`, 80 × 20
+cells, 2.5 s steps, period 50 s): converged after 4 updates and 10 cycles
+(500 s simulated, 5.5 s on 4 threads); interface heat flow 160.0002 W of
+160 W; probe temperatures within 0.14 K (0.4 % of the 33.7 K rise) of the
+fully coupled run's cycle means at 4000 s, which is within 0.1 K of its
+periodic state from 1350 s (about 12 s of its 36 s). The small rest is
+the correlation of h(t) with the swing of T_w, which the held wall does
+not have (the skin of PR C). The ledger: the heat balance of every fluid
+step with the solids held (heat into the held cells booked as `held`) and
+of every solid phase (the Robin heat or the defect booked as `robin`)
+closes to 10⁻¹³ relative.
+
+Updates after the first: IQN-ILS quasi-Newton (Degroote, Bathe &
+Vierendeels 2009) on the wall temperatures by default, Aitken (Irons &
+Tuck 1969; Küttler & Wall 2008) or fixed relaxation on request. Checks:
+V7.39 and V7.40 pass (`tests/cht_cycle.rs`); V7.38 is not built yet (a gap
+in features.toml).
 
 ### 9d.6 What 7d5 and 7d6 keep open for it
 
@@ -1538,7 +1594,7 @@ CHT lane (C) run in parallel.
 | C | 7t2 | Shell conduction and baffles (D189), surface mesh W1 and wall-face halo W2, film slots (D190) | V7.28–V7.32 |
 | C | 7d5 | Turbulent CHT: thermal wall function (D135) on the fluid side of every interface in series with the solid half cell (§9.4), turbulent conductivity c_p μ_t/Pr_t in the energy view (done, #158) | V7.36 |
 | C | 7d6 | Transient CHT: time terms of the fluid and the solids in the one energy matrix, heat storage in the balance, output and probes on the full mesh (done, #159) | V7.6, V7.37 |
-| C | later | Cycle-averaged coupling of periodic flows (D204, §9d), after 7d6; not sized yet | V7.38–V7.40 |
+| C | later | Cycle-averaged coupling of periodic flows (D204, §9d), after 7d6; core implemented (#190), skin and resolved cycles next | V7.38–V7.40 |
 | D | 7e1 | `buoyancy_production` hook in k, ε, ω, ζ/φ (not delivered by stage 6), G_b with SGDH, C_ε3 | V7.25, V7.18 (SGDH, reported) |
 | D | 7e2 | GGDH, G_b with GGDH | V7.18, V7.19, V7.21 |
 | D | 7e3 | Heated backward-facing step | V7.20 |

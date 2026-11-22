@@ -1918,7 +1918,7 @@ impl Scalars {
     /// The fluid–solid interface faces of the energy equation with their
     /// state of the last solve (D204): (slot, face, whether the solid cell
     /// is the owner, [area, G, G_fluid, heat into the solid, T_s*, T_w])
-    /// as [`crate::conduction::Conduction::face_states`].
+    /// as `Conduction::face_states`.
     pub fn energy_fluid_solid_faces(&self) -> Vec<(usize, u32, bool, [f64; 6])> {
         let Some(e) = self.fields.iter().find_map(|f| f.energy.as_deref()) else {
             return Vec::new();

@@ -122,6 +122,10 @@ pub struct EnergySection {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CycleCoupling {
+    /// `false` runs the case fully coupled, as if the section were not
+    /// there: the reference of the loop (default `true`).
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
     /// The period of the flow (s); a whole number of time steps.
     pub period: f64,
     /// Cycles run before the averaging, after every update (default 1).
@@ -150,8 +154,8 @@ pub struct CycleCoupling {
     /// (default 0.005).
     #[serde(default = "default_cycle_tolerance")]
     pub heat_tolerance: f64,
-    /// Under-relaxation of the solid temperatures per update, in (0, 1]
-    /// (default 1).
+    /// Under-relaxation of the solid temperatures in the first update, and
+    /// in every update with `update = "relaxation"`; in (0, 1] (default 1).
     #[serde(default = "default_relaxation_one")]
     pub relaxation: f64,
     /// The solid phase: `"steady"` (the only one in this version).
@@ -172,6 +176,9 @@ pub struct CycleCoupling {
     pub solid_model: String,
 }
 
+fn default_enabled() -> bool {
+    true
+}
 fn default_one() -> u32 {
     1
 }
