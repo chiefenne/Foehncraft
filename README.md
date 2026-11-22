@@ -166,7 +166,10 @@ validated range, one mesh only, …) in its report and its JSON result.
   steered through its live control port (L19): `run.status` with the live
   residuals, `run.set` for run-time settings (never limits), `run.stop`.
   [Connect an assistant](docs/agents.md), [gallery 175](docs/gallery/runs.md#mcp),
-  [gallery 177](docs/gallery/runs.md#control-port).
+  [gallery 177](docs/gallery/runs.md#control-port). A recorded study of an
+  assistant (four fin pitches of the heat sink under run limits and a study
+  budget, with the refused calls) replays without a window:
+  [gallery 181](docs/gallery/runs.md#heat-sink-study).
 - **GPU and Python.** The flow loop on NVIDIA GPUs with results bitwise
   equal to the CPU; the Python package `foehncraft` that builds, runs and
   studies cases; the grid convergence index of every mesh sweep.
