@@ -62,13 +62,13 @@ pub fn parts(mesh: &Mesh) -> Parts {
     let mut id = vec![u32::MAX; nc];
     let mut part = vec![0u32; nc];
     let mut n = 0u32;
-    for c in 0..nc {
+    for (c, pc) in part.iter_mut().enumerate() {
         let r = root(&mut up, c as u32) as usize;
         if id[r] == u32::MAX {
             id[r] = n;
             n += 1;
         }
-        part[c] = id[r];
+        *pc = id[r];
     }
     Parts {
         part,
@@ -196,28 +196,31 @@ pub fn check(case: &FlowCase, mesh: &Mesh) -> Result<Vec<PartInfo>> {
                 .map_or_else(|| "fluid".to_string(), |(n, _)| n.clone())
         })
         .collect();
-    if labels.len() > 1 {
-        for f in 0..mesh.n_interior_faces() {
-            let (o, n) = (mesh.owner[f] as usize, mesh.neighbour[f] as usize);
-            let (a, b) = (fluid_of(o), fluid_of(n));
-            if a != b {
-                let ro = &region_of_zone[mesh.cell_zone[o] as usize];
-                let rn = &region_of_zone[mesh.cell_zone[n] as usize];
-                return Err(diag::err(
-                    Diagnostic::new(
-                        diag::REG_FLUIDS_TOUCH,
-                        format!(
-                            "region `{ro}` ({}) and region `{rn}` ({}) share faces (one at {:?}): \
-                             two different fluids may meet only through a solid region or a thin \
-                             wall; a direct contact is a two-phase interface (multiphase, L3)",
-                            labels[a as usize],
-                            labels[b as usize],
-                            face_centroid(mesh, f)
-                        ),
-                    )
-                    .key(format!("regions.{}", if ro == "fluid" { rn } else { ro })),
-                ));
-            }
+    // one fluid: nothing to check (the parts of a single fluid, such as a
+    // rotor behind a sliding interface, are joined by their interfaces)
+    if labels.len() <= 1 {
+        return Ok(Vec::new());
+    }
+    for f in 0..mesh.n_interior_faces() {
+        let (o, n) = (mesh.owner[f] as usize, mesh.neighbour[f] as usize);
+        let (a, b) = (fluid_of(o), fluid_of(n));
+        if a != b {
+            let ro = &region_of_zone[mesh.cell_zone[o] as usize];
+            let rn = &region_of_zone[mesh.cell_zone[n] as usize];
+            return Err(diag::err(
+                Diagnostic::new(
+                    diag::REG_FLUIDS_TOUCH,
+                    format!(
+                        "region `{ro}` ({}) and region `{rn}` ({}) share faces (one at {:?}): \
+                         two different fluids may meet only through a solid region or a thin \
+                         wall; a direct contact is a two-phase interface (multiphase, L3)",
+                        labels[a as usize],
+                        labels[b as usize],
+                        face_centroid(mesh, f)
+                    ),
+                )
+                .key(format!("regions.{}", if ro == "fluid" { rn } else { ro })),
+            ));
         }
     }
     let p = parts(mesh);

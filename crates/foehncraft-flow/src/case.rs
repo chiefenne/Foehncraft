@@ -4423,11 +4423,31 @@ pub(crate) fn write_fields(
         });
     }
     // the variable density (stage 7c): ρ(T, p₀) of the cells
-    let rho_var = fl.phys.rho_var.clone();
-    if let Some(r) = &rho_var {
+    // and the density of each fluid (D194), with that of the solid regions
+    let rho_out: Option<Vec<f64>> = fl.phys.rho_var.as_ref().map(|r| {
+        let mut v = r.0.clone();
+        if fl.phys.zones && v.len() == mesh.n_cells {
+            for (name, reg) in &case.regions {
+                if reg.kind != crate::materials::RegionKind::Solid {
+                    continue;
+                }
+                let Ok(m) = crate::energy::solid(case, &Env::default(), name) else {
+                    continue;
+                };
+                for (c, rho) in v.iter_mut().enumerate() {
+                    let z = &mesh.zones[mesh.cell_zone[c] as usize];
+                    if reg.zones.iter().any(|n| n == z) {
+                        *rho = m.rho;
+                    }
+                }
+            }
+        }
+        v
+    });
+    if let Some(r) = &rho_out {
         fields.push(CellField {
             name: "density",
-            values: &r.0,
+            values: r,
         });
     }
     let err: Vec<f64>;
