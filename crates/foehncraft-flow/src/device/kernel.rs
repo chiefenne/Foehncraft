@@ -1541,6 +1541,7 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
         };
         let mut ins = vec![a.phi, a.bc_a, a.bc_b];
         ins.extend(a.grad.all());
+        ins.extend(a.eps_cell);
         check(&[a.out], &ins)?;
         let [vp, vc, bp, bf, cp, cv] = v.lists;
         let args = e::MlpArgs {
@@ -1560,6 +1561,7 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             vmax: self.r(v.vmax),
             func: a.func as u64,
             eps: a.eps,
+            eps_cell: a.eps_cell.map_or(Raw::EMPTY, |b| self.r(b)),
             relax: a.relax,
             out: self.r(a.out),
         };

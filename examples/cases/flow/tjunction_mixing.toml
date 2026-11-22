@@ -52,6 +52,9 @@ type = "wall"
 tolerance = 1e-7
 max_iterations = 3000
 
+[solver.scalar]
+limiter = "mlp"   # vertex bounds (D237): theta stays within [0, 1] to 0.2 % and converges monotonically with the mesh
+
 [output]
 vtkhdf = false
 wall_csv = false

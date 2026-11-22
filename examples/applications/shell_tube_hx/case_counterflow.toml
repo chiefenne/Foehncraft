@@ -119,6 +119,7 @@ log_every = 100
 relaxation = 1.0
 tolerance = 1e-10                     # the steel dominates the scaled residual (ENE007)
 max_iter = 300
+limiter = "mlp"                       # vertex bounds (D237): the face limiter put the air 12.6 K above its inlet value
 
 [output]
 vtkhdf = true

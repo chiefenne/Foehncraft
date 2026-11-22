@@ -1,0 +1,87 @@
+# Oblique step of a passive scalar on perturbed polyhedra: the bounded
+# convection of the scalars and the energy equation (D237).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/scalar_oblique_step_mlp.toml
+#
+# A uniform flow (1, 0.6) m/s crosses the unit square; the scalar c enters
+# with 1 through xmin and 0 through ymin, so the exact solution is a step
+# along the line from the corner (0, 0) at 31° and c must stay in [0, 1].
+# Nearly no diffusion (Γ = 1e-9). Linear upwind with a limiter on the
+# faces only (Venkatakrishnan, the default) is not bounded on a
+# multi-dimensional mesh: the face value that enters a cell comes from the
+# range of the upwind cell's neighbours, and c reaches 1.018. The MLP
+# limiter (Park & Kim 2012) bounds the reconstruction at every vertex by
+# all cells that share the vertex; with Nishikawa's R3 function and the
+# threshold ε = c_ε (c_max − c_min) the overshoot stays within about ε
+# (`limiter_epsilon = 0.01`: 1.002), with `limiter_epsilon = 0` the step is
+# strictly bounded. Compare with
+#
+#   --set 'solver.scalar.limiter="venkatakrishnan"'
+#   --set 'solver.scalar.limiter="barth-jespersen"'
+#   --set solver.scalar.limiter_epsilon=0.0
+#
+# The flow is the uniform flow from the start (it is the exact solution);
+# only the scalar converges. The run fails unless it converges and c stays
+# in [−0.005, 1.005] (`verification.scalar_range`).
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "poly"
+dimension = 2
+upper = [1.0, 1.0, 0.05]
+cells = [24, 24, 1]
+perturb = 0.3
+seed = 7
+
+[fluid]
+viscosity = 1e-3
+
+[scalars.c]
+diffusivity = 1e-9
+initial = "0.5 + 0.5 * tanh((y - 0.6 * x) / 0.2)"   # a smeared guess of the step
+
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [1.0, 0.6, 0.0]
+[boundary.xmin.scalar.c]
+value = 1.0
+
+[boundary.ymin]
+type = "velocity-inlet"
+velocity = [1.0, 0.6, 0.0]
+[boundary.ymin.scalar.c]
+value = 0.0
+
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+
+[boundary.ymax]
+type = "static-pressure-outlet"
+pressure = 0.0
+
+[boundary.zmin]
+type = "symmetry"
+
+[boundary.zmax]
+type = "symmetry"
+
+[initial]
+velocity = [1.0, 0.6, 0.0]
+
+[solver]
+tolerance = 1e-8
+max_iterations = 1500
+
+[solver.scalar]
+limiter = "mlp"                  # vertex bounds (MLP), Nishikawa R3
+limiter_epsilon = 0.01           # ε = 0.01 (c_max − c_min)
+
+[verification]
+require_convergence = true
+scalar_range = [-0.005, 1.005]   # within ε of the bounds [0, 1]
+
+[output]
+vtkhdf = true
+wall_csv = false

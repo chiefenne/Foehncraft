@@ -50,6 +50,26 @@ impl LimiterFunction {
     }
 }
 
+/// How ε of `limiter = "mlp"` scales (`limiter_epsilon_scaling`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum EpsilonScaling {
+    /// ε = c (φ_max − φ_min): one value for the domain (Wang 2000).
+    #[default]
+    Domain,
+    /// ε_c = c (φ_max − φ_min) √(V_c / V_domain): shrinks with the cell
+    /// size (as h^1.5 in 3D, h in a 2D case one cell thick; Moe et al.
+    /// 2015, Setzwein et al. 2026), so the bounds tighten as the mesh is
+    /// refined.
+    Cell,
+}
+
+/// The factors √(V_c / V_domain) of [`EpsilonScaling::Cell`].
+pub fn cell_factors(volume: &[f64]) -> Vec<f64> {
+    let total: f64 = volume.iter().sum();
+    volume.iter().map(|v| (v / total).sqrt()).collect()
+}
+
 /// The vertex stencil of `mesh`: the cells and boundary faces of every
 /// vertex and the vertices of every cell (each list sorted, no
 /// duplicates). A periodic face (each side keeps its own face) and a

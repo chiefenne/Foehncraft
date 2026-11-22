@@ -65,7 +65,9 @@ validated range, one mesh only, …) in its report and its JSON result.
   quadratic field (D236); partitioning with METIS and halos;
   VTKHDF output for ParaView.
 - **Numerics.** Cell-centred finite volumes with weighted least-squares
-  gradients, Venkatakrishnan(-Wang) limiters, linear upwind and bounded
+  gradients, Venkatakrishnan(-Wang) limiters, for the scalars and the
+  temperature also the vertex-based MLP limiter with Nishikawa's R3
+  (bounded on tetrahedra and polyhedra, D237), linear upwind and bounded
   central convection, non-orthogonal correction, the time-step-independent
   Rhie–Chow interpolation; BDF2 and Crank–Nicolson; reproducible
   (gather-based) assembly in double precision.

@@ -73,6 +73,9 @@ turbulent_prandtl = 0.7
 [solver]
 algorithm = "piso"
 
+[solver.scalar]
+limiter = "mlp"   # vertex bounds on the tetrahedra (D237): theta_95 is a band of 5 % around 0.0099
+
 [time]
 scheme = "bdf1"
 time_step = 0.05

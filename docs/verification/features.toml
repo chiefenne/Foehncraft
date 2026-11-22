@@ -53,7 +53,7 @@ evidence = [
   { kind = "reference-data", case = "tjunction_mixing", what = "3D T-junction on polyhedra converted from Gmsh tetrahedra, three meshes: inlet pressure order 1.77, GCI 2.4 %" },
 ]
 gaps = [
-  "T-junction (gallery 196): the pressure at the branch inlet is not grid-convergent (observed order 0.2, GCI 29 %) and the scalar difference downstream oscillates; no comparison with published measurements yet",
+  "T-junction (gallery 196): the pressure at the branch inlet is not grid-convergent (observed order 0.2, GCI 29 %); the scalar difference downstream converges with the MLP limiter (order 2.1, GCI 11 %); no comparison with published measurements yet",
   "conversion into polyhedra fails with GEN001 (a boundary cell centre behind its face) on Netgen-optimised tetrahedra and on one fine Gmsh mesh of the T-junction (h = 0.005 m); sizes that convert are used",
 ]
 
@@ -194,6 +194,26 @@ evidence = [
   { kind = "consistency", test = "crates/foehncraft-fv/tests/stage2.rs::limited_face_values_create_no_new_extrema", what = "limited face values create no new extrema" },
 ]
 gaps = ["no observed order with a limiter switched on in a smooth flow"]
+
+[[feature]]
+id = "numerics.mlp-limiter"
+area = "Numerics"
+title = "Vertex-based MLP limiter of the scalars and the energy equation"
+switch = "solver.scalar.limiter, solver.energy.limiter = \"mlp\""
+decisions = ["D237"]
+evidence = [
+  { kind = "exact", case = "scalar_oblique_step_mlp", what = "a step at 31° on 30 % perturbed polyhedra stays within [0, 1.0021] with R3 and c = 0.01 (Venkatakrishnan: [−0.0175, 1.0178])", doc = "docs/gallery/scalars.md#mlp-limiter" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/scalars.rs::mlp_limiter_bounds_the_oblique_step", what = "within ε of the bounds with c = 0.01, within 10⁻⁹ with c = 0, the face limiter outside" },
+  { kind = "consistency", test = "crates/foehncraft-kernels/src/fv.rs::nishikawa_functions_are_bounded_and_smooth", what = "R3, R4 and R5 bounded at ε = 0 and smooth" },
+  { kind = "consistency", test = "crates/foehncraft-flow/src/limiter.rs::a_strip_of_two_hexahedra_shares_four_vertices", what = "the vertex stencil of a small mesh" },
+  { kind = "consistency", case = "tjunction_mixing", what = "θ of the T-junction within [−0.0019, 1.0015], the scalar difference converges at order 2.1 over three meshes", doc = "docs/gallery/flow.md#tjunction-mixing" },
+]
+gaps = [
+  "not the default: Venkatakrishnan stays the limiter of the scalars and the energy equation until a full validation run",
+  "ε = 0 and the per-cell ε can stall a steady run (the T-junction from the medium mesh on)",
+  "on a smooth manufactured solution on polyhedra the error with R3 is 2.5 times the unlimited one (second order kept)",
+  "not run on a GPU",
+]
 
 [[feature]]
 id = "numerics.reproducible"

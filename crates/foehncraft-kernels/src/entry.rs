@@ -820,6 +820,8 @@ pub struct MlpArgs {
     pub func: u64,
     /// Threshold ε in the units of φ.
     pub eps: f64,
+    /// Factor of ε per cell (empty: none).
+    pub eps_cell: Raw<f64>,
     /// Relaxation β of ψ between calls, ψ ← ψ + β (ψ_new − ψ) (1: the new
     /// value).
     pub relax: f64,
@@ -878,6 +880,7 @@ impl Entry for MlpLimiter {
                 &a.m.cell_centroid.v(),
                 a.func as u32,
                 a.eps,
+                a.eps_cell.get(),
             );
             let o = a.out.out().add(c);
             *o = if a.relax < 1.0 {

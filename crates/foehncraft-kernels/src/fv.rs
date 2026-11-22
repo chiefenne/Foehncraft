@@ -343,7 +343,9 @@ pub const MLP_VENKATAKRISHNAN: u32 = 2;
 /// ([`MLP_BARTH_JESPERSEN`], [`MLP_VENKATAKRISHNAN`] or 3, 4, 5 for
 /// [`nishikawa_psi`]) and the threshold `eps` in the units of φ (ε of the
 /// solution, Wang 2000: dimensionally consistent on any mesh size), εₚ =
-/// epsᵖ. The stencil of the vertices bounds the face values of every
+/// epsᵖ; with a factor per cell `eps_cell` (not empty) ε_c = eps ·
+/// eps_cell\[c\], which lets ε shrink with the cell size (Moe et al. 2015,
+/// Setzwein et al. 2026). The stencil of the vertices bounds the face values of every
 /// neighbour that sees the cell, so a local extremum does not grow (LED in
 /// multi-dimensions, Park & Kim 2012).
 ///
@@ -365,9 +367,15 @@ pub unsafe fn mlp_limiter<T: Real>(
     cell_centroid: &Vec3<T>,
     func: u32,
     eps: T,
+    eps_cell: &[T],
 ) -> T {
     // SAFETY: guaranteed by the caller.
     unsafe {
+        let eps = if eps_cell.is_empty() {
+            eps
+        } else {
+            eps * ld(eps_cell, c)
+        };
         let pc = ld(phi, c);
         let g = grad.at(c);
         let xc = cell_centroid.at(c);

@@ -120,6 +120,8 @@ pub struct MlpOps {
     pub func: u32,
     /// Threshold ε in the units of φ.
     pub eps: f64,
+    /// Factor of ε per cell (`None`: one ε for all cells).
+    pub eps_cell: Option<Buf>,
     /// Relaxation β of ψ between calls (1: the new value; below 1 `out`
     /// holds the last ψ).
     pub relax: f64,

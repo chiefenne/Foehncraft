@@ -444,3 +444,41 @@ max_cfl = 2.0
     let _ = std::fs::remove_dir_all(&da);
     let _ = std::fs::remove_dir_all(&db);
 }
+
+/// The bounded convection of the scalars (D237) on the oblique step of
+/// `scalar_oblique_step_mlp.toml` (perturbed polyhedra): the face-neighbour
+/// limiter leaves [0, 1] by almost 2 %, the MLP limiter keeps the
+/// overshoot within its threshold ε = 0.01 (c_max − c_min) and with ε = 0
+/// the step is strictly bounded; all converge.
+#[test]
+fn mlp_limiter_bounds_the_oblique_step() {
+    let base = text("scalar_oblique_step_mlp.toml").replace("vtkhdf = true", "vtkhdf = false");
+    let range = |t: &str, name: &str| {
+        let r = run_case(&parse(t), name);
+        assert!(r.failures.is_empty(), "{name}: {:?}", r.failures);
+        let s = &r.solves[0];
+        assert!(s.converged, "{name}: {} iterations", s.iterations);
+        (s.scalars[0].min, s.scalars[0].max)
+    };
+    let (lo, hi) = range(&base, "mlp");
+    assert!(lo > -0.005 && hi < 1.005, "MLP R3: [{lo}, {hi}]");
+    let strict = base.replace("limiter_epsilon = 0.01", "limiter_epsilon = 0.0");
+    let (lo, hi) = range(&strict, "mlp_strict");
+    assert!(lo > -1e-9 && hi < 1.0 + 1e-9, "MLP R3, ε = 0: [{lo}, {hi}]");
+    let face = base.replace("limiter = \"mlp\"", "limiter = \"venkatakrishnan\"");
+    let (lo, hi) = range(&face, "venkatakrishnan");
+    assert!(hi > 1.01 && lo < -0.01, "Venkatakrishnan: [{lo}, {hi}]");
+}
+
+/// `limiter = "mlp"` is for the scalars and the energy equation; the
+/// momentum refuses it with its code.
+#[test]
+fn mlp_limiter_is_refused_for_the_momentum() {
+    let t = text("scalar_oblique_step_mlp.toml").replace(
+        "[solver.scalar]",
+        "[solver.momentum]\nlimiter = \"mlp\"\n\n[solver.scalar]",
+    );
+    let (code, msg) = refused(&t);
+    assert_eq!(code, "CASE004", "{msg}");
+    assert!(msg.contains("scalars and energy only"), "{msg}");
+}

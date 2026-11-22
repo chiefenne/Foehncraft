@@ -19,7 +19,7 @@
     "gaps written"
    ],
    "gaps": [
-    "T-junction (gallery 196): the pressure at the branch inlet is not grid-convergent (observed order 0.2, GCI 29 %) and the scalar difference downstream oscillates; no comparison with published measurements yet",
+    "T-junction (gallery 196): the pressure at the branch inlet is not grid-convergent (observed order 0.2, GCI 29 %); the scalar difference downstream converges with the MLP limiter (order 2.1, GCI 11 %); no comparison with published measurements yet",
     "conversion into polyhedra fails with GEN001 (a boundary cell centre behind its face) on Netgen-optimised tetrahedra and on one fine Gmsh mesh of the T-junction (h = 0.005 m); sizes that convert are used"
    ],
    "range": {}
@@ -156,6 +156,21 @@
    ],
    "gaps": [
     "no observed order with a limiter switched on in a smooth flow"
+   ],
+   "range": {}
+  },
+  {
+   "id": "numerics.mlp-limiter",
+   "title": "Vertex-based MLP limiter of the scalars and the energy equation",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "not the default: Venkatakrishnan stays the limiter of the scalars and the energy equation until a full validation run",
+    "ε = 0 and the per-cell ε can stall a steady run (the T-junction from the medium mesh on)",
+    "on a smooth manufactured solution on polyhedra the error with R3 is 2.5 times the unlimited one (second order kept)",
+    "not run on a GPU"
    ],
    "range": {}
   },

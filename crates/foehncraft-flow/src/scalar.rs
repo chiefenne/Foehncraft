@@ -49,7 +49,7 @@ use crate::device::{
 };
 use crate::diag::{self, Diagnostic};
 use crate::expr::{self, Env, Scalar, Value, Vars};
-use crate::limiter::LimiterFunction;
+use crate::limiter::{EpsilonScaling, LimiterFunction};
 use anyhow::Result;
 use foehncraft_fv::disc::Discretisation;
 use foehncraft_fv::problem::BoundaryKind;
@@ -232,6 +232,13 @@ pub struct ScalarSettings {
     /// lets smooth extrema pass, so a new extremum stays within about ε
     /// (0: strictly bounded).
     pub limiter_epsilon: f64,
+    /// `limiter = "mlp"`: ε for the whole domain (`domain`, default) or
+    /// per cell, shrinking with the cell size (`cell`: ε_c = c (φ_max −
+    /// φ_min) √(V_c / V_domain)). The shrinking ε tightens the bounds as
+    /// the mesh is refined and, like ε = 0, can stall a steady residual
+    /// on fine meshes (the medium T-junction mesh of gallery 196 with
+    /// c = 0.5).
+    pub limiter_epsilon_scaling: EpsilonScaling,
     /// `limiter = "mlp"`: relaxation β of the limiter value between outer
     /// iterations, ψ ← ψ + β (ψ_new − ψ). A steady deferred correction can
     /// lock into a two-iteration cycle of ψ in the cells of a mixing layer
@@ -266,6 +273,7 @@ impl Default for ScalarSettings {
             limiter_k: 5.0,
             limiter_function: LimiterFunction::R3,
             limiter_epsilon: 0.01,
+            limiter_epsilon_scaling: EpsilonScaling::Domain,
             limiter_relaxation: 0.5,
             bounded: false,
             relaxation: None,
@@ -311,10 +319,15 @@ impl ScalarSettings {
             CASE_RANGE,
             "[solver.scalar] limiter_k must be > 0"
         );
+        let top = match self.limiter_epsilon_scaling {
+            EpsilonScaling::Domain => 1.0,
+            EpsilonScaling::Cell => 100.0,
+        };
         crate::need!(
-            (0.0..1.0).contains(&self.limiter_epsilon),
+            (0.0..top).contains(&self.limiter_epsilon),
             CASE_RANGE,
-            "[solver.scalar] limiter_epsilon must be in [0, 1), is {}",
+            "[solver.scalar] limiter_epsilon must be in [0, {top}) with limiter_epsilon_scaling = {:?}, is {}",
+            self.limiter_epsilon_scaling,
             self.limiter_epsilon
         );
         crate::need!(
@@ -948,6 +961,8 @@ pub struct Scalars {
     /// The vertex stencil on the device, once a field uses
     /// `limiter = "mlp"` (one per mesh, shared by the fields).
     vert: Option<usize>,
+    /// The factors of `limiter_epsilon_scaling = "cell"` on the device.
+    eps_cell: Option<Buf>,
 }
 
 impl Scalars {
@@ -994,6 +1009,16 @@ impl Scalars {
             .collect();
         let mut fields = Vec::new();
         let mut vert = None;
+        let eps_cell = if settings.limiter == LimiterKind::Mlp
+            && settings.limiter_epsilon_scaling == EpsilonScaling::Cell
+            && !scalars.is_empty()
+        {
+            let b = dev.alloc(nc)?;
+            dev.upload(b, &crate::limiter::cell_factors(&disc.cell_volume[..nc]))?;
+            Some(b)
+        } else {
+            None
+        };
         for (name, s) in scalars {
             let dif = expr::value(
                 &s.diffusivity,
@@ -1258,6 +1283,7 @@ impl Scalars {
             t_set: f64::NAN,
             last_step: None,
             vert,
+            eps_cell,
         };
         let cells: Vec<[f64; 3]> = geo.cell_centroid[..nc].to_vec();
         s.set_values(dev, &cells, 0.0, true)?;
@@ -1382,6 +1408,7 @@ impl Scalars {
             self.cp, self.cn, self.bf, self.val, self.rhs, self.diag, self.order,
         );
         let xf = &self.xf;
+        let eps_cell = self.eps_cell;
         for f in self.fields.iter_mut() {
             let s = f.settings.clone();
             let alpha = s.alpha(tr);
@@ -1493,6 +1520,8 @@ impl Scalars {
                         grad: f.grad,
                         func: s.limiter_function.code(),
                         eps: s.limiter_epsilon * (mx - mn),
+                        eps_cell: eps_cell
+                            .filter(|_| s.limiter_epsilon_scaling == EpsilonScaling::Cell),
                         relax: s.limiter_relaxation,
                         out: f.psi,
                     })?;
@@ -2536,9 +2565,15 @@ impl Scalars {
             .iter()
             .map(|&z| zone_mat[z as usize])
             .collect();
-        let mlp = if case.solver.energy.limiter == LimiterKind::Mlp {
+        let es = &case.solver.energy;
+        let mlp = if es.limiter == LimiterKind::Mlp {
             if self.vert.is_none() {
                 self.vert = Some(dev.vertex_setup(&crate::limiter::vertex_stencil(mesh))?);
+            }
+            if es.limiter_epsilon_scaling == EpsilonScaling::Cell && self.eps_cell.is_none() {
+                let b = dev.alloc(nc)?;
+                dev.upload(b, &crate::limiter::cell_factors(&disc.cell_volume[..nc]))?;
+                self.eps_cell = Some(b);
             }
             self.vert
         } else {
@@ -3831,6 +3866,21 @@ pub fn check_sweep(
     let Some(first) = rep.solves.first() else {
         return;
     };
+    if let Some([lo, hi]) = v.scalar_range {
+        let mut out = Vec::new();
+        for (k, s) in rep.solves.iter().enumerate() {
+            for x in &s.scalars {
+                // a NaN extreme fails too
+                if !(x.min >= lo && x.max <= hi) {
+                    out.push(format!(
+                        "scalar {}: [{:.6}, {:.6}] on mesh {k} leaves the accepted range [{lo}, {hi}]",
+                        x.name, x.min, x.max
+                    ));
+                }
+            }
+        }
+        rep.failures.extend(out);
+    }
     let names: Vec<String> = first
         .scalars
         .iter()

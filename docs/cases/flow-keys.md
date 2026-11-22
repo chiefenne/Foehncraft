@@ -45,7 +45,7 @@ line (recipe 26).
 | `solver.pseudo_time.turbulence` | 0.5 with `coupled`, else 0 | c_T: the turbulence equations take the step min(Δτ, c_T T), T the time scale of the model; 0: relaxation only |
 | `solver.momentum.scheme` | `"linear-upwind"` | convection of momentum: `upwind`, `linear-upwind` or `central` (bounded central, D25) |
 | `solver.momentum.central_blending`, `solver.momentum.central_bounding` | 1, 0.1 | with `central`: share of the central correction (rest linear upwind) and the bound β (as for the scalar cases) |
-| `solver.momentum.limiter` | `"none"` | gradient limiter: `none`, `venkatakrishnan`, `venkatakrishnan-wang` |
+| `solver.momentum.limiter` | `"none"` | gradient limiter: `none`, `venkatakrishnan`, `venkatakrishnan-wang`, `barth-jespersen` (`mlp` is for the scalars and the energy equation only) |
 | `solver.momentum.limiter_k` | 5 | constant K of the limiter |
 | `solver.nonorth_correction` | true | deferred non-orthogonal and skewness correction of the viscous term |
 | `solver.momentum.relaxation` | 0.7; 0.98 with `coupled`, 0.995 for the k-ε family with `solver.turbulence.preconditioner = "reduction"` (D180) | under-relaxation α_u of the momentum equations (implicit, Patankar 1980); with `coupled` it only caps the local Courant number of the pseudo-time step at α/(1 − α) |
@@ -548,12 +548,18 @@ while continuity is not converged.
 | `boundary.<boundary>.scalar.<name>.periodic` | `"periodic"` | on one boundary of a periodic pair: `"periodic"` (unchanged across the pair) or `"heat-flux"` (the jump Δ = Q/ṁ of D109 (1): Q = ρ times the flux and source integrals, ṁ the mass flow through the pair; refused with fixed values on walls or inlets) |
 | `boundary.<boundary>.scalar.<name>.bulk` | 0 | `"heat-flux"`: the bulk (mixing-cup) value on this boundary, the level of a steady run |
 | `solver.scalar.scheme` | `linear-upwind` | `upwind`, `linear-upwind`, `central` (bounded, with `central_blending` and `central_bounding`) |
-| `solver.scalar.limiter`, `limiter_k` | `venkatakrishnan`, 5 | limiter of the scalar gradients |
+| `solver.scalar.limiter`, `limiter_k` | `venkatakrishnan`, 5 | limiter of the scalar gradients: `none`, `venkatakrishnan`, `venkatakrishnan-wang`, `barth-jespersen` (faces), `mlp` (vertices, D237, [recipe 211](../recipes/scalars.md#mlp-limiter)); the same keys in `[solver.energy]` |
+| `solver.scalar.limiter_function` | `r3` | `mlp`: `r3`, `r4`, `r5` (Nishikawa), `barth-jespersen`, `venkatakrishnan` |
+| `solver.scalar.limiter_epsilon` | 0.01 | `mlp`: c of the threshold ε = c (φ_max − φ_min), in the units of the field; 0 is strictly bounded |
+| `solver.scalar.limiter_epsilon_scaling` | `domain` | `mlp`: `domain` (one ε) or `cell` (ε √(V_c/V_domain), shrinks with the mesh) |
+| `solver.scalar.limiter_relaxation` | 0.5 | `mlp`: β of ψ ← ψ + β (ψ_new − ψ) between outer iterations |
+| `solver.scalar.bounded` | false | linear-upwind face value clipped to the interval of its two cells |
 | `solver.scalar.relaxation` | 0.9 steady, 1 transient | under-relaxation |
 | `solver.scalar.tolerance`, `max_iter` | 1e-3 steady, 1e-8 transient; 50 | relative tolerance and iterations of each BiCGStab solve |
 | `solver.scalar.sweeps` | 1 | solves per outer iteration, each with new deferred corrections |
 | `verification.scalar_order` | none | accepted observed order of the scalar errors (mesh sweep) or of the differences of successive solutions (time-step sweep) |
 | `verification.scalar_max_error` | none | largest accepted L2 error on the finest mesh |
+| `verification.scalar_range` | none | [lower, upper]: every scalar (and the temperature) within it on every mesh |
 
 The defaults per boundary kind: zero flux on walls, slip walls, symmetry
 planes and wedges; the value 0 at inlets; zero gradient at outlets.
