@@ -14,6 +14,8 @@ Part of the [Example gallery](../gallery.md): adjoint-ready kernels, runs that a
 | 171 | [Every function as a tool: the catalogue an agent reads](#tool-registry) | 7 | one registry of typed tools with ids, versions, JSON Schemas and action kinds; `foehn commands`, `foehn call`, `fc.call`; front ends checked by `cargo xtask layering` (D196, D203) |
 | 172 | [A session that can be replayed: the journal of tool calls](#journal) | 7 | every tool call into a journal with its typed input, the call that started a run in `run.jsonl`, `foehn run --script` replays a journal or a run record and reports each call that ends otherwise (D197) |
 | 175 | [An assistant at the controls: the MCP server](#mcp) | 7 | `foehn mcp`: every registry tool to an assistant over MCP, inside required roots, with an action table that allows, asks or refuses each kind of action, mandatory run limits, progress and cancellation, summaries first, histories paged by cursor, the session journaled for replay (L18, D198) |
+| 177 | [An assistant steers a running case: the control port](#control-port) | 7 | a run listens on `127.0.0.1` with a token in a file only its user reads; `run.status` gives the live residuals, `run.set` changes run-time settings (never limits), `run.stop` stops with restart file and results; applied after an iteration or step, reported with the equivalent `[[schedule]]` entry (L19, D198 f) |
+| 181 | [An assistant runs a study: the fin pitch of a heat sink](#heat-sink-study) | 7 | four fin pitches of the heat sink of gallery 158 run through `foehn mcp` by an assistant, under run limits and a study budget, with the refusals (no limits, a folder outside the write root, a mesh over the cell cap), live status, histories read in pages, a closing report with its limitations, and the journal a person replays (L18, L19, D197, D198) |
 
 ---
 
@@ -648,6 +650,156 @@ cargo build --release -p foehncraft-cli
 python3 -m tools.plot.mcp_session docs/figures/gallery/mcp_session.svg target/release/foehn
 target/release/foehn run --script output/tools/mcp-journal.jsonl \
     --read-root examples/cases --read-root output/tools --write-root output/tools/mcp
+```
+
+[↑ back to top](#run-control-health-and-adjoint-readiness)
+
+---
+
+<a id="control-port"></a>
+## 177. An assistant steers a running case: the control port
+
+<img src="../figures/gallery/control_port.svg" alt="Left: the transcript of a scripted assistant steering the lid-driven cavity at Re = 100 while its run is going: run.status with the live step and residual, run.set of the time step 0.005 to 0.01 queued and applied at step 402, run.set of a relaxation below 1 refused by the case at step 403, a second status and run.stop with the final result summary, exit code 3. Right: the continuity residual of the run over its 1007 time steps with the three events marked" width="1000" height="691">
+
+A run that an assistant (or a person) may steer listens on a port of the
+loopback interface, `127.0.0.1`, and nowhere else (L19, D198 (f)). The
+port number is in `control.json` in the output folder of the run, and a
+random token in `control.token` next to it, readable by its user only on
+Unix; both disappear when the run ends. `foehn flow --control-port` opens
+the port for a person; every `flow.run` through `foehn mcp` opens it, and
+`foehn mcp` answers calls of the kinds read and control while the run is
+going, so the assistant need not wait for the result of `flow.run`:
+
+- `run.status`: the last iteration or step with its residuals and linear
+  iterations, the wall time, whether a stop is pending, and what the run
+  did with the changes asked for so far.
+- `run.set`: run-time settings, the keys that a re-read of the case file
+  may change (D40): relaxation factors, linear-solver tolerances, time-step
+  settings, output cadences. Never `run.limits.*`: the limits of a run are
+  the person's, an assistant cannot raise its own.
+- `run.stop`: stop at the end of the current iteration or step, with the
+  restart file, the final output and the result summary, exit code 3
+  (`RUN022`).
+
+The changes take effect after an iteration or step, like the control files
+of D40, so a result never depends on where in a step a request arrived. A
+setting is checked against the case when it is applied: the figure shows the
+time step changed at step 402 (`RUN023`) and a momentum relaxation of 0.7
+that the case refuses at step 403, because a transient case with one outer
+iteration would lag the solution with it (`RUN024`); the run goes on with
+what it had. Every outcome is in the run record with the `[[schedule]]` entry
+that reproduces it from a case file (`at_step = 403, set = { time.time_step
+= 0.01 }`), so a steered run can be repeated without the port. The
+journal holds the live calls; `foehn run --script` skips them, since they
+act on a process that is gone.
+
+The figure is a scripted client on the transient cavity of [gallery 12](flow.md#cavity) with
+a small time step, so that the run lasts long enough to be steered; a real
+assistant chooses its calls itself. The residual jumps at step 402, where the
+step doubles, and falls on after.
+
+| Call | Answer |
+|---|---|
+| `flow.run` (not waited for) | the run starts, `control.json` and `control.token` appear |
+| `run.status` | running for 3.4 s, step 401, continuity 3.1e-7 |
+| `run.set` time step 0.01 | queued; applied after step 402 (`RUN023`) |
+| `run.set` relaxation 0.7 | queued; refused at step 403 (`RUN024`), reason in the status |
+| `run.stop` | `flow.run` ends: stopped, exit code 3, `RUN022` |
+
+| | |
+|---|---|
+| Code | `crates/foehncraft-flow/src/live.rs` (the port, the protocol, the token), `crates/foehncraft-flow/src/case.rs` and `unsteady.rs` (`apply_live_settings` after an iteration or step), `crates/foehncraft-tools/src/control.rs` (the tools), `crates/foehncraft-cli/src/mcp.rs` (the lane for read and control calls) |
+| Tests | `crates/foehncraft-flow/src/live.rs` (token, refusals, the limits cannot be set, the files disappear), `crates/foehncraft-cli/tests/mcp.rs` (steer and stop a running case through `foehn mcp`, the replay skips live calls) |
+| Case files | `tools/control/run_status.json`, `run_set.json`, `run_set_refused.json`, `run_stop.json` |
+| Guides | [Watch and steer a running case](../agents.md#7-watch-and-steer-a-running-case) |
+| Interfaces | [Live control port](../interfaces.md#live-control-port-l19) |
+
+```
+cargo build --release -p foehncraft-cli
+python3 -m tools.plot.control_session docs/figures/gallery/control_port.svg target/release/foehn
+```
+
+[↑ back to top](#run-control-health-and-adjoint-readiness)
+
+---
+
+<a id="heat-sink-study"></a>
+## 181. An assistant runs a study: the fin pitch of a heat sink
+
+<img src="../figures/gallery/heat_sink_agent.png" alt="The session of the assistant, call by call: two case checks, three refused run calls (red crosses, MCP002 no run limits, MCP003 outside the write root, MCP003 60 000 cells over the cap of 40 000), four runs of about two minutes each for the pitches 24, 32, 40 and 48 mm, two status polls during the first run, estimates and result pages in between, and result reads at the end; below, the cell-hours of each run, 1956 of the study budget of 3500" width="1320" height="814">
+
+*What the assistant did:* its 27 calls over 8.7 minutes, the three refusals, and the budget it spent.
+
+<img src="../figures/gallery/heat_sink_study.png" alt="Top: the temperature of four aluminium heat sinks with three fins in a turbulent air channel, fin pitch 24, 32, 40 and 48 mm, on one colour scale; the base is hottest at 24 mm, about 334 K, and cooler the wider the fins stand, about 328 K at 48 mm, with warm air trapped in the slots between close fins. Bottom: the mean temperature of the base top falls from 334.0 K to 327.7 K over the pitch, the pressure drop is lowest at 40 mm with 58 Pa" width="1320" height="990">
+
+The heat sink of [gallery 158](energy.md#cht-turbulent), studied by an
+assistant instead of a person: *how does the spacing of the three fins
+change the temperature of the base and the pressure drop?* The assistant
+(Claude) drove `foehn mcp` through a small host for scripts
+([`tools/agent/stdio_host.py`](../../tools/agent/stdio_host.py)); the calls
+are its own, and the only thing prepared is the project's action table:
+runs may start, writes outside the write root, overwrites, publishing and
+runs over 40 000 cells are refused. [agents.md](../agents.md#a-recorded-study-the-fin-pitch-of-a-heat-sink)
+holds the transcript.
+
+What happened, in the order of the calls:
+
+- It checked the case (`case.check`): 15 000 cells, at most 2500
+  iterations, 94 MB, and the diagnostic `THM005` (the channel walls are
+  adiabatic), which it judged intended. The estimate has no wall time yet
+  (`RUN012`, no benchmark of this machine).
+- Its first run was **refused** for want of `[run.limits]` (`MCP002`, with
+  the fix as `set`); a run into `/tmp/elsewhere` was **refused** (`MCP003`,
+  `write-outside-root`); a run on a mesh twice as fine to check the mesh
+  dependence was **refused** (`MCP003`, `exceed-estimate`: 60 000 cells over
+  the cap of 40 000). It added its own limits and a study budget of 3500
+  cell-hours and went on without the mesh study.
+- It started the 24 mm run without waiting and looked at it twice with
+  `run.status` (iteration 156, then 291, residuals falling): the control port
+  of [gallery 177](runs.md#control-port).
+- It read the series of each run with `result.page` (the pressure at the
+  inlet and outlet, the temperature along the top of the base) and the
+  result summaries, and closed with **"Finished with 7 limitations"**: the
+  first-cell y⁺ of the walls (4.7 to 18.4) outside the validated range of
+  the wall treatment (`LIM002`), one mesh only (`LIM004`, the refused mesh
+  study is why), and the energy equation with a turbulence model, conjugate
+  heat transfer with a turbulence model, the automatic wall treatment and
+  the schedule graded partial (`LIM001`). It called the sweep a
+  demonstration, not a design.
+
+| Pitch (mm) | Iterations | Base top, mean (K) | Base top, maximum (K) | Pressure drop (Pa) | Spent (cell-hours) |
+|---|---|---|---|---|---|
+| 24 | 962 | 334.0 | 334.3 | 65.7 | 483 |
+| 32 | 956 | 331.2 | 331.4 | 61.4 | 487 |
+| 40 (as shipped) | 1007 | 329.2 | 329.4 | 58.0 | 526 |
+| 48 | 937 | 327.7 | 328.0 | 63.1 | 459 |
+
+The temperature falls with the pitch over the whole range, and 48 mm is the
+widest the base allows, so the sweep did not find a minimum; the pressure
+drop does (40 mm). With one mesh and a first-cell y⁺ outside the validated
+range these are numbers to look at, not to build on.
+
+<img src="../figures/gallery/heat_sink_flow.png" alt="Top: the speed of the air for the fin pitches 24, 32, 40 and 48 mm on one colour scale, a jet of up to 15 m/s above the fins and a slow recirculation in each slot between the fins; bottom: the temperature along the top of the base of the four designs, about 334 K at 24 mm falling to about 328 K at 48 mm, with a small dip below each fin" width="1320" height="948">
+
+The journal of the session replays without a window and gives the same
+numbers: a replay of the 27 calls took 7 min 52 s on 4 threads (22 replayed, 5
+skipped, none different), and the residual histories, tables, fields and
+restart files of the four replayed runs are byte-identical to the originals.
+The refused calls and the live calls are skipped.
+
+| | |
+|---|---|
+| Code | `tools/agent/stdio_host.py` (the host), `tools/plot/heat_sink_study.py` and `tools/plot/heat_sink_agent.py` (the figures); no engine change |
+| Case files | `tools/mcp/heat_sink_study/foehn-mcp.toml` (the action table), `journal.jsonl` (the session), `session.csv` (the 27 calls with time and outcome), `results.csv` (what it read) |
+| Guides | [A recorded study](../agents.md#a-recorded-study-the-fin-pitch-of-a-heat-sink), [Connect an assistant](../agents.md) |
+
+```
+cargo build --release -p foehncraft-cli
+mkdir -p output/agent/study
+target/release/foehn run --script examples/cases/tools/mcp/heat_sink_study/journal.jsonl \
+    --read-root examples/cases --read-root output/agent/study --write-root output/agent/study
+python3 -m tools.plot.heat_sink_study docs/figures/gallery/heat_sink_study.png output/agent/study
+python3 -m tools.plot.heat_sink_agent figures examples/cases/tools/mcp/heat_sink_study/session.csv output/agent/study docs/figures/gallery
 ```
 
 [↑ back to top](#run-control-health-and-adjoint-readiness)

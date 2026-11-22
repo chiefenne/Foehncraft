@@ -1,0 +1,8 @@
+# What the assistant read in the recorded heat sink study (gallery 181): per fin pitch, the iterations,
+# the mean and maximum temperature of the cells along the top of the base (line_base_top, 100 cells),
+# the mean pressure of the inlet minus the outlet (boundaries), the cell-hours spent (study_budget.jsonl)
+pitch_mm,iterations,base_top_mean_K,base_top_max_K,pressure_drop_Pa,cell_hours
+24,962,333.99,334.35,65.66,483
+32,956,331.24,331.40,61.37,487
+40,1007,329.17,329.44,57.95,526
+48,937,327.69,327.96,63.11,459

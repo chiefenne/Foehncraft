@@ -19,7 +19,10 @@
 //!   weight u_τ,vis⁴/u_τ⁴ of the first version and the log-layer
 //!   production u_τ³/(κ y_P) overpredicted C_f of the flat plate by up to
 //!   17 % in the buffer layer; with these weights C_f lies within 2.6 % of
-//!   the TMR value for first-cell y⁺ from 0.24 to 85 on two meshes.
+//!   our own `low-re` result on the finest plate mesh for first-cell y⁺
+//!   from 0.24 to 85 on two meshes (D201 rework: the constants were first
+//!   fitted to the value of another solver and are checked again against
+//!   our own, `docs/verification/stage6.md`).
 //! - **Rough walls** (Aupoix 2015, the set fitted to Colebrook's
 //!   correlation): k_w = u_τ² k_w⁺ and ω_w = (u_τ²/ν) ω_w⁺ as wall values
 //!   with
@@ -299,8 +302,9 @@ pub fn wall_face<T: Real>(i: &WallInputs<T>, c: &SstConstants, treatment: u32) -
 
 /// The exponent n of the near-wall ω of the automatic treatment,
 /// (ω_vis^n + ω_log^n)^{1/n} (6g: 2 in Menter et al. 2003; 1.2 brings
-/// C_f of the flat plate within 2.4 % of the TMR value for first-cell y⁺
-/// from 0.8 to 85).
+/// C_f of the flat plate within 2.5 % of our own `low-re` result for
+/// first-cell y⁺ from 0.8 to 85; rechecked against our own result, the
+/// optimum of n lies between 1.2 and 1.3).
 pub const OMEGA_BLEND_N: f64 = 1.2;
 
 /// The y⁺ scale of the weight tanh((y⁺/y₀)²) with which the near-wall cell

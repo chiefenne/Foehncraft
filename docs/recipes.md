@@ -24,7 +24,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | [Verification](recipes/verification.md) | the discretisation uncertainty of a sweep (GCI), the generated verification manual | 34, 35, 165, 170 |
 | [Post-processing](recipes/post-processing.md) | derived fields with the output and from restart files (`foehn post derive`) | 30, 108, 110 |
 | [Engineering gallery](recipes/applications.md) | run an application of the Engineering Gallery and compare it with published data | 161 |
-| [Run control and health](recipes/runs.md) | restart, stop and steer runs, drive runs from a script or an agent, balances and divergence reports, the log, scheduled changes and case upgrades | 22, 26, 27, 37, 38, 39, 166, 171, 172, 175 |
+| [Run control and health](recipes/runs.md) | restart, stop and steer runs, drive runs from a script or an agent, balances and divergence reports, the log, scheduled changes and case upgrades | 22, 26, 27, 37, 38, 39, 166, 171, 172, 175, 177, 181 |
 
 ## All recipes by number
 
@@ -109,13 +109,15 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="cht-turbulent"></a>158 | [Couple a turbulent flow with a solid (turbulent conjugate heat transfer)](recipes/energy.md#cht-turbulent) | [Energy equation and heat transfer](recipes/energy.md) |
 | <a id="cht-transient"></a>159 | [Follow how a solid and a fluid heat up together (transient conjugate heat transfer)](recipes/energy.md#cht-transient) | [Energy equation and heat transfer](recipes/energy.md) |
 | <a id="cht-contact"></a>160 | [Put a contact resistance between two parts, orient an orthotropic solid, heat a component](recipes/energy.md#cht-contact) | [Energy equation and heat transfer](recipes/energy.md) |
-| <a id="fyfe-stirred-tank-recipe"></a>161 | [Run the 2 L stirred tank of Fyfe et al. and compare it with the published CFD plane](recipes/applications.md#fyfe-stirred-tank-recipe) | [Engineering gallery](recipes/applications.md) |
+| <a id="fyfe-stirred-tank-recipe"></a>161 | [Run the 2 L stirred tank of Fyfe et al.: power number and mixing time](recipes/applications.md#fyfe-stirred-tank-recipe) | [Engineering gallery](recipes/applications.md) |
 | <a id="status"></a>165 | [Grade a feature on the verification status page](recipes/verification.md#status) | [Verification](recipes/verification.md) |
 | <a id="budgets"></a>166 | [Set an iteration budget and a budget per study](recipes/runs.md#budgets) | [Run control and health](recipes/runs.md) |
 | <a id="limitations"></a>170 | [Read and act on the limitations of a run](recipes/verification.md#limitations) | [Verification](recipes/verification.md) |
 | <a id="tools"></a>171 | [Call any tool from a script or an agent](recipes/runs.md#tools) | [Run control and health](recipes/runs.md) |
 | <a id="journal"></a>172 | [Record a session and replay it](recipes/runs.md#journal) | [Run control and health](recipes/runs.md) |
 | <a id="mcp"></a>175 | [Connect an assistant through the MCP server](recipes/runs.md#mcp) | [Run control and health](recipes/runs.md) |
+| <a id="control-port"></a>177 | [Watch and steer a running case](recipes/runs.md#control-port) | [Run control and health](recipes/runs.md) |
+| <a id="heat-sink-study"></a>181 | [Let an assistant run a parameter study](recipes/runs.md#heat-sink-study) | [Run control and health](recipes/runs.md) |
 
 ## Adding a feature
 

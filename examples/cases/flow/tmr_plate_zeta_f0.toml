@@ -14,7 +14,7 @@
 # is ε at the wall, so that the wall value of ε converges with the mesh).
 #
 # Result: C_f(0.97) = 2.926·10⁻³, +1.8 % from White's correlation
-# (2.875·10⁻³; +8.7 % from the TMR value of SST, 2.6907·10⁻³), converged
+# (2.875·10⁻³; +8.4 % from our own SST value 2.7005·10⁻³), converged
 # in about 700 iterations. On 128 × 96 and 256 × 192 cells: 2.881·10⁻³
 # and 2.869·10⁻³ (+0.2 %, −0.2 %; GCI 0.2 %). First cell at y⁺ 10 / 30:
 # −0.3 % / −2.7 % from White.

@@ -1,0 +1,15 @@
+# The action table of the recorded heat sink study (docs/agents.md, gallery 181).
+# The person allowed what the study may start and refuses everything else;
+# the estimate caps are those of a small study on a laptop.
+[actions]
+start-run = "allow"
+exceed-estimate = "refuse"
+write-outside-root = "refuse"
+overwrite-results = "refuse"
+publish = "refuse"
+
+[estimate]
+max_cells = 40000
+max_host_memory = 2e9   # bytes
+max_output = 2e9        # bytes
+max_wall_time = 1800    # s, when the estimate has a wall time

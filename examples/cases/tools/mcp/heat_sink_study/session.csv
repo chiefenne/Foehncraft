@@ -1,0 +1,28 @@
+ticket,tool,start_s,seconds,outcome,code,pitch_mm,note
+t1,case.check,0.0,0.12,ok,,,
+t2,case.check,5.8,0.11,ok,,24,
+t3,flow.run,12.6,0.05,refused,MCP002,24,no run limits in the case
+t4,flow.run,12.8,0.05,refused,MCP003,24,outside the write root
+t5,flow.run,12.9,0.28,refused,MCP003,24,"60 000 cells, cap 40 000"
+t6,flow.run,16.8,121.65,ok,,24,
+t7,run.status,36.8,0.00,ok,,24,polled while the run goes
+t8,run.status,53.7,0.01,ok,,24,polled while the run goes
+t9,flow.run,142.3,122.77,ok,,32,
+t10,result.page,142.3,0.01,ok,,24,
+t11,result.page,142.4,0.00,ok,,24,boundaries
+t12,result.page,145.5,0.00,ok,,24,line_base_top
+t13,case.estimate,161.4,0.12,ok,,40,
+t14,flow.run,265.1,132.49,ok,,40,
+t15,flow.run,397.8,115.47,ok,,48,
+t16,result.page,519.2,0.00,ok,,24,line_base_top
+t17,result.page,519.2,0.00,ok,,24,boundaries
+t18,result.read,519.3,0.00,ok,,24,
+t19,result.page,519.3,0.00,ok,,32,line_base_top
+t20,result.page,519.3,0.00,ok,,32,boundaries
+t21,result.read,519.4,0.00,ok,,32,
+t22,result.page,519.4,0.00,ok,,40,line_base_top
+t23,result.page,519.4,0.00,ok,,40,boundaries
+t24,result.read,519.4,0.00,ok,,40,
+t25,result.page,519.5,0.00,ok,,48,line_base_top
+t26,result.page,519.5,0.00,ok,,48,boundaries
+t27,result.read,519.6,0.00,ok,,48,

@@ -187,7 +187,7 @@ the other models (D61); docs, gallery with field images, case and recipe
 |---|------|-----------|--------|
 | V1 | Frame equivalence | section 3.1 | the same steady field (to the solver tolerance) from the D55 absolute formulation and the relative formulation of `flow.frame_rotation` on an annular case |
 | V2 | Stabilisation cancels | section 5.1 | converged fields independent of the scaling of ν_stab to the solver tolerance |
-| V3 | Channel Re_τ 395 and 590, `low-re` | Manceau (2015) results first, then the DNS of Moser, Kim & Mansour (1999) | C_f within 3 % of the paper's model result; U⁺ and the four stress profiles plotted; peak R_11⁺ and R_12⁺ within numbers set at implementation from the paper |
+| V3 | Channel Re_τ 395 and 590, `low-re` | DNS of Moser, Kim & Mansour (1999) (the paper's own model results are not a target, D201) | C_f within 3 % of the DNS; U⁺ and the four stress profiles plotted; peak R_11⁺ and R_12⁺ within numbers set at implementation from the paper |
 | V4 | Square duct, periodic | DNS of the duct at low Re (Gavrilakis 1992; Pinelli et al. 2010) | eight corner vortices; peak secondary velocity within a band set at implementation (RSMs commonly underpredict it) |
 | V5 | Spanwise rotating channel | DNS of Kristoffersen & Andersson (1993) | asymmetric profiles, stabilised suction side; on `flow.frame_rotation`, case as `examples/cases/flow/channel_rotating_sst.toml` |
 | V6 | U-bend, shared with D171 | as D171 | as D171 |

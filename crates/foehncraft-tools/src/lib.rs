@@ -25,6 +25,7 @@ use serde_json::{Value, json};
 
 pub mod approval;
 pub mod case;
+pub mod control;
 pub mod expression;
 pub mod flow;
 pub mod journal;
@@ -60,6 +61,8 @@ pub enum Category {
     Mesh,
     /// Flow runs.
     Flow,
+    /// The live control of a running case (L19).
+    Run,
     /// Results of earlier runs.
     Result,
     /// Post-processing.
@@ -81,6 +84,7 @@ impl Category {
             Self::Expression => "expression",
             Self::Mesh => "mesh",
             Self::Flow => "flow",
+            Self::Run => "run",
             Self::Result => "result",
             Self::Post => "post",
             Self::Study => "study",
@@ -99,6 +103,9 @@ pub enum Action {
     WriteFiles,
     /// Starts a run (writes an output directory, may take long).
     StartRun,
+    /// Acts on a run that is going (stop, change a setting) through its
+    /// control port (L19); writes no file, needs the token of the run.
+    Control,
 }
 
 impl Action {
@@ -108,6 +115,7 @@ impl Action {
             Self::Read => "read",
             Self::WriteFiles => "write-files",
             Self::StartRun => "start-run",
+            Self::Control => "control",
         }
     }
 }
@@ -207,6 +215,8 @@ pub struct Ctx<'a> {
     pub build: BuildInfo,
     /// Where every top-level call is journaled (D197).
     pub journal: Option<journal::Journal>,
+    /// Open the live control port of a run this call starts (L19).
+    pub control: bool,
     /// The call being run (tool, version, typed input): a run writes it
     /// into its run record (D69).
     pub call: Option<Value>,
@@ -225,6 +235,7 @@ impl<'a> Ctx<'a> {
             observer: None,
             build,
             journal: None,
+            control: false,
             call: None,
             approval: None,
             text: Box::new(|_| {}),
@@ -378,6 +389,9 @@ pub fn registry() -> Vec<Entry> {
         entry::<flow::Run>(),
         entry::<flow::Read>(),
         entry::<flow::Page>(),
+        entry::<control::Status>(),
+        entry::<control::Stop>(),
+        entry::<control::Set>(),
         entry::<post::Derive>(),
         entry::<study::Scalar>(),
         entry::<study::Poisson>(),

@@ -15,6 +15,7 @@ instead.
 - [Timing small meshes](#timing)
 - [Iteration counts in tests](#counts)
 - [Counts a file declares](#declared-counts)
+- [Reference numbers of other solvers](#other-solver-numbers)
 
 <a id="steady-runs"></a>
 ## Steady runs: budget and stopping
@@ -150,3 +151,18 @@ the count against the size of the file first (`format::declared`: every
 item takes one byte at least), map sparse tags with a hash map instead of
 a table up to the largest tag, and compute `last - first + 1` with checked
 arithmetic (tests run in debug, where an overflow panics).
+
+<a id="other-solver-numbers"></a>
+## Reference numbers of other solvers
+
+A value computed by another code (a benchmark page's mean of two solvers,
+the authors' own model result in a paper, the velocity planes of a paper)
+is not a reference (D201). Two cases showed how it creeps in: a model
+constant of the automatic wall treatment was fitted so that the flat plate
+met such a value (6g), and a gallery entry drew its figures against another
+code's planes. Use measurements, DNS (published scalar values with their
+citation), correlations and analytic solutions, and our own mesh sweep
+(Richardson value, GCI) for verification. When a constant is fitted, fit it
+to one of those and say which. The audit of 2026-11-21 and its rework of
+2026-11-22 are in `docs/verification/DATA_SOURCES.md` (rule 5) and the
+changelog fragment 176.

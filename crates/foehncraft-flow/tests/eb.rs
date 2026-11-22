@@ -245,11 +245,11 @@ fn eb_results_are_bitwise_equal_on_1_and_4_threads() {
 
 /// The channel of the gallery at Re_τ 395: U_b⁺ within the ±3 % band
 /// (specification 9.4), and C_f (= F at the fixed mass flow) at
-/// 97 to 100 % of the DNS, where the paper reports 98 % (its Table 6);
+/// 97 to 100 % of the DNS;
 /// the low-Re treatment runs as well.
 #[test]
 #[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
-fn eb_channel_meets_the_paper() {
+fn eb_channel_against_the_dns() {
     let r = run_case(&parse(&text("channel_eb.toml")), "channel");
     assert!(r.failures.is_empty(), "{:?}", r.failures);
     let f = r.solves[0].periodic[0].driving_force;

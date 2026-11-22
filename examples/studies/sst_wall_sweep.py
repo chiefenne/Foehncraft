@@ -1,4 +1,4 @@
-"""The first-cell y⁺ sweep of the SST wall treatments on the TMR flat plate
+"""The first-cell y⁺ sweep of the SST wall treatments on the flat plate
 (stage 6 specification 9.3; verification manual, k-ω SST part 6b and 6g).
 
     python3 examples/studies/sst_wall_sweep.py OUT [--jobs N] [--treatment automatic]
@@ -6,8 +6,10 @@
 
 Runs `tmr_plate_sst.toml` on mesh level `--level` (64 × 48 cells for 1)
 with the wall grading set so that the first cell at x = 0.97 has the
-given y⁺ (from u_τ of the TMR C_f), and reports C_f(0.97) against the TMR
-value 2.6907e-3 in OUT/report.md, with the y⁺ the run reached. Finished
+given y⁺ (from u_τ of the reference C_f), and reports C_f(0.97) against the
+reference in OUT/report.md (by default our own `low-re` result on the finest
+plate mesh, level 3, first-cell y⁺ 0.09: 2.7005e-3, the plate GCI study of
+D201's rework; no number of another solver), with the y⁺ the run reached. Finished
 runs (a flow.json in their folder) are kept; delete a folder to rerun it.
 """
 from __future__ import annotations
@@ -22,15 +24,15 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 FOEHN = str(ROOT / "target/release/foehn")
 CASE = ROOT / "examples/cases/flow/tmr_plate_sst.toml"
-CF_TMR = 2.6907e-3
+CF_REF = 2.7005e-3     # own low-re result, level 3 (plate_channel_gci.py)
 NU = 2.0e-7
 HEIGHT = 1.0
 
 
 def ratio_for(y_plus: float, cells: int) -> float:
     """The grading ratio (last/first cell height) of `cells` cells over the
-    height 1 m whose first cell centre lies at y⁺ (u_τ from the TMR C_f)."""
-    u_tau = math.sqrt(CF_TMR / 2.0)
+    height 1 m whose first cell centre lies at y⁺ (u_τ from the reference C_f)."""
+    u_tau = math.sqrt(CF_REF / 2.0)
     h1 = 2.0 * y_plus * NU / u_tau
 
     def first(q):
@@ -89,15 +91,15 @@ def main():
 
     with ThreadPoolExecutor(a.jobs) as ex:
         res = list(ex.map(run, targets))
-    lines = [f"# SST `{a.treatment}` on the TMR plate, level {a.level}", "",
-             "| target y⁺ | y⁺ reached | C_f ·10³ | vs TMR | iterations, converged |",
+    lines = [f"# SST `{a.treatment}` on the plate, level {a.level}", "",
+             "| target y⁺ | y⁺ reached | C_f ·10³ | vs reference | iterations, converged |",
              "|---|---|---|---|---|"]
     for yp, v in res:
         if v is None:
             lines.append(f"| {yp:g} | failed | | | |")
             continue
         lines.append(f"| {yp:g} | {v['y_plus']:.2f} | {1e3 * v['cf']:.4f} | "
-                     f"{100 * (v['cf'] / CF_TMR - 1):+.1f} % | {v['iterations']}, {v['converged']} |")
+                     f"{100 * (v['cf'] / CF_REF - 1):+.1f} % | {v['iterations']}, {v['converged']} |")
     (base / "report.md").write_text("\n".join(lines) + "\n")
     (base / "results.json").write_text(json.dumps(dict((str(k), v) for k, v in res), indent=1))
     print("\n".join(lines))

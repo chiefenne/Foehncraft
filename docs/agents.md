@@ -20,6 +20,8 @@ Contents: [Before you start](#before-you-start) ·
 [4. The action table](#4-the-action-table) ·
 [5. A first session](#5-a-first-session) ·
 [6. Replay the session](#6-replay-the-session) ·
+[7. Watch and steer a running case](#7-watch-and-steer-a-running-case) ·
+[A recorded study](#a-recorded-study-the-fin-pitch-of-a-heat-sink) ·
 [Safety advice](#safety-advice) ·
 [What the server does and does not do](#what-the-server-does-and-does-not-do)
 
@@ -192,6 +194,109 @@ skipped (D197). Read the journal to see what the assistant did: each row
 holds the tool, its typed input, the status, the exit code and, for an
 approved call, who approved it.
 
+## 7. Watch and steer a running case
+
+While `flow.run` is going, the assistant's other calls of the kinds read and
+control do not wait for it (L19, [interfaces](interfaces.md#live-control-port-l19)),
+so it can look at the run, change it and stop it:
+
+| Tool | What it does |
+|---|---|
+| `run.status` | the last iteration or step with its residuals and linear iterations, the wall time, whether a stop is pending and what the run did with earlier changes |
+| `result.page` | the histories so far (`residuals`, monitors, `record`), paged by cursor |
+| `run.set` | change run-time settings (the keys a re-read of the case file may change, for example `solver.momentum.relaxation`; never `run.limits.*`); applied at the end of the current iteration or step |
+| `run.stop` | stop at the end of the current iteration or step: restart file, final output, result summary, exit code 3 |
+
+A setting that does not fit the case is not applied and shows as
+`rejected` with the reason in the status (`RUN024`); the run goes on. Every
+change is in the run record with the `[[schedule]]` entry that reproduces it
+from a case file. Stopping is not an action that needs your approval; it
+needs the token of the run, which lies in its output folder, inside the write
+root. A diverging run (residuals growing, `RUN014`) or a steady run that has
+stalled at iteration 2000 to 3000 (the diagnosis, `RUN016`) is what an
+assistant should stop, look at, and restart with other settings.
+
+## A recorded study: the fin pitch of a heat sink
+
+The following session is real, and recorded: an assistant (Claude) drove
+`foehn mcp` through [`tools/agent/stdio_host.py`](../tools/agent/stdio_host.py),
+a small host for scripts that keeps the server open and passes each call on.
+The calls are the assistant's own; the only thing the person prepared is the
+action table
+([`examples/cases/tools/mcp/heat_sink_study/foehn-mcp.toml`](../examples/cases/tools/mcp/heat_sink_study/foehn-mcp.toml)):
+starting runs is allowed, everything else that needs a rule is refused, and a
+run may not have more than 40 000 cells. The host announces no elicitation, so
+a question could not even be asked: what is not allowed in the table is
+refused. [Gallery 181](gallery/runs.md#heat-sink-study) shows the result.
+
+The task: *how does the spacing of the three fins of the heat sink of
+[gallery 158](gallery/energy.md#cht-turbulent) change the temperature of its
+base and the pressure drop of the channel?* The fins are 3 mm thick and
+20 mm tall on a 100 mm base; the middle fin stays at x = 128 mm and the outer
+ones move, so the pitch is 24, 32, 40 (the case as shipped) and 48 mm, the
+widest that keeps the outer fins on the base.
+
+| # | Call | What came back |
+|---|---|---|
+| 1 | `case.check` of the shipped case | can be run: 15 000 cells, 2500 iterations at most, host memory 94 MB, output 11 MB; the estimate has no wall time (`RUN012`, no benchmark of this machine yet); diagnostic `THM005`: the walls `ymin` and `ymax` have no energy condition and are adiabatic, which the assistant takes as intended (they are the channel walls) |
+| 2 | `case.check` with the fins of 24 mm pitch, set as `mesh.generate.zones=[…]` | the same 15 000 cells: the geometry change does not change the mesh size |
+| 3 | `flow.run` of that case | **refused**, `MCP002`: no `[run.limits]`; fix `run.limits.max_wall_time=3600, run.limits.max_output=1e8`. The assistant adds its own limits, 900 s, 30 MB and a study budget of 3500 cell-hours for the whole sweep, as `set` overrides |
+| 4 | `flow.run` with `out` in `/tmp/elsewhere` | **refused**, `MCP003`: `write-outside-root`; nothing was written |
+| 5 | `flow.run` on a mesh twice as fine (600 × 100, 60 000 cells) to check the mesh dependence | **refused**, `MCP003`: `exceed-estimate`, 60 000 cells over the cap of 40 000. The assistant notes that it cannot check the mesh dependence in this project |
+| 6 | `flow.run` with pitch 24 mm, started without waiting | the run goes on; two `run.status` calls during the run show it at iteration 156 and 291 with falling residuals |
+| 7 | `result.page` of the run: the series, then `boundaries` and `line_base_top` (100 rows) | mean pressure of the inlet and outlet, and the temperature of the cells along the top of the base |
+| 8 | the same for pitch 32, 40 and 48 mm, one after the other | each converged in 937 to 1007 iterations, about 2 min, 483 to 526 cell-hours; `study_budget.jsonl` lists them |
+| 9 | `result.read` of every run | every run ends `finished` (exit code 0) with the same 7 limitations |
+
+What the assistant read:
+
+| Pitch (mm) | Iterations | Base top, mean (K) | Base top, maximum (K) | Pressure drop (Pa) |
+|---|---|---|---|---|
+| 24 | 962 | 334.0 | 334.3 | 65.7 |
+| 32 | 956 | 331.2 | 331.4 | 61.4 |
+| 40 | 1007 | 329.2 | 329.4 | 58.0 |
+| 48 | 937 | 327.7 | 328.0 | 63.1 |
+
+And what it reported at the end, in its own words:
+
+> **Finished with 7 limitations** (the same for all four runs).
+> The mean temperature of the base top falls from 334.0 K at 24 mm pitch
+> to 327.7 K at 48 mm; the pressure drop is lowest at 40 mm (58.0 Pa) and
+> rises again at 48 mm (63.1 Pa). 48 mm is the widest pitch that the 100 mm
+> base allows, so the temperature has not turned around within the range
+> studied; I cannot say what a wider base would do. The limitations:
+> `LIM002`, the mean first-cell y⁺ of the walls is 4.7 to 18.4, outside the
+> validated range of the wall treatment; `LIM004`, one mesh only, so the
+> discretisation uncertainty is unknown, and a finer mesh was refused by the
+> project's cell cap; `LIM001` ×4, the automatic wall treatment, the energy
+> equation with a turbulence model, conjugate heat transfer with a
+> turbulence model and settings on a schedule are graded partial. The
+> difference between 24 and 48 mm (6 K) is large against the 1 to 2 K between
+> neighbours, but how large a mesh change would be is not known. This is a
+> sweep for illustration, not a design.
+
+### Replay it
+
+The journal of the session is
+[`examples/cases/tools/mcp/heat_sink_study/journal.jsonl`](../examples/cases/tools/mcp/heat_sink_study/journal.jsonl):
+every call with its typed input, the refusals and the live `run.status`
+calls included. A person replays it from the repository root without a
+window, and gets the same numbers (results are bitwise reproducible, D84):
+
+```
+mkdir -p output/agent/study
+target/release/foehn run --script examples/cases/tools/mcp/heat_sink_study/journal.jsonl \
+    --read-root examples/cases --read-root output/agent/study --write-root output/agent/study
+```
+
+The replay skips the refused calls (3 to 5) and the live calls, runs the
+four sweeps and the reads, and reports each call that ends otherwise than
+recorded; the four runs take about 8 minutes on 4 threads. The recorded session was replayed
+that way: of 27 calls 22 were replayed and 5 skipped (the three refused runs and the two
+live status calls), none ended otherwise than recorded, and the residual histories, the boundary
+and base-line tables, the balance, the fields and the restart files of the four runs are
+byte-identical to the originals (D84).
+
 ## Safety advice
 
 - **Its own folder.** Let the assistant work only in a project folder of
@@ -219,7 +324,8 @@ approved call, who approved it.
 | Does | Does not (yet) |
 |---|---|
 | every registry tool, by its id, through the same call as `foehn call` | tools of its own: there is no MCP-only logic |
-| the roots, the action table, mandatory run limits, the journal | a live control channel to a running solver (L19) |
+| the roots, the action table, mandatory run limits, the journal | change the limits of a running case (a person does, with the case file) |
+| `run.status`, `run.set`, `run.stop` on a running case, answered while it runs (L19) | steer a run that was started without the control port (a plain `foehn flow`) |
 | progress notifications during a run, cancellation | several calls at once: calls run one after another |
 | summaries with limitations, histories paged by `result.page` | raw fields, images (L21), comparing runs (L20) |
 | | resources and prompts (the lists are empty) |
