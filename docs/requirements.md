@@ -473,7 +473,7 @@ v0.7 is tagged and the clean-room replacement of other solvers' numbers (E1 to E
 **In v1.0:**
 
 1. 7b2 laminar natural convection (cavity Ra 1e3 to 1e6, plate, mixed convection) after 7b1 and 7c; heated D45 cases with SGDH (pipe, T-junction with hot and cold inflow). Not sized yet.
-2. Multi-rank MPI with overlapped halo exchange, the reproducible mode across ranks (D31, D93) and restart on another rank count; tests with several ranks on one machine. The spike of 2026-11-22 sized it ([assessment](assessments/mpi-multi-rank-sizing.md)): nine to ten pull requests, the first being the canonical local mesh and geometry that makes 2 ranks give bitwise the matrix of 1 rank.
+2. Multi-rank MPI with overlapped halo exchange, the reproducible mode across ranks (D31, D93) and restart on another rank count; tests with several ranks on one machine. The spike of 2026-11-22 sized it ([assessment](assessments/mpi-multi-rank-sizing.md)): nine to ten pull requests, the first being the canonical local mesh and geometry that makes 2 ranks give bitwise the matrix of 1 rank. Decided 2026-11-22: everything runs on ranks in v1.0 (periodic faces, MRF, sliding interfaces and CHT views included, not sized yet, the tag moves), the multigrid setup is replicated on every rank first, CPU ranks only (GPU with ranks moves to v1.1), `foehn run --ranks N` starts a run on ranks.
 3. The internal-flow cases of D45 (pipe, plane diffuser, U-bend, T-junction on polyhedra) with GCI in the reports; about 1-2 h of runs each plus one PR each.
 4. Cell-quality remediation (D50): the perturbed-mesh acceptance case.
 5. Scaling measurements as far as the hardware allows, labelled "designed for" for multi-node (O12).

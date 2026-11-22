@@ -190,7 +190,7 @@ W9; W2 and W3 can run in parallel after W1 if two threads are used.
 - The user must not have to choose a partition to get a result: results do
   not depend on the cuts, and the partition is a performance setting.
 
-## 8. Decisions of the maintainer and open points
+## 8. Decisions of the maintainer
 
 **Card 1 (2026-11-22): scope.** The maintainer chose "everything in v1.0":
 besides fluid-only flows, periodic faces, sliding interfaces, moving
@@ -209,9 +209,21 @@ taking them into v1.0 moves the tag. A first estimate needs a code read of
 each, about one hour of agent time per item, which is the proposal for the
 next step if the maintainer wants numbers before the order is fixed.
 
-**Still open (cards 2 to 4):** replicated or scalable multigrid setup, GPU with
-ranks in v1.0, how a run starts on ranks. Answers go into section 7a and D235
-of the requirements.
+**Card 2: multigrid setup.** Replicated first (W4 as written); the scalable
+setup replaces it later without changing any result, because both give the
+aggregates of the one-rank run.
+
+**Card 3: GPU.** CPU ranks only in v1.0. GPU runs stay on one rank; GPU-aware
+MPI, exact reductions on the GPU and the CPU against GPU hash check with two
+ranks sharing the T4 move to v1.1. W9 therefore measures CPU ranks only.
+
+**Card 4: launch.** `foehn run --ranks N` (the `ranks` input of the run tool,
+so the CLI, the Python package and the MCP server share it); the run starts
+itself under the system MPI launcher. Starting with `mpirun` by hand keeps
+working. This is W7.
+
+**Nothing is open from the spike.** What remains is the order of work and the
+go to start W1; coding starts only on the maintainer's explicit go.
 
 ## References
 
