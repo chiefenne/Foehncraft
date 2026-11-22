@@ -151,6 +151,11 @@ codes! {
     THM_SIDE = "THM003", Error, "A thermal condition on a boundary that cannot carry it: a flux or convection at an inlet, any condition at an outlet, a periodic boundary, a symmetry plane or a wedge.";
     THM_RANGE = "THM004", Error, "A thermal value out of range: a temperature or ambient temperature ≤ 0 K, a heat-transfer coefficient ≤ 0, a heat flow that is not finite.";
     THM_ADIABATIC = "THM005", Warning, "Walls without a `[boundary.<name>.energy]` table in a run with the energy equation: they are adiabatic (listed once).";
+    BUO_NO_GRAVITY = "BUO001", Error, "`[gravity]` with a vector of zero length, or a buoyancy model without `[gravity]`.";
+    BUO_RANGE = "BUO002", Warning, "The Boussinesq model outside its range: β ΔT above 0.1 over the temperatures of the case (the density changes by more than 10 %).";
+    BUO_NO_EXPANSION = "BUO003", Error, "The Boussinesq model without what it needs: no energy equation, no expansion coefficient (the fluid's density does not depend on T and `[buoyancy] expansion_coefficient` is not given), or a reference value out of range.";
+    BUO_NONE = "BUO004", Warning, "`[gravity]` with the energy equation but no buoyancy model (the temperature drives no flow); as information: a turbulence model with buoyancy, whose production of k by buoyancy comes in stage 7e1.";
+    BUO_TALL_OPENING = "BUO006", Warning, "A pressure boundary with `pressure_kind = \"static\"` over a height span whose hydrostatic difference ρ_ref g Δz is above the dynamic pressure: a uniform static value drives a flow through the opening.";
     THM_NO_ENERGY = "THM009", Error, "A `[boundary.<name>.energy]` table without `[energy]`: the energy equation is solved only with an `[energy]` table.";
     ENE_BOUNDARY = "THM010", Error, "A `[boundary.<name>.energy]` table for an unknown boundary, without exactly one condition (`temperature`, `heat_flux`, `heat_flow`, or `heat_transfer_coefficient` with `ambient_temperature`), or with `heat_transfer_coefficient` and `ambient_temperature` apart.";
     ENE_INLET = "THM011", Error, "An inlet without `[boundary.<name>.energy] temperature` in a run with the energy equation.";

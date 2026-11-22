@@ -643,6 +643,7 @@ pub fn attach(fl: &mut crate::simplec::Flow, view: Arc<FluidView>) -> Result<()>
         values: &values,
         t: 0.0,
         turning: &full.turning(),
+        hydrostatic: crate::buoyancy::hydrostatic(&full),
     };
     let arrays = crate::bc::arrays(mesh, geo, &full.boundary, phys.rho, at)?;
     let disc = crate::simplec::discretisation(mesh, geo, &arrays)?;

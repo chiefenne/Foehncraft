@@ -37,6 +37,7 @@ pub mod balance;
 pub mod banner_art;
 pub mod bc;
 pub mod budget;
+pub mod buoyancy;
 pub mod case;
 pub mod checkpoint;
 pub mod cht;

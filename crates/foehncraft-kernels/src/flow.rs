@@ -639,6 +639,10 @@ pub struct FluxInputs<'a, T> {
     /// centroid, w (u_P + ψ_P ∇u_P·r_P) + (1 − w)(u_N + ψ_N ∇u_N·r_N),
     /// in place of the interpolation with the interpolated gradient.
     pub bounded: bool,
+    /// Balanced-force offset q_f per face (D154): subtracted from the
+    /// pressure jump of interior and pressure-boundary faces; empty
+    /// without gravity.
+    pub jump_offset: &'a [T],
 }
 
 /// Face mass flux (kg/s) out of the owner, with the Rhie–Chow interpolation
@@ -726,7 +730,10 @@ pub unsafe fn face_mass_flux<T: Real>(f: usize, inp: &FluxInputs<T>) -> T {
             ];
             let d = sub(xn, xp);
             let df = w * ld(inp.d, p) + wn * ld(inp.d, n);
-            let jump = (ld(inp.p, n) - ld(inp.p, p)) - dot(gpf, d);
+            let mut jump = (ld(inp.p, n) - ld(inp.p, p)) - dot(gpf, d);
+            if !inp.jump_offset.is_empty() {
+                jump -= ld(inp.jump_offset, f);
+            }
             let m = ld(inp.rho_face, f) * (dot(uf, s) - df * dgeo * jump) + ld(inp.relax, f);
             if inp.transient {
                 let dsf = w * ld(inp.ds, p) + wn * ld(inp.ds, n);
@@ -752,7 +759,10 @@ pub unsafe fn face_mass_flux<T: Real>(f: usize, inp: &FluxInputs<T>) -> T {
                 } else {
                     ld(inp.pb, fb)
                 };
-                let jump = (pb - ld(inp.p, p)) - dot(gpp, rp);
+                let mut jump = (pb - ld(inp.p, p)) - dot(gpp, rp);
+                if !inp.jump_offset.is_empty() {
+                    jump -= ld(inp.jump_offset, f);
+                }
                 let dp = ld(inp.d, p);
                 let m = ld(inp.rho_face, f) * (dot(uf, s) - dp * dgeo * jump) + ld(inp.relax, f);
                 if inp.transient {
@@ -1036,10 +1046,14 @@ pub unsafe fn boundary_velocity<T: Real>(
 /// p₀ − ½ ρ (ṁ_f / (ρ |S|))², or at an outlet with backflow treatment the
 /// static pressure `pset` on outflow and the total pressure `pset` on
 /// backflow ([`PB_OUTLET`]); with backflow suppressed the extrapolation on
-/// the closed faces ([`PB_NO_BACKFLOW`], [`PB_TOTAL_NO_BACKFLOW`]).
+/// the closed faces ([`PB_NO_BACKFLOW`], [`PB_TOTAL_NO_BACKFLOW`]). With
+/// gravity the extrapolation adds the balanced-force term `offset[fb]`
+/// (D154 (4)), so that the reduced jump has a zero normal gradient;
+/// `offset` is empty without gravity.
 ///
 /// # Safety
-/// As [`boundary_velocity`].
+/// As [`boundary_velocity`]; `offset` is empty or has an entry per
+/// boundary face.
 #[inline(always)]
 pub unsafe fn boundary_pressure<T: Real>(
     fb: usize,
@@ -1048,6 +1062,7 @@ pub unsafe fn boundary_pressure<T: Real>(
     pset: T,
     p: &[T],
     grad_p: &Vec3<T>,
+    offset: &[T],
 ) -> T {
     // SAFETY: guaranteed by the caller.
     unsafe {
@@ -1057,7 +1072,8 @@ pub unsafe fn boundary_pressure<T: Real>(
         let closed = (rule == PB_NO_BACKFLOW || rule == PB_TOTAL_NO_BACKFLOW) && m <= T::ZERO;
         if rule == PB_EXTRAPOLATE || closed {
             let r = sub(inp.geo.face_centroid.at(f), inp.geo.cell_centroid.at(c));
-            ld(p, c) + dot(grad_p.at(c), r)
+            let pb = ld(p, c) + dot(grad_p.at(c), r);
+            if offset.is_empty() { pb } else { pb + ld(offset, fb) }
         } else if rule == PB_TOTAL
             || rule == PB_TOTAL_NO_BACKFLOW
             || (rule == PB_OUTLET && m < T::ZERO)

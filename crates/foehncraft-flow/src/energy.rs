@@ -726,6 +726,31 @@ pub fn setup_findings(case: &crate::case::FlowCase) -> Vec<crate::bc::Finding> {
     }]
 }
 
+/// The range of the temperatures that the case prescribes as numbers (the
+/// start value, boundary and ambient temperatures), for the range checks
+/// of buoyancy (BUO002); `None` without the energy equation.
+pub fn temperature_range(case: &crate::case::FlowCase) -> Option<(f64, f64)> {
+    let case = case.fluid_view.as_ref().map_or(case, |v| &v.full_case);
+    case.energy.as_ref()?;
+    let mut v: Vec<f64> = Vec::new();
+    if let Some(t) = case.energy.as_ref().and_then(|e| e.initial.number()) {
+        v.push(t);
+    }
+    for b in case.boundary_energy.values() {
+        for s in [&b.temperature, &b.ambient_temperature]
+            .into_iter()
+            .flatten()
+        {
+            if let Some(t) = s.number() {
+                v.push(t);
+            }
+        }
+    }
+    let lo = v.iter().copied().fold(f64::INFINITY, f64::min);
+    let hi = v.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    (lo <= hi).then_some((lo, hi))
+}
+
 /// The thermal properties of the fluid as functions of T.
 #[derive(Debug, Clone)]
 pub struct Fluid {

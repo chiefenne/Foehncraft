@@ -844,6 +844,16 @@ pub struct FlowCase {
     /// by the reader.
     #[serde(skip)]
     pub boundary_energy: BTreeMap<String, crate::energy::EnergyBoundary>,
+    /// Gravity (stage 7b1): `[gravity]`. With it the solved pressure is the
+    /// reduced pressure p′ = p − ρ_ref g·(x − x_ref) (D153).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gravity: Option<crate::buoyancy::GravitySection>,
+    /// The buoyancy model (stage 7b1): `[buoyancy]`.
+    #[serde(
+        default,
+        skip_serializing_if = "crate::buoyancy::BuoyancySection::is_default"
+    )]
+    pub buoyancy: crate::buoyancy::BuoyancySection,
     /// The fluid view of a conjugate heat transfer case (stage 7d1): set on
     /// the case of the flow, which runs on the fluid cells only, with the
     /// full case and mesh behind it ([`crate::cht`]).
@@ -1272,6 +1282,7 @@ impl FlowCase {
             transient,
         )?;
         crate::energy::validate(self, &env)?;
+        crate::buoyancy::validate(self)?;
         crate::turbulence::validate(self)?;
         let p = self.properties()?;
         let rho = p.density();
@@ -2592,6 +2603,7 @@ pub fn run_steered(
         values: &values,
         t: 0.0,
         turning: &case.turning(),
+        hydrostatic: crate::buoyancy::hydrostatic(&case),
     };
     let reynolds = case.reynolds();
     let mut rep = FlowReport {
@@ -2651,6 +2663,7 @@ pub fn run_steered(
         );
         findings.extend(crate::turbulence::setup_findings(&case));
         findings.extend(crate::energy::setup_findings(&case));
+        findings.extend(crate::buoyancy::setup_findings(&case, &mesh, &geo));
         if li == 0 {
             rep.findings = findings.clone();
         }
@@ -2738,6 +2751,7 @@ pub fn run_steered(
             fl.set_momentum_source(src)?;
         }
         crate::scalar::attach(&mut fl, &case, &mesh, &geo)?;
+        crate::buoyancy::attach(&mut fl, &case)?;
         crate::turbulence::attach(&mut fl, &case, &mesh, &geo)?;
         if let Some(notes) = crate::frame::attach(&mut fl, &case, &mesh, &geo)? {
             for l in &notes.lines {
@@ -4328,6 +4342,19 @@ pub(crate) fn write_fields(
             values: &fl.p,
         },
     ];
+    // gravity (stage 7b1): `pressure` is the reduced pressure p′, the
+    // static pressure p = p′ + ρ_ref g·(x − x_ref) beside it (D153)
+    let hydro = crate::buoyancy::hydrostatic(case);
+    let static_p: Vec<f64>;
+    if let Some(h) = hydro {
+        static_p = (0..mesh.n_cells)
+            .map(|c| fl.p[c] + h.head(geo.cell_centroid[c]))
+            .collect();
+        fields.push(CellField {
+            name: "static_pressure",
+            values: &static_p,
+        });
+    }
     let err: Vec<f64>;
     if let Some(a) = analytic {
         err = (0..mesh.n_cells)
@@ -4387,7 +4414,12 @@ pub(crate) fn write_fields(
         .collect();
     let name = case_name(case);
     let units = format!(
-        "{FIELD_UNITS}{}{}",
+        "{FIELD_UNITS}{}{}{}",
+        if hydro.is_some() {
+            "; static_pressure Pa"
+        } else {
+            ""
+        },
         match &fl.state.turbulence {
             Some(t) if t.zeta.is_some() => {
                 "; k m2/s2; epsilon m2/s3; nu_t m2/s; turbulence_wall_distance m; \
@@ -4514,11 +4546,13 @@ pub fn check_case(case: &FlowCase, path: &Path, mut log: impl FnMut(&str)) -> Re
             values: &case.compiled_boundaries()?,
             t: case.time.map_or(0.0, |t| t.start_time),
             turning: &case.turning(),
+            hydrostatic: crate::buoyancy::hydrostatic(&case),
         },
         case.check_context(),
     );
     findings.extend(crate::turbulence::setup_findings(case));
     findings.extend(crate::energy::setup_findings(case));
+    findings.extend(crate::buoyancy::setup_findings(case, &mesh, &geo));
     for f in &findings {
         log(&f.to_string());
     }

@@ -260,6 +260,7 @@ impl TimeValues {
                     values: &self.values,
                     t,
                     turning: &case.turning(),
+                    hydrostatic: crate::buoyancy::hydrostatic(&case),
                 },
             )?;
             fl.set_boundary_velocity(&arr.ub)?;
@@ -371,11 +372,13 @@ pub fn run(
                 values: &values,
                 t: case.time.map_or(0.0, |t| t.start_time),
                 turning: &case.turning(),
+                hydrostatic: crate::buoyancy::hydrostatic(&case),
             },
             case.check_context(),
         );
         findings.extend(crate::turbulence::setup_findings(case));
         findings.extend(crate::energy::setup_findings(case));
+        findings.extend(crate::buoyancy::setup_findings(case, &mesh, &geo));
         steer.set_cells(mesh.n_cells, usize::from(case.run.backend != "cpu"));
         if ri == 0 {
             rep.findings = findings.clone();
@@ -881,6 +884,7 @@ fn rebuild_flow(
             values: &tv.values,
             t,
             turning: &case.turning(),
+            hydrostatic: crate::buoyancy::hydrostatic(&case),
         },
     )?;
     let disc = simplec::discretisation(mesh, geo, &arrays)?;
@@ -897,6 +901,7 @@ fn rebuild_flow(
         nfl.set_momentum_source(src)?;
     }
     crate::scalar::attach(&mut nfl, case, mesh, geo)?;
+    crate::buoyancy::attach(&mut nfl, case)?;
     crate::turbulence::attach_with(&mut nfl, case, mesh, geo, wall_distance)?;
     crate::frame::attach(&mut nfl, case, mesh, geo)?;
     let scheme = case.time.context("[time]")?.scheme;
@@ -981,6 +986,7 @@ fn run_one<F: FnMut(&str)>(
             values: &tv.values,
             t: time0.start_time,
             turning: &case.turning(),
+            hydrostatic: crate::buoyancy::hydrostatic(&case),
         },
     )?;
     let ub0 = arrays.ub.clone();
@@ -1017,6 +1023,7 @@ fn run_one<F: FnMut(&str)>(
         fl.set_momentum_source(src)?;
     }
     crate::scalar::attach(&mut fl, &case, mesh, geo)?;
+    crate::buoyancy::attach(&mut fl, &case)?;
     // the wall distance of the sliding mesh by imprinting: kept per part and
     // updated for the rotor angle of every step (D182, D48)
     let mut turning_distance = match (&imprint, &work) {
