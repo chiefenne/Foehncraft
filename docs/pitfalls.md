@@ -120,6 +120,15 @@ sizes (h = 0.0050 m failed, 0.0055 m passed). Use plain Gmsh tetrahedra,
 try another size, or run the tetrahedra; the cause in the dual of boundary
 nodes at the concave junction edge is not fixed.
 
+### The asymmetric diffuser does not settle on fine meshes
+
+The steady SST case of gallery 199 (Re_H 20 000) converges on 5 280 cells
+(relaxation 0.5) and not on 21 120 or 84 480 (2026-11-22): SIMPLEC at
+relaxation 0.3 and 0.5 stalls, the default 0.7 diverges, and the coupled
+solver does not converge in 2 500 iterations and moves the reattachment
+from 30.7 H to 21.5 H. Do not run a grid study with the steady solver on
+this case; try a transient run first.
+
 ## Observers must not change the run
 
 Writing an intermediate result or a balance table between two outer

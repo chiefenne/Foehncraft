@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**99 features: 49 verified, 46 partial, 4 unverified.**
+**99 features: 48 verified, 47 partial, 4 unverified.**
 
 ## How a grade is computed
 
@@ -64,7 +64,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Boundary conditions | [Symmetry planes](#bc-symmetry) | verified |
 | Boundary conditions | [Axisymmetric wedges](#bc-wedge) | verified |
 | Boundary conditions | [Periodic pairs driven by a mass flow or a pressure gradient](#bc-periodic) | verified |
-| Turbulence models | [k-ω SST (2003)](#turbulence-sst) | verified |
+| Turbulence models | [k-ω SST (2003)](#turbulence-sst) | partial |
 | Turbulence models | [Standard k-ε](#turbulence-k-epsilon) | partial |
 | Turbulence models | [Realizable k-ε](#turbulence-realizable-k-epsilon) | partial |
 | Turbulence models | [k-ε-ζ-f (Hanjalić, Popovac & Hadžiabdić 2004)](#turbulence-zeta-f) | partial |
@@ -615,15 +615,20 @@ Gaps:
 
 ### k-ω SST (2003)
 
-**verified** · id `turbulence.sst` · switch `turbulence.model = "k-omega-sst"` · decisions D130
+**partial** (gaps written) · id `turbulence.sst` · switch `turbulence.model = "k-omega-sst"` · decisions D130
 
 - manufactured: [`sst_manufactured_solution_orders`](../../crates/foehncraft-flow/src/turbulence/mms.rs): orders 2.04 to 2.17 of k and ω on hexahedra, polyhedra and tetrahedra ([results](stage6.md#manufactured-solutions-of-every-model-spec-92-pr-148))
 - reference-data: [`tmr_plate_sst`](../../examples/cases/flow/tmr_plate_sst.toml): flat plate: C_f(0.97) +1.45 % from the Coles–Fernholz fit, GCI 1.76 % ([results](stage6.md#tmr-flat-plate-re_l--510⁶))
 - reference-data: [`channel_sst`](../../examples/cases/flow/channel_sst.toml): channel at Re_τ 395: U_b⁺ −1.3 % from the DNS of Moser, Kim & Mansour (1999) ([results](stage6.md#channel-re_τ--395))
 - reference-data: [`pipe_turbulent_sst`](../../examples/cases/flow/pipe_turbulent_sst.toml): pipe at Re_b 5300: u_τ/U_b +4.5 % from the DNS of El Khoury et al. (2013), GCI 0.2 % (band ±6 %) (passes in CI (set linux-1), not yet in the manual)
+- consistency: [`diffuser_sst`](../../examples/cases/flow/diffuser_sst.toml): asymmetric diffuser, coarse mesh: steady solution with separation at 0.73 H and reattachment at 30.7 H (passes in CI (set linux-1), not yet in the manual)
 - reference-data: [`backstep_outlet_backflow`](../../examples/cases/flow/backstep_outlet_backflow.toml): backward-facing step with the outlet inside the recirculation
 - reference-data: recorded run (level sweep of backstep_validation with SST, 3 meshes): step of Driver & Seegmiller (1985): x_r/H 6.747, +7.8 % (band ±10 %) ([results](stage6.md#backward-facing-step-against-the-experiment-part-6g-95))
 - consistency: [`sst_results_are_bitwise_equal_on_1_and_4_threads`](../../crates/foehncraft-flow/tests/turbulence.rs): bitwise equal on 1 and 4 threads
+
+Gaps:
+
+- asymmetric diffuser (gallery 199): the steady solver does not reach a steady state on 21 120 and 84 480 cells (SIMPLEC at relaxation 0.3 and 0.5 and the coupled solver stall or diverge), so there is no grid convergence study; the coarse solution is not compared with the measurements of Buice & Eaton (pending)
 
 Notes:
 

@@ -36,6 +36,8 @@ examples/meshes/*.su2
 !examples/meshes/pipe_gmsh_raw.msh
 # the coarse T-junction of gallery 196 (4 852 polyhedra, 0.9 MB), the CI case
 !examples/meshes/tjunction_gci_coarse.msh
+# the coarse diffuser mesh of gallery 199 (5 280 cells, 0.35 MB), the CI case
+!examples/meshes/diffuser_coarse.su2
 
 # Python package
 __pycache__/

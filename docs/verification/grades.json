@@ -401,9 +401,13 @@
   {
    "id": "turbulence.sst",
    "title": "k-ω SST (2003)",
-   "grade": "verified",
-   "why": [],
-   "gaps": [],
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "asymmetric diffuser (gallery 199): the steady solver does not reach a steady state on 21 120 and 84 480 cells (SIMPLEC at relaxation 0.3 and 0.5 and the coupled solver stall or diverge), so there is no grid convergence study; the coarse solution is not compared with the measurements of Buice & Eaton (pending)"
+   ],
    "range": {
     "y_plus_first": [
      0.0,

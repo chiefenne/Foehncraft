@@ -34,7 +34,7 @@ FLOW = {
         "pipe_gmsh_raw", "channel_heated", "channel_sst", "channel_keps", "channel_zeta_f",
         "channel_zeta_f0", "cavity_re1000_coupled", "channel_heated_keps", "channel_heated_pr0025",
         "channel_eb", "channel_rotating_sst", "square_duct_qcr", "pipe_turbulent_sst",
-        "tjunction_mixing",
+        "tjunction_mixing", "diffuser_sst",
     ],
     "linux-2": [
         "cylinder_re20", "cavity_re1000", "taylor_green_cfl10", "poiseuille_tet",

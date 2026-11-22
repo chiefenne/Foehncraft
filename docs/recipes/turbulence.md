@@ -764,3 +764,26 @@ wall-resolved runs need `solver.momentum.relaxation = 0.95` here, and
 judge convergence by u_τ, not by the residual alone.
 
 [↑ back to top](#turbulence-models)
+
+---
+
+<a id="diffuser"></a>
+## 199. Run an asymmetric diffuser and find the separation
+
+Make the structured mesh at a level (every level halves all intervals) and
+run with a relaxation of 0.5 (0.7 diverges):
+
+```
+python3 examples/meshes/diffuser.py diffuser.su2 --level 0
+target/release/foehn flow examples/cases/flow/diffuser_sst.toml --out output/diffuser \
+    --set 'mesh.file="diffuser.su2"'
+```
+
+The report prints the separation and the reattachment point of the lower
+wall (`output.wall_crossings`, positions from x = 0) and the first-cell y⁺
+of both walls. `wall_upper.csv` holds the wall pressure for the pressure
+recovery. On finer levels the steady run does not settle (gallery 199):
+check the momentum residual at 2 000 iterations, which rises, before
+trusting a position.
+
+[↑ back to top](#turbulence-models)
