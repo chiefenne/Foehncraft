@@ -109,7 +109,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="cht-turbulent"></a>158 | [Couple a turbulent flow with a solid (turbulent conjugate heat transfer)](recipes/energy.md#cht-turbulent) | [Energy equation and heat transfer](recipes/energy.md) |
 | <a id="cht-transient"></a>159 | [Follow how a solid and a fluid heat up together (transient conjugate heat transfer)](recipes/energy.md#cht-transient) | [Energy equation and heat transfer](recipes/energy.md) |
 | <a id="cht-contact"></a>160 | [Put a contact resistance between two parts, orient an orthotropic solid, heat a component](recipes/energy.md#cht-contact) | [Energy equation and heat transfer](recipes/energy.md) |
-| <a id="fyfe-stirred-tank-recipe"></a>161 | [Run the 2 L stirred tank of Fyfe et al. and compare it with the published CFD plane](recipes/applications.md#fyfe-stirred-tank-recipe) | [Engineering gallery](recipes/applications.md) |
+| <a id="fyfe-stirred-tank-recipe"></a>161 | [Run the 2 L stirred tank of Fyfe et al.: power number and mixing time](recipes/applications.md#fyfe-stirred-tank-recipe) | [Engineering gallery](recipes/applications.md) |
 | <a id="status"></a>165 | [Grade a feature on the verification status page](recipes/verification.md#status) | [Verification](recipes/verification.md) |
 | <a id="budgets"></a>166 | [Set an iteration budget and a budget per study](recipes/runs.md#budgets) | [Run control and health](recipes/runs.md) |
 | <a id="limitations"></a>170 | [Read and act on the limitations of a run](recipes/verification.md#limitations) | [Verification](recipes/verification.md) |
