@@ -1097,52 +1097,67 @@ fn run_one<F: FnMut(&str)>(
     if let Some(path) = &restart_file {
         let r = restart::read(path)?;
         let (r, same) = r.to_local(&mesh.cell_id[..nc], &mesh.face_id, mesh.n_interior_faces())?;
-        let Some((old, clock, dt_next, scheme)) = r.transient.clone() else {
-            bail!("{} is the restart file of a steady run", path.display());
-        };
-        if scheme != time0.scheme {
+        if let Some((old, clock, dt_next, scheme)) = r.transient.clone() {
+            if scheme != time0.scheme {
+                lg.note(&format!(
+                    "the restart file was written with {}, the case runs {}",
+                    scheme.label(),
+                    time0.scheme.label()
+                ));
+            }
+            fl.load(&r.state)?;
+            tr.restore(&mut fl, &old, clock)?;
+            crate::cht::load_restart(&mut fl, r.cht.as_ref(), path)?;
+            cycle_state = r.cht.as_ref().and_then(|c| c.cycle.clone());
+            if cycle_state.is_some() && !same {
+                bail!(
+                    "{}: the restart file holds the state of the cycle-averaged loop, which \
+                     follows the face order of the run that wrote it; the case has another cell \
+                     or face order",
+                    path.display()
+                );
+            }
+            fl.iteration = r.iteration;
+            if let Some(m) = &r.amg_matrix {
+                fl.restore_amg(m, r.amg_setups)?;
+            }
+            if !same {
+                let m = "note: the restart file has another cell or face order; the fields were mapped \
+                     by identity and the multigrid rebuilt (the continuation is not bit-identical)";
+                lg.note(m.trim_start_matches("note: "));
+                warnings.push(crate::diag::Diagnostic::new(
+                    crate::diag::RUN_RESTART_MAPPED,
+                    m,
+                ));
+            }
+            if !time0.adaptive {
+                dt = dt0;
+            } else {
+                dt = dt_next;
+            }
             lg.note(&format!(
-                "the restart file was written with {}, the case runs {}",
-                scheme.label(),
-                time0.scheme.label()
+                "restart from {} at step {}, t = {:.6e} s",
+                path.display(),
+                clock.step,
+                clock.time
             ));
-        }
-        fl.load(&r.state)?;
-        tr.restore(&mut fl, &old, clock)?;
-        crate::cht::load_restart(&mut fl, r.cht.as_ref(), path)?;
-        cycle_state = r.cht.as_ref().and_then(|c| c.cycle.clone());
-        if cycle_state.is_some() && !same {
-            bail!(
-                "{}: the restart file holds the state of the cycle-averaged loop, which follows \
-                 the face order of the run that wrote it; the case has another cell or face order",
-                path.display()
-            );
-        }
-        fl.iteration = r.iteration;
-        if let Some(m) = &r.amg_matrix {
-            fl.restore_amg(m, r.amg_setups)?;
-        }
-        if !same {
-            let m = "note: the restart file has another cell or face order; the fields were mapped \
-                 by identity and the multigrid rebuilt (the continuation is not bit-identical)";
-            lg.note(m.trim_start_matches("note: "));
-            warnings.push(crate::diag::Diagnostic::new(
-                crate::diag::RUN_RESTART_MAPPED,
-                m,
-            ));
-        }
-        if !time0.adaptive {
-            dt = dt0;
+            restart_from = Some(path.display().to_string());
         } else {
-            dt = dt_next;
+            // a steady restart file: its fields (velocity, pressure,
+            // turbulence) are the start fields of the run at `start_time`,
+            // with no older time levels, as after an initial condition
+            fl.load(&r.state)?;
+            crate::cht::load_restart(&mut fl, r.cht.as_ref(), path)?;
+            af.update(&case, mesh, geo, &mut fl, time0.start_time)?;
+            tv.update(&case, mesh, geo, &mut fl, time0.start_time)?;
+            tr.start(&mut fl)?;
+            lg.note(&format!(
+                "start from the steady solution of {} (iteration {}) at t = {:.6e} s",
+                path.display(),
+                r.iteration,
+                time0.start_time
+            ));
         }
-        lg.note(&format!(
-            "restart from {} at step {}, t = {:.6e} s",
-            path.display(),
-            clock.step,
-            clock.time
-        ));
-        restart_from = Some(path.display().to_string());
     } else {
         let (u, p) = match analytic0.filter(|a| a.is_transient() || case.initial.from_analytic) {
             Some(a) => {

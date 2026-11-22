@@ -385,7 +385,9 @@ pub struct Settings {
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct MomentumSettings {
-    /// Convection scheme of the momentum equations.
+    /// Convection scheme of the momentum equations (during a run only
+    /// between `upwind` and `linear-upwind`: a first-order start, then
+    /// second order, with `[[schedule]]`).
     pub scheme: Scheme,
     /// `scheme = "central"`: fraction of the bounded central scheme on the
     /// interior faces, the rest linear upwind (0 to 1).

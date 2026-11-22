@@ -1,0 +1,95 @@
+# Turbulent flow through the asymmetric plane diffuser of Buice & Eaton
+# (stage 8, D45), k-omega SST 2003 with the low-Re wall treatment.
+#
+#   python3 examples/meshes/diffuser.py examples/meshes/diffuser_coarse.su2 --level 0   (committed)
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/diffuser_sst.toml
+#
+# Geometry in metres with the inlet channel height H = 1 m (Buice & Eaton
+# 1995, Obi et al. 1993: 10 degree opening of one wall, area ratio 4.7;
+# both corners rounded with 4.3 H as in Kaltenbach 1994, CTR Annual
+# Research Briefs, p. 176): inlet duct of 20 H, diffuser of
+# 20.99 H, outlet duct of 50 H; the duct lengths are our choice
+# (examples/meshes/diffuser.py). The inlet takes the developed profile of
+# a periodic channel run (diffuser_channel_profile.toml, SST; the table is
+# written by examples/studies/diffuser_inlet_profile.py) with the velocity
+# and the turbulence of the table, as the experiment has a fully developed
+# channel flow. Re_H = U_c H / nu = 20 000 on the centreline velocity
+# U_c = 1 m/s and nu = 5e-5 m^2/s (bulk velocity U_b = 0.893 m/s). The
+# outlet takes a static pressure at 50 H.
+#
+# The run starts from potential flow (a uniform field breaks continuity in
+# the widening), with first-order upwind for 200 iterations and linear
+# upwind without a limiter from iteration 201 ([[schedule]]); relaxation
+# 0.8 (at 0.5 the large, weak separation converges very slowly). The
+# quantities are the separation and reattachment points on the lower wall
+# and the pressure recovery C_p = (p(x) - p(-10 H)) / (1/2 rho U_c^2) on
+# the upper wall; the comparison with the published measurements is
+# pending (no reference value is used here, D201). 6 960 cells on the
+# coarse mesh; the grid study (examples/studies/diffuser_gci.py) runs
+# levels 0 to 2.
+
+case_format = "0.6"
+
+[mesh]
+file = "../../meshes/diffuser_coarse.su2"
+thickness = 1.0
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 5e-5
+
+[turbulence]
+model = "k-omega-sst"
+wall_treatment = "low-re"
+
+[initial]
+potential_flow = true  # not a uniform field: it breaks continuity in the widening
+turbulence_intensity = 0.05
+viscosity_ratio = 10.0
+
+[boundary.inlet]
+type = "velocity-inlet"
+profile = "table"
+table = "diffuser_inlet_profile.csv"
+table_coordinate = "y"
+[boundary.outlet]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.upper]
+type = "wall"
+[boundary.lower]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-7
+max_iterations = 5000  # levels 0 to 2 need about 600, 1 500 and 4 900 iterations
+
+[solver.momentum]
+scheme = "upwind"      # a first-order start from the potential flow ...
+relaxation = 0.8
+
+[[schedule]]
+at_iteration = 201     # ... then second order (linear upwind, no limiter)
+set = { solver.momentum.scheme = "linear-upwind" }
+
+[output]
+vtkhdf = false
+wall_csv = true
+wall_crossings = [
+  { name = "separation", boundary = "lower", from = [0.0, 0.0, 0.5], direction = [1.0, 0.0, 0.0], kind = "separation" },
+  { name = "reattachment", boundary = "lower", from = [0.0, 0.0, 0.5], direction = [1.0, 0.0, 0.0], kind = "reattachment", skip = 2.0 },
+]
+# the jet core and the separated region: convergence is judged on these
+# (the jet moves slowly from the middle to the upper wall on the way)
+probes = [
+  { name = "core", point = [15.0, 0.5, 0.5] },
+  { name = "sep", point = [10.0, -1.5, 0.5] },
+]
+
+[log]
+columns = ["residual.momentum", "residual.continuity", "residual.turbulence", "probe.core.velocity_x", "probe.sep.velocity_x"]

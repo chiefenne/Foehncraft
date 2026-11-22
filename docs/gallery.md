@@ -18,7 +18,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | [Incompressible flow](gallery/flow.md) | steady and transient laminar verification and benchmarks: cavity, Poiseuille, Taylor–Green, cylinder, time-step control | 12, 13, 14, 15, 20, 78, 80, 81, 83, 85, 86, 87, 94, 95, 96, 98, 99, 100, 101, 102, 103, 196 |
 | [Passive scalars and the wall distance](gallery/scalars.md) | passive scalars carried by the flow, the bounded BDF2, the exact wall distance | 63 |
 | [Energy equation and heat transfer](gallery/energy.md) | the energy equation of the fluid with temperature-dependent properties, viscous heating and thermal walls: a heated cavity, conduction with k(T), Couette flow heated by friction, conjugate heat transfer with solid regions, laminar and turbulent (a finned heat sink) | 154, 156, 158, 159, 160, 180, 190, 186, 195 |
-| [Turbulence models](gallery/turbulence.md) | the RANS turbulence models of stage 6 with their wall treatments: k-ω SST on the TMR flat plate and in a channel | 68, 71, 73, 74, 88, 89, 90, 113, 115, 141, 140, 184, 194, 197, 193 |
+| [Turbulence models](gallery/turbulence.md) | the RANS turbulence models of stage 6 with their wall treatments: k-ω SST on the TMR flat plate and in a channel | 68, 71, 73, 74, 88, 89, 90, 113, 115, 141, 140, 184, 194, 197, 193, 199 |
 | [Boundary conditions](gallery/boundary-conditions.md) | slip walls, axisymmetric wedges, inlet profiles from tables, backflow at pressure outlets, convective outlets, periodic modules | 21, 67 |
 | [Expressions and materials](gallery/properties.md) | boundary values, body forces and viscosities as expressions, the material database, regions, walls with a mass flux | 23 |
 | [Python](gallery/python.md) | cases built, run and studied from Python: expressions with Python operators, callbacks, study tables | 24 |
@@ -116,6 +116,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | <a id="variable-density"></a>195 | [Air between walls at 960 K and 240 K, a heated duct and two closed boxes](gallery/energy.md#variable-density) | [Energy equation and heat transfer](gallery/energy.md) |
 | <a id="tjunction-mixing"></a>196 | [T-junction mixing on polyhedra: three meshes with grid convergence](gallery/flow.md#tjunction-mixing) | [Incompressible flow](gallery/flow.md) |
 | <a id="curvature-consistency"></a>197 | [The curvature correction on tetrahedra and perturbed meshes: a consistent DS/Dt](gallery/turbulence.md#curvature-consistency) | [Turbulence models](gallery/turbulence.md) |
+| <a id="diffuser"></a>199 | [Asymmetric plane diffuser: separation on one wall, rounded corners and three meshes with GCI](gallery/turbulence.md#diffuser) | [Turbulence models](gallery/turbulence.md) |
 | <a id="canonical-ranks"></a>200 | [Three ranks, the bits of one: the canonical local mesh](gallery/meshes.md#canonical-ranks) | [Meshes](gallery/meshes.md) |
 
 ## Adding a feature
