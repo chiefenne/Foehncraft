@@ -1,8 +1,12 @@
 # Step 27 – Adjoint solver (L17): staged plan
 
-Plan of 2026-11-22, maintainer request "Plan first" for L17. **No code, no
-decision taken**: every entry below is a proposal (D213 to D217, L50) until
-the maintainer answers the questions of section 9. Clean room (D201):
+Plan of 2026-11-22, maintainer request "Plan first" for L17. **No code.**
+The maintainer answered the ten questions of section 9 on 2026-11-22; the
+answers are in section 9 and adopted as D220 to D224, L51 and an amended
+L17 in [requirements.md](../requirements.md). Where a later section still
+says "proposed", the answer of section 9 governs. The ids were first
+written as D213 to D217 and L50 and renumbered because other work took
+those ids the same day. Clean room (D201):
 published literature only, no copyleft source, no commercial solver names.
 Time estimates are agent time (code in minutes to a few hours per pull
 request, long runs one to two hours, CI separately); where a size cannot
@@ -10,7 +14,8 @@ be known before a measurement the text says "not sized yet".
 
 Every gradient-based item of [step 26](step26-design-optimization.md)
 (D205 to D212, shape parametrisation, L49) depends on this solver. Next
-free ids at the time of writing: D213, L50, P19, O25, step 28.
+free ids after this page: D225, L52, P19, O25, step 28 (check the table
+before taking one; other pages also reserve D213 and L50).
 
 Contents: [0](#0-where-we-stand-checked-in-the-repository) where we stand,
 [1](#1-discrete-or-continuous) discrete or continuous,
@@ -91,7 +96,7 @@ Two consequences found while reading the code, which shape the plan:
 | Surface sensitivity | Node sensitivities dJ/dx; wall-face form by projecting on the normal | Natural: the Hadamard form (a function on the wall) |
 | Topology change under shape change (cut cells, L13) | Not differentiable through the cutting | Boundary-integral form needs only the converged fields |
 
-**Recommendation (D213 proposed): discrete adjoint, built on the kernels of
+**Recommendation (D220 proposed): discrete adjoint, built on the kernels of
 D59.** It is the form the requirements already prepare, it keeps the
 kernel source as the single definition of the physics, and its gradient
 is checkable against the forward derivative to round-off (D59's test). The
@@ -125,7 +130,7 @@ computer-graphics algorithms too. What transfers, and what does not:
 | **Constant-memory reverse by replaying the forward pass** (replay instead of taping) | Nimier-David et al. 2020 (radiative backpropagation); Vicini, Speierer & Jakob 2021 (path replay backpropagation) | Same trade as our binomial checkpointing and our "recompute local Jacobians" mode (section 7): memory for time, with a fixed-order replay that stays deterministic. Confirms the design, no new method |
 | **Source-transformation reverse for parallel kernels with atomics** | Hu et al. 2020 (DiffTaichi) | Atomic-based reverse conflicts with D31; use the gather-form reverse (section 2), keep as a speed comparison only |
 | **Compiler-level reverse mode** for GPU kernels (LLVM) | Moses & Churavy 2020 (Enzyme) | **Candidate for a spike** (stage A0): permissive licence; in Rust still experimental, state to be checked before any reliance (section 2, option B) |
-| Differentiable grid-free Monte Carlo (walk on spheres) | Miller, Sawhney, Crane & Gkioulekas 2024 ("Differential walk on spheres", arXiv 2405.12964) | Relevant only to L15 (radiation) where derivatives of a Monte Carlo estimate are needed; out of scope here, noted as L50-adjacent |
+| Differentiable grid-free Monte Carlo (walk on spheres) | Miller, Sawhney, Crane & Gkioulekas 2024 ("Differential walk on spheres", arXiv 2405.12964) | Relevant only to L15 (radiation) where derivatives of a Monte Carlo estimate are needed; out of scope here, noted as L51-adjacent |
 | Differentiable cloth / rigid contact with implicit differentiation | Liang et al. 2019; Qiao et al. 2020 | Same implicit-function idea as above; contact handling has no counterpart here |
 | Differentiable CFD in array languages (automatic differentiation of a whole solver, unrolled) | Kochkov et al. 2021; Bezgin, Buhendwa & Adams 2023; Holl, Koltun & Thuerey 2020 | Good for 2D research and for the cheap fidelity level of D207 (PyAeroFlow in JAX). Unrolling a converged steady solve costs memory proportional to the iterations: not the route for 1–10 M cell 3D runs |
 
@@ -142,7 +147,7 @@ the objective (∂J/∂q)ᵀ, (∂J/∂x)ᵀ, (∂J/∂p)ᵀ. Four ways to get t
 | **C. Operator-overloading tape** (CoDiPack-style, Sagebaum, Albring & Gauger 2017) | A reverse-mode `Real` type that records operations | Mature technique in large codes | A tape per thread is heap-based; incompatible with `no_std` GPU kernels; memory per product large; hidden state against D59 (1) |
 | **D. Hand-derived adjoint kernels** | Write the transposed kernels by hand | Fastest | Violates D59 (2) "no hand-derived or copied code"; breaks with every kernel change; rejected |
 
-**Proposed (D214): start with option A** because it works with what exists,
+**Proposed (D221): start with option A** because it works with what exists,
 and run a time-boxed spike on B (stage A0) to decide whether to switch
 the *kernel-local* reverse step to a compiler tool later. The surrounding
 structure (inverse-stencil gathers, objective and parameter plumbing, the
@@ -221,6 +226,14 @@ Stages are pull requests or short series of them; sizes are agent time.
 - Result: a short measurement note and the answer to question Q2.
 - Size: code minutes to under two hours, runs minutes. **Not sized
   further** until measured.
+
+### A0b. Solver generic over `Real` (decision Q7)
+
+Make the flow solver (not only the kernels) generic over `Real` so a whole
+run can be complex-stepped; details and risks in
+[section 9.1](#91-consequence-of-q7-a0b-a-solver-generic-over-real). The
+`f64` path stays the production path, bitwise unchanged on the catalogue.
+**Not sized yet**; first slice measured in A0.
 
 ### A1. Steady laminar incompressible adjoint, parameters without shape
 
@@ -304,7 +317,7 @@ unsteady, URANS with a periodic or decaying state, a time horizon
 shorter than the Lyapunov time). For chaotic and LES flows the plain
 adjoint grows exponentially (Lea, Allen & Haine 2000; Wang 2013) and is
 wrong; least-squares-shadowing methods (Wang, Blonigan & Wang 2014; Ni &
-Wang 2017) are the research item **L50**, not part of L17. L38 (learned
+Wang 2017) are the research item **L51**, not part of L17. L38 (learned
 unsteady corrections trained through unrolled steps, short horizons)
 uses this stage. Size: **not sized yet**.
 
@@ -321,9 +334,10 @@ uses this stage. Size: **not sized yet**.
 
 ### Order against the rest of the roadmap
 
-A0 needs no solver change and can run beside the stage 7 work. A1 and A2
-come after the stage 7 turbulent/transient CHT items (owner order of
-2026-11-21), unless the maintainer moves them (Q10). Tool wrappers of
+A0 needs no solver change and runs beside the stage 7 work. Decision Q10:
+A1 starts right after the current stage 7 part, A2 and A3 before the
+later stage 7 items if the heat sink study needs gradients; A0b sits
+between A0 and the verification of A1. Tool wrappers of
 D205/D210 need A1 to have something to wrap.
 
 ## 5. Verification ladder
@@ -344,7 +358,7 @@ on small meshes and is a feature row in `features.toml` (D199).
    level: derivative to round-off with h = 1e-30, no subtraction error.
    This also tests the `Dual` implementation itself, since the two types
    share no code. A complex-step run of the whole *solver* needs a solver
-   generic over `Real`; not planned now (Q7).
+   generic over `Real`: decided yes (Q7), work item A0b (section 9.1).
 4. **Tangent-linear solve**: the same linear system solved forward
    (dual direction) and in reverse; dJ/dp from both must agree to the
    linear tolerance. Cheap, exact, catches errors in the reverse
@@ -382,7 +396,7 @@ Sketch (not final):
 ```toml
 [adjoint]
 enabled     = true
-method      = "discrete"          # D213
+method      = "discrete"          # D220
 objective   = "dp_total"          # a D43 monitor or integral name, or an expression (D53)
 frozen      = []                  # e.g. ["turbulence"], recorded as a limitation
 tolerance   = 1e-8                # adjoint residual reduction
@@ -443,59 +457,72 @@ tool reports this before it starts.
 
 ## 8. Proposed entries
 
-Proposals only; nothing is added to `docs/requirements.md` tables until
-the maintainer decides (section 9). Next free ids: D213, L50.
+Adopted 2026-11-22 after the answers of section 9, with the changes noted
+there. Next free ids: D225, L52.
 
 | ID | Title | Content |
 |---|---|---|
-| D213 | Discrete adjoint on the D59 kernels | Section 1: discrete adjoint of the converged residual; exact (smooth) by default; frozen limiter or turbulence only as named options with a limitation; independent of the primal algorithm |
-| D214 | Reverse sweep from local dual Jacobians, scatter-free | Section 2 option A first, compiler reverse mode as a spike (A0); every reverse kernel is a gather over the inverse stencil, bitwise reproducible (D31, D93) |
-| D215 | Gradient verification ladder | Section 5: dot-product, local Jacobian, complex-step at residual level, tangent-linear, full-solve differences, shape derivative; a stage is "done" only with its rungs green or graded partial |
-| D216 | Adjoint tools and gradient contract | Section 6: `adjoint.solve`, `adjoint.sensitivity`, `adjoint.jvp`/`vjp`, `gradient.check`, `adjoint.estimate`; fills `limitations`, error estimates, effects and budget |
-| D217 | Scope rule for the unsteady adjoint | Section 4 A5: non-chaotic windows only; chaotic and LES sensitivities are a separate research item |
-| L50 | Sensitivities of chaotic flows | Least-squares shadowing (Wang et al.) for LES/DES; open research; also differentiable grid-free radiation (differential walk on spheres) once L15 exists |
+| D220 | Discrete adjoint on the D59 kernels | Section 1: discrete adjoint of the converged residual; exact (smooth) by default; frozen limiter or turbulence only as named options with a limitation; independent of the primal algorithm |
+| D221 | Reverse sweep from local dual Jacobians, scatter-free | Section 2 option A first, compiler reverse mode as a spike (A0); every reverse kernel is a gather over the inverse stencil, bitwise reproducible (D31, D93) |
+| D222 | Gradient verification ladder | Section 5: dot-product, local Jacobian, complex-step (residual level and, after A0b, the whole solve), tangent-linear, full-solve differences, shape derivative; a stage is "done" only with its rungs green or graded partial |
+| D223 | Adjoint tools and gradient contract | Section 6: `adjoint.solve`, `adjoint.sensitivity`, `adjoint.jvp`/`vjp`, `gradient.check`, `adjoint.estimate`; fills `limitations`, error estimates, effects and budget |
+| D224 | Scope rule for the unsteady adjoint | Section 4 A5: non-chaotic windows only; chaotic and LES sensitivities are a separate research item |
+| L51 | Sensitivities of chaotic flows | Least-squares shadowing (Wang et al.) for LES/DES; open research; also differentiable grid-free radiation (differential walk on spheres) once L15 exists |
 | L17 (amended) | Staged as A0–A6 (section 4) | Replace the one-line L17 text by the staged plan; no change of intent |
 
-## 9. Open questions for the maintainer
+## 9. Decisions of the maintainer (2026-11-22)
 
-Each has a recommendation; coding starts only on the maintainer's go
-(AGENTS.md).
+Asked as ten cards, one at a time, each with a recommendation. Coding still
+starts only on the maintainer's go (AGENTS.md).
 
-1. **Q1 Method.** Discrete adjoint (D213)? *Recommended: yes.*
-2. **Q2 Reverse-mode machinery.** Start with option A and allow a
-   time-boxed spike on the compiler tool (which may need a nightly
-   toolchain for the spike only, not for the product)? *Recommended: yes;
-   the spike result decides whether the product ever depends on it.*
-3. **Q3 Approximations.** Allow `frozen = ["turbulence"]` and frozen
-   limiters as named options with a limitation entry, default exact?
-   *Recommended: yes, so the gradient error of the common shortcut is
-   measured and visible.*
-4. **Q4 Primal algorithm.** Build on the residual function so SIMPLEC and
-   the coupled solver both work; the preconditioner is the coupled
-   solver's (its speed work stays closed, only transposed). *Recommended:
-   yes.*
-5. **Q5 First demonstration.** Laminar bend or duct (pressure drop with a
-   coloured wall-sensitivity map), a cylinder drag case, or the finned
-   channel of the heat sink study (needs A4)? *Recommended: laminar bend
-   pressure drop first; the heat sink after A4.*
-6. **Q6 Shape sensitivity form.** Exact node sensitivities with morphing
-   first (A2), the wall-face Hadamard form checked against them and used
-   for cut cells later. *Recommended: yes.*
-7. **Q7 Whole-solver complex-step.** Make the flow solver generic over
-   `Real` so a full run can be complex-stepped? *Recommended: not now;
-   residual-level complex-step and the tangent-linear solve cover the
-   risk.*
-8. **Q8 Transient scope.** Non-chaotic windows only (D217), chaotic
-   sensitivities as research item L50? *Recommended: yes.*
-9. **Q9 GPU.** CPU first, GPU parity of the reverse sweep after A1 (the
-   stage 2 pattern), kernel structure kept GPU-capable from the start.
-   *Recommended: yes.*
-10. **Q10 Priority.** Start A0 (no solver change) beside stage 7 and
-    A1/A2 after the stage 7 turbulent and transient CHT items, or move
-    the adjoint earlier because the whole optimisation chain waits for
-    it? *Recommended: A0 now, A1 right after the current stage 7 part,
-    A2 and A3 before the later stage 7 items if the heat sink study
-    needs gradients.*
+| # | Question | Answer | Consequence |
+|---|---|---|---|
+| Q1 | Method | **Discrete adjoint** (recommended) | D220 |
+| Q2 | Compiler reverse-mode tool | **Time-boxed spike only** (recommended) | D221; spike in A0, a nightly toolchain is allowed for the spike only |
+| Q3 | Frozen turbulence and limiters | **Named options, exact by default** (recommended) | Section 2 and A3; always a `limitations` entry; gradient error of the frozen variant is measured |
+| Q4 | Primal algorithm | **Residual function** (recommended) | SIMPLEC and the coupled solver share one callable residual; the coupled solver's preconditioner is reused transposed; its speed work stays closed |
+| Q5 | First demonstration | **Laminar bend pressure drop** (recommended) | A1 demo with a coloured wall-sensitivity map; the heat sink study after A4 |
+| Q6 | Shape sensitivity form | **Exact node form first** (recommended) | A2: node sensitivities with morphing first, wall-face form checked against them |
+| Q7 | Whole-solver complex step | **Yes, make the solver generic** (*not* the recommendation) | New work item A0b below; rung 3 of section 5 extends to full-solve complex-step |
+| Q8 | Transient scope | **Non-chaotic windows only** (recommended) | D224, research item L51 |
+| Q9 | GPU | **CPU first, GPU after A1** (recommended) | Kernel structure GPU-capable from the start; bitwise parity after A1 |
+| Q10 | Priority against stage 7 | **Spike now, A1 soon** (recommended) | A0 beside stage 7, A1 right after the current stage 7 part; A2 and A3 before the later stage 7 items if the heat sink study needs gradients |
+
+### 9.1 Consequence of Q7: A0b, a solver generic over `Real`
+
+The maintainer wants a whole run to be complex-steppable, so the flow
+solver (orchestration, linear solvers, turbulence and energy hosts) must
+become generic over `Real`, not only its kernels. Findings and plan, to be
+confirmed in A0:
+
+- The kernels are already generic (D59). What is `f64`-only: the derived
+  geometry weights (also needed for shape derivatives, A2), the solver
+  orchestration (`simplec.rs`, `coupled.rs`, `unsteady.rs`, `energy.rs`,
+  `cht.rs`), the Krylov and multigrid code, and the device layer.
+- A complex `Real` has to run through all of them, including GMRES with
+  complex arithmetic (a conjugation-free, "analytic" inner product, as the
+  complex-step technique requires), so every dot product and norm must use
+  the plain (non-conjugated) bilinear form and the real part for
+  convergence decisions. Comparisons and `max`/`min` act on the real part,
+  like `Dual`.
+- Costs: compile time and code size grow with the instantiations;
+  speed of the `f64` path must not change. Rule: the `f64` path stays the
+  production path and is bitwise unchanged (the 20 flow cases of the
+  catalogue compare with `tools/check/compare_runs.py`, as in stage 5 part
+  3). The generic code is monomorphised; the GPU path stays `f64`.
+- The pay-off: one run with h = 1e-30 gives the gradient of the full
+  solved J to round-off, independent of finite-difference noise: the
+  strongest check of the adjoint, and also of the primal's own
+  differentiability. It also makes the tangent-linear solve (rung 4) a
+  by-product.
+- Order: A0b follows the spike and the residual function (Q4) and comes
+  before A1's verification, because A1's acceptance includes the full-solve
+  complex-step comparison. **Not sized yet**: it touches the largest files of
+  the flow crate; the spike measures a first slice (one steady laminar
+  case, SIMPLEC only) before the full effort is estimated. Risk to state
+  plainly: this refactor is larger than the adjoint's reverse sweep and
+  could dominate A1; if the spike shows that, the question returns to the
+  maintainer with the measured size.
 
 ## 10. Sources
 
