@@ -431,14 +431,13 @@ wall_treatment = "compound"   # default; "low-re"
 
 **The channel** (`channel_eb.toml`). At the fixed mass flow of each DNS,
 the driving force F is C_f over the C_f of the DNS (Moser, Kim & Mansour
-1999). The paper's own channel results (its Table 6) are the acceptance
-target:
+1999). The DNS is the acceptance target:
 
-| Re_τ | Cells, first-cell y⁺ | C_f / C_f,DNS | Paper | U_b⁺ |
-|---|---|---|---|---|
-| 180 | 96, 0.13 | 97.8 % | 100 % | +1.1 % |
-| 395 | 96 / 192, 0.28 / 0.14 | 99.0 % / 98.8 % | 98 % | +0.5 % / +0.6 % |
-| 590 | 128, 0.25 | 99.1 % | 100 % | +0.5 % |
+| Re_τ | Cells, first-cell y⁺ | C_f / C_f,DNS | U_b⁺ |
+|---|---|---|---|
+| 180 | 96, 0.13 | 97.8 % | +1.1 % |
+| 395 | 96 / 192, 0.28 / 0.14 | 99.0 % / 98.8 % | +0.5 % / +0.6 % |
+| 590 | 128, 0.25 | 99.1 % | +0.5 % |
 
 At Re_τ 180 the start of the case (I = 0.05, ν_t/ν = 100) lets the
 channel turn laminar; I = 0.15 and ν_t/ν = 20 keep it turbulent.
@@ -453,9 +452,7 @@ with the model changed). x_r/H = 7.59, +21 % from the experiment's 6.26:
 outside the band of ±10 %, close to ζ-f of 2004 (7.82). The variable
 C*_ε2 makes the bubble long; with `constants = { c_epsilon4 = 1.83 }`
 (C*_ε2 = C_ε2) x_r/H = 6.24, but the plate is then +4.9 % from White
-and the channel C_f at Re_τ 395 101 % of the DNS. The paper reports the
-same tendency for its periodic hill (a bubble 9 % longer than the
-reference).
+and the channel C_f at Re_τ 395 101 % of the DNS.
 
 | Check | Result |
 |---|---|

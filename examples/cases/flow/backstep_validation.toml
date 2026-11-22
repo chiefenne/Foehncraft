@@ -19,8 +19,8 @@
 # (first-cell y⁺ about 1.5), the step corner and the reattachment
 # region; `verification.levels = [0, 1, 2]` (the study) halves every
 # interval once and twice (44 160 and 176 640 cells). The inflow
-# boundary layer at x = −4 H: C_f = 2.95·10⁻³ (the experiment 2.88·10⁻³,
-# the TMR's SST result 2.93·10⁻³), about 1.5 H thick.
+# boundary layer at x = −4 H: C_f = 2.95·10⁻³ (the experiment 2.88·10⁻³),
+# about 1.5 H thick.
 #
 # The reattachment point is a wall crossing (`[[output.wall_crossings]]`):
 # the first point after x = 2 H (behind the corner vortices) where the

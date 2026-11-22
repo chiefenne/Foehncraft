@@ -995,9 +995,9 @@ independent one-dimensional solver of the model reproduced both forms
 
 | Test | Check | Band | Result |
 |---|---|---|---|
-| Channel at Re_τ = 395 (`channel_eb.toml`), 96 / 192 cells, first-cell y⁺ 0.28 / 0.14 | C_f/C_f,DNS (the driving force) against the paper's 98 % (Table 6) | U_b⁺ ±3 % | 99.0 / 98.8 %, U_b⁺ +0.5 / +0.6 %, converged (`eb_channel_meets_the_paper`) |
-| Channel at Re_τ = 590, 128 cells, y⁺ 0.25 | C_f/C_f,DNS against the paper's 100 % | U_b⁺ ±3 % | 99.1 %, U_b⁺ +0.5 % |
-| Channel at Re_τ = 180, 96 cells, y⁺ 0.13, start I = 0.15, ν_t/ν = 20 | C_f/C_f,DNS against the paper's 100 % | U_b⁺ ±3 % | 97.8 %, U_b⁺ +1.1 %; from I = 0.05, ν_t/ν = 100 laminar (F = 0.260, the laminar 0.258) |
+| Channel at Re_τ = 395 (`channel_eb.toml`), 96 / 192 cells, first-cell y⁺ 0.28 / 0.14 | C_f/C_f,DNS (the driving force) against the DNS | U_b⁺ ±3 % | 99.0 / 98.8 %, U_b⁺ +0.5 / +0.6 %, converged (`eb_channel_against_the_dns`) |
+| Channel at Re_τ = 590, 128 cells, y⁺ 0.25 | C_f/C_f,DNS against the DNS | U_b⁺ ±3 % | 99.1 %, U_b⁺ +0.5 % |
+| Channel at Re_τ = 180, 96 cells, y⁺ 0.13, start I = 0.15, ν_t/ν = 20 | C_f/C_f,DNS against the DNS | U_b⁺ ±3 % | 97.8 %, U_b⁺ +1.1 %; from I = 0.05, ν_t/ν = 100 laminar (F = 0.260, the laminar 0.258) |
 | The channel at Re_τ 395 with `algorithm = "coupled"` | driving force | – | 0.98993 against 0.98982 (SIMPLEC), converged in 315 iterations |
 | TMR plate (`tmr_plate_eb.toml`), turbulent start, y⁺ 1 | C_f(0.97) against White, 2.875e-3 | ±3 % | 2.889e-3 (+0.5 %); k and φ held by the floor near the leading edge (TURB002) |
 | The plate from the TMR free stream | C_f(0.97) | ±3 % | turbulent from x ≈ 0.25, +2.5 % |
@@ -1017,8 +1017,7 @@ C_ε2 towards 0.4 where the turbulent transport of k is large against ε,
 ε grows, ν_t drops and the bubble reaches 7.59 H (+21 %; ζ-f of 2004:
 7.82, ζ-f₀: 6.38). With a constant C_ε2 the step is right (6.24) and the
 plate is 4.9 % high, so the switch helps the attached boundary layer and
-hurts the separated flow; the paper's periodic hill shows the same sign
-(its bubble 5.14 against 4.72 of the reference). The model stays as
+hurts the separated flow. The model stays as
 published; `c_epsilon4 = 1.83` is the option. (2) With the coupled
 algorithm the step does not converge: the residual of ε stays at 10⁻³
 and x_r moves between 7.74 and 7.77 (SIMPLEC converges to 7.59); the
@@ -1053,7 +1052,7 @@ the step corner and the reattachment region (first-cell y⁺ about 1.5);
 (44 160 and 176 640 cells). The TMR's own grids could not be
 downloaded here, so the family is not theirs.
 The inflow boundary layer at x = −4 H: C_f = 2.95·10⁻³ with ζ-f₀ on the
-coarse mesh (the experiment 2.88·10⁻³, the TMR's SST result 2.93·10⁻³).
+coarse mesh (the experiment 2.88·10⁻³).
 
 **The quantities.** The reattachment length is a wall crossing
 (`[[output.wall_crossings]]`, new in this part): the first point after
@@ -1092,7 +1091,7 @@ the sink k/T_K of 6d2 for ζ-f₀ and −ε for ζ-f.
 
 | Test | Check | Band | Result |
 |---|---|---|---|
-| Step (`backstep_validation.toml`), k-ω SST, coupled, 11 040 / 44 160 / 176 640 cells | x_r/H on the finest mesh against 6.26 | ±10 % | 6.747 (+7.8 %; the TMR's SST variant about 6.50) |
+| Step (`backstep_validation.toml`), k-ω SST, coupled, 11 040 / 44 160 / 176 640 cells | x_r/H on the finest mesh against 6.26 | ±10 % | 6.747 (+7.8 %) |
 | | x_r/H on the three meshes, GCI_fine, p | GCI ≤ 2 %, p in [1, 3] | 6.793, 6.747, 6.747: oscillatory, the fine pair 0.008 % apart, GCI below 0.01 %, p not defined (**finding**) |
 | | iterations | – | 800 (residual 1.8·10⁻⁴), 621 (converged), 800 (6·10⁻⁶) |
 | The step, standard k-ε, `scalable`, coupled | x_r/H against 5.345 (Mizukami, Georgiadis & Cannon 1993) | ±5 % | 5.372 (+0.5 %; −14.2 % from the experiment) |

@@ -41,17 +41,11 @@ Foehncraft alone.
 - Quantities used: mean streamwise velocity U⁺(y⁺); Reynolds stress
   components R₁₁⁺, R₂₂⁺, R₃₃⁺, R₁₂⁺; turbulent kinetic energy k⁺.
 
-### 1.2 Model benchmark (Manceau 2015)
+### 1.2 Model results of papers (not a data source)
 
-- Citation: R. Manceau, *Recent progress in the development of the Elliptic
-  Blending Reynolds-stress model*, International Journal of Heat and Fluid
-  Flow 51, 195–220 (2015).
-- DOI: 10.1016/j.ijheatfluidflow.2014.09.002 (**verified**: the DOI resolves
-  at doi.org, and library records give the same volume and pages; open
-  copy: HAL hal-01092931)
-- Quantities used: the model's own channel results at Re_τ = 395 and 590
-  (mean velocity and stress profiles), read from the paper's tables or
-  figures. Digitised values are recorded with the figure they come from.
+The results of a model computed by its authors' own code (for example the
+channel tables of an elliptic-blending model paper) are not reference
+data (D201, rule 5 below). The numbering of 1.3 is kept.
 
 ### 1.3 Newer channel DNS set (Lee & Moser 2015)
 
@@ -125,3 +119,10 @@ Foehncraft alone.
    project for that run only, and stays out of the repository.
 4. A new entry needs a verified DOI or publisher page, or it is marked
    **to verify** until it is.
+5. Reference numbers are measurements, direct numerical simulations
+   (published scalar values with their citation, no data sets), published
+   correlations and analytic solutions. Numbers computed by another
+   RANS or CFD code, whether a solver's result on a benchmark page or the
+   authors' own model result in a paper, are not used as targets (D201,
+   decision of 2026-11-22). Direct numerical simulations stay an accepted
+   class: D201 targets code-to-code RANS/CFD numbers, not DNS.

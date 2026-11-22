@@ -44,7 +44,10 @@ detail are in [CONTRIBUTING.md](CONTRIBUTING.md).
   published reference data, and cite them.
 - **MUST** get a decision of its own before using numbers produced by other
   solvers (for example CFD planes in a paper, reference values of other
-  codes).
+  codes, the authors' own model results in a paper). Published DNS values
+  (scalars with their citation, no data sets), measurements, correlations
+  and analytic solutions are accepted references: D201 targets
+  code-to-code RANS/CFD numbers, not DNS.
 - **MUST NOT** name commercial CFD solvers, or other codes we assess,
   anywhere: code, docs, commit messages, pull requests. Say "industry
   standards" or "modern development codes".

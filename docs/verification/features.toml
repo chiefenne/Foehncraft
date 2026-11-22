@@ -589,7 +589,7 @@ model = true
 evidence = [
   { kind = "manufactured", test = "crates/foehncraft-flow/src/turbulence/mms.rs::elliptic_blending_manufactured_solution_orders", what = "orders 1.93 to 2.25 of k, ε, φ, α on three cell types", doc = "docs/verification/stage6.md#manufactured-solutions-of-every-model-spec-92-pr-148" },
   { kind = "reference-data", case = "channel_eb", what = "channel at Re_τ 395: U_b⁺ +0.9 % from the DNS, p 2.05", doc = "docs/verification/stage6.md#channel-re_τ--395" },
-  { kind = "reference-data", test = "crates/foehncraft-flow/tests/eb.rs::eb_channel_meets_the_paper", what = "channel against the paper" },
+  { kind = "reference-data", test = "crates/foehncraft-flow/tests/eb.rs::eb_channel_against_the_dns", what = "channel against the DNS" },
   { kind = "reference-data", case = "tmr_plate_eb", what = "TMR flat plate" },
   { kind = "reference-data", case = "backstep_eb", what = "backward-facing step", doc = "docs/verification/stage6.md#backward-facing-step-against-the-experiment-part-6g-95" },
 ]
