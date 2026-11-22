@@ -95,9 +95,9 @@ The check before the run (`foehn flow --check`) also refuses:
   That is THM001 when the temperature level is left open, or THM002 when a
   heat input has no way out;
 - a boundary table without `[energy]` (THM009);
-- a passive scalar named `temperature`, a fluid region with a material of
-  its own, or an orthotropic fluid conductivity (ENE006), and a fluid
-  without c_p or k (MAT007). Solid regions: recipe 156.
+- a passive scalar named `temperature` or an orthotropic fluid
+  conductivity (ENE006), and a fluid without c_p or k (MAT007). A fluid
+  region with a material of its own: recipe 206. Solid regions: recipe 156.
 
 **The heat balance.** The run report (`flow.md`, `flow.json`,
 `result.json`) and the log give, for the final state, the conduction
