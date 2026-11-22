@@ -1,0 +1,71 @@
+# Turbulent flow through the asymmetric plane diffuser of Buice & Eaton
+# (stage 8, D45), k-omega SST 2003 with the low-Re wall treatment.
+#
+#   python3 examples/meshes/diffuser.py examples/meshes/diffuser_coarse.su2 --level 0   (committed)
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/diffuser_sst.toml
+#
+# Geometry in metres with the inlet channel height H = 1 m (Buice & Eaton
+# 1995: 10 degree opening of one wall, area ratio 4.7): inlet duct of 20 H,
+# diffuser of 20.99 H, outlet duct of 50 H; the duct lengths are our choice
+# (examples/meshes/diffuser.py). U_b = 1 m/s and nu = 5e-5 m^2/s give
+# Re_H = U_b H/nu = 20 000, inside the range 10 000 to 30 000 of the
+# experiment. The inlet takes a uniform velocity with 5 % turbulence
+# intensity (the flow develops in the inlet duct; the experiment has a
+# fully developed channel flow), the outlet a static pressure. The
+# pressure recovery C_p = (p(x) - p(inlet)) / (1/2 rho U_b^2) along the
+# upper wall and the separation on the lower wall are the quantities; the
+# comparison with the published measurements is pending (no reference value
+# is used here, D201). 5 280 cells on the coarse mesh; the grid study
+# (examples/studies/diffuser_gci.py) runs levels 0 to 2.
+
+case_format = "0.6"
+
+[mesh]
+file = "../../meshes/diffuser_coarse.su2"
+thickness = 1.0
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 5e-5
+
+[turbulence]
+model = "k-omega-sst"
+wall_treatment = "low-re"
+
+[initial]
+velocity = [1.0, 0.0, 0.0]
+turbulence_intensity = 0.05
+viscosity_ratio = 10.0
+
+[boundary.inlet]
+type = "velocity-inlet"
+velocity = [1.0, 0.0, 0.0]
+turbulence_intensity = 0.05
+viscosity_ratio = 10.0
+[boundary.outlet]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.upper]
+type = "wall"
+[boundary.lower]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-7
+max_iterations = 3000
+
+[solver.momentum]
+relaxation = 0.5       # the default 0.7 diverges in the first iterations
+
+[output]
+vtkhdf = false
+wall_csv = true
+wall_crossings = [
+  { name = "separation", boundary = "lower", from = [0.0, 0.0, 0.5], direction = [1.0, 0.0, 0.0], kind = "separation" },
+  { name = "reattachment", boundary = "lower", from = [0.0, 0.0, 0.5], direction = [1.0, 0.0, 0.0], kind = "reattachment", skip = 2.0 },
+]
