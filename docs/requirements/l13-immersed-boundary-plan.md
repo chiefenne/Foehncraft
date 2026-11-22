@@ -8,8 +8,9 @@ literature only, open-source code may be read where the licence allows, never
 copied, no commercial solver names. Sizes are agent time: code in minutes,
 runs in hours, CI separate; "not sized yet" where unsure.
 
-Next free ids when this page was written: D213, L50, P19, O25. The ids below
-are **proposals** (`D213`…), taken into requirements.md in a separate step.
+Ids: D225 to D234 (next free after the adjoint plan was D225 and L52),
+entered in [requirements.md](../requirements.md) with this page; the table in
+§0 maps them to the stages.
 
 **Decisions of 2026-11-22.** The maintainer answered the eleven questions of
 §9 (answers in the table there, one line each): no accuracy numbers yet (Q1),
@@ -36,6 +37,19 @@ term** (stage 1).
 | 4 | Hand-off to a body-fitted mesh | The measured immersed-versus-body-fitted check of D211, automatic in the study layer | body-fitted | reference |
 | 5 | Prescribed rigid motion | Bodies that translate or rotate through the background mesh: re-cut per step, layers move rigidly, fresh-cell treatment (Q10, 2026-11-22) | as in stage 2 or 3 | as stage 2 or 3 |
 
+| Id | Stage | Content |
+|---|---|---|
+| D225 | 0 | Geometry kernel: surface check, exact predicates, winding number and signed distance (default by benchmark), tolerant dirty STL, surface–polygon intersection |
+| D226 | 1 | Penalisation pre-stage, laminar and low-Re only, density-field topology search |
+| D227 | 2 | Cut-cell mesh operation, boundary conditions on cut walls, serial and reproducible |
+| D228 | 2 | Small-cell merging, refusal of thin solids |
+| D229 | 2 | Wall treatment on cut faces, CHT both ways, own near-body refinement operation |
+| D230 | 3 | Layered boundary: heat-type fields, column logic, 3D Python prototype with go/no-go |
+| D231 | 3 | Outer iso-surface, imprint join, first-layer loop |
+| D232 | 3 | Inward layers for CHT, four-way accuracy comparison |
+| D233 | 4 | Automatic hand-off to a body-fitted mesh (the D211 rule as a tool) |
+| D234 | 5 | Prescribed rigid motion of cut and layered bodies |
+
 Order is fixed by the maintainer: penalisation first, then cut cells, then
 hand-off. Stage 5 (rigid motion) follows the stage it moves (2, later 3).
 The layered boundary (stage 3) is the L13 target; it sits between
@@ -61,7 +75,7 @@ because it reuses the cutting code of stage 2 and gives the hand-off check
 - **Not there:** the adjoint solver L17 (only D59 kernels), mesh morphing L4,
   adaptive refinement L14.
 
-## 2. Stage 0 – Geometry kernel (D108 part 3, proposed D213)
+## 2. Stage 0 – Geometry kernel (D108 part 3, D225)
 
 Scope, in the order of use:
 
@@ -121,7 +135,7 @@ surface–polygon intersection 2 to 3 PRs; code about 30 to 60 min per PR,
 CI separate. Gallery: none (core), except a **geometry page** with an image
 of a cut sphere and its winding-number field (needs an image by the rule).
 
-## 3. Stage 1 – Penalisation pre-stage (proposed D214)
+## 3. Stage 1 – Penalisation pre-stage (D226)
 
 **Role (decided):** topology search and a cheap first look. Not a second
 immersed method. Its iso-surface goes into stage 2.
@@ -176,7 +190,7 @@ Sizing: kernel and flow hook 1 PR (about 30 to 45 min code), keys and
 diagnostics 1 PR, verification table runs about 1 to 2 hours, topology search
 and extraction 1 PR. Gradient check on the D59 kernels needs no L17.
 
-## 4. Stage 2 – Conservative cut cells (proposed D215–D217)
+## 4. Stage 2 – Conservative cut cells (D227–D229)
 
 Method (decided, step 26 §3.2): the background mesh is intersected with the
 surface; fluid parts stay ordinary polyhedral cells (D23); cut cells below a
@@ -266,7 +280,7 @@ Sizing: 2a 2 PRs, 2b 1, 2c 1, 2d 1, 2e 1, verification runs 2 to 3 hours in
 all; code about 30 to 60 min per PR. Cut robustness on messy surfaces and
 the small-cell statistics on complex CAD are **not sized yet**.
 
-## 5. Stage 3 – Layered distance-field boundary (the L13 target, proposed D218–D220)
+## 5. Stage 3 – Layered distance-field boundary (the L13 target, D230–D232)
 
 As recorded in L13 (PR #173): layers grown from a signed distance field at
 program start, the outermost iso-surface as the smooth cut, joined to the
@@ -328,7 +342,7 @@ comparison figure. Recipes: "grow layers on an STL", "tune the first layer".
 Sizing: 3a not sized yet; 3b to 3h code about 30 to 60 min per PR once 3a
 says go; runs 1 to 2 hours; 3D robustness on arbitrary CAD **not sized yet**.
 
-## 6. Stage 4 – Automatic hand-off to a body-fitted mesh (D211, proposed D221)
+## 6. Stage 4 – Automatic hand-off to a body-fitted mesh (D211, D233)
 
 The rule of D211 as a tool, in the study layer (D62), not in the solver.
 
@@ -358,7 +372,7 @@ both meshes. Recipe: "study on cut cells, check on a fitted mesh".
 Sizing: tool and report 1 PR (about 30 to 45 min code); study runs 1 to 2
 hours.
 
-## 6a. Stage 5 – Prescribed rigid motion (owner decision Q10, proposed D222)
+## 6a. Stage 5 – Prescribed rigid motion (owner decision Q10, D234)
 
 Added on 2026-11-22. Bodies translate or rotate along a prescribed path
 (expression D53 or table; constant angular velocity as a special case)
@@ -476,8 +490,7 @@ at a time. Each line gives the question, the answer and what it changed.
 | Q10 | Moving bodies | **Plan a stage for prescribed rigid motion** | new stage 5, §6a |
 | Q11 | Default signed distance method | **Decided by the benchmark** of §2 | §2 benchmark |
 
-The ids D213 and up are still proposals; moving them into requirements.md is
-a separate step.
+The ids D225 to D234 are entered in requirements.md with this record.
 
 ## 10. Order of work and what stops what
 
