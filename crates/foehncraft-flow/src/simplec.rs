@@ -2201,7 +2201,7 @@ impl Flow {
             bf: w.bf,
         })?;
         match self.turbulence.as_ref() {
-            Some(t) => t.add_explicit_stress(&mut *self.dev, f.grad_u, w.bf),
+            Some(t) => t.add_explicit_stress(&mut *self.dev, f.grad_u, f.u, f.ub, w.bf),
             None => Ok(()),
         }
     }
@@ -2465,7 +2465,7 @@ impl Flow {
             z: bf[2],
         };
         if let Some(t) = self.turbulence.as_ref() {
-            t.add_explicit_stress(&mut *self.dev, self.f.grad_u, bf)?;
+            t.add_explicit_stress(&mut *self.dev, self.f.grad_u, self.f.u, self.f.ub, bf)?;
         }
         let mut v = Vec::new();
         for b in bf.all() {

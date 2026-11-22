@@ -1177,22 +1177,29 @@ fn qcr_stress_manufactured_solution_orders() {
     for model in ["k-omega-sst-qcr2000", "k-omega-sst-qcr2013"] {
         check_qcr(model, "hex", (1.8, 2.2));
         check_qcr(model, "poly", (1.8, 2.2));
-        // first order on tetrahedra (finding, documented in the verification
-        // chapter)
+        // first order on tetrahedra: the midpoint rule of the face sum on
+        // irregular cells (the face stress itself is second order, D236)
         check_qcr(model, "tet", (0.8, 1.3));
     }
 }
 
-/// The finding behind the regular meshes of the test above: on meshes with
-/// randomly perturbed vertices the divergence of the explicit stress
-/// (Green-Gauss with the linear face interpolation of cell values) does not
-/// converge, its error stays at a few per cent of the largest force.
+/// On meshes with randomly perturbed vertices (hexahedra and tetrahedra,
+/// 15 % of the cell size) the divergence of the explicit stress converges
+/// (D236): the quadratic least-squares velocity gradient on the cells where
+/// the face-neighbour gradient is first order and the skewness-corrected
+/// face stress. (Before, Green-Gauss with the linear interpolation of cell
+/// values left an error of about 5 % of the largest force at every level.)
 #[test]
 #[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
-fn qcr_stress_on_perturbed_meshes_stays_bounded() {
-    let e = qcr_errors("k-omega-sst-qcr2000", "hex", 0.15, &[0, 1, 2]);
-    eprintln!("perturbed hex: {e:?}");
-    for (_, err) in &e {
-        assert!(*err < 0.1 && *err > 0.01, "{e:?}");
+fn qcr_stress_on_perturbed_meshes_converges() {
+    for mesh in ["hex", "tet"] {
+        let e = qcr_errors("k-omega-sst-qcr2000", mesh, 0.15, &[0, 1, 2]);
+        eprintln!("perturbed {mesh}: {e:?}");
+        let p = (e[1].1 / e[2].1).ln() / (e[1].0 / e[2].0).ln();
+        assert!(p > 0.9 && p < 2.2, "perturbed {mesh}: order {p:.3} ({e:?})");
+        assert!(
+            e[2].1 < e[1].1 && e[1].1 < e[0].1,
+            "perturbed {mesh}: {e:?}"
+        );
     }
 }

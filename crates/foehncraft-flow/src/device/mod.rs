@@ -909,8 +909,32 @@ pub trait FlowDevice {
         tau: [Buf; 6],
     ) -> Result<()>;
     /// b_f −= τ_f·S: an explicit cell stress `tau` (xx, yy, zz, xy, yz, zx)
-    /// in the momentum face parts `bf`.
-    fn explicit_stress_faces(&mut self, tau: [Buf; 6], bf: Buf3) -> Result<()>;
+    /// in the momentum face parts `bf`; with the cell gradients `gtau` of
+    /// the six components, skewness-corrected face stresses (D236).
+    fn explicit_stress_faces(
+        &mut self,
+        tau: [Buf; 6],
+        gtau: Option<[Buf3; 6]>,
+        bf: Buf3,
+    ) -> Result<()>;
+    /// Uploads the stencil of the quadratic least-squares gradient (D236):
+    /// the treated cells, the start of each stencil and its points (a cell,
+    /// or the number of cells plus a boundary face index); returns the
+    /// slot of the stencil.
+    fn quadratic_setup(&mut self, cells: &[u32], ptr: &[u32], idx: &[u32]) -> Result<usize>;
+    /// Overwrites the velocity gradient `out` at the treated cells of the
+    /// stencil `slot` of [`quadratic_setup`](Self::quadratic_setup) with
+    /// Σ_k w_k (u_k − u_c), components 0 … `dims` − 1.
+    #[allow(clippy::too_many_arguments)]
+    fn quadratic_gradient(
+        &mut self,
+        slot: usize,
+        w: Buf3,
+        dims: u32,
+        u: Buf3,
+        ub: Buf3,
+        out: [Buf3; 3],
+    ) -> Result<()>;
     /// The standard or realizable k-ε model per cell.
     fn keps_cells(&mut self, a: &KepsCellOps) -> Result<()>;
     /// The k-ε-ζ-f model per cell.

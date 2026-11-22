@@ -18,7 +18,7 @@ use crate::case::{FlowCase, Log};
 use crate::diag;
 use crate::turbulence::QcrMode;
 use anyhow::Result;
-use foehncraft_fv::exactness::OperatorErrors;
+use foehncraft_fv::exactness::{OperatorErrors, QuadraticGradient};
 use foehncraft_fv::problem::BoundaryKind;
 use foehncraft_mesh::{Geometry, Mesh};
 use serde::Serialize;
@@ -71,6 +71,12 @@ pub struct OperatorReport {
     pub gradient: OperatorPart,
     /// The gradient of the gradient on quadratic fields, |Hₕ − H|/|H|.
     pub hessian: OperatorPart,
+    /// With the QCR (step 2 of D236): the error of the velocity gradient
+    /// the stress takes, the quadratic least-squares fit on the cells
+    /// flagged in `gradient` (the face-neighbour gradient where the fit is
+    /// rank deficient): the cells still above the tolerance.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quadratic: Option<OperatorPart>,
     /// What the flagged cells mean for the run (the messages of the
     /// diagnostics, filled in a run).
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -119,6 +125,23 @@ pub fn check_with_errors(
     dims: usize,
     tolerance: f64,
 ) -> Result<(OperatorReport, OperatorErrors)> {
+    let kind = kinds(mesh, u_points);
+    let e = foehncraft_fv::exactness::operator_errors(mesh, geo, &kind, dims)?;
+    let r = OperatorReport {
+        cells: mesh.n_cells,
+        dimensions: dims,
+        linear: part(&e.linear, LINEAR_TOLERANCE, geo),
+        gradient: part(&e.gradient, tolerance, geo),
+        hessian: part(&e.hessian, tolerance, geo),
+        quadratic: None,
+        findings: Vec::new(),
+    };
+    Ok((r, e))
+}
+
+/// The boundary kind of every boundary face from the velocity stencil
+/// points.
+fn kinds(mesh: &Mesh, u_points: &BTreeMap<String, BoundaryKind>) -> Vec<BoundaryKind> {
     let ni = mesh.n_interior_faces();
     let mut kind = vec![BoundaryKind::FixedValue; mesh.n_faces() - ni];
     for p in &mesh.boundaries {
@@ -130,16 +153,63 @@ pub fn check_with_errors(
             kind[f - ni] = k;
         }
     }
+    kind
+}
+
+/// The quadratic least-squares velocity gradient (step 2 of D236) on the
+/// cells whose face-neighbour gradient is first order: those with a
+/// `gradient` error above `solver.operator_tolerance`.
+pub fn quadratic_velocity_gradient(
+    case: &FlowCase,
+    mesh: &Mesh,
+    geo: &Geometry,
+    u_points: &BTreeMap<String, BoundaryKind>,
+) -> Result<QuadraticGradient> {
+    let dims = crate::case::dimension(case) as usize;
+    let kind = kinds(mesh, u_points);
     let e = foehncraft_fv::exactness::operator_errors(mesh, geo, &kind, dims)?;
-    let r = OperatorReport {
-        cells: mesh.n_cells,
-        dimensions: dims,
-        linear: part(&e.linear, LINEAR_TOLERANCE, geo),
-        gradient: part(&e.gradient, tolerance, geo),
-        hessian: part(&e.hessian, tolerance, geo),
-        findings: Vec::new(),
-    };
-    Ok((r, e))
+    Ok(quadratic_on(
+        mesh,
+        geo,
+        &kind,
+        dims,
+        &e,
+        case.solver.operator_tolerance,
+    ))
+}
+
+fn quadratic_on(
+    mesh: &Mesh,
+    geo: &Geometry,
+    kind: &[BoundaryKind],
+    dims: usize,
+    e: &OperatorErrors,
+    tolerance: f64,
+) -> QuadraticGradient {
+    let cells: Vec<usize> = (0..e.gradient.len())
+        .filter(|&c| e.gradient[c] > tolerance)
+        .collect();
+    foehncraft_fv::exactness::quadratic_gradient(mesh, geo, kind, dims, &cells)
+}
+
+/// Fills `quadratic` of `r`: the gradient error of the QCR stress with the
+/// quadratic fit on the flagged cells.
+fn with_quadratic(
+    r: &mut OperatorReport,
+    e: &OperatorErrors,
+    mesh: &Mesh,
+    geo: &Geometry,
+    u_points: &BTreeMap<String, BoundaryKind>,
+    tolerance: f64,
+) {
+    let kind = kinds(mesh, u_points);
+    let q = quadratic_on(mesh, geo, &kind, r.dimensions, e, tolerance);
+    let qe = foehncraft_fv::exactness::quadratic_gradient_errors(mesh, geo, &kind, &q);
+    let mut v = e.gradient.clone();
+    for (&c, &x) in q.cells.iter().zip(&qe) {
+        v[c as usize] = x;
+    }
+    r.quadratic = Some(part(&v, tolerance, geo));
 }
 
 /// The file of a run with the errors of every cell (written when the check
@@ -173,13 +243,18 @@ pub fn check_case(case: &FlowCase, mesh: &Mesh, geo: &Geometry) -> Result<Operat
         turning: &case.turning(),
     };
     let arrays = crate::bc::arrays(mesh, geo, &case.boundary, case.rho(), at)?;
-    check(
+    let tol = case.solver.operator_tolerance;
+    let (mut r, e) = check_with_errors(
         mesh,
         geo,
         &arrays.u_points,
         crate::case::dimension(case) as usize,
-        case.solver.operator_tolerance,
-    )
+        tol,
+    )?;
+    if case.turbulence.qcr != QcrMode::None {
+        with_quadratic(&mut r, &e, mesh, geo, &arrays.u_points, tol);
+    }
+    Ok(r)
 }
 
 fn cells_text(p: &OperatorPart) -> String {
@@ -223,16 +298,22 @@ pub fn diagnostics(r: &OperatorReport, case: &FlowCase) -> Vec<diag::Diagnostic>
             .key("turbulence.curvature_correction"),
         );
     }
-    if t.qcr != QcrMode::None && r.gradient.flagged > 0 {
+    let g = r.quadratic.as_ref().unwrap_or(&r.gradient);
+    if t.qcr != QcrMode::None && g.flagged > 0 {
         out.push(
             diag::Diagnostic::new(
                 diag::MESH_OPERATOR_GRADIENT,
                 format!(
-                    "operator check (D236): the velocity gradient is first order (error above {} \
-                     for a quadratic field) on {}: the divergence of the explicit QCR stress \
-                     does not converge with the mesh on those cells",
-                    r.gradient.tolerance,
-                    cells_text(&r.gradient)
+                    "operator check (D236): the velocity gradient of the QCR stress is first order \
+                     (error above {} for a quadratic field{}) on {}: the divergence of the explicit \
+                     QCR stress does not converge with the mesh on those cells",
+                    g.tolerance,
+                    if r.quadratic.is_some() {
+                        "; the quadratic fit is rank deficient there"
+                    } else {
+                        ""
+                    },
+                    cells_text(g)
                 ),
             )
             .key("turbulence.qcr"),
@@ -262,6 +343,23 @@ pub(crate) fn report<F: FnMut(&str)>(
         case.solver.operator_tolerance,
     )
     .ok()?;
+    if case.turbulence.qcr != QcrMode::None {
+        with_quadratic(
+            &mut r,
+            &e,
+            mesh,
+            geo,
+            u_points,
+            case.solver.operator_tolerance,
+        );
+        let treated = r.gradient.flagged - r.quadratic.as_ref().map_or(0, |q| q.flagged);
+        if treated > 0 {
+            lg.line(&format!(
+                "QCR: quadratic least-squares velocity gradient on {treated} cells, skewness-corrected \
+                 face stress (D236)"
+            ));
+        }
+    }
     let ds = diagnostics(&r, case);
     if ds.is_empty() {
         return None;
@@ -333,10 +431,26 @@ type = "symmetry"
         // inside: exact
         let inner = r.cells - 2 * 8 - 2 * 8 + 4;
         assert!(r.gradient.flagged <= r.cells - inner, "{:?}", r.gradient);
+        // the quadratic fit of the QCR stress is exact everywhere, so only
+        // the curvature correction (LSQ-of-LSQ Hessian) is reported
+        let q = r.quadratic.as_ref().unwrap();
+        assert_eq!(q.flagged, 0, "{q:?}");
         assert_eq!(
             d.iter().map(|d| d.code).collect::<Vec<_>>(),
-            [diag::MESH_OPERATOR_HESSIAN, diag::MESH_OPERATOR_GRADIENT]
+            [diag::MESH_OPERATOR_HESSIAN]
         );
+    }
+
+    #[test]
+    fn quadratic_fit_is_exact_on_tetrahedra() {
+        let (r, d) = run("tet", "qcr = \"qcr2000\"");
+        assert_eq!(
+            r.quadratic.as_ref().unwrap().flagged,
+            0,
+            "{:?}",
+            r.quadratic
+        );
+        assert!(d.is_empty(), "{d:?}");
     }
 
     #[test]

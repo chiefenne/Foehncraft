@@ -540,12 +540,13 @@ pub fn of_run(case: &FlowCase, rep: &FlowReport) -> Vec<Limitation> {
                 ),
             ));
         }
-        if t.qcr != QcrMode::None && r.gradient.flagged > 0 {
+        let g = r.quadratic.as_ref().unwrap_or(&r.gradient);
+        if t.qcr != QcrMode::None && g.flagged > 0 {
             what.push((
                 "turbulence.qcr",
                 format!(
-                    "the velocity gradient is first order on {} of {} cells (MESH006): the divergence of the explicit QCR stress does not converge with the mesh there",
-                    r.gradient.flagged, r.cells
+                    "the velocity gradient of the QCR stress is first order on {} of {} cells (MESH006): the divergence of the explicit QCR stress does not converge with the mesh there",
+                    g.flagged, r.cells
                 ),
             ));
         }
