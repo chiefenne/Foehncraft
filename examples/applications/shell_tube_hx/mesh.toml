@@ -1,0 +1,15 @@
+# Shell and tube heat exchanger: the conformal multi-region tet mesh of
+# application 203 (six cell zones, four nozzle boundaries, housing_outer).
+#
+#   pip install gmsh
+#   python3 examples/applications/shell_tube_hx/mesh.py            # writes hx_L2.msh
+#   target/release/foehn mesh examples/applications/shell_tube_hx/mesh.toml
+
+case_format = "0.6"
+
+[mesh]
+file = "hx_L2.msh"     # metres already (mesh.py scales the STEP millimetres)
+renumber = "rcm"
+
+[check]
+locate_points = 5000
