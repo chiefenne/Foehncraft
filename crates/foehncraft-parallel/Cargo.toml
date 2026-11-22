@@ -22,5 +22,9 @@ mpi = { workspace = true, optional = true }
 name = "mpi_smoke"
 required-features = ["mpi"]
 
+[[example]]
+name = "mpi_latency"
+required-features = ["mpi"]
+
 [lints]
 workspace = true

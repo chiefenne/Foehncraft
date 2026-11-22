@@ -10,6 +10,7 @@ Part of the [Recipes](../recipes.md): the energy equation of the fluid (stage 7,
 | 159 | [Follow how a solid and a fluid heat up together (transient conjugate heat transfer)](#cht-transient) |
 | 160 | [Put a contact resistance between two parts, orient an orthotropic solid, heat a component](#cht-contact) |
 | 180 | [Bring the solids of a transient conjugate run to their state sooner (thermal acceleration)](#cht-acceleration) |
+| 186 | [Switch on gravity and buoyancy; which pressure do my boundary values mean](#buoyancy) |
 
 ---
 
@@ -512,3 +513,101 @@ D118, which keeps the true history with large steps, comes later. For an
 exhaust manifold over many engine cycles the cycle-averaged loop of D204
 (also later) solves the solid steady with the cycle-averaged heat transfer:
 the limit f → 0 of this acceleration, without the swing.
+
+<a id="buoyancy"></a>
+## 186. Switch on gravity and buoyancy; which pressure do my boundary values mean
+
+**Switch on gravity and the buoyancy.** Two tables, next to `[energy]`:
+
+```toml
+[gravity]
+vector = [0.0, -9.81, 0.0]          # m/s²
+reference_point = [0.0, 0.0, 0.0]   # x_ref of the reduced pressure (default)
+
+[buoyancy]
+model = "boussinesq"
+expansion_coefficient = 3.333e-3    # β (1/K); default from the fluid's density
+# reference_temperature = 300.0     # T_ref (K); default [fluid] temperature
+```
+
+The Boussinesq model keeps the density ρ₀ constant everywhere except in
+the body force, which becomes −ρ₀ β (T − T_ref) g. It holds while β ΔT is
+small; above 0.1, BUO002 warns, and the variable density of stage 7c is
+the model to use. Without `expansion_coefficient`, β comes from the
+fluid's density at T_ref (1/T_ref for an ideal gas); a constant density
+without β is refused (BUO003), and so is a buoyancy model without
+`[gravity]` or `[energy]` (BUO001, BUO003). `[gravity]` with the energy
+equation but no model warns (BUO004): the temperature then drives no
+flow. The force enters the faces exactly like the pressure gradient (the
+balanced force of D154), so a fluid at rest in a stratification stays at
+rest on any mesh ([gallery 186](../gallery/energy.md#buoyancy)).
+
+**Steady runs.** SIMPLEC and the coupled algorithm take a pseudo-time
+step of 1/N, with N = √(|g| β ΔT / L) the buoyancy frequency, so that the
+internal waves of a stratification settle instead of being overshot.
+`[solver.pseudo_time] factor` scales the step; a factor above 1 rarely
+helps, because the slow part is the plume or the roll finding its place.
+A laminar plume takes about 2000 iterations on 6000 cells.
+
+**Which pressure do my boundary values mean.** With `[gravity]` the
+solver works with the **reduced pressure**
+
+p′ = p − ρ_ref g·(x − x_ref),
+
+the static pressure minus the hydrostatic pressure of a fluid at ρ_ref.
+p′ is what drives the flow: a fluid at rest at ρ_ref has p′ = 0
+everywhere, at every height. The result has both, `pressure` (p′) and
+`static_pressure` (p).
+
+The values of the pressure boundaries (`static-pressure-inlet`,
+`total-pressure-inlet`, `static-pressure-outlet`,
+`total-pressure-outlet`) are **p′ by default**:
+
+| `pressure_kind` | The value means | 0 means | Use it for |
+|---|---|---|---|
+| `"reduced"` (default) | p′ = p − ρ_ref g·(x − x_ref) | an opening to an ambient at rest at ρ_ref, at every height | openings, windows, tall outlets, anything open to a still surrounding |
+| `"static"` | the static pressure p; the solver uses p′_b = p_b − ρ_ref g·(x_f − x_ref) per face | 0 Pa static at every face: a uniform static value | a measured or specified static pressure at one height, a gauge reading |
+
+<img src="../figures/gallery/buoyancy_pressure_kinds.png" alt="A liquid rising at 0.05 m/s in a channel 0.1 m wide and 2 m tall with gravity downwards. Left: the reduced pressure p prime, which falls by only 6.5 Pa from bottom to top, the friction. Middle: the static pressure p, which falls by 19.6 kPa, mostly the weight of the liquid. Right: p prime and p along the channel axis for an outlet given as p prime = 0 and for one given as the static pressure minus 19 620 Pa; the curves of the two runs lie on top of each other" width="800" height="431">
+
+A liquid (ρ = 1000 kg/m³) rising at 0.05 m/s in a channel 2 m tall shows
+both. `buoyancy_channel_reduced.toml` gives the outlet as p′ = 0, and
+`buoyancy_channel_static.toml` gives it as the static pressure there,
+p = −ρ g y = −19 620 Pa (relative to the inlet), with
+`pressure_kind = "static"`. Both runs give the same flow to 10⁻¹¹. p′
+falls by 6.5 Pa, the friction of the channel; p falls by 19.6 kPa, almost
+all of it the weight of the liquid.
+
+**The trap: a uniform static value over a tall opening.**
+`buoyancy_open_box.toml` is a box of fluid at rest, open over its full
+height of 1 m on one side. With the default kind, `pressure = 0.0` is the
+ambient's own hydrostatic profile, and the fluid stays at rest (largest
+speed 0). The same 0 Pa as a static pressure,
+
+```
+target/release/foehn flow examples/cases/flow/buoyancy_open_box.toml --out output/open_static \
+    --set 'boundary.xmax.pressure_kind="static"'
+```
+
+is a uniform static pressure from bottom to top, while the fluid inside
+carries 9.3 Pa of hydrostatic difference across the opening. Fluid is
+pushed out at the bottom and drawn in at the top, at up to 3.5 m/s. The
+physics has no such flow, and BUO006 warns when the hydrostatic difference
+over a static-kind opening exceeds its dynamic pressure. Use the default
+kind, or give the static profile as an expression of the height.
+
+**Interpreting the results.** `static_pressure` is p = p′ + ρ_ref g·(x −
+x_ref), the pressure a gauge would read relative to the reference point.
+The wall forces of the report are integrated from the reduced pressure
+p′. They leave out the uniform hydrostatic part, so a submerged body has
+no Archimedes force ρ_ref g V in them; add it by hand where it matters.
+The kinetic-energy ledger
+(`balance.csv`) counts the work of the buoyancy force, so it still
+closes.
+
+```
+cargo build --release -p foehncraft-cli
+target/release/foehn flow examples/cases/flow/buoyancy_channel_reduced.toml --out output/chan_reduced
+target/release/foehn flow examples/cases/flow/buoyancy_channel_static.toml --out output/chan_static
+target/release/foehn flow examples/cases/flow/buoyancy_open_box.toml --out output/open_reduced
+```

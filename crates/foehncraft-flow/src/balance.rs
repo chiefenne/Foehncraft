@@ -246,6 +246,10 @@ pub fn rates(
             Some(src) => dot([src[0][c], src[1][c], src[2][c]], u) * v,
             None => dot(f, u) * v,
         };
+        // the work of the buoyancy force of the momentum rows (stage 7b1)
+        if let Some(bf) = &sol.phys.buoyancy {
+            body[c] += dot([bf[0][c], bf[1][c], bf[2][c]], u) * v;
+        }
         // the pressure source of the momentum rows, −∇p_P V_P
         // (foehncraft_kernels::flow::momentum_row)
         press[c] = -dot(sol.grad_p.get(c), u) * v;

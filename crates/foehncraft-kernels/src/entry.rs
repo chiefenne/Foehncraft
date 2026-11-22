@@ -236,6 +236,14 @@ pub struct Mesh {
     pub periodic: u64,
     /// Shift of the neighbour centroid per periodic face.
     pub shift: Raw3,
+    /// The balanced-force offset q_f of the face pressure jump per face
+    /// (D154, stage 7b1): the Rhie–Chow jump becomes (p_N − p_P) −
+    /// ∇p̄_f·d − q_f; empty without gravity (the plain jump bit for bit).
+    pub jump_offset: Raw<f64>,
+    /// The balanced-force term e_b of the extrapolated boundary pressure
+    /// per boundary face (D154 (4)): p_b = p_P + ∇p_P·r + e_b; empty
+    /// without gravity.
+    pub pb_offset: Raw<f64>,
 }
 
 impl Mesh {
@@ -655,6 +663,7 @@ impl Entry for BoundaryValues {
                 ld(a.m.pset.get(), fb),
                 p,
                 &gp,
+                a.m.pb_offset.get(),
             );
         }
     }
@@ -820,6 +829,7 @@ impl Entry for MassFlux {
                 alpha: a.alpha,
                 psi: a.psi.v(),
                 bounded: a.bounded != 0,
+                jump_offset: a.m.jump_offset.get(),
             };
             *a.out.out().add(f) = k::face_mass_flux(f, &inp);
         }
@@ -3131,6 +3141,7 @@ mod tests {
                 + 16
                 + 8
                 + 48
+                + 2 * 16
         );
     }
 
