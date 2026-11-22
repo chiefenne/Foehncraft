@@ -20,6 +20,11 @@ fn out(name: &str) -> PathBuf {
 
 /// Developing laminar pipe flow at Re = 100 on the raw Gmsh mesh.
 fn pipe(remediation: &str) -> FlowCase {
+    pipe_with(remediation, "max_iterations = 400")
+}
+
+/// The pipe with more `[solver]` lines (`max_iterations` among them).
+fn pipe_with(remediation: &str, solver: &str) -> FlowCase {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/meshes");
     FlowCase::from_toml(
         &format!(
@@ -39,8 +44,8 @@ pressure = 0.0
 type = "wall"
 [solver]
 tolerance = 1e-6
-max_iterations = 400
 remediation = "{remediation}"
+{solver}
 [output]
 vtkhdf = false
 wall_csv = false
@@ -76,6 +81,24 @@ fn raw_gmsh_tetrahedra_converge_with_the_remediation() {
     assert!(md.contains("Cell quality (D50)") && md.contains("Mesh.OptimizeNetgen"));
     // the mass balance of the converged state
     assert!(s.mass_imbalance < 1e-6, "{}", s.mass_imbalance);
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+#[test]
+fn the_bounded_face_velocity_alone_runs_without_a_limiter() {
+    // `solver.face_velocity = "bounded"` set by hand, with no limiter and the
+    // remediation off: the face velocity takes the Venkatakrishnan limiter,
+    // whose per-cell ε² must be set up (it used to be left empty, and the
+    // run read past the end of the array)
+    let d = out("bounded");
+    let c = pipe_with("off", "face_velocity = \"bounded\"\nmax_iterations = 5");
+    // five iterations are enough to reach the limiter of every iteration
+    let r = run(&c, "pipe", &d, |_| {}).unwrap();
+    assert!(
+        (1..=5).contains(&r.solves[0].iterations),
+        "{}",
+        r.solves[0].iterations
+    );
     let _ = std::fs::remove_dir_all(&d);
 }
 
