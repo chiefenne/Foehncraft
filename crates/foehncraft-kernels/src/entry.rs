@@ -1960,6 +1960,10 @@ pub struct QcrArgs {
     pub tau: [Raw<f64>; 6],
     /// [`ExplicitStressFaces`]: b_f, updated in place.
     pub bf: Raw3,
+    /// [`ExplicitStressFaces`]: the cell gradients of the six stress
+    /// components for the skewness correction of the face stress (D236);
+    /// empty: the plain interpolation.
+    pub gtau: [Raw3; 6],
 }
 
 /// tau = the non-linear stress of a cell ([`crate::turb::sst::qcr_stress`]).
@@ -1991,6 +1995,13 @@ impl Entry for QcrCells {
 /// b_f −= τ_f·S with τ_f = w τ_P + (1 − w) τ_N on the interior faces and
 /// τ_P on the boundary faces: the divergence of an explicit cell stress
 /// in the momentum equations (b_f is subtracted from the owner row).
+///
+/// With the stress gradients `gtau` (D236) the face stress is corrected
+/// for skewness as the face velocity of the mass flux:
+/// τ_f = w τ_P + (1 − w) τ_N + ∇τ̄_f·(x_f − x_w), ∇τ̄_f = w ∇τ_P +
+/// (1 − w) ∇τ_N, x_w = w x_P + (1 − w) x_N, and on a boundary face
+/// τ_f = τ_P + ∇τ_P·(x_f − x_P); the face stress is then second order
+/// where the cell stress is (exact for a linear stress).
 pub struct ExplicitStressFaces;
 impl Entry for ExplicitStressFaces {
     type Args = QcrArgs;
@@ -2006,12 +2017,55 @@ impl Entry for ExplicitStressFaces {
                 t[i] = a.tau[i].read(o);
                 i += 1;
             }
+            let skew = a.gtau[0].x.len > 0;
+            let xf = [
+                a.m.face_centroid.x.read(f),
+                a.m.face_centroid.y.read(f),
+                a.m.face_centroid.z.read(f),
+            ];
+            let xp = [
+                a.m.cell_centroid.x.read(o),
+                a.m.cell_centroid.y.read(o),
+                a.m.cell_centroid.z.read(o),
+            ];
             if f < a.m.n_interior as usize {
                 let n = a.m.neighbour.read(f) as usize;
                 let w = a.m.weight.read(f);
                 let mut i = 0;
                 while i < 6 {
                     t[i] = w * t[i] + (1.0 - w) * a.tau[i].read(n);
+                    i += 1;
+                }
+                if skew {
+                    let g = a.m.geo();
+                    let xn = crate::fv::neighbour_centroid(
+                        f,
+                        n,
+                        &a.m.topo(),
+                        &g.cell_centroid,
+                        &g.shift,
+                    );
+                    let r = [
+                        xf[0] - (w * xp[0] + (1.0 - w) * xn[0]),
+                        xf[1] - (w * xp[1] + (1.0 - w) * xn[1]),
+                        xf[2] - (w * xp[2] + (1.0 - w) * xn[2]),
+                    ];
+                    let mut i = 0;
+                    while i < 6 {
+                        let gt = a.gtau[i];
+                        let gx = w * gt.x.read(o) + (1.0 - w) * gt.x.read(n);
+                        let gy = w * gt.y.read(o) + (1.0 - w) * gt.y.read(n);
+                        let gz = w * gt.z.read(o) + (1.0 - w) * gt.z.read(n);
+                        t[i] += gx * r[0] + gy * r[1] + gz * r[2];
+                        i += 1;
+                    }
+                }
+            } else if skew {
+                let r = [xf[0] - xp[0], xf[1] - xp[1], xf[2] - xp[2]];
+                let mut i = 0;
+                while i < 6 {
+                    let gt = a.gtau[i];
+                    t[i] += gt.x.read(o) * r[0] + gt.y.read(o) * r[1] + gt.z.read(o) * r[2];
                     i += 1;
                 }
             }
@@ -2023,6 +2077,84 @@ impl Entry for ExplicitStressFaces {
             *a.bf.x.out().add(f) -= fx;
             *a.bf.y.out().add(f) -= fy;
             *a.bf.z.out().add(f) -= fz;
+        }
+    }
+}
+
+/// Arguments of [`QuadraticGradient`] (D236).
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct QuadGradArgs {
+    /// The treated cells.
+    pub cells: Raw<u32>,
+    /// Start of the stencil of each treated cell (one more entry).
+    pub ptr: Raw<u32>,
+    /// Stencil points: a cell, or `n_cells` + a boundary face index.
+    pub idx: Raw<u32>,
+    /// Gradient weights per stencil point.
+    pub w: Raw3,
+    /// Number of cells.
+    pub n_cells: u64,
+    /// Components of the gradient the fit gives (2: x and y; the others
+    /// keep the face-neighbour gradient).
+    pub dims: u64,
+    /// Cell velocity.
+    pub u: Raw3,
+    /// Boundary face velocity.
+    pub ub: Raw3,
+    /// The velocity gradient, overwritten at the treated cells.
+    pub out: RawGrad,
+}
+
+/// The quadratic least-squares velocity gradient of one treated cell
+/// (`foehncraft_fv::exactness::QuadraticGradient`): g = Σ_k w_k (u_k − u_c)
+/// per component, written over the face-neighbour gradient.
+pub struct QuadraticGradient;
+impl Entry for QuadraticGradient {
+    type Args = QuadGradArgs;
+    const NAME: &'static str = "quadratic_gradient";
+    #[inline(always)]
+    unsafe fn run(t: usize, a: &QuadGradArgs) {
+        // SAFETY: guaranteed by the caller.
+        unsafe {
+            let c = a.cells.read(t) as usize;
+            let lo = a.ptr.read(t) as usize;
+            let hi = a.ptr.read(t + 1) as usize;
+            let nc = a.n_cells as usize;
+            let uc = [a.u.x.read(c), a.u.y.read(c), a.u.z.read(c)];
+            let mut g = [[0.0f64; 3]; 3];
+            let mut k = lo;
+            while k < hi {
+                let i = a.idx.read(k) as usize;
+                let v = if i < nc {
+                    [a.u.x.read(i), a.u.y.read(i), a.u.z.read(i)]
+                } else {
+                    let b = i - nc;
+                    [a.ub.x.read(b), a.ub.y.read(b), a.ub.z.read(b)]
+                };
+                let w = [a.w.x.read(k), a.w.y.read(k), a.w.z.read(k)];
+                let mut comp = 0;
+                while comp < 3 {
+                    let d = v[comp] - uc[comp];
+                    g[comp][0] += w[0] * d;
+                    g[comp][1] += w[1] * d;
+                    g[comp][2] += w[2] * d;
+                    comp += 1;
+                }
+                k += 1;
+            }
+            let mut comp = 0;
+            while comp < 3 {
+                let o = a.out.g[comp];
+                *o.x.out().add(c) = g[comp][0];
+                if a.dims > 1 {
+                    *o.y.out().add(c) = g[comp][1];
+                }
+                if a.dims > 2 {
+                    *o.z.out().add(c) = g[comp][2];
+                }
+                comp += 1;
+            }
         }
     }
 }
@@ -2863,6 +2995,7 @@ send_sync!(
     SstCellArgs,
     CurvatureArgs,
     QcrArgs,
+    QuadGradArgs,
     KepsCellArgs,
     ZetaFCellArgs,
     TurbFaceArgs,
@@ -2872,7 +3005,7 @@ send_sync!(
 );
 
 /// Names of all entries (the PTX module has `flow_<name>` for each).
-pub const NAMES: [&str; 53] = [
+pub const NAMES: [&str; 54] = [
     Lincomb::NAME,
     ScaledDifference::NAME,
     SquaresAdd::NAME,
@@ -2918,6 +3051,7 @@ pub const NAMES: [&str; 53] = [
     CurvatureCells::NAME,
     QcrCells::NAME,
     ExplicitStressFaces::NAME,
+    QuadraticGradient::NAME,
     KepsCells::NAME,
     ZetaFCells::NAME,
     TurbFaces::NAME,
@@ -2970,6 +3104,8 @@ mod tests {
             size_of::<WallFaceArgs>(),
             size_of::<WallCellArgs>(),
             size_of::<FloorArgs>(),
+            size_of::<QcrArgs>(),
+            size_of::<QuadGradArgs>(),
         ];
         for s in sizes {
             assert!(s + 8 <= 4096, "argument block of {s} bytes");
@@ -3028,7 +3164,7 @@ mod tests {
             unsafe { Lincomb::run(i, &a) };
         }
         assert_eq!(y, [-8.0, -16.0, -24.0]);
-        assert_eq!(NAMES.len(), 53);
+        assert_eq!(NAMES.len(), 54);
         // the elliptic-blending helpers: out += |v|², out3 = s v
         let (vx, vy, vz) = ([1.0, 0.0], [2.0, -3.0], [2.0, 4.0]);
         let s = [0.5, -2.0];

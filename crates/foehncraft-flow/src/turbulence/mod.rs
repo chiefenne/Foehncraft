@@ -1454,6 +1454,23 @@ struct EbDev {
     zeros: Buf,
 }
 
+/// The device data of the QCR of SST (D170) with the consistent stress
+/// divergence of D236: the kernel mode, the cell stress, its cell
+/// gradients (zero normal gradient on the boundary) for the skewness
+/// correction of the face stress, and on the cells where the
+/// face-neighbour velocity gradient is not second order the quadratic
+/// least-squares gradient (weights, coordinates) into `gq`.
+#[derive(Debug, Clone, Copy)]
+struct QcrDev {
+    mode: u32,
+    tau: [Buf; 6],
+    gtau: [Buf3; 6],
+    lsq: Buf3,
+    ones: Buf,
+    zeros: Buf,
+    quad: Option<(usize, Buf3, u32, [Buf3; 3])>,
+}
+
 /// The device data of the curvature correction of SST (D170): the six
 /// components of S_ij, their values at the last time level, DS_ij/Dt and
 /// f_r1, with the zero-gradient least-squares weights of [`EbDev`].
@@ -1635,8 +1652,8 @@ pub struct Turbulence {
     /// The curvature correction of SST.
     curv: Option<CurvDev>,
     curv_fresh: CurvFresh,
-    /// The QCR of SST: the kernel mode and the cell stress.
-    qcr: Option<(u32, [Buf; 6])>,
+    /// The QCR of SST.
+    qcr: Option<QcrDev>,
     /// Multigrid settings of the turbulence and elliptic solves (those of
     /// the pressure).
     amg: foehncraft_fv::amg::AmgSettings,
@@ -2047,7 +2064,62 @@ impl Turbulence {
             for b in &mut t {
                 *b = dev.alloc(nc)?;
             }
-            Some((section.qcr.kernel(), t))
+            let a3 = |dev: &mut dyn FlowDevice| -> Result<Buf3> {
+                Ok(Buf3 {
+                    x: dev.alloc(nc)?,
+                    y: dev.alloc(nc)?,
+                    z: dev.alloc(nc)?,
+                })
+            };
+            let mut gtau = [Buf3 {
+                x: face_viscosity,
+                y: face_viscosity,
+                z: face_viscosity,
+            }; 6];
+            for g in &mut gtau {
+                *g = a3(dev)?;
+            }
+            let points = mesh
+                .boundaries
+                .iter()
+                .map(|p| (p.name.clone(), BoundaryKind::ZeroGradient))
+                .collect();
+            let lsq = crate::simplec::lsq_with(mesh, geo, &points)?;
+            let lsq = Buf3 {
+                x: up(dev, &lsq.x)?,
+                y: up(dev, &lsq.y)?,
+                z: up(dev, &lsq.z)?,
+            };
+            let ones = dev.alloc(nb)?;
+            dev.fill(ones, 1.0)?;
+            // the quadratic gradient on the cells where the face-neighbour
+            // gradient is first order (D236)
+            let q = crate::operators::quadratic_velocity_gradient(
+                case,
+                mesh,
+                geo,
+                &bc_arrays.u_points,
+            )?;
+            let quad = if q.cells.is_empty() {
+                None
+            } else {
+                let slot = dev.quadratic_setup(&q.cells, &q.ptr, &q.idx)?;
+                let w = Buf3 {
+                    x: up(dev, &q.w.x)?,
+                    y: up(dev, &q.w.y)?,
+                    z: up(dev, &q.w.z)?,
+                };
+                Some((slot, w, q.dims as u32, [a3(dev)?, a3(dev)?, a3(dev)?]))
+            };
+            Some(QcrDev {
+                mode: section.qcr.kernel(),
+                tau: t,
+                gtau,
+                lsq,
+                ones,
+                zeros: dev.alloc(nb)?,
+                quad,
+            })
         };
         let ka_host = kinds(mesh, &case.boundary, treatment, VarKind::K, model).1;
         let wa_host = kinds(mesh, &case.boundary, treatment, VarKind::Second, model).1;
@@ -2899,17 +2971,40 @@ impl Turbulence {
     /// The non-linear stress of the QCR (D170) in the momentum face parts
     /// `bf`, from the current velocity gradient and ν_t of the last
     /// turbulence update (an explicit stress; nothing without `turbulence.qcr`).
+    ///
+    /// The divergence is consistent on irregular cells (D236): the velocity
+    /// gradient of the stress is the quadratic least-squares fit where the
+    /// face-neighbour gradient is first order (cell velocity `u`, boundary
+    /// velocity `ub`), and the face stress is corrected for skewness with
+    /// the cell gradients of the stress.
     pub(crate) fn add_explicit_stress(
         &self,
         dev: &mut dyn FlowDevice,
         grad_u: [Buf3; 3],
+        u: Buf3,
+        ub: Buf3,
         bf: Buf3,
     ) -> Result<()> {
-        let Some((mode, tau)) = self.qcr else {
+        let Some(q) = self.qcr else {
             return Ok(());
         };
-        dev.qcr_cells(grad_u, self.nu_t, &self.c, mode, tau)?;
-        dev.explicit_stress_faces(tau, bf)
+        let g = match q.quad {
+            Some((slot, w, dims, gq)) => {
+                for (a, b) in grad_u.iter().zip(&gq) {
+                    for (x, y) in a.all().into_iter().zip(b.all()) {
+                        dev.copy(x, y)?;
+                    }
+                }
+                dev.quadratic_gradient(slot, w, dims, u, ub, gq)?;
+                gq
+            }
+            None => grad_u,
+        };
+        dev.qcr_cells(g, self.nu_t, &self.c, q.mode, q.tau)?;
+        for (t, gt) in q.tau.iter().zip(&q.gtau) {
+            dev.gradient_with(q.lsq, *t, q.ones, q.zeros, None, *gt)?;
+        }
+        dev.explicit_stress_faces(q.tau, Some(q.gtau), bf)
     }
 
     /// The moving reference frames of the curvature correction (D170):

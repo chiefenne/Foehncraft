@@ -270,6 +270,321 @@ pub fn operator_errors(
     })
 }
 
+/// The quadratic least-squares gradient of the cells `cells` (D236, step
+/// 2): a weighted fit of a linear and a quadratic part,
+/// φ_k − φ_c = ∇φ·d_k + ½ d_kᵀ H d_k, over the face neighbours, their face
+/// neighbours and the fixed-value boundary faces of both (the boundary
+/// value at the face centroid), with the weights 1/|d_k|² of the
+/// face-neighbour gradient (D24). The gradient is exact for a quadratic
+/// field wherever the fit has full rank. Per treated cell the rows of the
+/// gradient: g = Σ_k w_k (φ_k − φ_c), with `idx` a cell (< n_cells) or a
+/// boundary face (n_cells + boundary face index).
+#[derive(Debug, Clone, Default)]
+pub struct QuadraticGradient {
+    /// The treated cells.
+    pub cells: Vec<u32>,
+    /// Start of the stencil of each treated cell in `idx` and `w`
+    /// (`cells.len() + 1` entries).
+    pub ptr: Vec<u32>,
+    /// Stencil points: a cell, or `n_cells` + a boundary face index.
+    pub idx: Vec<u32>,
+    /// Gradient weights per stencil point.
+    pub w: crate::disc::Soa3,
+    /// Cells asked for whose fit is rank deficient or badly conditioned
+    /// (left to the face-neighbour gradient).
+    pub failed: Vec<usize>,
+    /// Coordinates of the fit (2: x and y).
+    pub dims: usize,
+}
+
+/// Smallest pivot of the scaled normal equations, relative to the
+/// largest, for a fit to count as full rank.
+pub const QUADRATIC_PIVOT: f64 = 1e-9;
+
+/// The points of a fitted stencil with their gradient weights.
+type Stencil = Vec<(u32, [f64; 3])>;
+
+/// Cholesky solve of the symmetric positive definite `n`×`n` matrix `a`
+/// (row major) for the columns of `b` (`n` × `m`), in place; `None` when a
+/// pivot falls below `QUADRATIC_PIVOT` times the largest diagonal entry.
+fn cholesky_solve(a: &mut [f64], n: usize, b: &mut [f64], m: usize) -> Option<()> {
+    let big = (0..n).map(|i| a[i * n + i]).fold(0.0, f64::max);
+    if big.is_nan() || big <= 0.0 {
+        return None;
+    }
+    for j in 0..n {
+        let mut d = a[j * n + j];
+        for k in 0..j {
+            d -= a[j * n + k] * a[j * n + k];
+        }
+        if d.is_nan() || d <= QUADRATIC_PIVOT * big {
+            return None;
+        }
+        let d = d.sqrt();
+        a[j * n + j] = d;
+        for i in j + 1..n {
+            let mut v = a[i * n + j];
+            for k in 0..j {
+                v -= a[i * n + k] * a[j * n + k];
+            }
+            a[i * n + j] = v / d;
+        }
+    }
+    for c in 0..m {
+        // L y = b, Lᵀ x = y
+        for i in 0..n {
+            let mut v = b[i * m + c];
+            for k in 0..i {
+                v -= a[i * n + k] * b[k * m + c];
+            }
+            b[i * m + c] = v / a[i * n + i];
+        }
+        for i in (0..n).rev() {
+            let mut v = b[i * m + c];
+            for k in i + 1..n {
+                v -= a[k * n + i] * b[k * m + c];
+            }
+            b[i * m + c] = v / a[i * n + i];
+        }
+    }
+    Some(())
+}
+
+/// The stencil points of the quadratic fit of cell `c`: (index, position).
+fn quadratic_points(
+    mesh: &Mesh,
+    geo: &Geometry,
+    kind: &[BoundaryKind],
+    c: usize,
+    min: usize,
+) -> Vec<(u32, [f64; 3])> {
+    let ni = mesh.n_interior_faces();
+    let nc = mesh.n_cells;
+    let periodic = mesh.periodic_start();
+    let pshift: &[[f64; 3]] = mesh.periodic.as_ref().map_or(&[], |p| &p.shift);
+    let xc = &geo.cell_centroid;
+    // the face neighbours of cell `a` seen with the shift `s` of `a`
+    let ring = |a: usize, s: [f64; 3]| -> Vec<(u32, [f64; 3], [f64; 3])> {
+        let mut out = Vec::new();
+        for (f, is_nb) in mesh.cell_face_iter(a) {
+            if f < ni {
+                let (o, sh) = if is_nb {
+                    let sh = if f >= periodic {
+                        scale(pshift[f - periodic], -1.0)
+                    } else {
+                        [0.0; 3]
+                    };
+                    (mesh.owner[f] as usize, sh)
+                } else {
+                    let sh = if f >= periodic {
+                        pshift[f - periodic]
+                    } else {
+                        [0.0; 3]
+                    };
+                    (mesh.neighbour[f] as usize, sh)
+                };
+                let s2 = add(s, sh);
+                out.push((o as u32, add(xc[o], s2), s2));
+            } else if kind[f - ni] == BoundaryKind::FixedValue {
+                out.push(((nc + f - ni) as u32, add(geo.face_centroid[f], s), s));
+            }
+        }
+        out
+    };
+    let same = |a: &[f64; 3], b: &[f64; 3]| {
+        (0..3).all(|i| (a[i] - b[i]).abs() < 1e-12 * (1.0 + a[i].abs()))
+    };
+    let mut pts: Vec<(u32, [f64; 3])> = Vec::new();
+    let seen = |pts: &mut Vec<(u32, [f64; 3])>, i: u32, x: [f64; 3]| {
+        if (i as usize == c && same(&x, &xc[c])) || pts.iter().any(|(j, y)| *j == i && same(y, &x))
+        {
+            return;
+        }
+        pts.push((i, x));
+    };
+    // the neighbours of the neighbours; a third ring where that leaves
+    // fewer than `min` points (corner cells)
+    let mut frontier: Vec<(u32, [f64; 3])> = vec![(c as u32, [0.0; 3])];
+    for layer in 0..3 {
+        if layer == 2 && pts.len() >= min {
+            break;
+        }
+        let mut next = Vec::new();
+        for &(a, s) in &frontier {
+            if (a as usize) >= nc {
+                continue;
+            }
+            for (j, y, s2) in ring(a as usize, s) {
+                let before = pts.len();
+                seen(&mut pts, j, y);
+                if pts.len() > before {
+                    next.push((j, s2));
+                }
+            }
+        }
+        frontier = next;
+    }
+    pts
+}
+
+/// The quadratic least-squares gradient of `cells` (see
+/// [`QuadraticGradient`]) on `dims` coordinates, with the boundary kinds
+/// `kind` of the field (fixed-value faces enter the fit).
+pub fn quadratic_gradient(
+    mesh: &Mesh,
+    geo: &Geometry,
+    kind: &[BoundaryKind],
+    dims: usize,
+    cells: &[usize],
+) -> QuadraticGradient {
+    let dims = dims.clamp(1, 3);
+    let nq = dims * (dims + 1) / 2;
+    let m = dims + nq;
+    let xc = &geo.cell_centroid;
+    let fits: Vec<Option<Stencil>> = cells
+        .par_iter()
+        .map(|&c| {
+            let pts = quadratic_points(mesh, geo, kind, c, 2 * m);
+            if pts.len() < m + 1 {
+                return None;
+            }
+            let ds: Vec<[f64; 3]> = pts.iter().map(|(_, x)| sub(*x, xc[c])).collect();
+            let h = ds.iter().map(|d| norm(*d)).fold(0.0, f64::max);
+            if h.is_nan() || h <= 0.0 {
+                return None;
+            }
+            let n = pts.len();
+            // rows a_k of the scaled design matrix and the weights
+            let mut rows = vec![0.0; n * m];
+            let mut wt = vec![0.0; n];
+            for (k, d) in ds.iter().enumerate() {
+                let e = scale(*d, 1.0 / h);
+                let r = &mut rows[k * m..(k + 1) * m];
+                r[..dims].copy_from_slice(&e[..dims]);
+                let mut q = dims;
+                for i in 0..dims {
+                    for j in i..dims {
+                        r[q] = if i == j {
+                            0.5 * e[i] * e[i]
+                        } else {
+                            e[i] * e[j]
+                        };
+                        q += 1;
+                    }
+                }
+                wt[k] = 1.0 / dot(e, e).max(1e-300);
+            }
+            let mut a = vec![0.0; m * m];
+            let mut b = vec![0.0; m * n];
+            for k in 0..n {
+                let r = &rows[k * m..(k + 1) * m];
+                for i in 0..m {
+                    for j in 0..m {
+                        a[i * m + j] += wt[k] * r[i] * r[j];
+                    }
+                    b[i * n + k] = wt[k] * r[i];
+                }
+            }
+            cholesky_solve(&mut a, m, &mut b, n)?;
+            Some(
+                pts.iter()
+                    .enumerate()
+                    .map(|(k, (i, _))| {
+                        let mut g = [0.0; 3];
+                        for (r, gr) in g.iter_mut().enumerate().take(dims) {
+                            *gr = b[r * n + k] / h;
+                        }
+                        (*i, g)
+                    })
+                    .collect(),
+            )
+        })
+        .collect();
+    let mut out = QuadraticGradient {
+        ptr: vec![0],
+        dims,
+        ..Default::default()
+    };
+    for (&c, fit) in cells.iter().zip(fits) {
+        match fit {
+            Some(v) => {
+                out.cells.push(c as u32);
+                for (i, g) in v {
+                    out.idx.push(i);
+                    out.w.x.push(g[0]);
+                    out.w.y.push(g[1]);
+                    out.w.z.push(g[2]);
+                }
+                out.ptr.push(out.idx.len() as u32);
+            }
+            None => out.failed.push(c),
+        }
+    }
+    out
+}
+
+/// The gradient error of the treated cells of `q` (built with the
+/// boundary kinds `kind`) for the quadratic test fields, as `gradient` of
+/// [`OperatorErrors`] (relative to h_c |H| with h_c the longest distance of
+/// the cell's face-neighbour stencil): zero up to round-off where the fit
+/// has full rank. Per treated cell, in the order of `q.cells`.
+pub fn quadratic_gradient_errors(
+    mesh: &Mesh,
+    geo: &Geometry,
+    kind: &[BoundaryKind],
+    q: &QuadraticGradient,
+) -> Vec<f64> {
+    let ni = mesh.n_interior_faces();
+    let dims = q.dims;
+    let (lo, hi) = mesh.bounding_box();
+    let centre: [f64; 3] = std::array::from_fn(|i| 0.5 * (lo[i] + hi[i]));
+    let len = (0..3)
+        .map(|i| hi[i] - lo[i])
+        .fold(0.0, f64::max)
+        .max(1e-300);
+    let xc = &geo.cell_centroid;
+    (0..q.cells.len())
+        .into_par_iter()
+        .map(|t| {
+            let c = q.cells[t] as usize;
+            let pts = quadratic_points(mesh, geo, kind, c, 2 * (dims + dims * (dims + 1) / 2));
+            let hc = mesh
+                .cell_face_iter(c)
+                .map(|(f, nb)| {
+                    let x = if f < ni {
+                        let o = if nb { mesh.owner[f] } else { mesh.neighbour[f] } as usize;
+                        xc[o]
+                    } else {
+                        geo.face_centroid[f]
+                    };
+                    norm(sub(x, xc[c]))
+                })
+                .fold(0.0, f64::max)
+                .max(1e-300);
+            let a = q.ptr[t] as usize;
+            let mut worst = 0.0f64;
+            for i in 0..dims {
+                for j in i..dims {
+                    let f = |x: [f64; 3]| (x[i] - centre[i]) * (x[j] - centre[j]) / (len * len);
+                    let mut g = [0.0; 3];
+                    for (k, (_, x)) in pts.iter().enumerate() {
+                        let v = f(*x) - f(xc[c]);
+                        g[0] += q.w.x[a + k] * v;
+                        g[1] += q.w.y[a + k] * v;
+                        g[2] += q.w.z[a + k] * v;
+                    }
+                    let mut e = [0.0; 3];
+                    e[i] += (xc[c][j] - centre[j]) / (len * len);
+                    e[j] += (xc[c][i] - centre[i]) / (len * len);
+                    let hn = if i == j { 2.0 } else { 2f64.sqrt() } / (len * len);
+                    worst = worst.max(norm(sub(g, e)) / (hc * hn));
+                }
+            }
+            worst
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -336,5 +651,51 @@ mod tests {
                 "{m:?} {p}: gradient {g:e}, hessian {h:e}"
             );
         }
+    }
+
+    #[test]
+    fn the_quadratic_gradient_is_exact_for_quadratic_fields() {
+        for (m, p) in [
+            (Kind::Hex, 0.3),
+            (Kind::Tet, 0.0),
+            (Kind::Tet, 0.2),
+            (Kind::Poly, 0.2),
+        ] {
+            let (mesh, geo) = test_mesh(m, 3, 4, 0, p).unwrap();
+            let kinds = vec![BoundaryKind::FixedValue; mesh.n_faces() - mesh.n_interior_faces()];
+            let cells: Vec<usize> = (0..mesh.n_cells).collect();
+            let q = quadratic_gradient(&mesh, &geo, &kinds, 3, &cells);
+            assert!(q.failed.is_empty(), "{m:?} {p}: {} failed", q.failed.len());
+            let e = quadratic_gradient_errors(&mesh, &geo, &kinds, &q);
+            let worst = e.iter().cloned().fold(0.0, f64::max);
+            assert!(worst < 1e-8, "{m:?} {p}: {worst:e}");
+        }
+    }
+
+    #[test]
+    fn the_quadratic_gradient_in_two_dimensions() {
+        let (mesh, geo) = test_mesh(Kind::Tet, 2, 6, 0, 0.2).unwrap();
+        let ni = mesh.n_interior_faces();
+        // walls fixed, the z sides symmetry (not in the fit)
+        let mut kinds = vec![BoundaryKind::FixedValue; mesh.n_faces() - ni];
+        for p in &mesh.boundaries {
+            if p.name.starts_with('z') {
+                for f in p.range() {
+                    kinds[f - ni] = BoundaryKind::ZeroGradient;
+                }
+            }
+        }
+        let cells: Vec<usize> = (0..mesh.n_cells).collect();
+        let q = quadratic_gradient(&mesh, &geo, &kinds, 2, &cells);
+        let names: Vec<_> = mesh.boundaries.iter().map(|p| p.name.clone()).collect();
+        assert!(
+            q.failed.is_empty(),
+            "{} of {} failed; boundaries {names:?}; points of the first {}",
+            q.failed.len(),
+            mesh.n_cells,
+            quadratic_points(&mesh, &geo, &kinds, q.failed[0], 10).len()
+        );
+        let e = quadratic_gradient_errors(&mesh, &geo, &kinds, &q);
+        assert!(e.iter().cloned().fold(0.0, f64::max) < 1e-8);
     }
 }

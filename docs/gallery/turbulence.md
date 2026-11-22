@@ -15,6 +15,7 @@ Part of the [Example gallery](../gallery.md): the RANS turbulence models of stag
 | 115 | [Quadratic constitutive relation of SST: secondary flow in a square duct](#qcr) | 6 | `turbulence.qcr`, constants `c_cr1`, `c_cr2` |
 | 141 | [The sink of k near walls of the ζ-f models: grid convergence at the wall](#k-sink) | 6 | `turbulence.k_sink`, constants `c_epsilon1_zeta`, `c_epsilon1_power` |
 | 184 | [Manufactured solutions of k-ε-ζ-f₀, the curvature correction and the QCR: orders and two findings](#mms-turbulence) | 6 | `cargo test turbulence::mms`, `Flow::explicit_stress_force`, `tools/plot/mms_turbulence.py` |
+| 194 | [The QCR stress on tetrahedra and perturbed meshes: a consistent divergence](#qcr-consistency) | 6 | quadratic least-squares velocity gradient on flagged cells, skewness-corrected face stress, `MESH006` (D236) |
 | 140 | [Turbulence of the backflow at a pressure outlet: an outlet inside the recirculation](#outlet-backflow) | 6 | `k`, `omega`/`epsilon`, `turbulence_intensity`, `zeta` on `static-pressure-outlet` and `total-pressure-outlet` |
 
 ---
@@ -1021,6 +1022,57 @@ python3 -m tools.plot.mms_turbulence docs/figures/gallery/mms_turbulence.png
 
 ---
 
+<a id="qcr-consistency"></a>
+## 194. The QCR stress on tetrahedra and perturbed meshes: a consistent divergence
+
+<img src="../figures/gallery/qcr_consistency.png" alt="Top: the error of the QCR force per cell, |f_h − f| over the largest force on a log scale from 0.001 (dark blue) to 0.3 (yellow), on the finest tetrahedral mesh with 15 % perturbed vertices, in one quarter of the test window; left before the change, mostly 0.03 to 0.3 with a cell-to-cell pattern; right after, mostly 0.005 to 0.03. Bottom: the L2 error of the force against the cell size on log axes: before, the perturbed hexahedra level off at 5.5 % and the tetrahedra at about 10 %; after, both fall, the hexahedra to 0.65 % and the tetrahedra to 3.6 % at first order" width="1000" height="920">
+
+**What changed.** The QCR adds an explicit stress to the momentum
+equations, built from the velocity gradient; its divergence differentiates
+that gradient once more. With the face-neighbour least-squares gradient
+(first order on irregular cells, gallery 189) and the linear face
+interpolation of the cell stress, the divergence carried an error that did
+not fall with the mesh: about 5 % of the largest force on hexahedra with
+15 % perturbed vertices (gallery 184). Two changes make it consistent
+(D236, step 2):
+
+- On the cells the operator check flags for the QCR, the velocity gradient
+  of the stress is a quadratic least-squares fit over the neighbours of
+  the neighbours (a third ring where fewer than twice the unknowns are in
+  reach, boundary faces as points with their values). It is exact for
+  quadratic fields, so it is second order there. Elsewhere the gradient is
+  the face-neighbour one, unchanged.
+- The stress at a face is the weighted mean of the two cell values plus
+  the skewness correction ∇τ̄_f·(x_f − x_w) with cell gradients of the
+  stress (x_w the point where the line between the centroids meets the
+  face).
+
+**Results.** In the manufactured solution of the QCR force
+(`turbulence::mms`, QCR2000 on the frozen manufactured flow, three
+levels): on perturbed hexahedra the error now falls 4.6 %, 1.5 %, 0.65 %
+(order 1.2 to 1.6; before 8.5 %, 5.7 %, 5.5 %), on perturbed tetrahedra
+15.6 %, 7.3 %, 3.6 % (order 1; before 27.8 %, 14.6 %, 10.3 %, levelling off). The remaining first order
+on tetrahedra is the midpoint rule of the face sum on irregular cells, not
+the stress. Regular hexahedra and polyhedra keep order 2. The figure: the
+error per cell on the finest tetrahedral mesh before (left) and after
+(right), in one quarter of the test window, and the convergence (bottom). The operator check now reports
+`MESH006` only for cells where the quadratic fit itself fails.
+
+| | |
+|---|---|
+| Code | `foehncraft_fv::exactness::quadratic_gradient`, `entry::{QuadraticGradient, ExplicitStressFaces}`, `operators::quadratic_velocity_gradient`, `turbulence::QcrDev` |
+| Tests | `turbulence::mms::qcr_stress_on_perturbed_meshes_converges`, `qcr_stress_manufactured_solution_orders`, `exactness` tests of `foehncraft-fv`, `operators::tests::quadratic_fit_is_exact_on_tetrahedra` |
+| Case file | `flow/cavity_sst_operator_check.toml` (QCR2000 on perturbed tetrahedra) |
+| Recipe | [194](../recipes/turbulence.md#qcr-consistency) |
+
+```
+FOEHN_MMS_QCR_DUMP=output/qcr_new cargo test --release -p foehncraft-flow \
+    --lib qcr_stress_on_perturbed -- --nocapture 2> output/qcr_new.log
+python3 -m tools.plot.qcr_consistency docs/figures/gallery/qcr_consistency.png \
+    output/qcr_old output/qcr_new    # output/qcr_old: the same test on a build before #194
+```
+
+[↑ back to top](#turbulence-models)
 <a id="pipe-turbulent"></a>
 ## 193. Turbulent pipe flow at Re_b 5300: friction against the DNS, three meshes with GCI
 
