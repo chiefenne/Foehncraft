@@ -825,6 +825,28 @@
    "range": {}
   },
   {
+   "id": "buoyancy.boussinesq",
+   "title": "Gravity and the Boussinesq buoyancy (balanced force)",
+   "grade": "partial",
+   "why": [
+    "a model without reference data",
+    "gaps written"
+   ],
+   "gaps": [
+    "no reference-data case (a measured natural-convection flow)",
+    "the wall forces leave out the Archimedes part ρ_ref g V"
+   ],
+   "range": {}
+  },
+  {
+   "id": "buoyancy.pressure-kind",
+   "title": "Reduced and static pressure at pressure boundaries",
+   "grade": "verified",
+   "why": [],
+   "gaps": [],
+   "range": {}
+  },
+  {
    "id": "rotating.mrf",
    "title": "Moving reference frame (steady frozen rotor)",
    "grade": "partial",
@@ -1061,14 +1083,14 @@
    "range": {}
   },
   {
-   "id": "planned.buoyancy",
-   "title": "Buoyancy (Boussinesq and variable density)",
+   "id": "planned.variable-density",
+   "title": "Low-Mach variable density ρ(T, p₀)",
    "grade": "unverified",
    "why": [
     "no evidence holds"
    ],
    "gaps": [
-    "not built (stage 7b, after the CHT work)"
+    "not built (stage 7c; the Boussinesq buoyancy is in, buoyancy.boussinesq)"
    ],
    "range": {}
   }

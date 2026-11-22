@@ -119,6 +119,26 @@ pub enum Analytic {
         #[serde(default)]
         pressure_outlet: f64,
     },
+    /// Natural convection between two vertical walls of infinite height
+    /// (stage 7b1): the hot wall at x = `lower`, the cold one at x =
+    /// `upper`, gravity along −y, a linear temperature between them and the
+    /// Boussinesq force about their mean temperature. The flow rises at the
+    /// hot wall and falls at the cold one with no net flow:
+    /// v = (g β ΔT D²/(48 ν)) (ξ³ − ξ), ξ = 2 (x − x₀)/D − 1, u = 0, and a
+    /// constant reduced pressure (its level is not compared).
+    BuoyantSlot {
+        /// x of the hot wall.
+        #[serde(default)]
+        lower: f64,
+        /// x of the cold wall.
+        #[serde(default = "one")]
+        upper: f64,
+        /// g β ΔT (m/s²) of the wall temperature difference ΔT.
+        buoyancy: f64,
+        /// Kinematic viscosity ν (m²/s), set by the case from `[fluid]`.
+        #[serde(default)]
+        nu: f64,
+    },
     /// Hagen–Poiseuille flow in a pipe of radius R along the x axis:
     /// u = 2 U_m (1 − r²/R²), r² = y² + z², p = p_out + G (x_out − x) with
     /// G = 8 μ U_m / R².
@@ -267,6 +287,20 @@ impl Analytic {
                 let r2 = (x[1] * x[1] + x[2] * x[2]) / (radius * radius);
                 [2.0 * mean_velocity * (1.0 - r2), 0.0, 0.0]
             }
+            Self::BuoyantSlot {
+                lower,
+                upper,
+                buoyancy,
+                nu,
+            } => {
+                let d = upper - lower;
+                let xi = 2.0 * (x[0] - lower) / d - 1.0;
+                [
+                    0.0,
+                    buoyancy * d * d / (48.0 * nu) * (xi * xi * xi - xi),
+                    0.0,
+                ]
+            }
             Self::TaylorCouette {
                 inner_radius: r1,
                 outer_radius: r2,
@@ -306,6 +340,7 @@ impl Analytic {
             | Self::Couette { pressure, .. }
             | Self::CouetteViscosity { pressure, .. }
             | Self::CouetteTranspiration { pressure, .. } => pressure,
+            Self::BuoyantSlot { .. } => 0.0,
             Self::Poiseuille {
                 lower,
                 upper,
@@ -369,7 +404,7 @@ impl Analytic {
     /// constant that the run does not fix (closed domain): the error then
     /// compares the volume means.
     pub fn free_pressure_level(&self) -> bool {
-        matches!(self, Self::TaylorCouette { .. })
+        matches!(self, Self::TaylorCouette { .. } | Self::BuoyantSlot { .. })
     }
 
     /// The solution at time `t` (steady solutions ignore it).
@@ -391,7 +426,9 @@ impl Analytic {
                 *rho = density;
             }
             Self::TaylorCouette { rho, .. } => *rho = density,
-            Self::CouetteTranspiration { nu, .. } => *nu = viscosity / density,
+            Self::CouetteTranspiration { nu, .. } | Self::BuoyantSlot { nu, .. } => {
+                *nu = viscosity / density
+            }
             Self::Uniform { .. } | Self::Couette { .. } | Self::CouetteViscosity { .. } => {}
         }
         self
@@ -403,7 +440,8 @@ impl Analytic {
             Self::Couette { lower, upper, .. }
             | Self::CouetteViscosity { lower, upper, .. }
             | Self::CouetteTranspiration { lower, upper, .. }
-            | Self::Poiseuille { lower, upper, .. } => upper - lower,
+            | Self::Poiseuille { lower, upper, .. }
+            | Self::BuoyantSlot { lower, upper, .. } => upper - lower,
             Self::PipePoiseuille { radius, .. } => 2.0 * radius,
             Self::Uniform { length, .. } => length,
             Self::TaylorGreen { length, .. } => length,
@@ -424,6 +462,16 @@ impl Analytic {
             | Self::CouetteTranspiration { wall_velocity, .. } => wall_velocity.abs(),
             Self::Poiseuille { mean_velocity, .. } => 1.5 * mean_velocity.abs(),
             Self::PipePoiseuille { mean_velocity, .. } => 2.0 * mean_velocity.abs(),
+            Self::BuoyantSlot {
+                lower,
+                upper,
+                buoyancy,
+                nu,
+            } => {
+                // the largest speed, at ξ = ∓1/√3
+                let d = upper - lower;
+                (buoyancy * d * d / (48.0 * nu)).abs() * 2.0 / (3.0 * 3f64.sqrt())
+            }
             Self::TaylorGreen { velocity, .. } => velocity.abs(),
             Self::TaylorCouette {
                 inner_radius,

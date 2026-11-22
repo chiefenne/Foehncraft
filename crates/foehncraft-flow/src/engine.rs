@@ -1610,11 +1610,13 @@ pub fn check_case(
                     values: &values,
                     t: t0,
                     turning: &case.turning(),
+                    hydrostatic: crate::buoyancy::hydrostatic(case),
                 },
                 case.check_context(),
             );
             findings.extend(crate::turbulence::setup_findings(case));
             findings.extend(crate::energy::setup_findings(case));
+            findings.extend(crate::buoyancy::setup_findings(case, &mesh, &geo));
             rep.diagnostics
                 .extend(findings.iter().map(crate::bc::Finding::diagnostic));
             // the operator exactness check (D236)

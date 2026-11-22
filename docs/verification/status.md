@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**98 features: 48 verified, 46 partial, 4 unverified.**
+**100 features: 49 verified, 47 partial, 4 unverified.**
 
 ## How a grade is computed
 
@@ -97,6 +97,8 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Conjugate heat transfer | [Contact resistances and thin walls](#cht-contact-thin-wall) | verified |
 | Conjugate heat transfer | [Orthotropic solids (axes per region)](#cht-orthotropic) | verified |
 | Conjugate heat transfer | [Heat sources per region](#cht-region-source) | partial |
+| Buoyancy | [Gravity and the Boussinesq buoyancy (balanced force)](#buoyancy-boussinesq) | partial |
+| Buoyancy | [Reduced and static pressure at pressure boundaries](#buoyancy-pressure-kind) | verified |
 | Rotating machinery | [Moving reference frame (steady frozen rotor)](#rotating-mrf) | partial |
 | Rotating machinery | [Transient frozen rotor](#rotating-mrf-transient) | partial |
 | Rotating machinery | [A whole domain in a turning frame](#rotating-whole-domain-frame) | partial |
@@ -122,7 +124,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Backends and interfaces | [Tool registry (foehn call, foehn commands, typed schemas)](#interface-tool-registry) | verified |
 | Backends and interfaces | [Journal and replay of tool calls](#interface-journal-replay) | verified |
 | Backends and interfaces | [MCP server (foehn mcp)](#interface-mcp) | verified |
-| Planned | [Buoyancy (Boussinesq and variable density)](#planned-buoyancy) | unverified |
+| Planned | [Low-Mach variable density ρ(T, p₀)](#planned-variable-density) | unverified |
 
 ## Meshes
 
@@ -629,6 +631,7 @@ Gaps:
 - manufactured: [`sst_manufactured_solution_orders`](../../crates/foehncraft-flow/src/turbulence/mms.rs): orders 2.04 to 2.17 of k and ω on hexahedra, polyhedra and tetrahedra ([results](stage6.md#manufactured-solutions-of-every-model-spec-92-pr-148))
 - reference-data: [`tmr_plate_sst`](../../examples/cases/flow/tmr_plate_sst.toml): flat plate: C_f(0.97) +1.45 % from the Coles–Fernholz fit, GCI 1.76 % ([results](stage6.md#tmr-flat-plate-re_l--510⁶))
 - reference-data: [`channel_sst`](../../examples/cases/flow/channel_sst.toml): channel at Re_τ 395: U_b⁺ −1.3 % from the DNS of Moser, Kim & Mansour (1999) ([results](stage6.md#channel-re_τ--395))
+- reference-data: [`pipe_turbulent_sst`](../../examples/cases/flow/pipe_turbulent_sst.toml): pipe at Re_b 5300: u_τ/U_b +4.5 % from the DNS of El Khoury et al. (2013), GCI 0.2 % (band ±6 %) (passes in CI (set linux-1), not yet in the manual)
 - reference-data: [`backstep_outlet_backflow`](../../examples/cases/flow/backstep_outlet_backflow.toml): backward-facing step with the outlet inside the recirculation
 - reference-data: recorded run (level sweep of backstep_validation with SST, 3 meshes): step of Driver & Seegmiller (1985): x_r/H 6.747, +7.8 % (band ±10 %) ([results](stage6.md#backward-facing-step-against-the-experiment-part-6g-95))
 - consistency: [`sst_results_are_bitwise_equal_on_1_and_4_threads`](../../crates/foehncraft-flow/tests/turbulence.rs): bitwise equal on 1 and 4 threads
@@ -1077,6 +1080,37 @@ Gaps:
 
 - no exact solution with a volumetric source (for example the parabolic temperature of a heated slab)
 
+## Buoyancy
+
+<a id="buoyancy-boussinesq"></a>
+
+### Gravity and the Boussinesq buoyancy (balanced force)
+
+**partial** (a model without reference data; gaps written) · id `buoyancy.boussinesq` · switch `[gravity], [buoyancy] model = "boussinesq"` · decisions D153, D154
+
+- exact: [`buoyancy_box_at_rest`](../../examples/cases/flow/buoyancy_box_at_rest.toml): a stratified box at rest along an oblique gravity on a perturbed mesh: largest speed 1·10⁻¹⁵ m/s (passes in CI (set linux-3), not yet in the manual) ([results](../gallery/energy.md#buoyancy))
+- exact: [`stratified_box_stays_at_rest`](../../crates/foehncraft-flow/tests/buoyancy.rs): the box at rest on hex, tet, poly and mixed 3D meshes, SIMPLEC and coupled, below 3·10⁻¹⁰ m/s
+- exact: [`buoyancy_slot`](../../examples/cases/flow/buoyancy_slot.toml): the buoyant slot against its exact cubic profile, observed orders 2.14 and 2.13 (passes in CI (set linux-3), not yet in the manual) ([results](../cases/flow.md#gravity-and-buoyancy))
+- exact: [`buoyant_slot_has_second_order`](../../crates/foehncraft-flow/tests/buoyancy.rs): observed orders in 1.8–2.3
+- consistency: [`buoyancy_enclosure_plume`](../../examples/cases/flow/buoyancy_enclosure_plume.toml): a laminar plume in a closed air enclosure converges, mass and kinetic-energy ledgers close (passes in CI (set linux-3), not yet in the manual)
+
+Gaps:
+
+- no reference-data case (a measured natural-convection flow)
+- the wall forces leave out the Archimedes part ρ_ref g V
+
+<a id="buoyancy-pressure-kind"></a>
+
+### Reduced and static pressure at pressure boundaries
+
+**verified** · id `buoyancy.pressure-kind` · switch `[boundary.<name>] pressure_kind` · decisions D153
+
+- consistency: [`buoyancy_channel_reduced`](../../examples/cases/flow/buoyancy_channel_reduced.toml): a tall channel with the outlet as p′ = 0 (passes in CI (set linux-3), not yet in the manual) ([results](../recipes/energy.md#buoyancy))
+- consistency: [`buoyancy_channel_static`](../../examples/cases/flow/buoyancy_channel_static.toml): the same channel with the outlet as a static pressure: the same flow to 10⁻¹¹ (passes in CI (set linux-3), not yet in the manual)
+- exact: [`reduced_and_static_outlet_give_the_same_flow`](../../crates/foehncraft-flow/tests/buoyancy.rs): both kinds give the same velocity to 10⁻⁹
+- consistency: [`buoyancy_open_box`](../../examples/cases/flow/buoyancy_open_box.toml): a box open over its height stays at rest with the reduced value 0 (passes in CI (set linux-3), not yet in the manual)
+- consistency: [`static_outlet_without_hydrostatics_drives_a_false_flow`](../../crates/foehncraft-flow/tests/buoyancy.rs): a uniform static value over the opening drives a flow and warns BUO006
+
 ## Rotating machinery
 
 <a id="rotating-mrf"></a>
@@ -1393,12 +1427,12 @@ Contracts: `equivalence`, `replay`, `control`, `diagnostics`.
 
 ## Planned
 
-<a id="planned-buoyancy"></a>
+<a id="planned-variable-density"></a>
 
-### Buoyancy (Boussinesq and variable density)
+### Low-Mach variable density ρ(T, p₀)
 
-**unverified** (no evidence holds) · id `planned.buoyancy` · switch `not built` · decisions D150
+**unverified** (no evidence holds) · id `planned.variable-density` · switch `not built` · decisions D151
 
 Gaps:
 
-- not built (stage 7b, after the CHT work)
+- not built (stage 7c; the Boussinesq buoyancy is in, buoyancy.boussinesq)

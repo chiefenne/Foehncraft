@@ -727,6 +727,9 @@ pub struct Physics {
     /// The momentum source per unit volume (N/m³) per cell of a body force
     /// given by expressions (D53), as last set ([`Flow::set_momentum_source`]).
     pub source: Option<std::sync::Arc<[Vec<f64>; 3]>>,
+    /// The balanced buoyancy force B_P per unit volume (N/m³) per cell of
+    /// the momentum rows (stage 7b1, D154), as last refreshed.
+    pub buoyancy: Option<std::sync::Arc<[Vec<f64>; 3]>>,
 }
 
 impl Physics {
@@ -739,6 +742,7 @@ impl Physics {
             convection,
             mu_face: None,
             source: None,
+            buoyancy: None,
         }
     }
 
@@ -1033,6 +1037,13 @@ pub struct Flow {
     pub(crate) pseudo_speed: Option<f64>,
     /// The rotating zones of the moving reference frame (D55), if any.
     pub(crate) frames: Option<crate::frame::Frames>,
+    /// The host copy of the least-squares weights of the pressure (the
+    /// balanced force of gravity applies the same operator, D154).
+    pub(crate) lsq_p: foehncraft_fv::disc::Soa3,
+    /// The balanced-force arrays of the Boussinesq buoyancy (stage 7b1).
+    pub buoyancy: Option<Box<crate::buoyancy::Balanced>>,
+    /// The device buffer of the buoyancy source B_P V of the momentum rows.
+    buoyancy_source: Option<Buf3>,
 }
 
 /// The driving of one periodic pair: a uniform body force β t̂ along the
@@ -1484,6 +1495,9 @@ impl Flow {
             pseudo_length: None,
             pseudo_speed: None,
             frames: None,
+            lsq_p,
+            buoyancy: None,
+            buoyancy_source: None,
         })
     }
 
@@ -1645,6 +1659,7 @@ impl Flow {
         // the kept hierarchies of the momentum sweeps belong to later
         // matrices
         self.sweep = Default::default();
+        self.refresh_buoyancy()?;
         self.update_boundaries()?;
         self.gradients()?;
         Ok(true)
@@ -2152,6 +2167,11 @@ impl Flow {
                 self.dev.lincomb(r, 1.0, r, 1.0, q)?;
             }
         }
+        if let Some(src) = self.buoyancy_source {
+            for (r, q) in w.rhs.all().into_iter().zip(src.all()) {
+                self.dev.lincomb(r, 1.0, r, 1.0, q)?;
+            }
+        }
         self.add_coriolis()?;
         let alg = self.settings.algorithm(self.transient);
         if alg == Algorithm::Simple
@@ -2371,12 +2391,37 @@ impl Flow {
         self.dev.sync()?;
         self.timings.gradients += t.elapsed().as_secs_f64();
 
-        // step 3: relaxation term of the Rhie–Chow flux
+        // step 3: relaxation term of the Rhie–Chow flux; with buoyancy also
+        // the pseudo-time term of the buoyancy step (stage 7b1), with the
+        // current iterate as the old level: Y = ṁ − ρ ū·S into the scratch
+        // `w.mc` (free until the corrections)
         let t = Instant::now();
-        self.relaxation_term(alpha)?;
+        let step = self.buoyancy_step();
+        res.pseudo_step = step;
+        let w = self.w;
+        let time = match step {
+            Some(dt) => {
+                let a = self.flux_args(None, w.zero_face, None);
+                self.dev.mass_flux(&a, w.mc)?;
+                self.dev
+                    .scaled_difference(w.mc, 1.0, self.f.mass_flux, w.mc)?;
+                self.dev.lincomb(w.relax, 1.0 - alpha, w.mc, 0.0, w.mc)?;
+                Some(TimeTerms {
+                    a: [1.0, 1.0, 0.0],
+                    dt,
+                    u_old: self.f.u,
+                    u_old2: self.f.u,
+                    explicit: (0.0, self.f.u),
+                })
+            }
+            None => {
+                self.relaxation_term(alpha)?;
+                None
+            }
+        };
         // step 4: momentum
         let conv = self.convecting_flux()?;
-        let scale = self.momentum_assembly(conv, alpha, 1.0, None)?;
+        let scale = self.momentum_assembly(conv, alpha, 1.0, time)?;
         self.dev.sync()?;
         self.timings.momentum_assembly += t.elapsed().as_secs_f64();
         let t = Instant::now();
@@ -2386,7 +2431,7 @@ impl Flow {
 
         // step 5: predicted fluxes
         let t = Instant::now();
-        let a = self.flux_args(Some(self.w.d), self.w.relax, None);
+        let a = self.flux_args(Some(w.d), w.relax, step.map(|_| (w.ds, w.mc, alpha)));
         self.dev.mass_flux(&a, self.w.m)?;
         self.close_backflow(self.w.m)?;
         res.continuity = self.continuity(self.w.m)?;
@@ -2546,7 +2591,8 @@ impl Flow {
     }
 
     /// The scalar solves of an outer iteration, with the current fluxes
-    /// (after the pressure correction), into `res`.
+    /// (after the pressure correction), into `res`; then the buoyancy of
+    /// the new temperature.
     pub(crate) fn solve_scalars(
         &mut self,
         step: Option<crate::scalar::StepTime>,
@@ -2557,13 +2603,88 @@ impl Flow {
             let t = Instant::now();
             crate::cht::solve(self, step, res)?;
             self.timings.scalars += t.elapsed().as_secs_f64();
+        } else {
+            let coupling = self
+                .turbulence
+                .as_ref()
+                .map(|t| t.scalar_coupling(self.dev.as_ref()));
+            self.solve_scalar_fields(step, res, coupling)?;
+        }
+        self.refresh_buoyancy()
+    }
+
+    /// Sets up the Boussinesq buoyancy with the constants `c` (stage 7b1)
+    /// and computes its arrays from the current temperature.
+    pub fn attach_buoyancy(&mut self, c: crate::buoyancy::Constants) -> Result<()> {
+        let b =
+            crate::buoyancy::Balanced::new(c, &self.disc, &self.lsq_p, &self.bc.p_zero_gradient);
+        self.buoyancy = Some(Box::new(b));
+        self.refresh_buoyancy()
+    }
+
+    /// The fluid temperature per cell of the flow's cells: that of its own
+    /// energy equation, or in a conjugate case of the energy view's.
+    pub fn fluid_temperature(&mut self) -> Result<Option<Vec<f64>>> {
+        if let Some(c) = self.cht.as_deref_mut() {
+            let Some(phi) = c.fe.scalars.as_ref().and_then(|s| s.energy_phi()) else {
+                return Ok(None);
+            };
+            let full = c.fe.dev.download(phi)?;
+            return Ok(Some(
+                c.view.cell.iter().map(|&i| full[i as usize]).collect(),
+            ));
+        }
+        match self.scalars.as_ref().and_then(|s| s.energy_phi()) {
+            Some(phi) => Ok(Some(self.dev.download(phi)?)),
+            None => Ok(None),
+        }
+    }
+
+    /// The pseudo-time step of the momentum equations of a steady SIMPLEC
+    /// or SIMPLE run with buoyancy (stage 7b1): `factor` × L / U_b, with
+    /// U_b = √(|g| |β| ΔT L) the buoyancy velocity, which is `factor` / N
+    /// with N = √(|g| |β| ΔT / L) the buoyancy frequency. The relaxation
+    /// alone takes much longer steps on coarse meshes (α/(1 − α) ρ h²/μ in
+    /// a fluid at rest), and the explicit buoyancy force then overshoots
+    /// the internal waves of a stable stratification instead of letting
+    /// them settle. None without buoyancy or with an isothermal fluid.
+    pub(crate) fn buoyancy_step(&mut self) -> Option<f64> {
+        let l = self.pseudo_length();
+        let speed = self.buoyancy.as_ref()?.speed(l);
+        (speed > 0.0 && speed.is_finite()).then(|| self.settings.pseudo_time.factor * l / speed)
+    }
+
+    /// Recomputes the balanced-force arrays of the buoyancy from the
+    /// current temperature and uploads them (nothing without buoyancy).
+    pub fn refresh_buoyancy(&mut self) -> Result<()> {
+        if self.buoyancy.is_none() {
             return Ok(());
         }
-        let coupling = self
-            .turbulence
-            .as_ref()
-            .map(|t| t.scalar_coupling(self.dev.as_ref()));
-        self.solve_scalar_fields(step, res, coupling)
+        let Some(t) = self.fluid_temperature()? else {
+            return Ok(());
+        };
+        let nc = self.disc.n_cells;
+        let a = self.buoyancy.as_mut().expect("buoyancy").arrays(&t);
+        let b = match self.buoyancy_source {
+            Some(b) => b,
+            None => {
+                let b = Buf3 {
+                    x: self.dev.alloc(nc)?,
+                    y: self.dev.alloc(nc)?,
+                    z: self.dev.alloc(nc)?,
+                };
+                self.buoyancy_source = Some(b);
+                b
+            }
+        };
+        for (bi, v) in b.all().into_iter().zip(&a.source) {
+            self.dev.upload(bi, v)?;
+        }
+        let vol = &self.disc.cell_volume;
+        self.phys.buoyancy = Some(std::sync::Arc::new(std::array::from_fn(|i| {
+            a.source[i].iter().zip(vol).map(|(s, v)| s / v).collect()
+        })));
+        self.dev.set_balanced_force(&a.jump, &a.pb)
     }
 
     /// The scalar solves with the turbulent coupling `coupling` (that of

@@ -1,0 +1,55 @@
+# A box at rest with a tall opening: why boundary values with gravity are
+# reduced pressures by default (stage 7b1, D153; recipe "Which pressure do
+# my boundary values mean").
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/buoyancy_open_box.toml
+#
+# A square box 1 m × 1 m of a fluid with ρ = 1 kg/m³, gravity 9.81 m/s²
+# downwards; the right side is open to an ambient at rest (a static-
+# pressure outlet over the full height), the other sides are walls. With
+# the default kind the value 0 is the reduced pressure p′ = 0: the
+# ambient's own hydrostatic profile, and the fluid stays at rest.
+#   --set 'boundary.xmax.pressure_kind="static"'
+# makes the same 0 Pa a uniform static pressure over a height of 1 m,
+# while the fluid inside carries ρ g Δz = 9.8 Pa of hydrostatic pressure:
+# fluid is pushed out at the bottom and drawn in at the top, a flow that
+# the physics does not have (BUO006 warns).
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [1.0, 1.0, 0.05]
+cells = [20, 20, 1]
+
+[fluid]
+density = 1.0
+viscosity = 0.01
+
+[gravity]
+vector = [0.0, -9.81, 0.0]
+
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.xmin]
+type = "wall"
+[boundary.ymin]
+type = "wall"
+[boundary.ymax]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-9
+max_iterations = 300
+
+[verification]
+require_convergence = false
+
+[output]
+wall_csv = false

@@ -13,6 +13,7 @@ On this page:
 - [Expressions and materials](#expressions-and-materials)
 - [Passive scalars](#passive-scalars)
 - [Energy equation](#energy-equation)
+- [Gravity and buoyancy](#gravity-and-buoyancy)
 
 Stage 4: steady incompressible laminar flow, SIMPLEC with the Rhie–Chow
 interpolation ([explanation](../verification/stage4.md)). Stage 5: transient
@@ -148,6 +149,7 @@ the keys are on the [key page](flow-keys.md#turbulence-d129d139).
 |---|---|---|---|
 | `flow/tmr_plate_sst.toml` | generated hex 2D on the TMR grid family (8 + 24 cells along x, plate split from the symmetry plane at x = 0, wall grading 38 000), 3 072 cells (`verification.levels = [0, 1, 2, 3]`: 768 to 49 152) | the TMR zero-pressure-gradient flat plate at Re = 5·10⁶/m with k-ω SST and `low-re` (SIMPLEC on level 1; the four-level sweep with `solver.algorithm = "coupled"`): C_f(0.97) against the Coles–Fernholz fit (+1.45 % on the finest mesh, −6.1 % from White), the wall shear along the plate, the profile at x = 0.97, the D166 features | [gallery 68](../gallery/turbulence.md#sst), [recipe 68](../recipes/turbulence.md#sst) |
 | `flow/channel_sst.toml` | generated hex 2D, 2 × 96 cells, graded towards both walls (ratio 60), periodic in x | fully developed channel flow at Re_τ = 395 driven by the DNS bulk velocity: U_b⁺ = 17.43 against 17.55 (Moser, Kim & Mansour), −0.7 % | [gallery 68](../gallery/turbulence.md#sst), [recipe 68](../recipes/turbulence.md#sst) |
+| `flow/pipe_turbulent_sst.toml` | generated hex 2D on a 0.5° wedge, 2 × 48 cells graded towards the wall (levels 96 and 192 in the study), periodic module of 0.1 m | fully developed turbulent pipe flow at Re_b = 5 300 with k-ω SST (`low-re`): u_τ/U_b = 0.0714 against 0.0683 of the DNS (El Khoury et al. 2013), +4.5 %; GCI_fine 0.2 % on three meshes (`examples/studies/pipe_gci.py`) | [gallery 193](../gallery/turbulence.md#pipe-turbulent), [recipe 193](../recipes/turbulence.md#pipe-turbulent) |
 | `flow/channel_rotating_sst.toml` | generated hex 2D, 2 × 96 cells graded 30 towards both walls, periodic in x | the channel at Re_b = 5 800 in spanwise rotation (Ro = 0.15, `flow.frame_rotation`) with the curvature correction of SST: wall shear stress 1.63 times higher on the unstable side (1.00 without the correction) | [gallery 113](../gallery/turbulence.md#curvature-correction), [recipe 113](../recipes/turbulence.md#curvature-correction) |
 | `flow/backstep_outlet_backflow.toml` | generated hex 2D, the step mesh of gallery 74 cut at x = 4 H, 4 600 cells | the backward-facing step with the outlet inside the recirculation, SST automatic, k and ω of the backflow at the outlet | [gallery 140](../gallery/turbulence.md#outlet-backflow), [recipe 140](../recipes/turbulence.md#outlet-backflow) |
 | `flow/square_duct_qcr.toml` | generated hex 3D, 2 × 72 × 72 cells on a quarter duct graded 12 towards the two walls, periodic in x, symmetry on the two bisecting planes | the square duct at Re_b = 3 500 with SST and QCR2000: eight corner vortices, largest secondary velocity 1.56 % of U_b (none with linear SST) | [gallery 115](../gallery/turbulence.md#qcr), [recipe 115](../recipes/turbulence.md#qcr) |
@@ -239,3 +241,20 @@ the [key page](../keys.md) and in [recipe 154](../recipes/energy.md#energy-fluid
 | `flow/cht_contact_transient.toml` | generated hex 2D, 400 × 1 cells, zone `bar` | check V7.6: a solid at 400 K (k = 10) and a fluid at rest at 300 K (k = 1) brought into contact; the interface stays at T_i = 375.975 K, the erf profiles of `[energy] exact` to L2 0.0048 K at 500 s, second order in space and time | [gallery 159](../gallery/energy.md#cht-transient), [recipe 159](../recipes/energy.md#cht-transient) |
 | `flow/cht_orthotropic_patch.toml` | generated hex 2D, 20 × 20 cells perturbed by 25 %, zones `laminate`, `block` | stage 7d2 patch test: an orthotropic laminate (k₁ = 20, k₂ = 2, axes turned by 30°), a fluid at rest and a block behind R″_c = 0.01 m²K/W (`[interfaces]`); piecewise-linear T exact to 3·10⁻¹¹ K, 200 W/m² through every wall and interface | [gallery 160](../gallery/energy.md#cht-contact), [recipe 160](../recipes/energy.md#cht-contact) |
 | `flow/cht_circuit_board.toml` | generated hex 2D, 120 × 30 cells, zones `board`, `chip` | a 1 W chip (`[[energy.sources]]`) on a thermal pad (R″_c = 2·10⁻⁴ m²K/W) on an orthotropic board (k = 25 along, 0.35 through) in a 1 m/s air channel; chip 363.7 K (423.7 K with a plain laminate), balance closed to 7·10⁻¹³ | [gallery 160](../gallery/energy.md#cht-contact), [recipe 160](../recipes/energy.md#cht-contact) |
+
+## Gravity and buoyancy
+
+`[gravity]` and the Boussinesq buoyancy of stage 7b1 (D153) with the
+balanced force of D154; the solved pressure is the reduced pressure
+p′ = p − ρ_ref g·(x − x_ref), the output has the static pressure p as
+`static_pressure` as well; the keys are on the
+[key page](flow-keys.md#boundary-conditions-d29).
+
+| Case file | Mesh | Shows | Where |
+|---|---|---|---|
+| `flow/buoyancy_enclosure_plume.toml` | generated hex 2D, 100 × 60 cells | air in a closed enclosure 10 cm × 6 cm over a floor strip up to 5 K warmer, Ra ≈ 1.1·10⁵: a laminar plume leaning to the nearer wall and one large roll, 1.9 cm/s; SIMPLEC with the buoyancy step, 2009 iterations, 30 s | [gallery 186](../gallery/energy.md#buoyancy), [recipe 186](../recipes/energy.md#buoyancy) |
+| `flow/buoyancy_box_at_rest.toml` | generated hex 2D, 16 × 16 cells perturbed by 20 % | check V7.7 (a): a closed box with a stable stratification of 14 K along a gravity 37° from the y axis stays at rest, largest speed 1·10⁻¹⁵ m/s after 1000 iterations (tests/buoyancy.rs: also tet, poly, mixed 3D and the coupled algorithm) | [gallery 186](../gallery/energy.md#buoyancy), [recipe 186](../recipes/energy.md#buoyancy) |
+| `flow/buoyancy_slot.toml` | generated hex 2D, 8 × 2 to 32 × 8 cells perturbed by 15 % (3 levels), periodic in y | the buoyant slot between a hot and a cold vertical wall against its exact cubic profile v = (g β ΔT D²/(48 ν))(ξ³ − ξ); observed orders 2.14 and 2.13 | [gallery 186](../gallery/energy.md#buoyancy), [recipe 186](../recipes/energy.md#buoyancy) |
+| `flow/buoyancy_channel_reduced.toml` | generated hex 2D, 10 × 100 cells | a liquid rising at 0.05 m/s in a channel 2 m tall with gravity, outlet p′ = 0 (the default kind): p′ carries the friction (6.5 Pa), p adds −ρ g y | [gallery 186](../gallery/energy.md#buoyancy), [recipe 186](../recipes/energy.md#buoyancy) |
+| `flow/buoyancy_channel_static.toml` | as above | the same channel with the outlet as a static pressure, −19 620 Pa (`pressure_kind = "static"`): the same flow to 10⁻¹¹ | [gallery 186](../gallery/energy.md#buoyancy), [recipe 186](../recipes/energy.md#buoyancy) |
+| `flow/buoyancy_open_box.toml` | generated hex 2D, 20 × 20 cells | a box at rest open over its full height on one side: the reduced value 0 keeps it at rest; with `--set 'boundary.xmax.pressure_kind="static"'` the same 0 Pa as a uniform static value drives a false flow of 3.5 m/s (BUO006) | [gallery 186](../gallery/energy.md#buoyancy), [recipe 186](../recipes/energy.md#buoyancy) |
