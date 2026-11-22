@@ -741,11 +741,11 @@ Range: y_plus_first 0 … 1.
 - consistency: [`pure_shear_is_unchanged`](../../crates/foehncraft-flow/tests/curvature.rs): a channel without rotation unchanged to the last digit
 - reference-data: [`channel_rotating_sst`](../../examples/cases/flow/channel_rotating_sst.toml): channel in spanwise rotation, Ro 0.15: the unstable side marked
 - manufactured: [`curvature_correction_manufactured_solution_orders`](../../crates/foehncraft-flow/src/turbulence/mms.rs): orders 1.9 to 2.1 of k and ω with f_r1 (DS_ij/Dt from a flow whose strain axes turn) on hexahedra and polyhedra ([results](stage6.md#manufactured-solutions-of-k-ε-ζ-f₀-the-curvature-correction-and-the-qcr-pr-184))
+- manufactured: [`curvature_correction_on_tetrahedra_converges`](../../crates/foehncraft-flow/src/turbulence/mms.rs): order 1.9 to 2.1 of k and ω on regular and 15 % perturbed tetrahedra with S_ij from a second-order velocity gradient and the gradient of S_ij from a quadratic least-squares fit where the least-squares one is not consistent (D236) ([results](stage6.md#consistent-curvature-correction-on-irregular-meshes-d236-pr-197))
 
 Gaps:
 
 - the DNS of Kristoffersen & Andersson (1993) for the rotating channel is not compared (its data are not in the repository)
-- on tetrahedra the correction does not converge in the manufactured solution (error of k 1.3 % at all three levels): DS_ij/Dt takes the least-squares gradient of the least-squares gradient of the velocity, which is not consistent on irregular tetrahedra
 
 <a id="turbulence-qcr"></a>
 

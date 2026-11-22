@@ -734,6 +734,9 @@ struct Level {
     l2: Vec<f64>,
     linf: Vec<f64>,
     iterations: usize,
+    /// Cell centroid and the error of k relative to its largest value, per
+    /// cell (for the gallery figure of the curvature correction).
+    cells: Vec<([f64; 2], f64)>,
 }
 
 /// The flow of a level with the manufactured fields set (10 % off) and the
@@ -836,6 +839,7 @@ fn run_level(case: &FlowCase, level: u32, m: &dyn Model) -> Level {
         vol,
         exact,
         n,
+        xc,
         ..
     } = build(case, level, m);
     let nc = vol.len();
@@ -872,11 +876,15 @@ fn run_level(case: &FlowCase, level: u32, m: &dyn Model) -> Level {
         l2[e] = (l2[e] / vt).sqrt() / scale;
         linf[e] /= scale;
     }
+    let kmax = exact[0].iter().cloned().fold(0.0, f64::max);
     Level {
         h: (vt / nc as f64).sqrt(),
         l2,
         linf,
         iterations: it,
+        cells: (0..nc)
+            .map(|c| (xc[c], (num[0][c] - exact[0][c]) / kmax))
+            .collect(),
     }
 }
 
@@ -1172,10 +1180,10 @@ fn curvature_correction_manufactured_solution_orders() {
     check("k-omega-sst-curvature", "poly", (1.6, 2.4));
 }
 
-/// On tetrahedra the curvature correction converges since D236: DS_ij/Dt
-/// takes the Hessian of the quadratic least-squares fit of the velocity on
-/// the cells where the gradient of the face-neighbour gradient is not
-/// exact. (Before, the error of k and ω stayed at about 1.3 % and 0.7 % at
+/// On tetrahedra the curvature correction converges since D236: S_ij comes
+/// from a second-order velocity gradient (the quadratic fit where the
+/// face-neighbour one is first order) and its gradient from a quadratic fit
+/// of S_ij on the cells where the least-squares one is not consistent. (Before, the error of k and ω stayed at about 1.3 % and 0.7 % at
 /// all three levels.) Regular tetrahedra and 15 % perturbed ones.
 #[test]
 #[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
@@ -1187,12 +1195,22 @@ fn curvature_correction_on_tetrahedra_converges() {
             .replace("perturb = 0.15", &format!("perturb = {perturb}"));
         let case = FlowCase::from_toml(&text, Path::new(".")).unwrap();
         let runs: Vec<Level> = (0..3).map(|l| run_level(&case, l, m.as_ref())).collect();
-        for r in &runs {
+        for (level, r) in runs.iter().enumerate() {
             eprintln!(
                 "curvature tet perturb {perturb}: h {:.4e} L2 {}",
                 r.h,
                 sci(&r.l2)
             );
+            // FOEHN_MMS_CURV_DUMP=<folder>: the error of k per cell for the
+            // gallery figure (tools/plot/curvature_consistency.py)
+            if let Some(d) = std::env::var_os("FOEHN_MMS_CURV_DUMP") {
+                let mut s = String::from("x,y,ek\n");
+                for (x, e) in &r.cells {
+                    s.push_str(&format!("{},{},{}\n", x[0], x[1], e));
+                }
+                let name = format!("curvature_tet_{perturb}_{level}.csv");
+                std::fs::write(std::path::Path::new(&d).join(name), s).unwrap();
+            }
         }
         for e in 0..2 {
             let p = (runs[1].l2[e] / runs[2].l2[e]).ln() / (runs[1].h / runs[2].h).ln();

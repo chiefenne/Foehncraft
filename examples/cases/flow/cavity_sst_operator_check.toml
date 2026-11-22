@@ -7,14 +7,15 @@
 #
 # Before the solve the run applies the velocity gradient and the gradient
 # of the gradient (the velocity Hessian of the curvature correction) to
-# linear and quadratic test fields. On these cells the Hessian is
-# inexact for a quadratic field, so the log, flow.md and the warnings name
-# MESH005 (curvature correction), result.json lists LIM008, flow.json holds
-# the 50 worst cells of each operator and operators.csv the errors of every
-# cell. The QCR stress takes the quadratic least-squares velocity gradient
-# on every cell here (D236 step 2), so MESH006 is not reported. On regular
-# hexahedra only the cells at the walls are flagged (one-sided stencils).
-# The run converges in about 1 300 iterations.
+# linear and quadratic test fields. On these tetrahedra neither is exact
+# for a quadratic field, so the QCR stress takes the quadratic
+# least-squares velocity gradient and the curvature correction the Hessian
+# of the same fit on every cell (D236 steps 2 and 3); the log says so,
+# flow.json holds the check with the 50 worst cells of each operator and
+# operators.csv the errors of every cell. MESH005 and MESH006 would remain
+# only for cells where the fit fails. On regular hexahedra only the cells
+# at the walls take the fit (one-sided stencils).
+# The run converges in about ITERS iterations.
 
 case_format = "0.6"
 

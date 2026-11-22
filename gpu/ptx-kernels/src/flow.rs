@@ -70,7 +70,6 @@ entries! {
     flow_qcr_cells => e::QcrCells,
     flow_explicit_stress_faces => e::ExplicitStressFaces,
     flow_quadratic_gradient => e::QuadraticGradient,
-    flow_quadratic_strain_gradient => e::QuadraticStrainGradient,
     flow_keps_cells => e::KepsCells,
     flow_zeta_f_cells => e::ZetaFCells,
     flow_turb_faces => e::TurbFaces,

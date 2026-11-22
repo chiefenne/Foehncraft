@@ -2379,7 +2379,7 @@ in a transient run. Ω_ij is the rotation tensor of the absolute velocity.
 | The same flow in the inertial frame (absolute gradient) and in the turning frame (relative gradient, spin) | f_r1 | 10⁻¹⁴ | met: the sign of the frame term of Ω_ij is the consistent one |
 | Channel in spanwise rotation, Re_b 5 800, Ro = 2Ωh/U_b = 0.15 (`channel_rotating_sst.toml`, 192 cells) | τ_w lower/upper | DNS of Kristoffersen & Andersson (1993) ±15 % | SST 1.000 (no rotation effect, as expected for a linear model), corrected 1.627, unstable side the lower wall. **Open:** the DNS value (the paper's data are not in the repository) |
 | Backward-facing step, 44 160 cells (level 1 of `backstep_validation.toml`) | x_r/H | reported | 6.743 SST, 6.869 corrected (+1.9 %; experiment 6.26): the correction damps the turbulence in the curved shear layer by up to 10 % and the bubble grows |
-| Manufactured solution with the correction (PR #184) | observed order | 1.8–2.2 | 1.92 (hex), 1.99 (poly); **no convergence on tetrahedra** ([details](#manufactured-solutions-of-k-ε-ζ-f₀-the-curvature-correction-and-the-qcr-pr-184)) |
+| Manufactured solution with the correction (PR #184) | observed order | 1.8–2.2 | 1.92 (hex), 1.99 (poly); no convergence on tetrahedra ([details](#manufactured-solutions-of-k-ε-ζ-f₀-the-curvature-correction-and-the-qcr-pr-184)); since PR #197 2.0 (hex), 2.0–2.1 (poly), 1.9–2.1 on regular and perturbed tetrahedra ([details](#consistent-curvature-correction-on-irregular-meshes-d236-pr-197)) |
 
 **Findings.** (1) In the irrotational free stream r* = S/Ω is large and
 f_r1 sits at its upper limit 1.25. The production there is zero, so the
@@ -2533,7 +2533,8 @@ carries an error that does not fall with the mesh. Hexahedra and
 polyhedra are consistent. Listed as a gap of
 `turbulence.curvature-correction` in the grades; a consistent gradient of
 S_ij on tetrahedra (a face-based or higher-order reconstruction) is a
-follow-up and not done here.
+follow-up and not done here. Fixed in PR #197 (D236):
+[consistent curvature correction](#consistent-curvature-correction-on-irregular-meshes-d236-pr-197).
 
 **QCR.** The QCR changes the momentum equations, not the turbulence
 equations, so the test checks the stress and its divergence as the
@@ -2556,7 +2557,7 @@ the error stays at 5.5 % of the largest force at all three levels
 first order even without perturbation. A skewness correction of the face
 value with the gradient of the stress would remove it; the secondary flow
 of the square duct (gallery 115) is a structured-mesh result and is not
-affected at the quoted accuracy. Flagged for the owner; not changed here.
+affected at the quoted accuracy. Flagged for the owner; not changed here. Fixed in PR #194 (D236), next section.
 
 ## Consistent QCR stress on irregular meshes (D236, PR #194)
 
@@ -2595,3 +2596,41 @@ Figure: [mms_turbulence.png](../figures/gallery/mms_turbulence.png) (gallery 184
 ```
 cargo test --release -p foehncraft-flow --lib turbulence::mms -- --nocapture
 ```
+
+## Consistent curvature correction on irregular meshes (D236, PR #197)
+
+The finding on tetrahedra of PR #184 is fixed with two quadratic
+least-squares fits. (1) S_ij comes from a velocity gradient that is second
+order on every cell: the fit of PR #194 on the cells where the operator
+check finds the face-neighbour gradient first order. (2) On the cells
+where it finds the gradient of the gradient inexact for a quadratic field,
+the gradient of S_ij in DS_ij/Dt = u·∇S_ij is a quadratic least-squares
+fit of S_ij over interior cells only (neighbours of the neighbours, a third
+and fourth ring at corners), so no boundary values of S_ij are needed;
+elsewhere it stays the least-squares gradient with zero normal gradient
+at the boundaries. (2) is exact for the linear S_ij of a quadratic
+velocity (`foehncraft-fv` exactness tests,
+`operators::tests::quadratic_fit_is_exact_on_tetrahedra`).
+
+A first version took ∇S_ij from the Hessian of the velocity fit, ½ (∂_k∂_j u_i +
+∂_k∂_i u_j). It converged in the manufactured solution, but in a channel
+without rotation it moved the driving force by 2 % (`tests/curvature.rs::pure_shear_is_unchanged`,
+band 10⁻⁶): the second-order coefficients of a fit of the steep wall
+profile U(y) pick up its non-polynomial part, so ∂_x S_ij ≠ 0 in pure
+shear. Fitting S_ij itself keeps ∂_x S_ij = 0 exactly wherever the mesh is
+symmetric in x, as before.
+
+L2 error of k and ω in the manufactured solution of PR #184
+(`curvature_correction_on_tetrahedra_converges`, band: order 1.6 to 2.4 and
+a falling error):
+
+| Mesh | h | k | ω |
+|---|---|---|---|
+| tetrahedra | 9.88e-3, 4.94e-3, 2.47e-3 | 5.05e-3, 1.38e-3, 3.61e-4 | 2.34e-3, 5.94e-4, 1.49e-4 |
+| tetrahedra, 15 % perturbed | 9.88e-3, 4.94e-3, 2.47e-3 | 5.42e-3, 1.41e-3, 3.59e-4 | 2.47e-3, 6.26e-4, 1.51e-4 |
+
+Orders of the finest pair: 1.93 and 2.00 (regular), 1.98 and 2.05
+(perturbed); before, the error of k stayed at about 1.3 % at every level.
+Hexahedra and polyhedra (`curvature_correction_manufactured_solution_orders`)
+give 2.02, 2.03 and 2.03, 2.07 (before 1.92, 1.95 and 1.99, 2.06): their
+wall cells take the fits too.

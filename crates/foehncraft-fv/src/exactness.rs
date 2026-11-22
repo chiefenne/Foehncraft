@@ -290,10 +290,6 @@ pub struct QuadraticGradient {
     pub idx: Vec<u32>,
     /// Gradient weights per stencil point.
     pub w: crate::disc::Soa3,
-    /// Hessian weights per stencil point, H_mn = Σ_k h[s][k] (φ_k − φ_c)
-    /// with s = 0 … 5 for xx, yy, zz, xy, yz, zx (the order of the strain
-    /// components of the curvature correction); zero beyond `dims`.
-    pub h: [Vec<f64>; 6],
     /// Cells asked for whose fit is rank deficient or badly conditioned
     /// (left to the face-neighbour gradient).
     pub failed: Vec<usize>,
@@ -305,21 +301,8 @@ pub struct QuadraticGradient {
 /// largest, for a fit to count as full rank.
 pub const QUADRATIC_PIVOT: f64 = 1e-9;
 
-/// The points of a fitted stencil with their gradient and Hessian weights.
-type Stencil = Vec<(u32, [f64; 3], [f64; 6])>;
-
-/// The index of the Hessian component (i, j), i ≤ j, in the order xx, yy,
-/// zz, xy, yz, zx.
-const fn hessian_slot(i: usize, j: usize) -> usize {
-    match (i, j) {
-        (0, 0) => 0,
-        (1, 1) => 1,
-        (2, 2) => 2,
-        (0, 1) => 3,
-        (1, 2) => 4,
-        _ => 5,
-    }
-}
+/// The points of a fitted stencil with their gradient weights.
+type Stencil = Vec<(u32, [f64; 3])>;
 
 /// Cholesky solve of the symmetric positive definite `n`×`n` matrix `a`
 /// (row major) for the columns of `b` (`n` × `m`), in place; `None` when a
@@ -420,10 +403,11 @@ fn quadratic_points(
         pts.push((i, x));
     };
     // the neighbours of the neighbours; a third ring where that leaves
-    // fewer than `min` points (corner cells)
+    // fewer than `min` points (corner cells), a fourth where even that
+    // does (corners of a fit without boundary points)
     let mut frontier: Vec<(u32, [f64; 3])> = vec![(c as u32, [0.0; 3])];
-    for layer in 0..3 {
-        if layer == 2 && pts.len() >= min {
+    for layer in 0..4 {
+        if layer >= 2 && pts.len() >= min {
             break;
         }
         let mut next = Vec::new();
@@ -511,16 +495,7 @@ pub fn quadratic_gradient(
                         for (r, gr) in g.iter_mut().enumerate().take(dims) {
                             *gr = b[r * n + k] / h;
                         }
-                        // the quadratic rows hold ½H_ii and H_ij (i < j)
-                        let mut hw = [0.0; 6];
-                        let mut q = dims;
-                        for a in 0..dims {
-                            for c in a..dims {
-                                hw[hessian_slot(a, c)] = b[q * n + k] / (h * h);
-                                q += 1;
-                            }
-                        }
-                        (*i, g, hw)
+                        (*i, g)
                     })
                     .collect(),
             )
@@ -535,14 +510,11 @@ pub fn quadratic_gradient(
         match fit {
             Some(v) => {
                 out.cells.push(c as u32);
-                for (i, g, hw) in v {
+                for (i, g) in v {
                     out.idx.push(i);
                     out.w.x.push(g[0]);
                     out.w.y.push(g[1]);
                     out.w.z.push(g[2]);
-                    for (o, x) in out.h.iter_mut().zip(hw) {
-                        o.push(x);
-                    }
                 }
                 out.ptr.push(out.idx.len() as u32);
             }
@@ -614,11 +586,14 @@ pub fn quadratic_gradient_errors(
         .collect()
 }
 
-/// The Hessian error of the treated cells of `q` for the quadratic test
-/// fields, as `hessian` of [`OperatorErrors`] (|Hₕ − H|/|H|): zero up to
-/// round-off where the fit has full rank. Per treated cell, in the order
-/// of `q.cells`.
-pub fn quadratic_hessian_errors(
+/// The error of the fit `q` for linear fields per treated cell (in the
+/// order of `q.cells`), |Σ_k w_k (φ_k − φ_c) − ∇φ| L over the coordinate
+/// fields φ = x_i / L, L the largest extent of the mesh: zero up to
+/// round-off where the fit has full rank. With the fit of the strain
+/// gradient of the curvature correction (D236 step 3) this is its error
+/// for the linear strain of a quadratic velocity, the strain itself taken
+/// from a gradient that is exact for quadratic fields.
+pub fn quadratic_linear_errors(
     mesh: &Mesh,
     geo: &Geometry,
     kind: &[BoundaryKind],
@@ -626,7 +601,6 @@ pub fn quadratic_hessian_errors(
 ) -> Vec<f64> {
     let dims = q.dims;
     let (lo, hi) = mesh.bounding_box();
-    let centre: [f64; 3] = std::array::from_fn(|i| 0.5 * (lo[i] + hi[i]));
     let len = (0..3)
         .map(|i| hi[i] - lo[i])
         .fold(0.0, f64::max)
@@ -640,29 +614,19 @@ pub fn quadratic_hessian_errors(
             let a = q.ptr[t] as usize;
             let mut worst = 0.0f64;
             for i in 0..dims {
-                for j in i..dims {
-                    let f = |x: [f64; 3]| (x[i] - centre[i]) * (x[j] - centre[j]) / (len * len);
-                    let mut diff = 0.0;
-                    for m in 0..dims {
-                        for n in m..dims {
-                            let s = hessian_slot(m, n);
-                            let hm: f64 = pts
-                                .iter()
-                                .enumerate()
-                                .map(|(k, (_, x))| q.h[s][a + k] * (f(*x) - f(xc[c])))
-                                .sum();
-                            let exact = if (m, n) == (i, j) {
-                                if i == j { 2.0 } else { 1.0 }
-                            } else {
-                                0.0
-                            } / (len * len);
-                            let mult = if m == n { 1.0 } else { 2.0 };
-                            diff += mult * (hm - exact).powi(2);
-                        }
-                    }
-                    let hn = if i == j { 2.0 } else { 2f64.sqrt() } / (len * len);
-                    worst = worst.max(diff.sqrt() / hn);
+                let mut g = [0.0; 3];
+                for (k, (_, x)) in pts.iter().enumerate() {
+                    let v = (x[i] - xc[c][i]) / len;
+                    g[0] += q.w.x[a + k] * v;
+                    g[1] += q.w.y[a + k] * v;
+                    g[2] += q.w.z[a + k] * v;
                 }
+                let mut e = [0.0; 3];
+                e[i] = 1.0 / len;
+                for (d, gd) in g.iter_mut().enumerate().skip(dims) {
+                    *gd = e[d];
+                }
+                worst = worst.max(norm(sub(g, e)) * len);
             }
             worst
         })
@@ -753,9 +717,18 @@ mod tests {
             let e = quadratic_gradient_errors(&mesh, &geo, &kinds, &q);
             let worst = e.iter().cloned().fold(0.0, f64::max);
             assert!(worst < 1e-8, "{m:?} {p}: {worst:e}");
-            let e = quadratic_hessian_errors(&mesh, &geo, &kinds, &q);
+            // the fit without boundary points (the strain gradient of the
+            // curvature correction) is exact for linear fields
+            let zero = vec![BoundaryKind::ZeroGradient; kinds.len()];
+            let qs = quadratic_gradient(&mesh, &geo, &zero, 3, &cells);
+            assert!(
+                qs.failed.is_empty(),
+                "{m:?} {p}: {} failed",
+                qs.failed.len()
+            );
+            let e = quadratic_linear_errors(&mesh, &geo, &zero, &qs);
             let worst = e.iter().cloned().fold(0.0, f64::max);
-            assert!(worst < 1e-7, "{m:?} {p}: Hessian {worst:e}");
+            assert!(worst < 1e-8, "{m:?} {p}: linear {worst:e}");
         }
     }
 
@@ -784,7 +757,5 @@ mod tests {
         );
         let e = quadratic_gradient_errors(&mesh, &geo, &kinds, &q);
         assert!(e.iter().cloned().fold(0.0, f64::max) < 1e-8);
-        let e = quadratic_hessian_errors(&mesh, &geo, &kinds, &q);
-        assert!(e.iter().cloned().fold(0.0, f64::max) < 1e-7);
     }
 }

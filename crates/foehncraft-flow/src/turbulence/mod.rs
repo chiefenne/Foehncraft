@@ -1472,15 +1472,12 @@ struct QcrDev {
     quad: Option<(QuadDev, [Buf3; 3])>,
 }
 
-/// The quadratic least-squares velocity fit of D236 on the device: the
-/// stencil slot, the gradient and Hessian weights and the coordinates of
-/// the fit; shared by the QCR (gradient) and the curvature correction
-/// (Hessian).
+/// A quadratic least-squares fit of D236 on the device: the stencil slot,
+/// the gradient weights and the coordinates of the fit.
 #[derive(Debug, Clone, Copy)]
 struct QuadDev {
     slot: usize,
     w: Buf3,
-    h: [Buf; 6],
     dims: u32,
 }
 
@@ -1506,9 +1503,15 @@ struct CurvDev {
     spin: [f64; 3],
     /// `s_old` holds a time level.
     has_old: bool,
-    /// The quadratic fit on the cells where the gradient of the gradient
-    /// is not exact (D236): ∇S_ij from its Hessian there.
-    quad: Option<QuadDev>,
+    /// D236: the quadratic velocity fit on the cells where the
+    /// face-neighbour gradient is first order, with the gradient it
+    /// overwrites (S_ij from it is second order everywhere) …
+    quad: Option<(QuadDev, [Buf3; 3])>,
+    /// … and the quadratic fit of S_ij over interior cells on the cells
+    /// where the gradient of the gradient is not exact, with the zero
+    /// boundary values it never reads and the gradients of three
+    /// components it overwrites.
+    sfit: Option<(QuadDev, Buf3, [Buf3; 3])>,
 }
 
 /// The curvature correction computed S_ij since the start or the last
@@ -2027,37 +2030,41 @@ impl Turbulence {
         } else {
             None
         };
-        // the quadratic least-squares velocity fit on the cells where the
-        // QCR or the curvature correction needs it (D236)
-        let quad = if section.qcr != QcrMode::None || section.curvature_correction {
-            let q = crate::operators::quadratic_velocity_gradient(
-                case,
-                mesh,
-                geo,
-                &bc_arrays.u_points,
-            )?;
-            if q.cells.is_empty() {
-                None
-            } else {
-                let slot = dev.quadratic_setup(&q.cells, &q.ptr, &q.idx)?;
-                let w = Buf3 {
-                    x: up(dev, &q.w.x)?,
-                    y: up(dev, &q.w.y)?,
-                    z: up(dev, &q.w.z)?,
+        // the quadratic least-squares fits on the cells where the QCR or
+        // the curvature correction needs them (D236)
+        let (quad, sfit) = if section.qcr != QcrMode::None || section.curvature_correction {
+            let (q, qs) = crate::operators::quadratic_fits(case, mesh, geo, &bc_arrays.u_points)?;
+            let mut setup =
+                |q: &foehncraft_fv::exactness::QuadraticGradient| -> Result<Option<QuadDev>> {
+                    if q.cells.is_empty() {
+                        return Ok(None);
+                    }
+                    let slot = dev.quadratic_setup(&q.cells, &q.ptr, &q.idx)?;
+                    Ok(Some(QuadDev {
+                        slot,
+                        w: Buf3 {
+                            x: up(dev, &q.w.x)?,
+                            y: up(dev, &q.w.y)?,
+                            z: up(dev, &q.w.z)?,
+                        },
+                        dims: q.dims as u32,
+                    }))
                 };
-                let mut h = [w.x; 6];
-                for (b, v) in h.iter_mut().zip(&q.h) {
-                    *b = up(dev, v)?;
-                }
-                Some(QuadDev {
-                    slot,
-                    w,
-                    h,
-                    dims: q.dims as u32,
-                })
-            }
+            let quad = setup(&q)?;
+            let sfit = match qs {
+                Some(qs) => setup(&qs)?,
+                None => None,
+            };
+            (quad, sfit)
         } else {
-            None
+            (None, None)
+        };
+        let a3n = |dev: &mut dyn FlowDevice, n: usize| -> Result<Buf3> {
+            Ok(Buf3 {
+                x: dev.alloc(n)?,
+                y: dev.alloc(n)?,
+                z: dev.alloc(n)?,
+            })
         };
         let curv = if section.curvature_correction {
             let points = mesh
@@ -2101,7 +2108,22 @@ impl Turbulence {
                 rot: spin,
                 spin,
                 has_old: false,
-                quad,
+                quad: match quad {
+                    Some(q) => Some((q, [a3n(dev, nc)?, a3n(dev, nc)?, a3n(dev, nc)?])),
+                    None => None,
+                },
+                sfit: match sfit {
+                    Some(q) => {
+                        let zb = dev.alloc(nb)?;
+                        let zeros = Buf3 {
+                            x: zb,
+                            y: zb,
+                            z: zb,
+                        };
+                        Some((q, zeros, [a3n(dev, nc)?, a3n(dev, nc)?, a3n(dev, nc)?]))
+                    }
+                    None => None,
+                },
             })
         } else {
             None
@@ -2973,10 +2995,11 @@ impl Turbulence {
     }
 
     /// f_r1 of the curvature correction (D170) from the velocity gradient
-    /// of the last evaluation: S_ij per cell, the gradients of its six
-    /// components (zero normal gradient on every boundary; on the cells
-    /// where that is not consistent, D236, from the Hessian of the
-    /// quadratic fit of the velocity `u`, `ub`), DS_ij/Dt with
+    /// of the last evaluation (D236: on the cells where it is first order
+    /// the quadratic fit of the velocity `u`, `ub`, and the gradients of
+    /// S_ij from a quadratic fit over interior cells where the
+    /// least-squares gradient of S_ij is not consistent): S_ij per cell, the gradients of its six
+    /// components (zero normal gradient on every boundary), DS_ij/Dt with
     /// the velocity `u` less the frame velocity, and in a transient run
     /// the BDF1 time part from the last time level (`dt`).
     fn curvature_inputs(
@@ -2987,22 +3010,56 @@ impl Turbulence {
         dt: Option<f64>,
     ) -> Result<()> {
         let Some(c) = self.curv else { return Ok(()) };
+        // S_ij from a velocity gradient that is second order everywhere
+        // (D236): the quadratic fit where the face-neighbour one is not
+        let g = match c.quad {
+            Some((q, gq)) => {
+                for (a, b) in self.gu.iter().zip(&gq) {
+                    for (x, y) in a.all().into_iter().zip(b.all()) {
+                        dev.copy(x, y)?;
+                    }
+                }
+                dev.quadratic_gradient(q.slot, q.w, q.dims, u, ub, gq)?;
+                gq
+            }
+            None => self.gu,
+        };
         for (i, &b) in c.s.iter().enumerate() {
-            dev.strain_component(self.gu, i as u32, b)?;
+            dev.strain_component(g, i as u32, b)?;
         }
         self.curv_fresh.0.set(true);
-        for i in 0..6 {
-            dev.gradient_with(c.lsq, c.s[i], c.ones, c.zeros, None, c.tmp)?;
-            // the Hessian of the quadratic fit where the gradient of the
-            // gradient is not exact (D236)
-            if let Some(q) = c.quad {
-                dev.quadratic_strain_gradient(q.slot, q.h, q.dims, i as u32, u, ub, c.tmp)?;
+        let old = |i: usize| match dt {
+            Some(dt) if c.has_old => Some((c.s[i], c.s_old[i], 1.0 / dt)),
+            _ => None,
+        };
+        let v_frame = c.frame.map(|f| f.1);
+        match c.sfit {
+            // the gradients of S_ij: least squares (zero normal gradient on
+            // every boundary), and on the cells where that is not
+            // consistent the quadratic fit over interior cells (D236)
+            Some((q, zeros, gs)) => {
+                for half in [0usize, 3] {
+                    for (j, gj) in gs.iter().enumerate() {
+                        dev.gradient_with(c.lsq, c.s[half + j], c.ones, c.zeros, None, *gj)?;
+                    }
+                    let three = Buf3 {
+                        x: c.s[half],
+                        y: c.s[half + 1],
+                        z: c.s[half + 2],
+                    };
+                    dev.quadratic_gradient(q.slot, q.w, q.dims, three, zeros, gs)?;
+                    for (j, gj) in gs.iter().enumerate() {
+                        let i = half + j;
+                        dev.convective_derivative(u, v_frame, *gj, old(i), c.dsdt[i])?;
+                    }
+                }
             }
-            let old = match dt {
-                Some(dt) if c.has_old => Some((c.s[i], c.s_old[i], 1.0 / dt)),
-                _ => None,
-            };
-            dev.convective_derivative(u, c.frame.map(|f| f.1), c.tmp, old, c.dsdt[i])?;
+            None => {
+                for i in 0..6 {
+                    dev.gradient_with(c.lsq, c.s[i], c.ones, c.zeros, None, c.tmp)?;
+                    dev.convective_derivative(u, v_frame, c.tmp, old(i), c.dsdt[i])?;
+                }
+            }
         }
         dev.curvature_cells(&CurvatureOps {
             grad_u: self.gu,

@@ -2094,15 +2094,6 @@ pub struct QuadGradArgs {
     pub ub: Raw3,
     /// The velocity gradient, overwritten at the treated cells.
     pub out: RawGrad,
-    /// [`QuadraticStrainGradient`]: the Hessian weights per stencil point
-    /// (xx, yy, zz, xy, yz, zx).
-    pub h: [Raw<f64>; 6],
-    /// [`QuadraticStrainGradient`]: the strain component (0 … 5: xx, yy,
-    /// zz, xy, yz, zx).
-    pub comp: u64,
-    /// [`QuadraticStrainGradient`]: the gradient of that component,
-    /// overwritten at the treated cells.
-    pub sout: Raw3,
 }
 
 /// The quadratic least-squares velocity gradient of one treated cell
@@ -2153,84 +2144,6 @@ impl Entry for QuadraticGradient {
                     *o.z.out().add(c) = g[comp][2];
                 }
                 comp += 1;
-            }
-        }
-    }
-}
-
-/// The gradient of one strain component S_ab of one treated cell from the
-/// Hessian of the quadratic least-squares fit of the velocity (D236, the
-/// curvature correction): ∂_k S_ab = ½ (H^a_bk + H^b_ak) with
-/// H^a_mn = Σ_p h_mn,p (u_a,p − u_a,c), written over the face-neighbour
-/// gradient of S_ab (components 0 … `dims` − 1).
-pub struct QuadraticStrainGradient;
-impl Entry for QuadraticStrainGradient {
-    type Args = QuadGradArgs;
-    const NAME: &'static str = "quadratic_strain_gradient";
-    #[inline(always)]
-    unsafe fn run(t: usize, a: &QuadGradArgs) {
-        // SAFETY: guaranteed by the caller.
-        unsafe {
-            let c = a.cells.read(t) as usize;
-            let lo = a.ptr.read(t) as usize;
-            let hi = a.ptr.read(t + 1) as usize;
-            let nc = a.n_cells as usize;
-            let (ia, ib) = match a.comp {
-                0 => (0, 0),
-                1 => (1, 1),
-                2 => (2, 2),
-                3 => (0, 1),
-                4 => (1, 2),
-                _ => (2, 0),
-            };
-            let uc = [a.u.x.read(c), a.u.y.read(c), a.u.z.read(c)];
-            // H^a_mn and H^b_mn for the six (m, n), in the order of `h`
-            let mut ha = [0.0f64; 6];
-            let mut hb = [0.0f64; 6];
-            let mut k = lo;
-            while k < hi {
-                let i = a.idx.read(k) as usize;
-                let v = if i < nc {
-                    [a.u.x.read(i), a.u.y.read(i), a.u.z.read(i)]
-                } else {
-                    let b = i - nc;
-                    [a.ub.x.read(b), a.ub.y.read(b), a.ub.z.read(b)]
-                };
-                let da = v[ia] - uc[ia];
-                let db = v[ib] - uc[ib];
-                let mut s = 0;
-                while s < 6 {
-                    let w = a.h[s].read(k);
-                    ha[s] += w * da;
-                    hb[s] += w * db;
-                    s += 1;
-                }
-                k += 1;
-            }
-            // the slot of (m, n) in the order xx, yy, zz, xy, yz, zx
-            let slot = |m: usize, n: usize| -> usize {
-                if m == n {
-                    m
-                } else if m + n == 1 {
-                    3
-                } else if m + n == 3 {
-                    4
-                } else {
-                    5
-                }
-            };
-            let mut g = [0.0f64; 3];
-            let mut d = 0;
-            while d < 3 {
-                g[d] = 0.5 * (ha[slot(ib, d)] + hb[slot(ia, d)]);
-                d += 1;
-            }
-            *a.sout.x.out().add(c) = g[0];
-            if a.dims > 1 {
-                *a.sout.y.out().add(c) = g[1];
-            }
-            if a.dims > 2 {
-                *a.sout.z.out().add(c) = g[2];
             }
         }
     }
@@ -3082,7 +2995,7 @@ send_sync!(
 );
 
 /// Names of all entries (the PTX module has `flow_<name>` for each).
-pub const NAMES: [&str; 55] = [
+pub const NAMES: [&str; 54] = [
     Lincomb::NAME,
     ScaledDifference::NAME,
     SquaresAdd::NAME,
@@ -3129,7 +3042,6 @@ pub const NAMES: [&str; 55] = [
     QcrCells::NAME,
     ExplicitStressFaces::NAME,
     QuadraticGradient::NAME,
-    QuadraticStrainGradient::NAME,
     KepsCells::NAME,
     ZetaFCells::NAME,
     TurbFaces::NAME,
@@ -3241,7 +3153,7 @@ mod tests {
             unsafe { Lincomb::run(i, &a) };
         }
         assert_eq!(y, [-8.0, -16.0, -24.0]);
-        assert_eq!(NAMES.len(), 55);
+        assert_eq!(NAMES.len(), 54);
         // the elliptic-blending helpers: out += |v|², out3 = s v
         let (vx, vy, vz) = ([1.0, 0.0], [2.0, -3.0], [2.0, 4.0]);
         let s = [0.5, -2.0];

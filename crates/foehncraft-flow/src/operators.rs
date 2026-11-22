@@ -78,9 +78,10 @@ pub struct OperatorReport {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub quadratic: Option<OperatorPart>,
     /// With the curvature correction (step 3 of D236): the error of the
-    /// velocity Hessian DS_ij/Dt takes, the Hessian of the quadratic fit on
-    /// the cells flagged in `hessian` (the gradient of the gradient where
-    /// the fit is rank deficient): the cells still above the tolerance.
+    /// gradient of S_ij DS_ij/Dt takes, a quadratic fit of S_ij on the
+    /// cells flagged in `hessian` (the gradient of the gradient where the
+    /// fit or the velocity fit in its stencil is rank deficient): the cells
+    /// still above the tolerance.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub quadratic_hessian: Option<OperatorPart>,
     /// What the flagged cells mean for the run (the messages of the
@@ -163,27 +164,27 @@ fn kinds(mesh: &Mesh, u_points: &BTreeMap<String, BoundaryKind>) -> Vec<Boundary
     kind
 }
 
-/// The quadratic least-squares velocity fit (steps 2 and 3 of D236) on the
-/// cells where an operator the run uses is not exact: with the QCR those
-/// with a `gradient` error above `solver.operator_tolerance`, with the
-/// curvature correction those with a `hessian` error above it.
-pub fn quadratic_velocity_gradient(
+/// The quadratic least-squares fits of D236 a run takes: the velocity
+/// gradient on the cells whose face-neighbour gradient is first order
+/// (`gradient` error above `solver.operator_tolerance`; with the QCR or
+/// the curvature correction), and with the curvature correction the
+/// gradient of S_ij on the cells whose gradient of the gradient is not
+/// exact (`hessian` error above it), fitted over interior cells only (no
+/// boundary values of S_ij are needed).
+pub fn quadratic_fits(
     case: &FlowCase,
     mesh: &Mesh,
     geo: &Geometry,
     u_points: &BTreeMap<String, BoundaryKind>,
-) -> Result<QuadraticGradient> {
+) -> Result<(QuadraticGradient, Option<QuadraticGradient>)> {
     let dims = crate::case::dimension(case) as usize;
     let kind = kinds(mesh, u_points);
     let e = foehncraft_fv::exactness::operator_errors(mesh, geo, &kind, dims)?;
-    Ok(quadratic_on(
-        mesh,
-        geo,
-        &kind,
-        dims,
-        &e,
-        case.solver.operator_tolerance,
-        uses(case),
+    let tol = case.solver.operator_tolerance;
+    let (qcr, curvature) = uses(case);
+    Ok((
+        velocity_fit(mesh, geo, &kind, dims, &e, tol, qcr || curvature),
+        curvature.then(|| strain_fit(mesh, geo, dims, &e, tol)),
     ))
 }
 
@@ -194,24 +195,42 @@ fn uses(case: &FlowCase) -> (bool, bool) {
     (t.qcr != QcrMode::None, t.curvature_correction)
 }
 
-fn quadratic_on(
+fn velocity_fit(
     mesh: &Mesh,
     geo: &Geometry,
     kind: &[BoundaryKind],
     dims: usize,
     e: &OperatorErrors,
     tolerance: f64,
-    (qcr, curvature): (bool, bool),
+    on: bool,
 ) -> QuadraticGradient {
     let cells: Vec<usize> = (0..e.gradient.len())
-        .filter(|&c| (qcr && e.gradient[c] > tolerance) || (curvature && e.hessian[c] > tolerance))
+        .filter(|&c| on && e.gradient[c] > tolerance)
         .collect();
     foehncraft_fv::exactness::quadratic_gradient(mesh, geo, kind, dims, &cells)
 }
 
+/// Boundary kinds that leave every boundary face out of a fit.
+fn interior_only(mesh: &Mesh) -> Vec<BoundaryKind> {
+    vec![BoundaryKind::ZeroGradient; mesh.n_faces() - mesh.n_interior_faces()]
+}
+
+fn strain_fit(
+    mesh: &Mesh,
+    geo: &Geometry,
+    dims: usize,
+    e: &OperatorErrors,
+    tolerance: f64,
+) -> QuadraticGradient {
+    let cells: Vec<usize> = (0..e.hessian.len())
+        .filter(|&c| e.hessian[c] > tolerance)
+        .collect();
+    foehncraft_fv::exactness::quadratic_gradient(mesh, geo, &interior_only(mesh), dims, &cells)
+}
+
 /// Fills `quadratic` (with the QCR) and `quadratic_hessian` (with the
 /// curvature correction) of `r`: the errors of the operators the run
-/// takes with the quadratic fit on the flagged cells. Nothing without
+/// takes with the quadratic fits on the flagged cells. Nothing without
 /// either feature.
 fn with_quadratic(
     r: &mut OperatorReport,
@@ -222,32 +241,32 @@ fn with_quadratic(
     tolerance: f64,
     (qcr, curvature): (bool, bool),
 ) {
-    if !qcr && !curvature {
-        return;
-    }
     let kind = kinds(mesh, u_points);
-    let q = quadratic_on(
-        mesh,
-        geo,
-        &kind,
-        r.dimensions,
-        e,
-        tolerance,
-        (qcr, curvature),
-    );
+    let dims = r.dimensions;
+    let q = velocity_fit(mesh, geo, &kind, dims, e, tolerance, qcr || curvature);
+    let qe = foehncraft_fv::exactness::quadratic_gradient_errors(mesh, geo, &kind, &q);
+    let mut g = e.gradient.clone();
+    for (&c, &x) in q.cells.iter().zip(&qe) {
+        g[c as usize] = x;
+    }
     if qcr {
-        let qe = foehncraft_fv::exactness::quadratic_gradient_errors(mesh, geo, &kind, &q);
-        let mut v = e.gradient.clone();
-        for (&c, &x) in q.cells.iter().zip(&qe) {
-            v[c as usize] = x;
-        }
-        r.quadratic = Some(part(&v, tolerance, geo));
+        r.quadratic = Some(part(&g, tolerance, geo));
     }
     if curvature {
-        let qe = foehncraft_fv::exactness::quadratic_hessian_errors(mesh, geo, &kind, &q);
+        // the strain fit is exact for the linear strain of a quadratic
+        // field; that strain is exact where the velocity gradient is (the
+        // largest gradient error over the stencil counts as well)
+        let qs = strain_fit(mesh, geo, dims, e, tolerance);
+        let zero = interior_only(mesh);
+        let se = foehncraft_fv::exactness::quadratic_linear_errors(mesh, geo, &zero, &qs);
         let mut v = e.hessian.clone();
-        for (&c, &x) in q.cells.iter().zip(&qe) {
-            v[c as usize] = x;
+        for (t, (&c, &x)) in qs.cells.iter().zip(&se).enumerate() {
+            let (a, b) = (qs.ptr[t] as usize, qs.ptr[t + 1] as usize);
+            let worst = qs.idx[a..b]
+                .iter()
+                .map(|&p| g[p as usize])
+                .fold(g[c as usize], f64::max);
+            v[c as usize] = x.max(worst);
         }
         r.quadratic_hessian = Some(part(&v, tolerance, geo));
     }
@@ -411,8 +430,9 @@ pub(crate) fn report<F: FnMut(&str)>(
         let treated = r.hessian.flagged - q.flagged;
         if treated > 0 {
             lg.line(&format!(
-                "curvature correction: DS_ij/Dt from the Hessian of the quadratic least-squares \
-                 velocity fit on {treated} cells (D236)"
+                "curvature correction: S_ij from the quadratic velocity fit on {} cells, DS_ij/Dt \
+                 from a quadratic least-squares fit of S_ij on {treated} cells (D236)",
+                r.gradient.flagged
             ));
         }
     }
