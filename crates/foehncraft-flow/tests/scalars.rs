@@ -465,9 +465,19 @@ fn mlp_limiter_bounds_the_oblique_step() {
     let strict = base.replace("limiter_epsilon = 0.01", "limiter_epsilon = 0.0");
     let (lo, hi) = range(&strict, "mlp_strict");
     assert!(lo > -1e-9 && hi < 1.0 + 1e-9, "MLP R3, ε = 0: [{lo}, {hi}]");
+    // the face limiter leaves the range, and `verification.scalar_range`
+    // of the case fails the run for it
     let face = base.replace("limiter = \"mlp\"", "limiter = \"venkatakrishnan\"");
-    let (lo, hi) = range(&face, "venkatakrishnan");
+    let r = run_case(&parse(&face), "venkatakrishnan");
+    let s = &r.solves[0];
+    assert!(s.converged, "Venkatakrishnan: {} iterations", s.iterations);
+    let (lo, hi) = (s.scalars[0].min, s.scalars[0].max);
     assert!(hi > 1.01 && lo < -0.01, "Venkatakrishnan: [{lo}, {hi}]");
+    assert!(
+        r.failures.len() == 1 && r.failures[0].contains("leaves the accepted range"),
+        "{:?}",
+        r.failures
+    );
 }
 
 /// `limiter = "mlp"` is for the scalars and the energy equation; the
