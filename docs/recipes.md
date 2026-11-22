@@ -10,7 +10,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | Page | What it covers | Recipes |
 |---|---|---|
 | [Kernel benchmark G1](recipes/benchmarks.md) | build and run gate G1 on a CPU, on Windows and on an NVIDIA GPU, and rerun it on unstructured meshes | 1, 2, 3, 10 |
-| [Development: tests, CI and releases](recipes/development.md) | MPI tests, checking a change the way CI does, releases, derivative checks of the kernels | 4, 5, 6, 25 |
+| [Development: tests, CI and releases](recipes/development.md) | MPI tests, checking a change the way CI does, releases, derivative checks of the kernels | 4, 5, 6, 25, 184 |
 | [Meshes](recipes/meshes.md) | generate, read, convert and partition meshes, update the mesher's golden values, run flows on poor Gmsh meshes | 7, 8, 9, 11, 36, 127, 129, 134, 138 |
 | [Scalar transport and the pressure solver](recipes/scalar-pressure.md) | order of accuracy of the scalar operators, convection schemes, pressure-solver studies, hypre | 12, 13, 15, 17 |
 | [GPU runs](recipes/gpu.md) | scalar operators, pressure solver and flow cases on an NVIDIA GPU (also a free Colab T4) | 14, 16, 24 |
@@ -118,6 +118,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="mcp"></a>175 | [Connect an assistant through the MCP server](recipes/runs.md#mcp) | [Run control and health](recipes/runs.md) |
 | <a id="control-port"></a>177 | [Watch and steer a running case](recipes/runs.md#control-port) | [Run control and health](recipes/runs.md) |
 | <a id="heat-sink-study"></a>181 | [Let an assistant run a parameter study](recipes/runs.md#heat-sink-study) | [Run control and health](recipes/runs.md) |
+| <a id="mms-turbulence"></a>184 | [Check a turbulence model with a manufactured solution](recipes/development.md#mms-turbulence) | [Development: tests, CI and releases](recipes/development.md) |
 
 ## Adding a feature
 
