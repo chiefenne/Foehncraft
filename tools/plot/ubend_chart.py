@@ -112,8 +112,17 @@ def main(argv) -> None:
         ax = fig.add_subplot(gs[k])
         t = ax.tricontourf(tri, v, levels=48, cmap=cmap)
         fig.colorbar(t, ax=ax, label=lab, pad=0.01)
-        ax.set_aspect("equal"); ax.set_xlim(-8, 1.6); ax.set_ylim(-1.6, 1.6); ax.set_ylabel("y / H")
+        # Drawn as in the literature: flow in at the upper left, out at the
+        # lower left. The y axis points down (coordinates as in the case
+        # file, the picture mirrored about the duct axis y = 0), so inner and
+        # outer walls and the bend stay where the case has them.
+        ax.set_aspect("equal"); ax.set_xlim(-8, 1.6); ax.set_ylim(1.6, -1.6)
+        ax.set_ylabel("y / H (pointing down)")
         ax.set_facecolor("#e8e8e8")
+        if k == 0:
+            kw = dict(arrowprops=dict(arrowstyle="-|>", color="k", lw=1.2), color="k", fontsize=9, va="center")
+            ax.annotate("flow in", xy=(-4.6, -1.0), xytext=(-5.9, -1.0), **kw)
+            ax.annotate("flow out", xy=(-7.9, 1.0), xytext=(-6.3, 1.0), **kw)
     ax = fig.add_subplot(gs[2])
     outer, inner = g.along(d, "outer"), g.along(d, "inner")
     p0 = g.p_at(outer, g.station(-2.0, -1.5))
