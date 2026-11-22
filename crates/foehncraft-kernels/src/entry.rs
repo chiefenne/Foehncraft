@@ -3220,7 +3220,21 @@ mod tests {
             unsafe { Lincomb::run(i, &a) };
         }
         assert_eq!(y, [-8.0, -16.0, -24.0]);
-        assert_eq!(NAMES.len(), 54);
+        // out = a x y (D194)
+        let mut z = [0.0; 3];
+        let a = LinArgs {
+            a: 0.5,
+            b: 0.0,
+            x: r(&x),
+            y: r(&y),
+            out: Raw::new(z.as_mut_ptr() as u64, 3),
+        };
+        for i in 0..3 {
+            // SAFETY: index i of arrays of length 3.
+            unsafe { Product::run(i, &a) };
+        }
+        assert_eq!(z, [-4.0, -16.0, -36.0]);
+        assert_eq!(NAMES.len(), 55);
         // the elliptic-blending helpers: out += |v|², out3 = s v
         let (vx, vy, vz) = ([1.0, 0.0], [2.0, -3.0], [2.0, 4.0]);
         let s = [0.5, -2.0];
