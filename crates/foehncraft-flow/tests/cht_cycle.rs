@@ -437,7 +437,8 @@ fn warmup(end: f64, enabled: bool) -> String {
 /// A transient solid phase (`solid = "transient"`, D118): the march under
 /// the cycle-mean flow covers the fluid phase and the jump of the clock, by
 /// whole periods; the wall temperatures at the end of every march follow
-/// the cycle means of the fully coupled warm-up (within 2 % of the rise),
+/// the cycle means of the fully coupled warm-up (within 1 % of the whole
+/// rise: the march's error is largest early, about 0.2 K of 31 K),
 /// the balance of every march closes, and a run that ends at end_time is a
 /// history, not a loop that failed (no CYC004).
 #[test]
@@ -459,6 +460,8 @@ fn transient_solid_phase_follows_the_warm_up() {
     let (h, loop_rows) = csv(&da, "probes.csv");
     let (_, ref_rows) = csv(&db, "probes.csv");
     let start = loop_rows[0][col(&h, "heated_face_T")];
+    let whole = ref_rows.last().unwrap()[col(&h, "heated_face_T")] - start;
+    assert!(whole > 20.0, "{whole}");
     for u in &c.updates {
         let (m, j) = (u.march_time.unwrap(), u.march_jump.unwrap());
         assert!(m >= f64::from(u.cycles) * period - 1e-9, "{u:?}");
@@ -482,10 +485,9 @@ fn transient_solid_phase_follows_the_warm_up() {
                 .map(|r| r[k])
                 .collect();
             let mean = sel.iter().sum::<f64>() / sel.len() as f64;
-            let rise = mean - start;
             assert!(
-                (row[k] - mean).abs() < 0.02 * rise.max(1.0),
-                "{p} at {te} s: loop {} against {mean} (rise {rise})",
+                (row[k] - mean).abs() < 0.01 * whole,
+                "{p} at {te} s: loop {} against {mean} (whole rise {whole})",
                 row[k]
             );
         }

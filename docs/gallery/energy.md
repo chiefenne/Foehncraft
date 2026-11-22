@@ -12,6 +12,7 @@ Part of the [Example gallery](../gallery.md): the energy equation of the fluid (
 | 180 | [A heated wall brought to its steady and periodic state with thermal acceleration](#cht-acceleration) | 7 | `[energy.acceleration]` `inertia_scale`, `period`, `restore`, `restore_ramp`, `heat.csv` `inertia_scaling` |
 | 190 | [A pulsating channel over a heated wall, coupled by the cycle-averaged loop](#cht-cycle) | 7 | `[energy.cycle]` `period`, `solid_model`, `update`, `enabled`, `cycle_coupling.csv`, `cycle_faces.csv` |
 | 202 | [A thin-skin wall under a pulsating channel: the skin swing, fully coupled cycles at the end and the CHT restart](#cht-cycle-skin) | 7 | `[energy.cycle]` `skin`, `skin_harmonics`, `resolved_cycles`, `cycle_faces.csv` `t_wall_amplitude`, CHT `restart.h5` |
+| 208 | [A heated wall warmed up with the flow held, and a pulsating channel warmed up by the cycle loop](#cht-frozen-flow) | 7 | `[energy.frozen_flow]` `time_step`, `refresh_change`, `start`, `result.json` `frozen_flow`; `[energy.cycle] solid = "transient"`, `march_cycles`, `march_steps`, `cycle_coupling.csv` `march_jump` |
 | 186 | [A warm strip in a closed air enclosure, and a stratified box that stays at rest](#buoyancy) | 7 | `[gravity]`, `[buoyancy] model = "boussinesq"`, `expansion_coefficient`, `static_pressure` |
 | 195 | [Air between walls at 960 K and 240 K, a heated duct and two closed boxes](#variable-density) | 7 | `[energy] density = "variable"`, `thermodynamic_pressure`, `pressure_work`, `[buoyancy] model = "variable-density"`, `density` |
 
@@ -532,6 +533,99 @@ target/release/foehn flow examples/cases/flow/cht_pulsating_channel_skin.toml --
     --set energy.cycle.enabled=false --set time.end_time=10000.0 --set output.fields_every=4000
 pip install matplotlib h5py numpy
 python3 -m tools.plot.cht_skin docs/figures/gallery output/skin output/skin_ref
+```
+
+<a id="cht-frozen-flow"></a>
+## 208. A heated wall warmed up with the flow held, and a pulsating channel warmed up by the cycle loop
+
+<img src="../figures/gallery/cht_heated_wall_frozen.png" alt="Top: the temperature at 3000 s in a channel 4 m long over a wall 0.2 m thick heated from below with 1000 W/m², after the frozen-flow march: the wall warms from about 307 K at the inlet end to 322 K at the outlet end, and a warm layer grows in the fluid above it towards the outlet, the core of the channel at 300 K. Bottom left: the heated face and the fluid 4 cm above the wall at x = 3 m over time: the march as circles on the lines of the fully coupled run, rising from 300 K to 321 and 316 K, with seven narrow shaded bands for the coupled steps of the refreshes in the first 900 s. Bottom right: the march minus the fully coupled run over time for four probes: a saw tooth that rises before each refresh and falls after it, largest 0.058 K at 885 s, and 0.03 K at the end; the channel middle within 0.011 K" width="990" height="756">
+
+**The case.** `cht_heated_wall_frozen.toml` is the switched-on heated
+wall of gallery 159 (a channel 1 m high and 4 m long at Re = 100 over a
+wall 0.2 m thick, k_s/k_f = 10, 1000 W/m² into the wall from below) with a
+made-up fluid whose viscosity falls with the temperature,
+μ = 0.01 (T/300 K)⁻¹² Pa s: it halves over 17 K, so the flow over the
+warming wall changes. The flow develops within a few flow-through times
+(4 s); the wall warms with a time constant of about 300 s and is nearly
+steady after 1500 s. Fully coupled, every step of the warm-up is a flow
+step of 0.5 s (a Courant number of about 10): 6000 steps to 3000 s.
+
+**The frozen-flow march (`[energy.frozen_flow]`, D118).** The run steps
+fully coupled until the flow has settled: every 10 steps it compares the
+velocity field with that of the last window, and holds the flow when the
+relative rms change and the change still to come (extrapolated from the
+last two windows) are below 10⁻³. From then on velocity, pressure and
+mass flux are held, and only the temperature of fluid and wall, one
+matrix, is marched with steps of 10 s (`time_step`). The viscosity
+follows the temperature, so the run refreshes the flow, by coupled steps
+until it has settled again, whenever a fluid temperature has moved by
+more than 2 K since the hold (`refresh_change`). Here the flow is held at
+55 s and refreshed 7 times, the last time at 885 s: 287 frozen steps
+over 2865 s and 270 coupled steps over 135 s, 557 steps in 17 s against
+6000 steps in 155 s fully coupled on 4 threads.
+
+| Probe at x = 3 m | Rise to 3000 s | Largest difference to the fully coupled run | At 3000 s |
+|---|---|---|---|
+| Heated face | 21.27 K | 0.046 K | 0.029 K |
+| Interface | 18.76 K | 0.051 K | 0.029 K |
+| Fluid 4 cm above the wall | 16.07 K | 0.058 K | 0.029 K |
+| Channel middle | 0.84 K | 0.011 K | 0.004 K |
+
+The difference is the saw tooth of the held flow: it grows while the
+fluid warms under the flow of the last hold and drops at each refresh;
+what remains at the end comes from the flow of the last hold at 895 s:
+the fluid has moved by another 0.74 K since then, below the 2 K that
+would refresh it. With `refresh_change = 0.5` the run
+refreshes 20 times (794 steps) and ends within 0.002 K. For a flow that
+does not depend on the temperature the flow is held once and never
+refreshed, and the march differs from the fully coupled run only by the
+time error of the long steps (`tests/cht_frozen.rs`: within 0.01 K at
+the end). The heat balance closes in every step, frozen or coupled, to
+3·10⁻¹² of the largest heat flow. `result.json` lists the phases
+(coupled or frozen, why, from when to when, steps), and the log says why
+each hold and refresh happened (FRZ003).
+
+<img src="../figures/gallery/cht_frozen_steps.png" alt="Left: the time step over time on a log scale: the fully coupled run at 0.5 s throughout, the march at 10 s with seven narrow drops to 0.5 s for the refreshes before 900 s. Right: the steps taken over time: the fully coupled run rises linearly to 6000 steps at 3000 s, the march to 557 steps, most of them in the first 900 s" width="990" height="360">
+
+**A restart in the march.** `restart.h5` keeps the state of the march
+(phase, windows, the temperatures of the last hold) and, new for every
+conjugate run with a viscosity that follows the temperature, μ per face
+of the fluid. A run continued from a frozen phase or from the coupled
+steps of a refresh is bit-identical to one run through.
+
+<img src="../figures/gallery/cht_pulsating_channel_warmup.png" alt="Top: the temperature at 1500 s in a pulsating channel 4 m long over a wall 0.2 m thick heated from below, the vertical scale stretched 2.5 times: the wall warms from about 315 K at the inlet end to 335 K downstream, and a pocket of cold inflow sits above the wall near the inlet. Bottom left: the heated face, the middle of the wall at mid-depth and a point below the surface at x = 0.5 m over time: the cycle means of the fully coupled run as lines rising from 300 K to 335, 329 and 316 K, the wall of the loop at the end of each of its 15 marches as dots on them. Bottom right: the loop minus the fully coupled cycle mean at five points of the wall: up to 0.21 K at the first march at 100 s, then between minus 0.15 and 0.03 K, and within 0.01 K at 1500 s" width="990" height="738">
+
+**The warm-up of a periodic flow (`[energy.cycle] solid = "transient"`).**
+`cht_pulsating_channel_warmup.toml` is the pulsating channel of gallery
+190 (inlet velocity 1 ± 0.5 m/s and temperature 300 ± 50 K) with a period
+of 5 s instead of 50 s and the skin swing of gallery 202. The flow never
+settles, so it cannot be held; the cycle loop holds the wall instead.
+With `solid = "transient"` it gives the warm-up history rather than only
+the end state: after each fluid phase (here three periods with the wall
+held) it marches fluid and wall together under the cycle-mean mass flux
+and the measured defect of every interface face (the mean-flow model of
+gallery 190) over `march_cycles = 20` periods in `march_steps = 5` steps
+of 20 s. The march covers the fluid phase that has run, and the clock
+jumps over the rest by whole periods (85 s after the first phase), so
+the inlet history goes on at the same phase. The loop runs 15 updates
+to 1500 s: 780 steps in 18 s against 6000 steps in 95 s fully coupled.
+The wall at the end of every march lies on the cycle means of the fully
+coupled run: within 0.21 K over a rise of 35 K (at the first march,
+when the wall changes fastest) and within 0.01 K at 1500 s. The march
+has no quasi-Newton step: it is the history, so `relaxation` stays 1, and
+a run that ends at `end_time` before the tolerance is a history that has
+ended, not a loop that failed (no CYC004).
+
+```
+cargo build --release -p foehncraft-cli
+target/release/foehn flow examples/cases/flow/cht_heated_wall_frozen.toml --out output/frz
+target/release/foehn flow examples/cases/flow/cht_heated_wall_frozen.toml --out output/frz_ref \
+    --set energy.frozen_flow.enabled=false
+target/release/foehn flow examples/cases/flow/cht_pulsating_channel_warmup.toml --out output/wu
+target/release/foehn flow examples/cases/flow/cht_pulsating_channel_warmup.toml --out output/wu_ref \
+    --set energy.cycle.enabled=false
+pip install matplotlib h5py numpy
+python3 -m tools.plot.cht_frozen docs/figures/gallery output/frz output/frz_ref output/wu output/wu_ref
 ```
 
 <a id="buoyancy"></a>

@@ -1,5 +1,5 @@
 """The frozen-flow march (D118) and the cycle-averaged loop with a transient
-solid phase (D204), gallery entry 214.
+solid phase (D204), gallery entry 208.
 
 cht_heated_wall_frozen.png: the heated wall under a fluid whose viscosity
 falls with the temperature: the temperature at the end of the warm-up

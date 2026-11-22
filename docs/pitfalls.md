@@ -291,3 +291,19 @@ Three more from the skin swing (#202):
   fluid's until the first refresh; an effusivity taken from them at the
   start was 12 % off on a wall with k_s = k_f, and wrong by the ratio of
   conductivities on any other.
+
+Three more from the frozen-flow march (#208):
+- **A settling test with extrapolation never passes for a flow that
+  follows the temperature.** The flow drifts with the warming fluid, so
+  the ratio of two window changes stays near 1 (0.98) and the change
+  still to come, c r/(1 − r), stays large. For such a flow the change of
+  the last window alone decides; the refreshes catch the drift.
+- **A restart of a conjugate run must carry μ(T).** The viscosity on the
+  faces of a flow that follows the temperature is lagged state; without it
+  in `restart.h5` a restart in a refresh was 5·10⁻⁵ K off instead of bit
+  for bit.
+- **A viscosity written as an expression is not seen as a function of
+  T.** Only the property forms (power law, polynomial, table, ...) tell
+  the march that the flow follows the temperature; an expression string
+  of T made the march hold the flow once and never refresh it. Use a
+  form.

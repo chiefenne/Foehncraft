@@ -800,7 +800,24 @@
    "gaps": [
     "V7.38 not built: no exact solution of a slab under a periodic gas temperature and heat transfer coefficient (the skin swing is checked against the fully coupled run only)",
     "laminar case only; no turbulent periodic case yet",
-    "a restart with [energy.acceleration] is refused"
+    "a restart with [energy.acceleration] is refused",
+    "solid = \"transient\": the largest error of the history is at the first march (0.6 % of the rise), set by the march steps; no automatic choice of march_cycles or march_steps"
+   ],
+   "range": {}
+  },
+  {
+   "id": "cht.frozen-flow",
+   "title": "Frozen-flow march of a transient conjugate run",
+   "grade": "partial",
+   "why": [
+    "no exact or manufactured solution",
+    "gaps written"
+   ],
+   "gaps": [
+    "laminar cases only; no turbulent or buoyant case yet (buoyancy counts as a flow that follows T, untested)",
+    "the settling test looks at the velocity only (not the turbulence quantities)",
+    "a flow with time-dependent boundary values is held between refreshes (FRZ004), no automatic refresh by the change of the boundary values",
+    "no adaptive march step"
    ],
    "range": {}
   },
