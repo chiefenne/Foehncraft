@@ -1593,18 +1593,26 @@ pub fn check_case(
     match crate::case::mesh_for(case, level) {
         Ok((mesh, geo, _)) => {
             // the property program on this mesh: regions name existing zones (D112)
-            if let Err(e) = crate::case::physics(case)
+            let phys_on = match crate::case::physics(case)
                 .and_then(|p| crate::case::physics_on(case, &p, &mesh, &geo))
             {
-                rep.diagnostics.push(diag::of_error(&e));
-            }
+                Ok(p) => Some(p),
+                Err(e) => {
+                    rep.diagnostics.push(diag::of_error(&e));
+                    None
+                }
+            };
+            let rho: crate::bc::Density = match &phys_on {
+                Some(p) => p.into(),
+                None => case.rho().into(),
+            };
             let t0 = case.time.map_or(0.0, |t| t.start_time);
             let values = case.compiled_boundaries().unwrap_or_default();
             let mut findings = crate::bc::check(
                 &mesh,
                 &geo,
                 &case.boundary,
-                case.rho(),
+                rho,
                 crate::bc::At {
                     analytic: case.analytic_at(t0).as_ref(),
                     values: &values,

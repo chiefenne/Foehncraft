@@ -341,6 +341,8 @@ pub struct SstCellOps {
     pub d: Buf,
     /// ν.
     pub nu: f64,
+    /// ν per cell (D194: several fluids); `None`: `nu` everywhere.
+    pub nu_cell: Option<Buf>,
     /// Constants.
     pub c: foehncraft_kernels::turb::sst::SstConstants,
     /// Options.
@@ -402,6 +404,8 @@ pub struct KepsCellOps {
     pub e: Buf,
     /// ν.
     pub nu: f64,
+    /// ν per cell (D194: several fluids); `None`: `nu` everywhere.
+    pub nu_cell: Option<Buf>,
     /// Constants.
     pub c: foehncraft_kernels::turb::keps::KepsConstants,
     /// Options.
@@ -442,6 +446,8 @@ pub struct ZetaFCellOps {
     pub f: Buf,
     /// ν.
     pub nu: f64,
+    /// ν per cell (D194: several fluids); `None`: `nu` everywhere.
+    pub nu_cell: Option<Buf>,
     /// Constants.
     pub c: foehncraft_kernels::turb::zeta_f::ZetaFConstants,
     /// Options.
@@ -571,6 +577,8 @@ pub struct WallFaceOps {
     pub ub: Buf3,
     /// ν.
     pub nu: f64,
+    /// ν per cell (D194: several fluids); `None`: `nu` everywhere.
+    pub nu_cell: Option<Buf>,
     /// Treatment.
     pub treatment: u32,
     /// Constants.

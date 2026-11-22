@@ -1724,6 +1724,9 @@ pub struct SstCellArgs {
     pub d: Raw<f64>,
     /// ν.
     pub nu: f64,
+    /// ν per cell (D194: several fluids), or [`Raw::EMPTY`]: `nu` in
+    /// every cell.
+    pub nu_cell: Raw<f64>,
     /// Constants.
     pub c: crate::turb::sst::SstConstants,
     /// Options.
@@ -1780,7 +1783,11 @@ impl Entry for SstCells {
                 grad_w: a.grad_w.v().at(c),
                 grad_u: gu,
                 d: ld(a.d.get(), c),
-                nu: a.nu,
+                nu: if a.nu_cell.len > 0 {
+                    ld(a.nu_cell.get(), c)
+                } else {
+                    a.nu
+                },
                 fr1: if a.fr1.len > 0 {
                     ld(a.fr1.get(), c)
                 } else {
@@ -2183,6 +2190,9 @@ pub struct KepsCellArgs {
     pub e: Raw<f64>,
     /// ν.
     pub nu: f64,
+    /// ν per cell (D194: several fluids), or [`Raw::EMPTY`]: `nu` in
+    /// every cell.
+    pub nu_cell: Raw<f64>,
     /// Constants.
     pub c: crate::turb::keps::KepsConstants,
     /// Options.
@@ -2234,7 +2244,11 @@ impl Entry for KepsCells {
                 k: ld(a.k.get(), c),
                 e: ld(a.e.get(), c),
                 grad_u: [g.x.at(c), g.y.at(c), g.z.at(c)],
-                nu: a.nu,
+                nu: if a.nu_cell.len > 0 {
+                    ld(a.nu_cell.get(), c)
+                } else {
+                    a.nu
+                },
             };
             let r = crate::turb::keps::keps_cell(&inp, &a.c, &a.o);
             *a.nu_t.out().add(c) = r.nu_t;
@@ -2282,6 +2296,9 @@ pub struct ZetaFCellArgs {
     pub f: Raw<f64>,
     /// ν.
     pub nu: f64,
+    /// ν per cell (D194: several fluids), or [`Raw::EMPTY`]: `nu` in
+    /// every cell.
+    pub nu_cell: Raw<f64>,
     /// Constants.
     pub c: crate::turb::zeta_f::ZetaFConstants,
     /// Options.
@@ -2365,7 +2382,11 @@ impl Entry for ZetaFCells {
                 zeta: ld(a.zeta.get(), c),
                 f: ld(a.f.get(), c),
                 grad_u: [g.x.at(c), g.y.at(c), g.z.at(c)],
-                nu: a.nu,
+                nu: if a.nu_cell.len > 0 {
+                    ld(a.nu_cell.get(), c)
+                } else {
+                    a.nu
+                },
                 wall_m: wm,
                 wall_pk: wp,
                 grad_k: if a.grad_k.x.len > 0 {
@@ -2661,6 +2682,9 @@ pub struct WallFaceArgs {
     pub ub: Raw3,
     /// ν.
     pub nu: f64,
+    /// ν per cell (D194: several fluids), or [`Raw::EMPTY`]: `nu` in
+    /// every cell.
+    pub nu_cell: Raw<f64>,
     /// Treatment ([`crate::turb::wall::LOW_RE`], `AUTOMATIC`).
     pub treatment: u32,
     /// Constants.
@@ -2735,6 +2759,11 @@ impl Entry for WallFaces {
             let f = ld(a.faces.get(), i) as usize;
             let fb = f - a.m.n_interior as usize;
             let p = ld(a.m.owner.get(), f) as usize;
+            let nu_p = if a.nu_cell.len > 0 {
+                ld(a.nu_cell.get(), p)
+            } else {
+                a.nu
+            };
             let n = a.normal.v().at(i);
             let up = a.u.v().at(p);
             let uw = a.ub.v().at(fb);
@@ -2746,7 +2775,7 @@ impl Entry for WallFaces {
             if zf && a.treatment == crate::turb::wall::LOW_RE {
                 // k-ε-ζ-f integrated to the wall: k_w = 0, ζ_w = 0, ε_w
                 // and f_w of the first cell (Dirichlet values)
-                let (y, nu) = (ld(a.y.get(), i), a.nu);
+                let (y, nu) = (ld(a.y.get(), i), nu_p);
                 let (e_w, f_w) = crate::turb::wall::zeta_f_wall_values(
                     ld(a.k.get(), p),
                     ld(a.zeta.get(), p),
@@ -2801,7 +2830,7 @@ impl Entry for WallFaces {
                 let inp = crate::turb::wall::KepsWallInputs {
                     ut,
                     y: ld(a.y.get(), i),
-                    nu: a.nu,
+                    nu: nu_p,
                     k: ld(a.k.get(), p),
                     ks: ld(a.ks.get(), i),
                     cs: ld(a.cs.get(), i),
@@ -2828,7 +2857,7 @@ impl Entry for WallFaces {
                         inp.k,
                         ld(a.zeta.get(), p),
                         inp.y,
-                        a.nu,
+                        nu_p,
                         r.viscous,
                         a.n_zeta,
                         a.ke.e_wall,
@@ -2840,7 +2869,7 @@ impl Entry for WallFaces {
             let inp = crate::turb::wall::WallInputs {
                 ut,
                 y: ld(a.y.get(), i),
-                nu: a.nu,
+                nu: nu_p,
                 ks: ld(a.ks.get(), i),
                 u_tau_old: a.u_tau_old.read(i),
             };

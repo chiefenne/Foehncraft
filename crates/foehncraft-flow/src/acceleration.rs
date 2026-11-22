@@ -151,8 +151,9 @@ impl Controller {
             return Ok(None);
         };
         let names = sc.energy_regions();
+        let fluid = sc.energy_fluid_flags();
         let idx: Vec<usize> = if cfg.regions.is_empty() {
-            (1..names.len()).collect()
+            (0..names.len()).filter(|&i| !fluid[i]).collect()
         } else {
             cfg.regions
                 .iter()
@@ -521,12 +522,13 @@ fn conductances(fl: &mut Flow, idx: &[usize], t: f64) -> Result<Vec<f64>> {
     let names = sc.energy_regions();
     let t0 = sc.energy_temperature(dev)?;
     let cell = sc.energy_cell_regions();
+    let fluid = sc.energy_fluid_flags();
     let outer = sc.energy_outer_conductance(&areas, t);
     let held = |shift: Option<usize>| -> Vec<Option<f64>> {
         t0.iter()
             .zip(&cell)
             .map(|(&x, &m)| match m {
-                0 => None,
+                m if fluid[m as usize] => None,
                 m if Some(m as usize) == shift => Some(x + 1.0),
                 _ => Some(x),
             })

@@ -758,6 +758,12 @@ impl Physics {
         self.rho_var.as_ref().map_or(self.rho, |r| r.0[c])
     }
 
+    /// The density of face `f`.
+    #[inline]
+    pub fn rho_face_at(&self, f: usize) -> f64 {
+        self.rho_var.as_ref().map_or(self.rho, |r| r.1[f])
+    }
+
     /// The viscosity of face `f`.
     #[inline]
     pub fn mu_at(&self, f: usize) -> f64 {
@@ -1312,6 +1318,11 @@ impl Flow {
             },
             &target.ptx,
         )?;
+        // a density per cell and face (D194: several fluids; 7c sets its
+        // own after the energy equation)
+        if let Some(r) = &phys.rho_var {
+            dev.set_density(&r.0, &r.1)?;
+        }
         let stored = disc.sell.stored();
         let cell3 = |dev: &mut Box<dyn FlowDevice>| -> Result<Buf3> {
             Ok(Buf3 {
@@ -1460,7 +1471,7 @@ impl Flow {
                 area,
                 normal,
                 area_total,
-                q_other: fixed_outflow(&disc, &bc, &bc.ub, phys.rho),
+                q_other: fixed_outflow(&disc, &bc, &bc.ub, &phys),
                 balance: !bc.has_pressure(),
                 hold: true,
             })
@@ -1758,8 +1769,9 @@ impl Flow {
             for f in bd.b_faces.clone() {
                 let o = d.owner[f] as usize;
                 let s = [d.face_area.x[f], d.face_area.y[f], d.face_area.z[f]];
-                q += self.phys.rho * (u.x[o] * s[0] + u.y[o] * s[1] + u.z[o] * s[2]);
-                q_unit += self.phys.rho
+                let rho = self.phys.rho_at(o);
+                q += rho * (u.x[o] * s[0] + u.y[o] * s[1] + u.z[o] * s[2]);
+                q_unit += rho
                     * (pd.direction[0] * s[0] + pd.direction[1] * s[1] + pd.direction[2] * s[2]);
             }
             if q_unit > 0.0 {
@@ -1803,7 +1815,7 @@ impl Flow {
         // (deferred, Jasak 1996), so that the potential is that of the full
         // Laplacian on non-orthogonal meshes
         let m0 = self.dev.download(f.mass_flux)?;
-        let rho = self.phys.rho;
+        let phys = self.phys.clone();
         let mut it = 0;
         let mut r = Ok(());
         for pass in 0..=POTENTIAL_NONORTH_PASSES {
@@ -1828,7 +1840,7 @@ impl Flow {
                     let gk: f64 = (0..3)
                         .map(|i| (wt * g[i][p] + (1.0 - wt) * g[i][n]) * k[i])
                         .sum();
-                    *m -= rho * gk;
+                    *m -= phys.rho_face_at(fi) * gk;
                 }
                 self.dev.upload(f.mass_flux, &ms)?;
             }
@@ -1845,7 +1857,7 @@ impl Flow {
         self.dev.correct_fluxes(w.cf, f.mass_flux, w.pc, w.mc)?;
         self.dev.copy(w.mc, f.mass_flux)?;
         let m = self.dev.download(f.mass_flux)?;
-        let u = velocity_of_fluxes(mesh, geo, &m, self.phys.rho, self.disc.n_cells);
+        let u = velocity_of_fluxes(mesh, geo, &m, &self.phys, self.disc.n_cells);
         self.dev.upload(f.u.x, &u.x)?;
         self.dev.upload(f.u.y, &u.y)?;
         self.dev.upload(f.u.z, &u.z)?;
@@ -1877,13 +1889,13 @@ impl Flow {
             Some(t) => {
                 let ts = t.state(self.dev.as_mut(), &p, &pb)?;
                 // the static pressure p = p̂ − ⅔ρk
-                let c = 2.0 / 3.0 * self.phys.rho;
-                for (pi, ki) in p.iter_mut().zip(&ts.k) {
-                    *pi -= c * ki;
+                for (c, (pi, ki)) in p.iter_mut().zip(&ts.k).enumerate() {
+                    *pi -= 2.0 / 3.0 * self.phys.rho_at(c) * ki;
                 }
                 let kf = t.k_face(&ts.k, &ts.k_b, &self.disc.owner);
-                for (pi, ki) in pb.iter_mut().zip(&kf) {
-                    *pi -= c * ki;
+                let ni = self.disc.n_interior;
+                for (fb, (pi, ki)) in pb.iter_mut().zip(&kf).enumerate() {
+                    *pi -= 2.0 / 3.0 * self.phys.rho_face_at(ni + fb) * ki;
                 }
                 Some(ts)
             }
@@ -2058,7 +2070,7 @@ impl Flow {
         self.dev.upload(s.y, &ub[1])?;
         self.dev.upload(s.z, &ub[2])?;
         if let Some(cv) = self.conv {
-            let q = fixed_outflow(&self.disc, &self.bc, ub, self.phys.rho);
+            let q = fixed_outflow(&self.disc, &self.bc, ub, &self.phys);
             self.conv = Some(Convective { q_other: q, ..cv });
         }
         Ok(())
@@ -2935,13 +2947,18 @@ impl Flow {
 /// Mass flux (kg/s) out of the domain through the boundary faces that fix
 /// the flux with the prescribed velocity `ub`, without the convective
 /// outlets (in face order).
-fn fixed_outflow(disc: &Discretisation, bc: &BoundaryArrays, ub: &[Vec<f64>; 3], rho: f64) -> f64 {
+fn fixed_outflow(
+    disc: &Discretisation,
+    bc: &BoundaryArrays,
+    ub: &[Vec<f64>; 3],
+    phys: &Physics,
+) -> f64 {
     let ni = disc.n_interior;
     let mut q = 0.0;
     for (fb, (&kind, &rule)) in bc.flux_kind.iter().zip(&bc.ub_rule).enumerate() {
         if kind == k::FLUX_FIXED && rule == k::UB_FIXED {
             let f = fb + ni;
-            q += rho
+            q += phys.rho_face_at(f)
                 * (ub[0][fb] * disc.face_area.x[f]
                     + ub[1][fb] * disc.face_area.y[f]
                     + ub[2][fb] * disc.face_area.z[f]);
@@ -2953,7 +2970,7 @@ fn fixed_outflow(disc: &Discretisation, bc: &BoundaryArrays, ub: &[Vec<f64>; 3],
 /// Cell velocities from face mass fluxes, u_P = Σ_f ±ṁ_f (x_f − x_P)/(ρ V_P):
 /// exact for a uniform velocity, since Σ_f (x_f − x_P) S_fᵀ = V_P I for a
 /// closed cell (the start of D52).
-fn velocity_of_fluxes(mesh: &Mesh, geo: &Geometry, m: &[f64], rho: f64, nc: usize) -> Soa3 {
+fn velocity_of_fluxes(mesh: &Mesh, geo: &Geometry, m: &[f64], phys: &Physics, nc: usize) -> Soa3 {
     // a periodic face counts for its owner only: its partner closes the
     // cell across (D29)
     let ni = mesh.periodic_start();
@@ -2976,7 +2993,7 @@ fn velocity_of_fluxes(mesh: &Mesh, geo: &Geometry, m: &[f64], rho: f64, nc: usiz
         }
     }
     for c in 0..nc {
-        let r = 1.0 / (rho * geo.cell_volume[c]);
+        let r = 1.0 / (phys.rho_at(c) * geo.cell_volume[c]);
         u.x[c] *= r;
         u.y[c] *= r;
         u.z[c] *= r;

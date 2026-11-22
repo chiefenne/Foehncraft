@@ -782,7 +782,6 @@ pub fn compute(
     } else {
         Vec::new()
     };
-    let rho = fl.phys.rho;
     let turbo: Vec<Turbo> = match list.iter().any(|d| d.of_rotors()) {
         true => {
             let frames = Frames::new(case).ok_or_else(|| {
@@ -846,7 +845,7 @@ pub fn compute(
                 (0..nc)
                     .map(|c| {
                         let u = fl.u.get(c);
-                        fl.p[c] + 0.5 * rho * dot(u, u)
+                        fl.p[c] + 0.5 * fl.phys.rho_at(c) * dot(u, u)
                     })
                     .collect(),
             )),
@@ -889,7 +888,8 @@ pub fn compute(
                 turbo
                     .iter()
                     .zip(&fl.p)
-                    .map(|(t, p)| p + 0.5 * rho * dot(t.w, t.w))
+                    .enumerate()
+                    .map(|(c, (t, p))| p + 0.5 * fl.phys.rho_at(c) * dot(t.w, t.w))
                     .collect(),
             )),
             Derived::Rothalpy => out.cells.push((
@@ -897,7 +897,10 @@ pub fn compute(
                 turbo
                     .iter()
                     .zip(&fl.p)
-                    .map(|(t, p)| p / rho + 0.5 * dot(t.w, t.w) - 0.5 * dot(t.u, t.u))
+                    .enumerate()
+                    .map(|(c, (t, p))| {
+                        p / fl.phys.rho_at(c) + 0.5 * dot(t.w, t.w) - 0.5 * dot(t.u, t.u)
+                    })
                     .collect(),
             )),
             Derived::WallDistance => out
@@ -933,9 +936,10 @@ pub fn compute(
                 })?;
                 // the k-ε family: ω = ε/(C_μ k), so that τ = 1/(β* ω) = k/ε
                 let beta_star = case.turbulence.c_mu()?;
-                let nu = fl.phys.mu / fl.phys.rho;
+                let mu_c = case.properties()?.cell_viscosity(mesh, geo);
                 let rows: Vec<[f64; 12]> = (0..nc)
                     .map(|c| {
+                        let nu = mu_c[c] / fl.phys.rho_at(c);
                         let gp = fl.grad_p.get(c);
                         features(
                             gradient(fl, c),
@@ -961,9 +965,10 @@ pub fn compute(
             Derived::TurbulenceScales => {
                 let t = turbulence_state(fl, d)?;
                 let c_mu = case.turbulence.c_mu()?;
-                let nu = fl.phys.mu / fl.phys.rho;
+                let mu_c = case.properties()?.cell_viscosity(mesh, geo);
                 let rows: Vec<[f64; 5]> = (0..nc)
                     .map(|c| {
+                        let nu = mu_c[c] / fl.phys.rho_at(c);
                         let zt = t.zeta.as_ref().map(|z| z.t[c]);
                         scales(t.k[c], t.omega[c], t.epsilon, t.nu_t[c], zt, c_mu, nu)
                     })
@@ -1023,7 +1028,7 @@ pub fn compute(
                         let c = fl.disc.owner[f] as usize;
                         let y =
                             dot(sub(geo.face_centroid[f], geo.cell_centroid[c]), s).abs() / norm(s);
-                        let nu = fl.phys.mu_at(f) / fl.phys.rho;
+                        let nu = fl.phys.mu_at(f) / fl.phys.rho_face_at(f);
                         ut[f - ni] = t.u_tau[f - ni];
                         ys[f - ni] = y * u_star * t.k[c].max(0.0).sqrt() / nu;
                     }
@@ -1327,7 +1332,7 @@ fn with_restart<R>(
         &mesh,
         &geo,
         &case.boundary,
-        phys.rho,
+        &phys,
         crate::bc::At {
             analytic: analytic0.as_ref(),
             values: &values,
@@ -1425,8 +1430,8 @@ fn wall_values(
             let s = geo.face_area[f];
             let c = fl.disc.owner[f] as usize;
             let y = dot(sub(geo.face_centroid[f], geo.cell_centroid[c]), s).abs() / norm(s);
-            let u_tau = (norm(tau) / fl.phys.rho).sqrt();
-            let nu = fl.phys.mu_at(f) / fl.phys.rho;
+            let u_tau = (norm(tau) / fl.phys.rho_face_at(f)).sqrt();
+            let nu = fl.phys.mu_at(f) / fl.phys.rho_face_at(f);
             // with a turbulence model: the y⁺ of its wall treatment
             let yp = match &fl.state.turbulence {
                 Some(t) => t.y_plus[f - ni],

@@ -169,6 +169,10 @@ codes! {
     ENE_INLET = "THM011", Error, "An inlet without `[boundary.<name>.energy] temperature` in a run with the energy equation.";
     REG_NOT_FLUID = "REG001", Error, "A region that is not a fluid where it cannot be: a solid region without `[energy]` (solids are solved by the energy equation, stage 7d1), a porous zone (not in this version), or a solid material as the `[fluid]`.";
     REG_ZONE = "REG002", Error, "A region that names a cell zone the mesh does not have, or a zone in two regions.";
+    REG_PART_REFERENCE = "REG003", Error, "A fluid part (fluid cells connected without a solid between them) without a pressure boundary in a case of several fluid parts: give it a pressure outlet or inlet; a closed part of its own comes with stage MF-B.";
+    REG_FLUIDS_TOUCH = "REG004", Error, "Two fluids of different materials (or temperatures) share a face: that is a two-phase interface (multiphase, L3); put a solid region or a thin wall between them, or give both regions the same fluid.";
+    REG_PARTS = "REG005", Note, "The fluid parts of the case: their number, regions and fluids.";
+    REG_FLUIDS_UNSUPPORTED = "REG006", Error, "A setting that does not yet work with several fluids in one case (D194): the variable density, gravity, a rotating zone or frame, passive scalars, the coupled solver, a convective outlet or a periodic mass-flow drive.";
     // moving reference frame and sliding mesh (D55, D182)
     MRF_SLIDING_ZONE = "MRF001", Error, "An `[[mrf]]` table and a `[[sliding]]` table that turn the same cells (one of them without a `zone`, or both with the same one): a zone is turned by a moving reference frame (steady or transient, D185) or by a sliding mesh (D182), not by both.";
     MRF_ENTRY = "MRF002", Error, "An `[[mrf]]` table with no or two angular velocities (`omega`, `rpm`), a zero axis, a cell zone the mesh does not have (with the nearest name as a hint), no `zone` where there are several tables, or a zone that two tables rotate.";

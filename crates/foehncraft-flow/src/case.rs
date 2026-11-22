@@ -1204,6 +1204,19 @@ impl FlowCase {
                     );
                 }
             }
+            // a region of its own temperature evaluates its material there
+            // (D194); the [fluid] shorthand numbers stay those of [fluid]
+            let rcond = crate::materials::Conditions {
+                temperature: r.temperature.unwrap_or(cond.temperature),
+                ..cond
+            };
+            if let Some(t) = r.temperature {
+                crate::need!(
+                    t > 0.0 && t.is_finite(),
+                    CASE_RANGE,
+                    "[regions.{name}] temperature must be > 0 K, is {t}"
+                );
+            }
             let m = match &r.material {
                 Some(mat) => resolve_material(
                     Some(mat),
@@ -1211,21 +1224,28 @@ impl FlowCase {
                     None,
                     None,
                     &env,
-                    cond,
+                    rcond,
+                    &mut warnings,
+                )?,
+                None if r.temperature.is_some() => resolve_material(
+                    self.fluid.material.as_deref(),
+                    &self.materials,
+                    self.fluid.density.as_ref(),
+                    self.fluid.viscosity.as_ref(),
+                    &env,
+                    rcond,
                     &mut warnings,
                 )?,
                 None => fluid.clone(),
             };
-            let (a, b) = (m.density.value.constant(), fluid.density.value.constant());
-            crate::need!(
-                a.map(f64::to_bits) == b.map(f64::to_bits),
-                MAT_FORM,
-                "[regions.{name}] material `{}` has the density {:?} kg/m³, the fluid {:?}: \
-                 the density is one number for the whole fluid until the energy equation (L1)",
-                r.material.as_deref().unwrap_or(""),
-                a.unwrap_or(f64::NAN),
-                b.unwrap_or(f64::NAN)
-            );
+            if let Some(rho) = m.density.value.constant() {
+                crate::need!(
+                    rho > 0.0 && rho.is_finite(),
+                    CASE_RANGE,
+                    "[regions.{name}] the density of material `{}` must be > 0, is {rho}",
+                    r.material.as_deref().unwrap_or("")
+                );
+            }
             regions.push((name.clone(), r.zones.clone(), m));
         }
         Ok(crate::materials::PropertySet {
@@ -1293,6 +1313,7 @@ impl FlowCase {
         crate::energy::validate(self, &env)?;
         crate::buoyancy::validate(self)?;
         crate::density::validate(self)?;
+        crate::fluids::validate(self)?;
         crate::turbulence::validate(self)?;
         let p = self.properties()?;
         let rho = p.density();
@@ -1847,7 +1868,7 @@ fn scalar_wall_face(
     let c = fl.disc.owner[f] as usize;
     let pp = st.phi[c];
     let pb = w.a[fb] * pp + w.b[fb];
-    let ex = w.gamma[fb] / fl.phys.rho * fl.disc.dgeo[f] / norm(geo.face_area[f]);
+    let ex = w.gamma[fb] / fl.phys.rho_face_at(f) * fl.disc.dgeo[f] / norm(geo.face_area[f]);
     Some((pb, ex * (pb - pp)))
 }
 
@@ -2060,8 +2081,9 @@ pub(crate) fn wall_probes(
                     let c = fl.disc.owner[f] as usize;
                     let s = geo.face_area[f];
                     let y = dot(sub(geo.face_centroid[f], geo.cell_centroid[c]), s).abs() / norm(s);
-                    let ut = (norm(tau) / fl.phys.rho).sqrt();
-                    y * ut * fl.phys.rho / fl.phys.mu_at(f)
+                    let rho = fl.phys.rho_face_at(f);
+                    let ut = (norm(tau) / rho).sqrt();
+                    y * ut * rho / fl.phys.mu_at(f)
                 }
             };
             (tau, yp)
@@ -2482,7 +2504,12 @@ pub fn physics_on(case: &FlowCase, phys: &Physics, mesh: &Mesh, geo: &Geometry) 
         }
     }
     let mut p = phys.clone();
-    p.mu_face = case.properties()?.face_viscosity(mesh, geo);
+    let props = case.properties()?;
+    p.mu_face = props.face_viscosity(mesh, geo);
+    // several fluids (D194): the density of each cell and face
+    if let Some((cell, face)) = props.cell_face_density(mesh) {
+        p.rho_var = Some(std::sync::Arc::new((cell, face)));
+    }
     Ok(p)
 }
 
@@ -2662,6 +2689,8 @@ pub fn run_steered(
         // view, the energy equation on the full mesh
         let (fluid_case, mesh, geo) = crate::cht::view(&case, mesh, geo)?;
         case = fluid_case;
+        // the fluid parts (D194): REG004, REG003
+        let parts = crate::fluids::check(&case, &mesh)?;
         let nc = mesh.n_cells;
         steer.set_cells(nc, usize::from(case.run.backend != "cpu"));
         if li == 0 {
@@ -2670,12 +2699,14 @@ pub fn run_steered(
                 lg.note(&n);
             }
         }
+        // the density and viscosity per cell and face (D94, D194)
+        let phys_on = physics_on(&case, &phys, &mesh, &geo)?;
         // boundary-condition check (D30)
         let mut findings = bc::check(
             &mesh,
             &geo,
             &case.boundary,
-            phys.rho,
+            &phys_on,
             at,
             case.check_context(),
         );
@@ -2714,7 +2745,10 @@ pub fn run_steered(
             lg.frame(&crate::logblocks::solution(&case, false));
             lg.frame(&crate::logblocks::boundaries(&case, &quality));
             let mut any = false;
-            for n in crate::logblocks::notes(&case) {
+            for n in crate::logblocks::notes(&case)
+                .into_iter()
+                .chain(crate::fluids::notes(&parts))
+            {
                 if !any {
                     lg.line("");
                     any = true;
@@ -2732,7 +2766,7 @@ pub fn run_steered(
         if !single && li == last {
             lg.frame(&files_frame(&case, &mesh, &desc, out));
         }
-        let arrays = bc::arrays(&mesh, &geo, &case.boundary, phys.rho, at)?;
+        let arrays = bc::arrays(&mesh, &geo, &case.boundary, &phys_on, at)?;
         let disc = simplec::discretisation(&mesh, &geo, &arrays)?;
         let operators = crate::operators::report(
             &case,
@@ -2743,7 +2777,7 @@ pub fn run_steered(
             &mut lg,
             &mut rep.warnings,
         );
-        let phys = physics_on(&case, &phys, &mesh, &geo)?;
+        let phys = phys_on;
         let loc = Locator::new(&mesh, &geo);
         let reference_cell = if arrays.has_pressure() {
             None
@@ -4191,7 +4225,7 @@ pub(crate) fn write_outputs(
                             continue;
                         };
                         let fb = f - ni;
-                        let ex = w.gamma[fb] / fl.phys.rho * fl.disc.dgeo[f] / area;
+                        let ex = w.gamma[fb] / fl.phys.rho_face_at(f) * fl.disc.dgeo[f] / area;
                         let _ = write!(r, ",{pb:e},{flux:e},{ex:e}");
                         if let Some(t) = turb {
                             let _ = write!(r, ",{:e}", t.u_tau[fb] / ex);
@@ -4574,13 +4608,16 @@ pub fn check_case(case: &FlowCase, path: &Path, mut log: impl FnMut(&str)) -> Re
     let (fluid_case, mesh, geo) = crate::cht::view(case, mesh, geo)?;
     let case = &fluid_case;
     log(&format!("{}: {desc}", path.display()));
+    for n in crate::fluids::notes(&crate::fluids::check(case, &mesh)?) {
+        log(&n);
+    }
     // the property program on this mesh: regions name existing zones (D112)
-    physics_on(case, &physics(case)?, &mesh, &geo)?;
+    let phys_on = physics_on(case, &physics(case)?, &mesh, &geo)?;
     let mut findings = bc::check(
         &mesh,
         &geo,
         &case.boundary,
-        case.rho(),
+        &phys_on,
         bc::At {
             analytic: case.analytic().as_ref(),
             values: &case.compiled_boundaries()?,

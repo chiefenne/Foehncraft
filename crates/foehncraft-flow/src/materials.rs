@@ -705,6 +705,13 @@ pub struct RegionSection {
     /// part; default the axes of the material.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub axes: Option<[[f64; 3]; 2]>,
+    /// The temperature (K) at which the region's material is evaluated
+    /// where its properties stay constant (D194): the density without the
+    /// variable density, and every property of an isothermal run; default
+    /// `[fluid] temperature`. Water at 300 K beside air at 450 K in one
+    /// heat exchanger.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub temperature: Option<f64>,
 }
 
 /// The JSON Schema of `[materials]`: the include list and, for every other
@@ -1734,9 +1741,51 @@ pub struct PropertySet {
 }
 
 impl PropertySet {
-    /// The density (one number: the same in every region, checked).
+    /// The density of the `[fluid]` material: the reference value (and the
+    /// value in every cell unless [`density_varies`](Self::density_varies)).
     pub fn density(&self) -> f64 {
         self.fluid.density.value.constant().unwrap_or(f64::NAN)
+    }
+
+    /// True when a fluid region has a density of its own (D194: several
+    /// fluids in one case).
+    pub fn density_varies(&self) -> bool {
+        let r0 = self.density().to_bits();
+        self.regions
+            .iter()
+            .any(|r| r.2.density.value.constant().map(f64::to_bits) != Some(r0))
+    }
+
+    /// The density of each cell zone of `mesh`.
+    fn zone_density(&self, mesh: &foehncraft_mesh::Mesh) -> Vec<f64> {
+        mesh.zones
+            .iter()
+            .map(|z| {
+                self.regions
+                    .iter()
+                    .find(|r| r.1.iter().any(|n| n == z))
+                    .map_or(&self.fluid.density, |r| &r.2.density)
+                    .value
+                    .constant()
+                    .unwrap_or(f64::NAN)
+            })
+            .collect()
+    }
+
+    /// The density per cell and per face of `mesh` (D194; `None` when it is
+    /// one number everywhere, which keeps the solver's constant path bit for
+    /// bit). Fluids of different densities never share a face (REG004);
+    /// the face takes the owner's value.
+    pub fn cell_face_density(&self, mesh: &foehncraft_mesh::Mesh) -> Option<(Vec<f64>, Vec<f64>)> {
+        if !self.density_varies() {
+            return None;
+        }
+        let zr = self.zone_density(mesh);
+        let cell: Vec<f64> = (0..mesh.n_cells)
+            .map(|c| zr[mesh.cell_zone[c] as usize])
+            .collect();
+        let face: Vec<f64> = mesh.owner.iter().map(|&o| cell[o as usize]).collect();
+        Some((cell, face))
     }
 
     /// The viscosity of the `[fluid]` material, as the reference value of

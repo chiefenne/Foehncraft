@@ -63,6 +63,42 @@ use foehncraft_mesh::{Geometry, Mesh};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
+
+/// The density the boundary conditions take: one number, or one per face
+/// of the mesh (D194: several fluids in one case).
+#[derive(Debug, Clone, Copy)]
+pub enum Density<'a> {
+    /// One density everywhere.
+    One(f64),
+    /// The density of every face.
+    Faces(&'a [f64]),
+}
+
+impl Density<'_> {
+    /// The density at face `f`.
+    #[inline]
+    pub fn at(&self, f: usize) -> f64 {
+        match self {
+            Density::One(r) => *r,
+            Density::Faces(v) => v[f],
+        }
+    }
+}
+
+impl From<f64> for Density<'_> {
+    fn from(r: f64) -> Self {
+        Density::One(r)
+    }
+}
+
+impl<'a> From<&'a crate::simplec::Physics> for Density<'a> {
+    fn from(p: &'a crate::simplec::Physics) -> Self {
+        match &p.rho_var {
+            Some(r) => Density::Faces(&r.1),
+            None => Density::One(p.rho),
+        }
+    }
+}
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -1391,7 +1427,7 @@ fn prescribed_outflow(
     mesh: &Mesh,
     geo: &Geometry,
     bcs: &BTreeMap<String, BoundaryCondition>,
-    rho: f64,
+    rho: Density,
     at: At,
 ) -> (BTreeMap<String, f64>, f64) {
     let mut out = BTreeMap::new();
@@ -1404,7 +1440,7 @@ fn prescribed_outflow(
             BoundaryCondition::VelocityInlet { .. } => p
                 .range()
                 .map(|f| {
-                    let q = rho
+                    let q = rho.at(f)
                         * dot(
                             inlet_velocity(bc, at.of(&p.name), geo, f, at, &ext)
                                 .unwrap_or([0.0; 3]),
@@ -1743,11 +1779,11 @@ pub fn periodic_pairs(bcs: &BTreeMap<String, BoundaryCondition>) -> Result<Vec<P
 /// Checks the combination of boundary conditions on the whole domain (D30)
 /// before the run. Errors stop the run; warnings and notes go to the log.
 /// Every finding names the boundary and says what to change.
-pub fn check(
+pub fn check<'a>(
     mesh: &Mesh,
     geo: &Geometry,
     bcs: &BTreeMap<String, BoundaryCondition>,
-    rho: f64,
+    rho: impl Into<Density<'a>>,
     at: At,
     ctx: CheckContext,
 ) -> Vec<Finding> {
@@ -2293,7 +2329,7 @@ pub fn check(
     // the scale of the balance is the flow through the faces, so that a
     // boundary that the flow enters and leaves (an exact solution) does not
     // make round-off look like an imbalance
-    let (q, scale_q) = prescribed_outflow(mesh, geo, bcs, rho, at);
+    let (q, scale_q) = prescribed_outflow(mesh, geo, bcs, rho.into(), at);
     let net: f64 = q.values().sum();
     let inflow: Vec<&str> = q
         .iter()
@@ -2532,13 +2568,14 @@ impl BoundaryArrays {
 }
 
 /// The per-face arrays of the conditions (after [`check`] found no error).
-pub fn arrays(
+pub fn arrays<'a>(
     mesh: &Mesh,
     geo: &Geometry,
     bcs: &BTreeMap<String, BoundaryCondition>,
-    rho: f64,
+    rho: impl Into<Density<'a>>,
     at: At,
 ) -> Result<BoundaryArrays> {
+    let rho: Density = rho.into();
     let ni = mesh.n_interior_faces();
     let nb = mesh.n_boundary_faces();
     let mut a = BoundaryArrays {
@@ -2630,7 +2667,7 @@ pub fn arrays(
                     if mass_flux.is_some() {
                         // the normal velocity that carries the mass flux into
                         // the domain (D124 W3)
-                        let un = bc.wall_mass_flux(vals, xf, at.t) / rho;
+                        let un = bc.wall_mass_flux(vals, xf, at.t) / rho.at(f);
                         set_ub(sub(wall, scale(n, un)));
                     } else {
                         set_ub(wall);
@@ -2641,7 +2678,7 @@ pub fn arrays(
                 }
                 BoundaryCondition::MassFlowInlet { .. } => {
                     let mass_flow = bc.mass_flow_at(vals, at.t);
-                    set_ub(scale(n, -mass_flow / (rho * area)));
+                    set_ub(scale(n, -mass_flow / (rho.at(f) * area)));
                 }
                 BoundaryCondition::StaticPressureInlet { .. } => {
                     a.ub_rule[fb] = UB_FROM_FLUX;

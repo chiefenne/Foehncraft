@@ -1,0 +1,118 @@
+# Two fluids in one conjugate case: a laminar parallel-plate counterflow
+# heat exchanger with water below a steel plate and a light oil above it
+# (D194, stage MF-A, check V7.33).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/cht_counterflow_two_fluids.toml
+#
+# Two channels of height h = 2 mm, 0.5 m long, separated by a 0.5 mm steel
+# plate (k = 15 W/(m K)); the outer walls are adiabatic. Water (database,
+# at 300 K) enters at the left at 340 K, the oil (made-up constant
+# properties, ρ = 850, c_p = 2000, k = 0.13, μ = 0.005) at the right at
+# 300 K. Both enter with their fully developed velocity profiles; the oil
+# speed makes the two capacity rates equal (C_r = 1), so the wall heat flux
+# is uniform and each channel has the fully developed Nusselt number of a
+# flat duct heated on one side with the other insulated, Nu = 5.385 on
+# D_h = 2h (Shah & London 1978, Table 51):
+#
+#   h_w = 820.5, h_o = 175.0 W/(m² K), 1/U = 1/h_w + t/k + 1/h_o,
+#   U = 143.56 W/(m² K), C = 20.830 W/K per m of depth,
+#   NTU = U L / C = 3.446, ε = NTU/(1 + NTU) = 0.7751 (C_r = 1).
+#
+# The two fluids are separate fluid parts (REG005 in the log), each with
+# its own pressure outlet. The run checks the effectiveness from the water
+# outlet against ε–NTU (within 2 %, the thermal entry lengths are a few
+# per cent of L) and that the heat leaving the water equals the heat taken
+# up by the oil (the ledger of the two parts and the plate).
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [0.5, 0.0045, 0.001]
+cells = [200, 18, 1]
+split = [
+  { boundary = "xmin", axis = "y", at = 0.0025, name = "oil_out" },
+  { boundary = "xmin", axis = "y", at = 0.002, name = "plate_left" },
+  { boundary = "xmax", axis = "y", at = 0.0025, name = "oil_in" },
+  { boundary = "xmax", axis = "y", at = 0.002, name = "plate_right" },
+]
+zones = [
+  { name = "water", lower = [0.0, 0.0, 0.0], upper = [0.5, 0.002, 0.001] },
+  { name = "plate", lower = [0.0, 0.002, 0.0], upper = [0.5, 0.0025, 0.001] },
+  { name = "oil", lower = [0.0, 0.0025, 0.0], upper = [0.5, 0.0045, 0.001] },
+]
+
+[fluid]
+material = "water"
+temperature = 300.0
+
+[materials.light-oil]
+kind = "liquid"
+description = "a made-up light oil with constant properties (not a database material)"
+density = 850.0
+viscosity = 0.005
+specific_heat = 2000.0
+conductivity = 0.13
+
+[materials.plate-steel]
+kind = "solid"
+description = "a stainless steel plate with constant properties"
+density = 7900.0
+specific_heat = 500.0
+conductivity = 15.0
+
+[regions.water]
+kind = "fluid"
+zones = ["water"]
+
+[regions.oil]
+kind = "fluid"
+zones = ["oil"]
+material = "light-oil"
+
+[regions.plate]
+kind = "solid"
+zones = ["plate"]
+material = "plate-steel"
+
+[energy]
+initial = 320.0
+temperature_dependent = false
+
+# water: mean speed 2.5 mm/s (Re = 11.7), fully developed profile
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = ["0.015*(y/0.002)*(1 - y/0.002)", "0", "0"]
+[boundary.xmin.energy]
+temperature = 340.0
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+
+# oil: mean speed 6.1265 mm/s against x, the same capacity rate
+[boundary.oil_in]
+type = "velocity-inlet"
+velocity = ["-0.036759001803*((y - 0.0025)/0.002)*(1 - (y - 0.0025)/0.002)", "0", "0"]
+[boundary.oil_in.energy]
+temperature = 300.0
+[boundary.oil_out]
+type = "static-pressure-outlet"
+pressure = 0.0
+
+[boundary.plate_left]
+type = "wall"
+[boundary.plate_right]
+type = "wall"
+[boundary.ymin]
+type = "wall"
+[boundary.ymax]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-9
+max_iterations = 3000
