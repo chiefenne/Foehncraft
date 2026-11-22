@@ -261,8 +261,8 @@ const FILES: &[(&str, &str)] = &[
     ("channel_2d.su2", "su2"),
     ("cubes_mixed_3d.su2", "su2"),
     ("multizone/rotor_stator.su2", "su2"),
-    ("industry_msh/channel_hex.msh", "industry_msh"),
-    ("industry_msh/dual_polyhedra.msh", "industry_msh"),
+    ("fluent_msh/channel_hex.msh", "fluent_msh"),
+    ("fluent_msh/dual_polyhedra.msh", "fluent_msh"),
     ("vtk/channel_mixed_ascii.vtk", "vtk"),
     ("vtk/channel_mixed_binary.vtk", "vtk"),
     ("vtk/channel_mixed_ascii.vtu", "vtk"),
@@ -315,8 +315,8 @@ fn su2_reader_survives_the_corpus() {
 }
 
 #[test]
-fn industry_msh_reader_survives_the_corpus() {
-    for &(f, r) in FILES.iter().filter(|x| x.1 == "industry_msh") {
+fn fluent_msh_reader_survives_the_corpus() {
+    for &(f, r) in FILES.iter().filter(|x| x.1 == "fluent_msh") {
         corpus_of(f, r, ReadOptions::default());
     }
 }
@@ -560,7 +560,7 @@ fn hand_written_broken_inputs_are_refused() {
         let name: &'static str = match fname.split('_').next().unwrap() {
             "gmsh" => "gmsh",
             "su2" => "su2",
-            "industry" => "industry_msh",
+            "fluent" => "fluent_msh",
             "vtk" => "vtk",
             "openfoam" => "openfoam",
             other => panic!("{fname}: unknown reader prefix {other}"),

@@ -403,10 +403,11 @@ fn quadratic_points(
         pts.push((i, x));
     };
     // the neighbours of the neighbours; a third ring where that leaves
-    // fewer than `min` points (corner cells)
+    // fewer than `min` points (corner cells), a fourth where even that
+    // does (corners of a fit without boundary points)
     let mut frontier: Vec<(u32, [f64; 3])> = vec![(c as u32, [0.0; 3])];
-    for layer in 0..3 {
-        if layer == 2 && pts.len() >= min {
+    for layer in 0..4 {
+        if layer >= 2 && pts.len() >= min {
             break;
         }
         let mut next = Vec::new();
@@ -585,6 +586,53 @@ pub fn quadratic_gradient_errors(
         .collect()
 }
 
+/// The error of the fit `q` for linear fields per treated cell (in the
+/// order of `q.cells`), |Σ_k w_k (φ_k − φ_c) − ∇φ| L over the coordinate
+/// fields φ = x_i / L, L the largest extent of the mesh: zero up to
+/// round-off where the fit has full rank. With the fit of the strain
+/// gradient of the curvature correction (D236 step 3) this is its error
+/// for the linear strain of a quadratic velocity, the strain itself taken
+/// from a gradient that is exact for quadratic fields.
+pub fn quadratic_linear_errors(
+    mesh: &Mesh,
+    geo: &Geometry,
+    kind: &[BoundaryKind],
+    q: &QuadraticGradient,
+) -> Vec<f64> {
+    let dims = q.dims;
+    let (lo, hi) = mesh.bounding_box();
+    let len = (0..3)
+        .map(|i| hi[i] - lo[i])
+        .fold(0.0, f64::max)
+        .max(1e-300);
+    let xc = &geo.cell_centroid;
+    (0..q.cells.len())
+        .into_par_iter()
+        .map(|t| {
+            let c = q.cells[t] as usize;
+            let pts = quadratic_points(mesh, geo, kind, c, 2 * (dims + dims * (dims + 1) / 2));
+            let a = q.ptr[t] as usize;
+            let mut worst = 0.0f64;
+            for i in 0..dims {
+                let mut g = [0.0; 3];
+                for (k, (_, x)) in pts.iter().enumerate() {
+                    let v = (x[i] - xc[c][i]) / len;
+                    g[0] += q.w.x[a + k] * v;
+                    g[1] += q.w.y[a + k] * v;
+                    g[2] += q.w.z[a + k] * v;
+                }
+                let mut e = [0.0; 3];
+                e[i] = 1.0 / len;
+                for (d, gd) in g.iter_mut().enumerate().skip(dims) {
+                    *gd = e[d];
+                }
+                worst = worst.max(norm(sub(g, e)) * len);
+            }
+            worst
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -669,6 +717,18 @@ mod tests {
             let e = quadratic_gradient_errors(&mesh, &geo, &kinds, &q);
             let worst = e.iter().cloned().fold(0.0, f64::max);
             assert!(worst < 1e-8, "{m:?} {p}: {worst:e}");
+            // the fit without boundary points (the strain gradient of the
+            // curvature correction) is exact for linear fields
+            let zero = vec![BoundaryKind::ZeroGradient; kinds.len()];
+            let qs = quadratic_gradient(&mesh, &geo, &zero, 3, &cells);
+            assert!(
+                qs.failed.is_empty(),
+                "{m:?} {p}: {} failed",
+                qs.failed.len()
+            );
+            let e = quadratic_linear_errors(&mesh, &geo, &zero, &qs);
+            let worst = e.iter().cloned().fold(0.0, f64::max);
+            assert!(worst < 1e-8, "{m:?} {p}: linear {worst:e}");
         }
     }
 

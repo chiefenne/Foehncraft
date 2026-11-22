@@ -1,0 +1,77 @@
+# Gas heated on its way through a duct: the variable density of stage 7c
+# (D151) against the exact balances of a one-dimensional low-Mach flow.
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/vd_heated_duct.toml
+#
+# An ideal gas with the molar mass of air (ρ = p₀ M/(R T), constant c_p =
+# 1005 J/(kg K), k and μ) enters a duct 1 m long and 0.1 m high at 1 m/s
+# and 300 K; the side walls are slip walls, so the flow is one-
+# dimensional. A uniform heat source q''' = 5.9131e5 W/m³ in the middle
+# section 0.4 m < x < 0.6 m heats it by ΔT = q''' · 0.2 m/(ρ_in u_in c_p)
+# = 100 K. The thermodynamic pressure is the operating pressure
+# 101 325 Pa (the outlet is open to an ambient). Exact, for any mesh at
+# the solver tolerance: the mass flux G = ρ u is the same at both ends,
+# the outlet velocity is u_out = u_in T_out/T_in = 1.3333 m/s, the heat
+# ṁ c_p ΔT equals the source Q, and the momentum balance of the inviscid
+# duct gives p_in − p_out = G² (1/ρ_out − 1/ρ_in) = 0.3922 Pa (the
+# acceleration of the expanding gas). Check V7c.1 of the stage 7c design.
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [1.0, 0.1, 0.01]
+cells = [100, 4, 1]
+
+[materials.gas]
+kind = "gas"
+description = "an ideal gas with the molar mass of dry air and constant properties"
+molar_mass = 0.0289647
+density = { form = "ideal-gas", source = "ideal gas, rho = p M / (R T)" }
+specific_heat = 1005.0
+conductivity = 0.0263
+viscosity = 1.8e-5
+
+[fluid]
+material = "gas"
+temperature = 300.0
+
+[initial]
+velocity = [1.0, 0.0, 0.0]   # the inlet velocity (from rest the source would boil the still gas)
+
+[energy]
+initial = 300.0
+source = "if(x > 0.4, if(x < 0.6, 5.9131e5, 0.0), 0.0)"
+density = "variable"
+
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [1.0, 0.0, 0.0]
+[boundary.xmin.energy]
+temperature = 300.0
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymin]
+type = "slip-wall"
+[boundary.ymin.energy]
+heat_flux = 0.0
+[boundary.ymax]
+type = "slip-wall"
+[boundary.ymax.energy]
+heat_flux = 0.0
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-10
+max_iterations = 2000
+
+[verification]
+require_convergence = true
+
+[output]
+wall_csv = false

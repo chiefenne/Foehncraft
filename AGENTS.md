@@ -48,9 +48,12 @@ detail are in [CONTRIBUTING.md](CONTRIBUTING.md).
   (scalars with their citation, no data sets), measurements, correlations
   and analytic solutions are accepted references: D201 targets
   code-to-code RANS/CFD numbers, not DNS.
-- **MUST NOT** name commercial CFD solvers, or other codes we assess,
-  anywhere: code, docs, commit messages, pull requests. Say "industry
-  standards" or "modern development codes".
+- **MAY** name commercial CFD solvers and other codes where it is
+  appropriate (a file format, an interface, a published reference), as
+  long as it breaks neither the clean-room rules nor their licences (owner
+  decision 2026-11-22; before that the rule was to say "industry
+  standards"). Mark trademarks with a note where a name is used as the name
+  of a format. Never read copyleft source, never copy code.
 - **MUST** keep data under restrictive licences out of the repository;
   only the published numbers go in (see
   [docs/verification/DATA_SOURCES.md](docs/verification/DATA_SOURCES.md)).

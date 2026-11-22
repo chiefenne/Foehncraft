@@ -186,7 +186,9 @@ fn buoyancy_needs_gravity_and_energy() {
     assert_eq!(code, "BUO001", "{msg}");
     let (code, msg) = refused(&base.replace("expansion_coefficient = 1e-3\n", ""));
     assert_eq!(code, "BUO003", "{msg}");
+    // the variable-density model (stage 7c) needs a density that depends on
+    // the temperature; the box has one constant density
     let (code, msg) =
         refused(&base.replace("model = \"boussinesq\"", "model = \"variable-density\""));
-    assert_eq!(code, "ENE006", "{msg}");
+    assert_eq!(code, "ENE009", "{msg}");
 }

@@ -3,7 +3,8 @@
 //! For every monitored quantity of a sweep with three or more solutions
 //! (boundary mass flows, mean pressures and forces, force coefficients,
 //! wall probes and wall crossings, benchmark values, viscous and
-//! numerical dissipation) the report gives
+//! numerical dissipation, the heat flows of the energy equation, p₀ of a
+//! closed volume) the report gives
 //! the observed order, the extrapolated value, the uncertainty band and
 //! the grid convergence index of the three finest solutions, after the procedure of
 //! Celik, Ghia, Roache, Freitas, Coleman and Raad (2008), with the verdict
@@ -242,6 +243,35 @@ pub fn quantities(solve: &serde_json::Value) -> Vec<(String, f64)> {
                 out.push((format!("benchmark.{n}"), v));
             }
         }
+    }
+    // the heat flow through each boundary of the energy equation (stage 7)
+    for sc in solve
+        .get("scalars")
+        .and_then(|s| s.as_array())
+        .into_iter()
+        .flatten()
+    {
+        let s = sc.get("name").and_then(|n| n.as_str()).unwrap_or("?");
+        for p in sc
+            .get("boundaries")
+            .and_then(|b| b.as_array())
+            .into_iter()
+            .flatten()
+        {
+            let name = p.get("boundary").and_then(|n| n.as_str()).unwrap_or("?");
+            if let Some(v) = p.get("heat_flow").and_then(num).filter(|v| *v != 0.0) {
+                out.push((format!("scalars.{s}.{name}.heat_flow"), v));
+            }
+        }
+    }
+    // the thermodynamic pressure of a closed volume (stage 7c)
+    if let Some(v) = solve
+        .get("density")
+        .filter(|d| d.get("closed_volume").and_then(|c| c.as_bool()) == Some(true))
+        .and_then(|d| d.get("p0"))
+        .and_then(num)
+    {
+        out.push(("density.p0".into(), v));
     }
     if let Some(k) = solve
         .get("balance")

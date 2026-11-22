@@ -18,7 +18,8 @@
 > with solid regions, steady and transient, laminar and turbulent, with
 > contact resistances, orthotropic solids, thermal acceleration of the
 > solids and the cycle-averaged loop for periodic flows, are in, and so are
-> gravity and the Boussinesq buoyancy; variable density comes next.
+> gravity, the Boussinesq buoyancy and the low-Mach variable density
+> ρ(T, p₀).
 
 [![CI](https://github.com/chiefenne/Foehncraft/actions/workflows/ci.yml/badge.svg)](https://github.com/chiefenne/Foehncraft/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/chiefenne/Foehncraft)](https://github.com/chiefenne/Foehncraft/releases)
@@ -54,7 +55,7 @@ lists its limitations (a partial feature in use, a value outside the
 validated range, one mesh only, …) in its report and its JSON result.
 
 - **Meshes.** Arbitrary polyhedral cells in 2D and 3D; the Gmsh v4, SU2, CGNS (HDF5),
-  OpenFOAM polyMesh, industry `.msh` and VTK (`.vtk`, `.vtu`) readers behind one
+  OpenFOAM polyMesh, Fluent `.msh` and VTK (`.vtk`, `.vtu`) readers behind one
   mesh-format interface (2D SU2 files extruded one layer), a VTU writer;
   a built-in test mesher (hexahedra, tetrahedra, prisms, polyhedra; graded
   segments, the cylinder O-grid, annuli for rotors); a quality report with
@@ -86,13 +87,12 @@ validated range, one mesh only, …) in its report and its JSON result.
   rotation correction of SST
   (Smirnov & Menter 2009), a whole domain in a turning frame, and the
   quadratic constitutive relation QCR2000/QCR2013 for the secondary flow
-  of non-circular ducts, whose stress divergence converges on
-  tetrahedra and perturbed cells through a quadratic least-squares
-  velocity gradient on the cells the operator check flags (D236).
+  of non-circular ducts; both converge on tetrahedra and perturbed cells
+  through a quadratic least-squares velocity fit (gradient and Hessian)
+  on the cells the operator check flags (D236).
   Second order verified with manufactured
   solutions of every model on hex, polyhedral and tetrahedral cells
-  (the curvature correction is not yet convergent on tetrahedra, PR #184;
-  the QCR stress is first order there); validated on the flat plate, the channel against DNS, the backward-facing step and
+  (the QCR stress is first order on tetrahedra); validated on the flat plate, the channel against DNS, the backward-facing step and
   the impinging jet.
 - **Heat and mass transfer.** Passive scalars (temperature, concentration)
   carried by laminar and turbulent flow, with the turbulent Prandtl number
@@ -142,6 +142,17 @@ validated range, one mesh only, …) in its report and its JSON result.
   perturbed hex, tet, poly or mixed mesh stays at rest to 10⁻¹⁵ m/s; the
   buoyant slot meets its exact profile at second order, and a warm strip
   in a closed air enclosure drives a laminar plume (gallery 186).
+- **Variable density.** The low-Mach density ρ(T, p₀) of an ideal gas or a
+  liquid in every cell and face (`[energy] density = "variable"`, or
+  `[buoyancy] model = "variable-density"` with the body force (ρ − ρ_ref)
+  g), with SIMPLEC and the coupled algorithm, steady and transient,
+  turbulent and in conjugate heat transfer. p₀ is the operating pressure
+  of an open domain, or follows from the fixed mass of a closed volume,
+  with the pressure work that makes a closed gas heat with c_v. A heated
+  duct meets its exact balances, a closed box heated uniformly its exact
+  p₀(t), a manufactured solution with ρ = 1/T converges at second order,
+  and air between walls at 960 K and 240 K has a heat flow with GCI
+  0.02 % (gallery 195).
 - **Rotating machinery.** The moving reference frame (steady and transient
   frozen rotor), the sliding mesh by conformal stepping and by imprinting
   the interface in every step, several rotors at their own speeds,
@@ -275,7 +286,7 @@ The [changelog](CHANGELOG.md) lists every release.
 | `foehncraft-core` | generic floating-point type, index types, reproducible sums, counter-based random numbers (`no_std`) |
 | `foehncraft-kernels` | compute kernels, one source for CPU and GPU (`no_std`): benchmark, scalar operators, multigrid, flow |
 | `foehncraft-parallel` | communicator (serial, MPI), reproducible threaded reductions |
-| `foehncraft-mesh` | polyhedral mesh, geometry, quality report, mesh-format layer with the Gmsh, SU2, CGNS, OpenFOAM, industry .msh and VTK readers, test mesher (also the cylinder benchmark mesh and annuli for rotors), partitioning and halo, VTKHDF output, point location, wall distance, the imprint of sliding interfaces |
+| `foehncraft-mesh` | polyhedral mesh, geometry, quality report, mesh-format layer with the Gmsh, SU2, CGNS, OpenFOAM, Fluent .msh and VTK readers, test mesher (also the cylinder benchmark mesh and annuli for rotors), partitioning and halo, VTKHDF output, point location, wall distance, the imprint of sliding interfaces |
 | `foehncraft-fv` | finite-volume operators on a scalar (gradients, limiters, convection, diffusion, assembly), BiCGStab, and the pressure solver: CG with smoothed-aggregation multigrid in mixed precision, optional hypre reference; CPU backend (the GPU backend is in `foehncraft-cuda`) |
 | `foehncraft-flow` | incompressible flow: SIMPLEC and SIMPLE (steady), PISO with BDF2 and Crank–Nicolson (transient), the coupled algorithm, the Rhie–Chow interpolation, boundary conditions and their check, turbulence models and wall treatments, passive scalars and thermal wall functions, the moving reference frame and sliding meshes, torque and machine performance, restart and control files, probes and force coefficients, the flow device written once over a CPU or GPU executor, the `foehn flow` case, exact solutions, reference and benchmark data |
 | `foehncraft-bench` | gate G1: kernel benchmark, CPU backends |

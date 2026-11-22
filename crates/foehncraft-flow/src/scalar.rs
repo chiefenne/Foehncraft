@@ -305,6 +305,7 @@ const RESERVED: &[&str] = &[
     "speed",
     "pressure",
     "static_pressure",
+    "density",
     "velocity_error",
     "wall_distance",
     "x",
@@ -725,6 +726,34 @@ struct EnergyField {
     /// Heat added to cells (W per cell): the defect of the mean-flow model
     /// of the cycle loop's solid phase (D204).
     extra_heat: Option<Vec<f64>>,
+    /// The variable density of the fluid (stage 7c), set by the flow
+    /// after each refresh of ρ(T, p₀).
+    var_rho: Option<VarRho>,
+}
+
+/// The variable density of the fluid in the energy equation (stage 7c):
+/// ρ per cell of the energy mesh (the solids keep their own), ∂ρ/∂t per
+/// cell (the mass source of the continuity, for the ledger) and the
+/// pressure work dp₀/dt of a closed volume (W/m³ in the fluid cells).
+#[derive(Debug, Clone, Default)]
+pub struct VarRho {
+    /// ρ per cell (kg/m³); NaN where a solid keeps its own density.
+    pub rho: Vec<f64>,
+    /// ∂ρ/∂t per cell (kg/(m³ s)); empty outside a time step.
+    pub drho_dt: Vec<f64>,
+    /// dp₀/dt (Pa/s), the heat source of the pressure work in the fluid.
+    pub pressure_work: f64,
+}
+
+impl EnergyField {
+    /// The true density of cell `c` (the variable one of the fluid in stage
+    /// 7c, else that of its material; no thermal acceleration).
+    fn cell_rho(&self, c: usize) -> f64 {
+        match self.var_rho.as_ref().map(|v| v.rho[c]) {
+            Some(r) if !r.is_nan() => r,
+            _ => self.mats[self.mat_cell[c] as usize].rho,
+        }
+    }
 }
 
 /// The power density of a region source.
@@ -1793,7 +1822,16 @@ impl Scalars {
             if a2 != 0.0 {
                 l += a2 * h.at(t2[c]);
             }
-            per[m] += e.mats[m].rho * e.volume[c] * l / st.dt;
+            match e.var_rho.as_ref().filter(|v| !v.rho[c].is_nan()) {
+                // the bounded convection Σ ṁ (h_f − h_P) adds h_P ∂ρ/∂t
+                // to the boundary outflow Σ ṁ h_f: the storage of the
+                // ledger is ∂(ρ h)/∂t (stage 7c)
+                Some(v) => {
+                    let d = v.drho_dt.get(c).copied().unwrap_or(0.0);
+                    per[m] += e.volume[c] * (v.rho[c] * l / st.dt + h.at(t[c]) * d);
+                }
+                None => per[m] += e.mats[m].rho * e.volume[c] * l / st.dt,
+            }
         }
         // with a thermal acceleration (D213) the equation stores f times
         // the heat of the true ρ c_p; the rest is booked as inertia scaling
@@ -1858,6 +1896,36 @@ impl Scalars {
             .unwrap_or_default()
     }
 
+    /// The temperature per boundary face of the energy equation, T_b = a
+    /// T_P + b with the boundary coefficients of the last refresh (stage
+    /// 7c: the density of the boundary faces).
+    pub fn energy_boundary_temperature(
+        &self,
+        dev: &mut dyn FlowDevice,
+    ) -> Result<Option<Vec<f64>>> {
+        let Some(f) = self.fields.iter().find(|f| f.energy.is_some()) else {
+            return Ok(None);
+        };
+        let e = f.energy.as_deref().expect("energy");
+        let ni = e.neighbour.len();
+        let t = dev.download(f.phi)?;
+        let a = dev.download(f.bc_a)?;
+        let b = dev.download(f.bc_b)?;
+        Ok(Some(
+            (0..a.len())
+                .map(|fb| a[fb] * t[e.owner[ni + fb] as usize] + b[fb])
+                .collect(),
+        ))
+    }
+
+    /// Sets the variable density of the fluid (stage 7c): it acts from the
+    /// next energy solve.
+    pub fn set_energy_density(&mut self, v: Option<VarRho>) {
+        if let Some(e) = self.fields.iter_mut().find_map(|f| f.energy.as_deref_mut()) {
+            e.var_rho = v;
+        }
+    }
+
     /// Sets the factor on ρ c_p per region (D213); it acts from the next
     /// energy solve. Only between time steps: the storage of a step is
     /// then that of one factor.
@@ -1882,10 +1950,17 @@ impl Scalars {
         };
         let t = dev.download(f.phi)?;
         let mut out = vec![(0.0, 0.0, 0.0); e.regions.len()];
-        for (((&m, &v), &cp), &tc) in e.mat_cell.iter().zip(&e.volume).zip(&e.cp_cell).zip(&t) {
+        for (c, (((&m, &v), &cp), &tc)) in e
+            .mat_cell
+            .iter()
+            .zip(&e.volume)
+            .zip(&e.cp_cell)
+            .zip(&t)
+            .enumerate()
+        {
             let m = m as usize;
             out[m].0 += v;
-            out[m].1 += e.mats[m].rho * cp * v;
+            out[m].1 += e.cell_rho(c) * cp * v;
             out[m].2 += tc * v;
         }
         for o in &mut out {
@@ -2362,6 +2437,7 @@ impl Scalars {
             || !sec.sources.is_empty()
             || enthalpy.iter().any(|h| !h.is_constant())
             || sec.cycle.is_some()
+            || crate::density::wanted(case)
         {
             Some(put(&vec![0.0; nc])?)
         } else {
@@ -2523,6 +2599,7 @@ impl Scalars {
             held: None,
             robin_sp: None,
             extra_heat: None,
+            var_rho: None,
             fluid,
             mats,
             mat_cell,
@@ -2749,7 +2826,7 @@ fn refresh_energy(
     // ρ with the factor of a thermal acceleration (D213): the time term and
     // the storage of h_s take it, the convection (Ċ) does not
     let rho: Vec<f64> = (0..nc)
-        .map(|c| mats[mc[c] as usize].rho * e.inertia[mc[c] as usize])
+        .map(|c| e.cell_rho(c) * e.inertia[mc[c] as usize])
         .collect();
     let cap: Vec<f64> = e.cp_cell.iter().zip(&rho).map(|(c, r)| r * c).collect();
     dev.upload(e.capacity, &cap)?;
@@ -2829,6 +2906,14 @@ fn refresh_energy(
                     for &c in cells {
                         heat[c as usize] += q;
                     }
+                }
+            }
+        }
+        // the pressure work dp₀/dt of a closed volume (stage 7c)
+        if let Some(v) = e.var_rho.as_ref().filter(|v| v.pressure_work != 0.0) {
+            for (h, r) in heat.iter_mut().zip(&v.rho) {
+                if !r.is_nan() {
+                    *h += v.pressure_work;
                 }
             }
         }

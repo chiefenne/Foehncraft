@@ -886,6 +886,16 @@ pub trait FlowDevice {
     /// boundary pressure (`n_boundary` values). Without a call both are
     /// absent and the operations are those without gravity, bit for bit.
     fn set_balanced_force(&mut self, jump: &[f64], pb: &[f64]) -> Result<()>;
+    /// The variable-density cell arrays of stage 7c (D151): the mass
+    /// source V ∂ρ/∂t of the continuity rows and the densities ρⁿ, ρⁿ⁻¹ of
+    /// the momentum time term; `None` clears an array (no source, the
+    /// current density for the old levels).
+    fn set_variable_density(
+        &mut self,
+        source: Option<&[f64]>,
+        old: Option<&[f64]>,
+        old2: Option<&[f64]>,
+    ) -> Result<()>;
     /// Uploads the static arrays of the wall treatment.
     fn wall_setup(&mut self, s: &WallStatic) -> Result<()>;
     /// The k-ω SST model per cell.

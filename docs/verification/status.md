@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**101 features: 49 verified, 48 partial, 4 unverified.**
+**102 features: 50 verified, 49 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -30,7 +30,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Meshes | [SU2 reader (2D extruded, multi-zone)](#mesh-su2) | verified |
 | Meshes | [CGNS (HDF5) reader](#mesh-cgns) | partial |
 | Meshes | [OpenFOAM polyMesh reader](#mesh-openfoam) | partial |
-| Meshes | [Industry face-based .msh reader](#mesh-industry-msh) | partial |
+| Meshes | [Fluent face-based .msh reader](#mesh-fluent-msh) | partial |
 | Meshes | [VTK reader (.vtk, .vtu) and VTU writer](#mesh-vtk) | partial |
 | Meshes | [Partitioning with METIS and halos](#mesh-partition) | partial |
 | Meshes | [Quality report and automatic remediation of skewed cells](#mesh-quality-remediation) | partial |
@@ -100,6 +100,8 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Conjugate heat transfer | [Heat sources per region](#cht-region-source) | partial |
 | Buoyancy | [Gravity and the Boussinesq buoyancy (balanced force)](#buoyancy-boussinesq) | partial |
 | Buoyancy | [Reduced and static pressure at pressure boundaries](#buoyancy-pressure-kind) | verified |
+| Buoyancy | [Low-Mach variable density ρ(T, p₀)](#buoyancy-variable-density) | partial |
+| Buoyancy | [Thermodynamic pressure of a closed volume](#buoyancy-closed-volume) | verified |
 | Rotating machinery | [Moving reference frame (steady frozen rotor)](#rotating-mrf) | partial |
 | Rotating machinery | [Transient frozen rotor](#rotating-mrf-transient) | partial |
 | Rotating machinery | [A whole domain in a turning frame](#rotating-whole-domain-frame) | partial |
@@ -125,7 +127,6 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Backends and interfaces | [Tool registry (foehn call, foehn commands, typed schemas)](#interface-tool-registry) | verified |
 | Backends and interfaces | [Journal and replay of tool calls](#interface-journal-replay) | verified |
 | Backends and interfaces | [MCP server (foehn mcp)](#interface-mcp) | verified |
-| Planned | [Low-Mach variable density ρ(T, p₀)](#planned-variable-density) | unverified |
 
 ## Meshes
 
@@ -193,18 +194,18 @@ Gaps:
 
 - no flow case of the catalogue reads a polyMesh
 
-<a id="mesh-industry-msh"></a>
+<a id="mesh-fluent-msh"></a>
 
-### Industry face-based .msh reader
+### Fluent face-based .msh reader
 
-**partial** (no exact or manufactured solution; gaps written) · id `mesh.industry-msh` · switch `mesh.format = "industry_msh"`
+**partial** (no exact or manufactured solution; gaps written) · id `mesh.fluent-msh` · switch `mesh.format = "fluent_msh"`
 
-- consistency: [`polyhedral_cells_and_mixed_faces`](../../crates/foehncraft-mesh/tests/industry_msh.rs): polyhedral cells and mixed faces
-- consistency: [`face_orientation_does_not_matter`](../../crates/foehncraft-mesh/tests/industry_msh.rs): face orientation does not change the mesh
+- consistency: [`polyhedral_cells_and_mixed_faces`](../../crates/foehncraft-mesh/tests/fluent_msh.rs): polyhedral cells and mixed faces
+- consistency: [`face_orientation_does_not_matter`](../../crates/foehncraft-mesh/tests/fluent_msh.rs): face orientation does not change the mesh
 
 Gaps:
 
-- no flow case of the catalogue reads an industry .msh file
+- no flow case of the catalogue reads a Fluent .msh file
 
 <a id="mesh-vtk"></a>
 
@@ -255,11 +256,11 @@ Gaps:
 - exact: [`regular_hexahedra_are_second_order_inside`](../../crates/foehncraft-fv/src/exactness.rs): gradient and Hessian of quadratic fields exact inside regular hexahedra, flagged at the walls
 - consistency: [`irregular_cells_are_flagged`](../../crates/foehncraft-fv/src/exactness.rs): perturbed hexahedra and tetrahedra flagged
 - consistency: [`regular_hexahedra_flag_only_the_boundary_cells`](../../crates/foehncraft-flow/src/operators.rs): MESH005 and MESH006 with the features on; only the wall cells of a regular mesh
-- consistency: [`cavity_sst_operator_check`](../../examples/cases/flow/cavity_sst_operator_check.toml): the cavity on perturbed tetrahedra: every cell flagged, operators.csv written, the run converges as without the check (passes in CI (set linux-3), not yet in the manual)
+- consistency: [`cavity_sst_operator_check`](../../examples/cases/flow/cavity_sst_operator_check.toml): the cavity on perturbed tetrahedra: every cell takes both quadratic fits, no MESH005 or MESH006 left, operators.csv written, the run converges (passes in CI (set linux-3), not yet in the manual)
 
 Gaps:
 
-- the flagged cells are not yet treated: the quadratic least-squares operators and the local remesh are the next steps of D236
+- cells where a quadratic fit fails are only flagged (MESH005, MESH006); the local remesh of such cells is deferred to v1.1 with D54 (D236 step 4)
 
 <a id="mesh-vtkhdf"></a>
 
@@ -751,11 +752,11 @@ Range: y_plus_first 0 … 1.
 - consistency: [`pure_shear_is_unchanged`](../../crates/foehncraft-flow/tests/curvature.rs): a channel without rotation unchanged to the last digit
 - reference-data: [`channel_rotating_sst`](../../examples/cases/flow/channel_rotating_sst.toml): channel in spanwise rotation, Ro 0.15: the unstable side marked
 - manufactured: [`curvature_correction_manufactured_solution_orders`](../../crates/foehncraft-flow/src/turbulence/mms.rs): orders 1.9 to 2.1 of k and ω with f_r1 (DS_ij/Dt from a flow whose strain axes turn) on hexahedra and polyhedra ([results](stage6.md#manufactured-solutions-of-k-ε-ζ-f₀-the-curvature-correction-and-the-qcr-pr-184))
+- manufactured: [`curvature_correction_on_tetrahedra_converges`](../../crates/foehncraft-flow/src/turbulence/mms.rs): order 1.9 to 2.1 of k and ω on regular and 15 % perturbed tetrahedra with S_ij from a second-order velocity gradient and the gradient of S_ij from a quadratic least-squares fit where the least-squares one is not consistent (D236) ([results](stage6.md#consistent-curvature-correction-on-irregular-meshes-d236-pr-197))
 
 Gaps:
 
 - the DNS of Kristoffersen & Andersson (1993) for the rotating channel is not compared (its data are not in the repository)
-- on tetrahedra the correction does not converge in the manufactured solution (error of k 1.3 % at all three levels): DS_ij/Dt takes the least-squares gradient of the least-squares gradient of the velocity, which is not consistent on irregular tetrahedra
 
 <a id="turbulence-qcr"></a>
 
@@ -1136,6 +1137,36 @@ Gaps:
 - consistency: [`buoyancy_open_box`](../../examples/cases/flow/buoyancy_open_box.toml): a box open over its height stays at rest with the reduced value 0 (passes in CI (set linux-3), not yet in the manual)
 - consistency: [`static_outlet_without_hydrostatics_drives_a_false_flow`](../../crates/foehncraft-flow/tests/buoyancy.rs): a uniform static value over the opening drives a flow and warns BUO006
 
+<a id="buoyancy-variable-density"></a>
+
+### Low-Mach variable density ρ(T, p₀)
+
+**partial** (a model without reference data; gaps written) · id `buoyancy.variable-density` · switch `[energy] density = "variable", [buoyancy] model = "variable-density"` · decisions D151
+
+- exact: [`vd_heated_duct`](../../examples/cases/flow/vd_heated_duct.toml): gas heated by 100 K in a slip-wall duct: equal mass flows to 10⁻¹², the outlet ΔT of ṁ c_p ΔT = Q to 10⁻⁴, the inlet pressure G²(1/ρ_out − 1/ρ_in) to 2·10⁻³ (passes in CI (set linux-3), not yet in the manual) ([results](../cases/flow.md#variable-density))
+- exact: [`heated_duct_meets_the_one_dimensional_balances`](../../crates/foehncraft-flow/tests/variable_density.rs): the three balances of the duct and the heat ledger to 10⁻⁸
+- manufactured: [`vd_mms_steady`](../../examples/cases/flow/vd_mms_steady.toml): ρ = 1/T, a divergence-free mass flux, the full stress, a closed volume: observed orders 2.22 and 1.92 (velocity), 1.86 and 1.90 (temperature) (passes in CI (set linux-3), not yet in the manual) ([results](../cases/flow.md#variable-density))
+- manufactured: [`manufactured_solution_converges_at_second_order`](../../crates/foehncraft-flow/tests/variable_density.rs): second order on hexahedra and polygons; SIMPLEC and the coupled algorithm on the same discrete solution
+- consistency: [`vd_cavity_large_dt`](../../examples/cases/flow/vd_cavity_large_dt.toml): air in a cavity with walls at 960 K and 240 K: heat flow order 2.13, GCI 0.020 %; p₀ order 2.2, GCI 0.003 % (passes in CI (set long), not yet in the manual) ([results](../gallery/energy.md#variable-density))
+- consistency: [`variable_density_settings_are_checked`](../../crates/foehncraft-flow/tests/variable_density.rs): the settings without a low-Mach meaning or not built yet are refused with their codes
+
+Gaps:
+
+- no reference-data case (a measured flow with a large temperature difference)
+- not yet with passive scalars, a restart, periodic meshes, convective outlets, mass-flow inlets, wall mass fluxes or rotating zones (ENE006)
+- the turbulence outlet value ⅔ρk uses the reference density
+
+<a id="buoyancy-closed-volume"></a>
+
+### Thermodynamic pressure of a closed volume
+
+**verified** · id `buoyancy.closed-volume` · switch `[energy] thermodynamic_pressure = "closed-volume"` · decisions D151
+
+- exact: [`vd_closed_box_heating`](../../examples/cases/flow/vd_closed_box_heating.toml): a closed box at rest heated uniformly: T and p₀(t) linear in t, exact to 10⁻¹⁰ at any Δt; with pressure_work = "none" it warms with c_p (passes in CI (set linux-3), not yet in the manual) ([results](../cases/flow.md#variable-density))
+- exact: [`closed_box_heated_uniformly_warms_with_c_v`](../../crates/foehncraft-flow/tests/variable_density.rs): p₀ and T exact, the mass to 10⁻¹³
+- consistency: [`vd_closed_box_side_heated`](../../examples/cases/flow/vd_closed_box_side_heated.toml): a closed box heated through one wall: the mass to round-off, the mass ledger of every step closes with the storage (passes in CI (set linux-3), not yet in the manual) ([results](../cases/flow.md#variable-density))
+- consistency: [`closed_box_heated_on_one_side_keeps_its_mass`](../../crates/foehncraft-flow/tests/variable_density.rs): mass to 10⁻¹³, step mass imbalance below 10⁻⁸, heat ledger below 10⁻⁶
+
 ## Rotating machinery
 
 <a id="rotating-mrf"></a>
@@ -1449,15 +1480,3 @@ Contracts: `replay`, `schema`.
 - contract (diagnostics): [`refuses_to_start_without_both_roots`](../../crates/foehncraft-cli/tests/mcp.rs): no roots, no start
 
 Contracts: `equivalence`, `replay`, `control`, `diagnostics`.
-
-## Planned
-
-<a id="planned-variable-density"></a>
-
-### Low-Mach variable density ρ(T, p₀)
-
-**unverified** (no evidence holds) · id `planned.variable-density` · switch `not built` · decisions D151
-
-Gaps:
-
-- not built (stage 7c; the Boussinesq buoyancy is in, buoyancy.boussinesq)

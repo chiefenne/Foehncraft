@@ -100,6 +100,28 @@ pub struct EnergySection {
     /// a factor until their temperatures settle, then restored.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub acceleration: Option<Acceleration>,
+    /// `constant` (default): one density, that of `[fluid] temperature`;
+    /// `variable`: ρ(T, p₀) from the fluid's density form in every cell, the
+    /// low-Mach variable density of stage 7c (D151).
+    #[serde(
+        default,
+        skip_serializing_if = "crate::density::DensityModel::is_default"
+    )]
+    pub density: crate::density::DensityModel,
+    /// The thermodynamic pressure p₀ of the variable density: `constant`
+    /// (default; `[fluid] operating_pressure`, a domain open to an ambient)
+    /// or `closed-volume` (p₀(t) from the fixed mass of a closed domain).
+    #[serde(
+        default,
+        skip_serializing_if = "crate::density::ThermodynamicPressure::is_default"
+    )]
+    pub thermodynamic_pressure: crate::density::ThermodynamicPressure,
+    /// The pressure work of the energy equation: `none` or `thermodynamic`
+    /// (dp₀/dt per unit volume). Default: `thermodynamic` in a closed volume
+    /// (otherwise a heated gas would warm with c_p instead of c_v), `none`
+    /// in an open domain, where p₀ is constant.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pressure_work: Option<crate::density::PressureWork>,
     /// Cycle-averaged coupling of a periodic flow with its solids (D204,
     /// [`crate::cycle`]): the flow runs over cycles with the solids held,
     /// the cycle-mean interface heat transfer goes to a steady solve of the

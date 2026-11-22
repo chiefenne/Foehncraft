@@ -1,6 +1,6 @@
 # Meshes
 
-Part of the [Recipes](../recipes.md): generate, read (Gmsh, SU2, CGNS, OpenFOAM, industry .msh, VTK), convert and partition meshes, update the mesher's golden values, run flows on poor Gmsh meshes.
+Part of the [Recipes](../recipes.md): generate, read (Gmsh, SU2, CGNS, OpenFOAM, Fluent .msh, VTK), convert and partition meshes, update the mesher's golden values, run flows on poor Gmsh meshes.
 
 | # | Recipe |
 |---|---|
@@ -11,7 +11,7 @@ Part of the [Recipes](../recipes.md): generate, read (Gmsh, SU2, CGNS, OpenFOAM,
 | 36 | [Run a flow on raw Gmsh tetrahedra (skewed faces)](#skewed-tets) |
 | 127 | [Read an SU2 mesh and map its markers to boundary conditions](#mesh-su2) |
 | 129 | [Read a CGNS or OpenFOAM mesh](#mesh-cgns-openfoam) |
-| 134 | [Read an industry `.msh` or VTK mesh, write a VTU](#mesh-msh-vtk) |
+| 134 | [Read a Fluent `.msh` or VTK mesh, write a VTU](#mesh-msh-vtk) |
 | 138 | [Run a rotor/stator sliding case from a multi-zone SU2 or CGNS file](#mesh-multizone) |
 | 189 | [Check which cells the velocity gradient and Hessian are exact on](#operator-check) |
 
@@ -198,7 +198,7 @@ target/release/foehn flow examples/cases/flow/naca0012_su2_re1000.toml
 ```toml
 [mesh]
 file = "wing.su2"          # the format follows from the extension, or:
-format = "su2"             # gmsh | su2 | industry_msh | cgns | vtk | openfoam, for a file with another extension
+format = "su2"             # gmsh | su2 | fluent_msh | cgns | vtk | openfoam, for a file with another extension
 thickness = 0.01           # 2D files: layer thickness, in the file's units
 scale = 0.001              # millimetres to metres (after the extrusion)
 
@@ -263,17 +263,17 @@ and 2D CGNS files and structured zones are refused.
 ---
 
 <a id="mesh-msh-vtk"></a>
-## 134. Read an industry `.msh` or VTK mesh, write a VTU
+## 134. Read a Fluent `.msh` or VTK mesh, write a VTU
 
 Two more readers (D191, D192) and a writer.
 
-- **Industry `.msh`.** The ASCII, 3D, face-based text file that many
+- **Fluent `.msh`.** The ASCII, 3D, face-based text file that many
   commercial meshers and solvers write: nodes, cells and faces with the two
   cells on each side, zones with names. Cell shapes do not matter, so
   polyhedral meshes read as they are. Every face zone that is not of the type
   `interior` is a boundary of its name, the cell zones are the cell zones.
   The extension `.msh` is shared with Gmsh: the first bytes tell them apart,
-  and `format = "industry_msh"` forces the reader. Binary files and 2D files
+  and `format = "fluent_msh"` forces the reader. Binary files and 2D files
   are refused with the hint what to do.
 - **VTK.** Legacy `.vtk` (ASCII, binary) and XML `.vtu` (ASCII, base64,
   appended, zlib-compressed: what ParaView saves). The volume cells are
@@ -288,7 +288,7 @@ Two more readers (D191, D192) and a writer.
 - **Writing a VTU.** `output.vtu = true` in the mesh case, or `--vtu`:
 
 ```
-target/release/foehn mesh crates/foehncraft-mesh/tests/data/industry_msh/dual_polyhedra.msh --vtu
+target/release/foehn mesh crates/foehncraft-mesh/tests/data/fluent_msh/dual_polyhedra.msh --vtu
 target/release/foehn mesh crates/foehncraft-mesh/tests/data/vtk/channel_mixed_zlib.vtu
 ```
 
@@ -297,8 +297,8 @@ The `mesh.vtu` of the first command holds the 81 polyhedra and the boundaries
 
 ```toml
 [mesh]
-file = "channel.msh"        # industry .msh or Gmsh, by the content
-# format = "industry_msh"   # to force it
+file = "channel.msh"        # Fluent .msh or Gmsh, by the content
+# format = "fluent_msh"   # to force it
 
 [mesh.boundaries]           # zone or region names to the names of the conditions
 boundary3 = "inlet"         # a VTK region number without a name

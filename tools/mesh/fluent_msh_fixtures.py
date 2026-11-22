@@ -1,8 +1,8 @@
-"""Writes the industry `.msh` test meshes of crates/foehncraft-mesh/tests/data/industry_msh
+"""Writes the Fluent `.msh` test meshes of crates/foehncraft-mesh/tests/data/fluent_msh
 from the ASCII OpenFOAM test meshes of crates/foehncraft-mesh/tests/data/openfoam.
 
 Plain Python, no dependencies. Run from the repository root:
-    python3 -m tools.mesh.industry_msh_fixtures
+    python3 -m tools.mesh.fluent_msh_fixtures
 
 - channel_hex.msh: the hexahedral channel, one section per zone with
   fixed-type quadrilateral faces, the two cell zones as contiguous cell
@@ -19,7 +19,7 @@ import re
 from tools.mesh.cgns_ngon_fixture import body, foam_numbers
 
 SRC = "crates/foehncraft-mesh/tests/data/openfoam"
-OUT = "crates/foehncraft-mesh/tests/data/industry_msh"
+OUT = "crates/foehncraft-mesh/tests/data/fluent_msh"
 
 
 def read_foam(d):
@@ -79,7 +79,7 @@ def write(path, pts, faces, owner, neigh, patches, zones, mixed, flip=False):
 
     with open(path, "w") as o:
         o.write(
-            '(0 "Industry .msh test mesh, tools/mesh/industry_msh_fixtures.py")\n(0 "")\n'
+            '(0 "Fluent .msh test mesh, tools/mesh/fluent_msh_fixtures.py")\n(0 "")\n'
         )
         o.write("(2 3)\n")
         o.write(f"(10 (0 1 {f(len(pts))} 0 3))\n")

@@ -344,8 +344,9 @@ A code keeps its meaning; a retired code stays in the table.
 | `MAT007` | error | A fluid without specific heat or thermal conductivity in a run with the energy equation. |
 | `MAT008` | error | An orthotropic thermal conductivity without both axes, or with parallel axes. |
 | `MAT009` | error | A user material database file (`[materials] include`, `FOEHN_MATERIALS`) or a property data file (NASA-7 record, table file) that cannot be read or has the wrong format. |
-| `ENE006` | error | An energy setting this version does not have: a passive scalar named `temperature` beside `[energy]`, solid regions with a sliding mesh, a restart, passive scalars or a periodic mesh, or the variable-density buoyancy model (stage 7c). |
+| `ENE006` | error | An energy setting this version does not have: a passive scalar named `temperature` beside `[energy]`, solid regions with a sliding mesh, a restart, passive scalars or a periodic mesh, or with the variable density (stage 7c) passive scalars, a restart, a periodic mesh, a convective outlet, a mass-flow inlet, a wall mass flux or a rotating zone. |
 | `ENE008` | error | An `[[energy.sources]]` entry for a region the case does not have, or without exactly one of `power` and `power_density`. |
+| `ENE009` | error | Variable-density settings that do not fit together: a density that does not depend on T, `density = "variable"` with the Boussinesq model, a closed volume with an inlet or outlet, a closed volume of a liquid, or `closed-volume` without the variable density. |
 | `CHT004` | error | An `[interfaces.<name>]` table that is not on a region interface (regions unknown, the same, two fluids, or not touching), or without exactly one of `contact_resistance` (≥ 0) and `thin_wall` (thickness > 0 with `conductivity` or `material`). |
 | `ACC001` | error | An `[energy.acceleration]` setting that cannot be used: a steady case, no solid region, a region that is not a solid, `inertia_scale` outside (0, 1] and not `"auto"`, `restore` neither `"settled"` nor a time ≥ 0, or a `period`, `window_steps`, `settle_tolerance` or `target_windows` out of range. |
 | `ACC002` | warning | The run ended before the true heat capacity of the accelerated solids was restored: the final state is that of the accelerated solids and the history is not physical. |
@@ -355,6 +356,7 @@ A code keeps its meaning; a retired code stays in the table.
 | `CYC002` | warning | A fluid phase of the cycle-averaged loop ended at `max_cycles` while the mean interface heat flow still changed between the last two cycles by more than `cycle_tolerance`: the averages are not those of a periodic flow. |
 | `CYC004` | warning | The cycle-averaged loop stopped at `max_updates` before the wall temperatures and the interface heat flows settled within `tolerance` and `heat_tolerance`. |
 | `CYC005` | note | A step of the cycle-averaged loop: a fluid phase averaged, a solid phase solved, the wall temperatures updated, the loop converged. |
+| `ENE004` | warning | A Mach number above 0.3 in a run with the variable density: the low-Mach form loses its validity (the density does not follow the dynamic pressure). |
 | `ENE007` | warning | A steady run that converged while its heat balance does not close (imbalance above 1 % of the largest heat flow): the temperature residual is small but the energy solve is not converged; tighten `[solver.energy] tolerance` and raise `max_iter`. |
 | `THM001` | error | A steady run whose boundaries leave the temperature level undetermined: no inlet and no `temperature` or convection boundary, and no net heat input. |
 | `THM002` | error | A steady run with a net heat input (heat flux, heat flow, source or viscous heating) and no way for the heat to leave: no inlet and no `temperature` or convection boundary. |
@@ -368,6 +370,7 @@ A code keeps its meaning; a retired code stays in the table.
 | `BUO002` | warning | The Boussinesq model outside its range: β ΔT above 0.1 over the temperatures of the case (the density changes by more than 10 %). |
 | `BUO003` | error | The Boussinesq model without what it needs: no energy equation, no expansion coefficient (the fluid's density does not depend on T and `[buoyancy] expansion_coefficient` is not given), or a reference value out of range. |
 | `BUO004` | warning | `[gravity]` with the energy equation but no buoyancy model (the temperature drives no flow); as information: a turbulence model with buoyancy, whose production of k by buoyancy comes in stage 7e1. |
+| `BUO005` | error | A variable density in a closed domain (no inlet, no outlet) without `[energy] thermodynamic_pressure = "closed-volume"`: the mass in the domain would not be conserved. |
 | `BUO006` | warning | A pressure boundary with `pressure_kind = "static"` over a height span whose hydrostatic difference ρ_ref g Δz is above the dynamic pressure: a uniform static value drives a flow through the opening. |
 | `REG001` | error | A region that is not a fluid where it cannot be: a solid region without `[energy]` (solids are solved by the energy equation, stage 7d1), a porous zone (not in this version), or a solid material as the `[fluid]`. |
 | `REG002` | error | A region that names a cell zone the mesh does not have, or a zone in two regions. |

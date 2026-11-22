@@ -12,6 +12,7 @@ Part of the [Example gallery](../gallery.md): the energy equation of the fluid (
 | 180 | [A heated wall brought to its steady and periodic state with thermal acceleration](#cht-acceleration) | 7 | `[energy.acceleration]` `inertia_scale`, `period`, `restore`, `restore_ramp`, `heat.csv` `inertia_scaling` |
 | 190 | [A pulsating channel over a heated wall, coupled by the cycle-averaged loop](#cht-cycle) | 7 | `[energy.cycle]` `period`, `solid_model`, `update`, `enabled`, `cycle_coupling.csv`, `cycle_faces.csv` |
 | 186 | [A warm strip in a closed air enclosure, and a stratified box that stays at rest](#buoyancy) | 7 | `[gravity]`, `[buoyancy] model = "boussinesq"`, `expansion_coefficient`, `static_pressure` |
+| 195 | [Air between walls at 960 K and 240 K, a heated duct and two closed boxes](#variable-density) | 7 | `[energy] density = "variable"`, `thermodynamic_pressure`, `pressure_work`, `[buoyancy] model = "variable-density"`, `density` |
 
 ---
 
@@ -488,4 +489,70 @@ target/release/foehn flow examples/cases/flow/buoyancy_channel_static.toml --out
 pip install matplotlib h5py numpy
 python3 -m tools.plot.buoyancy_fields docs/figures/gallery output/plume output/box \
     output/chan_reduced output/chan_static
+```
+
+---
+
+<a id="variable-density"></a>
+## 195. Air between walls at 960 K and 240 K, a heated duct and two closed boxes
+
+<img src="../figures/gallery/vd_cavity_large_dt.png" alt="Left: the temperature in a closed square cavity of air 3.2 cm wide with the left wall at 960 K and the right wall at 240 K, with white streamlines: one roll fills the cavity with two cores, the hot air rises along the left wall and spreads under the ceiling, the cold air sinks along the right wall and runs along the floor, and the core is stratified. Middle: the density, from 0.34 kg/m³ at the hot wall to 1.37 kg/m³ at the cold wall, with velocity arrows. Right: the vertical velocity and the temperature across the middle of the cavity: the hot layer is broad and rises at up to 16 cm/s, the cold layer is thin and falls at up to 15 cm/s" width="800" height="261">
+
+**Air between walls at 960 K and 240 K (stage 7c).**
+`vd_cavity_large_dt.toml` is air from the material library (ideal gas,
+c_p(T), k(T), the Sutherland viscosity) in a closed square cavity of
+3.2 cm, the left wall at 960 K, the right wall at 240 K, the top and
+bottom adiabatic, gravity downwards. The temperature difference is 1.2
+times the mean temperature (ε = 0.6), far outside the Boussinesq range,
+so `[buoyancy] model = "variable-density"` takes ρ(T, p₀) in every cell
+and face: the density falls to 0.34 kg/m³ at the hot wall and rises to
+1.37 kg/m³ at the cold one, and the body force is (ρ − ρ_ref) g. The
+cavity is closed, so the thermodynamic pressure p₀ follows from the mass
+of the start state (600 K at 101 325 Pa); the gas ends cooler on average,
+and p₀ falls to 94 975 Pa. The flow is not the point-symmetric roll of
+the Boussinesq limit: the hot air is ten times more viscous than the cold
+air, so the rising layer is broad and the sinking one thin, and the core
+is stratified, warmer above. The coupled algorithm converges in 2667
+iterations on 128 × 128 cells clustered to the walls. Three nested meshes
+(32², 64², 128²) give our own estimate of the discretisation error: the
+heat flow through the hot wall is 0.14858 W per mm of depth, observed
+order 2.13, GCI 0.020 %, and p₀ has order 2.2 and GCI 0.003 % (D67; no
+results of other codes are used, D201). Uniform meshes up to 96² are not
+yet in the asymptotic range, because the thin cold layer has only two or
+three cells across.
+
+<img src="../figures/gallery/vd_checks.png" alt="Left: the temperature, velocity and density along a duct with slip walls, divided by their inlet values: in the heated middle part from 0.4 m to 0.6 m the temperature and the velocity rise by four thirds and the density falls by three quarters, on the exact outlet values. Middle: the temperature in a closed box of air 2 cm wide 2 s after its left wall was set to 400 K, with velocity arrows: the gas next to the hot wall grows denser as the pressure rises and the flow runs towards the wall at up to 0.14 mm/s. Right: the thermodynamic pressure over time for a closed box heated uniformly, on the exact straight line, and for the box heated through its left wall, which rises quickly at first and then more slowly" width="800" height="245">
+
+**A heated duct and two closed boxes (checks V7c.1 to V7c.3).**
+`vd_heated_duct.toml` heats a gas by 100 K in a duct with slip walls.
+With the density following the temperature, the mass flow stays the same
+at both ends to 10⁻¹², so the gas leaves 4/3 faster and 3/4 as dense as
+it came in; the heat ṁ c_p ΔT equals the source; and the pressure the
+inlet needs to accelerate the expanding gas, 0.392245 Pa, is the exact
+momentum flux difference G²(1/ρ_out − 1/ρ_in) = 0.3922 Pa.
+`vd_closed_box_heating.toml` heats a closed box of gas at rest uniformly.
+Its mass stays, so it warms with c_v, and T and p₀ rise linearly in time:
+both are exact to 10⁻¹⁰ at any time step. With `pressure_work = "none"`
+the same box warms with c_p, which is wrong for a closed volume.
+`vd_closed_box_side_heated.toml` heats a closed box of air through one
+wall at 400 K. The heated layer expands and pushes the gas towards the
+far wall at first (1.3 mm/s at 0.1 s) and compresses it there. As the
+heating slows and p₀ keeps rising, the gas next to the wall, held at
+400 K, grows denser, and by 2 s the flow runs back towards the hot wall.
+p₀ rises to 117 630 Pa in 2 s; the mass in the box stays to round-off (10⁻¹⁵) and the
+mass ledger of every step closes with the storage of the density. The
+manufactured solution of `vd_mms_steady.toml` (ρ = 1/T in a closed
+volume, generated by `tools/verification/vd_mms.py`) converges at second
+order for velocity and temperature on hexahedra and polygons.
+
+```
+cargo build --release -p foehncraft-cli
+target/release/foehn flow examples/cases/flow/vd_cavity_large_dt.toml --out output/cavity \
+    --set 'mesh.generate.cells=[128,128,1]' --set 'verification.levels=[0]'
+target/release/foehn flow examples/cases/flow/vd_heated_duct.toml --out output/duct
+target/release/foehn flow examples/cases/flow/vd_closed_box_heating.toml --out output/box
+target/release/foehn flow examples/cases/flow/vd_closed_box_side_heated.toml --out output/side
+pip install matplotlib h5py numpy
+python3 -m tools.plot.variable_density docs/figures/gallery output/cavity output/duct \
+    output/box output/side
 ```

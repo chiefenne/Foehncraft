@@ -730,6 +730,9 @@ pub struct Physics {
     /// The balanced buoyancy force B_P per unit volume (N/m³) per cell of
     /// the momentum rows (stage 7b1, D154), as last refreshed.
     pub buoyancy: Option<std::sync::Arc<[Vec<f64>; 3]>>,
+    /// The variable density per cell and per face (stage 7c), as last
+    /// refreshed (`None`: `rho` everywhere).
+    pub rho_var: Option<std::sync::Arc<(Vec<f64>, Vec<f64>)>>,
 }
 
 impl Physics {
@@ -743,7 +746,14 @@ impl Physics {
             mu_face: None,
             source: None,
             buoyancy: None,
+            rho_var: None,
         }
+    }
+
+    /// The density of cell `c`.
+    #[inline]
+    pub fn rho_at(&self, c: usize) -> f64 {
+        self.rho_var.as_ref().map_or(self.rho, |r| r.0[c])
     }
 
     /// The viscosity of face `f`.
@@ -1044,6 +1054,15 @@ pub struct Flow {
     pub buoyancy: Option<Box<crate::buoyancy::Balanced>>,
     /// The device buffer of the buoyancy source B_P V of the momentum rows.
     buoyancy_source: Option<Buf3>,
+    /// The variable density ρ(T, p₀) of stage 7c.
+    pub density: Option<Box<crate::density::Variable>>,
+    /// The backward-difference coefficients (a₀, −a₁, −a₂, as the
+    /// momentum time terms) and Δt of the current time step (`None` in a
+    /// steady run): the mass source V ∂ρ/∂t of the continuity.
+    pub(crate) density_time: Option<([f64; 3], f64)>,
+    /// The mass source V ∂ρ/∂t per cell on the device (the continuity
+    /// residual adds it).
+    density_source: Option<Buf>,
 }
 
 /// The driving of one periodic pair: a uniform body force β t̂ along the
@@ -1498,6 +1517,9 @@ impl Flow {
             lsq_p,
             buoyancy: None,
             buoyancy_source: None,
+            density: None,
+            density_time: None,
+            density_source: None,
         })
     }
 
@@ -2210,8 +2232,16 @@ impl Flow {
             beta: s.momentum.central_bounding,
             nonorth: if s.nonorth_correction { 1.0 } else { 0.0 },
             convection: if self.phys.convection { 1.0 } else { 0.0 },
-            transposed: if self.turbulence.is_some() { 1.0 } else { 0.0 },
-            trace_free: if s.transposed_stress == TransposedStress::TraceFree {
+            // the variable density (stage 7c): the full stress μ (∇u +
+            // ∇uᵀ − ⅔ (∇·u) I), the transposed part with ⅔ of the trace
+            transposed: if self.turbulence.is_some() || self.density.is_some() {
+                1.0
+            } else {
+                0.0
+            },
+            trace_free: if self.density.is_some() {
+                2.0 / 3.0
+            } else if s.transposed_stress == TransposedStress::TraceFree {
                 1.0
             } else {
                 0.0
@@ -2257,6 +2287,10 @@ impl Flow {
     pub(crate) fn continuity(&mut self, m: Buf) -> Result<f64> {
         let w = self.w;
         self.dev.net_outflow(m, w.defect)?;
+        if let (Some(src), Some(_)) = (self.density_source, self.density_time) {
+            // the mass source V ∂ρ/∂t of a variable density (stage 7c)
+            self.dev.lincomb(w.defect, 1.0, w.defect, 1.0, src)?;
+        }
         self.dev.throughflow(m, w.through)?;
         let d = self.dev.sum_sq(w.defect)?.sqrt();
         let t = self.dev.sum_sq(w.through)?.sqrt();
@@ -2610,7 +2644,142 @@ impl Flow {
                 .map(|t| t.scalar_coupling(self.dev.as_ref()));
             self.solve_scalar_fields(step, res, coupling)?;
         }
+        self.refresh_density()?;
         self.refresh_buoyancy()
+    }
+
+    /// The fluid temperature per boundary face of the flow (`t` per cell):
+    /// T_b of the energy equation, the face of the full mesh in a
+    /// conjugate case (the fluid cell's temperature at an interface).
+    pub(crate) fn fluid_boundary_temperature(&mut self, t: &[f64]) -> Result<Vec<f64>> {
+        let ni = self.disc.n_interior;
+        let nb = self.disc.n_faces - ni;
+        let owner = |fb: usize| self.disc.owner[ni + fb] as usize;
+        if let Some(c) = self.cht.as_deref_mut() {
+            let full = match c.fe.scalars.as_ref() {
+                Some(s) => s.energy_boundary_temperature(c.fe.dev.as_mut())?,
+                None => None,
+            };
+            let nif = c.fe.disc.n_interior;
+            return Ok((0..nb)
+                .map(|fb| {
+                    let g = c.view.face[ni + fb] as usize;
+                    match &full {
+                        Some(tb) if g >= nif => tb[g - nif],
+                        _ => t[owner(fb)],
+                    }
+                })
+                .collect());
+        }
+        let tb = match self.scalars.as_ref() {
+            Some(s) => s.energy_boundary_temperature(self.dev.as_mut())?,
+            None => None,
+        };
+        Ok(tb.unwrap_or_else(|| (0..nb).map(|fb| t[owner(fb)]).collect()))
+    }
+
+    /// Recomputes the variable density (stage 7c) from the current
+    /// temperature: p₀ of a closed volume, ρ per cell and face on the
+    /// device, the mass source and the old levels of a time step, and ρ,
+    /// ∂ρ/∂t and the pressure work of the energy equation (nothing with a
+    /// constant density).
+    pub fn refresh_density(&mut self) -> Result<()> {
+        if self.density.is_none() {
+            return Ok(());
+        }
+        let Some(t) = self.fluid_temperature()? else {
+            return Ok(());
+        };
+        let tb = self.fluid_boundary_temperature(&t)?;
+        let d = self.density.as_deref_mut().expect("density");
+        d.refresh(&t, &tb);
+        self.dev.set_density(&d.rho, &d.rho_face)?;
+        self.phys.rho_var = Some(std::sync::Arc::new((d.rho.clone(), d.rho_face.clone())));
+        let (src, dp) = match self.density_time {
+            Some((a, dt)) => (
+                d.mass_source(a, dt),
+                if d.pressure_work {
+                    d.dp0_dt(a, dt)
+                } else {
+                    0.0
+                },
+            ),
+            None => (None, 0.0),
+        };
+        let old = d.old.as_ref().filter(|_| self.density_time.is_some());
+        self.dev.set_variable_density(
+            src.as_deref(),
+            old.map(|o| o[0].as_slice()),
+            old.map(|o| o[1].as_slice()),
+        )?;
+        if let Some(s) = &src {
+            let b = match self.density_source {
+                Some(b) => b,
+                None => {
+                    let b = self.dev.alloc(self.disc.n_cells)?;
+                    self.density_source = Some(b);
+                    b
+                }
+            };
+            self.dev.upload(b, s)?;
+        }
+        let vol = &self.disc.cell_volume;
+        let drho_dt: Vec<f64> = src
+            .map(|s| s.iter().zip(vol).map(|(m, v)| m / v).collect())
+            .unwrap_or_default();
+        let rho = d.rho.clone();
+        if let Some(c) = self.cht.as_deref_mut() {
+            let n = c.fe.disc.n_cells;
+            let mut r = vec![f64::NAN; n];
+            let mut dr = if drho_dt.is_empty() {
+                Vec::new()
+            } else {
+                vec![0.0; n]
+            };
+            for (i, &g) in c.view.cell.iter().enumerate() {
+                r[g as usize] = rho[i];
+                if !drho_dt.is_empty() {
+                    dr[g as usize] = drho_dt[i];
+                }
+            }
+            if let Some(s) = c.fe.scalars.as_mut() {
+                s.set_energy_density(Some(crate::scalar::VarRho {
+                    rho: r,
+                    drho_dt: dr,
+                    pressure_work: dp,
+                }));
+            }
+        } else if let Some(s) = self.scalars.as_mut() {
+            s.set_energy_density(Some(crate::scalar::VarRho {
+                rho,
+                drho_dt,
+                pressure_work: dp,
+            }));
+        }
+        Ok(())
+    }
+
+    /// Starts a time step of a variable density (stage 7c) with the
+    /// backward-difference coefficients `a` (a₀, −a₁, −a₂) and Δt: the
+    /// current density becomes level n.
+    pub(crate) fn density_step_start(&mut self, a: [f64; 3], dt: f64) -> Result<()> {
+        let Some(d) = self.density.as_deref_mut() else {
+            return Ok(());
+        };
+        d.start_step();
+        self.density_time = Some((a, dt));
+        self.refresh_density()
+    }
+
+    /// Takes the last time step of a variable density back (after the
+    /// temperature was restored).
+    pub(crate) fn density_step_back(&mut self) -> Result<()> {
+        let Some(d) = self.density.as_deref_mut() else {
+            return Ok(());
+        };
+        d.step_back();
+        self.density_time = None;
+        self.refresh_density()
     }
 
     /// Sets up the Boussinesq buoyancy with the constants `c` (stage 7b1)
@@ -2664,7 +2833,12 @@ impl Flow {
             return Ok(());
         };
         let nc = self.disc.n_cells;
-        let a = self.buoyancy.as_mut().expect("buoyancy").arrays(&t);
+        let rho = self.density.as_ref().map(|d| d.rho.clone());
+        let a = self
+            .buoyancy
+            .as_mut()
+            .expect("buoyancy")
+            .arrays(&t, rho.as_deref());
         let b = match self.buoyancy_source {
             Some(b) => b,
             None => {

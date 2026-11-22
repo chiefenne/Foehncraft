@@ -165,7 +165,7 @@ pub fn features_in_use(case: &FlowCase) -> Vec<&'static str> {
         Some("su2") => f.push("mesh.su2"),
         Some("cgns") => f.push("mesh.cgns"),
         Some("vtk") => f.push("mesh.vtk"),
-        Some("industry_msh") => f.push("mesh.industry-msh"),
+        Some("fluent_msh") => f.push("mesh.fluent-msh"),
         Some("openfoam") => f.push("mesh.openfoam"),
         _ => {}
     }
@@ -535,12 +535,13 @@ pub fn of_run(case: &FlowCase, rep: &FlowReport) -> Vec<Limitation> {
     if let Some(r) = rep.solves.iter().find_map(|s| s.operators.as_ref()) {
         let mut what = Vec::new();
         let t = &case.turbulence;
-        if t.curvature_correction && r.hessian.flagged > 0 {
+        let h = r.quadratic_hessian.as_ref().unwrap_or(&r.hessian);
+        if t.curvature_correction && h.flagged > 0 {
             what.push((
                 "turbulence.curvature-correction",
                 format!(
                     "the velocity Hessian of the curvature correction is not consistent on {} of {} cells (MESH005): the correction does not converge with the mesh there",
-                    r.hessian.flagged, r.cells
+                    h.flagged, r.cells
                 ),
             ));
         }
@@ -637,7 +638,7 @@ mod tests {
             "mesh.su2",
             "mesh.cgns",
             "mesh.vtk",
-            "mesh.industry-msh",
+            "mesh.fluent-msh",
             "mesh.openfoam",
             "coupling.piso",
             "coupling.coupled",
