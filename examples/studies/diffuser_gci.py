@@ -1,14 +1,18 @@
 """Grid convergence of the asymmetric plane diffuser (D45, stage 8):
 separation and reattachment on the lower wall and the pressure recovery
 C_p along the upper wall, k-omega SST low-Re on three nested structured
-meshes (examples/meshes/diffuser.py, levels 0 to 2: 5 280, 21 120 and
-84 480 cells), observed order, extrapolated value and GCI_fine after
+meshes (examples/meshes/diffuser.py, levels 0 to 2: 6 960, 27 840 and
+111 360 cells), observed order, extrapolated value and GCI_fine after
 Celik et al. (2008), ratio 2. No reference value is used (D201); the
 comparison with the published measurements of Buice & Eaton is pending.
 
-    python3 examples/studies/diffuser_gci.py [OUT] [--levels 0,1,2] [--jobs 3] [--report-only]
+    python3 examples/studies/diffuser_gci.py [OUT] [--levels 0,1,2] [--jobs 3] [--report-only] [--sharp]
 
-C_p(x) = (p(x) - p_ref) / (1/2 rho U_c^2) on the upper wall with p_ref the
+--sharp runs diffuser_sst_sharp.toml on the meshes with sharp corners
+(diffuser.py --sharp: 8 400, 33 600 and 134 400 cells).
+
+The separated region is the longest stretch of the lower wall with
+tau_x < 0. C_p(x) = (p(x) - p_ref) / (1/2 rho U_c^2) on the upper wall with p_ref the
 wall pressure at x = -10 H, taken at x = 21 H (end of the diffuser) and
 x = 45 H (in the outlet duct). The levels run at the same time (--jobs).
 Needs the `foehn` executable (FOEHN=target/release/foehn by default).
@@ -28,6 +32,9 @@ from plate_channel_gci import celik, gci_txt, pct  # noqa: E402, F401
 
 ROOT = Path(__file__).resolve().parents[2]
 CASE = ROOT / "examples/cases/flow/diffuser_sst.toml"
+SHARP = "--sharp" in sys.argv
+if SHARP:
+    CASE = ROOT / "examples/cases/flow/diffuser_sst_sharp.toml"
 FOEHN = os.environ.get("FOEHN", str(ROOT / "target/release/foehn"))
 MESHER = ROOT / "examples/meshes/diffuser.py"
 
@@ -38,7 +45,8 @@ def run(base: Path, level: int) -> None:
         return
     d.mkdir(parents=True, exist_ok=True)
     su2 = base / f"diffuser_{level}.su2"
-    subprocess.run([sys.executable, str(MESHER), str(su2), "--level", str(level)], check=True)
+    subprocess.run([sys.executable, str(MESHER), str(su2), "--level", str(level)] + (["--sharp"] if SHARP else []),
+                   check=True)
     cmd = [FOEHN, "flow", str(CASE), "--out", str(d), "--threads", "1",
            "--set", f'mesh.file="{su2}"']
     with open(base / f"run_{level}.log", "w") as log:
@@ -46,10 +54,25 @@ def run(base: Path, level: int) -> None:
     print(f"level {level}: exit {r.returncode}", flush=True)
 
 
-def wall(d: Path):
-    rows = [x for x in (d / "wall_upper.csv").read_text().splitlines() if x and not x.startswith("#")]
+def wall(d: Path, name: str = "upper"):
+    rows = [x for x in (d / f"wall_{name}.csv").read_text().splitlines() if x and not x.startswith("#")]
     head = rows[0].split(",")
     return sorted((dict(zip(head, map(float, r.split(",")))) for r in rows[1:]), key=lambda r: r["x"])
+
+
+def bubble(d: Path) -> tuple[float, float]:
+    """Start and end of the main separated region of the lower wall: the
+    longest stretch with tau_x < 0 (a sharp corner leaves the shear near zero
+    behind the corner, where small bubbles come and go with the mesh)."""
+    w = wall(d, "lower")
+    cuts, sign = [], w[0]["tau_x"] < 0.0
+    for a, b in zip(w, w[1:]):
+        if (b["tau_x"] < 0.0) != sign:
+            t = a["tau_x"] / (a["tau_x"] - b["tau_x"])
+            cuts.append((a["x"] + t * (b["x"] - a["x"]), not sign))
+            sign = not sign
+    runs = [(x0, x1) for (x0, neg), (x1, _) in zip(cuts, cuts[1:]) if neg]
+    return max(runs, key=lambda r: r[1] - r[0])
 
 
 def at(pts, x: float) -> float:
@@ -64,11 +87,11 @@ def values(d: Path) -> dict | None:
     if not (d / "flow.json").exists():
         return None
     s = json.loads((d / "flow.json").read_text())["solves"][-1]
-    cr = {c["name"]: c["position"] for c in s["wall_crossings"]}
+    x_sep, x_reat = bubble(d)
     w = wall(d)
     p0 = at(w, -10.0)
     return {"cells": s["cells"], "iterations": s["iterations"], "converged": s.get("converged"),
-            "x_sep": cr["separation"], "x_reat": cr["reattachment"],
+            "x_sep": x_sep, "x_reat": x_reat,
             "cp_21": 2 * (at(w, 21.0) - p0), "cp_45": 2 * (at(w, 45.0) - p0)}
 
 
@@ -94,7 +117,7 @@ def main(argv: list[str]) -> int:
     if any(v is None for v in vs):
         print("runs missing")
         return 1
-    lines = ["# Grid convergence of the asymmetric diffuser, Re_H 20 000", "",
+    lines = [f"# Grid convergence of the asymmetric diffuser{' with sharp corners' if SHARP else ''}, Re_H 20 000", "",
              "k-omega SST low-Re; GCI_fine after Celik et al. (2008), ratio 2. Pending: comparison with published measurements.", "",
              "| cells | x_sep/H | x_reat/H | C_p(21 H) | C_p(45 H) | iterations |", "|---|---|---|---|---|---|"]
     for v in vs:

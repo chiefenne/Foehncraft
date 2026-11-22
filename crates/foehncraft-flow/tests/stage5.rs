@@ -451,3 +451,79 @@ fn convective_outlet_restarts_bit_identically() {
     let _ = std::fs::remove_dir_all(&da);
     let _ = std::fs::remove_dir_all(&db);
 }
+
+/// A transient run may start from the restart file of a steady run: its
+/// fields are the start fields at `start_time`, with no older levels. A
+/// converged steady cavity stays where it is over a few time steps.
+#[test]
+fn transient_run_starts_from_a_steady_restart() {
+    let steady_text = r#"
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [1.0, 1.0, 0.05]
+cells = [16, 16, 1]
+[fluid]
+viscosity = 0.01
+[boundary.xmin]
+type = "wall"
+[boundary.xmax]
+type = "wall"
+[boundary.ymin]
+type = "wall"
+[boundary.ymax]
+type = "wall"
+velocity = [1.0, 0.0, 0.0]
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+[solver]
+tolerance = 1e-10
+max_iterations = 2000
+[output]
+vtkhdf = false
+wall_csv = false
+"#;
+    let steady = FlowCase::from_toml(steady_text, Path::new(".")).unwrap();
+    let ds = out("steady_start_steady");
+    let rs = run_in(&steady, "steady", &ds);
+    assert!(
+        rs.solves.iter().all(|s| s.converged),
+        "the steady cavity converges"
+    );
+    let from = ds.join("restart.h5");
+    let tr = cavity(
+        16,
+        "scheme = \"bdf2\"\ntime_step = 0.05\nsteps = 6",
+        &format!("[run]\nrestart = '{}'", from.display()),
+    );
+    let dt = out("steady_start_transient");
+    let rt = run_in(&tr, "transient", &dt);
+    assert!(rt.failures.is_empty(), "{:?}", rt.failures);
+    let a = restart::read(&from).unwrap();
+    let b = restart::read(&dt.join("restart.h5")).unwrap();
+    assert!(a.transient.is_none(), "the steady file has no time levels");
+    assert_eq!(
+        b.transient.as_ref().unwrap().1.step,
+        6,
+        "six steps from t = 0"
+    );
+    let du = a
+        .state
+        .u
+        .x
+        .iter()
+        .zip(&b.state.u.x)
+        .chain(a.state.u.y.iter().zip(&b.state.u.y))
+        .map(|(p, q)| (p - q).abs())
+        .fold(0.0, f64::max);
+    assert!(du < 1e-5, "the steady state moved by {du:e}");
+    let log = std::fs::read_to_string(dt.join("flow.log")).unwrap();
+    assert!(
+        log.contains("start from the steady solution"),
+        "the log says so"
+    );
+    let _ = std::fs::remove_dir_all(&ds);
+    let _ = std::fs::remove_dir_all(&dt);
+}

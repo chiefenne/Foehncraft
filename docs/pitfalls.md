@@ -120,15 +120,57 @@ sizes (h = 0.0050 m failed, 0.0055 m passed). Use plain Gmsh tetrahedra,
 try another size, or run the tetrahedra; the cause in the dual of boundary
 nodes at the concave junction edge is not fixed.
 
-### The asymmetric diffuser does not settle on fine meshes
+### Sharp wall corners and thin wall cells (the asymmetric diffuser)
 
-The steady SST case of gallery 199 (Re_H 20 000) converges on 5 280 cells
-(relaxation 0.5) and not on 21 120 or 84 480 (2026-11-22): SIMPLEC at
-relaxation 0.3 and 0.5 stalls, the default 0.7 diverges, and the coupled
-solver does not converge in 2 500 iterations and moves the reattachment
-from 30.7 H to 21.5 H; a developed channel profile at the inlet does not
-change it (2026-11-22). Do not run a grid study with the steady solver on
-this case; try a transient run first.
+The steady SST diffuser of gallery 199 looked as if it did not settle on
+fine meshes (2026-11-22). Four causes, each found by switching one thing:
+
+- **A sharp corner of the wall breaks the least-squares gradient of the
+  thin wall cells.** Across the corner the wall cell next door has the same
+  wall distance but lies lower by about Δx tan θ / 2 (θ the kink angle), that
+  is A tan θ / 2 wall-cell heights for a wall cell of aspect ratio A: 13
+  heights at A = 150 and θ = 10°. The large wall-normal gradient leaks into
+  ∂u/∂x, which is wrong by O(1) on every mesh with the same cell shapes (the
+  face extrapolation error falls only as Δx). Linear upwind without a
+  limiter from the first iteration on extrapolates it: the velocity of the
+  wall row grows downstream by a factor 2 to 10 per iteration and the fine
+  meshes diverged in about 10 iterations. Three remedies, each run on the
+  diffuser (2026-11-22):
+  - start with upwind for 200 iterations, then linear upwind
+    (`[[schedule]]`): the sharp diffuser with Δx = 0.25 H (A = 150 at the
+    kink) then converges on levels 0 and 1 (494 and 1 378 iterations);
+  - shorten the wall cells towards the corner: A about 11 at the kink
+    (`diffuser.py --sharp`, case `diffuser_sst_sharp.toml`), one wall-cell
+    height of offset instead of 13, converges on all three levels;
+  - round the corner where the geometry has a radius (the experiment has
+    4.3 H): the error then falls as Δx² (0.10 and 0.017 of the velocity on
+    levels 0 and 1, against 0.55 and 0.27 with the sharp corner).
+
+  Upwind or the Venkatakrishnan limiter alone only hide the error. Behind a
+  sharp corner the wall shear stays near zero for about 1.5 H, and small
+  bubbles there come and go with the mesh: take the longest stretch of
+  reverse flow as the separated region, not the first sign change.
+- **Trapezoidal wall cells look skewed.** Where a channel widens, the wall
+  cells (aspect ratio 300 to 600) are trapezoids whose centroids shift
+  along the wall by more than their height; the face skewness (over the
+  centroid distance) reaches 1.8 on Δx = 0.5 H and switches the D50
+  remediation on, on the coarse levels only, so the levels of a grid study
+  run with different numerics. Make Δx small enough (0.25 H here) that the
+  skewness stays below 0.9 on every level (now at most 0.42, 0.25 and 0.13
+  on the three levels).
+- **A uniform start breaks continuity in a widening.** u = 1 everywhere
+  carries 4.7 times the inflow out of the diffuser; the finer meshes
+  diverged in iteration 6. Start from potential flow, and from upwind for
+  the first 200 iterations (`[[schedule]]`), then linear upwind: the
+  potential flow slips along the walls, and linear upwind on that start
+  diverges on the coarse mesh.
+- **SIMPLEC at relaxation 0.5 converges a large, weak separation very
+  slowly.** The reverse flow is about 2 % of the inflow; at 0.5 the bubble
+  was still growing after 1 700 iterations (reattachment 21.7 H) and the
+  residual stalled near 5·10⁻⁵, which looked like a missing steady state.
+  At 0.8 the same mesh converges to 10⁻⁷ with the reattachment at 29 H. A
+  transient run from the stalled state moves the same way, so check with
+  one before concluding that a steady state does not exist.
 
 ## Observers must not change the run
 

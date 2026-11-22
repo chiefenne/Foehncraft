@@ -39,7 +39,7 @@ FLOW = {
     "linux-2": [
         "cylinder_re20", "cavity_re1000", "taylor_green_cfl10", "poiseuille_tet",
         "poiseuille_hex", "poiseuille_poly", "tmr_plate_sst", "tmr_plate_keps",
-        "tmr_plate_zeta_f0",
+        "tmr_plate_zeta_f0", "diffuser_sst_sharp",
     ],
     "linux-3": [
         "taylor_green_error", "cylinder_potential", "cavity_re100_budget", "taylor_green_bdf2",

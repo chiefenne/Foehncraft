@@ -234,7 +234,9 @@ pub struct RunSection {
     pub backend: String,
     /// PTX module of the `cuda` backend.
     pub ptx: PathBuf,
-    /// Restart file to continue from (D42).
+    /// Restart file to continue from (D42). A transient case may also
+    /// start from the restart file of a steady run: its fields are the
+    /// start fields at `time.start_time`, with no older time levels.
     pub restart: Option<PathBuf>,
     /// Write `restart.h5` every N iterations or time steps (0: never).
     pub restart_every: usize,

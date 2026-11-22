@@ -334,3 +334,71 @@ set = { solver.momentum.relaxation = 0.8 }
     assert_eq!(e.boundary_energy.len(), 2);
     assert_eq!(e.solver.momentum.relaxation, Some(0.8));
 }
+
+/// A first-order start: the momentum scheme switches from `upwind` to
+/// `linear-upwind` at a prepared iteration. Before it the history is the
+/// one of an upwind run, the change is logged, and the run converges to the
+/// solution of the plain linear-upwind run. A switch to or from the bounded
+/// central scheme is refused when the case is read.
+#[test]
+fn the_momentum_scheme_switches_from_upwind_to_linear_upwind() {
+    let go = |extra: &str, name: &str| {
+        let d = out(name);
+        let text = CAVITY
+            .replace("max_iterations = 400", "max_iterations = 1500")
+            .replace("tolerance = 1e-5", "tolerance = 1e-9");
+        let line = "lines = [{ name = \"mid\", from = [0.5, 0.0, 0.025], to = [0.5, 1.0, 0.025], points = 21 }]\n";
+        let c = parse(&format!("{text}{line}{extra}")).unwrap();
+        let r = run(&c, "cavity", &d, |_| {}).unwrap();
+        let log = std::fs::read_to_string(d.join("flow.log")).unwrap();
+        let hist = std::fs::read_to_string(d.join("residuals.csv")).unwrap();
+        let u: Vec<f64> = std::fs::read_to_string(d.join("line_mid.csv"))
+            .unwrap()
+            .lines()
+            .filter(|l| !l.starts_with('#') && !l.starts_with('s'))
+            .map(|l| l.split(',').nth(4).unwrap().parse().unwrap())
+            .collect();
+        let _ = std::fs::remove_dir_all(&d);
+        (r, log, hist, u)
+    };
+    let (lu, _, _, u_lu) = go("", "lu");
+    let (up, _, hist_up, u_up) = go("[solver.momentum]\nscheme = \"upwind\"\n", "up");
+    let (sw, log_sw, hist_sw, u_sw) = go(
+        "[solver.momentum]\nscheme = \"upwind\"\n[[schedule]]\nat_iteration = 20\nset = { solver.momentum.scheme = \"linear-upwind\" }\n",
+        "switch",
+    );
+    assert!(lu.solves[0].converged && up.solves[0].converged && sw.solves[0].converged);
+    assert!(
+        log_sw.contains("schedule (iteration 20): solver.momentum.scheme"),
+        "{log_sw}"
+    );
+    let head = |h: &str| {
+        h.lines()
+            .filter(|l| !l.starts_with('#'))
+            .take(20)
+            .map(String::from)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(head(&hist_up), head(&hist_sw), "upwind before the switch");
+    // the converged state is the one of linear upwind, not of upwind
+    let diff = |a: &[f64], b: &[f64]| {
+        a.iter()
+            .zip(b)
+            .map(|(x, y)| (x - y).abs())
+            .fold(0.0, f64::max)
+    };
+    assert!(
+        diff(&u_lu, &u_sw) < 1e-6,
+        "switched {:e}",
+        diff(&u_lu, &u_sw)
+    );
+    assert!(
+        diff(&u_lu, &u_up) > 1e-3,
+        "upwind differs {:e}",
+        diff(&u_lu, &u_up)
+    );
+    let m = message(&format!(
+        "{CAVITY}\n[solver.momentum]\nscheme = \"central\"\n[[schedule]]\nat_iteration = 5\nset = {{ solver.momentum.scheme = \"upwind\" }}\n"
+    ));
+    assert!(m.contains("only between"), "{m}");
+}

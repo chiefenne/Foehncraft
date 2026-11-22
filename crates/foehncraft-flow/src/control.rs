@@ -15,7 +15,8 @@
 //!
 //! What a re-read applies ([`RUNTIME_KEYS`]): the output settings, the
 //! restart and re-read schedule, the stop criteria, the relaxation factors,
-//! the linear-solver tolerances, the time-step settings and the balance
+//! the momentum scheme between `upwind` and `linear-upwind` (a first-order
+//! start, then second order), the linear-solver tolerances, the time-step settings and the balance
 //! report and tolerances. Every other
 //! difference is reported as not applied (the state of the run belongs to
 //! the case it started with; stop the run and restart from the restart file
@@ -61,6 +62,7 @@ pub const RUNTIME_KEYS: &[&str] = &[
     "solver.max_iterations",
     "solver.tolerance",
     "solver.momentum.relaxation",
+    "solver.momentum.scheme",
     "solver.pressure.relaxation",
     "solver.momentum.tolerance",
     "solver.momentum.max_iter",
@@ -258,7 +260,12 @@ pub fn reread(path: &Path, current: &FlowCase, fired: usize) -> Result<Reread> {
             continue;
         }
         let line = format!("{k}: {} -> {}", show(x), show(y));
-        if RUNTIME_KEYS.contains(&k.as_str()) {
+        // the scheme switches only between upwind and linear upwind
+        let central = k == "solver.momentum.scheme"
+            && [x, y]
+                .iter()
+                .any(|v| v.and_then(|v| v.as_str()) == Some("central"));
+        if RUNTIME_KEYS.contains(&k.as_str()) && !central {
             set(&mut merged, k, y);
             applied.push(line);
         } else {

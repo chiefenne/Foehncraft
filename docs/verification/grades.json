@@ -418,7 +418,7 @@
     "gaps written"
    ],
    "gaps": [
-    "asymmetric diffuser (gallery 199): the steady solver does not reach a steady state on 21 120 and 84 480 cells (SIMPLEC at relaxation 0.3 and 0.5 and the coupled solver stall or diverge), so there is no grid convergence study; the coarse solution is not compared with the measurements of Buice & Eaton (pending)"
+    "asymmetric diffuser (gallery 199): not compared with the measurements of Buice & Eaton (pending); the separation point converges at order 1.6 only (GCI 4 %), and the steady solver needs about three times the iterations per halving of the mesh (4 909 on 111 360 cells) while the jet moves slowly to the upper wall"
    ],
    "range": {
     "y_plus_first": [

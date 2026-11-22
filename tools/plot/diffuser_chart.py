@@ -1,4 +1,4 @@
-"""Figure of the asymmetric diffuser (gallery 197): speed and turbulent
+"""Figure of the asymmetric diffuser (gallery 199): speed and turbulent
 viscosity ratio from sample lines of a run of
 examples/cases/flow/diffuser_sst.toml, and the wall pressure coefficient.
 
@@ -10,7 +10,6 @@ the turbulent viscosity ratio with matplotlib (pip install matplotlib
 numpy). Needs the `foehn` executable (FOEHN=target/release/foehn).
 """
 
-import math
 import os
 import subprocess
 import sys
@@ -25,12 +24,8 @@ import numpy as np  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 FOEHN = os.environ.get("FOEHN", str(ROOT / "target/release/foehn"))
-TAN = math.tan(math.radians(10.0))
-L_DIFF = 3.7 / TAN
-
-
-def ylow(x):
-    return -min(max(x, 0.0), L_DIFF) * TAN
+sys.path.insert(0, str(ROOT / "examples/meshes"))
+from diffuser import y_low as ylow  # noqa: E402  (the rounded lower wall of the mesh)
 
 
 def stations():

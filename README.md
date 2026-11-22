@@ -161,8 +161,10 @@ validated range, one mesh only, …) in its report and its JSON result.
 - **Cases and properties.** TOML case files with checks and guidance;
   boundary values, sources and viscosities as expressions; a material
   database (air, water, oils, glycols) with sources.
-- **Runs and results.** Restart, control files (`.stop`, `.result_N`,
-  `.read_toml_N`), settings that change on a schedule, probes, forces,
+- **Runs and results.** Restart (a transient run may also start from a
+  steady result), control files (`.stop`, `.result_N`, `.read_toml_N`),
+  settings that change on a schedule (also the momentum scheme, from a
+  first-order start to linear upwind), probes, forces,
   derived fields (vorticity, Q, λ₂, wall shear stress, y⁺, and the Reynolds stress, scales and wall values of the turbulence models),
   statistics of transient runs (time mean, RMS, covariance, phase averages,
   a confidence interval that says whether the window is long enough), mass and

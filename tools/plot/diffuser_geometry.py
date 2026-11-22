@@ -6,7 +6,6 @@
 Reads examples/meshes/diffuser_coarse.su2 (matplotlib, numpy).
 """
 
-import math
 import sys
 from pathlib import Path
 
@@ -18,6 +17,8 @@ import numpy as np  # noqa: E402
 from matplotlib.collections import LineCollection  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "examples/meshes"))
+from diffuser import L_DIFF, RADIUS, y_low  # noqa: E402  (the rounded lower wall of the mesh)
 
 
 def read_su2(path):
@@ -31,11 +32,11 @@ def read_su2(path):
 
 def main(out):
     pts, quads = read_su2(ROOT / "examples/meshes/diffuser_coarse.su2")
-    t = math.tan(math.radians(10))
-    ld = 3.7 / t
+    ld = L_DIFF
     fig, axs = plt.subplots(3, 1, figsize=(11, 10), dpi=170, gridspec_kw={"height_ratios": [1.5, 1, 1]})
     ax = axs[0]
-    poly = [(-20, 0), (0, 0), (ld, -3.7), (ld + 50, -3.7), (ld + 50, 1), (-20, 1)]
+    xs = np.linspace(-20, ld + 50, 800)
+    poly = [(x, y_low(x)) for x in xs] + [(ld + 50, 1), (-20, 1)]
     ax.fill(*zip(*poly), color="#dbe9f6", ec="k", lw=1.5)
     ax.annotate("", (-20, -0.9), (0, -0.9), arrowprops=dict(arrowstyle="<->"))
     ax.text(-10, -1.7, "inlet duct 20 H", ha="center")
@@ -51,6 +52,7 @@ def main(out):
     ax.text(ld + 50, 1.3, "outlet: static p = 0", ha="right", va="bottom", fontsize=8)
     ax.text(30, 1.3, "upper wall (no slip, y = 1)", ha="center", va="bottom", fontsize=8)
     ax.text(18, -2.2, "lower wall (no slip)", ha="center", fontsize=8, rotation=-10)
+    ax.text(8, -3.3, f"both corners rounded, R = {RADIUS} H", ha="center", fontsize=8)
     ax.set_xlim(-26, ld + 62); ax.set_ylim(-6, 3.4); ax.set_aspect("auto")
     ax.set_title("Geometry (units of H; Re_H = U_c H/ν = 20 000, ν = 5e-5 m²/s; z: symmetry planes)")
     for a, (x0, x1, y0, y1, ttl) in zip(axs[1:], [(-3, 12, -2.6, 1.4, "Mesh at the start of the diffuser"),
