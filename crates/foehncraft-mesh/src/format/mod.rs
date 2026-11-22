@@ -1,6 +1,6 @@
 //! Mesh file formats (D33, D187): one reader interface for every format.
 //!
-//! A format is a [`MeshFormat`]: a name (`gmsh`, `su2`, `industry_msh`, `cgns`,
+//! A format is a [`MeshFormat`]: a name (`gmsh`, `su2`, `fluent_msh`, `cgns`,
 //! `openfoam`),
 //! the file extensions it owns (an OpenFOAM mesh is a directory), a test of
 //! the first bytes of a file, and a reader.
@@ -25,7 +25,7 @@
 #[cfg(feature = "hdf5")]
 pub mod cgns;
 pub mod gmsh;
-pub mod industry_msh;
+pub mod fluent_msh;
 mod inflate;
 pub mod openfoam;
 pub mod su2;
@@ -96,7 +96,7 @@ pub trait MeshFormat: Sync {
 pub static FORMATS: &[&dyn MeshFormat] = &[
     &gmsh::Gmsh,
     &su2::Su2,
-    &industry_msh::IndustryMsh,
+    &fluent_msh::IndustryMsh,
     &vtk::Vtk,
     #[cfg(feature = "hdf5")]
     &cgns::Cgns,
@@ -120,6 +120,8 @@ pub(crate) fn declared(n: usize, len: usize, what: &str) -> Result<usize, String
 
 /// The format of a name.
 pub fn by_name(name: &str) -> Result<&'static dyn MeshFormat, String> {
+    // `industry_msh` is the former name of `fluent_msh`, still accepted
+    let name = if name == "industry_msh" { "fluent_msh" } else { name };
     FORMATS
         .iter()
         .copied()
@@ -137,7 +139,7 @@ pub fn by_extension(path: &Path) -> Option<&'static dyn MeshFormat> {
 }
 
 /// The formats that own the extension of `path` (`.msh` is shared by Gmsh
-/// and the industry format: the first bytes tell them apart).
+/// and the Fluent format: the first bytes tell them apart).
 fn owners(path: &Path) -> Vec<&'static dyn MeshFormat> {
     let Some(ext) = path
         .extension()

@@ -30,7 +30,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Meshes | [SU2 reader (2D extruded, multi-zone)](#mesh-su2) | verified |
 | Meshes | [CGNS (HDF5) reader](#mesh-cgns) | partial |
 | Meshes | [OpenFOAM polyMesh reader](#mesh-openfoam) | partial |
-| Meshes | [Industry face-based .msh reader](#mesh-industry-msh) | partial |
+| Meshes | [Fluent face-based .msh reader](#mesh-fluent-msh) | partial |
 | Meshes | [VTK reader (.vtk, .vtu) and VTU writer](#mesh-vtk) | partial |
 | Meshes | [Partitioning with METIS and halos](#mesh-partition) | partial |
 | Meshes | [Quality report and automatic remediation of skewed cells](#mesh-quality-remediation) | partial |
@@ -192,18 +192,18 @@ Gaps:
 
 - no flow case of the catalogue reads a polyMesh
 
-<a id="mesh-industry-msh"></a>
+<a id="mesh-fluent-msh"></a>
 
-### Industry face-based .msh reader
+### Fluent face-based .msh reader
 
-**partial** (no exact or manufactured solution; gaps written) · id `mesh.industry-msh` · switch `mesh.format = "industry_msh"`
+**partial** (no exact or manufactured solution; gaps written) · id `mesh.fluent-msh` · switch `mesh.format = "fluent_msh"`
 
-- consistency: [`polyhedral_cells_and_mixed_faces`](../../crates/foehncraft-mesh/tests/industry_msh.rs): polyhedral cells and mixed faces
-- consistency: [`face_orientation_does_not_matter`](../../crates/foehncraft-mesh/tests/industry_msh.rs): face orientation does not change the mesh
+- consistency: [`polyhedral_cells_and_mixed_faces`](../../crates/foehncraft-mesh/tests/fluent_msh.rs): polyhedral cells and mixed faces
+- consistency: [`face_orientation_does_not_matter`](../../crates/foehncraft-mesh/tests/fluent_msh.rs): face orientation does not change the mesh
 
 Gaps:
 
-- no flow case of the catalogue reads an industry .msh file
+- no flow case of the catalogue reads a Fluent .msh file
 
 <a id="mesh-vtk"></a>
 

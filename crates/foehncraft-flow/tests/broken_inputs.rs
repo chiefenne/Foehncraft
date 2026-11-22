@@ -287,7 +287,7 @@ fn broken_mesh_files_end_in_mesh003() {
         ("box_tet_binary.msh", 2),
         ("channel_2d.su2", 2),
         ("vtk/channel_mixed_zlib.vtu", 2),
-        ("industry_msh/channel_hex.msh", 2),
+        ("fluent_msh/channel_hex.msh", 2),
     ] {
         let b = std::fs::read(meshes.join(src)).unwrap();
         let name = Path::new(src)

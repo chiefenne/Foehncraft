@@ -10,7 +10,7 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct MeshInput {
-    /// Mesh case file (TOML) or a mesh file (Gmsh or industry `.msh`, SU2,
+    /// Mesh case file (TOML) or a mesh file (Gmsh or Fluent `.msh`, SU2,
     /// CGNS, VTK, an OpenFOAM case or polyMesh directory).
     pub input: PathBuf,
     /// Number of parts (overrides `partition.parts`).
