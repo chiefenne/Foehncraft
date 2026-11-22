@@ -13,7 +13,6 @@ executable (FOEHN=target/release/foehn by default).
 import os
 import subprocess
 import sys
-import tomllib
 from pathlib import Path
 
 import matplotlib
@@ -39,7 +38,6 @@ def sample_lines():
 def main(out: str, mesh: str, work: str = "/tmp/tjunction_chart") -> None:
     w = Path(work)
     w.mkdir(parents=True, exist_ok=True)
-    case = tomllib.loads((ROOT / "examples/cases/flow/tjunction_mixing.toml").read_text())
     text = (ROOT / "examples/cases/flow/tjunction_mixing.toml").read_text()
     text = text.replace('file = "../../meshes/tjunction_gci_coarse.msh"', f'file = "{Path(mesh).resolve()}"')
     lines = ", ".join(f'{{ name = "{n}", from = {a}, to = {b}, points = {p} }}' for n, a, b, p in sample_lines())
