@@ -505,6 +505,7 @@ impl Transient {
         }
         // uⁿ⁻² is gone
         self.clock.dt_prev2 = 0.0;
+        fl.density_step_back()?;
         self.finish_level(fl)?;
         Ok(true)
     }
@@ -562,6 +563,7 @@ impl Transient {
         // boundary values and gradients
         self.hold_convective(fl)?;
         anyhow::ensure!(fl.rewind()?, "no valid state was kept");
+        fl.density_step_back()?;
         fl.dev.sync()
     }
 
@@ -812,6 +814,9 @@ impl Transient {
             u_old2,
             explicit: (ew, l.r_old),
         };
+        // the variable density (stage 7c): ρⁿ⁻¹ ← ρⁿ ← ρ, the mass source
+        // of the continuity with the coefficients of this step
+        fl.density_step_start(time.a, dt)?;
         fl.dev.sync()?;
         fl.timings.momentum_assembly += t.elapsed().as_secs_f64();
 

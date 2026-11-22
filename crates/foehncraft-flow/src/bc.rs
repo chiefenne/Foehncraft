@@ -807,6 +807,41 @@ impl BoundaryCondition {
         )
     }
 
+    /// True for a boundary through which fluid enters or leaves (an
+    /// inlet, an outlet, a pressure boundary).
+    pub fn is_open(&self) -> bool {
+        matches!(
+            self,
+            Self::VelocityInlet { .. } | Self::MassFlowInlet { .. } | Self::ConvectiveOutlet { .. }
+        ) || self.is_pressure()
+    }
+
+    /// True for a periodic boundary.
+    pub fn is_periodic(&self) -> bool {
+        matches!(self, Self::Periodic { .. })
+    }
+
+    /// True for a convective outlet.
+    pub fn is_convective_outlet(&self) -> bool {
+        matches!(self, Self::ConvectiveOutlet { .. })
+    }
+
+    /// True for a mass-flow inlet.
+    pub fn is_mass_flow_inlet(&self) -> bool {
+        matches!(self, Self::MassFlowInlet { .. })
+    }
+
+    /// True for a wall with a mass flux.
+    pub fn has_wall_mass_flux(&self) -> bool {
+        matches!(
+            self,
+            Self::Wall {
+                mass_flux: Some(_),
+                ..
+            }
+        )
+    }
+
     /// True for the pressure conditions meant for outflow.
     pub fn is_pressure_outlet(&self) -> bool {
         matches!(

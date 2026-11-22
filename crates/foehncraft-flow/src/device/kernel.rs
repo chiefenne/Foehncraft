@@ -110,6 +110,9 @@ pub struct KernelFlow<E: Exec> {
     /// pressure term per boundary face; D154), allocated by the first
     /// `set_balanced_force`.
     balanced: Option<(Buf, Buf)>,
+    /// The variable-density cell arrays (stage 7c): mass source, ρⁿ,
+    /// ρⁿ⁻¹, allocated by the first `set_variable_density`.
+    variable: Option<[Buf; 3]>,
     /// The wall arrays of the turbulence models: faces, cells, ptr, slots.
     wall: Option<[Raw<u32>; 4]>,
 }
@@ -213,6 +216,9 @@ impl<E: Exec> KernelFlow<E> {
             shift,
             jump_offset: Raw::EMPTY,
             pb_offset: Raw::EMPTY,
+            mass_source: Raw::EMPTY,
+            rho_old: Raw::EMPTY,
+            rho_old2: Raw::EMPTY,
         };
         let pca: Vec<f64> =
             s.bc.flux_kind
@@ -248,6 +254,7 @@ impl<E: Exec> KernelFlow<E> {
             rho_buf,
             rho_face_buf,
             balanced: None,
+            variable: None,
             wall: None,
             lsq_u,
             lsq_p,
@@ -1231,6 +1238,42 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
         };
         self.x.upload(bj, jump)?;
         self.x.upload(bp, pb)
+    }
+
+    fn set_variable_density(
+        &mut self,
+        source: Option<&[f64]>,
+        old: Option<&[f64]>,
+        old2: Option<&[f64]>,
+    ) -> Result<()> {
+        let b = match self.variable {
+            Some(b) => b,
+            None => {
+                let b = [
+                    self.x.alloc(self.nc)?,
+                    self.x.alloc(self.nc)?,
+                    self.x.alloc(self.nc)?,
+                ];
+                self.variable = Some(b);
+                b
+            }
+        };
+        let mut raws = [Raw::EMPTY; 3];
+        for (i, v) in [source, old, old2].into_iter().enumerate() {
+            if let Some(v) = v {
+                ensure!(
+                    v.len() == self.nc,
+                    "flow device: a variable-density array of {} cells expected",
+                    self.nc
+                );
+                self.x.upload(b[i], v)?;
+                raws[i] = self.x.raw(b[i]);
+            }
+        }
+        self.m.mass_source = raws[0];
+        self.m.rho_old = raws[1];
+        self.m.rho_old2 = raws[2];
+        Ok(())
     }
 
     fn wall_setup(&mut self, w: &WallStatic) -> Result<()> {

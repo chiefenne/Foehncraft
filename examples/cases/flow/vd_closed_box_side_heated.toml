@@ -1,0 +1,69 @@
+# A closed box of air heated through one wall: the expansion of the warm
+# layer drives a flow and raises the thermodynamic pressure p₀ of the
+# closed volume (stage 7c, D151, check V7c.3).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/vd_closed_box_side_heated.toml
+#
+# Air (the material library: ideal gas, c_p(T), k(T), μ(T)) at rest in a
+# rigid box 2 cm × 2 cm at 300 K and 101 325 Pa. The left wall is held at
+# 400 K from t = 0, the other walls are adiabatic; no gravity. The heated
+# layer expands and pushes gas towards the cold side (a flow of a few
+# mm/s), and the gas away from the wall is compressed adiabatically (the
+# "piston effect"). After 2 s the mean temperature has risen and with it
+# p₀ = M R T/M_mol over V. The checks: the mass in the box stays to
+# round-off, every step's mass ledger closes with the storage of the
+# density, and the heat ledger closes.
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [0.02, 0.02, 0.002]
+cells = [32, 32, 1]
+perturb = 0.1
+
+[fluid]
+material = "air"
+temperature = 300.0
+
+[energy]
+initial = 300.0
+density = "variable"
+thermodynamic_pressure = "closed-volume"
+
+[boundary.xmin]
+type = "wall"
+[boundary.xmin.energy]
+temperature = 400.0
+[boundary.xmax]
+type = "wall"
+[boundary.xmax.energy]
+heat_flux = 0.0
+[boundary.ymin]
+type = "wall"
+[boundary.ymin.energy]
+heat_flux = 0.0
+[boundary.ymax]
+type = "wall"
+[boundary.ymax.energy]
+heat_flux = 0.0
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[time]
+scheme = "bdf2"
+time_step = 0.05
+end_time = 2.0
+
+[solver]
+outer_iterations = 20
+outer_tolerance = 1e-8
+
+[verification]
+require_convergence = false
+
+[output]
+wall_csv = false

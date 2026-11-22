@@ -244,6 +244,15 @@ pub struct Mesh {
     /// per boundary face (D154 (4)): p_b = p_P + ∇p_P·r + e_b; empty
     /// without gravity.
     pub pb_offset: Raw<f64>,
+    /// The mass source V (a₀ρⁿ⁺¹ + a₁ρⁿ + a₂ρⁿ⁻¹)/Δt per cell of a
+    /// variable density in a time step (stage 7c, D151): the continuity
+    /// rows read Σ ṁ + source = 0; empty otherwise.
+    pub mass_source: Raw<f64>,
+    /// The cell density of the old time levels n and n − 1 (stage 7c);
+    /// empty: the current density.
+    pub rho_old: Raw<f64>,
+    /// See `rho_old`.
+    pub rho_old2: Raw<f64>,
 }
 
 impl Mesh {
@@ -989,6 +998,8 @@ impl Entry for MomentumRows {
                 theta: a.theta,
                 transient: a.transient != 0,
                 rho: a.m.rho.get(),
+                rho_old: a.m.rho_old.get(),
+                rho_old2: a.m.rho_old2.get(),
                 time_a: a.time_a,
                 dt: a.dt,
                 u_old: a.u_old.v(),
@@ -1255,6 +1266,7 @@ impl Entry for PressureRows {
                 &a.m.topo(),
                 a.cf.get(),
                 a.mass_flux.get(),
+                a.m.mass_source.get(),
                 &a.m.layout(),
                 a.val.out(),
                 a.rhs.out(),
@@ -3006,6 +3018,7 @@ mod tests {
                 + 8
                 + 48
                 + 2 * 16
+                + 3 * 16
         );
     }
 

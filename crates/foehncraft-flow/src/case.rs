@@ -1283,6 +1283,7 @@ impl FlowCase {
         )?;
         crate::energy::validate(self, &env)?;
         crate::buoyancy::validate(self)?;
+        crate::density::validate(self)?;
         crate::turbulence::validate(self)?;
         let p = self.properties()?;
         let rho = p.density();
@@ -1779,6 +1780,10 @@ pub struct Solve {
     /// The statistics of a transient run (D71).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub statistics: Option<crate::statistics::StatisticsSummary>,
+    /// The variable density (stage 7c): p₀, the mass, the density range
+    /// and the largest Mach number.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub density: Option<crate::density::Summary>,
 }
 
 /// The value of a wall probe at the end of a solve.
@@ -2751,6 +2756,7 @@ pub fn run_steered(
             fl.set_momentum_source(src)?;
         }
         crate::scalar::attach(&mut fl, &case, &mesh, &geo)?;
+        crate::density::attach(&mut fl, &case)?;
         crate::buoyancy::attach(&mut fl, &case)?;
         crate::turbulence::attach(&mut fl, &case, &mesh, &geo)?;
         if let Some(notes) = crate::frame::attach(&mut fl, &case, &mesh, &geo)? {
@@ -3368,6 +3374,7 @@ pub fn run_steered(
         }
         let periodic = periodic_summaries(&mut fl, &mesh, &mut lg)?;
         let turbulence = turbulence_summary(&mut fl, &mesh, &mut lg, &mut rep.warnings)?;
+        let density = crate::density::summary(&mut fl, &mut rep.warnings)?;
         if single && (case.run.restart_final || stopped) && restart::AVAILABLE {
             let rs = steady_restart(&mut fl, &mesh, name)?;
             restart::write(&out.join("restart.h5"), &rs)?;
@@ -3402,6 +3409,7 @@ pub fn run_steered(
             wall_crossings: wall_crossing_values,
             turbulence,
             statistics: None,
+            density,
         });
         if stopped {
             rep.stopped = true;

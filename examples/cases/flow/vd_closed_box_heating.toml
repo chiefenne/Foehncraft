@@ -1,0 +1,79 @@
+# A closed box of gas heated uniformly: the thermodynamic pressure p₀(t)
+# of a closed volume and the pressure work of stage 7c (D151, check V7c.2).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/vd_closed_box_heating.toml
+#
+# An ideal gas with the molar mass of air (constant c_p = 1005 J/(kg K))
+# at rest in a rigid closed box 2 cm × 2 cm with adiabatic walls, at 300 K
+# and 101 325 Pa, heated by a uniform source q''' = 1e4 W/m³ for 5 s. Its
+# mass stays, so it warms with c_v = c_p − R/M: T(t) = T₀ + q''' t/(ρ₀ c_v)
+# and p₀(t) = p₀(0) T(t)/T₀, dp₀/dt = (γ − 1) q''' = 3998.3 Pa/s. At 5 s:
+# T = 359.19 K and p₀ = 121 316.44 Pa. Both are linear in t, so the
+# backward differences are exact at any Δt: the run matches them to the
+# tolerance of the outer iterations, and the mass to round-off (on a
+# perturbed mesh). Without the pressure work (`pressure_work = "none"`)
+# the gas would warm with c_p, γ = 1.4 times too slowly.
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [0.02, 0.02, 0.002]
+cells = [10, 10, 1]
+perturb = 0.2
+
+[materials.gas]
+kind = "gas"
+description = "an ideal gas with the molar mass of dry air and constant properties"
+molar_mass = 0.0289647
+density = { form = "ideal-gas", source = "ideal gas, rho = p M / (R T)" }
+specific_heat = 1005.0
+conductivity = 0.0263
+viscosity = 1.8e-5
+
+[fluid]
+material = "gas"
+temperature = 300.0
+
+[energy]
+initial = 300.0
+source = 1.0e4
+density = "variable"
+thermodynamic_pressure = "closed-volume"   # pressure_work is "thermodynamic" by default here
+
+[boundary.xmin]
+type = "wall"
+[boundary.xmin.energy]
+heat_flux = 0.0
+[boundary.xmax]
+type = "wall"
+[boundary.xmax.energy]
+heat_flux = 0.0
+[boundary.ymin]
+type = "wall"
+[boundary.ymin.energy]
+heat_flux = 0.0
+[boundary.ymax]
+type = "wall"
+[boundary.ymax.energy]
+heat_flux = 0.0
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[time]
+scheme = "bdf2"
+time_step = 0.5
+end_time = 5.0
+
+[solver]
+outer_iterations = 20
+outer_tolerance = 1e-12
+
+[verification]
+require_convergence = false
+
+[output]
+wall_csv = false
