@@ -10,6 +10,7 @@ instead.
 
 - [Steady runs: budget and stopping](#steady-runs)
 - [Coupled solver: experiments not to repeat](#coupled-solver)
+- [Multi-rank: local geometry must be canonical](#multi-rank)
 - [Skewed Gmsh tetrahedra](#skewed-tets)
 - [Observers must not change the run](#observers)
 - [Timing small meshes](#timing)
@@ -166,3 +167,19 @@ citation), correlations and analytic solutions, and our own mesh sweep
 to one of those and say which. The audit of 2026-11-21 and its rework of
 2026-11-22 are in `docs/verification/DATA_SOURCES.md` (rule 5) and the
 changelog fragment 176.
+
+<a id="multi-rank"></a>
+## Multi-rank: local geometry must be canonical
+
+Found by the MPI spike of 2026-11-22
+([assessment](assessments/mpi-multi-rank-sizing.md)). The local mesh of a
+rank (`decompose::extract`) re-orients faces so that the owner is the lower
+local cell and sums every cell over its faces in local face order. Geometry
+and matrix rows then differ in the last bits from the one-rank run for about
+40 % of the entities, and the halo cannot repair that, because the face
+quantities are recomputed on each rank. **Do instead:** evaluate every face
+with the node order and orientation of the global mesh (sign flip only),
+sum every cell over its faces in ascending global face id, copy halo values
+from the owner. The example `mpi_matrix` checks this on 1 to 4 ranks in CI.
+Do not compare partitions by tolerance when a bitwise comparison is
+possible: a tolerance hides the cause (D93).
