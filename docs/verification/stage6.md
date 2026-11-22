@@ -2591,6 +2591,38 @@ order that stays on tetrahedra is the midpoint rule of the face sum on
 irregular cells, not the face stress. The coupled momentum solve with QCR
 is still not in the manufactured solution.
 
+## Consistent QCR stress on irregular meshes (D236, PR #194)
+
+The finding above is fixed in two parts. (1) On the cells where the
+operator check (D236, PR #189) finds the face-neighbour velocity gradient
+first order, the explicit stress takes the velocity gradient of a
+quadratic least-squares fit over the neighbours of the neighbours (third
+ring where fewer than 2m points are in reach, m the number of unknowns;
+boundary faces as points with their values; normal equations scaled by
+the cell size and solved by Cholesky with a pivot tolerance of 10⁻⁹). The
+fit is exact for quadratic fields (`foehncraft-fv` exactness tests,
+`operators::tests::quadratic_fit_is_exact_on_tetrahedra`). (2) The face
+stress is the weighted mean of the two cells plus ∇τ̄_f·(x_f − x_w), with
+least-squares cell gradients of the stress, x_w the point of the line
+between the centroids on the face; at a boundary face τ_P + ∇τ_P·(x_f − x_P).
+
+L2 error of the QCR2000 force, 15 % perturbed vertices, three levels
+(`qcr_stress_on_perturbed_meshes_converges`, band: order 0.9 to 2.2 and a
+falling error):
+
+| Mesh | Before | After | Order, finest pair |
+|---|---|---|---|
+| hexahedra | 8.5 %, 5.7 %, 5.5 % | 4.6 %, 1.5 %, 0.65 % | 1.2 |
+| tetrahedra | 27.8 %, 14.6 %, 10.3 % | 15.6 %, 7.3 %, 3.6 % | 1.0 |
+
+Either part alone was not enough in the prototype: the skewness
+correction with the face-neighbour gradient still left an error that did
+not fall. Regular meshes keep their orders (`qcr_stress_manufactured_solution_orders`:
+hexahedra and polyhedra 1.8 to 2.2, tetrahedra 0.8 to 1.3). The first
+order that stays on tetrahedra is the midpoint rule of the face sum on
+irregular cells, not the face stress. The coupled momentum solve with QCR
+is still not in the manufactured solution.
+
 Figure: [mms_turbulence.png](../figures/gallery/mms_turbulence.png) (gallery 184).
 
 ```
