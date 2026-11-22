@@ -246,6 +246,7 @@ and `message`:
 | `LIM005` | a GPU not verified | a GPU not in the verified devices (Tesla T4) |
 | `LIM006` | automatic mesh remediation active | the remediation of D50 changed the schemes (MESH002) |
 | `LIM007` | the history before t = … s is not physical (thermal acceleration) | `[energy.acceleration]` (D213): the run reports `physical_from` |
+| `LIM008` | an operator of a feature in use is not exact on N of M cells | the operator check (D236): `MESH005` with `turbulence.curvature_correction`, `MESH006` with `turbulence.qcr` |
 
 Limitations change neither `status` nor the exit code (D199 Q1, Q2): a
 run with limitations is `finished` with exit code 0. The human text says
@@ -382,6 +383,9 @@ A code keeps its meaning; a retired code stays in the table.
 | `MESH001` | warning | Faces whose skewness exceeds `solver.skewness_limit` (poor cells, typically tetrahedra of a mesh that was not optimised). |
 | `MESH002` | note | Cell-quality remediation (D50): the run uses other schemes than set because of poor cells. |
 | `MESH003` | error | A mesh file that cannot be read: missing, of an unknown format, truncated or damaged (the reader says where); D202. |
+| `MESH004` | warning | The operator check (D236): the least-squares gradient of a linear field is not exact on some cells (a degenerate or badly conditioned stencil); the cells are listed worst first. |
+| `MESH005` | warning | The operator check (D236): with `turbulence.curvature_correction`, the velocity Hessian (DS/Dt) is not consistent for a quadratic field on some cells (error above `solver.operator_tolerance`), so the correction does not converge with the mesh there; the cells are listed worst first. |
+| `MESH006` | warning | The operator check (D236): with `turbulence.qcr`, the velocity gradient is first order on some cells (error above `solver.operator_tolerance` for a quadratic field), so the divergence of the explicit QCR stress does not converge with the mesh there; the cells are listed worst first. |
 | `RUN001` | note | Stopped by the `.stop` control file. |
 | `RUN002` | note | Stopped by a signal (SIGTERM, SIGINT or SIGUSR2). |
 | `RUN003` | warning | Stopped at the wall-time limit (`[run.limits] max_wall_time`). |
@@ -423,6 +427,7 @@ A code keeps its meaning; a retired code stays in the table.
 | `LIM005` | note | The GPU backend ran on a device that is not in the list of verified devices (Tesla T4 so far). |
 | `LIM006` | note | Automatic mesh remediation (D50, MESH002) changed the schemes on poor faces: first order there. |
 | `LIM007` | note | A transient conjugate run with thermal acceleration of its solids (D213): the history before `physical_from` is not physical (the solids' time ran faster, their swing was too large); the end state and later cycle means are. |
+| `LIM008` | note | An operator a feature in use needs is not exact on some cells (MESH005, MESH006, D236): the feature does not converge with the mesh there. |
 | `TOOL001` | error | A tool id that the registry does not have (with the nearest id as a hint); `foehn commands` lists them. |
 | `TOOL002` | error | A tool input that does not match the input schema of the tool (unknown field, wrong type, missing field). |
 | `TOOL003` | warning | The journal of tool calls (D197) could not be written: the calls run, but the journal misses them. |

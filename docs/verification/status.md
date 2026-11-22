@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**100 features: 50 verified, 47 partial, 3 unverified.**
+**101 features: 50 verified, 48 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -34,6 +34,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Meshes | [VTK reader (.vtk, .vtu) and VTU writer](#mesh-vtk) | partial |
 | Meshes | [Partitioning with METIS and halos](#mesh-partition) | partial |
 | Meshes | [Quality report and automatic remediation of skewed cells](#mesh-quality-remediation) | partial |
+| Meshes | [Operator exactness check of the velocity gradient and Hessian](#mesh-operator-check) | partial |
 | Meshes | [VTKHDF output for ParaView](#mesh-vtkhdf) | partial |
 | Numerics | [Weighted least-squares gradients](#numerics-gradient-ls) | verified |
 | Numerics | [Linear upwind and bounded central convection](#numerics-convection-schemes) | verified |
@@ -143,11 +144,17 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 
 ### Gmsh v4 reader
 
-**partial** (no exact or manufactured solution) · id `mesh.gmsh` · switch `mesh.format = "gmsh"`
+**partial** (no exact or manufactured solution; gaps written) · id `mesh.gmsh` · switch `mesh.format = "gmsh"`
 
 - consistency: [`box_tet_ascii_and_binary_are_equal`](../../crates/foehncraft-mesh/tests/gmsh.rs): ASCII and binary files give the same mesh
 - consistency: [`gmsh_meshes_are_unchanged`](../../crates/foehncraft-mesh/tests/gmsh_fingerprint.rs): fingerprints of the Gmsh meshes of the catalogue
 - reference-data: [`pipe_gmsh_raw`](../../examples/cases/flow/pipe_gmsh_raw.toml): developing laminar pipe flow on raw Gmsh tetrahedra converges (with the automatic remediation)
+- reference-data: [`tjunction_mixing`](../../examples/cases/flow/tjunction_mixing.toml): 3D T-junction on polyhedra converted from Gmsh tetrahedra, three meshes: inlet pressure order 1.77, GCI 2.4 % (passes in CI (set linux-1), not yet in the manual)
+
+Gaps:
+
+- T-junction (gallery 196): the pressure at the branch inlet is not grid-convergent (observed order 0.2, GCI 29 %) and the scalar difference downstream oscillates; no comparison with published measurements yet
+- conversion into polyhedra fails with GEN001 (a boundary cell centre behind its face) on Netgen-optimised tetrahedra and on one fine Gmsh mesh of the T-junction (h = 0.005 m); sizes that convert are used
 
 <a id="mesh-su2"></a>
 
@@ -237,6 +244,22 @@ Gaps:
 Gaps:
 
 - no order of accuracy on remediated meshes (the remediation is first order on the skewed faces by design)
+
+<a id="mesh-operator-check"></a>
+
+### Operator exactness check of the velocity gradient and Hessian
+
+**partial** (gaps written) · id `mesh.operator-check` · switch `solver.operator_tolerance` · decisions D236
+
+- exact: [`linear_fields_are_exact_on_every_mesh`](../../crates/foehncraft-fv/src/exactness.rs): the least-squares gradient of linear fields exact to 10⁻¹⁰ on regular and perturbed hexahedra and tetrahedra
+- exact: [`regular_hexahedra_are_second_order_inside`](../../crates/foehncraft-fv/src/exactness.rs): gradient and Hessian of quadratic fields exact inside regular hexahedra, flagged at the walls
+- consistency: [`irregular_cells_are_flagged`](../../crates/foehncraft-fv/src/exactness.rs): perturbed hexahedra and tetrahedra flagged
+- consistency: [`regular_hexahedra_flag_only_the_boundary_cells`](../../crates/foehncraft-flow/src/operators.rs): MESH005 and MESH006 with the features on; only the wall cells of a regular mesh
+- consistency: [`cavity_sst_operator_check`](../../examples/cases/flow/cavity_sst_operator_check.toml): the cavity on perturbed tetrahedra: every cell flagged, operators.csv written, the run converges as without the check (passes in CI (set linux-3), not yet in the manual)
+
+Gaps:
+
+- the flagged cells are not yet treated: the quadratic least-squares operators and the local remesh are the next steps of D236
 
 <a id="mesh-vtkhdf"></a>
 

@@ -490,7 +490,7 @@ impl Discretisation {
 /// The least-squares gradient weights of `mesh`, one per entry of
 /// `cell_faces`, with `kind` the boundary kind of every boundary face
 /// (the `lsq` of [`Discretisation::new`]).
-fn lsq_weights(mesh: &Mesh, geo: &Geometry, kind: &[BoundaryKind]) -> Result<Soa3> {
+pub(crate) fn lsq_weights(mesh: &Mesh, geo: &Geometry, kind: &[BoundaryKind]) -> Result<Soa3> {
     let nc = mesh.n_cells;
     let ni = mesh.n_interior_faces();
     let xc = &geo.cell_centroid;

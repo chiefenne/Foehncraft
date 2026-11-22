@@ -34,6 +34,8 @@ examples/meshes/*.su2
 !examples/meshes/taylor_couette_zones.su2
 # the raw Gmsh pipe of the cell-quality remediation (D50): case, test and gallery
 !examples/meshes/pipe_gmsh_raw.msh
+# the coarse T-junction of gallery 196 (4 852 polyhedra, 0.9 MB), the CI case
+!examples/meshes/tjunction_gci_coarse.msh
 
 # Python package
 __pycache__/

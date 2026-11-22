@@ -50,6 +50,11 @@ evidence = [
   { kind = "consistency", test = "crates/foehncraft-mesh/tests/gmsh.rs::box_tet_ascii_and_binary_are_equal", what = "ASCII and binary files give the same mesh" },
   { kind = "consistency", test = "crates/foehncraft-mesh/tests/gmsh_fingerprint.rs::gmsh_meshes_are_unchanged", what = "fingerprints of the Gmsh meshes of the catalogue" },
   { kind = "reference-data", case = "pipe_gmsh_raw", what = "developing laminar pipe flow on raw Gmsh tetrahedra converges (with the automatic remediation)" },
+  { kind = "reference-data", case = "tjunction_mixing", what = "3D T-junction on polyhedra converted from Gmsh tetrahedra, three meshes: inlet pressure order 1.77, GCI 2.4 %" },
+]
+gaps = [
+  "T-junction (gallery 196): the pressure at the branch inlet is not grid-convergent (observed order 0.2, GCI 29 %) and the scalar difference downstream oscillates; no comparison with published measurements yet",
+  "conversion into polyhedra fails with GEN001 (a boundary cell centre behind its face) on Netgen-optimised tetrahedra and on one fine Gmsh mesh of the T-junction (h = 0.005 m); sizes that convert are used",
 ]
 
 [[feature]]
@@ -129,6 +134,21 @@ evidence = [
   { kind = "consistency", test = "crates/foehncraft-flow/tests/quality.rs::raw_gmsh_tetrahedra_converge_with_the_remediation", what = "raw Gmsh tetrahedra converge with it and fail without it" },
 ]
 gaps = ["no order of accuracy on remediated meshes (the remediation is first order on the skewed faces by design)"]
+
+[[feature]]
+id = "mesh.operator-check"
+area = "Meshes"
+title = "Operator exactness check of the velocity gradient and Hessian"
+switch = "solver.operator_tolerance"
+decisions = ["D236"]
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-fv/src/exactness.rs::linear_fields_are_exact_on_every_mesh", what = "the least-squares gradient of linear fields exact to 10⁻¹⁰ on regular and perturbed hexahedra and tetrahedra" },
+  { kind = "exact", test = "crates/foehncraft-fv/src/exactness.rs::regular_hexahedra_are_second_order_inside", what = "gradient and Hessian of quadratic fields exact inside regular hexahedra, flagged at the walls" },
+  { kind = "consistency", test = "crates/foehncraft-fv/src/exactness.rs::irregular_cells_are_flagged", what = "perturbed hexahedra and tetrahedra flagged" },
+  { kind = "consistency", test = "crates/foehncraft-flow/src/operators.rs::regular_hexahedra_flag_only_the_boundary_cells", what = "MESH005 and MESH006 with the features on; only the wall cells of a regular mesh" },
+  { kind = "consistency", case = "cavity_sst_operator_check", what = "the cavity on perturbed tetrahedra: every cell flagged, operators.csv written, the run converges as without the check" },
+]
+gaps = ["the flagged cells are not yet treated: the quadratic least-squares operators and the local remesh are the next steps of D236"]
 
 [[feature]]
 id = "mesh.vtkhdf"

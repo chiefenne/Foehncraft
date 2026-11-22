@@ -180,6 +180,9 @@ codes! {
     // the mesh quality (D50)
     MESH_SKEWED = "MESH001", Warning, "Faces whose skewness exceeds `solver.skewness_limit` (poor cells, typically tetrahedra of a mesh that was not optimised).";
     MESH_REMEDIATION = "MESH002", Note, "Cell-quality remediation (D50): the run uses other schemes than set because of poor cells.";
+    MESH_OPERATOR_LINEAR = "MESH004", Warning, "The operator check (D236): the least-squares gradient of a linear field is not exact on some cells (a degenerate or badly conditioned stencil); the cells are listed worst first.";
+    MESH_OPERATOR_HESSIAN = "MESH005", Warning, "The operator check (D236): with `turbulence.curvature_correction`, the velocity Hessian (DS/Dt) is not consistent for a quadratic field on some cells (error above `solver.operator_tolerance`), so the correction does not converge with the mesh there; the cells are listed worst first.";
+    MESH_OPERATOR_GRADIENT = "MESH006", Warning, "The operator check (D236): with `turbulence.qcr`, the velocity gradient is first order on some cells (error above `solver.operator_tolerance` for a quadratic field), so the divergence of the explicit QCR stress does not converge with the mesh there; the cells are listed worst first.";
     MESH_READ = "MESH003", Error, "A mesh file that cannot be read: missing, of an unknown format, truncated or damaged (the reader says where); D202.";
     // the run (D40, D62, D64, D83)
     RUN_STOP_FILE = "RUN001", Note, "Stopped by the `.stop` control file.";
@@ -228,6 +231,7 @@ codes! {
     LIM_ONE_MESH = "LIM004", Note, "One mesh only: the discretisation uncertainty is not estimated (a level sweep gives the GCI, D67).";
     LIM_DEVICE = "LIM005", Note, "The GPU backend ran on a device that is not in the list of verified devices (Tesla T4 so far).";
     LIM_ACCELERATED = "LIM007", Note, "A transient conjugate run with thermal acceleration of its solids (D213): the history before `physical_from` is not physical (the solids' time ran faster, their swing was too large); the end state and later cycle means are.";
+    LIM_OPERATORS = "LIM008", Note, "An operator a feature in use needs is not exact on some cells (MESH005, MESH006, D236): the feature does not converge with the mesh there.";
     LIM_REMEDIATION = "LIM006", Note, "Automatic mesh remediation (D50, MESH002) changed the schemes on poor faces: first order there.";
     // the tool registry (D196)
     TOOL_UNKNOWN = "TOOL001", Error, "A tool id that the registry does not have (with the nearest id as a hint); `foehn commands` lists them.";

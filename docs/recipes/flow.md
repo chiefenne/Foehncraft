@@ -1301,3 +1301,27 @@ python3 -m tools.plot.meridional_fields disc_pot.png output/disc_pot/fields.vtkh
 
 [Gallery 103](../gallery/flow.md#revolved-interfaces); the keys are in
 [keys.md](../keys.md).
+
+---
+
+<a id="tjunction-mixing"></a>
+## 196. Mix two streams in a T-junction and check the mesh
+
+Mesh the junction with Gmsh at a size `h` (Netgen optimisation breaks the
+conversion into polyhedra, so leave it off), convert on reading and run:
+
+```
+gmsh -3 examples/meshes/tjunction_gci.geo -setnumber h 0.0079 -format msh41 -o tj.msh
+target/release/foehn flow examples/cases/flow/tjunction_mixing.toml --out output/tj \
+    --set 'mesh.file="tj.msh"'
+```
+
+`polyhedral = true` makes one cell per node. The branch carries a
+`[scalars.theta]` value of 1, the main inlet 0 (recipe on scalars). For
+the grid study run `python3 examples/studies/tjunction_gci.py output/tj_gci`
+(three meshes, about half a minute); check the report for the observed
+order of each quantity before trusting a number. A run that stops with
+GEN001 has a boundary cell whose centre lies behind its face: take
+another mesh size, or run the tetrahedra (`polyhedral = false`).
+
+[↑ back to top](#incompressible-flow)

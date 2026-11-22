@@ -110,6 +110,16 @@ maintainer before starting more.
   not a representative test.
 
 <a id="observers"></a>
+### Polyhedra from Netgen tetrahedra
+
+Converting tetrahedra into polyhedra (`mesh.polyhedral = true`) can end the
+run with GEN001 (the centre of a boundary cell lies behind its face, found
+on the T-junction of gallery 196, 2026-11-22): every mesh of the geometry
+optimised by Netgen failed, plain Gmsh meshes converted on three of four
+sizes (h = 0.0050 m failed, 0.0055 m passed). Use plain Gmsh tetrahedra,
+try another size, or run the tetrahedra; the cause in the dual of boundary
+nodes at the concave junction edge is not fixed.
+
 ## Observers must not change the run
 
 Writing an intermediate result or a balance table between two outer
