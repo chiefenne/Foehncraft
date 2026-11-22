@@ -52,6 +52,7 @@ pub mod engine;
 pub mod expr;
 pub mod frame;
 pub mod limitations;
+pub mod live;
 pub mod logblocks;
 pub mod logcols;
 pub mod materials;

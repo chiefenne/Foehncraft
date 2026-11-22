@@ -183,6 +183,8 @@ pub struct Steer {
     spend: SpendMeter,
     /// Lines for the log after its banner (the budgets, D198).
     pub(crate) notes: Vec<String>,
+    /// The live control port of the run (L19), when it has one.
+    pub(crate) live: Option<crate::live::Live>,
 }
 
 /// What a run has spent so far (cell-seconds, GPUs), and what the earlier
@@ -233,6 +235,7 @@ impl Steer {
             build: None,
             spend: SpendMeter::new(),
             notes: Vec::new(),
+            live: None,
         })
     }
 
@@ -248,6 +251,7 @@ impl Steer {
             build: None,
             spend: SpendMeter::new(),
             notes: Vec::new(),
+            live: None,
         }
     }
 
@@ -331,6 +335,12 @@ impl Steer {
                 diag::RUN_STOP_FILE,
                 "control-file",
                 "stopped by .stop".into(),
+            ))
+        } else if self.live.as_ref().is_some_and(|l| l.stop_requested()) {
+            Some(stop(
+                diag::RUN_CONTROL_STOP,
+                "control-port",
+                "stopped through the control port (run.stop)".into(),
             ))
         } else if let Some(sig) = self.interrupts.stop() {
             Some(Stop {
@@ -417,6 +427,22 @@ impl Steer {
         s
     }
 
+    /// The settings asked for through the control port since the last call
+    /// (L19).
+    pub(crate) fn take_settings(&self) -> Vec<crate::live::Pending> {
+        self.live
+            .as_ref()
+            .map(|l| l.take_settings())
+            .unwrap_or_default()
+    }
+
+    /// What the run did with a request of the control port, for its status.
+    pub(crate) fn live_note(&self, entry: serde_json::Value) {
+        if let Some(l) = &self.live {
+            l.note(entry);
+        }
+    }
+
     /// A restart file was asked for (SIGUSR1) since the last call.
     pub(crate) fn restart_requested(&self) -> bool {
         self.interrupts.take_restart()
@@ -486,6 +512,8 @@ impl std::fmt::Debug for Observer {
 pub(crate) struct Record {
     file: Option<std::io::BufWriter<std::fs::File>>,
     observer: Option<Observer>,
+    /// The state for the live control port (L19).
+    live: Option<crate::live::Live>,
 }
 
 impl Record {
@@ -495,6 +523,7 @@ impl Record {
         Ok(Self {
             file: Some(std::io::BufWriter::new(f)),
             observer: None,
+            live: None,
         })
     }
 
@@ -502,15 +531,21 @@ impl Record {
         Self {
             file: None,
             observer: None,
+            live: None,
         }
     }
 
     /// Appends one row.
     pub(crate) fn row(&mut self, v: &impl Serialize) {
-        if let Some(o) = &self.observer
+        if (self.observer.is_some() || self.live.is_some())
             && let Ok(j) = serde_json::to_value(v)
         {
-            o.call(&j);
+            if let Some(o) = &self.observer {
+                o.call(&j);
+            }
+            if let Some(l) = &self.live {
+                l.observe(&j);
+            }
         }
         if let Some(f) = self.file.as_mut()
             && let Ok(s) = serde_json::to_string(v)
@@ -524,6 +559,11 @@ impl Record {
         if let Some(f) = self.file.as_mut() {
             let _ = f.flush();
         }
+    }
+
+    /// Hands the rows to the live control port (L19).
+    pub(crate) fn live(&mut self, l: crate::live::Live) {
+        self.live = Some(l);
     }
 
     /// True when rows are written or observed.
@@ -1628,6 +1668,10 @@ pub struct RunOptions {
     /// D197): written into the run record after its header, so that
     /// `foehn run --script run.jsonl` runs it again.
     pub call: Option<serde_json::Value>,
+    /// Listen on the live control port (L19, D198 (f)): `run.status`,
+    /// `run.stop` and `run.set` reach the run through `control.json` and
+    /// `control.token` in its output directory.
+    pub control: bool,
 }
 
 /// The result summary (`result.json`, D62): what a study or an agent needs
@@ -1766,6 +1810,15 @@ pub fn run(
     let mut steer = Steer::new(opts.interrupts.clone(), dir, true)?;
     steer.record.observer = opts.observer.clone();
     steer.build = Some(opts.build.clone());
+    // the live control port lives as long as the run (L19)
+    let _port = if opts.control {
+        let live = crate::live::Live::default();
+        steer.record.live(live.clone());
+        steer.live = Some(live.clone());
+        Some(crate::live::Port::open(dir, &live, &opts.interrupts)?)
+    } else {
+        None
+    };
     let res = resolve_latest(&mut case, dir)
         .and_then(|()| check_paths(&case, &opts.roots))
         .and_then(|()| {

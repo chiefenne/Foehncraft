@@ -456,3 +456,134 @@ fn a_cancelled_run_stops_with_its_output() {
     assert!(d.join("runs/a/result.json").exists());
     assert_eq!(c.end(), 0);
 }
+
+/// L19: while `flow.run` is going, `run.status` answers at once with the
+/// live residuals, `run.set` changes a run-time setting (and cannot touch the
+/// limits), `run.stop` ends the run with its output; the journal holds the
+/// live calls and a replay skips them.
+#[test]
+fn a_running_case_is_steered_and_stopped_through_its_control_port() {
+    let d = dir("control");
+    std::fs::write(d.join("cavity.toml"), cavity(true, 2_000_000)).unwrap();
+    std::fs::write(
+        d.join("foehn-mcp.toml"),
+        "[actions]\nstart-run = \"allow\"\n",
+    )
+    .unwrap();
+    let mut c = Client::start(&d, false);
+    let run = c.post(
+        "tools/call",
+        json!({"name": "flow.run", "arguments": {"case": "cavity.toml", "out": "runs/live"}}),
+    );
+    // the port opens with the run; wait for the first iterations
+    let mut status = Value::Null;
+    for _ in 0..600 {
+        if d.join("runs/live/control.json").exists() {
+            let env = c.call("run.status", json!({"dir": "runs/live"}));
+            if env["status"] == "finished" && env["result"]["last"]["iteration"].as_u64() > Some(5)
+            {
+                status = env["result"].clone();
+                break;
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    assert_eq!(status["format"], "foehn.run-status", "{status}");
+    assert_eq!(status["state"], "running");
+    assert!(status["last"]["continuity"].is_number());
+
+    // a limit is the person's: refused; a run-time setting is queued
+    let env = c.call(
+        "run.set",
+        json!({"dir": "runs/live", "set": {"run.limits.max_wall_time": 1e9}}),
+    );
+    assert_eq!(code(&env), "TOOL007", "{env}");
+    let env = c.call(
+        "run.set",
+        json!({"dir": "runs/live", "set": {"solver.momentum.relaxation": 0.5}}),
+    );
+    assert_eq!(env["status"], "finished", "{env}");
+    // the run reports what it did with it
+    let mut applied = false;
+    for _ in 0..200 {
+        let env = c.call("run.status", json!({"dir": "runs/live"}));
+        applied = env["result"]["control"]
+            .as_array()
+            .is_some_and(|l| l.iter().any(|e| e["status"] == "applied"));
+        if applied {
+            let e = &env["result"]["control"][0];
+            assert_eq!(e["key"], "solver.momentum.relaxation");
+            assert!(e["schedule"].as_str().unwrap().contains("at_iteration"));
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    assert!(applied, "the run did not report the change");
+    // an invalid value is reported at the boundary, not applied
+    c.call(
+        "run.set",
+        json!({"dir": "runs/live", "set": {"solver.momentum.relaxation": "high"}}),
+    );
+    let mut rejected = false;
+    for _ in 0..200 {
+        let env = c.call("run.status", json!({"dir": "runs/live"}));
+        rejected = env["result"]["control"]
+            .as_array()
+            .is_some_and(|l| l.iter().any(|e| e["status"] == "rejected"));
+        if rejected {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    assert!(rejected);
+
+    let env = c.call("run.stop", json!({"dir": "runs/live"}));
+    assert_eq!(env["status"], "finished", "{env}");
+    let r = c.wait(run, |_, _| {});
+    let env = &r["result"]["structuredContent"];
+    assert_eq!(env["exit_code"], 3, "{env}");
+    assert_eq!(env["result"]["stop"]["code"], "RUN022", "{env}");
+    // the port is closed and its files are gone
+    assert!(!d.join("runs/live/control.json").exists());
+    assert!(!d.join("runs/live/control.token").exists());
+    let env = c.call("run.status", json!({"dir": "runs/live"}));
+    assert_eq!(code(&env), "TOOL007");
+    // the run record says what happened, with the equivalent schedule entry
+    let rec = std::fs::read_to_string(d.join("runs/live/run.jsonl")).unwrap();
+    for code in ["RUN022", "RUN023", "RUN024"] {
+        assert!(rec.contains(code), "{code} missing in the run record");
+    }
+    assert_eq!(c.end(), 0);
+
+    // the journal holds the live calls; a replay skips them
+    let j = journal(&d);
+    assert!(j.iter().any(|v| v["tool"] == "run.stop"));
+    let script = d.join("live-script.jsonl");
+    let rows: Vec<String> = j
+        .iter()
+        .filter(|v| v["tool"].as_str().is_some_and(|t| t.starts_with("run.")))
+        .map(|v| v.to_string())
+        .collect();
+    std::fs::write(&script, rows.join("\n")).unwrap();
+    let o = Command::new(FOEHN)
+        .args(["--json", "run", "--script", "live-script.jsonl"])
+        .args(["--read-root", ".", "--write-root", "runs"])
+        .current_dir(&d)
+        .output()
+        .unwrap();
+    assert_eq!(
+        o.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&o.stderr)
+    );
+    let out = String::from_utf8_lossy(&o.stdout);
+    assert!(
+        out.contains("\"skipped\": ") || out.contains("\"skipped\":"),
+        "{out}"
+    );
+    assert!(
+        out.contains("\"replayed\": 0") || out.contains("\"replayed\":0"),
+        "{out}"
+    );
+}

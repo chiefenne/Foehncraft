@@ -19,7 +19,7 @@ def test_the_catalogue_lists_every_tool():
     assert len(ids) == len(set(ids))
     for t in cat["tools"]:
         assert t["input_schema"]["type"] == "object", t["id"]
-        assert t["action"] in ("read", "write-files", "start-run"), t["id"]
+        assert t["action"] in ("read", "write-files", "start-run", "control"), t["id"]
 
 
 @needs_native

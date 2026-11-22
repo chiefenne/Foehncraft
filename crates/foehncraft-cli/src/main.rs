@@ -454,6 +454,11 @@ struct FlowArgs {
     /// Allow writing only below this directory (repeatable, D82).
     #[arg(long, value_name = "DIR")]
     write_root: Vec<PathBuf>,
+    /// Open the live control port of the run (L19): `run.status`,
+    /// `run.stop` and `run.set` (`foehn call`) reach the run through
+    /// `control.json` and `control.token` in its output directory.
+    #[arg(long)]
+    control_port: bool,
     /// CPU threads (overrides `run.threads`).
     #[arg(long)]
     threads: Option<usize>,
@@ -1002,6 +1007,7 @@ fn flow(a: FlowArgs, out: Out) -> Result<Done> {
     }
     let mut c = ctx(out).roots(roots);
     c.interrupts = signals();
+    c.control = a.control_port;
     let o = tools::flow::run_outcome(input, &mut c)?;
     let s = &o.summary;
     for d in s

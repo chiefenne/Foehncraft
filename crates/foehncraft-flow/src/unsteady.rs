@@ -2155,6 +2155,14 @@ fn run_one<F: FnMut(&str)>(
         {
             dt = b.time_step;
         }
+        if let Some(old) =
+            crate::case::apply_live_settings(&mut case, &mut fl, lg, steer, warnings, n)?
+            && let (Some(a), Some(b)) = (old.time, case.time)
+            && a.time_step != b.time_step
+            && !b.adaptive
+        {
+            dt = b.time_step;
+        }
         if let Some(s) = steer.poll(&case.run.limits, nsteps, true, req.stop) {
             lg.note(&format!("step {n}: {}", s.message));
             stopped = true;
