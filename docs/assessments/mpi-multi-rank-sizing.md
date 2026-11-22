@@ -190,11 +190,28 @@ W9; W2 and W3 can run in parallel after W1 if two threads are used.
 - The user must not have to choose a partition to get a result: results do
   not depend on the cuts, and the partition is a performance setting.
 
-## 8. Open points for the maintainer
+## 8. Decisions of the maintainer and open points
 
-The cards in the thread: (1) what runs on ranks in v1.0, (2) replicated or
-scalable multigrid setup, (3) GPU with ranks in v1.0, (4) how a run starts on
-ranks. Answers go into section 7a and D235 of the requirements.
+**Card 1 (2026-11-22): scope.** The maintainer chose "everything in v1.0":
+besides fluid-only flows, periodic faces, sliding interfaces, moving
+reference frames (MRF) and CHT with several regions also run on ranks in
+v1.0. Consequences for the plan, none of which is sized by this spike:
+
+| ID | Work | Basis | Agent time |
+| --- | --- | --- | --- |
+| W10 | Periodic faces in the decomposition (`decompose` refuses periodic meshes today; the affine map of D109 across a periodic pair that crosses a rank cut; the driving force of the periodic pipe as an exact global reduction) | Code read: one refusal in `decompose.rs`, the rest unknown | not sized yet |
+| W11 | MRF zones (a source term in a cell zone, probably partition-local) | Not read in this spike | not sized yet |
+| W12 | Sliding interfaces: imprinting and the supermesh of D58 and the rotating zone across rank cuts, torque and flux sums exact | Not read in this spike | not sized yet |
+| W13 | CHT views per rank with halo plans and the two-constraint METIS partition (D159, D122), interface faces on rank cuts computed once | Plan exists in the stage 7 page, section 11 | not sized yet |
+
+These four were deferred by the "fluid-only" option to keep the path short;
+taking them into v1.0 moves the tag. A first estimate needs a code read of
+each, about one hour of agent time per item, which is the proposal for the
+next step if the maintainer wants numbers before the order is fixed.
+
+**Still open (cards 2 to 4):** replicated or scalable multigrid setup, GPU with
+ranks in v1.0, how a run starts on ranks. Answers go into section 7a and D235
+of the requirements.
 
 ## References
 
