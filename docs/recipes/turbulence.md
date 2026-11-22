@@ -796,6 +796,82 @@ judge convergence by u_τ, not by the residual alone.
 
 ---
 
+<a id="diffuser"></a>
+## 199. Run an asymmetric diffuser, its grid study and a transient run from the steady state
+
+The inlet is a developed channel profile: the periodic channel
+`diffuser_channel_profile.toml` (bulk velocity set so that the centreline
+velocity is 1 m/s, Re_H = U_c H/ν = 20 000) gives the table
+`diffuser_inlet_profile.csv` (`python3 examples/studies/diffuser_inlet_profile.py`;
+change the mass flow of the periodic pair if the viscosity changes).
+Make the structured mesh at a level (every level halves all intervals;
+both corners of the lower wall are rounded with 4.3 H) and run:
+
+```
+python3 examples/meshes/diffuser.py diffuser.su2 --level 0
+target/release/foehn flow examples/cases/flow/diffuser_sst.toml --out output/diffuser \
+    --set 'mesh.file="diffuser.su2"'
+```
+
+- The case starts from potential flow (`[initial] potential_flow`), not
+  from a uniform field, with first-order upwind momentum, and switches to
+  linear upwind at iteration 201:
+
+  ```toml
+  [solver.momentum]
+  scheme = "upwind"
+  relaxation = 0.8
+
+  [[schedule]]
+  at_iteration = 201
+  set = { solver.momentum.scheme = "linear-upwind" }
+  ```
+
+  The scheme may change only between `"upwind"` and `"linear-upwind"`
+  (also at run time through `control.toml`); a change to or from
+  `"central"` is refused.
+- The report prints the separation and the reattachment point of the
+  lower wall (`output.wall_crossings`, positions from x = 0) and the
+  first-cell y⁺ of both walls; `wall_upper.csv` holds the wall pressure
+  for the pressure recovery. The log prints u at a probe in the jet core
+  and one in the separated region: judge convergence on these. On the
+  finer levels the momentum residual rises for a while (on level 2 from 1 000 to 2 400 of its 4 909 iterations) while
+  the jet moves to the upper wall; it is not a divergence.
+- **Sharp corners**: `diffuser.py --sharp` makes the mesh without the
+  radius and shortens the diffuser cells towards both corners (aspect
+  ratio about 11 at the kinks); run it with `diffuser_sst_sharp.toml`. Its
+  separation search starts 1 H behind the corner (`skip = 1.0`), since the
+  wall shear stays near zero there and small bubbles come and go with the
+  mesh. For a sharp corner of your own geometry, keep the first-order
+  start and shorten the wall cells at the kink
+  ([pitfalls](../pitfalls.md#sharp-wall-corners-and-thin-wall-cells-the-asymmetric-diffuser)).
+- The grid study runs levels 0 to 2 at the same time and writes
+  `report.md` with the order and GCI of each quantity:
+
+  ```
+  python3 examples/studies/diffuser_gci.py output/diffuser_gci --jobs 3
+  python3 examples/studies/diffuser_gci.py output/diffuser_gci_sharp --jobs 3 --sharp
+  ```
+
+- A **transient run from the steady state**: give the steady restart file
+  and a time step. Drop the iteration schedule (`at_iteration` does not fit
+  a transient case) and set the relaxation to 1 (one outer iteration per
+  step):
+
+  ```
+  target/release/foehn flow examples/cases/flow/diffuser_sst.toml --out output/diffuser_t \
+      --set 'mesh.file="diffuser.su2"' --restart output/diffuser/restart.h5 \
+      --set 'schedule=[]' --set solver.momentum.relaxation=1.0 \
+      --set time.time_step=0.1 --set time.end_time=100.0 \
+      --set 'output.probes=[{name="sep",point=[10.0,-1.5,0.5]},{name="shear",point=[15.0,-1.0,0.5]},{name="reat",point=[28.0,-3.5,0.5]},{name="core",point=[15.0,0.5,0.5]}]'
+  python3 -m tools.plot.diffuser_transient transient.png output/diffuser_t OTHER_RUN
+  ```
+
+  The log notes "start from the steady solution of …"; the steady fields
+  are the start fields at `time.start_time`, with no older time levels.
+  `probes.csv` holds the four probes; a steady state that is stable stays
+  flat (gallery 199).
+
 <a id="curvature-consistency"></a>
 ## 197. Run the curvature correction on tetrahedra and perturbed meshes
 

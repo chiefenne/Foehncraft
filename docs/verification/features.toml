@@ -515,9 +515,15 @@ evidence = [
   { kind = "reference-data", case = "tmr_plate_sst", what = "flat plate: C_f(0.97) +1.45 % from the Coles–Fernholz fit, GCI 1.76 %", doc = "docs/verification/stage6.md#tmr-flat-plate-re_l--510⁶" },
   { kind = "reference-data", case = "channel_sst", what = "channel at Re_τ 395: U_b⁺ −1.3 % from the DNS of Moser, Kim & Mansour (1999)", doc = "docs/verification/stage6.md#channel-re_τ--395" },
   { kind = "reference-data", case = "pipe_turbulent_sst", what = "pipe at Re_b 5300: u_τ/U_b +4.5 % from the DNS of El Khoury et al. (2013), GCI 0.2 % (band ±6 %)" },
+  { kind = "consistency", case = "diffuser_sst", what = "asymmetric diffuser with rounded corners, developed channel-profile inlet: converges on three meshes (6 960 to 111 360 cells); reattachment 28.94 H (GCI 0.36 %), separation 2.20 H (GCI 4 %), C_p(45 H) 0.5465 (GCI below 0.01 %)", doc = "docs/gallery/turbulence.md#diffuser" },
+  { kind = "consistency", case = "diffuser_sst_sharp", what = "the same diffuser with sharp corners (cells shortened towards the corners): converges; separated region from 1.82 H to 29.29 H on 8 400 cells", doc = "docs/gallery/turbulence.md#diffuser" },
+  { kind = "consistency", case = "diffuser_channel_profile", what = "periodic channel at centreline Re 20 000: centreline velocity 1.000 m/s, the developed inlet table of the diffuser" },
   { kind = "reference-data", case = "backstep_outlet_backflow", what = "backward-facing step with the outlet inside the recirculation" },
   { kind = "reference-data", run = "level sweep of backstep_validation with SST, 3 meshes", doc = "docs/verification/stage6.md#backward-facing-step-against-the-experiment-part-6g-95", what = "step of Driver & Seegmiller (1985): x_r/H 6.747, +7.8 % (band ±10 %)" },
   { kind = "consistency", test = "crates/foehncraft-flow/tests/turbulence.rs::sst_results_are_bitwise_equal_on_1_and_4_threads", what = "bitwise equal on 1 and 4 threads" },
+]
+gaps = [
+  "asymmetric diffuser (gallery 199): not compared with the measurements of Buice & Eaton (pending); the separation point converges at order 1.6 only (GCI 4 %), and the steady solver needs about three times the iterations per halving of the mesh (4 909 on 111 360 cells) while the jet moves slowly to the upper wall",
 ]
 notes = [
   "plate C_f against White's correlation −8.5 to −5.4 % (band ±8 %, widened from ±5 % on 2026-11-22): SST sits −6.1 % below White at x = 0.97 and −1.4 to +2.5 % from the Coles–Fernholz fit to measured layers",
@@ -1187,6 +1193,8 @@ switch = "[[schedule]]"
 evidence = [
   { kind = "consistency", case = "cavity_re100_schedule", what = "the Ghia cavity with a schedule" },
   { kind = "consistency", test = "crates/foehncraft-flow/tests/schedule.rs::steady_schedule_logs_changes_and_noop_changes_nothing", what = "a no-op schedule changes nothing" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/schedule.rs::the_momentum_scheme_switches_from_upwind_to_linear_upwind", what = "an upwind start switched to linear upwind converges to the linear-upwind solution" },
+  { kind = "consistency", case = "diffuser_sst", what = "the asymmetric diffuser starts with 200 upwind iterations, then linear upwind" },
 ]
 
 [[feature]]
@@ -1211,6 +1219,7 @@ evidence = [
   { kind = "contract", property = "bitwise", test = "crates/foehncraft-cli/tests/run_contract.rs::steady_restart_latest_is_bitwise", what = "`--restart latest` of a steady run is bitwise" },
   { kind = "contract", property = "bitwise", test = "crates/foehncraft-cli/tests/run_contract.rs::sigterm_stops_cleanly_and_restart_latest_continues_bitwise", what = "SIGTERM stops cleanly, restart continues bitwise" },
   { kind = "contract", property = "control", test = "crates/foehncraft-flow/tests/stage5.rs::stop_file_ends_the_run", what = "a stop file ends the run" },
+  { kind = "contract", property = "control", test = "crates/foehncraft-flow/tests/stage5.rs::transient_run_starts_from_a_steady_restart", what = "a transient run starts from a steady restart file and a converged state stays" },
   { kind = "contract", property = "control", test = "crates/foehncraft-cli/tests/run_contract.rs::sigterm_stops_cleanly_and_restart_latest_continues_bitwise", what = "SIGTERM writes a restart file and exits cleanly" },
 ]
 

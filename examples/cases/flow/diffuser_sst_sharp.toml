@@ -1,0 +1,87 @@
+# The asymmetric plane diffuser of diffuser_sst.toml with SHARP corners
+# (no radius) on both ends of the 10 degree wall (stage 8, D45), k-omega
+# SST 2003 with the low-Re wall treatment.
+#
+#   python3 examples/meshes/diffuser.py examples/meshes/diffuser_sharp_coarse.su2 --level 0 --sharp   (committed)
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/diffuser_sst_sharp.toml
+#
+# Everything else as in diffuser_sst.toml (developed channel-profile inlet,
+# Re_H = U_c H / nu = 20 000, potential start, upwind for 200 iterations,
+# then linear upwind without a limiter, relaxation 0.8). The mesh shortens
+# the diffuser cells towards both corners, from 0.33 H in the middle to
+# 0.0175 H at the corners on level 0, so the thin wall cells at the kinks
+# have an aspect ratio of about 11 instead of 150: the least-squares
+# gradient of a wall cell next to a kink is wrong by about the aspect
+# ratio times the kink angle (docs/pitfalls.md). With a sharp corner the
+# flow separates at the corner itself. 8 400 cells on the coarse mesh; the
+# grid study runs levels 0 to 2 (examples/studies/diffuser_gci.py --sharp).
+# No reference value is used (D201).
+
+case_format = "0.6"
+
+[mesh]
+file = "../../meshes/diffuser_sharp_coarse.su2"
+thickness = 1.0
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 5e-5
+
+[turbulence]
+model = "k-omega-sst"
+wall_treatment = "low-re"
+
+[initial]
+potential_flow = true  # not a uniform field: it breaks continuity in the widening
+turbulence_intensity = 0.05
+viscosity_ratio = 10.0
+
+[boundary.inlet]
+type = "velocity-inlet"
+profile = "table"
+table = "diffuser_inlet_profile.csv"
+table_coordinate = "y"
+[boundary.outlet]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.upper]
+type = "wall"
+[boundary.lower]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-7
+max_iterations = 8000  # levels 0 and 1 need about 1 100 and 2 700 iterations
+
+[solver.momentum]
+scheme = "upwind"      # a first-order start from the potential flow ...
+relaxation = 0.8
+
+[[schedule]]
+at_iteration = 201     # ... then second order (linear upwind, no limiter)
+set = { solver.momentum.scheme = "linear-upwind" }
+
+[output]
+vtkhdf = false
+wall_csv = true
+wall_crossings = [
+  # behind the sharp corner the shear stays near zero for about 1.5 H and
+  # bubbles of 0.1 H come and go with the mesh: the search for the main
+  # separation starts 1 H behind the corner
+  { name = "separation", boundary = "lower", from = [0.0, 0.0, 0.5], direction = [1.0, 0.0, 0.0], kind = "separation", skip = 1.0 },
+  { name = "reattachment", boundary = "lower", from = [0.0, 0.0, 0.5], direction = [1.0, 0.0, 0.0], kind = "reattachment", skip = 2.0 },
+]
+# the jet core and the separated region: convergence is judged on these
+# (the jet moves slowly from the middle to the upper wall on the way)
+probes = [
+  { name = "core", point = [15.0, 0.5, 0.5] },
+  { name = "sep", point = [10.0, -1.5, 0.5] },
+]
+
+[log]
+columns = ["residual.momentum", "residual.continuity", "residual.turbulence", "probe.core.velocity_x", "probe.sep.velocity_x"]

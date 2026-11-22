@@ -921,6 +921,12 @@ target/release/foehn flow examples/cases/flow/impinging_jet.toml --out output/je
 python3 -m tools.plot.zeta_f_sink_fields plate docs/figures/gallery/zeta_f_sink_plate.png output/pl_eps output/pl_wall
 python3 -m tools.plot.zeta_f_sink_fields jet docs/figures/gallery/zeta_f_sink_jet.png output/jet_kol output/jet_wall
 python3 examples/studies/plate_channel_gci.py output/gci --cases channel --levels 0,1,2,3
+```
+
+[↑ back to top](#turbulence-models)
+
+---
+
 <a id="outlet-backflow"></a>
 ## 140. Turbulence of the backflow at a pressure outlet: an outlet inside the recirculation
 
@@ -1132,7 +1138,7 @@ python3 -m tools.plot.curvature_consistency docs/figures/gallery/curvature_consi
 <a id="pipe-turbulent"></a>
 ## 193. Turbulent pipe flow at Re_b 5300: friction against the DNS, three meshes with GCI
 
-<img src="../figures/gallery/pipe_turbulent.png" alt="Fully developed turbulent pipe flow at Re_b 5300, k-omega SST. Left: axial velocity on a cross section, fast core in dark red and a thin slow layer at the wall in blue and green. Middle: eddy viscosity over molecular viscosity, up to 20 at the axis and zero at the wall. Right: mean velocity in wall units against y+, following the linear law below y+ 5 and the log law above 30, with the DNS centreline value as a red dot above the curve">
+<img src="../figures/gallery/pipe_turbulent.png" alt="Fully developed turbulent pipe flow at Re_b 5300, k-omega SST. Left: axial velocity on a cross section, fast core in dark red and a thin slow layer at the wall in blue and green. Middle: eddy viscosity over molecular viscosity, up to 20 at the axis and zero at the wall. Right: mean velocity in wall units against y+, following the linear law below y+ 5 and the log law above 30, with the DNS centreline value as a red dot above the curve" width="800" height="337">
 
 The first of the general-purpose internal flows of D45 (stage 8). A pipe
 of radius R = 0.5 m on an axisymmetric wedge of 0.5° (as the rough pipe,
@@ -1175,6 +1181,155 @@ the finest mesh stops at the limit of 3 000 iterations at the residual
 target/release/foehn flow examples/cases/flow/pipe_turbulent_sst.toml --out output/pipe
 python3 examples/studies/pipe_gci.py output/pipe_gci --levels 0,1,2
 python3 -m tools.plot.pipe_chart docs/figures/gallery/pipe_turbulent.png output/pipe_gci/pipe_sst_2
+```
+
+[↑ back to top](#turbulence-models)
+
+---
+
+<a id="diffuser"></a>
+## 199. Asymmetric plane diffuser: separation on one wall, rounded corners and three meshes with GCI
+
+<img src="../figures/gallery/diffuser_sst.png" alt="Turbulent flow through an asymmetric plane diffuser with rounded corners, k-omega SST, coarse mesh. Top: speed, a fast jet along the straight upper wall and a slow, separated region along the lower wall that opens at 10 degrees. Middle: turbulent viscosity ratio, large in the separated shear layer behind the diffuser. Bottom: pressure coefficient along the upper and the lower wall, rising to about 0.54 behind the diffuser" width="800" height="608">
+
+The third general-purpose internal flow of D45 (stage 8): a channel of
+height H whose lower wall opens at 10° to an area ratio of 4.7
+(Buice & Eaton 1995; the diffuser is 20.98 H long), then a straight outlet
+duct. Both corners of the lower wall are **rounded with a radius of
+4.3 H**, as in the experiment (Kaltenbach 1994, CTR Annual Research
+Briefs, p. 176: "both corners are rounded with a radius of 8.6 δ", H = 2δ).
+The lengths of the ducts (inlet 20 H, outlet 50 H) are our choice. The
+Reynolds number is Re_H = U_c H/ν = 20 000 with the **centreline
+velocity** U_c = 1 m/s of the inlet profile, H = 1 m and
+ν = 5·10⁻⁵ m²/s (inside the range 10 000 to 30 000 of the experiment; the
+bulk velocity is U_b = 0.893 m/s, so Re_b = 17 900). The inlet takes the
+**developed profile of a periodic channel run**
+(`diffuser_channel_profile.toml`, SST, velocity, k and ω written to
+`diffuser_inlet_profile.csv` by `examples/studies/diffuser_inlet_profile.py`),
+as the experiment has a fully developed channel flow at the inlet. C_p
+uses U_c. k-ω SST with the low-Re treatment on structured quadrilaterals
+(`examples/meshes/diffuser.py`: Δx = 0.25 H along the diffuser on
+level 0, tanh grading across the channel; mean first-cell y⁺ 0.75 and
+1.15 on the lower and the upper wall of level 0).
+
+The run starts from **potential flow** with first-order upwind momentum
+and switches to linear upwind at iteration 201 (`[[schedule]]` on
+`solver.momentum.scheme`, new in this pull request), SIMPLEC at
+relaxation 0.8. On level 0 (6 960 cells) it converges to 10⁻⁷ in 580
+iterations (19 s): the flow separates from the lower wall at x = 1.65 H
+and reattaches at x = 29.25 H, 8.3 H behind the diffuser; C_p reaches
+0.49 at the end of the diffuser and 0.54 at x = 45 H
+(C_p = (p − p(−10 H)) / ½ρU_c²).
+
+**Three meshes** (every interval halved; `examples/studies/diffuser_gci.py`,
+GCI after Celik et al. 2008, ratio 2):
+
+| Quantity | 6 960 cells | 27 840 | 111 360 | order | GCI_fine |
+|---|---|---|---|---|---|
+| separation x/H | 1.646 | 2.060 | 2.199 | 1.58 | 4.0 % (extrapolated 2.27) |
+| reattachment x/H | 29.25 | 29.04 | 28.94 | 1.12 | 0.36 % (extrapolated 28.86) |
+| C_p at 21 H | 0.4925 | 0.4970 | 0.4976 | 2.83 | 0.03 % |
+| C_p at 45 H | 0.5428 | 0.5462 | 0.5465 | 3.46 | below 0.01 % |
+| iterations to 10⁻⁷ | 580 | 1 483 | 4 909 | | |
+
+All four quantities converge monotonically. The pressure recovery is
+independent of the mesh to 0.03 % or better, the reattachment point has a
+GCI of 0.36 % at an order of 1.1, and the separation point, where the wall
+shear passes zero slowly on the straight 10° wall, has a GCI of 4 % at an
+order of 1.6. The number of iterations grows by a factor of 2.6 and 3.3
+per halving of Δx (below).
+
+**Why the first version did not converge** (numerics check of
+2026-11-22; the details are in the
+[pitfalls](../pitfalls.md#sharp-wall-corners-and-thin-wall-cells-the-asymmetric-diffuser)):
+
+- **Sharp corners.** At a kink of the wall the least-squares gradient of
+  the thin wall cells is wrong by O(1) (0.55 of the velocity on level 0):
+  the large wall-normal gradient leaks into ∂u/∂x. Linear upwind without
+  a limiter extrapolates it into the wall row, and the finer meshes
+  diverged in about 10 iterations. With the rounded corners the error is
+  0.10 and 0.017 on levels 0 and 1; it falls as Δx². Sharp corners run
+  as well now, with the first-order start (below).
+- **Skewed wall cells.** With Δx = 0.5 H the trapezoidal wall cells of the
+  widening reached a face skewness of 1.8 and switched the D50 remediation
+  on, on the coarse levels only, so the levels ran different numerics.
+  Δx = 0.25 H keeps the skewness at 0.42, 0.25 and 0.13: all three levels
+  run the same scheme.
+- **Uniform start.** u = 1 everywhere carries 4.7 times the inflow out of
+  the widening; the potential start with 200 upwind iterations replaces it.
+- **Relaxation 0.5 was slow, not a missing steady state.** The jet first
+  runs through the middle of the widening and then moves slowly to the
+  upper wall. At 0.5 this was still under way after 1 700 iterations
+  (reattachment at 21.7 H, residual stalled near 5·10⁻⁵); at 0.8 the same
+  mesh converges. The number of iterations of this move grows with every
+  halving of Δx (the pseudo-time step of SIMPLEC shrinks with the cell):
+  on level 2 the momentum residual rose from 1.7·10⁻⁵ at 1 000 iterations
+  to 4.4·10⁻⁵ at 2 400 while u in the jet core went from 0.15 to
+  0.44 U_c, then fell to 10⁻⁷ at 4 909 iterations. The case therefore
+  judges convergence on two probes in the jet core and in the separated
+  region, printed in the log.
+
+**Sharp corners** (`diffuser_sst_sharp.toml`, mesh `diffuser.py --sharp`).
+The same diffuser with sharp corners runs with the same settings. The mesh
+shortens the diffuser cells towards both corners (from 0.33 H in the
+middle to 0.0175 H at the corners on level 0), so the wall cells at the
+kinks have an aspect ratio of about 11 instead of 150. Behind the sharp
+corner the wall shear drops to nearly zero and stays there for about
+1.5 H (a suction peak at the corner, then incipient separation; small
+bubbles of 0.1 H come and go with the mesh), so the separated region is
+taken as the longest stretch of reverse flow:
+
+| Quantity | 8 400 cells | 33 600 | 134 400 | order | GCI_fine |
+|---|---|---|---|---|---|
+| separation x/H | 1.822 | 1.950 | running | | |
+| reattachment x/H | 29.29 | 29.12 | running | | |
+| C_p at 21 H | 0.4895 | 0.4920 | running | | |
+| C_p at 45 H | 0.5401 | 0.5417 | running | | |
+| iterations to 10⁻⁷ | 1 087 | 2 699 | running | | |
+
+Level 2 (134 400 cells) is still running; the GCI follows with it. On
+levels 0 and 1 the sharp corners move the reattachment by less than 0.3 %
+and C_p by at most 1 % from the rounded ones.
+
+With the plain 0.25 H cells and sharp corners (aspect ratio 150 at the
+kinks), the runs converge too, in 494 and 1 378 iterations on levels 0
+and 1 (the earlier divergence came from linear upwind from the first
+iteration on); level 1 gives the separated region from 1.66 H to
+29.19 H.
+
+<img src="../figures/gallery/diffuser_corners.png" alt="Skin friction along the lower wall of the diffuser on level 1 for rounded corners (blue), sharp corners with short cells at the corners (red) and sharp corners with plain 0.25 H cells (yellow, dashed). All three are negative from about 2 H to 29 H and agree within the line width there. Enlarged start of the diffuser: the rounded corner has a smooth hump of 6.4 times ten to the minus 3 before the corner, the sharp corner a spike at the corner (12 times ten to the minus 3 with the short cells, 7.6 with the plain cells), then the skin friction of both sharp variants falls to nearly zero within 0.2 H" width="800" height="305">
+
+**Transient runs from the steady state.** New in this pull request: a
+transient case may start from the restart file of a steady run
+(`--restart`, `time.time_step` set). On levels 0 and 1, 100 s
+(t U_c/H = 100) of BDF2 at Δt = 0.1 s from the converged steady state
+change the velocity at four probes by less than 2·10⁻⁵: the SST solution
+is steady, with no shedding. From the stalled state of relaxation 0.5 the
+transient moves the same way as the steady solver at 0.8: the jet core
+speeds up from 0.18 to 0.42 U_c in 200 s and the separated region turns
+from forward to reverse flow, still short of the converged state after
+200 s.
+
+<img src="../figures/gallery/diffuser_transient.png" alt="Four panels of the velocity u over time at probes in the diffuser, level 1, for two transient runs started from steady restart files. Dashed black lines: from the converged steady state, flat over 100 s. Coloured lines: from the stalled state of relaxation 0.5; in the separated region u falls from plus 0.025 to minus 0.004, in the shear layer it falls from 0.40 to 0.25, in the jet core it rises from 0.18 to 0.42, near reattachment it rises to 0.14 and falls to 0.02, all moving toward the converged values" width="800" height="512">
+
+- **There is no comparison with the measurements of Buice & Eaton** (owner
+  decision 2026-11-22: GCI first, reference later); the pressure recovery
+  and the separation and reattachment points of the experiment are in the
+  full report, which was not available. The case is grid-studied, not
+  validated.
+
+| | |
+|---|---|
+| Code | the momentum scheme may change between upwind and linear upwind on a schedule or at run time (`[[schedule]]`, `control.toml`); a transient case may start from the restart file of a steady run. Otherwise no new code: SU2 reader, SST low-Re (D130), wall crossings (6g) |
+| Case file | `flow/diffuser_sst.toml` (mesh `meshes/diffuser_coarse.su2`), `flow/diffuser_sst_sharp.toml` (mesh `meshes/diffuser_sharp_coarse.su2`), `flow/diffuser_channel_profile.toml` (inlet table) |
+| Study | `examples/studies/diffuser_gci.py` (levels 0 to 2, `--sharp` for the sharp corners); figures `tools/plot/diffuser_chart.py`, `tools/plot/diffuser_corners.py`, `tools/plot/diffuser_transient.py` |
+| Recipe | [199](../recipes/turbulence.md#diffuser) |
+
+```
+python3 examples/meshes/diffuser.py examples/meshes/diffuser_coarse.su2 --level 0
+target/release/foehn flow examples/cases/flow/diffuser_sst.toml --out output/diffuser
+python3 examples/studies/diffuser_gci.py output/diffuser_gci
+python3 -m tools.plot.diffuser_chart docs/figures/gallery/diffuser_sst.png
 ```
 
 [↑ back to top](#turbulence-models)

@@ -235,6 +235,25 @@ pub fn validate(case: &FlowCase) -> Result<()> {
     for (i, e) in case.schedule.iter().enumerate() {
         c = apply_entry(&c, e, None)
             .with_context(|| format!("[[schedule]] entry {} ({})", i + 1, e.when()))?;
+        scheme_switch(case, &c, i + 1)?;
+    }
+    Ok(())
+}
+
+/// The momentum scheme may switch between `upwind` and `linear-upwind`
+/// during a run (a first-order start, then second order); the bounded
+/// central scheme keeps state of its own and is chosen at the start.
+pub(crate) fn scheme_switch(old: &FlowCase, new: &FlowCase, n: usize) -> Result<()> {
+    use foehncraft_fv::solver::Scheme;
+    let (a, b) = (old.solver.momentum.scheme, new.solver.momentum.scheme);
+    if a != b && (a == Scheme::Central || b == Scheme::Central) {
+        return Err(bad(
+            format!(
+                "[[schedule]] entry {n}: `solver.momentum.scheme` may switch only between \
+                 \"upwind\" and \"linear-upwind\" during a run, not to or from \"central\""
+            ),
+            n,
+        ));
     }
     Ok(())
 }
