@@ -145,6 +145,9 @@ pub struct TransientSummary {
     /// `relative` column of `heat.csv`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub heat_relative_max: Option<f64>,
+    /// The thermal acceleration of the solids (D213).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub acceleration: Option<crate::acceleration::AccelerationSummary>,
 }
 
 /// The heat balance of one time step (stage 7d6): the balance of the
@@ -1215,6 +1218,10 @@ fn run_one<F: FnMut(&str)>(
         .map(|c| c.view.interfaces.clone())
         .unwrap_or_default();
     let mut heat_relative_max: Option<f64> = None;
+    let accel_csv = case
+        .energy
+        .as_ref()
+        .is_some_and(|e| e.acceleration.is_some());
     let mut heat_csv = if last && !heat_regions.is_empty() {
         let mut head = String::from("step,time,conduction,convection,source,storage");
         for r in &heat_regions {
@@ -1222,6 +1229,9 @@ fn run_one<F: FnMut(&str)>(
         }
         for i in &heat_interfaces {
             let _ = write!(head, ",{i}_heat");
+        }
+        if accel_csv {
+            head.push_str(",inertia_scaling");
         }
         head.push_str(",imbalance,relative");
         Some(History::new(
@@ -1234,7 +1244,9 @@ fn run_one<F: FnMut(&str)>(
                 "step -, time s, conduction W (into the domain through the boundaries), \
                  convection W (sensible enthalpy carried in by the flow), source W (q''' and \
                  viscous heating), storage W (stored in the step, all regions), \
-                 <region>_storage W, <interface>_heat W (into the fluid), imbalance W \
+                 <region>_storage W, <interface>_heat W (into the fluid), inertia_scaling W \
+                 (with [energy.acceleration]: the heat the true ρ c_p of the accelerated solids \
+                 would have stored in addition), imbalance W \
                  (conduction + convection + source - storage), relative - (|imbalance| over \
                  the largest heat flow)",
             ),
@@ -1436,6 +1448,11 @@ fn run_one<F: FnMut(&str)>(
     let mut rejected = 0usize;
     let mut last_rep = StepReport::default();
     let mut sched = crate::schedule::Runner::default();
+    // the thermal acceleration of the solids (D213)
+    let mut accel = match case.energy.as_ref().and_then(|e| e.acceleration.clone()) {
+        Some(a) => crate::acceleration::Controller::new(&mut fl, &a, tr.clock.time)?,
+        None => None,
+    };
     loop {
         // [[schedule]] (D128): the entries due before this step
         if !case.schedule.is_empty() {
@@ -1710,6 +1727,9 @@ fn run_one<F: FnMut(&str)>(
                     for q in &h.interfaces {
                         let _ = write!(row, ",{q:e}");
                     }
+                    if accel_csv {
+                        let _ = write!(row, ",{:e}", e.inertia_scaling.unwrap_or(0.0));
+                    }
                     let _ = write!(row, ",{:e},{:e}", e.imbalance, e.relative);
                     hc.row(&row);
                     heat_relative_max = Some(heat_relative_max.unwrap_or(0.0).max(e.relative));
@@ -1718,6 +1738,12 @@ fn run_one<F: FnMut(&str)>(
             }
             _ => None,
         };
+        if let Some(acc) = accel.as_mut() {
+            for l in acc.after_step(&mut fl, rp.time, rp.time - t0)? {
+                lg.line(&l);
+                steer.event(crate::diag::ACC_PHASE, n, &l);
+            }
+        }
         if n.is_multiple_of(case.output.history_every) {
             let mut sc = String::new();
             for x in &r.turbulence.residual {
@@ -2223,6 +2249,41 @@ fn run_one<F: FnMut(&str)>(
     )?;
     let periodic = crate::case::periodic_summaries(&mut fl, mesh, lg)?;
     let turbulence = crate::case::turbulence_summary(&mut fl, mesh, lg, warnings)?;
+    // the thermal acceleration (D213): not restored (ACC002), a skin
+    // through the wall while accelerated (ACC003)
+    let accel_summary = match accel.as_mut() {
+        Some(acc) => {
+            let thick = acc.skin_check(&mut fl)?;
+            if !thick.is_empty() {
+                let d = crate::diag::Diagnostic::new(
+                    crate::diag::ACC_SKIN,
+                    format!(
+                        "[energy.acceleration]: while accelerated the skin depth of the period was \
+                         larger than the thickness V/A of {}; the swing reached through the wall \
+                         until the restore",
+                        thick.join(", ")
+                    ),
+                );
+                lg.line(&format!("{}: {}", d.code, d.message));
+                steer.event(d.code, steps_total, &d.message);
+                warnings.push(d);
+            }
+            if !acc.restored() {
+                let d = crate::diag::Diagnostic::new(
+                    crate::diag::ACC_UNRESTORED,
+                    "[energy.acceleration]: the run ended before the true ρ c_p of the solids was \
+                     restored; the final state is that of the accelerated solids and the history \
+                     is not physical (run longer, or set `restore` to a time)"
+                        .to_string(),
+                );
+                lg.warn(&format!("{}: {}", d.code, d.message));
+                steer.event(d.code, steps_total, &d.message);
+                warnings.push(d);
+            }
+            Some(acc.summary(tr.clock.time))
+        }
+        None => None,
+    };
     // conjugate heat transfer: the fields of the output on the full mesh
     let full_out = if case.fluid_view.is_some() {
         let st = fl.state()?;
@@ -2512,6 +2573,7 @@ fn run_one<F: FnMut(&str)>(
             stopped,
             ns_per_cell_step: 1e9 * secs / (nc as f64 * nsteps.max(1) as f64),
             heat_relative_max,
+            acceleration: accel_summary,
         }),
         benchmark,
     };

@@ -1,0 +1,122 @@
+# The heated wall of `cht_heated_wall_transient` with thermal acceleration
+# of the wall (D213, §9e of the stage 7 specification): ρ c_p of the solid
+# is scaled down until its temperature has settled, then the true ρ c_p
+# comes back.
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/cht_heated_wall_accelerated.toml
+#
+# The steady temperatures do not depend on ρ c_p of a solid, so the end
+# state is that of the true wall. With `inertia_scale = "auto"` the run
+# measures after the first window (10 steps, 50 s) the conductance of the
+# wall to the flow (G ≈ 9.0 W/K, two steady energy solves with the wall
+# held), its time constant C/G ≈ 286 s with C = ρ c_p V = 2560 J/K, and
+# scales ρ c_p by f ≈ 0.175, so that the time constant becomes one window.
+# The wall settles at t = 450 s, the true ρ c_p is back from then (a jump:
+# the flow is steady), and at 600 s the heated face is within 0.003 K of the
+# 3000 s of the unaccelerated run (322.61 K, a rise of 22.6 K): five times
+# less simulated time.
+#
+# heat.csv carries the column `inertia_scaling`: the heat the true wall
+# would have stored in addition while accelerated (W); the balance of the
+# solved equation closes in every step, and storage + inertia_scaling is
+# the storage of the true wall. result.json has the measured G, τ and f,
+# the times of the settling and of the restore, and the time from which
+# the history counts as physical.
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [4.0, 1.2, 0.04]
+cells = [80, 30, 1]
+split = [
+  { boundary = "xmin", axis = "y", at = 0.2, name = "inlet" },
+  { boundary = "xmax", axis = "y", at = 0.2, name = "outlet" },
+]
+zones = [{ name = "wall", lower = [0.0, 0.0, 0.0], upper = [4.0, 0.2, 0.04] }]
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 0.01                     # Re = 100
+specific_heat = 1000.0
+conductivity = 14.084507042253522    # Pr = μ c_p/k = 0.71
+
+[materials.wall-solid]
+kind = "solid"
+description = "a made-up solid with k_s/k_f = 10 (not a database material)"
+density = 100.0                      # light: a time constant of about 300 s
+specific_heat = 800.0
+conductivity = 140.84507042253522
+
+[regions.wall]
+kind = "solid"
+zones = ["wall"]
+material = "wall-solid"
+
+[energy]
+initial = 300.0                      # everything at the inlet temperature at t = 0
+
+[energy.acceleration]
+inertia_scale = "auto"               # f from the wall's time constant, measured after 10 steps
+# window_steps = 10                  # a window: 10 steps (50 s); no period, the flow is steady
+# settle_tolerance = 1e-3            # settled: window means change by < 0.1 % of their rise
+# target_windows = 1                 # the scaled time constant: one window
+
+[initial]
+velocity = [0.0, 0.0, 0.0]
+
+[boundary.inlet]
+type = "velocity-inlet"
+velocity = [1.0, 0.0, 0.0]
+[boundary.inlet.energy]
+temperature = 300.0
+[boundary.outlet]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymax]
+type = "wall"
+[boundary.ymin]
+type = "wall"
+[boundary.ymin.energy]
+heat_flux = 1000.0                   # W/m² into the wall
+[boundary.xmin]
+type = "wall"                        # the upstream end of the wall
+[boundary.xmax]
+type = "wall"                        # the downstream end of the wall
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[time]
+scheme = "bdf2"
+time_step = 5.0
+end_time = 600.0
+
+[solver]
+outer_iterations = 3                 # the flow takes Courant numbers of 100
+
+[solver.momentum]
+relaxation = 0.9
+
+[solver.energy]
+relaxation = 1.0
+tolerance = 1e-10
+max_iter = 300
+
+[output]
+wall_csv = false
+fields_every = 60                    # every 300 s
+probes = [
+  { name = "heated_face", point = [3.0, 0.02, 0.02] },
+  { name = "interface", point = [3.0, 0.22, 0.02] },
+  { name = "channel", point = [3.0, 0.7, 0.02] },
+]
+lines = [
+  { name = "wall_top", from = [0.025, 0.18, 0.02], to = [3.975, 0.18, 0.02], points = 80 },
+  { name = "across", from = [3.0, 0.0, 0.02], to = [3.0, 1.2, 0.02], points = 121 },
+]

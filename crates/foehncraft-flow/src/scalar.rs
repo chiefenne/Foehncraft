@@ -708,6 +708,13 @@ struct EnergyField {
     normals: Vec<[f64; 3]>,
     /// The face area vectors S, when the case has an orthotropic solid.
     areas: Vec<[f64; 3]>,
+    /// The factor on ρ c_p per material (thermal acceleration of the
+    /// solids, D213; 1 for the fluid and every solid that is not
+    /// accelerated).
+    inertia: Vec<f64>,
+    /// Fixed temperatures (mask, values) of the energy rows: the solids
+    /// held while the conductance of the fluid side is measured (D213).
+    frozen: Option<(Buf, Buf)>,
 }
 
 /// The power density of a region source.
@@ -1295,6 +1302,7 @@ impl Scalars {
             // capacity flux, the boundary coefficients and the heat source
             let mut conv = mass_flux;
             let mut capacity = None;
+            let frozen = f.energy.as_deref().and_then(|e| e.frozen);
             let mut mus = turb.map(|tc| (tc.mu, tc.mu_eff));
             if let Some(e) = f.energy.as_deref_mut() {
                 refresh_energy(
@@ -1444,7 +1452,7 @@ impl Scalars {
                     sp: None,
                     alpha,
                     time,
-                    fix: None,
+                    fix: frozen,
                     positive: false,
                     pseudo: None,
                     capacity,
@@ -1772,13 +1780,17 @@ impl Scalars {
             }
             per[m] += e.mats[m].rho * e.volume[c] * l / st.dt;
         }
+        // with a thermal acceleration (D213) the equation stores f times
+        // the heat of the true ρ c_p; the rest is booked as inertia scaling
         Ok(Some(
             e.regions
                 .iter()
                 .zip(per)
-                .map(|(r, s)| RegionHeat {
+                .zip(&e.inertia)
+                .map(|((r, s), &f)| RegionHeat {
                     region: r.clone(),
-                    storage: s,
+                    storage: f * s,
+                    inertia_scaling: (1.0 - f) * s,
                 })
                 .collect(),
         ))
@@ -1820,6 +1832,153 @@ impl Scalars {
             .iter()
             .find_map(|f| f.energy.as_deref().map(|e| e.regions.clone()))
             .unwrap_or_default()
+    }
+
+    /// The factor on ρ c_p per region of the energy equation (the order of
+    /// [`Scalars::energy_regions`]; thermal acceleration, D213).
+    pub fn energy_inertia(&self) -> Vec<f64> {
+        self.fields
+            .iter()
+            .find_map(|f| f.energy.as_deref().map(|e| e.inertia.clone()))
+            .unwrap_or_default()
+    }
+
+    /// Sets the factor on ρ c_p per region (D213); it acts from the next
+    /// energy solve. Only between time steps: the storage of a step is
+    /// then that of one factor.
+    pub fn set_energy_inertia(&mut self, factors: &[f64]) {
+        if let Some(e) = self.fields.iter_mut().find_map(|f| f.energy.as_deref_mut()) {
+            for (a, &b) in e.inertia.iter_mut().zip(factors) {
+                *a = b;
+            }
+        }
+    }
+
+    /// Per region of the energy equation (the order of
+    /// [`Scalars::energy_regions`]): the volume (m³), the true heat
+    /// capacity Σ ρ c_p V (J/K, c_p of the last refresh) and the
+    /// volume-mean temperature (K).
+    pub fn energy_region_state(&self, dev: &mut dyn FlowDevice) -> Result<Vec<(f64, f64, f64)>> {
+        let Some(f) = self.fields.iter().find(|f| f.energy.is_some()) else {
+            return Ok(Vec::new());
+        };
+        let Some(e) = f.energy.as_deref() else {
+            return Ok(Vec::new());
+        };
+        let t = dev.download(f.phi)?;
+        let mut out = vec![(0.0, 0.0, 0.0); e.regions.len()];
+        for c in 0..e.mat_cell.len() {
+            let m = e.mat_cell[c] as usize;
+            let v = e.volume[c];
+            out[m].0 += v;
+            out[m].1 += e.mats[m].rho * e.cp_cell[c] * v;
+            out[m].2 += t[c] * v;
+        }
+        for o in &mut out {
+            if o.0 > 0.0 {
+                o.2 /= o.0;
+            }
+        }
+        Ok(out)
+    }
+
+    /// The mean conductivity per region of the energy equation (W/(m K),
+    /// over the internal faces between two cells of the region, of the
+    /// last refresh; the skin depth of D213).
+    pub fn energy_region_conductivity(&self) -> Vec<f64> {
+        let Some(e) = self.fields.iter().find_map(|f| f.energy.as_deref()) else {
+            return Vec::new();
+        };
+        let mut sum = vec![(0.0, 0.0); e.regions.len()];
+        for (f, &n) in e.neighbour.iter().enumerate() {
+            let a = e.mat_cell[e.owner[f] as usize];
+            if a == e.mat_cell[n as usize] {
+                sum[a as usize].0 += e.k_face[f];
+                sum[a as usize].1 += 1.0;
+            }
+        }
+        sum.iter()
+            .map(|&(k, n)| if n > 0.0 { k / n } else { 0.0 })
+            .collect()
+    }
+
+    /// The material (region index) of every cell of the energy equation.
+    pub fn energy_cell_regions(&self) -> Vec<u16> {
+        self.fields
+            .iter()
+            .find_map(|f| f.energy.as_deref().map(|e| e.mat_cell.clone()))
+            .unwrap_or_default()
+    }
+
+    /// The temperature of the energy equation per cell.
+    pub fn energy_temperature(&self, dev: &mut dyn FlowDevice) -> Result<Vec<f64>> {
+        match self.fields.iter().find(|f| f.energy.is_some()) {
+            Some(f) => dev.download(f.phi),
+            None => Ok(Vec::new()),
+        }
+    }
+
+    /// Sets the temperature of the energy equation per cell (restores the
+    /// state after a measurement of the conductances, D213).
+    pub fn set_energy_temperature(&mut self, dev: &mut dyn FlowDevice, t: &[f64]) -> Result<()> {
+        if let Some(f) = self.fields.iter().find(|f| f.energy.is_some()) {
+            dev.upload(f.phi, t)?;
+        }
+        Ok(())
+    }
+
+    /// Holds the temperatures of the cells with `Some(T)` in the following
+    /// energy solves (fixed rows), or releases all with `None` (D213).
+    pub fn set_energy_frozen(
+        &mut self,
+        dev: &mut dyn FlowDevice,
+        fixed: Option<&[Option<f64>]>,
+    ) -> Result<()> {
+        let Some(e) = self.fields.iter_mut().find_map(|f| f.energy.as_deref_mut()) else {
+            return Ok(());
+        };
+        match fixed {
+            None => e.frozen = None,
+            Some(v) => {
+                let mask: Vec<f64> = v.iter().map(|x| f64::from(u8::from(x.is_some()))).collect();
+                let val: Vec<f64> = v.iter().map(|x| x.unwrap_or(0.0)).collect();
+                let (bm, bv) = match e.frozen {
+                    Some(b) => b,
+                    None => (dev.alloc(mask.len())?, dev.alloc(mask.len())?),
+                };
+                dev.upload(bm, &mask)?;
+                dev.upload(bv, &val)?;
+                e.frozen = Some((bm, bv));
+            }
+        }
+        Ok(())
+    }
+
+    /// The conductance (W/K) from each region of the energy equation to
+    /// the outside through its boundaries with a fixed temperature or a
+    /// convection condition, at time `t`: Σ A k/d_n, and Σ A h k/d_n/(h +
+    /// k/d_n) at convection faces, with the face conductivity of the last
+    /// refresh; `areas` are the areas of the boundary faces (D213).
+    pub fn energy_outer_conductance(&self, areas: &[f64], t: f64) -> Vec<f64> {
+        let Some(e) = self.fields.iter().find_map(|f| f.energy.as_deref()) else {
+            return Vec::new();
+        };
+        let ni = e.neighbour.len();
+        let mut g = vec![0.0; e.regions.len()];
+        for (fb, c) in e.conds.iter().enumerate() {
+            let m = e.mat_cell[e.owner[ni + fb] as usize] as usize;
+            let kd = e.k_face[ni + fb] / e.dn[fb];
+            let a = areas[fb];
+            match c {
+                ECond::Temperature(_) => g[m] += a * kd,
+                ECond::Convection(h, _) => {
+                    let h = h.at(self.xf[fb], t);
+                    g[m] += a * h * kd / (h + kd);
+                }
+                _ => {}
+            }
+        }
+        g
     }
 
     /// The laminar viscosity μ(T) per face of the energy equation's last
@@ -2152,6 +2311,8 @@ impl Scalars {
             region_src,
             normals,
             areas,
+            inertia: vec![1.0; mats.len()],
+            frozen: None,
             fluid,
             mats,
             mat_cell,
@@ -2375,7 +2536,11 @@ fn refresh_energy(
             ));
         }
     }
-    let rho: Vec<f64> = (0..nc).map(|c| mats[mc[c] as usize].rho).collect();
+    // ρ with the factor of a thermal acceleration (D213): the time term and
+    // the storage of h_s take it, the convection (Ċ) does not
+    let rho: Vec<f64> = (0..nc)
+        .map(|c| mats[mc[c] as usize].rho * e.inertia[mc[c] as usize])
+        .collect();
     let cap: Vec<f64> = e.cp_cell.iter().zip(&rho).map(|(c, r)| r * c).collect();
     dev.upload(e.capacity, &cap)?;
     let m = dev.download(mass_flux)?;
@@ -2702,6 +2867,12 @@ pub struct EnergyBalance {
     /// The stored heat per region (`fluid` first, then the solid regions).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub storage_regions: Vec<RegionHeat>,
+    /// The heat the true ρ c_p of accelerated solids would have stored in
+    /// addition (W, D213), when a region is accelerated: conduction +
+    /// convection + source − storage − inertia_scaling is the balance of
+    /// the true solids, which the accelerated run does not close.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub inertia_scaling: Option<f64>,
     /// conduction + convection + source − storage (W): zero in a
     /// converged steady run and in every converged time step.
     pub imbalance: f64,
@@ -2715,8 +2886,18 @@ pub struct EnergyBalance {
 pub struct RegionHeat {
     /// The region (`fluid` or a solid region).
     pub region: String,
-    /// The heat stored (W).
+    /// The heat stored (W), with the heat capacity the equation was solved
+    /// with.
     pub storage: f64,
+    /// The heat the true ρ c_p would have stored in addition (W): (1 − f)
+    /// times the true storage, zero without a thermal acceleration (D213).
+    /// storage + inertia_scaling is the true storage.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub inertia_scaling: f64,
+}
+
+fn is_zero(x: &f64) -> bool {
+    *x == 0.0
 }
 
 /// A scalar in the report of a solve.
@@ -2892,6 +3073,9 @@ pub fn summaries(
                     largest = largest.max(r.storage.abs());
                 }
                 bal.storage_regions = rs.clone();
+                if rs.iter().any(|r| r.inertia_scaling != 0.0) {
+                    bal.inertia_scaling = Some(rs.iter().map(|r| r.inertia_scaling).sum());
+                }
             }
             bal.imbalance = bal.conduction + bal.convection + bal.source - total;
             bal.relative = if largest > 0.0 {
