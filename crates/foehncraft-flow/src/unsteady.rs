@@ -985,6 +985,8 @@ fn run_one<F: FnMut(&str)>(
     )?;
     let ub0 = arrays.ub.clone();
     let disc = simplec::discretisation(mesh, geo, &arrays)?;
+    let operators =
+        crate::operators::report(&case, mesh, geo, &arrays.u_points, out, lg, warnings);
     // (on the base mesh: a probe or the reference cell is found there, a
     // point inside a sliding rotor is a limit of variant B)
     let loc = Locator::new(mesh0, geo0);
@@ -2547,6 +2549,7 @@ fn run_one<F: FnMut(&str)>(
         turbulence,
         statistics,
         remediation,
+        operators,
         balance: Some(balance_summary),
         mesh: desc.into(),
         mesh_hash: crate::engine::mesh_hash(mesh),

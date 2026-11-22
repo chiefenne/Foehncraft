@@ -20,6 +20,7 @@ pub mod amg;
 pub mod backend;
 pub mod case;
 pub mod disc;
+pub mod exactness;
 #[cfg(feature = "hypre")]
 pub mod hypre;
 pub mod poisson;

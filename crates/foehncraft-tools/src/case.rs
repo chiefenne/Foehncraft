@@ -143,6 +143,7 @@ impl Tool for Check {
             ok: false,
             diagnostics: Vec::new(),
             estimate: None,
+            operators: None,
         };
         match a.load(ctx) {
             Ok(case) => engine::check_case(

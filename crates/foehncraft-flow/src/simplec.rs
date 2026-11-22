@@ -341,6 +341,10 @@ pub struct Settings {
     /// line through the two cell centroids, over the centroid distance) are
     /// poor (D50).
     pub skewness_limit: f64,
+    /// The operator check (D235): a cell whose velocity gradient (relative
+    /// to h |H|) or velocity Hessian (relative to |H|) has a larger error
+    /// for a quadratic field is flagged.
+    pub operator_tolerance: f64,
     /// Non-orthogonal correction of the viscous term (D26).
     pub nonorth_correction: bool,
     /// Largest number of outer iterations (steady).
@@ -468,6 +472,7 @@ impl Default for Settings {
             transposed_stress: TransposedStress::Full,
             remediation: Remediation::Auto,
             skewness_limit: 0.9,
+            operator_tolerance: 0.01,
             nonorth_correction: true,
             max_iterations: 2000,
             tolerance: 1e-8,
@@ -662,6 +667,11 @@ impl Settings {
             self.skewness_limit > 0.0,
             CASE_RANGE,
             "[solver] skewness_limit must be > 0"
+        );
+        crate::need!(
+            self.operator_tolerance > 0.0,
+            CASE_RANGE,
+            "[solver] operator_tolerance must be > 0"
         );
         crate::need!(
             (0.0..=1.0).contains(&self.momentum.central_blending),
