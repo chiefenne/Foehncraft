@@ -935,6 +935,22 @@ pub trait FlowDevice {
         ub: Buf3,
         out: [Buf3; 3],
     ) -> Result<()>;
+    /// Overwrites the gradient `out` of the strain component `comp` (0 … 5:
+    /// xx, yy, zz, xy, yz, zx) at the treated cells of the stencil `slot`
+    /// with ½ (H^a_bk + H^b_ak) from the Hessian weights `h` of the
+    /// quadratic fit, components 0 … `dims` − 1 (D236, the curvature
+    /// correction).
+    #[allow(clippy::too_many_arguments)]
+    fn quadratic_strain_gradient(
+        &mut self,
+        slot: usize,
+        h: [Buf; 6],
+        dims: u32,
+        comp: u32,
+        u: Buf3,
+        ub: Buf3,
+        out: Buf3,
+    ) -> Result<()>;
     /// The standard or realizable k-ε model per cell.
     fn keps_cells(&mut self, a: &KepsCellOps) -> Result<()>;
     /// The k-ε-ζ-f model per cell.

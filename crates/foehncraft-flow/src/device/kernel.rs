@@ -1432,8 +1432,46 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             u: self.r3(u),
             ub: self.r3(ub),
             out: self.rg(&out),
+            h: Default::default(),
+            comp: 0,
+            sout: Raw3::default(),
         };
         self.go::<e::QuadraticGradient>(cells.len as usize, &args)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn quadratic_strain_gradient(
+        &mut self,
+        slot: usize,
+        h: [Buf; 6],
+        dims: u32,
+        comp: u32,
+        u: Buf3,
+        ub: Buf3,
+        out: Buf3,
+    ) -> Result<()> {
+        let Some(&[cells, ptr, idx]) = self.quad.get(slot) else {
+            anyhow::bail!("flow device: no quadratic stencil {slot}");
+        };
+        let mut ins = h.to_vec();
+        ins.extend(u.all());
+        ins.extend(ub.all());
+        check(&out.all(), &ins)?;
+        let args = e::QuadGradArgs {
+            cells,
+            ptr,
+            idx,
+            w: Raw3::default(),
+            n_cells: self.nc as u64,
+            dims: dims as u64,
+            u: self.r3(u),
+            ub: self.r3(ub),
+            out: Default::default(),
+            h: h.map(|b| self.r(b)),
+            comp: comp as u64,
+            sout: self.r3(out),
+        };
+        self.go::<e::QuadraticStrainGradient>(cells.len as usize, &args)
     }
 
     fn keps_cells(&mut self, a: &KepsCellOps) -> Result<()> {

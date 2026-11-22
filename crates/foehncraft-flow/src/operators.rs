@@ -77,6 +77,12 @@ pub struct OperatorReport {
     /// rank deficient): the cells still above the tolerance.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub quadratic: Option<OperatorPart>,
+    /// With the curvature correction (step 3 of D236): the error of the
+    /// velocity Hessian DS_ij/Dt takes, the Hessian of the quadratic fit on
+    /// the cells flagged in `hessian` (the gradient of the gradient where
+    /// the fit is rank deficient): the cells still above the tolerance.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quadratic_hessian: Option<OperatorPart>,
     /// What the flagged cells mean for the run (the messages of the
     /// diagnostics, filled in a run).
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -134,6 +140,7 @@ pub fn check_with_errors(
         gradient: part(&e.gradient, tolerance, geo),
         hessian: part(&e.hessian, tolerance, geo),
         quadratic: None,
+        quadratic_hessian: None,
         findings: Vec::new(),
     };
     Ok((r, e))
@@ -156,9 +163,10 @@ fn kinds(mesh: &Mesh, u_points: &BTreeMap<String, BoundaryKind>) -> Vec<Boundary
     kind
 }
 
-/// The quadratic least-squares velocity gradient (step 2 of D236) on the
-/// cells whose face-neighbour gradient is first order: those with a
-/// `gradient` error above `solver.operator_tolerance`.
+/// The quadratic least-squares velocity fit (steps 2 and 3 of D236) on the
+/// cells where an operator the run uses is not exact: with the QCR those
+/// with a `gradient` error above `solver.operator_tolerance`, with the
+/// curvature correction those with a `hessian` error above it.
 pub fn quadratic_velocity_gradient(
     case: &FlowCase,
     mesh: &Mesh,
@@ -175,7 +183,15 @@ pub fn quadratic_velocity_gradient(
         dims,
         &e,
         case.solver.operator_tolerance,
+        uses(case),
     ))
+}
+
+/// Which operators the run differentiates once more: (the QCR, the
+/// curvature correction).
+fn uses(case: &FlowCase) -> (bool, bool) {
+    let t = &case.turbulence;
+    (t.qcr != QcrMode::None, t.curvature_correction)
 }
 
 fn quadratic_on(
@@ -185,15 +201,18 @@ fn quadratic_on(
     dims: usize,
     e: &OperatorErrors,
     tolerance: f64,
+    (qcr, curvature): (bool, bool),
 ) -> QuadraticGradient {
     let cells: Vec<usize> = (0..e.gradient.len())
-        .filter(|&c| e.gradient[c] > tolerance)
+        .filter(|&c| (qcr && e.gradient[c] > tolerance) || (curvature && e.hessian[c] > tolerance))
         .collect();
     foehncraft_fv::exactness::quadratic_gradient(mesh, geo, kind, dims, &cells)
 }
 
-/// Fills `quadratic` of `r`: the gradient error of the QCR stress with the
-/// quadratic fit on the flagged cells.
+/// Fills `quadratic` (with the QCR) and `quadratic_hessian` (with the
+/// curvature correction) of `r`: the errors of the operators the run
+/// takes with the quadratic fit on the flagged cells. Nothing without
+/// either feature.
 fn with_quadratic(
     r: &mut OperatorReport,
     e: &OperatorErrors,
@@ -201,15 +220,37 @@ fn with_quadratic(
     geo: &Geometry,
     u_points: &BTreeMap<String, BoundaryKind>,
     tolerance: f64,
+    (qcr, curvature): (bool, bool),
 ) {
-    let kind = kinds(mesh, u_points);
-    let q = quadratic_on(mesh, geo, &kind, r.dimensions, e, tolerance);
-    let qe = foehncraft_fv::exactness::quadratic_gradient_errors(mesh, geo, &kind, &q);
-    let mut v = e.gradient.clone();
-    for (&c, &x) in q.cells.iter().zip(&qe) {
-        v[c as usize] = x;
+    if !qcr && !curvature {
+        return;
     }
-    r.quadratic = Some(part(&v, tolerance, geo));
+    let kind = kinds(mesh, u_points);
+    let q = quadratic_on(
+        mesh,
+        geo,
+        &kind,
+        r.dimensions,
+        e,
+        tolerance,
+        (qcr, curvature),
+    );
+    if qcr {
+        let qe = foehncraft_fv::exactness::quadratic_gradient_errors(mesh, geo, &kind, &q);
+        let mut v = e.gradient.clone();
+        for (&c, &x) in q.cells.iter().zip(&qe) {
+            v[c as usize] = x;
+        }
+        r.quadratic = Some(part(&v, tolerance, geo));
+    }
+    if curvature {
+        let qe = foehncraft_fv::exactness::quadratic_hessian_errors(mesh, geo, &kind, &q);
+        let mut v = e.hessian.clone();
+        for (&c, &x) in q.cells.iter().zip(&qe) {
+            v[c as usize] = x;
+        }
+        r.quadratic_hessian = Some(part(&v, tolerance, geo));
+    }
 }
 
 /// The file of a run with the errors of every cell (written when the check
@@ -251,9 +292,7 @@ pub fn check_case(case: &FlowCase, mesh: &Mesh, geo: &Geometry) -> Result<Operat
         crate::case::dimension(case) as usize,
         tol,
     )?;
-    if case.turbulence.qcr != QcrMode::None {
-        with_quadratic(&mut r, &e, mesh, geo, &arrays.u_points, tol);
-    }
+    with_quadratic(&mut r, &e, mesh, geo, &arrays.u_points, tol, uses(case));
     Ok(r)
 }
 
@@ -283,16 +322,22 @@ pub fn diagnostics(r: &OperatorReport, case: &FlowCase) -> Vec<diag::Diagnostic>
         ));
     }
     let t = &case.turbulence;
-    if t.curvature_correction && r.hessian.flagged > 0 {
+    let h = r.quadratic_hessian.as_ref().unwrap_or(&r.hessian);
+    if t.curvature_correction && h.flagged > 0 {
         out.push(
             diag::Diagnostic::new(
                 diag::MESH_OPERATOR_HESSIAN,
                 format!(
                     "operator check (D236): the velocity Hessian of the curvature correction \
-                     (DS/Dt) has an error above {} on {}: the correction does not converge \
-                     with the mesh on those cells",
-                    r.hessian.tolerance,
-                    cells_text(&r.hessian)
+                     (DS/Dt) has an error above {} for a quadratic field{} on {}: the correction \
+                     does not converge with the mesh on those cells",
+                    h.tolerance,
+                    if r.quadratic_hessian.is_some() {
+                        "; the quadratic fit is rank deficient there"
+                    } else {
+                        ""
+                    },
+                    cells_text(h)
                 ),
             )
             .key("turbulence.curvature_correction"),
@@ -323,8 +368,9 @@ pub fn diagnostics(r: &OperatorReport, case: &FlowCase) -> Vec<diag::Diagnostic>
 }
 
 /// The check of a run on its mesh, with the log lines and warnings;
-/// `None` (and nothing written) where every operator the run uses is
-/// exact, so that the reports of such runs stay as they were.
+/// `None` (and nothing written) where every operator the run uses is exact
+/// and no cell takes the quadratic fit, so that the reports of such runs
+/// stay as they were.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn report<F: FnMut(&str)>(
     case: &FlowCase,
@@ -343,16 +389,17 @@ pub(crate) fn report<F: FnMut(&str)>(
         case.solver.operator_tolerance,
     )
     .ok()?;
-    if case.turbulence.qcr != QcrMode::None {
-        with_quadratic(
-            &mut r,
-            &e,
-            mesh,
-            geo,
-            u_points,
-            case.solver.operator_tolerance,
-        );
-        let treated = r.gradient.flagged - r.quadratic.as_ref().map_or(0, |q| q.flagged);
+    with_quadratic(
+        &mut r,
+        &e,
+        mesh,
+        geo,
+        u_points,
+        case.solver.operator_tolerance,
+        uses(case),
+    );
+    if let Some(q) = &r.quadratic {
+        let treated = r.gradient.flagged - q.flagged;
         if treated > 0 {
             lg.line(&format!(
                 "QCR: quadratic least-squares velocity gradient on {treated} cells, skewness-corrected \
@@ -360,8 +407,21 @@ pub(crate) fn report<F: FnMut(&str)>(
             ));
         }
     }
+    if let Some(q) = &r.quadratic_hessian {
+        let treated = r.hessian.flagged - q.flagged;
+        if treated > 0 {
+            lg.line(&format!(
+                "curvature correction: DS_ij/Dt from the Hessian of the quadratic least-squares \
+                 velocity fit on {treated} cells (D236)"
+            ));
+        }
+    }
     let ds = diagnostics(&r, case);
-    if ds.is_empty() {
+    // cells the quadratic fit treats are reported too (flow.json,
+    // operators.csv), without a diagnostic
+    let treated = (r.quadratic.is_some() && r.gradient.flagged > 0)
+        || (r.quadratic_hessian.is_some() && r.hessian.flagged > 0);
+    if ds.is_empty() && !treated {
         return None;
     }
     // every cell with its errors, for a plot or an agent
@@ -431,26 +491,35 @@ type = "symmetry"
         // inside: exact
         let inner = r.cells - 2 * 8 - 2 * 8 + 4;
         assert!(r.gradient.flagged <= r.cells - inner, "{:?}", r.gradient);
-        // the quadratic fit of the QCR stress is exact everywhere, so only
-        // the curvature correction (LSQ-of-LSQ Hessian) is reported
+        assert!(r.hessian.flagged > r.gradient.flagged, "{:?}", r.hessian);
+        // the quadratic fit on the flagged cells is exact for the QCR
+        // stress and the curvature correction alike: nothing reported
         let q = r.quadratic.as_ref().unwrap();
         assert_eq!(q.flagged, 0, "{q:?}");
-        assert_eq!(
-            d.iter().map(|d| d.code).collect::<Vec<_>>(),
-            [diag::MESH_OPERATOR_HESSIAN]
-        );
+        let q = r.quadratic_hessian.as_ref().unwrap();
+        assert_eq!(q.flagged, 0, "{q:?}");
+        assert!(d.is_empty(), "{d:?}");
     }
 
     #[test]
     fn quadratic_fit_is_exact_on_tetrahedra() {
-        let (r, d) = run("tet", "qcr = \"qcr2000\"");
+        let (r, d) = run("tet", "curvature_correction = true\nqcr = \"qcr2000\"");
         assert_eq!(
             r.quadratic.as_ref().unwrap().flagged,
             0,
             "{:?}",
             r.quadratic
         );
+        assert_eq!(
+            r.quadratic_hessian.as_ref().unwrap().flagged,
+            0,
+            "{:?}",
+            r.quadratic_hessian
+        );
         assert!(d.is_empty(), "{d:?}");
+        // without the features no fit
+        let (r, _) = run("tet", "");
+        assert!(r.quadratic.is_none() && r.quadratic_hessian.is_none());
     }
 
     #[test]

@@ -1172,25 +1172,38 @@ fn curvature_correction_manufactured_solution_orders() {
     check("k-omega-sst-curvature", "poly", (1.6, 2.4));
 }
 
-/// The finding behind the two cell types above: on tetrahedra the error
-/// of k and ω does not fall with the mesh (about 1.3 % and 0.7 % at all
-/// three levels). DS_ij/Dt comes from the least-squares gradient of the
-/// least-squares gradient of the velocity, which is not consistent on
-/// irregular tetrahedra; the production of both equations carries it.
+/// On tetrahedra the curvature correction converges since D236: DS_ij/Dt
+/// takes the Hessian of the quadratic least-squares fit of the velocity on
+/// the cells where the gradient of the face-neighbour gradient is not
+/// exact. (Before, the error of k and ω stayed at about 1.3 % and 0.7 % at
+/// all three levels.) Regular tetrahedra and 15 % perturbed ones.
 #[test]
 #[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
-fn curvature_correction_on_tetrahedra_stays_bounded() {
+fn curvature_correction_on_tetrahedra_converges() {
     let m = model_of("k-omega-sst-curvature");
     FLOW.set(m.flow());
-    let case = FlowCase::from_toml(
-        &case_text("k-omega-sst-curvature", "tet", m.as_ref()),
-        Path::new("."),
-    )
-    .unwrap();
-    for level in 0..3 {
-        let r = run_level(&case, level, m.as_ref());
-        eprintln!("curvature tet level {level}: L2 {}", sci(&r.l2));
-        assert!(r.l2[0] < 0.03 && r.l2[1] < 0.03, "{:?}", r.l2);
+    for perturb in [0.0, 0.15] {
+        let text = case_text("k-omega-sst-curvature", "tet", m.as_ref())
+            .replace("perturb = 0.15", &format!("perturb = {perturb}"));
+        let case = FlowCase::from_toml(&text, Path::new(".")).unwrap();
+        let runs: Vec<Level> = (0..3).map(|l| run_level(&case, l, m.as_ref())).collect();
+        for r in &runs {
+            eprintln!(
+                "curvature tet perturb {perturb}: h {:.4e} L2 {}",
+                r.h,
+                sci(&r.l2)
+            );
+        }
+        for e in 0..2 {
+            let p = (runs[1].l2[e] / runs[2].l2[e]).ln() / (runs[1].h / runs[2].h).ln();
+            assert!(
+                p > 1.6
+                    && p < 2.4
+                    && runs[2].l2[e] < runs[1].l2[e]
+                    && runs[1].l2[e] < runs[0].l2[e],
+                "perturb {perturb}, variable {e}: order {p:.3}"
+            );
+        }
     }
 }
 
