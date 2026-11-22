@@ -1750,7 +1750,7 @@ pub struct Solve {
     /// Cell-quality check and remediation (D50), on a mesh with poor faces.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub remediation: Option<crate::simplec::RemediationReport>,
-    /// The operator exactness check (D235).
+    /// The operator exactness check (D236).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub operators: Option<crate::operators::OperatorReport>,
     /// The passive scalars (D51).
@@ -4639,7 +4639,7 @@ impl FlowReport {
             if let Some(r) = &v.operators {
                 let _ = writeln!(
                     s,
-                    "\n**Operator check (D235)** on {}: {}",
+                    "\n**Operator check (D236)** on {}: {}",
                     v.mesh,
                     r.findings.join(" ")
                 );

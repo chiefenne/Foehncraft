@@ -14,7 +14,7 @@
 //! | LIM005 | a backend not verified on this device | a GPU that is not in [`VERIFIED_DEVICES`] |
 //! | LIM006 | automatic mesh remediation active | the remediation of D50 changed the schemes |
 //! | LIM007 | thermal acceleration of the solids | the history before `physical_from` is not physical (D213) |
-//! | LIM008 | an operator of a feature in use is not exact | the operator check of D235 (MESH005, MESH006) |
+//! | LIM008 | an operator of a feature in use is not exact | the operator check of D236 (MESH005, MESH006) |
 //!
 //! The list never changes a result or the exit code (D199 Q1, Q2): a run
 //! with limitations keeps `"status": "finished"` and exit code 0, and the
@@ -527,7 +527,7 @@ pub fn of_run(case: &FlowCase, rep: &FlowReport) -> Vec<Limitation> {
             msg,
         ));
     }
-    // LIM008: an operator of a feature in use is not exact (D235)
+    // LIM008: an operator of a feature in use is not exact (D236)
     if let Some(r) = rep.solves.iter().find_map(|s| s.operators.as_ref()) {
         let mut what = Vec::new();
         let t = &case.turbulence;

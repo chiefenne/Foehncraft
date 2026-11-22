@@ -1,4 +1,4 @@
-//! The operator exactness check of a run (D235): before the solve, the
+//! The operator exactness check of a run (D236): before the solve, the
 //! velocity gradient and the gradient of the gradient (the Hessian of the
 //! curvature correction) are applied to known linear and quadratic fields
 //! on the mesh of the run ([`foehncraft_fv::exactness`]); the cells where
@@ -57,7 +57,7 @@ pub struct OperatorPart {
     pub worst: Vec<FlaggedCell>,
 }
 
-/// The operator exactness check of a mesh (D235).
+/// The operator exactness check of a mesh (D236).
 #[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
 pub struct OperatorReport {
     /// Cells checked.
@@ -201,7 +201,7 @@ pub fn diagnostics(r: &OperatorReport, case: &FlowCase) -> Vec<diag::Diagnostic>
         out.push(diag::Diagnostic::new(
             diag::MESH_OPERATOR_LINEAR,
             format!(
-                "operator check (D235): the least-squares gradient of a linear field is not exact \
+                "operator check (D236): the least-squares gradient of a linear field is not exact \
                  on {}: degenerate or badly conditioned cells; improve or remesh them",
                 cells_text(&r.linear)
             ),
@@ -213,7 +213,7 @@ pub fn diagnostics(r: &OperatorReport, case: &FlowCase) -> Vec<diag::Diagnostic>
             diag::Diagnostic::new(
                 diag::MESH_OPERATOR_HESSIAN,
                 format!(
-                    "operator check (D235): the velocity Hessian of the curvature correction \
+                    "operator check (D236): the velocity Hessian of the curvature correction \
                      (DS/Dt) has an error above {} on {}: the correction does not converge \
                      with the mesh on those cells",
                     r.hessian.tolerance,
@@ -228,7 +228,7 @@ pub fn diagnostics(r: &OperatorReport, case: &FlowCase) -> Vec<diag::Diagnostic>
             diag::Diagnostic::new(
                 diag::MESH_OPERATOR_GRADIENT,
                 format!(
-                    "operator check (D235): the velocity gradient is first order (error above {} \
+                    "operator check (D236): the velocity gradient is first order (error above {} \
                      for a quadratic field) on {}: the divergence of the explicit QCR stress \
                      does not converge with the mesh on those cells",
                     r.gradient.tolerance,

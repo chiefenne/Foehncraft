@@ -1,4 +1,4 @@
-# The operator exactness check (D235) on a shallow lid-driven cavity (2:1) with k-ω SST,
+# The operator exactness check (D236) on a shallow lid-driven cavity (2:1) with k-ω SST,
 # the curvature and rotation correction and QCR2000, on 2D tetrahedra
 # (triangular prisms) with randomly perturbed vertices.
 #

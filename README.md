@@ -61,7 +61,7 @@ validated range, one mesh only, …) in its report and its JSON result.
   automatic remediation of skewed cells (Gauss pressure gradient, limiter,
   bounded Rhie–Chow face velocity); an operator exactness check that flags
   the cells where the velocity gradient or Hessian is not exact for a
-  quadratic field (D235); partitioning with METIS and halos;
+  quadratic field (D236); partitioning with METIS and halos;
   VTKHDF output for ParaView.
 - **Numerics.** Cell-centred finite volumes with weighted least-squares
   gradients, Venkatakrishnan(-Wang) limiters, linear upwind and bounded

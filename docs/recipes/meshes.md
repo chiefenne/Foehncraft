@@ -361,7 +361,7 @@ target/release/foehn flow examples/cases/flow/taylor_couette_su2_zones.toml
 
 The curvature correction of SST and the QCR differentiate the velocity
 gradient once more; they converge with the mesh only where the gradient is
-exact for a quadratic field (D235). Every run checks this before the solve;
+exact for a quadratic field (D236). Every run checks this before the solve;
 an agent or a script can ask before running:
 
 ```
@@ -385,7 +385,7 @@ target/release/foehn flow examples/cases/flow/cavity_sst_operator_check.toml \
 ```
 
 What to do with flagged cells: regular hexahedra or polyhedra in the core
-of the flow, or (the next steps of D235) the quadratic least-squares
+of the flow, or (the next steps of D236) the quadratic least-squares
 operators on the flagged cells and a local remesh of the cells still
 flagged; converting tetrahedra to polyhedra (D54) is the other way.
 

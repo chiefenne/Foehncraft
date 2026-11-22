@@ -236,7 +236,7 @@ Gaps:
 
 ### Operator exactness check of the velocity gradient and Hessian
 
-**partial** (gaps written) · id `mesh.operator-check` · switch `solver.operator_tolerance` · decisions D235
+**partial** (gaps written) · id `mesh.operator-check` · switch `solver.operator_tolerance` · decisions D236
 
 - exact: [`linear_fields_are_exact_on_every_mesh`](../../crates/foehncraft-fv/src/exactness.rs): the least-squares gradient of linear fields exact to 10⁻¹⁰ on regular and perturbed hexahedra and tetrahedra
 - exact: [`regular_hexahedra_are_second_order_inside`](../../crates/foehncraft-fv/src/exactness.rs): gradient and Hessian of quadratic fields exact inside regular hexahedra, flagged at the walls
@@ -246,7 +246,7 @@ Gaps:
 
 Gaps:
 
-- the flagged cells are not yet treated: the quadratic least-squares operators and the local remesh are the next steps of D235
+- the flagged cells are not yet treated: the quadratic least-squares operators and the local remesh are the next steps of D236
 
 <a id="mesh-vtkhdf"></a>
 

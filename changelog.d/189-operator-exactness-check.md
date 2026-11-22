@@ -1,4 +1,4 @@
-- **Operator exactness check of the mesh (D235).** Before the solve the
+- **Operator exactness check of the mesh (D236).** Before the solve the
   velocity gradient and its gradient (the velocity Hessian of the
   curvature correction) are applied to linear and quadratic test fields on
   the mesh of the run. Cells where they are not exact are flagged:

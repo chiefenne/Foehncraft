@@ -1540,7 +1540,7 @@ pub struct CheckReport {
     pub diagnostics: Vec<Diagnostic>,
     /// The estimate (when the case could be read).
     pub estimate: Option<Estimate>,
-    /// The operator exactness check of the first mesh (D235): the cells
+    /// The operator exactness check of the first mesh (D236): the cells
     /// where the velocity gradient or Hessian is not exact, worst first.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub operators: Option<crate::operators::OperatorReport>,
@@ -1617,7 +1617,7 @@ pub fn check_case(
             findings.extend(crate::energy::setup_findings(case));
             rep.diagnostics
                 .extend(findings.iter().map(crate::bc::Finding::diagnostic));
-            // the operator exactness check (D235)
+            // the operator exactness check (D236)
             if let Ok(mut r) = crate::operators::check_case(case, &mesh, &geo) {
                 let ds = crate::operators::diagnostics(&r, case);
                 r.findings = ds.iter().map(|d| d.message.clone()).collect();

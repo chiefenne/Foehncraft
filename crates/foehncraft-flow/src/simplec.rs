@@ -341,7 +341,7 @@ pub struct Settings {
     /// line through the two cell centroids, over the centroid distance) are
     /// poor (D50).
     pub skewness_limit: f64,
-    /// The operator check (D235): a cell whose velocity gradient (relative
+    /// The operator check (D236): a cell whose velocity gradient (relative
     /// to h |H|) or velocity Hessian (relative to |H|) has a larger error
     /// for a quadratic field is flagged.
     pub operator_tolerance: f64,

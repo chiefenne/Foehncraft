@@ -1,4 +1,4 @@
-//! The operator exactness check of a mesh (D235): the least-squares
+//! The operator exactness check of a mesh (D236): the least-squares
 //! gradient and the gradient of the gradient (the velocity Hessian of the
 //! curvature correction of SST) applied to known linear and quadratic
 //! fields on the real mesh before a solve, with the error per cell.

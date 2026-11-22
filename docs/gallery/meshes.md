@@ -13,7 +13,7 @@ Part of the [Example gallery](../gallery.md): the built-in test mesher in 2D and
 | 129 | [A polyhedral mesh from OpenFOAM and CGNS](#foam-cgns-polyhedra) | 6 | OpenFOAM and CGNS readers, polyhedral cells, one mesh through two formats (D188) |
 | 134 | [One polyhedral mesh through five formats](#five-formats) | 6 | industry .msh and VTK readers, VTU writer, the same mesh as OpenFOAM, CGNS, .msh and VTU (D191, D192) |
 | 138 | [Taylor–Couette sliding case from a two-zone SU2 file](#su2-zones) | 6 | multi-zone SU2 and CGNS, rotor and stator as cell zones, interface boundaries, `[[sliding]]` (D195) |
-| 189 | [Which cells can the curvature correction and the QCR trust? The operator check](#operator-check) | 6 | gradient and Hessian on test fields, `MESH004`–`MESH006`, `LIM008`, `operators.csv` (D235) |
+| 189 | [Which cells can the curvature correction and the QCR trust? The operator check](#operator-check) | 6 | gradient and Hessian on test fields, `MESH004`–`MESH006`, `LIM008`, `operators.csv` (D236) |
 
 ---
 
@@ -398,7 +398,7 @@ solutions of #184 (gallery 184). The run reports it before it starts:
 worst cells, `LIM008` in `result.json`, the 50 worst cells per operator in
 `flow.json` and `foehn flow --check`, and the errors of every cell in
 `operators.csv`. Nothing is reported where every operator the run uses is
-exact, and the check changes no result. The next steps of D235 treat the
+exact, and the check changes no result. The next steps of D236 treat the
 flagged cells (a quadratic least-squares fit over the neighbours of the
 neighbours for the QCR gradient and the Hessian, then a local remesh of
 the cells still flagged).
