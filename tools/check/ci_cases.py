@@ -54,6 +54,7 @@ FLOW = {
         "cavity_heated", "conduction_mms", "couette_viscous_heating", "cht_composite_wall",
         "cht_heated_wall", "cht_turbulent_channel", "cht_contact_transient",
         "cht_heated_wall_transient", "cht_orthotropic_patch", "cht_circuit_board",
+        "cht_heated_wall_accelerated", "cht_heated_wall_periodic_accelerated",
     ],
     "long": [
         "cylinder_re100", "cylinder_re100_short", "cylinder_re100_statistics", "cylinder_re100_convective", "cylinder_re20_gci",

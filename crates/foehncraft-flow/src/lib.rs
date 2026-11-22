@@ -29,6 +29,7 @@
 //! - [`monitor`]: probes, force coefficients, histories, benchmarks (D43);
 //! - [`plot`]: small SVG charts of the reports.
 
+pub mod acceleration;
 #[cfg(test)]
 mod adjoint_tests;
 pub mod analytic;

@@ -9,6 +9,7 @@ Part of the [Example gallery](../gallery.md): the energy equation of the fluid (
 | 158 | [A finned heat sink in a turbulent air channel, and a turbulent channel over a conducting wall](#cht-turbulent) | 7 | `[turbulence]` with solid regions, `[energy] wall_function`, `turbulent_prandtl` |
 | 159 | [A heated wall switched on, and two bodies brought into contact](#cht-transient) | 7 | `[time]` with solid regions, `heat.csv`, `<probe>_T`, `[energy] exact` with `erf` |
 | 160 | [A chip on a circuit board with a thermal pad, and an orthotropic patch test](#cht-contact) | 7 | `[interfaces.<name>] contact_resistance`, `thin_wall`, orthotropic `conductivity`, `[regions.<name>] axes`, `[[energy.sources]]` |
+| 180 | [A heated wall brought to its steady and periodic state with thermal acceleration](#cht-acceleration) | 7 | `[energy.acceleration]` `inertia_scale`, `period`, `restore`, `restore_ramp`, `heat.csv` `inertia_scaling` |
 
 ---
 
@@ -307,4 +308,62 @@ target/release/foehn flow examples/cases/flow/cht_orthotropic_patch.toml --out o
 pip install matplotlib h5py numpy
 python3 -m tools.plot.cht_contact docs/figures/gallery output/cht_board output/cht_board_plain \
     output/cht_board_nopad output/cht_patch
+```
+
+<a id="cht-acceleration"></a>
+## 180. A heated wall brought to its steady and periodic state with thermal acceleration
+
+<img src="../figures/gallery/cht_heated_wall_accelerated.png" alt="Top: the temperature of the heated wall and the channel flow above it at 600 s of the accelerated run; the wall is warm from about 307 K at the inlet end to 323 K at the outlet end and a warm layer grows in the fluid above it. Bottom: the temperature of the heated face over time; the accelerated wall, whose heat capacity was scaled by 0.175 after the first 50 s, reaches 322.6 K at about 300 s and gets its true heat capacity back at 450 s, while the true wall needs about 2500 s to the same temperature" width="990" height="774">
+
+**A heated wall in a steady flow (check V7.41).**
+`cht_heated_wall_accelerated.toml` is the heated wall of entry 159 with
+`[energy.acceleration] inertia_scale = "auto"`. The steady temperatures of
+a solid do not depend on its ρ c_p, so scaling ρ c_p down changes only how
+fast the wall gets there, like a good initial field. After the first
+window (10 steps of 5 s) the run measures the wall's conductance to the
+flow, G = 8.96 W/K (the heat flow out of the wall for 1 K more, two steady
+energy solves with the wall held and the flow as it is), and its time
+constant C/G = 286 s with C = ρ c_p V = 2560 J/K; ρ c_p is scaled by
+f = 0.175, so that the time constant becomes one window. The wall has
+settled at 450 s (the change still to come, extrapolated from the last two
+windows, below 0.1 % of the rise) and has its true ρ c_p from then on. At
+600 s the heated face is at 322.610 K against 322.612 K of the true wall
+after 3000 s: the same state with a fifth of the simulated time (120 steps
+in 4.2 s against 600 steps in 16.5 s on 4 threads). The balance of the
+solved equation closes in every step to 1.9·10⁻¹¹ of the heat flow, and
+`heat.csv` has the column `inertia_scaling`: the heat the true wall would
+have stored in addition, exactly (1 − f)/f of the wall's solved storage
+while accelerated (31.2 kJ over the run).
+
+<img src="../figures/gallery/cht_heated_wall_periodic.png" alt="Top: the temperature of the wall and the channel flow at 1500 s with the inlet temperature swinging between 250 and 350 K over 50 s; bands of warmer and cooler fluid travel down the channel above the warm wall. Bottom: the cycle mean of the heated face minus the true periodic state over time; the accelerated wall is within a few hundredths of a kelvin at 700 s; restored with a ramp over three periods it stays there (+0.0025 K at 1500 s), restored as a jump it drops by 1.5 K and recovers only with the true time constant (-0.24 K at 1500 s); the true wall reaches the state after about 2500 s" width="990" height="774">
+
+**The same wall in a periodic flow.**
+`cht_heated_wall_periodic_accelerated.toml` swings the inlet temperature
+between 250 and 350 K over 50 s and gives the period: a window is one
+period, the target is two periods (f = 0.35) and the wall settles at
+700 s. A jump back to the true ρ c_p would catch the accelerated wall in
+the middle of its swing, whose depth and amplitude are 1/√f larger than
+the true ones (the skin depth of the period √(2k/(f ρ c_p ω)) = 0.28 m is
+larger than the 0.2 m wall: ACC003). That part stays in the deep
+temperature and decays only with the true time constant: 1.5 K too cold
+right after the jump, still 0.24 K at 1500 s. Raising f geometrically back
+to 1 over three periods (`restore_ramp`, the default with a period) lets
+the swing die out on the way: the cycle mean at 1500 s is within 0.0025 K
+of the true wall's periodic state, which the unaccelerated run reaches
+after about 2500 s (4000 s run). The same effect in a lumped model: a jump
+leaves about (gas swing)/(ω τ_f) in the solid, 8 % of the swing at
+τ_f = 2 periods; a ramp over three periods 0.3 %.
+
+```
+cargo build --release -p foehncraft-cli
+target/release/foehn flow examples/cases/flow/cht_heated_wall_accelerated.toml --out output/acc
+target/release/foehn flow examples/cases/flow/cht_heated_wall_transient.toml --out output/ref
+target/release/foehn flow examples/cases/flow/cht_heated_wall_periodic_accelerated.toml --out output/per
+target/release/foehn flow examples/cases/flow/cht_heated_wall_periodic_accelerated.toml --out output/per_jump \
+    --set energy.acceleration.restore_ramp=0
+target/release/foehn flow examples/cases/flow/cht_heated_wall_periodic_accelerated.toml --out output/per_ref \
+    --set energy.acceleration.inertia_scale=1.0 --set time.end_time=4000.0
+pip install matplotlib h5py numpy
+python3 -m tools.plot.cht_acceleration docs/figures/gallery output/acc output/ref output/per \
+    output/per_jump output/per_ref
 ```

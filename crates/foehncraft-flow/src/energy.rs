@@ -95,6 +95,210 @@ pub struct EnergySection {
     /// the region, spread by volume) or `power_density` (W/m³).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sources: Vec<RegionSource>,
+    /// Thermal acceleration of the solid regions in a transient conjugate
+    /// run (D213, [`crate::acceleration`]): ρ c_p of the solids scaled by
+    /// a factor until their temperatures settle, then restored.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub acceleration: Option<Acceleration>,
+}
+
+/// `[energy.acceleration]`: thermal acceleration of the solids (D213). The
+/// heat capacity ρ c_p of the solid regions is multiplied by
+/// `inertia_scale` (0 < f ≤ 1), so that they reach their steady or
+/// periodic-mean temperatures f times sooner; the steady temperatures do
+/// not depend on ρ c_p of a solid. When the solids' mean temperatures have
+/// settled (or at `restore` seconds), the true ρ c_p comes back, at once
+/// or raised geometrically over `restore_ramp` windows. The history is not
+/// physical before the restore; the result says from when it is.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Acceleration {
+    /// The factor f on ρ c_p of the accelerated solids, 0 < f ≤ 1, or
+    /// `"auto"`: f from the time constant of each region, measured after
+    /// the first window, so that the scaled time constant is
+    /// `target_windows` windows.
+    pub inertia_scale: InertiaScale,
+    /// The accelerated solid regions (default: every solid region).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub regions: Vec<String>,
+    /// When the true ρ c_p comes back: `"settled"` (default) or a time (s)
+    /// at which the restore starts.
+    #[serde(default)]
+    pub restore: Restore,
+    /// The period of a periodic flow (s): a window is one period, and the
+    /// restore is raised geometrically over `restore_ramp` periods. Without
+    /// it a window is `window_steps` time steps.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub period: Option<f64>,
+    /// Time steps per window without a `period` (default 10).
+    #[serde(default = "default_window_steps")]
+    pub window_steps: u32,
+    /// Settled when, for every accelerated region, the change of its
+    /// window-mean temperature still to come (extrapolated geometrically
+    /// from the changes of the last two windows) and the change of the
+    /// last window are below this fraction of its change since the start
+    /// (default 1e-3).
+    #[serde(default = "default_settle_tolerance")]
+    pub settle_tolerance: f64,
+    /// Windows over which f rises geometrically to 1 (default 3 with a
+    /// `period`, 0 without: a jump is exact where the flow is not
+    /// periodic; in a periodic flow a jump leaves the part of the swing
+    /// that the accelerated solid had at that moment in its deep
+    /// temperature, which then decays only with the true time constant).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub restore_ramp: Option<u32>,
+    /// `"auto"`: the scaled time constant in windows (default 2 with a
+    /// `period`, 1 without).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_windows: Option<f64>,
+    /// Windows after the restore before the history counts as physical
+    /// (default 2; reported, nothing is cut).
+    #[serde(default = "default_settle_windows")]
+    pub settle_windows: u32,
+}
+
+/// The factor of `[energy.acceleration] inertia_scale`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(untagged)]
+pub enum InertiaScale {
+    /// A fixed factor, 0 < f ≤ 1.
+    Factor(f64),
+    /// `"auto"`.
+    Word(String),
+}
+
+/// `[energy.acceleration] restore`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(untagged)]
+pub enum Restore {
+    /// The time (s) at which the restore starts.
+    Time(f64),
+    /// `"settled"`.
+    Word(String),
+}
+
+impl Default for Restore {
+    fn default() -> Self {
+        Restore::Word("settled".into())
+    }
+}
+
+impl Acceleration {
+    /// The restore ramp in windows.
+    pub fn ramp(&self) -> u32 {
+        self.restore_ramp
+            .unwrap_or(if self.period.is_some() { 3 } else { 0 })
+    }
+
+    /// The target of `"auto"` in windows.
+    pub fn target(&self) -> f64 {
+        self.target_windows
+            .unwrap_or(if self.period.is_some() { 2.0 } else { 1.0 })
+    }
+
+    /// The fixed factor, `None` for `"auto"`.
+    pub fn factor(&self) -> Option<f64> {
+        match self.inertia_scale {
+            InertiaScale::Factor(f) => Some(f),
+            InertiaScale::Word(_) => None,
+        }
+    }
+
+    /// The restore time, `None` for `"settled"`.
+    pub fn restore_time(&self) -> Option<f64> {
+        match self.restore {
+            Restore::Time(t) => Some(t),
+            Restore::Word(_) => None,
+        }
+    }
+}
+
+fn default_window_steps() -> u32 {
+    10
+}
+
+fn default_settle_tolerance() -> f64 {
+    1e-3
+}
+
+fn default_settle_windows() -> u32 {
+    2
+}
+
+/// Checks `[energy.acceleration]` (ACC001).
+fn validate_acceleration(case: &crate::case::FlowCase, a: &Acceleration) -> Result<()> {
+    let key = "energy.acceleration";
+    crate::need!(
+        case.time.is_some(),
+        ACC_SETTING,
+        "[{key}] in a steady case: the steady temperatures do not depend on ρ c_p of a solid, \
+         there is nothing to accelerate; it is for transient conjugate runs"
+    );
+    crate::need!(
+        crate::cht::is_cht(case),
+        ACC_SETTING,
+        "[{key}] without solid regions: only the heat capacity of solids is scaled (in a fluid \
+         it also multiplies the convection, which would change the answer)"
+    );
+    match &a.inertia_scale {
+        InertiaScale::Factor(f) => crate::need!(
+            *f > 0.0 && *f <= 1.0,
+            ACC_SETTING,
+            "[{key}] inertia_scale must be in (0, 1] or \"auto\", is {f}"
+        ),
+        InertiaScale::Word(w) => crate::need!(
+            w == "auto",
+            ACC_SETTING,
+            "[{key}] inertia_scale must be a number in (0, 1] or \"auto\", is \"{w}\""
+        ),
+    }
+    match &a.restore {
+        Restore::Time(t) => crate::need!(
+            *t >= 0.0 && t.is_finite(),
+            ACC_SETTING,
+            "[{key}] restore must be \"settled\" or a time >= 0 s, is {t}"
+        ),
+        Restore::Word(w) => crate::need!(
+            w == "settled",
+            ACC_SETTING,
+            "[{key}] restore must be \"settled\" or a time in s, is \"{w}\""
+        ),
+    }
+    for r in &a.regions {
+        crate::need!(
+            case.regions
+                .get(r)
+                .is_some_and(|x| x.kind == crate::materials::RegionKind::Solid),
+            ACC_SETTING,
+            "[{key}] regions: `{r}` is not a solid region of the case"
+        );
+    }
+    if let Some(p) = a.period {
+        crate::need!(
+            p > 0.0 && p.is_finite(),
+            ACC_SETTING,
+            "[{key}] period must be > 0 s, is {p}"
+        );
+    }
+    crate::need!(
+        a.window_steps >= 2,
+        ACC_SETTING,
+        "[{key}] window_steps must be >= 2, is {}",
+        a.window_steps
+    );
+    crate::need!(
+        a.settle_tolerance > 0.0 && a.settle_tolerance < 1.0,
+        ACC_SETTING,
+        "[{key}] settle_tolerance must be in (0, 1), is {}",
+        a.settle_tolerance
+    );
+    crate::need!(
+        a.target() > 0.0 && a.target().is_finite(),
+        ACC_SETTING,
+        "[{key}] target_windows must be > 0, is {}",
+        a.target()
+    );
+    Ok(())
 }
 
 /// `[[energy.sources]]`: the heat source of one region (stage 7d2, §15 of
@@ -348,6 +552,9 @@ pub fn validate(case: &crate::case::FlowCase, env: &Env) -> Result<()> {
         );
     }
     case.solver.energy.validate(transient)?;
+    if let Some(a) = &e.acceleration {
+        validate_acceleration(case, a)?;
+    }
     for (b, t) in &case.boundary_energy {
         let key = format!("boundary.{b}.energy");
         let Some(bc) = case.boundary.get(b) else {

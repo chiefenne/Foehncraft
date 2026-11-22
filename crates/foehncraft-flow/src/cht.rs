@@ -680,6 +680,17 @@ pub fn solve(
     step: Option<crate::scalar::StepTime>,
     res: &mut crate::simplec::Residuals,
 ) -> Result<()> {
+    solve_with(fl, step, res, true)
+}
+
+/// [`solve`]; `back`: μ(T) goes back to the fluid view (false: a solve
+/// that measures and leaves the flow alone, D213).
+pub(crate) fn solve_with(
+    fl: &mut crate::simplec::Flow,
+    step: Option<crate::scalar::StepTime>,
+    res: &mut crate::simplec::Residuals,
+    back: bool,
+) -> Result<()> {
     let mut c = fl.cht.take().expect("a conjugate heat transfer case");
     let r = (|| -> Result<()> {
         let v = c.view.clone();
@@ -739,7 +750,7 @@ pub fn solve(
         fe.solve_scalar_fields(step, res, coupling)?;
         // μ(T) back to the fluid view: the face viscosity of a laminar
         // flow, the laminar viscosity of a turbulence model (which adds μ_t)
-        if let Some(mu) = fe.scalars.as_ref().and_then(|s| s.energy_viscosity()) {
+        if let (true, Some(mu)) = (back, fe.scalars.as_ref().and_then(|s| s.energy_viscosity())) {
             let back = v.faces_from_full(mu);
             fl.dev.upload(lam_target, &back)?;
             fl.phys.mu_face = Some(Arc::new(back));

@@ -141,6 +141,10 @@ codes! {
     ENE_UNSUPPORTED = "ENE006", Error, "An energy setting this version does not have: a passive scalar named `temperature` beside `[energy]`, solid regions with a sliding mesh, a restart, passive scalars or a periodic mesh.";
     ENE_SOURCE = "ENE008", Error, "An `[[energy.sources]]` entry for a region the case does not have, or without exactly one of `power` and `power_density`.";
     CHT_INTERFACE = "CHT004", Error, "An `[interfaces.<name>]` table that is not on a region interface (regions unknown, the same, two fluids, or not touching), or without exactly one of `contact_resistance` (≥ 0) and `thin_wall` (thickness > 0 with `conductivity` or `material`).";
+    ACC_SETTING = "ACC001", Error, "An `[energy.acceleration]` setting that cannot be used: a steady case, no solid region, a region that is not a solid, `inertia_scale` outside (0, 1] and not `\"auto\"`, `restore` neither `\"settled\"` nor a time ≥ 0, or a `period`, `window_steps`, `settle_tolerance` or `target_windows` out of range.";
+    ACC_UNRESTORED = "ACC002", Warning, "The run ended before the true heat capacity of the accelerated solids was restored: the final state is that of the accelerated solids and the history is not physical.";
+    ACC_SKIN = "ACC003", Note, "The accelerated solids' skin depth of the period, √(2k/(f ρ c_p ω)), is larger than the thickness V/A of a region (V its volume, A its interface area): while accelerated the swing of the period reaches through the wall; it goes away with the restore.";
+    ACC_PHASE = "ACC004", Note, "A step of the thermal acceleration: the conductances and factors measured, the solids settled, the restore started or finished.";
     ENE_BALANCE = "ENE007", Warning, "A steady run that converged while its heat balance does not close (imbalance above 1 % of the largest heat flow): the temperature residual is small but the energy solve is not converged; tighten `[solver.energy] tolerance` and raise `max_iter`.";
     THM_LEVEL = "THM001", Error, "A steady run whose boundaries leave the temperature level undetermined: no inlet and no `temperature` or convection boundary, and no net heat input.";
     THM_DRIFT = "THM002", Error, "A steady run with a net heat input (heat flux, heat flow, source or viscous heating) and no way for the heat to leave: no inlet and no `temperature` or convection boundary.";
@@ -215,6 +219,7 @@ codes! {
     LIM_NOT_SETTLED = "LIM003", Note, "A steady solve that stopped before its tolerance (iteration limit): the result may still change with more iterations.";
     LIM_ONE_MESH = "LIM004", Note, "One mesh only: the discretisation uncertainty is not estimated (a level sweep gives the GCI, D67).";
     LIM_DEVICE = "LIM005", Note, "The GPU backend ran on a device that is not in the list of verified devices (Tesla T4 so far).";
+    LIM_ACCELERATED = "LIM007", Note, "A transient conjugate run with thermal acceleration of its solids (D213): the history before `physical_from` is not physical (the solids' time ran faster, their swing was too large); the end state and later cycle means are.";
     LIM_REMEDIATION = "LIM006", Note, "Automatic mesh remediation (D50, MESH002) changed the schemes on poor faces: first order there.";
     // the tool registry (D196)
     TOOL_UNKNOWN = "TOOL001", Error, "A tool id that the registry does not have (with the nearest id as a hint); `foehn commands` lists them.";
@@ -484,7 +489,7 @@ mod tests {
                 [
                     "CASE", "SCHED", "BC", "SCAL", "RUN", "GEN", "DIV", "BAL", "EXPR", "MAT",
                     "REG", "MESH", "TURB", "MRF", "SLD", "ROT", "STAT", "ENE", "THM", "CHT",
-                    "TOOL", "LIM", "MCP"
+                    "TOOL", "LIM", "MCP", "ACC"
                 ]
                 .contains(&p),
                 "{}",

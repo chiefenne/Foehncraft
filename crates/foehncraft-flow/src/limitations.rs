@@ -262,6 +262,13 @@ pub fn features_in_use(case: &FlowCase) -> Vec<&'static str> {
         if !t.is_laminar() {
             f.push("cht.turbulent");
         }
+        if case
+            .energy
+            .as_ref()
+            .is_some_and(|e| e.acceleration.is_some())
+        {
+            f.push("cht.thermal-acceleration");
+        }
     }
     if case
         .interfaces
@@ -493,6 +500,30 @@ pub fn of_run(case: &FlowCase, rep: &FlowReport) -> Vec<Limitation> {
                 ),
             ));
         }
+    }
+    // LIM007: a thermal acceleration (D213): the history before
+    // `physical_from` is not physical
+    if let Some(a) = rep
+        .solves
+        .iter()
+        .filter_map(|s| s.transient.as_ref())
+        .find_map(|t| t.acceleration.as_ref())
+    {
+        let msg = match a.physical_from {
+            Some(t) => format!(
+                "thermal acceleration of the solids: the history before t = {} s is not physical \
+                 (time series, swings and cycle averages count from there)",
+                fmt(t)
+            ),
+            None => "thermal acceleration of the solids: the run ended before the true ρ c_p was \
+                     restored; its history and its end state are those of the accelerated solids"
+                .to_string(),
+        };
+        out.push(Limitation::new(
+            diag::LIM_ACCELERATED,
+            Some("cht.thermal-acceleration"),
+            msg,
+        ));
     }
     // LIM006: remediation
     if let Some(r) = rep

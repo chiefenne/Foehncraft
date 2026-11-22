@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**93 features: 41 verified, 48 partial, 4 unverified.**
+**94 features: 41 verified, 49 partial, 4 unverified.**
 
 ## How a grade is computed
 
@@ -90,6 +90,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Energy | [Energy with a turbulence model (thermal wall function, Pr_t)](#energy-turbulent) | partial |
 | Conjugate heat transfer | [Solid regions, steady](#cht-steady) | verified |
 | Conjugate heat transfer | [Transient conjugate heat transfer](#cht-transient) | verified |
+| Conjugate heat transfer | [Thermal acceleration of solids (scaled ρ c_p, restored)](#cht-thermal-acceleration) | partial |
 | Conjugate heat transfer | [Conjugate heat transfer with a turbulence model](#cht-turbulent) | partial |
 | Conjugate heat transfer | [Contact resistances and thin walls](#cht-contact-thin-wall) | verified |
 | Conjugate heat transfer | [Orthotropic solids (axes per region)](#cht-orthotropic) | verified |
@@ -990,6 +991,24 @@ Gaps:
 - exact: [`contact_converges_at_second_order_in_space_and_time`](../../crates/foehncraft-flow/tests/cht.rs): second order in space and time
 - consistency: [`cht_heated_wall_transient`](../../examples/cases/flow/cht_heated_wall_transient.toml): heat balance closes to 10⁻¹¹ in every step (passes in CI (set linux-3), not yet in the manual)
 - consistency: [`heated_wall_switched_on_reaches_the_steady_state`](../../crates/foehncraft-flow/tests/cht.rs): reaches the steady state
+
+<a id="cht-thermal-acceleration"></a>
+
+### Thermal acceleration of solids (scaled ρ c_p, restored)
+
+**partial** (no exact or manufactured solution; gaps written) · id `cht.thermal-acceleration` · switch `[energy.acceleration]`
+
+- consistency: [`cht_heated_wall_accelerated`](../../examples/cases/flow/cht_heated_wall_accelerated.toml): the steady state of the true wall five times sooner; measured time constant within 10 % of the case's estimate; balance and inertia-scaling term exact in every step (passes in CI (set linux-3), not yet in the manual) ([results](../gallery/energy.md#cht-acceleration))
+- consistency: [`auto_acceleration_reaches_the_steady_wall_sooner`](../../crates/foehncraft-flow/tests/cht_acceleration.rs): end state within 0.2 % of ΔT of the steady solution; inertia scaling (1 − f)/f of the solved storage to 10⁻¹²
+- consistency: [`cht_heated_wall_periodic_accelerated`](../../examples/cases/flow/cht_heated_wall_periodic_accelerated.toml): periodic inlet temperature: settled at 700 s, ρ c_p restored over three periods, cycle mean within 0.0025 K of the true periodic state at 1500 s (passes in CI (set linux-3), not yet in the manual)
+- consistency: [`periodic_restore_ramp_keeps_the_cycle_mean`](../../crates/foehncraft-flow/tests/cht_acceleration.rs): periodic inlet: cycle mean within 0.01 K of the true periodic state after the ramped restore, ten times closer than a jump
+- consistency: [`fixed_factor_scales_the_heat_up_and_restores_at_a_time`](../../crates/foehncraft-flow/tests/cht_acceleration.rs): a fixed factor and a restore at a set time
+
+Gaps:
+
+- the automatic factor leaves the conduction inside the solid out of the time constant (milder acceleration at large Biot numbers)
+- no case with several solids of very different time constants
+- the skin check uses the region's V/A, not the local wall thickness
 
 <a id="cht-turbulent"></a>
 

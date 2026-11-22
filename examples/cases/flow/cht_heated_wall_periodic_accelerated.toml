@@ -1,0 +1,118 @@
+# The heated wall of `cht_heated_wall_accelerated` with a periodic inlet
+# temperature, 300 ± 50 K over a period of 50 s: thermal acceleration in a
+# periodic flow (D213, §9e of the stage 7 specification).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/cht_heated_wall_periodic_accelerated.toml
+#
+# With `period` a window is one period: the first period measures the
+# wall's time constant (286 s), ρ c_p is scaled by f = 0.35 so that it
+# becomes two periods, and the wall settles (window means) at t = 700 s.
+# Then f is raised geometrically back to 1 over `restore_ramp = 3` periods
+# (until 850 s). A jump back (`restore_ramp = 0`) would catch the
+# accelerated wall in the middle of its swing and leave that part in its
+# deep temperature, which then decays only with the true time constant:
+# 1.5 K too cold right after the jump and still 0.24 K at 1500 s, against
+# 0.0025 K with the ramp (the unaccelerated run reaches its periodic state
+# after about 2500 s).
+#
+# While accelerated, the skin depth of the period √(2k/(f ρ c_p ω)) is
+# larger than the wall (ACC003, a note): the swing reaches through the wall
+# until the restore.
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [4.0, 1.2, 0.04]
+cells = [80, 30, 1]
+split = [
+  { boundary = "xmin", axis = "y", at = 0.2, name = "inlet" },
+  { boundary = "xmax", axis = "y", at = 0.2, name = "outlet" },
+]
+zones = [{ name = "wall", lower = [0.0, 0.0, 0.0], upper = [4.0, 0.2, 0.04] }]
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 0.01                     # Re = 100
+specific_heat = 1000.0
+conductivity = 14.084507042253522    # Pr = μ c_p/k = 0.71
+
+[materials.wall-solid]
+kind = "solid"
+description = "a made-up solid with k_s/k_f = 10 (not a database material)"
+density = 100.0                      # light: a time constant of about 300 s
+specific_heat = 800.0
+conductivity = 140.84507042253522
+
+[regions.wall]
+kind = "solid"
+zones = ["wall"]
+material = "wall-solid"
+
+[energy]
+initial = 300.0                      # everything at the inlet temperature at t = 0
+
+[energy.acceleration]
+inertia_scale = "auto"               # f from the wall's time constant, measured over the first period
+period = 50.0                        # s: a window is one period
+restore_ramp = 3                     # periods over which f rises back to 1 (the default with a period)
+# target_windows = 2                 # the scaled time constant: two periods (the default with a period)
+
+[initial]
+velocity = [0.0, 0.0, 0.0]
+
+[boundary.inlet]
+type = "velocity-inlet"
+velocity = [1.0, 0.0, 0.0]
+[boundary.inlet.energy]
+temperature = "300.0 + 50.0*sin(2.0*pi*t/50.0)"   # K, a period of 50 s
+[boundary.outlet]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymax]
+type = "wall"
+[boundary.ymin]
+type = "wall"
+[boundary.ymin.energy]
+heat_flux = 1000.0                   # W/m² into the wall
+[boundary.xmin]
+type = "wall"                        # the upstream end of the wall
+[boundary.xmax]
+type = "wall"                        # the downstream end of the wall
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[time]
+scheme = "bdf2"
+time_step = 5.0
+end_time = 1500.0
+
+[solver]
+outer_iterations = 3                 # the flow takes Courant numbers of 100
+
+[solver.momentum]
+relaxation = 0.9
+
+[solver.energy]
+relaxation = 1.0
+tolerance = 1e-10
+max_iter = 300
+
+[output]
+wall_csv = false
+fields_every = 100                   # every 500 s
+probes = [
+  { name = "heated_face", point = [3.0, 0.02, 0.02] },
+  { name = "interface", point = [3.0, 0.22, 0.02] },
+  { name = "channel", point = [3.0, 0.7, 0.02] },
+]
+lines = [
+  { name = "wall_top", from = [0.025, 0.18, 0.02], to = [3.975, 0.18, 0.02], points = 80 },
+  { name = "across", from = [3.0, 0.0, 0.02], to = [3.0, 1.2, 0.02], points = 121 },
+]
