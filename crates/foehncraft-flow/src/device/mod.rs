@@ -705,6 +705,8 @@ pub trait FlowDevice {
         num: Option<Buf>,
         den: Option<Buf>,
     ) -> Result<()>;
+    /// out = a x y per entry; `out` may be `x` or `y`.
+    fn product(&mut self, out: Buf, a: f64, x: Buf, y: Buf) -> Result<()>;
     /// out = a x + b y; `out` may be `x` or `y`.
     fn lincomb(&mut self, out: Buf, a: f64, x: Buf, b: f64, y: Buf) -> Result<()>;
     /// out += v_x² + v_y² + v_z² per entry.

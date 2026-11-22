@@ -121,7 +121,11 @@ fn member<'a>(
     let n_fluid = 1 + regions
         .iter()
         .skip(1)
-        .take_while(|r| case.regions.get(*r).is_some_and(|x| x.kind == RegionKind::Fluid))
+        .take_while(|r| {
+            case.regions
+                .get(*r)
+                .is_some_and(|x| x.kind == RegionKind::Fluid)
+        })
         .count() as u32;
     if name == "fluid" {
         return Some(Box::new(move |c| mat_cell[c] < n_fluid));

@@ -874,6 +874,18 @@ stage 7 (V7.32).
 
 ## 9c. Several fluids and materials: heat exchangers (D194)
 
+**Stage MF-A implemented 2026-11-22 (#206)**: fluid regions with their own
+material and temperature, properties per cell and face (flow, energy,
+turbulence, boundary conditions), fluid parts as connected components with
+REG003 (a part without a pressure boundary in a multi-part case), REG004
+(two fluids sharing a face), REG005 (the parts in the log) and REG006
+(settings not yet built for several fluids). V7.33 is checked in planar
+form (`cht_counterflow_two_fluids`). Build plan of the remaining stages:
+MF-B variable density per part and closed parts with their own reference
+and p₀ (V7.34), MF-C turbulence, buoyancy and Pr_t per fluid region (MF1),
+MF-D thin walls between fluids and the exchanger outputs (V7.33 thin-wall
+run, V7.35).
+
 Added 2026-11-20 at the maintainer's request: conjugate heat transfer must
 model tube-and-fin and other heat exchangers, with several fluid regions of
 different fluids and several solid regions of different materials, and no

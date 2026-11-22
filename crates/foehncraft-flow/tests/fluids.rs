@@ -79,7 +79,30 @@ fn counterflow_of_water_and_oil_follows_eps_ntu() {
         (q_water + q_oil).abs() < 1e-3 * q_water,
         "{q_water} {q_oil}"
     );
-    assert!((q_plate + q_water).abs() < 1e-3 * q_water, "{q_plate} {q_water}");
+    assert!(
+        (q_plate + q_water).abs() < 1e-3 * q_water,
+        "{q_plate} {q_water}"
+    );
+}
+
+/// The coupled solver with several fluids: the density per cell in its
+/// pseudo-time term and in the scale of the continuity row gives the same
+/// exchanger as SIMPLEC.
+#[test]
+fn coupled_solver_runs_two_fluids() {
+    let t = text().replace("[solver]\n", "[solver]\nalgorithm = \"coupled\"\n");
+    let case = FlowCase::from_toml(&t, &cases()).unwrap();
+    let r = run_case(&case, "coupled");
+    assert!(r.failures.is_empty(), "{:?}", r.failures);
+    let s = &r.solves[0];
+    assert!(s.converged);
+    let t = s.scalars.iter().find(|x| x.name == "temperature").unwrap();
+    let b = |n: &str| t.boundaries.iter().find(|b| b.boundary == n).unwrap();
+    let eps = (340.0 - b("xmax").mixed_mean.unwrap()) / 40.0;
+    let eps_oil = (b("oil_out").mixed_mean.unwrap() - 300.0) / 40.0;
+    // SIMPLEC: 0.7756
+    assert!((eps - 0.7756).abs() < 1e-3, "ε = {eps}");
+    assert!((eps_oil / eps - 1.0).abs() < 2e-3, "{eps_oil} vs {eps}");
 }
 
 /// REG004: the oil directly on the water (the plate a fluid region of the

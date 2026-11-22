@@ -735,6 +735,10 @@ pub struct Physics {
     /// The variable density per cell and per face (stage 7c), as last
     /// refreshed (`None`: `rho` everywhere).
     pub rho_var: Option<std::sync::Arc<(Vec<f64>, Vec<f64>)>>,
+    /// The density differs between the zones of several fluids (D194): the
+    /// coupled solver takes the pseudo-time term and the scale of the
+    /// continuity row per cell (false: `rho`, as before).
+    pub zones: bool,
 }
 
 impl Physics {
@@ -749,6 +753,7 @@ impl Physics {
             source: None,
             buoyancy: None,
             rho_var: None,
+            zones: false,
         }
     }
 

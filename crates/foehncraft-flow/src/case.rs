@@ -2509,6 +2509,7 @@ pub fn physics_on(case: &FlowCase, phys: &Physics, mesh: &Mesh, geo: &Geometry) 
     // several fluids (D194): the density of each cell and face
     if let Some((cell, face)) = props.cell_face_density(mesh) {
         p.rho_var = Some(std::sync::Arc::new((cell, face)));
+        p.zones = true;
     }
     Ok(p)
 }

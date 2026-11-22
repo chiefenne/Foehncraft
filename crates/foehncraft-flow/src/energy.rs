@@ -1089,7 +1089,9 @@ pub fn fluid_of(case: &crate::case::FlowCase, env: &Env, region: Option<&str>) -
             p.regions
                 .iter()
                 .find(|x| x.0 == r)
-                .map_or(p.density(), |x| x.2.density.value.constant().unwrap_or(f64::NAN))
+                .map_or(p.density(), |x| {
+                    x.2.density.value.constant().unwrap_or(f64::NAN)
+                })
         }
         None => case.rho(),
     };

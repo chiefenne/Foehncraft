@@ -2018,7 +2018,7 @@ impl Scalars {
         let mut sum = vec![(0.0, 0.0, 0.0); e.regions.len()];
         for (c, (&m, &v)) in e.mat_cell.iter().zip(&e.volume).enumerate() {
             let mat = &e.mats[m as usize];
-            let tc = if e.dependent { t[c] } else { e.t_ref };
+            let tc = if e.dependent { t[c] } else { mat.t_ref };
             let k = mat.tensor(tc);
             let s = &mut sum[m as usize];
             s.0 += v;

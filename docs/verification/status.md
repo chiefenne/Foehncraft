@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**102 features: 49 verified, 50 partial, 3 unverified.**
+**103 features: 49 verified, 51 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -94,6 +94,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Conjugate heat transfer | [Transient conjugate heat transfer](#cht-transient) | verified |
 | Conjugate heat transfer | [Thermal acceleration of solids (scaled ρ c_p, restored)](#cht-thermal-acceleration) | partial |
 | Conjugate heat transfer | [Cycle-averaged coupling of a periodic flow with its solids](#cht-cycle-coupling) | partial |
+| Conjugate heat transfer | [Several fluids and materials in one case (fluid parts)](#cht-several-fluids) | partial |
 | Conjugate heat transfer | [Conjugate heat transfer with a turbulence model](#cht-turbulent) | partial |
 | Conjugate heat transfer | [Contact resistances and thin walls](#cht-contact-thin-wall) | verified |
 | Conjugate heat transfer | [Orthotropic solids (axes per region)](#cht-orthotropic) | verified |
@@ -1069,6 +1070,24 @@ Gaps:
 - V7.38 not built: no exact solution of a slab under a periodic gas temperature and heat transfer coefficient (the skin swing is checked against the fully coupled run only)
 - laminar case only; no turbulent periodic case yet
 - a restart with [energy.acceleration] is refused
+
+<a id="cht-several-fluids"></a>
+
+### Several fluids and materials in one case (fluid parts)
+
+**partial** (no exact or manufactured solution; gaps written) · id `cht.several-fluids` · switch `[regions.<name>] kind = "fluid" with material, temperature` · decisions D194
+
+- reference-data: [`cht_counterflow_two_fluids`](../../examples/cases/flow/cht_counterflow_two_fluids.toml): V7.33 (planar form): water / light-oil counterflow across a steel plate, C_r = 1: effectiveness 0.7756 against ε–NTU 0.7751 with the fully developed Nu = 5.385 (band 2 %); heat of water, plate and oil agree, ledger to 3·10⁻⁵ (passes in CI (set linux-3), not yet in the manual) ([results](../gallery/energy.md#two-fluids))
+- consistency: [`counterflow_of_water_and_oil_follows_eps_ntu`](../../crates/foehncraft-flow/tests/fluids.rs): ε within 2 % of ε–NTU, the oil warms as much as the water cools (C_r = 1), water, plate and oil heat flows agree to 10⁻³
+- consistency: [`two_fluids_touching_are_refused`](../../crates/foehncraft-flow/tests/fluids.rs): REG004 for two fluids sharing a face
+- consistency: [`a_part_without_pressure_level_is_refused`](../../crates/foehncraft-flow/tests/fluids.rs): REG003 for a fluid part without a pressure boundary
+
+Gaps:
+
+- V7.33 in its planar form only (no double pipe, no thin-wall run: thin walls between fluids come with MF-D)
+- V7.34 (closed parts with their own reference and p₀) and V7.35 (tube-and-fin cell) not built yet (MF-B, MF-D)
+- variable density, gravity, rotating zones, passive scalars and the coupled solver refused with several fluids (REG006)
+- one turbulence model for all fluids (models per region: MF-C)
 
 <a id="cht-turbulent"></a>
 

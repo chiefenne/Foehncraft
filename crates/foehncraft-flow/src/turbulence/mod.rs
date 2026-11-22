@@ -2501,8 +2501,7 @@ impl Turbulence {
                     nu,
                 );
             }
-            let Some(&(_, s, _)) = self.inlets.faces.iter().find(|f| in_part(f.0 as usize))
-            else {
+            let Some(&(_, s, _)) = self.inlets.faces.iter().find(|f| in_part(f.0 as usize)) else {
                 return from(0.01, 1.0, speed0, nu);
             };
             let (mut ks, mut ws, mut n) = (0.0, 0.0, 0.0);
@@ -2750,7 +2749,8 @@ impl Turbulence {
         let mut wb = vec![0.0; self.nb];
         for (i, &(fb, s, x)) in self.inlets.faces.iter().enumerate() {
             let sp = (ux[i] * ux[i] + uy[i] * uy[i] + uz[i] * uz[i]).sqrt();
-            let (k, w) = self.inlets.specs[s].at(sp, x, t, self.nu_b(fb as usize), self.c_mu, self.eps);
+            let (k, w) =
+                self.inlets.specs[s].at(sp, x, t, self.nu_b(fb as usize), self.c_mu, self.eps);
             kb[fb as usize] = k.max(self.k.floor);
             wb[fb as usize] = w.max(self.w.floor);
         }
@@ -2810,8 +2810,14 @@ impl Turbulence {
         for (i, &(fb, s, x)) in self.backflow.faces.iter().enumerate() {
             let v = if m[i] < 0.0 {
                 let sp = (ux[i] * ux[i] + uy[i] * uy[i] + uz[i] * uz[i]).sqrt();
-                let (k, w) =
-                    self.backflow.specs[s].at(sp, x, t, self.nu_b(fb as usize), self.c_mu, self.eps);
+                let (k, w) = self.backflow.specs[s].at(
+                    sp,
+                    x,
+                    t,
+                    self.nu_b(fb as usize),
+                    self.c_mu,
+                    self.eps,
+                );
                 let z = self.backflow.specs[s]
                     .zeta_at(x)
                     .unwrap_or(self.backflow.zeta[s]);

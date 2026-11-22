@@ -950,6 +950,20 @@ evidence = [
 gaps = ["V7.38 not built: no exact solution of a slab under a periodic gas temperature and heat transfer coefficient (the skin swing is checked against the fully coupled run only)", "laminar case only; no turbulent periodic case yet", "a restart with [energy.acceleration] is refused"]
 
 [[feature]]
+id = "cht.several-fluids"
+area = "Conjugate heat transfer"
+title = "Several fluids and materials in one case (fluid parts)"
+switch = "[regions.<name>] kind = \"fluid\" with material, temperature"
+decisions = ["D194"]
+evidence = [
+  { kind = "reference-data", case = "cht_counterflow_two_fluids", what = "V7.33 (planar form): water / light-oil counterflow across a steel plate, C_r = 1: effectiveness 0.7756 against ε–NTU 0.7751 with the fully developed Nu = 5.385 (band 2 %); heat of water, plate and oil agree, ledger to 3·10⁻⁵", doc = "docs/gallery/energy.md#two-fluids" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/fluids.rs::counterflow_of_water_and_oil_follows_eps_ntu", what = "ε within 2 % of ε–NTU, the oil warms as much as the water cools (C_r = 1), water, plate and oil heat flows agree to 10⁻³" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/fluids.rs::two_fluids_touching_are_refused", what = "REG004 for two fluids sharing a face" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/fluids.rs::a_part_without_pressure_level_is_refused", what = "REG003 for a fluid part without a pressure boundary" },
+]
+gaps = ["V7.33 in its planar form only (no double pipe, no thin-wall run: thin walls between fluids come with MF-D)", "V7.34 (closed parts with their own reference and p₀) and V7.35 (tube-and-fin cell) not built yet (MF-B, MF-D)", "variable density, gravity, rotating zones, passive scalars and the coupled solver refused with several fluids (REG006)", "one turbulence model for all fluids (models per region: MF-C)"]
+
+[[feature]]
 id = "cht.turbulent"
 area = "Conjugate heat transfer"
 title = "Conjugate heat transfer with a turbulence model"

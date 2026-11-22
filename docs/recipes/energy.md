@@ -12,6 +12,7 @@ Part of the [Recipes](../recipes.md): the energy equation of the fluid (stage 7,
 | 180 | [Bring the solids of a transient conjugate run to their state sooner (thermal acceleration)](#cht-acceleration) |
 | 190 | [Couple a periodic flow with slow solids by cycle averages (exhaust manifolds, pulsating flows)](#cht-cycle) |
 | 202 | [Get the swing of the wall temperature from the cycle loop, and restart a conjugate run](#cht-cycle-skin) |
+| 206 | [Put several fluids in one conjugate case (water and air in a heat exchanger)](#two-fluids) |
 | 186 | [Switch on gravity and buoyancy; which pressure do my boundary values mean](#buoyancy) |
 | 195 | [Let the density of a gas follow its temperature (low-Mach variable density)](#variable-density) |
 
@@ -660,6 +661,61 @@ target/release/foehn flow examples/cases/flow/cht_pulsating_channel_skin.toml --
 Gallery 202 compares the two: the loop ends at 1250 s within 0.016 K of
 the periodic state and within 0.1 % on the swing; the fully coupled run
 needs 4400 to 5550 s.
+
+<a id="two-fluids"></a>
+## 206. Put several fluids in one conjugate case (water and air in a heat exchanger)
+
+Give every fluid zone of the mesh a fluid region with its material; the
+cells outside the regions keep the `[fluid]`. A region may also give the
+temperature at which its material is evaluated, where its properties stay
+constant (`[energy] temperature_dependent = false`, or the density, which
+stays that of the region until the variable density of stage MF-B):
+
+```toml
+[fluid]
+material = "water"
+temperature = 293.15
+
+[regions.tubes_water]
+kind = "fluid"
+zones = ["tube_side"]            # the [fluid]: water at 293.15 K
+
+[regions.shell_air]
+kind = "fluid"
+zones = ["shell_side"]
+material = "air"
+temperature = 573.15             # air evaluated at 300 °C
+
+[regions.tubes]
+kind = "solid"
+zones = ["tubes"]
+material = "steel"               # any number of solid regions
+```
+
+Rules the run checks before it starts:
+
+- Fluids of different materials (or temperatures) may meet only through a
+  solid region (REG004). Two regions of the same fluid may touch; they are
+  one part of the flow.
+- Fluid cells connected through faces form a **fluid part**. In a case of
+  several parts every part needs a pressure boundary (an outlet or a
+  pressure inlet) of its own (REG003). The log lists the parts with their
+  regions, fluids and boundaries (REG005): check that each part has the
+  boundaries you meant.
+- Not yet with several fluids (REG006): the variable density, gravity, a
+  rotating zone or frame, passive scalars, convective outlets and periodic
+  boundaries. Both SIMPLEC and the coupled solver run several fluids. They come with the next stages (MF-B
+  variable density per part, MF-C models per region).
+
+The report gives the heat flow through every interface
+(`interface-<solid>` for the `[fluid]`, `interface-<fluid region>-<solid>`
+for a fluid of its own) and the enthalpy flow of every inlet and outlet,
+each with the enthalpy of its own fluid; gallery 206 is a water / oil
+counterflow exchanger against ε–NTU.
+
+```
+target/release/foehn flow examples/cases/flow/cht_counterflow_two_fluids.toml --out output/two_fluids
+```
 
 <a id="buoyancy"></a>
 ## 186. Switch on gravity and buoyancy; which pressure do my boundary values mean

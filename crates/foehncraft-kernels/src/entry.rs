@@ -398,6 +398,19 @@ impl Entry for SchurDiagonal {
     }
 }
 
+/// out = a x y per entry (the density per cell of the coupled
+/// preconditioner with several fluids, D194).
+pub struct Product;
+impl Entry for Product {
+    type Args = LinArgs;
+    const NAME: &'static str = "product";
+    #[inline(always)]
+    unsafe fn run(i: usize, a: &LinArgs) {
+        // SAFETY: guaranteed by the caller; index i only.
+        unsafe { *a.out.out().add(i) = a.a * a.x.read(i) * a.y.read(i) }
+    }
+}
+
 /// Arguments of the element-wise entries on three-component arrays.
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
@@ -3046,12 +3059,13 @@ send_sync!(
 );
 
 /// Names of all entries (the PTX module has `flow_<name>` for each).
-pub const NAMES: [&str; 54] = [
+pub const NAMES: [&str; 55] = [
     Lincomb::NAME,
     ScaledDifference::NAME,
     SquaresAdd::NAME,
     ScaleVector::NAME,
     SchurDiagonal::NAME,
+    Product::NAME,
     PseudoCoefficient::NAME,
     Fill::NAME,
     Subtract::NAME,

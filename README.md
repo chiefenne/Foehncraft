@@ -136,7 +136,13 @@ validated range, one mesh only, …) in its report and its JSON result.
   effusivity, and `resolved_cycles` ends the loop with a few fully coupled
   cycles: a thin-skin wall ends at 1250 s within 0.016 K and 0.1 % on the
   swing of the periodic state the fully coupled run reaches after about
-  5000 s. Conjugate runs and the loop restart bit-identically.
+  5000 s. Conjugate runs and the loop restart bit-identically. Several
+  fluids in one case (D194): any number of fluid regions, each with its
+  own material (liquids and gases) and the temperature at which it is
+  evaluated, beside any number of solids; fluids that touch only through
+  solids are separate parts of the flow, each with its own pressure
+  level; a water / oil counterflow exchanger across a steel plate meets
+  ε–NTU to 0.07 %.
 - **Gravity and buoyancy.** `[gravity]` and the Boussinesq buoyancy
   (`[buoyancy] model = "boussinesq"`) in SIMPLEC and the coupled algorithm.
   The solver works with the reduced pressure p′ = p − ρ_ref g·(x − x_ref)

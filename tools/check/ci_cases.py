@@ -56,7 +56,7 @@ FLOW = {
         "cht_heated_wall", "cht_turbulent_channel", "cht_contact_transient",
         "cht_heated_wall_transient", "cht_orthotropic_patch", "cht_circuit_board",
         "cht_heated_wall_accelerated", "cht_heated_wall_periodic_accelerated",
-        "cht_pulsating_channel_cycle",
+        "cht_pulsating_channel_cycle", "cht_counterflow_two_fluids",
         "cavity_sst_operator_check",
         "buoyancy_box_at_rest", "buoyancy_slot", "buoyancy_channel_reduced",
         "buoyancy_channel_static", "buoyancy_open_box", "buoyancy_enclosure_plume",

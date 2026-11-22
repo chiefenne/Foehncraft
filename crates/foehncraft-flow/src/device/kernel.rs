@@ -548,6 +548,18 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
         self.go::<e::ScaleVector>(self.r(s).len as usize, &args)
     }
 
+    fn product(&mut self, out: Buf, a: f64, x: Buf, y: Buf) -> Result<()> {
+        let r = self.r(out);
+        let args = e::LinArgs {
+            a,
+            b: 0.0,
+            x: self.r(x),
+            y: self.r(y),
+            out: r,
+        };
+        self.lin::<e::Product>(r.len as usize, args)
+    }
+
     fn lincomb(&mut self, out: Buf, a: f64, x: Buf, b: f64, y: Buf) -> Result<()> {
         let r = self.r(out);
         let args = e::LinArgs {

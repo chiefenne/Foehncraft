@@ -139,8 +139,6 @@ pub fn validate(case: &FlowCase) -> Result<()> {
         Some("a rotating frame (flow.frame_rotation)")
     } else if !case.scalars.is_empty() {
         Some("passive scalars")
-    } else if case.solver.algorithm(case.time.is_some()) == crate::simplec::Algorithm::Coupled {
-        Some("the coupled solver (use the segregated SIMPLEC/PISO)")
     } else if case.boundary.values().any(|b| b.is_convective_outlet()) {
         Some("a convective outlet")
     } else if case
@@ -333,11 +331,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn two_blocks_are_two_parts() {
-        // two 2x1 strips of cells side by side, not joined
+    fn one_strip_is_one_part() {
+        // one strip of four cells: one part
         let src = r#"
-[mesh]
-generator = "box"
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [4.0, 1.0, 1.0]
 cells = [4, 1, 1]
 "#;
         let case: FlowCase = toml::from_str(src).unwrap();
