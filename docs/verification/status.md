@@ -254,11 +254,11 @@ Gaps:
 - exact: [`regular_hexahedra_are_second_order_inside`](../../crates/foehncraft-fv/src/exactness.rs): gradient and Hessian of quadratic fields exact inside regular hexahedra, flagged at the walls
 - consistency: [`irregular_cells_are_flagged`](../../crates/foehncraft-fv/src/exactness.rs): perturbed hexahedra and tetrahedra flagged
 - consistency: [`regular_hexahedra_flag_only_the_boundary_cells`](../../crates/foehncraft-flow/src/operators.rs): MESH005 and MESH006 with the features on; only the wall cells of a regular mesh
-- consistency: [`cavity_sst_operator_check`](../../examples/cases/flow/cavity_sst_operator_check.toml): the cavity on perturbed tetrahedra: every cell flagged, operators.csv written, the run converges as without the check (passes in CI (set linux-3), not yet in the manual)
+- consistency: [`cavity_sst_operator_check`](../../examples/cases/flow/cavity_sst_operator_check.toml): the cavity on perturbed tetrahedra: every cell takes both quadratic fits, no MESH005 or MESH006 left, operators.csv written, the run converges (passes in CI (set linux-3), not yet in the manual)
 
 Gaps:
 
-- the flagged cells are not yet treated: the quadratic least-squares operators and the local remesh are the next steps of D236
+- cells where a quadratic fit fails are only flagged (MESH005, MESH006); the local remesh of such cells is deferred to v1.1 with D54 (D236 step 4)
 
 <a id="mesh-vtkhdf"></a>
 

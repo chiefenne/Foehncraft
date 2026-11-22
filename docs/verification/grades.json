@@ -117,7 +117,7 @@
     "gaps written"
    ],
    "gaps": [
-    "the flagged cells are not yet treated: the quadratic least-squares operators and the local remesh are the next steps of D236"
+    "cells where a quadratic fit fails are only flagged (MESH005, MESH006); the local remesh of such cells is deferred to v1.1 with D54 (D236 step 4)"
    ],
    "range": {}
   },
