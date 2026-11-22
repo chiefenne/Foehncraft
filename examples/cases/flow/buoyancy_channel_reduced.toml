@@ -1,0 +1,54 @@
+# A tall vertical channel with gravity, outlet given as reduced pressure
+# (stage 7b1, D153; recipe "Which pressure do my boundary values mean").
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/buoyancy_channel_reduced.toml
+#
+# A liquid (ρ = 1000 kg/m³, μ = 0.05 Pa s) flows up a channel 0.1 m wide
+# and 2 m tall at 0.05 m/s (Re = 100), gravity 9.81 m/s² downwards, the
+# reference point of the reduced pressure at the inlet (the origin). With
+# gravity the solver works with the reduced pressure
+# p′ = p − ρ_ref g·(x − x_ref), so a fluid of constant density needs no
+# pressure gradient to stay up: p′ carries only the friction, the static
+# pressure p = p′ − ρ g y adds the hydrostatic part (19.6 kPa over the
+# height). This case gives the default reduced pressure p′ = 0 at the outlet.
+# buoyancy_channel_reduced.toml and buoyancy_channel_static.toml give the
+# same flow to round-off (tests/buoyancy.rs); the output has both
+# `pressure` (p′) and `static_pressure` (p).
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [0.1, 2.0, 0.01]
+cells = [10, 100, 1]
+
+[fluid]
+density = 1000.0
+viscosity = 0.05
+
+[gravity]
+vector = [0.0, -9.81, 0.0]
+reference_point = [0.0, 0.0, 0.0]
+
+[boundary.ymin]
+type = "velocity-inlet"
+velocity = [0.0, 0.05, 0.0]
+[boundary.ymax]
+type = "static-pressure-outlet"
+pressure = 0.0                 # p′ = 0 at the outlet (the default kind)
+[boundary.xmin]
+type = "wall"
+[boundary.xmax]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-9
+max_iterations = 2000
+
+[output]
+wall_csv = false

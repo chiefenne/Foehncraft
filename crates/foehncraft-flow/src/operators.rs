@@ -241,6 +241,7 @@ pub fn check_case(case: &FlowCase, mesh: &Mesh, geo: &Geometry) -> Result<Operat
         values: &values,
         t: 0.0,
         turning: &case.turning(),
+        hydrostatic: crate::buoyancy::hydrostatic(case),
     };
     let arrays = crate::bc::arrays(mesh, geo, &case.boundary, case.rho(), at)?;
     let tol = case.solver.operator_tolerance;

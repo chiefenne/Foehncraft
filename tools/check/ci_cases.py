@@ -33,7 +33,8 @@ FLOW = {
         "couette_derived", "couette_viscosity", "couette_transpiration", "poiseuille_water",
         "pipe_gmsh_raw", "channel_heated", "channel_sst", "channel_keps", "channel_zeta_f",
         "channel_zeta_f0", "cavity_re1000_coupled", "channel_heated_keps", "channel_heated_pr0025",
-        "channel_eb", "channel_rotating_sst", "square_duct_qcr",
+        "channel_eb", "channel_rotating_sst", "square_duct_qcr", "pipe_turbulent_sst",
+        "tjunction_mixing",
     ],
     "linux-2": [
         "cylinder_re20", "cavity_re1000", "taylor_green_cfl10", "poiseuille_tet",
@@ -56,6 +57,8 @@ FLOW = {
         "cht_heated_wall_transient", "cht_orthotropic_patch", "cht_circuit_board",
         "cht_heated_wall_accelerated", "cht_heated_wall_periodic_accelerated",
         "cavity_sst_operator_check",
+        "buoyancy_box_at_rest", "buoyancy_slot", "buoyancy_channel_reduced",
+        "buoyancy_channel_static", "buoyancy_open_box", "buoyancy_enclosure_plume",
     ],
     "long": [
         "cylinder_re100", "cylinder_re100_short", "cylinder_re100_statistics", "cylinder_re100_convective", "cylinder_re20_gci",

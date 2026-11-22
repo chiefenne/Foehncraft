@@ -1,0 +1,74 @@
+# A warm strip on the floor of a small closed air enclosure: a laminar
+# plume and the two rolls it drives (stage 7b1, D153, D154; gallery 186).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/buoyancy_enclosure_plume.toml
+#
+# Air at 300 K (ρ = 1.177 kg/m³, μ = 1.846e-5 Pa s, c_p = 1007 J/(kg K),
+# k = 0.0263 W/(m K), β = 1/T = 3.333e-3 1/K) in a closed enclosure 10 cm
+# wide and 6 cm high, gravity 9.81 m/s² downwards. A strip of the floor,
+# off centre at x = 3.5 cm, is up to 5 K warmer (a smooth Gaussian profile,
+# 6 mm half width); the ceiling is held at 300 K, the side walls and the
+# rest of the floor are adiabatic. The Rayleigh number on the height and
+# the 5 K is about 1.1e5: the flow is laminar and steady. The warm air
+# rises from the strip in a plume that leans towards the nearer left
+# wall, spreads to the right under the ceiling and returns along the
+# floor: one large roll, and a small counter-rotating one in the lower
+# left corner. The largest speed is
+# 1.9 cm/s, the warmest air 304.4 K. The Boussinesq force with the balanced
+# force of D154 (the reduced pressure p′ = p − ρ g·x as the solved
+# pressure); the output has `pressure` (p′) and `static_pressure` (p).
+# SIMPLEC takes the buoyancy pseudo-time step of stage 7b1; about 2000
+# iterations, 30 s on one core.
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [0.1, 0.06, 0.002]
+cells = [100, 60, 1]
+
+[fluid]
+density = 1.177
+viscosity = 1.846e-5
+specific_heat = 1007.0
+conductivity = 0.0263
+temperature = 300.0          # also the reference temperature of the buoyancy
+
+[energy]
+initial = 300.0
+
+[gravity]
+vector = [0.0, -9.81, 0.0]
+
+[buoyancy]
+model = "boussinesq"
+expansion_coefficient = 3.333e-3
+
+[boundary.ymin]
+type = "wall"
+[boundary.ymin.energy]
+temperature = "300.0 + 5.0*exp(-((x - 0.035)/0.006)^2)"
+[boundary.ymax]
+type = "wall"
+[boundary.ymax.energy]
+temperature = 300.0
+[boundary.xmin]
+type = "wall"
+[boundary.xmax]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-6
+max_iterations = 2500
+
+[solver.energy]
+tolerance = 1e-10
+max_iter = 200
+
+[output]
+wall_csv = false

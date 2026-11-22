@@ -1,0 +1,79 @@
+# A closed box at rest with a stable stratification: the hydrostatic
+# check V7.7 (a) of the buoyancy (stage 7b1, D153, D154).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/buoyancy_box_at_rest.toml
+#
+# Air-like fluid in a closed square box 1 m × 1 m, gravity 9.81 m/s²
+# oblique to the mesh axes (37° from the y axis) and a temperature that
+# rises linearly against gravity by 14 K across the box (warm above, cold
+# below: stable), held on all four walls. With the Boussinesq model the
+# fluid has to stay at rest: the balanced force of D154 treats the
+# buoyancy force exactly as the pressure gradient, face by face, so the
+# discrete hydrostatic pressure balances it on every cell and every face.
+# The perturbed mesh (20 % of the cell size) makes the faces skewed and
+# non-orthogonal. Result: the largest speed is about 1e-15 m/s after 1000
+# iterations, round-off, on hex, tet, poly and mixed meshes, with SIMPLEC
+# and the coupled algorithm (tests/buoyancy.rs). The output has the
+# reduced pressure p′ (`pressure`) and the static pressure p
+# (`static_pressure`), the hydrostatic profile of the box.
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [1.0, 1.0, 0.1]
+cells = [16, 16, 1]
+perturb = 0.2
+
+[fluid]
+density = 1.0
+viscosity = 1e-3
+specific_heat = 1000.0
+conductivity = 1.0
+temperature = 300.0
+
+[energy]
+initial = "300.0 + 10.0*(0.6*x + 0.8*y)"   # rises along −g
+
+[gravity]
+vector = [-5.886, -7.848, 0.0]           # 9.81 m/s², oblique
+
+[buoyancy]
+model = "boussinesq"
+expansion_coefficient = 1e-3
+
+[boundary.xmin]
+type = "wall"
+[boundary.xmin.energy]
+temperature = "300.0 + 10.0*(0.6*x + 0.8*y)"
+[boundary.xmax]
+type = "wall"
+[boundary.xmax.energy]
+temperature = "300.0 + 10.0*(0.6*x + 0.8*y)"
+[boundary.ymin]
+type = "wall"
+[boundary.ymin.energy]
+temperature = "300.0 + 10.0*(0.6*x + 0.8*y)"
+[boundary.ymax]
+type = "wall"
+[boundary.ymax.energy]
+temperature = "300.0 + 10.0*(0.6*x + 0.8*y)"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-30          # run all iterations: the speed must stay at round-off
+max_iterations = 1000
+
+[solver.energy]
+tolerance = 1e-14
+max_iter = 500
+
+[verification]
+require_convergence = false
+
+[output]
+wall_csv = false

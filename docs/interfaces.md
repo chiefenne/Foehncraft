@@ -343,7 +343,7 @@ A code keeps its meaning; a retired code stays in the table.
 | `MAT007` | error | A fluid without specific heat or thermal conductivity in a run with the energy equation. |
 | `MAT008` | error | An orthotropic thermal conductivity without both axes, or with parallel axes. |
 | `MAT009` | error | A user material database file (`[materials] include`, `FOEHN_MATERIALS`) or a property data file (NASA-7 record, table file) that cannot be read or has the wrong format. |
-| `ENE006` | error | An energy setting this version does not have: a passive scalar named `temperature` beside `[energy]`, solid regions with a sliding mesh, a restart, passive scalars or a periodic mesh. |
+| `ENE006` | error | An energy setting this version does not have: a passive scalar named `temperature` beside `[energy]`, solid regions with a sliding mesh, a restart, passive scalars or a periodic mesh, or the variable-density buoyancy model (stage 7c). |
 | `ENE008` | error | An `[[energy.sources]]` entry for a region the case does not have, or without exactly one of `power` and `power_density`. |
 | `CHT004` | error | An `[interfaces.<name>]` table that is not on a region interface (regions unknown, the same, two fluids, or not touching), or without exactly one of `contact_resistance` (≥ 0) and `thin_wall` (thickness > 0 with `conductivity` or `material`). |
 | `ACC001` | error | An `[energy.acceleration]` setting that cannot be used: a steady case, no solid region, a region that is not a solid, `inertia_scale` outside (0, 1] and not `"auto"`, `restore` neither `"settled"` nor a time ≥ 0, or a `period`, `window_steps`, `settle_tolerance` or `target_windows` out of range. |
@@ -359,6 +359,11 @@ A code keeps its meaning; a retired code stays in the table.
 | `THM009` | error | A `[boundary.<name>.energy]` table without `[energy]`: the energy equation is solved only with an `[energy]` table. |
 | `THM010` | error | A `[boundary.<name>.energy]` table for an unknown boundary, without exactly one condition (`temperature`, `heat_flux`, `heat_flow`, or `heat_transfer_coefficient` with `ambient_temperature`), or with `heat_transfer_coefficient` and `ambient_temperature` apart. |
 | `THM011` | error | An inlet without `[boundary.<name>.energy] temperature` in a run with the energy equation. |
+| `BUO001` | error | `[gravity]` with a vector of zero length, or a buoyancy model without `[gravity]`. |
+| `BUO002` | warning | The Boussinesq model outside its range: β ΔT above 0.1 over the temperatures of the case (the density changes by more than 10 %). |
+| `BUO003` | error | The Boussinesq model without what it needs: no energy equation, no expansion coefficient (the fluid's density does not depend on T and `[buoyancy] expansion_coefficient` is not given), or a reference value out of range. |
+| `BUO004` | warning | `[gravity]` with the energy equation but no buoyancy model (the temperature drives no flow); as information: a turbulence model with buoyancy, whose production of k by buoyancy comes in stage 7e1. |
+| `BUO006` | warning | A pressure boundary with `pressure_kind = "static"` over a height span whose hydrostatic difference ρ_ref g Δz is above the dynamic pressure: a uniform static value drives a flow through the opening. |
 | `REG001` | error | A region that is not a fluid where it cannot be: a solid region without `[energy]` (solids are solved by the energy equation, stage 7d1), a porous zone (not in this version), or a solid material as the `[fluid]`. |
 | `REG002` | error | A region that names a cell zone the mesh does not have, or a zone in two regions. |
 | `MRF001` | error | An `[[mrf]]` table and a `[[sliding]]` table that turn the same cells (one of them without a `zone`, or both with the same one): a zone is turned by a moving reference frame (steady or transient, D185) or by a sliding mesh (D182), not by both. |

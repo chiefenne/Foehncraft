@@ -106,6 +106,10 @@ pub struct KernelFlow<E: Exec> {
     /// `m.rho_face`; D150).
     rho_buf: Buf,
     rho_face_buf: Buf,
+    /// The balanced-force face arrays (jump offset per face, boundary
+    /// pressure term per boundary face; D154), allocated by the first
+    /// `set_balanced_force`.
+    balanced: Option<(Buf, Buf)>,
     /// The wall arrays of the turbulence models: faces, cells, ptr, slots.
     wall: Option<[Raw<u32>; 4]>,
     /// The stencils of the quadratic fits (D236): cells, ptr, idx.
@@ -209,6 +213,8 @@ impl<E: Exec> KernelFlow<E> {
             beta: x.raw(beta),
             periodic: d.periodic as u64,
             shift,
+            jump_offset: Raw::EMPTY,
+            pb_offset: Raw::EMPTY,
         };
         let pca: Vec<f64> =
             s.bc.flux_kind
@@ -243,6 +249,7 @@ impl<E: Exec> KernelFlow<E> {
             mu_buf,
             rho_buf,
             rho_face_buf,
+            balanced: None,
             wall: None,
             quad: Vec::new(),
             lsq_u,
@@ -1206,6 +1213,27 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
         );
         self.x.upload(self.rho_buf, cell)?;
         self.x.upload(self.rho_face_buf, face)
+    }
+
+    fn set_balanced_force(&mut self, jump: &[f64], pb: &[f64]) -> Result<()> {
+        ensure!(
+            jump.len() == self.nf && pb.len() == self.nb,
+            "flow device: balanced-force arrays of {} faces and {} boundary faces expected",
+            self.nf,
+            self.nb
+        );
+        let (bj, bp) = match self.balanced {
+            Some(b) => b,
+            None => {
+                let b = (self.x.alloc(self.nf)?, self.x.alloc(self.nb)?);
+                self.balanced = Some(b);
+                self.m.jump_offset = self.x.raw(b.0);
+                self.m.pb_offset = self.x.raw(b.1);
+                b
+            }
+        };
+        self.x.upload(bj, jump)?;
+        self.x.upload(bp, pb)
     }
 
     fn wall_setup(&mut self, w: &WallStatic) -> Result<()> {

@@ -474,6 +474,7 @@ fn flux_inputs<'a, T: Real>(
         alpha: T::from_f64(0.7),
         psi: l.v3("u"),
         bounded: false,
+        jump_offset: &[],
     }
 }
 
@@ -568,6 +569,7 @@ fn boundary_pressure<T: Real>(fx: &Fixture, l: &Lifted<T>, fb: usize) -> Vec<T> 
             l.s("pset")[fb],
             l.s("p"),
             &l.v3("gp"),
+            &[],
         )]
     }
 }

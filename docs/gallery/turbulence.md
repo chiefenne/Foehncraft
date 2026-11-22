@@ -1073,3 +1073,54 @@ python3 -m tools.plot.qcr_consistency docs/figures/gallery/qcr_consistency.png \
 ```
 
 [↑ back to top](#turbulence-models)
+<a id="pipe-turbulent"></a>
+## 193. Turbulent pipe flow at Re_b 5300: friction against the DNS, three meshes with GCI
+
+<img src="../figures/gallery/pipe_turbulent.png" alt="Fully developed turbulent pipe flow at Re_b 5300, k-omega SST. Left: axial velocity on a cross section, fast core in dark red and a thin slow layer at the wall in blue and green. Middle: eddy viscosity over molecular viscosity, up to 20 at the axis and zero at the wall. Right: mean velocity in wall units against y+, following the linear law below y+ 5 and the log law above 30, with the DNS centreline value as a red dot above the curve">
+
+The first of the general-purpose internal flows of D45 (stage 8). A pipe
+of radius R = 0.5 m on an axisymmetric wedge of 0.5° (as the rough pipe,
+recipe 71), one periodic module of 0.1 m, driven by the mass flow of
+U_b = 1 m/s, ν = 1/5300 so that Re_b = U_b D/ν = 5 300. The solver
+adjusts the body force F; with the wall shear F R/2 the friction
+velocity is u_τ = √(F R/2ρ), and Re_τ = u_τ R/ν, u_τ/U_b and the friction
+factor follow from the driving force in the log. The reference is the
+DNS of El Khoury et al. (2013), Table 2: Re_b 5 300, Re_τ 181,
+u_τ/U_b = 0.0683, so C_f = 2 (u_τ/U_b)² = 9.33·10⁻³ (a published scalar;
+no data set is used).
+
+| Mesh (cells across the radius) | u_τ/U_b | Re_τ | iterations |
+|---|---|---|---|
+| 48 (96 cells) | 0.07106 | 188.3 | 557 |
+| 96 (192 cells) | 0.07128 | 188.9 | 1 083 |
+| 192 (384 cells) | 0.07139 | 189.2 | 3 000 (limit) |
+
+The observed order is 0.98, the extrapolated value 0.0715 and GCI_fine
+(Celik et al. 2008) 0.20 % for u_τ/U_b (0.40 % for C_f). On the finest mesh the friction
+velocity is **+4.5 % above the DNS** (the friction factor +9.3 %, band ±12 %), the
+known direction of the SST model in low-Reynolds-number wall flow; the
+centreline velocity U_cl⁺ = 18.2 lies 5 % below the DNS value 19.13. First-cell y⁺ is 0.2 on the
+base mesh. The observed order is close to 1, not 2 (the channel of recipe 68 also converges slower than second order); the cause is not investigated here, the GCI of 0.2 % stays inside the band of the specification.
+
+Convergence: the base mesh needs the momentum relaxation 0.95 (the
+default 0.7 did not reach 10⁻⁹ in 3 000 iterations on 192 cells across);
+the finest mesh stops at the limit of 3 000 iterations at the residual
+1·10⁻⁸ with the residuals falling steadily; its u_τ differs by 3·10⁻⁵
+(relative) from the value after 4 000 iterations, far below the GCI.
+
+| | |
+|---|---|
+| Code | no new code: wedge (D3), driven periodic pair (D29), SST low-Re (D130) |
+| Case files | `flow/pipe_turbulent_sst.toml` |
+| Study | `examples/studies/pipe_gci.py`; figure `tools/plot/pipe_chart.py` |
+| Recipe | [193](../recipes/turbulence.md#pipe-turbulent) |
+
+```
+target/release/foehn flow examples/cases/flow/pipe_turbulent_sst.toml --out output/pipe
+python3 examples/studies/pipe_gci.py output/pipe_gci --levels 0,1,2
+python3 -m tools.plot.pipe_chart docs/figures/gallery/pipe_turbulent.png output/pipe_gci/pipe_sst_2
+```
+
+[↑ back to top](#turbulence-models)
+
+---

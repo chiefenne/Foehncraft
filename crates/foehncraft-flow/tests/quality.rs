@@ -293,6 +293,7 @@ fn plain_fluxes(
         alpha: 1.0,
         psi: v3(&psi[0], &psi[1], &psi[2]),
         bounded,
+        jump_offset: &[],
     };
     // SAFETY: every face of the mesh, every array has its entries.
     (0..ni)
