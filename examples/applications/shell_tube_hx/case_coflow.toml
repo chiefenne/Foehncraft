@@ -5,9 +5,6 @@
 #   python3 examples/applications/shell_tube_hx/mesh.py --level 2
 #   target/release/foehn flow examples/applications/shell_tube_hx/case_coflow.toml --out output/hx_coflow
 #
-# NEEDS several fluids with their own materials in one conjugate case
-# (D194, MF-A): this version refuses the water region (ENE006).
-#
 # Boundary conditions (owner, 2026-11-22):
 # - hot air enters the shell side through the side nozzle at the inlet end
 #   (shell_nozzle_front, x = -100 mm, inner diameter 30 mm) at 15 m/s and
@@ -54,6 +51,7 @@ material = "air"
 kind = "fluid"
 zones = ["tube_side"]
 material = "water"
+temperature = 293.15                  # K: its properties at the 20 °C inlet (D194)
 
 [regions.steel]
 kind = "solid"

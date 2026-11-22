@@ -269,7 +269,7 @@ impl Conduction {
         mesh: &Mesh,
         geo: &Geometry,
         disc: &foehncraft_fv::disc::Discretisation,
-        region: &[u16],
+        region: &[u32],
         names: &[String],
         spec_of: &dyn Fn(usize) -> Option<usize>,
         specs: Vec<Resistance>,
@@ -279,7 +279,7 @@ impl Conduction {
         let nc = mesh.n_cells;
         let mut faces = Vec::new();
         let mut slot = vec![u32::MAX; ni];
-        let mut pairs: Vec<(u16, u16, Pair)> = Vec::new();
+        let mut pairs: Vec<(u32, u32, Pair)> = Vec::new();
         let xc = &geo.cell_centroid;
         for f in 0..ni {
             let (o, n) = (mesh.owner[f] as usize, mesh.neighbour[f] as usize);
