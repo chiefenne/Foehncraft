@@ -1,0 +1,429 @@
+# L13 – Immersed boundaries: staged plan
+
+Plan only, no code (maintainer choice "Plan first", 2026-11-22). Builds on
+[step 26](step26-design-optimization.md) (§3 methods, §8 layered idea, §9 2D
+prototype), the amended L13 and D58, D73, D108, D211 in
+[requirements.md](../requirements.md). Clean room (D201): published
+literature only, open-source code may be read where the licence allows, never
+copied, no commercial solver names. Sizes are agent time: code in minutes,
+runs in hours, CI separate; "not sized yet" where unsure.
+
+Next free ids when this page was written: D213, L50, P19, O25. The ids below
+are **proposals** (`D213`…), taken into requirements.md only after the
+decisions of §9.
+
+## 0. Summary
+
+Four stages, each ends in a gallery case with images and a measured accuracy
+statement. Every stage keeps the solver data structures untouched: the
+immersed body enters as a **mesh operation** (stages 2 to 4) or as a **source
+term** (stage 1).
+
+| Stage | Name | What it delivers | Where the wall is | Accuracy class |
+|---|---|---|---|---|
+| 0 | Geometry kernel | Robust surface checks, winding numbers, signed distance, exact predicates, surface–polygon intersection (D108 part 3) | – | exact geometry |
+| 1 | Penalisation pre-stage | Brinkman term on a fixed mesh; density-field topology search; iso-surface to a surface file | smeared over about one cell | laminar and topology only; known flaws listed |
+| 2 | Cut cells | Background polyhedral mesh cut by the surface, small cells merged, wall faces are ordinary wall faces, CHT both ways | sharp, on cut cells (wall functions, no layers) | second order laminar; ranking quality for turbulent |
+| 3 | Layered distance-field boundary | Thin body-fitted layers grown from a signed distance field, outermost iso-surface cut and imprinted (D58) | sharp, on regular layer cells | target: body-fitted quality at the wall |
+| 4 | Hand-off to a body-fitted mesh | The measured immersed-versus-body-fitted check of D211, automatic in the study layer | body-fitted | reference |
+
+Order is fixed by the maintainer: penalisation first, then cut cells, then
+hand-off. The layered boundary (stage 3) is the L13 target; it sits between
+because it reuses the cutting code of stage 2 and gives the hand-off check
+(stage 4) its main use. The hand-off also works after stage 2 alone.
+
+## 1. Existing code this builds on (checked on main at 3359091)
+
+- `foehncraft-mesh::query` (D108 part 1): BVH over surface faces, exact
+  closest-point query, deterministic. **Not there:** ray casting, winding
+  numbers, signed distance, exact predicates (no orient3d anywhere in the
+  crates).
+- `imprint.rs` (D58, D182, D186): supermesh by clipping convex polygons,
+  closed cells, geometric conservation law. It handles **surfaces of
+  revolution only**; arbitrary surfaces need a general surface–polygon
+  intersection with exact predicates. This is the shared kernel of stages 2
+  and 3.
+- Wall treatment D13/D135 and exact wall distance of D48 on any wall face.
+- Regions and CHT (D112, D160; 7d1, 7d2 merged): solid cells and interface
+  faces exist, so the solid part of a cut cell has somewhere to go.
+- Thin walls D189, mesh quality remediation D50, limitations D199, tool
+  registry D196, MCP server L18, journal D197.
+- **Not there:** the adjoint solver L17 (only D59 kernels), mesh morphing L4,
+  adaptive refinement L14.
+
+## 2. Stage 0 – Geometry kernel (D108 part 3, proposed D213)
+
+Scope, in the order of use:
+
+1. **Surface check** tool: closed or open, orientation, self-intersections,
+   non-manifold edges, degenerate triangles, duplicate vertices, bounding
+   box, units; a report, no silent repair (diagnostic codes `IMM0xx`).
+2. **Exact predicates**: adaptive-precision orientation and in-sphere tests
+   (Shewchuk 1997), implemented from the paper or taken from an open-source
+   crate whose licence is checked (owner decision Q6).
+3. **Winding numbers and inside/outside**: generalised winding number
+   (Jacobson et al. 2013) with the fast hierarchical evaluation (Barill et
+   al. 2018) on the existing BVH; deterministic. Tolerates dirty STL, which
+   exact-Boolean methods do not: the exact mesh-Boolean methods read for
+   this plan need manifold, watertight, non-self-intersecting input
+   (Cherchi et al. 2022; Trettner et al. 2022).
+4. **Signed distance**: closest-point distance (exists) with the sign from
+   the winding number; narrow-band version on the background mesh nodes.
+5. **Surface–polygon intersection**: clip a (non-convex, possibly
+   non-planar) cell face by the triangle surface with exact predicates and
+   indirect (implicit) intersection points (Attene 2020; Cherchi et al.
+   2022 describe the technique). Output: polygon pieces with edge links to
+   the surface triangle. This is the new core, shared with stage 2 and with
+   the general static imprinting of D58.
+
+Verification: unit tests on spheres, cubes and a bunny-class STL; volume and
+area of a cut sphere against the analytic value converging at second order;
+brute-force closest point and winding number against the fast versions on
+random queries; degenerate cases (vertex on face, edge on edge, coplanar)
+exact; bitwise equal on 1, 2, 4 threads (D93).
+
+Benchmark against computer graphics (maintainer rule): narrow-band SDF by
+(a) closest-point + winding number (ours), (b) fast sweeping on a sparse grid
+(Museth 2017 sparse and parallel fast sweeping; Roosing et al. 2019 scan
+conversion on the GPU for CFD mesh generation, floating point, needs a
+correctly oriented closed surface), (c) the heat method (stage 3). Metrics:
+error against the analytic sphere/torus distance, time per million nodes,
+behaviour on dirty input.
+
+Sizing: surface check and predicates 2 PRs, winding numbers 1 PR, SDF 1 PR,
+surface–polygon intersection 2 to 3 PRs; code about 30 to 60 min per PR,
+CI separate. Gallery: none (core), except a **geometry page** with an image
+of a cut sphere and its winding-number field (needs an image by the rule).
+
+## 3. Stage 1 – Penalisation pre-stage (proposed D214)
+
+**Role (decided):** topology search and a cheap first look. Not a second
+immersed method. Its iso-surface goes into stage 2.
+
+Method: a per-cell solid fraction or density χ ∈ [0,1] (from D108 SDF
+volume fractions, or a design variable) and a Brinkman drag term
+−(χ/η) u in momentum (Angot, Bruneau & Fabrie 1999), the topology-optimisation
+interpolation of Borrvall & Petersson (2003) for the design variable.
+Implementation: an implicit diagonal contribution and a source given as a
+**field** like D104 (kernels stay pure functions, D59); k, ε/ω, T are held to
+zero velocity/solid values in χ ≈ 1 cells. The coupled and the SIMPLEC
+solver need the same term inside the Rhie–Chow coefficient (otherwise
+pressure decouples in the solid), a check of its own.
+
+Known flaws, stated so that we do not copy them (maintainer rule):
+smeared wall of about one cell; wall shear and heat flux not accurate; wall
+functions do not fit; accuracy depends on η and the mesh width, with the
+penalisation error vanishing with η for fixed mesh but the stiffness
+increasing; leakage through thin walls; an industrial aeronautical CFD
+code's published penalisation (arXiv 2404.16132, read for this plan, summary
+only) reports pressure well predicted, skin friction not very well predicted,
+and diverging leading-edge pressure when its wall model was switched on. We
+therefore label the stage **laminar and low-Re plus topology** in the
+limitations (D199) and refuse a wall function on penalised walls
+(diagnostic).
+
+Open point: choice of η (tied to the mesh width, to a time scale, or fixed);
+verified by a sweep, not decided in advance.
+
+Verification (D45 style, analytic and manufactured):
+
+| Case | Reference | Check |
+|---|---|---|
+| Poiseuille/Couette with the wall inside the domain, wall not on a cell face | analytic | order of convergence in h at η ∝ h² and η ∝ h; wall position error |
+| MMS of the penalised equation (source in the solid) on 4 mesh types | manufactured | formal order of the discretisation |
+| Stokes cylinder/sphere drag in a channel | published Stokes-limit drag with wall correction (Faxén/Haberman type) | drag error vs h |
+| Cylinder Re 20 (Schäfer & Turek 1996) | published drag, lift, pressure difference | error vs the same case on our body-fitted mesh |
+| Channel with a density field, topology search of a simple duct bend | none (consistency) | iso-surface at 0.5 reproduces the cut surface within one cell |
+| Gradient of drag with respect to χ | finite difference | dual numbers (D59) agree to 1e-8 relative |
+
+Gallery 1: cylinder Re 20 penalised against body-fitted (velocity magnitude
+and vorticity side by side, with χ); topology search of a duct bend with the
+density field and the extracted surface. Recipe: "put a body in the flow
+without meshing it". Cases: `immersed/penalised-cylinder.toml`,
+`immersed/topology-bend.toml`.
+
+Iso-surface extraction: marching tetrahedra on a decomposed polyhedral cell
+(vertex values from cell values by inverse-distance), benchmarked against
+dual contouring for sharp features (stage 3 uses the same).
+
+Sizing: kernel and flow hook 1 PR (about 30 to 45 min code), keys and
+diagnostics 1 PR, verification table runs about 1 to 2 hours, topology search
+and extraction 1 PR. Gradient check on the D59 kernels needs no L17.
+
+## 4. Stage 2 – Conservative cut cells (proposed D215–D217)
+
+Method (decided, step 26 §3.2): the background mesh is intersected with the
+surface; fluid parts stay ordinary polyhedral cells (D23); cut cells below a
+volume fraction merge into a neighbour; the immersed wall is an ordinary wall
+face. Literature read or checked for this plan: Ye et al. 1999, Meyer et
+al. 2010, Berger & Aftosmis 2012 (from the step 26 assessment, not re-read
+here); Crocker, Dubief & Desjardins (arXiv 1411.1004, full text read): second
+order for temperature, **first order for momentum statistics**, mixing
+instead of merging for cells below volume fraction 0.1, flux continuity at
+the interface imposed implicitly, no wall model, 7 to 10 % cost for the CHT
+coupling; Ndiaye et al. 2025 (journal article read, inviscid, first order,
+three conservative corrections that are either global, or not always
+conservative, or locally conservative). Both are Cartesian-grid methods. We
+cut an arbitrary polyhedral mesh, and cut cells become ordinary cells, which
+keeps conservation exact without a correction step. That claim is checked by
+test (below), not assumed.
+
+Steps:
+
+1. **2a Cut.** For every cell touched by the surface, build the fluid
+   polyhedron: split faces by the stage 0 intersection, close the cell with
+   the surface patch, keep exact topology (watertight cells). A cell split
+   into two disjoint fluid pieces becomes two cells. Wall faces may be
+   non-planar; the face area vector and centroid use the triangle
+   decomposition like all D23 faces (to be confirmed against the geometry
+   module in the first PR). Closure check: sum of area vectors of each
+   cell below 1e-14 relative.
+2. **2b Small cells.** Merge below a volume fraction threshold (a case key,
+   default decided by measurement, the literature uses 0.1 to 0.3) into the
+   neighbour with the largest shared fluid face; merged cells are polyhedra,
+   which D23 allows. Options measured against each other: merging, mixing
+   (Crocker et al.), and state redistribution (explicit-scheme method,
+   not suited to our implicit steady solvers, recorded only). D50 quality
+   remediation applies to what remains.
+3. **2c Wall treatment on cut faces.** The wall function needs the true
+   first-cell distance: use the exact closest-point distance (D108) per cut
+   cell and per merged cell; y+ varies with cut volume fraction, so the
+   y+ map and a per-body statistic go to the limitations (D199). No layers
+   on cut meshes. Optional thin prism layer extruded from the cut surface
+   (step 26 §3.2) is a stage 3 special case and not built here.
+4. **2d CHT.** Cut both ways. The solid part of a cut cell becomes a cell of
+   the solid region (D112); the cut face is an ordinary region interface
+   (D160). Thin solids (thickness below about two cell widths) are not
+   resolved: refuse with a diagnostic and point to the thin wall of D189.
+5. **2e Boundary conditions.** The D29 set on the immersed surface through
+   named surface patches (STL solids or per-triangle tags); moving wall
+   velocity of a body at rest or rotating rigidly with a constant angular
+   velocity (frame D55). Real body motion is L4.
+6. **2f Background refinement.** Near-body size control without adaptive
+   refinement: the background mesh comes from a Gmsh size field (D62) driven
+   by the body distance. A built-in refinement operation waits for L14
+   (owner decision Q7).
+7. **2g Reproducibility.** The cut is a serial mesh operation on the global
+   mesh, before partitioning; result bitwise independent of threads and
+   ranks by construction (D93).
+
+Verification:
+
+| Case | Reference | Expected |
+|---|---|---|
+| Cut sphere/cylinder volume and area, closure | analytic | volume and area second order, closure 1e-14 |
+| Poisson with Dirichlet on a cut sphere (MMS) | manufactured | L2 order about 2; wall gradient order reported (1 to 2) |
+| Annulus conduction, Taylor–Couette with the inner cylinder cut | analytic | second order, torque error vs h |
+| Inclined Poiseuille channel, walls not on mesh planes | analytic | velocity and wall shear order |
+| Concentric-cylinder CHT, conductivity ratio 9 to 900 | analytic | order, interface flux continuity to round-off |
+| Stokes sphere, sphere Re 20 and 100 (published drag) | published | drag error vs the body-fitted mesh with the same cell count |
+| Cylinder Re 20 and Re 100 (Schäfer & Turek 1996) | published | same as stage 1 case, now sharp |
+| Tilted flat plate, turbulent, wall functions | published skin-friction correlation and our own body-fitted run | Cf error vs y+ spread, plus the cut-cell effect on the log-law |
+| Conservation: mass, momentum, energy ledger (D119) | – | closed to round-off, same as a body-fitted run |
+| Merge threshold sweep (0.05 to 0.4) | – | error and iteration count vs threshold; sets the default |
+| Shape-gradient check (§7) | finite difference | measured, including noise from topology switches |
+
+Gallery 2: sphere or cylinder in a duct with the cut mesh closeup and the
+velocity field; a heated pin in a channel (CHT, T field); a slanted plate with
+the y+ map. Recipes: "cut a surface into a mesh", "choose the merge
+threshold". Cases: `immersed/cut-sphere.toml`, `immersed/cut-pin-cht.toml`.
+No four-fold or symbol-like arrangements of bodies in images (maintainer
+rule); single bodies or irregular patterns.
+
+Sizing: 2a 2 PRs, 2b 1, 2c 1, 2d 1, 2e 1, verification runs 2 to 3 hours in
+all; code about 30 to 60 min per PR. Cut robustness on messy surfaces and
+the small-cell statistics on complex CAD are **not sized yet**.
+
+## 5. Stage 3 – Layered distance-field boundary (the L13 target, proposed D218–D220)
+
+As recorded in L13 (PR #173): layers grown from a signed distance field at
+program start, the outermost iso-surface as the smooth cut, joined to the
+background by imprinting (D58), layers also inward for CHT. The 2D prototype
+(step 26 §9) held up except at sharp convex edges and column meeting points;
+the heat-field statistics on the fins were unreliable and are not used.
+
+Work packages, each with its own go/no-go (a research stage: results decide
+the next one):
+
+1. **3a 3D prototype in Python (numpy/scipy), meshes only.** Same method as
+   the 2D prototype, on a sphere, a box, a fin with a narrow gap, an STL with
+   a sharp edge. Questions: fan at convex edges (the 2D fan shrank 3.7 times,
+   not to zero), merge/stop of columns at concave corners and gaps, local
+   layer limit from the gradient dip, cost at scale (the 2D grid solves took
+   10 to 15 s per 500k cells). Output: go/no-go for 3D in Rust. About 1 to 2
+   hours of agent time per iteration; the number of iterations is not sized.
+2. **3b Fields.** Compare for growth directions and layer limit: exact
+   closest-point direction (corner kink), heat method (Crane et al. 2013),
+   signed heat method (Feng & Crane 2024, approximate, about first order, no
+   analysis of corners or medial axis in the paper as read). Values for the
+   turbulence wall distance stay exact (D108).
+3. **3c Surface under the layers.** Surface mesh quality: isotropic remeshing
+   (Botsch & Kobbelt 2004), or a quad-dominant parameterisation (Corman &
+   Crane 2025, the best candidate named in step 26 §8.6), or the footprint of
+   the background mesh on the surface. Measured by the quality of the grown
+   layer cells.
+4. **3d Column logic in Rust.** Insertion at convex edges, merging and
+   stopping at concave corners and gaps, layers down to a minimum (below the
+   first-layer height fall back to stage 2 cut cells with a limitation).
+5. **3e Outer iso-surface.** Marching cubes against dual contouring and
+   marching tetrahedra on the field; the field is smooth there, so the
+   benchmark measures curvature error and triangle quality.
+6. **3f Join.** Imprint with D58 (general version from stage 0 kernel),
+   background size matched to the outer layer height (size jump limit).
+   Exactness: conservation as in stage 2.
+7. **3g First-layer height loop.** Start from a flat-plate estimate; after
+   the first run regrow from measured wall shear (meshing is automatic).
+8. **3h Inward layers for CHT.** Negative distances, conformal interface
+   with layers on both sides.
+
+Verification: the stage 2 cases repeated on the layered mesh, with the
+**four-way comparison** penalised / cut / layered / body-fitted at equal
+cell count as the central accuracy statement; layer-mesh quality
+metrics (skewness, non-orthogonality, volume ratio); y+ spread; mesh
+independence of the immersed surface (the outer cut moved by one cell must
+not change the wall result beyond the stated tolerance: this is the
+test that the wall really sits on the layers, not on the cut).
+
+Gallery 3: finned heat sink with the layers in the fin gaps (cut view of the
+mesh and temperature) — this ties to the heat sink study already running as
+its own thread; a sphere with the layer stack and the wake; the four-way
+comparison figure. Recipes: "grow layers on an STL", "tune the first layer".
+
+Sizing: 3a not sized yet; 3b to 3h code about 30 to 60 min per PR once 3a
+says go; runs 1 to 2 hours; 3D robustness on arbitrary CAD **not sized yet**.
+
+## 6. Stage 4 – Automatic hand-off to a body-fitted mesh (D211, proposed D221)
+
+The rule of D211 as a tool, in the study layer (D62), not in the solver.
+
+1. **`immersed.compare`**: run the same design on the immersed mesh and on a
+   body-fitted mesh (Gmsh script of D62 with layers, converted to polyhedra by
+   D54), report the difference of each objective, wall quantities and
+   y+, with the grid-convergence verdict (D67). Record as a limitation
+   (D199). The difference becomes the first-order correction of D207 (the
+   immersed mesh is a fidelity level, tagged in D106).
+2. **Switch rule**: switch when the trust-region radius or the gain per round
+   falls below the measured difference, or the gain per round falls below the
+   uncertainty of the immersed result (D206). "No switch needed" is a valid
+   outcome, especially after stage 3.
+3. **Surface export** for the body-fitted mesh: final design surface to STL,
+   plus a template with the meshing parameters. Morphing (L4) instead of
+   regenerating is later.
+4. **Agent safety**: starts runs, so it is a `start-run` tool under the D198
+   budgets; an estimate comes first (D81).
+
+Verification: the comparison is itself the test; it must reproduce, on the
+sphere, cylinder and finned plate, the differences that stage 2 and 3 report.
+
+Gallery 4: a small fin-pitch study on the immersed mesh, then the check on the
+body-fitted mesh; plot of objective versus round and the temperature fields of
+both meshes. Recipe: "study on cut cells, check on a fitted mesh".
+
+Sizing: tool and report 1 PR (about 30 to 45 min code); study runs 1 to 2
+hours.
+
+## 7. Interaction with the adjoint (L17) and CHT
+
+**The adjoint solver is not built.** All gradient statements below are plans
+for when L17 exists; stage 1 to 4 do not wait for it.
+
+| Method | What the adjoint gives | Shape gradient | Risk |
+|---|---|---|---|
+| Penalisation | exact discrete gradient with respect to χ per cell (D59 kernels already agree with finite differences) | topology gradient directly | none for gradients; flaws are in the wall accuracy |
+| Cut cells | discrete adjoint on the frozen cut mesh | (a) continuous surface sensitivity on cut wall faces (the L17 surface sensitivity), applied as normal displacement; (b) forward-mode derivative of the cut geometry itself with frozen topology, generic over the D7 float type so dual numbers pass through the cutting code | cut topology and merge decisions change discontinuously with the surface; the gradient is piecewise smooth, noisy at switches |
+| Layered | layer nodes are smooth functions of the surface and design parameters | adjoint node sensitivities of L17 chained with the layer-mesh Jacobian; outer cut far from the wall treated as frozen with an error estimate for D206 | needs the column logic to be differentiable (frozen topology, smooth rules) |
+
+Rule for stage 2: the gradient strategy is decided by measurement when L17
+exists, not in advance: compare (a), (b) and finite differences (a step sweep
+shows the noise) on the cylinder and the pin. The cut code is written
+generic over the float type from the first PR, so (b) stays possible. A
+shape-and-topology derivative on a fixed mesh with a level set exists in the
+literature (Gangl & Gfrerer, arXiv 2209.15491, read as a summary: 2D, linear
+level set, mesh fixed) and informs the pre-stage; it is not adopted for the
+3D design chain.
+
+**CHT.** Cut and layered methods cut both ways; the interface is a normal
+D160 face with series conductance, so interface fluxes are conservative and
+the thermal adjoint (D160 kernels) applies unchanged. Penalisation: solid
+temperature through an equation domain of regions (D112) is not available
+until a χ-weighted conductivity exists (a stage 1 sub-item, laminar CHT only,
+decide with Q9). Cycle-averaged CHT (D204) works on top of either mesh.
+
+## 8. Interfaces: scriptable and MCP compatible (D77–D87, L18, D196)
+
+Nothing exists only in a GUI. New tools in the D196 registry, typed in/out,
+action kind per D198:
+
+| Tool id | Kind | Does |
+|---|---|---|
+| `geometry.check` | read | surface report (closed, orientation, self-intersection, volume, bounds) |
+| `geometry.sdf` | write-files | signed distance and winding number on a mesh or grid, VTKHDF |
+| `mesh.cut` | write-files | background mesh + surface → cut mesh, quality and small-cell report |
+| `mesh.layers` | write-files | surface → layered mesh with the outer cut surface |
+| `immersed.estimate` | read | cell counts, small-cell count, layer count, memory before the run (D81) |
+| `immersed.compare` | start-run | the D211 check |
+| `study.immersed` | start-run | the study with automatic hand-off |
+
+Case file keys (D77 schema, Python mirror D61):
+`[immersed] method = "penalisation" | "cut" | "layered"`, `[[immersed.body]]`
+with `surface`, `units`, `kind = "solid" | "region"`, `material`, patch tags;
+`[immersed.cut] min_volume_fraction`, `merge = "neighbour"`;
+`[immersed.layers] first_height | y_plus_target`, `growth`, `count |
+total_thickness`, `min_layers`; `[immersed.penalisation] eta`, `interpolation`.
+Diagnostics `IMM001`… with fix hints (D78): surface not closed, self
+intersection, body outside the domain, thin solid, first-layer height below
+the cut, small-cell fraction too high. Limitations (D199): number and
+fraction of merged cells, y+ spread on immersed walls, thin-wall fallbacks,
+penalised walls. Machine-readable report in `result.json`. Every tool is
+deterministic and journaled (D197). Surface inputs: STL (ASCII, binary),
+OBJ later; STEP through Gmsh/OpenCASCADE (D62). Verification grades go into
+`features.toml` per stage (D199): stage 1 "partial, laminar", stage 2
+"verified" only after the table above passes.
+
+## 9. Open questions as owner decisions
+
+Each has a recommendation; none blocks stage 0 and stage 1.
+
+| # | Question | Recommendation |
+|---|---|---|
+| Q1 | Accuracy targets. Proposed: stage 2 second-order on the analytic cases, laminar drag within 1 % of the body-fitted mesh at equal cell count at about 1 M cells, turbulent wall shear within 5 %; stage 3 within 2 % | Accept as proposals; replace after the first measurement |
+| Q2 | Dirty STL: winding-number tolerant, or require closed manifold surfaces | Tolerant with a report, never silent repair |
+| Q3 | Small cells: merging as default, mixing and state redistribution measured only | Merging |
+| Q4 | Thin solids (below about two cells): refuse, or thin wall D189 | Refuse with a pointer to D189 |
+| Q5 | Penalised turbulent walls: allow with a limitation, or laminar only | Laminar and low-Re only, wall function refused |
+| Q6 | Exact predicates: write from the paper, or use an open-source crate if its licence fits | Check licences, write the 2 predicates ourselves if unclear (clean room) |
+| Q7 | Background refinement: Gmsh size field now, own refinement with L14 | Gmsh size field now |
+| Q8 | Stage 3: 3D Python prototype first, as in 2D | Yes; go/no-go before Rust |
+| Q9 | Penalised CHT (χ-weighted conductivity) in stage 1 or left out | Left out; CHT starts at stage 2 |
+| Q10 | Moving bodies (L4, fresh-cell problem) | Out of scope for this plan |
+| Q11 | Which stage-0 SDF method is the default after the benchmark | Decided by the benchmark of §2, not now |
+
+## 10. Order of work and what stops what
+
+Stage 0 and stage 1 can start together (no overlap in code). Stage 2 waits
+for stage 0 steps 1 to 5. Stage 3a (Python) can run next to stage 2 and
+needs only stage 0 steps 3 and 4. Stage 4 waits for stage 2 and uses stage 3
+when it exists. Nothing here depends on L17; the shape-gradient checks of §7
+wait for it. Every PR: changelog fragment, README "What works today", docs,
+gallery entry with at least one image and field images for physics (the
+maintainer rule), case files and a recipe.
+
+## 11. Sources
+
+Read for this plan (full text or the part named): Crocker, Dubief &
+Desjardins, arXiv 1411.1004 (full); Ndiaye et al., Int. J. Heat Fluid Flow
+114, 2025 (journal article, part); Cherchi, Pellacini, Attene & Livesu,
+arXiv 2205.14151 (part); Trettner, Nehring-Wirxel & Kobbelt, ACM TOG 41(4),
+2022 (part); Roosing, Strickson & Nikiforakis, arXiv 1903.00353 (part);
+arXiv 2404.16132 (part, summary); Gangl & Gfrerer, arXiv 2209.15491 (part,
+summary); Bayat, Li & Alexandersen, arXiv 2601.02202 (abstract level:
+density-based topology optimisation for turbulent flow with a Brinkman
+penalty and an implicit wall function).
+From the earlier step 26 assessment (not re-read now): Ye et al. 1999;
+Meyer et al. 2010; Berger & Aftosmis 2012; Peskin 2002; Mittal & Iaccarino
+2005; Angot et al. 1999; Borrvall & Petersson 2003; Tseng & Ferziger 2003.
+Named from memory and to be read when their stage starts: Shewchuk 1997;
+Jacobson et al. 2013; Barill et al. 2018; Attene 2020; Museth (sparse fast
+sweeping); Botsch & Kobbelt 2004; Crane, Weischedel & Wardetzky 2013;
+Schäfer & Turek 1996. A "continuous adjoint cut-cell method for cavitating
+flows" turned up in the search by title only and is unread.
