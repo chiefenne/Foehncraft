@@ -23,6 +23,7 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
+pub mod approval;
 pub mod case;
 pub mod expression;
 pub mod flow;
@@ -162,12 +163,34 @@ pub trait Tool {
     /// Runs the tool.
     fn call(input: Self::Input, ctx: &mut Ctx<'_>) -> Result<Self::Output>;
 
+    /// What a call would write, before it runs: for the approvals of an
+    /// agent host ([`approval`], D198 (b)). Reads the case where it needs
+    /// to; writes nothing. The default: nothing known.
+    fn effects(_input: &Self::Input, _ctx: &mut Ctx<'_>) -> Result<Effects> {
+        Ok(Effects::default())
+    }
+
     /// The exit code of a finished call (D64): 0 finished, 2 failed checks,
     /// 3 stopped; 1 when the output reports an error (a case that cannot
     /// run).
     fn exit_code(_output: &Self::Output) -> i32 {
         0
     }
+}
+
+/// What a call would do, known before it runs ([`Tool::effects`]).
+#[derive(Debug, Clone, Default, Serialize, JsonSchema)]
+pub struct Effects {
+    /// Directories (an output directory) and files the call writes.
+    pub writes: Vec<std::path::PathBuf>,
+    /// The estimate of a run (D81).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub estimate: Option<foehncraft_flow::engine::Estimate>,
+    /// The `[run.limits]` of a run (D83).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limits: Option<foehncraft_flow::case::Limits>,
+    /// The call publishes outside the computer.
+    pub publishes: bool,
 }
 
 /// What every call gets from its front end: roots (D82), interrupts and the
@@ -187,6 +210,9 @@ pub struct Ctx<'a> {
     /// The call being run (tool, version, typed input): a run writes it
     /// into its run record (D69).
     pub call: Option<Value>,
+    /// How the host approved the call (for the journal row, D197): set by
+    /// an agent host such as `foehn mcp` before the call.
+    pub approval: Option<Value>,
     text: Box<dyn FnMut(&str) + Send + 'a>,
 }
 
@@ -200,6 +226,7 @@ impl<'a> Ctx<'a> {
             build,
             journal: None,
             call: None,
+            approval: None,
             text: Box::new(|_| {}),
         }
     }
@@ -240,6 +267,7 @@ pub struct Entry {
     input_schema: fn() -> Value,
     output_schema: fn() -> Value,
     run: fn(Value, &mut Ctx<'_>) -> Result<(Value, i32)>,
+    effects: fn(Value, &mut Ctx<'_>) -> Result<Effects>,
 }
 
 impl Entry {
@@ -286,6 +314,11 @@ fn run_erased<T: Tool>(input: Value, ctx: &mut Ctx<'_>) -> Result<(Value, i32)> 
     Ok((serde_json::to_value(&out)?, code))
 }
 
+fn effects_erased<T: Tool>(input: Value, ctx: &mut Ctx<'_>) -> Result<Effects> {
+    let typed = input_of::<T>(input)?;
+    T::effects(&typed, ctx)
+}
+
 /// The registry entry of tool `T`.
 pub fn entry<T: Tool>() -> Entry {
     Entry {
@@ -293,7 +326,35 @@ pub fn entry<T: Tool>() -> Entry {
         input_schema: schema_of::<T::Input>,
         output_schema: schema_of::<T::Output>,
         run: run_erased::<T>,
+        effects: effects_erased::<T>,
     }
+}
+
+/// The catalogue entry of the tool `id`.
+pub fn spec(id: &str) -> Option<ToolSpec> {
+    registry()
+        .into_iter()
+        .find(|e| e.spec.id == id)
+        .map(|e| e.spec)
+}
+
+/// What a call of the tool `id` with `input` would write, before it runs
+/// ([`Tool::effects`]); for the approvals of an agent host (D198 (b)).
+/// Not journaled: it runs nothing.
+pub fn effects(id: &str, input: &Value, ctx: &mut Ctx<'_>) -> Result<Effects> {
+    let reg = registry();
+    let e = reg.iter().find(|e| e.spec.id == id).ok_or_else(|| {
+        diag::err(Diagnostic::new(
+            diag::TOOL_UNKNOWN,
+            format!("unknown tool `{id}`"),
+        ))
+    })?;
+    let input = if input.is_null() {
+        json!({})
+    } else {
+        input.clone()
+    };
+    (e.effects)(input, ctx)
 }
 
 /// Every tool, in catalogue order. An explicit list: no macros, no
@@ -316,6 +377,7 @@ pub fn registry() -> Vec<Entry> {
         entry::<mesh::Process>(),
         entry::<flow::Run>(),
         entry::<flow::Read>(),
+        entry::<flow::Page>(),
         entry::<post::Derive>(),
         entry::<study::Scalar>(),
         entry::<study::Poisson>(),

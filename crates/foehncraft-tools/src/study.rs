@@ -59,6 +59,18 @@ impl Tool for Scalar {
     type Input = ScalarInput;
     type Output = ScalarOutput;
 
+    /// The output directory.
+    fn effects(a: &ScalarInput, ctx: &mut Ctx<'_>) -> Result<crate::Effects> {
+        use foehncraft_fv::case::{ScalarCase, output_dir};
+        ctx.roots.check_read(&a.case, "the case file")?;
+        let case = ScalarCase::from_file(&a.case).map_err(diag::case_error)?;
+        let (_, dir) = output_dir(&case, &a.case, a.out.clone());
+        Ok(crate::Effects {
+            writes: vec![dir],
+            ..Default::default()
+        })
+    }
+
     fn call(a: ScalarInput, ctx: &mut Ctx<'_>) -> Result<ScalarOutput> {
         use foehncraft_fv::case::{ScalarCase, output_dir, run};
         ctx.roots.check_read(&a.case, "the case file")?;
@@ -153,6 +165,18 @@ impl Tool for Poisson {
     const ACTION: Action = Action::StartRun;
     type Input = PoissonInput;
     type Output = PoissonOutput;
+
+    /// The output directory.
+    fn effects(a: &PoissonInput, ctx: &mut Ctx<'_>) -> Result<crate::Effects> {
+        use foehncraft_fv::poisson::{PoissonCase, output_dir};
+        ctx.roots.check_read(&a.case, "the case file")?;
+        let case = PoissonCase::from_file(&a.case).map_err(diag::case_error)?;
+        let (_, dir) = output_dir(&case, &a.case, a.out.clone());
+        Ok(crate::Effects {
+            writes: vec![dir],
+            ..Default::default()
+        })
+    }
 
     fn call(a: PoissonInput, ctx: &mut Ctx<'_>) -> Result<PoissonOutput> {
         use foehncraft_fv::poisson::{PoissonCase, StudySolver, output_dir, run};
@@ -263,6 +287,26 @@ impl Tool for G1 {
     const ACTION: Action = Action::StartRun;
     type Input = G1Input;
     type Output = G1Output;
+
+    /// The output directory.
+    fn effects(a: &G1Input, ctx: &mut Ctx<'_>) -> Result<crate::Effects> {
+        use foehncraft_bench::case::G1Case;
+        let dir = match (&a.out, &a.case) {
+            (Some(o), _) => o.clone(),
+            (None, Some(p)) => {
+                ctx.roots.check_read(p, "the case file")?;
+                G1Case::from_file(p)
+                    .map_err(diag::case_error)?
+                    .output
+                    .directory
+            }
+            (None, None) => G1Case::default().output.directory,
+        };
+        Ok(crate::Effects {
+            writes: vec![dir],
+            ..Default::default()
+        })
+    }
 
     fn call(a: G1Input, ctx: &mut Ctx<'_>) -> Result<G1Output> {
         use foehncraft_bench::G1Case;

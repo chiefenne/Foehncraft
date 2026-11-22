@@ -410,6 +410,13 @@ A code keeps its meaning; a retired code stays in the table.
 | `TOOL003` | warning | The journal of tool calls (D197) could not be written: the calls run, but the journal misses them. |
 | `TOOL004` | error | A script to replay (`foehn run --script`) that cannot be read: not a file of JSON lines, or without calls. |
 | `TOOL005` | warning | A replayed call (`foehn run --script`) that ended with another status or exit code than in its record; the replay stops there unless `--keep-going`. |
+| `TOOL006` | error | A series of `result.page` that the run directory does not have, or a cursor that does not belong to it; the call without `series` lists the series. |
+| `MCP001` | error | `foehn mcp` started without `--read-root` and `--write-root`, or with an action table (`--policy`) inside a write root, where a tool could rewrite it. |
+| `MCP002` | error | A run started through MCP without `[run.limits] max_wall_time` and `max_output`; the fix sets them with `set`. |
+| `MCP003` | error | A call that the action table of the project (`foehn-mcp.toml`) refuses: start a run, exceed the estimate caps, write outside the write roots, overwrite results, publish. |
+| `MCP004` | error | A call that the person declined when the server asked for approval. |
+| `MCP005` | error | A call that needs the person's approval (`ask`), from a host that cannot ask (no MCP elicitation); the person allows it in `foehn-mcp.toml` or uses a host that asks. |
+| `MCP006` | error | The action table `foehn-mcp.toml` cannot be read or written: not TOML, an unknown action kind or setting. |
 | `GEN001` | error | An error without a more specific code. |
 
 ## Engine API (D86)

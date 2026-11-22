@@ -50,6 +50,20 @@ impl Tool for Derive {
     type Input = DeriveInput;
     type Output = serde_json::Value;
 
+    /// The output directory of the run, where the fields are written.
+    fn effects(a: &DeriveInput, ctx: &mut Ctx<'_>) -> Result<crate::Effects> {
+        let case = engine::load(&a.case, &a.set, &ctx.roots)?;
+        let (_, dir) = foehncraft_flow::case::output_dir(&case, &a.case, a.out.clone());
+        let writes = match &a.file {
+            Some(f) => vec![f.clone()],
+            None => vec![dir],
+        };
+        Ok(crate::Effects {
+            writes,
+            ..Default::default()
+        })
+    }
+
     fn call(a: DeriveInput, ctx: &mut Ctx<'_>) -> Result<serde_json::Value> {
         use foehncraft_flow::case::output_dir;
         use foehncraft_flow::derived::{self, Derived};

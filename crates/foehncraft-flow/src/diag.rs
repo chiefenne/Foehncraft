@@ -218,8 +218,25 @@ codes! {
     TOOL_JOURNAL = "TOOL003", Warning, "The journal of tool calls (D197) could not be written: the calls run, but the journal misses them.";
     TOOL_SCRIPT = "TOOL004", Error, "A script to replay (`foehn run --script`) that cannot be read: not a file of JSON lines, or without calls.";
     TOOL_REPLAY_DIFFERS = "TOOL005", Warning, "A replayed call (`foehn run --script`) that ended with another status or exit code than in its record; the replay stops there unless `--keep-going`.";
+    TOOL_SERIES = "TOOL006", Error, "A series of `result.page` that the run directory does not have, or a cursor that does not belong to it; the call without `series` lists the series.";
+    // the MCP server and the approvals of agent calls (L18, D198)
+    MCP_ROOTS = "MCP001", Error, "`foehn mcp` started without `--read-root` and `--write-root`, or with an action table (`--policy`) inside a write root, where a tool could rewrite it.";
+    MCP_LIMITS = "MCP002", Error, "A run started through MCP without `[run.limits] max_wall_time` and `max_output`; the fix sets them with `set`.";
+    MCP_REFUSED = "MCP003", Error, "A call that the action table of the project (`foehn-mcp.toml`) refuses: start a run, exceed the estimate caps, write outside the write roots, overwrite results, publish.";
+    MCP_DECLINED = "MCP004", Error, "A call that the person declined when the server asked for approval.";
+    MCP_CANNOT_ASK = "MCP005", Error, "A call that needs the person's approval (`ask`), from a host that cannot ask (no MCP elicitation); the person allows it in `foehn-mcp.toml` or uses a host that asks.";
+    MCP_POLICY = "MCP006", Error, "The action table `foehn-mcp.toml` cannot be read or written: not TOML, an unknown action kind or setting.";
     // anything else
     GENERAL = "GEN001", Error, "An error without a more specific code.";
+}
+
+/// A call refused before it ran (an unknown tool, a bad input, a refusal or
+/// a declined approval of the MCP server): a replay skips it (D197).
+pub fn refused_before_run(code: &str) -> bool {
+    matches!(
+        code,
+        "TOOL001" | "TOOL002" | "MCP002" | "MCP003" | "MCP004" | "MCP005"
+    )
 }
 
 /// The registry entry of a code.
@@ -462,7 +479,7 @@ mod tests {
                 [
                     "CASE", "SCHED", "BC", "SCAL", "RUN", "GEN", "DIV", "BAL", "EXPR", "MAT",
                     "REG", "MESH", "TURB", "MRF", "SLD", "ROT", "STAT", "ENE", "THM", "CHT",
-                    "TOOL", "LIM"
+                    "TOOL", "LIM", "MCP"
                 ]
                 .contains(&p),
                 "{}",

@@ -46,6 +46,7 @@ def test_every_tool_through_call(tmp_path):
         },
         "flow.run": {"case": case, "out": out},
         "result.read": {"dir": out},
+        "result.page": {"dir": out, "series": "residuals", "limit": 5},
         "post.derive": {"case": case, "out": out, "fields": ["vorticity"]},
         "study.scalar": {
             "case": ROOT / "examples/cases/scalar/mms_poly_2d.toml",
