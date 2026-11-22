@@ -3,7 +3,7 @@
 //! docs/requirements/stage7-energy-buoyancy-cht.md, checks V7.7 (a) and the
 //! buoyant slot.
 
-use foehncraft_flow::case::{FlowCase, FlowReport, run};
+use foehncraft_flow::case::{FlowCase, run};
 use foehncraft_flow::diag;
 use std::path::{Path, PathBuf};
 
@@ -26,8 +26,9 @@ fn text(file: &str) -> String {
 }
 
 /// Runs a case and returns its report and the largest cell speed of the
-/// final state (from the restart file).
-fn run_speed(case: &FlowCase, name: &str) -> (FlowReport, f64) {
+/// final state (from the restart file, which needs the `hdf5` feature).
+#[cfg(feature = "hdf5")]
+fn run_speed(case: &FlowCase, name: &str) -> (foehncraft_flow::case::FlowReport, f64) {
     let dir = out(name);
     let rep = run(case, name, &dir, |_| {}).unwrap();
     let r = foehncraft_flow::restart::read(&dir.join("restart.h5")).unwrap();
@@ -53,6 +54,7 @@ fn refused(text: &str) -> (String, String) {
 
 /// The stratified box of `buoyancy_box_at_rest.toml` on mesh type `kind`
 /// (with `dimension`, `cells`) and the algorithm `alg`.
+#[cfg(feature = "hdf5")]
 fn box_case(kind: &str, dimension: u32, cells: &str, alg: &str, iterations: usize) -> FlowCase {
     let t = text("buoyancy_box_at_rest.toml")
         .replace("type = \"hex\"", &format!("type = \"{kind}\""))
@@ -92,6 +94,7 @@ fn box_case(kind: &str, dimension: u32, cells: &str, alg: &str, iterations: usiz
 /// perturbed meshes of every type, with SIMPLEC and with the coupled
 /// algorithm: the balanced force of D154 has a discrete hydrostatic state.
 #[test]
+#[cfg(feature = "hdf5")]
 fn stratified_box_stays_at_rest() {
     let g = 9.81f64;
     let bound = 1e-10 * (g * 1.0f64).sqrt();
@@ -138,6 +141,7 @@ fn buoyant_slot_has_second_order() {
 /// channel run once with `pressure_kind = "reduced"` (0) and once with
 /// `"static"` (the hydrostatic profile) gives the same velocity.
 #[test]
+#[cfg(feature = "hdf5")]
 fn reduced_and_static_outlet_give_the_same_flow() {
     let t = text("buoyancy_channel_reduced.toml");
     let (a, sa) = run_speed(&parse(&t), "chan_reduced");
@@ -152,6 +156,7 @@ fn reduced_and_static_outlet_give_the_same_flow() {
 /// tall opening drives a flow through a box that should be at rest
 /// (BUO006 warns), while the default reduced value keeps it at rest.
 #[test]
+#[cfg(feature = "hdf5")]
 fn static_outlet_without_hydrostatics_drives_a_false_flow() {
     let t = text("buoyancy_open_box.toml");
     let (r, s_reduced) = run_speed(&parse(&t), "open_reduced");
