@@ -18,9 +18,11 @@
 # between the top and the wall cell; the bottom boundary splits at x = 0
 # into the symmetry stretch `ymin` and the wall `plate`.
 #
-# Reference (TMR flatplate_sst page, SST-V, finest grid 545 × 385, mean of
-# CFL3D and FUN3D, retrieved for pyaeroflow): C_f(0.970084) = 0.0026907,
-# drag coefficient of the plate (one side, area 2 m²) C_D = 0.0028488.
+# References (D201: no result of another code): the Coles-Fernholz fit to
+# measured zero-pressure-gradient layers, C_f = 2 [ln(Re_theta)/0.384 +
+# 4.127]^-2 (Nagib, Chauhan & Monkewitz 2007), at the Re_theta of the run
+# (7 848 on the finest mesh), White's correlation, and the Richardson
+# extrapolation of our own mesh sweep (C_f 2.7385e-3, GCI 1.76 %).
 # The wall probe `x097` gives C_f, the force of `plate` the drag:
 # C_D = F_x / (½ ρ U² · 2 m²) = F_x on the 1 m depth of the mesh.
 # Level 1 (64 × 48 cells, 635 SIMPLEC iterations, a few seconds). The
@@ -32,7 +34,8 @@
 #
 #   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/tmr_plate_sst.toml --set 'verification.levels=[0, 1, 2, 3]' --set 'solver.algorithm="coupled"'
 #
-# Level 1 gives C_f(0.97) = 0.002668 (−0.8 %), level 3 0.002701 (+0.4 %).
+# Level 1 gives C_f(0.97) = 0.002668, level 3 0.0027005 (+1.45 % from the
+# Coles-Fernholz fit, −6.1 % from White).
 
 case_format = "0.6"
 

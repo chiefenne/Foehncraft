@@ -467,13 +467,13 @@ The rest of D173:
 A full 1D pipe integration (eqs. 3 and 4 with the bulk velocity, mixed-mean
 temperature) at the DNS conditions gives:
 
-| Case | Nu, ours | Nu, model in the thesis | Nu, DNS | Re_b ours / DNS | c_f ours / DNS |
-|---|---|---|---|---|---|
-| Re_τ 360, Pr 10 | 52.7 | 53.65 | 51.40 | 5 328 / 5 275 | 9.13 / 9.68 ·10⁻³ |
-| Re_τ 360, Pr 20 | 67.4 | 67.80 | 65.95 | | |
-| Re_τ 360, Pr 50 | 92.0 | 90.86 | 89.69 | | |
-| Re_τ 500, Pr 10 | 76.7 | 76.49 | 74.89 | 7 782 / 7 680 | 8.26 / 8.70 ·10⁻³ |
-| Re_τ 500, Pr 20 | 99.0 | 97.57 | 96.03 | | |
+| Case | Nu, ours | Nu, DNS | Re_b ours / DNS | c_f ours / DNS |
+|---|---|---|---|---|
+| Re_τ 360, Pr 10 | 52.7 | 51.40 | 5 328 / 5 275 | 9.13 / 9.68 ·10⁻³ |
+| Re_τ 360, Pr 20 | 67.4 | 65.95 | | |
+| Re_τ 360, Pr 50 | 92.0 | 89.69 | | |
+| Re_τ 500, Pr 10 | 76.7 | 74.89 | 7 782 / 7 680 | 8.26 / 8.70 ·10⁻³ |
+| Re_τ 500, Pr 20 | 99.0 | 96.03 | | |
 
 (Re_τ here is based on the diameter, as in the papers; DNS and thesis model
 values from Irrenfried 2020, Table 6.3.) Our reconstruction is within 1.5 %
