@@ -1298,14 +1298,21 @@ with these ratios, `examples/studies/tjunction_gci.py`):
 |---|---|---|---|---|---|
 | mean pressure, main inlet (Pa) | 3.3375 | 3.4652 | 3.5179 | 1.77 | 2.4 % |
 | mean pressure, branch inlet (Pa) | 4.4941 | 4.5823 | 4.6572 | 0.21 | 29 % |
-| θ(y = +0.035) − θ(y = −0.035) at x = 0.9 m | 0.1966 | 0.1974 | 0.1910 | oscillatory | 1.7 % (band of the three) |
+| θ(y = +0.035) − θ(y = −0.035) at x = 0.9 m, MLP limiter | 0.1314 | 0.1796 | 0.1971 | 2.10 | 11 % |
 
 Findings, as run: the main-inlet pressure converges at about second
 order. The branch-inlet pressure does not: its order is 0.2 and the
 GCI 29 %. A likely cause, not isolated here, is the faceted wall of the
 mesh: the area of the branch inlet, and with it the mass flow of the
-uniform inlet velocity, changes with the mesh. The scalar difference
-across the pipe oscillates between the meshes (0.1966, 0.1974, 0.1910).
+uniform inlet velocity, changes with the mesh. The scalar is convected
+with the vertex limiter MLP of D237 (gallery 211): the scalar difference
+across the pipe converges from below at order 2.1 (extrapolated 0.215),
+θ stays within [−0.0019, 1.0015]. With the face limiter of
+Venkatakrishnan, the default, it oscillated between the meshes (0.1966,
+0.1974, 0.1910) and θ reached −0.0066; without a limiter it converges
+from above (0.3066, 0.2471, 0.2098) and θ reaches 1.069. The fine-mesh
+values with MLP and without a limiter bracket the converged value
+between 0.197 and 0.210.
 **There is no comparison with published measurements yet** (owner
 decision 2026-11-22: GCI first, reference later); the case is not
 validated, only grid-studied.
@@ -1318,7 +1325,7 @@ the Gmsh reader row.
 
 | | |
 |---|---|
-| Code | no new code: Gmsh reader, polyhedral conversion, passive scalar (D51) |
+| Code | no new code: Gmsh reader, polyhedral conversion, passive scalar (D51), MLP limiter (D237, #211) |
 | Case file | `flow/tjunction_mixing.toml` (coarse mesh `meshes/tjunction_gci_coarse.msh`) |
 | Study | `examples/studies/tjunction_gci.py`; figure `tools/plot/tjunction_chart.py` |
 | Recipe | [196](../recipes/flow.md#tjunction-mixing) |

@@ -1,4 +1,4 @@
-"""Figure of the T-junction mixer (gallery 194): speed and passive scalar on
+"""Figure of the T-junction mixer (gallery 196): speed and passive scalar on
 the mid plane z = 0, from sample lines of a run of
 examples/cases/flow/tjunction_mixing.toml on a mesh of the study.
 

@@ -1039,6 +1039,12 @@ impl TurbulenceSettings {
             "[solver.turbulence] relaxation must be in (0, 1], is {a}"
         );
         crate::need!(
+            self.limiter != LimiterKind::Mlp,
+            CASE_RANGE,
+            "[solver.turbulence] limiter = \"mlp\" is not built for the turbulence variables yet \
+             (scalars and energy only)"
+        );
+        crate::need!(
             self.viscosity_relaxation > 0.0 && self.viscosity_relaxation <= 1.0,
             CASE_RANGE,
             "[solver.turbulence] viscosity_relaxation must be in (0, 1], is {}",
@@ -2618,6 +2624,7 @@ impl Turbulence {
                 central: 0.0,
                 beta: 0.1,
                 nonorth: 1.0,
+                bound: 0.0,
                 cp: self.cp,
                 cn: self.cn,
                 bf: self.bf,
@@ -2892,9 +2899,13 @@ impl Turbulence {
         for v in &tr {
             dev.gradient_with(v.lsq, v.phi, v.bc_a, v.bc_b, None, v.grad)?;
             if s.scheme != Scheme::Upwind && s.limiter != LimiterKind::None {
-                let (mn, mx) = dev.min_max(v.phi)?;
-                let e = s.limiter_k.max(1e-12) * (mx - mn);
-                let eps2 = Eps2::Single((e * e).max(1e-300));
+                let eps2 = if s.limiter == LimiterKind::BarthJespersen {
+                    Eps2::Single(-1.0)
+                } else {
+                    let (mn, mx) = dev.min_max(v.phi)?;
+                    let e = s.limiter_k.max(1e-12) * (mx - mn);
+                    Eps2::Single((e * e).max(1e-300))
+                };
                 dev.limiter_with(v.phi, v.bc_a, v.bc_b, None, v.grad, eps2, v.psi)?;
             }
         }
@@ -3496,6 +3507,7 @@ impl Turbulence {
             },
             beta: 0.1,
             nonorth: 1.0,
+            bound: 0.0,
             cp: self.cp,
             cn: self.cn,
             bf: self.bf,
@@ -3713,6 +3725,7 @@ impl Turbulence {
             central: 0.0,
             beta: 0.1,
             nonorth: 1.0,
+            bound: 0.0,
             cp: self.cp,
             cn: self.cn,
             bf: self.bf,

@@ -610,6 +610,11 @@ impl Backend for CudaBackend {
                 self.stream.memcpy_htod(&[e * e], &mut self.d.eps2_one)?;
                 1
             }
+            // a negative single ε² selects Barth–Jespersen
+            Limiter::BarthJespersen => {
+                self.stream.memcpy_htod(&[-1.0], &mut self.d.eps2_one)?;
+                1
+            }
         };
         let mut psi = self.take(V::Psi)?;
         {

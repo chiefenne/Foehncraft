@@ -407,6 +407,7 @@ fn scalar_face<T: Real>(fx: &Fixture, l: &Lifted<T>, f: usize) -> Vec<T> {
         beta: T::ZERO,
         nonorth: T::ONE,
         nonorth_limit: T::from_f64(-1.0),
+        bound: T::ZERO,
     };
     // SAFETY: f is a face of the mesh.
     let (a, b, c) = unsafe { fv::face_coefficients(f, &inp) };

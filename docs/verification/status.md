@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**104 features: 49 verified, 52 partial, 3 unverified.**
+**105 features: 49 verified, 53 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -39,6 +39,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Numerics | [Weighted least-squares gradients](#numerics-gradient-ls) | verified |
 | Numerics | [Linear upwind and bounded central convection](#numerics-convection-schemes) | verified |
 | Numerics | [Venkatakrishnan(-Wang) limiters](#numerics-limiters) | partial |
+| Numerics | [Vertex-based MLP limiter of the scalars and the energy equation](#numerics-mlp-limiter) | partial |
 | Numerics | [Reproducible (gather-based) assembly](#numerics-reproducible) | partial |
 | Linear solvers | [Aggregation multigrid with CG for the pressure (mixed precision)](#linear-amg-pressure) | verified |
 | Linear solvers | [Reduction multigrid for momentum and turbulence](#linear-reduction-multigrid) | partial |
@@ -156,7 +157,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 
 Gaps:
 
-- T-junction (gallery 196): the pressure at the branch inlet is not grid-convergent (observed order 0.2, GCI 29 %) and the scalar difference downstream oscillates; no comparison with published measurements yet
+- T-junction (gallery 196): the pressure at the branch inlet is not grid-convergent (observed order 0.2, GCI 29 %); the scalar difference downstream converges with the MLP limiter (order 2.1, GCI 11 %); no comparison with published measurements yet
 - conversion into polyhedra fails with GEN001 (a boundary cell centre behind its face) on Netgen-optimised tetrahedra and on one fine Gmsh mesh of the T-junction (h = 0.005 m); sizes that convert are used
 
 <a id="mesh-su2"></a>
@@ -307,6 +308,25 @@ Gaps:
 Gaps:
 
 - no observed order with a limiter switched on in a smooth flow
+
+<a id="numerics-mlp-limiter"></a>
+
+### Vertex-based MLP limiter of the scalars and the energy equation
+
+**partial** (gaps written) · id `numerics.mlp-limiter` · switch `solver.scalar.limiter, solver.energy.limiter = "mlp"` · decisions D237
+
+- exact: [`scalar_oblique_step_mlp`](../../examples/cases/flow/scalar_oblique_step_mlp.toml): a step at 31° on 30 % perturbed polyhedra stays within [0, 1.0021] with R3 and c = 0.01 (Venkatakrishnan: [−0.0175, 1.0178]) (passes in CI (set linux-3), not yet in the manual) ([results](../gallery/scalars.md#mlp-limiter))
+- exact: [`mlp_limiter_bounds_the_oblique_step`](../../crates/foehncraft-flow/tests/scalars.rs): within ε of the bounds with c = 0.01, within 10⁻⁹ with c = 0, the face limiter outside
+- consistency: [`nishikawa_functions_are_bounded_and_smooth`](../../crates/foehncraft-kernels/src/fv.rs): R3, R4 and R5 bounded at ε = 0 and smooth
+- consistency: [`a_strip_of_two_hexahedra_shares_four_vertices`](../../crates/foehncraft-flow/src/limiter.rs): the vertex stencil of a small mesh
+- consistency: [`tjunction_mixing`](../../examples/cases/flow/tjunction_mixing.toml): θ of the T-junction within [−0.0019, 1.0015], the scalar difference converges at order 2.1 over three meshes (passes in CI (set linux-1), not yet in the manual) ([results](../gallery/flow.md#tjunction-mixing))
+
+Gaps:
+
+- not the default: Venkatakrishnan stays the limiter of the scalars and the energy equation until a full validation run
+- ε = 0 and the per-cell ε can stall a steady run (the T-junction from the medium mesh on)
+- on a smooth manufactured solution on polyhedra the error with R3 is 2.5 times the unlimited one (second order kept)
+- not run on a GPU
 
 <a id="numerics-reproducible"></a>
 

@@ -374,6 +374,8 @@ impl Backend for CpuBackend {
                 let e = k * (mx - mn);
                 vec![e * e]
             }
+            // a negative single ε² selects Barth–Jespersen
+            Limiter::BarthJespersen => vec![-1.0],
         };
         self.map_into(V::Psi, |s, c| {
             let d = &s.d;
@@ -418,6 +420,7 @@ impl Backend for CpuBackend {
             beta: st.beta,
             nonorth: if st.nonorth { 1.0 } else { 0.0 },
             nonorth_limit: st.nonorth_limit,
+            bound: 0.0,
         };
         let fill = |first: usize, a: &mut [f64], b: &mut [f64], c: &mut [f64]| {
             for j in 0..a.len() {

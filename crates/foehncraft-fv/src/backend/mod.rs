@@ -101,6 +101,8 @@ pub enum Limiter {
         /// K.
         k: f64,
     },
+    /// Barth–Jespersen (1989): ψ = min(1, Δ₊/Δ₋).
+    BarthJespersen,
 }
 
 /// Settings of the face coefficients.

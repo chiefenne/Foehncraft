@@ -662,6 +662,10 @@ pub struct VerificationSection {
     pub scalar_order: Option<[f64; 2]>,
     /// Largest accepted L2 error of every scalar with `exact` (absolute).
     pub scalar_max_error: Option<f64>,
+    /// Accepted range of every scalar of the report (the passive scalars
+    /// and, with the energy equation, the temperature) on every mesh: the
+    /// check of a bounded convection scheme (D237).
+    pub scalar_range: Option<[f64; 2]>,
 }
 
 /// A line along which velocity and pressure are sampled.

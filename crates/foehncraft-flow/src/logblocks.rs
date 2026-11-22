@@ -426,6 +426,7 @@ fn short(name: &str) -> String {
         "central" => "CD".into(),
         "venkatakrishnan" => "Venkat.".into(),
         "venkatakrishnan-wang" => "Venkat-W".into(),
+        "barth-jespersen" => "BJ".into(),
         o => o.to_string(),
     }
 }

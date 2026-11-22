@@ -58,6 +58,7 @@ pub mod fluids;
 pub mod frame;
 pub mod frozen;
 pub mod limitations;
+pub mod limiter;
 pub mod live;
 pub mod logblocks;
 pub mod logcols;

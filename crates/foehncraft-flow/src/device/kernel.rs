@@ -12,8 +12,9 @@
 
 use super::{
     BoundaryArgs, Buf, Buf3, CurvatureOps, Eps2, FlowDevice, FluxArgs, KepsCellOps, Lsq, Mask,
-    MomentumFaceArgs, MomentumRowArgs, ScalarFaceArgs, ScalarRowArgs, ScalarTurbOps, ScalarWallOps,
-    Setup, SstCellOps, TurbFaceOps, WallCellOps, WallFaceOps, WallStatic, ZetaFCellOps,
+    MlpOps, MomentumFaceArgs, MomentumRowArgs, ScalarFaceArgs, ScalarRowArgs, ScalarTurbOps,
+    ScalarWallOps, Setup, SstCellOps, TurbFaceOps, VertexStencil, WallCellOps, WallFaceOps,
+    WallStatic, ZetaFCellOps,
 };
 use anyhow::{Result, ensure};
 use foehncraft_core::repro::{BLOCK, combine_block_sums};
@@ -117,6 +118,19 @@ pub struct KernelFlow<E: Exec> {
     wall: Option<[Raw<u32>; 4]>,
     /// The stencils of the quadratic fits (D236): cells, ptr, idx.
     quad: Vec<[Raw<u32>; 3]>,
+    /// The vertex stencils of the MLP limiter.
+    vert: Vec<VertSlot>,
+}
+
+/// A vertex stencil on the device ([`FlowDevice::vertex_setup`]).
+#[derive(Debug, Clone, Copy)]
+struct VertSlot {
+    /// vert_ptr, vert_cells, bface_ptr, bfaces, cell_ptr, cell_verts.
+    lists: [Raw<u32>; 6],
+    points: Buf3,
+    vmin: Buf,
+    vmax: Buf,
+    n_vert: usize,
 }
 
 impl<E: Exec> KernelFlow<E> {
@@ -259,6 +273,7 @@ impl<E: Exec> KernelFlow<E> {
             variable: None,
             wall: None,
             quad: Vec::new(),
+            vert: Vec::new(),
             lsq_u,
             lsq_p,
             rho: s.rho,
@@ -792,6 +807,7 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             beta: a.beta,
             nonorth: a.nonorth,
             nonorth_limit: -1.0,
+            bound: a.bound,
             cp: self.r(a.cp),
             cn: self.r(a.cn),
             bf: self.r(a.bf),
@@ -1478,6 +1494,79 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             gtau: gtau.map_or([Raw3::default(); 6], |g| g.map(|b| self.r3(b))),
         };
         self.go::<e::ExplicitStressFaces>(self.nf, &args)
+    }
+
+    fn vertex_setup(&mut self, s: &VertexStencil) -> Result<usize> {
+        let nv = s.vert_ptr.len().saturating_sub(1);
+        ensure!(
+            nv > 0
+                && s.bface_ptr.len() == nv + 1
+                && s.cell_ptr.len() == self.nc + 1
+                && s.points.iter().all(|p| p.len() == nv)
+                && s.vert_ptr[nv] as usize == s.vert_cells.len()
+                && s.bface_ptr[nv] as usize == s.bfaces.len()
+                && s.cell_ptr[self.nc] as usize == s.cell_verts.len(),
+            "flow device: inconsistent vertex stencil"
+        );
+        let lists = [
+            self.x.alloc_u32(&s.vert_ptr)?,
+            self.x.alloc_u32(&s.vert_cells)?,
+            self.x.alloc_u32(&s.bface_ptr)?,
+            self.x.alloc_u32(&s.bfaces)?,
+            self.x.alloc_u32(&s.cell_ptr)?,
+            self.x.alloc_u32(&s.cell_verts)?,
+        ];
+        let points = Buf3 {
+            x: self.x.alloc(nv)?,
+            y: self.x.alloc(nv)?,
+            z: self.x.alloc(nv)?,
+        };
+        self.x.upload(points.x, &s.points[0])?;
+        self.x.upload(points.y, &s.points[1])?;
+        self.x.upload(points.z, &s.points[2])?;
+        let (vmin, vmax) = (self.x.alloc(nv)?, self.x.alloc(nv)?);
+        self.vert.push(VertSlot {
+            lists,
+            points,
+            vmin,
+            vmax,
+            n_vert: nv,
+        });
+        Ok(self.vert.len() - 1)
+    }
+
+    fn mlp_limiter(&mut self, a: &MlpOps) -> Result<()> {
+        let Some(&v) = self.vert.get(a.slot) else {
+            anyhow::bail!("flow device: no vertex stencil {}", a.slot);
+        };
+        let mut ins = vec![a.phi, a.bc_a, a.bc_b];
+        ins.extend(a.grad.all());
+        ins.extend(a.eps_cell);
+        check(&[a.out], &ins)?;
+        let [vp, vc, bp, bf, cp, cv] = v.lists;
+        let args = e::MlpArgs {
+            m: self.m,
+            vert_ptr: vp,
+            vert_cells: vc,
+            bface_ptr: bp,
+            bfaces: bf,
+            cell_ptr: cp,
+            cell_verts: cv,
+            points: self.r3(v.points),
+            phi: self.r(a.phi),
+            bc_a: self.r(a.bc_a),
+            bc_b: self.r(a.bc_b),
+            grad: self.r3(a.grad),
+            vmin: self.r(v.vmin),
+            vmax: self.r(v.vmax),
+            func: a.func as u64,
+            eps: a.eps,
+            eps_cell: a.eps_cell.map_or(Raw::EMPTY, |b| self.r(b)),
+            relax: a.relax,
+            out: self.r(a.out),
+        };
+        self.go::<e::VertexBounds>(v.n_vert, &args)?;
+        self.go::<e::MlpLimiter>(self.nc, &args)
     }
 
     fn quadratic_setup(&mut self, cells: &[u32], ptr: &[u32], idx: &[u32]) -> Result<usize> {

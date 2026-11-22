@@ -1,10 +1,11 @@
 # Passive scalars and the wall distance
 
-Part of the [Recipes](../recipes.md): passive scalars carried by the flow (D51, D116), their boundary conditions, bounds and exact solutions, and the exact wall distance (D48). The keys are on the [key page](../cases/flow-keys.md#passive-scalars-d51-d116).
+Part of the [Recipes](../recipes.md): passive scalars carried by the flow (D51, D116), their boundary conditions, bounds and exact solutions, their bounded convection (D237), and the exact wall distance (D48). The keys are on the [key page](../cases/flow-keys.md#passive-scalars-d51-d116).
 
 | # | Recipe |
 |---|---|
 | 63 | [Carry a passive scalar and compute a Nusselt number](#passive-scalars) |
+| 211 | [Keep a scalar or the temperature within its bounds on tetrahedra and polyhedra](#mlp-limiter) |
 
 ---
 
@@ -86,3 +87,64 @@ distance of every cell centroid to the nearest face of the `wall`
 boundaries (dataset `wall_distance`, m); a case without a wall is
 refused. `foehn post derive CASE --fields wall-distance` writes it from a
 restart file.
+
+[↑ back to top](#passive-scalars-and-the-wall-distance)
+
+---
+
+<a id="mlp-limiter"></a>
+## 211. Keep a scalar or the temperature within its bounds on tetrahedra and polyhedra
+
+**When.** A scalar or the temperature has a sharp front (an inlet value
+meeting another, little diffusion) on tetrahedra or converted polyhedra,
+or it is a bounded quantity (a mixture fraction, a tracer) whose
+overshoot matters. The face limiters (`venkatakrishnan`, the default,
+and `barth-jespersen`) can leave the bounds there by several percent of
+the range; on hexahedra aligned with the flow they rarely do, and a
+smooth solution is more accurate without the vertex bounds.
+
+```toml
+[solver.scalar]                # or [solver.energy] for the temperature
+limiter = "mlp"                # bounds at the vertices (Park & Kim 2012)
+limiter_function = "r3"        # Nishikawa's R3 (default); r4, r5 are less dissipative
+limiter_epsilon = 0.01         # ε = 0.01 (φ_max − φ_min): overshoot within about ε
+limiter_relaxation = 0.5       # damps a limit cycle of a steady run
+```
+
+`limiter = "mlp"` is refused for the momentum and the turbulence
+equations (`CASE004`). Check the extremes in the report (`flow.json`,
+per scalar `min` and `max`; the energy equation as `temperature`) or let
+the case fail outside a range:
+
+```toml
+[verification]
+scalar_range = [-0.005, 1.005]
+```
+
+**If a steady run stalls.** The residual of the scalar stops at 10⁻⁴ to
+10⁻³ while the flow has converged: the limiter value of a few cells
+switches back and forth. Keep `limiter_epsilon` above 0 (0.01 is
+enough), lower `limiter_relaxation` to 0.25, and keep
+`limiter_epsilon_scaling = "domain"`: the per-cell ε (`"cell"`) shrinks
+with the mesh and stalls like ε = 0 on fine meshes. Strict bounds
+(`limiter_epsilon = 0`) suit transient runs.
+
+**The oblique step** (gallery 211) with the four limiters:
+
+```
+cargo build --release -p foehncraft-cli
+C=examples/cases/flow/scalar_oblique_step_mlp.toml
+target/release/foehn flow $C --out output/limiters/mlp
+target/release/foehn flow $C --out output/limiters/mlp0 --set solver.scalar.limiter_epsilon=0.0
+target/release/foehn flow $C --out output/limiters/venk --set 'solver.scalar.limiter="venkatakrishnan"'
+target/release/foehn flow $C --out output/limiters/bj --set 'solver.scalar.limiter="barth-jespersen"'
+python3 - <<'PY'
+import json
+for v in ["venk", "bj", "mlp", "mlp0"]:
+    s = json.load(open(f"output/limiters/{v}/flow.json"))["solves"][0]
+    c = s["scalars"][0]
+    print(f"{v:5s} c in [{c['min']:.4f}, {c['max']:.4f}], {s['iterations']} iterations")
+PY
+```
+
+[↑ back to top](#passive-scalars-and-the-wall-distance)

@@ -223,6 +223,196 @@ pub fn venkat_psi<T: Real>(dplus: T, dminus: T, eps2: T) -> T {
     (num / den).min_of(T::ONE)
 }
 
+/// Barth–Jespersen's limiter function of one face: ψ = min(1, Δ₊/Δ₋) for
+/// the unlimited increment Δ₋ ≠ 0 and the allowed increment Δ₊ of the
+/// same sign (or zero): the largest ψ with ψ Δ₋ inside the neighbourhood
+/// bounds. Not differentiable, which can stall a steady residual (Berger,
+/// Aftosmis & Murman 2005); the smooth Venkatakrishnan form is the default.
+#[inline(always)]
+pub fn barth_jespersen_psi<T: Real>(dplus: T, dminus: T) -> T {
+    (dplus / dminus).max_of(T::ZERO).min_of(T::ONE)
+}
+
+/// Nishikawa's limiter functions R3, R4, R5 (Nishikawa 2022, AIAA
+/// 2022-1374, eqs. (5.5)–(5.7)) with the ε modification of Venkatakrishnan:
+/// for a = |Δ₊|, b = |Δ₋|,
+///
+/// ψ = ((aᵖ + εₚ) + a Sₚ) / ((aᵖ + εₚ) + b (aᵖ⁻¹ + Sₚ)) for a ≤ 2b, else 1,
+///
+/// S₃ = 4b², S₄ = 2b (a² − 2b (a − 2b)), S₅ = 8b² (a² − 2b (a − b)).
+/// Differentiable, equal to 1 with zero slope where the unlimited value is
+/// bounded (y = a/b ≥ 2), and of order p in smooth regions (the
+/// Venkatakrishnan function is of order 2). `eps_p` = εₚ has the units of
+/// φᵖ; `p` outside 3..=5 is taken as 3.
+#[inline(always)]
+pub fn nishikawa_psi<T: Real>(dplus: T, dminus: T, eps_p: T, p: u32) -> T {
+    let a = dplus.abs();
+    let b = dminus.abs();
+    let two = T::from_f64(2.0);
+    if a > two * b {
+        return T::ONE;
+    }
+    let (ap, ap1, s) = match p {
+        4 => {
+            let a2 = a * a;
+            (a2 * a2, a2 * a, two * b * (a2 - two * b * (a - two * b)))
+        }
+        5 => {
+            let a2 = a * a;
+            (
+                a2 * a2 * a,
+                a2 * a2,
+                T::from_f64(8.0) * b * b * (a2 - two * b * (a - b)),
+            )
+        }
+        _ => (a * a * a, a * a, T::from_f64(4.0) * b * b),
+    };
+    let num = ap + eps_p + a * s;
+    let den = ap + eps_p + b * (ap1 + s);
+    if den > T::ZERO {
+        (num / den).max_of(T::ZERO).min_of(T::ONE)
+    } else {
+        T::ONE
+    }
+}
+
+/// Minimum and maximum over the multi-dimensional limiting stencil of
+/// vertex `v` (Park & Kim 2012, the MLP condition): the values of the cells
+/// that share the vertex (`vert_ptr`, `vert_cells`) and the boundary values
+/// of the boundary faces that contain it (`bface_ptr`, `bfaces`, indices of
+/// boundary faces).
+///
+/// # Safety
+/// The lists are consistent CSR arrays of the mesh; `phi` has an entry per
+/// cell, the boundary arrays one per boundary face and `topo.owner` one per
+/// face.
+#[inline(always)]
+#[allow(clippy::too_many_arguments)]
+pub unsafe fn vertex_bounds<T: Real>(
+    v: usize,
+    vert_ptr: &[u32],
+    vert_cells: &[u32],
+    bface_ptr: &[u32],
+    bfaces: &[u32],
+    topo: &Topology,
+    phi: &[T],
+    bc: &Boundary<T>,
+) -> (T, T) {
+    // SAFETY: guaranteed by the caller.
+    unsafe {
+        let lo = ld(vert_ptr, v) as usize;
+        let hi = ld(vert_ptr, v + 1) as usize;
+        if lo >= hi {
+            // a vertex of no cell (no cell reads its bounds)
+            return (T::ZERO, T::ZERO);
+        }
+        let first = ld(phi, ld(vert_cells, lo) as usize);
+        let (mut mn, mut mx) = (first, first);
+        let mut k = lo + 1;
+        while k < hi {
+            let x = ld(phi, ld(vert_cells, k) as usize);
+            mn = mn.min_of(x);
+            mx = mx.max_of(x);
+            k += 1;
+        }
+        let lo = ld(bface_ptr, v) as usize;
+        let hi = ld(bface_ptr, v + 1) as usize;
+        k = lo;
+        while k < hi {
+            let fb = ld(bfaces, k) as usize;
+            let p = ld(topo.owner, topo.n_interior + fb) as usize;
+            let x = bc.value(fb, ld(phi, p));
+            mn = mn.min_of(x);
+            mx = mx.max_of(x);
+            k += 1;
+        }
+        (mn, mx)
+    }
+}
+
+/// The limiter function of [`mlp_limiter`].
+pub const MLP_BARTH_JESPERSEN: u32 = 0;
+/// [`venkat_psi`] with ε² = `eps`².
+pub const MLP_VENKATAKRISHNAN: u32 = 2;
+
+/// Limiter value ψ_c of cell `c` with the multi-dimensional limiting
+/// process (MLP, Park & Kim 2012): the linear reconstruction at each vertex
+/// v of the cell, Δ₋ = ∇φ_c·(x_v − x_c), is held inside the bounds of the
+/// vertex ([`vertex_bounds`], `vmin`, `vmax`), Δ₊ = φ_v^max − φ_c or
+/// φ_v^min − φ_c, with the limiter function `func`
+/// ([`MLP_BARTH_JESPERSEN`], [`MLP_VENKATAKRISHNAN`] or 3, 4, 5 for
+/// [`nishikawa_psi`]) and the threshold `eps` in the units of φ (ε of the
+/// solution, Wang 2000: dimensionally consistent on any mesh size), εₚ =
+/// epsᵖ; with a factor per cell `eps_cell` (not empty) ε_c = eps ·
+/// eps_cell\[c\], which lets ε shrink with the cell size (Moe et al. 2015,
+/// Setzwein et al. 2026). The stencil of the vertices bounds the face values of every
+/// neighbour that sees the cell, so a local extremum does not grow (LED in
+/// multi-dimensions, Park & Kim 2012).
+///
+/// # Safety
+/// `cell_ptr`/`cell_verts` are a consistent CSR array of the vertices of
+/// every cell, `points` and `vmin`/`vmax` have an entry per vertex, `phi`,
+/// `grad`, `cell_centroid` one per cell.
+#[inline(always)]
+#[allow(clippy::too_many_arguments)]
+pub unsafe fn mlp_limiter<T: Real>(
+    c: usize,
+    cell_ptr: &[u32],
+    cell_verts: &[u32],
+    points: &Vec3<T>,
+    vmin: &[T],
+    vmax: &[T],
+    phi: &[T],
+    grad: &Vec3<T>,
+    cell_centroid: &Vec3<T>,
+    func: u32,
+    eps: T,
+    eps_cell: &[T],
+) -> T {
+    // SAFETY: guaranteed by the caller.
+    unsafe {
+        let eps = if eps_cell.is_empty() {
+            eps
+        } else {
+            eps * ld(eps_cell, c)
+        };
+        let pc = ld(phi, c);
+        let g = grad.at(c);
+        let xc = cell_centroid.at(c);
+        let e2 = eps * eps;
+        let ep = match func {
+            4 => e2 * e2,
+            5 => e2 * e2 * eps,
+            _ => e2 * eps,
+        };
+        let lo = ld(cell_ptr, c) as usize;
+        let hi = ld(cell_ptr, c + 1) as usize;
+        let mut psi = T::ONE;
+        let mut k = lo;
+        while k < hi {
+            let v = ld(cell_verts, k) as usize;
+            let dm = dot(g, sub(points.at(v), xc));
+            let dp = if dm > T::ZERO {
+                ld(vmax, v) - pc
+            } else {
+                ld(vmin, v) - pc
+            };
+            let p = if dm == T::ZERO {
+                T::ONE
+            } else {
+                match func {
+                    MLP_BARTH_JESPERSEN => barth_jespersen_psi(dp, dm),
+                    MLP_VENKATAKRISHNAN => venkat_psi(dp, dm, e2),
+                    _ => nishikawa_psi(dp, dm, ep, func),
+                }
+            };
+            psi = psi.min_of(p);
+            k += 1;
+        }
+        psi
+    }
+}
+
 /// Limiter value ψ_c of cell `c`: the minimum of [`venkat_psi`] over its
 /// faces, with the bounds φ_min, φ_max from the cell and its face
 /// neighbours (boundary faces count with their face value).
@@ -230,6 +420,8 @@ pub fn venkat_psi<T: Real>(dplus: T, dminus: T, eps2: T) -> T {
 /// `eps2` is ε² per cell (Venkatakrishnan: (K h_c)³ with h_c the cube root
 /// of the cell volume), or a single value when `eps2.len() == 1`
 /// (Venkatakrishnan–Wang: ε² = (K' (φ_max − φ_min)_domain)², Wang 2000).
+/// A single negative value selects Barth–Jespersen (Barth & Jespersen
+/// 1989): ψ = min(1, Δ₊/Δ₋) per face, [`barth_jespersen_psi`].
 ///
 /// # Safety
 /// As [`lsq_gradient`]; `grad` and `cell_centroid` have an entry for `c`,
@@ -282,9 +474,17 @@ pub unsafe fn venkat_limiter<T: Real>(
             let (f, _) = unpack_face(ld(topo.cell_faces, k));
             let dm = dot(g, sub(face_centroid.at(f), xc));
             let p = if dm > T::ZERO {
-                venkat_psi(mx - pc, dm, e2)
+                if e2 < T::ZERO {
+                    barth_jespersen_psi(mx - pc, dm)
+                } else {
+                    venkat_psi(mx - pc, dm, e2)
+                }
             } else if dm < T::ZERO {
-                venkat_psi(mn - pc, dm, e2)
+                if e2 < T::ZERO {
+                    barth_jespersen_psi(mn - pc, dm)
+                } else {
+                    venkat_psi(mn - pc, dm, e2)
+                }
             } else {
                 T::ONE
             };
@@ -341,6 +541,29 @@ pub struct FaceInputs<'a, T> {
     /// Limit of the non-orthogonal correction as a multiple of the
     /// orthogonal part (Jasak 1996); a negative value means no limit.
     pub nonorth_limit: T,
+    /// 1 to clip the linear-upwind face value to the interval of the two
+    /// cell values of the face, 0 to leave it ([`clip_increment`]).
+    pub bound: T,
+}
+
+/// The linear-upwind increment `ho` = φ_f − φ_U clipped so that the face
+/// value lies between the upwind and downwind values (`diff` = φ_D − φ_U):
+/// the convection boundedness criterion of the normalised-variable
+/// schemes (Gaskell & Lau 1988; Jasak, Weller & Gosman 1999) applied to
+/// the face value of the reconstruction. A limiter alone bounds the face
+/// value by the neighbourhood of the upwind cell, which on a
+/// multi-dimensional mesh reaches cells that are not neighbours of the
+/// downwind one; with the clip an inflow face never carries a value beyond
+/// that of the receiving cell, so the converged cell values make no new
+/// extrema (with a limiter that vanishes at a local extremum).
+/// `bound` ≤ 0 leaves `ho` unchanged.
+#[inline(always)]
+pub fn clip_increment<T: Real>(ho: T, diff: T, bound: T) -> T {
+    if bound <= T::ZERO {
+        ho
+    } else {
+        ho.max_of(diff.min_of(T::ZERO)).min_of(diff.max_of(T::ZERO))
+    }
 }
 
 /// With bounding (β > 0) the central value `c` clipped to the interval of
@@ -418,9 +641,11 @@ pub unsafe fn face_coefficients<T: Real>(f: usize, inp: &FaceInputs<T>) -> (T, T
             let phi_n = inp.bc.across(f, t, ld(inp.phi, n));
             // linear-upwind deferred correction ṁ (φ_f − φ_U)
             let ho = if m >= T::ZERO {
-                ld(inp.psi, p) * dot(gp, sub(xf, inp.cell_centroid.at(p)))
+                let ho = ld(inp.psi, p) * dot(gp, sub(xf, inp.cell_centroid.at(p)));
+                clip_increment(ho, phi_n - phi_p, inp.bound)
             } else {
-                ld(inp.psi, n) * dot(gn, sub(xf, xn))
+                let ho = ld(inp.psi, n) * dot(gn, sub(xf, xn));
+                clip_increment(ho, phi_p - phi_n, inp.bound)
             };
             let w = ld(inp.weight, f);
             let wn = T::ONE - w;
@@ -467,7 +692,11 @@ pub unsafe fn face_coefficients<T: Real>(f: usize, inp: &FaceInputs<T>) -> (T, T
             let a = ld(inp.bc.a, fb);
             let bb = ld(inp.bc.b, fb);
             let one_a = T::ONE - a;
-            let ho = ld(inp.psi, p) * dot(gp, sub(xf, inp.cell_centroid.at(p)));
+            let ho = clip_increment(
+                ld(inp.psi, p) * dot(gp, sub(xf, inp.cell_centroid.at(p))),
+                inp.bc.value(fb, phi_p) - phi_p,
+                inp.bound,
+            );
             let corr = gam * dot(kf, gp);
             let orth = dd * (inp.bc.value(fb, phi_p) - phi_p);
             // the central fraction takes the boundary value as the face
@@ -584,5 +813,61 @@ pub unsafe fn assemble_row<T: Real>(
         *val.add(layout.pos(c, 0)) = dr;
         *rhs.add(c) = b;
         *dinv.add(c) = T::ONE / dr;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_clip_keeps_the_face_value_between_the_cells() {
+        // off: the high-order increment as it is
+        assert_eq!(clip_increment(0.7, 0.5, 0.0), 0.7);
+        // inside [0, diff]
+        assert_eq!(clip_increment(0.3, 0.5, 1.0), 0.3);
+        // past the downwind cell, either sign
+        assert_eq!(clip_increment(0.7, 0.5, 1.0), 0.5);
+        assert_eq!(clip_increment(-0.7, -0.5, 1.0), -0.5);
+        // against the upwind direction: back to the upwind value
+        assert_eq!(clip_increment(-0.2, 0.5, 1.0), 0.0);
+    }
+
+    #[test]
+    fn barth_jespersen_is_the_ratio_clipped_to_one() {
+        assert_eq!(barth_jespersen_psi(0.25, 1.0), 0.25);
+        assert_eq!(barth_jespersen_psi(3.0, 1.0), 1.0);
+        assert_eq!(barth_jespersen_psi(-0.5, -1.0), 0.5);
+        assert_eq!(barth_jespersen_psi(0.0, 1.0), 0.0);
+    }
+
+    /// Nishikawa's R3, R4 and R5 without ε: bounded (ψ y⁻¹ ≤ 1, so the
+    /// reconstruction stays inside the bound), one from y = 2 on and
+    /// differentiable there, below Barth–Jespersen at y = 1.
+    #[test]
+    fn nishikawa_functions_are_bounded_and_smooth() {
+        for (p, at_one) in [(3, 5.0 / 6.0), (4, 0.875), (5, 0.9)] {
+            let psi = |y: f64| nishikawa_psi(y, 1.0, 0.0, p);
+            for i in 1..=3000 {
+                let y = i as f64 * 1e-3;
+                let v = psi(y);
+                assert!((0.0..=1.0).contains(&v), "R{p} ψ({y}) = {v}");
+                assert!(v <= y + 1e-15, "R{p} ψ({y}) = {v} > y");
+                if y > 2.0 {
+                    assert_eq!(v, 1.0);
+                }
+            }
+            assert!(
+                (psi(1.0) - at_one).abs() < 1e-12,
+                "R{p} ψ(1) = {}",
+                psi(1.0)
+            );
+            let slope = (psi(2.0) - psi(2.0 - 1e-4)) / 1e-4;
+            assert!(slope.abs() < 1e-4, "R{p} slope at 2: {slope}");
+            // the signs of Δ₊, Δ₋ do not matter, ε > 0 keeps ψ in [0, 1]
+            assert_eq!(nishikawa_psi(-0.5, -1.0, 0.0, p), psi(0.5));
+            let v = nishikawa_psi(0.0, 1.0, 1e-3, p);
+            assert!(v > 0.0 && v < 1e-2, "R{p} {v}");
+        }
     }
 }

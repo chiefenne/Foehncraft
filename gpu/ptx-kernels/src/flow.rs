@@ -30,6 +30,8 @@ entries! {
     flow_scale_vector => e::ScaleVector,
     flow_schur_diagonal => e::SchurDiagonal,
     flow_product => e::Product,
+    flow_vertex_bounds => e::VertexBounds,
+    flow_mlp_limiter => e::MlpLimiter,
     flow_pseudo_coefficient => e::PseudoCoefficient,
     flow_fill => e::Fill,
     flow_subtract => e::Subtract,

@@ -45,7 +45,7 @@ A boundary condition is required for every boundary.
 | `solver.scheme` | `"linear-upwind"` | `upwind`, `linear-upwind` or `central` (bounded central, D25) |
 | `solver.central_blending` | 1 | with `central`: share c of the bounded central correction; the rest, 1 − c, is linear upwind |
 | `solver.central_bounding` | 0.1 | with `central`: β of the normalised-variable bound (central where φ̃_U ≥ β, blended towards upwind below, upwind outside (0, 1)); 0 for plain central |
-| `solver.limiter` | `"none"` | `none`, `venkatakrishnan`, `venkatakrishnan-wang` |
+| `solver.limiter` | `"none"` | `none`, `venkatakrishnan`, `venkatakrishnan-wang`, `barth-jespersen` (ψ = min(1, Δ₊/Δ₋), strictly bounded) |
 | `solver.limiter_k` | 5.0 | K: ε² = (K h)³ (Venkatakrishnan) or ε = K (φ_max − φ_min) (Venkatakrishnan–Wang); 0 for strictly bounded |
 | `solver.nonorth_correction` | true | non-orthogonal diffusion correction |
 | `solver.nonorth_limit` | −1 | limit of that correction as a multiple of the orthogonal part (negative: none) |

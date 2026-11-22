@@ -783,6 +783,115 @@ impl Entry for Limiter {
     }
 }
 
+/// Arguments of [`VertexBounds`] and [`MlpLimiter`] (the
+/// multi-dimensional limiting process, Park & Kim 2012).
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct MlpArgs {
+    /// Mesh (topology, cell centroids).
+    pub m: Mesh,
+    /// Start of the cells of each vertex (one more entry than vertices).
+    pub vert_ptr: Raw<u32>,
+    /// The cells of the vertices.
+    pub vert_cells: Raw<u32>,
+    /// Start of the boundary faces of each vertex.
+    pub bface_ptr: Raw<u32>,
+    /// The boundary faces (boundary face indices) of the vertices.
+    pub bfaces: Raw<u32>,
+    /// Start of the vertices of each cell.
+    pub cell_ptr: Raw<u32>,
+    /// The vertices of the cells.
+    pub cell_verts: Raw<u32>,
+    /// Vertex coordinates.
+    pub points: Raw3,
+    /// Cell values.
+    pub phi: Raw<f64>,
+    /// Boundary coefficient a.
+    pub bc_a: Raw<f64>,
+    /// Boundary constant b.
+    pub bc_b: Raw<f64>,
+    /// Gradient.
+    pub grad: Raw3,
+    /// Bounds per vertex (written by [`VertexBounds`]).
+    pub vmin: Raw<f64>,
+    /// Bounds per vertex.
+    pub vmax: Raw<f64>,
+    /// Limiter function ([`fv::mlp_limiter`]).
+    pub func: u64,
+    /// Threshold ε in the units of φ.
+    pub eps: f64,
+    /// Factor of ε per cell (empty: none).
+    pub eps_cell: Raw<f64>,
+    /// Relaxation β of ψ between calls, ψ ← ψ + β (ψ_new − ψ) (1: the new
+    /// value).
+    pub relax: f64,
+    /// Output ψ per cell (read as the last ψ when `relax` < 1).
+    pub out: Raw<f64>,
+}
+
+/// The bounds of every vertex over its MLP stencil ([`fv::vertex_bounds`]).
+pub struct VertexBounds;
+impl Entry for VertexBounds {
+    type Args = MlpArgs;
+    const NAME: &'static str = "vertex_bounds";
+    #[inline(always)]
+    unsafe fn run(v: usize, a: &MlpArgs) {
+        // SAFETY: guaranteed by the caller; index v only.
+        unsafe {
+            let bc = Boundary {
+                a: a.bc_a.get(),
+                b: a.bc_b.get(),
+                jump: &[],
+            };
+            let (mn, mx) = fv::vertex_bounds(
+                v,
+                a.vert_ptr.get(),
+                a.vert_cells.get(),
+                a.bface_ptr.get(),
+                a.bfaces.get(),
+                &a.m.topo(),
+                a.phi.get(),
+                &bc,
+            );
+            *a.vmin.out().add(v) = mn;
+            *a.vmax.out().add(v) = mx;
+        }
+    }
+}
+
+/// The MLP limiter of cell `c` ([`fv::mlp_limiter`]).
+pub struct MlpLimiter;
+impl Entry for MlpLimiter {
+    type Args = MlpArgs;
+    const NAME: &'static str = "mlp_limiter";
+    #[inline(always)]
+    unsafe fn run(c: usize, a: &MlpArgs) {
+        // SAFETY: guaranteed by the caller; index c only.
+        unsafe {
+            let psi = fv::mlp_limiter(
+                c,
+                a.cell_ptr.get(),
+                a.cell_verts.get(),
+                &a.points.v(),
+                a.vmin.get(),
+                a.vmax.get(),
+                a.phi.get(),
+                &a.grad.v(),
+                &a.m.cell_centroid.v(),
+                a.func as u32,
+                a.eps,
+                a.eps_cell.get(),
+            );
+            let o = a.out.out().add(c);
+            *o = if a.relax < 1.0 {
+                *o + a.relax * (psi - *o)
+            } else {
+                psi
+            };
+        }
+    }
+}
+
 /// Arguments of [`MassFlux`].
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
@@ -1522,6 +1631,8 @@ pub struct ScalarFaceArgs {
     pub nonorth: f64,
     /// Limit of the non-orthogonal correction (< 0: none).
     pub nonorth_limit: f64,
+    /// 1: linear-upwind face values between the two cell values.
+    pub bound: f64,
     /// Output c_P.
     pub cp: Raw<f64>,
     /// Output c_N.
@@ -1562,6 +1673,7 @@ impl Entry for ScalarFaces {
                 beta: a.beta,
                 nonorth: a.nonorth,
                 nonorth_limit: a.nonorth_limit,
+                bound: a.bound,
             };
             let (cp, cn, b) = fv::face_coefficients(f, &inp);
             *a.cp.out().add(f) = cp;
@@ -3031,6 +3143,7 @@ send_sync!(
     BoundaryValuesArgs,
     GradientArgs,
     LimiterArgs,
+    MlpArgs,
     MassFluxArgs,
     MomentumFaceArgs,
     MomentumRowArgs,
@@ -3059,13 +3172,15 @@ send_sync!(
 );
 
 /// Names of all entries (the PTX module has `flow_<name>` for each).
-pub const NAMES: [&str; 55] = [
+pub const NAMES: [&str; 57] = [
     Lincomb::NAME,
     ScaledDifference::NAME,
     SquaresAdd::NAME,
     ScaleVector::NAME,
     SchurDiagonal::NAME,
     Product::NAME,
+    VertexBounds::NAME,
+    MlpLimiter::NAME,
     PseudoCoefficient::NAME,
     Fill::NAME,
     Subtract::NAME,
@@ -3137,6 +3252,7 @@ mod tests {
             size_of::<BoundaryValuesArgs>(),
             size_of::<GradientArgs>(),
             size_of::<LimiterArgs>(),
+            size_of::<MlpArgs>(),
             size_of::<MassFluxArgs>(),
             size_of::<MomentumFaceArgs>(),
             size_of::<MomentumRowArgs>(),
@@ -3234,7 +3350,7 @@ mod tests {
             unsafe { Product::run(i, &a) };
         }
         assert_eq!(z, [-4.0, -16.0, -36.0]);
-        assert_eq!(NAMES.len(), 55);
+        assert_eq!(NAMES.len(), 57);
         // the elliptic-blending helpers: out += |v|², out3 = s v
         let (vx, vy, vz) = ([1.0, 0.0], [2.0, -3.0], [2.0, 4.0]);
         let s = [0.5, -2.0];

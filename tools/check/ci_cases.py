@@ -46,7 +46,7 @@ FLOW = {
         "taylor_green_error", "cylinder_potential", "cavity_re100_budget", "taylor_green_bdf2",
         "taylor_green_cn", "poiseuille_mixed", "cavity_re100_transient", "taylor_green_space",
         "cavity_re100_poly3d", "cavity_re100_tet3d", "pipe_wedge", "poiseuille_expression",
-        "taylor_green_expression", "channel_ramp", "scalar_front_bdf2",
+        "taylor_green_expression", "channel_ramp", "scalar_front_bdf2", "scalar_oblique_step_mlp",
         "poiseuille_periodic", "channel_heated_periodic", "pipe_heated_periodic",
         "pipe_rough_keps", "backstep_zeta_f0_coupled", "backstep_validation",
         "pipe_heated_keps", "plate_heated_keps", "jet_pipe_profile", "taylor_couette_mrf",

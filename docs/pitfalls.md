@@ -18,6 +18,7 @@ instead.
 - [Counts a file declares](#declared-counts)
 - [Reference numbers of other solvers](#other-solver-numbers)
 - [Coupling loops: the solid must see the flow's response](#coupling-loops)
+- [Limiters on tetrahedra and polyhedra](#limiters)
 
 <a id="steady-runs"></a>
 ## Steady runs: budget and stopping
@@ -324,3 +325,27 @@ Three more from the frozen-flow march (#208):
   the march that the flow follows the temperature; an expression string
   of T made the march hold the flow once and never refresh it. Use a
   form.
+
+<a id="limiters"></a>
+## Limiters on tetrahedra and polyhedra
+
+Found with the vertex limiter of D237 (#211):
+- **A face limiter does not keep a scalar bounded on tetrahedra.** Linear
+  upwind with Venkatakrishnan or Barth–Jespersen keeps a face value in
+  the range of the face neighbours of the upwind cell, not of the cell it
+  flows into. The air of the heat exchanger reached 12.6 K above its
+  inlet temperature with Venkatakrishnan and 44 K with Barth–Jespersen;
+  a bounded oblique step on polyhedra stays bounded with Barth–Jespersen,
+  so one mesh type proves nothing. Look at the extremes of the report
+  against the boundary values on the real mesh.
+- **A strictly bounded limiter stalls a steady run.** With ε = 0, the
+  Barth–Jespersen function at the vertices or a per-cell ε that shrinks
+  with the mesh, the limiter value of a few cells in a mixing layer
+  switches every outer iteration and the scalar residual stops between
+  10⁻⁵ and 10⁻³ while the flow has converged (T-junction). Keep ε at
+  about 1 % of the range and relax ψ (`limiter_relaxation`).
+- **A limiter that wins on bounds can lose on a grid study.** The vertex
+  limiter clips smooth extrema within ε: the T-junction's scalar
+  difference on the coarse mesh drops by a third, and the two cases with
+  an exact smooth solution move away from it. Do not switch a default on
+  a sharp-front case alone; run the smooth ones too.
