@@ -741,3 +741,26 @@ target/release/foehn flow examples/cases/flow/backstep_outlet_backflow.toml
 ```
 
 [↑ back to top](#turbulence-models)
+
+---
+
+<a id="pipe-turbulent"></a>
+## 193. Run a turbulent pipe and check its friction
+
+Use the wedge pipe (recipe 71) with a periodic module and `low-re`:
+
+```
+target/release/foehn flow examples/cases/flow/pipe_turbulent_sst.toml --out output/pipe
+grep "periodic xmin" output/pipe/flow.log
+```
+
+With the body force F of the log, u_τ = √(F R/2ρ) (ρ = 1, R = 0.5 m),
+u_τ/U_b with U_b = 1 and C_f = 2 (u_τ/U_b)²; Re_τ = u_τ R/ν. The case
+gives u_τ/U_b of 0.0711 on 96 cells (DNS 0.0683). For the grid-convergence
+study (observed order, extrapolated value, GCI_fine after Celik et al.
+2008) run `python3 examples/studies/pipe_gci.py output/pipe_gci`; it
+refines across the radius only, the solution does not depend on x. Steady
+wall-resolved runs need `solver.momentum.relaxation = 0.95` here, and
+judge convergence by u_τ, not by the residual alone.
+
+[↑ back to top](#turbulence-models)
