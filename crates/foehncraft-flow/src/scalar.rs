@@ -1867,12 +1867,11 @@ impl Scalars {
         };
         let t = dev.download(f.phi)?;
         let mut out = vec![(0.0, 0.0, 0.0); e.regions.len()];
-        for c in 0..e.mat_cell.len() {
-            let m = e.mat_cell[c] as usize;
-            let v = e.volume[c];
+        for (((&m, &v), &cp), &tc) in e.mat_cell.iter().zip(&e.volume).zip(&e.cp_cell).zip(&t) {
+            let m = m as usize;
             out[m].0 += v;
-            out[m].1 += e.mats[m].rho * e.cp_cell[c] * v;
-            out[m].2 += t[c] * v;
+            out[m].1 += e.mats[m].rho * cp * v;
+            out[m].2 += tc * v;
         }
         for o in &mut out {
             if o.0 > 0.0 {

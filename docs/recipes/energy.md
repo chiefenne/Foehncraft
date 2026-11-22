@@ -9,6 +9,7 @@ Part of the [Recipes](../recipes.md): the energy equation of the fluid (stage 7,
 | 158 | [Couple a turbulent flow with a solid (turbulent conjugate heat transfer)](#cht-turbulent) |
 | 159 | [Follow how a solid and a fluid heat up together (transient conjugate heat transfer)](#cht-transient) |
 | 160 | [Put a contact resistance between two parts, orient an orthotropic solid, heat a component](#cht-contact) |
+| 180 | [Bring the solids of a transient conjugate run to their state sooner (thermal acceleration)](#cht-acceleration) |
 
 ---
 
@@ -326,7 +327,9 @@ target/release/foehn flow examples/cases/flow/cht_contact_transient.toml --out o
 conjugate run yet, and the turbulence fields are not written on the whole
 mesh. A periodic flow whose solid only follows the cycle-average (an
 exhaust manifold over an engine cycle) is the cycle-averaged coupling of
-D204, which comes later; until then such a case runs the full transient.
+D204, which comes later; until then such a case runs the full transient,
+with the thermal acceleration of recipe 180 to bring the solids to their
+cycle-mean state sooner.
 
 <a id="cht-contact"></a>
 ## 160. Put a contact resistance between two parts, orient an orthotropic solid, heat a component
@@ -431,3 +434,81 @@ with heat capacity, layers and in-plane conduction (D189), fluid–fluid
 walls, and the entropy production of a contact resistance in the
 second-law check come later. Periodic meshes with solids (the thick-walled
 channel of V7.10) are not yet possible (ENE006).
+
+<a id="cht-acceleration"></a>
+## 180. Bring the solids of a transient conjugate run to their state sooner (thermal acceleration)
+
+A solid warms up with its time constant, often minutes, while the flow
+settles in seconds or follows a cycle of milliseconds; a transient run
+that only needs the operating point (a steady state, or the cycle mean
+of a periodic flow) spends most of its steps waiting for the solid. The
+steady temperatures of a solid do not depend on its ρ c_p, so the run can
+scale ρ c_p of the solids down until they have settled, and then give it
+back (D213):
+
+```toml
+[energy.acceleration]
+inertia_scale = "auto"     # or a factor 0 < f <= 1
+# regions = ["wall"]       # default: every solid region
+# restore = "settled"      # or a time in s at which the restore starts
+# period = 0.04            # s, of a periodic flow: a window is one period
+# window_steps = 10        # without a period: steps per window
+# settle_tolerance = 1e-3  # change still to come, of the solids' rise
+# restore_ramp = 3         # windows over which f rises back to 1 (3 with a period, 0 without)
+# target_windows = 2       # auto: scaled time constant (2 with a period, 1 without)
+# settle_windows = 2       # windows after the restore before the history counts as physical
+```
+
+**What happens.** With a factor, the solids run with f ρ c_p from the
+first step. With `"auto"`, the first window runs with the true ρ c_p;
+at its end the run measures each solid region's conductance G to the rest
+(the change of its interface heat flow when it is 1 K warmer, from two
+steady solves of the energy equation with every solid held and the flow as
+it is, plus its outer boundaries with a temperature or a convection
+condition), its true heat capacity C and its time constant τ = C/G, and
+sets f = (target windows × window)/τ, at least 10⁻⁴. τ leaves out the
+conduction inside the solid (a small Biot number); where it matters, the
+acceleration is milder than asked for, never stronger. Every window the
+run checks whether the solids' window-mean temperatures have settled; then
+the true ρ c_p comes back: at once without a period (exact, the flow is
+not periodic), raised geometrically over `restore_ramp` periods with a
+period (a jump would leave the part of the accelerated swing that the
+solid had at that moment in its deep temperature, where it decays only
+with the true time constant; gallery 180).
+
+**What is exact and what is not.** The steady state and the cycle mean of
+a periodic flow are those of the true solid (to the settle tolerance;
+the cycle mean to second order in the swing through h(T_w), μ(T) and
+radiation). The history before the restore is not physical: the solids'
+time runs 1/f times faster, and in a periodic flow their skin depth and
+surface swing are 1/√f too large while accelerated (ACC003 when the skin
+reaches through the region). The result gives `physical_from`, the restore
+time plus `settle_windows` windows; use only what comes after it for
+cycle averages, swings and histories. A run that ends before the restore
+warns (ACC002).
+
+**The output.**
+- `heat.csv`: the column `inertia_scaling`, the heat the true ρ c_p would
+  have stored in addition (W): storage + inertia_scaling is the storage of
+  the true solids; the balance of the solved equation (`imbalance`) closes
+  as without acceleration.
+- the report, `transient.acceleration`: per region the factor, C, the
+  measured G and τ (auto), the skin depth and thickness (with a period) and
+  the heat booked as inertia scaling over the run (J); the times of the
+  measurement, of the settling, of the start and end of the restore,
+  `physical_from` and `history_physical`.
+- the log and the run record: one ACC004 line for every step of it.
+
+```
+target/release/foehn flow examples/cases/flow/cht_heated_wall_accelerated.toml --out output/acc
+target/release/foehn flow examples/cases/flow/cht_heated_wall_periodic_accelerated.toml --out output/per
+```
+
+**When not to use it.** A steady conjugate run has no ρ c_p of a solid in
+its equations: nothing to accelerate (ACC001). When the heat-up history
+itself is wanted (a component warming in a steady cooling flow, a drive
+cycle), the solids must keep their true ρ c_p; the frozen-flow march of
+D118, which keeps the true history with large steps, comes later. For an
+exhaust manifold over many engine cycles the cycle-averaged loop of D204
+(also later) solves the solid steady with the cycle-averaged heat transfer:
+the limit f → 0 of this acceleration, without the swing.

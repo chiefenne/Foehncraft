@@ -758,6 +758,21 @@
    "range": {}
   },
   {
+   "id": "cht.thermal-acceleration",
+   "title": "Thermal acceleration of solids (scaled ρ c_p, restored)",
+   "grade": "partial",
+   "why": [
+    "no exact or manufactured solution",
+    "gaps written"
+   ],
+   "gaps": [
+    "the automatic factor leaves the conduction inside the solid out of the time constant (milder acceleration at large Biot numbers)",
+    "no case with several solids of very different time constants",
+    "the skin check uses the region's V/A, not the local wall thickness"
+   ],
+   "range": {}
+  },
+  {
    "id": "cht.turbulent",
    "title": "Conjugate heat transfer with a turbulence model",
    "grade": "partial",

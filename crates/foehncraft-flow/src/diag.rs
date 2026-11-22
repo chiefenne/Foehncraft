@@ -215,6 +215,7 @@ codes! {
     LIM_NOT_SETTLED = "LIM003", Note, "A steady solve that stopped before its tolerance (iteration limit): the result may still change with more iterations.";
     LIM_ONE_MESH = "LIM004", Note, "One mesh only: the discretisation uncertainty is not estimated (a level sweep gives the GCI, D67).";
     LIM_DEVICE = "LIM005", Note, "The GPU backend ran on a device that is not in the list of verified devices (Tesla T4 so far).";
+    LIM_ACCELERATED = "LIM007", Note, "A transient conjugate run with thermal acceleration of its solids (D213): the history before `physical_from` is not physical (the solids' time ran faster, their swing was too large); the end state and later cycle means are.";
     LIM_REMEDIATION = "LIM006", Note, "Automatic mesh remediation (D50, MESH002) changed the schemes on poor faces: first order there.";
     // the tool registry (D196)
     TOOL_UNKNOWN = "TOOL001", Error, "A tool id that the registry does not have (with the nearest id as a hint); `foehn commands` lists them.";

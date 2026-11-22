@@ -134,8 +134,10 @@ pub struct Acceleration {
     #[serde(default = "default_window_steps")]
     pub window_steps: u32,
     /// Settled when, for every accelerated region, the change of its
-    /// window-mean temperature from one window to the next is below this
-    /// fraction of its change since the start (default 1e-3).
+    /// window-mean temperature still to come (extrapolated geometrically
+    /// from the changes of the last two windows) and the change of the
+    /// last window are below this fraction of its change since the start
+    /// (default 1e-3).
     #[serde(default = "default_settle_tolerance")]
     pub settle_tolerance: f64,
     /// Windows over which f rises geometrically to 1 (default 3 with a

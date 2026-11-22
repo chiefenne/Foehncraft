@@ -137,6 +137,7 @@ pub struct Controller {
     /// The mean temperatures at the start and of the last window.
     start: Vec<f64>,
     prev: Option<Vec<f64>>,
+    prev2: Option<Vec<f64>>,
     /// The last window length (s).
     window: f64,
     sum: AccelerationSummary,
@@ -176,6 +177,7 @@ impl Controller {
             acc_windows: 0,
             start,
             prev: None,
+            prev2: None,
             window: cfg.period.unwrap_or(0.0),
             sum: AccelerationSummary {
                 mode: if fixed.is_some() { "factor" } else { "auto" }.into(),
@@ -298,19 +300,32 @@ impl Controller {
             Phase::Accelerated => {
                 self.acc_windows += 1;
                 if self.cfg.restore_time().is_none()
-                    && self.acc_windows >= 2
-                    && let Some(prev) = &self.prev
+                    && self.acc_windows >= 3
+                    && let (Some(prev), Some(prev2)) = (&self.prev, &self.prev2)
                 {
+                    // the change still to come, extrapolated geometrically
+                    // from the last two window changes (Aitken's Δ²),
+                    // against the rise since the start
                     let tol = self.cfg.settle_tolerance;
-                    let settled = mean.iter().zip(prev).zip(&self.start).all(|((m, p), s)| {
-                        let total = (m - s).abs().max(1e-12 * m.abs());
-                        (m - p).abs() <= tol * total
+                    let settled = (0..mean.len()).all(|i| {
+                        let (d1, d0) = (mean[i] - prev[i], prev[i] - prev2[i]);
+                        let total = (mean[i] - self.start[i]).abs().max(1e-12 * mean[i].abs());
+                        let ratio = if d0 != 0.0 { d1 / d0 } else { 0.0 };
+                        let rest = if (0.0..1.0).contains(&ratio) {
+                            d1.abs() * ratio / (1.0 - ratio)
+                        } else if d1 == 0.0 {
+                            0.0
+                        } else {
+                            f64::INFINITY
+                        };
+                        rest <= tol * total && d1.abs() <= tol * total
                     });
                     if settled {
                         self.sum.settled_at = Some(t);
                         lines.push(format!(
-                            "thermal acceleration: the solids have settled at t = {t:.6e} s \
-                             (window-mean temperatures change by less than {:e} of their rise)",
+                            "thermal acceleration: the solids have settled at t = {t:.6e} s (the \
+                             change still to come of the window-mean temperatures is below {:e} \
+                             of their rise)",
                             tol
                         ));
                         self.start_restore(t, lines);
@@ -322,6 +337,7 @@ impl Controller {
             }
             _ => {}
         }
+        self.prev2 = self.prev.take();
         self.prev = Some(mean);
         Ok(())
     }

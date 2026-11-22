@@ -16,7 +16,8 @@
 > [What works today](#what-works-today) lists what is on `main` now. Stage 7 is
 > under way: the energy equation of the fluid and conjugate heat transfer
 > with solid regions, steady and transient, laminar and turbulent, with
-> contact resistances and orthotropic solids, are in; buoyancy and
+> contact resistances, orthotropic solids and thermal acceleration of the
+> solids, are in; buoyancy and
 > variable density come later.
 
 [![CI](https://github.com/chiefenne/Foehncraft/actions/workflows/ci.yml/badge.svg)](https://github.com/chiefenne/Foehncraft/actions/workflows/ci.yml)
@@ -113,7 +114,12 @@ validated range, one mesh only, …) in its report and its JSON result.
   interfaces a piecewise-linear temperature is exact on a skewed mesh (a
   rotated laminate, a fluid and a block behind a contact resistance, to
   3·10⁻¹¹ K); a chip on a thermal pad on a circuit board with copper
-  planes is the gallery example.
+  planes is the gallery example. Thermal acceleration of the solids
+  (`[energy.acceleration]`): ρ c_p of the solids is scaled down until they
+  settle (the factor measured from each solid's time constant, or given),
+  then the true ρ c_p comes back, at once or ramped over a few periods in a
+  periodic flow; the heated wall reaches its steady state five times sooner,
+  and the heat the true solid would have stored is booked in the balance.
 - **Rotating machinery.** The moving reference frame (steady and transient
   frozen rotor), the sliding mesh by conformal stepping and by imprinting
   the interface in every step, several rotors at their own speeds,

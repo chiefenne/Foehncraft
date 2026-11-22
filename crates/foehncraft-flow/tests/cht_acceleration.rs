@@ -264,3 +264,49 @@ fn wrong_settings_are_refused() {
     assert_eq!(code, "ACC001", "{msg}");
     assert!(msg.contains("steady"), "{msg}");
 }
+
+/// The cycle mean of the heated face over the last period (`probes.csv`).
+fn last_cycle_mean(dir: &Path, period: f64) -> f64 {
+    let (head, rows) = csv(dir, "probes.csv");
+    let ct = head.iter().position(|h| h == "time").unwrap();
+    let c = head.iter().position(|h| h == "heated_face_T").unwrap();
+    let end = rows.last().unwrap()[ct];
+    let v: Vec<f64> = rows
+        .iter()
+        .filter(|r| r[ct] > end - period + 1e-9)
+        .map(|r| r[c])
+        .collect();
+    v.iter().sum::<f64>() / v.len() as f64
+}
+
+/// V7.42, periodic inlet: restored over three periods, the cycle mean is
+/// that of the true wall's periodic state; restored as a jump, the wall
+/// keeps part of its accelerated swing in its deep temperature, ten times
+/// further off.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn periodic_restore_ramp_keeps_the_cycle_mean() {
+    let base = coarse(&text("cht_heated_wall_periodic_accelerated.toml"));
+    let mean = |t: &str, name: &str| -> f64 {
+        let dir = out(name);
+        let r = run(&parse(t), name, &dir, |_| {}).unwrap();
+        assert!(r.failures.is_empty(), "{:?}", r.failures);
+        let m = last_cycle_mean(&dir, 50.0);
+        let _ = std::fs::remove_dir_all(&dir);
+        m
+    };
+    let truth = mean(
+        &base
+            .replace("inertia_scale = \"auto\"", "inertia_scale = 1.0")
+            .replace("end_time = 1500.0", "end_time = 4000.0"),
+        "per_true",
+    );
+    let ramp = mean(&base, "per_ramp");
+    let jump = mean(
+        &base.replace("restore_ramp = 3", "restore_ramp = 0"),
+        "per_jump",
+    );
+    let (er, ej) = ((ramp - truth).abs(), (jump - truth).abs());
+    assert!(er < 0.01, "ramp {ramp} against {truth}");
+    assert!(ej > 10.0 * er, "jump {jump}, ramp {ramp}, true {truth}");
+}

@@ -889,6 +889,20 @@ evidence = [
 ]
 
 [[feature]]
+id = "cht.thermal-acceleration"
+area = "Conjugate heat transfer"
+title = "Thermal acceleration of solids (scaled ρ c_p, restored)"
+switch = "[energy.acceleration]"
+evidence = [
+  { kind = "consistency", case = "cht_heated_wall_accelerated", what = "the steady state of the true wall five times sooner; measured time constant within 10 % of the case's estimate; balance and inertia-scaling term exact in every step", doc = "docs/gallery/energy.md#cht-acceleration" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/cht_acceleration.rs::auto_acceleration_reaches_the_steady_wall_sooner", what = "end state within 0.2 % of ΔT of the steady solution; inertia scaling (1 − f)/f of the solved storage to 10⁻¹²" },
+  { kind = "consistency", case = "cht_heated_wall_periodic_accelerated", what = "periodic inlet temperature: settled at 700 s, ρ c_p restored over three periods, cycle mean within 0.0025 K of the true periodic state at 1500 s" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/cht_acceleration.rs::periodic_restore_ramp_keeps_the_cycle_mean", what = "periodic inlet: cycle mean within 0.01 K of the true periodic state after the ramped restore, ten times closer than a jump" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/cht_acceleration.rs::fixed_factor_scales_the_heat_up_and_restores_at_a_time", what = "a fixed factor and a restore at a set time" },
+]
+gaps = ["the automatic factor leaves the conduction inside the solid out of the time constant (milder acceleration at large Biot numbers)", "no case with several solids of very different time constants", "the skin check uses the region's V/A, not the local wall thickness"]
+
+[[feature]]
 id = "cht.turbulent"
 area = "Conjugate heat transfer"
 title = "Conjugate heat transfer with a turbulence model"

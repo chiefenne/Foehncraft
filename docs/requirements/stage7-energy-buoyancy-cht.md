@@ -32,6 +32,7 @@ Contents
    - 9b. [Wall film heat exchange with walls, thin walls and solids (D190)](#9b-wall-film-heat-exchange-with-walls-thin-walls-and-solids-d190)
    - 9c. [Several fluids and materials: heat exchangers (D194)](#9c-several-fluids-and-materials-heat-exchangers-d194)
    - 9d. [Cycle-averaged coupling of periodic flows (D204)](#9d-cycle-averaged-coupling-of-periodic-flows-d204)
+   - 9e. [Thermal acceleration of solids (D213)](#9e-thermal-acceleration-of-solids-d213)
 10. [Coupling strategy, linear solvers and order of solution (D158)](#10-coupling-strategy-linear-solvers-and-order-of-solution-d158)
 11. [Multi-region partitioning and halos (D159)](#11-multi-region-partitioning-and-halos-d159)
 12. [Kernels: GPU, reproducibility, adjoint (D160)](#12-kernels-gpu-reproducibility-adjoint-d160)
@@ -1008,6 +1009,65 @@ V7.38–V7.40 in §14.3c.
   cycle-mean fluid balance of item 7 needs.
 
 
+## 9e. Thermal acceleration of solids (D213)
+
+Added 2026-11-22 at the maintainer's request (built in #180). The earlier
+practice of the maintainer: reduce ρ c_p of the structure in the first
+cycles, so that its thermal transient is shorter, as an initial flow field
+shortens the flow's.
+
+**What it changes.** For a factor f on ρ c_p of a solid: the steady
+temperatures and the steady interface heat flows do not change (no ρ c_p in
+the steady equation); the time constants ρ c_p L²/k and ρ c_p V/(hA) are f
+times shorter; the skin depth of a period √(2k/(f ρ c_p ω)) and the surface
+swing q̂/(e√ω), e = √(k f ρ c_p), are 1/√f times larger; the cycle mean of a
+periodic flow is unchanged for linear physics and biased to second order in
+the swing through h(T_w), μ(T), c_p(T) and radiation; the history before
+the restore is not physical. ρ c_p of a fluid is never scaled (it also
+multiplies the convection).
+
+**Restore.** T stays continuous. In a steady flow a jump is exact. In a
+periodic flow a jump catches the accelerated solid in its swing and leaves
+that part in the deep temperature, where it decays only with the true time
+constant: about (swing)/(ω τ_f) in a lumped model (8 % of the swing at
+τ_f = 2 periods); a geometric ramp of f over n periods lets it die out
+(0.3 % for n = 3, 0.05 % for n = 10). Default: a ramp over 3 periods with a
+`period`, a jump without.
+
+**Automatic factor.** After the first window with the true ρ c_p, each
+accelerated region's conductance G to the rest: the heat flow out of the
+region through its interfaces with the region held 1 K warmer, minus that
+with it held as it is (steady energy solves, every solid held, the flow as
+it is), plus Σ A k/d_n at outer temperature faces and Σ A h k/d_n/(h + k/d_n)
+at convection faces. τ = C/G with C = Σ ρ c_p V; f = target/τ in
+[10⁻⁴, 1]. Internal conduction is not in τ (a small Biot number); where it
+matters f comes out larger, the acceleration milder.
+
+**Settling.** Per accelerated region the window-mean temperature (a window
+is a period, or `window_steps` steps); settled when the change of the last
+window and the change still to come, extrapolated geometrically from the
+last two windows (Aitken's Δ²), are below `settle_tolerance` of the rise
+since the start, for every region, at least three windows after the
+factor was set.
+
+**Ledger.** The equation stores f times the heat of the true solid; per
+region and step `inertia_scaling` = (1 − f) × true storage (W) in
+`heat.csv` and the energy summary, the total per region over the run (J)
+in the report. The imbalance of the solved equation is unchanged.
+
+**Keys.** `[energy.acceleration]`: `inertia_scale` (number or `"auto"`),
+`regions`, `restore` (`"settled"` or a time), `period`, `window_steps`,
+`settle_tolerance`, `restore_ramp`, `target_windows`, `settle_windows`.
+Codes: ACC001 error (steady case, no solid, a fluid region, values out of
+range), ACC002 warning (ended before the restore), ACC003 note (skin depth
+of the period larger than V/A of a region while accelerated), ACC004 note
+(each step of the acceleration in the log and the run record).
+
+**Relation to D204.** The solid phase of the cycle-averaged loop (a steady
+solid with the averaged Robin pair) is the limit f → 0 of this acceleration
+with the swing averaged out; the loop needs no factor. Checks V7.41, V7.42
+(§14.3c).
+
 ## 10. Coupling strategy, linear solvers and order of solution (D158)
 
 ### 10.1 One matrix or two solvers
@@ -1284,6 +1344,8 @@ Added 2026-11-21 (maintainer: turbulent and transient CHT before 7b1 and
 | V7.38 | Slab with a periodic gas temperature and heat-transfer coefficient on one face, a fixed temperature on the other (D204) | mean temperature profile after the loop; surface swing with `skin = "effusivity"` | mean profile within 0.5 % of ΔT of the fully coupled transient run in its periodic state after ≤ 3 updates; swing amplitude within 2 % of the Fourier solution |
 | V7.39 | Pulsating laminar channel flow (inlet velocity and temperature periodic) over a thick conducting wall (D204) | interface heat flow, wall temperature | within 1 % of the fully coupled transient conjugate run in its periodic state; wall-clock time of both reported |
 | V7.40 | Ledger of the cycle-averaged loop (D204) | heat balance of the solid per update; cycle-mean fluid balance with the change of stored heat | solid to the solver tolerance; fluid within 10⁻⁶ relative |
+| V7.41 | The switched-on heated wall of V7.37 with `inertia_scale = "auto"` (D213, `cht_heated_wall_accelerated.toml`) | measured τ against the case's estimate; scaled τ one window; settled and restored within the run; end state against the steady solution; balance per step; `inertia_scaling` = (1 − f)/f × solved wall storage | τ within 10 %; f τ = window to 10⁻⁹; end state within 0.2 % of ΔT; balance below 10⁻⁹; the ratio to 10⁻¹² (`tests/cht_acceleration.rs`). **Met 2026-11-22 (#180)** |
+| V7.42 | Fixed factor and restore at a time (D213) | true storage of the first step against the unaccelerated run; restore at the set time; periodic inlet: cycle mean after a 3-period ramp and after a jump against the unaccelerated periodic state | ratio between 0.9/f and 1/f; restore at the time; ramp within 0.01 K and ten times closer than the jump (`tests/cht_acceleration.rs`). **Met 2026-11-22 (#180)** |
 
 ### 14.4 Implementation checks
 
