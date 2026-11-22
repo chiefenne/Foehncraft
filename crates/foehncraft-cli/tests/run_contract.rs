@@ -166,7 +166,10 @@ fn run_record_rows_follow_their_schema() {
     assert_eq!(o.status.code(), Some(0));
     let rec = std::fs::read_to_string(out.join("run.jsonl")).unwrap();
     let required: &[(&str, &[&str])] = &[
-        ("header", &["format", "format_version", "case", "provenance"]),
+        (
+            "header",
+            &["format", "format_version", "case", "provenance"],
+        ),
         ("columns", &["columns"]),
         ("iteration", &["iteration"]),
         ("timings", &["seconds"]),
@@ -174,12 +177,21 @@ fn run_record_rows_follow_their_schema() {
         ("end", &["status", "exit_code"]),
     ];
     let optional = [
-        "section", "table_row", "balance", "event", "diagnosis", "budget", "spend", "call",
+        "section",
+        "table_row",
+        "balance",
+        "event",
+        "diagnosis",
+        "budget",
+        "spend",
+        "call",
     ];
     let mut seen = std::collections::BTreeSet::new();
     for (n, line) in rec.lines().enumerate() {
         let row: Value = serde_json::from_str(line).unwrap_or_else(|e| panic!("row {n}: {e}"));
-        let t = row["type"].as_str().unwrap_or_else(|| panic!("row {n} has no type"));
+        let t = row["type"]
+            .as_str()
+            .unwrap_or_else(|| panic!("row {n} has no type"));
         match required.iter().find(|(name, _)| *name == t) {
             Some((_, keys)) => {
                 for k in *keys {
@@ -190,7 +202,10 @@ fn run_record_rows_follow_their_schema() {
         }
         seen.insert(t.to_string());
     }
-    for (name, _) in required.iter().filter(|(n, _)| *n != "columns" && *n != "timings") {
+    for (name, _) in required
+        .iter()
+        .filter(|(n, _)| *n != "columns" && *n != "timings")
+    {
         assert!(seen.contains(*name), "no `{name}` row in {seen:?}");
     }
 }
