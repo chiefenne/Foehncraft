@@ -18,3 +18,13 @@ envelope is on standard output ([gallery 171](../gallery/runs.md#tool-registry),
 | `ramp_expression.json` | `expression.eval` | a ramped parabolic inlet profile with constants, at three points |
 | `scalar_mms.json` | `study.scalar` | the manufactured-solution sweep of scalar transport on polygons (observed order about 2) |
 | `cavity_session.jsonl` | `journal.replay` | a script of four calls (check, run, derive, read) for `foehn run --script` (D197); not an input of `foehn call` but its `script` |
+| `page_cavity.json` | `result.page` | the first 100 rows of the residual history of that run; the answer's `next_cursor` gives the next page |
+
+The folder `mcp/` holds what an assistant session through `foehn mcp`
+(L18) needs ([gallery 175](../gallery/runs.md#mcp),
+[recipe 175](../recipes/runs.md#mcp), [agents.md](../agents.md)):
+
+| File | Shows |
+|---|---|
+| `mcp/foehn-mcp.toml` | the action table of a project with the default of every kind written out and the estimate caps (D198 (b)) |
+| `mcp/heat_sink_session.jsonl` | the calls of a scripted assistant on the finned heat sink: check, a run refused for want of `[run.limits]`, the run with the fix approved once, the series and the residual history; `python3 -m tools.plot.mcp_session` sends them to `foehn mcp` |

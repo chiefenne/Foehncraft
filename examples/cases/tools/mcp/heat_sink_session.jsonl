@@ -1,0 +1,5 @@
+{"tool": "case.check", "arguments": {"case": "examples/cases/flow/cht_heat_sink_turbulent.toml", "out": "output/tools/mcp/sink"}}
+{"tool": "flow.run", "arguments": {"case": "examples/cases/flow/cht_heat_sink_turbulent.toml", "out": "output/tools/mcp/sink"}}
+{"tool": "flow.run", "arguments": {"case": "examples/cases/flow/cht_heat_sink_turbulent.toml", "out": "output/tools/mcp/sink", "set": ["run.limits.max_wall_time=1800", "run.limits.max_output=1e9"]}, "answer": "allow-once"}
+{"tool": "result.page", "arguments": {"dir": "output/tools/mcp/sink"}}
+{"tool": "result.page", "arguments": {"dir": "output/tools/mcp/sink", "series": "residuals", "limit": 400}, "follow_cursor": true}

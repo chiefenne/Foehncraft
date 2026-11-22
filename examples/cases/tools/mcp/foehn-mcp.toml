@@ -1,0 +1,16 @@
+# The action table of this project for agent calls (foehn mcp, D198 (b)).
+# Each kind: "default", "allow", "ask" or "refuse". Answers "always"
+# of the approval questions are written here; edit by hand at any time.
+[actions]
+start-run = "ask"   # default: ask
+exceed-estimate = "ask"   # default: ask
+write-outside-root = "refuse"   # default: refuse
+overwrite-results = "ask"   # default: ask
+publish = "refuse"   # default: refuse
+
+# A run whose estimate (D81) exceeds a cap is the kind exceed-estimate.
+[estimate]
+max_cells = 2000000
+max_host_memory = 8e9   # bytes
+max_output = 5e9        # bytes
+max_wall_time = 3600       # s, when the estimate has a wall time
