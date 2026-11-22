@@ -34,6 +34,17 @@ Grade rules (D199, also printed on the page):
 - **partial**: everything else (gaps written, only `consistency` checks,
   a model without reference data, a case without a run).
 
+Infrastructure features (restart, logs, run record, Python package, command
+line, tool registry, journal and replay, MCP server) have no physics to
+compare with, so no exact solution exists for them. A row marked
+`infrastructure = true` is **verified** through *contract evidence*
+instead: it lists the properties it promises (`contracts = [...]`, from
+`PROPERTIES`) and every one needs a holding evidence item of kind
+`contract` with that `property` (a test that checks it, run on every pull
+request); no gap may be written. Missing contract evidence gives
+**partial**. Exact, manufactured and reference-data items still count where
+they exist; consistency checks stay what they were.
+
 So a gap written into the table, or a failing case, lowers the grade
 automatically; raising it needs evidence.
 """
@@ -54,7 +65,17 @@ GRADES = ROOT / "docs" / "verification" / "grades.json"
 FIGURE = ROOT / "docs" / "figures" / "verification" / "grades.svg"
 COLOURS = {"verified": "#2e9d5b", "partial": "#e9a23b", "unverified": "#d64541"}
 FORMAT, VERSION = "foehncraft.verification-grades", "1.0"
-KINDS = ("exact", "manufactured", "reference-data", "consistency")
+KINDS = ("exact", "manufactured", "reference-data", "consistency", "contract")
+# the properties contract evidence can prove (infrastructure rows, D199)
+PROPERTIES = {
+    "bitwise": "two paths to the same state give bitwise equal results (restart, repeat, backend)",
+    "schema": "the output has a fixed, tested format (keys, types, format name and version)",
+    "equivalence": "two entry points (command line, Python, tool call, MCP) give the same result",
+    "replay": "a recorded session replays to the same files",
+    "control": "a control file, signal or port takes effect and leaves a clean state",
+    "diagnostics": "errors and refusals are structured diagnostics with a code and a hint",
+    "round-trip": "writing and reading back gives the same object",
+}
 GRADE_ORDER = ("verified", "partial", "unverified")
 FAMILIES = ("flow", "scalar", "poisson")
 # checks of the manual every flow case has; they say nothing about a feature
@@ -144,6 +165,15 @@ def load_table() -> list[dict]:
         if fid in seen:
             errors.append(f"{fid}: id used twice")
         seen.add(fid)
+        if r.get("infrastructure"):
+            need = r.get("contracts", [])
+            if not need:
+                errors.append(f"{fid}: an infrastructure row lists its `contracts`")
+            for c in need:
+                if c not in PROPERTIES:
+                    errors.append(f"{fid}: unknown contract `{c}` (known: {', '.join(PROPERTIES)})")
+        elif "contracts" in r:
+            errors.append(f"{fid}: `contracts` needs `infrastructure = true`")
         for k in r.get("range", {}):
             if k not in RANGE_KEYS:
                 errors.append(f"{fid}: unknown range key `{k}` (known: {', '.join(RANGE_KEYS)})")
@@ -152,6 +182,10 @@ def load_table() -> list[dict]:
                 errors.append(f"{fid}: evidence kind `{e.get('kind')}` (known: {', '.join(KINDS)})")
             if not ({"case", "test", "run"} & set(e)):
                 errors.append(f"{fid}: evidence needs a `case`, `test` or `run`")
+            if e.get("kind") == "contract" and e.get("property") not in PROPERTIES:
+                errors.append(f"{fid}: contract evidence needs a `property` ({', '.join(PROPERTIES)})")
+            elif e.get("kind") != "contract" and "property" in e:
+                errors.append(f"{fid}: `property` belongs to contract evidence")
             if "what" not in e:
                 errors.append(f"{fid}: evidence without `what`")
             if "case" in e and e["case"] not in files:
@@ -199,9 +233,13 @@ def grade(row: dict, results: dict[str, dict], sets: dict[str, str]) -> dict:
             auto_gaps.append(f"`{case}` has no run in the verification manual or in CI")
         items.append({**e, "state": state, "how": how, "bands": band_text(entry)})
     holding = {i["kind"] for i in items if i["state"] == "holds"}
+    held = {i["property"] for i in items if i["state"] == "holds" and i["kind"] == "contract"}
+    lacking = [c for c in row.get("contracts", []) if c not in held] if row.get("infrastructure") else []
     gaps = list(row.get("gaps", [])) + auto_gaps
     if failed or not holding:
         g = "unverified"
+    elif row.get("infrastructure"):
+        g = "verified" if not lacking and not gaps else "partial"
     elif (holding & {"exact", "manufactured"}) and ("reference-data" in holding or not row.get("model")) \
             and not gaps:
         g = "verified"
@@ -213,7 +251,10 @@ def grade(row: dict, results: dict[str, dict], sets: dict[str, str]) -> dict:
     if not holding:
         why.append("no evidence holds")
     if g == "partial":
-        if not holding & {"exact", "manufactured"}:
+        if row.get("infrastructure"):
+            if lacking:
+                why.append("no contract evidence for: " + ", ".join(lacking))
+        elif not holding & {"exact", "manufactured"}:
             why.append("no exact or manufactured solution")
         if row.get("model") and "reference-data" not in holding:
             why.append("a model without reference data")
@@ -238,7 +279,7 @@ def evidence_md(i: dict, files: dict[str, str]) -> str:
         heads.append(f"[`{name}`]({rel(path)})")
     if "run" in i and not heads:
         heads.append(f"recorded run ({i['run']})")
-    text = f"{i['kind']}: " + ", ".join(heads) + f": {i['what']}"
+    text = f"{i['kind']}" + (f" ({i['property']})" if i["kind"] == "contract" else "") + ": " + ", ".join(heads) + f": {i['what']}"
     if i["how"].startswith("passes in CI"):
         text += f" ({i['how']})"
     if i["bands"]:
@@ -277,7 +318,9 @@ def build(rows: list[dict]) -> tuple[str, dict]:
         "Kinds of evidence: `exact` (an exact solution, often with its observed order), "
         "`manufactured` (a manufactured solution with its order), `reference-data` "
         "(experiments, DNS, published benchmarks and correlations) and `consistency` "
-        "(conservation, equality of two paths, bitwise equality, input checks).",
+        "(conservation, equality of two paths, bitwise equality, input checks) and `contract` "
+        "(only for infrastructure features: a tested promise such as bitwise restart, a fixed "
+        "output schema, replay to identical files, equality of command line and Python).",
         "",
         "An item *holds* when its test exists (tests run on every pull request), its recorded run "
         "is documented, or its case passed in the last manual run or runs in a CI case set.",
@@ -288,6 +331,9 @@ def build(rows: list[dict]) -> tuple[str, dict]:
         "the feature is a model, no gap is written and every case has a run |",
         "| partial | some items hold, but gaps are written, or only `consistency` checks hold, or "
         "a model has no reference data, or a case has no run |",
+        "| verified (infrastructure) | restart, logs, run record, interfaces: every contract the "
+        "row lists (`bitwise`, `schema`, `equivalence`, `replay`, `control`, `diagnostics`, "
+        "`round-trip`) has a holding `contract` item, and no gap is written |",
         "| unverified | no item holds, or a case of the feature failed in the last manual run |",
         "",
         "A gap written into the table, or a failing case, lowers the grade at once; raising it "
@@ -324,6 +370,8 @@ def build(rows: list[dict]) -> tuple[str, dict]:
                 out += ["Gaps:", ""] + [f"- {g}" for g in x["gaps"]] + [""]
             if r.get("notes"):
                 out += ["Notes:", ""] + [f"- {n}" for n in r["notes"]] + [""]
+            if r.get("infrastructure"):
+                out += ["Contracts: " + ", ".join(f"`{c}`" for c in r["contracts"]) + ".", ""]
             if r.get("range"):
                 rng = ", ".join(f"{k} {v[0]:g} … {v[1]:g}" for k, v in r["range"].items())
                 out += [f"Range: {rng}.", ""]

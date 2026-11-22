@@ -155,6 +155,61 @@ fn json_result_and_byte_identical_files() {
     );
 }
 
+/// D199 evidence (schema): every row of `run.jsonl` is one JSON object with a
+/// known `type` and the keys of that type; the header names the format.
+#[test]
+fn run_record_rows_follow_their_schema() {
+    let d = dir("record_schema");
+    let case = steady(&d);
+    let out = d.join("out");
+    let o = foehn(&["--json", "--quiet", "flow", s(&case), "--out", s(&out)]);
+    assert_eq!(o.status.code(), Some(0));
+    let rec = std::fs::read_to_string(out.join("run.jsonl")).unwrap();
+    let required: &[(&str, &[&str])] = &[
+        (
+            "header",
+            &["format", "format_version", "case", "provenance"],
+        ),
+        ("columns", &["columns"]),
+        ("iteration", &["iteration"]),
+        ("timings", &["seconds"]),
+        ("result", &["result"]),
+        ("end", &["status", "exit_code"]),
+    ];
+    let optional = [
+        "section",
+        "table_row",
+        "balance",
+        "event",
+        "diagnosis",
+        "budget",
+        "spend",
+        "call",
+    ];
+    let mut seen = std::collections::BTreeSet::new();
+    for (n, line) in rec.lines().enumerate() {
+        let row: Value = serde_json::from_str(line).unwrap_or_else(|e| panic!("row {n}: {e}"));
+        let t = row["type"]
+            .as_str()
+            .unwrap_or_else(|| panic!("row {n} has no type"));
+        match required.iter().find(|(name, _)| *name == t) {
+            Some((_, keys)) => {
+                for k in *keys {
+                    assert!(row.get(*k).is_some(), "row {n} ({t}) lacks `{k}`");
+                }
+            }
+            None => assert!(optional.contains(&t), "row {n}: unknown type `{t}`"),
+        }
+        seen.insert(t.to_string());
+    }
+    for (name, _) in required
+        .iter()
+        .filter(|(n, _)| *n != "columns" && *n != "timings")
+    {
+        assert!(seen.contains(*name), "no `{name}` row in {seen:?}");
+    }
+}
+
 #[test]
 fn exit_codes() {
     let d = dir("exit_codes");

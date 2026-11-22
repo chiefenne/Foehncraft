@@ -101,6 +101,10 @@ detail are in [CONTRIBUTING.md](CONTRIBUTING.md).
   met) there; regenerate the status page with
   `python3 -m tools.release.verification_status`. Never write a grade by
   hand (D199).
+  Infrastructure features (restart, logs, interfaces, journal, MCP) have no
+  exact solution: mark the row `infrastructure = true`, list its `contracts`
+  and give each a `kind = "contract"` item with a `property` and a test
+  (see the header of `tools/release/verification_status.py`).
 
 ## Code
 
