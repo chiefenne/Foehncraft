@@ -240,6 +240,46 @@ Without species, D17's low-Mach form arrives here; L2 adds species to it.
   speed of sound of the material is a health number; above Ma 0.3 a warning
   (ENE004) says that the low-Mach form loses validity (L10).
 
+**As built (PR 7c, #195, 2026-11-22).** The points that differ from the
+text above or make it concrete:
+
+1. The switch is opt-in: `[energy] density = "variable"`, or `[buoyancy]
+   model = "variable-density"`, which turns it on. A fluid whose material
+   has an ideal-gas form keeps the constant density of `[fluid]
+   temperature` without it, so every case before 7c stays bitwise
+   unchanged. The density form of the fluid gives ρ_op(T) at the
+   operating pressure; the cells take ρ = ρ_op(T) p₀/p_op for an ideal gas
+   and ρ_op(T) for a liquid. A closed volume of a liquid is refused
+   (ENE009): it has no low-Mach solution.
+2. p₀ of a closed volume is the exact reduction p₀ = M p_op / Σ ρ_op(T) V
+   after every temperature update, with M the mass of the start state, so
+   the mass stays to round-off; the mass source of the pressure equation is
+   V(a₀ρ − a₁ρⁿ − a₂ρⁿ⁻¹)/Δt with the BDF coefficients, and the momentum
+   time term takes the density of each time level. The pressure work is
+   W_p = dp₀/dt (`pressure_work`, default `thermodynamic` in a closed
+   volume, `none` in an open one; the `full` form stays with L22).
+3. The energy equation keeps its bounded, non-conservative form with ρ per
+   cell, so its storage needs no correction of the density levels; the heat
+   ledger books the storage as V(ρ ∂h/∂t + h ∂ρ/∂t). The momentum equation
+   takes the full stress with −⅔ μ ∇·u (the kernel's trace term with the
+   factor ⅔). The kinetic-energy ledger books the pressure dilatation
+   Σ p_P Σ_f ṁ_f/ρ_f as a physical term, and the mass ledger the storage of
+   the density.
+4. Checks: V7c.1 a heated duct against its exact one-dimensional balances,
+   V7c.2 a closed box heated uniformly (T and p₀ linear in t, exact at any
+   Δt), V7c.3 a closed box heated on one side (mass to round-off), V7c.4 a
+   manufactured solution with ρ = 1/T in a closed volume (second order on
+   hexahedra and polygons, SIMPLEC and the coupled algorithm on the same
+   solution). V7.17 compares with no published numbers: its references
+   (Vierendeels et al. 2003, Le Quéré et al. 2005) are results of other
+   codes and fall under D201; the large-ΔT cavity of gallery 195 carries
+   our own GCI instead (heat flow 0.020 %, p₀ 0.003 % on 32² to 128²
+   clustered meshes).
+5. Not yet with the variable density (ENE006): passive scalars, a restart,
+   periodic meshes, convective outlets, mass-flow inlets, wall mass fluxes,
+   rotating zones. The turbulence outlet value ⅔ρk uses the reference
+   density.
+
 
 ## 5. Turbulent heat flux (D152)
 
@@ -383,7 +423,7 @@ text above or make it concrete:
    is at rest to 10⁻¹⁵ m/s on every mesh, and the heated cavity at Ra 10⁴
    converges in 235 iterations instead of 202, to the same Nu.
 4. BUO004 warns for `[gravity]` with the energy equation and no buoyancy
-   model, without the Richardson estimate; BUO005 comes with 7c. The wall
+   model, without the Richardson estimate; BUO005 came with 7c (#195). The wall
    forces of the report are from p′ (the Archimedes part ρ_ref g V is not in
    them).
 

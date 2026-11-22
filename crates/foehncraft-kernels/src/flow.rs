@@ -195,10 +195,12 @@ pub struct MomentumInputs<'a, T> {
     /// deferred term (variable eddy viscosity, stage 6 specification 2.4),
     /// 0 without (laminar flow: it vanishes for constant μ).
     pub transposed: T,
-    /// 1 to take the transposed part without its trace,
-    /// ∇·[μ ((∇u)ᵀ − (∇·u) I)] (the cell-quality remediation, D50): the
-    /// same term where ∇·u = 0, without the grad-div part μ ∇(∇·u) that
-    /// cell gradients on tetrahedra leave in it; 0 for the full part.
+    /// The fraction of the trace taken off the transposed part,
+    /// ∇·[μ ((∇u)ᵀ − c (∇·u) I)]: 1 without its trace (the cell-quality
+    /// remediation, D50: the same term where ∇·u = 0, without the grad-div
+    /// part μ ∇(∇·u) that cell gradients on tetrahedra leave in it), ⅔ for
+    /// the full stress of a variable density (stage 7c, Stokes'
+    /// hypothesis), 0 for the full part.
     pub trace_free: T,
 }
 
@@ -433,6 +435,11 @@ pub struct MomentumRowInputs<'a, T> {
     pub transient: bool,
     /// Cell density ρ_P, one entry per cell (read in a time step).
     pub rho: &'a [T],
+    /// The cell density of the old level n (variable density, stage 7c);
+    /// empty: `rho` (a density constant in time, bit for bit).
+    pub rho_old: &'a [T],
+    /// The cell density of the level n − 1; empty: `rho_old`.
+    pub rho_old2: &'a [T],
     /// Coefficients a₀, −a₁, −a₂ of the backward differences
     /// du/dt ≈ (a₀ uⁿ⁺¹ + a₁ uⁿ + a₂ uⁿ⁻¹) / Δt: the diagonal gets
     /// τ_P = ρ_P a₀ / Δt V_P, the right-hand side the old levels uⁿ and
@@ -541,14 +548,24 @@ pub unsafe fn momentum_row<T: Real>(c: usize, inp: &MomentumRowInputs<T>, out: &
             let r = ld(inp.rho, c);
             diag += r * inp.time_a[0] / inp.dt * vol;
             let uo = inp.u_old.at(c);
-            let c1 = r * inp.time_a[1] / inp.dt;
+            let r1 = if inp.rho_old.is_empty() {
+                r
+            } else {
+                ld(inp.rho_old, c)
+            };
+            let c1 = r1 * inp.time_a[1] / inp.dt;
             let mut i = 0;
             while i < 3 {
                 src[i] = c1 * vol * uo[i];
                 i += 1;
             }
             if inp.time_a[2] != T::ZERO {
-                let c2 = r * inp.time_a[2] / inp.dt;
+                let r2 = if inp.rho_old2.is_empty() {
+                    r1
+                } else {
+                    ld(inp.rho_old2, c)
+                };
+                let c2 = r2 * inp.time_a[2] / inp.dt;
                 let uo2 = inp.u_old2.at(c);
                 i = 0;
                 while i < 3 {
@@ -837,18 +854,22 @@ pub fn close_backflow<T: Real>(kind: u32, m: T) -> (T, T) {
 }
 
 /// Pressure-correction row of cell `c`: Σ_f c_f (p'_P − p'_N) = −Σ_f ±ṁ*_f
-/// (the continuity defect of the predicted fluxes). Writes the SELL slots
+/// (the continuity defect of the predicted fluxes), minus the mass
+/// source V ∂ρ/∂t of a variable density (stage 7c; empty: none, the
+/// former row bit for bit). Writes the SELL slots
 /// and `rhs[c]`; returns nothing else. The matrix is symmetric and, with at
 /// least one pressure boundary or a reference cell, positive definite.
 ///
 /// # Safety
 /// As [`crate::fv::assemble_row`].
 #[inline(always)]
+#[allow(clippy::too_many_arguments)]
 pub unsafe fn pressure_row<T: Real>(
     c: usize,
     topo: &Topology,
     cf: &[T],
     mass_flux: &[T],
+    mass_source: &[T],
     layout: &SellLayout,
     val: *mut T,
     rhs: *mut T,
@@ -877,6 +898,9 @@ pub unsafe fn pressure_row<T: Real>(
             k += 1;
         }
         *val.add(layout.pos(c, 0)) = diag;
+        if !mass_source.is_empty() {
+            b -= ld(mass_source, c);
+        }
         *rhs.add(c) = b;
     }
 }

@@ -886,6 +886,16 @@ pub trait FlowDevice {
     /// boundary pressure (`n_boundary` values). Without a call both are
     /// absent and the operations are those without gravity, bit for bit.
     fn set_balanced_force(&mut self, jump: &[f64], pb: &[f64]) -> Result<()>;
+    /// The variable-density cell arrays of stage 7c (D151): the mass
+    /// source V ∂ρ/∂t of the continuity rows and the densities ρⁿ, ρⁿ⁻¹ of
+    /// the momentum time term; `None` clears an array (no source, the
+    /// current density for the old levels).
+    fn set_variable_density(
+        &mut self,
+        source: Option<&[f64]>,
+        old: Option<&[f64]>,
+        old2: Option<&[f64]>,
+    ) -> Result<()>;
     /// Uploads the static arrays of the wall treatment.
     fn wall_setup(&mut self, s: &WallStatic) -> Result<()>;
     /// The k-ω SST model per cell.
@@ -915,8 +925,32 @@ pub trait FlowDevice {
         tau: [Buf; 6],
     ) -> Result<()>;
     /// b_f −= τ_f·S: an explicit cell stress `tau` (xx, yy, zz, xy, yz, zx)
-    /// in the momentum face parts `bf`.
-    fn explicit_stress_faces(&mut self, tau: [Buf; 6], bf: Buf3) -> Result<()>;
+    /// in the momentum face parts `bf`; with the cell gradients `gtau` of
+    /// the six components, skewness-corrected face stresses (D236).
+    fn explicit_stress_faces(
+        &mut self,
+        tau: [Buf; 6],
+        gtau: Option<[Buf3; 6]>,
+        bf: Buf3,
+    ) -> Result<()>;
+    /// Uploads the stencil of the quadratic least-squares gradient (D236):
+    /// the treated cells, the start of each stencil and its points (a cell,
+    /// or the number of cells plus a boundary face index); returns the
+    /// slot of the stencil.
+    fn quadratic_setup(&mut self, cells: &[u32], ptr: &[u32], idx: &[u32]) -> Result<usize>;
+    /// Overwrites the velocity gradient `out` at the treated cells of the
+    /// stencil `slot` of [`quadratic_setup`](Self::quadratic_setup) with
+    /// Σ_k w_k (u_k − u_c), components 0 … `dims` − 1.
+    #[allow(clippy::too_many_arguments)]
+    fn quadratic_gradient(
+        &mut self,
+        slot: usize,
+        w: Buf3,
+        dims: u32,
+        u: Buf3,
+        ub: Buf3,
+        out: [Buf3; 3],
+    ) -> Result<()>;
     /// The standard or realizable k-ε model per cell.
     fn keps_cells(&mut self, a: &KepsCellOps) -> Result<()>;
     /// The k-ε-ζ-f model per cell.

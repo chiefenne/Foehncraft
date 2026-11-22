@@ -734,6 +734,9 @@ struct Level {
     l2: Vec<f64>,
     linf: Vec<f64>,
     iterations: usize,
+    /// Cell centroid and the error of k relative to its largest value, per
+    /// cell (for the gallery figure of the curvature correction).
+    cells: Vec<([f64; 2], f64)>,
 }
 
 /// The flow of a level with the manufactured fields set (10 % off) and the
@@ -837,6 +840,7 @@ fn run_level(case: &FlowCase, level: u32, m: &dyn Model) -> Level {
         vol,
         exact,
         n,
+        xc,
         ..
     } = build(case, level, m);
     let nc = vol.len();
@@ -873,11 +877,15 @@ fn run_level(case: &FlowCase, level: u32, m: &dyn Model) -> Level {
         l2[e] = (l2[e] / vt).sqrt() / scale;
         linf[e] /= scale;
     }
+    let kmax = exact[0].iter().cloned().fold(0.0, f64::max);
     Level {
         h: (vt / nc as f64).sqrt(),
         l2,
         linf,
         iterations: it,
+        cells: (0..nc)
+            .map(|c| (xc[c], (num[0][c] - exact[0][c]) / kmax))
+            .collect(),
     }
 }
 
@@ -1014,6 +1022,14 @@ fn qcr_errors(model: &str, mesh: &str, perturb: f64, levels: &[u32]) -> Vec<(f64
                 assert!(it < 2500, "level {level}: no convergence");
             }
             let force = fl.explicit_stress_force().unwrap();
+            // FOEHN_MMS_QCR_DUMP=<folder>: the force error of every cell
+            // (x, y, error of f_x and f_y, exact f_x and f_y) for the
+            // gallery figure (tools/plot/qcr_consistency.py)
+            let mut dump = std::env::var_os("FOEHN_MMS_QCR_DUMP").map(|d| {
+                let mut s = String::from("x,y,ex,ey,fx,fy\n");
+                s.reserve(64 * xc.len());
+                (std::path::PathBuf::from(d), s)
+            });
             let (mut num, mut vt, mut big) = (0.0, 0.0, 0.0f64);
             for (c, &x) in xc.iter().enumerate() {
                 // S = 0 on the centre lines: |S| of the isotropic stress of
@@ -1024,9 +1040,24 @@ fn qcr_errors(model: &str, mesh: &str, perturb: f64, levels: &[u32]) -> Vec<(f64
                 }
                 let f = qcr_force(x, c2013);
                 let e = (force[c][0] - f[0]).powi(2) + (force[c][1] - f[1]).powi(2);
+                if let Some((_, s)) = dump.as_mut() {
+                    s.push_str(&format!(
+                        "{},{},{},{},{},{}\n",
+                        x[0],
+                        x[1],
+                        force[c][0] - f[0],
+                        force[c][1] - f[1],
+                        f[0],
+                        f[1]
+                    ));
+                }
                 num += vol[c] * e;
                 vt += vol[c];
                 big = big.max(f[0].abs()).max(f[1].abs());
+            }
+            if let Some((d, s)) = dump {
+                let name = format!("{model}_{mesh}_{perturb}_{level}.csv");
+                std::fs::write(d.join(name), s).unwrap();
             }
             let nc = vol.len() as f64;
             let h = (vol.iter().sum::<f64>() / nc).sqrt();
@@ -1150,25 +1181,48 @@ fn curvature_correction_manufactured_solution_orders() {
     check("k-omega-sst-curvature", "poly", (1.6, 2.4));
 }
 
-/// The finding behind the two cell types above: on tetrahedra the error
-/// of k and ω does not fall with the mesh (about 1.3 % and 0.7 % at all
-/// three levels). DS_ij/Dt comes from the least-squares gradient of the
-/// least-squares gradient of the velocity, which is not consistent on
-/// irregular tetrahedra; the production of both equations carries it.
+/// On tetrahedra the curvature correction converges since D236: S_ij comes
+/// from a second-order velocity gradient (the quadratic fit where the
+/// face-neighbour one is first order) and its gradient from a quadratic fit
+/// of S_ij on the cells where the least-squares one is not consistent. (Before, the error of k and ω stayed at about 1.3 % and 0.7 % at
+/// all three levels.) Regular tetrahedra and 15 % perturbed ones.
 #[test]
 #[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
-fn curvature_correction_on_tetrahedra_stays_bounded() {
+fn curvature_correction_on_tetrahedra_converges() {
     let m = model_of("k-omega-sst-curvature");
     FLOW.set(m.flow());
-    let case = FlowCase::from_toml(
-        &case_text("k-omega-sst-curvature", "tet", m.as_ref()),
-        Path::new("."),
-    )
-    .unwrap();
-    for level in 0..3 {
-        let r = run_level(&case, level, m.as_ref());
-        eprintln!("curvature tet level {level}: L2 {}", sci(&r.l2));
-        assert!(r.l2[0] < 0.03 && r.l2[1] < 0.03, "{:?}", r.l2);
+    for perturb in [0.0, 0.15] {
+        let text = case_text("k-omega-sst-curvature", "tet", m.as_ref())
+            .replace("perturb = 0.15", &format!("perturb = {perturb}"));
+        let case = FlowCase::from_toml(&text, Path::new(".")).unwrap();
+        let runs: Vec<Level> = (0..3).map(|l| run_level(&case, l, m.as_ref())).collect();
+        for (level, r) in runs.iter().enumerate() {
+            eprintln!(
+                "curvature tet perturb {perturb}: h {:.4e} L2 {}",
+                r.h,
+                sci(&r.l2)
+            );
+            // FOEHN_MMS_CURV_DUMP=<folder>: the error of k per cell for the
+            // gallery figure (tools/plot/curvature_consistency.py)
+            if let Some(d) = std::env::var_os("FOEHN_MMS_CURV_DUMP") {
+                let mut s = String::from("x,y,ek\n");
+                for (x, e) in &r.cells {
+                    s.push_str(&format!("{},{},{}\n", x[0], x[1], e));
+                }
+                let name = format!("curvature_tet_{perturb}_{level}.csv");
+                std::fs::write(std::path::Path::new(&d).join(name), s).unwrap();
+            }
+        }
+        for e in 0..2 {
+            let p = (runs[1].l2[e] / runs[2].l2[e]).ln() / (runs[1].h / runs[2].h).ln();
+            assert!(
+                p > 1.6
+                    && p < 2.4
+                    && runs[2].l2[e] < runs[1].l2[e]
+                    && runs[1].l2[e] < runs[0].l2[e],
+                "perturb {perturb}, variable {e}: order {p:.3}"
+            );
+        }
     }
 }
 
@@ -1178,22 +1232,29 @@ fn qcr_stress_manufactured_solution_orders() {
     for model in ["k-omega-sst-qcr2000", "k-omega-sst-qcr2013"] {
         check_qcr(model, "hex", (1.8, 2.2));
         check_qcr(model, "poly", (1.8, 2.2));
-        // first order on tetrahedra (finding, documented in the verification
-        // chapter)
+        // first order on tetrahedra: the midpoint rule of the face sum on
+        // irregular cells (the face stress itself is second order, D236)
         check_qcr(model, "tet", (0.8, 1.3));
     }
 }
 
-/// The finding behind the regular meshes of the test above: on meshes with
-/// randomly perturbed vertices the divergence of the explicit stress
-/// (Green-Gauss with the linear face interpolation of cell values) does not
-/// converge, its error stays at a few per cent of the largest force.
+/// On meshes with randomly perturbed vertices (hexahedra and tetrahedra,
+/// 15 % of the cell size) the divergence of the explicit stress converges
+/// (D236): the quadratic least-squares velocity gradient on the cells where
+/// the face-neighbour gradient is first order and the skewness-corrected
+/// face stress. (Before, Green-Gauss with the linear interpolation of cell
+/// values left an error of about 5 % of the largest force at every level.)
 #[test]
 #[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
-fn qcr_stress_on_perturbed_meshes_stays_bounded() {
-    let e = qcr_errors("k-omega-sst-qcr2000", "hex", 0.15, &[0, 1, 2]);
-    eprintln!("perturbed hex: {e:?}");
-    for (_, err) in &e {
-        assert!(*err < 0.1 && *err > 0.01, "{e:?}");
+fn qcr_stress_on_perturbed_meshes_converges() {
+    for mesh in ["hex", "tet"] {
+        let e = qcr_errors("k-omega-sst-qcr2000", mesh, 0.15, &[0, 1, 2]);
+        eprintln!("perturbed {mesh}: {e:?}");
+        let p = (e[1].1 / e[2].1).ln() / (e[1].0 / e[2].0).ln();
+        assert!(p > 0.9 && p < 2.2, "perturbed {mesh}: order {p:.3} ({e:?})");
+        assert!(
+            e[2].1 < e[1].1 && e[1].1 < e[0].1,
+            "perturbed {mesh}: {e:?}"
+        );
     }
 }

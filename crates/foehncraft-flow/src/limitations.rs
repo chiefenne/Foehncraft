@@ -13,6 +13,8 @@
 //! | LIM004 | one mesh only | no level sweep: no discretisation uncertainty |
 //! | LIM005 | a backend not verified on this device | a GPU that is not in [`VERIFIED_DEVICES`] |
 //! | LIM006 | automatic mesh remediation active | the remediation of D50 changed the schemes |
+//! | LIM007 | thermal acceleration of the solids | the history before `physical_from` is not physical (D213) |
+//! | LIM008 | an operator of a feature in use is not exact | the operator check of D236 (MESH005, MESH006) |
 //!
 //! The list never changes a result or the exit code (D199 Q1, Q2): a run
 //! with limitations keeps `"status": "finished"` and exit code 0, and the
@@ -162,7 +164,7 @@ pub fn features_in_use(case: &FlowCase) -> Vec<&'static str> {
         Some("su2") => f.push("mesh.su2"),
         Some("cgns") => f.push("mesh.cgns"),
         Some("vtk") => f.push("mesh.vtk"),
-        Some("industry_msh") => f.push("mesh.industry-msh"),
+        Some("fluent_msh") => f.push("mesh.fluent-msh"),
         Some("openfoam") => f.push("mesh.openfoam"),
         _ => {}
     }
@@ -525,6 +527,34 @@ pub fn of_run(case: &FlowCase, rep: &FlowReport) -> Vec<Limitation> {
             msg,
         ));
     }
+    // LIM008: an operator of a feature in use is not exact (D236)
+    if let Some(r) = rep.solves.iter().find_map(|s| s.operators.as_ref()) {
+        let mut what = Vec::new();
+        let t = &case.turbulence;
+        let h = r.quadratic_hessian.as_ref().unwrap_or(&r.hessian);
+        if t.curvature_correction && h.flagged > 0 {
+            what.push((
+                "turbulence.curvature-correction",
+                format!(
+                    "the velocity Hessian of the curvature correction is not consistent on {} of {} cells (MESH005): the correction does not converge with the mesh there",
+                    h.flagged, r.cells
+                ),
+            ));
+        }
+        let g = r.quadratic.as_ref().unwrap_or(&r.gradient);
+        if t.qcr != QcrMode::None && g.flagged > 0 {
+            what.push((
+                "turbulence.qcr",
+                format!(
+                    "the velocity gradient of the QCR stress is first order on {} of {} cells (MESH006): the divergence of the explicit QCR stress does not converge with the mesh there",
+                    g.flagged, r.cells
+                ),
+            ));
+        }
+        for (feature, msg) in what {
+            out.push(Limitation::new(diag::LIM_OPERATORS, Some(feature), msg));
+        }
+    }
     // LIM006: remediation
     if let Some(r) = rep
         .solves
@@ -584,7 +614,7 @@ mod tests {
             "mesh.su2",
             "mesh.cgns",
             "mesh.vtk",
-            "mesh.industry-msh",
+            "mesh.fluent-msh",
             "mesh.openfoam",
             "coupling.piso",
             "coupling.coupled",
@@ -654,6 +684,7 @@ mod tests {
             diag::LIM_ONE_MESH,
             diag::LIM_DEVICE,
             diag::LIM_REMEDIATION,
+            diag::LIM_OPERATORS,
         ] {
             assert!(diag::info(c).is_some(), "{c}");
         }

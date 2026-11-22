@@ -1,4 +1,4 @@
-//! Industry `.msh` reader (D191): hexahedral and polyhedral meshes, zones,
+//! Fluent `.msh` reader (D191): hexahedral and polyhedral meshes, zones,
 //! both face orientations, `.msh` shared with Gmsh, and clear errors.
 
 use foehncraft_mesh::Geometry;
@@ -8,7 +8,7 @@ use foehncraft_mesh::quality::QualityReport;
 
 fn path(name: &str) -> String {
     format!(
-        "{}/tests/data/industry_msh/{name}",
+        "{}/tests/data/fluent_msh/{name}",
         env!("CARGO_MANIFEST_DIR")
     )
 }
@@ -17,7 +17,7 @@ fn check(f: &MeshFile, volume: f64) -> QualityReport {
     f.mesh.validate().unwrap_or_else(|e| panic!("{e}"));
     let geo = Geometry::compute(&f.mesh);
     let (q, _) = QualityReport::compute(&f.mesh, &geo);
-    assert!(q.ok(), "{}", q.to_markdown("industry_msh"));
+    assert!(q.ok(), "{}", q.to_markdown("fluent_msh"));
     assert!(
         ((q.total_volume - volume) / volume).abs() < 1e-12,
         "{}",
@@ -42,7 +42,7 @@ fn names(f: &MeshFile) -> Vec<&str> {
 #[test]
 fn hexahedral_channel() {
     let f = format::read(path("channel_hex.msh"), None).unwrap();
-    assert_eq!(f.reader, "industry_msh");
+    assert_eq!(f.reader, "fluent_msh");
     let q = check(&f, 2.0);
     assert_eq!(f.mesh.n_cells, 16);
     assert_eq!(names(&f), ["inlet", "outlet", "walls", "sides"]);
@@ -98,13 +98,13 @@ fn shares_the_extension_with_gmsh() {
     }
     assert_eq!(
         format::read(path("channel_hex.msh"), None).unwrap().reader,
-        "industry_msh"
+        "fluent_msh"
     );
     assert_eq!(
-        format::read(path("channel_hex.msh"), Some("industry_msh"))
+        format::read(path("channel_hex.msh"), Some("fluent_msh"))
             .unwrap()
             .reader,
-        "industry_msh"
+        "fluent_msh"
     );
     assert!(format::read(path("channel_hex.msh"), Some("gmsh")).is_err());
 }
@@ -121,7 +121,7 @@ fn case_path_with_renamed_zones_and_scale() {
         ..Default::default()
     };
     let (mesh, source, _) = build_mesh(&sec).unwrap();
-    assert!(source.contains("industry"), "{source}");
+    assert!(source.contains("Fluent"), "{source}");
     let n: Vec<&str> = mesh.boundaries.iter().map(|b| b.name.as_str()).collect();
     assert_eq!(n, ["inlet", "outlet", "wall", "sides"]);
     let v: f64 = Geometry::compute(&mesh).cell_volume.iter().sum();
@@ -131,7 +131,7 @@ fn case_path_with_renamed_zones_and_scale() {
 #[test]
 fn bad_files_give_clear_errors() {
     let e = |s: &str| {
-        format::industry_msh::IndustryMsh
+        format::fluent_msh::IndustryMsh
             .parse(s.as_bytes(), &Default::default())
             .unwrap_err()
     };

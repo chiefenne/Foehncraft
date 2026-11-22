@@ -15,6 +15,8 @@ Part of the [Recipes](../recipes.md): run a case with a RANS turbulence model, c
 | 115 | [Get the secondary flow of non-circular ducts with SST](#qcr) |
 | 141 | [Choose the sink of k of the ζ-f models](#k-sink) |
 | 140 | [Say what turbulence enters through an outlet](#outlet-backflow) |
+| 194 | [Run the QCR on tetrahedra and perturbed meshes](#qcr-consistency) |
+| 197 | [Run the curvature correction on tetrahedra and perturbed meshes](#curvature-consistency) |
 
 ---
 
@@ -744,6 +746,33 @@ target/release/foehn flow examples/cases/flow/backstep_outlet_backflow.toml
 
 ---
 
+<a id="qcr-consistency"></a>
+## 194. Run the QCR on tetrahedra and perturbed meshes
+
+Nothing to switch on: a run with `turbulence.qcr` checks its velocity
+gradient before the solve (D236) and uses the quadratic least-squares
+gradient for the QCR stress on every cell where the face-neighbour
+gradient is first order. The log says how many cells that is, and
+`foehn flow --check --json` shows it before a run:
+
+```
+target/release/foehn flow examples/cases/flow/cavity_sst_operator_check.toml --check --json
+```
+
+- `operators.quadratic` in the report holds the error of the quadratic
+  fit; `MESH006` remains only for the cells where the fit fails (too few
+  or degenerate neighbours of neighbours). Remesh those cells, or convert
+  tetrahedra to polyhedra (D54).
+- `solver.operator_tolerance` (0.01) sets which cells count as flagged and
+  so which cells take the quadratic gradient.
+- On regular hexahedra the quadratic gradient is used only in the cell
+  layer at the walls; inside the mesh the gradient is already exact.
+- The curvature correction (`turbulence.curvature_correction`) takes S_ij
+  from the same fit (recipe 197).
+
+```
+target/release/foehn flow examples/cases/flow/cavity_sst_operator_check.toml
+```
 <a id="pipe-turbulent"></a>
 ## 193. Run a turbulent pipe and check its friction
 
@@ -790,5 +819,29 @@ of both walls. `wall_upper.csv` holds the wall pressure for the pressure
 recovery. On finer levels the steady run does not settle (gallery 199):
 check the momentum residual at 2 000 iterations, which rises, before
 trusting a position.
+<a id="curvature-consistency"></a>
+## 197. Run the curvature correction on tetrahedra and perturbed meshes
+
+Nothing to switch on: with `turbulence.curvature_correction = true` the
+run checks the gradient of its velocity gradient before the solve (D236)
+and, on every cell where it is not exact for a quadratic field, takes the
+gradient of S_ij in DS_ij/Dt from a quadratic least-squares fit of S_ij
+(with S_ij from the quadratic velocity fit of recipe 194 where the
+face-neighbour gradient is first order). The log names the number of
+cells:
+
+```
+target/release/foehn flow examples/cases/flow/cavity_sst_operator_check.toml
+# curvature correction: S_ij from the quadratic velocity fit on 4096 cells, DS_ij/Dt from a quadratic least-squares fit of S_ij on 4096 cells (D236)
+```
+
+- `foehn flow --check --json` shows it before a run: `operators.hessian`
+  is the check of the plain operator, `operators.quadratic_hessian` that of
+  fits on the treated cells. `MESH005` remains only for cells where a
+  fit fails (too few or degenerate neighbours of neighbours); remesh those
+  cells or convert tetrahedra to polyhedra (D54).
+- On regular hexahedra and polyhedra only the cell layers at the walls
+  take the fit; the result changes only there.
+- With the QCR on as well, both use the same velocity fit.
 
 [↑ back to top](#turbulence-models)

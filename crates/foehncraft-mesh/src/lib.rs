@@ -16,7 +16,7 @@
 //! - [`wedge`]: axisymmetric wedge meshes revolved from a 2D mesh;
 //! - [`format`](mod@format): the mesh file formats behind one reader interface (D33,
 //!   D187): [`gmsh`] (Gmsh `.msh` 4.1) and [`format::su2`] (SU2 `.su2`),
-//!   [`format::industry_msh`] (the face-based `.msh`), [`format::vtk`] (VTK
+//!   [`format::fluent_msh`] (the face-based `.msh`), [`format::vtk`] (VTK
 //!   `.vtk` and `.vtu`, also written), [`format::openfoam`] (polyMesh directories) and, with the `hdf5` feature,
 //!   `format::cgns` (CGNS HDF5);
 //! - [`periodic`]: translational periodic boundary pairs (D29, D109);

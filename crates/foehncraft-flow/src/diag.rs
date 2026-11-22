@@ -138,7 +138,7 @@ codes! {
     MAT_THERMAL = "MAT007", Error, "A fluid without specific heat or thermal conductivity in a run with the energy equation.";
     MAT_AXES = "MAT008", Error, "An orthotropic thermal conductivity without both axes, or with parallel axes.";
     MAT_FILE = "MAT009", Error, "A user material database file (`[materials] include`, `FOEHN_MATERIALS`) or a property data file (NASA-7 record, table file) that cannot be read or has the wrong format.";
-    ENE_UNSUPPORTED = "ENE006", Error, "An energy setting this version does not have: a passive scalar named `temperature` beside `[energy]`, solid regions with a sliding mesh, a restart, passive scalars or a periodic mesh, or the variable-density buoyancy model (stage 7c).";
+    ENE_UNSUPPORTED = "ENE006", Error, "An energy setting this version does not have: a passive scalar named `temperature` beside `[energy]`, solid regions with a sliding mesh, a restart, passive scalars or a periodic mesh, or with the variable density (stage 7c) passive scalars, a restart, a periodic mesh, a convective outlet, a mass-flow inlet, a wall mass flux or a rotating zone.";
     ENE_SOURCE = "ENE008", Error, "An `[[energy.sources]]` entry for a region the case does not have, or without exactly one of `power` and `power_density`.";
     CHT_INTERFACE = "CHT004", Error, "An `[interfaces.<name>]` table that is not on a region interface (regions unknown, the same, two fluids, or not touching), or without exactly one of `contact_resistance` (≥ 0) and `thin_wall` (thickness > 0 with `conductivity` or `material`).";
     ACC_SETTING = "ACC001", Error, "An `[energy.acceleration]` setting that cannot be used: a steady case, no solid region, a region that is not a solid, `inertia_scale` outside (0, 1] and not `\"auto\"`, `restore` neither `\"settled\"` nor a time ≥ 0, or a `period`, `window_steps`, `settle_tolerance` or `target_windows` out of range.";
@@ -155,6 +155,9 @@ codes! {
     BUO_RANGE = "BUO002", Warning, "The Boussinesq model outside its range: β ΔT above 0.1 over the temperatures of the case (the density changes by more than 10 %).";
     BUO_NO_EXPANSION = "BUO003", Error, "The Boussinesq model without what it needs: no energy equation, no expansion coefficient (the fluid's density does not depend on T and `[buoyancy] expansion_coefficient` is not given), or a reference value out of range.";
     BUO_NONE = "BUO004", Warning, "`[gravity]` with the energy equation but no buoyancy model (the temperature drives no flow); as information: a turbulence model with buoyancy, whose production of k by buoyancy comes in stage 7e1.";
+    BUO_CLOSED = "BUO005", Error, "A variable density in a closed domain (no inlet, no outlet) without `[energy] thermodynamic_pressure = \"closed-volume\"`: the mass in the domain would not be conserved.";
+    VD_SETTINGS = "ENE009", Error, "Variable-density settings that do not fit together: a density that does not depend on T, `density = \"variable\"` with the Boussinesq model, a closed volume with an inlet or outlet, a closed volume of a liquid, or `closed-volume` without the variable density.";
+    VD_MACH = "ENE004", Warning, "A Mach number above 0.3 in a run with the variable density: the low-Mach form loses its validity (the density does not follow the dynamic pressure).";
     BUO_TALL_OPENING = "BUO006", Warning, "A pressure boundary with `pressure_kind = \"static\"` over a height span whose hydrostatic difference ρ_ref g Δz is above the dynamic pressure: a uniform static value drives a flow through the opening.";
     THM_NO_ENERGY = "THM009", Error, "A `[boundary.<name>.energy]` table without `[energy]`: the energy equation is solved only with an `[energy]` table.";
     ENE_BOUNDARY = "THM010", Error, "A `[boundary.<name>.energy]` table for an unknown boundary, without exactly one condition (`temperature`, `heat_flux`, `heat_flow`, or `heat_transfer_coefficient` with `ambient_temperature`), or with `heat_transfer_coefficient` and `ambient_temperature` apart.";
@@ -177,6 +180,9 @@ codes! {
     // the mesh quality (D50)
     MESH_SKEWED = "MESH001", Warning, "Faces whose skewness exceeds `solver.skewness_limit` (poor cells, typically tetrahedra of a mesh that was not optimised).";
     MESH_REMEDIATION = "MESH002", Note, "Cell-quality remediation (D50): the run uses other schemes than set because of poor cells.";
+    MESH_OPERATOR_LINEAR = "MESH004", Warning, "The operator check (D236): the least-squares gradient of a linear field is not exact on some cells (a degenerate or badly conditioned stencil); the cells are listed worst first.";
+    MESH_OPERATOR_HESSIAN = "MESH005", Warning, "The operator check (D236): with `turbulence.curvature_correction`, the velocity Hessian (DS/Dt) is not consistent for a quadratic field on some cells (error above `solver.operator_tolerance`), so the correction does not converge with the mesh there; the cells are listed worst first.";
+    MESH_OPERATOR_GRADIENT = "MESH006", Warning, "The operator check (D236): with `turbulence.qcr`, the velocity gradient is first order on some cells (error above `solver.operator_tolerance` for a quadratic field), so the divergence of the explicit QCR stress does not converge with the mesh there; the cells are listed worst first.";
     MESH_READ = "MESH003", Error, "A mesh file that cannot be read: missing, of an unknown format, truncated or damaged (the reader says where); D202.";
     // the run (D40, D62, D64, D83)
     RUN_STOP_FILE = "RUN001", Note, "Stopped by the `.stop` control file.";
@@ -225,6 +231,7 @@ codes! {
     LIM_ONE_MESH = "LIM004", Note, "One mesh only: the discretisation uncertainty is not estimated (a level sweep gives the GCI, D67).";
     LIM_DEVICE = "LIM005", Note, "The GPU backend ran on a device that is not in the list of verified devices (Tesla T4 so far).";
     LIM_ACCELERATED = "LIM007", Note, "A transient conjugate run with thermal acceleration of its solids (D213): the history before `physical_from` is not physical (the solids' time ran faster, their swing was too large); the end state and later cycle means are.";
+    LIM_OPERATORS = "LIM008", Note, "An operator a feature in use needs is not exact on some cells (MESH005, MESH006, D236): the feature does not converge with the mesh there.";
     LIM_REMEDIATION = "LIM006", Note, "Automatic mesh remediation (D50, MESH002) changed the schemes on poor faces: first order there.";
     // the tool registry (D196)
     TOOL_UNKNOWN = "TOOL001", Error, "A tool id that the registry does not have (with the nearest id as a hint); `foehn commands` lists them.";

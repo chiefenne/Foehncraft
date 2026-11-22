@@ -184,6 +184,13 @@ pub struct Rates {
     pub mass_scale: f64,
     /// Torque and shaft power of the rotors, machine values (D184).
     pub rotors: crate::rotor::Values,
+    /// The mass in the domain, Σ ρ V (kg), with a variable density (stage
+    /// 7c; its storage enters the mass account of a time step).
+    pub mass: Option<f64>,
+    /// The pressure dilatation ∫ p ∇·u dV of a variable density (W, stage
+    /// 7c): the physical exchange between kinetic and internal energy,
+    /// with ∇·u from the face fluxes, Σ_f ṁ_f/ρ_f per cell.
+    pub pressure_dilatation: Option<f64>,
 }
 
 /// The shaft work of one rotor (D184): −Ω·T, the work of its walls on the
@@ -241,7 +248,7 @@ pub fn rates(
         let v = volume[c];
         let uu = dot(u, u);
         umax = umax.max(uu.sqrt());
-        ke[c] = 0.5 * rho * uu * v;
+        ke[c] = 0.5 * sol.phys.rho_at(c) * uu * v;
         body[c] = match &sol.phys.source {
             Some(src) => dot([src[0][c], src[1][c], src[2][c]], u) * v,
             None => dot(f, u) * v,
@@ -369,7 +376,27 @@ pub fn rates(
             .max(rho * umax * pairwise_sum(&area));
         boundaries.push(t);
     }
+    // the variable density (stage 7c): the mass in the domain and the
+    // pressure dilatation Σ_P p_P Σ_f ṁ_f/ρ_f
+    let (mass, pressure_dilatation) = match &sol.phys.rho_var {
+        Some(r) => {
+            let m: Vec<f64> = (0..nc).map(|c| r.0[c] * volume[c]).collect();
+            let mut div = vec![0.0; nc];
+            for fc in 0..d.n_faces {
+                let q = sol.mass_flux[fc] / r.1[fc];
+                div[d.owner[fc] as usize] += q;
+                if fc < ni {
+                    div[d.neighbour[fc] as usize] -= q;
+                }
+            }
+            let pd: Vec<f64> = (0..nc).map(|c| sol.p[c] * div[c]).collect();
+            (Some(pairwise_sum(&m)), Some(pairwise_sum(&pd)))
+        }
+        None => (None, None),
+    };
     Rates {
+        mass,
+        pressure_dilatation,
         kinetic_energy: pairwise_sum(&ke),
         boundaries,
         body_force_power: pairwise_sum(&body),
@@ -676,6 +703,7 @@ mod names {
     pub const BODY_FORCE: &str = "body force";
     pub const VISCOUS_DISSIPATION: &str = "viscous dissipation";
     pub const PRESSURE_SOURCE: &str = "pressure source";
+    pub const PRESSURE_DILATATION: &str = "pressure dilatation";
 }
 
 impl Rates {
@@ -715,6 +743,11 @@ impl Rates {
             TermKind::Part,
             self.pressure_source_power,
         ));
+        if let Some(pd) = self.pressure_dilatation {
+            ke.terms
+                .push(Term::volume(PRESSURE_DILATATION, TermKind::Exchange, pd));
+        }
+        mass.content = self.mass;
         vec![mass, ke]
     }
 }
@@ -800,6 +833,7 @@ pub struct Balance {
 fn close(
     accounts: Vec<Account>,
     storage_ke: f64,
+    storage_mass: f64,
     shafts: &[ShaftTerms],
 ) -> (MassBalance, EnergyBalance, Vec<BoundaryTerms>, Vec<Account>) {
     use names::*;
@@ -831,7 +865,12 @@ fn close(
             .collect::<Vec<_>>(),
     );
     let source = ke.value(PRESSURE_SOURCE, None);
-    let pressure = -(source + wall_pressure);
+    let pressure = match ke.term(PRESSURE_DILATATION, None) {
+        // the physical part of the discrete −∫ p ∇·u dV is not numerical
+        // (a variable density, stage 7c)
+        Some(t) => -(source + wall_pressure) + t.value,
+        None => -(source + wall_pressure),
+    };
     // the views keep the signs of the reports, signed zeros included: the
     // outflow and the numerical dissipation (= −imbalance of the closure)
     // are formed from the terms in the sign the tables print
@@ -839,11 +878,19 @@ fn close(
     let num = ck.contributions - storage_ke;
     let scale = mass.scale.unwrap_or(0.0);
     (
-        MassBalance {
-            storage: 0.0,
-            outflow: out,
-            imbalance: out,
-            relative: if scale > 0.0 { out / scale } else { 0.0 },
+        {
+            // storage + outflow (no storage: the outflow, signed zero kept)
+            let imb = if storage_mass == 0.0 {
+                out
+            } else {
+                storage_mass + out
+            };
+            MassBalance {
+                storage: storage_mass,
+                outflow: out,
+                imbalance: imb,
+                relative: if scale > 0.0 { imb / scale } else { 0.0 },
+            }
         },
         EnergyBalance {
             energy: ke.content.unwrap_or(0.0),
@@ -870,10 +917,12 @@ fn close(
 fn balance_of(
     accounts: Vec<Account>,
     storage_ke: f64,
+    storage_mass: f64,
     shafts: Vec<ShaftTerms>,
     kinds: &[BoundaryTerms],
 ) -> Balance {
-    let (mass, kinetic_energy, mut boundaries, accounts) = close(accounts, storage_ke, &shafts);
+    let (mass, kinetic_energy, mut boundaries, accounts) =
+        close(accounts, storage_ke, storage_mass, &shafts);
     for (b, k) in boundaries.iter_mut().zip(kinds) {
         b.kind = k.kind.clone();
     }
@@ -891,7 +940,7 @@ fn balance_of(
 pub fn steady(r: &Rates, iteration: usize) -> Balance {
     Balance {
         iteration: Some(iteration),
-        ..balance_of(r.accounts(), 0.0, ShaftTerms::of(r), &r.boundaries)
+        ..balance_of(r.accounts(), 0.0, 0.0, ShaftTerms::of(r), &r.boundaries)
     }
 }
 
@@ -908,6 +957,9 @@ pub struct Ledger {
     shafts: Vec<ShaftTerms>,
     kinds: Vec<BoundaryTerms>,
     energy: f64,
+    /// The mass in the domain at the start and now (a variable density).
+    start_mass: Option<f64>,
+    mass: Option<f64>,
     /// A step counts as negative below −tolerance (relative).
     pub tolerance: f64,
     /// Steps booked.
@@ -924,6 +976,8 @@ impl Ledger {
     /// −`tolerance` (round-off is not a finding).
     pub fn start(r: Rates, t: f64, step: usize, tolerance: f64) -> Self {
         Self {
+            start_mass: r.mass,
+            mass: r.mass,
             tolerance,
             start_energy: r.kinetic_energy,
             energy: r.kinetic_energy,
@@ -970,6 +1024,19 @@ impl Ledger {
         } else {
             0.0
         };
+        let storage_mass = match (r.mass, prev.mass) {
+            (Some(b), Some(a)) if dt > 0.0 => (b - a) / dt,
+            _ => 0.0,
+        };
+        // a variable density (stage 7c): the mass is known to the round-off
+        // of its sum, a floor of the scale where nothing flows (a closed box
+        // at rest)
+        let mut accounts = accounts;
+        if let (Some(m), true) = (r.mass, dt > 0.0)
+            && let Some(a) = accounts.iter_mut().find(|a| a.quantity == names::MASS)
+        {
+            a.scale = a.scale.map(|x| x.max(1e3 * f64::EPSILON * m.abs() / dt));
+        }
         for (acc, s) in self.run.iter_mut().zip(&accounts) {
             acc.accumulate(s, dt);
         }
@@ -977,7 +1044,8 @@ impl Ledger {
             acc.power += dt * t.power;
             acc.transposed += dt * t.transposed;
         }
-        let b = balance_of(accounts, storage, shafts, &r.boundaries);
+        let b = balance_of(accounts, storage, storage_mass, shafts, &r.boundaries);
+        self.mass = r.mass;
         self.energy = r.kinetic_energy;
         self.time = t;
         self.step = step;
@@ -1011,6 +1079,10 @@ impl Ledger {
             ..balance_of(
                 accounts,
                 self.energy - self.start_energy,
+                match (self.mass, self.start_mass) {
+                    (Some(b), Some(a)) => b - a,
+                    _ => 0.0,
+                },
                 self.shafts.clone(),
                 &self.kinds,
             )
@@ -1423,6 +1495,8 @@ mod tests {
             viscous_dissipation: phi,
             mass_scale: 1.0,
             rotors: Default::default(),
+            mass: None,
+            pressure_dilatation: None,
         }
     }
 

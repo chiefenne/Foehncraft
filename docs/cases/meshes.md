@@ -9,7 +9,7 @@ On this page:
 Stage 1: build or read a mesh, check it, renumber and partition it, write
 the quality report (`mesh_report.md`, `mesh_report.json`) and `mesh.vtkhdf`
 for ParaView. Run with `foehn mesh FILE`; a mesh file (Gmsh `.msh`, SU2
-`.su2`, industry `.msh`, CGNS `.cgns`, VTK `.vtk`/`.vtu`, or an OpenFOAM case or `polyMesh` directory) can be given directly instead of a case file (`foehn mesh pipe.msh`), command-line
+`.su2`, Fluent `.msh`, CGNS `.cgns`, VTK `.vtk`/`.vtu`, or an OpenFOAM case or `polyMesh` directory) can be given directly instead of a case file (`foehn mesh pipe.msh`), command-line
 options override the file (`foehn mesh --help`).
 
 | Case file | Mesh | Shows | Where |
@@ -31,9 +31,9 @@ Every key is optional; a case needs either `mesh.file` or a
 
 | Key | Default | Meaning |
 |---|---|---|
-| `mesh.file` | – | mesh file: Gmsh MSH 4.1, ASCII or binary (D33), SU2 `.su2`, ASCII, 2D or 3D, several zones in 3D (D187, D195), CGNS `.cgns`, HDF5, unstructured zones (D188, D195), an OpenFOAM case, `constant` or `polyMesh` directory, ASCII or binary (D188), the industry face-based `.msh`, ASCII, 3D (D191), or a VTK unstructured grid, `.vtk` or `.vtu` (D192) |
+| `mesh.file` | – | mesh file: Gmsh MSH 4.1, ASCII or binary (D33), SU2 `.su2`, ASCII, 2D or 3D, several zones in 3D (D187, D195), CGNS `.cgns`, HDF5, unstructured zones (D188, D195), an OpenFOAM case, `constant` or `polyMesh` directory, ASCII or binary (D188), the Fluent face-based `.msh`, ASCII, 3D (D191), or a VTK unstructured grid, `.vtk` or `.vtu` (D192) |
 | `mesh.merge_nodes` | `false` | join coincident nodes of a multi-zone file (SU2 `NZONE` > 1, CGNS with several zones); off: the zones stay apart, each a cell zone, and their interface is two boundaries for `[[sliding]]` (D195) |
-| `mesh.format` | from the extension | `gmsh`, `su2`, `industry_msh`, `cgns`, `vtk` or `openfoam`; without it the extension or directory decides (`.msh`: the first bytes tell Gmsh from the industry format), else the first bytes of the file |
+| `mesh.format` | from the extension | `gmsh`, `su2`, `fluent_msh`, `cgns`, `vtk` or `openfoam`; without it the extension or directory decides (`.msh`: the first bytes tell Gmsh from the Fluent format), else the first bytes of the file |
 | `mesh.thickness` | median edge length | layer thickness in z of a 2D file (SU2 `NDIME= 2`) extruded into one layer, in the units of the file |
 | `mesh.scale` | 1.0 | factor on the coordinates of the file (0.001: millimetres to metres) |
 | `mesh.polyhedral` | false | convert a tetrahedral mesh into polyhedra (dual mesh, one cell per node) |
@@ -67,5 +67,5 @@ one cell zone `fluid`; a 2D SU2 file adds the extruded planes `zmin` and
 `zmax`. A CGNS file gives its BCs as boundaries (Gmsh physical names through
 the family) and one cell zone `fluid`; an OpenFOAM mesh gives its patches
 (`empty` patches too) as boundaries and its `cellZones` as cell zones.
-An industry `.msh` file gives its face zones as boundaries (every zone that is not `interior`) and its cell zones as zones. A VTK grid gives its triangles and quadrilaterals as boundary faces and its cell-data array `region` (or `gmsh:physical`, ...) as the numbers of the zones and boundaries; the string arrays `zone_names` and `boundary_names` of the field data name them (`boundary<N>` without). `[mesh.boundaries]` renames boundaries of any format to the names
+Fluent is a trademark of ANSYS, Inc., named here only as the name of the file format; Foehncraft is not affiliated with it. A Fluent `.msh` file gives its face zones as boundaries (every zone that is not `interior`) and its cell zones as zones. A VTK grid gives its triangles and quadrilaterals as boundary faces and its cell-data array `region` (or `gmsh:physical`, ...) as the numbers of the zones and boundaries; the string arrays `zone_names` and `boundary_names` of the field data name them (`boundary<N>` without). `[mesh.boundaries]` renames boundaries of any format to the names
 the boundary conditions use.

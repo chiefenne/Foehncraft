@@ -1,0 +1,63 @@
+# The operator exactness check (D236) on a shallow lid-driven cavity (2:1) with k-ω SST,
+# the curvature and rotation correction and QCR2000, on 2D tetrahedra
+# (triangular prisms) with randomly perturbed vertices.
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/cavity_sst_operator_check.toml
+#   (regular hexahedra: --set mesh.generate.type=hex --set mesh.generate.perturb=0)
+#
+# Before the solve the run applies the velocity gradient and the gradient
+# of the gradient (the velocity Hessian of the curvature correction) to
+# linear and quadratic test fields. On these tetrahedra neither is exact
+# for a quadratic field, so the QCR stress takes the quadratic
+# least-squares velocity gradient on every cell and the curvature
+# correction takes DS_ij/Dt from a quadratic least-squares fit of S_ij
+# (D236 steps 2 and 3); the log says so,
+# flow.json holds the check with the 50 worst cells of each operator and
+# operators.csv the errors of every cell. MESH005 and MESH006 would remain
+# only for cells where the fit fails. On regular hexahedra only the cells
+# at the walls take the fit (one-sided stencils).
+# The run converges in about 1 030 iterations.
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "tet"
+dimension = 2
+upper = [2.0, 1.0, 0.03125]
+cells = [64, 32, 1]
+perturb = 0.15
+
+[fluid]
+density = 1.0
+viscosity = 1e-4           # Re = 10 000 on the lid
+
+[turbulence]
+model = "k-omega-sst"
+curvature_correction = true
+qcr = "qcr2000"
+
+[initial]
+turbulence_intensity = 0.05
+viscosity_ratio = 10.0
+
+[boundary.ymax]
+type = "wall"
+velocity = [1.0, 0.0, 0.0]     # the lid
+[boundary.xmin]
+type = "wall"
+[boundary.xmax]
+type = "wall"
+[boundary.ymin]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-5
+max_iterations = 2000      # about 1 030 on the tetrahedra
+
+[output]
+vtkhdf = false
+wall_csv = false

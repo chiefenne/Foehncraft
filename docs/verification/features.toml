@@ -92,15 +92,15 @@ evidence = [
 gaps = ["no flow case of the catalogue reads a polyMesh"]
 
 [[feature]]
-id = "mesh.industry-msh"
+id = "mesh.fluent-msh"
 area = "Meshes"
-title = "Industry face-based .msh reader"
-switch = 'mesh.format = "industry_msh"'
+title = "Fluent face-based .msh reader"
+switch = 'mesh.format = "fluent_msh"'
 evidence = [
-  { kind = "consistency", test = "crates/foehncraft-mesh/tests/industry_msh.rs::polyhedral_cells_and_mixed_faces", what = "polyhedral cells and mixed faces" },
-  { kind = "consistency", test = "crates/foehncraft-mesh/tests/industry_msh.rs::face_orientation_does_not_matter", what = "face orientation does not change the mesh" },
+  { kind = "consistency", test = "crates/foehncraft-mesh/tests/fluent_msh.rs::polyhedral_cells_and_mixed_faces", what = "polyhedral cells and mixed faces" },
+  { kind = "consistency", test = "crates/foehncraft-mesh/tests/fluent_msh.rs::face_orientation_does_not_matter", what = "face orientation does not change the mesh" },
 ]
-gaps = ["no flow case of the catalogue reads an industry .msh file"]
+gaps = ["no flow case of the catalogue reads a Fluent .msh file"]
 
 [[feature]]
 id = "mesh.vtk"
@@ -134,6 +134,21 @@ evidence = [
   { kind = "consistency", test = "crates/foehncraft-flow/tests/quality.rs::raw_gmsh_tetrahedra_converge_with_the_remediation", what = "raw Gmsh tetrahedra converge with it and fail without it" },
 ]
 gaps = ["no order of accuracy on remediated meshes (the remediation is first order on the skewed faces by design)"]
+
+[[feature]]
+id = "mesh.operator-check"
+area = "Meshes"
+title = "Operator exactness check of the velocity gradient and Hessian"
+switch = "solver.operator_tolerance"
+decisions = ["D236"]
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-fv/src/exactness.rs::linear_fields_are_exact_on_every_mesh", what = "the least-squares gradient of linear fields exact to 10⁻¹⁰ on regular and perturbed hexahedra and tetrahedra" },
+  { kind = "exact", test = "crates/foehncraft-fv/src/exactness.rs::regular_hexahedra_are_second_order_inside", what = "gradient and Hessian of quadratic fields exact inside regular hexahedra, flagged at the walls" },
+  { kind = "consistency", test = "crates/foehncraft-fv/src/exactness.rs::irregular_cells_are_flagged", what = "perturbed hexahedra and tetrahedra flagged" },
+  { kind = "consistency", test = "crates/foehncraft-flow/src/operators.rs::regular_hexahedra_flag_only_the_boundary_cells", what = "MESH005 and MESH006 with the features on; only the wall cells of a regular mesh" },
+  { kind = "consistency", case = "cavity_sst_operator_check", what = "the cavity on perturbed tetrahedra: every cell takes both quadratic fits, no MESH005 or MESH006 left, operators.csv written, the run converges" },
+]
+gaps = ["cells where a quadratic fit fails are only flagged (MESH005, MESH006); the local remesh of such cells is deferred to v1.1 with D54 (D236 step 4)"]
 
 [[feature]]
 id = "mesh.vtkhdf"
@@ -619,10 +634,10 @@ evidence = [
   { kind = "consistency", test = "crates/foehncraft-flow/tests/curvature.rs::pure_shear_is_unchanged", what = "a channel without rotation unchanged to the last digit" },
   { kind = "reference-data", case = "channel_rotating_sst", what = "channel in spanwise rotation, Ro 0.15: the unstable side marked" },
   { kind = "manufactured", test = "crates/foehncraft-flow/src/turbulence/mms.rs::curvature_correction_manufactured_solution_orders", what = "orders 1.9 to 2.1 of k and ω with f_r1 (DS_ij/Dt from a flow whose strain axes turn) on hexahedra and polyhedra", doc = "docs/verification/stage6.md#manufactured-solutions-of-k-ε-ζ-f₀-the-curvature-correction-and-the-qcr-pr-184" },
+  { kind = "manufactured", test = "crates/foehncraft-flow/src/turbulence/mms.rs::curvature_correction_on_tetrahedra_converges", what = "order 1.9 to 2.1 of k and ω on regular and 15 % perturbed tetrahedra with S_ij from a second-order velocity gradient and the gradient of S_ij from a quadratic least-squares fit where the least-squares one is not consistent (D236)", doc = "docs/verification/stage6.md#consistent-curvature-correction-on-irregular-meshes-d236-pr-197" },
 ]
 gaps = [
   "the DNS of Kristoffersen & Andersson (1993) for the rotating channel is not compared (its data are not in the repository)",
-  "on tetrahedra the correction does not converge in the manufactured solution (error of k 1.3 % at all three levels): DS_ij/Dt takes the least-squares gradient of the least-squares gradient of the velocity, which is not consistent on irregular tetrahedra",
 ]
 
 [[feature]]
@@ -637,10 +652,11 @@ evidence = [
   { kind = "consistency", test = "crates/foehncraft-flow/tests/curvature.rs::qcr_drives_the_secondary_flow_of_a_duct", what = "secondary flow of a square duct appears with QCR, not without" },
   { kind = "reference-data", case = "square_duct_qcr", what = "square duct, Re_b 3 500: secondary velocity 1.55 % of U_b, the vortex pair into the corner" },
   { kind = "manufactured", test = "crates/foehncraft-flow/src/turbulence/mms.rs::qcr_stress_manufactured_solution_orders", what = "the explicit stress force of QCR2000 and QCR2013 against the divergence of the written-out stress: order 2.0 to 2.1 on regular hexahedra and polyhedra", doc = "docs/verification/stage6.md#manufactured-solutions-of-k-ε-ζ-f₀-the-curvature-correction-and-the-qcr-pr-184" },
+  { kind = "manufactured", test = "crates/foehncraft-flow/src/turbulence/mms.rs::qcr_stress_on_perturbed_meshes_converges", what = "the stress force on 15 % perturbed hexahedra and tetrahedra converges (hexahedra 4.6 %, 1.5 %, 0.65 %; tetrahedra order 1) with the quadratic least-squares gradient and the skewness-corrected face stress (D236)", doc = "docs/verification/stage6.md#consistent-qcr-stress-on-irregular-meshes-d236-pr-194" },
 ]
 gaps = [
   "the DNS of Pinelli et al. (2010) is not compared within a band (its data are not in the repository)",
-  "the divergence of the explicit QCR stress is first order on tetrahedra and does not converge on meshes with randomly perturbed vertices (error 5 % of the largest force at 15 % perturbation): Green-Gauss with the linear interpolation of cell values; the coupled momentum equations are not in the manufactured solution",
+  "the divergence of the explicit QCR stress is first order on tetrahedra, regular or perturbed (the midpoint rule of the face sum on irregular cells), and second order only on regular hexahedra and polyhedra; the coupled momentum equations are not in the manufactured solution",
 ]
 
 [[feature]]
@@ -992,6 +1008,40 @@ evidence = [
   { kind = "consistency", test = "crates/foehncraft-flow/tests/buoyancy.rs::static_outlet_without_hydrostatics_drives_a_false_flow", what = "a uniform static value over the opening drives a flow and warns BUO006" },
 ]
 
+[[feature]]
+id = "buoyancy.variable-density"
+area = "Buoyancy"
+title = "Low-Mach variable density ρ(T, p₀)"
+switch = "[energy] density = \"variable\", [buoyancy] model = \"variable-density\""
+decisions = ["D151"]
+model = true
+evidence = [
+  { kind = "exact", case = "vd_heated_duct", what = "gas heated by 100 K in a slip-wall duct: equal mass flows to 10⁻¹², the outlet ΔT of ṁ c_p ΔT = Q to 10⁻⁴, the inlet pressure G²(1/ρ_out − 1/ρ_in) to 2·10⁻³", doc = "docs/cases/flow.md#variable-density" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/variable_density.rs::heated_duct_meets_the_one_dimensional_balances", what = "the three balances of the duct and the heat ledger to 10⁻⁸" },
+  { kind = "manufactured", case = "vd_mms_steady", what = "ρ = 1/T, a divergence-free mass flux, the full stress, a closed volume: observed orders 2.22 and 1.92 (velocity), 1.86 and 1.90 (temperature)", doc = "docs/cases/flow.md#variable-density" },
+  { kind = "manufactured", test = "crates/foehncraft-flow/tests/variable_density.rs::manufactured_solution_converges_at_second_order", what = "second order on hexahedra and polygons; SIMPLEC and the coupled algorithm on the same discrete solution" },
+  { kind = "consistency", case = "vd_cavity_large_dt", what = "air in a cavity with walls at 960 K and 240 K: heat flow order 2.13, GCI 0.020 %; p₀ order 2.2, GCI 0.003 %", doc = "docs/gallery/energy.md#variable-density" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/variable_density.rs::variable_density_settings_are_checked", what = "the settings without a low-Mach meaning or not built yet are refused with their codes" },
+]
+gaps = [
+  "no reference-data case (a measured flow with a large temperature difference)",
+  "not yet with passive scalars, a restart, periodic meshes, convective outlets, mass-flow inlets, wall mass fluxes or rotating zones (ENE006)",
+  "the turbulence outlet value ⅔ρk uses the reference density",
+]
+
+[[feature]]
+id = "buoyancy.closed-volume"
+area = "Buoyancy"
+title = "Thermodynamic pressure of a closed volume"
+switch = "[energy] thermodynamic_pressure = \"closed-volume\""
+decisions = ["D151"]
+evidence = [
+  { kind = "exact", case = "vd_closed_box_heating", what = "a closed box at rest heated uniformly: T and p₀(t) linear in t, exact to 10⁻¹⁰ at any Δt; with pressure_work = \"none\" it warms with c_p", doc = "docs/cases/flow.md#variable-density" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/variable_density.rs::closed_box_heated_uniformly_warms_with_c_v", what = "p₀ and T exact, the mass to 10⁻¹³" },
+  { kind = "consistency", case = "vd_closed_box_side_heated", what = "a closed box heated through one wall: the mass to round-off, the mass ledger of every step closes with the storage", doc = "docs/cases/flow.md#variable-density" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/variable_density.rs::closed_box_heated_on_one_side_keeps_its_mass", what = "mass to 10⁻¹³, step mass imbalance below 10⁻⁸, heat ledger below 10⁻⁶" },
+]
+
 # ---------------------------------------------------------------- rotating machinery
 
 [[feature]]
@@ -1336,11 +1386,3 @@ evidence = [
 
 # ---------------------------------------------------------------- planned
 
-[[feature]]
-id = "planned.variable-density"
-area = "Planned"
-title = "Low-Mach variable density ρ(T, p₀)"
-switch = "not built"
-decisions = ["D151"]
-evidence = []
-gaps = ["not built (stage 7c; the Boussinesq buoyancy is in, buoyancy.boussinesq)"]

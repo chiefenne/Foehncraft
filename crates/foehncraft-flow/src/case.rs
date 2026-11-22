@@ -1283,6 +1283,7 @@ impl FlowCase {
         )?;
         crate::energy::validate(self, &env)?;
         crate::buoyancy::validate(self)?;
+        crate::density::validate(self)?;
         crate::turbulence::validate(self)?;
         let p = self.properties()?;
         let rho = p.density();
@@ -1761,6 +1762,9 @@ pub struct Solve {
     /// Cell-quality check and remediation (D50), on a mesh with poor faces.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub remediation: Option<crate::simplec::RemediationReport>,
+    /// The operator exactness check (D236).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub operators: Option<crate::operators::OperatorReport>,
     /// The passive scalars (D51).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub scalars: Vec<crate::scalar::ScalarSummary>,
@@ -1779,6 +1783,10 @@ pub struct Solve {
     /// The statistics of a transient run (D71).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub statistics: Option<crate::statistics::StatisticsSummary>,
+    /// The variable density (stage 7c): p₀, the mass, the density range
+    /// and the largest Mach number.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub density: Option<crate::density::Summary>,
 }
 
 /// The value of a wall probe at the end of a solve.
@@ -2716,6 +2724,15 @@ pub fn run_steered(
         }
         let arrays = bc::arrays(&mesh, &geo, &case.boundary, phys.rho, at)?;
         let disc = simplec::discretisation(&mesh, &geo, &arrays)?;
+        let operators = crate::operators::report(
+            &case,
+            &mesh,
+            &geo,
+            &arrays.u_points,
+            out,
+            &mut lg,
+            &mut rep.warnings,
+        );
         let phys = physics_on(&case, &phys, &mesh, &geo)?;
         let loc = Locator::new(&mesh, &geo);
         let reference_cell = if arrays.has_pressure() {
@@ -2751,6 +2768,7 @@ pub fn run_steered(
             fl.set_momentum_source(src)?;
         }
         crate::scalar::attach(&mut fl, &case, &mesh, &geo)?;
+        crate::density::attach(&mut fl, &case)?;
         crate::buoyancy::attach(&mut fl, &case)?;
         crate::turbulence::attach(&mut fl, &case, &mesh, &geo)?;
         if let Some(notes) = crate::frame::attach(&mut fl, &case, &mesh, &geo)? {
@@ -3368,6 +3386,7 @@ pub fn run_steered(
         }
         let periodic = periodic_summaries(&mut fl, &mesh, &mut lg)?;
         let turbulence = turbulence_summary(&mut fl, &mesh, &mut lg, &mut rep.warnings)?;
+        let density = crate::density::summary(&mut fl, &mut rep.warnings)?;
         if single && (case.run.restart_final || stopped) && restart::AVAILABLE {
             let rs = steady_restart(&mut fl, &mesh, name)?;
             restart::write(&out.join("restart.h5"), &rs)?;
@@ -3396,12 +3415,14 @@ pub fn run_steered(
             benchmark,
             balance: Some(summary),
             remediation,
+            operators,
             scalars,
             periodic,
             wall_probes: wall_probe_values,
             wall_crossings: wall_crossing_values,
             turbulence,
             statistics: None,
+            density,
         });
         if stopped {
             rep.stopped = true;
@@ -4355,6 +4376,14 @@ pub(crate) fn write_fields(
             values: &static_p,
         });
     }
+    // the variable density (stage 7c): ρ(T, p₀) of the cells
+    let rho_var = fl.phys.rho_var.clone();
+    if let Some(r) = &rho_var {
+        fields.push(CellField {
+            name: "density",
+            values: &r.0,
+        });
+    }
     let err: Vec<f64>;
     if let Some(a) = analytic {
         err = (0..mesh.n_cells)
@@ -4653,6 +4682,16 @@ impl FlowReport {
                                 .join(", ")
                         )
                     }
+                );
+            }
+        }
+        for v in &self.solves {
+            if let Some(r) = &v.operators {
+                let _ = writeln!(
+                    s,
+                    "\n**Operator check (D236)** on {}: {}",
+                    v.mesh,
+                    r.findings.join(" ")
                 );
             }
         }

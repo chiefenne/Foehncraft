@@ -110,8 +110,13 @@ pub struct KernelFlow<E: Exec> {
     /// pressure term per boundary face; D154), allocated by the first
     /// `set_balanced_force`.
     balanced: Option<(Buf, Buf)>,
+    /// The variable-density cell arrays (stage 7c): mass source, ρⁿ,
+    /// ρⁿ⁻¹, allocated by the first `set_variable_density`.
+    variable: Option<[Buf; 3]>,
     /// The wall arrays of the turbulence models: faces, cells, ptr, slots.
     wall: Option<[Raw<u32>; 4]>,
+    /// The stencils of the quadratic fits (D236): cells, ptr, idx.
+    quad: Vec<[Raw<u32>; 3]>,
 }
 
 impl<E: Exec> KernelFlow<E> {
@@ -213,6 +218,9 @@ impl<E: Exec> KernelFlow<E> {
             shift,
             jump_offset: Raw::EMPTY,
             pb_offset: Raw::EMPTY,
+            mass_source: Raw::EMPTY,
+            rho_old: Raw::EMPTY,
+            rho_old2: Raw::EMPTY,
         };
         let pca: Vec<f64> =
             s.bc.flux_kind
@@ -248,7 +256,9 @@ impl<E: Exec> KernelFlow<E> {
             rho_buf,
             rho_face_buf,
             balanced: None,
+            variable: None,
             wall: None,
+            quad: Vec::new(),
             lsq_u,
             lsq_p,
             rho: s.rho,
@@ -1233,6 +1243,42 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
         self.x.upload(bp, pb)
     }
 
+    fn set_variable_density(
+        &mut self,
+        source: Option<&[f64]>,
+        old: Option<&[f64]>,
+        old2: Option<&[f64]>,
+    ) -> Result<()> {
+        let b = match self.variable {
+            Some(b) => b,
+            None => {
+                let b = [
+                    self.x.alloc(self.nc)?,
+                    self.x.alloc(self.nc)?,
+                    self.x.alloc(self.nc)?,
+                ];
+                self.variable = Some(b);
+                b
+            }
+        };
+        let mut raws = [Raw::EMPTY; 3];
+        for (i, v) in [source, old, old2].into_iter().enumerate() {
+            if let Some(v) = v {
+                ensure!(
+                    v.len() == self.nc,
+                    "flow device: a variable-density array of {} cells expected",
+                    self.nc
+                );
+                self.x.upload(b[i], v)?;
+                raws[i] = self.x.raw(b[i]);
+            }
+        }
+        self.m.mass_source = raws[0];
+        self.m.rho_old = raws[1];
+        self.m.rho_old2 = raws[2];
+        Ok(())
+    }
+
     fn wall_setup(&mut self, w: &WallStatic) -> Result<()> {
         ensure!(
             w.ptr.len() == w.cells.len() + 1 && w.slots.len() == w.faces.len(),
@@ -1385,12 +1431,22 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             mode,
             tau: tau.map(|b| self.r(b)),
             bf: Raw3::default(),
+            gtau: [Raw3::default(); 6],
         };
         self.go::<e::QcrCells>(self.nc, &args)
     }
 
-    fn explicit_stress_faces(&mut self, tau: [Buf; 6], bf: Buf3) -> Result<()> {
-        check(&bf.all(), &tau)?;
+    fn explicit_stress_faces(
+        &mut self,
+        tau: [Buf; 6],
+        gtau: Option<[Buf3; 6]>,
+        bf: Buf3,
+    ) -> Result<()> {
+        let mut ins = tau.to_vec();
+        if let Some(g) = gtau {
+            ins.extend(g.iter().flat_map(|b| b.all()));
+        }
+        check(&bf.all(), &ins)?;
         let args = e::QcrArgs {
             m: self.m,
             grad_u: RawGrad::default(),
@@ -1399,8 +1455,56 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             mode: 0,
             tau: tau.map(|b| self.r(b)),
             bf: self.r3(bf),
+            gtau: gtau.map_or([Raw3::default(); 6], |g| g.map(|b| self.r3(b))),
         };
         self.go::<e::ExplicitStressFaces>(self.nf, &args)
+    }
+
+    fn quadratic_setup(&mut self, cells: &[u32], ptr: &[u32], idx: &[u32]) -> Result<usize> {
+        ensure!(
+            !cells.is_empty()
+                && ptr.len() == cells.len() + 1
+                && ptr.last().copied().unwrap_or(0) as usize == idx.len(),
+            "flow device: empty or inconsistent quadratic stencil"
+        );
+        let s = [
+            self.x.alloc_u32(cells)?,
+            self.x.alloc_u32(ptr)?,
+            self.x.alloc_u32(idx)?,
+        ];
+        self.quad.push(s);
+        Ok(self.quad.len() - 1)
+    }
+
+    fn quadratic_gradient(
+        &mut self,
+        slot: usize,
+        w: Buf3,
+        dims: u32,
+        u: Buf3,
+        ub: Buf3,
+        out: [Buf3; 3],
+    ) -> Result<()> {
+        let Some(&[cells, ptr, idx]) = self.quad.get(slot) else {
+            anyhow::bail!("flow device: no quadratic stencil {slot}");
+        };
+        let mut ins = w.all().to_vec();
+        ins.extend(u.all());
+        ins.extend(ub.all());
+        let outs: Vec<Buf> = out.iter().flat_map(|b| b.all()).collect();
+        check(&outs, &ins)?;
+        let args = e::QuadGradArgs {
+            cells,
+            ptr,
+            idx,
+            w: self.r3(w),
+            n_cells: self.nc as u64,
+            dims: dims as u64,
+            u: self.r3(u),
+            ub: self.r3(ub),
+            out: self.rg(&out),
+        };
+        self.go::<e::QuadraticGradient>(cells.len as usize, &args)
     }
 
     fn keps_cells(&mut self, a: &KepsCellOps) -> Result<()> {

@@ -59,15 +59,15 @@
    "range": {}
   },
   {
-   "id": "mesh.industry-msh",
-   "title": "Industry face-based .msh reader",
+   "id": "mesh.fluent-msh",
+   "title": "Fluent face-based .msh reader",
    "grade": "partial",
    "why": [
     "no exact or manufactured solution",
     "gaps written"
    ],
    "gaps": [
-    "no flow case of the catalogue reads an industry .msh file"
+    "no flow case of the catalogue reads a Fluent .msh file"
    ],
    "range": {}
   },
@@ -106,6 +106,18 @@
    ],
    "gaps": [
     "no order of accuracy on remediated meshes (the remediation is first order on the skewed faces by design)"
+   ],
+   "range": {}
+  },
+  {
+   "id": "mesh.operator-check",
+   "title": "Operator exactness check of the velocity gradient and Hessian",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "cells where a quadratic fit fails are only flagged (MESH005, MESH006); the local remesh of such cells is deferred to v1.1 with D54 (D236 step 4)"
    ],
    "range": {}
   },
@@ -511,8 +523,7 @@
     "gaps written"
    ],
    "gaps": [
-    "the DNS of Kristoffersen & Andersson (1993) for the rotating channel is not compared (its data are not in the repository)",
-    "on tetrahedra the correction does not converge in the manufactured solution (error of k 1.3 % at all three levels): DS_ij/Dt takes the least-squares gradient of the least-squares gradient of the velocity, which is not consistent on irregular tetrahedra"
+    "the DNS of Kristoffersen & Andersson (1993) for the rotating channel is not compared (its data are not in the repository)"
    ],
    "range": {}
   },
@@ -525,7 +536,7 @@
    ],
    "gaps": [
     "the DNS of Pinelli et al. (2010) is not compared within a band (its data are not in the repository)",
-    "the divergence of the explicit QCR stress is first order on tetrahedra and does not converge on meshes with randomly perturbed vertices (error 5 % of the largest force at 15 % perturbation): Green-Gauss with the linear interpolation of cell values; the coupled momentum equations are not in the manufactured solution"
+    "the divergence of the explicit QCR stress is first order on tetrahedra, regular or perturbed (the midpoint rule of the face sum on irregular cells), and second order only on regular hexahedra and polyhedra; the coupled momentum equations are not in the manufactured solution"
    ],
    "range": {}
   },
@@ -843,6 +854,29 @@
    "range": {}
   },
   {
+   "id": "buoyancy.variable-density",
+   "title": "Low-Mach variable density ρ(T, p₀)",
+   "grade": "partial",
+   "why": [
+    "a model without reference data",
+    "gaps written"
+   ],
+   "gaps": [
+    "no reference-data case (a measured flow with a large temperature difference)",
+    "not yet with passive scalars, a restart, periodic meshes, convective outlets, mass-flow inlets, wall mass fluxes or rotating zones (ENE006)",
+    "the turbulence outlet value ⅔ρk uses the reference density"
+   ],
+   "range": {}
+  },
+  {
+   "id": "buoyancy.closed-volume",
+   "title": "Thermodynamic pressure of a closed volume",
+   "grade": "verified",
+   "why": [],
+   "gaps": [],
+   "range": {}
+  },
+  {
    "id": "rotating.mrf",
    "title": "Moving reference frame (steady frozen rotor)",
    "grade": "partial",
@@ -1076,18 +1110,6 @@
    "grade": "verified",
    "why": [],
    "gaps": [],
-   "range": {}
-  },
-  {
-   "id": "planned.variable-density",
-   "title": "Low-Mach variable density ρ(T, p₀)",
-   "grade": "unverified",
-   "why": [
-    "no evidence holds"
-   ],
-   "gaps": [
-    "not built (stage 7c; the Boussinesq buoyancy is in, buoyancy.boussinesq)"
-   ],
    "range": {}
   }
  ]

@@ -11,6 +11,7 @@ Part of the [Recipes](../recipes.md): the energy equation of the fluid (stage 7,
 | 160 | [Put a contact resistance between two parts, orient an orthotropic solid, heat a component](#cht-contact) |
 | 180 | [Bring the solids of a transient conjugate run to their state sooner (thermal acceleration)](#cht-acceleration) |
 | 186 | [Switch on gravity and buoyancy; which pressure do my boundary values mean](#buoyancy) |
+| 195 | [Let the density of a gas follow its temperature (low-Mach variable density)](#variable-density) |
 
 ---
 
@@ -532,8 +533,8 @@ expansion_coefficient = 3.333e-3    # β (1/K); default from the fluid's density
 
 The Boussinesq model keeps the density ρ₀ constant everywhere except in
 the body force, which becomes −ρ₀ β (T − T_ref) g. It holds while β ΔT is
-small; above 0.1, BUO002 warns, and the variable density of stage 7c is
-the model to use. Without `expansion_coefficient`, β comes from the
+small; above 0.1, BUO002 warns, and the variable density of [recipe
+195](#variable-density) is the model to use. Without `expansion_coefficient`, β comes from the
 fluid's density at T_ref (1/T_ref for an ideal gas); a constant density
 without β is refused (BUO003), and so is a buoyancy model without
 `[gravity]` or `[energy]` (BUO001, BUO003). `[gravity]` with the energy
@@ -610,4 +611,99 @@ cargo build --release -p foehncraft-cli
 target/release/foehn flow examples/cases/flow/buoyancy_channel_reduced.toml --out output/chan_reduced
 target/release/foehn flow examples/cases/flow/buoyancy_channel_static.toml --out output/chan_static
 target/release/foehn flow examples/cases/flow/buoyancy_open_box.toml --out output/open_reduced
+```
+
+---
+
+<a id="variable-density"></a>
+## 195. Let the density of a gas follow its temperature (low-Mach variable density)
+
+**When.** A gas whose temperature changes by more than about a tenth of
+its absolute temperature: hot air in an oven or an enclosure with a
+heater, an exhaust gas cooled in a duct, air that a heater expands in a
+closed volume, a liquid heated by tens of kelvins on its way through a
+pipe. The flow stays slow (Mach below
+about 0.3), so the pressure waves do not matter and the density depends
+on the temperature and on one thermodynamic pressure p₀, not on the local
+pressure (the low-Mach model, D151). For a few kelvins the Boussinesq
+model of [recipe 186](#buoyancy) is enough and cheaper.
+
+**Switch it on.** One key in `[energy]`:
+
+```toml
+[fluid]
+material = "air"                    # or a material with a density form
+temperature = 600.0                 # the start state and T_ref
+
+[energy]
+initial = 600.0
+density = "variable"                # ρ(T, p₀) in every cell and face
+# thermodynamic_pressure = "constant"   # p₀ = [fluid] operating_pressure (default)
+```
+
+The density comes from the fluid's density form: an ideal gas ρ = p₀ M/(R
+T) (`density = { form = "ideal-gas" }` and a `molar_mass`, as air of the
+material library has), or a table or law of the temperature for a liquid.
+The momentum equation takes the full stress with −⅔ μ ∇·u, the pressure
+equation the storage V ∂ρ/∂t of a transient run, and the energy
+equation ρ per cell. Cases without the key keep the constant density of
+`[fluid] temperature` and are bitwise unchanged. With gravity, `[buoyancy]
+model = "variable-density"` switches the density on as well and gives the
+body force (ρ − ρ_ref) g; the Boussinesq model and a constant density
+form are refused (ENE009).
+
+**Open or closed.** In a domain open to an ambient (an inlet and an
+outlet, a pressure boundary) p₀ is `[fluid] operating_pressure` and
+constant. In a closed domain (walls, symmetry planes and nothing else)
+the gas cannot leave, so p₀ follows from its fixed mass:
+
+```toml
+[energy]
+density = "variable"
+thermodynamic_pressure = "closed-volume"   # p₀(t) from the mass of the start state
+# pressure_work = "thermodynamic"          # dp₀/dt as a heat source (the default here)
+```
+
+A closed domain with a constant p₀ is refused (BUO005): heating would
+create or destroy mass. A closed volume needs an ideal gas, and an open
+domain cannot be one (ENE009). The pressure work dp₀/dt is on by default
+in a closed volume, so that a heated gas warms with c_v; `pressure_work =
+"none"` leaves it out and the gas warms with c_p, which is the right
+answer only for an open domain. `vd_closed_box_heating.toml` is the
+check: a box at rest heated with 10⁴ W/m³ for 5 s reaches T and p₀
+exactly, at any time step ([gallery 195](../gallery/energy.md#variable-density)).
+
+**Steady runs.** SIMPLEC and the coupled algorithm both work and give
+the same discrete solution (checked on the manufactured solution). A
+closed cavity starts from rest; give a flow through a duct its inflow
+velocity as `[initial] velocity`: from rest a heat source heats the still
+gas far beyond its range before the flow arrives, and the run diverges. The large-ΔT cavity of gallery 195 takes
+266, 808 and 2719 coupled iterations on 32², 64² and 128² cells clustered
+to the walls, which the cold layer needs: on uniform meshes up to 96² the
+heat flow is not yet in the asymptotic range.
+
+**Interpreting the results.** The output has a `density` field. The
+report has p₀, whether the volume is closed, the mass at the start and
+at the end, the density range and the largest Mach number (ENE004 warns
+above 0.3, where the low-Mach model no longer holds); `history.csv` of a
+transient run has the columns `p0`, `mass`, `rho_min` and `rho_max`. A
+mesh sweep gives the observed order and the GCI of p₀ and of the wall
+heat flows. The ledgers book the new terms: the mass account the storage
+of the density (it closes per step, `vd_closed_box_side_heated.toml`), the
+heat account the storage ρ ∂h/∂t + h ∂ρ/∂t, and the kinetic-energy account
+the pressure dilatation p ∇·u, the work of the expanding gas, as a
+physical term, not numerical dissipation.
+
+**Not yet.** Passive scalars, a restart, periodic meshes, convective
+outlets, mass-flow inlets, wall mass fluxes and rotating zones are
+refused with ENE006. The outlet value ⅔ρk of a turbulence model uses the
+reference density.
+
+```
+cargo build --release -p foehncraft-cli
+target/release/foehn flow examples/cases/flow/vd_cavity_large_dt.toml --out output/cavity
+target/release/foehn flow examples/cases/flow/vd_heated_duct.toml --out output/duct
+target/release/foehn flow examples/cases/flow/vd_closed_box_heating.toml --out output/box
+target/release/foehn flow examples/cases/flow/vd_closed_box_side_heated.toml --out output/side
+target/release/foehn flow examples/cases/flow/vd_mms_steady.toml --out output/vd_mms
 ```

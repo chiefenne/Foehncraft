@@ -1560,6 +1560,15 @@ impl Curve {
         matches!(self.kind, CurveKind::Constant(_))
     }
 
+    /// p M / R (kg K/m³) of an ideal-gas density curve, at the pressure it
+    /// was built for (`None` for any other form).
+    pub fn ideal_gas(&self) -> Option<f64> {
+        match self.kind {
+            CurveKind::IdealGas { pm_over_r } => Some(pm_over_r),
+            _ => None,
+        }
+    }
+
     /// The value at the temperature `t` (K), with `t` clamped to the data
     /// range.
     pub fn at(&self, t: f64) -> f64 {
