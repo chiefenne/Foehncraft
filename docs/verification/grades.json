@@ -946,10 +946,8 @@
   {
    "id": "run.restart-control",
    "title": "Restart and control files (.stop, .result_N, .read_toml_N)",
-   "grade": "partial",
-   "why": [
-    "no exact or manufactured solution"
-   ],
+   "grade": "verified",
+   "why": [],
    "gaps": [],
    "range": {}
   },
@@ -982,10 +980,8 @@
   {
    "id": "run.log-records",
    "title": "Log columns and JSON records for scripts and agents",
-   "grade": "partial",
-   "why": [
-    "no exact or manufactured solution"
-   ],
+   "grade": "verified",
+   "why": [],
    "gaps": [],
    "range": {}
   },
@@ -1027,20 +1023,40 @@
   {
    "id": "interface.python",
    "title": "Python package foehncraft (cases, runs, studies)",
-   "grade": "partial",
-   "why": [
-    "no exact or manufactured solution"
-   ],
+   "grade": "verified",
+   "why": [],
    "gaps": [],
    "range": {}
   },
   {
    "id": "interface.cli-contract",
    "title": "Run contract of the command line (exit codes, JSON, schema)",
-   "grade": "partial",
-   "why": [
-    "no exact or manufactured solution"
-   ],
+   "grade": "verified",
+   "why": [],
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "interface.tool-registry",
+   "title": "Tool registry (foehn call, foehn commands, typed schemas)",
+   "grade": "verified",
+   "why": [],
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "interface.journal-replay",
+   "title": "Journal and replay of tool calls",
+   "grade": "verified",
+   "why": [],
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "interface.mcp",
+   "title": "MCP server (foehn mcp)",
+   "grade": "verified",
+   "why": [],
    "gaps": [],
    "range": {}
   },

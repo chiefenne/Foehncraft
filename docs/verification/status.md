@@ -4,11 +4,11 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**95 features: 41 verified, 50 partial, 4 unverified.**
+**98 features: 48 verified, 46 partial, 4 unverified.**
 
 ## How a grade is computed
 
-Kinds of evidence: `exact` (an exact solution, often with its observed order), `manufactured` (a manufactured solution with its order), `reference-data` (experiments, DNS, published benchmarks and correlations) and `consistency` (conservation, equality of two paths, bitwise equality, input checks).
+Kinds of evidence: `exact` (an exact solution, often with its observed order), `manufactured` (a manufactured solution with its order), `reference-data` (experiments, DNS, published benchmarks and correlations) and `consistency` (conservation, equality of two paths, bitwise equality, input checks) and `contract` (only for infrastructure features: a tested promise such as bitwise restart, a fixed output schema, replay to identical files, equality of command line and Python).
 
 An item *holds* when its test exists (tests run on every pull request), its recorded run is documented, or its case passed in the last manual run or runs in a CI case set.
 
@@ -16,6 +16,7 @@ An item *holds* when its test exists (tests run on every pull request), its reco
 |---|---|
 | verified | an `exact` or `manufactured` item holds, a `reference-data` item holds where the feature is a model, no gap is written and every case has a run |
 | partial | some items hold, but gaps are written, or only `consistency` checks hold, or a model has no reference data, or a case has no run |
+| verified (infrastructure) | restart, logs, run record, interfaces: every contract the row lists (`bitwise`, `schema`, `equivalence`, `replay`, `control`, `diagnostics`, `round-trip`) has a holding `contract` item, and no gap is written |
 | unverified | no item holds, or a case of the feature failed in the last manual run |
 
 A gap written into the table, or a failing case, lowers the grade at once; raising it needs evidence. *Range* is the validated range of the feature; a run outside it will be reported as a limitation (D199).
@@ -108,16 +109,19 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Cases and properties | [Material database (air, water, oils, glycols)](#case-materials) | partial |
 | Cases and properties | [Settings that change on a schedule](#case-schedule) | partial |
 | Cases and properties | [Case checks and guidance (unknown keys, boundary checks)](#case-checks-guidance) | partial |
-| Runs and results | [Restart and control files (.stop, .result_N, .read_toml_N)](#run-restart-control) | partial |
+| Runs and results | [Restart and control files (.stop, .result_N, .read_toml_N)](#run-restart-control) | verified |
 | Runs and results | [Derived fields (vorticity, Q, λ₂, wall shear, y⁺, turbulence fields)](#run-derived-fields) | verified |
 | Runs and results | [Statistics of transient runs (mean, RMS, phase averages, confidence)](#run-statistics) | verified |
 | Runs and results | [Mass and kinetic-energy ledgers, divergence report](#run-ledgers) | partial |
-| Runs and results | [Log columns and JSON records for scripts and agents](#run-log-records) | partial |
+| Runs and results | [Log columns and JSON records for scripts and agents](#run-log-records) | verified |
 | Runs and results | [Iteration budget, diagnosis of steady runs, study budgets](#run-budgets) | verified |
 | Runs and results | [Grid convergence index of every mesh sweep](#run-gci) | verified |
 | Backends and interfaces | [Flow loop on NVIDIA GPUs](#backend-cuda) | partial |
-| Backends and interfaces | [Python package foehncraft (cases, runs, studies)](#interface-python) | partial |
-| Backends and interfaces | [Run contract of the command line (exit codes, JSON, schema)](#interface-cli-contract) | partial |
+| Backends and interfaces | [Python package foehncraft (cases, runs, studies)](#interface-python) | verified |
+| Backends and interfaces | [Run contract of the command line (exit codes, JSON, schema)](#interface-cli-contract) | verified |
+| Backends and interfaces | [Tool registry (foehn call, foehn commands, typed schemas)](#interface-tool-registry) | verified |
+| Backends and interfaces | [Journal and replay of tool calls](#interface-journal-replay) | verified |
+| Backends and interfaces | [MCP server (foehn mcp)](#interface-mcp) | verified |
 | Planned | [Buoyancy (Boussinesq and variable density)](#planned-buoyancy) | unverified |
 
 ## Meshes
@@ -1216,11 +1220,15 @@ Gaps:
 
 ### Restart and control files (.stop, .result_N, .read_toml_N)
 
-**partial** (no exact or manufactured solution) · id `run.restart-control`
+**verified** · id `run.restart-control`
 
-- consistency: [`restart_continues_bit_identically`](../../crates/foehncraft-flow/tests/stage5.rs): restart continues bitwise
-- consistency: [`sigterm_stops_cleanly_and_restart_latest_continues_bitwise`](../../crates/foehncraft-cli/tests/run_contract.rs): SIGTERM stops cleanly, restart continues bitwise
-- consistency: [`stop_file_ends_the_run`](../../crates/foehncraft-flow/tests/stage5.rs): a stop file ends the run
+- contract (bitwise): [`restart_continues_bit_identically`](../../crates/foehncraft-flow/tests/stage5.rs): a restarted run continues bitwise
+- contract (bitwise): [`steady_restart_latest_is_bitwise`](../../crates/foehncraft-cli/tests/run_contract.rs): `--restart latest` of a steady run is bitwise
+- contract (bitwise): [`sigterm_stops_cleanly_and_restart_latest_continues_bitwise`](../../crates/foehncraft-cli/tests/run_contract.rs): SIGTERM stops cleanly, restart continues bitwise
+- contract (control): [`stop_file_ends_the_run`](../../crates/foehncraft-flow/tests/stage5.rs): a stop file ends the run
+- contract (control): [`sigterm_stops_cleanly_and_restart_latest_continues_bitwise`](../../crates/foehncraft-cli/tests/run_contract.rs): SIGTERM writes a restart file and exits cleanly
+
+Contracts: `bitwise`, `control`.
 
 <a id="run-derived-fields"></a>
 
@@ -1257,11 +1265,15 @@ Gaps:
 
 ### Log columns and JSON records for scripts and agents
 
-**partial** (no exact or manufactured solution) · id `run.log-records` · switch `[log]` · decisions D77
+**verified** · id `run.log-records` · switch `[log]` · decisions D77
 
 - consistency: [`cavity_re100_columns`](../../examples/cases/flow/cavity_re100_columns.toml): the Ghia cavity with a chosen iteration table (manual: largest deviation from Ghia et al. (1982), Re = 100 ≤ 0.02)
-- consistency: [`configurable_log_columns_change_no_result`](../../crates/foehncraft-cli/tests/run_contract.rs): log columns change no result
-- consistency: [`json_result_and_byte_identical_files`](../../crates/foehncraft-cli/tests/run_contract.rs): the JSON result and byte-identical files
+- contract (schema): [`run_record_rows_follow_their_schema`](../../crates/foehncraft-cli/tests/run_contract.rs): every row of run.jsonl has a known type and the keys of that type; the header names the format
+- contract (schema): [`json_result_and_byte_identical_files`](../../crates/foehncraft-cli/tests/run_contract.rs): result.json is the object on standard output; header and end row of the run record
+- contract (equivalence): [`configurable_log_columns_change_no_result`](../../crates/foehncraft-cli/tests/run_contract.rs): log columns change no result; flow.log and run.jsonl carry the same content
+- contract (bitwise): [`json_result_and_byte_identical_files`](../../crates/foehncraft-cli/tests/run_contract.rs): two runs give byte-identical result, residual and field files
+
+Contracts: `schema`, `equivalence`, `bitwise`.
 
 <a id="run-budgets"></a>
 
@@ -1314,20 +1326,70 @@ Gaps:
 
 ### Python package foehncraft (cases, runs, studies)
 
-**partial** (no exact or manufactured solution) · id `interface.python` · switch `import foehncraft` · decisions D86
+**verified** · id `interface.python` · switch `import foehncraft` · decisions D86
 
-- consistency: [`test_the_command_line_gives_the_same_run`](../../python/tests/test_run.py): the command line gives the same run
-- consistency: [`test_every_example_case_round_trips`](../../python/tests/test_case.py): every example case round-trips
+- contract (equivalence): [`test_the_command_line_gives_the_same_run`](../../python/tests/test_run.py): the command line gives the same run
+- contract (equivalence): [`test_a_case_built_in_python_is_its_case_file`](../../python/tests/test_run.py): a case built in Python is its case file
+- contract (round-trip): [`test_every_example_case_round_trips`](../../python/tests/test_case.py): every example case round-trips
+- contract (diagnostics): [`test_errors_of_the_case_carry_codes`](../../python/tests/test_run.py): errors of the case carry their codes
 - consistency: [`test_uncertainty_of_a_sweep`](../../python/tests/test_run.py): the uncertainty of a sweep
+
+Contracts: `equivalence`, `round-trip`, `diagnostics`.
 
 <a id="interface-cli-contract"></a>
 
 ### Run contract of the command line (exit codes, JSON, schema)
 
-**partial** (no exact or manufactured solution) · id `interface.cli-contract` · decisions D64, D77
+**verified** · id `interface.cli-contract` · decisions D64, D77
 
-- consistency: [`exit_codes`](../../crates/foehncraft-cli/tests/run_contract.rs): exit codes
-- consistency: [`schema_is_json_schema`](../../crates/foehncraft-cli/tests/run_contract.rs): the schema is a JSON Schema
+- contract (diagnostics): [`exit_codes`](../../crates/foehncraft-cli/tests/run_contract.rs): exit codes of a finished, failed and stopped run
+- contract (schema): [`schema_is_json_schema`](../../crates/foehncraft-cli/tests/run_contract.rs): the case schema is a JSON Schema
+- contract (schema): [`json_result_and_byte_identical_files`](../../crates/foehncraft-cli/tests/run_contract.rs): the --json result carries format, status and exit code
+
+Contracts: `schema`, `diagnostics`.
+
+<a id="interface-tool-registry"></a>
+
+### Tool registry (foehn call, foehn commands, typed schemas)
+
+**verified** · id `interface.tool-registry` · switch `foehn call, foehn commands` · decisions D196
+
+- contract (schema): [`commands_lists_every_tool_with_schemas`](../../crates/foehncraft-cli/tests/tools_contract.rs): every tool lists its input and output schema
+- contract (schema): [`every_schema_is_an_object_schema`](../../crates/foehncraft-tools/src/lib.rs): every schema is an object schema
+- contract (schema): [`tools_md_is_current`](../../crates/foehncraft-tools/src/lib.rs): docs/tools.md is generated from the registry
+- contract (equivalence): [`call_matches_the_clap_commands`](../../crates/foehncraft-cli/tests/tools_contract.rs): a tool call equals the command-line command
+- contract (equivalence): [`runs_and_files_match`](../../crates/foehncraft-cli/tests/tools_contract.rs): a run through a tool call writes the same files as the command line
+- contract (diagnostics): [`bad_calls_are_diagnostics`](../../crates/foehncraft-cli/tests/tools_contract.rs): bad calls are diagnostics, not crashes
+
+Contracts: `schema`, `equivalence`, `diagnostics`.
+
+<a id="interface-journal-replay"></a>
+
+### Journal and replay of tool calls
+
+**verified** · id `interface.journal-replay` · switch `--journal, foehn run --script` · decisions D197
+
+- contract (replay): [`journal_and_replay`](../../crates/foehncraft-cli/tests/tools_contract.rs): a journaled session replays to the same files
+- contract (replay): [`replay_runs_the_calls_and_skips_the_refused_ones`](../../crates/foehncraft-tools/src/journal.rs): replay runs the calls and skips the refused ones
+- contract (replay): [`test_calls_go_into_the_journal_and_replay`](../../python/tests/test_tools.py): Python calls enter the journal and replay
+- contract (schema): [`calls_are_journaled_with_their_typed_input`](../../crates/foehncraft-tools/src/journal.rs): calls are journaled with their typed input
+
+Contracts: `replay`, `schema`.
+
+<a id="interface-mcp"></a>
+
+### MCP server (foehn mcp)
+
+**verified** · id `interface.mcp` · switch `foehn mcp` · decisions D77, L18
+
+- contract (equivalence): [`the_tools_are_the_registry_ids`](../../crates/foehncraft-cli/tests/mcp.rs): the MCP tools are the registry ids
+- contract (replay): [`a_session_with_questions_refusals_paging_and_its_replay`](../../crates/foehncraft-cli/tests/mcp.rs): a session through MCP replays from its journal
+- contract (control): [`a_running_case_is_steered_and_stopped_through_its_control_port`](../../crates/foehncraft-cli/tests/mcp.rs): a running case is steered and stopped through its control port
+- contract (control): [`a_cancelled_run_stops_with_its_output`](../../crates/foehncraft-cli/tests/mcp.rs): a cancelled run stops with its output
+- contract (diagnostics): [`a_host_that_cannot_ask_gets_a_refusal`](../../crates/foehncraft-cli/tests/mcp.rs): a host that cannot ask gets a refusal
+- contract (diagnostics): [`refuses_to_start_without_both_roots`](../../crates/foehncraft-cli/tests/mcp.rs): no roots, no start
+
+Contracts: `equivalence`, `replay`, `control`, `diagnostics`.
 
 ## Planned
 

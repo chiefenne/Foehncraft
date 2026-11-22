@@ -1117,10 +1117,14 @@ evidence = [
 id = "run.restart-control"
 area = "Runs and results"
 title = "Restart and control files (.stop, .result_N, .read_toml_N)"
+infrastructure = true
+contracts = ["bitwise", "control"]
 evidence = [
-  { kind = "consistency", test = "crates/foehncraft-flow/tests/stage5.rs::restart_continues_bit_identically", what = "restart continues bitwise" },
-  { kind = "consistency", test = "crates/foehncraft-cli/tests/run_contract.rs::sigterm_stops_cleanly_and_restart_latest_continues_bitwise", what = "SIGTERM stops cleanly, restart continues bitwise" },
-  { kind = "consistency", test = "crates/foehncraft-flow/tests/stage5.rs::stop_file_ends_the_run", what = "a stop file ends the run" },
+  { kind = "contract", property = "bitwise", test = "crates/foehncraft-flow/tests/stage5.rs::restart_continues_bit_identically", what = "a restarted run continues bitwise" },
+  { kind = "contract", property = "bitwise", test = "crates/foehncraft-cli/tests/run_contract.rs::steady_restart_latest_is_bitwise", what = "`--restart latest` of a steady run is bitwise" },
+  { kind = "contract", property = "bitwise", test = "crates/foehncraft-cli/tests/run_contract.rs::sigterm_stops_cleanly_and_restart_latest_continues_bitwise", what = "SIGTERM stops cleanly, restart continues bitwise" },
+  { kind = "contract", property = "control", test = "crates/foehncraft-flow/tests/stage5.rs::stop_file_ends_the_run", what = "a stop file ends the run" },
+  { kind = "contract", property = "control", test = "crates/foehncraft-cli/tests/run_contract.rs::sigterm_stops_cleanly_and_restart_latest_continues_bitwise", what = "SIGTERM writes a restart file and exits cleanly" },
 ]
 
 [[feature]]
@@ -1166,10 +1170,14 @@ area = "Runs and results"
 title = "Log columns and JSON records for scripts and agents"
 switch = "[log]"
 decisions = ["D77"]
+infrastructure = true
+contracts = ["schema", "equivalence", "bitwise"]
 evidence = [
   { kind = "consistency", case = "cavity_re100_columns", what = "the Ghia cavity with a chosen iteration table" },
-  { kind = "consistency", test = "crates/foehncraft-cli/tests/run_contract.rs::configurable_log_columns_change_no_result", what = "log columns change no result" },
-  { kind = "consistency", test = "crates/foehncraft-cli/tests/run_contract.rs::json_result_and_byte_identical_files", what = "the JSON result and byte-identical files" },
+  { kind = "contract", property = "schema", test = "crates/foehncraft-cli/tests/run_contract.rs::run_record_rows_follow_their_schema", what = "every row of run.jsonl has a known type and the keys of that type; the header names the format" },
+  { kind = "contract", property = "schema", test = "crates/foehncraft-cli/tests/run_contract.rs::json_result_and_byte_identical_files", what = "result.json is the object on standard output; header and end row of the run record" },
+  { kind = "contract", property = "equivalence", test = "crates/foehncraft-cli/tests/run_contract.rs::configurable_log_columns_change_no_result", what = "log columns change no result; flow.log and run.jsonl carry the same content" },
+  { kind = "contract", property = "bitwise", test = "crates/foehncraft-cli/tests/run_contract.rs::json_result_and_byte_identical_files", what = "two runs give byte-identical result, residual and field files" },
 ]
 
 [[feature]]
@@ -1226,9 +1234,13 @@ area = "Backends and interfaces"
 title = "Python package foehncraft (cases, runs, studies)"
 switch = "import foehncraft"
 decisions = ["D86"]
+infrastructure = true
+contracts = ["equivalence", "round-trip", "diagnostics"]
 evidence = [
-  { kind = "consistency", test = "python/tests/test_run.py::test_the_command_line_gives_the_same_run", what = "the command line gives the same run" },
-  { kind = "consistency", test = "python/tests/test_case.py::test_every_example_case_round_trips", what = "every example case round-trips" },
+  { kind = "contract", property = "equivalence", test = "python/tests/test_run.py::test_the_command_line_gives_the_same_run", what = "the command line gives the same run" },
+  { kind = "contract", property = "equivalence", test = "python/tests/test_run.py::test_a_case_built_in_python_is_its_case_file", what = "a case built in Python is its case file" },
+  { kind = "contract", property = "round-trip", test = "python/tests/test_case.py::test_every_example_case_round_trips", what = "every example case round-trips" },
+  { kind = "contract", property = "diagnostics", test = "python/tests/test_run.py::test_errors_of_the_case_carry_codes", what = "errors of the case carry their codes" },
   { kind = "consistency", test = "python/tests/test_run.py::test_uncertainty_of_a_sweep", what = "the uncertainty of a sweep" },
 ]
 
@@ -1237,9 +1249,61 @@ id = "interface.cli-contract"
 area = "Backends and interfaces"
 title = "Run contract of the command line (exit codes, JSON, schema)"
 decisions = ["D64", "D77"]
+infrastructure = true
+contracts = ["schema", "diagnostics"]
 evidence = [
-  { kind = "consistency", test = "crates/foehncraft-cli/tests/run_contract.rs::exit_codes", what = "exit codes" },
-  { kind = "consistency", test = "crates/foehncraft-cli/tests/run_contract.rs::schema_is_json_schema", what = "the schema is a JSON Schema" },
+  { kind = "contract", property = "diagnostics", test = "crates/foehncraft-cli/tests/run_contract.rs::exit_codes", what = "exit codes of a finished, failed and stopped run" },
+  { kind = "contract", property = "schema", test = "crates/foehncraft-cli/tests/run_contract.rs::schema_is_json_schema", what = "the case schema is a JSON Schema" },
+  { kind = "contract", property = "schema", test = "crates/foehncraft-cli/tests/run_contract.rs::json_result_and_byte_identical_files", what = "the --json result carries format, status and exit code" },
+]
+
+[[feature]]
+id = "interface.tool-registry"
+area = "Backends and interfaces"
+title = "Tool registry (foehn call, foehn commands, typed schemas)"
+switch = "foehn call, foehn commands"
+decisions = ["D196"]
+infrastructure = true
+contracts = ["schema", "equivalence", "diagnostics"]
+evidence = [
+  { kind = "contract", property = "schema", test = "crates/foehncraft-cli/tests/tools_contract.rs::commands_lists_every_tool_with_schemas", what = "every tool lists its input and output schema" },
+  { kind = "contract", property = "schema", test = "crates/foehncraft-tools/src/lib.rs::every_schema_is_an_object_schema", what = "every schema is an object schema" },
+  { kind = "contract", property = "schema", test = "crates/foehncraft-tools/src/lib.rs::tools_md_is_current", what = "docs/tools.md is generated from the registry" },
+  { kind = "contract", property = "equivalence", test = "crates/foehncraft-cli/tests/tools_contract.rs::call_matches_the_clap_commands", what = "a tool call equals the command-line command" },
+  { kind = "contract", property = "equivalence", test = "crates/foehncraft-cli/tests/tools_contract.rs::runs_and_files_match", what = "a run through a tool call writes the same files as the command line" },
+  { kind = "contract", property = "diagnostics", test = "crates/foehncraft-cli/tests/tools_contract.rs::bad_calls_are_diagnostics", what = "bad calls are diagnostics, not crashes" },
+]
+
+[[feature]]
+id = "interface.journal-replay"
+area = "Backends and interfaces"
+title = "Journal and replay of tool calls"
+switch = "--journal, foehn run --script"
+decisions = ["D197"]
+infrastructure = true
+contracts = ["replay", "schema"]
+evidence = [
+  { kind = "contract", property = "replay", test = "crates/foehncraft-cli/tests/tools_contract.rs::journal_and_replay", what = "a journaled session replays to the same files" },
+  { kind = "contract", property = "replay", test = "crates/foehncraft-tools/src/journal.rs::replay_runs_the_calls_and_skips_the_refused_ones", what = "replay runs the calls and skips the refused ones" },
+  { kind = "contract", property = "replay", test = "python/tests/test_tools.py::test_calls_go_into_the_journal_and_replay", what = "Python calls enter the journal and replay" },
+  { kind = "contract", property = "schema", test = "crates/foehncraft-tools/src/journal.rs::calls_are_journaled_with_their_typed_input", what = "calls are journaled with their typed input" },
+]
+
+[[feature]]
+id = "interface.mcp"
+area = "Backends and interfaces"
+title = "MCP server (foehn mcp)"
+switch = "foehn mcp"
+decisions = ["D77", "L18"]
+infrastructure = true
+contracts = ["equivalence", "replay", "control", "diagnostics"]
+evidence = [
+  { kind = "contract", property = "equivalence", test = "crates/foehncraft-cli/tests/mcp.rs::the_tools_are_the_registry_ids", what = "the MCP tools are the registry ids" },
+  { kind = "contract", property = "replay", test = "crates/foehncraft-cli/tests/mcp.rs::a_session_with_questions_refusals_paging_and_its_replay", what = "a session through MCP replays from its journal" },
+  { kind = "contract", property = "control", test = "crates/foehncraft-cli/tests/mcp.rs::a_running_case_is_steered_and_stopped_through_its_control_port", what = "a running case is steered and stopped through its control port" },
+  { kind = "contract", property = "control", test = "crates/foehncraft-cli/tests/mcp.rs::a_cancelled_run_stops_with_its_output", what = "a cancelled run stops with its output" },
+  { kind = "contract", property = "diagnostics", test = "crates/foehncraft-cli/tests/mcp.rs::a_host_that_cannot_ask_gets_a_refusal", what = "a host that cannot ask gets a refusal" },
+  { kind = "contract", property = "diagnostics", test = "crates/foehncraft-cli/tests/mcp.rs::refuses_to_start_without_both_roots", what = "no roots, no start" },
 ]
 
 # ---------------------------------------------------------------- planned
