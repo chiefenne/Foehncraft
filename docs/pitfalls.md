@@ -142,7 +142,8 @@ fine meshes (2026-11-22). Four causes, each found by switching one thing:
     kink) then converges on levels 0 and 1 (494 and 1 378 iterations);
   - shorten the wall cells towards the corner: A about 11 at the kink
     (`diffuser.py --sharp`, case `diffuser_sst_sharp.toml`), one wall-cell
-    height of offset instead of 13, converges on all three levels;
+    height of offset instead of 13, converges on levels 0 and 1 (1 087
+    and 2 699 iterations);
   - round the corner where the geometry has a radius (the experiment has
     4.3 H): the error then falls as Δx² (0.10 and 0.017 of the velocity on
     levels 0 and 1, against 0.55 and 0.27 with the sharp corner).

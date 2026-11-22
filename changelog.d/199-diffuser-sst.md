@@ -5,10 +5,12 @@
   table by `examples/studies/diffuser_inlet_profile.py`), on structured
   meshes from `examples/meshes/diffuser.py` with the corners rounded as in
   the experiment (4.3 H) or sharp (`--sharp`, cells shortened towards the
-  corners). Both converge on three meshes (GCI in gallery 199,
-  `examples/studies/diffuser_gci.py`): with rounded corners the reattachment point (28.94 H on 111 360 cells) has a
-  GCI of 0.36 %, the separation point (2.20 H) 4 % and the pressure recovery
-  0.03 % or less. No comparison with
+  corners). With rounded corners the case converges on three meshes (GCI in
+  gallery 199, `examples/studies/diffuser_gci.py`): the reattachment point
+  (28.94 H on 111 360 cells) has a GCI of 0.36 %, the separation point
+  (2.20 H) 4 % and the pressure recovery 0.03 % or less. With sharp corners
+  the two coarser meshes converge; the reattachment and the pressure
+  recovery are within 1 % of the rounded ones. No comparison with
   measurements yet (pending). Gallery and recipe 199.
 - **Why the diffuser did not converge before.** A sharp wall corner makes
   the least-squares gradient of thin wall cells wrong by O(1), and linear
