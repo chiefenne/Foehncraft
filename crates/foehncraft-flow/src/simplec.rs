@@ -1285,9 +1285,18 @@ impl Flow {
         let nc = disc.n_cells;
         let nf = disc.n_faces;
         let nb = nf - disc.n_interior;
-        let eps2 = match settings.momentum.limiter {
-            LimiterKind::Venkatakrishnan => disc.venkat_eps2(settings.momentum.limiter_k),
-            _ => Vec::new(),
+        // the per-cell ε² of the Venkatakrishnan limiter, also when only the
+        // bounded face velocity (D50) takes it (`gradients` uses that limiter
+        // when the convection scheme has none)
+        let venkat = match settings.momentum.limiter {
+            LimiterKind::Venkatakrishnan => true,
+            LimiterKind::None => settings.face_velocity == FaceVelocity::Bounded,
+            LimiterKind::VenkatakrishnanWang => false,
+        };
+        let eps2 = if venkat {
+            disc.venkat_eps2(settings.momentum.limiter_k)
+        } else {
+            Vec::new()
         };
         let mut dev = device::create(
             &target.device,

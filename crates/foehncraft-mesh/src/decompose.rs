@@ -22,6 +22,26 @@
 //! in the input mesh (R2), so output and restart do not depend on the
 //! decomposition.
 //!
+//! **Canonical local mesh** (D93 (1), (3); MPI plan step W1). The geometry
+//! and every per-cell sum of a rank are bitwise those of the one-rank run on
+//! the global mesh, for any number of ranks and any partition:
+//!
+//! - an inner face whose global owner has the higher local index, and a
+//!   processor face whose global owner is the halo cell, is stored flipped
+//!   (owner and neighbour swapped, nodes reversed after the first one) and
+//!   marked in [`Mesh::face_flip`]; [`Geometry::compute`] evaluates it in
+//!   the node order of the global mesh and reverses the sign of the area
+//!   vector, which is exact;
+//! - every own cell lists its faces in ascending position in the global
+//!   mesh, so volume, centroid and every later per-cell sum over faces add
+//!   the same terms in the same order as on one rank;
+//! - halo cells get their volume and centroid from the owning rank by the
+//!   exchange ([`LocalMesh::geometry`]), never recomputed.
+//!
+//! The reference is the global mesh handed to [`extract`] (after any
+//! renumbering), so one rank through [`extract`] gives the bits of the
+//! undecomposed run, and runs without a decomposition do not change.
+//!
 //! The halo exchange (R3) gathers the send values of all fields for one
 //! neighbouring rank into one buffer, sends one message per neighbour and
 //! copies the received block into the contiguous halo range of each field.
@@ -39,6 +59,7 @@
 use crate::geometry::Geometry;
 use crate::mesh::{Boundary, Mesh};
 use crate::renumber::rcm_order;
+use foehncraft_kernels::unpack_face;
 use foehncraft_parallel::Communicator;
 use serde::{Deserialize, Serialize};
 
@@ -254,6 +275,7 @@ pub fn extract(
         ..Default::default()
     };
     mesh.face_ptr.push(0);
+    mesh.face_flip = faces.iter().map(|x| x.5).collect();
     let mut processor_faces: Vec<(u32, usize)> = Vec::new();
     for &(class, key, a, b, f, rev) in &faces {
         let nodes = global.face(f as usize);
@@ -292,6 +314,12 @@ pub fn extract(
         start += len;
     }
     mesh.build_cell_faces();
+    // every cell lists its faces in ascending position in the global mesh,
+    // so per-cell sums run in global face order (D93 (1))
+    for c in 0..n_own {
+        let range = mesh.cell_ptr[c] as usize..mesh.cell_ptr[c + 1] as usize;
+        mesh.cell_faces[range].sort_unstable_by_key(|&e| faces[unpack_face(e).0].4);
+    }
 
     // exchange plan: for each neighbouring rank, the own cells in its halo,
     // in its halo order
@@ -417,7 +445,9 @@ impl HaloPlan {
 
 impl LocalMesh {
     /// Geometry of the local mesh, with the halo volumes and centroids
-    /// filled by one exchange of four fields.
+    /// filled by one exchange of four fields: bitwise the geometry of the
+    /// global mesh for every own face and own and halo cell (see the module
+    /// docs).
     pub fn geometry(&self, comm: &dyn Communicator) -> Geometry {
         let mut g = Geometry::compute(&self.mesh);
         let mut x: Vec<Vec<f64>> = (0..3)
@@ -438,4 +468,97 @@ impl LocalMesh {
         }
         g
     }
+}
+
+/// What [`canonical_check`] found on one rank.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct CanonicalRank {
+    /// The rank.
+    pub rank: usize,
+    /// Faces stored flipped against the global mesh.
+    pub flipped_faces: usize,
+    /// Faces whose area vector or centroid differ in any bit from the
+    /// global mesh (0 when the local mesh is canonical).
+    pub differing_faces: usize,
+    /// Own and halo cells whose volume or centroid differ in any bit
+    /// (0 when the local mesh is canonical).
+    pub differing_cells: usize,
+}
+
+/// Checks that the local meshes of a decomposition held in one process are
+/// canonical (MPI plan step W1, D93 (1), (3)): every own face and every own
+/// and halo cell has bitwise the geometry of `global` (halo filled by
+/// [`HaloPlan::exchange_all`]). `global_geo` is
+/// `Geometry::compute(global)`. Entities are matched by their global
+/// identities.
+pub fn canonical_check(
+    global: &Mesh,
+    global_geo: &Geometry,
+    locals: &[LocalMesh],
+) -> Vec<CanonicalRank> {
+    let same = |a: [f64; 3], b: [f64; 3]| (0..3).all(|d| a[d].to_bits() == b[d].to_bits());
+    let gface: std::collections::HashMap<u64, usize> = global
+        .face_id
+        .iter()
+        .enumerate()
+        .map(|(i, &g)| (g, i))
+        .collect();
+    let gcell: std::collections::HashMap<u64, usize> = global
+        .cell_id
+        .iter()
+        .enumerate()
+        .map(|(i, &g)| (g, i))
+        .collect();
+    let mut geos: Vec<Geometry> = locals.iter().map(|l| Geometry::compute(&l.mesh)).collect();
+    let plans: Vec<&HaloPlan> = locals.iter().map(|l| &l.halo).collect();
+    let mut vol: Vec<Vec<f64>> = geos.iter().map(|g| g.cell_volume.clone()).collect();
+    HaloPlan::exchange_all(&plans, &mut vol);
+    for d in 0..3 {
+        let mut x: Vec<Vec<f64>> = geos
+            .iter()
+            .map(|g| g.cell_centroid.iter().map(|c| c[d]).collect())
+            .collect();
+        HaloPlan::exchange_all(&plans, &mut x);
+        for (g, x) in geos.iter_mut().zip(&x) {
+            for (c, v) in g.cell_centroid.iter_mut().zip(x) {
+                c[d] = *v;
+            }
+        }
+    }
+    locals
+        .iter()
+        .zip(geos.iter_mut().zip(vol))
+        .map(|(l, (g, v))| {
+            g.cell_volume = v;
+            let m = &l.mesh;
+            let mut out = CanonicalRank {
+                rank: l.rank,
+                ..Default::default()
+            };
+            for f in 0..m.n_faces() {
+                let gf = gface[&m.face_id[f]];
+                let s = global_geo.face_area[gf];
+                let s = if m.is_flipped(f) {
+                    out.flipped_faces += 1;
+                    [-s[0], -s[1], -s[2]]
+                } else {
+                    s
+                };
+                if !same(s, g.face_area[f])
+                    || !same(global_geo.face_centroid[gf], g.face_centroid[f])
+                {
+                    out.differing_faces += 1;
+                }
+            }
+            for c in 0..m.n_cells + m.n_halo {
+                let gc = gcell[&m.cell_id[c]];
+                if global_geo.cell_volume[gc].to_bits() != g.cell_volume[c].to_bits()
+                    || !same(global_geo.cell_centroid[gc], g.cell_centroid[c])
+                {
+                    out.differing_cells += 1;
+                }
+            }
+            out
+        })
+        .collect()
 }

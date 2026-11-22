@@ -10,6 +10,7 @@ Part of the [Recipes](../recipes.md): the energy equation of the fluid (stage 7,
 | 159 | [Follow how a solid and a fluid heat up together (transient conjugate heat transfer)](#cht-transient) |
 | 160 | [Put a contact resistance between two parts, orient an orthotropic solid, heat a component](#cht-contact) |
 | 180 | [Bring the solids of a transient conjugate run to their state sooner (thermal acceleration)](#cht-acceleration) |
+| 190 | [Couple a periodic flow with slow solids by cycle averages (exhaust manifolds, pulsating flows)](#cht-cycle) |
 | 186 | [Switch on gravity and buoyancy; which pressure do my boundary values mean](#buoyancy) |
 | 195 | [Let the density of a gas follow its temperature (low-Mach variable density)](#variable-density) |
 
@@ -511,10 +512,88 @@ its equations: nothing to accelerate (ACC001). When the heat-up history
 itself is wanted (a component warming in a steady cooling flow, a drive
 cycle), the solids must keep their true ρ c_p; the frozen-flow march of
 D118, which keeps the true history with large steps, comes later. For an
-exhaust manifold over many engine cycles the cycle-averaged loop of D204
-(also later) solves the solid steady with the cycle-averaged heat transfer:
+exhaust manifold over many engine cycles the cycle-averaged loop of
+recipe 190 solves the solid steady with the cycle-averaged heat transfer:
 the limit f → 0 of this acceleration, without the swing.
 
+<a id="cht-cycle"></a>
+## 190. Couple a periodic flow with slow solids by cycle averages (exhaust manifolds, pulsating flows)
+
+A periodic flow (an engine cycle, a blade passing, a pulsating jet)
+settles in a few cycles, its solids in thousands. When the operating
+point of the solids is wanted, not their history, the run can hold the
+solids, average the heat transfer over a cycle and solve the solids steady
+with it, a few times over, until the wall temperatures stop changing
+(D204):
+
+```toml
+[energy.cycle]
+period = 0.04               # s, a whole number (>= 2) of time steps
+# warmup_cycles = 1         # after every update, not averaged
+# average_cycles = 1
+# max_cycles = 6            # per fluid phase, while the flow is not periodic (CYC002)
+# cycle_tolerance = 0.005   # relative change of the mean interface heat flow between cycles
+# max_updates = 5
+# tolerance = 0.5           # K, largest change of the wall temperature per update
+# heat_tolerance = 0.005    # relative change of the interface heat flow per update
+# relaxation = 1.0          # of the first update
+# update = "quasi-newton"   # later updates: "quasi-newton" | "aitken" | "relaxation"
+# solid_model = "mean-flow" # or "robin": the classic first-cell Robin pair (slow)
+# enabled = true            # false: the same case fully coupled, as its reference
+```
+
+The case needs a fixed time step and solid regions; it excludes
+`[energy.acceleration]` (CYC001). `time.end_time` is an upper bound: the
+run stops when the loop has converged or reached `max_updates` (CYC004).
+
+**What happens.** A fluid phase runs `warmup_cycles` + `average_cycles`
+cycles with the solids held (more, up to `max_cycles`, until the mean
+interface heat flow of the last two cycles agrees within
+`cycle_tolerance`). Per interface face it accumulates the fluid-side
+conductance, the heat flow and the reference temperature, and per face the
+mass flux. The solid phase solves the energy equation steady with the
+fluid convected by the cycle-mean mass flux, the solids free and the
+difference between the transient and the mean-flow heat flow of each face
+added to its solid cell; the new wall temperatures go to the next fluid
+phase, which continues from its own last state. The loop stops when the
+largest change of the wall temperature is below `tolerance` and the heat
+flow changes by less than `heat_tolerance`.
+
+**What is exact and what is not.** At convergence the cycle-mean heat
+flow of every interface face is that of the periodic flow at the final
+wall temperature, and the solids are in the steady state under it. The
+swing of the wall temperature over a cycle is not in the result (LIM009),
+nor its correlation with the heat-transfer coefficient: in gallery 190 the
+wall is within 0.4 % of the rise of the fully coupled periodic state. The
+fluid fields at the end are those of the last fluid phase.
+
+**The output.**
+- `cycle_coupling.csv`: one row per update with the time, the cycles of the
+  fluid phase and whether it was periodic, the cycle-mean heat flow of each
+  interface, its change, the largest and mean change of the wall
+  temperature, the mean wall temperature, the relaxation of the update and
+  the heat balance of the solid phase.
+- `cycle_faces.csv`: per interface face of the last update its position,
+  area, fluid-side conductance, reference temperature, heat flux into the
+  solid and wall temperature, for mapping or post-processing.
+- the report, `transient.cycle_coupling`: the same per update, `converged`,
+  the cycles and the end time; CYC005 lines in the log and the run
+  record.
+
+```
+target/release/foehn flow examples/cases/flow/cht_pulsating_channel_cycle.toml --out output/cyc
+target/release/foehn flow examples/cases/flow/cht_pulsating_channel_cycle.toml --out output/cyc_ref \
+    --set energy.cycle.enabled=false --set time.end_time=4000.0
+```
+
+**When not to use it.** When the history of the solids matters (a
+warm-up, a drive cycle) use the true transient run or the frozen-flow march
+(D118, later); when the swing at the surface matters (thermal fatigue) the
+skin swing and a few fully coupled cycles at the end come next. A flow that
+is not periodic has no cycle mean: use the thermal acceleration of recipe
+180. Keep `solid_model = "mean-flow"`; `"robin"` is the classic
+first-cell Robin loop, kept to compare: it needs many more updates
+(gallery 190).
 <a id="buoyancy"></a>
 ## 186. Switch on gravity and buoyancy; which pressure do my boundary values mean
 

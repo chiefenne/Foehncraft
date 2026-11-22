@@ -790,6 +790,21 @@
    "range": {}
   },
   {
+   "id": "cht.cycle-coupling",
+   "title": "Cycle-averaged coupling of a periodic flow with its solids",
+   "grade": "partial",
+   "why": [
+    "no exact or manufactured solution",
+    "gaps written"
+   ],
+   "gaps": [
+    "V7.38 not built: no exact solution of a slab under a periodic gas temperature and heat transfer coefficient",
+    "the swing of the wall temperature over a cycle is not resolved (the skin of the solids, CYC003, comes later)",
+    "laminar case only; no turbulent periodic case yet"
+   ],
+   "range": {}
+  },
+  {
    "id": "cht.turbulent",
    "title": "Conjugate heat transfer with a turbulence model",
    "grade": "partial",

@@ -247,6 +247,7 @@ and `message`:
 | `LIM006` | automatic mesh remediation active | the remediation of D50 changed the schemes (MESH002) |
 | `LIM007` | the history before t = … s is not physical (thermal acceleration) | `[energy.acceleration]` (D213): the run reports `physical_from` |
 | `LIM008` | an operator of a feature in use is not exact on N of M cells | the operator check (D236): `MESH005` with `turbulence.curvature_correction`, `MESH006` with `turbulence.qcr` |
+| `LIM009` | the solids carry the cycle-mean state, no swing over a cycle | `[energy.cycle]` (D204) |
 
 Limitations change neither `status` nor the exit code (D199 Q1, Q2): a
 run with limitations is `finished` with exit code 0. The human text says
@@ -351,6 +352,10 @@ A code keeps its meaning; a retired code stays in the table.
 | `ACC002` | warning | The run ended before the true heat capacity of the accelerated solids was restored: the final state is that of the accelerated solids and the history is not physical. |
 | `ACC003` | note | The accelerated solids' skin depth of the period, √(2k/(f ρ c_p ω)), is larger than the thickness V/A of a region (V its volume, A its interface area): while accelerated the swing of the period reaches through the wall; it goes away with the restore. |
 | `ACC004` | note | A step of the thermal acceleration: the conductances and factors measured, the solids settled, the restore started or finished. |
+| `CYC001` | error | An `[energy.cycle]` setting that cannot be used: a steady case, no solid region, together with `[energy.acceleration]`, an adaptive time step, a `period` that is not a whole number (≥ 2) of time steps, or a count, tolerance or relaxation out of range. |
+| `CYC002` | warning | A fluid phase of the cycle-averaged loop ended at `max_cycles` while the mean interface heat flow still changed between the last two cycles by more than `cycle_tolerance`: the averages are not those of a periodic flow. |
+| `CYC004` | warning | The cycle-averaged loop stopped at `max_updates` before the wall temperatures and the interface heat flows settled within `tolerance` and `heat_tolerance`. |
+| `CYC005` | note | A step of the cycle-averaged loop: a fluid phase averaged, a solid phase solved, the wall temperatures updated, the loop converged. |
 | `ENE004` | warning | A Mach number above 0.3 in a run with the variable density: the low-Mach form loses its validity (the density does not follow the dynamic pressure). |
 | `ENE007` | warning | A steady run that converged while its heat balance does not close (imbalance above 1 % of the largest heat flow): the temperature residual is small but the energy solve is not converged; tighten `[solver.energy] tolerance` and raise `max_iter`. |
 | `THM001` | error | A steady run whose boundaries leave the temperature level undetermined: no inlet and no `temperature` or convection boundary, and no net heat input. |
@@ -428,6 +433,7 @@ A code keeps its meaning; a retired code stays in the table.
 | `LIM006` | note | Automatic mesh remediation (D50, MESH002) changed the schemes on poor faces: first order there. |
 | `LIM007` | note | A transient conjugate run with thermal acceleration of its solids (D213): the history before `physical_from` is not physical (the solids' time ran faster, their swing was too large); the end state and later cycle means are. |
 | `LIM008` | note | An operator a feature in use needs is not exact on some cells (MESH005, MESH006, D236): the feature does not converge with the mesh there. |
+| `LIM009` | note | A cycle-averaged conjugate run (D204): the solids carry the steady temperatures of the cycle-mean heat transfer, not a history; each fluid phase ran with the wall temperatures held, so the swing of the wall temperature over a cycle is not in the result. |
 | `TOOL001` | error | A tool id that the registry does not have (with the nearest id as a hint); `foehn commands` lists them. |
 | `TOOL002` | error | A tool input that does not match the input schema of the tool (unknown field, wrong type, missing field). |
 | `TOOL003` | warning | The journal of tool calls (D197) could not be written: the calls run, but the journal misses them. |

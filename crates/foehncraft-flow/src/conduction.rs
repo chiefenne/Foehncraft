@@ -192,6 +192,25 @@ pub(crate) struct Conduction {
     g: [Vec<f64>; 3],
     bc: (Vec<f64>, Vec<f64>),
     n_interior: usize,
+    /// The Robin conditions of the solid phase of the cycle-averaged loop
+    /// (D204), per interface face: `None` keeps the face as it is.
+    pub robin: Option<Vec<Option<RobinFace>>>,
+}
+
+/// A fluid–solid interface face of the solid phase of the cycle-averaged
+/// loop (D204): the heat flow into the solid is Ḡ (T̄_ref − T_s*), T_s* the
+/// solid cell's temperature at the face (the offset of the face and the
+/// cross term of an orthotropic solid included), Ḡ the cycle mean of the
+/// conductance of the fluid side, the contact and the solid half cell in
+/// series. The face itself carries no conduction in the matrix.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct RobinFace {
+    /// Ḡ (W/K).
+    pub g: f64,
+    /// T̄_ref (K).
+    pub t_ref: f64,
+    /// The solid cell is the owner of the face.
+    pub solid_owner: bool,
 }
 
 #[inline]
@@ -400,6 +419,7 @@ impl Conduction {
             g: [Vec::new(), Vec::new(), Vec::new()],
             bc: (Vec::new(), Vec::new()),
             n_interior: ni,
+            robin: None,
         })
     }
 
@@ -418,6 +438,20 @@ impl Conduction {
         let tn = self.phi[fa.n as usize] + dot(gn, fa.tn);
         let cp = -dot(fa.a_p, gp);
         let cn = -dot(fa.a_n, gn);
+        if let Some(r) = self.robin.as_ref().and_then(|r| r[i]) {
+            // the solid phase of the cycle loop: the Robin pair on the
+            // solid side, the face temperature of the solid side through
+            // its half cell; the other side shows the same face value
+            let (ts, rs) = if r.solid_owner {
+                (tp + cp * fa.r_p, fa.r_p)
+            } else {
+                (tn - cn * fa.r_n, fa.r_n)
+            };
+            let q_in = r.g * (r.t_ref - ts);
+            let tw = ts + rs * q_in / fa.area;
+            let q_pn = if r.solid_owner { -q_in } else { q_in };
+            return (q_pn, tw, tw);
+        }
         let rt = fa.r_p + fa.r_c + fa.r_n;
         let q = (tp - tn + cp * fa.r_p + cn * fa.r_n) / rt;
         (q * fa.area, tp - fa.r_p * (q - cp), tn + fa.r_n * (q - cn))
@@ -592,6 +626,61 @@ impl Conduction {
         }
         self.cell_slot = cs;
         Ok(())
+    }
+
+    /// The Robin sources of the solid phase (D204) per solid cell of a
+    /// Robin face: (cell, the explicit heat flow Ḡ (T̄_ref − δT) (W) with
+    /// δT the offset and cross term of the face from the last sweep's
+    /// gradient, Ḡ (W/K) on the diagonal).
+    pub fn robin_sources(&self) -> Vec<(u32, f64, f64)> {
+        let Some(rb) = self.robin.as_ref() else {
+            return Vec::new();
+        };
+        let cs = &self.cell_slot;
+        let mut out = Vec::new();
+        for (fa, r) in self.faces.iter().zip(rb) {
+            let Some(r) = r else { continue };
+            // T_s* − T_P: the offset and the cross term (−a·∇T r on the
+            // owner's side, +a·∇T r on the neighbour's, as in `face`)
+            let (c, off, a, rr) = if r.solid_owner {
+                (fa.o, fa.tp, fa.a_p, -fa.r_p)
+            } else {
+                (fa.n, fa.tn, fa.a_n, fa.r_n)
+            };
+            let g = if self.phi.is_empty() {
+                [0.0; 3]
+            } else {
+                self.grad_of(cs, c as usize)
+            };
+            let dt = dot(g, off) + dot(a, g) * rr;
+            out.push((c, r.g * (r.t_ref - dt), r.g));
+        }
+        out
+    }
+
+    /// Per interface face of the last solve: (area, the conductance
+    /// |S|/(R_P + R″_c + R_N) (W/K), the conductance of the fluid side
+    /// |S|/R_fluid (W/K), the heat flow into the solid (W), the solid
+    /// cell's temperature at the face T_s* (K), the face temperature on
+    /// the solid side (K)), for the fluid–solid faces with `Some`; `fluid`
+    /// tells per face whether the owner is the fluid (`None`: two solids).
+    pub fn face_states(&self, fluid_owner: &[Option<bool>]) -> Vec<Option<[f64; 6]>> {
+        self.faces
+            .iter()
+            .enumerate()
+            .zip(fluid_owner)
+            .map(|((i, fa), fo)| {
+                let fo = (*fo)?;
+                let rt = fa.r_p + fa.r_c + fa.r_n;
+                let (q_in, tw, rs, rf) = if fo {
+                    (self.heat[i], self.t_n[i], fa.r_n, fa.r_p)
+                } else {
+                    (-self.heat[i], self.t_o[i], fa.r_p, fa.r_n)
+                };
+                let ts = tw - rs * q_in / fa.area;
+                Some([fa.area, fa.area / rt, fa.area / rf, q_in, ts, tw])
+            })
+            .collect()
     }
 
     /// The face temperatures and heat flows of the last solve, per

@@ -15,6 +15,7 @@
 //! | LIM006 | automatic mesh remediation active | the remediation of D50 changed the schemes |
 //! | LIM007 | thermal acceleration of the solids | the history before `physical_from` is not physical (D213) |
 //! | LIM008 | an operator of a feature in use is not exact | the operator check of D236 (MESH005, MESH006) |
+//! | LIM009 | cycle-averaged coupling (D204) | the solids carry the cycle-mean state, no swing over a cycle |
 //!
 //! The list never changes a result or the exit code (D199 Q1, Q2): a run
 //! with limitations keeps `"status": "finished"` and exit code 0, and the
@@ -270,6 +271,9 @@ pub fn features_in_use(case: &FlowCase) -> Vec<&'static str> {
             .is_some_and(|e| e.acceleration.is_some())
         {
             f.push("cht.thermal-acceleration");
+        }
+        if case.energy.as_ref().is_some_and(|e| e.cycle.is_some()) {
+            f.push("cht.cycle-coupling");
         }
     }
     if case
@@ -555,6 +559,26 @@ pub fn of_run(case: &FlowCase, rep: &FlowReport) -> Vec<Limitation> {
             out.push(Limitation::new(diag::LIM_OPERATORS, Some(feature), msg));
         }
     }
+    // LIM009: a cycle-averaged coupling (D204): the solids carry the
+    // cycle-mean state
+    if let Some(c) = rep
+        .solves
+        .iter()
+        .filter_map(|s| s.transient.as_ref())
+        .find_map(|t| t.cycle_coupling.as_ref())
+    {
+        out.push(Limitation::new(
+            diag::LIM_CYCLE,
+            Some("cht.cycle-coupling"),
+            format!(
+                "cycle-averaged coupling of the solids ({} after {} updates): their temperatures are \
+                 the steady state of the cycle-mean heat transfer, the swing of the wall \
+                 temperature over a cycle is not in the result",
+                if c.converged { "converged" } else { "not converged" },
+                c.updates.len()
+            ),
+        ));
+    }
     // LIM006: remediation
     if let Some(r) = rep
         .solves
@@ -659,6 +683,8 @@ mod tests {
             "cht.steady",
             "cht.turbulent",
             "cht.contact-thin-wall",
+            "cht.thermal-acceleration",
+            "cht.cycle-coupling",
             "rotating.mrf-transient",
             "rotating.mrf",
             "rotating.sliding-imprint",
@@ -685,6 +711,8 @@ mod tests {
             diag::LIM_DEVICE,
             diag::LIM_REMEDIATION,
             diag::LIM_OPERATORS,
+            diag::LIM_ACCELERATED,
+            diag::LIM_CYCLE,
         ] {
             assert!(diag::info(c).is_some(), "{c}");
         }

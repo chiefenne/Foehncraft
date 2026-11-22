@@ -13,11 +13,11 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | Page | What it covers | Examples |
 |---|---|---|
 | [Kernel benchmarks and GPU runs](gallery/benchmarks.md) | gate G1 on CPUs and GPUs, on box, polyhedral and tetrahedral meshes, and the flow loop on a GPU | 1, 2, 7, 16 |
-| [Meshes](gallery/meshes.md) | the built-in test mesher in 2D and 3D, partitioning, the Gmsh reader and flow on poor Gmsh meshes | 3, 4, 5, 6, 26, 127, 129, 134, 138, 189 |
+| [Meshes](gallery/meshes.md) | the built-in test mesher in 2D and 3D, partitioning, the Gmsh reader and flow on poor Gmsh meshes | 3, 4, 5, 6, 26, 127, 129, 134, 138, 189, 200 |
 | [Scalar transport and the pressure solver](gallery/scalar-pressure.md) | convection–diffusion order of accuracy, convection schemes and limiters, the pressure multigrid | 8, 9, 10, 11 |
 | [Incompressible flow](gallery/flow.md) | steady and transient laminar verification and benchmarks: cavity, Poiseuille, Taylor–Green, cylinder, time-step control | 12, 13, 14, 15, 20, 78, 80, 81, 83, 85, 86, 87, 94, 95, 96, 98, 99, 100, 101, 102, 103, 196 |
 | [Passive scalars and the wall distance](gallery/scalars.md) | passive scalars carried by the flow, the bounded BDF2, the exact wall distance | 63 |
-| [Energy equation and heat transfer](gallery/energy.md) | the energy equation of the fluid with temperature-dependent properties, viscous heating and thermal walls: a heated cavity, conduction with k(T), Couette flow heated by friction, conjugate heat transfer with solid regions, laminar and turbulent (a finned heat sink) | 154, 156, 158, 159, 160, 180, 186, 195 |
+| [Energy equation and heat transfer](gallery/energy.md) | the energy equation of the fluid with temperature-dependent properties, viscous heating and thermal walls: a heated cavity, conduction with k(T), Couette flow heated by friction, conjugate heat transfer with solid regions, laminar and turbulent (a finned heat sink) | 154, 156, 158, 159, 160, 180, 190, 186, 195 |
 | [Turbulence models](gallery/turbulence.md) | the RANS turbulence models of stage 6 with their wall treatments: k-ω SST on the TMR flat plate and in a channel | 68, 71, 73, 74, 88, 89, 90, 113, 115, 141, 140, 184, 194, 197, 193 |
 | [Boundary conditions](gallery/boundary-conditions.md) | slip walls, axisymmetric wedges, inlet profiles from tables, backflow at pressure outlets, convective outlets, periodic modules | 21, 67 |
 | [Expressions and materials](gallery/properties.md) | boundary values, body forces and viscosities as expressions, the material database, regions, walls with a mass flux | 23 |
@@ -110,11 +110,13 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | <a id="mms-turbulence"></a>184 | [Manufactured solutions of k-ε-ζ-f₀, the curvature correction and the QCR: orders and two findings](gallery/turbulence.md#mms-turbulence) | [Turbulence models](gallery/turbulence.md) |
 | <a id="buoyancy"></a>186 | [A warm strip in a closed air enclosure, and a stratified box that stays at rest](gallery/energy.md#buoyancy) | [Energy equation and heat transfer](gallery/energy.md) |
 | <a id="operator-check"></a>189 | [Which cells can the curvature correction and the QCR trust? The operator check](gallery/meshes.md#operator-check) | [Meshes](gallery/meshes.md) |
+| <a id="cht-cycle"></a>190 | [A pulsating channel over a heated wall, coupled by the cycle-averaged loop](gallery/energy.md#cht-cycle) | [Energy equation and heat transfer](gallery/energy.md) |
 | <a id="pipe-turbulent"></a>193 | [Turbulent pipe flow at Re_b 5300: friction against the DNS, three meshes with GCI](gallery/turbulence.md#pipe-turbulent) | [Turbulence models](gallery/turbulence.md) |
 | <a id="qcr-consistency"></a>194 | [The QCR stress on tetrahedra and perturbed meshes: a consistent divergence](gallery/turbulence.md#qcr-consistency) | [Turbulence models](gallery/turbulence.md) |
 | <a id="variable-density"></a>195 | [Air between walls at 960 K and 240 K, a heated duct and two closed boxes](gallery/energy.md#variable-density) | [Energy equation and heat transfer](gallery/energy.md) |
 | <a id="tjunction-mixing"></a>196 | [T-junction mixing on polyhedra: three meshes with grid convergence](gallery/flow.md#tjunction-mixing) | [Incompressible flow](gallery/flow.md) |
 | <a id="curvature-consistency"></a>197 | [The curvature correction on tetrahedra and perturbed meshes: a consistent DS/Dt](gallery/turbulence.md#curvature-consistency) | [Turbulence models](gallery/turbulence.md) |
+| <a id="canonical-ranks"></a>200 | [Three ranks, the bits of one: the canonical local mesh](gallery/meshes.md#canonical-ranks) | [Meshes](gallery/meshes.md) |
 
 ## Adding a feature
 
