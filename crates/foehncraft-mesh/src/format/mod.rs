@@ -24,8 +24,8 @@
 
 #[cfg(feature = "hdf5")]
 pub mod cgns;
-pub mod gmsh;
 pub mod fluent_msh;
+pub mod gmsh;
 mod inflate;
 pub mod openfoam;
 pub mod su2;
@@ -121,7 +121,11 @@ pub(crate) fn declared(n: usize, len: usize, what: &str) -> Result<usize, String
 /// The format of a name.
 pub fn by_name(name: &str) -> Result<&'static dyn MeshFormat, String> {
     // `industry_msh` is the former name of `fluent_msh`, still accepted
-    let name = if name == "industry_msh" { "fluent_msh" } else { name };
+    let name = if name == "industry_msh" {
+        "fluent_msh"
+    } else {
+        name
+    };
     FORMATS
         .iter()
         .copied()
