@@ -142,11 +142,17 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 
 ### Gmsh v4 reader
 
-**partial** (no exact or manufactured solution) · id `mesh.gmsh` · switch `mesh.format = "gmsh"`
+**partial** (no exact or manufactured solution; gaps written) · id `mesh.gmsh` · switch `mesh.format = "gmsh"`
 
 - consistency: [`box_tet_ascii_and_binary_are_equal`](../../crates/foehncraft-mesh/tests/gmsh.rs): ASCII and binary files give the same mesh
 - consistency: [`gmsh_meshes_are_unchanged`](../../crates/foehncraft-mesh/tests/gmsh_fingerprint.rs): fingerprints of the Gmsh meshes of the catalogue
 - reference-data: [`pipe_gmsh_raw`](../../examples/cases/flow/pipe_gmsh_raw.toml): developing laminar pipe flow on raw Gmsh tetrahedra converges (with the automatic remediation)
+- reference-data: [`tjunction_mixing`](../../examples/cases/flow/tjunction_mixing.toml): 3D T-junction on polyhedra converted from Gmsh tetrahedra, three meshes: inlet pressure order 1.77, GCI 2.4 % (passes in CI (set linux-1), not yet in the manual)
+
+Gaps:
+
+- T-junction (gallery 196): the pressure at the branch inlet is not grid-convergent (observed order 0.2, GCI 29 %) and the scalar difference downstream oscillates; no comparison with published measurements yet
+- conversion into polyhedra fails with GEN001 (a boundary cell centre behind its face) on Netgen-optimised tetrahedra and on one fine Gmsh mesh of the T-junction (h = 0.005 m); sizes that convert are used
 
 <a id="mesh-su2"></a>
 

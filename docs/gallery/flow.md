@@ -1274,3 +1274,61 @@ meridian) and rotor–rotor interfaces are not available yet; general
 non-matching interfaces are D58 (stage 7). Details on the
 [verification page](../verification/stage6.md#interfaces-of-any-rotationally-symmetric-shape-d186-pr-103).
 [Recipe 103](../recipes/flow.md#revolved-interfaces).
+
+---
+
+<a id="tjunction-mixing"></a>
+## 196. T-junction mixing on polyhedra: three meshes with grid convergence
+
+<img src="../figures/gallery/tjunction_mixing.png" alt="Laminar T-junction on the mid plane. Top: speed, a fast jet from the branch bends into the main pipe and joins the core flow, with a slow recirculation behind the junction on the branch side. Bottom: the passive scalar from the branch, yellow in the branch and a green band that spreads along the upper wall of the main pipe, dark blue elsewhere" width="1800" height="1080">
+
+The second general-purpose internal flow of D45 (stage 8): a main pipe of
+diameter 0.1 m and length 1 m with a branch of diameter 0.05 m joining at
+x = 0.3 m (`examples/meshes/tjunction_gci.geo`), both inlets at 1 m/s,
+ν = 5·10⁻⁴ m²/s (Re 200 and 100), a static pressure outlet. The branch
+fluid carries a passive scalar θ = 1 (Schmidt number 1, D51), the main
+fluid θ = 0. The Gmsh tetrahedra are converted into polyhedra, one cell
+per node. The flow is laminar and steady (90 to 180 iterations).
+
+Three meshes, 4 852, 16 665 and 44 738 polyhedra (h = 0.0126, 0.0079,
+0.0055 m, refinement ratios 1.50 and 1.41, GCI after Celik et al. 2008
+with these ratios, `examples/studies/tjunction_gci.py`):
+
+| Quantity | coarse | medium | fine | order | GCI_fine |
+|---|---|---|---|---|---|
+| mean pressure, main inlet (Pa) | 3.3375 | 3.4652 | 3.5179 | 1.77 | 2.4 % |
+| mean pressure, branch inlet (Pa) | 4.4941 | 4.5823 | 4.6572 | 0.21 | 29 % |
+| θ(y = +0.035) − θ(y = −0.035) at x = 0.9 m | 0.1966 | 0.1974 | 0.1910 | oscillatory | 1.7 % (band of the three) |
+
+Findings, as run: the main-inlet pressure converges at about second
+order. The branch-inlet pressure does not: its order is 0.2 and the
+GCI 29 %. A likely cause, not isolated here, is the faceted wall of the
+mesh: the area of the branch inlet, and with it the mass flow of the
+uniform inlet velocity, changes with the mesh. The scalar difference
+across the pipe oscillates between the meshes (0.1966, 0.1974, 0.1910).
+**There is no comparison with published measurements yet** (owner
+decision 2026-11-22: GCI first, reference later); the case is not
+validated, only grid-studied.
+
+The conversion into polyhedra fails with GEN001 (the centre of a boundary
+cell lies behind its wall face) on tetrahedra that Netgen optimised
+and on one fine Gmsh mesh (h = 0.005 m, 54 569 cells); the study uses
+plain Gmsh meshes of the sizes above that convert. Recorded as a gap of
+the Gmsh reader row.
+
+| | |
+|---|---|
+| Code | no new code: Gmsh reader, polyhedral conversion, passive scalar (D51) |
+| Case file | `flow/tjunction_mixing.toml` (coarse mesh `meshes/tjunction_gci_coarse.msh`) |
+| Study | `examples/studies/tjunction_gci.py`; figure `tools/plot/tjunction_chart.py` |
+| Recipe | [196](../recipes/flow.md#tjunction-mixing) |
+
+```
+target/release/foehn flow examples/cases/flow/tjunction_mixing.toml --out output/tj
+python3 examples/studies/tjunction_gci.py output/tjunction_gci
+python3 -m tools.plot.tjunction_chart docs/figures/gallery/tjunction_mixing.png output/tjunction_gci/tj_0.0055.msh
+```
+
+[↑ back to top](#incompressible-flow)
+
+---
