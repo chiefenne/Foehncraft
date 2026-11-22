@@ -14,6 +14,7 @@ Part of the [Example gallery](../gallery.md): adjoint-ready kernels, runs that a
 | 171 | [Every function as a tool: the catalogue an agent reads](#tool-registry) | 7 | one registry of typed tools with ids, versions, JSON Schemas and action kinds; `foehn commands`, `foehn call`, `fc.call`; front ends checked by `cargo xtask layering` (D196, D203) |
 | 172 | [A session that can be replayed: the journal of tool calls](#journal) | 7 | every tool call into a journal with its typed input, the call that started a run in `run.jsonl`, `foehn run --script` replays a journal or a run record and reports each call that ends otherwise (D197) |
 | 175 | [An assistant at the controls: the MCP server](#mcp) | 7 | `foehn mcp`: every registry tool to an assistant over MCP, inside required roots, with an action table that allows, asks or refuses each kind of action, mandatory run limits, progress and cancellation, summaries first, histories paged by cursor, the session journaled for replay (L18, D198) |
+| 177 | [An assistant steers a running case: the control port](#control-port) | 7 | a run listens on `127.0.0.1` with a token in a file only its user reads; `run.status` gives the live residuals, `run.set` changes run-time settings (never limits), `run.stop` stops with restart file and results; applied after an iteration or step, reported with the equivalent `[[schedule]]` entry (L19, D198 f) |
 
 ---
 
@@ -648,6 +649,73 @@ cargo build --release -p foehncraft-cli
 python3 -m tools.plot.mcp_session docs/figures/gallery/mcp_session.svg target/release/foehn
 target/release/foehn run --script output/tools/mcp-journal.jsonl \
     --read-root examples/cases --read-root output/tools --write-root output/tools/mcp
+```
+
+[↑ back to top](#run-control-health-and-adjoint-readiness)
+
+---
+
+<a id="control-port"></a>
+## 177. An assistant steers a running case: the control port
+
+<img src="../figures/gallery/control_port.svg" alt="Left: the transcript of a scripted assistant steering the lid-driven cavity at Re = 100 while its run is going: run.status with the live step and residual, run.set of the time step 0.005 to 0.01 queued and applied at step 402, run.set of a relaxation below 1 refused by the case at step 403, a second status and run.stop with the final result summary, exit code 3. Right: the continuity residual of the run over its 1007 time steps with the three events marked" width="1000" height="691">
+
+A run that an assistant (or a person) may steer listens on a port of the
+loopback interface, `127.0.0.1`, and nowhere else (L19, D198 (f)). The
+port number is in `control.json` in the output folder of the run, and a
+random token in `control.token` next to it, readable by its user only on
+Unix; both disappear when the run ends. `foehn flow --control-port` opens
+the port for a person; every `flow.run` through `foehn mcp` opens it, and
+`foehn mcp` answers calls of the kinds read and control while the run is
+going, so the assistant need not wait for the result of `flow.run`:
+
+- `run.status`: the last iteration or step with its residuals and linear
+  iterations, the wall time, whether a stop is pending, and what the run
+  did with the changes asked for so far.
+- `run.set`: run-time settings, the keys that a re-read of the case file
+  may change (D40): relaxation factors, linear-solver tolerances, time-step
+  settings, output cadences. Never `run.limits.*`: the limits of a run are
+  the person's, an assistant cannot raise its own.
+- `run.stop`: stop at the end of the current iteration or step, with the
+  restart file, the final output and the result summary, exit code 3
+  (`RUN022`).
+
+The changes take effect after an iteration or step, like the control files
+of D40, so a result never depends on where in a step a request arrived. A
+setting is checked against the case when it is applied: the figure shows the
+time step changed at step 402 (`RUN023`) and a momentum relaxation of 0.7
+that the case refuses at step 403, because a transient case with one outer
+iteration would lag the solution with it (`RUN024`); the run goes on with
+what it had. Every outcome is in the run record with the `[[schedule]]` entry
+that reproduces it from a case file (`at_step = 403, set = { time.time_step
+= 0.01 }`), so a steered run can be repeated without the port. The
+journal holds the live calls; `foehn run --script` skips them, since they
+act on a process that is gone.
+
+The figure is a scripted client on the transient cavity of [gallery 12](flow.md#cavity) with
+a small time step, so that the run lasts long enough to be steered; a real
+assistant chooses its calls itself. The residual jumps at step 402, where the
+step doubles, and falls on after.
+
+| Call | Answer |
+|---|---|
+| `flow.run` (not waited for) | the run starts, `control.json` and `control.token` appear |
+| `run.status` | running for 3.4 s, step 401, continuity 3.1e-7 |
+| `run.set` time step 0.01 | queued; applied after step 402 (`RUN023`) |
+| `run.set` relaxation 0.7 | queued; refused at step 403 (`RUN024`), reason in the status |
+| `run.stop` | `flow.run` ends: stopped, exit code 3, `RUN022` |
+
+| | |
+|---|---|
+| Code | `crates/foehncraft-flow/src/live.rs` (the port, the protocol, the token), `crates/foehncraft-flow/src/case.rs` and `unsteady.rs` (`apply_live_settings` after an iteration or step), `crates/foehncraft-tools/src/control.rs` (the tools), `crates/foehncraft-cli/src/mcp.rs` (the lane for read and control calls) |
+| Tests | `crates/foehncraft-flow/src/live.rs` (token, refusals, the limits cannot be set, the files disappear), `crates/foehncraft-cli/tests/mcp.rs` (steer and stop a running case through `foehn mcp`, the replay skips live calls) |
+| Case files | `tools/control/run_status.json`, `run_set.json`, `run_set_refused.json`, `run_stop.json` |
+| Guides | [Watch and steer a running case](../agents.md#7-watch-and-steer-a-running-case) |
+| Interfaces | [Live control port](../interfaces.md#live-control-port-l19) |
+
+```
+cargo build --release -p foehncraft-cli
+python3 -m tools.plot.control_session docs/figures/gallery/control_port.svg target/release/foehn
 ```
 
 [↑ back to top](#run-control-health-and-adjoint-readiness)

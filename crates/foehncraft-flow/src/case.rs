@@ -3122,6 +3122,7 @@ pub fn run_steered(
                     sched.fired,
                 )?;
             }
+            apply_live_settings(&mut case, &mut fl, &mut lg, steer, &mut rep.warnings, it)?;
             if let Some(s) = steer.poll(&case.run.limits, it - first, false, req.stop) {
                 lg.note(&format!("iteration {it}: {}", s.message));
                 stopped = true;
@@ -3572,6 +3573,70 @@ pub(crate) fn schedule_step<F: FnMut(&str)>(
     }
     fl.set_settings(new.solver.clone())?;
     Ok(Some(std::mem::replace(case, new)))
+}
+
+/// Applies the settings asked for through the live control port (L19) after
+/// iteration or step `n`, one by one: a setting that is invalid for the case
+/// is reported (`RUN024`) and left out, the others are applied (`RUN023`).
+/// Every outcome is an `event` row with the equivalent `[[schedule]]` entry
+/// (D128) and an entry of the status of the port. Returns the case as it was
+/// when something was applied.
+pub(crate) fn apply_live_settings<F: FnMut(&str)>(
+    case: &mut FlowCase,
+    fl: &mut Flow,
+    lg: &mut Log<F>,
+    steer: &mut Steer,
+    warnings: &mut Vec<diag::Diagnostic>,
+    n: usize,
+) -> Result<Option<FlowCase>> {
+    let pending = steer.take_settings();
+    if pending.is_empty() {
+        return Ok(None);
+    }
+    let (what, at) = if case.time.is_some() {
+        ("step", "at_step")
+    } else {
+        ("iteration", "at_iteration")
+    };
+    let mut first = None;
+    for p in pending {
+        // the equivalent entry of a case file: effective from the next
+        // iteration or step
+        let entry = format!(
+            "[[schedule]] {at} = {}, set = {{ {} = {} }}",
+            n + 1,
+            p.key,
+            p.value
+        );
+        match control::with_setting(case, &p.key, &p.value) {
+            Ok((new, old, now)) => {
+                fl.set_settings(new.solver.clone())?;
+                let prev = std::mem::replace(case, new);
+                first.get_or_insert(prev);
+                let m = format!("{what} {n}: control port: {}: {old} -> {now}", p.key);
+                lg.note(&m);
+                steer.event(diag::RUN_CONTROL_SET, n, &m);
+                steer.live_note(serde_json::json!({
+                    "at": n, "key": p.key, "old": old, "new": now,
+                    "status": "applied", "schedule": entry,
+                }));
+            }
+            Err(e) => {
+                let m = format!(
+                    "{what} {n}: control port: {} = {} not applied: {e:#}",
+                    p.key, p.value
+                );
+                lg.warn(&m);
+                steer.event(diag::RUN_CONTROL_REJECTED, n, &m);
+                warnings.push(diag::Diagnostic::new(diag::RUN_CONTROL_REJECTED, m));
+                steer.live_note(serde_json::json!({
+                    "at": n, "key": p.key, "value": p.value.to_string(),
+                    "status": "rejected", "error": format!("{e:#}"),
+                }));
+            }
+        }
+    }
+    Ok(first)
 }
 
 /// Re-reads the case file at iteration or step `n` (D40) and applies what

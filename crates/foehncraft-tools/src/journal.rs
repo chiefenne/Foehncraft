@@ -73,6 +73,10 @@ impl Journal {
     }
 
     fn append(&mut self, build: &foehncraft_flow::engine::BuildInfo, row: Value) -> Result<()> {
+        // live calls (`run.stop`) come from another thread while a run is
+        // going: one writer at a time keeps the numbers of the calls unique
+        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _guard = LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let seq = match self.seq {
             Some(n) => n,
             None => {
@@ -306,12 +310,18 @@ impl Tool for Replay {
             let refused = c["diagnostic"]["code"]
                 .as_str()
                 .is_some_and(diag::refused_before_run);
-            if refused {
+            let live = crate::control::LIVE_TOOLS.contains(&tool.as_str());
+            if refused || live {
                 r.status = "skipped".into();
                 r.same = true;
                 out.skipped += 1;
                 ctx.line(&format!(
-                    "{seq:>4}  {tool:<18} skipped (refused when recorded)"
+                    "{seq:>4}  {tool:<18} skipped ({})",
+                    if live {
+                        "a live call on a run that was going; see the run record"
+                    } else {
+                        "refused when recorded"
+                    }
                 ));
             } else if !stopped {
                 ctx.line(&format!("{seq:>4}  {tool}"));

@@ -28,3 +28,15 @@ The folder `mcp/` holds what an assistant session through `foehn mcp`
 |---|---|
 | `mcp/foehn-mcp.toml` | the action table of a project with the default of every kind written out and the estimate caps (D198 (b)) |
 | `mcp/heat_sink_session.jsonl` | the calls of a scripted assistant on the finned heat sink: check, a run refused for want of `[run.limits]`, the run with the fix approved once, the series and the residual history; `python3 -m tools.plot.mcp_session` sends them to `foehn mcp` |
+
+The folder `control/` holds the inputs of the live control of a running case
+(L19, [gallery 177](../gallery/runs.md#control-port),
+[recipe 177](../recipes/runs.md#control-port)). They name the output folder
+of the run of the recipe, `output/tools/control/live`:
+
+| File | Tool | Shows |
+|---|---|---|
+| `control/run_status.json` | `run.status` | the live state of the running cavity: the last step with its residuals, the wall time, what the run did with earlier changes |
+| `control/run_set.json` | `run.set` | the time step of the transient cavity changed from 0.005 s to 0.01 s while it runs |
+| `control/run_set_refused.json` | `run.set` | a relaxation below 1 that a transient case with one outer iteration refuses (`RUN024`): shown in the status, the run goes on |
+| `control/run_stop.json` | `run.stop` | stops the run at the end of the current step: restart file, final output, exit code 3 (`RUN022`) |

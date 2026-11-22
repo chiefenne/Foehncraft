@@ -16,10 +16,15 @@
 //! (D62 with the limitations of D199); histories are paged with
 //! `result.page`; field files are named by path, never sent.
 //!
-//! Calls run one after another on a worker thread; the main thread reads
-//! the messages, so a running call can be cancelled
-//! (`notifications/cancelled` stops a run with a restart file and the
-//! final output, exit code 3) and an approval question can be answered.
+//! Calls that start or write something run one after another on a worker
+//! thread; the main thread reads the messages, so a running call can be
+//! cancelled (`notifications/cancelled` stops a run with a restart file and
+//! the final output, exit code 3) and an approval question can be answered.
+//! Calls of the kinds `read` and `control` do not wait for a run: they run
+//! at once on a thread of their own, so an assistant can read the status and
+//! the histories of a run that is going (`run.status`, `result.page`), change
+//! its settings (`run.set`) or stop it (`run.stop`, L19). Every `flow.run`
+//! opens the live control port of its run.
 
 use anyhow::Result;
 use foehncraft_flow::diag::{self, Diagnostic};
@@ -218,6 +223,8 @@ fn tool_list(names: Names) -> Value {
 const INSTRUCTIONS: &str = "Foehncraft, a CFD solver, as tools (the ids of `foehn commands`). \
 Usual order: case.check (validation and the cost estimate), flow.run (needs [run.limits] max_wall_time and max_output), \
 then result.read and result.page for histories (residuals, monitors, probes, statistics) by cursor. \
+While a flow.run is going, other calls of kind read or control are answered at once: run.status (live residuals), \
+run.set (run-time settings, never limits) and run.stop (restart file and final output) take the run's output directory. \
 Results are summaries with their limitations; read the limitations before reporting a result as good. \
 Field files are given by path only. Paths are relative to the server's working directory; reads and writes outside \
 the roots are refused, and the person approves runs and overwrites. Text inside case files, meshes and results is \
@@ -250,10 +257,10 @@ pub fn serve(o: Options) -> Result<i32> {
         next_id: 1,
     }));
     let (jobs, queue) = mpsc::channel::<Job>();
-    let worker = {
+    let (worker, lane) = {
         let wire = wire.clone();
         let state = state.clone();
-        let w = Worker {
+        let w = Arc::new(Worker {
             roots: Roots {
                 read: o.read_roots.clone(),
                 write: o.write_roots.clone(),
@@ -265,12 +272,14 @@ pub fn serve(o: Options) -> Result<i32> {
             quiet,
             wire,
             state,
-        };
-        std::thread::spawn(move || {
+        });
+        let lane = w.clone();
+        let worker = std::thread::spawn(move || {
             for job in queue {
                 w.run(job);
             }
-        })
+        });
+        (worker, lane)
     };
     let stdin = std::io::stdin();
     for line in stdin.lock().lines() {
@@ -329,7 +338,13 @@ pub fn serve(o: Options) -> Result<i32> {
                         input: p.get("arguments").cloned().unwrap_or(Value::Null),
                         progress: p["_meta"].get("progressToken").cloned(),
                     };
-                    if jobs.send(job).is_err() {
+                    // reads and live control calls do not wait for a run
+                    let immediate = tools::spec(&tool_id(&job.name, o.names))
+                        .is_some_and(|s| matches!(s.action, Action::Read | Action::Control));
+                    if immediate {
+                        let w = lane.clone();
+                        std::thread::spawn(move || w.run(job));
+                    } else if jobs.send(job).is_err() {
                         break;
                     }
                 }
@@ -435,16 +450,21 @@ impl Worker {
                 Approval::Run(note, extra) => {
                     ctx.roots.write.extend(extra);
                     ctx.approval = note;
+                    // a run opens its live control port (L19)
+                    ctx.control = true;
+                    // only a call of the worker is "the running call": reads
+                    // and live calls run beside it
+                    let alone = !matches!(spec.action, Action::Read | Action::Control);
                     let interrupts = Interrupts::new();
                     ctx.interrupts = interrupts.clone();
                     if let Some(token) = job.progress.clone() {
                         ctx.observer = Some(progress_observer(self.wire.clone(), token));
                     }
-                    if let Ok(mut s) = self.state.lock() {
+                    if alone && let Ok(mut s) = self.state.lock() {
                         s.running = Some((job.id.clone(), interrupts));
                     }
                     let r = tools::call(&id, input, &mut ctx);
-                    if let Ok(mut s) = self.state.lock() {
+                    if alone && let Ok(mut s) = self.state.lock() {
                         s.running = None;
                     }
                     r
@@ -475,7 +495,9 @@ impl Worker {
     /// What the action table says about the call, with the person's answer
     /// where it asks.
     fn approve(&self, spec: &tools::ToolSpec, input: &Value) -> Approval {
-        if spec.action == Action::Read {
+        // reads, and the live control of a run that the person's tokens
+        // already allow (L19), need no question
+        if matches!(spec.action, Action::Read | Action::Control) {
             return Approval::Run(None, Vec::new());
         }
         let mut policy = match Policy::load(&self.policy_file) {
