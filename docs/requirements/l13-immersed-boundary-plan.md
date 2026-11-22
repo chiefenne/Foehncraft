@@ -9,14 +9,22 @@ copied, no commercial solver names. Sizes are agent time: code in minutes,
 runs in hours, CI separate; "not sized yet" where unsure.
 
 Next free ids when this page was written: D213, L50, P19, O25. The ids below
-are **proposals** (`D213`…), taken into requirements.md only after the
-decisions of §9.
+are **proposals** (`D213`…), taken into requirements.md in a separate step.
+
+**Decisions of 2026-11-22.** The maintainer answered the eleven questions of
+§9 (answers in the table there, one line each): no accuracy numbers yet (Q1),
+tolerant dirty STL with Crane's methods as candidates (Q2), merging of small
+cells (Q3), thin solids refused (Q4), penalised walls laminar and low-Re only
+(Q5), exact predicates written by us (Q6), own near-body refinement operation
+now (Q7), 3D Python prototype with go/no-go (Q8), no penalised CHT (Q9), a
+stage 5 for prescribed rigid motion (Q10), signed distance default decided by
+benchmark (Q11). The text below has been changed to match.
 
 ## 0. Summary
 
-Four stages, each ends in a gallery case with images and a measured accuracy
+Six stages (0 to 5), each ends in a gallery case with images and a measured accuracy
 statement. Every stage keeps the solver data structures untouched: the
-immersed body enters as a **mesh operation** (stages 2 to 4) or as a **source
+immersed body enters as a **mesh operation** (stages 2 to 5) or as a **source
 term** (stage 1).
 
 | Stage | Name | What it delivers | Where the wall is | Accuracy class |
@@ -26,9 +34,11 @@ term** (stage 1).
 | 2 | Cut cells | Background polyhedral mesh cut by the surface, small cells merged, wall faces are ordinary wall faces, CHT both ways | sharp, on cut cells (wall functions, no layers) | second order laminar; ranking quality for turbulent |
 | 3 | Layered distance-field boundary | Thin body-fitted layers grown from a signed distance field, outermost iso-surface cut and imprinted (D58) | sharp, on regular layer cells | target: body-fitted quality at the wall |
 | 4 | Hand-off to a body-fitted mesh | The measured immersed-versus-body-fitted check of D211, automatic in the study layer | body-fitted | reference |
+| 5 | Prescribed rigid motion | Bodies that translate or rotate through the background mesh: re-cut per step, layers move rigidly, fresh-cell treatment (Q10, 2026-11-22) | as in stage 2 or 3 | as stage 2 or 3 |
 
 Order is fixed by the maintainer: penalisation first, then cut cells, then
-hand-off. The layered boundary (stage 3) is the L13 target; it sits between
+hand-off. Stage 5 (rigid motion) follows the stage it moves (2, later 3).
+The layered boundary (stage 3) is the L13 target; it sits between
 because it reuses the cutting code of stage 2 and gives the hand-off check
 (stage 4) its main use. The hand-off also works after stage 2 alone.
 
@@ -58,15 +68,29 @@ Scope, in the order of use:
 1. **Surface check** tool: closed or open, orientation, self-intersections,
    non-manifold edges, degenerate triangles, duplicate vertices, bounding
    box, units; a report, no silent repair (diagnostic codes `IMM0xx`).
-2. **Exact predicates**: adaptive-precision orientation and in-sphere tests
-   (Shewchuk 1997), implemented from the paper or taken from an open-source
-   crate whose licence is checked (owner decision Q6).
+2. **Exact predicates**: adaptive-precision orientation tests (Shewchuk
+   1997), **written by us from the paper** (owner decision Q6, strict clean
+   room, no dependency); tested against exact rational arithmetic on
+   degenerate and near-degenerate inputs.
 3. **Winding numbers and inside/outside**: generalised winding number
    (Jacobson et al. 2013) with the fast hierarchical evaluation (Barill et
    al. 2018) on the existing BVH; deterministic. Tolerates dirty STL, which
    exact-Boolean methods do not: the exact mesh-Boolean methods read for
    this plan need manifold, watertight, non-self-intersecting input
    (Cherchi et al. 2022; Trettner et al. 2022).
+   **Dirty STL is tolerated, with a report and no silent repair** (Q2).
+   Candidates read as abstracts on the publication page of K. Crane
+   (2026-11-22; the full papers are read when this stage starts): the heat
+   method for generalised signed distance (Feng & Crane 2024), which
+   approximates the distance of geometry with holes, noise or
+   self-intersections by completing the shape implicitly, with a claimed
+   inside/outside more robust than the generalised winding number and any
+   discretisation including grids and tet meshes; winding numbers on discrete
+   surfaces (Feng, Gillespie & Crane 2023), which complete open curves and
+   label regions; the Laplacian for non-manifold triangle meshes (Sharp &
+   Crane 2020), which the heat method needs to run on non-manifold STL; and,
+   as an optional repair tool only, untangling of self-intersections without
+   changing connectivity (Minarcik, Liu, Crane & Li 2026).
 4. **Signed distance**: closest-point distance (exists) with the sign from
    the winding number; narrow-band version on the background mesh nodes.
 5. **Surface–polygon intersection**: clip a (non-convex, possibly
@@ -86,9 +110,11 @@ Benchmark against computer graphics (maintainer rule): narrow-band SDF by
 (a) closest-point + winding number (ours), (b) fast sweeping on a sparse grid
 (Museth 2017 sparse and parallel fast sweeping; Roosing et al. 2019 scan
 conversion on the GPU for CFD mesh generation, floating point, needs a
-correctly oriented closed surface), (c) the heat method (stage 3). Metrics:
+correctly oriented closed surface), (c) the heat method for generalised signed distance (Feng & Crane 2024,
+see item 3); the default method is **decided by this benchmark** (Q11). Metrics:
 error against the analytic sphere/torus distance, time per million nodes,
-behaviour on dirty input.
+behaviour on dirty input (holes, self-intersections, duplicate triangles;
+a ready test set is a part of the stage).
 
 Sizing: surface check and predicates 2 PRs, winding numbers 1 PR, SDF 1 PR,
 surface–polygon intersection 2 to 3 PRs; code about 30 to 60 min per PR,
@@ -178,7 +204,7 @@ Steps:
    decomposition like all D23 faces (to be confirmed against the geometry
    module in the first PR). Closure check: sum of area vectors of each
    cell below 1e-14 relative.
-2. **2b Small cells.** Merge below a volume fraction threshold (a case key,
+2. **2b Small cells.** Merge (owner decision Q3) below a volume fraction threshold (a case key,
    default decided by measurement, the literature uses 0.1 to 0.3) into the
    neighbour with the largest shared fluid face; merged cells are polyhedra,
    which D23 allows. Options measured against each other: merging, mixing
@@ -194,15 +220,21 @@ Steps:
 4. **2d CHT.** Cut both ways. The solid part of a cut cell becomes a cell of
    the solid region (D112); the cut face is an ordinary region interface
    (D160). Thin solids (thickness below about two cell widths) are not
-   resolved: refuse with a diagnostic and point to the thin wall of D189.
+   resolved: **refuse** with a diagnostic and point to the thin wall of D189
+   (owner decision Q4).
 5. **2e Boundary conditions.** The D29 set on the immersed surface through
    named surface patches (STL solids or per-triangle tags); moving wall
    velocity of a body at rest or rotating rigidly with a constant angular
    velocity (frame D55). Real body motion is L4.
-6. **2f Background refinement.** Near-body size control without adaptive
-   refinement: the background mesh comes from a Gmsh size field (D62) driven
-   by the body distance. A built-in refinement operation waits for L14
-   (owner decision Q7).
+6. **2f Background refinement.** Owner decision Q7: **our own near-body
+   refinement operation**, not a Gmsh size field. It refines cells by
+   distance to the surface (and to the layer stack of stage 3) into
+   polyhedral cells with hanging-node faces (allowed by D57), steered by a
+   size function; deterministic, serial before partitioning. It is the first
+   piece of the refinement kernel of L14 (the adaptive, solution-driven
+   version comes later on the same kernel). Verification: volume and face
+   area conservation, conservative flux across hanging faces on a smooth
+   solution (MMS, second order), quality statistics of the refined cells.
 7. **2g Reproducibility.** The cut is a serial mesh operation on the global
    mesh, before partitioning; result bitwise independent of threads and
    ranks by construction (D93).
@@ -245,7 +277,8 @@ the heat-field statistics on the fins were unreliable and are not used.
 Work packages, each with its own go/no-go (a research stage: results decide
 the next one):
 
-1. **3a 3D prototype in Python (numpy/scipy), meshes only.** Same method as
+1. **3a 3D prototype in Python (numpy/scipy), meshes only; go/no-go before
+   any Rust (owner decision Q8).** Same method as
    the 2D prototype, on a sphere, a box, a fin with a narrow gap, an STL with
    a sharp edge. Questions: fan at convex edges (the 2D fan shrank 3.7 times,
    not to zero), merge/stop of columns at concave corners and gaps, local
@@ -255,7 +288,8 @@ the next one):
 2. **3b Fields.** Compare for growth directions and layer limit: exact
    closest-point direction (corner kink), heat method (Crane et al. 2013),
    signed heat method (Feng & Crane 2024, approximate, about first order, no
-   analysis of corners or medial axis in the paper as read). Values for the
+   analysis of corners or medial axis in the paper as read; works on dirty
+   geometry, which ties it to the dirty-STL decision Q2). Values for the
    turbulence wall distance stay exact (D108).
 3. **3c Surface under the layers.** Surface mesh quality: isotropic remeshing
    (Botsch & Kobbelt 2004), or a quad-dominant parameterisation (Corman &
@@ -266,8 +300,10 @@ the next one):
    stopping at concave corners and gaps, layers down to a minimum (below the
    first-layer height fall back to stage 2 cut cells with a limitation).
 5. **3e Outer iso-surface.** Marching cubes against dual contouring and
-   marching tetrahedra on the field; the field is smooth there, so the
-   benchmark measures curvature error and triangle quality.
+   marching tetrahedra on the field, and subgrid marching tetrahedra
+   (Baktash, Gillespie & Crane 2025: manifold, intersection-free mesh from
+   edge crossings, several patches per tet); the field is smooth there, so
+   the benchmark measures curvature error, triangle quality and robustness.
 6. **3f Join.** Imprint with D58 (general version from stage 0 kernel),
    background size matched to the outer layer height (size jump limit).
    Exactness: conservation as in stage 2.
@@ -322,6 +358,48 @@ both meshes. Recipe: "study on cut cells, check on a fitted mesh".
 Sizing: tool and report 1 PR (about 30 to 45 min code); study runs 1 to 2
 hours.
 
+## 6a. Stage 5 – Prescribed rigid motion (owner decision Q10, proposed D222)
+
+Added on 2026-11-22. Bodies translate or rotate along a prescribed path
+(expression D53 or table; constant angular velocity as a special case)
+through the background mesh. Deformation and free (6-DOF) motion stay with
+L4; this stage only moves rigid bodies.
+
+- **Cut cells (stage 2):** the cut is redone every step, or when the body has
+  moved by a set fraction of a cell (a case key). Cells that change from
+  solid to fluid (**fresh cells**) get velocity, pressure and scalars from
+  their neighbours by a defined extrapolation, and the step reports how many
+  cells changed. The literature on the fresh-cell problem is read when the
+  stage starts (not read for this plan).
+- **Layered boundary (stage 3):** the layer mesh moves rigidly with the body
+  and is not rebuilt; only the outer cut and its imprint (D58) change per
+  step. This reuses the imprinting of the sliding interfaces (D182, D186)
+  generalised in stage 0.
+- **Conservation:** the geometric conservation law must hold for the faces
+  that appear, vanish and move (as in D186); mass and energy ledgers (D119)
+  close to round-off.
+- **Merging** of small cells is recomputed per step; the merge map must not
+  flip between steps in a way that makes the solution jump (check by a
+  smooth-motion test).
+
+Verification:
+
+| Case | Reference | Check |
+|---|---|---|
+| Cylinder dragged through still fluid against the same cylinder fixed in uniform flow | Galilean equivalence, our own fixed-body run | drag and lift history agree within the stage 2 error |
+| Sphere in accelerated motion in a still fluid, low Re | analytic added-mass and history force limits (to be sourced when the stage starts) | force history |
+| Rotating body: Taylor–Couette spin-up with the inner cylinder cut and rotating | analytic, and our sliding mesh (D182) | torque history |
+| Smooth sub-cell motion of a body | none (consistency) | no jump in forces when a cell changes state; merge-map flips counted |
+| Ledgers (D119) | – | closed to round-off including fresh cells |
+
+Gallery 5: a body of 3 or 5 blades (no four-fold pattern) turning through the
+background mesh, velocity and vorticity; a cylinder dragged through still
+fluid with its wake. Recipe: "move a body through a mesh without remeshing".
+
+Sizing: cut per step 1 PR, fresh-cell treatment 1 to 2 PRs, conservation
+checks 1 PR, code about 30 to 60 min per PR; the whole stage **not sized
+yet** because the fresh-cell treatment is research.
+
 ## 7. Interaction with the adjoint (L17) and CHT
 
 **The adjoint solver is not built.** All gradient statements below are plans
@@ -345,9 +423,8 @@ level set, mesh fixed) and informs the pre-stage; it is not adopted for the
 **CHT.** Cut and layered methods cut both ways; the interface is a normal
 D160 face with series conductance, so interface fluxes are conservative and
 the thermal adjoint (D160 kernels) applies unchanged. Penalisation: solid
-temperature through an equation domain of regions (D112) is not available
-until a χ-weighted conductivity exists (a stage 1 sub-item, laminar CHT only,
-decide with Q9). Cycle-averaged CHT (D204) works on top of either mesh.
+temperature through an equation domain of regions (D112) is not available,
+because penalised CHT is left out of stage 1 (owner decision Q9). Cycle-averaged CHT (D204) works on top of either mesh.
 
 ## 8. Interfaces: scriptable and MCP compatible (D77–D87, L18, D196)
 
@@ -380,30 +457,36 @@ OBJ later; STEP through Gmsh/OpenCASCADE (D62). Verification grades go into
 `features.toml` per stage (D199): stage 1 "partial, laminar", stage 2
 "verified" only after the table above passes.
 
-## 9. Open questions as owner decisions
+## 9. Owner decisions (2026-11-22)
 
-Each has a recommendation; none blocks stage 0 and stage 1.
+All eleven questions were answered by the maintainer on 2026-11-22, one card
+at a time. Each line gives the question, the answer and what it changed.
 
-| # | Question | Recommendation |
-|---|---|---|
-| Q1 | Accuracy targets. Proposed: stage 2 second-order on the analytic cases, laminar drag within 1 % of the body-fitted mesh at equal cell count at about 1 M cells, turbulent wall shear within 5 %; stage 3 within 2 % | Accept as proposals; replace after the first measurement |
-| Q2 | Dirty STL: winding-number tolerant, or require closed manifold surfaces | Tolerant with a report, never silent repair |
-| Q3 | Small cells: merging as default, mixing and state redistribution measured only | Merging |
-| Q4 | Thin solids (below about two cells): refuse, or thin wall D189 | Refuse with a pointer to D189 |
-| Q5 | Penalised turbulent walls: allow with a limitation, or laminar only | Laminar and low-Re only, wall function refused |
-| Q6 | Exact predicates: write from the paper, or use an open-source crate if its licence fits | Check licences, write the 2 predicates ourselves if unclear (clean room) |
-| Q7 | Background refinement: Gmsh size field now, own refinement with L14 | Gmsh size field now |
-| Q8 | Stage 3: 3D Python prototype first, as in 2D | Yes; go/no-go before Rust |
-| Q9 | Penalised CHT (χ-weighted conductivity) in stage 1 or left out | Left out; CHT starts at stage 2 |
-| Q10 | Moving bodies (L4, fresh-cell problem) | Out of scope for this plan |
-| Q11 | Which stage-0 SDF method is the default after the benchmark | Decided by the benchmark of §2, not now |
+| # | Question | Answer | Effect on the plan |
+|---|---|---|---|
+| Q1 | Accuracy targets (proposed 1 % laminar drag, 5 % turbulent wall shear, 2 % for stage 3) | **Set no numbers yet** | Stage 2 reports measured errors only; targets are fixed after the first four-way comparison of stage 3 |
+| Q2 | Dirty STL: tolerant or closed manifold only | **Tolerant, with a report** (maintainer: use Crane's methods, for example the latest heat method, for dirty geometry) | §2 item 3: the heat method for generalised signed distance, winding numbers on discrete surfaces, the non-manifold Laplacian and optional untangling become candidates; no silent repair |
+| Q3 | Small cell handling | **Merge**; mixing and state redistribution measured as references only | §4 step 2b |
+| Q4 | Solids thinner than about two cells | **Refuse**, point to the thin wall of D189 | §4 step 2d |
+| Q5 | Penalised walls with turbulence | **Laminar and low-Re only**, wall function refused | §3 |
+| Q6 | Exact predicates | **Write them ourselves** from the paper | §2 item 2 |
+| Q7 | Background refinement near the body | **Own refinement operation now** (instead of a Gmsh size field) | §4 step 2f, first piece of the L14 refinement kernel |
+| Q8 | 3D Python prototype of the layered boundary first | **Yes**, go/no-go before Rust | §5 step 3a |
+| Q9 | Penalised CHT in stage 1 | **Left out**; CHT starts at stage 2 | §3, §7 |
+| Q10 | Moving bodies | **Plan a stage for prescribed rigid motion** | new stage 5, §6a |
+| Q11 | Default signed distance method | **Decided by the benchmark** of §2 | §2 benchmark |
+
+The ids D213 and up are still proposals; moving them into requirements.md is
+a separate step.
 
 ## 10. Order of work and what stops what
 
 Stage 0 and stage 1 can start together (no overlap in code). Stage 2 waits
 for stage 0 steps 1 to 5. Stage 3a (Python) can run next to stage 2 and
 needs only stage 0 steps 3 and 4. Stage 4 waits for stage 2 and uses stage 3
-when it exists. Nothing here depends on L17; the shape-gradient checks of §7
+when it exists. Stage 5 waits for stage 2 (and for stage 3 to move layers);
+the near-body refinement operation of step 2f is built with stage 2 and is
+useful on its own. Nothing here depends on L17; the shape-gradient checks of §7
 wait for it. Every PR: changelog fragment, README "What works today", docs,
 gallery entry with at least one image and field images for physics (the
 maintainer rule), case files and a recipe.
@@ -422,7 +505,12 @@ penalty and an implicit wall function).
 From the earlier step 26 assessment (not re-read now): Ye et al. 1999;
 Meyer et al. 2010; Berger & Aftosmis 2012; Peskin 2002; Mittal & Iaccarino
 2005; Angot et al. 1999; Borrvall & Petersson 2003; Tseng & Ferziger 2003.
-Named from memory and to be read when their stage starts: Shewchuk 1997;
+Read as abstracts on K. Crane's publication page (2026-11-22): Feng &
+Crane 2024 (heat method for generalised signed distance), Feng, Gillespie &
+Crane 2023 (winding numbers on discrete surfaces), Sharp & Crane 2020
+(Laplacian for non-manifold meshes), Baktash, Gillespie & Crane 2025
+(subgrid marching tetrahedra), Minarcik, Liu, Crane & Li 2026 (untangling
+surfaces). Named from memory and to be read when their stage starts: Shewchuk 1997;
 Jacobson et al. 2013; Barill et al. 2018; Attene 2020; Museth (sparse fast
 sweeping); Botsch & Kobbelt 2004; Crane, Weischedel & Wardetzky 2013;
 Schäfer & Turek 1996. A "continuous adjoint cut-cell method for cavitating
