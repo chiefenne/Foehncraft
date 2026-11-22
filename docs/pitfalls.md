@@ -17,6 +17,7 @@ instead.
 - [Iteration counts in tests](#counts)
 - [Counts a file declares](#declared-counts)
 - [Reference numbers of other solvers](#other-solver-numbers)
+- [Coupling loops: the solid must see the flow's response](#coupling-loops)
 
 <a id="steady-runs"></a>
 ## Steady runs: budget and stopping
@@ -193,3 +194,21 @@ sum every cell over its faces in ascending global face id, copy halo values
 from the owner. The example `mpi_matrix` checks this on 1 to 4 ranks in CI.
 Do not compare partitions by tolerance when a bitwise comparison is
 possible: a tolerance hides the cause (D93).
+
+<a id="coupling-loops"></a>
+## Coupling loops: the solid must see the flow's response
+
+The first build of the cycle-averaged loop (D204) gave the solid phase the
+Robin pair of the first fluid cell, as the classic mapped loop does. It
+converged no sooner than the fully coupled run (gallery 190): the
+first-cell conductance (205 W/K there) is the answer of the heat flux with
+the fluid held, while the flow answers with about ṁ c_p and h A (8 and
+30 W/K), because the near-wall fluid follows the wall and the bulk warms.
+Aitken, IQN-ILS, a per-face and a global secant on top did not fix it (the
+secants overshot by hundreds of kelvin). What worked: the solid phase
+solves fluid and solid together, steady, with the cycle-mean mass flux, and
+a per-face defect on the solid cells brings the heat flows to the measured
+cycle means (3 to 4 updates). The defect goes into the solid cells only;
+put into the fluid cells it changed the fluid's answer (75 W instead of
+160 W). Before building a partitioned loop, compare the interface
+conductance the partner sees with the true response of the other side.

@@ -10,6 +10,7 @@ Part of the [Example gallery](../gallery.md): the energy equation of the fluid (
 | 159 | [A heated wall switched on, and two bodies brought into contact](#cht-transient) | 7 | `[time]` with solid regions, `heat.csv`, `<probe>_T`, `[energy] exact` with `erf` |
 | 160 | [A chip on a circuit board with a thermal pad, and an orthotropic patch test](#cht-contact) | 7 | `[interfaces.<name>] contact_resistance`, `thin_wall`, orthotropic `conductivity`, `[regions.<name>] axes`, `[[energy.sources]]` |
 | 180 | [A heated wall brought to its steady and periodic state with thermal acceleration](#cht-acceleration) | 7 | `[energy.acceleration]` `inertia_scale`, `period`, `restore`, `restore_ramp`, `heat.csv` `inertia_scaling` |
+| 190 | [A pulsating channel over a heated wall, coupled by the cycle-averaged loop](#cht-cycle) | 7 | `[energy.cycle]` `period`, `solid_model`, `update`, `enabled`, `cycle_coupling.csv`, `cycle_faces.csv` |
 | 186 | [A warm strip in a closed air enclosure, and a stratified box that stays at rest](#buoyancy) | 7 | `[gravity]`, `[buoyancy] model = "boussinesq"`, `expansion_coefficient`, `static_pressure` |
 | 195 | [Air between walls at 960 K and 240 K, a heated duct and two closed boxes](#variable-density) | 7 | `[energy] density = "variable"`, `thermodynamic_pressure`, `pressure_work`, `[buoyancy] model = "variable-density"`, `density` |
 
@@ -370,6 +371,74 @@ python3 -m tools.plot.cht_acceleration docs/figures/gallery output/acc output/re
     output/per_jump output/per_ref
 ```
 
+<a id="cht-cycle"></a>
+## 190. A pulsating channel over a heated wall, coupled by the cycle-averaged loop
+
+<img src="../figures/gallery/cht_pulsating_channel_cycle.png" alt="Top: the temperature at the end of the cycle-averaged loop at 500 s, the wall below y = 0.2 m warm from about 312 K at the inlet end to 335 K at the outlet end, the pulsating channel flow above it cooler near the inlet; the vertical scale is stretched 2.5 times. Bottom: the cycle mean of the heated face minus the periodic state over time: the loop with the mean-flow solid phase jumps to within 1 K after its first update at 150 s and to the periodic state at 350 s, the fully coupled run approaches it exponentially and is within 0.1 K at 1350 s, the loop with the first-cell Robin solid phase climbs in steps and gets there only at 1450 s" width="990" height="720">
+
+**The case (checks V7.39 and V7.40).** `cht_pulsating_channel_cycle.toml`
+is a laminar channel 4 m long and 0.2 m high (Re = 20) over a wall 0.2 m
+thick (k = 140.85 W/(m K), ρ c_p = 8·10⁴ J/(m³ K)) heated from below with
+1000 W/m² (160 W over the 4 m × 0.04 m face of the slice). The inlet
+velocity swings by ±50 % and the inlet temperature by ±50 K around 300 K
+with a period of 50 s (20 steps of 2.5 s). `[energy.cycle]` holds the wall
+at its current temperature and runs the flow for a warm-up cycle and an
+averaged one; per interface face it accumulates the conductance, the heat
+flow and the mass flux over the averaged cycle. The solid phase then
+solves the whole energy equation steady with the fluid convected by the
+cycle-mean mass flux and adds to each solid cell at the interface the
+difference between the cycle-mean heat flow of the transient phase and
+that of the mean flow (`solid_model = "mean-flow"`, the default): the
+wall answers a change of its own temperature with the response of the mean
+flow, and at the converged wall temperature its heat flows are those of the
+periodic flow. The new wall temperatures go back to the fluid phase, which
+continues from its own last state. After the first update a quasi-Newton
+update (IQN-ILS) takes the place of the relaxation.
+
+The loop converges after 4 updates and 10 cycles: 500 s simulated in 5.5 s
+on 4 threads. The interface heat flow is 160.0002 W, the heat put in; the
+probes in the wall are within 0.14 K (0.4 % of the 33.7 K rise of the
+heated face) of the cycle means of the fully coupled run at 4000 s
+(`--set energy.cycle.enabled=false`), which reaches its periodic state to
+0.1 K at 1350 s (about 12 s of its 36 s). The rest is the correlation of
+the heat-transfer coefficient with the swing of the wall temperature,
+which the held wall does not have. The heat balance closes to 10⁻¹³ of the
+heat flow in every fluid step (the heat into the held wall is booked as
+`held`) and in every solid phase (the defect booked as `robin`).
+
+<img src="../figures/gallery/cht_cycle_convergence.png" alt="Left: the largest change of the wall temperature per update on a log scale: the mean-flow solid phase falls from 35 K to 0.8, 0.026 and 0.0002 K in four updates, below the 0.01 K tolerance; the first-cell Robin solid phase grows from 1.6 K to 6.7 K over six updates and falls to 0.14 K at update 12. Right: the relative error of the cycle-mean interface heat flow against the fully coupled run: 1.5, 0.04, 1e-4 and 1.4e-6 for the mean-flow phase, from 1.5 slowly down to 8e-4 at update 12 for the Robin phase" width="990" height="378">
+
+**Why not the Robin pair of the first fluid cell.** The classic loop maps
+the cycle-mean heat transfer onto the structure as a Robin condition
+(h̄, T̄_ref) with h̄ the conductance of the first fluid cell. That
+conductance (205 W/K for this wall) is how the heat flux answers a change
+of the wall temperature with the fluid held; the flow does not hold: the
+near-wall fluid follows the wall and the bulk warms downstream, so the
+cycle-mean heat flow answers like the flow (ṁ c_p ≈ 8 W/K, h A ≈ 30 W/K).
+A structure that sees 25 times the true conductance moves too little per
+update. `solid_model = "robin"` keeps this classic solid phase for
+comparison: with the same quasi-Newton update its wall change grows to
+6.7 K before it falls, it is still 0.14 K after 12 updates, and its cycle
+mean reaches the periodic state no sooner than the fully coupled run
+(CYC004 when `max_updates` stops it first).
+
+**Where it pays.** Here the wall settles in about 25 periods, so the loop
+saves a factor of 2 to 3. The gain grows with the ratio of the solid's
+time constant to the period: an exhaust manifold needs thousands of
+cycles of 40 ms fully coupled and the same few updates in the loop. The
+loop leaves out the swing of the wall temperature over a cycle (LIM009);
+the skin swing from the solid's effusivity and a few fully coupled cycles
+at the end come next.
+
+```
+cargo build --release -p foehncraft-cli
+target/release/foehn flow examples/cases/flow/cht_pulsating_channel_cycle.toml --out output/cyc
+target/release/foehn flow examples/cases/flow/cht_pulsating_channel_cycle.toml --out output/cyc_robin \
+    --set energy.cycle.solid_model=robin --set energy.cycle.max_updates=12
+target/release/foehn flow examples/cases/flow/cht_pulsating_channel_cycle.toml --out output/cyc_ref \
+    --set energy.cycle.enabled=false --set time.end_time=4000.0
+pip install matplotlib h5py numpy
+python3 -m tools.plot.cht_cycle docs/figures/gallery output/cyc output/cyc_robin output/cyc_ref
 <a id="buoyancy"></a>
 ## 186. A warm strip in a closed air enclosure, and a stratified box that stays at rest
 

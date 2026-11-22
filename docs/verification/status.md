@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**101 features: 50 verified, 48 partial, 3 unverified.**
+**102 features: 50 verified, 49 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -93,6 +93,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Conjugate heat transfer | [Solid regions, steady](#cht-steady) | verified |
 | Conjugate heat transfer | [Transient conjugate heat transfer](#cht-transient) | verified |
 | Conjugate heat transfer | [Thermal acceleration of solids (scaled ρ c_p, restored)](#cht-thermal-acceleration) | partial |
+| Conjugate heat transfer | [Cycle-averaged coupling of a periodic flow with its solids](#cht-cycle-coupling) | partial |
 | Conjugate heat transfer | [Conjugate heat transfer with a turbulence model](#cht-turbulent) | partial |
 | Conjugate heat transfer | [Contact resistances and thin walls](#cht-contact-thin-wall) | verified |
 | Conjugate heat transfer | [Orthotropic solids (axes per region)](#cht-orthotropic) | verified |
@@ -1041,6 +1042,23 @@ Gaps:
 - the automatic factor leaves the conduction inside the solid out of the time constant (milder acceleration at large Biot numbers)
 - no case with several solids of very different time constants
 - the skin check uses the region's V/A, not the local wall thickness
+
+<a id="cht-cycle-coupling"></a>
+
+### Cycle-averaged coupling of a periodic flow with its solids
+
+**partial** (no exact or manufactured solution; gaps written) · id `cht.cycle-coupling` · switch `[energy.cycle]` · decisions D204
+
+- consistency: [`cht_pulsating_channel_cycle`](../../examples/cases/flow/cht_pulsating_channel_cycle.toml): pulsating laminar channel over a heated wall: converged after 4 updates (10 cycles, 500 s); interface heat flow 160.0 W and wall temperatures within 0.14 K (0.4 % of ΔT) of the fully coupled run in its periodic state at 4000 s (passes in CI (set linux-3), not yet in the manual) ([results](../gallery/energy.md#cht-cycle))
+- consistency: [`loop_matches_the_fully_coupled_periodic_state`](../../crates/foehncraft-flow/tests/cht_cycle.rs): V7.39: heat flow and wall temperatures within 1 % of the fully coupled periodic state; V7.40: heat balance of every fluid step and every solid phase to 10⁻⁹
+- consistency: [`robin_solid_phase_is_slower_and_says_so`](../../crates/foehncraft-flow/tests/cht_cycle.rs): the first-cell Robin solid phase converges slowly and says so (CYC004); its balance closes
+- consistency: [`wrong_settings_are_refused`](../../crates/foehncraft-flow/tests/cht_cycle.rs): settings that cannot be used are refused (CYC001)
+
+Gaps:
+
+- V7.38 not built: no exact solution of a slab under a periodic gas temperature and heat transfer coefficient
+- the swing of the wall temperature over a cycle is not resolved (the skin of the solids, CYC003, comes later)
+- laminar case only; no turbulent periodic case yet
 
 <a id="cht-turbulent"></a>
 

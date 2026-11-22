@@ -16,9 +16,10 @@
 > [What works today](#what-works-today) lists what is on `main` now. Stage 7 is
 > under way: the energy equation of the fluid and conjugate heat transfer
 > with solid regions, steady and transient, laminar and turbulent, with
-> contact resistances, orthotropic solids and thermal acceleration of the
-> solids, are in, and so are gravity, the Boussinesq buoyancy and the
-> low-Mach variable density ρ(T, p₀).
+> contact resistances, orthotropic solids, thermal acceleration of the
+> solids and the cycle-averaged loop for periodic flows, are in, and so are
+> gravity, the Boussinesq buoyancy and the low-Mach variable density
+> ρ(T, p₀).
 
 [![CI](https://github.com/chiefenne/Foehncraft/actions/workflows/ci.yml/badge.svg)](https://github.com/chiefenne/Foehncraft/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/chiefenne/Foehncraft)](https://github.com/chiefenne/Foehncraft/releases)
@@ -125,6 +126,12 @@ validated range, one mesh only, …) in its report and its JSON result.
   then the true ρ c_p comes back, at once or ramped over a few periods in a
   periodic flow; the heated wall reaches its steady state five times sooner,
   and the heat the true solid would have stored is booked in the balance.
+  The cycle-averaged loop (`[energy.cycle]`) couples a periodic flow with
+  slow solids: the flow runs a few cycles with the solids held, the solids
+  are solved steady under the cycle-mean heat transfer (answering with the
+  response of the cycle-mean flow), and the new wall temperatures go back,
+  until they settle; a pulsating channel over a heated wall converges in 4
+  updates to within 0.4 % of the fully coupled periodic state.
 - **Gravity and buoyancy.** `[gravity]` and the Boussinesq buoyancy
   (`[buoyancy] model = "boussinesq"`) in SIMPLEC and the coupled algorithm.
   The solver works with the reduced pressure p′ = p − ρ_ref g·(x − x_ref)
