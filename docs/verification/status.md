@@ -653,7 +653,7 @@ Gaps:
 Gaps:
 
 - asymmetric diffuser (gallery 199): not compared with the measurements of Buice & Eaton (pending); the separation point converges at order 1.6 only (GCI 4 %), and the steady solver needs about three times the iterations per halving of the mesh (4 909 on 111 360 cells) while the jet moves slowly to the upper wall; with sharp corners the finest mesh ends at the 8 000-iteration cap with residuals of 4e-7 and the separation point converges at order 0.6 (GCI 9 %)
-- U-bend (gallery 204): not compared with the measurements of Monson et al. (pending, owner choice: GCI first); the Re_b 1e6 case of the experiment not run; the reattachment converges oscillatory (GCI 2.9 %); the sharp-edged variant needs relaxation 0.5 at the start and its finest mesh is not in the study yet
+- U-bend (gallery 204): not compared with the measurements of Monson et al. (pending, owner choice: GCI first); the Re_b 1e6 case of the experiment not run; the reattachment converges oscillatory (GCI 2.9 %); the sharp-edged variant needs relaxation 0.5 at the start, and its finest mesh (201 600 cells) did not converge in 8 000 iterations (bubble still growing), so its GCI (reattachment 0.85 %, C_p 10 H behind the turn 4.3 %) is provisional
 
 Notes:
 

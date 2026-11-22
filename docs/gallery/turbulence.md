@@ -1428,8 +1428,26 @@ flow covers the divider end and the divider behind it; the main bubble
 on the outlet side closes 3.05 H and 2.89 H behind the divider end on
 levels 0 and 1 (2 479 and 5 964 iterations). C_p at the middle of the end
 wall is −0.80 and −0.81, and 10 H behind the turn −1.06 and −1.04: the
-sharp turn loses more than twice the pressure of the rounded one (−0.44). Level 2
-(201 984 cells) runs; its GCI follows in a docs update.
+sharp turn loses more than twice the pressure of the rounded one (−0.44).
+
+Three meshes with sharp edges (`ubend_gci.py --sharp`):
+
+| Quantity | 12 624 cells | 50 400 | 201 600 | order | GCI_fine |
+|---|---|---|---|---|---|
+| reattachment, H behind the divider end | 3.046 | 2.891 | 2.846 | 1.76 | 0.85 % (extrapolated 2.83) |
+| C_p divider end, middle | −3.4709 | −3.4457 | −3.4642 | oscillatory | 0.36 % |
+| C_p end wall, middle | −0.8021 | −0.8059 | −0.8059 | 5.6 | below 0.01 % |
+| C_p outer wall, 10 H behind the turn | −1.0628 | −1.0429 | −0.9946 | (divergent) | 4.3 % |
+| iterations | 2 479 | 5 964 | 8 000 (limit) | | |
+
+**Level 2 did not converge within its limit of 8 000 iterations**: the
+residual fell slowly (to 3·10⁻⁶) and the probe in the bubble was still
+rising (u from 0.19 to 0.23 between 5 000 and 8 000 iterations). The
+level-2 values are therefore provisional; the pressure 10 H behind the turn
+moved most (4.6 % from level 1) and its order is not meaningful. Running
+past 10 000 iterations is against the run rules (AGENTS.md); a faster
+route to the steady state of the sharp turn on fine meshes (a transient
+run from the level-2 state, or a stronger start) is open.
 
 <img src="../figures/gallery/ubend_sharp.png" alt="The same duct with sharp edges, coarse mesh. Top: speed; the flow turns in a jet around the square divider end, with slow corner vortices at the end wall and a long separated region on the divider behind the turn. Middle: turbulent viscosity ratio, large in the shear layers of the separated regions. Bottom: wall pressure coefficient along the inner and the outer wall, a suction of minus 3.5 on the divider end and a loss of about minus 1.05 behind the turn" width="800" height="656">
 
