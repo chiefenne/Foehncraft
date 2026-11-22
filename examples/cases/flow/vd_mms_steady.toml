@@ -1,0 +1,105 @@
+# The manufactured solution of the variable density (stage 7c, D151,
+# check V7c.4): written by `python3 -m tools.verification.vd_mms`; do not
+# edit the source expressions by hand.
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/vd_mms_steady.toml
+#
+# On the unit square, an ideal gas with R/M = 1 (molar mass 8.314 kg/mol)
+# at the operating pressure p₀ = 1 Pa, so ρ = 1/T; c_p = 3.5 J/(kg K)
+# (γ = 1.4), μ = 0.002 Pa s and k = 0.007 W/(m K) constant. The exact solution
+# (`[analytic] type = "variable-density"`): T = 1 + a sin πx sin πy with
+# a = 0.5, the mass flux of the stream function ψ = A sin²πx sin²πy with A
+# = 0.02 (∇·(ρu) = 0 exactly, u = 0 on the walls), and p = P cos πx cos πy
+# with P = 0.01. The momentum source (`[flow] body_force`) and the heat
+# source (`[energy] source`) make it a solution of the steady low-Mach
+# equations with the full viscous stress μ (∇u + ∇uᵀ − ⅔ (∇·u) I). The
+# box is closed, so p₀ follows from the mass of the start temperature
+# (the exact one). Three nested meshes (16², 32², 64²) with the coupled
+# algorithm (SIMPLEC gives the same solution in more iterations): the L2
+# errors of u and T fall at second order (observed 1.92 and 1.90 on the
+# finest pair; on the polygonal mesh of `type = "poly"` 2.32 and 2.16).
+# On the randomly perturbed hexahedra of `perturb` the velocity order
+# drops on the finest pair with a constant density as well (a property of
+# the perturbed meshes, not of the variable density).
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [1.0, 1.0, 0.05]
+cells = [16, 16, 1]
+
+[materials.gas]
+kind = "gas"
+description = "an ideal gas with R/M = 1 J/(kg K) (manufactured solution)"
+molar_mass = 8.314462618
+density = { form = "ideal-gas", source = "ideal gas, rho = p M / (R T)" }
+specific_heat = 3.5
+conductivity = 0.007
+viscosity = 0.002
+
+[fluid]
+material = "gas"
+temperature = 1.0
+operating_pressure = 1.0
+
+[flow]
+body_force = [
+  "0.0016*pi^3*(0.5*sin(pi*x)*sin(pi*y) + 1)*sin(pi*x)^3*sin(pi*y)^4*cos(pi*x) + 0.0016*pi^3*(0.5*sin(pi*x)*sin(pi*y) + 1)*sin(pi*x)^3*sin(pi*y)^2*cos(pi*x)*cos(pi*y)^2 + 0.00048*pi^3*(0.5*sin(pi*x)*sin(pi*y) + 1)*sin(pi*x)^2*sin(pi*y)*cos(pi*y) - 0.00016*pi^3*(0.5*sin(pi*x)*sin(pi*y) + 1)*sin(pi*y)*cos(pi*x)^2*cos(pi*y) + 0.00016*pi^3*sin(pi*x)^3*sin(pi*y)^2*cos(pi*y) - 8.0e-5*pi^3*sin(pi*x)^3*cos(pi*y)^3 - 0.00016*pi^3*sin(pi*x)*sin(pi*y)^2*cos(pi*x)^2*cos(pi*y) - 0.01*pi*sin(pi*x)*cos(pi*y)",
+  "0.0016*pi^3*(0.5*sin(pi*x)*sin(pi*y) + 1)*sin(pi*x)^4*sin(pi*y)^3*cos(pi*y) + 0.0016*pi^3*(0.5*sin(pi*x)*sin(pi*y) + 1)*sin(pi*x)^2*sin(pi*y)^3*cos(pi*x)^2*cos(pi*y) - 0.00048*pi^3*(0.5*sin(pi*x)*sin(pi*y) + 1)*sin(pi*x)*sin(pi*y)^2*cos(pi*x) + 0.00016*pi^3*(0.5*sin(pi*x)*sin(pi*y) + 1)*sin(pi*x)*cos(pi*x)*cos(pi*y)^2 - 0.00016*pi^3*sin(pi*x)^2*sin(pi*y)^3*cos(pi*x) + 0.00016*pi^3*sin(pi*x)^2*sin(pi*y)*cos(pi*x)*cos(pi*y)^2 + 8.0e-5*pi^3*sin(pi*y)^3*cos(pi*x)^3 - 0.01*pi*sin(pi*y)*cos(pi*x)",
+  0.0,
+]
+
+[energy]
+initial = "1 + 0.5 * sin(pi * x) * sin(pi * y)"
+exact = "1 + 0.5 * sin(pi * x) * sin(pi * y)"
+source = "0.007*pi^2*sin(pi*x)*sin(pi*y)"
+density = "variable"
+thermodynamic_pressure = "closed-volume"
+
+[boundary.xmin]
+type = "wall"
+[boundary.xmin.energy]
+temperature = 1.0
+[boundary.xmax]
+type = "wall"
+[boundary.xmax.energy]
+temperature = 1.0
+[boundary.ymin]
+type = "wall"
+[boundary.ymin.energy]
+temperature = 1.0
+[boundary.ymax]
+type = "wall"
+[boundary.ymax.energy]
+temperature = 1.0
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+algorithm = "coupled"
+tolerance = 1e-10
+max_iterations = 3000
+
+[solver.energy]
+tolerance = 1e-12
+max_iter = 200
+
+[analytic]
+type = "variable-density"
+flux = 0.02
+temperature = 0.5
+pressure = 0.01
+
+[verification]
+levels = [0, 1, 2]
+expected_order = [1.8, 2.2]
+scalar_order = [1.8, 2.2]
+require_convergence = true
+
+[output]
+vtkhdf = false
+wall_csv = false

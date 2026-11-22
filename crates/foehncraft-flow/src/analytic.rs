@@ -139,6 +139,22 @@ pub enum Analytic {
         #[serde(default)]
         nu: f64,
     },
+    /// The manufactured solution of the variable density (stage 7c, check
+    /// V7c.4) on the unit square, an ideal gas with R/M = 1 at p₀ = 1:
+    /// T = 1 + a sin πx sin πy, ρ = p₀/(R T/M) = 1/T, the mass flux from
+    /// the stream function ψ = A sin²πx sin²πy (ρu = ∂ψ/∂y, ρv = −∂ψ/∂x,
+    /// so ∇·(ρu) = 0 exactly and u = 0 on the walls), and p = P cos πx
+    /// cos πy up to a constant. The momentum and heat sources that make it
+    /// a solution are expressions of the case (written by
+    /// `tools/verification/vd_mms.py`).
+    VariableDensity {
+        /// A (kg/(m s)), the amplitude of the stream function.
+        flux: f64,
+        /// a (K), the amplitude of the temperature.
+        temperature: f64,
+        /// P (Pa), the amplitude of the pressure.
+        pressure: f64,
+    },
     /// Hagen–Poiseuille flow in a pipe of radius R along the x axis:
     /// u = 2 U_m (1 − r²/R²), r² = y² + z², p = p_out + G (x_out − x) with
     /// G = 8 μ U_m / R².
@@ -314,6 +330,18 @@ impl Analytic {
                 let g = a + b / r2x;
                 [-g * x[1], g * x[0], 0.0]
             }
+            Self::VariableDensity {
+                flux, temperature, ..
+            } => {
+                use std::f64::consts::PI;
+                let (sx, sy) = ((PI * x[0]).sin(), (PI * x[1]).sin());
+                let t = 1.0 + temperature * sx * sy;
+                [
+                    t * flux * PI * sx * sx * (2.0 * PI * x[1]).sin(),
+                    -t * flux * PI * (2.0 * PI * x[0]).sin() * sy * sy,
+                    0.0,
+                ]
+            }
             Self::TaylorGreen {
                 velocity,
                 length,
@@ -341,6 +369,10 @@ impl Analytic {
             | Self::CouetteViscosity { pressure, .. }
             | Self::CouetteTranspiration { pressure, .. } => pressure,
             Self::BuoyantSlot { .. } => 0.0,
+            Self::VariableDensity { pressure, .. } => {
+                use std::f64::consts::PI;
+                pressure * (PI * x[0]).cos() * (PI * x[1]).cos()
+            }
             Self::Poiseuille {
                 lower,
                 upper,
@@ -404,7 +436,10 @@ impl Analytic {
     /// constant that the run does not fix (closed domain): the error then
     /// compares the volume means.
     pub fn free_pressure_level(&self) -> bool {
-        matches!(self, Self::TaylorCouette { .. } | Self::BuoyantSlot { .. })
+        matches!(
+            self,
+            Self::TaylorCouette { .. } | Self::BuoyantSlot { .. } | Self::VariableDensity { .. }
+        )
     }
 
     /// The solution at time `t` (steady solutions ignore it).
@@ -429,7 +464,10 @@ impl Analytic {
             Self::CouetteTranspiration { nu, .. } | Self::BuoyantSlot { nu, .. } => {
                 *nu = viscosity / density
             }
-            Self::Uniform { .. } | Self::Couette { .. } | Self::CouetteViscosity { .. } => {}
+            Self::Uniform { .. }
+            | Self::Couette { .. }
+            | Self::CouetteViscosity { .. }
+            | Self::VariableDensity { .. } => {}
         }
         self
     }
@@ -443,6 +481,7 @@ impl Analytic {
             | Self::Poiseuille { lower, upper, .. }
             | Self::BuoyantSlot { lower, upper, .. } => upper - lower,
             Self::PipePoiseuille { radius, .. } => 2.0 * radius,
+            Self::VariableDensity { .. } => 1.0,
             Self::Uniform { length, .. } => length,
             Self::TaylorGreen { length, .. } => length,
             Self::TaylorCouette {
@@ -473,6 +512,10 @@ impl Analytic {
                 (buoyancy * d * d / (48.0 * nu)).abs() * 2.0 / (3.0 * 3f64.sqrt())
             }
             Self::TaylorGreen { velocity, .. } => velocity.abs(),
+            // the largest |ρu| = π A over the smallest ρ = 1/(1 + a)
+            Self::VariableDensity {
+                flux, temperature, ..
+            } => std::f64::consts::PI * flux.abs() * (1.0 + temperature.abs()),
             Self::TaylorCouette {
                 inner_radius,
                 outer_radius,

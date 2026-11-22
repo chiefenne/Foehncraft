@@ -259,3 +259,20 @@ p′ = p − ρ_ref g·(x − x_ref), the output has the static pressure p as
 | `flow/buoyancy_channel_reduced.toml` | generated hex 2D, 10 × 100 cells | a liquid rising at 0.05 m/s in a channel 2 m tall with gravity, outlet p′ = 0 (the default kind): p′ carries the friction (6.5 Pa), p adds −ρ g y | [gallery 186](../gallery/energy.md#buoyancy), [recipe 186](../recipes/energy.md#buoyancy) |
 | `flow/buoyancy_channel_static.toml` | as above | the same channel with the outlet as a static pressure, −19 620 Pa (`pressure_kind = "static"`): the same flow to 10⁻¹¹ | [gallery 186](../gallery/energy.md#buoyancy), [recipe 186](../recipes/energy.md#buoyancy) |
 | `flow/buoyancy_open_box.toml` | generated hex 2D, 20 × 20 cells | a box at rest open over its full height on one side: the reduced value 0 keeps it at rest; with `--set 'boundary.xmax.pressure_kind="static"'` the same 0 Pa as a uniform static value drives a false flow of 3.5 m/s (BUO006) | [gallery 186](../gallery/energy.md#buoyancy), [recipe 186](../recipes/energy.md#buoyancy) |
+
+## Variable density
+
+The low-Mach variable density ρ(T, p₀) of stage 7c (D151): `[energy]
+density = "variable"` or `[buoyancy] model = "variable-density"`; p₀ the
+operating pressure of an open domain or, with `thermodynamic_pressure =
+"closed-volume"`, that of the fixed mass of a closed one. The keys are
+on the [key page](../keys.md) and in [recipe
+195](../recipes/energy.md#variable-density).
+
+| Case file | Mesh | Shows | Where |
+|---|---|---|---|
+| `flow/vd_cavity_large_dt.toml` | generated hex 2D, 32² to 128² cells clustered to the walls (3 levels) | air in a closed square cavity of 3.2 cm with walls at 960 K and 240 K (ε = 0.6, Ra ≈ 10⁵), the coupled algorithm: the heat flow through the hot wall 0.14858 W (per mm of depth), observed order 2.13, GCI 0.020 %; p₀ = 94 975 Pa, order 2.2, GCI 0.003 % | [gallery 195](../gallery/energy.md#variable-density), [recipe 195](../recipes/energy.md#variable-density) |
+| `flow/vd_heated_duct.toml` | generated hex 2D, 100 × 4 cells | check V7c.1: gas heated by 100 K in a duct with slip walls; the mass flow is the same at both ends, ṁ c_p ΔT equals the source, the inlet pressure 0.392245 Pa is G²(1/ρ_out − 1/ρ_in) = 0.3922 Pa | [gallery 195](../gallery/energy.md#variable-density), [recipe 195](../recipes/energy.md#variable-density) |
+| `flow/vd_closed_box_heating.toml` | generated hex 2D, 10 × 10 cells | check V7c.2: a closed box of gas at rest heated uniformly with 10⁴ W/m³ warms with c_v; T = 359.190 K and p₀ = 121 316 Pa after 5 s, both linear in t and exact to 10⁻¹⁰ with any Δt | [recipe 195](../recipes/energy.md#variable-density) |
+| `flow/vd_closed_box_side_heated.toml` | generated hex 2D, 32 × 32 cells | check V7c.3: a closed box of air heated through one wall at 400 K for 2 s: p₀ rises to 117 630 Pa, the gas far from the wall is compressed to 321 K, the mass stays to round-off (10⁻¹⁵) | [gallery 195](../gallery/energy.md#variable-density), [recipe 195](../recipes/energy.md#variable-density) |
+| `flow/vd_mms_steady.toml` | generated hex 2D, 16² to 64² cells (3 levels) | check V7c.4: manufactured solution with ρ = 1/T, a divergence-free mass flux, the full stress and a closed volume (`tools/verification/vd_mms.py`); observed orders 2.22 and 1.92 (velocity), 1.86 and 1.90 (temperature), 1.8–2.2 required | [recipe 195](../recipes/energy.md#variable-density) |

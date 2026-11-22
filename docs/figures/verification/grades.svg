@@ -1,12 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 596" width="800" height="596" font-family="Helvetica, Arial, sans-serif" font-size="12">
-<rect width="800" height="596" fill="white"/>
-<text x="400.0" y="22" text-anchor="middle" font-size="15" font-weight="bold">Verification grades of 100 features (D199)</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 568" width="800" height="568" font-family="Helvetica, Arial, sans-serif" font-size="12">
+<rect width="800" height="568" fill="white"/>
+<text x="400.0" y="22" text-anchor="middle" font-size="15" font-weight="bold">Verification grades of 101 features (D199)</text>
 <rect x="230" y="36" width="14" height="14" fill="#2e9d5b"/>
-<text x="250" y="48">verified (49)</text>
+<text x="250" y="48">verified (50)</text>
 <rect x="380" y="36" width="14" height="14" fill="#e9a23b"/>
-<text x="400" y="48">partial (47)</text>
+<text x="400" y="48">partial (48)</text>
 <rect x="530" y="36" width="14" height="14" fill="#d64541"/>
-<text x="550" y="48">unverified (4)</text>
+<text x="550" y="48">unverified (3)</text>
 <text x="220" y="84.0" text-anchor="end">Meshes</text>
 <rect x="230.0" y="70" width="81.5" height="20" fill="#2e9d5b"/>
 <text x="270.8" y="84.0" text-anchor="middle" fill="white" font-weight="bold">2</text>
@@ -65,10 +65,10 @@
 <rect x="393.1" y="350" width="122.3" height="20" fill="#e9a23b"/>
 <text x="454.2" y="364.0" text-anchor="middle" fill="white" font-weight="bold">3</text>
 <text x="220" y="392.0" text-anchor="end">Buoyancy</text>
-<rect x="230.0" y="378" width="40.8" height="20" fill="#2e9d5b"/>
-<text x="250.4" y="392.0" text-anchor="middle" fill="white" font-weight="bold">1</text>
-<rect x="270.8" y="378" width="40.8" height="20" fill="#e9a23b"/>
-<text x="291.2" y="392.0" text-anchor="middle" fill="white" font-weight="bold">1</text>
+<rect x="230.0" y="378" width="81.5" height="20" fill="#2e9d5b"/>
+<text x="270.8" y="392.0" text-anchor="middle" fill="white" font-weight="bold">2</text>
+<rect x="311.5" y="378" width="81.5" height="20" fill="#e9a23b"/>
+<text x="352.3" y="392.0" text-anchor="middle" fill="white" font-weight="bold">2</text>
 <text x="220" y="420.0" text-anchor="end">Rotating machinery</text>
 <rect x="230.0" y="406" width="163.1" height="20" fill="#2e9d5b"/>
 <text x="311.5" y="420.0" text-anchor="middle" fill="white" font-weight="bold">4</text>
@@ -89,8 +89,5 @@
 <text x="331.9" y="504.0" text-anchor="middle" fill="white" font-weight="bold">5</text>
 <rect x="433.8" y="490" width="40.8" height="20" fill="#e9a23b"/>
 <text x="454.2" y="504.0" text-anchor="middle" fill="white" font-weight="bold">1</text>
-<text x="220" y="532.0" text-anchor="end">Planned</text>
-<rect x="230.0" y="518" width="40.8" height="20" fill="#d64541"/>
-<text x="250.4" y="532.0" text-anchor="middle" fill="white" font-weight="bold">1</text>
-<text x="495.0" y="580" text-anchor="middle" fill="#555">features per area, grades computed from docs/verification/features.toml</text>
+<text x="495.0" y="552" text-anchor="middle" fill="#555">features per area, grades computed from docs/verification/features.toml</text>
 </svg>

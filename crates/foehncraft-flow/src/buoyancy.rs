@@ -85,7 +85,9 @@ pub enum Model {
     /// ρ = ρ₀ everywhere except in the body force
     /// −ρ₀ β (T − T_ref) g.
     Boussinesq,
-    /// ρ(T, p₀) everywhere (stage 7c, not yet available).
+    /// ρ(T, p₀) everywhere (stage 7c, D151): the body force (ρ − ρ_ref) g
+    /// with the variable density of `[energy] density = "variable"`, which
+    /// this model switches on.
     VariableDensity,
 }
 
@@ -93,7 +95,8 @@ pub enum Model {
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct BuoyancySection {
-    /// `none` (default) or `boussinesq`.
+    /// `none` (default), `boussinesq` or `variable-density` (the body force
+    /// (ρ − ρ_ref) g with ρ(T, p₀) in every cell, stage 7c).
     #[serde(default)]
     pub model: Model,
     /// T_ref (K) of the body force; default the `[fluid] temperature`, at
@@ -184,10 +187,21 @@ pub struct Constants {
     pub t_ref: f64,
     /// Where β comes from (for the log).
     pub beta_source: &'static str,
+    /// The variable-density model (stage 7c): the force per cell is
+    /// (ρ_P − ρ_ref) g from the cell density; β only sets the buoyancy
+    /// velocity of the pseudo-time step.
+    pub variable: bool,
 }
 
 impl Constants {
-    /// The body force per unit volume at temperature `t` (N/m³).
+    /// The body force per unit volume of a cell of density `rho` (N/m³),
+    /// variable density.
+    pub fn force_of_density(&self, rho: f64) -> [f64; 3] {
+        let c = rho - self.rho_ref;
+        [c * self.g[0], c * self.g[1], c * self.g[2]]
+    }
+
+    /// The body force per unit volume at temperature `t` (N/m³), Boussinesq.
     pub fn force(&self, t: f64) -> [f64; 3] {
         let c = (self.rho0 - self.rho_ref) - self.rho0 * self.beta * (t - self.t_ref);
         [c * self.g[0], c * self.g[1], c * self.g[2]]
@@ -207,7 +221,7 @@ pub fn hydrostatic(case: &crate::case::FlowCase) -> Option<Hydrostatic> {
 
 /// The resolved Boussinesq constants of a case (`None` without the model).
 pub fn constants(case: &crate::case::FlowCase) -> Result<Option<Constants>> {
-    if case.buoyancy.model != Model::Boussinesq {
+    if case.buoyancy.model == Model::None {
         return Ok(None);
     }
     let g = case.gravity.as_ref().map(|g| g.vector).unwrap_or([0.0; 3]);
@@ -227,6 +241,7 @@ pub fn constants(case: &crate::case::FlowCase) -> Result<Option<Constants>> {
         beta,
         t_ref,
         beta_source,
+        variable: case.buoyancy.model == Model::VariableDensity,
     }))
 }
 
@@ -287,14 +302,9 @@ pub fn validate(case: &crate::case::FlowCase) -> Result<()> {
     }
     match case.buoyancy.model {
         Model::None => Ok(()),
-        Model::VariableDensity => Err(diag::err(
-            Diagnostic::new(
-                diag::ENE_UNSUPPORTED,
-                "[buoyancy] model = \"variable-density\" comes with the low-Mach variable \
-                 density (stage 7c); use \"boussinesq\" for now",
-            )
-            .key("buoyancy.model"),
-        )),
+        // the checks of the variable density are those of crate::density
+        // (called after this one)
+        Model::VariableDensity => Ok(()),
         Model::Boussinesq => {
             if case.gravity.is_none() {
                 return Err(diag::err(
@@ -379,6 +389,7 @@ pub fn setup_findings(
         message,
     };
     if let Ok(Some(c)) = constants(case)
+        && !c.variable
         && let Some((lo, hi)) = crate::energy::temperature_range(case)
     {
         let d = c.beta.abs()
@@ -393,8 +404,8 @@ pub fn setup_findings(
                 format!(
                     "β ΔT = {d:.3} above 0.1 (β = {:.4e} 1/K, temperatures {lo} K to {hi} K, \
                      T_ref = {} K): the density changes by more than 10 %, outside the range of \
-                     the Boussinesq model (Gray & Giorgini 1976); the variable-density model \
-                     (stage 7c) is the right one",
+                     the Boussinesq model (Gray & Giorgini 1976); `[buoyancy] model = \
+                     \"variable-density\"` (stage 7c) takes ρ(T, p₀) in every cell",
                     c.beta, c.t_ref
                 ),
             ));
@@ -586,12 +597,19 @@ impl Balanced {
         (norm(c.g) * c.beta.abs() * self.delta_t * l).sqrt()
     }
 
-    /// The arrays for the cell temperatures `t`.
-    pub fn arrays(&mut self, t: &[f64]) -> Arrays {
+    /// The arrays for the cell temperatures `t` (Boussinesq) or the cell
+    /// densities `rho` (variable density).
+    pub fn arrays(&mut self, t: &[f64], rho: Option<&[f64]>) -> Arrays {
         let nc = self.volume.len();
         let ni = self.n_interior;
         let nf = self.owner.len();
-        let b: Vec<[f64; 3]> = t.iter().map(|&x| self.constants.force(x)).collect();
+        let b: Vec<[f64; 3]> = match rho {
+            Some(r) => r
+                .iter()
+                .map(|&x| self.constants.force_of_density(x))
+                .collect(),
+            None => t.iter().map(|&x| self.constants.force(x)).collect(),
+        };
         // face offsets o_f = ½ (b_P + b_N)·d, o_b = b_P·r
         let o: Vec<f64> = (0..nf)
             .map(|f| {

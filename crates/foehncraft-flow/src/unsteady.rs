@@ -901,6 +901,7 @@ fn rebuild_flow(
         nfl.set_momentum_source(src)?;
     }
     crate::scalar::attach(&mut nfl, case, mesh, geo)?;
+    crate::density::attach(&mut nfl, case)?;
     crate::buoyancy::attach(&mut nfl, case)?;
     crate::turbulence::attach_with(&mut nfl, case, mesh, geo, wall_distance)?;
     crate::frame::attach(&mut nfl, case, mesh, geo)?;
@@ -1024,6 +1025,7 @@ fn run_one<F: FnMut(&str)>(
         fl.set_momentum_source(src)?;
     }
     crate::scalar::attach(&mut fl, &case, mesh, geo)?;
+    crate::density::attach(&mut fl, &case)?;
     crate::buoyancy::attach(&mut fl, &case)?;
     // the wall distance of the sliding mesh by imprinting: kept per part and
     // updated for the rotor angle of every step (D182, D48)
@@ -1204,6 +1206,13 @@ fn run_one<F: FnMut(&str)>(
         hunits
             .push_str(", energy - (scaled residual), first_order_energy - (cells at first order)");
         hhead.push_str(",energy,first_order_energy");
+    }
+    let vd_csv = crate::density::wanted(&case);
+    if vd_csv {
+        hunits.push_str(
+            ", p0 Pa (thermodynamic pressure), mass kg (in the domain), rho_min rho_max kg/m³",
+        );
+        hhead.push_str(",p0,mass,rho_min,rho_max");
     }
     let mut history = History::new(
         hist_dir,
@@ -1760,6 +1769,15 @@ fn run_one<F: FnMut(&str)>(
             for (x, k) in r.scalars.residual.iter().zip(&r.scalars.first_order) {
                 let _ = write!(sc, ",{x:e},{k}");
             }
+            if let (true, Some(d)) = (vd_csv, fl.density.as_deref()) {
+                let (lo, hi) = d
+                    .rho
+                    .iter()
+                    .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), &r| {
+                        (a.min(r), b.max(r))
+                    });
+                let _ = write!(sc, ",{:e},{:e},{lo:e},{hi:e}", d.p0, d.total_mass());
+            }
             history.row(&format!(
                 "{n},{:e},{:e},{:e},{:e},{:e},{:e},{:e},{},{}{sc}",
                 rp.time,
@@ -2307,6 +2325,7 @@ fn run_one<F: FnMut(&str)>(
     } else {
         None
     };
+    let density = crate::density::summary(&mut fl, warnings)?;
     let sol = Solution {
         state: fl.state()?,
         disc: &fl.disc,
@@ -2548,6 +2567,7 @@ fn run_one<F: FnMut(&str)>(
             ),
         };
     let solve = Solve {
+        density,
         scalars,
         periodic,
         wall_probes: wall_probe_values,

@@ -59,11 +59,12 @@ FLOW = {
         "cavity_sst_operator_check",
         "buoyancy_box_at_rest", "buoyancy_slot", "buoyancy_channel_reduced",
         "buoyancy_channel_static", "buoyancy_open_box", "buoyancy_enclosure_plume",
+        "vd_heated_duct", "vd_closed_box_heating", "vd_closed_box_side_heated", "vd_mms_steady",
     ],
     "long": [
         "cylinder_re100", "cylinder_re100_short", "cylinder_re100_statistics", "cylinder_re100_convective", "cylinder_re20_gci",
         "tmr_plate_zeta_f", "backstep_zeta_f0", "tmr_plate_eb", "backstep_eb", "impinging_jet",
-        "cht_heat_sink_turbulent", "cylinder_steady_diagnosis",
+        "cht_heat_sink_turbulent", "cylinder_steady_diagnosis", "vd_cavity_large_dt",
     ],
     "quick": [
         "cavity_re100_budget", "couette_hex", "couette_mixed", "couette_poly", "couette_tet",

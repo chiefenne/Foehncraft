@@ -17,8 +17,8 @@
 > under way: the energy equation of the fluid and conjugate heat transfer
 > with solid regions, steady and transient, laminar and turbulent, with
 > contact resistances, orthotropic solids and thermal acceleration of the
-> solids, are in, and so are gravity and the Boussinesq buoyancy; variable
-> density comes next.
+> solids, are in, and so are gravity, the Boussinesq buoyancy and the
+> low-Mach variable density ρ(T, p₀).
 
 [![CI](https://github.com/chiefenne/Foehncraft/actions/workflows/ci.yml/badge.svg)](https://github.com/chiefenne/Foehncraft/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/chiefenne/Foehncraft)](https://github.com/chiefenne/Foehncraft/releases)
@@ -136,6 +136,17 @@ validated range, one mesh only, …) in its report and its JSON result.
   perturbed hex, tet, poly or mixed mesh stays at rest to 10⁻¹⁵ m/s; the
   buoyant slot meets its exact profile at second order, and a warm strip
   in a closed air enclosure drives a laminar plume (gallery 186).
+- **Variable density.** The low-Mach density ρ(T, p₀) of an ideal gas or a
+  liquid in every cell and face (`[energy] density = "variable"`, or
+  `[buoyancy] model = "variable-density"` with the body force (ρ − ρ_ref)
+  g), with SIMPLEC and the coupled algorithm, steady and transient,
+  turbulent and in conjugate heat transfer. p₀ is the operating pressure
+  of an open domain, or follows from the fixed mass of a closed volume,
+  with the pressure work that makes a closed gas heat with c_v. A heated
+  duct meets its exact balances, a closed box heated uniformly its exact
+  p₀(t), a manufactured solution with ρ = 1/T converges at second order,
+  and air between walls at 960 K and 240 K has a heat flow with GCI
+  0.02 % (gallery 195).
 - **Rotating machinery.** The moving reference frame (steady and transient
   frozen rotor), the sliding mesh by conformal stepping and by imprinting
   the interface in every step, several rotors at their own speeds,
