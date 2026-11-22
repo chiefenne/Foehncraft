@@ -13,6 +13,7 @@ Part of the [Example gallery](../gallery.md): the energy equation of the fluid (
 | 190 | [A pulsating channel over a heated wall, coupled by the cycle-averaged loop](#cht-cycle) | 7 | `[energy.cycle]` `period`, `solid_model`, `update`, `enabled`, `cycle_coupling.csv`, `cycle_faces.csv` |
 | 202 | [A thin-skin wall under a pulsating channel: the skin swing, fully coupled cycles at the end and the CHT restart](#cht-cycle-skin) | 7 | `[energy.cycle]` `skin`, `skin_harmonics`, `resolved_cycles`, `cycle_faces.csv` `t_wall_amplitude`, CHT `restart.h5` |
 | 208 | [A heated wall warmed up with the flow held, and a pulsating channel warmed up by the cycle loop](#cht-frozen-flow) | 7 | `[energy.frozen_flow]` `time_step`, `refresh_change`, `start`, `result.json` `frozen_flow`; `[energy.cycle] solid = "transient"`, `march_cycles`, `march_steps`, `cycle_coupling.csv` `march_jump` |
+| 206 | [Water and oil in counterflow across a steel plate: two fluids in one conjugate case](#two-fluids) | 7 | `[regions.<name>] kind = "fluid"` with `material`, `temperature`, fluid parts, REG003–REG006 |
 | 186 | [A warm strip in a closed air enclosure, and a stratified box that stays at rest](#buoyancy) | 7 | `[gravity]`, `[buoyancy] model = "boussinesq"`, `expansion_coefficient`, `static_pressure` |
 | 195 | [Air between walls at 960 K and 240 K, a heated duct and two closed boxes](#variable-density) | 7 | `[energy] density = "variable"`, `thermodynamic_pressure`, `pressure_work`, `[buoyancy] model = "variable-density"`, `density` |
 
@@ -626,6 +627,62 @@ target/release/foehn flow examples/cases/flow/cht_pulsating_channel_warmup.toml 
     --set energy.cycle.enabled=false
 pip install matplotlib h5py numpy
 python3 -m tools.plot.cht_frozen docs/figures/gallery output/frz output/frz_ref output/wu output/wu_ref
+<a id="two-fluids"></a>
+## 206. Water and oil in counterflow across a steel plate: two fluids in one conjugate case
+
+<img src="../figures/gallery/cht_counterflow_two_fluids.png" alt="Top: the temperature in a parallel-plate counterflow exchanger 0.5 m long, the height stretched 25 times: water enters the lower 2 mm channel from the left at 340 K and leaves at the right at 309 K, a light oil enters the upper channel from the right at 300 K and leaves at the left at 331 K, the 0.5 mm steel plate between them in the middle. Middle: the velocity along x: the water flows to the right at up to 3.8 mm/s, the oil to the left at up to 9.2 mm/s, both with parabolic profiles, the plate at rest. Bottom: the bulk temperatures of the water and the oil along the exchanger as dots on the straight lines of the epsilon-NTU solution with effectiveness 0.7751: the two curves are parallel, since the capacity rates are equal" width="990" height="810">
+
+**The case.** `cht_counterflow_two_fluids.toml` puts two fluids in one
+conjugate case (D194, stage MF-A): water from the material database below
+a 0.5 mm steel plate (k = 15 W/(m K)) and a light oil with made-up
+constant properties (ρ = 850 kg/m³, c_p = 2000 J/(kg K), k = 0.13 W/(m K),
+μ = 0.005 Pa s) above it, each in a channel 2 mm high and 0.5 m long. The
+oil region names its own material:
+
+```toml
+[regions.oil]
+kind = "fluid"
+zones = ["oil"]
+material = "light-oil"
+```
+
+and a fluid region may also give the `temperature` at which its material
+is evaluated (hot air beside cold water). The water enters at the left at
+340 K, the oil at the right at 300 K, both with the fully developed
+profile; the oil speed makes the capacity rates equal (C_r = 1), so the
+heat flux through the plate is uniform and each channel has the fully
+developed Nusselt number of a flat duct heated on one side, Nu = 5.385 on
+D_h = 2h (Shah and London 1978). With 1/U = 1/h_w + t/k + 1/h_o the
+exchanger has NTU = 3.446 and ε = NTU/(1 + NTU) = 0.7751.
+
+**What the solver does with two fluids.** Density, viscosity, c_p and k
+are fields per cell and face, the turbulence models take ν and ρ per
+cell, and the boundary conditions the density of their face. The water and
+the oil touch only through the plate, so they are two **fluid parts** of
+the flow: blocks of one matrix that never couple, each with its own
+pressure outlet. The log lists them (REG005):
+
+```
+[REG005] 2 fluid part(s), 2 fluid(s)
+[REG005]   part 1: 1600 cells, regions water, fluid water at 300 K, boundaries xmin, xmax, ymin, zmin, zmax, interface-plate
+[REG005]   part 2: 1600 cells, regions oil, fluid light-oil at 300 K, boundaries ymax, zmin, zmax, oil_out, oil_in, interface-plate
+```
+
+A part without a pressure boundary is refused (REG003), and so are two
+different fluids that share a face (REG004): without a wall between them
+that is a two-phase interface, which needs a multiphase model.
+
+**Result.** The water leaves at 308.98 K, ε = 0.7756, within 0.07 % of
+ε–NTU; the oil warms by the same 31.06 K. The heat the water gives off,
+the heat through the plate (0.653 W per mm of depth) and the heat the oil
+takes up agree, and the ledger closes to 3·10⁻⁵ of the largest heat flow.
+The run takes 2670 SIMPLEC iterations, 14 s on 3200 fluid cells.
+
+```
+cargo build --release -p foehncraft-cli
+target/release/foehn flow examples/cases/flow/cht_counterflow_two_fluids.toml --out output/two_fluids
+pip install matplotlib h5py numpy
+python3 -m tools.plot.cht_two_fluids docs/figures/gallery output/two_fluids
 ```
 
 <a id="buoyancy"></a>

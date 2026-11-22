@@ -1,0 +1,125 @@
+# Engineering gallery, application 203: the shell and tube heat exchanger,
+# steady conjugate heat transfer, water and hot air in COFLOW.
+#
+#   pip install gmsh
+#   python3 examples/applications/shell_tube_hx/mesh.py --level 2
+#   target/release/foehn flow examples/applications/shell_tube_hx/case_coflow.toml --out output/hx_coflow
+#
+# Boundary conditions (owner, 2026-11-22):
+# - hot air enters the shell side through the side nozzle at the inlet end
+#   (shell_nozzle_front, x = -100 mm, inner diameter 30 mm) at 15 m/s and
+#   300 °C and leaves through shell_nozzle_rear against 1.5 bar;
+# - water enters the tube side through the top nozzle at the same end
+#   (tube_nozzle_front, y = -30 mm, inner diameter 40 mm) at 5 m/s and
+#   20 °C, flows through the seven tubes and leaves through
+#   tube_nozzle_rear against 1 bar; both streams run from the front end
+#   to the rear end (coflow; case_counterflow.toml turns the water round);
+# - the outer face of the housing is held at 25 °C;
+# - everything starts at rest.
+#
+# Reynolds numbers: air in the nozzle 15 · 0.03 / 4.8e-5 ≈ 9 400, water in
+# the tubes (5.1 m/s, d = 15 mm) ≈ 7.6e4: k-omega SST with the automatic
+# wall treatment and the thermal wall function, on tetrahedra without
+# prism layers. The pressures are gauge values; the 1.5 bar of the air
+# outlet is its operating pressure (ideal-gas density), the water is
+# incompressible.
+
+case_format = "0.6"
+
+[mesh]
+file = "hx_L2.msh"                    # metres; zones and boundaries of mesh.py
+renumber = "rcm"
+
+[fluid]
+material = "air"                      # the shell side; the water is a region below
+temperature = 573.15                  # K: 300 °C at the inlet
+operating_pressure = 150000.0         # Pa: 1.5 bar at the air outlet
+
+[materials.carbon-steel]
+kind = "solid"
+description = "Plain carbon steel (Mn <= 1 %, Si <= 0.1 %) at 300 K (Incropera et al., Fundamentals of Heat and Mass Transfer, 6th ed., 2007, Table A.1)"
+density = 7854.0                      # kg/m³
+specific_heat = 434.0                 # J/(kg K)
+conductivity = 60.5                   # W/(m K)
+
+[regions.air]
+kind = "fluid"
+zones = ["shell_side"]
+material = "air"
+
+[regions.water]
+kind = "fluid"
+zones = ["tube_side"]
+material = "water"
+temperature = 293.15                  # K: its properties at the 20 °C inlet (D194)
+
+[regions.steel]
+kind = "solid"
+zones = ["tubes", "tubesheets", "baffles", "housing"]
+material = "carbon-steel"
+
+[turbulence]
+model = "k-omega-sst"
+wall_treatment = "automatic"
+
+[energy]
+initial = 293.15                      # K: the metal and the water start cold
+turbulent_prandtl = 0.85
+wall_function = "kader"
+
+[initial]
+velocity = [0.0, 0.0, 0.0]            # at rest (owner)
+k = 0.01                              # m²/s²: an intensity of a still flow gives k = 0
+omega = 100.0                         # 1/s: nu_t = 1e-4 m²/s, a few times nu
+
+# --- shell side: hot air -------------------------------------------------
+[boundary.shell_nozzle_front]
+type = "velocity-inlet"
+normal_velocity = 15.0                # m/s into the domain
+turbulence_intensity = 0.05
+turbulence_length_scale = 0.0021      # m: 0.07 d, d = 30 mm
+[boundary.shell_nozzle_front.energy]
+temperature = 573.15                  # K: 300 °C
+
+[boundary.shell_nozzle_rear]
+type = "static-pressure-outlet"
+pressure = 0.0                        # gauge: 1.5 bar absolute (operating pressure)
+turbulence_intensity = 0.05
+turbulence_length_scale = 0.0021
+
+# --- tube side: water ----------------------------------------------------
+[boundary.tube_nozzle_front]
+type = "velocity-inlet"
+normal_velocity = 5.0                 # m/s into the domain
+turbulence_intensity = 0.05
+turbulence_length_scale = 0.0028      # m: 0.07 d, d = 40 mm
+[boundary.tube_nozzle_front.energy]
+temperature = 293.15                  # K: 20 °C
+
+[boundary.tube_nozzle_rear]
+type = "static-pressure-outlet"
+pressure = 0.0                        # gauge: 1 bar absolute
+turbulence_intensity = 0.05
+turbulence_length_scale = 0.0028
+
+# --- outside -------------------------------------------------------------
+[boundary.housing_outer]
+type = "wall"
+[boundary.housing_outer.energy]
+temperature = 298.15                  # K: 25 °C (owner)
+
+[solver]
+algorithm = "coupled"                 # SIMPLEC from rest diverged within 6 iterations on level 0
+tolerance = 1e-6
+max_iterations = 2500                 # check the run at 2 000-3 000 iterations
+log_every = 100
+
+[solver.energy]
+relaxation = 1.0
+tolerance = 1e-10                     # the steel dominates the scaled residual (ENE007)
+max_iter = 300
+
+[output]
+vtkhdf = true
+wall_csv = false
+derived = ["wall-shear-stress", "y-plus"]

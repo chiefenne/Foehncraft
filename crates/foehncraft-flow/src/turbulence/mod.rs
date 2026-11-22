@@ -1628,6 +1628,9 @@ pub struct Turbulence {
     treatment: u32,
     nu: f64,
     rho: f64,
+    /// ν and ρ per cell and per boundary face (its owner's) of a case of
+    /// several fluids (D194); `None`: `nu` and `rho` everywhere.
+    fluids: Option<CellFluids>,
     nc: usize,
     ni: usize,
     nb: usize,
@@ -1828,7 +1831,33 @@ fn kinds(
     (points, a)
 }
 
+/// ν and ρ of a case of several fluids (D194): per cell (host and device)
+/// and per boundary face (the owner's).
+#[derive(Debug, Clone)]
+struct CellFluids {
+    buf: Buf,
+    nu: Vec<f64>,
+    rho: Vec<f64>,
+    nu_b: Vec<f64>,
+    rho_b: Vec<f64>,
+}
+
 impl Turbulence {
+    /// ν of cell `c`.
+    fn nu_c(&self, c: usize) -> f64 {
+        self.fluids.as_ref().map_or(self.nu, |f| f.nu[c])
+    }
+
+    /// ν at boundary face `fb` (its owner's).
+    fn nu_b(&self, fb: usize) -> f64 {
+        self.fluids.as_ref().map_or(self.nu, |f| f.nu_b[fb])
+    }
+
+    /// ρ at boundary face `fb` (its owner's).
+    fn rho_b(&self, fb: usize) -> f64 {
+        self.fluids.as_ref().map_or(self.rho, |f| f.rho_b[fb])
+    }
+
     /// The turbulence model of a case on the device `dev` of a flow.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -1842,6 +1871,7 @@ impl Turbulence {
         mu: f64,
         face_viscosity: Buf,
         wall_distance: Option<Vec<f64>>,
+        cells: Option<(Vec<f64>, Vec<f64>)>,
     ) -> Result<Self> {
         let section = case.turbulence.clone();
         let settings = case.solver.turbulence.clone();
@@ -1880,6 +1910,23 @@ impl Turbulence {
         let c_mu = section.c_mu()?;
         let treatment = section.treatment();
         let nu = mu / rho;
+        let fluids = match cells {
+            Some((nu_c, rho_c)) => {
+                let owner_b = &disc.owner[ni..nf];
+                Some(CellFluids {
+                    buf: {
+                        let b = dev.alloc(nc)?;
+                        dev.upload(b, &nu_c)?;
+                        b
+                    },
+                    nu_b: owner_b.iter().map(|&o| nu_c[o as usize]).collect(),
+                    rho_b: owner_b.iter().map(|&o| rho_c[o as usize]).collect(),
+                    nu: nu_c,
+                    rho: rho_c,
+                })
+            }
+            None => None,
+        };
         // the inlets
         let mut specs = Vec::new();
         let mut zetas = Vec::new();
@@ -2248,6 +2295,7 @@ impl Turbulence {
             treatment: treatment.id(),
             nu,
             rho,
+            fluids,
             nc,
             ni,
             nb,
@@ -2347,7 +2395,7 @@ impl Turbulence {
         dev.upload(t.d, &d)?;
         t.wall_distance = d;
         // the start values (specification 7.3)
-        let (k0, w0) = t.initial_values(dev, case, geo, bc_arrays, &env)?;
+        let (k0, w0) = t.initial_values(dev, case, mesh, geo, bc_arrays, &env)?;
         dev.upload(t.k.phi, &k0)?;
         dev.upload(t.w.phi, &w0)?;
         if let Some(z) = &mut t.zf {
@@ -2387,7 +2435,7 @@ impl Turbulence {
                 let u = [bc.ub[0][fb], bc.ub[1][fb], bc.ub[2][fb]];
                 let sp = (u[0] * u[0] + u[1] * u[1] + u[2] * u[2]).sqrt();
                 self.inlets.specs[s]
-                    .at(sp, x, 0.0, self.nu, self.c_mu, self.eps)
+                    .at(sp, x, 0.0, self.nu_b(fb), self.c_mu, self.eps)
                     .0
             })
             .fold(0.0, f64::max)
@@ -2400,6 +2448,7 @@ impl Turbulence {
         &self,
         _dev: &mut dyn FlowDevice,
         case: &crate::case::FlowCase,
+        mesh: &Mesh,
         geo: &Geometry,
         bc: &BoundaryArrays,
         env: &Env,
@@ -2432,41 +2481,71 @@ impl Turbulence {
             }
             return Ok((kv, wv));
         }
-        let from = |ii: f64, r: f64, sp: f64| {
+        let from = |ii: f64, r: f64, sp: f64, nu: f64| {
             let k = 1.5 * (ii * sp) * (ii * sp);
             if self.eps {
-                (k, self.c_mu * k * k / (r * self.nu))
+                (k, self.c_mu * k * k / (r * nu))
             } else {
-                (k, k / (r * self.nu))
+                (k, k / (r * nu))
             }
         };
-        let (k, w) = if i.turbulence_intensity.is_some() || i.viscosity_ratio.is_some() {
-            from(
-                i.turbulence_intensity.unwrap_or(0.01),
-                i.viscosity_ratio.unwrap_or(1.0),
-                speed0,
-            )
-        } else if let Some(&(_, s, _)) = self.inlets.faces.first() {
-            // the first inlet: area-free mean of its face values
+        // the start values of one fluid part (`in_part`: its boundary
+        // faces; ν its viscosity): the initial intensity and viscosity
+        // ratio, else the area-free mean of its first inlet's face values
+        let start = |in_part: &dyn Fn(usize) -> bool, nu: f64| -> (f64, f64) {
+            if i.turbulence_intensity.is_some() || i.viscosity_ratio.is_some() {
+                return from(
+                    i.turbulence_intensity.unwrap_or(0.01),
+                    i.viscosity_ratio.unwrap_or(1.0),
+                    speed0,
+                    nu,
+                );
+            }
+            let Some(&(_, s, _)) = self.inlets.faces.iter().find(|f| in_part(f.0 as usize)) else {
+                return from(0.01, 1.0, speed0, nu);
+            };
             let (mut ks, mut ws, mut n) = (0.0, 0.0, 0.0);
             for &(fb, si, x) in &self.inlets.faces {
-                if si != s {
+                if si != s || !in_part(fb as usize) {
                     continue;
                 }
                 let fb = fb as usize;
                 let u = [bc.ub[0][fb], bc.ub[1][fb], bc.ub[2][fb]];
                 let sp = (u[0] * u[0] + u[1] * u[1] + u[2] * u[2]).sqrt();
                 let sp = if sp > 0.0 { sp } else { speed0 };
-                let (kk, ww) = self.inlets.specs[s].at(sp, x, 0.0, self.nu, self.c_mu, self.eps);
+                let (kk, ww) =
+                    self.inlets.specs[s].at(sp, x, 0.0, self.nu_b(fb), self.c_mu, self.eps);
                 ks += kk;
                 ws += ww;
                 n += 1.0;
             }
             (ks / n, ws / n)
-        } else {
-            from(0.01, 1.0, speed0)
         };
-        Ok((vec![k; nc], vec![w; nc]))
+        let Some(cf) = &self.fluids else {
+            let (k, w) = start(&|_| true, self.nu);
+            return Ok((vec![k; nc], vec![w; nc]));
+        };
+        // several fluids (D194): each fluid part from its own inlet
+        let parts = crate::fluids::parts(mesh);
+        let ni = mesh.n_interior_faces();
+        let (mut kv, mut wv) = (vec![0.0; nc], vec![0.0; nc]);
+        let mut done = vec![false; parts.n];
+        for c in 0..nc {
+            let pc = parts.part[c];
+            if done[pc as usize] {
+                continue;
+            }
+            done[pc as usize] = true;
+            let in_part = |fb: usize| parts.part[mesh.owner[ni + fb] as usize] == pc;
+            let (k, w) = start(&in_part, cf.nu[c]);
+            for d in c..nc {
+                if parts.part[d] == pc {
+                    kv[d] = k;
+                    wv[d] = w;
+                }
+            }
+        }
+        Ok((kv, wv))
     }
 
     /// The Poisson wall distance (Tucker 2003): ∇²φ = −1, φ = 0 on the
@@ -2512,7 +2591,10 @@ impl Turbulence {
         let bc_a = up(dev, &a)?;
         let bc_b = up(dev, &vec![0.0; self.nb])?;
         let gamma = up(dev, &vec![1.0; disc.n_faces])?;
-        let su = up(dev, &vec![1.0 / self.rho; nc])?;
+        let su = match &self.fluids {
+            Some(cf) => up(dev, &cf.rho.iter().map(|r| 1.0 / r).collect::<Vec<_>>())?,
+            None => up(dev, &vec![1.0 / self.rho; nc])?,
+        };
         let phi = dev.alloc(nc)?;
         let psi = dev.alloc(nc)?;
         dev.fill(psi, 1.0)?;
@@ -2667,7 +2749,8 @@ impl Turbulence {
         let mut wb = vec![0.0; self.nb];
         for (i, &(fb, s, x)) in self.inlets.faces.iter().enumerate() {
             let sp = (ux[i] * ux[i] + uy[i] * uy[i] + uz[i] * uz[i]).sqrt();
-            let (k, w) = self.inlets.specs[s].at(sp, x, t, self.nu, self.c_mu, self.eps);
+            let (k, w) =
+                self.inlets.specs[s].at(sp, x, t, self.nu_b(fb as usize), self.c_mu, self.eps);
             kb[fb as usize] = k.max(self.k.floor);
             wb[fb as usize] = w.max(self.w.floor);
         }
@@ -2727,7 +2810,14 @@ impl Turbulence {
         for (i, &(fb, s, x)) in self.backflow.faces.iter().enumerate() {
             let v = if m[i] < 0.0 {
                 let sp = (ux[i] * ux[i] + uy[i] * uy[i] + uz[i] * uz[i]).sqrt();
-                let (k, w) = self.backflow.specs[s].at(sp, x, t, self.nu, self.c_mu, self.eps);
+                let (k, w) = self.backflow.specs[s].at(
+                    sp,
+                    x,
+                    t,
+                    self.nu_b(fb as usize),
+                    self.c_mu,
+                    self.eps,
+                );
                 let z = self.backflow.specs[s]
                     .zeta_at(x)
                     .unwrap_or(self.backflow.zeta[s]);
@@ -2821,6 +2911,7 @@ impl Turbulence {
                 zeta: z.z.phi,
                 f: z.f.phi,
                 nu: self.nu,
+                nu_cell: self.fluids.as_ref().map(|f| f.buf),
                 c: z.c,
                 o: z.o,
                 add: if sources {
@@ -2861,6 +2952,7 @@ impl Turbulence {
                 k: self.k.phi,
                 e: self.w.phi,
                 nu: self.nu,
+                nu_cell: self.fluids.as_ref().map(|f| f.buf),
                 c: self.ke,
                 o: self.ko,
                 add: if sources { self.added } else { None },
@@ -2883,6 +2975,7 @@ impl Turbulence {
             grad_w: self.w.grad,
             d: self.d,
             nu: self.nu,
+            nu_cell: self.fluids.as_ref().map(|f| f.buf),
             c: self.c,
             o: self.o,
             add: if sources { self.added } else { None },
@@ -2916,6 +3009,7 @@ impl Turbulence {
             u,
             ub,
             nu: self.nu,
+            nu_cell: self.fluids.as_ref().map(|f| f.buf),
             treatment: self.treatment,
             c: self.c,
             ke: self.ke,
@@ -3211,7 +3305,7 @@ impl Turbulence {
         for (i, &fb) in self.pressure_faces.iter().enumerate() {
             let fb = fb as usize;
             let kf = self.ka_host[fb] * kp[i] + self.kin_host[fb];
-            v[fb] += 2.0 / 3.0 * self.rho * kf;
+            v[fb] += 2.0 / 3.0 * self.rho_b(fb) * kf;
         }
         dev.set_pressure_values(&v)
     }
@@ -4131,7 +4225,7 @@ impl Turbulence {
                 at = c;
             }
         }
-        Ok((m / self.nu, at))
+        Ok((m / self.nu_c(at), at))
     }
 }
 
@@ -4291,6 +4385,15 @@ pub fn attach_with(
         return Ok(());
     }
     let fv = fl.dev.face_viscosity();
+    // several fluids (D194): ν and ρ per cell
+    let cells = if crate::fluids::zone_fluids(case, mesh).1.len() > 1 {
+        let mu = case.properties()?.cell_viscosity(mesh, geo);
+        let rho: Vec<f64> = (0..mesh.n_cells).map(|c| fl.phys.rho_at(c)).collect();
+        let nu: Vec<f64> = mu.iter().zip(&rho).map(|(m, r)| m / r).collect();
+        Some((nu, rho))
+    } else {
+        None
+    };
     let t = Turbulence::new(
         fl.dev.as_mut(),
         case,
@@ -4302,6 +4405,7 @@ pub fn attach_with(
         fl.phys.mu,
         fv,
         wall_distance,
+        cells,
     )?;
     fl.add_turbulence(t)
 }

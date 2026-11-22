@@ -176,6 +176,23 @@ fine meshes (2026-11-22). Four causes, each found by switching one thing:
   transient run from the stalled state moves the same way, so check with
   one before concluding that a steady state does not exist.
 
+### Sharp 180° turns need a gentler start (the U-bend)
+
+The U-bend of gallery 204 with a square divider end and a square end wall
+(`ubend_sst_sharp.toml`, square cells at the kinks) did not run with the
+settings of the rounded bend (2026-11-22):
+
+- relaxation 0.8 from the potential-flow start diverged in 10 iterations
+  in the cells at the concave corners of the end wall, where the potential
+  flow stagnates; start at 0.5;
+- switching to linear upwind and to relaxation 0.8 in the same iteration
+  (201) diverged behind the divider end; switch the scheme first (601),
+  the relaxation later (1 201);
+- relaxation 0.5 throughout converges, but the separated region behind the
+  divider end grows very slowly: on 50 400 cells it was still growing at
+  6 000 iterations (residual 2·10⁻⁵). With the raise to 0.8 the same mesh
+  converges in 5 964. Watch the probe in the bubble, not the residual.
+
 ## Observers must not change the run
 
 Writing an intermediate result or a balance table between two outer

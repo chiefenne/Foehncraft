@@ -898,3 +898,72 @@ target/release/foehn flow examples/cases/flow/cavity_sst_operator_check.toml
 - With the QCR on as well, both use the same velocity fit.
 
 [↑ back to top](#turbulence-models)
+
+<a id="ubend"></a>
+## 204. Run a U-bend, its grid study and the sharp-edged variant
+
+The inlet is a developed channel profile: the periodic channel
+`ubend_channel_profile.toml` (mass flow of U_b = 1 m/s, Re_b = 10⁵) gives
+the table `ubend_inlet_profile.csv`, already placed on the inlet leg at
+−1.5 < y < −0.5 (`python3 examples/studies/ubend_inlet_profile.py`; run it
+again if the viscosity changes). Make the structured mesh at a level (every
+level halves all intervals) and run:
+
+```
+python3 examples/meshes/ubend.py ubend.su2 --level 0
+target/release/foehn flow examples/cases/flow/ubend_sst.toml --out output/ubend \
+    --set 'mesh.file="ubend.su2"'
+```
+
+- The case starts from potential flow with first-order upwind momentum and
+  switches to linear upwind at iteration 201, relaxation 0.8 (as the
+  diffuser, recipe 199).
+- The report prints the reattachment point on the inner wall behind the
+  turn (`output.wall_crossings` from the end of the turn in −x; 2.40 H on
+  level 0, within one wall face of the 2.32 H the study interpolates from
+  the wall table) and the first-cell y⁺; `wall_inner.csv` and `wall_outer.csv` hold the wall
+  pressure and shear. The log prints u at a probe in the core of the outlet
+  leg and one in the separated region (u > 0 there is reverse flow, the
+  outlet leg runs in −x): judge convergence on these.
+- The grid study runs levels 0 to 2 at the same time and writes
+  `report.md` with the order and GCI of the separation angle, the
+  reattachment and three wall pressures. It measures positions along the
+  wall (the angle in the turn, the distance behind it) and takes the
+  shear along the flow direction, so a separation inside the turn is found
+  too:
+
+  ```
+  python3 examples/studies/ubend_gci.py output/ubend_gci --jobs 3
+  python3 examples/studies/ubend_gci.py output/ubend_gci_sharp --jobs 3 --sharp
+  ```
+
+- **Sharp edges**: `ubend.py --sharp` makes a square divider end and a
+  square end wall with square cells at the kinks; run it with
+  `ubend_sst_sharp.toml`. It starts at relaxation 0.5, switches to linear
+  upwind at iteration 601 and raises the relaxation to 0.8 at 1 201:
+
+  ```toml
+  [solver.momentum]
+  scheme = "upwind"
+  relaxation = 0.5
+
+  [[schedule]]
+  at_iteration = 601
+  set = { solver.momentum.scheme = "linear-upwind" }
+
+  [[schedule]]
+  at_iteration = 1201
+  set = { solver.momentum.relaxation = 0.8 }
+  ```
+
+  0.8 from the start diverges at the concave corners, and switching both at
+  once diverges behind the divider end; 0.5 throughout converges too
+  slowly on level 1.
+- The curvature correction of SST changes the separation behind the turn
+  (gallery 204): `--set turbulence.curvature_correction=true`.
+- Figures: `python3 -m tools.plot.ubend_chart OUT.png [WORKDIR] [--sharp]`
+  (fields and wall pressure of the coarse mesh) and
+  `python3 -m tools.plot.ubend_friction OUT.png GCI_DIR CC_DIR SHARP_DIR`
+  (inner-wall friction of the study runs).
+
+[↑ back to top](#turbulence-models)

@@ -548,6 +548,18 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
         self.go::<e::ScaleVector>(self.r(s).len as usize, &args)
     }
 
+    fn product(&mut self, out: Buf, a: f64, x: Buf, y: Buf) -> Result<()> {
+        let r = self.r(out);
+        let args = e::LinArgs {
+            a,
+            b: 0.0,
+            x: self.r(x),
+            y: self.r(y),
+            out: r,
+        };
+        self.lin::<e::Product>(r.len as usize, args)
+    }
+
     fn lincomb(&mut self, out: Buf, a: f64, x: Buf, b: f64, y: Buf) -> Result<()> {
         let r = self.r(out);
         let args = e::LinArgs {
@@ -1336,6 +1348,7 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             grad_w: self.r3(a.grad_w),
             d: self.r(a.d),
             nu: a.nu,
+            nu_cell: a.nu_cell.map_or(Raw::EMPTY, |b| self.r(b)),
             c: a.c,
             o: a.o,
             add_k: a.add.map_or(none, |(x, _)| self.r(x)),
@@ -1539,6 +1552,7 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             k: self.r(a.k),
             e: self.r(a.e),
             nu: a.nu,
+            nu_cell: a.nu_cell.map_or(Raw::EMPTY, |b| self.r(b)),
             c: a.c,
             o: a.o,
             add_k: a.add.map_or(none, |(x, _)| self.r(x)),
@@ -1591,6 +1605,7 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             zeta: self.r(a.zeta),
             f: self.r(a.f),
             nu: a.nu,
+            nu_cell: a.nu_cell.map_or(Raw::EMPTY, |b| self.r(b)),
             c: a.c,
             o: a.o,
             add_k: add.map_or(none, |s| s[0]),
@@ -1739,6 +1754,7 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             u: self.r3(a.u),
             ub: self.r3(a.ub),
             nu: a.nu,
+            nu_cell: a.nu_cell.map_or(Raw::EMPTY, |b| self.r(b)),
             treatment: a.treatment,
             c: a.c,
             ke: a.ke,

@@ -645,11 +645,11 @@ enum ECond {
 /// The energy equation on the device and its host data (stage 7a1).
 #[derive(Debug, Clone)]
 struct EnergyField {
-    fluid: crate::energy::Fluid,
     /// The materials: the fluid first, then the solid regions (7d1).
     mats: Vec<crate::energy::Material>,
-    /// The material of each cell (index into `mats`).
-    mat_cell: Vec<u16>,
+    /// The material of each cell (index into `mats`; 32 bits, D194: no
+    /// fixed limit on the regions).
+    mat_cell: Vec<u32>,
     /// The region of each material (`fluid` first).
     regions: Vec<String>,
     /// Refresh c_p, k and μ every outer iteration.
@@ -686,8 +686,6 @@ struct EnergyField {
     mu_face: Option<Vec<f64>>,
     /// h_s(T) per material, in which the equation is conservative (D150).
     h: Vec<crate::energy::Enthalpy>,
-    /// The temperature of the properties when they do not follow T.
-    t_ref: f64,
     /// The thermal wall function on the fluid side of the interface faces
     /// of a turbulent conjugate case (stage 7d5), with the slot of each
     /// face of the mesh (`u32::MAX`: none).
@@ -1783,11 +1781,14 @@ impl Scalars {
 
     /// The energy equation's h_s(T) and the heat sources over the volume
     /// (W) of the last refresh, if the case has it.
-    fn energy_host(&self) -> Option<(crate::energy::Enthalpy, f64)> {
+    /// (D194: h_s of the material of each cell, for the boundary enthalpy
+    /// flow of every fluid).
+    #[allow(clippy::type_complexity)]
+    fn energy_host(&self) -> Option<((Vec<crate::energy::Enthalpy>, Vec<u32>), f64)> {
         self.fields.iter().find_map(|f| {
             f.energy.as_deref().map(|e| {
                 let src: f64 = e.heat.iter().zip(&e.volume).map(|(h, v)| h * v).sum();
-                (e.h[0].clone(), src)
+                ((e.h.clone(), e.mat_cell.clone()), src)
             })
         })
     }
@@ -2017,7 +2018,7 @@ impl Scalars {
         let mut sum = vec![(0.0, 0.0, 0.0); e.regions.len()];
         for (c, (&m, &v)) in e.mat_cell.iter().zip(&e.volume).enumerate() {
             let mat = &e.mats[m as usize];
-            let tc = if e.dependent { t[c] } else { e.t_ref };
+            let tc = if e.dependent { t[c] } else { mat.t_ref };
             let k = mat.tensor(tc);
             let s = &mut sum[m as usize];
             s.0 += v;
@@ -2232,8 +2233,21 @@ impl Scalars {
         Some((held, iface, src, robin))
     }
 
+    /// Per material of the energy equation (as [`Scalars::energy_regions`]):
+    /// true for a fluid (D194: one material per fluid of the case).
+    pub fn energy_fluid_flags(&self) -> Vec<bool> {
+        self.fields
+            .iter()
+            .find_map(|f| {
+                f.energy
+                    .as_deref()
+                    .map(|e| e.mats.iter().map(|m| m.fluid).collect())
+            })
+            .unwrap_or_default()
+    }
+
     /// The material (region index) of every cell of the energy equation.
-    pub fn energy_cell_regions(&self) -> Vec<u16> {
+    pub fn energy_cell_regions(&self) -> Vec<u32> {
         self.fields
             .iter()
             .find_map(|f| f.energy.as_deref().map(|e| e.mat_cell.clone()))
@@ -2336,7 +2350,7 @@ impl Scalars {
         self.fields
             .iter()
             .find_map(|f| f.energy.as_deref())
-            .is_some_and(|e| e.dependent && e.fluid.mu.is_some())
+            .is_some_and(|e| e.dependent && e.mats.iter().any(|m| m.mu.is_some()))
     }
 
     /// The fluid side of the interface faces for the next energy solves
@@ -2422,16 +2436,32 @@ impl Scalars {
         let t_ref = case.fluid.conditions().temperature;
         let k0 = fluid.k.at(t_ref);
         let cp0 = fluid.cp.at(t_ref);
-        // the materials: the fluid, then the solid regions by their zones
-        let mut mats = vec![crate::energy::Material {
-            name: "fluid".to_string(),
-            rho: fluid.rho,
-            cp: fluid.cp.clone(),
-            k: fluid.k.clone(),
-            aniso: None,
-        }];
-        let mut zone_mat = vec![0u16; mesh.zones.len()];
+        // the materials: the fluid, the fluid regions with a fluid (or a
+        // temperature) of their own (D194), then the solid regions by their
+        // zones
+        let mut mats = vec![crate::energy::fluid_material(&fluid, "fluid", t_ref)];
+        let mut zone_mat = vec![0u32; mesh.zones.len()];
         let mut regions = vec!["fluid".to_string()];
+        for (name, r) in &case.regions {
+            if r.kind != crate::materials::RegionKind::Fluid
+                || !(crate::energy::own_fluid(case, name) || r.temperature.is_some())
+            {
+                continue;
+            }
+            let f = crate::energy::fluid_of(case, env, Some(name))?;
+            let label = f.material.clone().unwrap_or_else(|| "fluid".to_string());
+            mats.push(crate::energy::fluid_material(
+                &f,
+                &label,
+                r.temperature.unwrap_or(t_ref),
+            ));
+            regions.push(name.clone());
+            for z in &r.zones {
+                if let Some(i) = mesh.zones.iter().position(|y| y == z) {
+                    zone_mat[i] = (mats.len() - 1) as u32;
+                }
+            }
+        }
         for (name, r) in &case.regions {
             if r.kind != crate::materials::RegionKind::Solid {
                 continue;
@@ -2441,11 +2471,11 @@ impl Scalars {
             regions.push(name.clone());
             for z in &r.zones {
                 if let Some(i) = mesh.zones.iter().position(|y| y == z) {
-                    zone_mat[i] = (mats.len() - 1) as u16;
+                    zone_mat[i] = (mats.len() - 1) as u32;
                 }
             }
         }
-        let mat_cell: Vec<u16> = mesh.cell_zone[..nc]
+        let mat_cell: Vec<u32> = mesh.cell_zone[..nc]
             .iter()
             .map(|&z| zone_mat[z as usize])
             .collect();
@@ -2497,7 +2527,7 @@ impl Scalars {
                 if sec.temperature_dependent {
                     crate::energy::Enthalpy::of(&m.cp)
                 } else {
-                    crate::energy::Enthalpy::constant(m.cp.at(t_ref))
+                    crate::energy::Enthalpy::constant(m.cp.at(m.t_ref))
                 }
             })
             .collect();
@@ -2542,7 +2572,7 @@ impl Scalars {
             .iter()
             .map(|&m| {
                 let m = &mats[m as usize];
-                m.rho * m.cp.at(t_ref)
+                m.rho * m.cp.at(m.t_ref)
             })
             .collect();
         let capacity = put(&cap0)?;
@@ -2655,7 +2685,6 @@ impl Scalars {
             heat: vec![0.0; nc],
             mu_face: None,
             h: enthalpy,
-            t_ref,
             iface: None,
             iface_law: (turb.law, turb.prt),
             iface_g: Vec::new(),
@@ -2669,7 +2698,6 @@ impl Scalars {
             robin_sp: None,
             extra_heat: None,
             var_rho: None,
-            fluid,
             mats,
             mat_cell,
             regions,
@@ -2749,17 +2777,23 @@ fn refresh_energy(
         })
         .collect();
     let dep = e.dependent;
-    let t_ref = e.t_ref;
-    let at = |c: &crate::materials::Curve, x: f64| c.at(if dep { x } else { t_ref });
     let mc = &e.mat_cell;
     let mats = &e.mats;
+    // a property at T (or at the material's temperature when they do not
+    // follow T)
+    let at = |m: &crate::energy::Material, c: &crate::materials::Curve, x: f64| {
+        c.at(if dep { x } else { m.t_ref })
+    };
     e.cp_cell = (0..nc)
-        .map(|c| at(&mats[mc[c] as usize].cp, tv[c]))
+        .map(|c| {
+            let m = &mats[mc[c] as usize];
+            at(m, &m.cp, tv[c])
+        })
         .collect();
     let mut cp_face = Vec::with_capacity(nf);
     let mut k_face = Vec::with_capacity(nf);
     let mut iface_g = vec![0.0; e.iface.as_ref().map_or(0, |(w, _)| w.faces.len())];
-    let tt = |x: f64| if dep { x } else { t_ref };
+    let tt = |m: &crate::energy::Material, x: f64| if dep { x } else { m.t_ref };
     let aniso = !e.normals.is_empty();
     let mut cross = Vec::new();
     // the cross vector K n̂ − k_n n̂ of a cell's material at a face
@@ -2778,7 +2812,7 @@ fn refresh_energy(
     for f in 0..nf {
         let o = e.owner[f] as usize;
         let mo = &mats[mc[o] as usize];
-        cp_face.push(at(&mo.cp, tf[f]));
+        cp_face.push(at(mo, &mo.cp, tf[f]));
         if f < ni && mc[e.neighbour[f] as usize] != mc[o] {
             // two regions: the series of the two half cells and the
             // contact resistance (D157 §9.1), δ_P/(δ_P+δ_N) = 1 − w
@@ -2791,9 +2825,9 @@ fn refresh_energy(
                 (fa.normal, fa.area / fa.dgeo, fa.spec)
             };
             let mn = &mats[mc[n] as usize];
-            let kp = mo.k_normal(tt(tv[o]), nrm);
-            let kn = mn.k_normal(tt(tv[n]), nrm);
-            let rc = spec.map_or(0.0, |i| cd.specs[i].at(tt(0.5 * (tv[o] + tv[n]))));
+            let kp = mo.k_normal(tt(mo, tv[o]), nrm);
+            let kn = mn.k_normal(tt(mn, tv[n]), nrm);
+            let rc = spec.map_or(0.0, |i| cd.specs[i].at(tt(mo, 0.5 * (tv[o] + tv[n]))));
             let (mut r_p, mut r_n) = ((1.0 - w) * dn / kp, w * dn / kn);
             match e.iface.as_ref().map(|(iw, slot)| (iw, slot[f])) {
                 Some((iw, i)) if i != u32::MAX => {
@@ -2803,9 +2837,9 @@ fn refresh_energy(
                     // solid half cell keeps δ/k
                     let i = i as usize;
                     let cf = if iw.fluid_owner[i] { o } else { n };
-                    let fl = &mats[0];
-                    let cpf = at(&fl.cp, tv[cf]);
-                    let kf = at(&fl.k, tv[cf]);
+                    let fl = &mats[mc[cf] as usize];
+                    let cpf = at(fl, &fl.cp, tv[cf]);
+                    let kf = at(fl, &fl.k, tv[cf]);
                     let muc = iw.mu[i] * cpf;
                     let yp = iw.y_star[i];
                     let gw = thermal::wall_conductance_at(
@@ -2831,13 +2865,13 @@ fn refresh_energy(
             fa.r_p = r_p;
             fa.r_c = rc;
             fa.r_n = r_n;
-            fa.a_p = side_cross(mo, tt(tv[o]), nrm);
-            fa.a_n = side_cross(mn, tt(tv[n]), nrm);
+            fa.a_p = side_cross(mo, tt(mo, tv[o]), nrm);
+            fa.a_n = side_cross(mn, tt(mn, tv[n]), nrm);
         } else if aniso && mo.aniso.is_some() {
             // an orthotropic region: k_n of the face normal in the matrix,
             // the tangential rest K S − k_n S as a deferred correction
             let nrm = e.normals[f];
-            let t = tt(tf[f]);
+            let t = tt(mo, tf[f]);
             let kn = mo.k_normal(t, nrm);
             k_face.push(kn);
             let k = mo.tensor(t);
@@ -2854,7 +2888,7 @@ fn refresh_energy(
                 t: tv3,
             });
         } else {
-            k_face.push(at(&mo.k, tf[f]));
+            k_face.push(at(mo, &mo.k, tf[f]));
         }
     }
     if let Some(cd) = e.cond.as_mut() {
@@ -2871,7 +2905,7 @@ fn refresh_energy(
         if let Some(i) = vals.iter().position(|v| !(*v > 0.0 && v.is_finite())) {
             let m = if cell { mc[i] } else { mc[e.owner[i] as usize] };
             let name = &mats[m as usize].name;
-            let (whose, key) = if m == 0 {
+            let (whose, key) = if m == 0 && name == "fluid" {
                 ("the fluid's".to_string(), format!("fluid.{what}"))
             } else {
                 (
@@ -2922,10 +2956,37 @@ fn refresh_energy(
     dev.upload(gamma0, kf)?;
     // μ(T) for the next momentum solve (the laminar viscosity of a
     // turbulence model, which adds μ_t to it)
-    if let (true, Some(mu)) = (dep, &e.fluid.mu) {
+    // (D194: per face the μ(T) of its fluid; a fluid whose viscosity does
+    // not follow T keeps its values)
+    if dep && e.mats.iter().any(|m| m.mu.is_some()) {
         let target = turb.map(|tc| tc.mu).or(link.map(|l| l.mu_face));
         if let Some(b) = target {
-            let v: Vec<f64> = tf.iter().map(|&x| mu.at(x)).collect();
+            let single = e.mats.len() == 1;
+            let mut v = if single {
+                Vec::new()
+            } else {
+                match e.mu_face.take() {
+                    Some(v) => v,
+                    None => dev.download(b)?,
+                }
+            };
+            if single {
+                let mu = e.mats[0].mu.as_ref().expect("checked");
+                v = tf.iter().map(|&x| mu.at(x)).collect();
+            } else {
+                let mc = &e.mat_cell;
+                for f in 0..nf {
+                    let o = mc[e.owner[f] as usize] as usize;
+                    let m = if e.mats[o].fluid || f >= ni {
+                        o
+                    } else {
+                        mc[e.neighbour[f] as usize] as usize
+                    };
+                    if let Some(mu) = &e.mats[m].mu {
+                        v[f] = mu.at(tf[f]);
+                    }
+                }
+            }
             dev.upload(b, &v)?;
             e.mu_face = Some(v);
         }
@@ -3443,7 +3504,8 @@ pub fn summaries(
                 }
                 mf += m[f].abs();
                 msum += m[f].abs() * pf;
-                if let Some((h, _)) = &heat {
+                if let Some(((hs, mc), _)) = &heat {
+                    let h = &hs[mc[o] as usize];
                     // the value the scheme convects: the boundary value at
                     // inflow, the scheme's reconstruction at outflow
                     let tc = match &outflow {

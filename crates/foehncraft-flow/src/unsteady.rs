@@ -261,7 +261,7 @@ impl TimeValues {
                 mesh,
                 geo,
                 &case.boundary,
-                fl.phys.rho,
+                &fl.phys,
                 bc::At {
                     analytic: a.as_ref(),
                     values: &self.values,
@@ -368,12 +368,14 @@ pub fn run(
         // view, the energy equation on the full mesh
         let (view_case, mesh, geo) = crate::cht::view(case, mesh, geo)?;
         let case = &view_case;
+        let parts = crate::fluids::check(case, &mesh)?;
         let values = case.compiled_boundaries()?;
+        let phys_on = crate::case::physics_on(case, &crate::case::physics(case)?, &mesh, &geo)?;
         let mut findings = bc::check(
             &mesh,
             &geo,
             &case.boundary,
-            case.rho(),
+            &phys_on,
             bc::At {
                 analytic: analytic.as_ref(),
                 values: &values,
@@ -428,7 +430,10 @@ pub fn run(
             lg.frame(&crate::logblocks::solution(case, true));
             lg.frame(&crate::logblocks::boundaries(case, &quality));
             let mut any = false;
-            for n in crate::logblocks::notes(case) {
+            for n in crate::logblocks::notes(case)
+                .into_iter()
+                .chain(crate::fluids::notes(&parts))
+            {
                 if !any {
                     lg.line("");
                     any = true;
@@ -896,7 +901,7 @@ fn rebuild_flow(
         mesh,
         geo,
         &case.boundary,
-        phys.rho,
+        &phys,
         bc::At {
             analytic: analytic.as_ref(),
             values: &tv.values,
@@ -999,7 +1004,7 @@ fn run_one<F: FnMut(&str)>(
         mesh,
         geo,
         &case.boundary,
-        phys.rho,
+        &phys,
         bc::At {
             analytic: analytic0.as_ref(),
             values: &tv.values,

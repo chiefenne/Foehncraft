@@ -341,6 +341,8 @@ pub struct SstCellOps {
     pub d: Buf,
     /// ν.
     pub nu: f64,
+    /// ν per cell (D194: several fluids); `None`: `nu` everywhere.
+    pub nu_cell: Option<Buf>,
     /// Constants.
     pub c: foehncraft_kernels::turb::sst::SstConstants,
     /// Options.
@@ -402,6 +404,8 @@ pub struct KepsCellOps {
     pub e: Buf,
     /// ν.
     pub nu: f64,
+    /// ν per cell (D194: several fluids); `None`: `nu` everywhere.
+    pub nu_cell: Option<Buf>,
     /// Constants.
     pub c: foehncraft_kernels::turb::keps::KepsConstants,
     /// Options.
@@ -442,6 +446,8 @@ pub struct ZetaFCellOps {
     pub f: Buf,
     /// ν.
     pub nu: f64,
+    /// ν per cell (D194: several fluids); `None`: `nu` everywhere.
+    pub nu_cell: Option<Buf>,
     /// Constants.
     pub c: foehncraft_kernels::turb::zeta_f::ZetaFConstants,
     /// Options.
@@ -571,6 +577,8 @@ pub struct WallFaceOps {
     pub ub: Buf3,
     /// ν.
     pub nu: f64,
+    /// ν per cell (D194: several fluids); `None`: `nu` everywhere.
+    pub nu_cell: Option<Buf>,
     /// Treatment.
     pub treatment: u32,
     /// Constants.
@@ -697,6 +705,8 @@ pub trait FlowDevice {
         num: Option<Buf>,
         den: Option<Buf>,
     ) -> Result<()>;
+    /// out = a x y per entry; `out` may be `x` or `y`.
+    fn product(&mut self, out: Buf, a: f64, x: Buf, y: Buf) -> Result<()>;
     /// out = a x + b y; `out` may be `x` or `y`.
     fn lincomb(&mut self, out: Buf, a: f64, x: Buf, b: f64, y: Buf) -> Result<()>;
     /// out += v_x² + v_y² + v_z² per entry.

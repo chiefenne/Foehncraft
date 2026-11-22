@@ -418,7 +418,8 @@
     "gaps written"
    ],
    "gaps": [
-    "asymmetric diffuser (gallery 199): not compared with the measurements of Buice & Eaton (pending); the separation point converges at order 1.6 only (GCI 4 %), and the steady solver needs about three times the iterations per halving of the mesh (4 909 on 111 360 cells) while the jet moves slowly to the upper wall; with sharp corners the finest mesh ends at the 8 000-iteration cap with residuals of 4e-7 and the separation point converges at order 0.6 (GCI 9 %)"
+    "asymmetric diffuser (gallery 199): not compared with the measurements of Buice & Eaton (pending); the separation point converges at order 1.6 only (GCI 4 %), and the steady solver needs about three times the iterations per halving of the mesh (4 909 on 111 360 cells) while the jet moves slowly to the upper wall; with sharp corners the finest mesh ends at the 8 000-iteration cap with residuals of 4e-7 and the separation point converges at order 0.6 (GCI 9 %)",
+    "U-bend (gallery 204): not compared with the measurements of Monson et al. (pending, owner choice: GCI first); the Re_b 1e6 case of the experiment not run; the reattachment converges oscillatory (GCI 2.9 %); the sharp-edged variant needs relaxation 0.5 at the start, and its finest mesh (201 600 cells) did not converge in 8 000 iterations (bubble still growing), so its GCI (reattachment 0.85 %, C_p 10 H behind the turn 4.3 %) is provisional"
    ],
    "range": {
     "y_plus_first": [
@@ -523,7 +524,8 @@
     "gaps written"
    ],
    "gaps": [
-    "the DNS of Kristoffersen & Andersson (1993) for the rotating channel is not compared (its data are not in the repository)"
+    "the DNS of Kristoffersen & Andersson (1993) for the rotating channel is not compared (its data are not in the repository)",
+    "on one-layer 2D meshes the operator check (D236) reports MESH005 on every cell: the quadratic fit of the velocity Hessian is rank deficient in z (U-bend, gallery 204); a false alarm in 2D, not fixed"
    ],
    "range": {}
   },
@@ -818,6 +820,22 @@
     "the settling test looks at the velocity only (not the turbulence quantities)",
     "a flow with time-dependent boundary values is held between refreshes (FRZ004), no automatic refresh by the change of the boundary values",
     "no adaptive march step"
+   ],
+   "range": {}
+  },
+  {
+   "id": "cht.several-fluids",
+   "title": "Several fluids and materials in one case (fluid parts)",
+   "grade": "partial",
+   "why": [
+    "no exact or manufactured solution",
+    "gaps written"
+   ],
+   "gaps": [
+    "V7.33 in its planar form only (no double pipe, no thin-wall run: thin walls between fluids come with MF-D)",
+    "V7.34 (closed parts with their own reference and p₀) and V7.35 (tube-and-fin cell) not built yet (MF-B, MF-D)",
+    "variable density, gravity, rotating zones, passive scalars and the coupled solver refused with several fluids (REG006)",
+    "one turbulence model for all fluids (models per region: MF-C)"
    ],
    "range": {}
   },

@@ -145,7 +145,12 @@ validated range, one mesh only, …) in its report and its JSON result.
   temperature when the fluid has moved: a heated wall under a fluid whose
   viscosity halves over 17 K warms up in 557 steps instead of 6000, within
   0.06 K of the fully coupled run. Conjugate runs, the loop and the march
-  restart bit-identically.
+  restart bit-identically. Several fluids in one case (D194): any number
+  of fluid regions, each with its own material (liquids and gases) and
+  the temperature at which it is evaluated, beside any number of solids;
+  fluids that touch only through solids are separate parts of the flow,
+  each with its own pressure level; a water / oil counterflow exchanger
+  across a steel plate meets ε–NTU to 0.07 %.
 - **Gravity and buoyancy.** `[gravity]` and the Boussinesq buoyancy
   (`[buoyancy] model = "boussinesq"`) in SIMPLEC and the coupled algorithm.
   The solver works with the reduced pressure p′ = p − ρ_ref g·(x − x_ref)

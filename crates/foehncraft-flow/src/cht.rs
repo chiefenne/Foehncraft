@@ -94,7 +94,7 @@ fn solid_cells(case: &FlowCase, mesh: &Mesh) -> Vec<Option<String>> {
 pub(crate) fn region_cells(
     case: &FlowCase,
     mesh: &Mesh,
-    mat_cell: &[u16],
+    mat_cell: &[u32],
     regions: &[String],
     name: &str,
 ) -> Option<Vec<u32>> {
@@ -112,15 +112,26 @@ pub(crate) fn region_cells(
 fn member<'a>(
     case: &'a FlowCase,
     mesh: &'a Mesh,
-    mat_cell: &'a [u16],
+    mat_cell: &'a [u32],
     regions: &'a [String],
     name: &str,
 ) -> Option<Box<dyn Fn(usize) -> bool + 'a>> {
+    // `fluid`: every fluid cell (D194: the fluid regions with a fluid of
+    // their own included; they come after `fluid` and before the solids)
+    let n_fluid = 1 + regions
+        .iter()
+        .skip(1)
+        .take_while(|r| {
+            case.regions
+                .get(*r)
+                .is_some_and(|x| x.kind == RegionKind::Fluid)
+        })
+        .count() as u32;
     if name == "fluid" {
-        return Some(Box::new(move |c| mat_cell[c] == 0));
+        return Some(Box::new(move |c| mat_cell[c] < n_fluid));
     }
     if let Some(i) = regions.iter().skip(1).position(|r| r == name) {
-        let i = (i + 1) as u16;
+        let i = (i + 1) as u32;
         return Some(Box::new(move |c| mat_cell[c] == i));
     }
     let r = case.regions.get(name)?;
@@ -129,7 +140,7 @@ fn member<'a>(
     }
     let zones: Vec<bool> = mesh.zones.iter().map(|z| r.zones.contains(z)).collect();
     Some(Box::new(move |c| {
-        mat_cell[c] == 0 && zones[mesh.cell_zone[c] as usize]
+        mat_cell[c] < n_fluid && zones[mesh.cell_zone[c] as usize]
     }))
 }
 
@@ -141,7 +152,7 @@ pub(crate) fn interface_specs(
     case: &FlowCase,
     env: &crate::expr::Env,
     mesh: &Mesh,
-    mat_cell: &[u16],
+    mat_cell: &[u32],
     regions: &[String],
 ) -> Result<(
     Vec<crate::conduction::Resistance>,

@@ -508,7 +508,12 @@ impl Controller {
                     swing_max: 0.0,
                 });
             }
-            let solid: Vec<bool> = sc.energy_cell_regions().iter().map(|&m| m != 0).collect();
+            let fluid = sc.energy_fluid_flags();
+            let solid: Vec<bool> = sc
+                .energy_cell_regions()
+                .iter()
+                .map(|&m| !fluid[m as usize])
+                .collect();
             let t = sc.energy_temperature(dev)?;
             hold(sc, dev, &solid, &t)?;
             let omega = 2.0 * std::f64::consts::PI / cfg.period;

@@ -518,12 +518,16 @@ evidence = [
   { kind = "consistency", case = "diffuser_sst", what = "asymmetric diffuser with rounded corners, developed channel-profile inlet: converges on three meshes (6 960 to 111 360 cells); reattachment 28.94 H (GCI 0.36 %), separation 2.20 H (GCI 4 %), C_p(45 H) 0.5465 (GCI below 0.01 %)", doc = "docs/gallery/turbulence.md#diffuser" },
   { kind = "consistency", case = "diffuser_sst_sharp", what = "the same diffuser with sharp corners (cells shortened towards the corners), three meshes (8 400 to 134 400 cells): reattachment 29.03 H (GCI 0.51 %), C_p(45 H) 0.5417 (GCI 0.15 %), separation 2.03 H (order 0.6, GCI 9 %)", doc = "docs/gallery/turbulence.md#diffuser" },
   { kind = "consistency", case = "diffuser_channel_profile", what = "periodic channel at centreline Re 20 000: centreline velocity 1.000 m/s, the developed inlet table of the diffuser" },
+  { kind = "consistency", case = "ubend_sst", what = "U-bend of Monson et al., Rc/H = 1, Re_b 1e5, developed channel-profile inlet: converges on three meshes (8 832 to 141 312 cells); inner-wall separation 139.8 deg (GCI 0.19 %), reattachment 2.19 H behind the turn (GCI 2.9 %, oscillatory), wall C_p GCI 0.03 to 0.27 %", doc = "docs/gallery/turbulence.md#ubend" },
+  { kind = "consistency", case = "ubend_sst_sharp", what = "the same U-bend with sharp edges (square divider end and end wall): converges on 12 624 and 50 400 cells; separated region behind the divider end closes at 3.05 H and 2.89 H", doc = "docs/gallery/turbulence.md#ubend" },
+  { kind = "consistency", case = "ubend_channel_profile", what = "periodic channel at Re_b 1e5: the developed inlet table of the U-bend" },
   { kind = "reference-data", case = "backstep_outlet_backflow", what = "backward-facing step with the outlet inside the recirculation" },
   { kind = "reference-data", run = "level sweep of backstep_validation with SST, 3 meshes", doc = "docs/verification/stage6.md#backward-facing-step-against-the-experiment-part-6g-95", what = "step of Driver & Seegmiller (1985): x_r/H 6.747, +7.8 % (band ±10 %)" },
   { kind = "consistency", test = "crates/foehncraft-flow/tests/turbulence.rs::sst_results_are_bitwise_equal_on_1_and_4_threads", what = "bitwise equal on 1 and 4 threads" },
 ]
 gaps = [
   "asymmetric diffuser (gallery 199): not compared with the measurements of Buice & Eaton (pending); the separation point converges at order 1.6 only (GCI 4 %), and the steady solver needs about three times the iterations per halving of the mesh (4 909 on 111 360 cells) while the jet moves slowly to the upper wall; with sharp corners the finest mesh ends at the 8 000-iteration cap with residuals of 4e-7 and the separation point converges at order 0.6 (GCI 9 %)",
+  "U-bend (gallery 204): not compared with the measurements of Monson et al. (pending, owner choice: GCI first); the Re_b 1e6 case of the experiment not run; the reattachment converges oscillatory (GCI 2.9 %); the sharp-edged variant needs relaxation 0.5 at the start, and its finest mesh (201 600 cells) did not converge in 8 000 iterations (bubble still growing), so its GCI (reattachment 0.85 %, C_p 10 H behind the turn 4.3 %) is provisional",
 ]
 notes = [
   "plate C_f against White's correlation −8.5 to −5.4 % (band ±8 %, widened from ±5 % on 2026-11-22): SST sits −6.1 % below White at x = 0.97 and −1.4 to +2.5 % from the Coles–Fernholz fit to measured layers",
@@ -636,9 +640,11 @@ evidence = [
   { kind = "reference-data", case = "channel_rotating_sst", what = "channel in spanwise rotation, Ro 0.15: the unstable side marked" },
   { kind = "manufactured", test = "crates/foehncraft-flow/src/turbulence/mms.rs::curvature_correction_manufactured_solution_orders", what = "orders 1.9 to 2.1 of k and ω with f_r1 (DS_ij/Dt from a flow whose strain axes turn) on hexahedra and polyhedra", doc = "docs/verification/stage6.md#manufactured-solutions-of-k-ε-ζ-f₀-the-curvature-correction-and-the-qcr-pr-184" },
   { kind = "manufactured", test = "crates/foehncraft-flow/src/turbulence/mms.rs::curvature_correction_on_tetrahedra_converges", what = "order 1.9 to 2.1 of k and ω on regular and 15 % perturbed tetrahedra with S_ij from a second-order velocity gradient and the gradient of S_ij from a quadratic least-squares fit where the least-squares one is not consistent (D236)", doc = "docs/verification/stage6.md#consistent-curvature-correction-on-irregular-meshes-d236-pr-197" },
+  { kind = "consistency", run = "ubend_sst with turbulence.curvature_correction = true, levels 0 and 1", what = "U-bend Rc/H = 1: the bubble on the convex inner wall grows (separation 127.5 deg instead of 139.4 deg, reattachment 2.57 H instead of 2.19 H on level 1)", doc = "docs/gallery/turbulence.md#ubend" },
 ]
 gaps = [
   "the DNS of Kristoffersen & Andersson (1993) for the rotating channel is not compared (its data are not in the repository)",
+  "on one-layer 2D meshes the operator check (D236) reports MESH005 on every cell: the quadratic fit of the velocity Hessian is rank deficient in z (U-bend, gallery 204); a false alarm in 2D, not fixed",
 ]
 
 [[feature]]
@@ -966,6 +972,20 @@ evidence = [
   { kind = "consistency", test = "crates/foehncraft-flow/tests/cht_frozen.rs::wrong_frozen_settings_are_refused", what = "settings that cannot be used are refused (FRZ001)" },
 ]
 gaps = ["laminar cases only; no turbulent or buoyant case yet (buoyancy counts as a flow that follows T, untested)", "the settling test looks at the velocity only (not the turbulence quantities)", "a flow with time-dependent boundary values is held between refreshes (FRZ004), no automatic refresh by the change of the boundary values", "no adaptive march step"]
+
+[[feature]]
+id = "cht.several-fluids"
+area = "Conjugate heat transfer"
+title = "Several fluids and materials in one case (fluid parts)"
+switch = "[regions.<name>] kind = \"fluid\" with material, temperature"
+decisions = ["D194"]
+evidence = [
+  { kind = "reference-data", case = "cht_counterflow_two_fluids", what = "V7.33 (planar form): water / light-oil counterflow across a steel plate, C_r = 1: effectiveness 0.7756 against ε–NTU 0.7751 with the fully developed Nu = 5.385 (band 2 %); heat of water, plate and oil agree, ledger to 3·10⁻⁵", doc = "docs/gallery/energy.md#two-fluids" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/fluids.rs::counterflow_of_water_and_oil_follows_eps_ntu", what = "ε within 2 % of ε–NTU, the oil warms as much as the water cools (C_r = 1), water, plate and oil heat flows agree to 10⁻³" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/fluids.rs::two_fluids_touching_are_refused", what = "REG004 for two fluids sharing a face" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/fluids.rs::a_part_without_pressure_level_is_refused", what = "REG003 for a fluid part without a pressure boundary" },
+]
+gaps = ["V7.33 in its planar form only (no double pipe, no thin-wall run: thin walls between fluids come with MF-D)", "V7.34 (closed parts with their own reference and p₀) and V7.35 (tube-and-fin cell) not built yet (MF-B, MF-D)", "variable density, gravity, rotating zones, passive scalars and the coupled solver refused with several fluids (REG006)", "one turbulence model for all fluids (models per region: MF-C)"]
 
 [[feature]]
 id = "cht.turbulent"

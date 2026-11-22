@@ -29,6 +29,7 @@ entries! {
     flow_squares_add => e::SquaresAdd,
     flow_scale_vector => e::ScaleVector,
     flow_schur_diagonal => e::SchurDiagonal,
+    flow_product => e::Product,
     flow_pseudo_coefficient => e::PseudoCoefficient,
     flow_fill => e::Fill,
     flow_subtract => e::Subtract,

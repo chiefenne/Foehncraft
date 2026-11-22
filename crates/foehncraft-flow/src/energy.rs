@@ -1015,12 +1015,12 @@ pub fn validate(case: &crate::case::FlowCase, env: &Env) -> Result<()> {
     );
     for (name, r) in &case.regions {
         match r.kind {
-            crate::materials::RegionKind::Fluid => crate::need!(
-                r.material.is_none() || r.material == case.fluid.material,
-                ENE_UNSUPPORTED,
-                "[regions.{name}]: a fluid region with its own material; the energy equation \
-                 takes the one `[fluid]` material in this version"
-            ),
+            crate::materials::RegionKind::Fluid => {
+                // a fluid of its own (D194): its c_p and k
+                if own_fluid(case, name) {
+                    fluid_of(case, env, Some(name))?;
+                }
+            }
             crate::materials::RegionKind::Solid => {
                 solid(case, env, name)?;
             }
@@ -1275,10 +1275,58 @@ pub struct Fluid {
 /// The thermal properties of the `[fluid]` (its material, with the
 /// `[fluid]` numbers replacing the material's): MAT007 without c_p or k.
 pub fn fluid(case: &crate::case::FlowCase, env: &Env) -> Result<Fluid> {
-    let cond: Conditions = case.fluid.conditions();
-    let (m, owner) = match &case.fluid.material {
+    fluid_of(case, env, None)
+}
+
+/// True when fluid region `name` has a material of its own (D194: another
+/// fluid than `[fluid]`).
+pub fn own_fluid(case: &crate::case::FlowCase, name: &str) -> bool {
+    case.regions.get(name).is_some_and(|r| {
+        r.kind == crate::materials::RegionKind::Fluid
+            && r.material.is_some()
+            && r.material != case.fluid.material
+    })
+}
+
+/// The thermal properties of a fluid region with a material of its own
+/// (D194), or of the `[fluid]` (`region` `None`): MAT007 without c_p or k.
+/// A region's own material takes none of the `[fluid]` numbers; the
+/// density is that of the property program (at the region's temperature).
+pub fn fluid_of(case: &crate::case::FlowCase, env: &Env, region: Option<&str>) -> Result<Fluid> {
+    let mut cond: Conditions = case.fluid.conditions();
+    let own = region.filter(|r| own_fluid(case, r));
+    let sec = region.and_then(|r| case.regions.get(r));
+    if let Some(t) = sec.and_then(|r| r.temperature) {
+        cond.temperature = t;
+    }
+    let material = match own {
+        Some(_) => sec.and_then(|r| r.material.clone()),
+        None => case.fluid.material.clone(),
+    };
+    let (m, owner) = match &material {
         Some(n) => (lookup(n, &case.materials)?, format!("materials.{n}")),
         None => (MaterialSection::default(), "fluid".to_string()),
+    };
+    let (given_cp, given_k, given_mu) = if own.is_some() {
+        (None, None, None)
+    } else {
+        (
+            case.fluid.specific_heat.clone(),
+            case.fluid.conductivity.clone(),
+            case.fluid.viscosity.clone(),
+        )
+    };
+    let rho = match region {
+        Some(r) => {
+            let p = case.properties()?;
+            p.regions
+                .iter()
+                .find(|x| x.0 == r)
+                .map_or(p.density(), |x| {
+                    x.2.density.value.constant().unwrap_or(f64::NAN)
+                })
+        }
+        None => case.rho(),
     };
     let pick = |given: &Option<Scalar>, own: &Option<Property>| -> Option<(Property, bool)> {
         match (given, own) {
@@ -1303,8 +1351,8 @@ pub fn fluid(case: &crate::case::FlowCase, env: &Env) -> Result<Fluid> {
         }
         None => None,
     };
-    let cp = pick(&case.fluid.specific_heat, &m.specific_heat);
-    let k = pick(&case.fluid.conductivity, &own_k);
+    let cp = pick(&given_cp, &m.specific_heat);
+    let k = pick(&given_k, &own_k);
     let missing: Vec<&str> = [
         ("specific_heat", cp.is_none()),
         ("conductivity", k.is_none()),
@@ -1314,7 +1362,13 @@ pub fn fluid(case: &crate::case::FlowCase, env: &Env) -> Result<Fluid> {
     .map(|x| x.0)
     .collect();
     if !missing.is_empty() {
-        let what = match &case.fluid.material {
+        let what = match &material {
+            Some(n) if own.is_some() => format!(
+                "material `{n}` of fluid region `{}` has no {}; the energy equation needs c_p \
+                 and k of every fluid (give them in [materials.{n}] with `base = \"{n}\"`)",
+                own.unwrap_or(""),
+                missing.join(" and no ")
+            ),
             Some(n) => format!(
                 "material `{n}` has no {}; the energy equation needs c_p and k of the fluid \
                  (give them in [materials.{n}] with `base = \"{n}\"`, or in [fluid])",
@@ -1343,7 +1397,7 @@ pub fn fluid(case: &crate::case::FlowCase, env: &Env) -> Result<Fluid> {
     let k = curve(&k, "conductivity", &label(k_given), &m, env, cond)?;
     // μ(T): only a form of T of the material's own viscosity (a [fluid]
     // viscosity, a number or an expression of x, y, z stays as it is)
-    let mu = match (&case.fluid.viscosity, &m.viscosity) {
+    let mu = match (&given_mu, &m.viscosity) {
         (None, Some(p @ Property::Form(f)))
             if !matches!(f, crate::materials::Form::Expression { .. }) =>
         {
@@ -1353,8 +1407,8 @@ pub fn fluid(case: &crate::case::FlowCase, env: &Env) -> Result<Fluid> {
         _ => None,
     };
     Ok(Fluid {
-        material: case.fluid.material.clone(),
-        rho: case.rho(),
+        material,
+        rho,
         cp,
         k,
         mu,
@@ -1474,7 +1528,25 @@ pub fn solid(case: &crate::case::FlowCase, env: &Env, region: &str) -> Result<Ma
         )?,
         k: curve(k.as_ref().unwrap(), "conductivity", &owner, &m, env, cond)?,
         aniso,
+        mu: None,
+        fluid: false,
+        t_ref: cond.temperature,
     })
+}
+
+/// The material of the energy equation of a fluid (D194: one per fluid of
+/// the case), `name` its label in messages (`fluid` for the `[fluid]`).
+pub fn fluid_material(f: &Fluid, name: &str, t_ref: f64) -> Material {
+    Material {
+        name: name.to_string(),
+        rho: f.rho,
+        cp: f.cp.clone(),
+        k: f.k.clone(),
+        aniso: None,
+        mu: f.mu.clone(),
+        fluid: true,
+        t_ref,
+    }
 }
 
 /// The thermal properties of one material of the energy equation.
@@ -1491,6 +1563,12 @@ pub struct Material {
     pub k: Curve,
     /// An orthotropic conductivity (stage 7d2).
     pub aniso: Option<Aniso>,
+    /// μ(T) (Pa s) of a fluid whose viscosity follows T.
+    pub mu: Option<Curve>,
+    /// A fluid (D194: the energy equation has one material per fluid).
+    pub fluid: bool,
+    /// The temperature of the properties when they do not follow T (K).
+    pub t_ref: f64,
 }
 
 /// An orthotropic conductivity K = Σᵢ kᵢ(T) eᵢ eᵢᵀ (D116, L48): the three

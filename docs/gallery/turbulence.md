@@ -1341,3 +1341,137 @@ python3 -m tools.plot.diffuser_chart docs/figures/gallery/diffuser_sst.png
 [↑ back to top](#turbulence-models)
 
 ---
+
+<a id="ubend"></a>
+## 204. U-bend of Rc/H = 1: separation behind a 180° turn, three meshes with GCI, sharp edges
+
+<img src="../figures/gallery/ubend_sst.png" alt="Turbulent flow through a two-dimensional U-duct with a centreline radius of one duct height, k-omega SST, coarse mesh. Top: speed, accelerated along the inner wall of the turn and a thin slow region on the inner wall behind the turn where the flow separates; the fast flow is pushed to the outer wall of the outlet leg. Middle: turbulent viscosity ratio, largest in the shear layer above the separated region. Bottom: wall pressure coefficient along the inner and the outer wall, a suction of minus 2.5 on the inner wall in the turn and a rise to plus 0.5 on the outer wall" width="800" height="656">
+
+The fourth general-purpose internal flow of D45 (stage 8): the
+two-dimensional U-duct of Monson, Seegmiller & McConnaughey (1990, AIAA
+90-1484), a 180° turn of **centreline radius Rc = H** (Rc/H = 1: inner wall
+radius 0.5 H, outer 1.5 H), at **Re_b = U_b H/ν = 10⁵**, the lower of the
+two Reynolds numbers of the experiment (U_b = 1 m/s, H = 1 m,
+ν = 10⁻⁵ m²/s). The lengths of the legs are our choice: 6 H upstream and
+20 H downstream (the experiment has about 14 H downstream; the outlet is
+kept further from the separation). The inlet takes the **developed
+profile of a periodic channel run** at the same Re_b
+(`ubend_channel_profile.toml`, SST, velocity, k and ω written to
+`ubend_inlet_profile.csv` by `examples/studies/ubend_inlet_profile.py`).
+k-ω SST with the low-Re treatment on structured quadrilaterals that follow
+the centreline (`examples/meshes/ubend.py`: 96 cells uniform in angle over
+the turn on level 0, the leg cells next to the turn as long as the turn
+cells, tanh grading across the duct; mean first-cell y⁺ 1.8 to 1.9 on
+level 0, about 0.9 and 0.45 on levels 1 and 2). C_p = (p − p_ref)/½ρU_b²
+with p_ref the outer-wall pressure 2 H before the turn.
+
+The run follows the diffuser (gallery 199): **potential-flow start**,
+first-order upwind for 200 iterations, then linear upwind
+(`[[schedule]]`), SIMPLEC at relaxation 0.8. On level 0 (8 832 cells) it
+converges to 10⁻⁷ in 499 iterations. The flow accelerates round the inner
+wall (C_p −2.5 at 90°), meets the adverse pressure gradient of the second
+half of the turn and **separates from the inner wall at θ = 138°**; the
+bubble closes 2.3 H behind the turn. The fast flow leaves the turn along
+the outer wall of the outlet leg and needs about 10 H to spread over the
+duct again.
+
+**Three meshes** (every interval halved; `examples/studies/ubend_gci.py`,
+GCI after Celik et al. 2008, ratio 2):
+
+| Quantity | 8 832 cells | 35 328 | 141 312 | order | GCI_fine |
+|---|---|---|---|---|---|
+| separation θ (deg) | 138.42 | 139.42 | 139.78 | 1.45 | 0.19 % (extrapolated 140.0) |
+| reattachment, H behind the turn | 2.318 | 2.189 | 2.192 | oscillatory | 2.9 % |
+| C_p inner wall, 90° | −2.5251 | −2.5264 | −2.5280 | (0.39) | 0.27 % |
+| C_p outer wall, 90° | 0.5076 | 0.5128 | 0.5135 | 2.84 | 0.03 % |
+| C_p outer wall, 10 H behind the turn | −0.4744 | −0.4481 | −0.4448 | 2.99 | 0.13 % |
+| iterations to 10⁻⁷ | 499 | 1 006 | 3 541 | | |
+
+The separation angle and the outer-wall pressures converge monotonically
+near second order. The reattachment point changes by 0.003 H between
+levels 1 and 2 after a step of 0.13 H from level 0; Celik's method calls
+that oscillatory and gives the 2.9 % from the range. The inner-wall C_p at
+90° changes by 0.1 % over the three meshes with no clear order.
+
+**Curvature correction.** With `turbulence.curvature_correction = true`
+(Smirnov & Menter 2009, gallery 113) the bubble grows: on level 1 the flow
+separates at 127.5° instead of 139.4° and reattaches 2.57 H behind the
+turn instead of 2.19 H (level 0: 125.2° and 2.77 H). The correction
+lowers the turbulence on the convex inner wall, which is what it is built
+for; which of the two is closer to the experiment is open until the
+comparison with the measurements is made (below). On these one-layer 2D
+meshes the operator check of the correction (D236) reports `MESH005` on
+every cell: the quadratic fit of the velocity Hessian is rank deficient in
+z. The run is not affected in-plane, but the check is a false alarm for 2D
+meshes (a gap, docs/verification/status.md).
+
+<img src="../figures/gallery/ubend_friction.png" alt="Skin friction along the inner wall from 1 H before the end of the turn to 5 H behind it. The rounded bend on three meshes (blue lines, nearly on top of each other) turns negative at about minus 0.35 H in the turn and positive again at about 2.2 H behind the turn. The curvature correction (orange, dashed) turns negative earlier and positive later at 2.6 H. The sharp-edged duct (red) is negative along the divider end, has a spike at the corner and stays negative to 2.9 H" width="800" height="336">
+
+**Sharp edges** (`ubend_sst_sharp.toml`, mesh `ubend.py --sharp`). The
+same duct with a square divider end at x = 0 and a square end wall at
+x = H (a turn gap of H): two convex and two concave kinks. Cartesian cells
+on a tensor grid; the cells of the turn gap are clustered towards the
+divider end and the end wall like the cells across the duct, so the cells
+at the kinks are square (12 624 cells on level 0). Two settings differ
+from the rounded case, each found by a run that failed:
+
+- relaxation 0.8 from the start diverged in 10 iterations at the concave
+  corners of the end wall; the case starts at 0.5;
+- the switch to linear upwind at iteration 201 together with relaxation
+  0.8 diverged behind the divider end; the case switches the scheme at
+  iteration 601 and the relaxation to 0.8 at 1 201. At 0.5 throughout,
+  level 1 drifted slowly (the bubble still growing at 6 000 iterations,
+  residual 2·10⁻⁵); with the raise it converges in 5 964.
+
+The flow separates at the first corner of the divider end and the reverse
+flow covers the divider end and the divider behind it; the main bubble
+on the outlet side closes 3.05 H and 2.89 H behind the divider end on
+levels 0 and 1 (2 479 and 5 964 iterations). C_p at the middle of the end
+wall is −0.80 and −0.81, and 10 H behind the turn −1.06 and −1.04: the
+sharp turn loses more than twice the pressure of the rounded one (−0.44).
+
+Three meshes with sharp edges (`ubend_gci.py --sharp`):
+
+| Quantity | 12 624 cells | 50 400 | 201 600 | order | GCI_fine |
+|---|---|---|---|---|---|
+| reattachment, H behind the divider end | 3.046 | 2.891 | 2.846 | 1.76 | 0.85 % (extrapolated 2.83) |
+| C_p divider end, middle | −3.4709 | −3.4457 | −3.4642 | oscillatory | 0.36 % |
+| C_p end wall, middle | −0.8021 | −0.8059 | −0.8059 | 5.6 | below 0.01 % |
+| C_p outer wall, 10 H behind the turn | −1.0628 | −1.0429 | −0.9946 | (divergent) | 4.3 % |
+| iterations | 2 479 | 5 964 | 8 000 (limit) | | |
+
+**Level 2 did not converge within its limit of 8 000 iterations**: the
+residual fell slowly (to 3·10⁻⁶) and the probe in the bubble was still
+rising (u from 0.19 to 0.23 between 5 000 and 8 000 iterations). The
+level-2 values are therefore provisional; the pressure 10 H behind the turn
+moved most (4.6 % from level 1) and its order is not meaningful. Running
+past 10 000 iterations is against the run rules (AGENTS.md); a faster
+route to the steady state of the sharp turn on fine meshes (a transient
+run from the level-2 state, or a stronger start) is open.
+
+<img src="../figures/gallery/ubend_sharp.png" alt="The same duct with sharp edges, coarse mesh. Top: speed; the flow turns in a jet around the square divider end, with slow corner vortices at the end wall and a long separated region on the divider behind the turn. Middle: turbulent viscosity ratio, large in the shear layers of the separated regions. Bottom: wall pressure coefficient along the inner and the outer wall, a suction of minus 3.5 on the divider end and a loss of about minus 1.05 behind the turn" width="800" height="656">
+
+- **There is no comparison with the measurements of Monson et al.**
+  (owner decision 2026-11-22: GCI first, reference later, D201); the
+  measured wall pressures and the separation of the experiment are in the
+  AIAA paper, which was not available. The case is grid-studied, not
+  validated. The Re_b = 10⁶ case of the experiment is not run yet (wall
+  cells about ten times thinner).
+
+| | |
+|---|---|
+| Code | no new solver code: SU2 reader, SST low-Re (D130), the momentum scheme and relaxation on a schedule (gallery 199), table inlet from a periodic channel |
+| Case file | `flow/ubend_sst.toml` (mesh `meshes/ubend_coarse.su2`), `flow/ubend_sst_sharp.toml` (mesh `meshes/ubend_sharp_coarse.su2`), `flow/ubend_channel_profile.toml` (inlet table) |
+| Study | `examples/studies/ubend_gci.py` (levels 0 to 2, `--sharp` for the sharp edges); figures `tools/plot/ubend_chart.py`, `tools/plot/ubend_friction.py` |
+| Recipe | [204](../recipes/turbulence.md#ubend) |
+
+```
+python3 examples/meshes/ubend.py examples/meshes/ubend_coarse.su2 --level 0
+target/release/foehn flow examples/cases/flow/ubend_sst.toml --out output/ubend
+python3 examples/studies/ubend_gci.py output/ubend_gci
+python3 -m tools.plot.ubend_chart docs/figures/gallery/ubend_sst.png
+```
+
+[↑ back to top](#turbulence-models)
+
+---

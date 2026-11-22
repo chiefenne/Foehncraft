@@ -341,8 +341,12 @@ pub(crate) struct CoupledWork {
     /// 1 per cell.
     one: Buf,
     /// ρ Σ|S| over the interior faces plus half of that of the boundary
-    /// faces (the scale of the continuity row).
+    /// faces (the scale of the continuity row; ρ per face with several
+    /// fluids).
     area: f64,
+    /// Several fluids (D194): ρ and 1/ρ per cell and a cell work buffer,
+    /// for the pseudo-time term of D̂ per cell.
+    zones: Option<(Buf, Buf, Buf)>,
     /// The Rhie–Chow pressure matrix L and its face coefficients.
     pval: Buf,
     cf: Buf,
@@ -420,12 +424,37 @@ impl Flow {
             let a =
                 (d.face_area.x[f].powi(2) + d.face_area.y[f].powi(2) + d.face_area.z[f].powi(2))
                     .sqrt();
-            area += if f < d.n_interior { a } else { 0.5 * a };
+            let a = if f < d.n_interior { a } else { 0.5 * a };
+            area += if self.phys.zones {
+                self.phys.rho_face_at(f) * a
+            } else {
+                a
+            };
         }
+        let area = if self.phys.zones {
+            area
+        } else {
+            self.phys.rho * area
+        };
+        let zones = match (&self.phys.rho_var, self.phys.zones) {
+            (Some(r), true) => {
+                let (rho, inv, work) = (
+                    self.dev.alloc(nc)?,
+                    self.dev.alloc(nc)?,
+                    self.dev.alloc(nc)?,
+                );
+                let i: Vec<f64> = r.0.iter().map(|v| 1.0 / v).collect();
+                self.dev.upload(rho, &r.0)?;
+                self.dev.upload(inv, &i)?;
+                Some((rho, inv, work))
+            }
+            _ => None,
+        };
         let cw = CoupledWork {
             neg_vol,
             one,
-            area: self.phys.rho * area,
+            area,
+            zones,
             pval: self.dev.alloc(stored)?,
             cf: self.dev.alloc(nf)?,
             dsum: self.dev.alloc(nc)?,
@@ -1000,10 +1029,11 @@ impl Flow {
         let s = self.settings.clone();
         let alpha = s.alpha_u(false);
         self.coupled_work()?;
-        let (r, x, t, mf, cf, pval, dsum, one, area, dhat, y) = {
+        let (r, x, t, mf, cf, pval, dsum, one, area, dhat, y, zones) = {
             let cw = self.coupled.as_ref().expect("coupled work");
             (
                 cw.r, cw.x, cw.t, cw.mf, cw.cf, cw.pval, cw.dsum, cw.one, cw.area, cw.dhat, cw.y,
+                cw.zones,
             )
         };
         let tm = Instant::now();
@@ -1055,8 +1085,20 @@ impl Flow {
         res.continuity = self.continuity(w.m)?;
         self.dev.pressure_faces(w.d, cf)?;
         self.dev.pressure_rows(cf, w.m, pval, r.p)?;
-        self.dev
-            .schur_diagonal(dhat, 1.0 - alpha, tau / alpha, w.ds, w.dc)?;
+        match zones {
+            // several fluids: 1/(a/D^s + ρ b) = (1/ρ) / (a/(ρ D^s) + b),
+            // and the bound D^C as ρ D^C before the division
+            Some((rho, inv, work)) if tau > 0.0 => {
+                let b = tau / (self.phys.rho * alpha);
+                self.dev.product(work, 1.0, rho, w.ds)?;
+                self.dev.product(dhat, 1.0, rho, w.dc)?;
+                self.dev.schur_diagonal(dhat, 1.0 - alpha, b, work, dhat)?;
+                self.dev.product(dhat, 1.0, inv, dhat)?;
+            }
+            _ => self
+                .dev
+                .schur_diagonal(dhat, 1.0 - alpha, tau / alpha, w.ds, w.dc)?,
+        }
         self.dev.lincomb(dsum, 1.0, w.d, 1.0, dhat)?;
         self.dev.pressure_faces(dsum, w.cf)?;
         self.dev.pressure_rows(w.cf, w.m, w.pval, w.prhs)?;

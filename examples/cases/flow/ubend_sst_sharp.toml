@@ -1,0 +1,96 @@
+# Turbulent flow through the two-dimensional U-duct of Monson, Seegmiller &
+# McConnaughey (1990, AIAA 90-1484; stage 8, D45), k-omega SST 2003 with the
+# low-Re wall treatment.
+#
+#   python3 examples/meshes/ubend.py examples/meshes/ubend_sharp_coarse.su2 --level 0 --sharp   (committed)
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/ubend_sst_sharp.toml
+#
+# Geometry in metres with the duct height H = 1 m: a 180 degree turn of
+# the centreline radius Rc = H (Rc/H = 1: inner wall radius 0.5 H, outer
+# 1.5 H) about the origin, an inlet leg of 6 H and an outlet leg of 20 H
+# (the lengths are our choice, examples/meshes/ubend.py). The inlet takes
+# the developed profile of a periodic channel run (ubend_channel_profile.toml,
+# table by examples/studies/ubend_inlet_profile.py) with its velocity and
+# turbulence. Re_b = U_b H / nu = 1e5 with U_b = 1 m/s and nu = 1e-5 m^2/s
+# (the lower of the two Reynolds numbers of the experiment). The outlet
+# takes a static pressure at 20 H.
+#
+# Sharp edges (examples/meshes/ubend.py --sharp): a divider of thickness H
+# with a square end at x = 0 and a square end wall at x = H (a turn gap of
+# H), Cartesian cells clustered towards the kinks so that the cells there
+# are square. The rest as ubend_sst.toml, except the start: potential flow,
+# first-order upwind at relaxation 0.5 (0.8 diverges at the concave corners
+# of the end wall), linear upwind from iteration 601 (a switch at 201
+# together with relaxation 0.8 diverged behind the divider end) and
+# relaxation 0.8 from iteration 1 201 (at 0.5 the bubble behind the divider
+# end grows very slowly). Levels 0 and 1 converge in about 2 500 and 6 000
+# iterations. No reference value is used (D201).
+
+case_format = "0.6"
+
+[mesh]
+file = "../../meshes/ubend_sharp_coarse.su2"
+thickness = 1.0
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 1e-5
+
+[turbulence]
+model = "k-omega-sst"
+wall_treatment = "low-re"
+
+[initial]
+potential_flow = true  # not a uniform field (owner rule, D45)
+turbulence_intensity = 0.05
+viscosity_ratio = 10.0
+
+[boundary.inlet]
+type = "velocity-inlet"
+profile = "table"
+table = "ubend_inlet_profile.csv"
+table_coordinate = "y"
+[boundary.outlet]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.inner]
+type = "wall"
+[boundary.outer]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-7
+max_iterations = 8000  # levels 0 to 2: see the grid study
+
+[solver.momentum]
+scheme = "upwind"      # a first-order start from the potential flow ...
+relaxation = 0.5       # 0.8 diverges in the first 10 iterations at the concave corners of the end wall
+
+[[schedule]]
+at_iteration = 601     # ... then second order (linear upwind, no limiter); a switch at 201 with
+set = { solver.momentum.scheme = "linear-upwind" }   # relaxation 0.8 diverged behind the divider end
+
+[[schedule]]
+at_iteration = 1201    # then relaxation 0.8: at 0.5 the bubble behind the divider end grows very slowly
+set = { solver.momentum.relaxation = 0.8 }
+
+[output]
+vtkhdf = false
+wall_csv = true
+wall_crossings = [
+  { name = "reattachment", boundary = "inner", from = [0.0, 0.5, 0.5], direction = [-1.0, 0.0, 0.0], kind = "reattachment" },
+]
+# the core of the outlet leg and the separated region behind the turn:
+# convergence is judged on these
+probes = [
+  { name = "core", point = [-3.0, 1.0, 0.5] },
+  { name = "bubble", point = [-0.3, 0.55, 0.5] },
+]
+
+[log]
+columns = ["residual.momentum", "residual.continuity", "residual.turbulence", "probe.core.velocity_x", "probe.bubble.velocity_x"]

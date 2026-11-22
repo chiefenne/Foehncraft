@@ -35,11 +35,12 @@ FLOW = {
         "channel_zeta_f0", "cavity_re1000_coupled", "channel_heated_keps", "channel_heated_pr0025",
         "channel_eb", "channel_rotating_sst", "square_duct_qcr", "pipe_turbulent_sst",
         "tjunction_mixing", "diffuser_sst", "diffuser_channel_profile",
+        "ubend_sst", "ubend_channel_profile",
     ],
     "linux-2": [
         "cylinder_re20", "cavity_re1000", "taylor_green_cfl10", "poiseuille_tet",
         "poiseuille_hex", "poiseuille_poly", "tmr_plate_sst", "tmr_plate_keps",
-        "tmr_plate_zeta_f0", "diffuser_sst_sharp",
+        "tmr_plate_zeta_f0", "diffuser_sst_sharp", "ubend_sst_sharp",
     ],
     "linux-3": [
         "taylor_green_error", "cylinder_potential", "cavity_re100_budget", "taylor_green_bdf2",
@@ -56,7 +57,7 @@ FLOW = {
         "cht_heated_wall", "cht_turbulent_channel", "cht_contact_transient",
         "cht_heated_wall_transient", "cht_orthotropic_patch", "cht_circuit_board",
         "cht_heated_wall_accelerated", "cht_heated_wall_periodic_accelerated",
-        "cht_pulsating_channel_cycle",
+        "cht_pulsating_channel_cycle", "cht_counterflow_two_fluids",
         "cavity_sst_operator_check",
         "buoyancy_box_at_rest", "buoyancy_slot", "buoyancy_channel_reduced",
         "buoyancy_channel_static", "buoyancy_open_box", "buoyancy_enclosure_plume",
