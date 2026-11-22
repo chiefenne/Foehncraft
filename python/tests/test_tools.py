@@ -47,6 +47,10 @@ def test_every_tool_through_call(tmp_path):
         "flow.run": {"case": case, "out": out},
         "result.read": {"dir": out},
         "result.page": {"dir": out, "series": "residuals", "limit": 5},
+        # live control (L19): no run listens in a finished run's folder
+        "run.status": {"dir": out},
+        "run.stop": {"dir": out},
+        "run.set": {"dir": out, "set": {"time.time_step": 0.01}},
         "post.derive": {"case": case, "out": out, "fields": ["vorticity"]},
         "study.scalar": {
             "case": ROOT / "examples/cases/scalar/mms_poly_2d.toml",
@@ -71,6 +75,10 @@ def test_every_tool_through_call(tmp_path):
     for tool in listed:
         r = fc.call(tool, **inputs[tool])
         assert r["format"] == "foehn.tool-result"
+        if tool.startswith("run."):
+            assert r["status"] == "error", tool
+            assert r["diagnostics"][0]["code"] == "TOOL007", tool
+            continue
         assert r["status"] == "finished", (tool, r["diagnostics"])
         # the limitations of the output in the envelope (D199)
         assert r["limitations"] == (r["result"] or {}).get("limitations", []), tool
