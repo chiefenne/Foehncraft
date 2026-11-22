@@ -12,6 +12,7 @@ Part of the [Recipes](../recipes.md): the energy equation of the fluid (stage 7,
 | 180 | [Bring the solids of a transient conjugate run to their state sooner (thermal acceleration)](#cht-acceleration) |
 | 190 | [Couple a periodic flow with slow solids by cycle averages (exhaust manifolds, pulsating flows)](#cht-cycle) |
 | 202 | [Get the swing of the wall temperature from the cycle loop, and restart a conjugate run](#cht-cycle-skin) |
+| 208 | [Warm up a conjugate run with the flow held, or the warm-up history of a periodic flow](#cht-frozen-flow) |
 | 206 | [Put several fluids in one conjugate case (water and air in a heat exchanger)](#two-fluids) |
 | 186 | [Switch on gravity and buoyancy; which pressure do my boundary values mean](#buoyancy) |
 | 195 | [Let the density of a gas follow its temperature (low-Mach variable density)](#variable-density) |
@@ -662,6 +663,87 @@ Gallery 202 compares the two: the loop ends at 1250 s within 0.016 K of
 the periodic state and within 0.1 % on the swing; the fully coupled run
 needs 4400 to 5550 s.
 
+<a id="cht-frozen-flow"></a>
+## 208. Warm up a conjugate run with the flow held, or the warm-up history of a periodic flow
+
+**When.** A transient conjugate run whose flow settles within seconds and
+whose solids warm over minutes or hours: a cooling flow over electronics,
+a heated wall, a part brought to temperature. The flow's step (a Courant
+number of a few) then sets every step of the warm-up. Hold the flow once
+it has settled and march only the temperatures with long steps:
+
+```toml
+[time]
+time_step = 0.5            # the flow's step
+end_time = 3000.0
+
+[energy.frozen_flow]
+time_step = 10.0           # s, the step of the march with the flow held (>= the [time] step)
+refresh_change = 2.0       # K: refresh a flow that follows T when a fluid temperature has moved by this
+# start = "settled"        # or a time (s) for the first hold
+# window_steps = 10        # the settling test: windows of flow steps ...
+# settle_tolerance = 1e-3  # ... rms change of the velocity per window, and still to come
+# refresh_every = 0        # frozen steps between refreshes at most (0: only by refresh_change)
+# iterations = 20          # energy solves per frozen step at most
+# enabled = false          # the same case fully coupled: its reference
+```
+
+**What it does.** Coupled steps until the flow has settled, then energy
+steps of fluid and solids (one matrix) with velocity, pressure, mass flux
+and turbulence held. A flow that follows the temperature (a viscosity
+form that depends on T, or buoyancy) is refreshed by coupled steps, until
+it has settled again, whenever a fluid temperature has moved by
+`refresh_change` since it was held; a flow that does not is held once.
+The heat balance closes in every step, and restarts continue bit for bit
+in any phase.
+
+**Choose the step and the refresh.** The march is implicit, so its step
+is set by the accuracy of the temperature history, not by stability: a
+tenth to a fiftieth of the solids' time constant is a good start.
+`refresh_change` trades steps for accuracy where the flow follows T: on
+the heated wall of gallery 208 (a viscosity that halves over 17 K) 2 K
+gives 557 steps and 0.06 K at most against the fully coupled run, 0.5 K
+gives 794 steps and 0.05 K at most, 0.002 K at the end. A flow whose
+boundary values or forces change with time is not held correctly between
+refreshes (FRZ004 warns); give it `refresh_every`, or run it fully
+coupled. A flow that never settles (FRZ002) is periodic: use the cycle
+loop below.
+
+**What to read.** `result.json` → `solves[0].transient.frozen_flow`:
+`frozen_at`, `frozen_steps`, `coupled_steps`, `refreshes`,
+`solves_mean`, `fluid_change` and the `phases` with their reason
+(`start`, `settled`, `start time`, `temperature`, `refresh_every`). The log has one FRZ003 line
+per hold and refresh. LIM010 in the limitations says the flow was held.
+Not with `[energy.acceleration]`, `[energy.cycle]`, the variable density
+or an adaptive step (FRZ001).
+
+**The warm-up history of a periodic flow.** A pulsating or rotating flow
+never settles, so the cycle loop of recipe 190 holds the wall instead.
+`solid = "transient"` makes its solid phase a march under the cycle-mean
+flow, so the loop gives the warm-up history, not only the end state:
+
+```toml
+[energy.cycle]
+period = 5.0
+solid = "transient"
+march_cycles = 20          # periods of physical time per update (>= warmup + average cycles)
+march_steps = 5            # steps of the march per update (default 4)
+max_updates = 40           # the loop stops at the tolerance or at end_time
+```
+
+Each update marches fluid and solids over `march_cycles` periods (the
+fluid phase that has run included); the clock then jumps over the rest,
+by whole periods. The wall at time + `march_jump` of each row of
+`cycle_coupling.csv` is the history; `relaxation` must stay 1 (the march
+is not a fixed-point step). On the channel of gallery 208 the history is
+within 0.21 K of the fully coupled cycle means over a 35 K rise, in 780
+steps instead of 6000.
+
+```
+target/release/foehn flow examples/cases/flow/cht_heated_wall_frozen.toml --out output/frz
+target/release/foehn flow examples/cases/flow/cht_heated_wall_frozen.toml --out output/frz_ref \
+    --set energy.frozen_flow.enabled=false
+target/release/foehn flow examples/cases/flow/cht_pulsating_channel_warmup.toml --out output/wu
 <a id="two-fluids"></a>
 ## 206. Put several fluids in one conjugate case (water and air in a heat exchanger)
 

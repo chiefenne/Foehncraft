@@ -997,4 +997,112 @@ impl Transient {
             error,
         })
     }
+
+    /// One step of size `dt` of the energy equation alone, with the flow
+    /// held (the frozen-flow march, D118): velocity, pressure, mass flux
+    /// and turbulence keep their values and their time levels, the
+    /// temperatures of fluid and solids take the step with the held flux
+    /// (one matrix, D158). `restart`: BDF1, for the first step after the
+    /// step size has changed by more than BDF2 takes (from the flow's step
+    /// to the march's); later steps are BDF2 as the case asks. The energy
+    /// equation is solved up to `iterations` times, until the largest
+    /// change of a temperature between two solves is below 10⁻⁸ of the
+    /// temperature span (its properties follow T). The flow's levels are
+    /// those of its last coupled step, and the next coupled step continues
+    /// from them: its step ratio to the long step of the march is small,
+    /// which makes it BDF1-like, and the flow had settled.
+    pub fn energy_step(
+        &mut self,
+        fl: &mut Flow,
+        dt: f64,
+        restart: bool,
+        iterations: u32,
+    ) -> Result<StepReport> {
+        ensure!(dt > 0.0 && dt.is_finite(), "time step {dt} must be > 0");
+        ensure!(
+            fl.cht.is_some(),
+            "the energy-only step of the frozen flow needs a conjugate case"
+        );
+        let second = !restart && self.scheme != TimeScheme::Bdf1 && self.clock.levels >= 1;
+        let omega = if second { dt / self.clock.dt_prev } else { 1.0 };
+        let t = Instant::now();
+        let mut prev = match crate::cht::energy_fields(fl) {
+            Some((sc, dev)) => {
+                sc.step_start(dev, self.clock.levels >= 1, second.then_some(omega))?;
+                sc.energy_temperature(dev)?
+            }
+            None => Vec::new(),
+        };
+        let step = crate::scalar::StepTime {
+            time: self.clock.time + dt,
+            dt,
+            a: crate::scalar::bdf(second, omega),
+        };
+        let mut first = Residuals::default();
+        let mut last = Residuals::default();
+        let mut outer = 0;
+        self.outer_log.clear();
+        for k in 1..=iterations.max(1) as usize {
+            outer = k;
+            fl.iteration += 1;
+            let mut res = Residuals {
+                iteration: fl.iteration,
+                ..Default::default()
+            };
+            crate::cht::solve(fl, Some(step), &mut res)?;
+            if !res.finite() {
+                fl.diverged = Some(res.clone());
+                return Err(crate::diag::err(crate::diag::Diagnostic::new(
+                    crate::diag::RUN_DIVERGED,
+                    format!(
+                        "the energy equation diverged in the frozen-flow step {} (t = {:.6e} s, \
+                         Δt = {dt:.3e} s; residuals {:?})",
+                        self.clock.step + 1,
+                        self.clock.time + dt,
+                        res.scalars.residual
+                    ),
+                )));
+            }
+            let now = match crate::cht::energy_fields(fl) {
+                Some((sc, dev)) => sc.energy_temperature(dev)?,
+                None => Vec::new(),
+            };
+            let (lo, hi) = now
+                .iter()
+                .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), &x| {
+                    (a.min(x), b.max(x))
+                });
+            let change = now
+                .iter()
+                .zip(&prev)
+                .fold(0.0_f64, |a, (x, y)| a.max((x - y).abs()));
+            prev = now;
+            if k == 1 {
+                first = res.clone();
+            }
+            last = res.clone();
+            self.outer_log.push(res);
+            if k > 1 && change <= 1e-8 * (hi - lo).max(1.0) {
+                break;
+            }
+        }
+        fl.dev.sync()?;
+        fl.timings.scalars += t.elapsed().as_secs_f64();
+        let cfl = self.courant(fl, dt)?;
+        self.clock.time += dt;
+        self.clock.step += 1;
+        self.clock.dt_prev2 = self.clock.dt_prev;
+        self.clock.dt_prev = dt;
+        self.clock.levels = (self.clock.levels + 1).min(2);
+        Ok(StepReport {
+            step: self.clock.step,
+            time: self.clock.time,
+            dt,
+            residuals: first,
+            last,
+            outer,
+            cfl,
+            error: None,
+        })
+    }
 }

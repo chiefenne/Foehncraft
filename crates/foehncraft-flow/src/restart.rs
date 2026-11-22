@@ -44,7 +44,11 @@
 //! - a conjugate case (stage 7): `cht_cell_id`, `cht_temperature` and,
 //!   transient, `cht_temperature_old` on the full mesh (fluid and solids),
 //!   and with the cycle-averaged loop (D204) `cht_cycle_state`, the bytes of
-//!   its state as JSON (counters, accumulators, update history);
+//!   its state as JSON (counters, accumulators, update history), with the
+//!   frozen-flow march (D118) `cht_frozen_state` (its phase, settling
+//!   windows and counters), and with a viscosity that follows T
+//!   `cht_viscosity` (μ(T) per face of the fluid view as the energy equation
+//!   last passed it to the flow);
 //! - optional, for meshes that move (D91, L22): `point_id`,
 //!   `points_x|y|z` and the cell volumes of the time levels `volume_<k>`
 //!   (attribute `volume_levels`); a fixed mesh leaves them out.
@@ -105,6 +109,11 @@ pub struct ChtRestart {
     pub t_old: Option<Vec<f64>>,
     /// The state of the cycle-averaged loop (JSON), if the run has one.
     pub cycle: Option<Vec<u8>>,
+    /// The state of the frozen-flow march (JSON, D118), if the run has one.
+    pub frozen: Option<Vec<u8>>,
+    /// The face viscosity μ(T) of the fluid view as the energy equation
+    /// last passed it to the flow, when the viscosity follows T.
+    pub viscosity: Option<Vec<f64>>,
 }
 
 /// Point coordinates and cell volumes of the time levels (D91): optional
@@ -338,6 +347,15 @@ mod io {
                         .shape([b.len()])
                         .create("cht_cycle_state")?
                         .write_raw(b)?;
+                }
+                if let Some(b) = &c.frozen {
+                    g.new_dataset::<u8>()
+                        .shape([b.len()])
+                        .create("cht_frozen_state")?
+                        .write_raw(b)?;
+                }
+                if let Some(m) = &c.viscosity {
+                    ds(&g, "cht_viscosity", m)?;
                 }
             }
             if let Some(geo) = &r.geometry {
@@ -595,6 +613,16 @@ mod io {
                 },
                 cycle: if g.link_exists("cht_cycle_state") {
                     Some(g.dataset("cht_cycle_state")?.read_raw::<u8>()?)
+                } else {
+                    None
+                },
+                frozen: if g.link_exists("cht_frozen_state") {
+                    Some(g.dataset("cht_frozen_state")?.read_raw::<u8>()?)
+                } else {
+                    None
+                },
+                viscosity: if g.link_exists("cht_viscosity") {
+                    Some(rd(&g, "cht_viscosity")?)
                 } else {
                     None
                 },

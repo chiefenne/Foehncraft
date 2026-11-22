@@ -2439,6 +2439,16 @@ impl Scalars {
             .find_map(|f| f.energy.as_deref().and_then(|e| e.mu_face.as_deref()))
     }
 
+    /// True when the energy equation gives the flow a viscosity that
+    /// follows the temperature (μ(T) of the fluid, refreshed with T): the
+    /// flow then depends on the temperature (the frozen flow of D118).
+    pub fn energy_viscosity_follows(&self) -> bool {
+        self.fields
+            .iter()
+            .find_map(|f| f.energy.as_deref())
+            .is_some_and(|e| e.dependent && e.mats.iter().any(|m| m.mu.is_some()))
+    }
+
     /// The fluid side of the interface faces for the next energy solves
     /// (a turbulent conjugate case, stage 7d5): the faces and distances
     /// once, y* and μ of the fluid view every outer iteration.

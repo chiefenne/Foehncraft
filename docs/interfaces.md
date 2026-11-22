@@ -247,7 +247,8 @@ and `message`:
 | `LIM006` | automatic mesh remediation active | the remediation of D50 changed the schemes (MESH002) |
 | `LIM007` | the history before t = … s is not physical (thermal acceleration) | `[energy.acceleration]` (D213): the run reports `physical_from` |
 | `LIM008` | an operator of a feature in use is not exact on N of M cells | the operator check (D236): `MESH005` with `turbulence.curvature_correction`, `MESH006` with `turbulence.qcr` |
-| `LIM009` | the solids carry the cycle-mean state, no swing over a cycle | `[energy.cycle]` (D204) |
+| `LIM009` | the solids carry the cycle-mean state (or its history with `solid = "transient"`), the swing over a cycle only as an estimate | `[energy.cycle]` (D204) |
+| `LIM010` | the flow was held during the march (frozen flow) | `[energy.frozen_flow]` (D118): the run reports the frozen steps and refreshes |
 
 Limitations change neither `status` nor the exit code (D199 Q1, Q2): a
 run with limitations is `finished` with exit code 0. The human text says
@@ -357,6 +358,10 @@ A code keeps its meaning; a retired code stays in the table.
 | `CYC003` | warning | `skin = "effusivity"` with a skin depth of the period √(2k/(ρ c_p ω)) that is not small against the thickness V/A of a solid region (larger than a third of it): the swing reaches through the wall there and the semi-infinite solution does not hold; `resolved_cycles` gives the exact swing. |
 | `CYC004` | warning | The cycle-averaged loop stopped at `max_updates` before the wall temperatures and the interface heat flows settled within `tolerance` and `heat_tolerance`. |
 | `CYC005` | note | A step of the cycle-averaged loop: a fluid phase averaged, a solid phase solved, the wall temperatures updated, the loop converged. |
+| `FRZ001` | error | An `[energy.frozen_flow]` setting that cannot be used: a steady case, no solid region, together with `[energy.acceleration]` or `[energy.cycle]`, the variable density, an adaptive time step, a `time_step` below the `[time]` step, or a `start`, window, tolerance or count out of range. |
+| `FRZ002` | warning | The flow of a frozen-flow run did not settle by the window test (an unsteady flow, or a tolerance too tight): the run stayed fully coupled with the `[time]` step from the last freeze or refresh on. |
+| `FRZ003` | note | A step of the frozen-flow march: the flow settled and was held, or it was refreshed by coupled steps because the temperatures it depends on had moved. |
+| `FRZ004` | warning | A frozen-flow run whose flow boundary values or body force depend on time: the held flow does not follow them between refreshes (`refresh_every`). |
 | `ENE004` | warning | A Mach number above 0.3 in a run with the variable density: the low-Mach form loses its validity (the density does not follow the dynamic pressure). |
 | `ENE007` | warning | A steady run that converged while its heat balance does not close (imbalance above 1 % of the largest heat flow): the temperature residual is small but the energy solve is not converged; tighten `[solver.energy] tolerance` and raise `max_iter`. |
 | `THM001` | error | A steady run whose boundaries leave the temperature level undetermined: no inlet and no `temperature` or convection boundary, and no net heat input. |
@@ -438,7 +443,8 @@ A code keeps its meaning; a retired code stays in the table.
 | `LIM006` | note | Automatic mesh remediation (D50, MESH002) changed the schemes on poor faces: first order there. |
 | `LIM007` | note | A transient conjugate run with thermal acceleration of its solids (D213): the history before `physical_from` is not physical (the solids' time ran faster, their swing was too large); the end state and later cycle means are. |
 | `LIM008` | note | An operator a feature in use needs is not exact on some cells (MESH005, MESH006, D236): the feature does not converge with the mesh there. |
-| `LIM009` | note | A cycle-averaged conjugate run (D204): the solids carry the steady temperatures of the cycle-mean heat transfer, not a history; each fluid phase ran with the wall temperatures held, so the swing of the wall temperature over a cycle is not in the result. |
+| `LIM009` | note | A cycle-averaged conjugate run (D204): the solids carry the steady temperatures of the cycle-mean heat transfer (with `solid = "transient"` a history under it, marched in large steps), and each fluid phase ran with the wall temperatures held: the swing of the wall temperature over a cycle is in the result only as the estimate of `skin` or from `resolved_cycles`. |
+| `LIM010` | note | A frozen-flow run (D118): the flow was held during the march, so its history is that of the settled flow at the temperatures of the last freeze or refresh; exact for a flow that does not depend on the temperature. |
 | `TOOL001` | error | A tool id that the registry does not have (with the nearest id as a hint); `foehn commands` lists them. |
 | `TOOL002` | error | A tool input that does not match the input schema of the tool (unknown field, wrong type, missing field). |
 | `TOOL003` | warning | The journal of tool calls (D197) could not be written: the calls run, but the journal misses them. |

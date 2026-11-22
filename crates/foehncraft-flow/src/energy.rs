@@ -128,6 +128,102 @@ pub struct EnergySection {
     /// solids, and the two alternate until the wall temperatures settle.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cycle: Option<CycleCoupling>,
+    /// The frozen-flow march of a transient conjugate run (D118,
+    /// [`crate::frozen`]): once the flow has settled it is held, and the
+    /// temperatures of fluid and solids march alone with large steps; the
+    /// flow is refreshed by coupled steps when the temperatures it depends
+    /// on have moved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frozen_flow: Option<FrozenFlow>,
+}
+
+/// `[energy.frozen_flow]`: the frozen-flow march of a transient conjugate
+/// run (D118, §9f of the stage 7 specification). A steady cooling flow
+/// settles in a few flow-through times, the solids it cools warm up over
+/// minutes or hours: the run steps fully coupled with the `[time]` step
+/// until the flow has settled, then holds the velocity, pressure, mass
+/// flux and turbulence and marches only the energy equation of fluid and
+/// solids (the same matrix, D158) with steps of `time_step`. The history
+/// stays physical: the flow is the settled one of the current
+/// temperatures. When the flow depends on the temperature (μ(T), the
+/// Boussinesq buoyancy) it is refreshed by coupled steps, until it has
+/// settled again, whenever a fluid temperature has moved by more than
+/// `refresh_change` since the flow was held (or every `refresh_every`
+/// frozen steps); a flow that does not depend on the temperature is held
+/// once and exactly.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct FrozenFlow {
+    /// `false` runs the case fully coupled, as if the section were not
+    /// there: the reference of the march (default `true`).
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
+    /// The step of the energy march with the flow held (s), at least the
+    /// `[time]` step of the flow.
+    pub time_step: f64,
+    /// When the flow is first held: `"settled"` (default: by the window
+    /// test below) or a time (s).
+    #[serde(default)]
+    pub start: FrozenStart,
+    /// Flow steps per window of the settling test (default 10).
+    #[serde(default = "default_window_steps")]
+    pub window_steps: u32,
+    /// The flow has settled when the relative rms change of the velocity
+    /// over the last window and the change still to come (extrapolated
+    /// geometrically from the last two windows) are below this (default
+    /// 1e-3); for a flow that follows the temperature, which drifts with
+    /// it, the change of the last window alone.
+    #[serde(default = "default_settle_tolerance")]
+    pub settle_tolerance: f64,
+    /// K: a flow that depends on the temperature is refreshed when a fluid
+    /// temperature has moved by more than this since the flow was held
+    /// (default 2).
+    #[serde(default = "default_refresh_change")]
+    pub refresh_change: f64,
+    /// Frozen steps between two refreshes at most (default 0: only by
+    /// `refresh_change`); counts also for a flow that does not depend on
+    /// the temperature (a boundary value that changes slowly).
+    #[serde(default)]
+    pub refresh_every: u32,
+    /// Solves of the energy equation per frozen step at most (default 20;
+    /// a step stops when the largest change of a temperature between two
+    /// solves is below 10⁻⁸ of the temperature span).
+    #[serde(default = "default_frozen_iterations")]
+    pub iterations: u32,
+}
+
+/// `[energy.frozen_flow] start`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(untagged)]
+pub enum FrozenStart {
+    /// The time (s) at which the flow is first held.
+    Time(f64),
+    /// `"settled"`.
+    Word(String),
+}
+
+impl Default for FrozenStart {
+    fn default() -> Self {
+        FrozenStart::Word("settled".into())
+    }
+}
+
+impl FrozenFlow {
+    /// The start time, `None` for `"settled"`.
+    pub fn start_time(&self) -> Option<f64> {
+        match self.start {
+            FrozenStart::Time(t) => Some(t),
+            FrozenStart::Word(_) => None,
+        }
+    }
+}
+
+fn default_refresh_change() -> f64 {
+    2.0
+}
+
+fn default_frozen_iterations() -> u32 {
+    20
 }
 
 /// `[energy.cycle]`: cycle-averaged conjugate coupling of a periodic flow
@@ -180,9 +276,21 @@ pub struct CycleCoupling {
     /// in every update with `update = "relaxation"`; in (0, 1] (default 1).
     #[serde(default = "default_relaxation_one")]
     pub relaxation: f64,
-    /// The solid phase: `"steady"` (the only one in this version).
+    /// The solid phase: `"steady"` (default: the steady solids of the
+    /// cycle-mean heat transfer, the end state) or `"transient"` (a march
+    /// of fluid and solids under the cycle-mean flow with large steps over
+    /// `march_cycles` periods per update: the warm-up history, D118).
     #[serde(default = "default_solid_phase")]
     pub solid: String,
+    /// `solid = "transient"`: the periods of physical time per update, the
+    /// fluid phase included (the solids are held during it and the march
+    /// covers that time too); the run's clock jumps over the rest, by
+    /// whole periods.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub march_cycles: Option<u32>,
+    /// `solid = "transient"`: the steps of the march per update (default 4).
+    #[serde(default = "default_march_steps")]
+    pub march_steps: u32,
     /// How the solid temperatures are updated from the second update on:
     /// `"quasi-newton"` (default: a least-squares model of the loop's
     /// response from all earlier updates, IQN-ILS), `"aitken"` (a dynamic
@@ -250,6 +358,9 @@ fn default_cycle_update() -> String {
 }
 fn default_solid_phase() -> String {
     "steady".into()
+}
+fn default_march_steps() -> u32 {
+    4
 }
 
 /// `[energy.acceleration]`: thermal acceleration of the solids (D213). The
@@ -480,11 +591,130 @@ fn validate_cycle(case: &crate::case::FlowCase, c: &CycleCoupling, accel: bool) 
         "[{key}] skin_harmonics must be >= 1"
     );
     crate::need!(
-        c.solid == "steady",
+        ["steady", "transient"].contains(&c.solid.as_str()),
         CYC_SETTING,
-        "[{key}] solid must be \"steady\" in this version (a transient march of the solids with \
-         large steps follows with the frozen-flow coupling), is \"{}\"",
+        "[{key}] solid must be \"steady\" or \"transient\", is \"{}\"",
         c.solid
+    );
+    if c.solid == "transient" {
+        let phase = c.warmup_cycles + c.average_cycles;
+        crate::need!(
+            c.march_cycles.is_some_and(|m| m >= phase),
+            CYC_SETTING,
+            "[{key}] solid = \"transient\" needs march_cycles, the periods of physical time per \
+             update (at least warmup_cycles + average_cycles = {phase}: the march covers the fluid \
+             phase, in which the solids were held), is {:?}",
+            c.march_cycles
+        );
+        crate::need!(
+            c.march_steps >= 1,
+            CYC_SETTING,
+            "[{key}] march_steps must be >= 1"
+        );
+        crate::need!(
+            c.relaxation == 1.0,
+            CYC_SETTING,
+            "[{key}] solid = \"transient\" with relaxation {}: the march gives the new solid \
+             temperatures of a history, which an under-relaxation would slow down; leave it at 1",
+            c.relaxation
+        );
+    } else {
+        crate::need!(
+            c.march_cycles.is_none(),
+            CYC_SETTING,
+            "[{key}] march_cycles belongs to solid = \"transient\""
+        );
+    }
+    Ok(())
+}
+
+/// Checks `[energy.frozen_flow]` (FRZ001).
+fn validate_frozen(case: &crate::case::FlowCase, f: &FrozenFlow, e: &EnergySection) -> Result<()> {
+    let key = "energy.frozen_flow";
+    let Some(t) = case.time.as_ref() else {
+        crate::need!(
+            false,
+            FRZ_SETTING,
+            "[{key}] in a steady case: a steady conjugate case is solved monolithically and has no \
+             history to march"
+        );
+        unreachable!()
+    };
+    crate::need!(
+        crate::cht::is_cht(case),
+        FRZ_SETTING,
+        "[{key}] without solid regions: the fluid temperatures follow the flow within a \
+         flow-through time, so there is no slow part to march with large steps"
+    );
+    crate::need!(
+        e.acceleration.is_none(),
+        FRZ_SETTING,
+        "[{key}] with [energy.acceleration]: the frozen-flow march keeps the true history, the \
+         acceleration gives it up; use one of the two"
+    );
+    crate::need!(
+        e.cycle.is_none(),
+        FRZ_SETTING,
+        "[{key}] with [energy.cycle]: a periodic flow does not settle; the loop's solid = \
+         \"transient\" marches the solids under the cycle-mean flow"
+    );
+    crate::need!(
+        e.density != crate::density::DensityModel::Variable
+            && case.buoyancy.model != crate::buoyancy::Model::VariableDensity,
+        FRZ_SETTING,
+        "[{key}] with the variable density: the mass flux follows the temperature through the \
+         density, which a held flux cannot; the frozen flow needs a constant density (with the \
+         Boussinesq buoyancy if needed)"
+    );
+    crate::need!(
+        !t.adaptive,
+        FRZ_SETTING,
+        "[{key}] with an adaptive time step: the coupled steps take the fixed [time] step, the \
+         march its own"
+    );
+    crate::need!(
+        f.time_step.is_finite() && f.time_step >= t.time_step,
+        FRZ_SETTING,
+        "[{key}] time_step must be at least the [time] time_step ({} s), is {}",
+        t.time_step,
+        f.time_step
+    );
+    if let FrozenStart::Word(w) = &f.start {
+        crate::need!(
+            w == "settled",
+            FRZ_SETTING,
+            "[{key}] start must be \"settled\" or a time in s, is \"{w}\""
+        );
+    }
+    if let Some(s) = f.start_time() {
+        crate::need!(
+            s >= 0.0 && s.is_finite(),
+            FRZ_SETTING,
+            "[{key}] start must be \"settled\" or a time >= 0 s, is {s}"
+        );
+    }
+    crate::need!(
+        f.window_steps >= 2,
+        FRZ_SETTING,
+        "[{key}] window_steps must be >= 2, is {}",
+        f.window_steps
+    );
+    crate::need!(
+        f.settle_tolerance > 0.0 && f.settle_tolerance < 1.0,
+        FRZ_SETTING,
+        "[{key}] settle_tolerance must be in (0, 1), is {}",
+        f.settle_tolerance
+    );
+    crate::need!(
+        f.refresh_change > 0.0 && f.refresh_change.is_finite(),
+        FRZ_SETTING,
+        "[{key}] refresh_change must be > 0 K, is {}",
+        f.refresh_change
+    );
+    crate::need!(
+        f.iterations >= 1,
+        FRZ_SETTING,
+        "[{key}] iterations must be >= 1"
     );
     Ok(())
 }
@@ -826,6 +1056,9 @@ pub fn validate(case: &crate::case::FlowCase, env: &Env) -> Result<()> {
     }
     if let Some(c) = &e.cycle {
         validate_cycle(case, c, e.acceleration.is_some())?;
+    }
+    if let Some(f) = &e.frozen_flow {
+        validate_frozen(case, f, e)?;
     }
     for (b, t) in &case.boundary_energy {
         let key = format!("boundary.{b}.energy");

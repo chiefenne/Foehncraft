@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**104 features: 49 verified, 52 partial, 3 unverified.**
+**105 features: 49 verified, 53 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -95,6 +95,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Conjugate heat transfer | [Transient conjugate heat transfer](#cht-transient) | verified |
 | Conjugate heat transfer | [Thermal acceleration of solids (scaled ρ c_p, restored)](#cht-thermal-acceleration) | partial |
 | Conjugate heat transfer | [Cycle-averaged coupling of a periodic flow with its solids](#cht-cycle-coupling) | partial |
+| Conjugate heat transfer | [Frozen-flow march of a transient conjugate run](#cht-frozen-flow) | partial |
 | Conjugate heat transfer | [Several fluids and materials in one case (fluid parts)](#cht-several-fluids) | partial |
 | Conjugate heat transfer | [Conjugate heat transfer with a turbulence model](#cht-turbulent) | partial |
 | Conjugate heat transfer | [Contact resistances and thin walls](#cht-contact-thin-wall) | verified |
@@ -1090,12 +1091,35 @@ Gaps:
 - consistency: [`cht_pulsating_channel_skin`](../../examples/cases/flow/cht_pulsating_channel_skin.toml): thin-skin wall (δ = 0.03 m): the loop with the skin swing and three fully coupled cycles ends at 1250 s within 0.016 K of the fully coupled periodic state (10 000 s) and within 0.1 % on the swing (passes in CI (set long), not yet in the manual) ([results](../gallery/energy.md#cht-cycle-skin))
 - consistency: [`skin_swing_and_resolved_cycles`](../../crates/foehncraft-flow/tests/cht_cycle.rs): the skin swing converges with the wall temperatures, the fully coupled cycles give the heat put in, the estimated swing is within 10 % of theirs, the ledger closes to 10⁻⁹ in every step
 - consistency: [`skin_deeper_than_the_wall_warns`](../../crates/foehncraft-flow/tests/cht_cycle.rs): CYC003 where the skin depth reaches through the wall
+- consistency: [`cht_pulsating_channel_warmup`](../../examples/cases/flow/cht_pulsating_channel_warmup.toml): V7.44: solid = "transient": the warm-up history of a pulsating channel (period 5 s), 15 updates and 780 steps to 1500 s; the wall at the end of every march within 0.21 K of the fully coupled cycle means over a 35 K rise, 0.01 K at the end (passes in CI (set long), not yet in the manual) ([results](../gallery/energy.md#cht-frozen-flow))
+- consistency: [`transient_solid_phase_follows_the_warm_up`](../../crates/foehncraft-flow/tests/cht_cycle.rs): V7.44: march and jump by whole periods, the wall at the end of every march within 1 % of the whole rise of the fully coupled cycle means, the balance of every march below 10⁻⁹, no CYC004 at end_time
+- consistency: [`transient_solid_phase_restart_continues_bit_identically`](../../crates/foehncraft-flow/tests/cht_cycle.rs): a restart in the fluid phase after a jump of the clock continues bitwise
 
 Gaps:
 
 - V7.38 not built: no exact solution of a slab under a periodic gas temperature and heat transfer coefficient (the skin swing is checked against the fully coupled run only)
 - laminar case only; no turbulent periodic case yet
 - a restart with [energy.acceleration] is refused
+- solid = "transient": the largest error of the history is at the first march (0.6 % of the rise), set by the march steps; no automatic choice of march_cycles or march_steps
+
+<a id="cht-frozen-flow"></a>
+
+### Frozen-flow march of a transient conjugate run
+
+**partial** (no exact or manufactured solution; gaps written) · id `cht.frozen-flow` · switch `[energy.frozen_flow]` · decisions D118
+
+- consistency: [`cht_heated_wall_frozen`](../../examples/cases/flow/cht_heated_wall_frozen.toml): V7.43: the switched-on heated wall with a viscosity that halves over 17 K: held at 55 s, 7 refreshes, 557 steps against 6000 fully coupled; every probe within 0.058 K of the fully coupled history over a 21 K rise, balance closed to 3·10⁻¹² (passes in CI (set long), not yet in the manual) ([results](../gallery/energy.md#cht-frozen-flow))
+- consistency: [`frozen_flow_follows_the_fully_coupled_heat_up`](../../crates/foehncraft-flow/tests/cht_frozen.rs): V7.43: a flow that does not depend on T is held once, never refreshed; within 0.1 K of the fully coupled history and 0.01 K at the end; balance below 10⁻⁹; LIM010
+- consistency: [`viscosity_that_follows_the_temperature_refreshes_the_flow`](../../crates/foehncraft-flow/tests/cht_frozen.rs): V7.43: μ(T): at least 3 refreshes for temperature, within 0.15 K of the fully coupled history, balance below 10⁻⁹
+- consistency: [`frozen_flow_restart_continues_bit_identically`](../../crates/foehncraft-flow/tests/cht_frozen.rs): a restart in a frozen phase and in the coupled steps of a refresh continues bitwise (the march state and μ(T) in restart.h5)
+- consistency: [`wrong_frozen_settings_are_refused`](../../crates/foehncraft-flow/tests/cht_frozen.rs): settings that cannot be used are refused (FRZ001)
+
+Gaps:
+
+- laminar cases only; no turbulent or buoyant case yet (buoyancy counts as a flow that follows T, untested)
+- the settling test looks at the velocity only (not the turbulence quantities)
+- a flow with time-dependent boundary values is held between refreshes (FRZ004), no automatic refresh by the change of the boundary values
+- no adaptive march step
 
 <a id="cht-several-fluids"></a>
 
