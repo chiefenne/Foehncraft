@@ -371,7 +371,7 @@ pub fn request(dir: &Path, mut req: Value) -> Result<Value> {
     writeln!(s, "{req}")?;
     let mut line = String::new();
     std::io::BufReader::new(&s).read_line(&mut line)?;
-    Ok(serde_json::from_str(&line).context("the run answered with something that is not JSON")?)
+    serde_json::from_str(&line).context("the run answered with something that is not JSON")
 }
 
 #[cfg(test)]

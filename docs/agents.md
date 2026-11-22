@@ -20,6 +20,7 @@ Contents: [Before you start](#before-you-start) ·
 [4. The action table](#4-the-action-table) ·
 [5. A first session](#5-a-first-session) ·
 [6. Replay the session](#6-replay-the-session) ·
+[7. Watch and steer a running case](#7-watch-and-steer-a-running-case) ·
 [Safety advice](#safety-advice) ·
 [What the server does and does not do](#what-the-server-does-and-does-not-do)
 
@@ -192,6 +193,28 @@ skipped (D197). Read the journal to see what the assistant did: each row
 holds the tool, its typed input, the status, the exit code and, for an
 approved call, who approved it.
 
+## 7. Watch and steer a running case
+
+While `flow.run` is going, the assistant's other calls of the kinds read and
+control do not wait for it (L19, [interfaces](interfaces.md#live-control-port-l19)),
+so it can look at the run, change it and stop it:
+
+| Tool | What it does |
+|---|---|
+| `run.status` | the last iteration or step with its residuals and linear iterations, the wall time, whether a stop is pending and what the run did with earlier changes |
+| `result.page` | the histories so far (`residuals`, monitors, `record`), paged by cursor |
+| `run.set` | change run-time settings (the keys a re-read of the case file may change, for example `solver.momentum.relaxation`; never `run.limits.*`); applied at the end of the current iteration or step |
+| `run.stop` | stop at the end of the current iteration or step: restart file, final output, result summary, exit code 3 |
+
+A setting that does not fit the case is not applied and shows as
+`rejected` with the reason in the status (`RUN024`); the run goes on. Every
+change is in the run record with the `[[schedule]]` entry that reproduces it
+from a case file. Stopping is not an action that needs your approval; it
+needs the token of the run, which lies in its output folder, inside the write
+root. A diverging run (residuals growing, `RUN014`) or a steady run that has
+stalled at iteration 2000 to 3000 (the diagnosis, `RUN016`) is what an
+assistant should stop, look at, and restart with other settings.
+
 ## Safety advice
 
 - **Its own folder.** Let the assistant work only in a project folder of
@@ -219,7 +242,8 @@ approved call, who approved it.
 | Does | Does not (yet) |
 |---|---|
 | every registry tool, by its id, through the same call as `foehn call` | tools of its own: there is no MCP-only logic |
-| the roots, the action table, mandatory run limits, the journal | a live control channel to a running solver (L19) |
+| the roots, the action table, mandatory run limits, the journal | change the limits of a running case (a person does, with the case file) |
+| `run.status`, `run.set`, `run.stop` on a running case, answered while it runs (L19) | steer a run that was started without the control port (a plain `foehn flow`) |
 | progress notifications during a run, cancellation | several calls at once: calls run one after another |
 | summaries with limitations, histories paged by `result.page` | raw fields, images (L21), comparing runs (L20) |
 | | resources and prompts (the lists are empty) |

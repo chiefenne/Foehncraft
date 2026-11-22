@@ -162,8 +162,11 @@ validated range, one mesh only, …) in its report and its JSON result.
   exceed the estimate, write outside the roots, overwrite results), run
   limits required, progress and cancellation, summaries with their
   limitations first and histories paged by `result.page`, and every call
-  journaled for `foehn run --script`. [Connect an assistant](docs/agents.md),
-  [gallery 175](docs/gallery/runs.md#mcp).
+  journaled for `foehn run --script`. A running case can be watched and
+  steered through its live control port (L19): `run.status` with the live
+  residuals, `run.set` for run-time settings (never limits), `run.stop`.
+  [Connect an assistant](docs/agents.md), [gallery 175](docs/gallery/runs.md#mcp),
+  [gallery 177](docs/gallery/runs.md#control-port).
 - **GPU and Python.** The flow loop on NVIDIA GPUs with results bitwise
   equal to the CPU; the Python package `foehncraft` that builds, runs and
   studies cases; the grid convergence index of every mesh sweep.

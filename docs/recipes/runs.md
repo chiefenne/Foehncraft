@@ -14,6 +14,7 @@ Part of the [Recipes](../recipes.md): restart, stop and steer runs, drive runs f
 | 171 | [Call any tool from a script or an agent](#tools) |
 | 172 | [Record a session and replay it](#journal) |
 | 175 | [Connect an assistant through the MCP server](#mcp) |
+| 177 | [Watch and steer a running case](#control-port) |
 
 ---
 
@@ -536,5 +537,51 @@ The scripted session of gallery 175 on the heat sink:
 ```
 python3 -m tools.plot.mcp_session docs/figures/gallery/mcp_session.svg target/release/foehn
 ```
+
+[↑ back to top](#run-control-and-health)
+
+---
+
+<a id="control-port"></a>
+## 177. Watch and steer a running case
+
+A run opens a control port when you ask for it (L19): `foehn flow
+--control-port`, or any `flow.run` through `foehn mcp`. From the repository
+root, after `cargo build --release`, start the transient cavity with a
+small time step so that it lasts long enough:
+
+```
+mkdir -p output/tools/control
+target/release/foehn flow examples/cases/flow/cavity_re100_transient.toml \
+    --out output/tools/control/live --control-port \
+    --set time.time_step=0.005 --set time.steps=1000000 \
+    --set run.limits.max_wall_time=120 --set run.limits.max_output=2e9
+```
+
+In a second terminal ask the run how it is doing, change the time step,
+look again, and stop it. The inputs are in
+`examples/cases/tools/control/`:
+
+```
+target/release/foehn call run.status --input examples/cases/tools/control/run_status.json
+target/release/foehn call run.set    --input examples/cases/tools/control/run_set.json
+target/release/foehn call run.set    --input examples/cases/tools/control/run_set_refused.json
+target/release/foehn call run.status --input examples/cases/tools/control/run_status.json
+target/release/foehn call run.stop   --input examples/cases/tools/control/run_stop.json
+```
+
+The status lists under `control` what the run did with each change: the
+time step is `applied` after the current step, with the `[[schedule]]` entry
+that repeats it from a case file; the relaxation of 0.7 is `rejected`,
+because a transient case with one outer iteration would lag the solution
+(`RUN024`). The stop ends the first terminal's run with exit code 3, a
+restart file and the result summary. Only run-time settings can be changed
+(the keys a re-read of the case file may change, D40), never `run.limits.*`.
+The port exists only while the run goes: `control.json` and `control.token`
+are in the output folder, the token readable by its user only, and both
+disappear when the run ends. An assistant does the same through
+[`foehn mcp`](../agents.md#7-watch-and-steer-a-running-case); the figure of
+[gallery 177](../gallery/runs.md#control-port) is made by
+`python3 -m tools.plot.control_session docs/figures/gallery/control_port.svg`.
 
 [↑ back to top](#run-control-and-health)

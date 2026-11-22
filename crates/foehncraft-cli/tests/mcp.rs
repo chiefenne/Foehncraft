@@ -464,7 +464,10 @@ fn a_cancelled_run_stops_with_its_output() {
 #[test]
 fn a_running_case_is_steered_and_stopped_through_its_control_port() {
     let d = dir("control");
-    std::fs::write(d.join("cavity.toml"), cavity(true, 2_000_000)).unwrap();
+    // a transient cavity with far more steps than the test waits for
+    let case =
+        cavity(true, 10) + "\n[time]\nscheme = \"bdf2\"\ntime_step = 1e-4\nsteps = 2000000\n";
+    std::fs::write(d.join("cavity.toml"), case).unwrap();
     std::fs::write(
         d.join("foehn-mcp.toml"),
         "[actions]\nstart-run = \"allow\"\n",
@@ -480,8 +483,7 @@ fn a_running_case_is_steered_and_stopped_through_its_control_port() {
     for _ in 0..600 {
         if d.join("runs/live/control.json").exists() {
             let env = c.call("run.status", json!({"dir": "runs/live"}));
-            if env["status"] == "finished" && env["result"]["last"]["iteration"].as_u64() > Some(5)
-            {
+            if env["status"] == "finished" && env["result"]["last"]["step"].as_u64() > Some(5) {
                 status = env["result"].clone();
                 break;
             }
@@ -500,7 +502,7 @@ fn a_running_case_is_steered_and_stopped_through_its_control_port() {
     assert_eq!(code(&env), "TOOL007", "{env}");
     let env = c.call(
         "run.set",
-        json!({"dir": "runs/live", "set": {"solver.momentum.relaxation": 0.5}}),
+        json!({"dir": "runs/live", "set": {"time.time_step": 2e-4}}),
     );
     assert_eq!(env["status"], "finished", "{env}");
     // the run reports what it did with it
@@ -512,17 +514,19 @@ fn a_running_case_is_steered_and_stopped_through_its_control_port() {
             .is_some_and(|l| l.iter().any(|e| e["status"] == "applied"));
         if applied {
             let e = &env["result"]["control"][0];
-            assert_eq!(e["key"], "solver.momentum.relaxation");
-            assert!(e["schedule"].as_str().unwrap().contains("at_iteration"));
+            assert_eq!(e["key"], "time.time_step");
+            assert!(e["schedule"].as_str().unwrap().contains("at_step"));
             break;
         }
         std::thread::sleep(std::time::Duration::from_millis(50));
     }
     assert!(applied, "the run did not report the change");
-    // an invalid value is reported at the boundary, not applied
+    // a setting that does not fit the case is reported at the boundary, not
+    // applied (a relaxation below 1 in a transient case with one outer
+    // iteration)
     c.call(
         "run.set",
-        json!({"dir": "runs/live", "set": {"solver.momentum.relaxation": "high"}}),
+        json!({"dir": "runs/live", "set": {"solver.momentum.relaxation": 0.5}}),
     );
     let mut rejected = false;
     for _ in 0..200 {
