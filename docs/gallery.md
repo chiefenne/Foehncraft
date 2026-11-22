@@ -13,7 +13,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | Page | What it covers | Examples |
 |---|---|---|
 | [Kernel benchmarks and GPU runs](gallery/benchmarks.md) | gate G1 on CPUs and GPUs, on box, polyhedral and tetrahedral meshes, and the flow loop on a GPU | 1, 2, 7, 16 |
-| [Meshes](gallery/meshes.md) | the built-in test mesher in 2D and 3D, partitioning, the Gmsh reader and flow on poor Gmsh meshes | 3, 4, 5, 6, 26, 127, 129, 134, 138 |
+| [Meshes](gallery/meshes.md) | the built-in test mesher in 2D and 3D, partitioning, the Gmsh reader and flow on poor Gmsh meshes | 3, 4, 5, 6, 26, 127, 129, 134, 138, 189 |
 | [Scalar transport and the pressure solver](gallery/scalar-pressure.md) | convection–diffusion order of accuracy, convection schemes and limiters, the pressure multigrid | 8, 9, 10, 11 |
 | [Incompressible flow](gallery/flow.md) | steady and transient laminar verification and benchmarks: cavity, Poiseuille, Taylor–Green, cylinder, time-step control | 12, 13, 14, 15, 20, 78, 80, 81, 83, 85, 86, 87, 94, 95, 96, 98, 99, 100, 101, 102, 103, 196 |
 | [Passive scalars and the wall distance](gallery/scalars.md) | passive scalars carried by the flow, the bounded BDF2, the exact wall distance | 63 |
@@ -109,6 +109,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | <a id="heat-sink-study"></a>181 | [An assistant runs a study: the fin pitch of a heat sink](gallery/runs.md#heat-sink-study) | [Run control, health and adjoint readiness](gallery/runs.md) |
 | <a id="mms-turbulence"></a>184 | [Manufactured solutions of k-ε-ζ-f₀, the curvature correction and the QCR: orders and two findings](gallery/turbulence.md#mms-turbulence) | [Turbulence models](gallery/turbulence.md) |
 | <a id="buoyancy"></a>186 | [A warm strip in a closed air enclosure, and a stratified box that stays at rest](gallery/energy.md#buoyancy) | [Energy equation and heat transfer](gallery/energy.md) |
+| <a id="operator-check"></a>189 | [Which cells can the curvature correction and the QCR trust? The operator check](gallery/meshes.md#operator-check) | [Meshes](gallery/meshes.md) |
 | <a id="pipe-turbulent"></a>193 | [Turbulent pipe flow at Re_b 5300: friction against the DNS, three meshes with GCI](gallery/turbulence.md#pipe-turbulent) | [Turbulence models](gallery/turbulence.md) |
 | <a id="tjunction-mixing"></a>196 | [T-junction mixing on polyhedra: three meshes with grid convergence](gallery/flow.md#tjunction-mixing) | [Incompressible flow](gallery/flow.md) |
 

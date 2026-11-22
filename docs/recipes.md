@@ -11,7 +11,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 |---|---|---|
 | [Kernel benchmark G1](recipes/benchmarks.md) | build and run gate G1 on a CPU, on Windows and on an NVIDIA GPU, and rerun it on unstructured meshes | 1, 2, 3, 10 |
 | [Development: tests, CI and releases](recipes/development.md) | MPI tests, checking a change the way CI does, releases, derivative checks of the kernels | 4, 5, 6, 25, 184 |
-| [Meshes](recipes/meshes.md) | generate, read, convert and partition meshes, update the mesher's golden values, run flows on poor Gmsh meshes | 7, 8, 9, 11, 36, 127, 129, 134, 138 |
+| [Meshes](recipes/meshes.md) | generate, read, convert and partition meshes, update the mesher's golden values, run flows on poor Gmsh meshes | 7, 8, 9, 11, 36, 127, 129, 134, 138, 189 |
 | [Scalar transport and the pressure solver](recipes/scalar-pressure.md) | order of accuracy of the scalar operators, convection schemes, pressure-solver studies, hypre | 12, 13, 15, 17 |
 | [GPU runs](recipes/gpu.md) | scalar operators, pressure solver and flow cases on an NVIDIA GPU (also a free Colab T4) | 14, 16, 24 |
 | [Incompressible flow](recipes/flow.md) | Couette, Poiseuille, cavity and cylinder runs, boundary conditions, transient runs, time-step control | 18, 19, 20, 21, 23, 28, 78, 80, 81, 83, 85, 86, 87, 94, 95, 96, 98, 99, 100, 101, 102, 103, 196 |
@@ -121,6 +121,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="heat-sink-study"></a>181 | [Let an assistant run a parameter study](recipes/runs.md#heat-sink-study) | [Run control and health](recipes/runs.md) |
 | <a id="mms-turbulence"></a>184 | [Check a turbulence model with a manufactured solution](recipes/development.md#mms-turbulence) | [Development: tests, CI and releases](recipes/development.md) |
 | <a id="buoyancy"></a>186 | [Switch on gravity and buoyancy; which pressure do my boundary values mean](recipes/energy.md#buoyancy) | [Energy equation and heat transfer](recipes/energy.md) |
+| <a id="operator-check"></a>189 | [Check which cells the velocity gradient and Hessian are exact on](recipes/meshes.md#operator-check) | [Meshes](recipes/meshes.md) |
 | <a id="pipe-turbulent"></a>193 | [Run a turbulent pipe and check its friction](recipes/turbulence.md#pipe-turbulent) | [Turbulence models](recipes/turbulence.md) |
 | <a id="tjunction-mixing"></a>196 | [Mix two streams in a T-junction and check the mesh](recipes/flow.md#tjunction-mixing) | [Incompressible flow](recipes/flow.md) |
 
