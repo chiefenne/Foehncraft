@@ -255,11 +255,11 @@ Gaps:
 - exact: [`regular_hexahedra_are_second_order_inside`](../../crates/foehncraft-fv/src/exactness.rs): gradient and Hessian of quadratic fields exact inside regular hexahedra, flagged at the walls
 - consistency: [`irregular_cells_are_flagged`](../../crates/foehncraft-fv/src/exactness.rs): perturbed hexahedra and tetrahedra flagged
 - consistency: [`regular_hexahedra_flag_only_the_boundary_cells`](../../crates/foehncraft-flow/src/operators.rs): MESH005 and MESH006 with the features on; only the wall cells of a regular mesh
-- consistency: [`cavity_sst_operator_check`](../../examples/cases/flow/cavity_sst_operator_check.toml): the cavity on perturbed tetrahedra: every cell flagged, operators.csv written, the run converges as without the check (passes in CI (set linux-3), not yet in the manual)
+- consistency: [`cavity_sst_operator_check`](../../examples/cases/flow/cavity_sst_operator_check.toml): the cavity on perturbed tetrahedra: every cell takes both quadratic fits, no MESH005 or MESH006 left, operators.csv written, the run converges (passes in CI (set linux-3), not yet in the manual)
 
 Gaps:
 
-- the flagged cells are not yet treated: the quadratic least-squares operators and the local remesh are the next steps of D236
+- cells where a quadratic fit fails are only flagged (MESH005, MESH006); the local remesh of such cells is deferred to v1.1 with D54 (D236 step 4)
 
 <a id="mesh-vtkhdf"></a>
 
@@ -751,11 +751,11 @@ Range: y_plus_first 0 … 1.
 - consistency: [`pure_shear_is_unchanged`](../../crates/foehncraft-flow/tests/curvature.rs): a channel without rotation unchanged to the last digit
 - reference-data: [`channel_rotating_sst`](../../examples/cases/flow/channel_rotating_sst.toml): channel in spanwise rotation, Ro 0.15: the unstable side marked
 - manufactured: [`curvature_correction_manufactured_solution_orders`](../../crates/foehncraft-flow/src/turbulence/mms.rs): orders 1.9 to 2.1 of k and ω with f_r1 (DS_ij/Dt from a flow whose strain axes turn) on hexahedra and polyhedra ([results](stage6.md#manufactured-solutions-of-k-ε-ζ-f₀-the-curvature-correction-and-the-qcr-pr-184))
+- manufactured: [`curvature_correction_on_tetrahedra_converges`](../../crates/foehncraft-flow/src/turbulence/mms.rs): order 1.9 to 2.1 of k and ω on regular and 15 % perturbed tetrahedra with S_ij from a second-order velocity gradient and the gradient of S_ij from a quadratic least-squares fit where the least-squares one is not consistent (D236) ([results](stage6.md#consistent-curvature-correction-on-irregular-meshes-d236-pr-197))
 
 Gaps:
 
 - the DNS of Kristoffersen & Andersson (1993) for the rotating channel is not compared (its data are not in the repository)
-- on tetrahedra the correction does not converge in the manufactured solution (error of k 1.3 % at all three levels): DS_ij/Dt takes the least-squares gradient of the least-squares gradient of the velocity, which is not consistent on irregular tetrahedra
 
 <a id="turbulence-qcr"></a>
 

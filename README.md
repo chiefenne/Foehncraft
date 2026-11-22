@@ -86,13 +86,12 @@ validated range, one mesh only, …) in its report and its JSON result.
   rotation correction of SST
   (Smirnov & Menter 2009), a whole domain in a turning frame, and the
   quadratic constitutive relation QCR2000/QCR2013 for the secondary flow
-  of non-circular ducts, whose stress divergence converges on
-  tetrahedra and perturbed cells through a quadratic least-squares
-  velocity gradient on the cells the operator check flags (D236).
+  of non-circular ducts; both converge on tetrahedra and perturbed cells
+  through a quadratic least-squares velocity fit (gradient and Hessian)
+  on the cells the operator check flags (D236).
   Second order verified with manufactured
   solutions of every model on hex, polyhedral and tetrahedral cells
-  (the curvature correction is not yet convergent on tetrahedra, PR #184;
-  the QCR stress is first order there); validated on the flat plate, the channel against DNS, the backward-facing step and
+  (the QCR stress is first order on tetrahedra); validated on the flat plate, the channel against DNS, the backward-facing step and
   the impinging jet.
 - **Heat and mass transfer.** Passive scalars (temperature, concentration)
   carried by laminar and turbulent flow, with the turbulent Prandtl number
