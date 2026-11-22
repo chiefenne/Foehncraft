@@ -1281,15 +1281,21 @@ taken as the longest stretch of reverse flow:
 
 | Quantity | 8 400 cells | 33 600 | 134 400 | order | GCI_fine |
 |---|---|---|---|---|---|
-| separation x/H | 1.822 | 1.950 | running | | |
-| reattachment x/H | 29.29 | 29.12 | running | | |
-| C_p at 21 H | 0.4895 | 0.4920 | running | | |
-| C_p at 45 H | 0.5401 | 0.5417 | running | | |
-| iterations to 10⁻⁷ | 1 087 | 2 699 | running | | |
+| separation x/H | 1.822 | 1.950 | 2.033 | 0.63 | 9.4 % (extrapolated 2.19) |
+| reattachment x/H | 29.29 | 29.12 | 29.03 | 0.83 | 0.51 % (extrapolated 28.91) |
+| C_p at 21 H | 0.4895 | 0.4920 | 0.4923 | 3.46 | below 0.01 % |
+| C_p at 45 H | 0.5401 | 0.5417 | 0.5417 | oscillatory | 0.15 % |
+| iterations to 10⁻⁷ | 1 087 | 2 699 | 8 000 (cap) | | |
 
-Level 2 (134 400 cells) is still running; the GCI follows with it. On
-levels 0 and 1 the sharp corners move the reattachment by less than 0.3 %
-and C_p by at most 1 % from the rounded ones.
+Level 2 stops at the iteration cap of 8 000 with the largest residual at
+4·10⁻⁷ (turbulence); the probes in the jet core and in the separated
+region have not changed in three digits since iteration 4 000. The
+reattachment point and the pressure recovery converge well (GCI 0.51 %
+and 0.15 % or less). On each level the reattachment lies 0.1 to 0.3 %
+downstream of the rounded one (29.03 H against 28.94 H on the finest
+mesh) and C_p is lower by 0.5 to 1.1 %. The separation point converges at order 0.6 only (GCI 9 %):
+behind the sharp corner the wall shear stays near zero for 1.5 H, so a
+small change of the shear moves the first point of reverse flow far.
 
 With the plain 0.25 H cells and sharp corners (aspect ratio 150 at the
 kinks), the runs converge too, in 494 and 1 378 iterations on levels 0

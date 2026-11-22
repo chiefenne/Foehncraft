@@ -641,7 +641,7 @@ Gaps:
 - reference-data: [`channel_sst`](../../examples/cases/flow/channel_sst.toml): channel at Re_τ 395: U_b⁺ −1.3 % from the DNS of Moser, Kim & Mansour (1999) ([results](stage6.md#channel-re_τ--395))
 - reference-data: [`pipe_turbulent_sst`](../../examples/cases/flow/pipe_turbulent_sst.toml): pipe at Re_b 5300: u_τ/U_b +4.5 % from the DNS of El Khoury et al. (2013), GCI 0.2 % (band ±6 %) (passes in CI (set linux-1), not yet in the manual)
 - consistency: [`diffuser_sst`](../../examples/cases/flow/diffuser_sst.toml): asymmetric diffuser with rounded corners, developed channel-profile inlet: converges on three meshes (6 960 to 111 360 cells); reattachment 28.94 H (GCI 0.36 %), separation 2.20 H (GCI 4 %), C_p(45 H) 0.5465 (GCI below 0.01 %) (passes in CI (set linux-1), not yet in the manual) ([results](../gallery/turbulence.md#diffuser))
-- consistency: [`diffuser_sst_sharp`](../../examples/cases/flow/diffuser_sst_sharp.toml): the same diffuser with sharp corners (cells shortened towards the corners): converges; separated region from 1.82 H to 29.29 H on 8 400 cells (passes in CI (set linux-2), not yet in the manual) ([results](../gallery/turbulence.md#diffuser))
+- consistency: [`diffuser_sst_sharp`](../../examples/cases/flow/diffuser_sst_sharp.toml): the same diffuser with sharp corners (cells shortened towards the corners), three meshes (8 400 to 134 400 cells): reattachment 29.03 H (GCI 0.51 %), C_p(45 H) 0.5417 (GCI 0.15 %), separation 2.03 H (order 0.6, GCI 9 %) (passes in CI (set linux-2), not yet in the manual) ([results](../gallery/turbulence.md#diffuser))
 - consistency: [`diffuser_channel_profile`](../../examples/cases/flow/diffuser_channel_profile.toml): periodic channel at centreline Re 20 000: centreline velocity 1.000 m/s, the developed inlet table of the diffuser (passes in CI (set linux-1), not yet in the manual)
 - reference-data: [`backstep_outlet_backflow`](../../examples/cases/flow/backstep_outlet_backflow.toml): backward-facing step with the outlet inside the recirculation
 - reference-data: recorded run (level sweep of backstep_validation with SST, 3 meshes): step of Driver & Seegmiller (1985): x_r/H 6.747, +7.8 % (band ±10 %) ([results](stage6.md#backward-facing-step-against-the-experiment-part-6g-95))
@@ -649,7 +649,7 @@ Gaps:
 
 Gaps:
 
-- asymmetric diffuser (gallery 199): not compared with the measurements of Buice & Eaton (pending); the separation point converges at order 1.6 only (GCI 4 %), and the steady solver needs about three times the iterations per halving of the mesh (4 909 on 111 360 cells) while the jet moves slowly to the upper wall
+- asymmetric diffuser (gallery 199): not compared with the measurements of Buice & Eaton (pending); the separation point converges at order 1.6 only (GCI 4 %), and the steady solver needs about three times the iterations per halving of the mesh (4 909 on 111 360 cells) while the jet moves slowly to the upper wall; with sharp corners the finest mesh ends at the 8 000-iteration cap with residuals of 4e-7 and the separation point converges at order 0.6 (GCI 9 %)
 
 Notes:
 
