@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+Nothing yet.
+
 ## 0.7 (2026-11-22) – stage 7 (part): energy equation, conjugate heat transfer and agents
 
 
