@@ -1053,7 +1053,7 @@ Gaps:
 - consistency: [`loop_matches_the_fully_coupled_periodic_state`](../../crates/foehncraft-flow/tests/cht_cycle.rs): V7.39: heat flow and wall temperatures within 1 % of the fully coupled periodic state; V7.40: heat balance of every fluid step and every solid phase to 10⁻⁹
 - consistency: [`robin_solid_phase_is_slower_and_says_so`](../../crates/foehncraft-flow/tests/cht_cycle.rs): the first-cell Robin solid phase converges slowly and says so (CYC004); its balance closes
 - consistency: [`wrong_settings_are_refused`](../../crates/foehncraft-flow/tests/cht_cycle.rs): settings that cannot be used are refused (CYC001)
-- consistency: [`cht_pulsating_channel_skin`](../../examples/cases/flow/cht_pulsating_channel_skin.toml): thin-skin wall (δ = 0.03 m): the loop with the skin swing and three fully coupled cycles ends at 1250 s within 0.016 K of the fully coupled periodic state (10 000 s) and within 0.1 % on the swing ([results](../gallery/energy.md#cht-cycle-skin)) **missing**
+- consistency: [`cht_pulsating_channel_skin`](../../examples/cases/flow/cht_pulsating_channel_skin.toml): thin-skin wall (δ = 0.03 m): the loop with the skin swing and three fully coupled cycles ends at 1250 s within 0.016 K of the fully coupled periodic state (10 000 s) and within 0.1 % on the swing (passes in CI (set long), not yet in the manual) ([results](../gallery/energy.md#cht-cycle-skin))
 - consistency: [`skin_swing_and_resolved_cycles`](../../crates/foehncraft-flow/tests/cht_cycle.rs): the skin swing converges with the wall temperatures, the fully coupled cycles give the heat put in, the estimated swing is within 10 % of theirs, the ledger closes to 10⁻⁹ in every step
 - consistency: [`skin_deeper_than_the_wall_warns`](../../crates/foehncraft-flow/tests/cht_cycle.rs): CYC003 where the skin depth reaches through the wall
 
@@ -1062,7 +1062,6 @@ Gaps:
 - V7.38 not built: no exact solution of a slab under a periodic gas temperature and heat transfer coefficient (the skin swing is checked against the fully coupled run only)
 - laminar case only; no turbulent periodic case yet
 - a restart with [energy.acceleration] is refused
-- `cht_pulsating_channel_skin` has no run in the verification manual or in CI
 
 <a id="cht-turbulent"></a>
 

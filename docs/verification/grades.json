@@ -796,8 +796,7 @@
    "gaps": [
     "V7.38 not built: no exact solution of a slab under a periodic gas temperature and heat transfer coefficient (the skin swing is checked against the fully coupled run only)",
     "laminar case only; no turbulent periodic case yet",
-    "a restart with [energy.acceleration] is refused",
-    "`cht_pulsating_channel_skin` has no run in the verification manual or in CI"
+    "a restart with [energy.acceleration] is refused"
    ],
    "range": {}
   },
