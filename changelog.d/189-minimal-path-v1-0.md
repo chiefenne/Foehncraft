@@ -1,0 +1,1 @@
+- **Minimal path to v1.0.** Requirements section 7a and D235 record what v1.0 contains and what moves to v1.1.
