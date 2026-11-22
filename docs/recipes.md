@@ -23,7 +23,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | [Python](recipes/python.md) | the `foehncraft` package: cases, expressions, runs with callbacks, results, materials, studies | 33 |
 | [Verification](recipes/verification.md) | the discretisation uncertainty of a sweep (GCI), the generated verification manual | 34, 35, 165, 170 |
 | [Post-processing](recipes/post-processing.md) | derived fields with the output and from restart files (`foehn post derive`) | 30, 108, 110 |
-| [Engineering gallery](recipes/applications.md) | run an application of the Engineering Gallery and compare it with published data | 161 |
+| [Engineering gallery](recipes/applications.md) | run an application of the Engineering Gallery and compare it with published data | 161, 203 |
 | [Run control and health](recipes/runs.md) | restart, stop and steer runs, drive runs from a script or an agent, balances and divergence reports, the log, scheduled changes and case upgrades | 22, 26, 27, 37, 38, 39, 166, 171, 172, 175, 177, 181 |
 
 ## All recipes by number
@@ -129,6 +129,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="tjunction-mixing"></a>196 | [Mix two streams in a T-junction and check the mesh](recipes/flow.md#tjunction-mixing) | [Incompressible flow](recipes/flow.md) |
 | <a id="curvature-consistency"></a>197 | [Run the curvature correction on tetrahedra and perturbed meshes](recipes/turbulence.md#curvature-consistency) | [Turbulence models](recipes/turbulence.md) |
 | <a id="canonical-ranks"></a>200 | [Check that every rank has the bits of one rank (canonical local mesh)](recipes/meshes.md#canonical-ranks) | [Meshes](recipes/meshes.md) |
+| <a id="shell-tube-hx-recipe"></a>203 | [Mesh a multi-region heat exchanger from a STEP assembly with Gmsh](recipes/applications.md#shell-tube-hx-recipe) | [Engineering gallery](recipes/applications.md) |
 
 ## Adding a feature
 

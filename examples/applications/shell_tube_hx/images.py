@@ -1,5 +1,10 @@
-"""Images of the heat-exchanger mesh: a section through all six zones and a
-cut-away of the housing with the tube bundle (pyvista, off-screen)."""
+"""Images of the heat-exchanger mesh (application 203): a section through
+all six zones and a cut-away of the housing with the tube bundle.
+
+    pip install meshio pyvista
+    python3 examples/applications/shell_tube_hx/images.py examples/applications/shell_tube_hx/hx_L2.msh docs/figures/applications
+
+Off-screen; on a headless Linux box run it under xvfb-run."""
 import sys, numpy as np, meshio, pyvista as pv
 pv.OFF_SCREEN=True
 m=meshio.read(sys.argv[1]); outdir=sys.argv[2]
