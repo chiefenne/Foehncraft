@@ -755,6 +755,7 @@ fn build(case: &FlowCase, level: u32, m: &dyn Model) -> Built {
         values: &values,
         t: 0.0,
         turning: &case.turning(),
+        hydrostatic: crate::buoyancy::hydrostatic(case),
     };
     let arrays = crate::bc::arrays(&mesh, &geo, &case.boundary, phys.rho, at).unwrap();
     let disc = crate::simplec::discretisation(&mesh, &geo, &arrays).unwrap();

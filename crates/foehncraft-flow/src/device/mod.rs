@@ -880,6 +880,12 @@ pub trait FlowDevice {
     /// operations read (D150). The device starts with the constant
     /// density of its setup on every cell and face.
     fn set_density(&mut self, cell: &[f64], face: &[f64]) -> Result<()>;
+    /// Sets the balanced-force arrays of gravity (D154, stage 7b1): the
+    /// offset q_f subtracted from the Rhie–Chow pressure jump of every face
+    /// (`n_faces` values) and the term e_b added to the extrapolated
+    /// boundary pressure (`n_boundary` values). Without a call both are
+    /// absent and the operations are those without gravity, bit for bit.
+    fn set_balanced_force(&mut self, jump: &[f64], pb: &[f64]) -> Result<()>;
     /// Uploads the static arrays of the wall treatment.
     fn wall_setup(&mut self, s: &WallStatic) -> Result<()>;
     /// The k-ω SST model per cell.

@@ -10,6 +10,7 @@ Part of the [Example gallery](../gallery.md): the energy equation of the fluid (
 | 159 | [A heated wall switched on, and two bodies brought into contact](#cht-transient) | 7 | `[time]` with solid regions, `heat.csv`, `<probe>_T`, `[energy] exact` with `erf` |
 | 160 | [A chip on a circuit board with a thermal pad, and an orthotropic patch test](#cht-contact) | 7 | `[interfaces.<name>] contact_resistance`, `thin_wall`, orthotropic `conductivity`, `[regions.<name>] axes`, `[[energy.sources]]` |
 | 180 | [A heated wall brought to its steady and periodic state with thermal acceleration](#cht-acceleration) | 7 | `[energy.acceleration]` `inertia_scale`, `period`, `restore`, `restore_ramp`, `heat.csv` `inertia_scaling` |
+| 186 | [A warm strip in a closed air enclosure, and a stratified box that stays at rest](#buoyancy) | 7 | `[gravity]`, `[buoyancy] model = "boussinesq"`, `expansion_coefficient`, `static_pressure` |
 
 ---
 
@@ -366,4 +367,56 @@ target/release/foehn flow examples/cases/flow/cht_heated_wall_periodic_accelerat
 pip install matplotlib h5py numpy
 python3 -m tools.plot.cht_acceleration docs/figures/gallery output/acc output/ref output/per \
     output/per_jump output/per_ref
+```
+
+<a id="buoyancy"></a>
+## 186. A warm strip in a closed air enclosure, and a stratified box that stays at rest
+
+<img src="../figures/gallery/buoyancy_enclosure_plume.png" alt="Left: the temperature in a closed air enclosure 10 cm wide and 6 cm high over a floor strip at x = 3.5 cm that is up to 5 K warmer, with white streamlines: a plume rises from the strip and leans to the left wall, one large roll fills the enclosure, and a small counter-rotating roll sits in the lower left corner; the warmest air is 304.4 K. Right: the speed with velocity arrows: the fastest air, 1.89 cm/s, runs up the plume and along the ceiling, and returns more slowly along the floor" width="800" height="263">
+
+**A warm strip in a closed air enclosure (stage 7b1).**
+`buoyancy_enclosure_plume.toml` is air at 300 K in a closed enclosure
+10 cm wide and 6 cm high, gravity 9.81 m/s² downwards. A strip of the
+floor at x = 3.5 cm is up to 5 K warmer (a smooth Gaussian profile), the
+ceiling is held at 300 K, and the other walls are adiabatic. The
+Rayleigh number on the height and the 5 K is about 1.1·10⁵, so the flow
+is laminar and steady. `[gravity]` and `[buoyancy] model = "boussinesq"`
+with β = 1/T = 3.333·10⁻³ 1/K add the force −ρ₀β(T − T_ref)g. The warm air
+rises in a plume that leans towards the nearer, left wall, spreads to the
+right under the ceiling at up to 1.9 cm/s and returns along the floor. A
+small counter-rotating roll fills the corner left of the strip. SIMPLEC
+converges in 2009 iterations (30 s on one core) and takes the buoyancy
+pseudo-time step of stage 7b1. That step is 1/N, with N the buoyancy
+frequency; without it, relaxation alone takes far longer steps on coarse
+meshes and keeps overshooting the internal waves of a stratification.
+
+<img src="../figures/gallery/buoyancy_box_at_rest.png" alt="Left: the static pressure in a closed square box on a mesh whose nodes are moved at random by up to 20 percent of a cell, layered across a gravity that points down and to the left at 37 degrees from the y axis, from 0 Pa at the lower left corner to minus 13 Pa at the upper right. Right: the speed on a logarithmic scale after 1000 iterations, between 1e-17 and 1e-15 m/s in every cell, a random pattern of round-off" width="800" height="333">
+
+**A stratified box that stays at rest (check V7.7 (a)).**
+`buoyancy_box_at_rest.toml` is a closed box 1 m × 1 m on a mesh
+perturbed by 20 %, with gravity 37° from the y axis. The temperature
+rises linearly by 14 K against gravity and is held on all four walls,
+which is a stable stratification. The fluid must stay at rest. A force
+interpolated like an ordinary body force leaves a small part on the
+skewed faces that the pressure cannot balance, and that part drives
+spurious currents. The **balanced force** of D154 builds the buoyancy of
+every face from the same face differences and the same least-squares
+operator as the pressure gradient, so the discrete hydrostatic pressure
+balances it exactly in every cell and on every face. The largest speed
+after 1000 iterations is 1·10⁻¹⁵ m/s, which is round-off. tests/buoyancy.rs
+also runs the box on tet and poly meshes, on a mixed 3D mesh (gravity
+oblique to all three axes) and with the coupled algorithm, and stays
+below 3·10⁻¹⁰ m/s in every run. The buoyant slot between a hot and a
+cold wall (`buoyancy_slot.toml`) meets its exact cubic profile at
+observed orders 2.14 and 2.13.
+
+```
+cargo build --release -p foehncraft-cli
+target/release/foehn flow examples/cases/flow/buoyancy_enclosure_plume.toml --out output/plume
+target/release/foehn flow examples/cases/flow/buoyancy_box_at_rest.toml --out output/box
+target/release/foehn flow examples/cases/flow/buoyancy_channel_reduced.toml --out output/chan_reduced
+target/release/foehn flow examples/cases/flow/buoyancy_channel_static.toml --out output/chan_static
+pip install matplotlib h5py numpy
+python3 -m tools.plot.buoyancy_fields docs/figures/gallery output/plume output/box \
+    output/chan_reduced output/chan_static
 ```

@@ -949,6 +949,38 @@ evidence = [
 ]
 gaps = ["no exact solution with a volumetric source (for example the parabolic temperature of a heated slab)"]
 
+# ---------------------------------------------------------------- buoyancy
+
+[[feature]]
+id = "buoyancy.boussinesq"
+area = "Buoyancy"
+title = "Gravity and the Boussinesq buoyancy (balanced force)"
+switch = "[gravity], [buoyancy] model = \"boussinesq\""
+decisions = ["D153", "D154"]
+model = true
+evidence = [
+  { kind = "exact", case = "buoyancy_box_at_rest", what = "a stratified box at rest along an oblique gravity on a perturbed mesh: largest speed 1·10⁻¹⁵ m/s", doc = "docs/gallery/energy.md#buoyancy" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/buoyancy.rs::stratified_box_stays_at_rest", what = "the box at rest on hex, tet, poly and mixed 3D meshes, SIMPLEC and coupled, below 3·10⁻¹⁰ m/s" },
+  { kind = "exact", case = "buoyancy_slot", what = "the buoyant slot against its exact cubic profile, observed orders 2.14 and 2.13", doc = "docs/cases/flow.md#gravity-and-buoyancy" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/buoyancy.rs::buoyant_slot_has_second_order", what = "observed orders in 1.8–2.3" },
+  { kind = "consistency", case = "buoyancy_enclosure_plume", what = "a laminar plume in a closed air enclosure converges, mass and kinetic-energy ledgers close" },
+]
+gaps = ["no reference-data case (a measured natural-convection flow)", "the wall forces leave out the Archimedes part ρ_ref g V"]
+
+[[feature]]
+id = "buoyancy.pressure-kind"
+area = "Buoyancy"
+title = "Reduced and static pressure at pressure boundaries"
+switch = "[boundary.<name>] pressure_kind"
+decisions = ["D153"]
+evidence = [
+  { kind = "consistency", case = "buoyancy_channel_reduced", what = "a tall channel with the outlet as p′ = 0", doc = "docs/recipes/energy.md#buoyancy" },
+  { kind = "consistency", case = "buoyancy_channel_static", what = "the same channel with the outlet as a static pressure: the same flow to 10⁻¹¹" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/buoyancy.rs::reduced_and_static_outlet_give_the_same_flow", what = "both kinds give the same velocity to 10⁻⁹" },
+  { kind = "consistency", case = "buoyancy_open_box", what = "a box open over its height stays at rest with the reduced value 0" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/buoyancy.rs::static_outlet_without_hydrostatics_drives_a_false_flow", what = "a uniform static value over the opening drives a flow and warns BUO006" },
+]
+
 # ---------------------------------------------------------------- rotating machinery
 
 [[feature]]
@@ -1294,10 +1326,10 @@ evidence = [
 # ---------------------------------------------------------------- planned
 
 [[feature]]
-id = "planned.buoyancy"
+id = "planned.variable-density"
 area = "Planned"
-title = "Buoyancy (Boussinesq and variable density)"
+title = "Low-Mach variable density ρ(T, p₀)"
 switch = "not built"
-decisions = ["D150"]
+decisions = ["D151"]
 evidence = []
-gaps = ["not built (stage 7b, after the CHT work)"]
+gaps = ["not built (stage 7c; the Boussinesq buoyancy is in, buoyancy.boussinesq)"]
