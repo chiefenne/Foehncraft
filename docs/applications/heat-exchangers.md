@@ -32,7 +32,8 @@ conditions.
 | Interfaces | found by the solver from the cell zones (`interface-<region>`, recipe 156); the two fluids touch nowhere |
 | Run cost | meshing 40 s (level 0) to 2 min (level 2) on one core |
 | Confidence | **mesh only**: C6 passes (`foehn mesh`: valid, the boundary encloses the volume to 2·10⁻¹⁶, no cell left unremediated); the flow checks follow with the run |
-| Case files | `applications/shell_tube_hx/mesh.toml` (mesh check); the flow case follows |
+| Boundary conditions | hot air in through `shell_nozzle_front` at 15 m/s and 300 °C, out through `shell_nozzle_rear` at 1.5 bar; water in through a top nozzle at 5 m/s and 20 °C, out through the other at 1 bar; housing outside at 25 °C; everything starts at rest |
+| Case files | `applications/shell_tube_hx/mesh.toml` (mesh check); `case_coflow.toml` (water in at `tube_nozzle_front`, the air's end) and `case_counterflow.toml` (water in at `tube_nozzle_rear`); both wait for several fluid materials in one conjugate case (D194) |
 
 ### The mesh
 
@@ -82,6 +83,23 @@ between the tubesheets and on the tube side beyond them. The plugs, short
 discs just outside the nozzle ends, close the nozzles: their flat faces
 become the four inlet and outlet boundaries. The script stops when the two
 fluids share a face or a nozzle face is missing.
+
+### The flow cases
+
+Two steady conjugate cases share the mesh. Air enters the shell side
+through the side nozzle at the front end (x = −100 mm) at 15 m/s and
+300 °C and leaves at the rear end against 1.5 bar (the operating pressure
+of its ideal-gas density; the solved pressures are gauge values). Water
+enters at 5 m/s and 20 °C and leaves against 1 bar: through
+`tube_nozzle_front` in `case_coflow.toml`, so both streams run from the
+front to the rear end, and through `tube_nozzle_rear` in
+`case_counterflow.toml`, against the air (counter flow overall; in the
+baffle windows the air crosses the tubes). The outside of the housing is
+held at 25 °C, the metal is plain carbon steel. Reynolds numbers: about
+9 400 for the air in its nozzle, 7.6·10⁴ for the water in the tubes
+(5.1 m/s, d = 15 mm); k-ω SST with the automatic wall treatment and the
+thermal wall function. Every key except the water's own material passes
+`foehn flow --check`.
 
 ### Limits
 
