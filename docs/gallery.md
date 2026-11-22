@@ -17,7 +17,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | [Scalar transport and the pressure solver](gallery/scalar-pressure.md) | convection–diffusion order of accuracy, convection schemes and limiters, the pressure multigrid | 8, 9, 10, 11 |
 | [Incompressible flow](gallery/flow.md) | steady and transient laminar verification and benchmarks: cavity, Poiseuille, Taylor–Green, cylinder, time-step control | 12, 13, 14, 15, 20, 78, 80, 81, 83, 85, 86, 87, 94, 95, 96, 98, 99, 100, 101, 102, 103, 196 |
 | [Passive scalars and the wall distance](gallery/scalars.md) | passive scalars carried by the flow, the bounded BDF2, the exact wall distance | 63 |
-| [Energy equation and heat transfer](gallery/energy.md) | the energy equation of the fluid with temperature-dependent properties, viscous heating and thermal walls: a heated cavity, conduction with k(T), Couette flow heated by friction, conjugate heat transfer with solid regions, laminar and turbulent (a finned heat sink) | 154, 156, 158, 159, 160, 180, 190, 202, 206, 186, 195 |
+| [Energy equation and heat transfer](gallery/energy.md) | the energy equation of the fluid with temperature-dependent properties, viscous heating and thermal walls: a heated cavity, conduction with k(T), Couette flow heated by friction, conjugate heat transfer with solid regions, laminar and turbulent (a finned heat sink) | 154, 156, 158, 159, 160, 180, 190, 202, 208, 206, 186, 195 |
 | [Turbulence models](gallery/turbulence.md) | the RANS turbulence models of stage 6 with their wall treatments: k-ω SST on the TMR flat plate and in a channel | 68, 71, 73, 74, 88, 89, 90, 113, 115, 141, 140, 184, 194, 197, 193, 199, 204 |
 | [Boundary conditions](gallery/boundary-conditions.md) | slip walls, axisymmetric wedges, inlet profiles from tables, backflow at pressure outlets, convective outlets, periodic modules | 21, 67 |
 | [Expressions and materials](gallery/properties.md) | boundary values, body forces and viscosities as expressions, the material database, regions, walls with a mass flux | 23 |
@@ -121,6 +121,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | <a id="cht-cycle-skin"></a>202 | [A thin-skin wall under a pulsating channel: the skin swing, fully coupled cycles at the end and the CHT restart](gallery/energy.md#cht-cycle-skin) | [Energy equation and heat transfer](gallery/energy.md) |
 | <a id="ubend"></a>204 | [U-bend of Rc/H = 1: separation behind a 180° turn, three meshes with GCI, sharp edges](gallery/turbulence.md#ubend) | [Turbulence models](gallery/turbulence.md) |
 | <a id="two-fluids"></a>206 | [Water and oil in counterflow across a steel plate: two fluids in one conjugate case](gallery/energy.md#two-fluids) | [Energy equation and heat transfer](gallery/energy.md) |
+| <a id="cht-frozen-flow"></a>208 | [A heated wall warmed up with the flow held, and a pulsating channel warmed up by the cycle loop](gallery/energy.md#cht-frozen-flow) | [Energy equation and heat transfer](gallery/energy.md) |
 
 ## Adding a feature
 
