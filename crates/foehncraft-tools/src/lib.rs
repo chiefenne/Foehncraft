@@ -432,7 +432,10 @@ pub struct ToolResult {
     pub result: Value,
     /// The diagnostic of a call that failed.
     pub diagnostics: Vec<Diagnostic>,
-    /// Known limitations of the result (D199; empty until it fills them).
+    /// What the user must know before trusting the result (D199): the
+    /// `limitations` of the tool's output (a run, a result read back),
+    /// codes LIM001 to LIM006; they change neither `status` nor the exit
+    /// code. Empty for a tool whose output has none.
     pub limitations: Vec<Value>,
 }
 
@@ -489,9 +492,9 @@ pub fn call(id: &str, input: Value, ctx: &mut Ctx<'_>) -> ToolResult {
             tool_version: e.spec.version,
             status: status_of(code),
             exit_code: code,
+            limitations: limitations_of(&result),
             result,
             diagnostics: Vec::new(),
-            limitations: Vec::new(),
         },
         Err(err) => {
             let mut d = diag::of_error(&err);
@@ -499,6 +502,15 @@ pub fn call(id: &str, input: Value, ctx: &mut Ctx<'_>) -> ToolResult {
             failed(id, e.spec.version, d)
         }
     }
+}
+
+/// The limitations (D199) of a tool's output: its field `limitations`.
+fn limitations_of(result: &Value) -> Vec<Value> {
+    result
+        .get("limitations")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
 }
 
 fn failed(id: &str, version: u32, d: Diagnostic) -> ToolResult {

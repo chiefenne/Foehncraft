@@ -71,6 +71,8 @@ def test_every_tool_through_call(tmp_path):
         r = fc.call(tool, **inputs[tool])
         assert r["format"] == "foehn.tool-result"
         assert r["status"] == "finished", (tool, r["diagnostics"])
+        # the limitations of the output in the envelope (D199)
+        assert r["limitations"] == (r["result"] or {}).get("limitations", []), tool
         results[tool] = r["result"]
     assert results["expression.eval"]["values"] == [2.5]
     assert "viscosity = 0.02" in results["case.resolve"]["toml"]

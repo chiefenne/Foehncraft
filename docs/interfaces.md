@@ -466,8 +466,10 @@ commands whose object has no `format`, the same fields without the
 codes above. A call that fails has `result: null` and its diagnostic in
 `diagnostics`: an unknown id is `TOOL001` (with the nearest id), an input
 that does not match the schema `TOOL002`. `limitations` carries the
-limitations of a run (D199, below) once the run tools of D196 part 2
-fill it from the result summary. A breaking change of a tool's input or output raises its version.
+limitations of the tool's output (D199, above): those of the result
+summary for `flow.run` and `result.read`, empty for a tool whose output
+has none; like the summary's, they change neither `status` nor the exit
+code. A breaking change of a tool's input or output raises its version.
 Human text of a tool goes to standard error (`--quiet` silences it).
 
 ## Journal and replay (D197)

@@ -244,8 +244,23 @@ fn runs_and_files_match() {
         "the same solution, bitwise"
     );
 
+    // the envelope carries the limitations of the run (D199): one mesh
+    let (_, env) = call("flow.run", &json!({"case": c, "out": b_out}));
+    assert_eq!(env["limitations"], env["result"]["limitations"]);
+    assert!(
+        env["limitations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|l| l["code"] == "LIM004"),
+        "{}",
+        env["limitations"]
+    );
     let (_, r) = call("result.read", &json!({"dir": b_out}));
     assert_eq!(r["result"]["solves"], b["solves"]);
+    assert_eq!(r["limitations"], env["limitations"]);
+    let (_, i) = call("system.info", &json!({}));
+    assert_eq!(i["limitations"], json!([]));
 
     let (_, e) = call("case.estimate", &json!({"case": c}));
     let (_, k) = cli(&["flow", c, "--check"]);
