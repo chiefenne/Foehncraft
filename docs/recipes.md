@@ -17,7 +17,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | [Incompressible flow](recipes/flow.md) | Couette, Poiseuille, cavity and cylinder runs, boundary conditions, transient runs, time-step control | 18, 19, 20, 21, 23, 28, 78, 80, 81, 83, 85, 86, 87, 94, 95, 96, 98, 99, 100, 101, 102, 103, 196 |
 | [Passive scalars and the wall distance](recipes/scalars.md) | passive scalars with their boundary conditions, bounds, exact solutions, the Nusselt number of a heated channel, the wall distance | 63 |
 | [Energy equation and heat transfer](recipes/energy.md) | the temperature of a flow: properties of T, thermal wall conditions, viscous heating, the heat balance, solid regions and conjugate heat transfer, laminar and turbulent | 154, 156, 158, 159, 160, 180, 186, 195 |
-| [Turbulence models](recipes/turbulence.md) | RANS turbulence models: the model, the wall treatment by the mesh, inlet turbulence, roughness, the near-wall checks | 68, 71, 73, 74, 88, 89, 90, 113, 115, 141, 140, 194, 193 |
+| [Turbulence models](recipes/turbulence.md) | RANS turbulence models: the model, the wall treatment by the mesh, inlet turbulence, roughness, the near-wall checks | 68, 71, 73, 74, 88, 89, 90, 113, 115, 141, 140, 194, 193, 197 |
 | [Boundary conditions](recipes/boundary-conditions.md) | slip walls, wedges for axisymmetric flow, inlet profiles from tables, backflow at pressure outlets, convective outlets, periodic modules | 29, 67 |
 | [Expressions and materials](recipes/properties.md) | values as expressions of x, y, z and t, constants and tables, wall mass flux, the material database, regions | 31, 32 |
 | [Python](recipes/python.md) | the `foehncraft` package: cases, expressions, runs with callbacks, results, materials, studies | 33 |
@@ -126,6 +126,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="qcr-consistency"></a>194 | [Run the QCR on tetrahedra and perturbed meshes](recipes/turbulence.md#qcr-consistency) | [Turbulence models](recipes/turbulence.md) |
 | <a id="variable-density"></a>195 | [Let the density of a gas follow its temperature (low-Mach variable density)](recipes/energy.md#variable-density) | [Energy equation and heat transfer](recipes/energy.md) |
 | <a id="tjunction-mixing"></a>196 | [Mix two streams in a T-junction and check the mesh](recipes/flow.md#tjunction-mixing) | [Incompressible flow](recipes/flow.md) |
+| <a id="curvature-consistency"></a>197 | [Run the curvature correction on tetrahedra and perturbed meshes](recipes/turbulence.md#curvature-consistency) | [Turbulence models](recipes/turbulence.md) |
 
 ## Adding a feature
 
