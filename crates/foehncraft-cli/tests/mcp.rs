@@ -547,6 +547,10 @@ fn a_running_case_is_steered_and_stopped_through_its_control_port() {
     let env = &r["result"]["structuredContent"];
     assert_eq!(env["exit_code"], 3, "{env}");
     assert_eq!(env["result"]["stop"]["code"], "RUN022", "{env}");
+    // the result does not list the files of the port, so that two runs of the
+    // same case stay byte-identical with and without it (D84)
+    let summary = std::fs::read_to_string(d.join("runs/live/result.json")).unwrap();
+    assert!(!summary.contains("control.token") && !summary.contains("control.json"));
     // the port is closed and its files are gone
     assert!(!d.join("runs/live/control.json").exists());
     assert!(!d.join("runs/live/control.token").exists());

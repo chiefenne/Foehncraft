@@ -755,7 +755,7 @@ pub struct FileHash {
 }
 
 /// Size and hash of every output file of `dir` except the measured ones
-/// and the control files, by name.
+/// and the control files (D40, L19), by name.
 pub fn file_hashes(dir: &Path) -> Result<Vec<FileHash>> {
     let mut out = Vec::new();
     let Ok(rd) = std::fs::read_dir(dir) else {
@@ -763,9 +763,13 @@ pub fn file_hashes(dir: &Path) -> Result<Vec<FileHash>> {
     };
     for e in rd.flatten() {
         let name = e.file_name().to_string_lossy().into_owned();
+        // the files of the live control port exist only while the run goes
+        // (L19) and hold a token: never part of the result
         if name.starts_with('.')
             || name.ends_with(".tmp")
             || MEASURED_FILES.contains(&name.as_str())
+            || name == crate::live::CONTROL_FILE
+            || name == crate::live::TOKEN_FILE
         {
             continue;
         }
