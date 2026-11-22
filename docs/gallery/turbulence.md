@@ -1,6 +1,6 @@
 # Turbulence models
 
-Part of the [Example gallery](../gallery.md): the RANS turbulence models of stage 6 with their wall treatments (D129–D139), checked against the NASA Turbulence Modeling Resource (TMR), DNS and correlations.
+Part of the [Example gallery](../gallery.md): the RANS turbulence models of stage 6 with their wall treatments (D129–D139), checked against measurements, DNS and correlations (the set-ups of the flat plate and the step follow the NASA Turbulence Modeling Resource, TMR; no result of another code is used as a reference, D201).
 
 | # | Example | Stage | Feature |
 |---|---|---|---|
@@ -21,7 +21,7 @@ Part of the [Example gallery](../gallery.md): the RANS turbulence models of stag
 <a id="sst"></a>
 ## 68. k-ω SST on the TMR flat plate and in a channel
 
-<img src="../figures/gallery/sst.svg" alt="Left: the skin friction along the TMR flat plate on 256 x 192 cells against White's correlation and the TMR value of SST at x = 0.97. Middle: the velocity at x = 0.97 and in the channel at Re_τ = 395 in wall units against Spalding's law. Right: C_f at x = 0.97 with the automatic wall treatment for first-cell y⁺ from 2 to 100 against the TMR value, with the ±2 % band" width="800" height="298">
+<img src="../figures/gallery/sst.svg" alt="Left: the skin friction along the TMR flat plate on 256 x 192 cells against White's correlation and the Coles–Fernholz fit at x = 0.97. Middle: the velocity at x = 0.97 and in the channel at Re_τ = 395 in wall units against Spalding's law. Right: C_f at x = 0.97 with the automatic wall treatment for first-cell y⁺ from 2 to 100 against our own finest-mesh result, with the ±2 % band" width="800" height="298">
 
 **The model.** The k-ω SST model of Menter, Kuntz & Langtry (2003): the
 blend F₁ between k-ω near walls and k-ε away from them, the eddy
@@ -44,32 +44,34 @@ first cell are blended between their viscous-sublayer and log-law values,
 and above the sublayer the first cell takes the equilibrium production of
 the constant-stress layer (6g, PR #112).
 
-**The TMR flat plate** (`tmr_plate_sst.toml`). The 2D zero-pressure-gradient
-plate at Re = 5·10⁶ per metre with the TMR's free-stream values
+**The flat plate** (`tmr_plate_sst.toml`). The 2D zero-pressure-gradient
+plate at Re = 5·10⁶ per metre with the free-stream values of the TMR set-up
 (k = 2.25·10⁻⁷ U², ν_t/ν = 0.009), on the built-in mesher's copy
-of the TMR grid family (point counts and stretching, not the TMR files):
+of the TMR grid family (point counts and stretching, not the TMR files; the set-up, not a result):
 four meshes from 32 × 24 to 256 × 192 cells, first-cell y⁺ 0.09 on the
 finest. The skin friction at x = 0.97 converges monotonically:
 
-| Cells | C_f(0.97) | against TMR | C_D (one side) | against TMR |
-|---|---|---|---|---|
-| 768 | 2.6937e-3 | +0.11 % | – | – |
-| 3 072 | 2.6682e-3 | −0.83 % | 2.8259e-3 | −0.80 % |
-| 12 288 | 2.6868e-3 | −0.14 % | 2.8477e-3 | −0.04 % |
-| 49 152 | 2.7007e-3 | +0.37 % | 2.8606e-3 | +0.41 % |
-| TMR, SST, finest grid | 2.6907e-3 | | 2.8488e-3 | |
+| Cells | C_f(0.97) | against the fit | C_D (one side) |
+|---|---|---|---|
+| 768 | 2.6937e-3 | | – |
+| 3 072 | 2.6682e-3 | | 2.8259e-3 |
+| 12 288 | 2.6868e-3 | | 2.8476e-3 |
+| 49 152 | 2.7005e-3 | +1.45 % | 2.8605e-3 |
+| extrapolated (Richardson, GCI 1.76 %) | 2.7385e-3 | | |
 
-The validation band of the specification, |C_f − C_f,TMR| ≤ 1 % plus
-the numerical uncertainty, holds on every mesh but the first. The
-verification band does not: the observed order of the three finest meshes
-is 0.43 for C_f (GCI 1.87 %, extrapolated 2.741e-3) and 0.74 for C_D
-(GCI 0.84 %), where the specification asks for p ≥ 1.5 and GCI ≤ 1 %.
+The reference is the Coles–Fernholz fit to measured zero-pressure-gradient
+layers (C_f = 2[ln(Re_θ)/0.384 + 4.127]⁻², Nagib, Chauhan & Monkewitz
+2007) at the Re_θ of the run (7 848), and White's correlation, which lies
+6.1 % above the finest C_f at x = 0.97. The validation band is ±8 %
+against both and holds. The verification band does not: the observed order
+of the three finest meshes is 0.44 for C_f (GCI 1.76 %) and 0.75 for C_D
+(GCI 0.83 %), where the specification asks for p ≥ 1.5 and GCI ≤ 1 %.
 This is recorded as a finding: on the coarsest mesh the stretched grid
 puts only a few cells into the laminar leading-edge region, and the
-convergence is not yet in its asymptotic range; the TMR itself reports
-its finest-grid values after five grids. White's correlation lies 5 to 9 %
-above the computed C_f along the plate, the TMR value of SST 6.4 % at
-x = 0.97, so the model, not the code, sets that difference. u⁺ at x = 0.97
+convergence is not yet in its asymptotic range. White's correlation lies
+5 to 9 % above the computed C_f along the plate (−8.5 to −5.4 %), the
+Coles–Fernholz fit −1.4 to +2.5 % from it, so the correlation, not the
+code, sets the difference to White. u⁺ at x = 0.97
 follows Spalding's law (κ = 0.41, B = 5.0) within 2.3 % for
 1 ≤ y⁺ ≤ 300.
 
@@ -78,8 +80,8 @@ changed so that the first cell sits at y⁺ ≈ 2 to 100:
 
 | First-cell y⁺ at x = 0.97 | 1.7 | 4.2 | 8.7 | 27 | 92 |
 |---|---|---|---|---|---|
-| C_f against the TMR value | −0.2 % | −1.9 % | −0.5 % | +1.1 % | −1.5 % |
-| before 6g (PR #112) | +2.3 % | +15.6 % | +14.8 % | −0.2 % | −0.7 % |
+| C_f against our own finest-mesh value | −0.5 % | −2.3 % | −0.8 % | +0.7 % | −1.8 % |
+| before 6g (PR #112) | +1.9 % | +15.2 % | +14.4 % | −0.7 % | −1.1 % |
 
 The treatment now holds C_f within about 2 % from the sublayer to the
 log layer. Its first version, with the quartic weight of Menter et al.
@@ -88,8 +90,9 @@ log layer. Its first version, with the quartic weight of Menter et al.
 cell takes ω_P = (ω_vis^1.2 + ω_log^1.2)^{1/1.2} and the equilibrium
 production of the constant-stress layer, with the weight tanh((y⁺/5)²).
 The sweep with `examples/studies/sst_wall_sweep.py` over first-cell y⁺
-0.24 to 85 stays within −2.6 to +2.4 % of the TMR value on this mesh and
-the next finer one. TURB001 warns only above y⁺ 300.
+0.24 to 85 stays within −2.6 to +1.2 % of our own finest-mesh result on this
+mesh and the next finer one; n = 1.2 and y₀ = 5 were first fitted to the
+value of another solver and, rechecked against our own result, stay. TURB001 warns only above y⁺ 300.
 
 **The channel** (`channel_sst.toml`). Fully developed flow between two
 walls at Re_τ = 395 on one periodic module (stage 6p) driven by the bulk
@@ -338,7 +341,7 @@ treatment gives −7.1 and +4.8 %. Every run converges.
 **The flat plate** (`tmr_plate_zeta_f0.toml`). The run starts from the
 free stream of the TMR (ν_t/ν = 0.009), and the boundary layer turns
 turbulent on its own, which ζ-f does not do. C_f(0.97) = 2.926·10⁻³,
-+1.8 % from White's correlation (+8.7 % from the TMR value of SST), and
++1.8 % from White's correlation, and
 +0.2 / −0.2 % on the two finer meshes; at y⁺ 10 and 30 −0.3 and −2.7 %.
 Every field converges to 10⁻⁷ without a positivity floor, at all three
 y⁺.

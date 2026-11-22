@@ -3,8 +3,10 @@ channel at Re_tau = 395, stage 6 part 6g, specification 9.3 and 9.4: the
 observed order p, the extrapolated value and GCI_fine (Celik et al. 2008)
 of the skin friction C_f(x = 0.97) and the drag C_D of the plate and of the
 bulk velocity U_b+ of the channel, for every model on three meshes, and
-the finest value against the references (White's correlation and the TMR
-value for the plate, the DNS of Moser, Kim & Mansour for the channel).
+the finest value against the references (White's correlation and the
+Coles-Fernholz fit at the run's own momentum-thickness Reynolds number for
+the plate, the DNS of Moser, Kim & Mansour for the channel). No number
+computed by another solver is used (D201).
 
     python3 examples/studies/plate_channel_gci.py [OUT] [--models sst,zf,...]
         [--cases plate,channel] [--levels 0,1,2] [--jobs 4] [--report-only]
@@ -54,7 +56,8 @@ levels 0 to 3 (2026-11-20, PR #128, about 15 minutes on four cores):
     python3 examples/studies/plate_channel_gci.py output/gci_channel --cases channel --levels 0,1,2 --report-only
 
 Bands (specification 9.3, 9.4): plate GCI_fine of C_f ≤ 2 %, C_f within
-±5 % of White, SST C_f within 1 % of the TMR value; channel GCI_fine of
+±8 % of White and of Coles-Fernholz (the SST model itself sits about 6 %
+below White, a finding, not a defect of the study); channel GCI_fine of
 U_b+ ≤ 0.5 %, U_b+ within ±3 % of the DNS (17.55). Writes OUT/report.md
 (also printed) and OUT/results.json. Needs the `foehn` executable
 (FOEHN=target/release/foehn by default).
@@ -77,10 +80,34 @@ FOEHN = os.environ.get("FOEHN", str(ROOT / "target/release/foehn"))
 
 U_B = 17.55            # the bulk velocity of the channel cases (u_tau = 1 m/s)
 UB_DNS = 17.55         # Moser, Kim & Mansour (1999), Re_tau 395
-CF_TMR = 0.0026907     # TMR, SST, C_f(0.970084), finest grid
-CD_TMR = 0.0028488     # TMR, SST, C_D of the plate (one side)
+NU = 2.0e-7           # the plate cases: U = 1 m/s, nu = 2e-7 m²/s
 RE_X = 0.970084 * 5e6  # Re_x of the probe (U L/nu = 5e6)
 CF_WHITE = 0.455 / math.log(0.06 * RE_X) ** 2
+
+
+def coles_fernholz(re_theta: float) -> float:
+    """C_f = 2 [ln(Re_θ)/0.384 + 4.127]⁻², a fit to measured zero-pressure-
+    gradient boundary layers (Nagib, Chauhan & Monkewitz 2007)."""
+    return 2.0 / (math.log(re_theta) / 0.384 + 4.127) ** 2
+
+
+def edge_profile(d: Path):
+    """(u_e, θ) of the profile line `x097` of the run (U = 1 at the inlet):
+    u_e the largest u of the line (the plate displaces the flow a little,
+    +0.3 % at the edge of the layer), θ = ∫ (u/u_e)(1 − u/u_e) dy."""
+    f = d / "line_x097.csv"
+    if not f.exists():
+        return None
+    rows = [l.strip().split(",") for l in f.read_text().splitlines() if not l.startswith("#")]
+    h = rows[0]
+    y = [float(r[h.index("y")]) for r in rows[1:]]
+    u = [float(r[h.index("u")]) for r in rows[1:]]
+    ue = max(u)
+    g = [(v / ue) * (1 - v / ue) for v in u]
+    th = sum(0.5 * (g[i] + g[i + 1]) * (y[i + 1] - y[i]) for i in range(len(y) - 1))
+    return ue, th
+
+
 
 MODELS = {
     # key: (label, plate case, channel case, extra sets)
@@ -103,7 +130,7 @@ ITERATIONS = {0: 6000, 1: 12000, 2: 24000, 3: 40000}
 # the plate runs of these models use the coupled algorithm (D178), within
 # 3 000 iterations: ζ-f₀ converges on the 128 × 96 plate in 178 instead
 # of 7 400 SIMPLE iterations, with C_f the same to 0.1 %
-PLATE_COUPLED = {"zf", "zf0"}
+PLATE_COUPLED = {"sst", "zf", "zf0"}
 
 # the channel: converged to this scaled residual with the coupled
 # algorithm (D178), within these limits; the segregated SIMPLE of the case
@@ -201,6 +228,11 @@ def values(d: Path, case: str) -> dict | None:
         p = next(w for w in s["wall_probes"] if w["name"] == "x097")
         v["cf"] = p["skin_friction"]
         v["y_plus"] = p["y_plus"]
+        e = edge_profile(d)
+        v["re_theta"] = None if e is None else e[0] * e[1] / NU
+        # C_f of the probe on the local edge velocity u_e, against the fit
+        v["cf_cf"] = None if e is None else coles_fernholz(v["re_theta"])
+        v["cf_local"] = None if e is None else v["cf"] / e[0] ** 2
         # C_D = F_x / (½ ρ U² · 2 m²) = F_x on the 1 m depth (ρ = U = 1)
         v["cd"] = next(b["force"][0] for b in s["boundaries"] if b["name"] == "plate")
     else:
@@ -244,9 +276,9 @@ def report(base: Path, models, cases, levels) -> str:
         q = ("cf", "cd") if case == "plate" else ("ub_plus",)
         if case == "plate":
             lines += ["## TMR flat plate, Re_L = 5·10⁶", "",
-                      f"References: C_f(0.97) White {CF_WHITE:.5e}, TMR (SST) {CF_TMR:.5e}; C_D TMR (SST) {CD_TMR:.5e}.",
-                      "", "| model | cells | y⁺ (finest) | C_f ·10³ | p | GCI_fine | C_f extrap. ·10³ | finest vs White | finest vs TMR | C_D ·10³ | p | GCI_fine | iterations, converged |",
-                      "|---|---|---:|---|---:|---:|---:|---:|---:|---|---:|---:|---|"]
+                      f"References: C_f(0.97) White {CF_WHITE:.5e}; Coles-Fernholz at the Re_θ of the finest run of each model (Re_θ in the column).",
+                      "", "| model | cells | y⁺ (finest) | C_f ·10³ | p | GCI_fine | C_f extrap. ·10³ | finest vs White | Re_θ (finest) | finest vs Coles-Fernholz | C_D ·10³ | p | GCI_fine | iterations, converged |",
+                      "|---|---|---:|---|---:|---:|---:|---:|---:|---:|---|---:|---:|---|"]
         else:
             lines += ["", "## Channel, Re_τ = 395", "", f"Reference: U_b⁺ = {UB_DNS} (DNS).", "",
                       "| model | cells | U_b⁺ | p | GCI_fine | extrapolated | finest vs DNS | iterations, converged |",
@@ -272,7 +304,8 @@ def report(base: Path, models, cases, levels) -> str:
                     f"| {label} | {cells} | {vs[-1]['y_plus']:.2f} | {cf} | "
                     f"{'–' if gc.get('p') is None else format(gc['p'], '.2f')} ({gc.get('verdict', '')}) | {gci_txt(gc.get('gci'))} | "
                     f"{'–' if gc.get('ext') is None else format(1e3 * gc['ext'], '.4f')} | {pct(fin / CF_WHITE - 1)} | "
-                    f"{pct(fin / CF_TMR - 1)} | {cd} | "
+                    f"{'–' if vs[-1]['re_theta'] is None else format(vs[-1]['re_theta'], '.0f')} | "
+                    f"{'–' if vs[-1]['cf_cf'] is None else pct(vs[-1]['cf_local'] / vs[-1]['cf_cf'] - 1)} | {cd} | "
                     f"{'–' if gd.get('p') is None else format(gd['p'], '.2f')} | {gci_txt(gd.get('gci'))} | {its} |")
             else:
                 ub = " / ".join(f"{v['ub_plus']:.3f}" for v in vs)

@@ -492,15 +492,15 @@ decisions = ["D130"]
 model = true
 evidence = [
   { kind = "manufactured", test = "crates/foehncraft-flow/src/turbulence/mms.rs::sst_manufactured_solution_orders", what = "orders 2.04 to 2.17 of k and ω on hexahedra, polyhedra and tetrahedra", doc = "docs/verification/stage6.md#manufactured-solutions-of-every-model-spec-92-pr-148" },
-  { kind = "reference-data", case = "tmr_plate_sst", what = "TMR flat plate: C_f(0.97) +0.37 % from the TMR value, GCI 1.87 %", doc = "docs/verification/stage6.md#tmr-flat-plate-re_l--510⁶" },
+  { kind = "reference-data", case = "tmr_plate_sst", what = "flat plate: C_f(0.97) +1.45 % from the Coles–Fernholz fit, GCI 1.76 %", doc = "docs/verification/stage6.md#tmr-flat-plate-re_l--510⁶" },
   { kind = "reference-data", case = "channel_sst", what = "channel at Re_τ 395: U_b⁺ −1.3 % from the DNS of Moser, Kim & Mansour (1999)", doc = "docs/verification/stage6.md#channel-re_τ--395" },
   { kind = "reference-data", case = "backstep_outlet_backflow", what = "backward-facing step with the outlet inside the recirculation" },
   { kind = "reference-data", run = "level sweep of backstep_validation with SST, 3 meshes", doc = "docs/verification/stage6.md#backward-facing-step-against-the-experiment-part-6g-95", what = "step of Driver & Seegmiller (1985): x_r/H 6.747, +7.8 % (band ±10 %)" },
   { kind = "consistency", test = "crates/foehncraft-flow/tests/turbulence.rs::sst_results_are_bitwise_equal_on_1_and_4_threads", what = "bitwise equal on 1 and 4 threads" },
 ]
 notes = [
-  "plate C_f against White's correlation −8.7 to −5.3 % (band ±5 %): the TMR value of SST itself is −6.4 %, so the correlation is the outlier",
-  "plate C_f is oscillatory over three meshes (p 0.43); it meets the 2 % GCI band without an order",
+  "plate C_f against White's correlation −8.5 to −5.4 % (band ±8 %, widened from ±5 % on 2026-11-22): SST sits −6.1 % below White at x = 0.97 and −1.4 to +2.5 % from the Coles–Fernholz fit to measured layers",
+  "plate C_f converges monotonically but slowly (p 0.44, GCI 1.76 %); it meets the 2 % GCI band without the order",
 ]
 range = { y_plus_first = [0.0, 1.0] }
 

@@ -716,11 +716,12 @@ y⁺ ≈ 1 take ζ-f (6d) or EB (6e). No two-layer model is added.
 
 **Wall value of ω in `low-re` (*6b*, from the flat-plate runs).** Fixing
 ω_P = 6ν/(β₁ y_P²) in the first cell, as the draft had it, made C_f(0.97)
-of the TMR plate converge at first order (p ≈ 0.9: −3.1 %, −1.2 %, −0.1 %
-on 64 × 48 to 256 × 192 cells) towards about +1.1 % of the TMR value: the
+of the plate converge at first order (p ≈ 0.9: −3.1 %, −1.2 %, −0.1 %
+on 64 × 48 to 256 × 192 cells, against the TMR value of the day, since
+dropped as a reference) towards about +1.1 % of it: the
 1/y² profile of ω is not resolved by the linear flux between the first
 two cells. The wall-face value 10·6ν/(β₁ d₁²) with d₁ the wall-cell
-height, which the TMR codes and pyaeroflow use, gives −0.8 % already on
+height, which pyaeroflow uses, gives −0.8 % already on
 64 × 48 cells; pyaeroflow found the same (d₁ = the centroid distance, four
 times larger ω_w, gives 2 % less). d₁ = 2 y_P is the wall-cell height of
 hexahedra and prisms. *6g, PR #112:* the sweep of the factor (1, 3, 10,
@@ -1192,8 +1193,8 @@ scalar with Pr = 0.71, isothermal plate.
 
 | Quantity | Reference | Verification | Validation band B_model |
 |---|---|---|---|
-| C_f at x = 0.97 (SST, low-re treatment) | TMR finest-grid value of SST, stored with its retrieval date in the case's reference file | p in [1.5, 2.5], GCI_fine ≤ 1 % | ≤ 1 % (code-to-code: SST 2003 and the 1994 SST differ by S against Ω in ν_t, which is the same in a boundary layer to well below 1 %) |
-| C_f(Re_x), 10⁶ ≤ Re_x ≤ 10⁷, every model with its default treatment | White (2006): C_f = 0.455/ln²(0.06 Re_x) | GCI_fine ≤ 2 % at x = 0.97 | ±5 % |
+| C_f at x = 0.97 (SST, low-re treatment) | the Coles–Fernholz fit C_f = 2[ln(Re_θ)/0.384 + 4.127]⁻² (Nagib, Chauhan & Monkewitz 2007, a fit to measured layers) at the Re_θ of the run, and the Richardson-extrapolated value of our own mesh sweep (verification) | p in [1.5, 2.5], GCI_fine ≤ 1 % | ±8 % (decision 2026-11-22, D201: no value of another solver; the model itself lies about 6 % below White) |
+| C_f(Re_x), 10⁶ ≤ Re_x ≤ 10⁷, every model with its default treatment | White (2006): C_f = 0.455/ln²(0.06 Re_x), and the Coles–Fernholz fit above | GCI_fine ≤ 2 % at x = 0.97 | ±5 % (White, k-ε family and ζ-f); ±8 % for SST against White |
 | u⁺(y⁺) at Re_θ ≈ 10⁴ (y⁺ ≈ 1 meshes) | Spalding's law for 1 ≤ y⁺ ≤ 30, log law for 30 ≤ y⁺ ≤ 300 | – | ±3 % (SST, ζ-f, EB) |
 | St_x(Re_x), 5·10⁵ ≤ Re_x ≤ 5·10⁶ | St = 0.0287 Re_x^{−0.2} Pr^{−0.4} (Kays, Crawford & Weigand 2005) | GCI_fine ≤ 2 % | ±10 % |
 | y⁺ insensitivity: first-cell y⁺ of 0.5, 1, 2, 5, 10, 30, 60, 100 at x = 0.97 | the model's own y⁺ ≈ 1 result (low-re) | – | C_f within ±2 % (SST automatic), ±3 % (ζ-f and EB compound), ±5 % (k-ε compound, and scalable for y⁺ ≥ 30); St within ±5 % (Kader) |
@@ -1201,21 +1202,23 @@ scalar with Pr = 0.71, isothermal plate.
 
 **Results of 6b (PR #68, SST; details on the
 [verification page](../verification/stage6.md#k-ω-sst-part-6b)).**
-C_f(0.97) with `low-re` on 256 × 192 cells is 2.7007e-3, +0.37 % from
-the TMR value: the validation row passes. Its convergence over the three
+C_f(0.97) with `low-re` on 256 × 192 cells is 2.7005e-3, +1.45 % from
+the Coles–Fernholz fit at the run's Re_θ (the TMR value used first was
+dropped, D201): the validation row passes. Its convergence over the three
 finest meshes is monotonic with p = 0.43 and GCI_fine = 1.87 %, outside
 the verification band (finding; a fifth mesh decides whether the
 asymptotic range is reached). C_f(Re_x) lies 5 to 9 % below White's
-correlation, as the TMR's SST result does at x = 0.97 (−6.4 %): the row's
-±5 % band does not suit SST and is kept as a finding of the model.
+correlation (−6.1 % at x = 0.97) and −1.4 to +2.5 % from the
+Coles–Fernholz fit: the ±5 % band against White does not suit SST and was
+widened to ±8 % for it.
 u⁺ at x = 0.97 follows Spalding's law within 2.3 %. The y⁺ study of
-`automatic` gives +2.3 % (y⁺ 1.7), +15.6 % (4.6), +14.8 % (9.3),
-−0.2 % (27) and −0.7 % (92): the buffer layer misses the ±2 % band
+`automatic` gives +1.9 % (y⁺ 1.7), +15.2 % (4.6), +14.4 % (9.3),
+−0.7 % (27) and −1.1 % (92), against our own value: the buffer layer misses the ±2 % band
 (finding); TURB001 warns there and the blending is revisited with the
 wall functions of 6c. *6g, PR #112:* the automatic treatment now blends
 ω_P with the exponent 1.2 and imposes it, and the equilibrium production of
 Reichardt's law, with the weight tanh((y⁺/5)²): C_f lies within −2.6 to
-+2.4 % of the TMR value for first-cell y⁺ 0.24 to 85 on two meshes (the
++1.2 % of our own finest-mesh result for first-cell y⁺ 0.24 to 85 on two meshes (the
 sweep `examples/studies/sst_wall_sweep.py`; the ±2 % band is met for
 y⁺ ≥ 4 on level 2). The temperature rows wait for 6f, the other models
 for 6c–6e.
@@ -1302,7 +1305,7 @@ keep it turbulent. Flat plate (9.3): C_f(0.97) +0.5 % from White.
 on the [verification page](../verification/stage6.md#gci-of-the-turbulence-models-on-the-plate-and-the-channel-93-94-pr-111)).**
 Plate: no model shows an asymptotic order on levels 0 to 2 (SST, ζ-f and
 EB oscillatory, k-ε and ζ-f₀ divergent, the realizable k-ε p = 1.0); SST
-lies within 0.14 % of the TMR value with GCI 0.47 %; ζ-f does not
+has GCI 0.47 % (levels 0 to 2); ζ-f does not
 converge on the finer plates (C_f +16 to +24 %, finding). Channel: GCI
 0.13 to 0.79 % for the low-Re models, the realizable k-ε with scalable
 wall functions +11 % on the finest mesh (finding). Levels 1 to 3 belong

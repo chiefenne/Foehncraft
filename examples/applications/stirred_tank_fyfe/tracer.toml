@@ -1,0 +1,84 @@
+# Engineering gallery: mixing time of the 2 L lab tank of Fyfe et al. (Org.
+# Process Res. Dev. 2024, 28, 3661-3673, doi:10.1021/acs.oprd.4c00229,
+# CC BY 4.0), 200 rpm, baffled: a tracer released at the liquid surface,
+# halfway between the shaft and the wall, between two baffle plates, as in
+# their phenolphthalein runs (20 mL of acid into 2 L). Transient, in the
+# frame of the rotor (D55, frozen rotor): the flow is started from the
+# steady frozen-rotor result of `case.toml` and the tracer is carried and
+# mixed by the mean flow and the turbulent diffusivity nu_t/Sc_t of the
+# k-omega SST model. The mixing time is the time at which the tracer
+# everywhere lies within 5 % of its final value (theta_95), read by
+# `mixing_time.py`.
+#
+#   python3 examples/applications/stirred_tank_fyfe/mesh.py --level 0
+#   target/release/foehn flow examples/applications/stirred_tank_fyfe/case.toml --out output/fyfe
+#   target/release/foehn flow examples/applications/stirred_tank_fyfe/tracer.toml --out output/fyfe_tracer \
+#       --set 'run.restart="output/fyfe/restart.h5"'
+#   python3 examples/applications/stirred_tank_fyfe/mixing_time.py output/fyfe_tracer
+#
+# The tracer is the mixture fraction of the added liquid (1 in the blob of
+# 20 mL, a sphere of radius 16.8 mm smoothed over 4 mm), so that the final
+# value is 20/2020 = 0.0099. The molecular diffusivity is nu/Sc with Sc =
+# 1000 (the turbulent part dominates by a factor of about 10^4).
+
+case_format = "0.6"
+
+[mesh]
+file = "fyfe_L0.msh"
+renumber = "rcm"
+
+[fluid]
+density = 998.2
+viscosity = 0.0009
+
+[constants]
+spin = 20.943951023931955   # rad/s = 200 rpm
+
+[turbulence]
+model = "k-omega-sst"
+wall_treatment = "automatic"
+
+[initial]
+turbulence_intensity = 0.05
+viscosity_ratio = 10.0
+
+[flow]
+convection = true
+
+[[mrf]]
+zone = "rotor"
+axis = [0.0, 0.0, 1.0]
+rpm = 200.0
+walls = ["impeller", "shaft"]
+
+[boundary.impeller]
+type = "wall"
+velocity = ["-spin * y", "spin * x", 0.0]
+[boundary.shaft]
+type = "wall"
+velocity = ["-spin * y", "spin * x", 0.0]
+[boundary.vessel]
+type = "wall"
+[boundary.baffles]
+type = "wall"
+[boundary.surface]
+type = "symmetry"
+
+[scalars.tracer]
+diffusivity = 9.0e-10
+initial = "0.5 * (1.0 - tanh((sqrt((x - 0.025) * (x - 0.025) + (y - 0.025) * (y - 0.025) + (z - 0.133) * (z - 0.133)) - 0.0168) / 0.004))"
+bounds = [0.0, 1.0]
+turbulent_prandtl = 0.7
+
+[solver]
+algorithm = "piso"
+
+[time]
+scheme = "bdf1"
+time_step = 0.05
+end_time = 40.0
+
+[output]
+vtkhdf = true
+wall_csv = false
+fields_interval = 2.0
