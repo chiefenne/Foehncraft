@@ -14,6 +14,7 @@ Part of the [Example gallery](../gallery.md): the built-in test mesher in 2D and
 | 134 | [One polyhedral mesh through five formats](#five-formats) | 6 | Fluent .msh and VTK readers, VTU writer, the same mesh as OpenFOAM, CGNS, .msh and VTU (D191, D192) |
 | 138 | [Taylor–Couette sliding case from a two-zone SU2 file](#su2-zones) | 6 | multi-zone SU2 and CGNS, rotor and stator as cell zones, interface boundaries, `[[sliding]]` (D195) |
 | 189 | [Which cells can the curvature correction and the QCR trust? The operator check](#operator-check) | 6 | gradient and Hessian on test fields, `MESH004`–`MESH006`, `LIM008`, `operators.csv` (D236) |
+| 200 | [Three ranks, the bits of one: the canonical local mesh](#canonical-ranks) | 8 | flipped faces, cell faces in global order, `foehn mesh` check per rank (MPI step W1, D93) |
 
 ---
 
@@ -415,6 +416,45 @@ target/release/foehn flow $F --out output/ops_tet --set output.vtkhdf=true
 target/release/foehn flow $F --out output/ops_hex --set output.vtkhdf=true \
     --set mesh.generate.type=\"hex\" --set mesh.generate.perturb=0
 python3 -m tools.plot.operator_check docs/figures/gallery/operator_check.png output/ops_hex output/ops_tet
+```
+
+[↑ back to top](#meshes)
+
+---
+
+<a id="canonical-ranks"></a>
+## 200. Three ranks, the bits of one: the canonical local mesh
+
+<img src="../figures/gallery/canonical_ranks_rank.png" alt="A perturbed 2D polyhedral mesh in three METIS parts, one colour per rank" width="800" height="448">
+
+<img src="../figures/gallery/canonical_ranks_flipped.png" alt="Faces each rank stores flipped against the global mesh, counted per cell" width="800" height="448">
+
+A perturbed 2D polyhedral mesh (325 cells) in three ranks with METIS and two
+halo layers. A rank's part is renumbered for locality, so on every rank
+some faces must be stored the other way round: a processor face is owned by
+the rank's own cell, and an inner face runs from the lower to the higher
+local cell. The lower picture counts those flipped faces per cell: 208,
+194 and 284 on ranks 0, 1 and 2. Since MPI step W1 a flipped face is
+marked, its geometry is evaluated in the node order of the global mesh with
+the sign of the area vector reversed (exact), every cell sums its faces in
+global face order, and halo cells take volume and centroid from their
+owner. The report of the run checks every face and cell of every rank
+against the one-rank mesh bit for bit: 0 faces and 0 cells differ (the run
+fails otherwise). Before W1, 30 to 40 % of the faces and all off-diagonal
+matrix rows differed in the last bits (the MPI spike, #192).
+
+| | |
+|---|---|
+| Mesh | poly 2D, 24 × 12 base grid, 325 cells, nodes perturbed by 25 % |
+| Ranks | 3 (METIS), imbalance 1.006, 50 cut faces, two halo layers |
+| Case file | `mesh/canonical_ranks.toml` |
+
+```
+target/release/foehn mesh examples/cases/mesh/canonical_ranks.toml
+python3 -m tools.mesh.render_mesh output/canonical_ranks/mesh.vtkhdf rank.png \
+    --field rank --categorical --top --size 1000x560 --title "3 ranks (METIS)"
+python3 -m tools.mesh.render_mesh output/canonical_ranks/mesh.vtkhdf flipped.png \
+    --field flipped_faces --top --size 1000x560 --title "faces stored flipped per cell"
 ```
 
 [↑ back to top](#meshes)

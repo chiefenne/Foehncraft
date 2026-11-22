@@ -21,7 +21,11 @@
 //!   out of the owner cell.
 //! - **Cell to face** lists (`cell_ptr`, `cell_faces`) for the gather loops,
 //!   packed with the orientation bit ([`foehncraft_kernels::pack_face`]), faces
-//!   in ascending order. Only for local cells.
+//!   in ascending order of the global mesh (for a mesh that is not a rank's
+//!   part, ascending local order; for a local mesh of
+//!   [`crate::decompose`], ascending face position in the global mesh, so
+//!   every per-cell sum over faces runs in global order, D93 (1)). Only for
+//!   local cells.
 //!
 //! Inner faces are sorted by owner, then neighbour (upper-triangular order),
 //! which gives the matrix rows the order of a well-numbered mesh.
@@ -166,6 +170,13 @@ pub struct Mesh {
     pub point_id: Vec<GlobalIndex>,
     /// Translational periodic faces (`None`: none; see the module docs).
     pub periodic: Option<Periodic>,
+    /// Faces stored with the reverse orientation of the global mesh they
+    /// were extracted from (empty: none, the mesh is its own global mesh).
+    /// A flipped face has its owner and neighbour swapped and its nodes
+    /// reversed after the first one; geometry evaluates it in the global
+    /// node order and flips the sign, so every rank gets the bits of the
+    /// one-rank run (D93 (3); see [`crate::decompose`]).
+    pub face_flip: Vec<bool>,
 }
 
 impl Mesh {
@@ -193,6 +204,28 @@ impl Mesh {
     #[inline]
     pub fn face(&self, f: usize) -> &[u32] {
         &self.face_nodes[self.face_ptr[f] as usize..self.face_ptr[f + 1] as usize]
+    }
+
+    /// Whether face `f` is stored reversed against the global mesh (see
+    /// [`Mesh::face_flip`]).
+    #[inline]
+    pub fn is_flipped(&self, f: usize) -> bool {
+        self.face_flip.get(f).copied().unwrap_or(false)
+    }
+
+    /// Nodes of face `f` in the order of the global mesh, and whether the
+    /// face is flipped. Reversing the loop after its first node is its own
+    /// inverse, so the global order is recovered exactly.
+    pub fn face_global_order(&self, f: usize) -> (std::borrow::Cow<'_, [u32]>, bool) {
+        let n = self.face(f);
+        if self.is_flipped(f) {
+            let mut v = Vec::with_capacity(n.len());
+            v.push(n[0]);
+            v.extend(n[1..].iter().rev());
+            (std::borrow::Cow::Owned(v), true)
+        } else {
+            (std::borrow::Cow::Borrowed(n), false)
+        }
     }
 
     /// Packed faces of local cell `c` (see [`foehncraft_kernels::unpack_face`]).
@@ -401,18 +434,30 @@ impl Mesh {
                 ));
             }
         }
+        if !self.face_flip.is_empty() && self.face_flip.len() != nf {
+            return Err(format!(
+                "face_flip has {} entries for {nf} faces",
+                self.face_flip.len()
+            ));
+        }
+        // a rank's part lists the faces of a cell in global face order (the
+        // order of the mesh it was extracted from), not in local order
+        let local_order = self.face_flip.is_empty();
         let mut edges: Vec<(u32, u32)> = Vec::with_capacity(64);
+        let mut seen: Vec<usize> = Vec::with_capacity(64);
         for c in 0..nc {
             edges.clear();
+            seen.clear();
             let mut last = None;
             for (f, is_nb) in self.cell_face_iter(c) {
                 if f >= nf {
                     return Err(format!("cell {c}: face {f} out of range"));
                 }
-                if last.is_some_and(|l| l >= f) {
+                if local_order && last.is_some_and(|l| l >= f) {
                     return Err(format!("cell {c}: faces not in ascending order"));
                 }
                 last = Some(f);
+                seen.push(f);
                 let expected = if is_nb {
                     if f >= ni {
                         return Err(format!("cell {c}: boundary face {f} flagged as neighbour"));
@@ -431,6 +476,10 @@ impl Mesh {
                     // outward direction of the edge seen from this cell
                     edges.push(if is_nb { (b, a) } else { (a, b) });
                 }
+            }
+            seen.sort_unstable();
+            if seen.windows(2).any(|w| w[0] == w[1]) {
+                return Err(format!("cell {c}: a face is listed twice"));
             }
             edges.sort_unstable();
             for w in edges.windows(2) {

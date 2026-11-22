@@ -173,6 +173,8 @@ a basis. One pull request each unless a line says two.
 | W8 | **Verification in CI** (D93): the same cases on 1, 2, 4 ranks and 1, 2, 4 threads compared by hash; on a difference the first field, iteration and global cell id where the runs part; restart written on 4 and continued on 2 | 1–1.5 h | a few minutes per case | medium |
 | W9 | **Scaling measurements and report**: strong and weak scaling as far as the hardware allows, ranks × threads splits, the overhead of the mode against the default mode on the cases of D45, T4 with two ranks sharing the GPU only if GPU ranks are in scope; "designed for" label for multi-node | 1 h of writing | 4–8 h of runs, spread over cases | low |
 
+**Status.** W1 done in #200 (2026-11-22): the canonical construction is in the library (`Mesh::face_flip`, cell faces in global order, `Geometry::compute`, `decompose::canonical_check`); the one-rank bits did not change, because the reference is the mesh handed to the decomposition.
+
 **Total of W1 to W8:** about 11 to 20 agent hours of active work in nine to
 ten pull requests, plus CI waits, plus 4 to 8 hours of runs for W9. The
 estimate has its weight in W4 and W5; if W4 needs the scalable setup, add what

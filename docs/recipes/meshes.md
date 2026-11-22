@@ -14,6 +14,7 @@ Part of the [Recipes](../recipes.md): generate, read (Gmsh, SU2, CGNS, OpenFOAM,
 | 134 | [Read a Fluent `.msh` or VTK mesh, write a VTU](#mesh-msh-vtk) |
 | 138 | [Run a rotor/stator sliding case from a multi-zone SU2 or CGNS file](#mesh-multizone) |
 | 189 | [Check which cells the velocity gradient and Hessian are exact on](#operator-check) |
+| 200 | [Check that every rank has the bits of one rank (canonical local mesh)](#canonical-ranks) |
 
 ---
 
@@ -388,5 +389,40 @@ What to do with flagged cells: regular hexahedra or polyhedra in the core
 of the flow, or (the next steps of D236) the quadratic least-squares
 operators on the flagged cells and a local remesh of the cells still
 flagged; converting tetrahedra to polyhedra (D54) is the other way.
+
+[↑ back to top](#meshes)
+
+---
+
+<a id="canonical-ranks"></a>
+## 200. Check that every rank has the bits of one rank (canonical local mesh)
+
+Every partitioned `foehn mesh` run checks the local meshes against the
+one-rank mesh bit for bit (MPI step W1, D93 (1), (3)) and stops with an
+error if any face or cell differs:
+
+```
+target/release/foehn mesh examples/cases/mesh/canonical_ranks.toml
+target/release/foehn mesh examples/cases/mesh/canonical_ranks.toml --parts 4 --method rcb
+```
+
+`mesh_report.md` has the columns `flipped faces` and `faces, cells
+differing from one rank` (always `0, 0`) in the partition table;
+`mesh_report.json` has the list `canonical` with `rank`, `flipped_faces`,
+`differing_faces` and `differing_cells` for an agent or a script;
+`mesh.vtkhdf` has the cell fields `rank` and `flipped_faces`.
+
+The same check across MPI processes, with the rows of a diffusion matrix
+(needs MPI as in recipe 4; `SPIKE_KIND` is `poly`, `hex`, `tet` or `mixed`):
+
+```
+cargo build --release -p foehncraft-mesh --features mpi --example mpi_matrix
+for n in 1 2 3 4; do SPIKE_KIND=tet mpirun --oversubscribe -n $n target/release/examples/mpi_matrix; done
+```
+
+Prints `BITWISE EQUAL TO ONE RANK` and exits with 1 otherwise. In code:
+`decompose::canonical_check(&global, &Geometry::compute(&global), &locals)`;
+the reference is the mesh handed to `decompose` (after any renumbering), so
+runs without a decomposition do not change.
 
 [↑ back to top](#meshes)

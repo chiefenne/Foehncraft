@@ -191,7 +191,12 @@ and matrix rows then differ in the last bits from the one-rank run for about
 quantities are recomputed on each rank. **Do instead:** evaluate every face
 with the node order and orientation of the global mesh (sign flip only),
 sum every cell over its faces in ascending global face id, copy halo values
-from the owner. The example `mpi_matrix` checks this on 1 to 4 ranks in CI.
+from the owner. Done in MPI step W1 (#200): `Mesh::face_flip` marks the
+flipped faces, `extract` lists cell faces in global order, and
+`Geometry::compute` is canonical on any local mesh; `foehn mesh` and the
+example `mpi_matrix` (1 to 4 ranks, four cell types, in CI) check it. Code
+that evaluates a face from its nodes on a local mesh (W3 onward) must use
+`Mesh::face_global_order`, not `Mesh::face`, where the bits matter.
 Do not compare partitions by tolerance when a bitwise comparison is
 possible: a tolerance hides the cause (D93).
 
