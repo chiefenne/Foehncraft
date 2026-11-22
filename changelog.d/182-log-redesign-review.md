@@ -1,1 +1,0 @@
-- **Requirements: log redesign review (D214).** The console log redesign is built (D125 to D128); the maintainer added `[log] detail`, a schedulable `log.columns`, a Limitations block at the start and an Events block at the end; see the [log review](docs/requirements/log-redesign-review.md). Plan only, no code.

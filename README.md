@@ -11,7 +11,7 @@
 ---
 
 > **Status: stage 6 done (RANS turbulence, heat transfer in forced
-> convection, rotating machinery), release 0.6.** The stage
+> convection, rotating machinery), stage 7 under way, release 0.7.** The stage
 > plan and every decision are in [docs/requirements.md](docs/requirements.md);
 > [What works today](#what-works-today) lists what is on `main` now. Stage 7 is
 > under way: the energy equation of the fluid and conjugate heat transfer
