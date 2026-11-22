@@ -24,7 +24,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | [Python](gallery/python.md) | cases built, run and studied from Python: expressions with Python operators, callbacks, study tables | 24 |
 | [Verification](gallery/verification.md) | the discretisation uncertainty of mesh sweeps (grid convergence index) and the generated verification manual | 25, 170 |
 | [Post-processing](gallery/post-processing.md) | derived fields: vorticity, Q, λ₂, wall shear stress, y⁺, from the run or a restart file | 22, 108, 110 |
-| [Run control, health and adjoint readiness](gallery/runs.md) | adjoint-ready kernels, runs that a program drives, balances and the divergence report, the log, the table columns, scheduled changes | 17, 18, 19, 27, 28, 29, 166, 171, 172 |
+| [Run control, health and adjoint readiness](gallery/runs.md) | adjoint-ready kernels, runs that a program drives, balances and the divergence report, the log, the table columns, scheduled changes | 17, 18, 19, 27, 28, 29, 166, 171, 172, 175 |
 
 ## All examples by number
 
@@ -103,6 +103,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | <a id="limitations"></a>170 | [Verification grades and the limitations of a run: the raw Gmsh pipe](gallery/verification.md#limitations) | [Verification](gallery/verification.md) |
 | <a id="tool-registry"></a>171 | [Every function as a tool: the catalogue an agent reads](gallery/runs.md#tool-registry) | [Run control, health and adjoint readiness](gallery/runs.md) |
 | <a id="journal"></a>172 | [A session that can be replayed: the journal of tool calls](gallery/runs.md#journal) | [Run control, health and adjoint readiness](gallery/runs.md) |
+| <a id="mcp"></a>175 | [An assistant at the controls: the MCP server](gallery/runs.md#mcp) | [Run control, health and adjoint readiness](gallery/runs.md) |
 
 ## Adding a feature
 

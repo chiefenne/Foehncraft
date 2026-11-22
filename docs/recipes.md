@@ -24,7 +24,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | [Verification](recipes/verification.md) | the discretisation uncertainty of a sweep (GCI), the generated verification manual | 34, 35, 165, 170 |
 | [Post-processing](recipes/post-processing.md) | derived fields with the output and from restart files (`foehn post derive`) | 30, 108, 110 |
 | [Engineering gallery](recipes/applications.md) | run an application of the Engineering Gallery and compare it with published data | 161 |
-| [Run control and health](recipes/runs.md) | restart, stop and steer runs, drive runs from a script or an agent, balances and divergence reports, the log, scheduled changes and case upgrades | 22, 26, 27, 37, 38, 39, 166, 171, 172 |
+| [Run control and health](recipes/runs.md) | restart, stop and steer runs, drive runs from a script or an agent, balances and divergence reports, the log, scheduled changes and case upgrades | 22, 26, 27, 37, 38, 39, 166, 171, 172, 175 |
 
 ## All recipes by number
 
@@ -115,6 +115,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="limitations"></a>170 | [Read and act on the limitations of a run](recipes/verification.md#limitations) | [Verification](recipes/verification.md) |
 | <a id="tools"></a>171 | [Call any tool from a script or an agent](recipes/runs.md#tools) | [Run control and health](recipes/runs.md) |
 | <a id="journal"></a>172 | [Record a session and replay it](recipes/runs.md#journal) | [Run control and health](recipes/runs.md) |
+| <a id="mcp"></a>175 | [Connect an assistant through the MCP server](recipes/runs.md#mcp) | [Run control and health](recipes/runs.md) |
 
 ## Adding a feature
 
