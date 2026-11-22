@@ -81,6 +81,52 @@ pub enum Eps2 {
     Cells(Buf),
 }
 
+/// The vertex stencil of the multi-dimensional limiting process (MLP): CSR
+/// lists of the cells and boundary faces of every vertex and of the
+/// vertices of every cell, and the vertex coordinates.
+#[derive(Debug, Clone, Default)]
+pub struct VertexStencil {
+    /// Start of the cells of each vertex (one more entry than vertices).
+    pub vert_ptr: Vec<u32>,
+    /// The cells of the vertices.
+    pub vert_cells: Vec<u32>,
+    /// Start of the boundary faces of each vertex.
+    pub bface_ptr: Vec<u32>,
+    /// The boundary faces (boundary face indices) of the vertices.
+    pub bfaces: Vec<u32>,
+    /// Start of the vertices of each cell (one more entry than cells).
+    pub cell_ptr: Vec<u32>,
+    /// The vertices of the cells.
+    pub cell_verts: Vec<u32>,
+    /// Vertex coordinates x, y, z.
+    pub points: [Vec<f64>; 3],
+}
+
+/// Inputs and output of [`FlowDevice::mlp_limiter`].
+#[derive(Debug, Clone, Copy)]
+pub struct MlpOps {
+    /// The stencil of [`FlowDevice::vertex_setup`].
+    pub slot: usize,
+    /// Cell values.
+    pub phi: Buf,
+    /// Boundary coefficient a per boundary face.
+    pub bc_a: Buf,
+    /// Boundary constant b per boundary face.
+    pub bc_b: Buf,
+    /// Cell gradient.
+    pub grad: Buf3,
+    /// Limiter function: 0 Barth–Jespersen, 2 Venkatakrishnan, 3, 4, 5
+    /// Nishikawa R3, R4, R5.
+    pub func: u32,
+    /// Threshold ε in the units of φ.
+    pub eps: f64,
+    /// Relaxation β of ψ between calls (1: the new value; below 1 `out`
+    /// holds the last ψ).
+    pub relax: f64,
+    /// Output ψ per cell.
+    pub out: Buf,
+}
+
 /// Inputs and outputs of [`FlowDevice::boundary_values`].
 #[derive(Debug, Clone, Copy)]
 pub struct BoundaryArgs {
@@ -244,6 +290,9 @@ pub struct ScalarFaceArgs {
     pub beta: f64,
     /// 1 with the non-orthogonal correction.
     pub nonorth: f64,
+    /// 1: linear-upwind face values clipped between the two cell values
+    /// of the face ([`foehncraft_kernels::fv::clip_increment`]).
+    pub bound: f64,
     /// Output c_P.
     pub cp: Buf,
     /// Output c_N.
@@ -943,6 +992,12 @@ pub trait FlowDevice {
         gtau: Option<[Buf3; 6]>,
         bf: Buf3,
     ) -> Result<()>;
+    /// Uploads the vertex stencil of the multi-dimensional limiting process
+    /// (MLP, Park & Kim 2012); returns its slot.
+    fn vertex_setup(&mut self, s: &VertexStencil) -> Result<usize>;
+    /// The MLP limiter ψ per cell ([`foehncraft_kernels::fv::mlp_limiter`]):
+    /// the bounds of every vertex, then the limiter at the vertices.
+    fn mlp_limiter(&mut self, a: &MlpOps) -> Result<()>;
     /// Uploads the stencil of the quadratic least-squares gradient (D236):
     /// the treated cells, the start of each stencil and its points (a cell,
     /// or the number of cells plus a boundary face index); returns the

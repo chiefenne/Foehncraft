@@ -42,6 +42,13 @@ pub enum LimiterKind {
     Venkatakrishnan,
     /// Venkatakrishnan–Wang.
     VenkatakrishnanWang,
+    /// Barth–Jespersen: ψ = min(1, Δ₊/Δ₋), strictly inside the
+    /// neighbourhood bounds (not differentiable).
+    BarthJespersen,
+    /// The multi-dimensional limiting process (Park & Kim 2012): the
+    /// reconstruction at the cell vertices bounded by the cells that share
+    /// each vertex; scalars and the energy equation only.
+    Mlp,
 }
 
 /// Krylov method of the linear solves.
@@ -141,6 +148,10 @@ impl Settings {
         );
         anyhow::ensure!(self.limiter_k >= 0.0, "[solver] limiter_k must be >= 0");
         anyhow::ensure!(
+            self.limiter != LimiterKind::Mlp,
+            "[solver] limiter = \"mlp\" is for the scalars and the energy equation of the flow solver"
+        );
+        anyhow::ensure!(
             (0.0..=1.0).contains(&self.central_blending),
             "[solver] central_blending must lie in [0, 1]"
         );
@@ -162,6 +173,9 @@ impl Settings {
             LimiterKind::None => Limiter::None,
             LimiterKind::Venkatakrishnan => Limiter::Venkatakrishnan { k: self.limiter_k },
             LimiterKind::VenkatakrishnanWang => Limiter::VenkatakrishnanWang { k: self.limiter_k },
+            LimiterKind::BarthJespersen => Limiter::BarthJespersen,
+            // refused by `validate`
+            LimiterKind::Mlp => Limiter::BarthJespersen,
         }
     }
 }

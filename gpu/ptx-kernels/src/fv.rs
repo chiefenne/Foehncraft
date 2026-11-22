@@ -234,6 +234,7 @@ pub unsafe extern "ptx-kernel" fn fv_faces(
             beta,
             nonorth,
             nonorth_limit,
+            bound: 0.0,
         };
         let (a, b, c) = fv::face_coefficients(f, &inp);
         *cp.add(f) = a;

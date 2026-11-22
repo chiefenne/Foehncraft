@@ -685,6 +685,12 @@ impl Settings {
             CASE_RANGE,
             "[solver.momentum] central_bounding must lie in [0, 1)"
         );
+        crate::need!(
+            self.momentum.limiter != LimiterKind::Mlp,
+            CASE_RANGE,
+            "[solver.momentum] limiter = \"mlp\" is not built for the velocity yet (scalars and \
+             energy only)"
+        );
         for (name, t) in [
             ("[solver.momentum] tolerance", self.momentum_tol(transient)),
             ("[solver.pressure] tolerance", self.pressure_tol(transient)),
@@ -1302,7 +1308,9 @@ impl Flow {
         let venkat = match settings.momentum.limiter {
             LimiterKind::Venkatakrishnan => true,
             LimiterKind::None => settings.face_velocity == FaceVelocity::Bounded,
-            LimiterKind::VenkatakrishnanWang => false,
+            LimiterKind::VenkatakrishnanWang | LimiterKind::BarthJespersen | LimiterKind::Mlp => {
+                false
+            }
         };
         let eps2 = if venkat {
             disc.venkat_eps2(settings.momentum.limiter_k)
@@ -2168,6 +2176,8 @@ impl Flow {
                     let e = kk * (mx - mn);
                     Eps2::Single(e * e)
                 }
+                // a negative single ε² selects Barth–Jespersen
+                LimiterKind::BarthJespersen => Eps2::Single(-1.0),
                 _ => Eps2::PerCell,
             };
             self.dev.limiter(u, ub, f.grad_u[i], eps2, psi)?;

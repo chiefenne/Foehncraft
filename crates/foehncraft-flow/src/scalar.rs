@@ -44,11 +44,12 @@
 
 use crate::bc::BoundaryCondition;
 use crate::device::{
-    Buf, Buf3, Eps2, FlowDevice, ScalarFaceArgs, ScalarRowArgs, ScalarTime, ScalarTurbOps,
+    Buf, Buf3, Eps2, FlowDevice, MlpOps, ScalarFaceArgs, ScalarRowArgs, ScalarTime, ScalarTurbOps,
     ScalarWallOps,
 };
 use crate::diag::{self, Diagnostic};
 use crate::expr::{self, Env, Scalar, Value, Vars};
+use crate::limiter::LimiterFunction;
 use anyhow::Result;
 use foehncraft_fv::disc::Discretisation;
 use foehncraft_fv::problem::BoundaryKind;
@@ -222,6 +223,27 @@ pub struct ScalarSettings {
     pub limiter: LimiterKind,
     /// Constant K of the limiter.
     pub limiter_k: f64,
+    /// `limiter = "mlp"`: the limiter function at the vertices (default
+    /// Nishikawa's R3).
+    pub limiter_function: LimiterFunction,
+    /// `limiter = "mlp"`: the threshold ε of the limiter function as a
+    /// fraction of the range of the field over the domain, ε = c (φ_max −
+    /// φ_min) in the units of the field (Wang 2000): below ε the limiter
+    /// lets smooth extrema pass, so a new extremum stays within about ε
+    /// (0: strictly bounded).
+    pub limiter_epsilon: f64,
+    /// `limiter = "mlp"`: relaxation β of the limiter value between outer
+    /// iterations, ψ ← ψ + β (ψ_new − ψ). A steady deferred correction can
+    /// lock into a two-iteration cycle of ψ in the cells of a mixing layer
+    /// (the residual then stalls); β < 1 damps it. The converged ψ is the
+    /// unrelaxed one, so the converged solution keeps its bounds (1: no
+    /// relaxation).
+    pub limiter_relaxation: f64,
+    /// Linear-upwind face values clipped to the interval of the two cell
+    /// values of the face (the convection boundedness criterion): with a
+    /// limiter the converged cell values make no new extrema on any mesh
+    /// (default false: the plain linear-upwind face value).
+    pub bounded: bool,
     /// Under-relaxation of the scalars (default 0.9 steady, 1 transient).
     pub relaxation: Option<f64>,
     /// Relative tolerance of each scalar solve (default 1e-3 steady, 1e-8
@@ -242,6 +264,10 @@ impl Default for ScalarSettings {
             central_bounding: 0.1,
             limiter: LimiterKind::Venkatakrishnan,
             limiter_k: 5.0,
+            limiter_function: LimiterFunction::R3,
+            limiter_epsilon: 0.01,
+            limiter_relaxation: 0.5,
+            bounded: false,
             relaxation: None,
             tolerance: None,
             max_iter: 50,
@@ -284,6 +310,18 @@ impl ScalarSettings {
             self.limiter_k > 0.0,
             CASE_RANGE,
             "[solver.scalar] limiter_k must be > 0"
+        );
+        crate::need!(
+            (0.0..1.0).contains(&self.limiter_epsilon),
+            CASE_RANGE,
+            "[solver.scalar] limiter_epsilon must be in [0, 1), is {}",
+            self.limiter_epsilon
+        );
+        crate::need!(
+            self.limiter_relaxation > 0.0 && self.limiter_relaxation <= 1.0,
+            CASE_RANGE,
+            "[solver.scalar] limiter_relaxation must be in (0, 1], is {}",
+            self.limiter_relaxation
         );
         crate::need!(
             (0.0..=1.0).contains(&self.central_blending)
@@ -609,6 +647,8 @@ struct Field {
     turb: TurbField,
     su: Option<Buf>,
     eps2: Option<Buf>,
+    /// The vertex stencil of `limiter = "mlp"` on the device.
+    mlp: Option<usize>,
     /// φⁿ, φⁿ⁻¹ and the φⁿ⁻¹ of the step before (taking a step back).
     old: Option<(Buf, Buf, Buf)>,
     /// The sliding mesh (D182): φⁿ and φⁿ⁻¹ with the data of the moved
@@ -905,6 +945,9 @@ pub struct Scalars {
     /// The time terms of the last step solved (the heat storage of the
     /// balance, stage 7d6).
     last_step: Option<StepTime>,
+    /// The vertex stencil on the device, once a field uses
+    /// `limiter = "mlp"` (one per mesh, shared by the fields).
+    vert: Option<usize>,
 }
 
 impl Scalars {
@@ -950,6 +993,7 @@ impl Scalars {
             })
             .collect();
         let mut fields = Vec::new();
+        let mut vert = None;
         for (name, s) in scalars {
             let dif = expr::value(
                 &s.diffusivity,
@@ -1091,6 +1135,10 @@ impl Scalars {
             } else {
                 None
             };
+            if settings.limiter == LimiterKind::Mlp && vert.is_none() {
+                vert = Some(dev.vertex_setup(&crate::limiter::vertex_stencil(mesh))?);
+            }
+            let mlp = vert.filter(|_| settings.limiter == LimiterKind::Mlp);
             let psi = dev.alloc(nc)?;
             dev.fill(psi, 1.0)?;
             let old = if transient {
@@ -1181,6 +1229,7 @@ impl Scalars {
                 turb,
                 su,
                 eps2,
+                mlp,
                 old,
                 content: None,
                 valid: None,
@@ -1208,6 +1257,7 @@ impl Scalars {
             rho_volume: geo.cell_volume[..nc].iter().map(|v| rho * v).collect(),
             t_set: f64::NAN,
             last_step: None,
+            vert,
         };
         let cells: Vec<[f64; 3]> = geo.cell_centroid[..nc].to_vec();
         s.set_values(dev, &cells, 0.0, true)?;
@@ -1432,9 +1482,25 @@ impl Scalars {
                 {
                     cd.one_sided(dev, phi_b, grad_b, bca, bcb)?;
                 }
-                if s.scheme != Scheme::Upwind && s.limiter != LimiterKind::None {
+                if let (Some(slot), false) = (f.mlp, s.scheme == Scheme::Upwind) {
+                    // ε in the units of the field (Wang 2000)
+                    let (mn, mx) = dev.min_max(f.phi)?;
+                    dev.mlp_limiter(&MlpOps {
+                        slot,
+                        phi: f.phi,
+                        bc_a: f.bc_a,
+                        bc_b: f.bc_b,
+                        grad: f.grad,
+                        func: s.limiter_function.code(),
+                        eps: s.limiter_epsilon * (mx - mn),
+                        relax: s.limiter_relaxation,
+                        out: f.psi,
+                    })?;
+                } else if s.scheme != Scheme::Upwind && s.limiter != LimiterKind::None {
                     let eps2 = match (s.limiter, f.eps2) {
                         (LimiterKind::Venkatakrishnan, Some(b)) => Eps2::Cells(b),
+                        // a negative single ε² selects Barth–Jespersen
+                        (LimiterKind::BarthJespersen, _) => Eps2::Single(-1.0),
                         _ => {
                             let (mn, mx) = dev.min_max(f.phi)?;
                             let e = s.limiter_k * (mx - mn);
@@ -1460,6 +1526,7 @@ impl Scalars {
                     },
                     beta: s.central_bounding,
                     nonorth: 1.0,
+                    bound: if s.bounded { 1.0 } else { 0.0 },
                     cp: w_cp,
                     cn: w_cn,
                     bf: w_bf,
@@ -2469,6 +2536,14 @@ impl Scalars {
             .iter()
             .map(|&z| zone_mat[z as usize])
             .collect();
+        let mlp = if case.solver.energy.limiter == LimiterKind::Mlp {
+            if self.vert.is_none() {
+                self.vert = Some(dev.vertex_setup(&crate::limiter::vertex_stencil(mesh))?);
+            }
+            self.vert
+        } else {
+            None
+        };
         let mut put = |v: &[f64]| -> Result<Buf> {
             let b = dev.alloc(v.len())?;
             dev.upload(b, v)?;
@@ -2538,6 +2613,7 @@ impl Scalars {
         } else {
             None
         };
+
         let psi = put(&vec![1.0; nc])?;
         use foehncraft_kernels::turb::thermal as th;
         let turb = TurbField {
@@ -2711,6 +2787,7 @@ impl Scalars {
             turb,
             su,
             eps2,
+            mlp,
             old,
             content: None,
             valid: None,
