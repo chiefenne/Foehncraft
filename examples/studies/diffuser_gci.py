@@ -8,7 +8,7 @@ comparison with the published measurements of Buice & Eaton is pending.
 
     python3 examples/studies/diffuser_gci.py [OUT] [--levels 0,1,2] [--jobs 3] [--report-only]
 
-C_p(x) = (p(x) - p_ref) / (1/2 rho U_b^2) on the upper wall with p_ref the
+C_p(x) = (p(x) - p_ref) / (1/2 rho U_c^2) on the upper wall with p_ref the
 wall pressure at x = -10 H, taken at x = 21 H (end of the diffuser) and
 x = 45 H (in the outlet duct). The levels run at the same time (--jobs).
 Needs the `foehn` executable (FOEHN=target/release/foehn by default).

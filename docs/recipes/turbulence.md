@@ -770,6 +770,11 @@ judge convergence by u_τ, not by the residual alone.
 <a id="diffuser"></a>
 ## 199. Run an asymmetric diffuser and find the separation
 
+The inlet is a developed channel profile: the periodic channel
+`diffuser_channel_profile.toml` (bulk velocity set so that the centreline
+velocity is 1 m/s, Re_H = U_c H/ν = 20 000) gives the table
+`diffuser_inlet_profile.csv` (`python3 examples/studies/diffuser_inlet_profile.py`;
+change the mass flow of the periodic pair if the viscosity changes).
 Make the structured mesh at a level (every level halves all intervals) and
 run with a relaxation of 0.5 (0.7 diverges):
 

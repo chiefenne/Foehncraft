@@ -1078,25 +1078,30 @@ python3 -m tools.plot.pipe_chart docs/figures/gallery/pipe_turbulent.png output/
 <a id="diffuser"></a>
 ## 199. Asymmetric plane diffuser: separation on one wall, and a grid study that does not converge
 
-<img src="../figures/gallery/diffuser_sst.png" alt="Turbulent flow through an asymmetric plane diffuser, k-omega SST, coarse mesh. Top: speed, a fast jet along the straight upper wall and a slow, separated region along the lower wall that opens at 10 degrees. Middle: turbulent viscosity ratio, large in the separated shear layer behind the diffuser. Bottom: pressure coefficient along the upper and the lower wall, rising to about 0.64 behind the diffuser" width="2000" height="1520">
+<img src="../figures/gallery/diffuser_sst.png" alt="Turbulent flow through an asymmetric plane diffuser, k-omega SST, coarse mesh. Top: speed, a fast jet along the straight upper wall and a slow, separated region along the lower wall that opens at 10 degrees. Middle: turbulent viscosity ratio, large in the separated shear layer behind the diffuser. Bottom: pressure coefficient along the upper and the lower wall, rising to about 0.54 behind the diffuser" width="2000" height="1520">
 
 The third general-purpose internal flow of D45 (stage 8): a channel of
 height H whose lower wall opens at 10° to an area ratio of 4.7
 (Buice & Eaton 1995; the diffuser is 20.99 H long), then a straight outlet
 duct. The lengths of the ducts (inlet 20 H, outlet 50 H) are our choice:
-the open 1995 brief does not give them legibly. U_b = 1 m/s,
-ν = 5·10⁻⁵ m²/s (Re_H = 20 000, inside the range 10 000 to 30 000 of the
-experiment), uniform inlet velocity with 5 % intensity, so the flow
-develops in the inlet duct; the experiment has a fully developed
-channel flow at the inlet. k-ω SST with the low-Re treatment, structured
+the open 1995 brief does not give them legibly. The Reynolds number is
+Re_H = U_c H/ν = 20 000 with the **centreline velocity** U_c = 1 m/s of
+the inlet profile, H = 1 m and ν = 5·10⁻⁵ m²/s (inside the range 10 000
+to 30 000 of the experiment; the bulk velocity is U_b = 0.893 m/s, so
+Re_b = 17 900). The inlet takes the **developed profile of a periodic
+channel run** (`diffuser_channel_profile.toml`, SST, velocity, k and ω
+written to `diffuser_inlet_profile.csv` by
+`examples/studies/diffuser_inlet_profile.py`), as the experiment has a
+fully developed channel flow at the inlet; the inlet duct of 20 H keeps it
+developed. C_p uses U_c. k-ω SST with the low-Re treatment, structured
 quadrilaterals (`examples/meshes/diffuser.py`, tanh grading, first-cell y⁺
 0.1 to 2.2, mean 0.85 and 1.3 at the two walls).
 
-On the coarse mesh (5 280 cells) the steady run converges in about 1 640
-iterations (35 s, relaxation 0.5; the default 0.7 diverges): the flow
-separates on the lower wall at x = 0.73 H, early in the diffuser, and
-reattaches at x = 30.7 H, 9.7 H behind its end; the pressure
-coefficient reaches C_p = 0.64 (C_p = (p − p(−10 H)) / ½ρU_b²).
+On the coarse mesh (5 280 cells) the steady run converges in about 1 600
+iterations (40 s, relaxation 0.5; the default 0.7 diverges): the flow
+separates on the lower wall at x = 2.3 H, early in the diffuser, and
+reattaches at x = 29.3 H, 8.3 H behind its end; the pressure
+coefficient reaches C_p = 0.54 (C_p = (p − p(−10 H)) / ½ρU_c²).
 
 **Findings, as run (no grid-convergence study).**
 
@@ -1105,7 +1110,10 @@ coefficient reaches C_p = 0.64 (C_p = (p − p(−10 H)) / ½ρU_b²).
   (momentum 4·10⁻⁴ at 3 000 iterations, k rising), on 84 480 cells the
   run at the default setting diverges in 7 iterations, and the coupled
   solver reaches its limit of 2 500 iterations on 21 120 cells with a
-  reattachment at 21.5 H instead of 30.7 H. The solution depends on the
+  reattachment at 21.5 H instead of 30.7 H (uniform inlet). The developed
+  inlet profile does not change this: on 21 120 cells it stalls again at
+  3 000 iterations (momentum residual 4·10⁻⁴, reattachment 27 H), and on
+  84 480 cells it diverges in 6 iterations. The solution depends on the
   mesh and on where the run stops, so no GCI is quoted. The cause (an
   unsteady separation that the steady SST model cannot settle, or a
   setting of ours) is not found; a transient run is the next test.
@@ -1118,7 +1126,7 @@ coefficient reaches C_p = 0.64 (C_p = (p − p(−10 H)) / ½ρU_b²).
 | | |
 |---|---|
 | Code | no new code: SU2 reader, SST low-Re (D130), wall crossings (6g) |
-| Case file | `flow/diffuser_sst.toml` (mesh `meshes/diffuser_coarse.su2`) |
+| Case file | `flow/diffuser_sst.toml` (mesh `meshes/diffuser_coarse.su2`), `flow/diffuser_channel_profile.toml` (inlet table) |
 | Study | `examples/studies/diffuser_gci.py` (levels 0 to 2; it reports the unconverged levels with a star); figure `tools/plot/diffuser_chart.py` |
 | Recipe | [199](../recipes/turbulence.md#diffuser) |
 

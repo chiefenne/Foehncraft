@@ -1,0 +1,61 @@
+# Developed channel flow for the inlet of the diffuser (diffuser_sst.toml,
+# stage 8, D45): plane channel of height H = 1 m, k-omega SST low-Re,
+# nu = 5e-5 m^2/s, one periodic module of 0.1 m, driven by the mass flow of
+# the bulk velocity U_b. The bulk velocity is set so that the centreline
+# velocity is U_c = 1 m/s, which makes Re_H = U_c H / nu = 20 000, the
+# Reynolds number quoted for the experiment (centreline velocity and
+# channel height). U_b = 0.893 m/s (mass_flow 0.0893 m^2/s per unit
+# depth) gives U_c = 1.000 m/s; change it with the viscosity.
+# The line `profile` samples the half channel from the centre plane to the
+# upper wall for the inlet table `examples/cases/flow/diffuser_inlet_profile.csv`.
+#
+#   python3 examples/studies/diffuser_inlet_profile.py
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [0.1, 1.0, 0.1]
+cells = [2, 96, 1]
+grading = { y = { ratio = 60.0, symmetric = true } }
+
+[fluid]
+density = 1.0
+viscosity = 5e-5
+
+[turbulence]
+model = "k-omega-sst"
+wall_treatment = "low-re"
+
+[initial]
+velocity = [1.0, 0.0, 0.0]
+turbulence_intensity = 0.05
+viscosity_ratio = 10.0
+
+[boundary.xmin]
+type = "periodic"
+partner = "xmax"
+mass_flow = 0.0893
+[boundary.xmax]
+type = "periodic"
+[boundary.ymin]
+type = "wall"
+[boundary.ymax]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-9
+max_iterations = 3000
+
+[solver.momentum]
+relaxation = 0.95
+
+[output]
+vtkhdf = false
+wall_csv = true
+lines = [ { name = "profile", from = [0.05, 0.5, 0.05], to = [0.05, 1.0, 0.05], points = 200 } ]

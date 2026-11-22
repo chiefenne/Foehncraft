@@ -621,7 +621,8 @@ Gaps:
 - reference-data: [`tmr_plate_sst`](../../examples/cases/flow/tmr_plate_sst.toml): flat plate: C_f(0.97) +1.45 % from the Coles–Fernholz fit, GCI 1.76 % ([results](stage6.md#tmr-flat-plate-re_l--510⁶))
 - reference-data: [`channel_sst`](../../examples/cases/flow/channel_sst.toml): channel at Re_τ 395: U_b⁺ −1.3 % from the DNS of Moser, Kim & Mansour (1999) ([results](stage6.md#channel-re_τ--395))
 - reference-data: [`pipe_turbulent_sst`](../../examples/cases/flow/pipe_turbulent_sst.toml): pipe at Re_b 5300: u_τ/U_b +4.5 % from the DNS of El Khoury et al. (2013), GCI 0.2 % (band ±6 %) (passes in CI (set linux-1), not yet in the manual)
-- consistency: [`diffuser_sst`](../../examples/cases/flow/diffuser_sst.toml): asymmetric diffuser, coarse mesh: steady solution with separation at 0.73 H and reattachment at 30.7 H (passes in CI (set linux-1), not yet in the manual)
+- consistency: [`diffuser_sst`](../../examples/cases/flow/diffuser_sst.toml): asymmetric diffuser, coarse mesh: steady solution with separation at 2.3 H and reattachment at 29.3 H, developed channel-profile inlet (passes in CI (set linux-1), not yet in the manual)
+- consistency: [`diffuser_channel_profile`](../../examples/cases/flow/diffuser_channel_profile.toml): periodic channel at centreline Re 20 000: centreline velocity 1.000 m/s, the developed inlet table of the diffuser (passes in CI (set linux-1), not yet in the manual)
 - reference-data: [`backstep_outlet_backflow`](../../examples/cases/flow/backstep_outlet_backflow.toml): backward-facing step with the outlet inside the recirculation
 - reference-data: recorded run (level sweep of backstep_validation with SST, 3 meshes): step of Driver & Seegmiller (1985): x_r/H 6.747, +7.8 % (band ±10 %) ([results](stage6.md#backward-facing-step-against-the-experiment-part-6g-95))
 - consistency: [`sst_results_are_bitwise_equal_on_1_and_4_threads`](../../crates/foehncraft-flow/tests/turbulence.rs): bitwise equal on 1 and 4 threads

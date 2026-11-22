@@ -47,12 +47,12 @@ def main(out):
     ax.text(-22, 0.5, "H = 1", ha="right", va="center")
     ax.annotate("", (ld + 52, -3.7), (ld + 52, 1), arrowprops=dict(arrowstyle="<->"))
     ax.text(ld + 53, -1.35, "4.7 H", va="center")
-    ax.text(-19.5, 1.3, "inlet: u = 1 m/s, Tu 5 %, ν_t/ν 10", va="bottom", fontsize=8)
+    ax.text(-19.5, 1.3, "inlet: developed channel profile (U_c = 1 m/s)", va="bottom", fontsize=8)
     ax.text(ld + 50, 1.3, "outlet: static p = 0", ha="right", va="bottom", fontsize=8)
     ax.text(30, 1.3, "upper wall (no slip, y = 1)", ha="center", va="bottom", fontsize=8)
     ax.text(18, -2.2, "lower wall (no slip)", ha="center", fontsize=8, rotation=-10)
     ax.set_xlim(-26, ld + 62); ax.set_ylim(-6, 3.4); ax.set_aspect("auto")
-    ax.set_title("Geometry (units of H; Re_H = U_b H/ν = 20 000, ν = 5e-5 m²/s; z: symmetry planes)")
+    ax.set_title("Geometry (units of H; Re_H = U_c H/ν = 20 000, ν = 5e-5 m²/s; z: symmetry planes)")
     for a, (x0, x1, y0, y1, ttl) in zip(axs[1:], [(-3, 12, -2.6, 1.4, "Mesh at the start of the diffuser"),
                                               (-0.6, 0.6, -0.12, 1.05, "Inlet-duct cross-section and wall clustering at x = 0 (zoom)")]):
         segs = []

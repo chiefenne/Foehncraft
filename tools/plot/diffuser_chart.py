@@ -48,6 +48,7 @@ def main(out: str, work: str = "/tmp/diffuser_chart") -> None:
     w.mkdir(parents=True, exist_ok=True)
     text = (ROOT / "examples/cases/flow/diffuser_sst.toml").read_text()
     text = text.replace('file = "../../meshes/diffuser_coarse.su2"', f'file = "{ROOT / "examples/meshes/diffuser_coarse.su2"}"')
+    text = text.replace('table = "diffuser_inlet_profile.csv"', f'table = "{ROOT / "examples/cases/flow/diffuser_inlet_profile.csv"}"')
     lines = ", ".join(
         f'{{ name = "s{i}", from = [{x}, {ylow(x) + 0.004}, 0.5], to = [{x}, 0.996, 0.5], points = 70 }}'
         for i, x in enumerate(stations()))
@@ -64,7 +65,7 @@ def main(out: str, work: str = "/tmp/diffuser_chart") -> None:
     cx, cy = xs[tri.triangles].mean(axis=1), ys[tri.triangles].mean(axis=1)
     tri.set_mask(cy < np.array([ylow(x) for x in cx]) - 1e-9)
     fig, axs = plt.subplots(3, 1, figsize=(10, 7.6), dpi=200, gridspec_kw={"height_ratios": [1, 1, 0.8]})
-    for ax, v, lab, cmap in [(axs[0], sp, "speed |u| / U_b", "turbo"), (axs[1], nt, "turbulent viscosity ratio ν_t / ν", "magma")]:
+    for ax, v, lab, cmap in [(axs[0], sp, "speed |u| / U_c", "turbo"), (axs[1], nt, "turbulent viscosity ratio ν_t / ν", "magma")]:
         t = ax.tricontourf(tri, v, levels=40, cmap=cmap)
         fig.colorbar(t, ax=ax, label=lab, pad=0.01)
         ax.set_aspect("equal"); ax.set_ylabel("y / H")
