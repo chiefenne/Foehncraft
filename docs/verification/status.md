@@ -641,7 +641,7 @@ Gaps:
 - reference-data: [`channel_sst`](../../examples/cases/flow/channel_sst.toml): channel at Re_τ 395: U_b⁺ −1.3 % from the DNS of Moser, Kim & Mansour (1999) ([results](stage6.md#channel-re_τ--395))
 - reference-data: [`pipe_turbulent_sst`](../../examples/cases/flow/pipe_turbulent_sst.toml): pipe at Re_b 5300: u_τ/U_b +4.5 % from the DNS of El Khoury et al. (2013), GCI 0.2 % (band ±6 %) (passes in CI (set linux-1), not yet in the manual)
 - consistency: [`diffuser_sst`](../../examples/cases/flow/diffuser_sst.toml): asymmetric diffuser with rounded corners, developed channel-profile inlet: converges on three meshes (6 960 to 111 360 cells); reattachment 28.94 H (GCI 0.36 %), separation 2.20 H (GCI 4 %), C_p(45 H) 0.5465 (GCI below 0.01 %) (passes in CI (set linux-1), not yet in the manual) ([results](../gallery/turbulence.md#diffuser))
-- consistency: [`diffuser_sst_sharp`](../../examples/cases/flow/diffuser_sst_sharp.toml): the same diffuser with sharp corners (cells shortened towards the corners): converges; separated region from 1.82 H to 29.29 H on 8 400 cells (passes in CI (set linux-2), not yet in the manual) ([results](../gallery/turbulence.md#diffuser))
+- consistency: [`diffuser_sst_sharp`](../../examples/cases/flow/diffuser_sst_sharp.toml): the same diffuser with sharp corners (cells shortened towards the corners), three meshes (8 400 to 134 400 cells): reattachment 29.03 H (GCI 0.51 %), C_p(45 H) 0.5417 (GCI 0.15 %), separation 2.03 H (order 0.6, GCI 9 %) (passes in CI (set linux-2), not yet in the manual) ([results](../gallery/turbulence.md#diffuser))
 - consistency: [`diffuser_channel_profile`](../../examples/cases/flow/diffuser_channel_profile.toml): periodic channel at centreline Re 20 000: centreline velocity 1.000 m/s, the developed inlet table of the diffuser (passes in CI (set linux-1), not yet in the manual)
 - consistency: [`ubend_sst`](../../examples/cases/flow/ubend_sst.toml): U-bend of Monson et al., Rc/H = 1, Re_b 1e5, developed channel-profile inlet: converges on three meshes (8 832 to 141 312 cells); inner-wall separation 139.8 deg (GCI 0.19 %), reattachment 2.19 H behind the turn (GCI 2.9 %, oscillatory), wall C_p GCI 0.03 to 0.27 % (passes in CI (set linux-1), not yet in the manual) ([results](../gallery/turbulence.md#ubend))
 - consistency: [`ubend_sst_sharp`](../../examples/cases/flow/ubend_sst_sharp.toml): the same U-bend with sharp edges (square divider end and end wall): converges on 12 624 and 50 400 cells; separated region behind the divider end closes at 3.05 H and 2.89 H (passes in CI (set linux-2), not yet in the manual) ([results](../gallery/turbulence.md#ubend))
@@ -652,7 +652,7 @@ Gaps:
 
 Gaps:
 
-- asymmetric diffuser (gallery 199): not compared with the measurements of Buice & Eaton (pending); the separation point converges at order 1.6 only (GCI 4 %), and the steady solver needs about three times the iterations per halving of the mesh (4 909 on 111 360 cells) while the jet moves slowly to the upper wall
+- asymmetric diffuser (gallery 199): not compared with the measurements of Buice & Eaton (pending); the separation point converges at order 1.6 only (GCI 4 %), and the steady solver needs about three times the iterations per halving of the mesh (4 909 on 111 360 cells) while the jet moves slowly to the upper wall; with sharp corners the finest mesh ends at the 8 000-iteration cap with residuals of 4e-7 and the separation point converges at order 0.6 (GCI 9 %)
 - U-bend (gallery 204): not compared with the measurements of Monson et al. (pending, owner choice: GCI first); the Re_b 1e6 case of the experiment not run; the reattachment converges oscillatory (GCI 2.9 %); the sharp-edged variant needs relaxation 0.5 at the start and its finest mesh is not in the study yet
 
 Notes:
@@ -1066,12 +1066,15 @@ Gaps:
 - consistency: [`loop_matches_the_fully_coupled_periodic_state`](../../crates/foehncraft-flow/tests/cht_cycle.rs): V7.39: heat flow and wall temperatures within 1 % of the fully coupled periodic state; V7.40: heat balance of every fluid step and every solid phase to 10⁻⁹
 - consistency: [`robin_solid_phase_is_slower_and_says_so`](../../crates/foehncraft-flow/tests/cht_cycle.rs): the first-cell Robin solid phase converges slowly and says so (CYC004); its balance closes
 - consistency: [`wrong_settings_are_refused`](../../crates/foehncraft-flow/tests/cht_cycle.rs): settings that cannot be used are refused (CYC001)
+- consistency: [`cht_pulsating_channel_skin`](../../examples/cases/flow/cht_pulsating_channel_skin.toml): thin-skin wall (δ = 0.03 m): the loop with the skin swing and three fully coupled cycles ends at 1250 s within 0.016 K of the fully coupled periodic state (10 000 s) and within 0.1 % on the swing (passes in CI (set long), not yet in the manual) ([results](../gallery/energy.md#cht-cycle-skin))
+- consistency: [`skin_swing_and_resolved_cycles`](../../crates/foehncraft-flow/tests/cht_cycle.rs): the skin swing converges with the wall temperatures, the fully coupled cycles give the heat put in, the estimated swing is within 10 % of theirs, the ledger closes to 10⁻⁹ in every step
+- consistency: [`skin_deeper_than_the_wall_warns`](../../crates/foehncraft-flow/tests/cht_cycle.rs): CYC003 where the skin depth reaches through the wall
 
 Gaps:
 
-- V7.38 not built: no exact solution of a slab under a periodic gas temperature and heat transfer coefficient
-- the swing of the wall temperature over a cycle is not resolved (the skin of the solids, CYC003, comes later)
+- V7.38 not built: no exact solution of a slab under a periodic gas temperature and heat transfer coefficient (the skin swing is checked against the fully coupled run only)
 - laminar case only; no turbulent periodic case yet
+- a restart with [energy.acceleration] is refused
 
 <a id="cht-turbulent"></a>
 
@@ -1333,6 +1336,8 @@ Gaps:
 - contract (control): [`stop_file_ends_the_run`](../../crates/foehncraft-flow/tests/stage5.rs): a stop file ends the run
 - contract (control): [`transient_run_starts_from_a_steady_restart`](../../crates/foehncraft-flow/tests/stage5.rs): a transient run starts from a steady restart file and a converged state stays
 - contract (control): [`sigterm_stops_cleanly_and_restart_latest_continues_bitwise`](../../crates/foehncraft-cli/tests/run_contract.rs): SIGTERM writes a restart file and exits cleanly
+- contract (bitwise): [`cht_restart_continues_bit_identically`](../../crates/foehncraft-flow/tests/cht_cycle.rs): conjugate runs: a transient run, the cycle loop in a fluid phase, with the skin swing and in the fully coupled cycles continue bitwise (#202)
+- contract (bitwise): [`steady_cht_restart_keeps_the_solid_temperatures`](../../crates/foehncraft-flow/tests/cht_cycle.rs): a steady conjugate run continues from the temperatures of its solids (#202)
 
 Contracts: `bitwise`, `control`.
 

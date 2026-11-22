@@ -2436,6 +2436,7 @@ fn steady_restart(fl: &mut Flow, mesh: &Mesh, name: &str) -> Result<Restart> {
         sweep: fl.sweep.clone(),
         transient: None,
         geometry: None,
+        cht: crate::cht::restart_part(fl, None)?,
     })
 }
 
@@ -2797,6 +2798,7 @@ pub fn run_steered(
                 );
             }
             fl.load(&r.state)?;
+            crate::cht::load_restart(&mut fl, r.cht.as_ref(), &path)?;
             fl.iteration = r.iteration;
             if let Some(m) = &r.amg_matrix {
                 fl.restore_amg(m, r.amg_setups)?;

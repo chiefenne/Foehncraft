@@ -143,7 +143,9 @@ fine meshes (2026-11-22). Four causes, each found by switching one thing:
   - shorten the wall cells towards the corner: A about 11 at the kink
     (`diffuser.py --sharp`, case `diffuser_sst_sharp.toml`), one wall-cell
     height of offset instead of 13, converges on levels 0 and 1 (1 087
-    and 2 699 iterations);
+    and 2 699 iterations) and reaches residuals of 4·10⁻⁷ on level 2 at
+    the cap of 8 000 iterations, with the probes steady from iteration
+    4 000;
   - round the corner where the geometry has a radius (the experiment has
     4.3 H): the error then falls as Δx² (0.10 and 0.017 of the velocity on
     levels 0 and 1, against 0.55 and 0.27 with the sharp corner).
@@ -287,3 +289,22 @@ cycle means (3 to 4 updates). The defect goes into the solid cells only;
 put into the fluid cells it changed the fluid's answer (75 W instead of
 160 W). Before building a partitioned loop, compare the interface
 conductance the partner sees with the true response of the other side.
+The classic loop with an h against the bulk temperature (about h A) is
+much closer than the first-cell h and converges in a few passes where
+ṁ c_p is large against h A; it is slow where the bulk follows the wall.
+
+Three more from the skin swing (#202):
+- **A lagged swing oscillates.** The swing of the held wall changes the
+  flux it is computed from; updated after the fact it swung between 0.08
+  and 0.49 K per update. Its amplitudes belong in the unknowns of the
+  quasi-Newton update next to the wall temperatures.
+- **Release into fully coupled cycles from the full skin profile.** Freed
+  from the mean, the solids lack the energy of the swing in the skin, and
+  that error leaves with the time constant of the whole wall, not of the
+  skin (0.3 K after three cycles); started from the damped and delayed
+  swing in depth it was 0.016 K.
+- **Material values, not the face values, before the first step.** The
+  conductivity and c_p on the faces of the energy equation are the
+  fluid's until the first refresh; an effusivity taken from them at the
+  start was 12 % off on a wall with k_s = k_f, and wrong by the ratio of
+  conductivities on any other.

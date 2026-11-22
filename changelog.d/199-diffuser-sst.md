@@ -9,9 +9,12 @@
   gallery 199, `examples/studies/diffuser_gci.py`): the reattachment point
   (28.94 H on 111 360 cells) has a GCI of 0.36 %, the separation point
   (2.20 H) 4 % and the pressure recovery 0.03 % or less. With sharp corners
-  the two coarser meshes converge; the reattachment and the pressure
-  recovery are within 1 % of the rounded ones. No comparison with
-  measurements yet (pending). Gallery and recipe 199.
+  (three meshes, 8 400 to 134 400 cells) the reattachment point (29.03 H)
+  has a GCI of 0.51 % and the pressure recovery 0.15 % or less, within
+  1.1 % of the rounded ones; the separation point converges at order 0.6
+  only (GCI 9 %), since the wall shear stays near zero for 1.5 H behind
+  the corner. No comparison with measurements yet (pending). Gallery and
+  recipe 199.
 - **Why the diffuser did not converge before.** A sharp wall corner makes
   the least-squares gradient of thin wall cells wrong by O(1), and linear
   upwind from the first iteration diverged on it; trapezoidal wall cells

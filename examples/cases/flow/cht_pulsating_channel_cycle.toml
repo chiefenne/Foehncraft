@@ -6,13 +6,14 @@
 #   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/cht_pulsating_channel_cycle.toml
 #
 # The loop alternates fluid phases (two periods with the wall temperatures
-# held, the second averaged) and steady solves of the wall with the
-# cycle-mean Robin pair (Ḡ, T̄_ref) of every interface face. It stops when
-# the wall temperatures change by less than 0.01 K and the interface heat
-# flow by less than 0.1 % between two updates. The fully coupled transient
-# run (the same case without [energy.cycle]) needs about 3000 s, sixty
-# periods, to reach its periodic state, with the wall's time constant of
-# about 300 s.
+# held, the second averaged) and steady solves of the whole energy
+# equation with the cycle-mean mass flux, the solids corrected by the
+# cycle-mean heat flow of each interface face (solid_model = "mean-flow").
+# It stops when the wall temperatures change by less than 0.01 K and the
+# interface heat flow by less than 0.1 % between two updates: after 4
+# updates, at 500 s. The fully coupled transient run (--set
+# energy.cycle.enabled=false) is within 0.1 K of its periodic state from
+# about 1350 s, with the wall's time constant of about 300 s.
 
 case_format = "0.6"
 
