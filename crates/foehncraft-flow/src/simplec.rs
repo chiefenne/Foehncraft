@@ -2436,6 +2436,52 @@ impl Flow {
         }
     }
 
+    /// The force per unit volume of the explicit stress of the QCR
+    /// (`turbulence.qcr`) on every cell, from the velocity gradient and
+    /// the eddy viscosity as they are: the face sums that the momentum
+    /// equations take (verification: manufactured stress, stage 6
+    /// specification 9.2). Zero without the QCR.
+    pub fn explicit_stress_force(&mut self) -> Result<Vec<[f64; 3]>> {
+        let nf = self.disc.n_faces;
+        let mut bf = Vec::new();
+        for _ in 0..3 {
+            let b = self.dev.alloc(nf)?;
+            self.dev.fill(b, 0.0)?;
+            bf.push(b);
+        }
+        let bf = Buf3 {
+            x: bf[0],
+            y: bf[1],
+            z: bf[2],
+        };
+        if let Some(t) = self.turbulence.as_ref() {
+            t.add_explicit_stress(&mut *self.dev, self.f.grad_u, bf)?;
+        }
+        let mut v = Vec::new();
+        for b in bf.all() {
+            v.push(self.dev.download(b)?);
+        }
+        let d = &self.disc;
+        let mut force = vec![[0.0; 3]; d.n_cells];
+        for f in 0..nf {
+            // b_f is subtracted from the owner row and added to the
+            // neighbour row of the momentum equations: the force on the
+            // owner is the flux through the face, ∮ τ·dS = −b_f
+            for c in 0..3 {
+                force[d.owner[f] as usize][c] -= v[c][f];
+                if f < d.n_interior {
+                    force[d.neighbour[f] as usize][c] += v[c][f];
+                }
+            }
+        }
+        for (c, fc) in force.iter_mut().enumerate() {
+            for x in fc.iter_mut() {
+                *x /= d.cell_volume[c];
+            }
+        }
+        Ok(force)
+    }
+
     /// One steady outer iteration of the turbulence equations alone, with
     /// the velocity and the fluxes as they are (verification: manufactured
     /// solutions with a prescribed velocity, stage 6 specification 9.2).

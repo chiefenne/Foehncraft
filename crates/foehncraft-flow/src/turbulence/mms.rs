@@ -49,10 +49,62 @@ const U0: f64 = 0.25;
 const NU: f64 = 1e-5;
 const PI: f64 = std::f64::consts::PI;
 
+/// The prescribed flow of a model's manufactured solution.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Flow {
+    /// u = U₀ (sin πx cos πy, −cos πx sin πy): S_xy = 0, no DS_ij/Dt of
+    /// the rotation term.
+    Cellular,
+    /// The stream function of [`Flow::Cellular`] with the modes
+    /// (2, 1) and (1, 2) added (β = 1): a strain tensor that turns along
+    /// the streamlines, so that every term of r̃ of the curvature
+    /// correction is active.
+    Mixed,
+}
+
+thread_local! {
+    /// The flow of the test running in this thread.
+    static FLOW: std::cell::Cell<Flow> = const { std::cell::Cell::new(Flow::Cellular) };
+}
+
+const BETA: f64 = 1.0;
+
 fn vel(x: P) -> [f64; 2] {
     let (sx, cx) = (PI * x[0]).sin_cos();
     let (sy, cy) = (PI * x[1]).sin_cos();
-    [U0 * sx * cy, -U0 * cx * sy]
+    match FLOW.get() {
+        Flow::Cellular => [U0 * sx * cy, -U0 * cx * sy],
+        Flow::Mixed => {
+            let (s2x, c2x) = (2.0 * PI * x[0]).sin_cos();
+            let (s2y, c2y) = (2.0 * PI * x[1]).sin_cos();
+            [
+                U0 * (sx * cy + BETA * s2x * cy + BETA * sx * c2y),
+                -U0 * (cx * sy + 2.0 * BETA * c2x * sy + 0.5 * BETA * cx * s2y),
+            ]
+        }
+    }
+}
+
+/// The velocity components as expressions of the case file.
+fn vel_text(flow: Flow) -> [String; 2] {
+    match flow {
+        Flow::Cellular => [
+            format!("{U0} * sin(pi * x) * cos(pi * y)"),
+            format!("-{U0} * cos(pi * x) * sin(pi * y)"),
+        ],
+        Flow::Mixed => [
+            format!(
+                "{U0} * (sin(pi * x) * cos(pi * y) + {BETA} * sin(2 * pi * x) * cos(pi * y) \
+                 + {BETA} * sin(pi * x) * cos(2 * pi * y))"
+            ),
+            format!(
+                "-{U0} * (cos(pi * x) * sin(pi * y) + {} * cos(2 * pi * x) * sin(pi * y) \
+                 + {} * cos(pi * x) * sin(2 * pi * y))",
+                2.0 * BETA,
+                0.5 * BETA
+            ),
+        ],
+    }
 }
 
 fn k_exact(x: P) -> f64 {
@@ -179,11 +231,69 @@ trait Model {
     fn second(&self) -> &'static str;
     fn fields(&self) -> Vec<fn(P) -> f64>;
     fn eqs(&self, x: P) -> Vec<Eq>;
+    /// The prescribed flow.
+    fn flow(&self) -> Flow {
+        Flow::Cellular
+    }
+    /// The `turbulence.model` of the case, when it is not the name of the
+    /// test.
+    fn key(&self) -> Option<&'static str> {
+        None
+    }
+    /// Further keys of the `[turbulence]` table.
+    fn extra(&self) -> &'static str {
+        ""
+    }
+}
+
+/// S_ij of the prescribed flow.
+fn sij(x: P, i: usize, j: usize) -> f64 {
+    let g = grad_u(x);
+    0.5 * (g[i][j] + g[j][i])
+}
+
+/// The rotation function f_r1 of the curvature correction of Smirnov &
+/// Menter (2009), c_r1 = 1, c_r2 = 2, c_r3 = 1, from the definitions
+/// f_r1 = max[0, min(f_rotation, 1.25)],
+/// f_rotation = (1 + c_r1) 2r*/(1 + r*) [1 − c_r3 atan(c_r2 r̃)] − c_r1,
+/// r* = S/Ω, r̃ = 2 Ω_ik S_jk DS_ij/Dt/(Ω D³), D² = max(S², 0.09 ω²), in
+/// the inertial frame, with DS_ij/Dt = u·∇S_ij of the steady flow.
+fn fr1_exact(x: P) -> f64 {
+    let g = grad_u(x);
+    let (mut s2, mut o2) = (0.0, 0.0);
+    let mut s = [[0.0; 2]; 2];
+    let mut w = [[0.0; 2]; 2];
+    for i in 0..2 {
+        for j in 0..2 {
+            s[i][j] = 0.5 * (g[i][j] + g[j][i]);
+            w[i][j] = 0.5 * (g[i][j] - g[j][i]);
+            s2 += 2.0 * s[i][j] * s[i][j];
+            o2 += 2.0 * w[i][j] * w[i][j];
+        }
+    }
+    let (sm, om) = (s2.sqrt(), o2.sqrt());
+    let rs = sm / om;
+    let d2 = s2.max(0.09 * w_exact(x).powi(2));
+    let u = vel(x);
+    let mut num = 0.0;
+    for i in 0..2 {
+        for j in 0..2 {
+            let ds = dot(u, grad(&|y| sij(y, i, j), x));
+            let a: f64 = (0..2).map(|k| w[i][k] * s[j][k]).sum();
+            num += a * ds;
+        }
+    }
+    let rt = 2.0 * num / (om * d2 * d2.sqrt());
+    let fr = 2.0 * 2.0 * rs / (1.0 + rs) * (1.0 - (2.0 * rt).atan()) - 1.0;
+    fr.min(1.25).max(0.0)
 }
 
 /// k-ω SST 2003 (Menter, Kuntz & Langtry 2003; the production limiter
-/// 10 β* k ω, P̃_k in both equations).
-struct Sst;
+/// 10 β* k ω, P̃_k in both equations); with `curv` the production of both
+/// equations times f_r1 (Smirnov & Menter 2009), after the limiter.
+struct Sst {
+    curv: bool,
+}
 
 struct SstPoint {
     nu_t: f64,
@@ -192,7 +302,7 @@ struct SstPoint {
     cross: f64,
 }
 
-fn sst_point(x: P) -> SstPoint {
+fn sst_point(x: P, curv: bool) -> SstPoint {
     let (bs, a1, sw2) = (0.09, 0.31, 0.856);
     let (k, w, d) = (k_exact(x), w_exact(x), d_exact(x));
     let s = strain(x);
@@ -206,6 +316,7 @@ fn sst_point(x: P) -> SstPoint {
     let f2 = (arg2 * arg2).tanh();
     let nu_t = a1 * k / (a1 * w).max(s * f2);
     let pk = (nu_t * s * s).min(10.0 * bs * k * w);
+    let pk = if curv { fr1_exact(x) * pk } else { pk };
     SstPoint {
         nu_t,
         f1,
@@ -218,11 +329,28 @@ impl Model for Sst {
     fn second(&self) -> &'static str {
         "omega"
     }
+    fn key(&self) -> Option<&'static str> {
+        Some("k-omega-sst")
+    }
+    fn flow(&self) -> Flow {
+        if self.curv {
+            Flow::Mixed
+        } else {
+            Flow::Cellular
+        }
+    }
+    fn extra(&self) -> &'static str {
+        if self.curv {
+            "curvature_correction = true\n"
+        } else {
+            ""
+        }
+    }
     fn fields(&self) -> Vec<fn(P) -> f64> {
         vec![k_exact, w_exact]
     }
     fn eqs(&self, x: P) -> Vec<Eq> {
-        let p = sst_point(x);
+        let p = sst_point(x, self.curv);
         let (k, w) = (k_exact(x), w_exact(x));
         let b = |a: f64, c: f64| p.f1 * a + (1.0 - p.f1) * c;
         let (sk, sw) = (b(0.85, 1.0), b(0.5, 0.856));
@@ -234,6 +362,36 @@ impl Model for Sst {
                 gamma / p.nu_t * p.pk - beta * w * w + (1.0 - p.f1) * p.cross,
             ),
         ]
+    }
+}
+
+/// k-ω SST with the quadratic constitutive relation (`turbulence.qcr`):
+/// the k and ω equations are those of [`Sst`] (the production keeps the
+/// linear stress); the stress enters the momentum equations, checked by
+/// [`qcr_orders`].
+struct SstQcr {
+    c2013: bool,
+}
+
+impl Model for SstQcr {
+    fn second(&self) -> &'static str {
+        "omega"
+    }
+    fn fields(&self) -> Vec<fn(P) -> f64> {
+        vec![k_exact, w_exact]
+    }
+    fn eqs(&self, x: P) -> Vec<Eq> {
+        Sst { curv: false }.eqs(x)
+    }
+    fn key(&self) -> Option<&'static str> {
+        Some("k-omega-sst")
+    }
+    fn extra(&self) -> &'static str {
+        if self.c2013 {
+            "qcr = \"qcr2013\"\n"
+        } else {
+            "qcr = \"qcr2000\"\n"
+        }
     }
 }
 
@@ -325,13 +483,29 @@ impl Model for RealizableKe {
 /// ν_t = C_μ ζ k T, C_ε1 = 1.4 (1 + 0.012/ζ); the f equation in the
 /// divergence form −∇·(L²∇f) + f of the solver (the paper writes L²∇²f;
 /// the two differ by ∇L²·∇f).
-struct ZetaF;
+struct ZetaF {
+    /// The f₀ form of Popovac (2023) with the choices of 6d2 and #141
+    /// (`k-epsilon-zeta-f0`).
+    f0: bool,
+}
 
-fn zeta_f_scales(x: P) -> (f64, f64) {
+/// The coefficient of ν_t, ν_t = C_μ ζ k T, and the coefficient a of the
+/// realizability bound of T and L (a = 0.6 √2 of our ζ-f₀ default: the
+/// bound written with S = (2 S_ij S_ij)^½).
+fn zeta_f_coefficients(f0: bool) -> (f64, f64) {
+    if f0 {
+        (0.09 / 0.41, 0.6 * 2f64.sqrt())
+    } else {
+        (0.22, 0.6)
+    }
+}
+
+fn zeta_f_scales(x: P, f0: bool) -> (f64, f64) {
     let (k, e, z) = (k_exact(x), e_exact(x), z_exact(x));
     let s = strain(x);
-    let den = 6f64.sqrt() * 0.22 * s * z;
-    let t = (k / e).min(0.6 / den).max(6.0 * (NU / e).sqrt());
+    let (cm, a) = zeta_f_coefficients(f0);
+    let den = 6f64.sqrt() * cm * s * z;
+    let t = (k / e).min(a / den).max(6.0 * (NU / e).sqrt());
     let l = 0.36
         * (k.powf(1.5) / e)
             .min(k.sqrt() / den)
@@ -349,9 +523,31 @@ impl Model for ZetaF {
     fn eqs(&self, x: P) -> Vec<Eq> {
         let (k, e, z, f) = (k_exact(x), e_exact(x), z_exact(x), f_exact(x));
         let s = strain(x);
-        let (t, l) = zeta_f_scales(x);
-        let nu_t = 0.22 * z * k * t;
+        let (t, l) = zeta_f_scales(x, self.f0);
+        let nu_t = zeta_f_coefficients(self.f0).0 * z * k * t;
         let pk = nu_t * s * s;
+        if self.f0 {
+            // Popovac (2023): ν_t = (c_μ/ζ_eq) ζ k T; C_ε1 = 1.4 (1 +
+            // 0.009/ζ); the sink of k max(k/T_K, 2νk/d²) with T_K =
+            // max(k/ε, C_T (ν/ε)^½); the ζ equation
+            // f₀ − ζ [P_k/ε + (N_ζ − 1)]/T and the f₀ equation
+            // −L²∇²f₀ + f₀ = [(C_f1 + C_f2 P_k/ε)(2/3 − ζ) + (N_ζ − 1) ζ]/T
+            // with N_ζ = 2
+            let ce1 = 1.4 * (1.0 + 0.009 / z);
+            let t_k = (k / e).max(6.0 * (NU / e).sqrt());
+            let sink = (1.0 / t_k).max(2.0 * NU / d_exact(x).powi(2));
+            return vec![
+                Eq::transport(NU + nu_t, pk - sink * k),
+                Eq::transport(NU + nu_t / 1.3, (ce1 * pk - 1.9 * e) / t),
+                Eq::transport(NU + nu_t / 1.2, f - z * (pk / e + 1.0) / t),
+                Eq {
+                    conv: 0.0,
+                    gamma: l * l,
+                    lin: 1.0,
+                    q: ((0.4 + 0.65 * pk / e) * (2.0 / 3.0 - z) + z) / t,
+                },
+            ];
+        }
         let ce1 = 1.4 * (1.0 + 0.012 / z);
         vec![
             Eq::transport(NU + nu_t, pk - e),
@@ -460,16 +656,21 @@ fn added_source(m: &dyn Model, x: P) -> Vec<f64> {
 
 fn model_of(name: &str) -> Box<dyn Model> {
     match name {
-        "k-omega-sst" => Box::new(Sst),
+        "k-omega-sst" => Box::new(Sst { curv: false }),
+        "k-omega-sst-curvature" => Box::new(Sst { curv: true }),
+        "k-omega-sst-qcr2000" => Box::new(SstQcr { c2013: false }),
+        "k-omega-sst-qcr2013" => Box::new(SstQcr { c2013: true }),
         "k-epsilon" => Box::new(StandardKe),
         "realizable-k-epsilon" => Box::new(RealizableKe),
-        "k-epsilon-zeta-f" => Box::new(ZetaF),
+        "k-epsilon-zeta-f" => Box::new(ZetaF { f0: false }),
+        "k-epsilon-zeta-f0" => Box::new(ZetaF { f0: true }),
         "elliptic-blending-k-epsilon" => Box::new(Eb),
         _ => unreachable!(),
     }
 }
 
 fn case_text(model: &str, mesh: &str, m: &dyn Model) -> String {
+    let key = m.key().unwrap_or(model);
     let second = m.second();
     let st = if second == "omega" { W_TEXT } else { E_TEXT };
     let zeta = if m.fields().len() > 2 {
@@ -477,10 +678,11 @@ fn case_text(model: &str, mesh: &str, m: &dyn Model) -> String {
     } else {
         String::new()
     };
+    let [ux, uy] = vel_text(m.flow());
     let side = |name: &str| {
         format!(
             "[boundary.{name}]\ntype = \"velocity-inlet\"\n\
-             velocity = [\"{U0} * sin(pi * x) * cos(pi * y)\", \"-{U0} * cos(pi * x) * sin(pi * y)\", 0.0]\n\
+             velocity = [\"{ux}\", \"{uy}\", 0.0]\n\
              k = \"{K_TEXT}\"\n{second} = \"{st}\"\n{zeta}"
         )
     };
@@ -497,7 +699,8 @@ viscosity = {NU}
 [flow]
 convection = true
 [turbulence]
-model = "{model}"
+model = "{key}"
+{extra}
 {xmin}{xmax}{ymin}{ymax}
 [boundary.zmin]
 type = "symmetry"
@@ -512,6 +715,7 @@ max_iter = 200
 vtkhdf = false
 wall_csv = false
 "#,
+        extra = m.extra(),
         xmin = side("xmin"),
         xmax = side("xmax"),
         ymin = side("ymin"),
@@ -528,7 +732,17 @@ struct Level {
     iterations: usize,
 }
 
-fn run_level(case: &FlowCase, level: u32, m: &dyn Model) -> Level {
+/// The flow of a level with the manufactured fields set (10 % off) and the
+/// added sources.
+struct Built {
+    fl: crate::simplec::Flow,
+    xc: Vec<P>,
+    vol: Vec<f64>,
+    exact: Vec<Vec<f64>>,
+    n: usize,
+}
+
+fn build(case: &FlowCase, level: u32, m: &dyn Model) -> Built {
     let (mesh, geo, _) = crate::case::mesh_for(case, Some(level)).unwrap();
     let phys = crate::case::physics(case).unwrap();
     let values = case.compiled_boundaries().unwrap();
@@ -593,7 +807,7 @@ fn run_level(case: &FlowCase, level: u32, m: &dyn Model) -> Level {
     {
         let (t, dev) = fl.turbulence_mut().unwrap();
         // without walls the model takes d = 10¹⁰; the manufactured d
-        // replaces it (only SST reads it)
+        // replaces it (SST and the sink of k of ζ-f₀ read it)
         let d: Vec<f64> = xc.iter().map(|&x| d_exact(x)).collect();
         t.set_wall_distance(dev, &d).unwrap();
         t.set_added_sources(dev, &src[0], &src[1]).unwrap();
@@ -603,6 +817,24 @@ fn run_level(case: &FlowCase, level: u32, m: &dyn Model) -> Level {
             t.set_zeta_fields(dev, &start[2], &start[3]).unwrap();
         }
     }
+    Built {
+        fl,
+        xc,
+        vol,
+        exact,
+        n,
+    }
+}
+
+fn run_level(case: &FlowCase, level: u32, m: &dyn Model) -> Level {
+    let Built {
+        mut fl,
+        vol,
+        exact,
+        n,
+        ..
+    } = build(case, level, m);
+    let nc = vol.len();
     let mut it = 0;
     loop {
         let r = fl.turbulence_iteration().unwrap();
@@ -652,6 +884,7 @@ fn sci(v: &[f64]) -> String {
 /// The observed orders of the L2 errors of every variable over `levels`.
 fn orders(model: &str, mesh: &str, levels: &[u32]) -> Vec<Vec<f64>> {
     let m = model_of(model);
+    FLOW.set(m.flow());
     let case = FlowCase::from_toml(&case_text(model, mesh, m.as_ref()), Path::new(".")).unwrap();
     let runs: Vec<Level> = levels
         .iter()
@@ -687,6 +920,124 @@ fn check(model: &str, mesh: &str, band: (f64, f64)) {
     }
 }
 
+/// τ_ij/ρ of the quadratic constitutive relation less the Boussinesq stress
+/// (Spalart 2000; Mani et al. 2013) in the plane, from the definitions
+/// τ_ij^QCR − τ_ij = −C_cr1 (O_ik τ_jk + O_jk τ_ik),
+/// O_ik = 2 W_ik/(∂_m u_n ∂_m u_n)^½, W_ik = ½(∂u_i/∂x_k − ∂u_k/∂x_i),
+/// τ_ij = 2 ν_t S_ij, C_cr1 = 0.3, and for QCR2013 the further
+/// −C_cr2 ν_t (2 S_mn S_mn)^½ δ_ij, C_cr2 = 2.5.
+fn qcr_tau(x: P, c2013: bool) -> [[f64; 2]; 2] {
+    let g = grad_u(x);
+    let nu_t = sst_point(x, false).nu_t;
+    let mut gg = 0.0;
+    let mut s = [[0.0; 2]; 2];
+    let mut w = [[0.0; 2]; 2];
+    for i in 0..2 {
+        for j in 0..2 {
+            gg += g[i][j] * g[i][j];
+            s[i][j] = 0.5 * (g[i][j] + g[j][i]);
+            w[i][j] = 0.5 * (g[i][j] - g[j][i]);
+        }
+    }
+    let norm = gg.sqrt();
+    let o = |i: usize, k: usize| 2.0 * w[i][k] / norm;
+    let tau = |i: usize, k: usize| 2.0 * nu_t * s[i][k];
+    let mut out = [[0.0; 2]; 2];
+    for i in 0..2 {
+        for j in 0..2 {
+            for k in 0..2 {
+                out[i][j] -= 0.3 * (o(i, k) * tau(j, k) + o(j, k) * tau(i, k));
+            }
+        }
+    }
+    if c2013 {
+        let s2: f64 = (0..2)
+            .map(|i| (0..2).map(|j| s[i][j] * s[i][j]).sum::<f64>())
+            .sum();
+        for i in 0..2 {
+            out[i][i] -= 2.5 * nu_t * (2.0 * s2).sqrt();
+        }
+    }
+    out
+}
+
+/// ∂_j τ_ij of the QCR stress.
+fn qcr_force(x: P, c2013: bool) -> [f64; 2] {
+    let mut f = [0.0; 2];
+    for (i, fi) in f.iter_mut().enumerate() {
+        for j in 0..2 {
+            *fi += d1(&|y| qcr_tau(y, c2013)[i][j], x, j);
+        }
+    }
+    f
+}
+
+/// L2 error of the explicit stress force of the QCR on `mesh`, over the
+/// cells away from the sides (|x − ½| ≤ 0.35 in both directions), relative
+/// to the largest exact force, per level: the stress and its divergence
+/// as the momentum equations take them, from the velocity gradient and the
+/// ν_t of the solver on the manufactured fields (the cell-value stress on a
+/// boundary face is first order, so the cells next to the sides are left
+/// out).
+fn qcr_errors(model: &str, mesh: &str, perturb: f64, levels: &[u32]) -> Vec<(f64, f64)> {
+    let m = model_of(model);
+    FLOW.set(m.flow());
+    let c2013 = model.ends_with("2013");
+    let text = case_text(model, mesh, m.as_ref())
+        .replace("perturb = 0.15", &format!("perturb = {perturb}"));
+    let case = FlowCase::from_toml(&text, Path::new(".")).unwrap();
+    levels
+        .iter()
+        .map(|&level| {
+            let Built {
+                mut fl,
+                xc,
+                vol,
+                exact,
+                ..
+            } = build(&case, level, m.as_ref());
+            {
+                // the exact fields as the start; converged for ν_t
+                let (t, dev) = fl.turbulence_mut().unwrap();
+                t.set_fields(dev, &exact[0], &exact[1]).unwrap();
+            }
+            for it in 0.. {
+                let r = fl.turbulence_iteration().unwrap();
+                if r.residual.iter().cloned().fold(0.0, f64::max) < 1e-11 {
+                    break;
+                }
+                assert!(it < 2500, "level {level}: no convergence");
+            }
+            let force = fl.explicit_stress_force().unwrap();
+            let (mut num, mut vt, mut big) = (0.0, 0.0, 0.0f64);
+            for (c, &x) in xc.iter().enumerate() {
+                if (x[0] - 0.5).abs() > 0.35 || (x[1] - 0.5).abs() > 0.35 {
+                    continue;
+                }
+                let f = qcr_force(x, c2013);
+                let e = (force[c][0] - f[0]).powi(2) + (force[c][1] - f[1]).powi(2);
+                num += vol[c] * e;
+                vt += vol[c];
+                big = big.max(f[0].abs()).max(f[1].abs());
+            }
+            let nc = vol.len() as f64;
+            let h = (vol.iter().sum::<f64>() / nc).sqrt();
+            (h, (num / vt).sqrt() / big)
+        })
+        .collect()
+}
+
+/// The order of the force error on meshes without perturbation.
+fn check_qcr(model: &str, mesh: &str, band: (f64, f64)) {
+    let e = qcr_errors(model, mesh, 0.0, &[0, 1, 2]);
+    eprintln!("{model} {mesh}: (h, L2 error of the force) {e:?}");
+    let p = (e[1].1 / e[2].1).ln() / (e[1].0 / e[2].0).ln();
+    assert!(
+        p > band.0 && p < band.1,
+        "{model} {mesh}: order {p:.3} outside {band:?} ({e:?})"
+    );
+}
+
 /// The manufactured fields keep every switch of the models on one branch
 /// and let F₁ of SST cover its range.
 #[test]
@@ -699,7 +1050,7 @@ fn manufactured_fields_stay_on_one_branch() {
             let s = strain(x);
             // SST: ν_t = k/ω, the production limiter inactive, the √k
             // term of arg₁ wins over 500ν/(d²ω) and the CD_kω term
-            let p = sst_point(x);
+            let p = sst_point(x, false);
             f1_lo = f1_lo.min(p.f1);
             f1_hi = f1_hi.max(p.f1);
             assert!(0.31 * w > s, "a₁ω > S F₂ at {x:?}");
@@ -717,9 +1068,13 @@ fn manufactured_fields_stay_on_one_branch() {
             );
             assert!(s * k / e < 3.77, "η at {x:?}");
             // ζ-f: T = k/ε and L = C_L k^{3/2}/ε (no bound acts)
-            let (t, l) = zeta_f_scales(x);
-            assert!((t - k / e).abs() < 1e-15 * t, "T at {x:?}");
-            assert!((l - 0.36 * k.powf(1.5) / e).abs() < 1e-15 * l, "L at {x:?}");
+            for f0 in [false, true] {
+                let (t, l) = zeta_f_scales(x, f0);
+                assert!((t - k / e).abs() < 1e-15 * t, "T at {x:?}");
+                assert!((l - 0.36 * k.powf(1.5) / e).abs() < 1e-15 * l, "L at {x:?}");
+            }
+            // ζ-f₀: the sink of k is k/T_K = ε (2ν/d² is smaller)
+            assert!(2.0 * NU / (d * d) < e / k, "sink of k at {x:?}");
             // EB: T < T_lim, α in (0, 1), φ < 2
             let (t, _, nu_t) = eb_point(x);
             assert!(
@@ -770,4 +1125,67 @@ fn elliptic_blending_manufactured_solution_orders() {
     check("elliptic-blending-k-epsilon", "hex", (1.8, 2.2));
     check("elliptic-blending-k-epsilon", "poly", (1.6, 2.4));
     check("elliptic-blending-k-epsilon", "tet", (1.6, 2.4));
+}
+
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn zeta_f0_manufactured_solution_orders() {
+    check("k-epsilon-zeta-f0", "hex", (1.8, 2.2));
+    check("k-epsilon-zeta-f0", "poly", (1.6, 2.4));
+    check("k-epsilon-zeta-f0", "tet", (1.6, 2.4));
+}
+
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn curvature_correction_manufactured_solution_orders() {
+    check("k-omega-sst-curvature", "hex", (1.8, 2.2));
+    check("k-omega-sst-curvature", "poly", (1.6, 2.4));
+}
+
+/// The finding behind the two cell types above: on tetrahedra the error
+/// of k and ω does not fall with the mesh (about 1.3 % and 0.7 % at all
+/// three levels). DS_ij/Dt comes from the least-squares gradient of the
+/// least-squares gradient of the velocity, which is not consistent on
+/// irregular tetrahedra; the production of both equations carries it.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn curvature_correction_on_tetrahedra_stays_bounded() {
+    let m = model_of("k-omega-sst-curvature");
+    FLOW.set(m.flow());
+    let case = FlowCase::from_toml(
+        &case_text("k-omega-sst-curvature", "tet", m.as_ref()),
+        Path::new("."),
+    )
+    .unwrap();
+    for level in 0..3 {
+        let r = run_level(&case, level, m.as_ref());
+        eprintln!("curvature tet level {level}: L2 {}", sci(&r.l2));
+        assert!(r.l2[0] < 0.03 && r.l2[1] < 0.03, "{:?}", r.l2);
+    }
+}
+
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn qcr_stress_manufactured_solution_orders() {
+    for model in ["k-omega-sst-qcr2000", "k-omega-sst-qcr2013"] {
+        check_qcr(model, "hex", (1.8, 2.2));
+        check_qcr(model, "poly", (1.8, 2.2));
+        // first order on tetrahedra (finding, documented in the verification
+        // chapter)
+        check_qcr(model, "tet", (0.8, 1.3));
+    }
+}
+
+/// The finding behind the regular meshes of the test above: on meshes with
+/// randomly perturbed vertices the divergence of the explicit stress
+/// (Green-Gauss with the linear face interpolation of cell values) does not
+/// converge, its error stays at a few per cent of the largest force.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn qcr_stress_on_perturbed_meshes_stays_bounded() {
+    let e = qcr_errors("k-omega-sst-qcr2000", "hex", 0.15, &[0, 1, 2]);
+    eprintln!("perturbed hex: {e:?}");
+    for (_, err) in &e {
+        assert!(*err < 0.1 && *err > 0.01, "{e:?}");
+    }
 }
