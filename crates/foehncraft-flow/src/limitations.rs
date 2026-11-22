@@ -164,7 +164,7 @@ pub fn features_in_use(case: &FlowCase) -> Vec<&'static str> {
         Some("su2") => f.push("mesh.su2"),
         Some("cgns") => f.push("mesh.cgns"),
         Some("vtk") => f.push("mesh.vtk"),
-        Some("industry_msh") => f.push("mesh.industry-msh"),
+        Some("fluent_msh") => f.push("mesh.fluent-msh"),
         Some("openfoam") => f.push("mesh.openfoam"),
         _ => {}
     }
@@ -614,7 +614,7 @@ mod tests {
             "mesh.su2",
             "mesh.cgns",
             "mesh.vtk",
-            "mesh.industry-msh",
+            "mesh.fluent-msh",
             "mesh.openfoam",
             "coupling.piso",
             "coupling.coupled",

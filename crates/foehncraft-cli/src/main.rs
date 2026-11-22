@@ -355,7 +355,7 @@ enum Bench {
 
 #[derive(clap::Args)]
 struct MeshArgs {
-    /// Mesh case file (TOML) or a mesh file (Gmsh or industry `.msh`, SU2
+    /// Mesh case file (TOML) or a mesh file (Gmsh or Fluent `.msh`, SU2
     /// `.su2`, CGNS `.cgns`, VTK `.vtk`/`.vtu`, OpenFOAM case or polyMesh
     /// directory).
     input: PathBuf,

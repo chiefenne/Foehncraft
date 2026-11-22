@@ -334,7 +334,7 @@ Category `mesh`, action `write-files`, version 1.
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `input` | string | required | Mesh case file (TOML) or a mesh file (Gmsh or industry `.msh`, SU2, CGNS, VTK, an OpenFOAM case or polyMesh directory). |
+| `input` | string | required | Mesh case file (TOML) or a mesh file (Gmsh or Fluent `.msh`, SU2, CGNS, VTK, an OpenFOAM case or polyMesh directory). |
 | `parts` | integer | – | Number of parts (overrides `partition.parts`). |
 | `method` | string | – | Partitioning method: `metis` or `rcb` (overrides `partition.method`). |
 | `renumber` | string | – | Cell order: `none`, `rcm` or `shuffle` (overrides `mesh.renumber`). |

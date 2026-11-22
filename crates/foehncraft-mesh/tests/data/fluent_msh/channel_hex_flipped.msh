@@ -1,4 +1,4 @@
-(0 "Industry .msh test mesh, tools/mesh/industry_msh_fixtures.py")
+(0 "Fluent .msh test mesh, tools/mesh/fluent_msh_fixtures.py")
 (0 "")
 (2 3)
 (10 (0 1 2d 0 3))

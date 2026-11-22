@@ -1,6 +1,6 @@
 [package]
 name = "foehncraft-mesh"
-description = "Foehncraft mesh: polyhedral face-based mesh, geometry and quality, built-in test mesher, Gmsh, SU2, industry .msh, CGNS, VTK and OpenFOAM readers, partitioning and halo layout, point location and VTKHDF output"
+description = "Foehncraft mesh: polyhedral face-based mesh, geometry and quality, built-in test mesher, Gmsh, SU2, Fluent .msh, CGNS, VTK and OpenFOAM readers, partitioning and halo layout, point location and VTKHDF output"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

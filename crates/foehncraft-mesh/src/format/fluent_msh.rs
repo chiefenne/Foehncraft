@@ -1,4 +1,7 @@
-//! Reader for the industry-standard face-based `.msh` text format (D191).
+//! Reader for the Fluent face-based `.msh` text format (D191).
+//!
+//! Fluent is a trademark of ANSYS, Inc.; the name is used here only to name
+//! the file format. Foehncraft is not affiliated with or endorsed by ANSYS.
 //!
 //! Written from the public description of the format in the user guides of
 //! the solvers that use it. A file is a list of sections in parentheses, the
@@ -48,17 +51,17 @@ use crate::geometry::{polygon_area_centroid, sub};
 use std::collections::HashMap;
 
 /// The format in the registry of [`crate::format`]; `mesh.format =
-/// "industry_msh"`.
+/// "fluent_msh"`.
 #[derive(Debug, Clone, Copy)]
 pub struct IndustryMsh;
 
 impl MeshFormat for IndustryMsh {
     fn name(&self) -> &'static str {
-        "industry_msh"
+        "fluent_msh"
     }
 
     fn title(&self) -> &'static str {
-        "industry-standard face-based .msh, ASCII, 3D, polyhedral"
+        "Fluent face-based .msh, ASCII, 3D, polyhedral"
     }
 
     fn extensions(&self) -> &'static [&'static str] {
@@ -535,8 +538,8 @@ fn parse(bytes: &[u8]) -> Result<MeshFile, String> {
     mesh.boundaries.retain(|p| p.len > 0);
     Ok(MeshFile {
         mesh,
-        reader: "industry_msh",
-        format: "industry .msh ASCII 3D".into(),
+        reader: "fluent_msh",
+        format: "Fluent .msh ASCII 3D".into(),
         warnings,
     })
 }

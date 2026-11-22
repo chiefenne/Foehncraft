@@ -92,15 +92,15 @@ evidence = [
 gaps = ["no flow case of the catalogue reads a polyMesh"]
 
 [[feature]]
-id = "mesh.industry-msh"
+id = "mesh.fluent-msh"
 area = "Meshes"
-title = "Industry face-based .msh reader"
-switch = 'mesh.format = "industry_msh"'
+title = "Fluent face-based .msh reader"
+switch = 'mesh.format = "fluent_msh"'
 evidence = [
-  { kind = "consistency", test = "crates/foehncraft-mesh/tests/industry_msh.rs::polyhedral_cells_and_mixed_faces", what = "polyhedral cells and mixed faces" },
-  { kind = "consistency", test = "crates/foehncraft-mesh/tests/industry_msh.rs::face_orientation_does_not_matter", what = "face orientation does not change the mesh" },
+  { kind = "consistency", test = "crates/foehncraft-mesh/tests/fluent_msh.rs::polyhedral_cells_and_mixed_faces", what = "polyhedral cells and mixed faces" },
+  { kind = "consistency", test = "crates/foehncraft-mesh/tests/fluent_msh.rs::face_orientation_does_not_matter", what = "face orientation does not change the mesh" },
 ]
-gaps = ["no flow case of the catalogue reads an industry .msh file"]
+gaps = ["no flow case of the catalogue reads a Fluent .msh file"]
 
 [[feature]]
 id = "mesh.vtk"
