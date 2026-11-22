@@ -3,9 +3,14 @@
 inner diameter T = 135 mm with a chamfered bottom, liquid height 150 mm, a
 four-blade 45 degree pitched-blade turbine of tip diameter 45 mm and a
 four-plate baffle insert. Dimensions from the paper's Supporting Information
-(vessel, impeller, hub, shaft, clearance, baffle plates); the bottom chamfer
-is read from the paper's published CFD plane. The geometry is theirs, not a
-Foehncraft design, so the four-fold arrangement is shown with the reference.
+(vessel, impeller, hub, shaft, clearance, baffle plates, and the vessel
+primitives: a cylinder of radius 67.5 mm and length 150 mm with a chamfer of
+15 and 20 mm, then one of 40 and 40 mm, on the bottom edge). The second
+chamfer is longer than the 25 mm face the first one leaves, so it consumes
+that face: the bottom is a cone, flat out to r = 7.5 mm (the 40 mm of the
+second chamfer on the end face from r = 47.5 mm) and 15 mm high at the wall.
+That reading is ours; the text does not say it. The geometry is theirs, not
+a Foehncraft design, so the four-fold arrangement is shown with the reference.
 
     pip install gmsh
     python3 examples/applications/stirred_tank_fyfe/mesh.py                # level 1 (coarse)
@@ -16,8 +21,7 @@ Writes `fyfe_L<level>.msh` next to this script. Tetrahedra, no prism layers.
 Boundaries: `impeller` (hub and blades inside the rotor zone), `shaft`,
 `vessel` (side wall and bottom), `baffles`, `surface` (the liquid level, a
 flat symmetry plane). Cell zones: `rotor`, `stator`. Lengths in m, z up from
-the vessel bottom (the paper's plane files have z = 0 at the bottom and z
-pointing down into the liquid).
+the vessel bottom.
 """
 import argparse
 import math
@@ -27,7 +31,7 @@ import gmsh
 
 R = 0.0675                 # vessel radius (T = 135 mm)
 H = 0.150                  # liquid height
-R_FLAT, CHAMFER_H = 0.035, 0.016   # flat bottom out to R_FLAT, then a cone up to the wall
+R_FLAT, CHAMFER_H = 0.0075, 0.015  # flat bottom out to R_FLAT, then a cone up to the wall (SI chamfers, see above)
 R_TIP = 0.0225             # impeller tip radius (D = 45 mm)
 CHORD = 0.015 / math.sin(math.radians(45.0))    # plate width: 15 mm projected blade height
 T_BLADE = 0.0014           # blade thickness
@@ -136,7 +140,7 @@ def classify(rotor, stator):
             groups["shaft"].append(s)
         elif own == {"rotor"}:
             groups["impeller"].append(s)
-        elif span > 0.04:
+        elif span > 0.04 or z1 < 0.5 * Z0_ZONE:     # the side wall, the cone, or the small flat bottom
             groups["vessel"].append(s)
         elif rc > BAFFLE_R0 - 0.01:
             groups["baffles"].append(s)

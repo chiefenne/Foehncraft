@@ -606,7 +606,7 @@ Gaps:
 **verified** · id `turbulence.sst` · switch `turbulence.model = "k-omega-sst"` · decisions D130
 
 - manufactured: [`sst_manufactured_solution_orders`](../../crates/foehncraft-flow/src/turbulence/mms.rs): orders 2.04 to 2.17 of k and ω on hexahedra, polyhedra and tetrahedra ([results](stage6.md#manufactured-solutions-of-every-model-spec-92-pr-148))
-- reference-data: [`tmr_plate_sst`](../../examples/cases/flow/tmr_plate_sst.toml): TMR flat plate: C_f(0.97) +0.37 % from the TMR value, GCI 1.87 % ([results](stage6.md#tmr-flat-plate-re_l--510⁶))
+- reference-data: [`tmr_plate_sst`](../../examples/cases/flow/tmr_plate_sst.toml): flat plate: C_f(0.97) +1.45 % from the Coles–Fernholz fit, GCI 1.76 % ([results](stage6.md#tmr-flat-plate-re_l--510⁶))
 - reference-data: [`channel_sst`](../../examples/cases/flow/channel_sst.toml): channel at Re_τ 395: U_b⁺ −1.3 % from the DNS of Moser, Kim & Mansour (1999) ([results](stage6.md#channel-re_τ--395))
 - reference-data: [`backstep_outlet_backflow`](../../examples/cases/flow/backstep_outlet_backflow.toml): backward-facing step with the outlet inside the recirculation
 - reference-data: recorded run (level sweep of backstep_validation with SST, 3 meshes): step of Driver & Seegmiller (1985): x_r/H 6.747, +7.8 % (band ±10 %) ([results](stage6.md#backward-facing-step-against-the-experiment-part-6g-95))
@@ -614,8 +614,8 @@ Gaps:
 
 Notes:
 
-- plate C_f against White's correlation −8.7 to −5.3 % (band ±5 %): the TMR value of SST itself is −6.4 %, so the correlation is the outlier
-- plate C_f is oscillatory over three meshes (p 0.43); it meets the 2 % GCI band without an order
+- plate C_f against White's correlation −8.5 to −5.4 % (band ±8 %, widened from ±5 % on 2026-11-22): SST sits −6.1 % below White at x = 0.97 and −1.4 to +2.5 % from the Coles–Fernholz fit to measured layers
+- plate C_f converges monotonically but slowly (p 0.44, GCI 1.76 %); it meets the 2 % GCI band without the order
 
 Range: y_plus_first 0 … 1.
 
@@ -700,7 +700,7 @@ Range: y_plus_first 0 … 30.
 
 - manufactured: [`elliptic_blending_manufactured_solution_orders`](../../crates/foehncraft-flow/src/turbulence/mms.rs): orders 1.93 to 2.25 of k, ε, φ, α on three cell types ([results](stage6.md#manufactured-solutions-of-every-model-spec-92-pr-148))
 - reference-data: [`channel_eb`](../../examples/cases/flow/channel_eb.toml): channel at Re_τ 395: U_b⁺ +0.9 % from the DNS, p 2.05 ([results](stage6.md#channel-re_τ--395))
-- reference-data: [`eb_channel_meets_the_paper`](../../crates/foehncraft-flow/tests/eb.rs): channel against the paper
+- reference-data: [`eb_channel_against_the_dns`](../../crates/foehncraft-flow/tests/eb.rs): channel against the DNS
 - reference-data: [`tmr_plate_eb`](../../examples/cases/flow/tmr_plate_eb.toml): TMR flat plate
 - reference-data: [`backstep_eb`](../../examples/cases/flow/backstep_eb.toml): backward-facing step ([results](stage6.md#backward-facing-step-against-the-experiment-part-6g-95))
 

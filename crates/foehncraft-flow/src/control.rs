@@ -195,6 +195,30 @@ pub(crate) fn set(v: &mut toml::Value, key: &str, x: Option<&toml::Value>) {
     }
 }
 
+/// A case with one setting changed (L19: `run.set` through the live control
+/// port): the new case, the old and the new value as the case holds them.
+/// An error when the value does not fit the key's type or the case no
+/// longer validates.
+pub fn with_setting(
+    current: &FlowCase,
+    key: &str,
+    value: &toml::Value,
+) -> Result<(FlowCase, String, String)> {
+    let mut v = toml::Value::try_from(current)?;
+    let mut flat = BTreeMap::new();
+    flatten("", &v, &mut flat);
+    let old = show(flat.get(key));
+    set(&mut v, key, Some(value));
+    let mut case: FlowCase = v.try_into()?;
+    case.source = current.source.clone();
+    case.overrides = current.overrides.clone();
+    case.validate()?;
+    let mut flat = BTreeMap::new();
+    flatten("", &toml::Value::try_from(&case)?, &mut flat);
+    let new = show(flat.get(key));
+    Ok((case, old, new))
+}
+
 /// The result of a re-read.
 #[derive(Debug, Clone)]
 pub struct Reread {

@@ -26,6 +26,7 @@ fn outcome(a: &FlowInput, ctx: &mut Ctx<'_>) -> Result<Outcome> {
         roots: ctx.roots.clone(),
         observer: ctx.observer.clone(),
         call: ctx.call.clone(),
+        control: ctx.control,
     };
     engine::run(&case, &name, &dir, &opts, |l| ctx.line(l))
 }

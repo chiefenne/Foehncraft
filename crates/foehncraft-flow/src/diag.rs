@@ -196,6 +196,10 @@ codes! {
     RUN_STUDY_SPENT = "RUN019", Error, "A study budget is already spent by the earlier runs of the study (`study_budget.jsonl`): the run does not start.";
     RUN_STUDY_ESTIMATE = "RUN020", Warning, "The estimate of the run (D81) does not fit into what is left of a study budget.";
     RUN_LARGE_BUDGET = "RUN021", Warning, "A steady iteration budget above 10 000 iterations: a steady case needs hundreds, at most a few thousand; look at the run after 2000 to 3000 iterations instead.";
+    // the live control port (L19)
+    RUN_CONTROL_STOP = "RUN022", Note, "Stopped through the live control port (`run.stop`): restart file, final output, exit code 3 (L19).";
+    RUN_CONTROL_SET = "RUN023", Note, "A setting changed through the live control port (`run.set`): key, old and new value, with the equivalent `[[schedule]]` entry (L19).";
+    RUN_CONTROL_REJECTED = "RUN024", Warning, "A setting asked for through the live control port that cannot be applied (not valid for the case at that point); the run goes on with the settings it had.";
     // the causes of a divergence (D63)
     DIV_TIME_STEP = "DIV001", Note, "Divergence cause: the Courant number near the failing cells is large; reduce the time step.";
     DIV_RELAXATION = "DIV002", Note, "Divergence cause: under-relaxation factors too large for the case.";
@@ -229,6 +233,7 @@ codes! {
     MCP_LIMITS = "MCP002", Error, "A run started through MCP without `[run.limits] max_wall_time` and `max_output`; the fix sets them with `set`.";
     MCP_REFUSED = "MCP003", Error, "A call that the action table of the project (`foehn-mcp.toml`) refuses: start a run, exceed the estimate caps, write outside the write roots, overwrite results, publish.";
     MCP_DECLINED = "MCP004", Error, "A call that the person declined when the server asked for approval.";
+    TOOL_CONTROL = "TOOL007", Error, "A request to the live control port of a run (`run.status`, `run.stop`, `run.set`) that cannot be made or is refused: no run listens in the directory, the token is wrong, or the setting cannot be changed during a run (L19).";
     MCP_CANNOT_ASK = "MCP005", Error, "A call that needs the person's approval (`ask`), from a host that cannot ask (no MCP elicitation); the person allows it in `foehn-mcp.toml` or uses a host that asks.";
     MCP_POLICY = "MCP006", Error, "The action table `foehn-mcp.toml` cannot be read or written: not TOML, an unknown action kind or setting.";
     // anything else

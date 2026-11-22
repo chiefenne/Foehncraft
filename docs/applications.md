@@ -63,4 +63,4 @@ contents.
 | # | Application | Page |
 |---|---|---|
 | <a id="stirred-tank"></a>131 | [Stirred tank with a three-blade hydrofoil: power and pumping number](applications/rotating-machinery.md#stirred-tank) | [Rotating machinery](applications/rotating-machinery.md) |
-| <a id="fyfe-stirred-tank"></a>161 | [Stirred 2 L lab tank of Fyfe et al.: velocity planes against the published CFD](applications/rotating-machinery.md#fyfe-stirred-tank) | [Rotating machinery](applications/rotating-machinery.md) |
+| <a id="fyfe-stirred-tank"></a>161 | [Stirred 2 L lab tank of Fyfe et al.: power number and mixing time against measurements](applications/rotating-machinery.md#fyfe-stirred-tank) | [Rotating machinery](applications/rotating-machinery.md) |

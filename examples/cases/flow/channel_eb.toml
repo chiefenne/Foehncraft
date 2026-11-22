@@ -16,11 +16,11 @@
 # is the integration to the wall (k = φ = α = 0, ε_w = ν k/y²). The
 # profile line gives U, k, ε, ν_t, φ = v²/k and α across the channel.
 #
-# Result: F = 0.990, C_f at 99.0 % of the DNS, where the paper reports
-# 98 % (its Table 6, the acceptance target of specification 3.4);
+# Result: F = 0.990, C_f at 99.0 % of the DNS (the acceptance target of
+# specification 3.4 is the DNS);
 # U_b⁺ = 17.64, +0.5 % (band ±3 %), in 2 900 iterations. On 192 cells
 # 98.8 %. Re_τ 180 (mass flow 3.102) and 590 (3.7124, 128 cells, ratio
-# 80) give 97.8 and 99.1 % (paper 100 and 100 %); at Re_τ 180 the start
+# 80) give 97.8 and 99.1 %; at Re_τ 180 the start
 # needs `turbulence_intensity = 0.15` and `viscosity_ratio = 20`: from
 # the start below the channel turns laminar.
 

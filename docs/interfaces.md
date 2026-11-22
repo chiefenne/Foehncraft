@@ -395,6 +395,9 @@ A code keeps its meaning; a retired code stays in the table.
 | `RUN019` | error | A study budget is already spent by the earlier runs of the study (`study_budget.jsonl`): the run does not start. |
 | `RUN020` | warning | The estimate of the run (D81) does not fit into what is left of a study budget. |
 | `RUN021` | warning | A steady iteration budget above 10 000 iterations: a steady case needs hundreds, at most a few thousand; look at the run after 2000 to 3000 iterations instead. |
+| `RUN022` | note | Stopped through the live control port (`run.stop`): restart file, final output, exit code 3 (L19). |
+| `RUN023` | note | A setting changed through the live control port (`run.set`): key, old and new value, with the equivalent `[[schedule]]` entry (L19). |
+| `RUN024` | warning | A setting asked for through the live control port that cannot be applied (not valid for the case at that point); the run goes on with the settings it had. |
 | `DIV001` | note | Divergence cause: the Courant number near the failing cells is large; reduce the time step. |
 | `DIV002` | note | Divergence cause: under-relaxation factors too large for the case. |
 | `DIV003` | note | Divergence cause: poor cells (skewness, non-orthogonality, volume ratio) at the failing cells. |
@@ -418,6 +421,7 @@ A code keeps its meaning; a retired code stays in the table.
 | `TOOL004` | error | A script to replay (`foehn run --script`) that cannot be read: not a file of JSON lines, or without calls. |
 | `TOOL005` | warning | A replayed call (`foehn run --script`) that ended with another status or exit code than in its record; the replay stops there unless `--keep-going`. |
 | `TOOL006` | error | A series of `result.page` that the run directory does not have, or a cursor that does not belong to it; the call without `series` lists the series. |
+| `TOOL007` | error | A request to the live control port of a run (`run.status`, `run.stop`, `run.set`) that cannot be made or is refused: no run listens in the directory, the token is wrong, or the setting cannot be changed during a run (L19). |
 | `MCP001` | error | `foehn mcp` started without `--read-root` and `--write-root`, or with an action table (`--policy`) inside a write root, where a tool could rewrite it. |
 | `MCP002` | error | A run started through MCP without `[run.limits] max_wall_time` and `max_output`; the fix sets them with `set`. |
 | `MCP003` | error | A call that the action table of the project (`foehn-mcp.toml`) refuses: start a run, exceed the estimate caps, write outside the write roots, overwrite results, publish. |
@@ -533,8 +537,12 @@ The guide for people is [agents.md](agents.md).
 | server → client `notifications/progress` | for a call with a `progressToken`: the outer iteration or time step of a run, at most one a second |
 | server → client `elicitation/create` | the approval question of a call (below); the answer `allow-once`, `allow-always`, `refuse-once` or `refuse-always` |
 
-Calls run one after another on one worker. Before a call of a tool that
-is not of kind read, the server asks the tool what it would write
+Calls that write or start a run run one after another on one worker.
+Calls of the kinds `read` and `control` do not wait for it: they run at
+once on a thread of their own, so a running `flow.run` can be watched
+(`run.status`, `result.page`) and steered (`run.set`, `run.stop`, see
+[the control port](#live-control-port-l19)). Before a call of a tool that
+is not of kind read or control, the server asks the tool what it would write
 (`effects`: the output folder or files, for a run its estimate, D81, and
 its `[run.limits]`) and the action table (`--policy`, default
 `foehn-mcp.toml`, outside every write root) what to do. The kinds are
@@ -562,6 +570,48 @@ page), which the next call passes as `cursor`. For `record`, `types`
 filters the rows (`iteration`, `table_row`, …). An unknown series or a
 cursor of another series is `TOOL006`. Fields are never paged: their
 files are named in the result summary.
+
+## Live control port (L19)
+
+A run started with `foehn flow --control-port`, or by any `flow.run`
+through `foehn mcp`, listens on a TCP port of the loopback interface
+(`127.0.0.1` only, an operating-system port) and writes two files into its
+output directory: `control.json` (`foehn.control`: `host`, `port`, `pid`,
+`token_file`) and `control.token` (128 random bits as hexadecimal text; on
+Unix readable by its user only, mode 0600). Both are removed when the run
+ends, so a directory without `control.json` has no run that can be
+steered. The tools `run.status`, `run.stop` and `run.set` ([tools.md](tools.md))
+find the port there; they need the directory inside the read roots
+(`run.status`) or the write roots (`run.stop`, `run.set`).
+
+The protocol is one JSON object per line, one request and one answer per
+connection, the token in every request:
+
+| Request | Answer |
+|---|---|
+| `{"token": …, "op": "status"}` | `foehn.run-status`: `state` (`running`, `finished`), `pid`, `wall_time`, `stop_requested`, `last` (the last `iteration` or `step` row of the run record: residuals, linear iterations), `control` (what the run did with the requests so far), `pending` |
+| `{"token": …, "op": "stop"}` | the run stops at the end of the current iteration or step, as at `.stop`: restart file, final output, exit code 3, `RUN022` |
+| `{"token": …, "op": "restart"}` | `restart.h5` at the end of the current iteration or step, the run goes on |
+| `{"token": …, "op": "set", "set": {"key": value}}` | the settings are queued (`queued`); only the keys a re-read of the case file may change (D40), never `run.limits.*`: a run's limits are the person's, an assistant cannot raise its own |
+
+Everything is applied after an iteration or step, like the control files
+(D76), so a result never depends on when a request arrived within one. A
+queued setting is checked against the case when it is applied: one that
+does not fit (for example a relaxation below 1 in a transient case with one
+outer iteration) is `RUN024` and left out, the run goes on with what it
+had. Each outcome is an `event` row of the run record (`RUN023`, `RUN024`)
+and an entry of `control` in the status, with the equivalent
+`[[schedule]]` entry (`at_iteration` or `at_step` = the next iteration or
+step), so that a person can reproduce a steered run from its case file.
+A wrong or missing token, a bad request and a run that is gone are
+`TOOL007`.
+
+The live calls are in the journal like every call; `foehn run --script`
+skips them (they act on a process that is gone), and a replayed `flow.run`
+runs to its end, not to the step where an assistant stopped it: a stopped
+run ends with exit code 3, so the replay reports that call as different
+unless the run record's `RUN022` stop is reproduced with a `max_steps`
+limit or a schedule.
 
 ## Python package (D61)
 
