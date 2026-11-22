@@ -643,6 +643,9 @@ Gaps:
 - consistency: [`diffuser_sst`](../../examples/cases/flow/diffuser_sst.toml): asymmetric diffuser with rounded corners, developed channel-profile inlet: converges on three meshes (6 960 to 111 360 cells); reattachment 28.94 H (GCI 0.36 %), separation 2.20 H (GCI 4 %), C_p(45 H) 0.5465 (GCI below 0.01 %) (passes in CI (set linux-1), not yet in the manual) ([results](../gallery/turbulence.md#diffuser))
 - consistency: [`diffuser_sst_sharp`](../../examples/cases/flow/diffuser_sst_sharp.toml): the same diffuser with sharp corners (cells shortened towards the corners): converges; separated region from 1.82 H to 29.29 H on 8 400 cells (passes in CI (set linux-2), not yet in the manual) ([results](../gallery/turbulence.md#diffuser))
 - consistency: [`diffuser_channel_profile`](../../examples/cases/flow/diffuser_channel_profile.toml): periodic channel at centreline Re 20 000: centreline velocity 1.000 m/s, the developed inlet table of the diffuser (passes in CI (set linux-1), not yet in the manual)
+- consistency: [`ubend_sst`](../../examples/cases/flow/ubend_sst.toml): U-bend of Monson et al., Rc/H = 1, Re_b 1e5, developed channel-profile inlet: converges on three meshes (8 832 to 141 312 cells); inner-wall separation 139.8 deg (GCI 0.19 %), reattachment 2.19 H behind the turn (GCI 2.9 %, oscillatory), wall C_p GCI 0.03 to 0.27 % (passes in CI (set linux-1), not yet in the manual) ([results](../gallery/turbulence.md#ubend))
+- consistency: [`ubend_sst_sharp`](../../examples/cases/flow/ubend_sst_sharp.toml): the same U-bend with sharp edges (square divider end and end wall): converges on 12 624 and 50 400 cells; separated region behind the divider end closes at 3.05 H and 2.89 H (passes in CI (set linux-2), not yet in the manual) ([results](../gallery/turbulence.md#ubend))
+- consistency: [`ubend_channel_profile`](../../examples/cases/flow/ubend_channel_profile.toml): periodic channel at Re_b 1e5: the developed inlet table of the U-bend (passes in CI (set linux-1), not yet in the manual)
 - reference-data: [`backstep_outlet_backflow`](../../examples/cases/flow/backstep_outlet_backflow.toml): backward-facing step with the outlet inside the recirculation
 - reference-data: recorded run (level sweep of backstep_validation with SST, 3 meshes): step of Driver & Seegmiller (1985): x_r/H 6.747, +7.8 % (band ±10 %) ([results](stage6.md#backward-facing-step-against-the-experiment-part-6g-95))
 - consistency: [`sst_results_are_bitwise_equal_on_1_and_4_threads`](../../crates/foehncraft-flow/tests/turbulence.rs): bitwise equal on 1 and 4 threads
@@ -650,6 +653,7 @@ Gaps:
 Gaps:
 
 - asymmetric diffuser (gallery 199): not compared with the measurements of Buice & Eaton (pending); the separation point converges at order 1.6 only (GCI 4 %), and the steady solver needs about three times the iterations per halving of the mesh (4 909 on 111 360 cells) while the jet moves slowly to the upper wall
+- U-bend (gallery 204): not compared with the measurements of Monson et al. (pending, owner choice: GCI first); the Re_b 1e6 case of the experiment not run; the reattachment converges oscillatory (GCI 2.9 %); the sharp-edged variant needs relaxation 0.5 at the start and its finest mesh is not in the study yet
 
 Notes:
 
@@ -760,10 +764,12 @@ Range: y_plus_first 0 … 1.
 - reference-data: [`channel_rotating_sst`](../../examples/cases/flow/channel_rotating_sst.toml): channel in spanwise rotation, Ro 0.15: the unstable side marked
 - manufactured: [`curvature_correction_manufactured_solution_orders`](../../crates/foehncraft-flow/src/turbulence/mms.rs): orders 1.9 to 2.1 of k and ω with f_r1 (DS_ij/Dt from a flow whose strain axes turn) on hexahedra and polyhedra ([results](stage6.md#manufactured-solutions-of-k-ε-ζ-f₀-the-curvature-correction-and-the-qcr-pr-184))
 - manufactured: [`curvature_correction_on_tetrahedra_converges`](../../crates/foehncraft-flow/src/turbulence/mms.rs): order 1.9 to 2.1 of k and ω on regular and 15 % perturbed tetrahedra with S_ij from a second-order velocity gradient and the gradient of S_ij from a quadratic least-squares fit where the least-squares one is not consistent (D236) ([results](stage6.md#consistent-curvature-correction-on-irregular-meshes-d236-pr-197))
+- consistency: recorded run (ubend_sst with turbulence.curvature_correction = true, levels 0 and 1): U-bend Rc/H = 1: the bubble on the convex inner wall grows (separation 127.5 deg instead of 139.4 deg, reattachment 2.57 H instead of 2.19 H on level 1) ([results](../gallery/turbulence.md#ubend))
 
 Gaps:
 
 - the DNS of Kristoffersen & Andersson (1993) for the rotating channel is not compared (its data are not in the repository)
+- on one-layer 2D meshes the operator check (D236) reports MESH005 on every cell: the quadratic fit of the velocity Hessian is rank deficient in z (U-bend, gallery 204); a false alarm in 2D, not fixed
 
 <a id="turbulence-qcr"></a>
 

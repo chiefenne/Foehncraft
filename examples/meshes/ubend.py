@@ -123,7 +123,7 @@ def rounded(level: int):
 
 def sharp(level: int):
     f = 1 << level
-    n_in, n_o, n_g, nj = N_IN * f, N_OUT * f, N_GAP * f, N_J * f
+    n_o, n_g, nj = N_OUT * f, N_GAP * f, N_J * f
     xg = [GAP * e for e in across(n_g)]
     dx0 = xg[1]
     # the legs: one x grid for both (the outlet leg is the longer one)

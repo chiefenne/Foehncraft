@@ -40,6 +40,9 @@ examples/meshes/*.su2
 # cells with sharp corners, 0.6 MB), the CI cases
 !examples/meshes/diffuser_coarse.su2
 !examples/meshes/diffuser_sharp_coarse.su2
+# the coarse U-bend meshes of gallery 204 (8 832 and 12 624 cells), read by ubend_sst*.toml
+!examples/meshes/ubend_coarse.su2
+!examples/meshes/ubend_sharp_coarse.su2
 
 # Python package
 __pycache__/

@@ -56,4 +56,4 @@ relaxation = 0.95
 [output]
 vtkhdf = false
 wall_csv = true
-lines = [ { name = "profile", from = [0.05, 0.5, 0.05], to = [0.05, 1.0, 0.05], points = 200 } ]
+lines = [ { name = "profile", from = [0.05, 0.5, 0.05], to = [0.05, 1.0, 0.05], points = 500 } ]
