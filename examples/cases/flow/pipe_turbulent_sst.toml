@@ -1,0 +1,64 @@
+# Fully developed turbulent pipe flow at Re_b = 5300 (Re_tau about 181),
+# k-omega SST 2003 with the low-Re wall treatment (stage 8, D45).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/pipe_turbulent_sst.toml
+#
+# Pipe of radius R = 0.5 m (D = 1 m) on an axisymmetric wedge of 0.5° (as
+# pipe_rough_keps.toml), one periodic module of 0.1 m driven by the mass
+# flow of U_b = 1 m/s through the wedge section 1/2 R^2 sin(theta),
+# nu = 1/5300 so that Re_b = U_b D / nu = 5300. The solver adjusts the
+# uniform body force F; the wall shear stress is F R / 2, so
+# u_tau = sqrt(F R / (2 rho)), Re_tau = u_tau R / nu and u_tau/U_b follow
+# from the driving force in the log. Reference: the DNS of El Khoury et al.
+# (2013), Table 2: Re_b 5300, Re_tau 181, u_tau/U_b = 0.0683 (C_f =
+# 2 (u_tau/U_b)^2 = 9.33e-3); the Blasius-type correlation is a second
+# check (examples/studies/pipe_gci.py). 48 cells across the radius,
+# graded towards the wall.
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [0.1, 0.5, 0.1]
+cells = [2, 48, 1]
+wedge = 0.5            # degrees about the x axis; y is the radius
+grading = { y = { ratio = 0.03 } }
+
+[fluid]
+density = 1.0
+viscosity = 0.00018867924528301886   # 1/5300
+
+[turbulence]
+model = "k-omega-sst"
+wall_treatment = "low-re"
+
+[initial]
+velocity = [1.0, 0.0, 0.0]
+turbulence_intensity = 0.05
+viscosity_ratio = 10.0
+
+[boundary.xmin]
+type = "periodic"
+partner = "xmax"
+mass_flow = 1.0908169e-3     # kg/s: rho U 1/2 R^2 sin(0.5 deg)
+[boundary.xmax]
+type = "periodic"
+[boundary.ymax]
+type = "wall"
+[boundary.zmin]
+type = "wedge"
+[boundary.zmax]
+type = "wedge"
+
+[solver]
+tolerance = 1e-9
+max_iterations = 3000
+
+[solver.momentum]
+relaxation = 0.95     # 0.7 needs more than 3000 iterations on the finer meshes
+
+[output]
+vtkhdf = false
+wall_csv = true
+lines = [ { name = "profile", from = [0.05, 0.0, 0.0], to = [0.05, 0.5, 0.0], points = 200 } ]
