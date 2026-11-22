@@ -81,4 +81,4 @@ end_time = 40.0
 [output]
 vtkhdf = true
 wall_csv = false
-fields_interval = 2.0
+fields_every = 40     # 2 s at the step of 0.05 s

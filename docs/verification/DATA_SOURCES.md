@@ -109,6 +109,32 @@ data (D201, rule 5 below). The numbering of 1.3 is kept.
   CC BY-NC-SA 4.0, and it stays out of this repository. Values come from the
   paper.
 
+## 3b. Stirred tank mixing (Fyfe et al. 2024)
+
+- Citation: C. Fyfe, H. Barrington, C. M. Gordon, M. Reid, *A computer vision
+  approach towards verifying CFD models*, Organic Process Research &
+  Development 28 (9), 3661–3673 (2024), CC BY 4.0.
+- DOI: 10.1021/acs.oprd.4c00229 (**verified**: the DOI and the page range
+  are printed on the paper's pages)
+- Quantities used: the measured plateau (macromixing) times of Table 3 for
+  the phenolphthalein runs, 200 rpm unbaffled 17.3 s, 200 rpm baffled
+  18.7 s, 400 rpm unbaffled 20.0 s, 400 rpm baffled 6.5 s (single runs,
+  whole-reactor colour metric); the vessel, impeller and baffle dimensions
+  of its Supporting Information. Not used: its CFD results (velocity planes,
+  the Table 1 velocity differences) and the blend times of its
+  correlation tool (Table 2), which are numbers of other solvers (D201).
+
+### 3c. Power number and blend time correlations (to verify)
+
+- Grenville blend time, θ₉₅ = 5.20 N_P^(−1/3) N⁻¹ (T/D)²: **to verify**
+  (the source, Grenville's work on mixing times of turbulent stirred tanks,
+  is quoted in the audit of 2026-11-21 as "Grenville (1992)"; no citation is
+  confirmed yet).
+- Measured power number of a four-blade 45° pitched-blade turbine in a
+  baffled tank, about 1.2 to 1.4 in the turbulent range (Chapple, Kresta,
+  Wall & Afacan 2002, Chem. Eng. Res. Des. 80): **to verify** before a test
+  quotes it.
+
 ## 4. Rules for adding an entry
 
 1. A value goes into the repository only when a test or a validation page
