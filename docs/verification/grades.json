@@ -15,9 +15,13 @@
    "title": "Gmsh v4 reader",
    "grade": "partial",
    "why": [
-    "no exact or manufactured solution"
+    "no exact or manufactured solution",
+    "gaps written"
    ],
-   "gaps": [],
+   "gaps": [
+    "T-junction (gallery 196): the pressure at the branch inlet is not grid-convergent (observed order 0.2, GCI 29 %) and the scalar difference downstream oscillates; no comparison with published measurements yet",
+    "conversion into polyhedra fails with GEN001 (a boundary cell centre behind its face) on Netgen-optimised tetrahedra and on one fine Gmsh mesh of the T-junction (h = 0.005 m); sizes that convert are used"
+   ],
    "range": {}
   },
   {
@@ -102,6 +106,18 @@
    ],
    "gaps": [
     "no order of accuracy on remediated meshes (the remediation is first order on the skewed faces by design)"
+   ],
+   "range": {}
+  },
+  {
+   "id": "mesh.operator-check",
+   "title": "Operator exactness check of the velocity gradient and Hessian",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "the flagged cells are not yet treated: the quadratic least-squares operators and the local remesh are the next steps of D236"
    ],
    "range": {}
   },
@@ -517,7 +533,7 @@
    ],
    "gaps": [
     "the DNS of Pinelli et al. (2010) is not compared within a band (its data are not in the repository)",
-    "the divergence of the explicit QCR stress is first order on tetrahedra and does not converge on meshes with randomly perturbed vertices (error 5 % of the largest force at 15 % perturbation): Green-Gauss with the linear interpolation of cell values; the coupled momentum equations are not in the manufactured solution"
+    "the divergence of the explicit QCR stress is first order on tetrahedra, regular or perturbed (the midpoint rule of the face sum on irregular cells), and second order only on regular hexahedra and polyhedra; the coupled momentum equations are not in the manufactured solution"
    ],
    "range": {}
   },
@@ -828,6 +844,28 @@
    "range": {}
   },
   {
+   "id": "buoyancy.boussinesq",
+   "title": "Gravity and the Boussinesq buoyancy (balanced force)",
+   "grade": "partial",
+   "why": [
+    "a model without reference data",
+    "gaps written"
+   ],
+   "gaps": [
+    "no reference-data case (a measured natural-convection flow)",
+    "the wall forces leave out the Archimedes part ρ_ref g V"
+   ],
+   "range": {}
+  },
+  {
+   "id": "buoyancy.pressure-kind",
+   "title": "Reduced and static pressure at pressure boundaries",
+   "grade": "verified",
+   "why": [],
+   "gaps": [],
+   "range": {}
+  },
+  {
    "id": "rotating.mrf",
    "title": "Moving reference frame (steady frozen rotor)",
    "grade": "partial",
@@ -949,10 +987,8 @@
   {
    "id": "run.restart-control",
    "title": "Restart and control files (.stop, .result_N, .read_toml_N)",
-   "grade": "partial",
-   "why": [
-    "no exact or manufactured solution"
-   ],
+   "grade": "verified",
+   "why": [],
    "gaps": [],
    "range": {}
   },
@@ -985,10 +1021,8 @@
   {
    "id": "run.log-records",
    "title": "Log columns and JSON records for scripts and agents",
-   "grade": "partial",
-   "why": [
-    "no exact or manufactured solution"
-   ],
+   "grade": "verified",
+   "why": [],
    "gaps": [],
    "range": {}
   },
@@ -1030,32 +1064,52 @@
   {
    "id": "interface.python",
    "title": "Python package foehncraft (cases, runs, studies)",
-   "grade": "partial",
-   "why": [
-    "no exact or manufactured solution"
-   ],
+   "grade": "verified",
+   "why": [],
    "gaps": [],
    "range": {}
   },
   {
    "id": "interface.cli-contract",
    "title": "Run contract of the command line (exit codes, JSON, schema)",
-   "grade": "partial",
-   "why": [
-    "no exact or manufactured solution"
-   ],
+   "grade": "verified",
+   "why": [],
    "gaps": [],
    "range": {}
   },
   {
-   "id": "planned.buoyancy",
-   "title": "Buoyancy (Boussinesq and variable density)",
+   "id": "interface.tool-registry",
+   "title": "Tool registry (foehn call, foehn commands, typed schemas)",
+   "grade": "verified",
+   "why": [],
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "interface.journal-replay",
+   "title": "Journal and replay of tool calls",
+   "grade": "verified",
+   "why": [],
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "interface.mcp",
+   "title": "MCP server (foehn mcp)",
+   "grade": "verified",
+   "why": [],
+   "gaps": [],
+   "range": {}
+  },
+  {
+   "id": "planned.variable-density",
+   "title": "Low-Mach variable density ρ(T, p₀)",
    "grade": "unverified",
    "why": [
     "no evidence holds"
    ],
    "gaps": [
-    "not built (stage 7b, after the CHT work)"
+    "not built (stage 7c; the Boussinesq buoyancy is in, buoyancy.boussinesq)"
    ],
    "range": {}
   }

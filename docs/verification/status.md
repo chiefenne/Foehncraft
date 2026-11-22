@@ -4,11 +4,11 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**95 features: 41 verified, 50 partial, 4 unverified.**
+**101 features: 49 verified, 48 partial, 4 unverified.**
 
 ## How a grade is computed
 
-Kinds of evidence: `exact` (an exact solution, often with its observed order), `manufactured` (a manufactured solution with its order), `reference-data` (experiments, DNS, published benchmarks and correlations) and `consistency` (conservation, equality of two paths, bitwise equality, input checks).
+Kinds of evidence: `exact` (an exact solution, often with its observed order), `manufactured` (a manufactured solution with its order), `reference-data` (experiments, DNS, published benchmarks and correlations) and `consistency` (conservation, equality of two paths, bitwise equality, input checks) and `contract` (only for infrastructure features: a tested promise such as bitwise restart, a fixed output schema, replay to identical files, equality of command line and Python).
 
 An item *holds* when its test exists (tests run on every pull request), its recorded run is documented, or its case passed in the last manual run or runs in a CI case set.
 
@@ -16,6 +16,7 @@ An item *holds* when its test exists (tests run on every pull request), its reco
 |---|---|
 | verified | an `exact` or `manufactured` item holds, a `reference-data` item holds where the feature is a model, no gap is written and every case has a run |
 | partial | some items hold, but gaps are written, or only `consistency` checks hold, or a model has no reference data, or a case has no run |
+| verified (infrastructure) | restart, logs, run record, interfaces: every contract the row lists (`bitwise`, `schema`, `equivalence`, `replay`, `control`, `diagnostics`, `round-trip`) has a holding `contract` item, and no gap is written |
 | unverified | no item holds, or a case of the feature failed in the last manual run |
 
 A gap written into the table, or a failing case, lowers the grade at once; raising it needs evidence. *Range* is the validated range of the feature; a run outside it will be reported as a limitation (D199).
@@ -33,6 +34,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Meshes | [VTK reader (.vtk, .vtu) and VTU writer](#mesh-vtk) | partial |
 | Meshes | [Partitioning with METIS and halos](#mesh-partition) | partial |
 | Meshes | [Quality report and automatic remediation of skewed cells](#mesh-quality-remediation) | partial |
+| Meshes | [Operator exactness check of the velocity gradient and Hessian](#mesh-operator-check) | partial |
 | Meshes | [VTKHDF output for ParaView](#mesh-vtkhdf) | partial |
 | Numerics | [Weighted least-squares gradients](#numerics-gradient-ls) | verified |
 | Numerics | [Linear upwind and bounded central convection](#numerics-convection-schemes) | verified |
@@ -96,6 +98,8 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Conjugate heat transfer | [Contact resistances and thin walls](#cht-contact-thin-wall) | verified |
 | Conjugate heat transfer | [Orthotropic solids (axes per region)](#cht-orthotropic) | verified |
 | Conjugate heat transfer | [Heat sources per region](#cht-region-source) | partial |
+| Buoyancy | [Gravity and the Boussinesq buoyancy (balanced force)](#buoyancy-boussinesq) | partial |
+| Buoyancy | [Reduced and static pressure at pressure boundaries](#buoyancy-pressure-kind) | verified |
 | Rotating machinery | [Moving reference frame (steady frozen rotor)](#rotating-mrf) | partial |
 | Rotating machinery | [Transient frozen rotor](#rotating-mrf-transient) | partial |
 | Rotating machinery | [A whole domain in a turning frame](#rotating-whole-domain-frame) | partial |
@@ -108,17 +112,20 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Cases and properties | [Material database (air, water, oils, glycols)](#case-materials) | partial |
 | Cases and properties | [Settings that change on a schedule](#case-schedule) | partial |
 | Cases and properties | [Case checks and guidance (unknown keys, boundary checks)](#case-checks-guidance) | partial |
-| Runs and results | [Restart and control files (.stop, .result_N, .read_toml_N)](#run-restart-control) | partial |
+| Runs and results | [Restart and control files (.stop, .result_N, .read_toml_N)](#run-restart-control) | verified |
 | Runs and results | [Derived fields (vorticity, Q, λ₂, wall shear, y⁺, turbulence fields)](#run-derived-fields) | verified |
 | Runs and results | [Statistics of transient runs (mean, RMS, phase averages, confidence)](#run-statistics) | verified |
 | Runs and results | [Mass and kinetic-energy ledgers, divergence report](#run-ledgers) | partial |
-| Runs and results | [Log columns and JSON records for scripts and agents](#run-log-records) | partial |
+| Runs and results | [Log columns and JSON records for scripts and agents](#run-log-records) | verified |
 | Runs and results | [Iteration budget, diagnosis of steady runs, study budgets](#run-budgets) | verified |
 | Runs and results | [Grid convergence index of every mesh sweep](#run-gci) | verified |
 | Backends and interfaces | [Flow loop on NVIDIA GPUs](#backend-cuda) | partial |
-| Backends and interfaces | [Python package foehncraft (cases, runs, studies)](#interface-python) | partial |
-| Backends and interfaces | [Run contract of the command line (exit codes, JSON, schema)](#interface-cli-contract) | partial |
-| Planned | [Buoyancy (Boussinesq and variable density)](#planned-buoyancy) | unverified |
+| Backends and interfaces | [Python package foehncraft (cases, runs, studies)](#interface-python) | verified |
+| Backends and interfaces | [Run contract of the command line (exit codes, JSON, schema)](#interface-cli-contract) | verified |
+| Backends and interfaces | [Tool registry (foehn call, foehn commands, typed schemas)](#interface-tool-registry) | verified |
+| Backends and interfaces | [Journal and replay of tool calls](#interface-journal-replay) | verified |
+| Backends and interfaces | [MCP server (foehn mcp)](#interface-mcp) | verified |
+| Planned | [Low-Mach variable density ρ(T, p₀)](#planned-variable-density) | unverified |
 
 ## Meshes
 
@@ -137,11 +144,17 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 
 ### Gmsh v4 reader
 
-**partial** (no exact or manufactured solution) · id `mesh.gmsh` · switch `mesh.format = "gmsh"`
+**partial** (no exact or manufactured solution; gaps written) · id `mesh.gmsh` · switch `mesh.format = "gmsh"`
 
 - consistency: [`box_tet_ascii_and_binary_are_equal`](../../crates/foehncraft-mesh/tests/gmsh.rs): ASCII and binary files give the same mesh
 - consistency: [`gmsh_meshes_are_unchanged`](../../crates/foehncraft-mesh/tests/gmsh_fingerprint.rs): fingerprints of the Gmsh meshes of the catalogue
 - reference-data: [`pipe_gmsh_raw`](../../examples/cases/flow/pipe_gmsh_raw.toml): developing laminar pipe flow on raw Gmsh tetrahedra converges (with the automatic remediation)
+- reference-data: [`tjunction_mixing`](../../examples/cases/flow/tjunction_mixing.toml): 3D T-junction on polyhedra converted from Gmsh tetrahedra, three meshes: inlet pressure order 1.77, GCI 2.4 % (passes in CI (set linux-1), not yet in the manual)
+
+Gaps:
+
+- T-junction (gallery 196): the pressure at the branch inlet is not grid-convergent (observed order 0.2, GCI 29 %) and the scalar difference downstream oscillates; no comparison with published measurements yet
+- conversion into polyhedra fails with GEN001 (a boundary cell centre behind its face) on Netgen-optimised tetrahedra and on one fine Gmsh mesh of the T-junction (h = 0.005 m); sizes that convert are used
 
 <a id="mesh-su2"></a>
 
@@ -231,6 +244,22 @@ Gaps:
 Gaps:
 
 - no order of accuracy on remediated meshes (the remediation is first order on the skewed faces by design)
+
+<a id="mesh-operator-check"></a>
+
+### Operator exactness check of the velocity gradient and Hessian
+
+**partial** (gaps written) · id `mesh.operator-check` · switch `solver.operator_tolerance` · decisions D236
+
+- exact: [`linear_fields_are_exact_on_every_mesh`](../../crates/foehncraft-fv/src/exactness.rs): the least-squares gradient of linear fields exact to 10⁻¹⁰ on regular and perturbed hexahedra and tetrahedra
+- exact: [`regular_hexahedra_are_second_order_inside`](../../crates/foehncraft-fv/src/exactness.rs): gradient and Hessian of quadratic fields exact inside regular hexahedra, flagged at the walls
+- consistency: [`irregular_cells_are_flagged`](../../crates/foehncraft-fv/src/exactness.rs): perturbed hexahedra and tetrahedra flagged
+- consistency: [`regular_hexahedra_flag_only_the_boundary_cells`](../../crates/foehncraft-flow/src/operators.rs): MESH005 and MESH006 with the features on; only the wall cells of a regular mesh
+- consistency: [`cavity_sst_operator_check`](../../examples/cases/flow/cavity_sst_operator_check.toml): the cavity on perturbed tetrahedra: every cell flagged, operators.csv written, the run converges as without the check (passes in CI (set linux-3), not yet in the manual)
+
+Gaps:
+
+- the flagged cells are not yet treated: the quadratic least-squares operators and the local remesh are the next steps of D236
 
 <a id="mesh-vtkhdf"></a>
 
@@ -609,6 +638,7 @@ Gaps:
 - manufactured: [`sst_manufactured_solution_orders`](../../crates/foehncraft-flow/src/turbulence/mms.rs): orders 2.04 to 2.17 of k and ω on hexahedra, polyhedra and tetrahedra ([results](stage6.md#manufactured-solutions-of-every-model-spec-92-pr-148))
 - reference-data: [`tmr_plate_sst`](../../examples/cases/flow/tmr_plate_sst.toml): flat plate: C_f(0.97) +1.45 % from the Coles–Fernholz fit, GCI 1.76 % ([results](stage6.md#tmr-flat-plate-re_l--510⁶))
 - reference-data: [`channel_sst`](../../examples/cases/flow/channel_sst.toml): channel at Re_τ 395: U_b⁺ −1.3 % from the DNS of Moser, Kim & Mansour (1999) ([results](stage6.md#channel-re_τ--395))
+- reference-data: [`pipe_turbulent_sst`](../../examples/cases/flow/pipe_turbulent_sst.toml): pipe at Re_b 5300: u_τ/U_b +4.5 % from the DNS of El Khoury et al. (2013), GCI 0.2 % (band ±6 %) (passes in CI (set linux-1), not yet in the manual)
 - reference-data: [`backstep_outlet_backflow`](../../examples/cases/flow/backstep_outlet_backflow.toml): backward-facing step with the outlet inside the recirculation
 - reference-data: recorded run (level sweep of backstep_validation with SST, 3 meshes): step of Driver & Seegmiller (1985): x_r/H 6.747, +7.8 % (band ±10 %) ([results](stage6.md#backward-facing-step-against-the-experiment-part-6g-95))
 - consistency: [`sst_results_are_bitwise_equal_on_1_and_4_threads`](../../crates/foehncraft-flow/tests/turbulence.rs): bitwise equal on 1 and 4 threads
@@ -737,11 +767,12 @@ Gaps:
 - consistency: [`qcr_drives_the_secondary_flow_of_a_duct`](../../crates/foehncraft-flow/tests/curvature.rs): secondary flow of a square duct appears with QCR, not without
 - reference-data: [`square_duct_qcr`](../../examples/cases/flow/square_duct_qcr.toml): square duct, Re_b 3 500: secondary velocity 1.55 % of U_b, the vortex pair into the corner
 - manufactured: [`qcr_stress_manufactured_solution_orders`](../../crates/foehncraft-flow/src/turbulence/mms.rs): the explicit stress force of QCR2000 and QCR2013 against the divergence of the written-out stress: order 2.0 to 2.1 on regular hexahedra and polyhedra ([results](stage6.md#manufactured-solutions-of-k-ε-ζ-f₀-the-curvature-correction-and-the-qcr-pr-184))
+- manufactured: [`qcr_stress_on_perturbed_meshes_converges`](../../crates/foehncraft-flow/src/turbulence/mms.rs): the stress force on 15 % perturbed hexahedra and tetrahedra converges (hexahedra 4.6 %, 1.5 %, 0.65 %; tetrahedra order 1) with the quadratic least-squares gradient and the skewness-corrected face stress (D236) ([results](stage6.md#consistent-qcr-stress-on-irregular-meshes-d236-pr-194))
 
 Gaps:
 
 - the DNS of Pinelli et al. (2010) is not compared within a band (its data are not in the repository)
-- the divergence of the explicit QCR stress is first order on tetrahedra and does not converge on meshes with randomly perturbed vertices (error 5 % of the largest force at 15 % perturbation): Green-Gauss with the linear interpolation of cell values; the coupled momentum equations are not in the manufactured solution
+- the divergence of the explicit QCR stress is first order on tetrahedra, regular or perturbed (the midpoint rule of the face sum on irregular cells), and second order only on regular hexahedra and polyhedra; the coupled momentum equations are not in the manufactured solution
 
 <a id="turbulence-smooth-limits"></a>
 
@@ -1074,6 +1105,37 @@ Gaps:
 
 - no exact solution with a volumetric source (for example the parabolic temperature of a heated slab)
 
+## Buoyancy
+
+<a id="buoyancy-boussinesq"></a>
+
+### Gravity and the Boussinesq buoyancy (balanced force)
+
+**partial** (a model without reference data; gaps written) · id `buoyancy.boussinesq` · switch `[gravity], [buoyancy] model = "boussinesq"` · decisions D153, D154
+
+- exact: [`buoyancy_box_at_rest`](../../examples/cases/flow/buoyancy_box_at_rest.toml): a stratified box at rest along an oblique gravity on a perturbed mesh: largest speed 1·10⁻¹⁵ m/s (passes in CI (set linux-3), not yet in the manual) ([results](../gallery/energy.md#buoyancy))
+- exact: [`stratified_box_stays_at_rest`](../../crates/foehncraft-flow/tests/buoyancy.rs): the box at rest on hex, tet, poly and mixed 3D meshes, SIMPLEC and coupled, below 3·10⁻¹⁰ m/s
+- exact: [`buoyancy_slot`](../../examples/cases/flow/buoyancy_slot.toml): the buoyant slot against its exact cubic profile, observed orders 2.14 and 2.13 (passes in CI (set linux-3), not yet in the manual) ([results](../cases/flow.md#gravity-and-buoyancy))
+- exact: [`buoyant_slot_has_second_order`](../../crates/foehncraft-flow/tests/buoyancy.rs): observed orders in 1.8–2.3
+- consistency: [`buoyancy_enclosure_plume`](../../examples/cases/flow/buoyancy_enclosure_plume.toml): a laminar plume in a closed air enclosure converges, mass and kinetic-energy ledgers close (passes in CI (set linux-3), not yet in the manual)
+
+Gaps:
+
+- no reference-data case (a measured natural-convection flow)
+- the wall forces leave out the Archimedes part ρ_ref g V
+
+<a id="buoyancy-pressure-kind"></a>
+
+### Reduced and static pressure at pressure boundaries
+
+**verified** · id `buoyancy.pressure-kind` · switch `[boundary.<name>] pressure_kind` · decisions D153
+
+- consistency: [`buoyancy_channel_reduced`](../../examples/cases/flow/buoyancy_channel_reduced.toml): a tall channel with the outlet as p′ = 0 (passes in CI (set linux-3), not yet in the manual) ([results](../recipes/energy.md#buoyancy))
+- consistency: [`buoyancy_channel_static`](../../examples/cases/flow/buoyancy_channel_static.toml): the same channel with the outlet as a static pressure: the same flow to 10⁻¹¹ (passes in CI (set linux-3), not yet in the manual)
+- exact: [`reduced_and_static_outlet_give_the_same_flow`](../../crates/foehncraft-flow/tests/buoyancy.rs): both kinds give the same velocity to 10⁻⁹
+- consistency: [`buoyancy_open_box`](../../examples/cases/flow/buoyancy_open_box.toml): a box open over its height stays at rest with the reduced value 0 (passes in CI (set linux-3), not yet in the manual)
+- consistency: [`static_outlet_without_hydrostatics_drives_a_false_flow`](../../crates/foehncraft-flow/tests/buoyancy.rs): a uniform static value over the opening drives a flow and warns BUO006
+
 ## Rotating machinery
 
 <a id="rotating-mrf"></a>
@@ -1217,11 +1279,15 @@ Gaps:
 
 ### Restart and control files (.stop, .result_N, .read_toml_N)
 
-**partial** (no exact or manufactured solution) · id `run.restart-control`
+**verified** · id `run.restart-control`
 
-- consistency: [`restart_continues_bit_identically`](../../crates/foehncraft-flow/tests/stage5.rs): restart continues bitwise
-- consistency: [`sigterm_stops_cleanly_and_restart_latest_continues_bitwise`](../../crates/foehncraft-cli/tests/run_contract.rs): SIGTERM stops cleanly, restart continues bitwise
-- consistency: [`stop_file_ends_the_run`](../../crates/foehncraft-flow/tests/stage5.rs): a stop file ends the run
+- contract (bitwise): [`restart_continues_bit_identically`](../../crates/foehncraft-flow/tests/stage5.rs): a restarted run continues bitwise
+- contract (bitwise): [`steady_restart_latest_is_bitwise`](../../crates/foehncraft-cli/tests/run_contract.rs): `--restart latest` of a steady run is bitwise
+- contract (bitwise): [`sigterm_stops_cleanly_and_restart_latest_continues_bitwise`](../../crates/foehncraft-cli/tests/run_contract.rs): SIGTERM stops cleanly, restart continues bitwise
+- contract (control): [`stop_file_ends_the_run`](../../crates/foehncraft-flow/tests/stage5.rs): a stop file ends the run
+- contract (control): [`sigterm_stops_cleanly_and_restart_latest_continues_bitwise`](../../crates/foehncraft-cli/tests/run_contract.rs): SIGTERM writes a restart file and exits cleanly
+
+Contracts: `bitwise`, `control`.
 
 <a id="run-derived-fields"></a>
 
@@ -1258,11 +1324,15 @@ Gaps:
 
 ### Log columns and JSON records for scripts and agents
 
-**partial** (no exact or manufactured solution) · id `run.log-records` · switch `[log]` · decisions D77
+**verified** · id `run.log-records` · switch `[log]` · decisions D77
 
 - consistency: [`cavity_re100_columns`](../../examples/cases/flow/cavity_re100_columns.toml): the Ghia cavity with a chosen iteration table (manual: largest deviation from Ghia et al. (1982), Re = 100 ≤ 0.02)
-- consistency: [`configurable_log_columns_change_no_result`](../../crates/foehncraft-cli/tests/run_contract.rs): log columns change no result
-- consistency: [`json_result_and_byte_identical_files`](../../crates/foehncraft-cli/tests/run_contract.rs): the JSON result and byte-identical files
+- contract (schema): [`run_record_rows_follow_their_schema`](../../crates/foehncraft-cli/tests/run_contract.rs): every row of run.jsonl has a known type and the keys of that type; the header names the format
+- contract (schema): [`json_result_and_byte_identical_files`](../../crates/foehncraft-cli/tests/run_contract.rs): result.json is the object on standard output; header and end row of the run record
+- contract (equivalence): [`configurable_log_columns_change_no_result`](../../crates/foehncraft-cli/tests/run_contract.rs): log columns change no result; flow.log and run.jsonl carry the same content
+- contract (bitwise): [`json_result_and_byte_identical_files`](../../crates/foehncraft-cli/tests/run_contract.rs): two runs give byte-identical result, residual and field files
+
+Contracts: `schema`, `equivalence`, `bitwise`.
 
 <a id="run-budgets"></a>
 
@@ -1315,29 +1385,79 @@ Gaps:
 
 ### Python package foehncraft (cases, runs, studies)
 
-**partial** (no exact or manufactured solution) · id `interface.python` · switch `import foehncraft` · decisions D86
+**verified** · id `interface.python` · switch `import foehncraft` · decisions D86
 
-- consistency: [`test_the_command_line_gives_the_same_run`](../../python/tests/test_run.py): the command line gives the same run
-- consistency: [`test_every_example_case_round_trips`](../../python/tests/test_case.py): every example case round-trips
+- contract (equivalence): [`test_the_command_line_gives_the_same_run`](../../python/tests/test_run.py): the command line gives the same run
+- contract (equivalence): [`test_a_case_built_in_python_is_its_case_file`](../../python/tests/test_run.py): a case built in Python is its case file
+- contract (round-trip): [`test_every_example_case_round_trips`](../../python/tests/test_case.py): every example case round-trips
+- contract (diagnostics): [`test_errors_of_the_case_carry_codes`](../../python/tests/test_run.py): errors of the case carry their codes
 - consistency: [`test_uncertainty_of_a_sweep`](../../python/tests/test_run.py): the uncertainty of a sweep
+
+Contracts: `equivalence`, `round-trip`, `diagnostics`.
 
 <a id="interface-cli-contract"></a>
 
 ### Run contract of the command line (exit codes, JSON, schema)
 
-**partial** (no exact or manufactured solution) · id `interface.cli-contract` · decisions D64, D77
+**verified** · id `interface.cli-contract` · decisions D64, D77
 
-- consistency: [`exit_codes`](../../crates/foehncraft-cli/tests/run_contract.rs): exit codes
-- consistency: [`schema_is_json_schema`](../../crates/foehncraft-cli/tests/run_contract.rs): the schema is a JSON Schema
+- contract (diagnostics): [`exit_codes`](../../crates/foehncraft-cli/tests/run_contract.rs): exit codes of a finished, failed and stopped run
+- contract (schema): [`schema_is_json_schema`](../../crates/foehncraft-cli/tests/run_contract.rs): the case schema is a JSON Schema
+- contract (schema): [`json_result_and_byte_identical_files`](../../crates/foehncraft-cli/tests/run_contract.rs): the --json result carries format, status and exit code
+
+Contracts: `schema`, `diagnostics`.
+
+<a id="interface-tool-registry"></a>
+
+### Tool registry (foehn call, foehn commands, typed schemas)
+
+**verified** · id `interface.tool-registry` · switch `foehn call, foehn commands` · decisions D196
+
+- contract (schema): [`commands_lists_every_tool_with_schemas`](../../crates/foehncraft-cli/tests/tools_contract.rs): every tool lists its input and output schema
+- contract (schema): [`every_schema_is_an_object_schema`](../../crates/foehncraft-tools/src/lib.rs): every schema is an object schema
+- contract (schema): [`tools_md_is_current`](../../crates/foehncraft-tools/src/lib.rs): docs/tools.md is generated from the registry
+- contract (equivalence): [`call_matches_the_clap_commands`](../../crates/foehncraft-cli/tests/tools_contract.rs): a tool call equals the command-line command
+- contract (equivalence): [`runs_and_files_match`](../../crates/foehncraft-cli/tests/tools_contract.rs): a run through a tool call writes the same files as the command line
+- contract (diagnostics): [`bad_calls_are_diagnostics`](../../crates/foehncraft-cli/tests/tools_contract.rs): bad calls are diagnostics, not crashes
+
+Contracts: `schema`, `equivalence`, `diagnostics`.
+
+<a id="interface-journal-replay"></a>
+
+### Journal and replay of tool calls
+
+**verified** · id `interface.journal-replay` · switch `--journal, foehn run --script` · decisions D197
+
+- contract (replay): [`journal_and_replay`](../../crates/foehncraft-cli/tests/tools_contract.rs): a journaled session replays to the same files
+- contract (replay): [`replay_runs_the_calls_and_skips_the_refused_ones`](../../crates/foehncraft-tools/src/journal.rs): replay runs the calls and skips the refused ones
+- contract (replay): [`test_calls_go_into_the_journal_and_replay`](../../python/tests/test_tools.py): Python calls enter the journal and replay
+- contract (schema): [`calls_are_journaled_with_their_typed_input`](../../crates/foehncraft-tools/src/journal.rs): calls are journaled with their typed input
+
+Contracts: `replay`, `schema`.
+
+<a id="interface-mcp"></a>
+
+### MCP server (foehn mcp)
+
+**verified** · id `interface.mcp` · switch `foehn mcp` · decisions D77, L18
+
+- contract (equivalence): [`the_tools_are_the_registry_ids`](../../crates/foehncraft-cli/tests/mcp.rs): the MCP tools are the registry ids
+- contract (replay): [`a_session_with_questions_refusals_paging_and_its_replay`](../../crates/foehncraft-cli/tests/mcp.rs): a session through MCP replays from its journal
+- contract (control): [`a_running_case_is_steered_and_stopped_through_its_control_port`](../../crates/foehncraft-cli/tests/mcp.rs): a running case is steered and stopped through its control port
+- contract (control): [`a_cancelled_run_stops_with_its_output`](../../crates/foehncraft-cli/tests/mcp.rs): a cancelled run stops with its output
+- contract (diagnostics): [`a_host_that_cannot_ask_gets_a_refusal`](../../crates/foehncraft-cli/tests/mcp.rs): a host that cannot ask gets a refusal
+- contract (diagnostics): [`refuses_to_start_without_both_roots`](../../crates/foehncraft-cli/tests/mcp.rs): no roots, no start
+
+Contracts: `equivalence`, `replay`, `control`, `diagnostics`.
 
 ## Planned
 
-<a id="planned-buoyancy"></a>
+<a id="planned-variable-density"></a>
 
-### Buoyancy (Boussinesq and variable density)
+### Low-Mach variable density ρ(T, p₀)
 
-**unverified** (no evidence holds) · id `planned.buoyancy` · switch `not built` · decisions D150
+**unverified** (no evidence holds) · id `planned.variable-density` · switch `not built` · decisions D151
 
 Gaps:
 
-- not built (stage 7b, after the CHT work)
+- not built (stage 7c; the Boussinesq buoyancy is in, buoyancy.boussinesq)

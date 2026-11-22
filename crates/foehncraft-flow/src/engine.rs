@@ -1540,6 +1540,10 @@ pub struct CheckReport {
     pub diagnostics: Vec<Diagnostic>,
     /// The estimate (when the case could be read).
     pub estimate: Option<Estimate>,
+    /// The operator exactness check of the first mesh (D236): the cells
+    /// where the velocity gradient or Hessian is not exact, worst first.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub operators: Option<crate::operators::OperatorReport>,
 }
 
 /// Checks a case file: reads it (with overrides and roots), checks the
@@ -1559,6 +1563,7 @@ pub fn check_file(
         ok: false,
         diagnostics: Vec::new(),
         estimate: None,
+        operators: None,
     };
     let case = match load(path, sets, roots) {
         Ok(c) => c,
@@ -1605,13 +1610,22 @@ pub fn check_case(
                     values: &values,
                     t: t0,
                     turning: &case.turning(),
+                    hydrostatic: crate::buoyancy::hydrostatic(case),
                 },
                 case.check_context(),
             );
             findings.extend(crate::turbulence::setup_findings(case));
             findings.extend(crate::energy::setup_findings(case));
+            findings.extend(crate::buoyancy::setup_findings(case, &mesh, &geo));
             rep.diagnostics
                 .extend(findings.iter().map(crate::bc::Finding::diagnostic));
+            // the operator exactness check (D236)
+            if let Ok(mut r) = crate::operators::check_case(case, &mesh, &geo) {
+                let ds = crate::operators::diagnostics(&r, case);
+                r.findings = ds.iter().map(|d| d.message.clone()).collect();
+                rep.diagnostics.extend(ds);
+                rep.operators = Some(r);
+            }
         }
         Err(e) => rep.diagnostics.push(diag::of_error(&e)),
     }

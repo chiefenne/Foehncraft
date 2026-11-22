@@ -357,6 +357,36 @@ least-squares gradient on smooth fields) and reduces to the present one
 without gravity, bitwise (the extra term is zero when g = 0, and the code
 path is not entered).
 
+**As built (PR 7b1, #186, 2026-11-22).** Four points differ from the
+text above or make it concrete:
+
+1. The face body force of the offsets is the arithmetic mean,
+   o_f = ½(b_P + b_N)·d, not the interpolation with the face weight. For a
+   linear stratification the hydrostatic p′ is quadratic along d, and the
+   mean of the two end slopes is its exact difference on any face position,
+   so the discrete hydrostatic state is exact on skewed and off-centre
+   faces as well (the weighted form is not). The Rhie–Chow term uses
+   o_f − B̄_f·d with B̄_f weighted as ∇p_f; the boundary faces take
+   o_b = b_P·r, the faces with a zero-gradient pressure are left out of
+   B_P as they are out of ∇p.
+2. T_ref defaults to `[fluid] temperature` (the temperature of ρ₀), and
+   ρ_ref to ρ₀; `[buoyancy] reference_temperature` and
+   `reference_density` override them.
+3. The steady algorithms take a buoyancy pseudo-time step: SIMPLEC and
+   SIMPLE add ρV/Δτ with Δτ = L/U_b = 1/N (N = √(|g| β ΔT / L)), with the
+   current iterate as the old level and the time term of the Rhie–Chow
+   flux (D27); the automatic step of the coupled algorithm (D177) takes
+   U_b as a lower bound of its speed. Without it the relaxation alone takes
+   steps of about α/(1 − α) ρ h²/μ in a fluid at rest, N Δτ ≫ 1 on coarse
+   meshes, and the explicit force overshoots the internal waves of a stable
+   stratification without end (a 5 × 5 box kept 2·10⁻² m/s). With it the box
+   is at rest to 10⁻¹⁵ m/s on every mesh, and the heated cavity at Ra 10⁴
+   converges in 235 iterations instead of 202, to the same Nu.
+4. BUO004 warns for `[gravity]` with the energy equation and no buoyancy
+   model, without the Richardson estimate; BUO005 comes with 7c. The wall
+   forces of the report are from p′ (the Archimedes part ρ_ref g V is not in
+   them).
+
 ### 6.3 Body force with a density step
 
 For a sharp density change (a hot layer over cold fluid, two regions of
@@ -1000,7 +1030,7 @@ not a whole number of steps, a value out of range), CYC002 warning (the
 fluid phase is not periodic after `max_cycles`), CYC003 warning (skin depth
 not small against the wall thickness; PR C), CYC004 warning (stopped at
 `max_updates` before the tolerances), CYC005 note (a step of the loop);
-LIM008 in the limitations of every run with the loop.
+LIM009 in the limitations of every run with the loop.
 
 ### 9d.5 Checks (planned)
 

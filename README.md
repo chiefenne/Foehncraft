@@ -11,14 +11,14 @@
 ---
 
 > **Status: stage 6 done (RANS turbulence, heat transfer in forced
-> convection, rotating machinery), release 0.6.** The stage
+> convection, rotating machinery), stage 7 under way, release 0.7.** The stage
 > plan and every decision are in [docs/requirements.md](docs/requirements.md);
 > [What works today](#what-works-today) lists what is on `main` now. Stage 7 is
 > under way: the energy equation of the fluid and conjugate heat transfer
 > with solid regions, steady and transient, laminar and turbulent, with
 > contact resistances, orthotropic solids, thermal acceleration of the
-> solids and the cycle-averaged loop for periodic flows, are in; buoyancy and
-> variable density come later.
+> solids and the cycle-averaged loop for periodic flows, are in, and so are
+> gravity and the Boussinesq buoyancy; variable density comes next.
 
 [![CI](https://github.com/chiefenne/Foehncraft/actions/workflows/ci.yml/badge.svg)](https://github.com/chiefenne/Foehncraft/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/chiefenne/Foehncraft)](https://github.com/chiefenne/Foehncraft/releases)
@@ -59,7 +59,9 @@ validated range, one mesh only, …) in its report and its JSON result.
   a built-in test mesher (hexahedra, tetrahedra, prisms, polyhedra; graded
   segments, the cylinder O-grid, annuli for rotors); a quality report with
   automatic remediation of skewed cells (Gauss pressure gradient, limiter,
-  bounded Rhie–Chow face velocity); partitioning with METIS and halos;
+  bounded Rhie–Chow face velocity); an operator exactness check that flags
+  the cells where the velocity gradient or Hessian is not exact for a
+  quadratic field (D236); partitioning with METIS and halos;
   VTKHDF output for ParaView.
 - **Numerics.** Cell-centred finite volumes with weighted least-squares
   gradients, Venkatakrishnan(-Wang) limiters, linear upwind and bounded
@@ -84,10 +86,13 @@ validated range, one mesh only, …) in its report and its JSON result.
   rotation correction of SST
   (Smirnov & Menter 2009), a whole domain in a turning frame, and the
   quadratic constitutive relation QCR2000/QCR2013 for the secondary flow
-  of non-circular ducts. Second order verified with manufactured
+  of non-circular ducts, whose stress divergence converges on
+  tetrahedra and perturbed cells through a quadratic least-squares
+  velocity gradient on the cells the operator check flags (D236).
+  Second order verified with manufactured
   solutions of every model on hex, polyhedral and tetrahedral cells
-  (the curvature correction and the QCR stress with the findings of
-  PR #184: not convergent on tetrahedra); validated on the flat plate, the channel against DNS, the backward-facing step and
+  (the curvature correction is not yet convergent on tetrahedra, PR #184;
+  the QCR stress is first order there); validated on the flat plate, the channel against DNS, the backward-facing step and
   the impinging jet.
 - **Heat and mass transfer.** Passive scalars (temperature, concentration)
   carried by laminar and turbulent flow, with the turbulent Prandtl number
@@ -127,6 +132,16 @@ validated range, one mesh only, …) in its report and its JSON result.
   response of the cycle-mean flow), and the new wall temperatures go back,
   until they settle; a pulsating channel over a heated wall converges in 4
   updates to within 0.4 % of the fully coupled periodic state.
+- **Gravity and buoyancy.** `[gravity]` and the Boussinesq buoyancy
+  (`[buoyancy] model = "boussinesq"`) in SIMPLEC and the coupled algorithm.
+  The solver works with the reduced pressure p′ = p − ρ_ref g·(x − x_ref)
+  and writes the static pressure beside it. Values of pressure boundaries
+  are p′ by default, or the static pressure with
+  `pressure_kind = "static"`. The buoyancy enters the faces like the
+  pressure gradient (balanced force), so a stratified box at rest on a
+  perturbed hex, tet, poly or mixed mesh stays at rest to 10⁻¹⁵ m/s; the
+  buoyant slot meets its exact profile at second order, and a warm strip
+  in a closed air enclosure drives a laminar plume (gallery 186).
 - **Rotating machinery.** The moving reference frame (steady and transient
   frozen rotor), the sliding mesh by conformal stepping and by imprinting
   the interface in every step, several rotors at their own speeds,

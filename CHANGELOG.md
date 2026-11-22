@@ -4,10 +4,293 @@
 
 Nothing yet.
 
+## 0.7 (2026-11-22) – stage 7 (part): energy equation, conjugate heat transfer and agents
+
+
+**Highlights.**
+
+- **Energy equation of the fluid.** Conservative sensible-enthalpy temperature
+  equation with c_p(T), k(T) and μ(T) from the material database (water and
+  air tables, NASA-7/9, CHEMKIN reader, user database files), viscous
+  heating, volumetric sources, thermal wall conditions (`temperature`,
+  `heat_flux`, `heat_flow`, `heat_transfer_coefficient`) and a heat balance
+  of every boundary.
+- **Conjugate heat transfer.** Solid regions in steady and transient,
+  laminar and turbulent flow: one energy matrix over fluid and solids with
+  series conductances at material faces, the thermal wall function of the
+  flow on the fluid side, contact resistances and thin walls, orthotropic
+  solids, region heat sources, per-step `heat.csv` and probes of the
+  temperature. Automatic thermal acceleration of solids in transient runs
+  (D213) with a conservative restore. Exact checks V7.4, V7.6, V7.36,
+  V7.37 and the acceleration checks V7.41 and V7.42.
+- **Agents first.** The tool registry (D196): every command of `foehn` and
+  every Python function runs through typed tools with schemas, a journal
+  with replay (D197), the MCP server `foehn mcp` with read and write roots,
+  run limits and study budgets (D198), the live control port with
+  `run.status`, `run.stop` and `run.set` (L19), run limitations
+  LIM001–LIM007 from the verification status page (D199), and an
+  assistant-run heat sink study as gallery 181.
+- **Robustness and clean room.** Bounded Rhie–Chow face velocity for
+  skewed tetrahedra (D50), `unsafe` only in named modules and a
+  broken-input corpus for every reader (D202), the ζ-f and ζ-f₀ wall sink
+  that converges with the mesh, manufactured solutions of every
+  turbulence model including ζ-f₀, curvature correction and QCR, and the
+  clean-room rework of the reference numbers (D201, E1–E10).
+- **Engineering gallery.** The stirred tank and the 2 L tank of Fyfe et al.
+- **Plans and requirements.** Cycle-averaged CHT (D204), design
+  optimisation (step 26), the immersed boundary method (L13, with the
+  owner decisions), the adjoint solver (step 27, D220–D224) and the log
+  redesign (D214). No code.
+
+**Known limits.** Buoyancy (7b1) and variable density (7c) are not in this
+release; periodic meshes with solids are refused (ENE006); the curvature
+correction and the explicit QCR stress do not converge at full order on
+tetrahedra (see the grades on the verification status page); the GPU path
+of the energy equation is covered by host-side changes and was not run on
+a device in this release; the generated verification manual was not
+regenerated for 0.7.
+
+**Changes.**
+
+- **Engineering Gallery started (application 131).** A new track for industrial cases with complex geometry, next to the feature gallery: the index [docs/applications.md](docs/applications.md) with the check legend and trust levels, the rotating-machinery page, and the first entry, a baffled stirred tank with a three-blade hydrofoil (power number 0.29–0.30, pumping number 0.45 at 2 500 iterations). The entry is a demonstration: the steady frozen rotor does not settle, and the check card says so. The mesh script and the case are in `examples/applications/stirred_tank/`.
+- **Mesh grading for the tank.** The tank mesh is graded from the walls, which keeps the blade–hub and sparger corners below skewness 1.1; without it they reach 1.4 and the pressure runs away.
+- **Multi-zone SU2 and CGNS meshes for rotor/stator runs (D195, gallery 138,
+  recipe 138).** `mesh.file` reads all zones of an SU2 file (`NZONE= n`) or a
+  CGNS base into one mesh, each zone a cell zone, the nodes of different zones
+  apart, so the interface is two boundaries for `[[sliding]]`. New key
+  `mesh.merge_nodes` joins coincident nodes for touching stationary zones.
+- **ζ-f and ζ-f₀ converge with the mesh at the wall (stage 6, maintainer
+  decision 2026-11-20).** The sink of the k equation is now
+  max(k/T_K, 2νk/d²), with d the wall distance and T_K the time scale
+  with its Kolmogorov bound. It equals ε at the wall, so k falls like y²,
+  and it is k/T_K away from walls, which keeps k positive at a laminar
+  leading edge. The sink k/T_K of 6d2 let k fall like y only, and the
+  wall value of ε then grew with every refinement: the converged channel
+  of ζ-f₀ went from U_b⁺ 17.79 to 18.39 over four meshes. Now it gives
+  17.34, 17.54, 17.58, 17.58 (+0.2 % from the DNS on 768 cells across).
+  ζ-f₀ takes C_ε1 = 1.4 (1 + 0.009/ζ) in place of the printed
+  1.4 (1 + 0.012/√ζ), which gives U_b⁺ −11 % with a consistent sink. The
+  flat plate (C_f +1.8, +0.2, −0.2 % from White on three meshes, GCI 0.2 %) and the
+  step (x_r/H 6.42) stay in their bands. The impinging jet converges with
+  the mesh, but at Nu₀ = 196, +38 % from the experiment (the
+  stagnation-point excess of k; finding). The ζ-f plate now converges
+  (C_f +0.05 % from White on the middle mesh; before, it stopped at the
+  iteration limit at +24 %).
+- **New keys:** `turbulence.k_sink` (`"wall"`, the default; `"epsilon"`,
+  the papers' −ε; `"kolmogorov"`, the old ζ-f₀ default) and
+  `[turbulence.constants] c_epsilon1_power` (1, or ½ for the printed
+  C_ε1″/√ζ of Popovac 2023).
+- **Fix:** the ambient (sustaining) source of k in ζ-f and ζ-f₀ is the
+  sink at the ambient state, so the free stream holds its k for every sink
+  form.
+- **The channel runs of the GCI study use the coupled algorithm**, at
+  most 3 000 iterations each: ζ-f₀ converges to 10⁻⁹ in 436 to 883
+  iterations instead of up to 35 000 with SIMPLEC, the k-ε models in
+  under 700, ζ-f in under 2 600, with the same U_b⁺. SST on the finest
+  mesh and EB on the two finest stop at the limit with a residual near
+  10⁻⁷, within 0.3 % of their converged values (finding; the docs keep
+  the SIMPLEC values of #128). The plate runs of ζ-f and ζ-f₀ use it too
+  (178 to 496 iterations).
+- **The channel case files of ζ-f and ζ-f₀ use the coupled algorithm**
+  (about 230 and 370 iterations instead of 2 100 and 3 700).
+- **The ζ-f plate converges** (`require_convergence = true`): C_f +2.0 %
+  from White on 64 × 48 cells, +0.03 % on 128 × 96 (before +5.1 % with
+  the k floor of the leading edge).
+- **The inlet table of the impinging jet** (`impinging_jet_profile.csv`)
+  is made again from the pipe flow with the new sink.
+- **Gallery 141 and recipe 141**: the sink of k with two field images
+  (the ζ-f plate near its leading edge, the wall layer of the jet).
+- **Finding:** in the test of a turbulence patch carried by the rotor
+  (`tests/sliding.rs`), the imprinted run of ζ-f₀ at a Courant number of
+  1.7 drives ζ to its cap and diverges with any sink of k that is ε at the
+  wall (the new default and the papers' −ε); k/T_K held there. The
+  imprinted run of the test now takes half the time step (Courant 0.85).
+- **Robust on skewed tetrahedra: bounded Rhie–Chow face velocity (D50).** On raw Gmsh tetrahedra, turbulent rotor cases (the stirred tank) still diverged with the cell-quality remediation. The cause was the face velocity of the mass flux, which is moved to the face centroid with the unlimited cell gradients. On skewed faces that feeds a velocity mode back into continuity with a gain above one. The remediation now also sets `solver.face_velocity = "bounded"`, the mean of the two limited extrapolations to the face centroid. It is exact for a linear field and stays between the values of the two cells. Meshes without skewed faces are unchanged. The new opt-in `solver.transposed_stress = "trace-free"` drops the grad-div part of the explicit transposed stress in turbulent flow.
+- **Kernels: density per cell and per face (stage 7.0b).** The flux,
+  momentum, scalar and turbulence kernels read ρ from cell and face fields
+  instead of one number, on the CPU and the GPU. Results are bit for bit
+  unchanged; the fields carry the variable density of stage 7.
+- **Manufactured solutions of every turbulence model (stage 6
+  specification 9.2).** `turbulence::mms` solves the turbulence equations
+  of SST, the standard and the realizable k-ε, k-ε-ζ-f and the
+  elliptic-blending k-ε alone in a frozen cellular flow with smooth
+  manufactured k, ω/ε, ζ/φ, f/α and wall distance and every source term
+  active; the L2 errors converge at order 1.8–2.3 on hexahedra, polyhedra
+  and triangular prisms. New: `Flow::turbulence_iteration`,
+  `Turbulence::set_added_zeta_sources` (with an added right-hand side of
+  the f/α equation in the kernel) and `Turbulence::set_zeta_fields`.
+- **Fix: realizable k-ε C_μ with the deviatoric strain.** W̃ of Shih et
+  al. now comes from the trace-free strain; with the discrete trace it
+  jumped across its range where the strain vanishes.
+- **Requirements: oriented anisotropic material properties (L48).** Material
+  frames for orthotropic conductivity and permeability in laminations,
+  windings and magnets of e-motors; recorded with L30. No code.
+- **Assessment: the ArtCraft development method.** `docs/assessments/artcraft-development-method.md` compares how the ArtCraft Crafting Apps are built with Foehncraft's practice and lists open questions for the maintainer (tool registry, mandatory roots for agents, `AGENTS.md`, cost gate, verification grades, clean room). No behaviour changes.
+- **Materials: thermal data (stage 7.0c).** Every material may carry a
+  specific heat c_p and a thermal conductivity k (any property form, or
+  orthotropic with two axes). Solids need density, c_p and k (MAT006).
+  User material database files (`[materials] include`, `FOEHN_MATERIALS`)
+  extend the built-in database; `foehn materials --include FILE` lists them.
+  Water and air have c_p and k tables from the IAPWS-95 and IAPWS 2011 (water)
+  and Helmholtz-equation (air) formulations, evaluated with CoolProp 8.0 (MIT).
+  NASA-7 and NASA-9 specific-heat forms and a CHEMKIN reader are in.
+Record the ArtCraft challenge decisions D196-D203 and the L7 GUI rules; docs only.
+- **Energy equation of the fluid (stage 7a1).** `[energy]` solves the
+  temperature of the fluid, conservative in the sensible enthalpy, with
+  c_p(T), k(T) and μ(T) from the material or from `[fluid] specific_heat`
+  and `conductivity` (μ(T) reaches the momentum equation;
+  `temperature_dependent = false` keeps the reference values). Viscous
+  heating, volumetric sources and exact solutions. Walls take
+  `temperature`, `heat_flux`, `heat_flow` (W) or
+  `heat_transfer_coefficient` with `ambient_temperature` in
+  `[boundary.<name>.energy]`; inlets take `temperature`. The report has a
+  heat balance and the heat flow of every boundary. The condition follows
+  from the keys (no `type` key). The thermal set-up check gives THM001 to THM005 and THM009 to
+  THM011 (undetermined temperature level, heat with no way out,
+  conditions on the wrong boundary kind, values out of range, adiabatic
+  walls listed, tables without `[energy]`, malformed tables, inlets
+  without a temperature); ENE006 for settings this version does not
+  have. Checks V7.1 and V7.2 at second order (gallery and
+  recipe 154).
+State in D203 that Python stays the user front end.
+- **Solid regions and conjugate heat transfer (stage 7d1).** A region of
+  kind `solid` (`[regions.<name>] kind = "solid"`, its cell zones and a
+  solid material with density, specific heat and conductivity) now joins
+  the energy equation: the flow runs on the fluid cells, where the faces
+  against a solid become the no-slip wall `interface-<region>`, and the
+  temperature runs on all cells as one matrix, with the series conductance
+  of the two half cells at every face between materials. The report gives
+  the heat flow and mean temperature of each interface; the heat balance
+  of the whole domain closes to round-off. The box generator takes
+  `zones = [{ name, lower, upper }]` to mark cell zones by centroid.
+  Steady laminar cases only for now: transient runs, turbulence, restart
+  and passive scalars together with solids are refused (ENE006), as are a
+  solid without a complete material (MAT006), solids without `[energy]`
+  (REG001) and unknown zones (REG002). Check V7.4 (a composite wall with
+  conductivity ratios 1 : 100 : 10⁴, exact to round-off) and a heated wall
+  under a channel flow (gallery and recipe 156).
+- **Requirement D204: cycle-averaged conjugate heat transfer for periodic flows** (engine exhaust manifolds), stage 7 page §9d: automated loop of transient fluid cycles with frozen solids, per-face cycle-averaged heat-transfer coefficient and reference temperature, steady solid solve, new wall temperatures until the tolerances are met. Plan: turbulent (7d5) and transient (7d6) CHT before buoyancy; checks V7.36–V7.40.
+- **Turbulent conjugate heat transfer (stage 7d5).** Solid regions now
+  work with every turbulence model. The fluid side of each fluid–solid
+  interface is the thermal wall function of the flow (Kader or
+  Jayatilleke, D135), h_w = ρ c_p u*/T⁺, in series with the solid's half
+  cell, q = (T_P − T_N)/(1/h_w + δ_N/k_s); y* and μ of the first fluid
+  cell are taken in every outer iteration, the fluid conducts with
+  k + c_p μ_t/Pr_t, and μ(T) goes back to the laminar viscosity of the
+  turbulence model. Check V7.36: a turbulent channel over a conducting
+  wall gives the same heat flow as the fluid-only path with the wall
+  function in series with a convection condition, to 10⁻⁴ for k-ε and
+  SST (`cht_turbulent_channel.toml`). Gallery and recipe 158: a finned
+  aluminium heat sink in a turbulent air channel
+  (`cht_heat_sink_turbulent.toml`).
+- **Fixes.** A `[[schedule]]` entry no longer drops the energy and scalar
+  sub-tables of the boundaries (an energy case with an inlet and a
+  schedule was refused). A temperature that turns NaN in a diverging run
+  is reported as a divergence instead of stopping in the property
+  interpolation.
+- **Transient conjugate heat transfer (stage 7d6).** Solid regions now
+  work with a `[time]` table. The fluid and the solids share one energy
+  matrix with the time terms ρ c_p V/Δt of each cell's own material, so
+  the interface needs no coupling iteration and has no time lag; the
+  temperature's time levels follow those of the flow through adaptive,
+  rejected and rewound steps. The heat balance gains the heat stored per
+  region, and every transient run with the energy equation writes it per
+  step to `heat.csv` (and to the run record), with the heat flow through
+  each interface; the report gives the largest relative imbalance of a
+  step. Probes give the temperature (`<probe>_T`), in a conjugate case on
+  the whole mesh, solids included. Check V7.6: two bodies brought into
+  contact keep the exact contact temperature (to 10⁻¹² K at 500 s) and
+  follow the erf profiles at second order in space (2.02, 2.00) and time
+  (2.05, 2.02) (`cht_contact_transient.toml`); check V7.37: the heated
+  wall switched on closes its balance to 2·10⁻¹¹ in every step and ends
+  at the steady solution (`cht_heated_wall_transient.toml`). Gallery and
+  recipe 159.
+- **`erf` and `erfc` in the expression language**, written in-house like
+  the other functions (bitwise the same on every backend, within a few
+  ulp of the C library), for exact solutions of transient conduction.
+- **Sweeps.** A transient sweep over levels now checks the scalars with an
+  exact solution (`scalar_max_error`, `scalar_order`) as a steady one
+  does; a time sweep of a conjugate case takes the temperature on the
+  whole mesh, and a fluid at rest no longer gives a NaN velocity order.
+- **Contact resistance, orthotropic solids and region heat sources
+  (stage 7d2).** `[interfaces.<name>]` puts a contact resistance
+  (`contact_resistance`, m²K/W) or a thin wall (`thin_wall` with
+  `thickness` and `conductivity` or `material`, the resistance t/k) into
+  the faces between two regions, fluid–solid or solid–solid; the face
+  conductance is the series of the two half cells and the resistance, and
+  the report gives the heat flow and temperature of every pair of regions
+  (`interface-<solid>`, and `interface-<a>-<b>` between two solids). Solid
+  materials may now have an orthotropic conductivity (three principal
+  values along two axes, each a form of T), oriented per region with
+  `[regions.<name>] axes`: the matrix takes the conductivity of the face
+  normal, the tangential rest of the flux is a deferred correction.
+  `[[energy.sources]]` heats one region with `power` (W, spread by volume)
+  or `power_density` (W/m³). Codes CHT004 and ENE008.
+- **Exact interface flux on skewed meshes.** The cells next to a region
+  interface take one-sided least-squares gradients (the face temperature
+  of their own side in place of the cell across), and the interface flux
+  uses the face-normal temperatures of both sides (D157 §9.2): a
+  piecewise-linear temperature is exact on any mesh and at any
+  conductivity ratio. Check: the patch test `cht_orthotropic_patch.toml`
+  (a laminate with axes turned by 30°, a fluid at rest and a block behind
+  a contact resistance, on a mesh perturbed by 25 %) is exact to
+  3·10⁻¹¹ K; V7.4 with a contact resistance and a thin wall matches the
+  series formula to 10⁻⁹. Gallery and recipe 160: a 1 W chip on a thermal
+  pad on a circuit board with copper planes (`cht_circuit_board.toml`).
+- **Heat balance on skewed meshes.** The reported conduction through a
+  boundary with a fixed temperature now includes the non-orthogonal part
+  of the flux, as the matrix has it, so the balance of the energy equation
+  closes on skewed meshes too.
+- **Generated meshes.** With `perturb`, nodes on a face plane of a `zones`
+  box now move only along the plane, so the interfaces between the zones
+  stay planes.
+- **Stirred-tank images and the Fyfe 2 L tank.** The engineering-gallery tank (entry 131) now has velocity sections and an impeller picture. New entry 161 builds the 2 L lab tank of Fyfe et al. (OPRD 2024) from the paper's supporting information, runs it with the moving reference frame at 200 rpm and compares velocity planes and profiles with the paper's published CFD (power number about 2.0 against 1.8 from the paper's correlation). `tools.docs.images` also sizes images on the applications pages.
+- **Rules and lessons in the repository.** New `AGENTS.md` holds the standing rules for agents and contributors as MUST and SHOULD, with the exact checks to run before pushing; new `docs/pitfalls.md` keeps the lessons of earlier work and the experiments not to repeat (steady-run budget and stopping, coupled-solver variants, skewed tetrahedra, observers, timing, iteration counts in tests) (D200). The pull request template asks what ran and what did not, and why (D203).
+- **Stage 7 plan in the repository.** The working plan of stage 7 (pull request cut, lanes, decisions and status per pull request) is now `docs/requirements/stage7-plan.md`, linked from the stage 7 specification (D200).
+- **One registry of tools (D196, part 1).** New crate `foehncraft-tools`: every engine function a front end calls becomes a typed tool with a stable id, a contract version, an action kind (read, write files, start a run) and input and output schemas from the same structs. `foehn commands` prints the catalogue as JSON (`docs/tools.md` is generated from it), `foehn call <id> --input file.json` runs any tool from JSON and prints a result envelope with status, exit code and diagnostics. In: the system, case-schema, case-check, case-resolve, diagnostic-code, material and expression tools; `foehn info`, `bench backends`, `schema`, `materials` and `flow --check` now go through them with unchanged text, JSON and exit codes. New commands `foehn case resolve`, `foehn diag codes` and `foehn expression`; new codes `TOOL001` and `TOOL002`.
+- **Verification status page (D199, part 1).** Every feature a case file can switch on (91 rows: meshes, numerics, solvers, boundary conditions, turbulence models and wall treatments, heat transfer, energy, conjugate heat transfer, rotating machinery, runs, GPU and Python) has a grade, verified, partial or unverified, on the generated page `docs/verification/status.md`, with the evidence that checks it (cases with the bands of the verification manual, tests, recorded runs) and the known gaps. The grades are computed by `tools/release/verification_status.py` from the hand-written table `docs/verification/features.toml` and the manual, never typed in; CI fails when the table names a case, test or page that does not exist, leaves a catalogue case without a feature, or disagrees with the page. `docs/verification/grades.json` carries the same for the limitations of a run (part 2). First grades: 39 verified, 48 partial, 4 unverified (mass-flow inlet, static-pressure inlet, total-pressure outlet, buoyancy).
+- **Iteration budget and diagnosis of steady runs (D198 (d)).** `foehn flow --check`, the log and the run record show the iteration budget and where it comes from. At `[run.limits] diagnose_at` (default 2000) a steady run that has not converged is diagnosed from its residuals: the trend of each equation over the last 500 iterations, the verdict (on track, slow, stalled, rising, oscillating) and advice, as a `diagnosis` row of `run.jsonl` and in the log; `diagnosis = "stop"` stops a run off track (exit code 3, `RUN017`). A budget above 10 000 iterations draws `RUN021` in the check. The diagnosis only reads the residuals: fields and residuals are bitwise those of a run without it.
+- **Budgets per study (D198 (c)).** `[run.limits] study_cell_hours`, `study_gpu_hours` and `study_output` bound what all runs of a study spend together, kept in `study_budget.jsonl` next to the variant directories. The `budget` row of `run.jsonl` shows the D81 estimate (now with cell-hours and GPU-hours) beside each budget, the spend so far and what is left; a run that spends the rest stops (`RUN018`), the next one does not start (`RUN019`), an estimate that does not fit warns (`RUN020`). Gallery and recipe 166, case `cylinder_steady_diagnosis.toml`.
+- **`unsafe` only in named modules (D202).** The workspace now denies `unsafe_code` and clippy's `undocumented_unsafe_blocks`. Twelve named modules allow unsafe code (the kernel bodies, the CUDA crate, the CPU and SELL-C backends, the host executor, the hypre interface and three tests of the kernel bodies); `python3 -m tools.check.unsafe_modules` lists them with their reasons and fails on `unsafe` anywhere else (CI). Six unsafe blocks got their missing `// SAFETY:` comment; the code is unchanged.
+- **Broken-input corpus for every reader (D202).** Truncated files, damaged numbers, dropped and repeated lines, flipped bytes, garbage, the files of other formats and damaged CGNS nodes are fed to the Gmsh, SU2, industry .msh, VTK/VTU, OpenFOAM and CGNS readers, and damaged case files to the flow, mesh, scalar, Poisson and benchmark case readers. Each must end in an error with a diagnostic code, never a panic, an abort or a hang. The corpus found allocation aborts from counts a file declares (a mesh file declaring 10^14 elements aborted the program) and a read past the end of an OpenFOAM file; the readers now check declared counts against the file size and use checked arithmetic on ranges. Valid files read exactly as before.
+- **New diagnostic codes `MESH003` and `CASE010`.** A mesh file that cannot be read (missing, unknown format, truncated, damaged) now ends in `MESH003` instead of `GEN001`; a case file that a reader refuses for a reason without a more specific code yet ends in `CASE010`. TOML and read errors of the mesh, scalar, Poisson and benchmark case files get `CASE001` to `CASE009` like the flow case files.
+- **Runs and files as tools; the crate layering check (D196 part 2, D203).** New tools `case.estimate`, `case.upgrade`, `mesh.process`, `flow.run` (streams the run record and stops on request), `result.read` and `post.derive`; `foehn mesh`, `flow`, `case upgrade` and `post derive` go through them with unchanged text, JSON, exit codes and bitwise-equal results. Every function of the Python native module is now a wrapper of its tool, and `foehncraft.call(tool, **fields)` and `foehncraft.commands()` reach any tool from Python. `cargo xtask layering` runs in CI: crate dependencies must follow the layers, and the command line and the Python module call the engine only through the registry.
+- **Requirements step 26: design optimisation.** Decisions D205–D212, L49 and the immersed-boundary method of L13 (cut cells as a mesh operation, Brinkman topology pre-stage): a differentiable chain of typed tools for outside optimisers, inexact one-shot steps, multi-fidelity trust regions with PyAeroFlow, gradient-enhanced Bayesian optimisation, surrogates from our own runs, optimisation as an agent tool with budgets, and zonal optimisation with adjoint-corrected boundaries ([step 26 page](docs/requirements/step26-design-optimization.md)).
+- **Limitations of a run (D199, part 2).** Every result summary (`result.json`, `foehn flow --json`, Python `Result.limitations`) carries a `limitations` list with codes LIM001 to LIM006: a feature in use graded partial or unverified on the verification status page (the grades are compiled into the binary), a feature outside its validated range (first-cell y⁺, Reynolds, Prandtl and Courant numbers, skewness), a steady solve that stopped before its tolerance, one mesh only (no discretisation uncertainty), a GPU that is not verified (Tesla T4 so far), and automatic mesh remediation. The last frame of the log reads "Run finished with N limitations" and lists them, and `flow.md` starts with them. Status and exit code stay as they were (`finished`, 0); no flow result changes. Gallery 170 shows the grades per area and the raw Gmsh pipe with its three limitations; recipe 170 says what to do about each code.
+- **Studies as tools; every command through the registry (D196 part 3).** New tools `study.scalar`, `study.poisson` and `study.g1`; `foehn scalar`, `poisson` and `g1` go through them with unchanged text, JSON, exit codes and results, so every command of `foehn` and every Python function now runs through the 19 tools of `docs/tools.md`. The command line depends only on `foehncraft-tools`, `foehncraft-flow` and the build crates, and `cargo xtask layering` rejects direct paths into the mesh, fv, bench, parallel and kernel crates from the front ends. Gallery 171 (the catalogue an agent reads), recipe 171 and the case page `docs/cases/tools.md` with JSON inputs in `examples/cases/tools/`.
+- **Journal of tool calls and replay (D197).** `--journal FILE` (or `FOEHN_JOURNAL`, also read by the Python package) appends every tool call with its typed input (defaults filled in), status, exit code and duration to a JSON-lines journal (`foehn.journal`). A run writes the call that started it into `run.jsonl` (`{"type": "call"}` after the header; results unchanged). `foehn run --script FILE` (tool `journal.replay`) replays a journal or a run record without a window, skips calls refused when recorded, and stops at the first call that ends otherwise (`TOOL005`, exit 1) unless `--keep-going`. New codes TOOL003 to TOOL005. Gallery 172, recipe 172, `examples/cases/tools/cavity_session.jsonl`.
+- **Requirements: layered distance-field immersed boundary (L13).** L13 target: wall on a thin layer mesh grown from a signed distance field at program start, outermost iso-surface as the smooth cut, imprint join; result of a 2D prototype (finned wall, narrow gap) on the [step 26 page](docs/requirements/step26-design-optimization.md#9-prototype-of-the-layered-distance-field-boundary-2d-2026-11-21).
+- **Limitations in the tool-result envelope (D199, D196).** `foehn call` and `foehncraft.call` now copy the `limitations` of a tool's output (`flow.run`, `result.read`: LIM001 to LIM006 of the result summary) into the envelope's `limitations`, so an agent sees them without opening the result. Status, exit codes and results are unchanged.
+- **MCP server `foehn mcp` (L18, D198 (a), (b), (e)).** An assistant (an MCP host) reaches every tool of the registry by its id over the Model Context Protocol on standard input and output, through the same call as `foehn call`, with progress notifications and cancellation (a cancelled run stops with a restart file, exit code 3). The server refuses to start without `--read-root` and `--write-root` (`MCP001`). An action table per project (`foehn-mcp.toml`, outside the write roots) sets each kind of action, start a run, exceed the estimate caps, write outside the write roots, overwrite results, publish, to default, allow, ask or refuse; "ask" puts the question to the person through the host (MCP elicitation), answered once or always. A run started through MCP needs `[run.limits] max_wall_time` and `max_output` (`MCP002`, with the fix). Every call is journaled with `"via": "mcp"` and the approval, so `foehn run --script` replays the session (refused calls skipped). New tool `result.page` pages the histories of a run (residuals, monitors, probes, statistics, the run record) by cursor; fields are named by path only. Tools tell what a call would write (`effects`), the approvals live in `foehncraft_tools::approval`. New codes TOOL006, MCP001 to MCP006. Guides [agents.md](docs/agents.md), [troubleshooting](docs/troubleshooting.md) and [install and update](docs/install.md) (D203). Gallery 175, recipe 175, `examples/cases/tools/mcp/`. Flow results unchanged.
+- **Clean-room rework of the reference numbers (D201, audit E1 to E10).** No result of another solver is a reference any more. The plate of SST is checked against the Coles–Fernholz fit to measured layers (+1.45 % at Re_θ 7 848, band ±8 %) and White's correlation (−6.1 %, band widened from ±5 % to ±8 % for SST by the maintainer), with our own four-mesh Richardson value (2.7385e-3, GCI 1.76 %); `plate_channel_gci.py` and `tools/plot/sst_chart.py` compute the fit from the run's own profile and the TMR values are gone from the studies, cases, docs and the chart. The wall constants of `automatic` (n = 1.2, y₀ = 5), first fitted to the value of another solver, were rechecked against our own result on a 10-point grid and stay (largest deviation 2.5 %). The step no longer quotes a result of another code; the channel of the elliptic-blending model is judged against the DNS only (the test is `eb_channel_against_the_dns`); the "model in the thesis" column of the planned high-Pr tests and the Manceau entry of `DATA_SOURCES.md` are gone; DNS stays an accepted class (rule 5 of `DATA_SOURCES.md`, D201 and AGENTS.md say that D201 targets code-to-code RANS/CFD numbers). Entry 161 (Fyfe 2 L tank) no longer compares with the paper's CFD planes (script and figures removed); the bottom is rebuilt from the chamfers of the Supporting Information (read as one cone, flat to r = 7.5 mm, 15 mm high), the power-number reference is the measured literature band 1.0 to 1.7 (the earlier run gave 2.0: a finding), and the new `tracer.toml` with `mixing_time.py` sets up the mixing-time check against Table 3 of the paper (18.7 s, 200 rpm baffled) and the Grenville correlation; the runs wait for the maintainer's own mesh. New figure `fyfe_geometry.png`. Gallery 161 and recipe 161 reworked.
+- **Live control port (L19, D198 (f)).** A run started with `foehn flow --control-port`, or any `flow.run` through `foehn mcp`, listens on a port of `127.0.0.1` only, with a random token in `control.token` (mode 0600 on Unix) beside `control.json` in its output folder; both disappear when the run ends. New tools `run.status` (the last iteration or step with its residuals, the wall time, what the run did with earlier changes), `run.set` (run-time settings, the keys a re-read may change, never `run.limits.*`) and `run.stop` (restart file, final output, exit code 3); new action kind `control`. Changes are applied after an iteration or step, checked against the case then (`RUN024` for one that does not fit), and written to the run record with the equivalent `[[schedule]]` entry (`RUN022` to `RUN024`, `TOOL007`). `foehn mcp` answers calls of the kinds read and control while a run is going, so an assistant can watch and stop a run it started; a journal replay skips live calls. Gallery 177, recipe 177, `examples/cases/tools/control/`, guide section in [agents.md](docs/agents.md). Flow results unchanged.
+- **Requirements: staged plan for the immersed boundary method (L13).** Five stages (geometry kernel, penalisation pre-stage, cut cells, layered distance-field boundary, automatic hand-off to a body-fitted mesh) with verification cases, gallery cases, adjoint and CHT interaction, tool interfaces and open owner decisions; see the [L13 plan](docs/requirements/l13-immersed-boundary-plan.md). Plan only, no code.
+- **Requirements step 27: staged plan for the adjoint solver (L17).** Proposal page with discrete against continuous adjoint (literature and computer-graphics benchmarks), a scatter-free reverse sweep on the D59 kernels, stages A0 to A6 (spike, steady laminar, geometry chain and morphing, turbulence, CHT, transient with checkpointing, extras), a gradient verification ladder, the tool and gradient interface, memory and cost relations, proposed entries D213 to D217 and L50, and ten open questions for the maintainer ([step 27 page](docs/requirements/step27-adjoint-solver.md)). Nothing is decided yet.
+- **Thermal acceleration of solids in transient conjugate heat transfer (D213).** `[energy.acceleration]` scales ρ c_p of the solid regions by a factor (given, or `"auto"`: measured after the first window from each solid's conductance to the flow and its heat capacity, so that its time constant becomes one window, two periods in a periodic flow) until their temperatures have settled, then restores the true ρ c_p: at once in a steady flow, raised geometrically over `restore_ramp` periods in a periodic flow, where a jump would leave part of the accelerated swing in the deep solid. The steady and cycle-mean states are those of the true solids; the heated wall of gallery 159 gets there five times sooner, and with a periodic inlet the ramp keeps the cycle mean within 0.0025 K where a jump leaves 0.24 K. `heat.csv` books the heat the true solids would have stored as `inertia_scaling`; the report gives the measured conductance, time constant and factor, the restore times and from when the history counts as physical. Codes ACC001–ACC004; checks V7.41, V7.42; gallery and recipe 180.
+- **An assistant runs a heat sink study through `foehn mcp`.** The fin-pitch sweep of the finned heat sink (four pitches, 24 to 48 mm) was run by an assistant under run limits and a study budget, with the refusals of the action table shown (no run limits `MCP002`, a folder outside the write root and a mesh over the cell cap `MCP003`), live status of a running case, histories read by page and a closing report with its limitations. The recorded journal replays with `foehn run --script`; a replay gives byte-identical residual histories. New: `tools/agent/stdio_host.py`, a small host that keeps `foehn mcp` open behind a socket for scripts and for assistants without MCP registration; figure tools `tools/plot/heat_sink_study.py` (the fields and the numbers) and `tools/plot/heat_sink_agent.py` (the session timeline with its refusals and budget, the speed fields and the temperature the assistant read). Gallery, recipe, `examples/cases/tools/mcp/heat_sink_study/`, the transcript in [agents.md](docs/agents.md). No engine change.
+- **Requirements: log redesign review (D214).** The console log redesign is built (D125 to D128); the maintainer added `[log] detail`, a schedulable `log.columns`, a Limitations block at the start and an Events block at the end; see the [log review](docs/requirements/log-redesign-review.md). Plan only, no code.
+- **Requirements: adjoint plan decisions (L17, step 27).** The maintainer's answers to the ten questions: discrete adjoint on the converged residual (D220), scatter-free reverse sweep from local dual Jacobians with a time-boxed spike on a compiler reverse-mode tool (D221), a gradient verification ladder including a whole-solver complex step, which makes the flow solver generic over `Real` (D222, stage A0b), adjoint tools and gradient contract (D223), non-chaotic transient adjoint only (D224), chaotic-flow sensitivities as research item L51; L17 staged A0 to A6, first demonstration a laminar bend pressure drop ([step 27 page](docs/requirements/step27-adjoint-solver.md)).
+- **Manufactured solutions of k-ε-ζ-f₀, the curvature correction and the
+  QCR (stage 6 specification 9.2).** The harness of PR #148 now covers
+  ζ-f₀ (orders 1.85–2.27 on hexahedra, polyhedra, tetrahedra), the
+  curvature correction of SST in a second prescribed flow whose strain axes
+  turn (1.9–2.1 on hexahedra and polyhedra) and the explicit stress of the
+  QCR2000/QCR2013 (order 2 on regular hexahedra and polyhedra). Findings,
+  not fixed here: the curvature correction does not converge on tetrahedra
+  (DS_ij/Dt from the least-squares gradient of the gradient), and the
+  divergence of the explicit QCR stress is first order on tetrahedra and
+  does not converge on randomly perturbed meshes. New:
+  `Flow::explicit_stress_force`. The grades of the three features list
+  the gaps. Gallery and recipe 184.
+- **Requirements: L13 plan decisions.** The maintainer's answers to the eleven open questions are recorded in the [L13 plan](docs/requirements/l13-immersed-boundary-plan.md#9-owner-decisions-2026-11-22): tolerant dirty STL with Crane's methods as candidates, merged small cells, own near-body refinement, a 3D Python prototype before Rust, and a new stage 5 for prescribed rigid motion.
+- **Requirements: ids D225 to D234 for the immersed boundary stages.** Geometry kernel, penalisation pre-stage, cut cells, layered boundary, hand-off and rigid motion are entered in the requirements table.
+Nothing yet.
+
 ## Summary
 
 | Version | Stage | Highlights |
 |---|---|---|
+| 0.7 (2026-11-22) | 7 (part) Energy, conjugate heat transfer, agents | Energy equation of the fluid with temperature-dependent properties, conjugate heat transfer with solid regions (steady and transient, laminar and turbulent, contact resistances, orthotropic solids, heat sources, thermal acceleration of solids), the tool registry, journal and replay, the MCP server `foehn mcp`, run limits and budgets, the live control port, run limitations from the verification status page, manufactured solutions of every turbulence model, the clean-room rework of the reference numbers. **CHT checks exact to round-off (V7.4, V7.6 to 10⁻¹² K, V7.36 to 10⁻⁴); heat balance closes to 10⁻¹¹ in every step; thermal acceleration ends within 0.2 % of the steady solution.** Gallery 131–184, recipes up to 184 |
 | 0.6 (2026-11-20) | 6 RANS turbulence, heat transfer, rotating machinery | Six RANS models: k-ω SST 2003 (with the curvature and rotation correction and QCR2000/QCR2013), standard and realizable k-ε, k-ε-ζ-f, k-ε-ζ-f₀ and the elliptic-blending k-ε; wall treatments `low-re`, `automatic`, `scalable`, `standard`, `compound`, `compound-2023` and rough walls; passive scalars with turbulent diffusivity and thermal wall functions (also for high Prandtl numbers); periodic boundaries; rotating machinery with the moving reference frame, sliding meshes (conformal stepping and imprinted interfaces of any shape of revolution, several rotors), torque, shaft power and machine performance; the coupled pressure–velocity algorithm with pseudo-time steps and multigrid for momentum and turbulence; SU2, OpenFOAM, CGNS, industry `.msh` and VTK mesh readers; derived turbulence fields, transient statistics, the grid convergence study of the models; the new log, case format 0.6 and `[[schedule]]`. **TMR flat plate C_f +0.37 % (SST) and within −2.6 to +2.4 % for first-cell y⁺ 0.24 to 85; channel at Re_τ 395 U_b⁺ −0.7 % (SST) and EB C_f 97.8–99.1 % of DNS; backward-facing step x_r/H +0.5 % (k-ε against the published k-ε) and +0.6 % (k-ε-ζ-f₀ against the experiment); impinging jet Nu₀ −0.2 % (SST); heated channel Nu within −2.6 to +1.0 % of DNS; GPU bitwise equal to the CPU for 14 turbulence cases on a Tesla T4; the coupled algorithm settles the step in about 70 instead of 600 iterations.** Gallery 26–134, recipes 36–134 |
 | 0.5 (2026-11-16) | 5 Transient flow, run control, Python | Transient incompressible flow: PISO with variable-step BDF2 and Crank–Nicolson, outer correctors for large time steps, a time step from the integration error, output at exact times, restart files and control files; the whole flow loop on NVIDIA GPUs; adjoint-ready kernels (dual numbers, transposed matrices, checkpointing); the run contract for scripts and agents (`--json`, `--set`, `result.json`, run record, exit codes and signals, case schema, diagnostic codes, estimate, limits, provenance); the conservation ledger and the divergence report; the bounded central scheme and the boundary conditions of D29 (slip, wedge, tables, backflow, convective outlet); derived fields; expressions, the material database and regions; the Python package `foehncraft` with studies; the grid convergence index of every sweep and a generated verification manual; all scripts in Python. **Taylor–Green time order 2.0–2.4 and space order 2.1; Schäfer & Turek 2D-1 inside all reference ranges, C_D extrapolated to 5.5797 ± 0.0004 from three meshes; GPU flow loop bitwise equal to the CPU on a Tesla T4 (722 ns per cell and iteration on 970 225 polyhedra); a case built in Python is bitwise its TOML file.** Commands `foehn materials`, `foehn post derive`, `foehn schema`; gallery 14–25, recipes 21–35 |
 | 0.4 (2026-11-15) | 4 Laminar steady flow | First flow solver: steady incompressible laminar flow with SIMPLEC (and SIMPLE) on polyhedral meshes, relaxation-independent Rhie–Chow interpolation (Majumdar 1988), CG + AMG for the pressure correction, boundary conditions of D29 (walls also moving, velocity and mass-flow inlets, static and total pressure inlets and outlets, symmetry) with a check of their combination and guidance (D30), TOML case file with "did you mean" (D39), log, CSV, wall and line output (D43). **Couette exact to the iteration tolerance on all mesh types; Poiseuille observed order 1.80–2.00; lid-driven cavity within 0.4–1.4 % of Ghia et al. at Re 100 and 1000 in 2D and within 2.5 % on 3D tetrahedra and polyhedra.** New crate `cfdcraft-flow`, command `cfdcraft flow`, thirteen case files, gallery 12–13, recipes 18–20. CPU only; the GPU flow loop follows with stage 5 |
@@ -15,6 +298,12 @@ Nothing yet.
 | 0.2 (2026-11-14) | 2 Operators on a scalar equation | Finite-volume operators on a scalar transport equation, one source for the CPU and the NVIDIA GPU: least-squares gradients (exact for linear fields, error 6e-15 on all mesh types), linear upwind with Venkatakrishnan and Venkatakrishnan–Wang limiters (no new extrema at K = 0), over-relaxed non-orthogonal diffusion, reproducible gather-based assembly into sliced ELL, BiCGStab. Observed order 1.87–2.08 on hex, tet, poly and mixed meshes in 2D and 3D. **GPU and CPU results bitwise equal on a Tesla T4** (912 673 polyhedra, 311 ns per cell and iteration). New command `cfdcraft scalar`, seven case files, gallery 8–9, recipes 12–14 |
 | 0.1 (2026-11-14) | 1 Mesh | Polyhedral face-based mesh with exact geometry (every cell closed to 1e-15, volumes exact), Gmsh 4.1 reader, built-in test mesher (hex, tet, poly, mixed; 2D and 3D; graded, refined, perturbed), quality report, VTKHDF output for ParaView, METIS and RCB partitioning with a solver-ready halo layout and multi-field halo exchange (tested over MPI on 2–4 ranks), particle point location on all mesh types, golden-value test matrix, `cfdcraft mesh` command. G1 rerun on polyhedral and shuffled meshes: bitwise equal; quiet-machine verdict open (O15) |
 | 0.0 (2026-11-14) | 0 Foundations and gate G1 | Cargo workspace, CI on Linux, macOS and Windows with MPI runs on 4 ranks, the G1 kernel benchmark. **G1 GPU verdict passed on a Tesla T4: single-source Rust kernels within 1.0 % of hand-written CUDA C, bitwise equal results**; **CPU verdict passed on an i9-9900K: single-source bodies within 1.8 % of hand-written loops, in two runs** |
+
+Release 0.7 is the first part of stage 7: the energy equation of the
+fluid, conjugate heat transfer with solid regions and the tools for agents
+(registry, MCP server, live control port). Buoyancy and variable density
+follow in later releases. The Cargo version of the crates is now 0.7.0;
+the release is the Git tag `v0.7` (D46).
 
 Release 0.6 closes stage 6: all six turbulence models, the wall
 treatments, passive scalars with thermal wall functions and rotating

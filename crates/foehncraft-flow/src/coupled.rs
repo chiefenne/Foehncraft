@@ -888,7 +888,7 @@ impl Flow {
     /// domain over the area of its boundary faces without the symmetry
     /// planes (periodic faces are interior faces); (ΣV)^(1/3) for a domain
     /// without such boundaries.
-    fn pseudo_length(&mut self) -> f64 {
+    pub(crate) fn pseudo_length(&mut self) -> f64 {
         if let Some(l) = self.pseudo_length {
             return l;
         }
@@ -950,7 +950,13 @@ impl Flow {
         for u in self.f.u.all() {
             cells += self.dev.sum_sq(u)?;
         }
-        let speed = (cells / self.disc.n_cells as f64).sqrt().max(bnd);
+        // with buoyancy also the buoyancy velocity (stage 7b1): a fluid at
+        // rest in a stratification has no other speed
+        let buoyant = self.buoyancy.as_ref().map_or(0.0, |b| b.speed(length));
+        let speed = (cells / self.disc.n_cells as f64)
+            .sqrt()
+            .max(bnd)
+            .max(buoyant);
         Ok((speed > 0.0 && speed.is_finite()).then(|| s.factor * length / speed))
     }
 

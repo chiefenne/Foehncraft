@@ -1,0 +1,58 @@
+# Laminar T-junction mixer with a passive scalar on a polyhedral mesh
+# (stage 8, D45, D51): grid-convergence case of the 3D internal flows.
+#
+#   gmsh -3 examples/meshes/tjunction_gci.geo -setnumber h 0.0126 -format msh41 \
+#       -o examples/meshes/tjunction_gci_coarse.msh      (committed)
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/tjunction_mixing.toml
+#
+# Main pipe of diameter D = 0.1 m and length 1 m, branch of diameter 0.05 m
+# and length 0.3 m joining at x = 0.3 m (examples/meshes/tjunction_gci.geo).
+# Both inlets carry a uniform velocity of 1 m/s, nu = 5e-4 m^2/s (Re = 200
+# on the main pipe, 100 on the branch), the outlet is a static pressure
+# outlet. The branch fluid carries the passive scalar theta = 1 (Schmidt
+# number 1), the main fluid theta = 0: the mixing index downstream
+# (the difference of theta at y = +/-0.035 m on the line x = 0.9 m) and the
+# mean pressures of the two inlets are the quantities of the grid study (examples/studies/tjunction_gci.py,
+# three tetrahedral meshes converted into polyhedra). The flow is steady
+# and laminar at this Reynolds number. The mesh of this case is the
+# coarse one (4 800 polyhedra; the study meshes have 4 800, 16 000 and 45 000).
+
+case_format = "0.6"
+
+[mesh]
+file = "../../meshes/tjunction_gci_coarse.msh"
+polyhedral = true
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 5e-4
+
+[scalars.theta]
+diffusivity = 5e-4
+initial = 0.0
+
+[boundary.inlet_main]
+type = "velocity-inlet"
+velocity = [1.0, 0.0, 0.0]
+[boundary.inlet_main.scalar.theta]
+value = 0.0
+[boundary.inlet_branch]
+type = "velocity-inlet"
+velocity = [0.0, -1.0, 0.0]
+[boundary.inlet_branch.scalar.theta]
+value = 1.0
+[boundary.outlet]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.wall]
+type = "wall"
+
+[solver]
+tolerance = 1e-7
+max_iterations = 3000
+
+[output]
+vtkhdf = false
+wall_csv = false
+lines = [ { name = "cross", from = [0.9, -0.04, 0.0], to = [0.9, 0.04, 0.0], points = 81 } ]

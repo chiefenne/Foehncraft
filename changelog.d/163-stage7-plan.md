@@ -1,1 +1,0 @@
-- **Stage 7 plan in the repository.** The working plan of stage 7 (pull request cut, lanes, decisions and status per pull request) is now `docs/requirements/stage7-plan.md`, linked from the stage 7 specification (D200).

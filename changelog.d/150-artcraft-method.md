@@ -1,1 +1,0 @@
-- **Assessment: the ArtCraft development method.** `docs/assessments/artcraft-development-method.md` compares how the ArtCraft Crafting Apps are built with Foehncraft's practice and lists open questions for the maintainer (tool registry, mandatory roots for agents, `AGENTS.md`, cost gate, verification grades, clean room). No behaviour changes.

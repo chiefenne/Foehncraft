@@ -304,6 +304,7 @@ const RESERVED: &[&str] = &[
     "velocity_z",
     "speed",
     "pressure",
+    "static_pressure",
     "velocity_error",
     "wall_distance",
     "x",
@@ -2175,6 +2176,15 @@ impl Scalars {
             }
         }
         g
+    }
+
+    /// The device buffer of the temperature of the energy equation, if
+    /// the scalars have one.
+    pub fn energy_phi(&self) -> Option<Buf> {
+        self.fields
+            .iter()
+            .find(|f| f.energy.is_some())
+            .map(|f| f.phi)
     }
 
     /// The laminar viscosity μ(T) per face of the energy equation's last

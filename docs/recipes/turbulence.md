@@ -15,6 +15,7 @@ Part of the [Recipes](../recipes.md): run a case with a RANS turbulence model, c
 | 115 | [Get the secondary flow of non-circular ducts with SST](#qcr) |
 | 141 | [Choose the sink of k of the ζ-f models](#k-sink) |
 | 140 | [Say what turbulence enters through an outlet](#outlet-backflow) |
+| 194 | [Run the QCR on tetrahedra and perturbed meshes](#qcr-consistency) |
 
 ---
 
@@ -739,5 +740,56 @@ viscosity_ratio = 10.0               # or turbulence_length_scale
 ```
 target/release/foehn flow examples/cases/flow/backstep_outlet_backflow.toml
 ```
+
+[↑ back to top](#turbulence-models)
+
+---
+
+<a id="qcr-consistency"></a>
+## 194. Run the QCR on tetrahedra and perturbed meshes
+
+Nothing to switch on: a run with `turbulence.qcr` checks its velocity
+gradient before the solve (D236) and uses the quadratic least-squares
+gradient for the QCR stress on every cell where the face-neighbour
+gradient is first order. The log says how many cells that is, and
+`foehn flow --check --json` shows it before a run:
+
+```
+target/release/foehn flow examples/cases/flow/cavity_sst_operator_check.toml --check --json
+```
+
+- `operators.quadratic` in the report holds the error of the quadratic
+  fit; `MESH006` remains only for the cells where the fit fails (too few
+  or degenerate neighbours of neighbours). Remesh those cells, or convert
+  tetrahedra to polyhedra (D54).
+- `solver.operator_tolerance` (0.01) sets which cells count as flagged and
+  so which cells take the quadratic gradient.
+- On regular hexahedra the quadratic gradient is used only in the cell
+  layer at the walls; inside the mesh the gradient is already exact.
+- The curvature correction (`turbulence.curvature_correction`) still
+  takes the gradient of the face-neighbour gradient; `MESH005` warns where
+  that is inconsistent (the next step of D236).
+
+```
+target/release/foehn flow examples/cases/flow/cavity_sst_operator_check.toml
+```
+<a id="pipe-turbulent"></a>
+## 193. Run a turbulent pipe and check its friction
+
+Use the wedge pipe (recipe 71) with a periodic module and `low-re`:
+
+```
+target/release/foehn flow examples/cases/flow/pipe_turbulent_sst.toml --out output/pipe
+grep "periodic xmin" output/pipe/flow.log
+```
+
+With the body force F of the log, u_τ = √(F R/2ρ) (ρ = 1, R = 0.5 m),
+u_τ/U_b with U_b = 1 and C_f = 2 (u_τ/U_b)²; Re_τ = u_τ R/ν. The case
+gives u_τ/U_b of 0.0711 on 96 cells (DNS 0.0683). For the grid-convergence
+study (observed order, extrapolated value, GCI_fine after Celik et al.
+2008) run `python3 examples/studies/pipe_gci.py output/pipe_gci`; it
+refines across the radius only, the solution does not depend on x. Steady
+wall-resolved runs need `solver.momentum.relaxation = 0.95` here, and
+judge convergence by u_τ, not by the residual alone.
 
 [↑ back to top](#turbulence-models)

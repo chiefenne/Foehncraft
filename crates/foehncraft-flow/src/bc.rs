@@ -600,6 +600,13 @@ pub enum BoundaryCondition {
     StaticPressureInlet {
         /// Static pressure (Pa): a number or an expression (D53).
         pressure: Scalar,
+        /// What the value means with gravity: the reduced pressure p′
+        /// (default) or the static pressure p (D153, stage 7b1).
+        #[serde(
+            default,
+            skip_serializing_if = "crate::buoyancy::PressureKind::is_default"
+        )]
+        pressure_kind: crate::buoyancy::PressureKind,
         /// Turbulence values (stage 6).
         #[serde(default)]
         turbulence_intensity: Option<f64>,
@@ -628,6 +635,13 @@ pub enum BoundaryCondition {
         /// Total pressure p₀ = p + ½ρ|u|² (Pa): a number or an expression
         /// (D53).
         total_pressure: Scalar,
+        /// What the value means with gravity: the reduced pressure p′
+        /// (default) or the static pressure p (D153, stage 7b1).
+        #[serde(
+            default,
+            skip_serializing_if = "crate::buoyancy::PressureKind::is_default"
+        )]
+        pressure_kind: crate::buoyancy::PressureKind,
         /// Turbulence values (stage 6).
         #[serde(default)]
         turbulence_intensity: Option<f64>,
@@ -657,6 +671,13 @@ pub enum BoundaryCondition {
         /// example the hydrostatic pressure of a free outlet.
         #[serde(default)]
         pressure: Scalar,
+        /// What the value means with gravity: the reduced pressure p′
+        /// (default) or the static pressure p (D153, stage 7b1).
+        #[serde(
+            default,
+            skip_serializing_if = "crate::buoyancy::PressureKind::is_default"
+        )]
+        pressure_kind: crate::buoyancy::PressureKind,
         /// Treatment of the faces where the flow enters.
         #[serde(default)]
         backflow: Backflow,
@@ -687,6 +708,13 @@ pub enum BoundaryCondition {
     TotalPressureOutlet {
         /// Total pressure (Pa): a number or an expression (D53).
         total_pressure: Scalar,
+        /// What the value means with gravity: the reduced pressure p′
+        /// (default) or the static pressure p (D153, stage 7b1).
+        #[serde(
+            default,
+            skip_serializing_if = "crate::buoyancy::PressureKind::is_default"
+        )]
+        pressure_kind: crate::buoyancy::PressureKind,
         /// Treatment of the faces where the flow enters.
         #[serde(default)]
         backflow: Backflow,
@@ -1069,6 +1097,9 @@ pub struct At<'a> {
     /// The zones that turn (`[[mrf]]`, `[[sliding]]`; see
     /// [`FlowCase::turning`](crate::case::FlowCase::turning)).
     pub turning: &'a [Turning],
+    /// The hydrostatic reference of gravity (stage 7b1): the values of
+    /// boundaries with `pressure_kind = "static"` become reduced pressures.
+    pub hydrostatic: Option<crate::buoyancy::Hydrostatic>,
 }
 
 static NO_VALUES: std::sync::LazyLock<Compiled> = std::sync::LazyLock::new(Compiled::new);
@@ -1081,6 +1112,7 @@ impl<'a> At<'a> {
             values: &NO_VALUES,
             t: 0.0,
             turning: &[],
+            hydrostatic: None,
         }
     }
 
@@ -1163,6 +1195,17 @@ impl BoundaryCondition {
                 mass_flux: Some(m), ..
             } => sval(m, vals.and_then(|v| v.mass_flux.as_ref()), x, t),
             _ => 0.0,
+        }
+    }
+
+    /// `pressure_kind` of a pressure boundary (`None` for the others).
+    pub fn pressure_kind(&self) -> Option<crate::buoyancy::PressureKind> {
+        match self {
+            BoundaryCondition::StaticPressureInlet { pressure_kind, .. }
+            | BoundaryCondition::StaticPressureOutlet { pressure_kind, .. }
+            | BoundaryCondition::TotalPressureInlet { pressure_kind, .. }
+            | BoundaryCondition::TotalPressureOutlet { pressure_kind, .. } => Some(*pressure_kind),
+            _ => None,
         }
     }
 
@@ -2622,6 +2665,13 @@ pub fn arrays(
                 BoundaryCondition::Periodic { .. } => {
                     anyhow::bail!("periodic boundary `{}` was not paired", p.name)
                 }
+            }
+            // a static pressure with gravity: the reduced pressure of the
+            // face, p′_b = p_b − ρ_ref g·(x_f − x_ref) (D153)
+            if let (Some(h), Some(crate::buoyancy::PressureKind::Static)) =
+                (at.hydrostatic, bc.pressure_kind())
+            {
+                a.pset[fb] -= h.head(xf);
             }
         }
     }
