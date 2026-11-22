@@ -1146,6 +1146,12 @@ impl FlowCase {
         {
             e.cycle = None;
         }
+        // as `[energy.frozen_flow] enabled = false` (D118)
+        if let Some(e) = &mut c.energy
+            && e.frozen_flow.as_ref().is_some_and(|y| !y.enabled)
+        {
+            e.frozen_flow = None;
+        }
         c.validate()?;
         Ok(c)
     }
@@ -2458,7 +2464,7 @@ fn steady_restart(fl: &mut Flow, mesh: &Mesh, name: &str) -> Result<Restart> {
         sweep: fl.sweep.clone(),
         transient: None,
         geometry: None,
-        cht: crate::cht::restart_part(fl, None)?,
+        cht: crate::cht::restart_part(fl, None, None)?,
     })
 }
 

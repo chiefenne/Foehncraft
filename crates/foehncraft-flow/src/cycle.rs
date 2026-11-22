@@ -98,6 +98,9 @@ use std::collections::VecDeque;
 /// change of a solid temperature is below 10⁻⁹ of the temperature span).
 const SOLID_ITERATIONS: usize = 200;
 
+/// Solves per step of a transient solid phase at most (the same stop).
+const MARCH_ITERATIONS: usize = 40;
+
 /// The bounds of the Aitken factor of the updates.
 const OMEGA_MIN: f64 = 0.05;
 const OMEGA_MAX: f64 = 50.0;
@@ -151,6 +154,14 @@ pub struct CycleUpdate {
     /// swing of the fluid phase; it counts against `tolerance` too.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub swing_change: Option<f64>,
+    /// With `solid = "transient"`: the physical time the march covered (s,
+    /// the fluid phase included, in which the solids were held) ...
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub march_time: Option<f64>,
+    /// ... and the jump of the run's clock after the fluid phase (s, whole
+    /// periods): the solids are at `time + march_jump` after the update.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub march_jump: Option<f64>,
 }
 
 /// The skin swing in the result.
@@ -200,6 +211,9 @@ pub struct CycleSummary {
     /// The time when the loop ended (s), none when the run ended first.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ended_at: Option<f64>,
+    /// The solid phase: `"steady"` or `"transient"` (a history).
+    #[serde(default)]
+    pub solid: String,
     /// The skin swing (`skin = "effusivity"`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub skin: Option<SkinSummary>,
@@ -398,12 +412,23 @@ pub struct Controller {
     res_min: Vec<f64>,
     res_max: Vec<f64>,
     resolved: Option<ResolvedSummary>,
+    /// The end time of the run (a transient solid phase does not march
+    /// past it), and the jump of the clock that the last update asks for.
+    end_time: Option<f64>,
+    jump: Option<f64>,
 }
 
 impl Controller {
     /// The loop of a conjugate case from time `t0`: the solids are held at
     /// their current temperatures from the first step on.
-    pub fn new(fl: &mut Flow, cfg: &CycleCoupling, t0: f64, dt: f64, dim: u8) -> Result<Self> {
+    pub fn new(
+        fl: &mut Flow,
+        cfg: &CycleCoupling,
+        t0: f64,
+        dt: f64,
+        dim: u8,
+        end_time: Option<f64>,
+    ) -> Result<Self> {
         let mut skin_notes = Vec::new();
         let mut skin = None;
         let (faces, pairs, solid, skin_depth) = {
@@ -531,6 +556,8 @@ impl Controller {
             res_min: vec![f64::MAX; n],
             res_max: vec![f64::MIN; n],
             resolved: None,
+            end_time,
+            jump: None,
             cfg: cfg.clone(),
             dim,
             faces,
@@ -672,6 +699,13 @@ impl Controller {
     /// run stops.
     pub fn done(&self) -> bool {
         self.done
+    }
+
+    /// The jump of the run's clock after a transient solid phase (s, whole
+    /// periods), once: the solids have marched past the end of the fluid
+    /// phase.
+    pub fn take_jump(&mut self) -> Option<f64> {
+        self.jump.take()
     }
 
     /// After a time step that ended at `t` and took `dt`: accumulates the
@@ -1002,6 +1036,24 @@ impl Controller {
         let heat_change = self
             .q_prev
             .map(|p| (q_total - p).abs() / self.heat_scale(q_total.abs().max(p.abs())));
+        // a transient solid phase: the march covers the time since the
+        // solids were last updated (the fluid phase, in which they were
+        // held) and the rest of `march_cycles` periods, over which the
+        // clock then jumps (whole periods, so the flow continues in phase),
+        // not past the end of the run
+        let transient = self.cfg.solid == "transient";
+        let span_phase = f64::from(self.cycles_in_phase) * self.cfg.period;
+        let (march, jump) = if transient {
+            let want = f64::from(self.cfg.march_cycles.unwrap_or(0)) * self.cfg.period;
+            let mut m = want.max(span_phase);
+            if let Some(e) = self.end_time {
+                m = m.min(e - (t - span_phase)).max(span_phase);
+            }
+            (Some(m), Some((m - span_phase).max(0.0)))
+        } else {
+            (None, None)
+        };
+        let march_dt = march.map(|m| m / f64::from(self.cfg.march_steps.max(1)));
         // the solid phase, from the state at the end of the fluid phase
         // (its time levels are put back afterwards)
         let saved = {
@@ -1040,7 +1092,13 @@ impl Controller {
                 });
             }
             sc.set_energy_robin(dev, Some(robin))?;
-            let r = steady(fl, None, span)?;
+            let r = match march_dt {
+                Some(h) => {
+                    sc.set_energy_temperature(dev, &t_before)?;
+                    march_steps(fl, None, t, h, self.cfg.march_steps, span)?
+                }
+                None => steady(fl, None, span)?,
+            };
             let (sc, dev) = fields(fl)?;
             sc.set_energy_robin(dev, None)?;
             r
@@ -1076,17 +1134,23 @@ impl Controller {
             }
             sc.set_energy_frozen(dev, None)?;
             sc.set_energy_extra_heat(Some(extra));
-            let (last, i2) = steady(fl, Some(&mf), span)?;
+            let (last, i2) = match march_dt {
+                Some(h) => march_steps(fl, Some(&mf), t, h, self.cfg.march_steps, span)?,
+                None => steady(fl, Some(&mf), span)?,
+            };
             (last, i1 + i2)
         };
         // the balance of the solids in the solid phase: the fluid counted
         // as held (what flows into it, convection included, is booked as
         // `held`, so the balance is that of the solids with the Robin heat
         // or the defect), the old levels at the solved field (a steady
-        // solve stores nothing)
+        // solve stores nothing; a march keeps those of its last step, whose
+        // balance it is)
         {
             let (sc, dev) = fields(fl)?;
-            sc.set_energy_levels(dev, &last)?;
+            if !transient {
+                sc.set_energy_levels(dev, &last)?;
+            }
             let fluid: Vec<bool> = self.solid.iter().map(|s| !s).collect();
             hold(sc, dev, &fluid, &last)?;
         }
@@ -1157,7 +1221,10 @@ impl Controller {
             .chain(s_next.iter().copied())
             .collect();
         let r: Vec<f64> = xt.iter().zip(&x).map(|(a, b)| a - b).collect();
+        // (a transient solid phase: the march is a history, not a fixed
+        // point; its result is the new state)
         let (x_new, w) = match (self.cfg.update.as_str(), self.hist_r.is_empty()) {
+            _ if transient => (xt.clone(), 1.0),
             (_, true) | ("relaxation", _) => {
                 let w = self.cfg.relaxation;
                 (x.iter().zip(&r).map(|(a, d)| a + w * d).collect(), w)
@@ -1180,8 +1247,10 @@ impl Controller {
             _ => (quasi_newton(&self.hist_r, &self.hist_xt, &r, &xt), 1.0),
         };
         self.omega = w;
-        self.hist_r.push(r);
-        self.hist_xt.push(xt);
+        if !transient {
+            self.hist_r.push(r);
+            self.hist_xt.push(xt);
+        }
         // the fluid back at its state and time levels of the end of the
         // fluid phase, the solids at the new temperatures on every level
         if !s_new.is_empty() {
@@ -1237,11 +1306,13 @@ impl Controller {
             solid_relative: bal.relative,
             swing_max,
             swing_change: swing_max.map(|_| swing_change),
+            march_time: march,
+            march_jump: jump,
         };
         lines.push(format!(
             "[energy.cycle] update {k} at t = {t} s after {} cycles: interface heat flow {:.6e} W \
              into the fluid{}, wall temperature change max {:.4} K, mean {:.4} K, mean wall {:.4} \
-             K; solid phase {its} solves, balance {:.2e}, relaxation {:.3}",
+             K; solid phase {its} solves, balance {:.2e}, relaxation {:.3}{}",
             self.cycles_in_phase,
             q_total,
             heat_change.map_or(String::new(), |c| format!(" (change {c:.2e})")),
@@ -1249,7 +1320,15 @@ impl Controller {
             dmean,
             wmean,
             bal.relative,
-            w
+            w,
+            match (march, jump) {
+                (Some(m), Some(j)) => format!(
+                    "; the solids marched {m} s in {} steps, the clock jumps {j} s to t = {} s",
+                    self.cfg.march_steps,
+                    t + j
+                ),
+                _ => String::new(),
+            }
         ));
         self.updates.push(row);
         self.means = FaceMeans {
@@ -1310,7 +1389,14 @@ impl Controller {
             lines.push(m);
             end(self, &mut lines, fl)?;
         }
-        // the next fluid phase
+        // the next fluid phase (after the jump of a transient solid phase)
+        if let Some(j) = jump.filter(|&j| j > 0.0) {
+            self.jump = Some(j);
+            self.cycle_start += j;
+            if let Some(e) = self.ended_at.as_mut() {
+                *e += j;
+            }
+        }
         self.cycles_in_phase = 0;
         self.hist.clear();
         self.cycle_q.clear();
@@ -1389,9 +1475,10 @@ impl Controller {
     }
 
     /// The loop for the result at the end of the run; a run that ended
-    /// before the loop gets CYC004.
+    /// before the loop gets CYC004 (not with a transient solid phase,
+    /// whose history ends with the run).
     pub fn summary(&mut self) -> CycleSummary {
-        if !self.done {
+        if !self.done && self.cfg.solid != "transient" {
             let m = format!(
                 "[energy.cycle]: the run ended (end_time or steps) after {} updates, before the \
                  loop converged or reached max_updates",
@@ -1409,6 +1496,7 @@ impl Controller {
             converged: self.converged,
             cycles: self.cycles_total,
             ended_at: self.ended_at,
+            solid: self.cfg.solid.clone(),
             skin: self.skin.clone(),
             resolved: self.resolved.clone(),
         }
@@ -1422,7 +1510,8 @@ impl Controller {
         }
         head.push_str(
             ",heat_change,wall_change_max,wall_change_mean,wall_mean,solid_iterations,\
-             relaxation,solid_imbalance,solid_relative,swing_max,swing_change",
+             relaxation,solid_imbalance,solid_relative,swing_max,swing_change,march_time,\
+             march_jump",
         );
         let rows = self
             .updates
@@ -1440,7 +1529,7 @@ impl Controller {
                     r.push_str(&format!(",{q:e}"));
                 }
                 r.push_str(&format!(
-                    ",{},{:e},{:e},{:e},{},{:e},{:e},{:e},{},{}",
+                    ",{},{:e},{:e},{:e},{},{:e},{:e},{:e},{},{},{},{}",
                     u.heat_change.map_or(String::new(), |c| format!("{c:e}")),
                     u.wall_change_max,
                     u.wall_change_mean,
@@ -1450,7 +1539,9 @@ impl Controller {
                     u.solid_imbalance,
                     u.solid_relative,
                     u.swing_max.map_or(String::new(), |x| format!("{x:e}")),
-                    u.swing_change.map_or(String::new(), |x| format!("{x:e}"))
+                    u.swing_change.map_or(String::new(), |x| format!("{x:e}")),
+                    u.march_time.map_or(String::new(), |x| format!("{x:e}")),
+                    u.march_jump.map_or(String::new(), |x| format!("{x:e}"))
                 ));
                 r
             })
@@ -1622,6 +1713,59 @@ fn steady(fl: &mut Flow, flux: Option<&[f64]>, span: f64) -> Result<(Vec<f64>, u
         last = now;
         if d <= 1e-9 * span {
             break;
+        }
+    }
+    Ok((last, its))
+}
+
+/// The march of a transient solid phase: `steps` steps of `dt` of the
+/// energy equation (with the full-mesh face mass flux `flux` of the fluid
+/// view in place of the current one, if given) from the current
+/// temperatures, BDF1 first and BDF2 after, each solved until the largest
+/// change of a temperature is below 10⁻⁹ of `span` (at most
+/// `MARCH_ITERATIONS`). The boundary values and sources stay at those of
+/// the time `t` of the update (their swing over a cycle is in the defect
+/// and in the Robin pairs). The temperatures at the end and the solves.
+fn march_steps(
+    fl: &mut Flow,
+    flux: Option<&[f64]>,
+    t: f64,
+    dt: f64,
+    steps: u32,
+    span: f64,
+) -> Result<(Vec<f64>, usize)> {
+    let mut last = {
+        let (sc, dev) = fields(fl)?;
+        let t0 = sc.energy_temperature(dev)?;
+        sc.set_energy_levels3(dev, &t0, &t0, &t0)?;
+        t0
+    };
+    let mut its = 0;
+    for k in 0..steps.max(1) {
+        let second = k > 0;
+        {
+            let (sc, dev) = fields(fl)?;
+            sc.step_start(dev, true, second.then_some(1.0))?;
+        }
+        let st = crate::scalar::StepTime {
+            time: t,
+            dt,
+            a: crate::scalar::bdf(second, 1.0),
+        };
+        for _ in 0..MARCH_ITERATIONS {
+            let mut res = crate::simplec::Residuals::default();
+            crate::cht::solve_with_flux(fl, Some(st), &mut res, false, flux)?;
+            its += 1;
+            let (sc, dev) = fields(fl)?;
+            let now = sc.energy_temperature(dev)?;
+            let d = now
+                .iter()
+                .zip(&last)
+                .fold(0.0_f64, |a, (x, y)| a.max((x - y).abs()));
+            last = now;
+            if d <= 1e-9 * span {
+                break;
+            }
         }
     }
     Ok((last, its))

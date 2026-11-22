@@ -17,7 +17,8 @@
 > under way: the energy equation of the fluid and conjugate heat transfer
 > with solid regions, steady and transient, laminar and turbulent, with
 > contact resistances, orthotropic solids, thermal acceleration of the
-> solids and the cycle-averaged loop for periodic flows, are in, and so are
+> solids, the frozen-flow march and the cycle-averaged loop for periodic
+> flows, are in, and so are
 > gravity, the Boussinesq buoyancy and the low-Mach variable density
 > ρ(T, p₀).
 
@@ -136,13 +137,20 @@ validated range, one mesh only, …) in its report and its JSON result.
   effusivity, and `resolved_cycles` ends the loop with a few fully coupled
   cycles: a thin-skin wall ends at 1250 s within 0.016 K and 0.1 % on the
   swing of the periodic state the fully coupled run reaches after about
-  5000 s. Conjugate runs and the loop restart bit-identically. Several
-  fluids in one case (D194): any number of fluid regions, each with its
-  own material (liquids and gases) and the temperature at which it is
-  evaluated, beside any number of solids; fluids that touch only through
-  solids are separate parts of the flow, each with its own pressure
-  level; a water / oil counterflow exchanger across a steel plate meets
-  ε–NTU to 0.07 %.
+  5000 s; `solid = "transient"` gives the warm-up history instead, marched
+  under the cycle-mean flow with the clock jumped by whole periods (within
+  0.6 % of the rise, 780 steps against 6000). The frozen-flow march
+  (`[energy.frozen_flow]`) holds a settled flow and marches only the
+  temperatures with long steps, refreshing a flow that follows the
+  temperature when the fluid has moved: a heated wall under a fluid whose
+  viscosity halves over 17 K warms up in 557 steps instead of 6000, within
+  0.06 K of the fully coupled run. Conjugate runs, the loop and the march
+  restart bit-identically. Several fluids in one case (D194): any number
+  of fluid regions, each with its own material (liquids and gases) and
+  the temperature at which it is evaluated, beside any number of solids;
+  fluids that touch only through solids are separate parts of the flow,
+  each with its own pressure level; a water / oil counterflow exchanger
+  across a steel plate meets ε–NTU to 0.07 %.
 - **Gravity and buoyancy.** `[gravity]` and the Boussinesq buoyancy
   (`[buoyancy] model = "boussinesq"`) in SIMPLEC and the coupled algorithm.
   The solver works with the reduced pressure p′ = p − ρ_ref g·(x − x_ref)

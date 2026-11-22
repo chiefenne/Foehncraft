@@ -1,0 +1,127 @@
+# The heated wall of `cht_heated_wall_transient` with a fluid whose
+# viscosity falls with the temperature, warmed up with the frozen-flow
+# march (D118, §9f of the stage 7 specification).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/cht_heated_wall_frozen.toml
+#
+# The flow develops within a few flow-through times (L/U = 4 s), the wall
+# warms up over minutes (time constant about 300 s). Fully coupled, every
+# step of the warm-up is a flow step of 0.5 s: 6000 steps to 3000 s. With
+# [energy.frozen_flow] the run steps fully coupled until the flow has
+# settled, then holds velocity, pressure and mass flux and marches only the
+# temperatures of fluid and wall (one matrix) with steps of 10 s. The
+# viscosity follows the temperature (it halves over 17 K), so the flow is
+# refreshed by coupled steps, until it has settled again, whenever a fluid
+# temperature has moved by more than 2 K since it was held.
+#
+# The fully coupled reference is the same case with
+# `--set energy.frozen_flow.enabled=false`. result.json has the section
+# `frozen_flow`: the phases (coupled or frozen, why, steps), the refreshes
+# and the solves per frozen step; heat.csv closes the balance of every
+# step, frozen or coupled.
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [4.0, 1.2, 0.04]
+cells = [80, 30, 1]
+split = [
+  { boundary = "xmin", axis = "y", at = 0.2, name = "inlet" },
+  { boundary = "xmax", axis = "y", at = 0.2, name = "outlet" },
+]
+zones = [{ name = "wall", lower = [0.0, 0.0, 0.0], upper = [4.0, 0.2, 0.04] }]
+
+[mesh]
+renumber = "rcm"
+
+[materials.thinning-fluid]
+kind = "liquid"
+description = "a made-up fluid (Re = 100, Pr = 0.71 at 300 K) whose viscosity falls with T (not a database material)"
+density = 1.0
+specific_heat = 1000.0
+conductivity = 14.084507042253522
+viscosity = { form = "power-law", value_ref = 0.01, t_ref = 300.0, exponent = -12.0 }   # Pa s, halves over 17 K
+
+[fluid]
+material = "thinning-fluid"
+temperature = 300.0
+
+[materials.wall-solid]
+kind = "solid"
+description = "a made-up solid with k_s/k_f = 10 (not a database material)"
+density = 100.0                      # light: a time constant of about 300 s
+specific_heat = 800.0
+conductivity = 140.84507042253522
+
+[regions.wall]
+kind = "solid"
+zones = ["wall"]
+material = "wall-solid"
+
+[energy]
+initial = 300.0                      # everything at the inlet temperature at t = 0
+
+[energy.frozen_flow]
+time_step = 10.0                     # s, the step of the march with the flow held
+refresh_change = 2.0                 # K, a fluid temperature moved since the flow was held
+# start = "settled"                  # the first hold: when the flow has settled
+# window_steps = 10                  # the settling test: windows of 10 flow steps
+# settle_tolerance = 1e-3            # rms change of the velocity per window, and still to come
+
+[initial]
+velocity = [0.0, 0.0, 0.0]
+
+[boundary.inlet]
+type = "velocity-inlet"
+velocity = [1.0, 0.0, 0.0]
+[boundary.inlet.energy]
+temperature = 300.0
+[boundary.outlet]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymax]
+type = "wall"
+[boundary.ymin]
+type = "wall"
+[boundary.ymin.energy]
+heat_flux = 1000.0                   # W/m² into the wall
+[boundary.xmin]
+type = "wall"                        # the upstream end of the wall
+[boundary.xmax]
+type = "wall"                        # the downstream end of the wall
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[time]
+scheme = "bdf2"
+time_step = 0.5                      # the flow's step (Courant number about 10)
+end_time = 3000.0
+
+[solver]
+outer_iterations = 3
+
+[solver.momentum]
+relaxation = 0.9
+
+[solver.energy]
+relaxation = 1.0
+tolerance = 1e-10
+max_iter = 300
+
+[output]
+wall_csv = false
+history_every = 1
+probes = [
+  { name = "heated_face", point = [3.0, 0.02, 0.02] },
+  { name = "interface", point = [3.0, 0.22, 0.02] },
+  { name = "near_wall", point = [3.0, 0.24, 0.02] },
+  { name = "channel", point = [3.0, 0.7, 0.02] },
+]
+lines = [
+  { name = "wall_top", from = [0.025, 0.18, 0.02], to = [3.975, 0.18, 0.02], points = 80 },
+  { name = "across", from = [3.0, 0.0, 0.02], to = [3.0, 1.2, 0.02], points = 121 },
+]

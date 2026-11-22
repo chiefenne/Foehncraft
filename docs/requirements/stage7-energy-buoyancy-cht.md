@@ -1056,9 +1056,8 @@ being guessed.
 
 ### 9d.4 Keys
 
-As built (#190, #202) the table is `[energy.cycle]` (beside
-`[energy.acceleration]`, which it excludes); a transient `solid` phase
-comes with the frozen-flow march (D118, PR D).
+As built (#190, #202, #208) the table is `[energy.cycle]` (beside
+`[energy.acceleration]` and `[energy.frozen_flow]`, which it excludes).
 
 ```toml
 [energy.cycle]
@@ -1074,7 +1073,9 @@ heat_tolerance = 0.005     # relative change of the interface heat flow per upda
 relaxation = 1.0           # of the first update
 update = "quasi-newton"    # later updates: "quasi-newton" | "aitken" | "relaxation"
 solid_model = "mean-flow"  # "mean-flow" | "robin" (the first-cell Robin pair)
-solid = "steady"           # "transient" with D118 (PR D)
+solid = "steady"           # "transient": a history, marched under the cycle-mean flow (#208)
+march_cycles = 20          # with "transient": periods of physical time per update
+march_steps = 4            # with "transient": steps of the march per update
 skin = "none"              # "effusivity": the surface swing of a thin skin (#202)
 skin_harmonics = 10        # harmonics of the period for the swing
 resolved_cycles = 0        # fully coupled cycles after the loop (#202)
@@ -1082,10 +1083,13 @@ resolved_cycles = 0        # fully coupled cycles after the loop (#202)
 
 Codes: CYC001 error (a setting that cannot be used: a steady case, no
 solid, with `[energy.acceleration]`, an adaptive step, a period that is
-not a whole number of steps, a value out of range), CYC002 warning (the
+not a whole number of steps, a value out of range, `march_cycles` below
+the cycles of a fluid phase or without `solid = "transient"`, a
+`relaxation` other than 1 with it), CYC002 warning (the
 fluid phase is not periodic after `max_cycles`), CYC003 warning (skin depth
 larger than a third of the wall thickness V/A), CYC004 warning (stopped at
-`max_updates` before the tolerances), CYC005 note (a step of the loop);
+`max_updates` before the tolerances; not for `solid = "transient"`, whose
+end at `end_time` is the end of the history), CYC005 note (a step of the loop);
 LIM009 in the limitations of every run with the loop.
 
 ### 9d.5 Checks (planned)
@@ -1188,6 +1192,39 @@ the fully coupled run is within 0.1 K from 4400 s (skin) to 5550 s (heated
 face). Checks: `tests/cht_cycle.rs` (skin swing and resolved cycles,
 CYC003, bit-identical restarts, steady restart).
 
+### 9d.9 As built: the transient solid phase (#208)
+
+`solid = "transient"` turns the loop into a warm-up or cool-down history
+(item 3, the multi-rate schedule of D118). Each update marches, instead
+of the steady solve B, fluid and solids together under the cycle-mean
+mass flux and the defect of every interface face (with `solid_model =
+"robin"` the solids under the Robin pairs) over M = max(`march_cycles`,
+cycles of the fluid phase) periods, in `march_steps` BDF steps (the first
+BDF1, then BDF2) from the temperatures at the end of the fluid phase.
+The march covers the fluid phase that has run; the clock then jumps by
+the rest, J = M − (time of the phase), a whole number of periods, so the
+next fluid phase starts at the same phase of the inlet history and the
+boundary values stay periodic. A march that would pass `end_time` is cut
+there. The update has no quasi-Newton or relaxation (the march is the
+history, not a fixed-point iterate), so `relaxation` must be 1. Boundary
+values and sources are held at the time of the update during the march.
+`cycle_coupling.csv` gains `march_time` and `march_jump`; the wall
+temperatures at time + `march_jump` form the history, and the loop stops
+when they change by less than `tolerance` per update, or at `end_time`
+(no CYC004). The restart keeps the jump (the clock of `restart.h5` is the
+jumped one).
+
+Results on `cht_pulsating_channel_warmup.toml` (the pulsating channel
+of §9d.7 with a period of 5 s, 80 × 20 cells, 0.25 s steps, 20 periods
+per update in 5 steps of 20 s, skin swing): 15 updates to 1500 s, 780
+steps in 18 s on 4 threads, against 6000 steps in 95 s fully coupled.
+The wall at the end of every march is within 0.21 K of the fully coupled
+run's cycle mean there over a rise of 35 K (largest at the first march,
+at 100 s), and within 0.01 K at 1500 s; the balance of every march
+closes to 2·10⁻¹² relative. Checks V7.44 (`tests/cht_cycle.rs`: within
+1 % of the whole rise on 40 × 10 cells, bit-identical restart in the
+fluid phase after a jump).
+
 ### 9d.6 What 7d5 and 7d6 keep open for it
 
 - The fluid-side conductance of every interface face (laminar k/δ_P or the
@@ -1259,6 +1296,84 @@ of the period larger than V/A of a region while accelerated), ACC004 note
 solid with the averaged Robin pair) is the limit f → 0 of this acceleration
 with the swing averaged out; the loop needs no factor. Checks V7.41, V7.42
 (§14.3c).
+
+## 9f. Frozen-flow march of transient conjugate runs (D118)
+
+Built in #208 at the maintainer's request (D118 item: multi-rate clocks,
+frozen flow; the third way to shorten a thermal warm-up beside the
+acceleration of §9e and the loop of §9d).
+
+**The problem.** A transient conjugate run steps the flow and the
+temperatures with one step, set by the flow (a Courant number of a few to
+ten). The wall warms over minutes or hours; the flow settles within a few
+flow-through times. Fully coupled, every step of the warm-up is a flow
+step: the heated wall of V7.37 with a 0.5 s step needs 6000 steps to
+3000 s.
+
+**The march.** `[energy.frozen_flow]` steps fully coupled until the flow
+has settled, then holds velocity, pressure, mass flux and turbulence and
+marches only the energy equation of fluid and solids (the one matrix of
+D112, with its time terms, convected by the held mass flux) with
+`time_step`, a multiple of the `[time]` step. Each frozen step solves the
+energy equation repeatedly (`iterations`, 20 at most) until its change is
+below 10⁻⁸ of the temperature span, for k(T), c_p(T) and the interface
+conductances. The first frozen step after coupled steps is BDF1 (the old
+levels belong to the flow's step), later ones BDF2; the first coupled
+step after a frozen phase takes the BDF2 weights of the unequal steps,
+which make it close to BDF1.
+
+**Settling.** Every `window_steps` coupled steps the run compares the
+velocity field with that of the last window: c = rms|u − u₋|/rms|u|. The
+flow has settled when c and the change still to come, c r/(1 − r) with
+r = c/c₋ (Aitken's Δ², as in §9e), are below `settle_tolerance`. For a
+flow that follows the temperature, which drifts with the warming fluid,
+c alone counts. `start` may instead give a time for the first hold.
+
+**Refresh.** A flow follows the temperature when the viscosity depends on
+it (a property form of D94–D103) or with buoyancy. Such a flow is
+refreshed, by coupled steps until it has settled again, when a fluid
+temperature has moved by more than `refresh_change` since the hold, or
+every `refresh_every` frozen steps (also for a flow that does not follow
+the temperature, e.g. time-dependent boundary values, FRZ004). A flow
+that does not depend on the temperature is held once and never refreshed:
+the march is then exact up to the time error of the long steps.
+
+**Ledger and restart.** The heat balance closes in every step, frozen or
+coupled (`heat.csv`). `restart.h5` holds the state of the march
+(`cht_frozen_state`: phase, windows, reference temperatures, counters)
+and, for a viscosity that follows the temperature, μ per face of the
+fluid (`cht_viscosity`), which a CHT restart lacked before: a restart in
+a frozen phase and in the coupled steps of a refresh continues bit for
+bit.
+
+**Keys.** `[energy.frozen_flow]`: `enabled` (false: the same case fully
+coupled, its reference), `time_step`, `start` (`"settled"` or a time),
+`window_steps` (10), `settle_tolerance` (10⁻³), `refresh_change` (2 K),
+`refresh_every` (0: off), `iterations` (20). Codes: FRZ001 error (a
+steady case, no solid, with `[energy.acceleration]` or `[energy.cycle]`,
+variable density, an adaptive step, `time_step` below the `[time]` step,
+a value out of range), FRZ002 warning (the flow did not settle), FRZ003
+note (each hold and refresh, in the log and the run record), FRZ004
+warning (time-dependent flow values); LIM010 in the limitations.
+`result.json` has `frozen_flow`: the phases (kind, start, end, steps,
+reason), frozen and coupled steps and time, refreshes, solves per frozen
+step.
+
+Results on `cht_heated_wall_frozen.toml` (the heated wall of V7.37,
+80 × 30 cells, with a viscosity that halves over 17 K; flow step 0.5 s,
+march step 10 s, `refresh_change` 2 K): held at 55 s, 7 refreshes, 557
+steps (287 frozen, 270 coupled) in 17 s against 6000 steps in 155 s
+fully coupled; every probe within 0.058 K of the fully coupled history
+over a rise of 21 K, 0.03 K at the end (0.002 K with `refresh_change =
+0.5`, 794 steps); the balance closes to 3·10⁻¹² relative. Checks V7.43
+(`tests/cht_frozen.rs`).
+
+**Relation to §9d and §9e.** The acceleration (§9e) changes the solid's
+ρ c_p and keeps the flow step; the frozen flow keeps the physics and
+takes long steps where the flow does not change; the loop (§9d) handles
+a flow that never settles (periodic), and with `solid = "transient"`
+uses the same idea, a march under the held (cycle-mean) flow. The three
+exclude each other in one run.
 
 ## 10. Coupling strategy, linear solvers and order of solution (D158)
 
@@ -1538,6 +1653,8 @@ Added 2026-11-21 (maintainer: turbulent and transient CHT before 7b1 and
 | V7.40 | Ledger of the cycle-averaged loop (D204) | heat balance of the solid per update; cycle-mean fluid balance with the change of stored heat | solid to the solver tolerance; fluid within 10⁻⁶ relative |
 | V7.41 | The switched-on heated wall of V7.37 with `inertia_scale = "auto"` (D213, `cht_heated_wall_accelerated.toml`) | measured τ against the case's estimate; scaled τ one window; settled and restored within the run; end state against the steady solution; balance per step; `inertia_scaling` = (1 − f)/f × solved wall storage | τ within 10 %; f τ = window to 10⁻⁹; end state within 0.2 % of ΔT; balance below 10⁻⁹; the ratio to 10⁻¹² (`tests/cht_acceleration.rs`). **Met 2026-11-22 (#180)** |
 | V7.42 | Fixed factor and restore at a time (D213) | true storage of the first step against the unaccelerated run; restore at the set time; periodic inlet: cycle mean after a 3-period ramp and after a jump against the unaccelerated periodic state | ratio between 0.9/f and 1/f; restore at the time; ramp within 0.01 K and ten times closer than the jump (`tests/cht_acceleration.rs`). **Met 2026-11-22 (#180)** |
+| V7.43 | The heated wall of V7.37 with `[energy.frozen_flow]` (D118, `cht_heated_wall_frozen.toml`), a viscosity constant and following T | probe histories against the fully coupled run; refreshes; heat balance; restart in a frozen phase and in a refresh | constant viscosity: within 0.1 K over the history and 0.01 K at the end, no refresh; μ(T): within 0.15 K, at least 3 refreshes for temperature; balance below 10⁻⁹; restarts bit-identical (`tests/cht_frozen.rs`, 40 × 15 cells). **Met 2026-11-22 (#208)** |
+| V7.44 | The pulsating channel with a period of 5 s warmed up by the loop with `solid = "transient"` (D204, D118, `cht_pulsating_channel_warmup.toml`) | wall temperatures at the end of every march against the cycle means of the fully coupled run; march and jump by whole periods; balance of each march; restart after a jump | within 1 % of the whole rise; balance below 10⁻⁹; restart bit-identical (`tests/cht_cycle.rs`, 40 × 10 cells). **Met 2026-11-22 (#208)** |
 
 ### 14.4 Implementation checks
 
@@ -1730,7 +1847,7 @@ CHT lane (C) run in parallel.
 | C | 7t2 | Shell conduction and baffles (D189), surface mesh W1 and wall-face halo W2, film slots (D190) | V7.28–V7.32 |
 | C | 7d5 | Turbulent CHT: thermal wall function (D135) on the fluid side of every interface in series with the solid half cell (§9.4), turbulent conductivity c_p μ_t/Pr_t in the energy view (done, #158) | V7.36 |
 | C | 7d6 | Transient CHT: time terms of the fluid and the solids in the one energy matrix, heat storage in the balance, output and probes on the full mesh (done, #159) | V7.6, V7.37 |
-| C | later | Cycle-averaged coupling of periodic flows (D204, §9d), after 7d6; core implemented (#190), skin swing, resolved cycles and restart (#202); frozen-flow march next | V7.38–V7.40 |
+| C | later | Cycle-averaged coupling of periodic flows (D204, §9d), after 7d6; core implemented (#190), skin swing, resolved cycles and restart (#202), transient solid phase and the frozen-flow march of D118 (#208) | V7.38–V7.40, V7.43, V7.44 |
 | D | 7e1 | `buoyancy_production` hook in k, ε, ω, ζ/φ (not delivered by stage 6), G_b with SGDH, C_ε3 | V7.25, V7.18 (SGDH, reported) |
 | D | 7e2 | GGDH, G_b with GGDH | V7.18, V7.19, V7.21 |
 | D | 7e3 | Heated backward-facing step | V7.20 |
