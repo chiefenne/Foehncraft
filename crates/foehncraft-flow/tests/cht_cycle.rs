@@ -363,6 +363,10 @@ fn skin_swing_and_resolved_cycles() {
     assert!(sk.swing_max > 1.0, "{sk:?}");
     let last = c.updates.last().unwrap();
     assert!(last.swing_change.unwrap() <= 0.01, "{last:?}");
+    // the heat balance closes in every step, also while the swing moves the
+    // held cells (their storage is booked with the held heat)
+    let tr = r.solves[0].transient.as_ref().unwrap();
+    assert!(tr.heat_relative_max.unwrap() < 1e-9, "{tr:?}");
     let res = c.resolved.as_ref().unwrap();
     assert_eq!(res.cycles, 3);
     let q = res.heat_flow[0].1;

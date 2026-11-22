@@ -2426,7 +2426,11 @@ fn run_one<F: FnMut(&str)>(
                          m², h_fluid W/(m² K) (cycle mean of the fluid side), conductance W/(m² \
                          K) (fluid side, contact and solid half cell in series), t_ref K, \
                          heat_flux W/m² (cycle mean, into the solid), t_wall K (solid side \
-                         after the last solid phase)",
+                         after the last solid phase); with skin = \"effusivity\": \
+                         t_wall_amplitude K (half the range of the estimated surface swing), \
+                         t_wall_min K, t_wall_max K; with resolved_cycles: \
+                         resolved_t_wall_min K, resolved_t_wall_max K (over the last fully \
+                         coupled cycle)",
                     ),
                     &head,
                     None,

@@ -8,8 +8,10 @@
 #
 #   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/cht_pulsating_channel_skin.toml
 #
-# The fully coupled reference: --set energy.cycle.enabled=false
-# --set time.end_time=4000.0 (the wall's time constant L²/a is about 700 s).
+# The loop converges after 10 updates (1100 s) and ends at 1250 s within
+# 0.016 K of the periodic state. The fully coupled reference:
+# --set energy.cycle.enabled=false --set time.end_time=10000.0 (within
+# 0.1 K from 4400 to 5550 s; the wall's time constant is about 700 s).
 
 case_format = "0.6"
 

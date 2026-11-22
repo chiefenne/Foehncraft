@@ -309,6 +309,11 @@ struct LoopState {
     resolved: Option<ResolvedSummary>,
 }
 
+/// Where a solid cell of the skin layer gets its swing from: the held
+/// cell, the centroid and unit normal of its interface face, and the depth
+/// of the held cell below that face (m).
+type Source = (u32, [f64; 3], [f64; 3], f64);
+
 /// The swing of the held cells: per cell the complex amplitudes of the
 /// harmonics (K).
 type Swing = Vec<(u32, Vec<(f64, f64)>)>;
@@ -747,7 +752,7 @@ impl Controller {
         let nc = mesh.n_cells;
         // per cell: the source (held cell, face centroid, unit normal, depth
         // of the held cell)
-        let mut src: Vec<Option<(u32, [f64; 3], [f64; 3], f64)>> = vec![None; nc];
+        let mut src: Vec<Option<Source>> = vec![None; nc];
         let mut queue = VecDeque::new();
         let mut out = Vec::new();
         let depth = |x: &[f64; 3], xf: &[f64; 3], nf: &[f64; 3]| -> f64 {

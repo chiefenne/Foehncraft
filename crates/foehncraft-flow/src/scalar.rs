@@ -1797,6 +1797,33 @@ impl Scalars {
     /// the cells of each region (`fluid` first), the time terms the energy
     /// equation was solved with; `None` in a steady run.
     pub fn energy_storage(&self, dev: &mut dyn FlowDevice) -> Result<Option<Vec<RegionHeat>>> {
+        self.energy_storage_of(dev, None)
+    }
+
+    /// The heat stored in the held cells of the cycle loop in the last
+    /// time step (W, D204): with the skin swing their temperature moves,
+    /// and the heat the holding takes is what flows into them less this.
+    fn energy_held_storage(&self, dev: &mut dyn FlowDevice) -> Result<f64> {
+        let Some(held) = self
+            .fields
+            .iter()
+            .find_map(|f| f.energy.as_deref())
+            .and_then(|e| e.held.clone())
+        else {
+            return Ok(0.0);
+        };
+        Ok(self
+            .energy_storage_of(dev, Some(&held))?
+            .map_or(0.0, |r| r.iter().map(|x| x.storage).sum()))
+    }
+
+    /// See [`Scalars::energy_storage`]; with `only`, the cells where it is
+    /// true.
+    fn energy_storage_of(
+        &self,
+        dev: &mut dyn FlowDevice,
+        only: Option<&[bool]>,
+    ) -> Result<Option<Vec<RegionHeat>>> {
         let Some(st) = self.last_step else {
             return Ok(None);
         };
@@ -1816,6 +1843,9 @@ impl Scalars {
         let [a0, a1, a2] = st.a;
         let mut per = vec![0.0; e.regions.len()];
         for c in 0..e.mat_cell.len() {
+            if only.is_some_and(|o| !o[c]) {
+                continue;
+            }
             let m = e.mat_cell[c] as usize;
             let h = &e.h[m];
             let mut l = a0 * h.at(t[c]) + a1 * h.at(t1[c]);
@@ -3440,6 +3470,10 @@ pub fn summaries(
             Some(_) => sc.energy_storage(fl.dev.as_mut())?,
             None => None,
         };
+        let held_stored = match held {
+            Some(_) => sc.energy_held_storage(fl.dev.as_mut())?,
+            None => 0.0,
+        };
         let energy = heat.as_ref().map(|(_, src)| {
             bal.source = *src;
             largest = largest.max(src.abs());
@@ -3466,7 +3500,9 @@ pub fn summaries(
                 out -= x;
             }
             if let Some((_, iface, src_held, robin)) = held {
-                let h = held_b + iface + src_held;
+                // less what the held cells store when their temperature
+                // moves (the skin swing)
+                let h = held_b + iface + src_held - held_stored;
                 bal.held = Some(h);
                 largest = largest.max(h.abs());
                 out += h;

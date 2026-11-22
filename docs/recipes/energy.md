@@ -11,6 +11,7 @@ Part of the [Recipes](../recipes.md): the energy equation of the fluid (stage 7,
 | 160 | [Put a contact resistance between two parts, orient an orthotropic solid, heat a component](#cht-contact) |
 | 180 | [Bring the solids of a transient conjugate run to their state sooner (thermal acceleration)](#cht-acceleration) |
 | 190 | [Couple a periodic flow with slow solids by cycle averages (exhaust manifolds, pulsating flows)](#cht-cycle) |
+| 202 | [Get the swing of the wall temperature from the cycle loop, and restart a conjugate run](#cht-cycle-skin) |
 | 186 | [Switch on gravity and buoyancy; which pressure do my boundary values mean](#buoyancy) |
 | 195 | [Let the density of a gas follow its temperature (low-Mach variable density)](#variable-density) |
 
@@ -588,12 +589,78 @@ target/release/foehn flow examples/cases/flow/cht_pulsating_channel_cycle.toml -
 
 **When not to use it.** When the history of the solids matters (a
 warm-up, a drive cycle) use the true transient run or the frozen-flow march
-(D118, later); when the swing at the surface matters (thermal fatigue) the
-skin swing and a few fully coupled cycles at the end come next. A flow that
+(D118, later); when the swing at the surface matters (thermal fatigue) add
+the skin swing and a few fully coupled cycles at the end (recipe 202). A
+flow that
 is not periodic has no cycle mean: use the thermal acceleration of recipe
 180. Keep `solid_model = "mean-flow"`; `"robin"` is the classic
 first-cell Robin loop, kept to compare: it needs many more updates
 (gallery 190).
+
+<a id="cht-cycle-skin"></a>
+## 202. Get the swing of the wall temperature from the cycle loop, and restart a conjugate run
+
+The loop of recipe 190 holds the solids at their cycle mean, so the wall
+temperature does not swing over a cycle (LIM009). Two keys bring the
+swing back:
+
+```toml
+[energy.cycle]
+period = 0.04
+skin = "effusivity"        # the swing of a thin skin from √(k ρ c_p); default "none"
+# skin_harmonics = 10      # harmonics of the period (at most half the steps of a cycle)
+resolved_cycles = 3        # fully coupled cycles after the loop; default 0
+max_updates = 10           # the swing takes a few more updates
+```
+
+**The skin swing.** The loop takes the harmonics of the heat flux into
+each interface face over the averaged cycle and gives the held solid cell
+the swing that a semi-infinite solid of the region's effusivity
+e = √(k ρ c_p) has under that flux, less the drop over its half cell. The
+flow of the next fluid phase sees the swinging surface; the swing
+amplitudes are updated with the wall temperatures, and the loop converges
+when both change by less than `tolerance` (the change of the swing is in
+`cycle_coupling.csv` as `swing_change`). `cycle_faces.csv` gives per face
+the estimated `t_wall_amplitude`, `t_wall_min` and `t_wall_max`. It holds
+where the skin depth δ = √(2k/(ρ c_p ω)) is small against the wall:
+CYC003 warns where δ is more than a third of a region's thickness V/A,
+and there `resolved_cycles` is the answer.
+
+**Fully coupled cycles at the end.** With `resolved_cycles` the loop
+releases the solids when it ends and runs that many cycles fully coupled,
+from the decaying swing profile of the skin (so the mean does not drift).
+They give the exact swing: `resolved_t_wall_min` and
+`resolved_t_wall_max` per face, and `transient.cycle_coupling.resolved`
+in the report with the heat flow of the last cycle. Two or three cycles
+are enough for the swing; they cost what fully coupled cycles cost.
+
+**Restart a conjugate run.** `restart.h5` now holds the temperature of the
+solids with its old time level, and the state of the cycle loop, so
+conjugate runs restart like any other:
+
+```toml
+[run]
+restart_final = true      # the default; or restart_every = N
+# later run:
+restart = "output/a/restart.h5"
+```
+
+The continuation is bit-identical with the same mesh order (a mapped
+order is refused for the loop: its state follows the face order). A
+restart with `[energy.acceleration]` is refused (ENE006): the
+scaled ρ c_p and its schedule are not in the file. A restart file of a
+loop read by a case without `[energy.cycle]` continues fully coupled.
+
+```
+target/release/foehn flow examples/cases/flow/cht_pulsating_channel_skin.toml --out output/skin
+target/release/foehn flow examples/cases/flow/cht_pulsating_channel_skin.toml --out output/skin_ref \
+    --set energy.cycle.enabled=false --set time.end_time=10000.0
+```
+
+Gallery 202 compares the two: the loop ends at 1250 s within 0.016 K of
+the periodic state and within 0.1 % on the swing; the fully coupled run
+needs 4400 to 5550 s.
+
 <a id="buoyancy"></a>
 ## 186. Switch on gravity and buoyancy; which pressure do my boundary values mean
 

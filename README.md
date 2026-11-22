@@ -131,7 +131,12 @@ validated range, one mesh only, …) in its report and its JSON result.
   are solved steady under the cycle-mean heat transfer (answering with the
   response of the cycle-mean flow), and the new wall temperatures go back,
   until they settle; a pulsating channel over a heated wall converges in 4
-  updates to within 0.4 % of the fully coupled periodic state.
+  updates to within 0.4 % of the fully coupled periodic state. With
+  `skin = "effusivity"` the held wall swings like a thin skin of its
+  effusivity, and `resolved_cycles` ends the loop with a few fully coupled
+  cycles: a thin-skin wall ends at 1250 s within 0.016 K and 0.1 % on the
+  swing of the periodic state the fully coupled run reaches after about
+  5000 s. Conjugate runs and the loop restart bit-identically.
 - **Gravity and buoyancy.** `[gravity]` and the Boussinesq buoyancy
   (`[buoyancy] model = "boussinesq"`) in SIMPLEC and the coupled algorithm.
   The solver works with the reduced pressure p′ = p − ρ_ref g·(x − x_ref)
