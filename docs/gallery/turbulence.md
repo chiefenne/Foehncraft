@@ -1345,7 +1345,11 @@ python3 -m tools.plot.diffuser_chart docs/figures/gallery/diffuser_sst.png
 <a id="ubend"></a>
 ## 204. U-bend of Rc/H = 1: separation behind a 180° turn, three meshes with GCI, sharp edges
 
-<img src="../figures/gallery/ubend_sst.png" alt="Turbulent flow through a two-dimensional U-duct with a centreline radius of one duct height, k-omega SST, coarse mesh. Top: speed, accelerated along the inner wall of the turn and a thin slow region on the inner wall behind the turn where the flow separates; the fast flow is pushed to the outer wall of the outlet leg. Middle: turbulent viscosity ratio, largest in the shear layer above the separated region. Bottom: wall pressure coefficient along the inner and the outer wall, a suction of minus 2.5 on the inner wall in the turn and a rise to plus 0.5 on the outer wall" width="800" height="656">
+<img src="../figures/gallery/ubend_sst.png" alt="Turbulent flow through a two-dimensional U-duct with a centreline radius of one duct height, k-omega SST, coarse mesh, drawn with the flow entering at the upper left and leaving at the lower left. Top: speed, accelerated along the inner wall of the turn and a thin slow region on the inner wall behind the turn where the flow separates; the fast flow is pushed to the outer wall of the outlet leg. Middle: turbulent viscosity ratio, largest in the shear layer above the separated region. Bottom: wall pressure coefficient along the inner and the outer wall, a suction of minus 2.5 on the inner wall in the turn and a rise to plus 0.5 on the outer wall" width="800" height="656">
+
+The field images are drawn as in the literature, with the flow entering at
+the upper left and leaving at the lower left: the y axis points down, so
+the coordinates are those of the case file and the mesh.
 
 The fourth general-purpose internal flow of D45 (stage 8): the
 two-dimensional U-duct of Monson, Seegmiller & McConnaughey (1990, AIAA
@@ -1449,7 +1453,7 @@ past 10 000 iterations is against the run rules (AGENTS.md); a faster
 route to the steady state of the sharp turn on fine meshes (a transient
 run from the level-2 state, or a stronger start) is open.
 
-<img src="../figures/gallery/ubend_sharp.png" alt="The same duct with sharp edges, coarse mesh. Top: speed; the flow turns in a jet around the square divider end, with slow corner vortices at the end wall and a long separated region on the divider behind the turn. Middle: turbulent viscosity ratio, large in the shear layers of the separated regions. Bottom: wall pressure coefficient along the inner and the outer wall, a suction of minus 3.5 on the divider end and a loss of about minus 1.05 behind the turn" width="800" height="656">
+<img src="../figures/gallery/ubend_sharp.png" alt="The same duct with sharp edges, coarse mesh, flow in at the upper left and out at the lower left. Top: speed; the flow turns in a jet around the square divider end, with slow corner vortices at the end wall and a long separated region on the divider behind the turn. Middle: turbulent viscosity ratio, large in the shear layers of the separated regions. Bottom: wall pressure coefficient along the inner and the outer wall, a suction of minus 3.5 on the divider end and a loss of about minus 1.05 behind the turn" width="800" height="656">
 
 - **There is no comparison with the measurements of Monson et al.**
   (owner decision 2026-11-22: GCI first, reference later, D201); the
