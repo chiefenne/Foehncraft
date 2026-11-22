@@ -826,8 +826,14 @@ fn restart_of(
     mesh: &foehncraft_mesh::Mesh,
     name: &str,
     dt_next: f64,
+    cycle: Option<&crate::cycle::Controller>,
 ) -> Result<Restart> {
+    let cycle = match cycle {
+        Some(c) => Some(c.save()?),
+        None => None,
+    };
     Ok(Restart {
+        cht: crate::cht::restart_part(fl, cycle)?,
         case: name.into(),
         cell_id: mesh.cell_id[..mesh.n_cells].to_vec(),
         face_id: mesh.face_id.clone(),
@@ -1082,6 +1088,7 @@ fn run_one<F: FnMut(&str)>(
     let mut af = AnalyticFaces::new(&case, mesh, &ub0);
     let mut dt = dt0;
     let mut restart_from = None;
+    let mut cycle_state: Option<Vec<u8>> = None;
     let restart_file = if single {
         case.run.restart.clone()
     } else {
@@ -1102,6 +1109,15 @@ fn run_one<F: FnMut(&str)>(
         }
         fl.load(&r.state)?;
         tr.restore(&mut fl, &old, clock)?;
+        crate::cht::load_restart(&mut fl, r.cht.as_ref(), path)?;
+        cycle_state = r.cht.as_ref().and_then(|c| c.cycle.clone());
+        if cycle_state.is_some() && !same {
+            bail!(
+                "{}: the restart file holds the state of the cycle-averaged loop, which follows \
+                 the face order of the run that wrote it; the case has another cell or face order",
+                path.display()
+            );
+        }
         fl.iteration = r.iteration;
         if let Some(m) = &r.amg_matrix {
             fl.restore_amg(m, r.amg_setups)?;
@@ -1485,6 +1501,14 @@ fn run_one<F: FnMut(&str)>(
         )?),
         None => None,
     };
+    match (&mut cycle, &cycle_state) {
+        (Some(c), Some(b)) => c.restore(&mut fl, b, tr.clock.time + dt)?,
+        (None, Some(_)) => lg.note(
+            "the restart file holds the state of a cycle-averaged loop; the case runs without \
+             [energy.cycle], so the run continues fully coupled",
+        ),
+        _ => {}
+    }
     loop {
         // [[schedule]] (D128): the entries due before this step
         if !case.schedule.is_empty() {
@@ -1673,7 +1697,7 @@ fn run_one<F: FnMut(&str)>(
                         files.push("fields_last_valid.vtkhdf");
                     }
                     if last && restart::AVAILABLE && imprint.is_none() {
-                        let rs = restart_of(&mut fl, &tr, mesh, name, h)?;
+                        let rs = restart_of(&mut fl, &tr, mesh, name, h, cycle.as_ref())?;
                         restart::write(&out.join("restart.h5"), &rs)?;
                         files.push("restart.h5");
                     }
@@ -2204,7 +2228,7 @@ fn run_one<F: FnMut(&str)>(
             }
         }
         if restart_now && restart::AVAILABLE && imprint.is_none() {
-            let rs = restart_of(&mut fl, &tr, mesh, name, dt)?;
+            let rs = restart_of(&mut fl, &tr, mesh, name, dt, cycle.as_ref())?;
             restart::write(&out.join("restart.h5"), &rs)?;
             if restart_numbered {
                 restart::write(&out.join(format!("restart_{n:06}.h5")), &rs)?;
@@ -2299,7 +2323,7 @@ fn run_one<F: FnMut(&str)>(
         lg.frame(&f);
     }
     if last && (case.run.restart_final || stopped) && restart::AVAILABLE && imprint.is_none() {
-        let rs = restart_of(&mut fl, &tr, mesh, name, dt)?;
+        let rs = restart_of(&mut fl, &tr, mesh, name, dt, cycle.as_ref())?;
         restart::write(&out.join("restart.h5"), &rs)?;
     }
     let scalars = crate::scalar::summaries(
@@ -2374,7 +2398,9 @@ fn run_one<F: FnMut(&str)>(
                          (solid side of the interface faces, solid phase against the update \
                          before), wall_mean K, solid_iterations -, relaxation - (of the \
                          update), solid_imbalance W, solid_relative - (balance of the solids with \
-                         the Robin heat or the defect of the mean-flow model)",
+                         the Robin heat or the defect of the mean-flow model), swing_max K \
+                         (skin: largest surface swing amplitude), swing_change K (skin: largest \
+                         change of a harmonic of the swing)",
                     ),
                     &head,
                     None,

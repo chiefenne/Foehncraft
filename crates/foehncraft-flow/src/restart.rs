@@ -41,6 +41,10 @@
 //!   `momentum_amg_use`, the hierarchy (0 to 2, −1 none) of each velocity
 //!   component, and `momentum_amg_matrix_<h>`, the momentum matrix
 //!   hierarchy h was built from;
+//! - a conjugate case (stage 7): `cht_cell_id`, `cht_temperature` and,
+//!   transient, `cht_temperature_old` on the full mesh (fluid and solids),
+//!   and with the cycle-averaged loop (D204) `cht_cycle_state`, the bytes of
+//!   its state as JSON (counters, accumulators, update history);
 //! - optional, for meshes that move (D91, L22): `point_id`,
 //!   `points_x|y|z` and the cell volumes of the time levels `volume_<k>`
 //!   (attribute `volume_levels`); a fixed mesh leaves them out.
@@ -82,6 +86,25 @@ pub struct Restart {
     /// The geometry of the state, for meshes that move or deform (D91,
     /// L22): `None` for a fixed mesh, whose mesh file defines it.
     pub geometry: Option<RestartGeometry>,
+    /// The temperature of a conjugate case on the full mesh (fluid and
+    /// solids, stage 7) and the state of its cycle-averaged loop (D204).
+    pub cht: Option<ChtRestart>,
+}
+
+/// The energy equation of a conjugate case in a restart file: datasets
+/// `cht_cell_id` (the global identities of the full mesh), `cht_temperature`
+/// (K) and, transient, `cht_temperature_old` (the level before), and with
+/// the cycle-averaged loop `cht_cycle_state` (bytes of its JSON state).
+#[derive(Debug, Clone, Default)]
+pub struct ChtRestart {
+    /// Global cell identities of the full mesh in local order.
+    pub cell_id: Vec<u64>,
+    /// The temperature per cell of the full mesh (K).
+    pub t: Vec<f64>,
+    /// Transient: the level before.
+    pub t_old: Option<Vec<f64>>,
+    /// The state of the cycle-averaged loop (JSON), if the run has one.
+    pub cycle: Option<Vec<u8>>,
 }
 
 /// Point coordinates and cell volumes of the time levels (D91): optional
@@ -302,6 +325,19 @@ mod io {
                     ds(&g, "ub_old_x", &u[0])?;
                     ds(&g, "ub_old_y", &u[1])?;
                     ds(&g, "ub_old_z", &u[2])?;
+                }
+            }
+            if let Some(c) = &r.cht {
+                ds_u64(&g, "cht_cell_id", &c.cell_id)?;
+                ds(&g, "cht_temperature", &c.t)?;
+                if let Some(o) = &c.t_old {
+                    ds(&g, "cht_temperature_old", o)?;
+                }
+                if let Some(b) = &c.cycle {
+                    g.new_dataset::<u8>()
+                        .shape([b.len()])
+                        .create("cht_cycle_state")?
+                        .write_raw(b)?;
                 }
             }
             if let Some(geo) = &r.geometry {
@@ -548,8 +584,27 @@ mod io {
         } else {
             None
         };
+        let cht = if g.link_exists("cht_temperature") {
+            Some(ChtRestart {
+                cell_id: g.dataset("cht_cell_id")?.read_raw::<u64>()?,
+                t: rd(&g, "cht_temperature")?,
+                t_old: if g.link_exists("cht_temperature_old") {
+                    Some(rd(&g, "cht_temperature_old")?)
+                } else {
+                    None
+                },
+                cycle: if g.link_exists("cht_cycle_state") {
+                    Some(g.dataset("cht_cycle_state")?.read_raw::<u8>()?)
+                } else {
+                    None
+                },
+            })
+        } else {
+            None
+        };
         Ok(Restart {
             geometry,
+            cht,
             case: rsattr(&g, "case")?,
             cell_id: g.dataset("cell_id")?.read_raw::<u64>()?,
             face_id: g.dataset("face_id")?.read_raw::<u64>()?,

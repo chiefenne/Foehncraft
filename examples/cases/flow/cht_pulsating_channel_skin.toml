@@ -1,0 +1,117 @@
+# The pulsating channel of `cht_pulsating_channel_cycle.toml` over a wall
+# whose skin is thin: k_s = k_f, ρ c_p = 2.5·10⁵ J/(m³ K), so that the swing
+# of the period (50 s) reaches only δ = √(2a/ω) = 0.03 m into the 0.2 m
+# wall, resolved by 6 cells of 5 mm. The loop takes the swing of the wall
+# temperature from the solid's effusivity (`skin = "effusivity"`, D204) and
+# ends with three fully coupled cycles (`resolved_cycles`), which give the
+# exact swing to compare.
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/cht_pulsating_channel_skin.toml
+#
+# The fully coupled reference: --set energy.cycle.enabled=false
+# --set time.end_time=4000.0 (the wall's time constant L²/a is about 700 s).
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [4.0, 0.4, 0.04]
+cells = [80, 80, 1]
+split = [
+  { boundary = "xmin", axis = "y", at = 0.2, name = "inlet" },
+  { boundary = "xmax", axis = "y", at = 0.2, name = "outlet" },
+]
+zones = [{ name = "wall", lower = [0.0, 0.0, 0.0], upper = [4.0, 0.2, 0.04] }]
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 0.01                     # Re = U H/ν = 20 with the channel height H = 0.2 m
+specific_heat = 1000.0
+conductivity = 14.084507042253522    # Pr = μ c_p/k = 0.71
+
+[materials.wall-solid]
+kind = "solid"
+description = "a made-up solid with k_s = k_f and a thin skin (not a database material)"
+density = 312.5                      # ρ c_p = 2.5e5 J/(m³ K), a = 5.6e-5 m²/s
+specific_heat = 800.0
+conductivity = 14.084507042253522
+
+[regions.wall]
+kind = "solid"
+zones = ["wall"]
+material = "wall-solid"
+
+[energy]
+initial = 300.0                      # everything at the inlet temperature at t = 0
+
+[energy.cycle]
+period = 50.0                        # s, 20 time steps
+warmup_cycles = 1                    # after every update, not averaged
+average_cycles = 1
+tolerance = 0.01                     # K, the largest change of a wall temperature per update
+heat_tolerance = 0.001               # the relative change of the interface heat flow
+max_updates = 10
+skin = "effusivity"                  # the swing of the wall from the solid's effusivity
+resolved_cycles = 3                  # fully coupled cycles at the end: the exact swing
+
+[initial]
+velocity = [0.0, 0.0, 0.0]
+
+[boundary.inlet]
+type = "velocity-inlet"
+velocity = ["1.0 + 0.5*sin(2.0*pi*t/50.0)", 0.0, 0.0]   # m/s, pulsating
+[boundary.inlet.energy]
+temperature = "300.0 + 50.0*sin(2.0*pi*t/50.0)"   # K, a period of 50 s
+[boundary.outlet]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymax]
+type = "wall"
+[boundary.ymin]
+type = "wall"
+[boundary.ymin.energy]
+heat_flux = 1000.0                   # W/m² into the wall
+[boundary.xmin]
+type = "wall"                        # the upstream end of the wall
+[boundary.xmax]
+type = "wall"                        # the downstream end of the wall
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[time]
+scheme = "bdf2"
+time_step = 2.5
+end_time = 4000.0                     # an upper bound: the loop stops by itself
+
+[solver]
+outer_iterations = 3                 # the flow takes Courant numbers of 100
+
+[solver.momentum]
+relaxation = 0.9
+
+[solver.energy]
+relaxation = 1.0
+tolerance = 1e-10
+max_iter = 300
+
+[output]
+wall_csv = false
+fields_every = 400
+probes = [
+  { name = "heated_face", point = [3.0, 0.0025, 0.02] },
+  { name = "skin_upstream", point = [0.5, 0.1975, 0.02] },
+  { name = "skin_middle", point = [2.0, 0.1975, 0.02] },
+  { name = "skin_downstream", point = [3.5, 0.1975, 0.02] },
+  { name = "deep_middle", point = [2.0, 0.1025, 0.02] },
+  { name = "channel", point = [3.0, 0.3, 0.02] },
+]
+lines = [
+  { name = "wall_top", from = [0.025, 0.18, 0.02], to = [3.975, 0.18, 0.02], points = 80 },
+  { name = "across", from = [3.0, 0.0025, 0.02], to = [3.0, 0.3975, 0.02], points = 80 },
+]

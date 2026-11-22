@@ -196,6 +196,23 @@ pub struct CycleCoupling {
     /// first fluid cell).
     #[serde(default = "default_solid_model")]
     pub solid_model: String,
+    /// The swing of the wall temperature over a cycle: `"none"` (default:
+    /// the wall is held at its cycle-mean temperature in the fluid phases)
+    /// or `"effusivity"` (the periodic solution of a semi-infinite solid
+    /// under the measured harmonics of the face heat flux, T̂_w = q̂ /
+    /// (e √(iω)), e = √(k ρ c_p): the next fluid phase sees it, and
+    /// `cycle_faces.csv` gives its amplitude, minimum and maximum per face).
+    #[serde(default = "default_skin")]
+    pub skin: String,
+    /// The harmonics of the period that the skin swing takes (default 10;
+    /// at most half the time steps of a cycle).
+    #[serde(default = "default_skin_harmonics")]
+    pub skin_harmonics: u32,
+    /// Fully coupled cycles after the loop has ended, started from its
+    /// solid temperatures: the exact swing, also at thin walls and edges
+    /// (default 0).
+    #[serde(default)]
+    pub resolved_cycles: u32,
 }
 
 fn default_enabled() -> bool {
@@ -218,6 +235,12 @@ fn default_cycle_tolerance_k() -> f64 {
 }
 fn default_relaxation_one() -> f64 {
     1.0
+}
+fn default_skin() -> String {
+    "none".into()
+}
+fn default_skin_harmonics() -> u32 {
+    10
 }
 fn default_solid_model() -> String {
     "mean-flow".into()
@@ -444,6 +467,17 @@ fn validate_cycle(case: &crate::case::FlowCase, c: &CycleCoupling, accel: bool) 
         CYC_SETTING,
         "[{key}] solid_model must be \"mean-flow\" or \"robin\", is \"{}\"",
         c.solid_model
+    );
+    crate::need!(
+        ["none", "effusivity"].contains(&c.skin.as_str()),
+        CYC_SETTING,
+        "[{key}] skin must be \"none\" or \"effusivity\", is \"{}\"",
+        c.skin
+    );
+    crate::need!(
+        c.skin_harmonics >= 1,
+        CYC_SETTING,
+        "[{key}] skin_harmonics must be >= 1"
     );
     crate::need!(
         c.solid == "steady",
@@ -770,9 +804,14 @@ pub fn validate(case: &crate::case::FlowCase, env: &Env) -> Result<()> {
             "solid regions with a sliding mesh ([[sliding]]) are not in this version"
         );
         crate::need!(
-            case.run.restart.is_none(),
+            case.run.restart.is_none()
+                || case
+                    .energy
+                    .as_ref()
+                    .is_none_or(|e| e.acceleration.is_none()),
             ENE_UNSUPPORTED,
-            "a restart with solid regions is not in this version"
+            "a restart with [energy.acceleration] is not in this version (the scaled ρ c_p of \
+             the solids and the schedule of the scaling are not in the restart file)"
         );
         crate::need!(
             case.scalars.is_empty(),
