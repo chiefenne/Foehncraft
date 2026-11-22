@@ -242,3 +242,162 @@ fn wrong_settings_are_refused() {
     assert_eq!(code, "CYC001", "{msg}");
     assert!(msg.contains("[energy.acceleration]"), "{msg}");
 }
+
+/// Runs `text` once through and once in two parts (to `t_split` with the
+/// restart file written, then continued from it) and checks that the
+/// continuation is bit-identical: the last row of the probes, the heat
+/// flow over the interfaces and, with a loop, every update.
+fn continues_bit_identically(label: &str, text: &str, t_split: f64) {
+    let whole = out(&format!("{label}_whole"));
+    let (a, b) = (out(&format!("{label}_a")), out(&format!("{label}_b")));
+    run(&parse(text), label, &whole, |_| {}).unwrap();
+    let mut first = parse(text);
+    first.time.as_mut().unwrap().end_time = Some(t_split);
+    first.run.restart_final = true;
+    run(&first, label, &a, |_| {}).unwrap();
+    let mut second = parse(text);
+    second.run.restart = Some(a.join("restart.h5"));
+    run(&second, label, &b, |_| {}).unwrap();
+    let mut files = vec!["probes.csv", "heat.csv"];
+    if whole.join("cycle_coupling.csv").exists() {
+        files.extend(["cycle_coupling.csv", "cycle_faces.csv"]);
+    }
+    for f in files {
+        let (hw, rw) = csv(&whole, f);
+        let (hb, rb) = csv(&b, f);
+        assert_eq!(hw, hb, "{label}: {f}");
+        let (lw, lb) = (rw.last().unwrap(), rb.last().unwrap());
+        assert!(
+            lw.iter()
+                .zip(lb)
+                .all(|(x, y)| x.to_bits() == y.to_bits() || (x.is_nan() && y.is_nan())),
+            "{label}: {f}\n{lw:?}\n{lb:?}"
+        );
+        if f == "cycle_coupling.csv" {
+            assert_eq!(rw.len(), rb.len(), "{label}: the updates");
+        }
+    }
+    for d in [whole, a, b] {
+        let _ = std::fs::remove_dir_all(&d);
+    }
+}
+
+/// The CHT restart (§9d): the temperatures of the solids and their old
+/// time level go into restart.h5, and with `[energy.cycle]` the state of
+/// the loop (the averages of the running fluid phase, the history of the
+/// quasi-Newton update, the held means, the skin swing and the fully
+/// coupled cycles at the end). A run continued from it is bit-identical to
+/// one run through: a plain transient conjugate run, the loop restarted in
+/// the middle of a fluid phase, and the loop with the skin swing restarted
+/// in the middle of a fluid phase and in the fully coupled cycles.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn cht_restart_continues_bit_identically() {
+    let plain = text("cht_heated_wall_transient.toml")
+        .replace("cells = [80, 30, 1]", "cells = [40, 15, 1]")
+        .replace("end_time = 3000.0", "end_time = 200.0");
+    continues_bit_identically("plain", &plain, 100.0);
+    continues_bit_identically("loop", &coarse(), 175.0);
+    let skin = text("cht_pulsating_channel_skin.toml")
+        .replace("cells = [80, 80, 1]", "cells = [40, 40, 1]")
+        .replace("max_updates = 10", "max_updates = 4")
+        .replace("resolved_cycles = 3", "resolved_cycles = 2");
+    // four updates: the loop ends at 500 s, the fully coupled cycles run
+    // to 600 s
+    continues_bit_identically("skin_phase", &skin, 425.0);
+    continues_bit_identically("skin_resolved", &skin, 575.0);
+}
+
+/// The steady CHT restart: a steady conjugate run continued from its
+/// restart file starts from the temperatures of the solids it ended with.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn steady_cht_restart_keeps_the_solid_temperatures() {
+    let t = text("cht_heated_wall.toml").replace("cells = [80, 30, 1]", "cells = [40, 15, 1]");
+    let (a, b) = (out("steady_a"), out("steady_b"));
+    let mut first = parse(&t);
+    first.run.restart_final = true;
+    let r1 = run(&first, "steady", &a, |_| {}).unwrap();
+    let mut second = parse(&t);
+    second.run.restart = Some(a.join("restart.h5"));
+    let r2 = run(&second, "steady", &b, |_| {}).unwrap();
+    // converged already: the continuation stops at its first iteration
+    // (the count goes on from the restart file)
+    let (n1, n2) = (r1.solves[0].iterations, r2.solves[0].iterations);
+    assert!(
+        n2 <= n1 + 2,
+        "{n2} iterations after the restart, {n1} before"
+    );
+    let (h, ra) = csv(&a, "line_wall_top.csv");
+    let (_, rb) = csv(&b, "line_wall_top.csv");
+    let k = col(&h, "temperature");
+    assert_eq!(ra.len(), rb.len());
+    for (x, y) in ra.iter().zip(&rb) {
+        assert!((x[k] - y[k]).abs() < 1e-6, "{x:?} {y:?}");
+    }
+    for d in [a, b] {
+        let _ = std::fs::remove_dir_all(&d);
+    }
+}
+
+/// The skin swing (`skin = "effusivity"`) on a thin skin: the loop with
+/// the swing converges; the fully coupled cycles after it give the heat
+/// flow of the heater and a swing at the surface; the summary and
+/// cycle_faces.csv carry the swing.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn skin_swing_and_resolved_cycles() {
+    let t = text("cht_pulsating_channel_skin.toml")
+        .replace("cells = [80, 80, 1]", "cells = [40, 40, 1]");
+    let dir = out("skin");
+    let r = run(&parse(&t), "skin", &dir, |_| {}).unwrap();
+    let c = cycle(&r);
+    assert!(c.converged, "{:?}", c.updates.last());
+    assert!(
+        !r.warnings.iter().any(|d| d.code == diag::CYC_SKIN),
+        "{:?}",
+        r.warnings
+    );
+    let sk = c.skin.as_ref().unwrap();
+    assert!(sk.harmonics >= 5, "{sk:?}");
+    assert!(sk.swing_max > 1.0, "{sk:?}");
+    let last = c.updates.last().unwrap();
+    assert!(last.swing_change.unwrap() <= 0.01, "{last:?}");
+    let res = c.resolved.as_ref().unwrap();
+    assert_eq!(res.cycles, 3);
+    let q = res.heat_flow[0].1;
+    assert!((q - 160.0).abs() < 0.01 * 160.0, "{q}");
+    // the swing of the resolved cycles against the loop's estimate
+    assert!(
+        (res.swing_max - sk.swing_max).abs() < 0.1 * res.swing_max,
+        "{res:?} {sk:?}"
+    );
+    let (h, rows) = csv(&dir, "cycle_faces.csv");
+    let (lo, hi) = (
+        col(&h, "resolved_t_wall_min"),
+        col(&h, "resolved_t_wall_max"),
+    );
+    assert!(rows.iter().all(|x| x[hi] >= x[lo]));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// CYC003: the skin swing on the thick-skin wall of the gallery case, whose
+/// skin depth reaches through the wall, warns.
+#[test]
+fn skin_deeper_than_the_wall_warns() {
+    let t = coarse()
+        .replace("max_updates = 6", "max_updates = 6\nskin = \"effusivity\"")
+        .replace(
+            "end_time = 3000.0                     # an upper bound: the loop stops by itself",
+            "end_time = 5.0",
+        );
+    let dir = out("thick");
+    let r = run(&parse(&t), "thick", &dir, |_| {}).unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+    let w = r
+        .warnings
+        .iter()
+        .find(|d| d.code == diag::CYC_SKIN)
+        .unwrap_or_else(|| panic!("{:?}", r.warnings));
+    assert!(w.message.contains("wall"), "{}", w.message);
+}

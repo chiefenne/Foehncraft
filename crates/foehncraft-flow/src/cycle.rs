@@ -407,11 +407,15 @@ impl Controller {
             })?;
             let regions = sc.energy_cell_regions();
             let state = sc.energy_region_state(dev)?;
-            let k = sc.energy_region_conductivity();
-            let effusivity: Vec<f64> = state
+            // ρ c_p and k from the materials (the face values of the energy
+            // equation are those of the fluid until its first refresh)
+            let mat = sc.energy_region_material(dev)?;
+            let k: Vec<f64> = mat.iter().map(|m| m.1).collect();
+            let rho_cp: Vec<f64> = mat.iter().map(|m| m.0).collect();
+            let effusivity: Vec<f64> = rho_cp
                 .iter()
                 .zip(&k)
-                .map(|(&(v, c, _), &k)| if v > 0.0 { (k * c / v).sqrt() } else { 0.0 })
+                .map(|(&c, &k)| (k * c).sqrt())
                 .collect();
             let faces: Vec<Face> = sc
                 .energy_fluid_solid_faces()
@@ -448,8 +452,7 @@ impl Controller {
                     if *a <= 0.0 || state[r].0 <= 0.0 {
                         continue;
                     }
-                    let rho_cp = state[r].1 / state[r].0;
-                    let d = (2.0 * k[r] / (rho_cp * omega)).sqrt();
+                    let d = (2.0 * k[r] / (rho_cp[r] * omega)).sqrt();
                     let l = state[r].0 / a;
                     let name = names.get(r).cloned().unwrap_or_default();
                     if d > l / 3.0 {
@@ -479,12 +482,12 @@ impl Controller {
             let t = sc.energy_temperature(dev)?;
             hold(sc, dev, &solid, &t)?;
             let omega = 2.0 * std::f64::consts::PI / cfg.period;
-            let skin_depth: Vec<f64> = state
+            let skin_depth: Vec<f64> = rho_cp
                 .iter()
                 .zip(&k)
-                .map(|(&(v, c, _), &k)| {
-                    if v > 0.0 && c > 0.0 {
-                        (2.0 * k * v / (c * omega)).sqrt()
+                .map(|(&c, &k)| {
+                    if c > 0.0 {
+                        (2.0 * k / (c * omega)).sqrt()
                     } else {
                         0.0
                     }

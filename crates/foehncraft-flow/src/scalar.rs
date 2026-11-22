@@ -1971,6 +1971,35 @@ impl Scalars {
         Ok(out)
     }
 
+    /// Per region of the energy equation: the volume means of ρ c_p
+    /// (J/(m³ K)) and of the conductivity k (W/(m K); the mean of the
+    /// diagonal of an orthotropic region) at the current temperature, from
+    /// the materials themselves (D204: the effusivity and the skin depth of
+    /// the skin swing, also before the first refresh of the face values).
+    pub fn energy_region_material(&self, dev: &mut dyn FlowDevice) -> Result<Vec<(f64, f64)>> {
+        let Some(f) = self.fields.iter().find(|f| f.energy.is_some()) else {
+            return Ok(Vec::new());
+        };
+        let Some(e) = f.energy.as_deref() else {
+            return Ok(Vec::new());
+        };
+        let t = dev.download(f.phi)?;
+        let mut sum = vec![(0.0, 0.0, 0.0); e.regions.len()];
+        for (c, (&m, &v)) in e.mat_cell.iter().zip(&e.volume).enumerate() {
+            let mat = &e.mats[m as usize];
+            let tc = if e.dependent { t[c] } else { e.t_ref };
+            let k = mat.tensor(tc);
+            let s = &mut sum[m as usize];
+            s.0 += v;
+            s.1 += e.cell_rho(c) * mat.cp.at(tc) * v;
+            s.2 += (k[0][0] + k[1][1] + k[2][2]) / 3.0 * v;
+        }
+        Ok(sum
+            .iter()
+            .map(|&(v, c, k)| if v > 0.0 { (c / v, k / v) } else { (0.0, 0.0) })
+            .collect())
+    }
+
     /// The mean conductivity per region of the energy equation (W/(m K),
     /// over the internal faces between two cells of the region, of the
     /// last refresh; the skin depth of D213).
