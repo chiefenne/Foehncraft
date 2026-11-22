@@ -14,6 +14,7 @@ Part of the [Example gallery](../gallery.md): the RANS turbulence models of stag
 | 113 | [Curvature and rotation correction of SST: channel in spanwise rotation, backward-facing step](#curvature-correction) | 6 | `turbulence.curvature_correction`, `flow.frame_rotation`, constants `c_r1` … `c_r3`, derived field `curvature-correction` |
 | 115 | [Quadratic constitutive relation of SST: secondary flow in a square duct](#qcr) | 6 | `turbulence.qcr`, constants `c_cr1`, `c_cr2` |
 | 141 | [The sink of k near walls of the ζ-f models: grid convergence at the wall](#k-sink) | 6 | `turbulence.k_sink`, constants `c_epsilon1_zeta`, `c_epsilon1_power` |
+| 184 | [Manufactured solutions of k-ε-ζ-f₀, the curvature correction and the QCR: orders and two findings](#mms-turbulence) | 6 | `cargo test turbulence::mms`, `Flow::explicit_stress_force`, `tools/plot/mms_turbulence.py` |
 | 140 | [Turbulence of the backflow at a pressure outlet: an outlet inside the recirculation](#outlet-backflow) | 6 | `k`, `omega`/`epsilon`, `turbulence_intensity`, `zeta` on `static-pressure-outlet` and `total-pressure-outlet` |
 
 ---
@@ -969,6 +970,51 @@ target/release/foehn flow examples/cases/flow/backstep_outlet_backflow.toml --ou
 target/release/foehn flow backstep_outlet_backflow_default.toml --out output/bf_default
 python3 -m tools.plot.outlet_backflow docs/figures/gallery/outlet_backflow.png \
     output/bf_values/fields.vtkhdf output/bf_default/fields.vtkhdf
+```
+
+[↑ back to top](#turbulence-models)
+
+---
+
+<a id="mms-turbulence"></a>
+## 184. Manufactured solutions of k-ε-ζ-f₀, the curvature correction and the QCR: orders and two findings
+
+<img src="../figures/gallery/mms_turbulence.png" alt="Top left: the prescribed two-cell flow of the curvature test with white streamlines, coloured by the rotation function f_r1 from 0 (dark blue) to 1.25 (yellow). Other panels: the relative L2 error against the cell size on hexahedra, polyhedra and tetrahedra for k-ε-ζ-f₀ (second order on all three), for the curvature correction (second order on hexahedra and polyhedra, flat on tetrahedra) and for the explicit QCR2000 stress force (second order on regular hexahedra and polyhedra, first order on tetrahedra, flat on perturbed hexahedra)" width="1000" height="800">
+
+**What is checked.** A manufactured solution puts smooth exact fields
+into the model equations and adds the residual as a source; the discrete
+solution must then approach the exact one at the order of the scheme. The
+turbulence equations were checked this way for every model in
+pull request #148; this one adds the last three: k-ε-ζ-f₀ with its
+own sink of k, C_ε1 and f₀ equation, the curvature correction of SST
+(production of k and ω times f_r1, with the material derivative of the
+strain) and the explicit stress of the QCR in the momentum equations.
+
+**Results.** ζ-f₀ converges at order 1.85 to 2.27 on all three cell types.
+The curvature correction does at 1.9 to 2.1 on hexahedra and polyhedra,
+in a flow whose strain axes turn so that every term of r̃ acts (top left:
+f_r1 of that flow, clipped to 0 and 1.25 in much of the domain). The QCR
+stress force converges at order 2 on regular hexahedra and polyhedra.
+
+**Two findings, not fixed here.** (1) On tetrahedra the curvature
+correction does not converge: DS_ij/Dt takes the gradient of the gradient
+of the velocity, which is not consistent on irregular tetrahedra. (2) The
+divergence of the explicit QCR stress is first order on tetrahedra and
+does not converge on meshes with randomly perturbed vertices (5 % of the
+largest force at 15 % perturbation); a skewness correction would remove it.
+Both are written into the grades (`docs/verification/status.md`) as gaps
+of the two features. Details and numbers:
+[verification page](../verification/stage6.md#manufactured-solutions-of-k-ε-ζ-f₀-the-curvature-correction-and-the-qcr-pr-184).
+
+| | |
+|---|---|
+| Test | `crates/foehncraft-flow/src/turbulence/mms.rs` (release build) |
+| Case file | none: the manufactured sources are set by the test; the set-ups of the features are `flow/channel_rotating_sst.toml`, `flow/square_duct_qcr.toml`, `flow/channel_zeta_f0.toml` |
+| Recipe | [184](../recipes/development.md#mms-turbulence) |
+
+```
+cargo test --release -p foehncraft-flow --lib turbulence::mms -- --nocapture
+python3 -m tools.plot.mms_turbulence docs/figures/gallery/mms_turbulence.png
 ```
 
 [↑ back to top](#turbulence-models)

@@ -1179,8 +1179,12 @@ SST, standard and realizable k-ε, k-ε-ζ-f (2004) and the elliptic-blending
 k-ε in a frozen cellular flow with every source term active: the L2
 orders of all variables lie in 1.82–2.29 on hexahedra, polyhedra and
 triangular prisms (bands met). Finding: the realizable C_μ now takes the
-deviatoric strain (W̃ jumped where S → 0). Not covered: ζ-f₀ (its sink
-is changing), the curvature correction and the QCR.
+deviatoric strain (W̃ jumped where S → 0). Implemented in PR #184: ζ-f₀
+(orders 1.85–2.27), the curvature correction (1.9–2.1 on hexahedra and
+polyhedra; **not convergent on tetrahedra**, DS_ij/Dt from the gradient of
+the gradient) and the QCR (the explicit stress force: order 2 on regular
+hexahedra and polyhedra, first order on tetrahedra and on perturbed
+meshes).
 
 ### 9.3 Zero-pressure-gradient flat plate
 
@@ -1570,7 +1574,7 @@ are proposals to be confirmed with the papers.
 | Flat plate and channel at Re_τ = 395 with `curvature_correction` | C_f, u⁺ profile | SST without the option (pure shear: f_r1 = 1) | relative difference ≤ 1e-6 |
 | Channel in spanwise system rotation, Re_τ = 194 (rotating zone, D55; periodic, 6p) | wall shear stress on the unstable and the stable side, mean-velocity profile | DNS of Kristoffersen & Andersson (1993) ◇ | ratio of the two wall shear stresses within ±15 % ◇ |
 | Fully developed square duct, Re_b ≈ 3 500 (periodic, 6p) with `qcr = "qcr2013"` | largest secondary velocity, its position | DNS of Pinelli, Uhlmann, Sekimoto & Kawahara (2010) ◇ | within ±30 % and the corner vortex pair present; linear SST gives none (a check that the option acts) |
-| Manufactured solution with the corrections switched on | observed order | — | 1.8 – 2.2 (the corrections must not lower the order) |
+| Manufactured solution with the corrections switched on | observed order | — | 1.8 – 2.2 (the corrections must not lower the order); PR #184: met on hexahedra and polyhedra, not on tetrahedra (curvature) and perturbed or tetrahedral meshes (QCR stress) |
 
 
 ## 10. Implementation plan

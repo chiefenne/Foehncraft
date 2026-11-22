@@ -85,7 +85,8 @@ validated range, one mesh only, …) in its report and its JSON result.
   quadratic constitutive relation QCR2000/QCR2013 for the secondary flow
   of non-circular ducts. Second order verified with manufactured
   solutions of every model on hex, polyhedral and tetrahedral cells
-  (except ζ-f₀); validated on the flat plate, the channel against DNS, the backward-facing step and
+  (the curvature correction and the QCR stress with the findings of
+  PR #184: not convergent on tetrahedra); validated on the flat plate, the channel against DNS, the backward-facing step and
   the impinging jet.
 - **Heat and mass transfer.** Passive scalars (temperature, concentration)
   carried by laminar and turbulent flow, with the turbulent Prandtl number

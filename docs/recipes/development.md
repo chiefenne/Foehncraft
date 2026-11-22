@@ -8,6 +8,7 @@ Part of the [Recipes](../recipes.md): MPI tests, checking a change the way CI do
 | 5 | [Check a change the way CI does](#ci-local) |
 | 6 | [Make a release (tag and GitHub release)](#release) |
 | 25 | [Check the derivatives of the kernels (adjoint readiness)](#adjoint-ready) |
+| 184 | [Check a turbulence model with a manufactured solution](#mms-turbulence) |
 
 ---
 
@@ -147,5 +148,32 @@ in the storage of A (for the solvers and the multigrid),
 is called for i = n − 1, …, 0 with level i current. `schedule(n, s)` lists
 the actions, `python3 -m tools.plot.checkpoint_chart out.svg` draws the cost
 against the snapshots.
+
+[↑ back to top](#development-tests-ci-and-releases)
+
+---
+
+<a id="mms-turbulence"></a>
+## 184. Check a turbulence model with a manufactured solution
+
+Run the order checks of every turbulence model (SST, k-ε, realizable
+k-ε, k-ε-ζ-f, k-ε-ζ-f₀, elliptic blending, the curvature correction and
+the QCR stress); they take under a minute in a release build and print the
+errors per level and the observed orders:
+
+```
+cargo test --release -p foehncraft-flow --lib turbulence::mms -- --nocapture
+```
+
+To add a model: write a `Model` in `crates/foehncraft-flow/src/turbulence/mms.rs`
+with its fields and its equations at a point (the published equations,
+not the kernel code), list it in `model_of`, and add a test that calls
+`check(model, mesh, band)`. Keep every switch of the model on one branch
+in the manufactured fields (`manufactured_fields_stay_on_one_branch`);
+a continuous clip, as of f_r1, is allowed. A term that needs a different
+flow selects it with `Model::flow`. The errors of the three levels give
+p = ln(e₁/e₂)/ln(h₁/h₂); a wrong constant in the model equations drops p
+to 0.2 to 0.7. The figure of gallery 184 comes from
+`python3 -m tools.plot.mms_turbulence docs/figures/gallery/mms_turbulence.png`.
 
 [↑ back to top](#development-tests-ci-and-releases)

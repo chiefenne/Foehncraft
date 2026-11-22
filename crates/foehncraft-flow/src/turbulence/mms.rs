@@ -33,9 +33,13 @@
 //! largest exact value, gives the observed order between levels,
 //! p = ln(e₁/e₂)/ln(h₁/h₂) with h = (V/N)^½.
 //!
-//! The ζ-f₀ form (`k-epsilon-zeta-f0`) is left out while its near-wall
-//! sink is being changed (2026-11-20); its terms off the wall are those of
-//! the 2004 form with the f₀ substitution.
+//! The ζ-f₀ form (`k-epsilon-zeta-f0`, PR 184) takes its own coefficients,
+//! the sink of k, C_ε1 with 0.009/ζ and the f₀ equation. The curvature
+//! correction of SST runs in a second prescribed flow ([`Flow::Mixed`])
+//! whose strain axes turn along the streamlines, so that DS_ij/Dt acts.
+//! The QCR changes the momentum equations, not the turbulence equations:
+//! [`qcr_errors`] compares the explicit stress force of the solver with
+//! the divergence of the written-out stress.
 
 #![allow(clippy::needless_range_loop)]
 
@@ -285,7 +289,7 @@ fn fr1_exact(x: P) -> f64 {
     }
     let rt = 2.0 * num / (om * d2 * d2.sqrt());
     let fr = 2.0 * 2.0 * rs / (1.0 + rs) * (1.0 - (2.0 * rt).atan()) - 1.0;
-    fr.min(1.25).max(0.0)
+    fr.clamp(0.0, 1.25)
 }
 
 /// k-ω SST 2003 (Menter, Kuntz & Langtry 2003; the production limiter
@@ -973,7 +977,7 @@ fn qcr_force(x: P, c2013: bool) -> [f64; 2] {
 }
 
 /// L2 error of the explicit stress force of the QCR on `mesh`, over the
-/// cells away from the sides (|x − ½| ≤ 0.35 in both directions), relative
+/// cells away from the sides (|x − ½| ≤ 0.35 in both directions) and from the centre lines of the flow, where S = 0, relative
 /// to the largest exact force, per level: the stress and its divergence
 /// as the momentum equations take them, from the velocity gradient and the
 /// ν_t of the solver on the manufactured fields (the cell-value stress on a
@@ -1011,7 +1015,10 @@ fn qcr_errors(model: &str, mesh: &str, perturb: f64, levels: &[u32]) -> Vec<(f64
             let force = fl.explicit_stress_force().unwrap();
             let (mut num, mut vt, mut big) = (0.0, 0.0, 0.0f64);
             for (c, &x) in xc.iter().enumerate() {
-                if (x[0] - 0.5).abs() > 0.35 || (x[1] - 0.5).abs() > 0.35 {
+                // S = 0 on the centre lines: |S| of the isotropic stress of
+                // QCR2013 has a kink there, left out within ±0.1
+                let kink = (PI * x[0]).cos().abs() * (PI * x[1]).cos().abs() < 0.3;
+                if (x[0] - 0.5).abs() > 0.35 || (x[1] - 0.5).abs() > 0.35 || kink {
                     continue;
                 }
                 let f = qcr_force(x, c2013);

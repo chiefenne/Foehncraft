@@ -2379,7 +2379,7 @@ in a transient run. Ω_ij is the rotation tensor of the absolute velocity.
 | The same flow in the inertial frame (absolute gradient) and in the turning frame (relative gradient, spin) | f_r1 | 10⁻¹⁴ | met: the sign of the frame term of Ω_ij is the consistent one |
 | Channel in spanwise rotation, Re_b 5 800, Ro = 2Ωh/U_b = 0.15 (`channel_rotating_sst.toml`, 192 cells) | τ_w lower/upper | DNS of Kristoffersen & Andersson (1993) ±15 % | SST 1.000 (no rotation effect, as expected for a linear model), corrected 1.627, unstable side the lower wall. **Open:** the DNS value (the paper's data are not in the repository) |
 | Backward-facing step, 44 160 cells (level 1 of `backstep_validation.toml`) | x_r/H | reported | 6.743 SST, 6.869 corrected (+1.9 %; experiment 6.26): the correction damps the turbulence in the curved shear layer by up to 10 % and the bubble grows |
-| Manufactured solution with the correction | observed order | 1.8–2.2 | **open** (the SST MMS of PR #148 runs without the correction; with it f_r1 needs the material derivative of the strain axes, not yet in the manufactured source) |
+| Manufactured solution with the correction (PR #184) | observed order | 1.8–2.2 | 1.92 (hex), 1.99 (poly); **no convergence on tetrahedra** ([details](#manufactured-solutions-of-k-ε-ζ-f₀-the-curvature-correction-and-the-qcr-pr-184)) |
 
 **Findings.** (1) In the irrotational free stream r* = S/Ω is large and
 f_r1 sits at its upper limit 1.25. The production there is zero, so the
@@ -2485,10 +2485,80 @@ order 1.82. (2) The f equation of ζ-f is solved in the divergence form
 manufactured source takes the solver's form (the EB α equation is
 solved with L² outside the divergence, as its paper writes it). (3) With
 no walls the model sets d = 10¹⁰; the manufactured d is set with
-`Turbulence::set_wall_distance` after attaching. (4) The ζ-f₀ form is
-not covered while its near-wall sink changes (its off-wall terms are
-those of the 2004 form with the f₀ substitution); the curvature
-correction and the QCR are not covered either.
+`Turbulence::set_wall_distance` after attaching. (4) The ζ-f₀ form, the
+curvature correction and the QCR are covered since PR #184 (next
+section).
+
+```
+cargo test --release -p foehncraft-flow --lib turbulence::mms -- --nocapture
+```
+
+## Manufactured solutions of k-ε-ζ-f₀, the curvature correction and the QCR (PR #184)
+
+The harness of PR #148 (frozen flow, written-out sources, 16 × 16 to
+64 × 64 cells, residuals to 10⁻¹¹) now covers the last three items of
+stage 6.
+
+**k-ε-ζ-f₀.** The source is written from Popovac (2023) with our choices
+of 6d2 and PR #141: ν_t = (c_μ/ζ_eq) ζ k T, the realizability bound with
+a = 0.6 √2, the sink of k max(k/T_K, 2νk/d²), C_ε1 = 1.4 (1 + 0.009/ζ), the
+ζ equation f₀ − ζ [P_k/ε + (N_ζ − 1)]/T and the f₀ equation with
++ (N_ζ − 1) ζ/T on the right. The manufactured fields keep every switch on
+one branch (the sink is k/T_K = ε, 2ν/d² is smaller; `manufactured_fields_stay_on_one_branch`
+checks it for both ζ-f forms). Orders of k, ε, ζ, f₀, finest pair:
+hex 2.03, 2.07, 1.85, 1.98; poly 2.09, 2.11, 2.06, 1.99; tet 2.13, 2.22,
+2.27, 2.06 (bands 1.8–2.2 and 1.6–2.4, met; the tet values lie above 2.2
+as for ζ-f in PR #148).
+
+**Curvature correction.** The cellular flow of PR #148 has S₁₂ = 0 and
+r̃ = 0 identically, so f_r1 would not exercise DS_ij/Dt. The test uses a
+second prescribed flow, the stream function of the cellular flow with the
+modes (2, 1) and (1, 2) added (β = 1), tangential to the sides, with
+strain axes that turn along the streamlines. The source multiplies the
+production of k and ω by f_r1 after the limiter, f_r1 written out from
+Smirnov & Menter (2009) with DS_ij/Dt = u·∇S_ij from nested fourth-order
+differences. f_r1 is clipped to [0, 1.25] on much of the domain (the
+figure of gallery 184); the clip is continuous, so the source has kinks
+but no jumps and second order is kept. |r̃| reaches 0.25 where f_r1 is
+not clipped, so a wrong DS_ij/Dt changes the source by about 10 % and the
+error would stop converging. Orders of k, ω, finest pair: hex 1.92, 1.95;
+poly 1.99, 2.06.
+
+**Finding: tetrahedra.** The error of k and ω is 1.3 % and 0.7 % at all
+three levels (`curvature_correction_on_tetrahedra_stays_bounded` asserts it
+stays below 3 %). DS_ij/Dt takes the least-squares gradient of the
+least-squares gradient of the velocity; that second derivative is not
+consistent on irregular tetrahedra, so the production of both equations
+carries an error that does not fall with the mesh. Hexahedra and
+polyhedra are consistent. Listed as a gap of
+`turbulence.curvature-correction` in the grades; a consistent gradient of
+S_ij on tetrahedra (a face-based or higher-order reconstruction) is a
+follow-up and not done here.
+
+**QCR.** The QCR changes the momentum equations, not the turbulence
+equations, so the test checks the stress and its divergence as the
+momentum equations take them: on the manufactured k, ω (ν_t from the
+solver) and the cellular flow, `Flow::explicit_stress_force` (new, the
+face sums of `ExplicitStressFaces` per unit volume) is compared with
+∂_j τ_ij of the stress written out from the definitions of Spalart (2000)
+and Mani et al. (2013), C_cr1 = 0.3, C_cr2 = 2.5, over the cells away
+from the sides and from the lines where S = 0 (|S| of the isotropic
+stress of QCR2013 has a kink there). Order of the L2 force error, regular
+meshes: QCR2000 hex 2.06, poly 2.06, tet 1.03; QCR2013 hex 2.06, poly 1.94,
+tet 1.01 (bands 1.8–2.2; first order 0.8–1.3 on tetrahedra). The coupled
+momentum solve with QCR is not in the manufactured solution.
+
+**Finding: the explicit stress is only consistent on regular meshes.** The
+divergence is Green-Gauss with the linear interpolation of the cell
+stress to the face. On hexahedra with randomly perturbed vertices (15 %)
+the error stays at 5.5 % of the largest force at all three levels
+(`qcr_stress_on_perturbed_meshes_stays_bounded`), on tetrahedra it is
+first order even without perturbation. A skewness correction of the face
+value with the gradient of the stress would remove it; the secondary flow
+of the square duct (gallery 115) is a structured-mesh result and is not
+affected at the quoted accuracy. Flagged for the owner; not changed here.
+
+Figure: [mms_turbulence.png](../figures/gallery/mms_turbulence.png) (gallery 184).
 
 ```
 cargo test --release -p foehncraft-flow --lib turbulence::mms -- --nocapture
