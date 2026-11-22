@@ -20,7 +20,7 @@
 use crate::Geometry;
 use crate::annulus::AnnulusSpec;
 use crate::cylinder::CylinderSpec;
-use crate::decompose::{HaloPlan, decompose};
+use crate::decompose::{CanonicalRank, HaloPlan, canonical_check, decompose};
 use crate::generate::BoxSpec;
 use crate::locate::{Locator, TrackEnd};
 use crate::mesh::Mesh;
@@ -260,6 +260,10 @@ pub struct MeshReport {
     pub partition: Option<PartitionStats>,
     /// Halo cells and processor faces per rank.
     pub halo: Vec<(usize, usize, usize)>,
+    /// Canonical local meshes (MPI step W1): flipped faces per rank and the
+    /// faces and cells whose geometry differs in any bit from the one-rank
+    /// mesh (always 0; the run fails otherwise).
+    pub canonical: Vec<CanonicalRank>,
     /// Point-location test.
     pub locate: Option<LocateReport>,
     /// Seconds per step.
@@ -395,8 +399,10 @@ pub fn run(
 
     // partition
     let mut rank = vec![0.0; mesh.n_cells];
+    let mut flipped = vec![0.0; mesh.n_cells];
     let mut stats = None;
     let mut halo = Vec::new();
+    let mut canonical = Vec::new();
     if case.partition.parts > 1 {
         let t = Instant::now();
         let p = &case.partition;
@@ -429,6 +435,32 @@ pub fn run(
         }
         for (c, &r) in part.iter().enumerate() {
             rank[c] = r as f64;
+        }
+        // canonical local meshes: the geometry of every rank bitwise that of
+        // the one-rank mesh (D93 (1), (3))
+        canonical = canonical_check(&mesh, &geo, &locals);
+        for c in &canonical {
+            anyhow::ensure!(
+                c.differing_faces == 0 && c.differing_cells == 0,
+                "rank {}: local geometry differs from the one-rank mesh in {} faces and {} cells",
+                c.rank,
+                c.differing_faces,
+                c.differing_cells
+            );
+        }
+        // flipped faces per own cell, as a cell field of the output
+        let position: std::collections::HashMap<u64, usize> = mesh
+            .cell_id
+            .iter()
+            .enumerate()
+            .map(|(i, &g)| (g, i))
+            .collect();
+        for l in &locals {
+            for f in 0..l.mesh.n_faces() {
+                if l.mesh.is_flipped(f) {
+                    flipped[position[&l.mesh.cell_id[l.mesh.owner[f] as usize]]] += 1.0;
+                }
+            }
         }
         log(&format!(
             "partition: {} parts ({}), imbalance {:.3}, {} cut faces",
@@ -508,6 +540,7 @@ pub fn run(
         quality,
         partition: stats,
         halo,
+        canonical,
         locate,
         timings,
     };
@@ -567,13 +600,17 @@ pub fn run(
                     name: "rank",
                     values: &rank,
                 });
+                fields.push(CellField {
+                    name: "flipped_faces",
+                    values: &flipped,
+                });
             }
             write(&p, &mesh, &fields)?;
             files.push(p);
         }
         #[cfg(not(feature = "hdf5"))]
         {
-            let _ = (&cq, &rank);
+            let _ = (&cq, &rank, &flipped);
             log("VTKHDF output skipped: built without the feature `hdf5`");
         }
     }
@@ -596,14 +633,19 @@ impl MeshReport {
         if let Some(p) = &self.partition {
             let _ = writeln!(
                 s,
-                "\n## Partition\n\n{} parts, imbalance {:.3}, {} cut faces\n\n| rank | cells | halo cells | processor faces | neighbours |\n|---:|---:|---:|---:|---:|",
+                "\n## Partition\n\n{} parts, imbalance {:.3}, {} cut faces; local meshes canonical (geometry bitwise that of one rank)\n\n| rank | cells | halo cells | processor faces | neighbours | flipped faces | faces, cells differing from one rank |\n|---:|---:|---:|---:|---:|---:|---:|",
                 p.parts, p.imbalance, p.cut_faces
             );
             for (r, h, f) in &self.halo {
+                let c = self.canonical.iter().find(|c| c.rank == *r);
                 let _ = writeln!(
                     s,
-                    "| {r} | {} | {h} | {f} | {} |",
-                    p.cells[*r], p.neighbours[*r]
+                    "| {r} | {} | {h} | {f} | {} | {} | {}, {} |",
+                    p.cells[*r],
+                    p.neighbours[*r],
+                    c.map_or(0, |c| c.flipped_faces),
+                    c.map_or(0, |c| c.differing_faces),
+                    c.map_or(0, |c| c.differing_cells)
                 );
             }
         }

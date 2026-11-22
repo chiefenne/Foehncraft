@@ -195,7 +195,7 @@ impl Geometry {
     /// Small meshes run on the calling thread: handing the work to the
     /// thread pool would cost more than it saves (same result).
     pub fn faces(mesh: &Mesh) -> (Vec<[f64; 3]>, Vec<[f64; 3]>) {
-        let one = |f: usize| polygon_area_centroid(&mesh.points, mesh.face(f));
+        let one = |f: usize| face_area_centroid(mesh, &mesh.points, f);
         if mesh.n_faces() < SERIAL_FACES {
             (0..mesh.n_faces()).map(one).unzip()
         } else {
@@ -219,6 +219,21 @@ impl Geometry {
     pub fn normal_area(&self, f: usize) -> ([f64; 3], f64) {
         let a = norm(self.face_area[f]);
         (scale(self.face_area[f], 1.0 / a), a)
+    }
+}
+
+/// Area vector (out of the local owner) and centroid of face `f`, evaluated
+/// in the node order of the global mesh: a flipped face of a local mesh
+/// gets the global bits with the sign of the area vector reversed, which is
+/// exact (D93 (3)).
+#[inline]
+pub fn face_area_centroid<T: Coord>(mesh: &Mesh, points: &[[T; 3]], f: usize) -> ([T; 3], [T; 3]) {
+    let (nodes, flipped) = mesh.face_global_order(f);
+    let (s, c) = polygon_area_centroid(points, &nodes);
+    if flipped {
+        ([-s[0], -s[1], -s[2]], c)
+    } else {
+        (s, c)
     }
 }
 
@@ -252,7 +267,12 @@ pub fn cell_volume_centroid_of<T: Coord>(
     let mut vol = T::ZERO;
     let mut cen = [T::ZERO; 3];
     for (f, is_nb) in mesh.cell_face_iter(c) {
-        let nodes = mesh.face(f);
+        // the face in global node order and with the global sense, so a
+        // local mesh sums the same tetrahedra in the same order as the
+        // global mesh (cell faces are listed in global face order)
+        let (nodes, flipped) = mesh.face_global_order(f);
+        let is_nb = is_nb != flipped;
+        let nodes = &nodes[..];
         let k = nodes.len();
         // fan about the node average, the same surface as the area vector
         let fc = if k == 3 {
