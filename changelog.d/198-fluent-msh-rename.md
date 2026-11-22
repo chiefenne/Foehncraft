@@ -1,0 +1,1 @@
+- The face-based `.msh` reader is named after its format, Fluent `.msh` (`mesh.format = "fluent_msh"`; the old key `industry_msh` still works). Naming commercial codes is now allowed where appropriate (AGENTS.md).
