@@ -152,6 +152,9 @@ pub struct TransientSummary {
     /// (D204).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cycle_coupling: Option<crate::cycle::CycleSummary>,
+    /// The frozen-flow march of a transient conjugate case (D118).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frozen_flow: Option<crate::frozen::FrozenSummary>,
 }
 
 /// The heat balance of one time step (stage 7d6): the balance of the
@@ -827,13 +830,18 @@ fn restart_of(
     name: &str,
     dt_next: f64,
     cycle: Option<&crate::cycle::Controller>,
+    frozen: Option<&crate::frozen::Controller>,
 ) -> Result<Restart> {
     let cycle = match cycle {
         Some(c) => Some(c.save()?),
         None => None,
     };
+    let frozen = match frozen {
+        Some(c) => Some(c.save()?),
+        None => None,
+    };
     Ok(Restart {
-        cht: crate::cht::restart_part(fl, cycle)?,
+        cht: crate::cht::restart_part(fl, cycle, frozen)?,
         case: name.into(),
         cell_id: mesh.cell_id[..mesh.n_cells].to_vec(),
         face_id: mesh.face_id.clone(),
@@ -1089,6 +1097,7 @@ fn run_one<F: FnMut(&str)>(
     let mut dt = dt0;
     let mut restart_from = None;
     let mut cycle_state: Option<Vec<u8>> = None;
+    let mut frozen_state: Option<Vec<u8>> = None;
     let restart_file = if single {
         case.run.restart.clone()
     } else {
@@ -1109,12 +1118,18 @@ fn run_one<F: FnMut(&str)>(
             tr.restore(&mut fl, &old, clock)?;
             crate::cht::load_restart(&mut fl, r.cht.as_ref(), path)?;
             cycle_state = r.cht.as_ref().and_then(|c| c.cycle.clone());
-            if cycle_state.is_some() && !same {
+            frozen_state = r.cht.as_ref().and_then(|c| c.frozen.clone());
+            if (cycle_state.is_some() || frozen_state.is_some()) && !same {
                 bail!(
-                    "{}: the restart file holds the state of the cycle-averaged loop, which \
-                     follows the face order of the run that wrote it; the case has another cell \
-                     or face order",
-                    path.display()
+                    "{}: the restart file holds the state of the {}, which follows the cell \
+                     and face order of the run that wrote it; the case has another cell or face \
+                     order",
+                    path.display(),
+                    if cycle_state.is_some() {
+                        "cycle-averaged loop"
+                    } else {
+                        "frozen-flow march"
+                    }
                 );
             }
             fl.iteration = r.iteration;
@@ -1513,6 +1528,7 @@ fn run_one<F: FnMut(&str)>(
             tr.clock.time,
             dt,
             crate::case::dimension(&case),
+            case.time.as_ref().and_then(|t| t.end_time),
         )?),
         None => None,
     };
@@ -1521,6 +1537,31 @@ fn run_one<F: FnMut(&str)>(
         (None, Some(_)) => lg.note(
             "the restart file holds the state of a cycle-averaged loop; the case runs without \
              [energy.cycle], so the run continues fully coupled",
+        ),
+        _ => {}
+    }
+    // the frozen-flow march of a transient conjugate run (D118)
+    let mut frozen = match case.energy.as_ref().and_then(|e| e.frozen_flow.clone()) {
+        Some(f) => {
+            let c = crate::frozen::Controller::new(
+                &mut fl,
+                &f,
+                case.buoyancy.model != crate::buoyancy::Model::None,
+                tv.boundary || tv.source || !af.faces.is_empty(),
+                tr.clock.time,
+            )?;
+            for l in c.start_lines() {
+                lg.line(&l);
+            }
+            Some(c)
+        }
+        None => None,
+    };
+    match (&mut frozen, &frozen_state) {
+        (Some(c), Some(b)) => c.restore(b)?,
+        (None, Some(_)) => lg.note(
+            "the restart file holds the state of a frozen-flow march; the case runs without \
+             [energy.frozen_flow], so the run continues fully coupled",
         ),
         _ => {}
     }
@@ -1547,7 +1588,12 @@ fn run_one<F: FnMut(&str)>(
         if t.steps.is_some_and(|n| step >= n) {
             break;
         }
-        let mut h = dt;
+        // the frozen-flow march (D118): an energy-only step of its own size
+        let frozen_step = frozen.as_ref().is_some_and(|f| f.frozen());
+        let mut h = match &frozen {
+            Some(f) if frozen_step => f.time_step(),
+            _ => dt,
+        };
         // D66: land on the next scheduled output time; when it lies within
         // two steps, in two equal steps, so that no step gets shorter than
         // half the planned one (not with a sliding mesh, whose step is the
@@ -1637,7 +1683,12 @@ fn run_one<F: FnMut(&str)>(
             af.update(&case, mesh, geo, &mut fl, t0 + h)?;
             tv.update(&case, mesh, geo, &mut fl, t0 + h)?;
             fl.keep_valid()?;
-            let r = tr.step(&mut fl, h);
+            let r = match &frozen {
+                Some(f) if frozen_step => {
+                    tr.energy_step(&mut fl, h, f.restart_levels(), f.iterations())
+                }
+                _ => tr.step(&mut fl, h),
+            };
             // a step whose error exceeds the tolerance is taken back and
             // repeated with a shorter one (at most MAX_REJECTIONS times, and
             // not below min_time_step); with the exponent ½ rather than ⅓,
@@ -1712,7 +1763,15 @@ fn run_one<F: FnMut(&str)>(
                         files.push("fields_last_valid.vtkhdf");
                     }
                     if last && restart::AVAILABLE && imprint.is_none() {
-                        let rs = restart_of(&mut fl, &tr, mesh, name, h, cycle.as_ref())?;
+                        let rs = restart_of(
+                            &mut fl,
+                            &tr,
+                            mesh,
+                            name,
+                            h,
+                            cycle.as_ref(),
+                            frozen.as_ref(),
+                        )?;
                         restart::write(&out.join("restart.h5"), &rs)?;
                         files.push("restart.h5");
                     }
@@ -1815,11 +1874,22 @@ fn run_one<F: FnMut(&str)>(
                 steer.event(crate::diag::ACC_PHASE, n, &l);
             }
         }
+        if let Some(fz) = frozen.as_mut() {
+            for l in fz.after_step(&mut fl, &rp, frozen_step)? {
+                lg.line(&l);
+                steer.event(crate::diag::FRZ_PHASE, n, &l);
+            }
+        }
         let mut cycle_done = false;
         if let Some(cy) = cycle.as_mut() {
             for l in cy.after_step(&mut fl, rp.time, rp.time - t0)? {
                 lg.line(&l);
                 steer.event(crate::diag::CYC_PHASE, n, &l);
+            }
+            // a transient solid phase: the solids have marched past the
+            // end of the fluid phase, the clock follows (whole periods)
+            if let Some(j) = cy.take_jump() {
+                tr.clock.time += j;
             }
             cycle_done = cy.done();
         }
@@ -2243,7 +2313,15 @@ fn run_one<F: FnMut(&str)>(
             }
         }
         if restart_now && restart::AVAILABLE && imprint.is_none() {
-            let rs = restart_of(&mut fl, &tr, mesh, name, dt, cycle.as_ref())?;
+            let rs = restart_of(
+                &mut fl,
+                &tr,
+                mesh,
+                name,
+                dt,
+                cycle.as_ref(),
+                frozen.as_ref(),
+            )?;
             restart::write(&out.join("restart.h5"), &rs)?;
             if restart_numbered {
                 restart::write(&out.join(format!("restart_{n:06}.h5")), &rs)?;
@@ -2338,7 +2416,15 @@ fn run_one<F: FnMut(&str)>(
         lg.frame(&f);
     }
     if last && (case.run.restart_final || stopped) && restart::AVAILABLE && imprint.is_none() {
-        let rs = restart_of(&mut fl, &tr, mesh, name, dt, cycle.as_ref())?;
+        let rs = restart_of(
+            &mut fl,
+            &tr,
+            mesh,
+            name,
+            dt,
+            cycle.as_ref(),
+            frozen.as_ref(),
+        )?;
         restart::write(&out.join("restart.h5"), &rs)?;
     }
     let scalars = crate::scalar::summaries(
@@ -2383,6 +2469,30 @@ fn run_one<F: FnMut(&str)>(
                 warnings.push(d);
             }
             Some(acc.summary(tr.clock.time))
+        }
+        None => None,
+    };
+    // the frozen-flow march (D118): its phases, a flow that did not settle
+    // (FRZ002), time-dependent flow values (FRZ004)
+    let frozen_summary = match frozen.as_mut() {
+        Some(fz) => {
+            let sm = fz.summary();
+            for d in fz.diagnostics.drain(..) {
+                lg.warn(&format!("{}: {}", d.code, d.message));
+                steer.event(d.code, steps_total, &d.message);
+                warnings.push(d);
+            }
+            lg.line(&format!(
+                "frozen flow: {} frozen steps over {:.6e} s, {} coupled steps over {:.6e} s, {} \
+                 refreshes, {:.2} energy solves per frozen step",
+                sm.frozen_steps,
+                sm.frozen_time,
+                sm.coupled_steps,
+                sm.coupled_time,
+                sm.refreshes,
+                sm.solves_mean
+            ));
+            Some(sm)
         }
         None => None,
     };
@@ -2753,6 +2863,7 @@ fn run_one<F: FnMut(&str)>(
             heat_relative_max,
             acceleration: accel_summary,
             cycle_coupling: cycle_summary,
+            frozen_flow: frozen_summary,
         }),
         benchmark,
     };

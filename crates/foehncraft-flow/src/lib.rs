@@ -55,6 +55,7 @@ pub mod energy;
 pub mod engine;
 pub mod expr;
 pub mod frame;
+pub mod frozen;
 pub mod limitations;
 pub mod live;
 pub mod logblocks;

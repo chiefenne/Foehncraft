@@ -228,6 +228,21 @@ fn wrong_settings_are_refused() {
             t.replace("max_updates = 6", "max_updates = 6\nrelaxation = 1.5"),
             "relaxation",
         ),
+        (
+            t.replace("max_updates = 6", "max_updates = 6\nsolid = \"transient\""),
+            "march_cycles",
+        ),
+        (
+            t.replace("max_updates = 6", "max_updates = 6\nmarch_cycles = 4"),
+            "march_cycles belongs",
+        ),
+        (
+            t.replace(
+                "max_updates = 6",
+                "max_updates = 6\nsolid = \"transient\"\nmarch_cycles = 4\nrelaxation = 0.5",
+            ),
+            "relaxation 0.5",
+        ),
     ];
     for (case, what) in bad {
         let (code, msg) = refused(&case);
@@ -404,4 +419,89 @@ fn skin_deeper_than_the_wall_warns() {
         .find(|d| d.code == diag::CYC_SKIN)
         .unwrap_or_else(|| panic!("{:?}", r.warnings));
     assert!(w.message.contains("wall"), "{}", w.message);
+}
+
+/// The warm-up case of the gallery on a coarser mesh and with a shorter
+/// march, to `end` s; `enabled = false`: fully coupled.
+fn warmup(end: f64, enabled: bool) -> String {
+    let mut t = text("cht_pulsating_channel_warmup.toml")
+        .replace("cells = [80, 20, 1]", "cells = [40, 10, 1]")
+        .replace("end_time = 1500.0", &format!("end_time = {end:.1}"))
+        .replace("skin = \"effusivity\"", "skin = \"none\"");
+    if !enabled {
+        t = t.replace("period = 5.0 ", "enabled = false\nperiod = 5.0 ");
+    }
+    t
+}
+
+/// A transient solid phase (`solid = "transient"`, D118): the march under
+/// the cycle-mean flow covers the fluid phase and the jump of the clock, by
+/// whole periods; the wall temperatures at the end of every march follow
+/// the cycle means of the fully coupled warm-up (within 2 % of the rise),
+/// the balance of every march closes, and a run that ends at end_time is a
+/// history, not a loop that failed (no CYC004).
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn transient_solid_phase_follows_the_warm_up() {
+    let (da, db) = (out("warm"), out("warm_ref"));
+    let case = parse(&warmup(600.0, true));
+    let ra = run(&case, "loop", &da, |_| {}).unwrap();
+    run(&parse(&warmup(600.0, false)), "coupled", &db, |_| {}).unwrap();
+    let c = cycle(&ra);
+    assert_eq!(c.solid, "transient");
+    assert!(c.updates.len() >= 5, "{}", c.updates.len());
+    assert!(
+        !ra.warnings.iter().any(|w| w.code == diag::CYC_MAX_UPDATES),
+        "{:?}",
+        ra.warnings
+    );
+    let period = c.period;
+    let (h, loop_rows) = csv(&da, "probes.csv");
+    let (_, ref_rows) = csv(&db, "probes.csv");
+    let start = loop_rows[0][col(&h, "heated_face_T")];
+    for u in &c.updates {
+        let (m, j) = (u.march_time.unwrap(), u.march_jump.unwrap());
+        assert!(m >= f64::from(u.cycles) * period - 1e-9, "{u:?}");
+        assert!((j / period - (j / period).round()).abs() < 1e-9 || u.time + j >= 600.0 - 1e-9);
+        assert!(u.solid_relative < 1e-9, "{u:?}");
+        // the loop's wall at the end of the march against the fully coupled
+        // cycle mean there
+        let te = u.time + j;
+        if te < period {
+            continue;
+        }
+        let row = loop_rows
+            .iter()
+            .find(|r| (r[1] - u.time).abs() < 1e-9)
+            .unwrap();
+        for p in ["heated_face_T", "wall_depth_T"] {
+            let k = col(&h, p);
+            let sel: Vec<f64> = ref_rows
+                .iter()
+                .filter(|r| r[1] > te - period + 1e-9 && r[1] <= te + 1e-9)
+                .map(|r| r[k])
+                .collect();
+            let mean = sel.iter().sum::<f64>() / sel.len() as f64;
+            let rise = mean - start;
+            assert!(
+                (row[k] - mean).abs() < 0.02 * rise.max(1.0),
+                "{p} at {te} s: loop {} against {mean} (rise {rise})",
+                row[k]
+            );
+        }
+    }
+    let lims: Vec<String> = foehncraft_flow::limitations::of_run(&case, &ra)
+        .into_iter()
+        .map(|l| l.code.to_string())
+        .collect();
+    assert!(lims.iter().any(|c| c == diag::LIM_CYCLE), "{lims:?}");
+}
+
+/// A restart after a jump of the clock, in the middle of a fluid phase, is
+/// bit-identical to the run without it.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn transient_solid_phase_restart_continues_bit_identically() {
+    // the first update ends at 15 s (three cycles) and jumps to 100 s
+    continues_bit_identically("warm", &warmup(300.0, true), 105.0);
 }

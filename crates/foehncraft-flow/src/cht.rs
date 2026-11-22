@@ -633,16 +633,22 @@ pub(crate) fn energy_fields(
 
 /// The energy equation of a conjugate case for a restart file: the
 /// temperature on the full mesh, its level before (transient) and the
-/// state of the cycle-averaged loop, if given; `None` for a case without
-/// solids.
+/// states of the cycle-averaged loop and of the frozen-flow march, if
+/// given; `None` for a case without solids.
 pub(crate) fn restart_part(
     fl: &mut crate::simplec::Flow,
     cycle: Option<Vec<u8>>,
+    frozen: Option<Vec<u8>>,
 ) -> anyhow::Result<Option<crate::restart::ChtRestart>> {
     let Some(c) = fl.cht.as_deref() else {
         return Ok(None);
     };
     let cell_id = c.view.mesh.cell_id[..c.view.mesh.n_cells].to_vec();
+    let viscosity = fl.phys.mu_face.as_deref().cloned().filter(|_| {
+        c.fe.scalars
+            .as_ref()
+            .is_some_and(|s| s.energy_viscosity_follows())
+    });
     let Some((sc, dev)) = energy_fields(fl) else {
         return Ok(None);
     };
@@ -658,6 +664,8 @@ pub(crate) fn restart_part(
         t: st.phi,
         t_old: st.old,
         cycle,
+        frozen,
+        viscosity,
     }))
 }
 
@@ -716,6 +724,18 @@ pub(crate) fn load_restart(
     };
     if let Some((sc, dev)) = energy_fields(fl) {
         sc.load(dev, &[st])?;
+    }
+    // μ(T) as the energy last passed it to the flow (else the first
+    // momentum solve would take the viscosity of the case temperature)
+    if let Some(mu) = &r.viscosity
+        && mu.len() == fl.disc.n_faces
+    {
+        let target = match fl.turbulence.as_ref() {
+            Some(t) => t.scalar_coupling(fl.dev.as_ref()).mu,
+            None => fl.dev.face_viscosity(),
+        };
+        fl.dev.upload(target, mu)?;
+        fl.phys.mu_face = Some(Arc::new(mu.clone()));
     }
     Ok(())
 }

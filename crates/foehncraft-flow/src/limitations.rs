@@ -272,6 +272,13 @@ pub fn features_in_use(case: &FlowCase) -> Vec<&'static str> {
         {
             f.push("cht.thermal-acceleration");
         }
+        if case
+            .energy
+            .as_ref()
+            .is_some_and(|e| e.frozen_flow.is_some())
+        {
+            f.push("cht.frozen-flow");
+        }
         if case.energy.as_ref().is_some_and(|e| e.cycle.is_some()) {
             f.push("cht.cycle-coupling");
         }
@@ -567,15 +574,61 @@ pub fn of_run(case: &FlowCase, rep: &FlowReport) -> Vec<Limitation> {
         .filter_map(|s| s.transient.as_ref())
         .find_map(|t| t.cycle_coupling.as_ref())
     {
+        let history = c.solid == "transient";
         out.push(Limitation::new(
             diag::LIM_CYCLE,
             Some("cht.cycle-coupling"),
             format!(
                 "cycle-averaged coupling of the solids ({} after {} updates): their temperatures are \
-                 the steady state of the cycle-mean heat transfer, the swing of the wall \
-                 temperature over a cycle is not in the result",
-                if c.converged { "converged" } else { "not converged" },
-                c.updates.len()
+                 {} of the cycle-mean heat transfer, the swing of the wall temperature over a \
+                 cycle {}",
+                if c.converged {
+                    "converged"
+                } else if history {
+                    "a history to the end of the run"
+                } else {
+                    "not converged"
+                },
+                c.updates.len(),
+                if history {
+                    "a history (marched in large steps under the cycle-mean flow, the wall held in \
+                     the fluid phases)"
+                } else {
+                    "the steady state"
+                },
+                if c.skin.is_some() || c.resolved.is_some() {
+                    "only as the estimate of the skin or from the fully coupled cycles"
+                } else {
+                    "is not in the result"
+                }
+            ),
+        ));
+    }
+    // LIM010: the frozen-flow march (D118): the flow was held
+    if let Some(f) = rep
+        .solves
+        .iter()
+        .filter_map(|s| s.transient.as_ref())
+        .find_map(|t| t.frozen_flow.as_ref())
+        .filter(|f| f.frozen_steps > 0)
+    {
+        out.push(Limitation::new(
+            diag::LIM_FROZEN,
+            Some("cht.frozen-flow"),
+            format!(
+                "frozen-flow march: the flow was held for {} steps over {:.4e} s ({} refreshes{}); \
+                 its history is that of the settled flow at the temperatures of the last hold",
+                f.frozen_steps,
+                f.frozen_time,
+                f.refreshes,
+                if f.flow_follows_temperature {
+                    format!(
+                        ", the fluid moved by {:.3} K since the last hold",
+                        f.fluid_change
+                    )
+                } else {
+                    ", exact: the flow does not depend on the temperature".to_string()
+                }
             ),
         ));
     }
@@ -685,6 +738,7 @@ mod tests {
             "cht.contact-thin-wall",
             "cht.thermal-acceleration",
             "cht.cycle-coupling",
+            "cht.frozen-flow",
             "rotating.mrf-transient",
             "rotating.mrf",
             "rotating.sliding-imprint",
@@ -713,6 +767,7 @@ mod tests {
             diag::LIM_OPERATORS,
             diag::LIM_ACCELERATED,
             diag::LIM_CYCLE,
+            diag::LIM_FROZEN,
         ] {
             assert!(diag::info(c).is_some(), "{c}");
         }

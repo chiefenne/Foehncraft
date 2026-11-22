@@ -1,0 +1,130 @@
+# The pulsating channel of `cht_pulsating_channel_cycle` with a period ten
+# times shorter (5 s against the wall's time constant of about 300 s),
+# warmed up with the cycle-averaged loop and a transient solid phase
+# (D204 with the march of D118, §9d of the stage 7 specification).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/cht_pulsating_channel_warmup.toml
+#
+# Fully coupled, the warm-up to 1500 s takes 6000 steps of 0.25 s (20 per
+# period). The loop runs fluid phases of two periods with the wall held
+# and then, with solid = "transient", marches fluid and wall under the
+# cycle-mean flow (the defect per interface face as in the steady solid
+# phase) over 20 periods per update in 5 steps of 20 s: the march covers
+# the fluid phase, in which the wall was held, and the clock jumps over the
+# rest by whole periods. The wall temperatures form a history at the end
+# of every march (`cycle_coupling.csv`: time + march_jump); the loop stops
+# when they change by less than 0.01 K per update, or at end_time. The skin
+# swing (skin = "effusivity", #202) lets the fluid phases see the swing of
+# the wall surface: without it the held wall misses the correlation of the
+# swing with the heat transfer, and the end state is about 0.1 K off.
+#
+# The fully coupled reference is the same case with
+# `--set energy.cycle.enabled=false`: 6000 steps against about 700, and
+# the wall within 0.22 K of it over the whole warm-up (a rise of 35 K),
+# within 0.012 K at 1500 s.
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [4.0, 0.4, 0.04]
+cells = [80, 20, 1]
+split = [
+  { boundary = "xmin", axis = "y", at = 0.2, name = "inlet" },
+  { boundary = "xmax", axis = "y", at = 0.2, name = "outlet" },
+]
+zones = [{ name = "wall", lower = [0.0, 0.0, 0.0], upper = [4.0, 0.2, 0.04] }]
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 0.01                     # Re = U H/ν = 20 with the channel height H = 0.2 m
+specific_heat = 1000.0
+conductivity = 14.084507042253522    # Pr = μ c_p/k = 0.71
+
+[materials.wall-solid]
+kind = "solid"
+description = "a made-up solid with k_s/k_f = 10 (not a database material)"
+density = 100.0                      # light: a time constant of about 300 s
+specific_heat = 800.0
+conductivity = 140.84507042253522
+
+[regions.wall]
+kind = "solid"
+zones = ["wall"]
+material = "wall-solid"
+
+[energy]
+initial = 300.0                      # everything at the inlet temperature at t = 0
+
+[energy.cycle]
+period = 5.0                         # s, 20 time steps
+warmup_cycles = 1                    # after every update, not averaged
+average_cycles = 1
+tolerance = 0.01                     # K, the largest change of a wall temperature per update
+heat_tolerance = 0.001               # the relative change of the interface heat flow
+max_updates = 40
+solid = "transient"                  # a history: the march under the cycle-mean flow
+march_cycles = 20                    # 100 s of physical time per update
+march_steps = 5                      # in steps of 20 s
+skin = "effusivity"                  # the surface swing (skin depth 0.05 m of a 0.2 m wall)
+
+[initial]
+velocity = [0.0, 0.0, 0.0]
+
+[boundary.inlet]
+type = "velocity-inlet"
+velocity = ["1.0 + 0.5*sin(2.0*pi*t/5.0)", 0.0, 0.0]   # m/s, pulsating
+[boundary.inlet.energy]
+temperature = "300.0 + 50.0*sin(2.0*pi*t/5.0)"   # K, a period of 5 s
+[boundary.outlet]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymax]
+type = "wall"
+[boundary.ymin]
+type = "wall"
+[boundary.ymin.energy]
+heat_flux = 1000.0                   # W/m² into the wall
+[boundary.xmin]
+type = "wall"                        # the upstream end of the wall
+[boundary.xmax]
+type = "wall"                        # the downstream end of the wall
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[time]
+scheme = "bdf2"
+time_step = 0.25
+end_time = 1500.0
+
+[solver]
+outer_iterations = 3                 # Courant numbers of about 10
+
+[solver.momentum]
+relaxation = 0.9
+
+[solver.energy]
+relaxation = 1.0
+tolerance = 1e-10
+max_iter = 300
+
+[output]
+wall_csv = false
+probes = [
+  { name = "heated_face", point = [3.0, 0.005, 0.02] },
+  { name = "wall_depth", point = [2.0, 0.1, 0.02] },
+  { name = "wall_upstream", point = [0.5, 0.195, 0.02] },
+  { name = "wall_middle", point = [2.0, 0.195, 0.02] },
+  { name = "wall_downstream", point = [3.5, 0.195, 0.02] },
+  { name = "channel", point = [3.0, 0.3, 0.02] },
+]
+lines = [
+  { name = "wall_top", from = [0.025, 0.18, 0.02], to = [3.975, 0.18, 0.02], points = 80 },
+  { name = "across", from = [3.0, 0.0, 0.02], to = [3.0, 0.4, 0.02], points = 81 },
+]
