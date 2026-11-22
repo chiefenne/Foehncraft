@@ -15,6 +15,7 @@ Part of the [Recipes](../recipes.md): restart, stop and steer runs, drive runs f
 | 172 | [Record a session and replay it](#journal) |
 | 175 | [Connect an assistant through the MCP server](#mcp) |
 | 177 | [Watch and steer a running case](#control-port) |
+| 181 | [Let an assistant run a parameter study](#heat-sink-study) |
 
 ---
 
@@ -583,5 +584,59 @@ disappear when the run ends. An assistant does the same through
 [`foehn mcp`](../agents.md#7-watch-and-steer-a-running-case); the figure of
 [gallery 177](../gallery/runs.md#control-port) is made by
 `python3 -m tools.plot.control_session docs/figures/gallery/control_port.svg`.
+
+[↑ back to top](#run-control-and-health)
+
+---
+
+<a id="heat-sink-study"></a>
+## 181. Let an assistant run a parameter study
+
+A study through `foehn mcp` needs a folder for its runs and an action table
+that says what the assistant may start. From the repository root, after
+`cargo build --release`:
+
+```
+mkdir -p output/agent/study
+cat > output/agent/foehn-mcp.toml <<'TABLE'
+[actions]
+start-run = "allow"          # or "ask" with a host that can ask you
+exceed-estimate = "refuse"
+write-outside-root = "refuse"
+overwrite-results = "refuse"
+
+[estimate]
+max_cells = 40000            # a run above this is refused, not asked
+TABLE
+target/release/foehn mcp --read-root examples/cases --read-root output/agent/study \
+    --write-root output/agent/study --policy output/agent/foehn-mcp.toml \
+    --journal output/agent/journal.jsonl
+```
+
+Register that command with the assistant host ([agents.md](../agents.md)),
+and give it the task: "vary the fin pitch of
+`examples/cases/flow/cht_heat_sink_turbulent.toml` by overriding
+`mesh.generate.zones`, check each case first, run each into
+`output/agent/study/pitch_<mm>` with run limits, and report the mean
+temperature of the base top and the pressure drop with the limitations of
+every result." The run limits and the study budget are `set` overrides the
+assistant adds itself (`run.limits.max_wall_time`, `max_output`,
+`study_cell_hours`). While a run goes it can read `run.status` and
+`result.page`, and `run.stop` it.
+
+To see what a session looks like, replay the recorded one
+([gallery 181](../gallery/runs.md#heat-sink-study)); it takes about 8 minutes:
+
+```
+target/release/foehn run --script examples/cases/tools/mcp/heat_sink_study/journal.jsonl \
+    --read-root examples/cases --read-root output/agent/study --write-root output/agent/study
+```
+
+The replay skips the refused and the live calls and reports any call that
+ends otherwise than recorded. Compare `output/agent/study/pitch_40/residuals.csv`
+with the one of your own run: the files are byte-identical.
+Without a host of your own, `tools/agent/stdio_host.py` keeps `foehn mcp`
+open behind a socket and sends one call per command (its docstring has the
+usage); it is what the recorded session used.
 
 [↑ back to top](#run-control-and-health)
