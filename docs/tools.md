@@ -136,6 +136,7 @@ Category `case`, action `read`, version 1.
 | `ok` | boolean | The case can be run (no error). |
 | `diagnostics` | array of object | Findings of the validation and the boundary-condition check. |
 | `estimate` | object | The estimate (when the case could be read). |
+| `operators` | object | The operator exactness check of the first mesh (D235): the cells where the velocity gradient or Hessian is not exact, worst first. |
 
 ## `case.resolve`
 
