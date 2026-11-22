@@ -675,8 +675,9 @@ Range: y_plus_first 0 … 1.
 
 ### k-ε-ζ-f₀ (Popovac 2023)
 
-**partial** (no exact or manufactured solution; gaps written) · id `turbulence.zeta-f0` · switch `turbulence.model = "k-epsilon-zeta-f0"` · decisions D133, D141
+**partial** (gaps written) · id `turbulence.zeta-f0` · switch `turbulence.model = "k-epsilon-zeta-f0"` · decisions D133, D141
 
+- manufactured: [`zeta_f0_manufactured_solution_orders`](../../crates/foehncraft-flow/src/turbulence/mms.rs): orders 1.85 to 2.27 of k, ε, ζ, f₀ on three cell types (the sink of k, C_ε1 with 0.009/ζ, the f₀ equation) ([results](stage6.md#manufactured-solutions-of-k-ε-ζ-f₀-the-curvature-correction-and-the-qcr-pr-184))
 - reference-data: [`channel_zeta_f0`](../../examples/cases/flow/channel_zeta_f0.toml): channel at Re_τ 395: U_b⁺ +0.2 % from the DNS, p 2.2 ([results](stage6.md#channel-re_τ--395))
 - reference-data: [`tmr_plate_zeta_f0`](../../examples/cases/flow/tmr_plate_zeta_f0.toml): TMR flat plate: C_f +0.2 % from White ([results](stage6.md#the-wall-sink-of-k-for-both-ζ-f-models-pr-141))
 - reference-data: [`backstep_zeta_f0`](../../examples/cases/flow/backstep_zeta_f0.toml): backward-facing step: x_r/H 6.44, +3 %
@@ -686,7 +687,6 @@ Range: y_plus_first 0 … 1.
 
 Gaps:
 
-- no manufactured-solution order check (the ζ-f₀ form is not in the MMS of PR #148)
 - impinging jet Nu₀ 196, +38 % from the experiment's 141 (k at the stagnation point; no production limiter there yet)
 
 Range: y_plus_first 0 … 30.
@@ -718,11 +718,12 @@ Range: y_plus_first 0 … 1.
 - exact: [`absolute_and_relative_frames_agree`](../../crates/foehncraft-kernels/src/turb/sst.rs): f_r1 the same in the inertial and the turning frame to 10⁻¹⁴ ([results](stage6.md#curvature-and-rotation-correction-of-sst-6h-d170-pr-113))
 - consistency: [`pure_shear_is_unchanged`](../../crates/foehncraft-flow/tests/curvature.rs): a channel without rotation unchanged to the last digit
 - reference-data: [`channel_rotating_sst`](../../examples/cases/flow/channel_rotating_sst.toml): channel in spanwise rotation, Ro 0.15: the unstable side marked
+- manufactured: [`curvature_correction_manufactured_solution_orders`](../../crates/foehncraft-flow/src/turbulence/mms.rs): orders 1.9 to 2.1 of k and ω with f_r1 (DS_ij/Dt from a flow whose strain axes turn) on hexahedra and polyhedra ([results](stage6.md#manufactured-solutions-of-k-ε-ζ-f₀-the-curvature-correction-and-the-qcr-pr-184))
 
 Gaps:
 
 - the DNS of Kristoffersen & Andersson (1993) for the rotating channel is not compared (its data are not in the repository)
-- no manufactured-solution order check with the correction
+- on tetrahedra the correction does not converge in the manufactured solution (error of k 1.3 % at all three levels): DS_ij/Dt takes the least-squares gradient of the least-squares gradient of the velocity, which is not consistent on irregular tetrahedra
 
 <a id="turbulence-qcr"></a>
 
@@ -733,11 +734,12 @@ Gaps:
 - exact: [`qcr_of_a_shear_flow`](../../crates/foehncraft-kernels/src/turb/sst.rs): the six components in simple shear to 10⁻¹² ([results](stage6.md#quadratic-constitutive-relation-of-sst-6h-d170-pr-115))
 - consistency: [`qcr_drives_the_secondary_flow_of_a_duct`](../../crates/foehncraft-flow/tests/curvature.rs): secondary flow of a square duct appears with QCR, not without
 - reference-data: [`square_duct_qcr`](../../examples/cases/flow/square_duct_qcr.toml): square duct, Re_b 3 500: secondary velocity 1.55 % of U_b, the vortex pair into the corner
+- manufactured: [`qcr_stress_manufactured_solution_orders`](../../crates/foehncraft-flow/src/turbulence/mms.rs): the explicit stress force of QCR2000 and QCR2013 against the divergence of the written-out stress: order 2.0 to 2.1 on regular hexahedra and polyhedra ([results](stage6.md#manufactured-solutions-of-k-ε-ζ-f₀-the-curvature-correction-and-the-qcr-pr-184))
 
 Gaps:
 
 - the DNS of Pinelli et al. (2010) is not compared within a band (its data are not in the repository)
-- no manufactured-solution order check with QCR
+- the divergence of the explicit QCR stress is first order on tetrahedra and does not converge on meshes with randomly perturbed vertices (error 5 % of the largest force at 15 % perturbation): Green-Gauss with the linear interpolation of cell values; the coupled momentum equations are not in the manufactured solution
 
 <a id="turbulence-smooth-limits"></a>
 
