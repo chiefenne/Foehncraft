@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**94 features: 41 verified, 49 partial, 4 unverified.**
+**95 features: 41 verified, 50 partial, 4 unverified.**
 
 ## How a grade is computed
 
@@ -33,6 +33,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Meshes | [VTK reader (.vtk, .vtu) and VTU writer](#mesh-vtk) | partial |
 | Meshes | [Partitioning with METIS and halos](#mesh-partition) | partial |
 | Meshes | [Quality report and automatic remediation of skewed cells](#mesh-quality-remediation) | partial |
+| Meshes | [Operator exactness check of the velocity gradient and Hessian](#mesh-operator-check) | partial |
 | Meshes | [VTKHDF output for ParaView](#mesh-vtkhdf) | partial |
 | Numerics | [Weighted least-squares gradients](#numerics-gradient-ls) | verified |
 | Numerics | [Linear upwind and bounded central convection](#numerics-convection-schemes) | verified |
@@ -230,6 +231,22 @@ Gaps:
 Gaps:
 
 - no order of accuracy on remediated meshes (the remediation is first order on the skewed faces by design)
+
+<a id="mesh-operator-check"></a>
+
+### Operator exactness check of the velocity gradient and Hessian
+
+**partial** (gaps written) · id `mesh.operator-check` · switch `solver.operator_tolerance` · decisions D235
+
+- exact: [`linear_fields_are_exact_on_every_mesh`](../../crates/foehncraft-fv/src/exactness.rs): the least-squares gradient of linear fields exact to 10⁻¹⁰ on regular and perturbed hexahedra and tetrahedra
+- exact: [`regular_hexahedra_are_second_order_inside`](../../crates/foehncraft-fv/src/exactness.rs): gradient and Hessian of quadratic fields exact inside regular hexahedra, flagged at the walls
+- consistency: [`irregular_cells_are_flagged`](../../crates/foehncraft-fv/src/exactness.rs): perturbed hexahedra and tetrahedra flagged
+- consistency: [`regular_hexahedra_flag_only_the_boundary_cells`](../../crates/foehncraft-flow/src/operators.rs): MESH005 and MESH006 with the features on; only the wall cells of a regular mesh
+- consistency: [`cavity_sst_operator_check`](../../examples/cases/flow/cavity_sst_operator_check.toml): the cavity on perturbed tetrahedra: every cell flagged, operators.csv written, the run converges as without the check (passes in CI (set linux-3), not yet in the manual)
+
+Gaps:
+
+- the flagged cells are not yet treated: the quadratic least-squares operators and the local remesh are the next steps of D235
 
 <a id="mesh-vtkhdf"></a>
 

@@ -106,6 +106,18 @@
    "range": {}
   },
   {
+   "id": "mesh.operator-check",
+   "title": "Operator exactness check of the velocity gradient and Hessian",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "the flagged cells are not yet treated: the quadratic least-squares operators and the local remesh are the next steps of D235"
+   ],
+   "range": {}
+  },
+  {
    "id": "mesh.vtkhdf",
    "title": "VTKHDF output for ParaView",
    "grade": "partial",

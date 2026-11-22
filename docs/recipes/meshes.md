@@ -13,6 +13,7 @@ Part of the [Recipes](../recipes.md): generate, read (Gmsh, SU2, CGNS, OpenFOAM,
 | 129 | [Read a CGNS or OpenFOAM mesh](#mesh-cgns-openfoam) |
 | 134 | [Read an industry `.msh` or VTK mesh, write a VTU](#mesh-msh-vtk) |
 | 138 | [Run a rotor/stator sliding case from a multi-zone SU2 or CGNS file](#mesh-multizone) |
+| 189 | [Check which cells the velocity gradient and Hessian are exact on](#operator-check) |
 
 ---
 
@@ -350,5 +351,42 @@ Multi-zone SU2 files are 3D only. Try the case of gallery 138:
 python3 -m tools.mesh.taylor_couette_zones examples/meshes/taylor_couette_zones.su2
 target/release/foehn flow examples/cases/flow/taylor_couette_su2_zones.toml
 ```
+
+[↑ back to top](#meshes)
+
+---
+
+<a id="operator-check"></a>
+## 189. Check which cells the velocity gradient and Hessian are exact on
+
+The curvature correction of SST and the QCR differentiate the velocity
+gradient once more; they converge with the mesh only where the gradient is
+exact for a quadratic field (D235). Every run checks this before the solve;
+an agent or a script can ask before running:
+
+```
+target/release/foehn flow examples/cases/flow/cavity_sst_operator_check.toml --check --json
+```
+
+The report has `operators` with `linear`, `gradient` and `hessian`, each
+with `max`, `mean`, `flagged` (the cells above `tolerance`) and `worst`
+(up to 50 cells with index, error and centroid), and the diagnostics
+`MESH005` (with `turbulence.curvature_correction`) and `MESH006` (with
+`turbulence.qcr`); `MESH004` on any case means a broken stencil. In a run
+the same lines go to the log and `flow.md`, `LIM008` to `result.json`, and
+`operators.csv` holds `cell,x,y,z,linear,gradient,hessian` for every cell
+(open it in ParaView with the cell centroids, or join it with
+`fields.vtkhdf` by the cell index). The tolerance is
+`solver.operator_tolerance` (0.01):
+
+```
+target/release/foehn flow examples/cases/flow/cavity_sst_operator_check.toml \
+    --set solver.operator_tolerance=0.05
+```
+
+What to do with flagged cells: regular hexahedra or polyhedra in the core
+of the flow, or (the next steps of D235) the quadratic least-squares
+operators on the flagged cells and a local remesh of the cells still
+flagged; converting tetrahedra to polyhedra (D54) is the other way.
 
 [↑ back to top](#meshes)

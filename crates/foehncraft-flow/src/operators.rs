@@ -268,7 +268,9 @@ pub(crate) fn report<F: FnMut(&str)>(
     }
     // every cell with its errors, for a plot or an agent
     if write_csv(&out.join(CSV), geo, &e).is_ok() {
-        lg.line(&format!("operator check: the errors of every cell in {CSV}"));
+        lg.line(&format!(
+            "operator check: the errors of every cell in {CSV}"
+        ));
     }
     for d in ds {
         lg.line(&d.message);

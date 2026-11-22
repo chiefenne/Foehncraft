@@ -13,6 +13,7 @@ Part of the [Example gallery](../gallery.md): the built-in test mesher in 2D and
 | 129 | [A polyhedral mesh from OpenFOAM and CGNS](#foam-cgns-polyhedra) | 6 | OpenFOAM and CGNS readers, polyhedral cells, one mesh through two formats (D188) |
 | 134 | [One polyhedral mesh through five formats](#five-formats) | 6 | industry .msh and VTK readers, VTU writer, the same mesh as OpenFOAM, CGNS, .msh and VTU (D191, D192) |
 | 138 | [Taylor–Couette sliding case from a two-zone SU2 file](#su2-zones) | 6 | multi-zone SU2 and CGNS, rotor and stator as cell zones, interface boundaries, `[[sliding]]` (D195) |
+| 189 | [Which cells can the curvature correction and the QCR trust? The operator check](#operator-check) | 6 | gradient and Hessian on test fields, `MESH004`–`MESH006`, `LIM008`, `operators.csv` (D235) |
 
 ---
 
@@ -365,5 +366,55 @@ target/release/foehn flow examples/cases/flow/taylor_couette_su2_zones.toml
 | Case | `examples/cases/flow/taylor_couette_su2_zones.toml` |
 | Mesh | `examples/meshes/taylor_couette_zones.su2`, made by `tools/mesh/taylor_couette_zones.py` |
 | Recipe | [recipe 138](../recipes/meshes.md#mesh-multizone) |
+
+[↑ back to top](#meshes)
+
+---
+
+<a id="operator-check"></a>
+## 189. Which cells can the curvature correction and the QCR trust? The operator check
+
+<img src="../figures/gallery/operator_check.png" alt="Three panels of a shallow 2:1 cavity, cells coloured on a log scale from 0.001 (black) to 2 (light yellow). Top: regular hexahedra, the Hessian error is zero inside and about 0.5 in the two layers of cells along the walls (368 of 2048 cells flagged). Middle: perturbed tetrahedra, the gradient error is about 0.2 to 0.4 in every cell. Bottom: the same tetrahedra, the Hessian error is about 0.5 to 1 in every cell" width="900" height="1150">
+
+**What is checked.** Before the solve the run applies its velocity
+gradient (least squares over the face neighbours, D24) and the gradient
+of that gradient (the velocity Hessian behind DS_ij/Dt of the curvature
+correction) to linear and quadratic test fields on its own mesh. The
+gradient must be exact for a linear field on every cell; where it is also
+exact for a quadratic field it is second order, and only there do the
+operators that differentiate it once more (the divergence of the explicit
+QCR stress, DS_ij/Dt) converge with the mesh. The errors per cell are
+dimensionless: the gradient error over h |H| (h the longest stencil
+distance), the Hessian error over |H|.
+
+**Results.** On regular hexahedra (top) both operators are exact inside;
+the cells at the walls have one-sided stencils, so the gradient is first
+order in one layer and the Hessian in two. On tetrahedra with perturbed
+vertices (middle, bottom) every cell is flagged: gradient errors of 0.2 to
+0.4, Hessian errors near one. This is the reason why the curvature
+correction and the QCR did not converge on tetrahedra in the manufactured
+solutions of #184 (gallery 184). The run reports it before it starts:
+`MESH005` (curvature correction) and `MESH006` (QCR) with the count and the
+worst cells, `LIM008` in `result.json`, the 50 worst cells per operator in
+`flow.json` and `foehn flow --check`, and the errors of every cell in
+`operators.csv`. Nothing is reported where every operator the run uses is
+exact, and the check changes no result. The next steps of D235 treat the
+flagged cells (a quadratic least-squares fit over the neighbours of the
+neighbours for the QCR gradient and the Hessian, then a local remesh of
+the cells still flagged).
+
+| | |
+|---|---|
+| Case file | `flow/cavity_sst_operator_check.toml` |
+| Plot | `tools/plot/operator_check.py` |
+| Recipe | [189](../recipes/meshes.md#operator-check) |
+
+```
+F=examples/cases/flow/cavity_sst_operator_check.toml
+target/release/foehn flow $F --out output/ops_tet --set output.vtkhdf=true
+target/release/foehn flow $F --out output/ops_hex --set output.vtkhdf=true \
+    --set mesh.generate.type=\"hex\" --set mesh.generate.perturb=0
+python3 -m tools.plot.operator_check docs/figures/gallery/operator_check.png output/ops_hex output/ops_tet
+```
 
 [↑ back to top](#meshes)

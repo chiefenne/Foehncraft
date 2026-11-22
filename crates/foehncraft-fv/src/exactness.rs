@@ -140,7 +140,10 @@ pub fn operator_errors(
     let w2 = lsq_weights(mesh, geo, &zero)?;
     let (lo, hi) = mesh.bounding_box();
     let centre: [f64; 3] = std::array::from_fn(|i| 0.5 * (lo[i] + hi[i]));
-    let len = (0..3).map(|i| hi[i] - lo[i]).fold(0.0, f64::max).max(1e-300);
+    let len = (0..3)
+        .map(|i| hi[i] - lo[i])
+        .fold(0.0, f64::max)
+        .max(1e-300);
     let xc = &geo.cell_centroid;
     let rel = |x: [f64; 3], i: usize| (x[i] - centre[i]) / len;
     // the quadratic fields (i, j), i ≤ j
@@ -300,7 +303,12 @@ mod tests {
 
     #[test]
     fn linear_fields_are_exact_on_every_mesh() {
-        for (m, p) in [(Kind::Hex, 0.0), (Kind::Hex, 0.3), (Kind::Tet, 0.0), (Kind::Tet, 0.2)] {
+        for (m, p) in [
+            (Kind::Hex, 0.0),
+            (Kind::Hex, 0.3),
+            (Kind::Tet, 0.0),
+            (Kind::Tet, 0.2),
+        ] {
             let (_, e) = errors(m, p);
             let worst = e.linear.iter().cloned().fold(0.0, f64::max);
             assert!(worst < 1e-10, "{m:?} {p}: {worst:e}");
@@ -323,7 +331,10 @@ mod tests {
             let (mesh, e) = errors(m, p);
             let g = inner_max(&mesh, &e.gradient);
             let h = inner_max(&mesh, &e.hessian);
-            assert!(g > 0.01 && h > 0.05, "{m:?} {p}: gradient {g:e}, hessian {h:e}");
+            assert!(
+                g > 0.01 && h > 0.05,
+                "{m:?} {p}: gradient {g:e}, hessian {h:e}"
+            );
         }
     }
 }
