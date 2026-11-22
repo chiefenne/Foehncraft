@@ -1,4 +1,4 @@
-"""The operator exactness check (D236), gallery 188: the error of the
+"""The operator exactness check (D236), gallery 189: the error of the
 velocity gradient for a quadratic field (relative to h |H|) and of its
 gradient, the velocity Hessian of the curvature correction (relative to
 |H|), per cell of the cavity of `cavity_sst_operator_check.toml` on
