@@ -13,6 +13,8 @@
 //! | LIM004 | one mesh only | no level sweep: no discretisation uncertainty |
 //! | LIM005 | a backend not verified on this device | a GPU that is not in [`VERIFIED_DEVICES`] |
 //! | LIM006 | automatic mesh remediation active | the remediation of D50 changed the schemes |
+//! | LIM007 | thermal acceleration of the solids | the history before `physical_from` is not physical (D213) |
+//! | LIM008 | an operator of a feature in use is not exact | the operator check of D236 (MESH005, MESH006) |
 //!
 //! The list never changes a result or the exit code (D199 Q1, Q2): a run
 //! with limitations keeps `"status": "finished"` and exit code 0, and the
@@ -525,6 +527,32 @@ pub fn of_run(case: &FlowCase, rep: &FlowReport) -> Vec<Limitation> {
             msg,
         ));
     }
+    // LIM008: an operator of a feature in use is not exact (D236)
+    if let Some(r) = rep.solves.iter().find_map(|s| s.operators.as_ref()) {
+        let mut what = Vec::new();
+        let t = &case.turbulence;
+        if t.curvature_correction && r.hessian.flagged > 0 {
+            what.push((
+                "turbulence.curvature-correction",
+                format!(
+                    "the velocity Hessian of the curvature correction is not consistent on {} of {} cells (MESH005): the correction does not converge with the mesh there",
+                    r.hessian.flagged, r.cells
+                ),
+            ));
+        }
+        if t.qcr != QcrMode::None && r.gradient.flagged > 0 {
+            what.push((
+                "turbulence.qcr",
+                format!(
+                    "the velocity gradient is first order on {} of {} cells (MESH006): the divergence of the explicit QCR stress does not converge with the mesh there",
+                    r.gradient.flagged, r.cells
+                ),
+            ));
+        }
+        for (feature, msg) in what {
+            out.push(Limitation::new(diag::LIM_OPERATORS, Some(feature), msg));
+        }
+    }
     // LIM006: remediation
     if let Some(r) = rep
         .solves
@@ -654,6 +682,7 @@ mod tests {
             diag::LIM_ONE_MESH,
             diag::LIM_DEVICE,
             diag::LIM_REMEDIATION,
+            diag::LIM_OPERATORS,
         ] {
             assert!(diag::info(c).is_some(), "{c}");
         }

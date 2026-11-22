@@ -1761,6 +1761,9 @@ pub struct Solve {
     /// Cell-quality check and remediation (D50), on a mesh with poor faces.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub remediation: Option<crate::simplec::RemediationReport>,
+    /// The operator exactness check (D236).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub operators: Option<crate::operators::OperatorReport>,
     /// The passive scalars (D51).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub scalars: Vec<crate::scalar::ScalarSummary>,
@@ -2716,6 +2719,15 @@ pub fn run_steered(
         }
         let arrays = bc::arrays(&mesh, &geo, &case.boundary, phys.rho, at)?;
         let disc = simplec::discretisation(&mesh, &geo, &arrays)?;
+        let operators = crate::operators::report(
+            &case,
+            &mesh,
+            &geo,
+            &arrays.u_points,
+            out,
+            &mut lg,
+            &mut rep.warnings,
+        );
         let phys = physics_on(&case, &phys, &mesh, &geo)?;
         let loc = Locator::new(&mesh, &geo);
         let reference_cell = if arrays.has_pressure() {
@@ -3396,6 +3408,7 @@ pub fn run_steered(
             benchmark,
             balance: Some(summary),
             remediation,
+            operators,
             scalars,
             periodic,
             wall_probes: wall_probe_values,
@@ -4653,6 +4666,16 @@ impl FlowReport {
                                 .join(", ")
                         )
                     }
+                );
+            }
+        }
+        for v in &self.solves {
+            if let Some(r) = &v.operators {
+                let _ = writeln!(
+                    s,
+                    "\n**Operator check (D236)** on {}: {}",
+                    v.mesh,
+                    r.findings.join(" ")
                 );
             }
         }

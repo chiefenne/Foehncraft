@@ -59,7 +59,9 @@ validated range, one mesh only, …) in its report and its JSON result.
   a built-in test mesher (hexahedra, tetrahedra, prisms, polyhedra; graded
   segments, the cylinder O-grid, annuli for rotors); a quality report with
   automatic remediation of skewed cells (Gauss pressure gradient, limiter,
-  bounded Rhie–Chow face velocity); partitioning with METIS and halos;
+  bounded Rhie–Chow face velocity); an operator exactness check that flags
+  the cells where the velocity gradient or Hessian is not exact for a
+  quadratic field (D236); partitioning with METIS and halos;
   VTKHDF output for ParaView.
 - **Numerics.** Cell-centred finite volumes with weighted least-squares
   gradients, Venkatakrishnan(-Wang) limiters, linear upwind and bounded
