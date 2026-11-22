@@ -1,0 +1,59 @@
+# Developed channel flow for the inlet of the U-bend (ubend_sst.toml,
+# stage 8, D45): plane channel of height H = 1 m, k-omega SST low-Re,
+# nu = 1e-5 m^2/s, one periodic module of 0.1 m, driven by the mass flow of
+# the bulk velocity U_b = 1 m/s (mass_flow 0.1 kg/s through the 1 m x 0.1 m
+# face), so Re_b = U_b H / nu = 1e5, the lower Reynolds number of the
+# experiment of Monson et al. (1990). The line `profile` samples the half
+# channel from the centre plane to the upper wall for the inlet table
+# `examples/cases/flow/ubend_inlet_profile.csv`.
+#
+#   python3 examples/studies/ubend_inlet_profile.py
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [0.1, 1.0, 0.1]
+cells = [2, 128, 1]
+grading = { y = { ratio = 150.0, symmetric = true } }
+
+[fluid]
+density = 1.0
+viscosity = 1e-5
+
+[turbulence]
+model = "k-omega-sst"
+wall_treatment = "low-re"
+
+[initial]
+velocity = [1.0, 0.0, 0.0]
+turbulence_intensity = 0.05
+viscosity_ratio = 10.0
+
+[boundary.xmin]
+type = "periodic"
+partner = "xmax"
+mass_flow = 0.1
+[boundary.xmax]
+type = "periodic"
+[boundary.ymin]
+type = "wall"
+[boundary.ymax]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-9
+max_iterations = 3000
+
+[solver.momentum]
+relaxation = 0.95
+
+[output]
+vtkhdf = false
+wall_csv = true
+lines = [ { name = "profile", from = [0.05, 0.5, 0.05], to = [0.05, 1.0, 0.05], points = 200 } ]
