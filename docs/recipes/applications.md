@@ -68,5 +68,10 @@ zones = ["tubes", "tubesheets", "baffles", "housing"]
 material = "steel"
 ```
 
-Two fluids with different materials in one conjugate case are not supported yet (ENE006), see the limits of application 203.
+The exchanger's own flow cases are `case_coflow.toml` and `case_counterflow.toml` (air on the shell side, water on the tube side, the water turned round between them). Two fluids with different materials in one conjugate case are not supported yet (ENE006, D194), see the limits of application 203; once they are:
+
+```
+target/release/foehn flow examples/applications/shell_tube_hx/case_coflow.toml --out output/hx_coflow
+target/release/foehn flow examples/applications/shell_tube_hx/case_counterflow.toml --out output/hx_counterflow
+```
 
