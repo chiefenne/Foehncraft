@@ -228,3 +228,39 @@ fn variable_density_settings_are_checked() {
     ));
     assert_eq!(c, "ENE006", "{m}");
 }
+
+/// V7c.4: the manufactured solution (ρ = 1/T, a divergence-free mass flux,
+/// the full stress with ⅔ of the trace, a closed volume) at second order
+/// for velocity and temperature on nested hexahedra and polygons; SIMPLEC
+/// gives the solution of the coupled algorithm.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn manufactured_solution_converges_at_second_order() {
+    let t = text("vd_mms_steady.toml");
+    for (kind, band) in [("hex", [1.8, 2.2]), ("poly", [1.8, 2.5])] {
+        let rep = run_case(
+            &parse(&t.replace("type = \"hex\"", &format!("type = \"{kind}\""))),
+            &format!("mms_{kind}"),
+        );
+        let u = *rep.orders.last().unwrap();
+        let tt = *rep.scalar_orders[0].1.last().unwrap();
+        for (what, o) in [("velocity", u), ("temperature", tt)] {
+            assert!(
+                o >= band[0] && o <= band[1],
+                "{kind}: {what} order {o} outside {band:?} ({:?}, {:?})",
+                rep.orders,
+                rep.scalar_orders
+            );
+        }
+    }
+    // SIMPLEC on the coarsest mesh: the same discrete solution
+    let one = |alg: &str| {
+        let c = t
+            .replace("levels = [0, 1, 2]", "levels = [0]")
+            .replace("algorithm = \"coupled\"", &format!("algorithm = \"{alg}\""));
+        let rep = run_case(&parse(&c), &format!("mms_{alg}"));
+        rep.solves[0].errors.as_ref().unwrap().l2
+    };
+    let (a, b) = (one("coupled"), one("simplec"));
+    assert!((a - b).abs() < 1e-6 * a, "coupled {a}, SIMPLEC {b}");
+}

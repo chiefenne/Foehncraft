@@ -1495,6 +1495,8 @@ mod tests {
             viscous_dissipation: phi,
             mass_scale: 1.0,
             rotors: Default::default(),
+            mass: None,
+            pressure_dilatation: None,
         }
     }
 

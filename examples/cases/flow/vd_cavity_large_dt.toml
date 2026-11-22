@@ -1,0 +1,80 @@
+# Natural convection of air in a square cavity with walls 960 K and 240 K:
+# a temperature difference far outside the Boussinesq range, with the
+# variable density of stage 7c (D151) and the buoyancy force (ρ − ρ_ref) g
+# of the balanced-force form (D154). Gallery and recipe of stage 7c.
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/vd_cavity_large_dt.toml
+#
+# Air from the material library (ideal gas, c_p(T), k(T) and the
+# Sutherland viscosity) in a closed square cavity of side L = 3.2 cm, the
+# left wall at 960 K, the right wall at 240 K (ε = ΔT/(2 T₀) = 0.6 about
+# T₀ = 600 K), top and bottom adiabatic, gravity 9.81 m/s² downwards. The
+# Rayleigh number with the properties at T₀ is about 1·10⁵: a steady
+# laminar flow. The cavity is closed, so the thermodynamic pressure p₀
+# follows from the mass of the start state (600 K at 101 325 Pa); it falls
+# as the hot air grows thinner faster than the cold air grows denser. The
+# flow is not symmetric about the centre as in the Boussinesq limit: the
+# hot boundary layer is thicker and faster, the cold one thinner. Three
+# nested meshes (24², 48², 96²) give the observed order, the extrapolated
+# value and the grid convergence index of the heat flow through the hot
+# wall and of p₀ (our own estimate; no results of other codes, D201).
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [0.032, 0.032, 0.001]
+cells = [24, 24, 1]
+
+[fluid]
+material = "air"
+temperature = 600.0
+
+[energy]
+initial = 600.0
+density = "variable"
+thermodynamic_pressure = "closed-volume"
+
+[gravity]
+vector = [0.0, -9.81, 0.0]
+
+[buoyancy]
+model = "variable-density"
+
+[boundary.xmin]
+type = "wall"
+[boundary.xmin.energy]
+temperature = 960.0
+[boundary.xmax]
+type = "wall"
+[boundary.xmax.energy]
+temperature = 240.0
+[boundary.ymin]
+type = "wall"
+[boundary.ymin.energy]
+heat_flux = 0.0
+[boundary.ymax]
+type = "wall"
+[boundary.ymax.energy]
+heat_flux = 0.0
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+algorithm = "coupled"
+tolerance = 1e-7
+max_iterations = 2000
+
+[solver.energy]
+tolerance = 1e-12
+max_iter = 200
+
+[verification]
+levels = [0, 1, 2]
+require_convergence = true
+
+[output]
+wall_csv = false
