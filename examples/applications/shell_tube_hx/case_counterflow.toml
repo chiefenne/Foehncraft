@@ -72,8 +72,8 @@ wall_function = "kader"
 
 [initial]
 velocity = [0.0, 0.0, 0.0]            # at rest (owner)
-turbulence_intensity = 0.01
-viscosity_ratio = 1.0
+k = 0.01                              # m²/s²: an intensity of a still flow gives k = 0
+omega = 100.0                         # 1/s: nu_t = 1e-4 m²/s, a few times nu
 
 # --- shell side: hot air -------------------------------------------------
 [boundary.shell_nozzle_front]
@@ -112,18 +112,17 @@ type = "wall"
 temperature = 298.15                  # K: 25 °C (owner)
 
 [solver]
+algorithm = "coupled"                 # SIMPLEC from rest diverged within 6 iterations on level 0
 tolerance = 1e-6
 max_iterations = 2500                 # check the run at 2 000-3 000 iterations
 log_every = 100
-
-[solver.momentum]
-relaxation = 0.5                      # while the jets set up from rest
-
-[[schedule]]
-at_iteration = 200
-set = { solver.momentum.relaxation = 0.7 }
 
 [solver.energy]
 relaxation = 1.0
 tolerance = 1e-10                     # the steel dominates the scaled residual (ENE007)
 max_iter = 300
+
+[output]
+vtkhdf = true
+wall_csv = false
+derived = ["wall-shear-stress", "y-plus"]
