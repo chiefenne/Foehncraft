@@ -7,6 +7,11 @@ and restart on another rank count. The spike measures and sizes; it builds
 no feature. The code of the measurements is in three examples (section 3) and
 the decision cards are answered in the pull request thread, not here.
 
+> **2026-11-23 (maintainer decision): multi-rank MPI moved to v1.1.** W1
+> (#200) and W2 (#219) are on `main` as groundwork; W3 onward, the scaling
+> measurements (W9) and the GPU exact sums are v1.1. Where this note says
+> "v1.0" for multi-rank work, read v1.1.
+
 **Result in four sentences.** The parallel layer is a good start (communicator
 trait with an MPI backend, METIS partitioning, local meshes with halos, a
 tested halo exchange), but none of the numerics runs distributed yet: the

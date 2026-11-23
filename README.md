@@ -181,6 +181,13 @@ validated range, one mesh only, …) in its report and its JSON result.
   p₀(t), a manufactured solution with ρ = 1/T converges at second order,
   and air between walls at 960 K and 240 K has a heat flow with GCI
   0.02 % (gallery 195).
+- **Internal flows (D45).** Turbulent pipe flow against DNS, the
+  asymmetric plane diffuser of Buice & Eaton, the U-bend of Monson et al.
+  and a laminar T-junction mixing a passive scalar on polyhedra, each with
+  a grid convergence study (GCI) on three meshes and, for the diffuser and
+  the U-bend, also with sharp edges (gallery
+  [193](docs/gallery/turbulence.md#pipe-turbulent), [196](docs/gallery/flow.md#tjunction-mixing),
+  [199](docs/gallery/turbulence.md#diffuser), [204](docs/gallery/turbulence.md#ubend)).
 - **Rotating machinery.** The moving reference frame (steady and transient
   frozen rotor), the sliding mesh by conformal stepping and by imprinting
   the interface in every step, several rotors at their own speeds,
@@ -245,8 +252,9 @@ validated range, one mesh only, …) in its report and its JSON result.
   assistant (four fin pitches of the heat sink under run limits and a study
   budget, with the refused calls) replays without a window:
   [gallery 181](docs/gallery/runs.md#heat-sink-study).
-- **GPU and Python.** The flow loop on NVIDIA GPUs with results bitwise
-  equal to the CPU; the Python package `foehncraft` that builds, runs and
+- **GPU and Python.** The flow loop on NVIDIA GPUs; its results agree
+  with the CPU to rounding (bitwise until the exact CPU sums of W2; the
+  GPU keeps block sums until v1.1); the Python package `foehncraft` that builds, runs and
   studies cases; the grid convergence index of every mesh sweep.
 
 ## Goal
@@ -276,8 +284,10 @@ The guiding targets are:
 
 Version 1.0: incompressible flow, steady and transient, on unstructured 3D
 meshes with the RANS models above, heat transfer with the energy equation,
-buoyancy and conjugate heat transfer (stage 7), on NVIDIA GPUs and CPUs with
-MPI (stage 8). Everything after that follows the roadmap in the
+buoyancy and conjugate heat transfer (stage 7), the internal-flow cases of
+stage 8, on NVIDIA GPUs and CPUs in one process. Runs on several MPI ranks
+(with the exact reductions of v1.0 as the groundwork) follow in v1.1.
+Everything after that follows the roadmap in the
 [requirements](docs/requirements.md): reacting flows, sprays, multiphase
 flow, moving meshes and scale-resolving turbulence.
 
