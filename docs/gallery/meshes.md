@@ -481,8 +481,9 @@ bits on any number of ranks, threads and in any cell order (black line).
 The CPU solvers' dot products and residual norms, the balances, mass flows
 and torques use the same sums, so a residual history no longer depends on
 how the mesh is cut. Cost: about 2.3 to 3.5 ns per value on one core
-against 0.6 to 0.9 ns for the block sum, partly hidden by the threads; the
-measured cost per solver iteration is in the changelog of #219.
+against 0.6 to 0.9 ns for the block sum, partly hidden by the threads; per
+outer iteration +2 to +7 % on a cavity of 970 225 polyhedra and +18 to
++25 % on a 4 096-cell cavity, where the solver's dot products weigh most.
 
 | | |
 |---|---|

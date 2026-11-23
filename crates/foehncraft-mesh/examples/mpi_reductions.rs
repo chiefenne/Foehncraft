@@ -44,8 +44,8 @@ use std::collections::HashSet;
 /// A field keyed by global id, with magnitudes over 22 decades and signed
 /// zeros, so that the order of a sum matters in the last bits.
 fn phi(id: u64) -> f64 {
-    if id % 97 == 0 {
-        return if id % 2 == 0 { 0.0 } else { -0.0 };
+    if id.is_multiple_of(97) {
+        return if id.is_multiple_of(2) { 0.0 } else { -0.0 };
     }
     let u = uniform([id, 11, 3]) - 0.5;
     u * 10f64.powi((id % 23) as i32 - 11)
@@ -189,8 +189,8 @@ fn main() {
     let n_own = local.mesh.n_cells;
     // x on the own cells, the halo filled by the owners (D93 (3))
     let mut x: Vec<f64> = local.mesh.cell_id.iter().map(|_| f64::NAN).collect();
-    for c in 0..n_own {
-        x[c] = psi(local.mesh.cell_id[c] ^ 0xaaaa);
+    for (xc, &id) in x.iter_mut().zip(&local.mesh.cell_id[..n_own]) {
+        *xc = psi(id ^ 0xaaaa);
     }
     local.halo.exchange(&comm, &mut x);
     let v = reduce(&comm, &local.mesh, &lgeo, n_own, &x, &boundary);
@@ -224,7 +224,7 @@ fn main() {
             if old_same {
                 "= 1 rank"
             } else {
-                "differs from 1 rank"
+                "differs (local cell order, rank order)"
             }
         );
     }
