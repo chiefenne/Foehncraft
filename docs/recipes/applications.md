@@ -5,7 +5,7 @@ Part of the [Recipes](../recipes.md): run an application of the [Engineering Gal
 | # | Recipe |
 |---|---|
 | 161 | [Run the 2 L stirred tank of Fyfe et al.: power number and mixing time](#fyfe-stirred-tank-recipe) |
-| 203 | [Mesh a multi-region heat exchanger from a STEP assembly with Gmsh](#shell-tube-hx-recipe) |
+| 203 | [Mesh and run a multi-region heat exchanger from a STEP assembly](#shell-tube-hx-recipe) |
 
 ---
 
@@ -40,7 +40,7 @@ The figure of the geometry is drawn by `python3 examples/applications/stirred_ta
 ---
 
 <a id="shell-tube-hx-recipe"></a>
-## 203. Mesh a multi-region heat exchanger from a STEP assembly with Gmsh
+## 203. Mesh and run a multi-region heat exchanger from a STEP assembly
 
 The mesh and its checks are [application 203](../applications/heat-exchangers.md#shell-tube-hx), the case in the [case catalogue](../cases/applications.md).
 
@@ -68,10 +68,18 @@ zones = ["tubes", "tubesheets", "baffles", "housing"]
 material = "steel"
 ```
 
-The exchanger's own flow cases are `case_coflow.toml` and `case_counterflow.toml` (air on the shell side, water on the tube side, the water turned round between them). Two fluids with different materials in one conjugate case are not supported yet (ENE006, D194), see the limits of application 203; once they are:
+The exchanger's own flow cases are `case_coflow.toml` and `case_counterflow.toml`: air on the shell side and water on the tube side, each fluid region with its own material (D194), the water turned round between them. The case files name level 2; the results of application 203 are from level 0:
 
 ```
-target/release/foehn flow examples/applications/shell_tube_hx/case_coflow.toml --out output/hx_coflow
-target/release/foehn flow examples/applications/shell_tube_hx/case_counterflow.toml --out output/hx_counterflow
+python3 examples/applications/shell_tube_hx/mesh.py --level 0      # 477 921 cells
+target/release/foehn flow examples/applications/shell_tube_hx/case_coflow.toml \
+    --set 'mesh.file="hx_L0.msh"' --threads 4 --out output/hx_coflow                  # about 90 min
+target/release/foehn flow examples/applications/shell_tube_hx/case_counterflow.toml \
+    --set 'mesh.file="hx_L0.msh"' --threads 4 --out output/hx_counterflow
+pip install h5py pyvista pillow
+xvfb-run -a python3 examples/applications/shell_tube_hx/flow_images.py \
+    output/hx_coflow/fields.vtkhdf docs/figures/applications
 ```
+
+`flow.json` holds the heat flow and the mixed-mean temperature of every boundary (`solves[0].scalars`, the scalar `temperature`): the heat the air gives up is the sum of the enthalpy flows of the two shell nozzles, the water's the sum over the two tube nozzles. To continue a run, pass `--restart output/hx_coflow/restart.h5` with a larger `solver.max_iterations`; judge it by these heat flows and the air outlet temperature over the last few hundred iterations, not by the residuals, which stall near 10⁻³.
 
