@@ -28,7 +28,7 @@ line (recipe 26).
 | `buoyancy.reference_density` | ρ₀ | ρ_ref (kg/m³) of the reduced pressure |
 | `flow.frame_rotation` | `[0, 0, 0]` | angular velocity Ω (rad/s) of a frame in which the whole domain is solved: the velocity is the one relative to the frame, the momentum equations take the Coriolis force −2ρ Ω × u, the centrifugal force stays in the pressure (p − ½ρ\|Ω × r\|² is solved); for periodic flows in system rotation (the rotating channel of 9.8); not with `[[mrf]]` or `[[sliding]]` |
 | `initial.velocity` | `[0, 0, 0]` | start velocity (m/s) |
-| `initial.pressure` | 0 | start pressure (Pa) |
+| `initial.pressure` | each fluid part from its own pressure boundaries | start pressure (Pa) of every cell; left out, each fluid part starts at the value of its pressure boundaries, or on a Laplace solve between two different values (D238; not with a reference cell or gravity) |
 | `initial.potential_flow` | false | start from potential flow instead of `initial.velocity` (D52): the irrotational velocity that carries the inflow to the pressure boundaries, one Laplace solve with the pressure multigrid and four non-orthogonal correction passes |
 | `pressure.reference_point` | lower corner of the bounding box | the cell containing it holds the pressure level when no boundary fixes it |
 | `pressure.reference_value` | 0 | pressure in that cell (Pa) |
@@ -510,6 +510,9 @@ every output file (`properties_hash`, `materials_database`).
 | `regions.<name>.zones` | cell zones of the mesh (each zone in one region; unknown zones are REG002) |
 | `regions.<name>.material` | its material (default: that of `[fluid]`) |
 | `regions.<name>.axes` | the first two principal axes of an orthotropic conductivity in this region, `[[..], [..]]` in the mesh frame (default: those of the material; one material oriented differently in every part) |
+| `regions.<name>.initial.velocity`, `.pressure` | start values of a fluid region (numbers or expressions of x, y, z; the pressure in the file's convention), before `[initial]` (D238, [recipe 221](../recipes/energy.md#start-values)) |
+| `regions.<name>.initial.temperature` | start temperature of the region (K, a number or an expression), or `"inlet"` for a fluid region: the inflow-weighted inlet temperature of its fluid part; the only key of a solid region (REG007) |
+| `regions.<name>.initial.k` with `.omega` or `.epsilon` | turbulence start values of a fluid region |
 
 **Interfaces** (conjugate cases, stage 7d2, [recipe 160](../recipes/energy.md#cht-contact)).
 `[interfaces.<name>]` puts a resistance into the faces between two regions:

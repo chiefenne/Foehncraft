@@ -1441,6 +1441,7 @@ impl FlowCase {
     /// file tables are checked by [`load_tables`](Self::load_tables)).
     pub fn validate(&self) -> Result<()> {
         crate::frame::validate(self)?;
+        crate::start::validate(self)?;
         crate::sliding::validate(self)?;
         crate::rotor::validate(self)?;
         if let Some(d) = &self.fluid.density
@@ -2305,6 +2306,11 @@ pub struct FlowReport {
     /// of every fluid part (D239), for people and agents.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pressure_values: Option<serde_json::Value>,
+    /// The start values of the regions and fluid parts and where they come
+    /// from (D238, REG010); empty when the case starts from its uniform
+    /// `[initial]` values or restarts.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub start_values: Vec<crate::start::StartValue>,
 }
 
 pub(crate) fn mesh_for(case: &FlowCase, level: Option<u32>) -> Result<(Mesh, Geometry, String)> {
@@ -2737,6 +2743,7 @@ pub fn run_steered(
         failures: Vec::new(),
         seconds: 0.0,
         pressure_values: case.pressure_frame.as_ref().map(|f| f.json()),
+        start_values: Vec::new(),
     };
     std::fs::write(out.join("case.resolved.toml"), case.resolved_toml()?)?;
     let last = levels.len() - 1;
@@ -2927,7 +2934,31 @@ pub fn run_steered(
                 path.display(),
                 r.iteration
             ));
-        } else if case.initial.potential_flow {
+        } else {
+            // the start values of the regions and parts (D238)
+            let mut starts = Vec::new();
+            if let Some((u, p, lines)) = crate::start::initial_flow(
+                &case,
+                &mesh,
+                &geo,
+                case.initial.velocity,
+                p0,
+                reference_cell.is_some(),
+            )? {
+                fl.initialise(&u, &p)?;
+                starts = lines;
+            }
+            starts.extend(crate::start::temperature_report(&case, &mesh, &geo)?);
+            starts.extend(crate::start::turbulence_report(&case));
+            if li == 0 && !starts.is_empty() {
+                lg.line("");
+                for n in crate::start::notes(&starts) {
+                    lg.line(&n);
+                }
+                rep.start_values = starts;
+            }
+        }
+        if case.run.restart.is_none() && case.initial.potential_flow {
             let it = fl.potential_flow(&mesh, &geo)?;
             lg.note(&format!(
                 "start from potential flow (D52): {it} CG iterations"

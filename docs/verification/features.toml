@@ -1295,6 +1295,26 @@ gaps = [
 ]
 
 [[feature]]
+id = "run.start-values"
+area = "Runs and results"
+title = "Start values per region and per fluid part"
+switch = "[regions.<name>.initial]"
+decisions = ["D238"]
+infrastructure = true
+contracts = ["diagnostics"]
+evidence = [
+  { kind = "consistency", case = "cht_two_fluids_start", what = "water and oil at their inlet temperatures, the plate at 320 K, the oil pressure on a Laplace solve between its total-pressure inlet and outlet; 2251 instead of 2616 iterations from a uniform start", doc = "docs/gallery/energy.md#start-values" },
+  { kind = "consistency", test = "crates/foehncraft-flow/src/start.rs::a_part_between_two_pressures_starts_on_the_laplace_solution", what = "a channel between 10 Pa and 0 Pa starts on the exact straight line (1e-9)" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/start_values.rs::every_region_and_part_starts_on_its_own", what = "two parts at their own outlet pressures, inlet temperatures per region, REG010 and `start_values`" },
+  { kind = "contract", property = "diagnostics", test = "crates/foehncraft-flow/tests/start_values.rs::region_tables_are_checked", what = "REG007 for a velocity in a solid region, REG009 for an inlet temperature without an inlet" },
+]
+gaps = [
+  "the hydrostatic start pressure per part with gravity is not built (gravity keeps the case-wide start)",
+  "the Laplace start is a Jacobi-preconditioned CG, not the pressure multigrid",
+  "volume selections inside a region (`[[initial.patch]]`) and a region started from another run come later (D73, D52)",
+]
+
+[[feature]]
 id = "run.restart-control"
 area = "Runs and results"
 title = "Restart and control files (.stop, .result_N, .read_toml_N)"

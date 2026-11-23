@@ -1077,6 +1077,20 @@
    "range": {}
   },
   {
+   "id": "run.start-values",
+   "title": "Start values per region and per fluid part",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "the hydrostatic start pressure per part with gravity is not built (gravity keeps the case-wide start)",
+    "the Laplace start is a Jacobi-preconditioned CG, not the pressure multigrid",
+    "volume selections inside a region (`[[initial.patch]]`) and a region started from another run come later (D73, D52)"
+   ],
+   "range": {}
+  },
+  {
    "id": "run.restart-control",
    "title": "Restart and control files (.stop, .result_N, .read_toml_N)",
    "grade": "verified",

@@ -384,6 +384,10 @@ A code keeps its meaning; a retired code stays in the table.
 | `REG004` | error | Two fluids of different materials (or temperatures) share a face: that is a two-phase interface (multiphase, L3); put a solid region or a thin wall between them, or give both regions the same fluid. |
 | `REG005` | note | The fluid parts of the case: their number, regions and fluids. |
 | `REG006` | error | A setting that does not yet work with several fluids in one case (D194): the variable density, gravity, a rotating zone or frame, passive scalars, a convective outlet or a periodic mass-flow drive. |
+| `REG007` | error | A key of `[regions.<name>.initial]` that does not fit: a solid region takes `temperature` only, turbulence start values come as `k` with one of `omega` or `epsilon`, and a start temperature needs `[energy]`. |
+| `REG008` | error | A start temperature, k, omega or epsilon of `[regions.<name>.initial]` that is not > 0. |
+| `REG009` | error | `temperature = "inlet"` in `[regions.<name>.initial]` for a region whose fluid part has no inlet with `[boundary.<name>.energy] temperature`. |
+| `REG010` | note | The start values of the regions and fluid parts and where they come from: given, a boundary value, a Laplace solve between the pressure boundaries of a part, or the inlets. |
 | `PRS001` | error | An absolute pressure value (`[fluid] pressure_values = "absolute"`, the default from case format 0.7, D239) that is zero or negative: a boundary `pressure` or `total_pressure`, `[initial] pressure`, `[pressure] reference_value` or an operating pressure; set `pressure_values = "gauge"` for values relative to the operating pressure. |
 | `PRS002` | warning | An absolute pressure below 1 kPa in a gas (density below 50 kg/m³): it looks like a gauge value; set `[fluid] pressure_values = "gauge"` if it is one. |
 | `PRS003` | error | A fluid part whose operating pressure cannot be taken from its pressure boundaries (absolute values, D239): their values are expressions only; give `[fluid] operating_pressure` or `[regions.<name>] operating_pressure`. |
