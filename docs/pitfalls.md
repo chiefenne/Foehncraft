@@ -349,3 +349,10 @@ Found with the vertex limiter of D237 (#211):
   difference on the coarse mesh drops by a third, and the two cases with
   an exact smooth solution move away from it. Do not switch a default on
   a sharp-front case alone; run the smooth ones too.
+- **A limiter with memory belongs in the restart file.** The relaxation
+  of ψ makes the limiter value state: before #214 a restart started from
+  ψ = 1, and in its first iteration the exchanger's air inlet nozzle went
+  60 K above the inlet temperature (it healed within 150 iterations).
+  Every quantity that carries from one outer iteration to the next goes
+  into restart.h5, with a bit-identical restart test; do not take images
+  or results from the first iterations after a restart of an older file.
