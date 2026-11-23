@@ -98,7 +98,7 @@ fn part(v: &[f64], tolerance: f64, geo: &Geometry) -> OperatorPart {
     OperatorPart {
         tolerance,
         max: v.iter().copied().fold(0.0, f64::max),
-        mean: foehncraft_core::repro::pairwise_sum(v) / v.len().max(1) as f64,
+        mean: foehncraft_core::exact::exact_sum(v) / v.len().max(1) as f64,
         flagged,
         worst: idx
             .into_iter()

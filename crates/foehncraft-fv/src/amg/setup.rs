@@ -93,8 +93,14 @@ pub fn lambda_max(a: &Csr, diag: &[f64], iters: usize) -> f64 {
     let mut lam = 0.0;
     for _ in 0..iters {
         let ax = a.spmv(&x);
-        let xax: f64 = x.iter().zip(&ax).map(|(a, b)| a * b).sum();
-        let xdx: f64 = x.iter().zip(diag).map(|(a, d)| a * a * d).sum();
+        let xax = dot(&x, &ax);
+        let xdx = {
+            let mut s = foehncraft_core::exact::ExactSum::new();
+            for (a, d) in x.iter().zip(diag) {
+                s.add(a * a * d);
+            }
+            s.value()
+        };
         lam = xax / xdx;
         let mut y: Vec<f64> = ax.iter().zip(diag).map(|(v, d)| v / d).collect();
         let nrm = y.iter().map(|v| v * v).sum::<f64>().sqrt();
@@ -376,8 +382,10 @@ pub fn dense_spd_inverse_with(a: &Csr, scaled: bool) -> Result<Vec<f64>> {
     Ok(inv)
 }
 
+/// Exact dot product (D93 (5): the eigenvalue estimate uses exact
+/// reductions).
 fn dot(a: &[f64], b: &[f64]) -> f64 {
-    a.iter().zip(b).map(|(x, y)| x * y).sum()
+    foehncraft_core::exact::exact_dot(a, b)
 }
 
 fn axpy(c: f64, x: &[f64], y: &mut [f64]) {

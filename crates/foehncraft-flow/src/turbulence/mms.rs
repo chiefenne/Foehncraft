@@ -44,6 +44,7 @@
 #![allow(clippy::needless_range_loop)]
 
 use crate::case::FlowCase;
+use foehncraft_core::exact::ExactSumIter as _;
 use std::path::Path;
 
 /// A point of the plane.
@@ -864,7 +865,7 @@ fn run_level(case: &FlowCase, level: u32, m: &dyn Model) -> Level {
         num.push(z.zeta);
         num.push(z.f);
     }
-    let vt: f64 = vol.iter().sum();
+    let vt: f64 = vol.iter().exact_sum();
     let mut l2 = vec![0.0; n];
     let mut linf = vec![0.0f64; n];
     for e in 0..n {
@@ -1060,7 +1061,7 @@ fn qcr_errors(model: &str, mesh: &str, perturb: f64, levels: &[u32]) -> Vec<(f64
                 std::fs::write(d.join(name), s).unwrap();
             }
             let nc = vol.len() as f64;
-            let h = (vol.iter().sum::<f64>() / nc).sqrt();
+            let h = (vol.iter().exact_sum() / nc).sqrt();
             (h, (num / vt).sqrt() / big)
         })
         .collect()

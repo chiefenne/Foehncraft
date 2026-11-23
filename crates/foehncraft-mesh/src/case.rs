@@ -20,7 +20,9 @@
 use crate::Geometry;
 use crate::annulus::AnnulusSpec;
 use crate::cylinder::CylinderSpec;
-use crate::decompose::{CanonicalRank, HaloPlan, canonical_check, decompose};
+use crate::decompose::{
+    CanonicalRank, HaloPlan, ReductionValue, canonical_check, decompose, reduction_check,
+};
 use crate::generate::BoxSpec;
 use crate::locate::{Locator, TrackEnd};
 use crate::mesh::Mesh;
@@ -264,6 +266,11 @@ pub struct MeshReport {
     /// faces and cells whose geometry differs in any bit from the one-rank
     /// mesh (always 0; the run fails otherwise).
     pub canonical: Vec<CanonicalRank>,
+    /// Exact reductions over the ranks (MPI step W2): volume, first moment
+    /// and boundary area, bitwise those of one rank (the run fails
+    /// otherwise), with the old rank-order pairwise sums for comparison.
+    #[serde(default)]
+    pub reductions: Vec<ReductionValue>,
     /// Point-location test.
     pub locate: Option<LocateReport>,
     /// Seconds per step.
@@ -403,6 +410,7 @@ pub fn run(
     let mut stats = None;
     let mut halo = Vec::new();
     let mut canonical = Vec::new();
+    let mut reductions = Vec::new();
     if case.partition.parts > 1 {
         let t = Instant::now();
         let p = &case.partition;
@@ -446,6 +454,19 @@ pub fn run(
                 c.rank,
                 c.differing_faces,
                 c.differing_cells
+            );
+        }
+        // exact reductions: the sums over the ranks bitwise those of one
+        // rank (D31 (1), D93 (4))
+        reductions = reduction_check(&mesh, &geo, &locals);
+        for r in &reductions {
+            anyhow::ensure!(
+                r.bitwise_equal,
+                "exact {} over {} ranks differs from one rank: {:e} against {:e}",
+                r.name,
+                case.partition.parts,
+                r.ranks,
+                r.one_rank
             );
         }
         // flipped faces per own cell, as a cell field of the output
@@ -541,6 +562,7 @@ pub fn run(
         partition: stats,
         halo,
         canonical,
+        reductions,
         locate,
         timings,
     };
@@ -646,6 +668,23 @@ impl MeshReport {
                     c.map_or(0, |c| c.flipped_faces),
                     c.map_or(0, |c| c.differing_faces),
                     c.map_or(0, |c| c.differing_cells)
+                );
+            }
+        }
+        if !self.reductions.is_empty() {
+            let _ = writeln!(
+                s,
+                "\n## Exact reductions over the ranks (MPI step W2)\n\n| sum | ranks (exact) | bitwise = one rank | old pairwise in rank order | ulps from exact |\n|---|---:|:---:|---:|---:|"
+            );
+            for r in &self.reductions {
+                let _ = writeln!(
+                    s,
+                    "| {} | {:.17e} | {} | {:.17e} | {} |",
+                    r.name,
+                    r.ranks,
+                    if r.bitwise_equal { "yes" } else { "**no**" },
+                    r.pairwise_ranks,
+                    r.pairwise_ulps
                 );
             }
         }

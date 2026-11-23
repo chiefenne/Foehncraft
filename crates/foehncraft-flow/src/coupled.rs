@@ -75,6 +75,7 @@ use crate::device::{Buf, Buf3, Lsq, Mask, TimeTerms};
 use crate::simplec::{Algorithm, Flow, Residuals};
 use crate::turbulence::PseudoStep;
 use anyhow::Result;
+use foehncraft_core::exact::ExactSumIter as _;
 use foehncraft_fv::amg::ReductionSettings;
 use foehncraft_fv::solver::Preconditioner;
 use foehncraft_kernels::flow as k;
@@ -922,7 +923,7 @@ impl Flow {
             return l;
         }
         let d = &self.disc;
-        let volume: f64 = d.cell_volume.iter().sum();
+        let volume: f64 = d.cell_volume.iter().exact_sum();
         let mut area = 0.0;
         for (fb, kind) in self.bc.mom_kind.iter().enumerate() {
             if *kind != k::MOM_SYMMETRY {

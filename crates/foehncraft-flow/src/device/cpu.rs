@@ -10,6 +10,7 @@
 use super::kernel::{Exec, KernelFlow};
 use super::{Buf, Setup};
 use anyhow::{Result, ensure};
+use foehncraft_core::exact::{ExactSum, max_total, min_total};
 use foehncraft_fv::amg::{AmgSettings, ReductionSettings};
 use foehncraft_fv::backend::{Backend, V};
 use foehncraft_fv::solver::{self as linear, Preconditioner};
@@ -114,9 +115,86 @@ impl CpuExec {
     }
 }
 
+/// Values per task of the exact reductions.
+const EXACT_GRAIN: usize = 1 << 12;
+
+impl CpuExec {
+    /// The values of a raw array of this executor.
+    fn host(&self, r: Raw<f64>) -> &[f64] {
+        if r.len == 0 {
+            return &[];
+        }
+        // SAFETY: every Raw handed to the executor points into one of its
+        // host arrays (buffers or statics), which live as long as `self`;
+        // no launch runs while `self` is borrowed.
+        unsafe { std::slice::from_raw_parts(r.ptr as *const f64, r.len as usize) }
+    }
+
+    fn exact_acc(&self, x: &[f64], y: Option<&[f64]>) -> ExactSum {
+        let chunk = |(a, b): (&[f64], Option<&[f64]>)| {
+            let mut s = ExactSum::new();
+            match b {
+                Some(b) => s.add_products(a, b),
+                None => {
+                    for &v in a {
+                        s.add(v * v);
+                    }
+                }
+            }
+            s
+        };
+        if self.serial || x.len() <= EXACT_GRAIN {
+            return chunk((x, y));
+        }
+        let merge = |mut a: ExactSum, b: ExactSum| {
+            a.merge(&b);
+            a
+        };
+        self.pool.install(|| match y {
+            Some(y) => x
+                .par_chunks(EXACT_GRAIN)
+                .zip(y.par_chunks(EXACT_GRAIN))
+                .map(|(a, b)| chunk((a, Some(b))))
+                .reduce(ExactSum::new, merge),
+            None => x
+                .par_chunks(EXACT_GRAIN)
+                .map(|a| chunk((a, None)))
+                .reduce(ExactSum::new, merge),
+        })
+    }
+}
+
 impl Exec for CpuExec {
     fn name(&self) -> String {
         "cpu".into()
+    }
+
+    fn exact_dot(&mut self, x: Raw<f64>, y: Option<Raw<f64>>) -> Option<f64> {
+        let xs = self.host(x);
+        let ys = y.map(|y| self.host(y));
+        if let Some(ys) = ys {
+            assert_eq!(xs.len(), ys.len(), "dot product of unequal lengths");
+        }
+        Some(self.exact_acc(xs, ys).value())
+    }
+
+    fn exact_min_max(&mut self, x: Raw<f64>) -> Option<(f64, f64)> {
+        let xs = self.host(x);
+        let fold = |c: &[f64]| {
+            c.iter()
+                .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), &v| {
+                    (min_total(a, v), max_total(b, v))
+                })
+        };
+        if self.serial || xs.len() <= EXACT_GRAIN {
+            return Some(fold(xs));
+        }
+        Some(self.pool.install(|| {
+            xs.par_chunks(EXACT_GRAIN).map(fold).reduce(
+                || (f64::INFINITY, f64::NEG_INFINITY),
+                |(a, b), (c, d)| (min_total(a, c), max_total(b, d)),
+            )
+        }))
     }
 
     fn device(&self) -> String {

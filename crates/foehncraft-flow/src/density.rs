@@ -18,6 +18,7 @@
 use crate::diag::{self, Diagnostic};
 use crate::materials::Curve;
 use anyhow::Result;
+use foehncraft_core::exact::ExactSumIter as _;
 use serde::{Deserialize, Serialize};
 
 /// `[energy] density`: whether the density follows the temperature.
@@ -150,7 +151,7 @@ impl Variable {
                 .iter()
                 .zip(&self.volume)
                 .map(|(&tc, v)| self.curve.at(tc) * v)
-                .sum();
+                .exact_sum();
             self.p0 = self.mass * self.p_op / s;
         }
         self.rho = t.iter().map(|&tc| self.at(tc)).collect();
@@ -234,7 +235,11 @@ impl Variable {
 
     /// The mass in the domain, Σ ρ V (kg).
     pub fn total_mass(&self) -> f64 {
-        self.rho.iter().zip(&self.volume).map(|(r, v)| r * v).sum()
+        self.rho
+            .iter()
+            .zip(&self.volume)
+            .map(|(r, v)| r * v)
+            .exact_sum()
     }
 }
 

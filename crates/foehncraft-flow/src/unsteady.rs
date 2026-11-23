@@ -25,6 +25,7 @@ use crate::plot::{self, Series};
 use crate::restart::{self, Restart};
 use crate::simplec::{self, Flow, Solution, Target};
 use crate::transient::{ErrorControl, StepReport, TimeScheme, Transient};
+use foehncraft_core::exact::ExactSumIter as _;
 
 /// Times of an output schedule in simulated time (D66): the multiples of
 /// `interval` and the listed `times`.
@@ -2625,7 +2626,7 @@ fn run_one<F: FnMut(&str)>(
     let rotor_values = crate::case::rotor_report(&sol, mesh, geo, &case, lg, warnings);
     let wall_probe_values = crate::case::wall_probes(&case, mesh, geo, &sol);
     let wall_crossing_values = crate::case::wall_crossings(&case, mesh, geo, &sol);
-    let total: f64 = boundaries.iter().map(|p| p.mass_flow).sum();
+    let total: f64 = boundaries.iter().map(|p| p.mass_flow).exact_sum();
     let umax = (0..nc).map(|c| norm(sol.u.get(c))).fold(0.0f64, f64::max);
     let big = boundaries
         .iter()

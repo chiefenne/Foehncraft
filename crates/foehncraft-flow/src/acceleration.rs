@@ -33,6 +33,7 @@
 use crate::energy::Acceleration;
 use crate::simplec::Flow;
 use anyhow::Result;
+use foehncraft_core::exact::ExactSumIter as _;
 use serde::{Deserialize, Serialize};
 
 /// The smallest factor of `"auto"`.
@@ -429,7 +430,7 @@ impl Controller {
                 .iter()
                 .filter(|(n, ..)| interface_touches(n, name, &self.names))
                 .map(|x| x.2)
-                .sum();
+                .exact_sum();
             if rho_cp > 0.0 && k[i] > 0.0 {
                 let d = (2.0 * k[i] / (f * rho_cp * omega)).sqrt();
                 r.skin_depth = Some(d);

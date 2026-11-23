@@ -1,0 +1,28 @@
+# Exact reductions over ranks (MPI plan step W2, D31 (1), D93 (4)): a
+# perturbed 3D polyhedral mesh split into 7 ranks with METIS. Every rank
+# sums its own cells and boundary faces (domain volume, first moment V x,
+# boundary area) into an exact accumulator; the accumulators are merged as
+# the integer all-reduce of a multi-rank run does it, and the result is
+# compared bit for bit with the exact sum over the whole mesh on one rank
+# (always equal; the run fails otherwise). The report shows the old sum
+# (pairwise per rank, then in rank order) next to it, which changes with the
+# rank count. Try `--parts 2` up to `--parts 16`. Gallery example and recipe
+# of the same number.
+#
+#   foehn mesh examples/cases/mesh/exact_reductions.toml
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "poly"
+dimension = 3
+lower = [0.0, 0.0, 0.0]
+upper = [2.0, 1.0, 1.0]
+cells = [16, 10, 8]
+perturb = 0.2
+seed = 2026
+
+[partition]
+parts = 7
+method = "metis"       # metis | rcb
+halo_layers = 1

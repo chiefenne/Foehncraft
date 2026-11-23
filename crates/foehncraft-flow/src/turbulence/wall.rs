@@ -9,6 +9,7 @@
 
 use crate::bc::BoundaryCondition;
 use crate::device::WallStatic;
+use foehncraft_core::exact::ExactSumIter as _;
 use foehncraft_mesh::{Geometry, Mesh};
 use std::collections::BTreeMap;
 
@@ -102,7 +103,7 @@ impl Walls {
                 .iter()
                 .filter(|&&s| fixes(s))
                 .map(|&s| w.area[s as usize])
-                .sum();
+                .exact_sum();
             if smooth <= 0.0 {
                 // only rough faces: ω from the transport equation with the
                 // wall value of the roughness model

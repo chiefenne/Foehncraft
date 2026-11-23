@@ -65,7 +65,7 @@ use crate::bc::{BoundaryCondition, Turning};
 use crate::case::{FlowCase, wall_face_transposed, wall_face_values};
 use crate::diag::{self, Diagnostic};
 use crate::simplec::Solution;
-use foehncraft_core::repro::pairwise_sum;
+use foehncraft_core::exact::exact_sum;
 use foehncraft_mesh::geometry::{cross, dot, norm, sub};
 use foehncraft_mesh::{Geometry, Mesh};
 use serde::{Deserialize, Serialize};
@@ -437,7 +437,7 @@ pub fn evaluate(sol: &Solution, mesh: &Mesh, geo: &Geometry, case: &FlowCase) ->
         .map(|p| is_wall(case, &p.name))
         .collect();
     let torque = |t: &Turning, fs: &[Face]| -> f64 {
-        pairwise_sum(
+        exact_sum(
             &fs.iter()
                 .map(|f| dot(t.axis, cross(sub(f.x, t.origin), f.force)))
                 .collect::<Vec<_>>(),
@@ -490,12 +490,12 @@ pub fn evaluate(sol: &Solution, mesh: &Mesh, geo: &Geometry, case: &FlowCase) ->
                     }
                 }
             }
-            let tq = pairwise_sum(&on_rotor);
+            let tq = exact_sum(&on_rotor);
             let mut am = AngularMomentum {
                 rotor: -tq,
-                walls: pairwise_sum(&on_walls),
-                openings: pairwise_sum(&on_open),
-                outflow: pairwise_sum(&out),
+                walls: exact_sum(&on_walls),
+                openings: exact_sum(&on_open),
+                outflow: exact_sum(&out),
                 ..Default::default()
             };
             am.imbalance = am.outflow - (am.rotor + am.walls + am.openings);
@@ -516,8 +516,8 @@ pub fn evaluate(sol: &Solution, mesh: &Mesh, geo: &Geometry, case: &FlowCase) ->
                     .collect(),
                 torque: tq,
                 power: -w * tq,
-                wall_work: pairwise_sum(&work),
-                transposed_work: pairwise_sum(&transposed),
+                wall_work: exact_sum(&work),
+                transposed_work: exact_sum(&transposed),
                 slip: if reach > 0.0 { slip / reach } else { 0.0 },
                 angular_momentum: am,
             }
@@ -555,11 +555,11 @@ pub fn evaluate(sol: &Solution, mesh: &Mesh, geo: &Geometry, case: &FlowCase) ->
                     pa.push(f.p * f.area);
                 }
                 (
-                    pairwise_sum(&m),
-                    pairwise_sum(&pt),
-                    pairwise_sum(&rcu),
-                    pairwise_sum(&pa),
-                    pairwise_sum(&a),
+                    exact_sum(&m),
+                    exact_sum(&pt),
+                    exact_sum(&rcu),
+                    exact_sum(&pa),
+                    exact_sum(&a),
                 )
             };
             let (m_in, pt_in, l_in, _, _) = side(&index(&m.inlet));

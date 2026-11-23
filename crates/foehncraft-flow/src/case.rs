@@ -74,6 +74,7 @@ use crate::restart::{self, Restart};
 use crate::simplec::{self, Flow, Physics, Residuals, Settings, Solution, Timings};
 use crate::transient::TimeScheme;
 use anyhow::{Context, Result, bail};
+use foehncraft_core::exact::ExactSumIter as _;
 use foehncraft_mesh::case::{MeshSection, build_mesh};
 use foehncraft_mesh::geometry::{cross, dot, norm, sub};
 use foehncraft_mesh::locate::Locator;
@@ -3323,7 +3324,7 @@ pub fn run_steered(
         for (w, c) in wall_crossing_values.iter().zip(&case.output.wall_crossings) {
             lg.line(&wall_crossing_line(w, c));
         }
-        let total: f64 = boundaries.iter().map(|p| p.mass_flow).sum();
+        let total: f64 = boundaries.iter().map(|p| p.mass_flow).exact_sum();
         // scale: the largest boundary mass flow, or in a closed domain the
         // flow ρ |u|max A through the largest boundary
         let umax = (0..nc).map(|c| norm(sol.u.get(c))).fold(0.0f64, f64::max);

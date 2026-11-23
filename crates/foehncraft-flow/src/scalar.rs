@@ -51,6 +51,7 @@ use crate::diag::{self, Diagnostic};
 use crate::expr::{self, Env, Scalar, Value, Vars};
 use crate::limiter::{EpsilonScaling, LimiterFunction};
 use anyhow::Result;
+use foehncraft_core::exact::ExactSumIter as _;
 use foehncraft_fv::disc::Discretisation;
 use foehncraft_fv::problem::BoundaryKind;
 use foehncraft_fv::solver::{LimiterKind, Preconditioner, Scheme};
@@ -1899,7 +1900,7 @@ impl Scalars {
     fn energy_host(&self) -> Option<((Vec<crate::energy::Enthalpy>, Vec<u32>), f64)> {
         self.fields.iter().find_map(|f| {
             f.energy.as_deref().map(|e| {
-                let src: f64 = e.heat.iter().zip(&e.volume).map(|(h, v)| h * v).sum();
+                let src: f64 = e.heat.iter().zip(&e.volume).map(|(h, v)| h * v).exact_sum();
                 ((e.h.clone(), e.mat_cell.clone()), src)
             })
         })
@@ -2219,7 +2220,7 @@ impl Scalars {
             .iter()
             .find_map(|f| f.energy.as_deref())
             .and_then(|e| e.extra_heat.as_ref())
-            .map(|x| x.iter().sum())
+            .map(|x| x.iter().exact_sum())
     }
 
     /// Sets or clears the heat added to cells (W per cell, D204).
@@ -2341,7 +2342,7 @@ impl Scalars {
             .zip(&e.volume)
             .filter(|((h, _), _)| **h)
             .map(|((_, q), v)| q * v)
-            .sum();
+            .exact_sum();
         Some((held, iface, src, robin))
     }
 
@@ -2514,7 +2515,7 @@ impl Scalars {
         let nb = nf - ni;
         let mut area = BTreeMap::new();
         for p in &mesh.boundaries {
-            let a: f64 = p.range().map(|f| geo.normal_area(f).1).sum();
+            let a: f64 = p.range().map(|f| geo.normal_area(f).1).exact_sum();
             area.insert(p.name.clone(), a);
         }
         let by_name = crate::energy::conditions(case, env, &area)?;
@@ -2751,7 +2752,10 @@ impl Scalars {
                 })?;
             let v = match (&src.power, &src.power_density) {
                 (Some(p), None) => {
-                    let vol: f64 = cells.iter().map(|&c| geo.cell_volume[c as usize]).sum();
+                    let vol: f64 = cells
+                        .iter()
+                        .map(|&c| geo.cell_volume[c as usize])
+                        .exact_sum();
                     crate::need!(
                         vol > 0.0,
                         ENE_SOURCE,
@@ -3548,7 +3552,7 @@ pub fn summaries(
     let nc = mesh.n_cells;
     let ni = mesh.n_interior_faces();
     let rho = fl.phys.rho;
-    let vol: f64 = geo.cell_volume[..nc].iter().sum();
+    let vol: f64 = geo.cell_volume[..nc].iter().exact_sum();
     let h = if dim == 2 {
         let (lo, hi) = mesh.bounding_box();
         (vol / (hi[2] - lo[2]) / nc as f64).sqrt()
@@ -3677,7 +3681,7 @@ pub fn summaries(
         let energy = heat.as_ref().map(|(_, src)| {
             bal.source = *src;
             largest = largest.max(src.abs());
-            let total: f64 = stored.iter().flatten().map(|r| r.storage).sum();
+            let total: f64 = stored.iter().flatten().map(|r| r.storage).exact_sum();
             if let Some(rs) = &stored {
                 bal.storage = Some(total);
                 largest = largest.max(total.abs());

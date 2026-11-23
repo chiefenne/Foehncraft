@@ -14,6 +14,7 @@
 //! is local extremum diminishing in multi-dimensions.
 
 use crate::device::VertexStencil;
+use foehncraft_core::exact::ExactSumIter as _;
 use foehncraft_mesh::Mesh;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -66,7 +67,7 @@ pub enum EpsilonScaling {
 
 /// The factors √(V_c / V_domain) of [`EpsilonScaling::Cell`].
 pub fn cell_factors(volume: &[f64]) -> Vec<f64> {
-    let total: f64 = volume.iter().sum();
+    let total: f64 = volume.iter().exact_sum();
     volume.iter().map(|v| (v / total).sqrt()).collect()
 }
 
