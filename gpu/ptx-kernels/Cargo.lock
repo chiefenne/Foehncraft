@@ -4,18 +4,18 @@ version = 4
 
 [[package]]
 name = "foehncraft-core"
-version = "0.7.0"
+version = "1.0.0"
 
 [[package]]
 name = "foehncraft-kernels"
-version = "0.7.0"
+version = "1.0.0"
 dependencies = [
  "foehncraft-core",
 ]
 
 [[package]]
 name = "foehncraft-ptx-kernels"
-version = "0.7.0"
+version = "1.0.0"
 dependencies = [
  "foehncraft-core",
  "foehncraft-kernels",
