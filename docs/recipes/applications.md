@@ -81,5 +81,5 @@ xvfb-run -a python3 examples/applications/shell_tube_hx/flow_images.py \
     output/hx_coflow/fields.vtkhdf docs/figures/applications
 ```
 
-`flow.json` holds the heat flow and the mixed-mean temperature of every boundary (`solves[0].scalars`, the scalar `temperature`): the heat the air gives up is the sum of the enthalpy flows of the two shell nozzles, the water's the sum over the two tube nozzles. To continue a run, pass `--restart output/hx_coflow/restart.h5` with a larger `solver.max_iterations`; judge it by these heat flows and the air outlet temperature over the last few hundred iterations, not by the residuals, which stall near 10⁻³.
+`flow_images.py` writes the three flow images and the two images of the steel (`hx_steel_cutaway.png`, `hx_steel_bundle.png`, coloured from 20 to 30 °C; change `STEEL` in the script for another range). `flow.json` holds the heat flow and the mixed-mean temperature of every boundary (`solves[0].scalars`, the scalar `temperature`): the heat the air gives up is the sum of the enthalpy flows of the two shell nozzles, the water's the sum over the two tube nozzles. To continue a run, pass `--restart output/hx_coflow/restart.h5` with a larger `solver.max_iterations`; judge it by these heat flows and the air outlet temperature over the last few hundred iterations, not by the residuals, which stall near 10⁻³.
 

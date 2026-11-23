@@ -1,7 +1,9 @@
 """Flow images of the heat exchanger (application 203): the temperature and
-the speed on a section through both air nozzles and the axis, and the
-temperature on the plane x = 0 through the water nozzles and two tubes;
-with a third argument also the README teaser.
+the speed on a section through both air nozzles and the axis, the
+temperature on the plane x = 0 through the water nozzles and two tubes,
+and the temperature of the steel (the housing cut open at x = 0 around the
+whole tube bundle, and the bundle alone from the other side); with a third
+argument also the README teaser.
 
     pip install h5py pyvista pillow
     xvfb-run -a python3 examples/applications/shell_tube_hx/flow_images.py \
@@ -27,8 +29,9 @@ f = h5py.File(src, "r")["VTKHDF/internal"]
 pts = f["Points"][()] * 1000.0  # mm
 conn, off = f["Connectivity"][()], f["Offsets"][()]
 g = pv.UnstructuredGrid(np.insert(conn, off[:-1], np.diff(off)), f["Types"][()], pts)
-for k in ["temperature", "speed", "zone"]:
+for k in ["temperature", "speed"]:
     g.cell_data[k] = f["CellData/" + k][()]
+g.cell_data["zone"] = f["CellData/zone"][()].astype(int)
 zone = g.cell_data["zone"]
 fluid = (zone == 1) | (zone == 2)
 g.cell_data["T_C"] = g.cell_data["temperature"] - 273.15
@@ -100,6 +103,37 @@ p.camera_position = cam([1.0, 0, 0], (0, 150, 25), (0, 0, 1))
 p.camera.zoom(1.5)
 p.screenshot(f"{out}/hx_flow_tube_plane.png")
 crop(f"{out}/hx_flow_tube_plane.png")
+
+# the steel: zones 0 (housing), 3 (tubesheets), 4 (tubes), 5 (baffles)
+STEEL = (20, 30)
+sbar = {**bar, "title": "steel temperature (°C)"}
+
+
+def zones(grid, which):
+    return grid.extract_cells(np.where(np.isin(grid.cell_data["zone"], which))[0])
+
+
+bundle = zones(g, [3, 4, 5]).extract_surface(algorithm="dataset_surface")
+house = zones(g, [0]).clip(normal=(1, 0, 0), origin=(0, 0, 0), invert=True)
+p = pv.Plotter(off_screen=True, window_size=(2400, 1200))
+p.set_background(BG)
+p.enable_anti_aliasing("ssaa")
+p.add_mesh(house.extract_surface(algorithm="dataset_surface"), scalars="T_C", cmap="inferno",
+           clim=STEEL, scalar_bar_args=sbar)
+p.add_mesh(bundle, scalars="T_C", cmap="inferno", clim=STEEL, show_scalar_bar=False, specular=0.2)
+p.camera_position = [(470, -190, 300), (0, 150, 25), (0, 0, 1)]
+p.camera.zoom(1.15)
+p.screenshot(f"{out}/hx_steel_cutaway.png")
+crop(f"{out}/hx_steel_cutaway.png")
+
+p = pv.Plotter(off_screen=True, window_size=(2400, 1200))
+p.set_background(BG)
+p.enable_anti_aliasing("ssaa")
+p.add_mesh(bundle, scalars="T_C", cmap="inferno", clim=STEEL, scalar_bar_args=sbar, specular=0.2)
+p.camera_position = [(-470, -190, -250), (0, 150, 25), (0, 0, 1)]
+p.camera.zoom(1.2)
+p.screenshot(f"{out}/hx_steel_bundle.png")
+crop(f"{out}/hx_steel_bundle.png")
 
 if readme:
     # the README teaser: the temperature section without the labels, 3:1
