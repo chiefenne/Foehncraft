@@ -113,7 +113,7 @@ impl ExactSum {
         }
     }
 
-    /// Adds every value of `x` (the batched path of [`Bins`]).
+    /// Adds every value of `x` (batched: one integer bin per binary exponent).
     pub fn add_slice(&mut self, x: &[f64]) {
         if x.len() < SHORT {
             for &v in x {
