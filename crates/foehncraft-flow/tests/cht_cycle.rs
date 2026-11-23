@@ -355,6 +355,49 @@ fn steady_cht_restart_keeps_the_solid_temperatures() {
     }
 }
 
+/// The steady CHT restart with the vertex limiter of the energy equation
+/// (D237): its limiter value ψ goes into restart.h5 (`cht_psi`, on the
+/// full mesh), so a run continued from the middle ends bit-identically
+/// to the run without the interruption.
+#[cfg(feature = "hdf5")]
+#[test]
+fn steady_cht_restart_with_the_mlp_energy_limiter_is_bit_identical() {
+    use foehncraft_flow::restart;
+    let t = text("cht_heated_wall.toml")
+        .replace("cells = [80, 30, 1]", "cells = [40, 15, 1]")
+        .replace("max_iterations = 2000", "max_iterations = 60")
+        .replace("[solver.energy]\n", "[solver.energy]\nlimiter = \"mlp\"\n");
+    let (a, b) = (out("mlp_full"), out("mlp_cont"));
+    let mut first = parse(&t);
+    first.verification = Default::default();
+    first.run.restart_at = vec![30];
+    first.run.restart_final = true;
+    run(&first, "full", &a, |_| {}).unwrap();
+    let mut second = parse(&t);
+    second.verification = Default::default();
+    second.run.restart = Some(a.join("restart_000030.h5"));
+    second.run.restart_final = true;
+    run(&second, "cont", &b, |_| {}).unwrap();
+    let ra = restart::read(&a.join("restart.h5")).unwrap();
+    let rb = restart::read(&b.join("restart.h5")).unwrap();
+    assert_eq!(ra.iteration, rb.iteration);
+    let (ca, cb) = (ra.cht.unwrap(), rb.cht.unwrap());
+    assert!(ca.psi.is_some(), "the restart file holds ψ of the energy");
+    let bits = |v: &[f64]| v.iter().map(|x| x.to_bits()).collect::<Vec<_>>();
+    assert_eq!(
+        bits(&ca.t),
+        bits(&cb.t),
+        "the continued temperature differs"
+    );
+    assert_eq!(
+        bits(ca.psi.as_ref().unwrap()),
+        bits(cb.psi.as_ref().unwrap())
+    );
+    for d in [a, b] {
+        let _ = std::fs::remove_dir_all(&d);
+    }
+}
+
 /// The skin swing (`skin = "effusivity"`) on a thin skin: the loop with
 /// the swing converges; the fully coupled cycles after it give the heat
 /// flow of the heater and a swing at the surface; the summary and

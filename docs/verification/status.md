@@ -320,12 +320,15 @@ Gaps:
 - consistency: [`nishikawa_functions_are_bounded_and_smooth`](../../crates/foehncraft-kernels/src/fv.rs): R3, R4 and R5 bounded at ε = 0 and smooth
 - consistency: [`a_strip_of_two_hexahedra_shares_four_vertices`](../../crates/foehncraft-flow/src/limiter.rs): the vertex stencil of a small mesh
 - consistency: [`tjunction_mixing`](../../examples/cases/flow/tjunction_mixing.toml): θ of the T-junction within [−0.0019, 1.0015], the scalar difference converges at order 2.1 over three meshes (passes in CI (set linux-1), not yet in the manual) ([results](../gallery/flow.md#tjunction-mixing))
+- consistency: [`mlp_limiter_restart_continues_bit_identically`](../../crates/foehncraft-flow/tests/scalars.rs): ψ of the relaxation in restart.h5 (`scalar_psi_<name>`): a steady run continued from the middle ends bit-identically
+- consistency: [`steady_cht_restart_with_the_mlp_energy_limiter_is_bit_identical`](../../crates/foehncraft-flow/tests/cht_cycle.rs): the energy's ψ in restart.h5 (`cht_psi`): a steady conjugate run continued from the middle ends bit-identically
 
 Gaps:
 
 - not the default: Venkatakrishnan stays the limiter of the scalars and the energy equation until a full validation run
 - ε = 0 and the per-cell ε can stall a steady run (the T-junction from the medium mesh on)
 - on a smooth manufactured solution on polyhedra the error with R3 is 2.5 times the unlimited one (second order kept)
+- bounds the reconstruction, not a stalled steady iteration: the water of the heat exchanger (application 203) falls to 15.7 °C in a few end-chamber cells, below its 20 °C inlet
 - not run on a GPU
 
 <a id="numerics-reproducible"></a>
