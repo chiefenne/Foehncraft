@@ -4,6 +4,302 @@
 
 Nothing yet.
 
+## 1.0.0 (2026-11-23) – milestone 1: a general purpose incompressible solver with heat transfer
+
+**Foehncraft 1.0 in one paragraph.** A finite-volume solver for
+incompressible and low-Mach flow on arbitrary polyhedral meshes in 2D and
+3D, written in Rust, with one kernel source for the CPU and NVIDIA GPUs.
+Steady and transient laminar and RANS flow (k-ω SST with curvature
+correction and QCR, standard and realizable k-ε, k-ε-ζ-f, k-ε-ζ-f₀,
+elliptic-blending k-ε, with every common wall treatment); SIMPLEC, PISO
+and a coupled pressure–velocity algorithm with multigrid; the energy
+equation with temperature-dependent properties, conjugate heat transfer
+with any number of solids and fluids, gravity, Boussinesq buoyancy and the
+low-Mach variable density; rotating machinery with the moving reference
+frame and sliding meshes; readers for Gmsh, SU2, CGNS, OpenFOAM, Fluent
+`.msh` and VTK meshes; restart, schedules, probes, statistics, ledgers and
+divergence reports; a Python package, a typed tool registry and an MCP
+server for scripts and assistants. Every feature has a verification grade
+with its evidence on the [verification status](docs/verification/status.md)
+page, and every run lists its limitations.
+
+**Highlights since 0.7.**
+
+- **Internal flows of D45 with grid convergence.** Turbulent pipe flow at
+  Re_b 5 300 (u_τ/U_b +4.5 % from the DNS, GCI 0.2 %), the asymmetric
+  plane diffuser of Buice & Eaton (reattachment 28.9 H, GCI 0.36 %), the
+  U-bend of Monson et al. (separation at 139.8°, GCI 0.19 %), both also
+  with sharp edges, and a laminar T-junction mixing a passive scalar on
+  polyhedra; gallery 193, 196, 199, 204.
+- **Several fluids in one conjugate case (D194).** Any number of fluid
+  regions with their own liquids or gases beside any number of solids;
+  each fluid part with its own pressure level. A shell and tube heat
+  exchanger runs hot air, water and steel in one case on 0.48 M
+  tetrahedra (application 203, a demonstration).
+- **Gravity, buoyancy and variable density (stages 7b1 and 7c).**
+  Boussinesq buoyancy with a balanced force (a stratified box at rest
+  stays at rest to 10⁻¹⁵ m/s on any cell type) and the low-Mach density
+  ρ(T, p₀) for open and closed domains, steady and transient, turbulent
+  and conjugate.
+- **Absolute pressures and start values (D239, D238; case format 0.7).**
+  Pressure values in a case file are absolute by default (gauge optional,
+  older files read as gauge); every region and fluid part starts from its
+  own values and its own pressure boundaries. The case format is stable
+  from 1.0 on.
+- **Slow thermal transients made fast (D204, D118).** The cycle-averaged
+  loop for periodic flows over slow solids, with a skin swing and fully
+  coupled closing cycles, and the frozen-flow march: warm-ups in a tenth
+  of the steps within a fraction of a kelvin of the fully coupled run.
+- **Robust numerics on real meshes.** An operator exactness check of every
+  mesh (D236) with quadratic fits that make the curvature correction and
+  the QCR converge on tetrahedra; the vertex-based MLP limiter for scalars
+  and temperature (D237); exact, order-independent sums, dot products and
+  norms on the CPU, bitwise the same for any thread count (MPI step W2,
+  with the canonical local mesh of W1 as groundwork for ranks).
+
+**Known limits.** Runs use one process (threads, or one GPU): multi-rank
+MPI is v1.1 (W1 and W2 are in, D235). Since the exact CPU sums, GPU
+results agree with the CPU to rounding, not bitwise (GPU exact sums in
+v1.1). No natural-convection benchmark validation yet (7b2 is v1.1), no
+turbulent buoyancy closures (7e). The T-junction's branch-inlet pressure
+does not converge with the mesh (GCI 29 %) and the D45 cases still lack
+measurements, Re 10⁶ and a converged sharp-edged fine U-bend mesh; the
+heat exchanger is a demonstration on one mesh. Several fluids do not yet
+combine with variable density, gravity, rotating zones or passive scalars
+(REG006); periodic meshes with solids are refused (ENE006). The GPU paths
+of the stage 7 physics were not run on a device for this release, and the
+generated verification manual was last run on 0.6.0.
+
+**Changes.**
+
+- **Gravity and the Boussinesq buoyancy (stage 7b1).** `[gravity]` with
+  `vector` and `reference_point`, and `[buoyancy]` with
+  `model = "boussinesq"`, `expansion_coefficient` (default from the
+  fluid's density at T_ref), `reference_temperature` (default the
+  `[fluid] temperature`) and `reference_density`. The solved pressure is
+  the reduced pressure p′ = p − ρ_ref g·(x − x_ref); the output has the
+  static pressure p as `static_pressure` as well. The values of the
+  pressure boundaries are p′ by default; `pressure_kind = "static"` reads
+  them as static pressures and converts them per face. Works with SIMPLEC
+  and the coupled algorithm (the kernels are shared by CPU and GPU), with
+  the energy equation and with solid regions (the fluid temperature drives
+  the force).
+- **Balanced force (D154).** The buoyancy enters every face as the
+  pressure gradient does: the same face differences, the same
+  least-squares operator in the cells, the matching Rhie–Chow term and
+  boundary pressure. A closed box with a stable stratification along an
+  oblique gravity stays at rest to 10⁻¹⁵ m/s on perturbed hex, tet, poly
+  and mixed meshes, with SIMPLEC and the coupled algorithm (V7.7 (a)).
+- **Buoyancy pseudo-time step.** Steady runs with buoyancy take a
+  pseudo-time step 1/N (N the buoyancy frequency, scaled by
+  `[solver.pseudo_time] factor`) in SIMPLEC and SIMPLE, and the coupled
+  algorithm's automatic step takes the buoyancy velocity as a lower bound.
+  Without it a stable stratification on a coarse mesh never settled.
+- **Kinetic-energy ledger** counts the work of the buoyancy force.
+- **Codes** BUO001 (no gravity), BUO002 (Boussinesq out of range), BUO003
+  (no energy equation or no β), BUO004 (gravity with energy but no model),
+  BUO006 (a static-kind pressure value over a tall opening); the
+  variable-density model is refused with ENE006 until stage 7c.
+- **Cases and docs.** `buoyancy_enclosure_plume`, `buoyancy_box_at_rest`,
+  `buoyancy_slot` (analytic `buoyant-slot`, observed orders 2.14 and
+  2.13), `buoyancy_channel_reduced`, `buoyancy_channel_static`,
+  `buoyancy_open_box`; gallery and recipe 186 ("Switch on gravity and
+  buoyancy; which pressure do my boundary values mean").
+- **Infrastructure features can reach verified (D199).** Restart, logs and
+  run record, Python package, command line, tool registry, journal and
+  replay and the MCP server are graded through contract evidence: a row
+  marked `infrastructure = true` lists its contracts (bitwise, schema,
+  equivalence, replay, control, diagnostics, round-trip) and each needs a
+  test of kind `contract`. Three new rows (tool registry, journal and
+  replay, MCP); 48 of 97 features are verified, up from 41 of 93. New test:
+  every row of `run.jsonl` follows its schema.
+- **Operator exactness check of the mesh (D236).** Before the solve the
+  velocity gradient and its gradient (the velocity Hessian of the
+  curvature correction) are applied to linear and quadratic test fields on
+  the mesh of the run. Cells where they are not exact are flagged:
+  `MESH004` (a broken stencil), `MESH005` (with the curvature correction:
+  it does not converge there), `MESH006` (with the QCR: the stress
+  divergence does not converge there) and the limitation `LIM008`; the 50
+  worst cells per operator go to `flow.json` and the `case.check` report,
+  every cell to `operators.csv`. New key `solver.operator_tolerance`
+  (0.01). No result changes. Gallery and recipe 189.
+- **Cycle-averaged coupling of a periodic flow with its solids (D204).** `[energy.cycle]` runs the loop by itself on one mesh: a fluid phase holds the solids at their wall temperature and averages the heat transfer of every interface face (and the mass flux) over a cycle once the flow is periodic; a solid phase solves the energy equation steady with the fluid convected by the cycle-mean mass flux and the difference between the transient and the mean-flow heat flow added to the solid cells, so the wall answers its own temperature with the response of the flow; the new wall temperatures go back to the fluid phase, with a quasi-Newton (IQN-ILS) update after the first, until the wall temperature and the heat flow settle. On a pulsating channel over a heated wall the loop converges after 4 updates and 10 cycles; heat flow and wall temperatures are within 0.4 % of the rise of the fully coupled periodic state. The classic first-cell Robin solid phase stays as `solid_model = "robin"` for comparison: it converges no sooner than the fully coupled run there. `enabled = false` runs the same case fully coupled. Outputs `cycle_coupling.csv`, `cycle_faces.csv` and `transient.cycle_coupling` of the report; heat balances of every fluid step and solid phase to 10⁻¹³. Codes CYC001, CYC002, CYC004, CYC005 and LIM009; checks V7.39, V7.40; gallery and recipe 190.
+- **Minimal path to v1.0.** Requirements section 7a and D235 record what v1.0 contains and what moves to v1.1.
+- **Multi-rank MPI sized (spike).** Assessment `docs/assessments/mpi-multi-rank-sizing.md`: what exists, a test that shows two ranks do not yet give the matrix of one rank (local face orientation and face order), the canonical construction that does (bitwise on 1 to 4 ranks, hexahedra and polyhedra, new example `mpi_matrix` in the MPI job of CI), the measured cost of exact reductions and of MPI messages on one machine, and a sized plan of nine to ten pull requests. No solver change.
+- **Turbulent pipe flow with grid convergence (D45).** New case
+  `pipe_turbulent_sst.toml`: fully developed pipe flow at Re_b = 5 300 on a
+  0.5° wedge with k-ω SST (`low-re`); friction velocity u_τ/U_b = 0.0714,
+  +4.5 % from the DNS of El Khoury et al. (2013) (0.0683), GCI_fine 0.2 %
+  on three meshes (`examples/studies/pipe_gci.py`). Gallery and recipe 193.
+- **QCR stress divergence consistent on irregular meshes (D236 step 2).**
+  On the cells where the operator check finds the face-neighbour velocity
+  gradient first order, the explicit QCR stress takes a quadratic
+  least-squares velocity gradient over the neighbours of the neighbours,
+  and the face value of the stress is corrected for skewness with cell
+  gradients of the stress. The stress force of the manufactured solution
+  now converges on meshes with 15 % perturbed vertices (hexahedra 4.6 %,
+  1.5 %, 0.65 %; tetrahedra first order) instead of staying at about 5 %.
+  `MESH006` is now reported only for cells where the quadratic fit is rank
+  deficient. QCR cases on meshes with flagged cells change slightly (the
+  square duct, regular hexahedra with 286 flagged wall cells: largest secondary velocity 1.558 % of U_b, before 1.558 %). Gallery and recipe 194.
+- **Low-Mach variable density ρ(T, p₀) (stage 7c, D151).** `[energy]
+  density = "variable"` (or `[buoyancy] model = "variable-density"`, which
+  switches it on) takes the density of the fluid's density form, an ideal
+  gas ρ = p₀ M/(R T) or a table or law of the temperature, in every cell
+  and face. The thermodynamic pressure p₀ is the operating pressure in a
+  domain open to an ambient, or with `thermodynamic_pressure =
+  "closed-volume"` follows from the fixed mass of a closed domain, which
+  then stays to round-off. Works with SIMPLEC and the coupled algorithm,
+  steady and transient, with the turbulence models and on the
+  fluid side of conjugate heat transfer; the kernels are shared by CPU and
+  GPU. Cases without the switch are bitwise unchanged.
+- **The equations of a variable density.** The mass storage V ∂ρ/∂t in
+  the pressure equation, the momentum time term with the density of each
+  time level, the full viscous stress with −⅔ μ ∇·u, the energy equation
+  with ρ per cell and, in a closed volume, the pressure work dp₀/dt
+  (`[energy] pressure_work`, default `thermodynamic` there and `none` in
+  an open domain), so that a closed gas heats with c_v.
+- **Ledgers.** The mass account books the storage of the density, the
+  kinetic-energy account the pressure dilatation p ∇·u as a physical term,
+  the heat account the storage ρ ∂h/∂t + h ∂ρ/∂t; the report and `history
+  .csv` carry p₀, the mass and the density range, and a mesh sweep gives
+  the observed order and GCI of p₀ and of the wall heat flows.
+- **Checks.** ENE004 warns above Mach 0.3; ENE009 refuses a constant
+  density form, a closed volume in an open domain or without the switch,
+  and the Boussinesq model with it; BUO005 refuses a closed domain with a
+  constant p₀; ENE006 names what does not work with it yet (passive
+  scalars, a restart, periodic meshes, convective outlets, mass-flow
+  inlets, wall mass fluxes, rotating zones). BUO002 points to the new
+  model.
+- **Verification.** A heated duct against its exact one-dimensional
+  balances (V7c.1), a closed box heated uniformly that warms with c_v and
+  p₀(t) exact (V7c.2), a closed box heated on one side that keeps its mass
+  (V7c.3), and a manufactured solution with ρ = 1/T in a closed volume
+  (V7c.4, generated by `tools/verification/vd_mms.py`), second order for
+  velocity and temperature on hexahedra and polygons, SIMPLEC and the
+  coupled algorithm on the same discrete solution.
+- **T-junction mixing on polyhedra with grid convergence (D45).** New case
+  `tjunction_mixing.toml`: laminar T-junction (Re 200 and 100) with a passive
+  scalar, Gmsh tetrahedra converted into polyhedra, three meshes of 4 852,
+  16 665 and 44 738 cells (`examples/studies/tjunction_gci.py`). The main-inlet
+  pressure converges at order 1.77 (GCI 2.4 %); the branch-inlet pressure does
+  not (order 0.2, GCI 29 %), and the conversion fails with GEN001 on some
+  meshes; both are written as gaps. Validation against measurements is
+  pending. Gallery and recipe 196.
+- **Curvature correction consistent on irregular meshes (D236 step 3).**
+  DS_ij/Dt of the curvature correction of SST takes S_ij from a velocity
+  gradient that is second order everywhere (the quadratic least-squares
+  fit of the QCR on the cells where the face-neighbour gradient is first
+  order), and on the cells where the least-squares gradient of S_ij is not
+  consistent, the gradient of S_ij from a quadratic least-squares fit over
+  interior cells. The manufactured solution converges at order 2 on
+  regular and 15 % perturbed tetrahedra (error of k 0.54 %, 0.14 %,
+  0.036 %) instead of staying at about 1.3 %; a channel in pure shear stays
+  unchanged to round-off. The operator check reports
+  `quadratic_hessian`; `MESH005` remains only where the fit fails, and a
+  run whose cells take the fit writes `operators.csv` and the check in
+  `flow.json`. Gallery and recipe 197.
+- The face-based `.msh` reader is named after its format, Fluent `.msh` (`mesh.format = "fluent_msh"`; the old key `industry_msh` still works). Naming commercial codes is now allowed where appropriate (AGENTS.md).
+- **Asymmetric plane diffuser (D45).** New cases `diffuser_sst.toml` and
+  `diffuser_sst_sharp.toml`: the diffuser of Buice & Eaton (10°, area ratio
+  4.7) at Re_H 20 000 (centreline velocity) with k-ω SST and a developed
+  channel profile at the inlet (new case `diffuser_channel_profile.toml`,
+  table by `examples/studies/diffuser_inlet_profile.py`), on structured
+  meshes from `examples/meshes/diffuser.py` with the corners rounded as in
+  the experiment (4.3 H) or sharp (`--sharp`, cells shortened towards the
+  corners). With rounded corners the case converges on three meshes (GCI in
+  gallery 199, `examples/studies/diffuser_gci.py`): the reattachment point
+  (28.94 H on 111 360 cells) has a GCI of 0.36 %, the separation point
+  (2.20 H) 4 % and the pressure recovery 0.03 % or less. With sharp corners
+  (three meshes, 8 400 to 134 400 cells) the reattachment point (29.03 H)
+  has a GCI of 0.51 % and the pressure recovery 0.15 % or less, within
+  1.1 % of the rounded ones; the separation point converges at order 0.6
+  only (GCI 9 %), since the wall shear stays near zero for 1.5 H behind
+  the corner. No comparison with measurements yet (pending). Gallery and
+  recipe 199.
+- **Why the diffuser did not converge before.** A sharp wall corner makes
+  the least-squares gradient of thin wall cells wrong by O(1), and linear
+  upwind from the first iteration diverged on it; trapezoidal wall cells
+  switched the D50 remediation on, on the coarse levels only; a uniform
+  start broke continuity in the widening; and relaxation 0.5 only looked
+  like a stall. The case now starts from potential flow with upwind for
+  200 iterations, runs at relaxation 0.8, and judges convergence on probes
+  in the log (`docs/pitfalls.md`).
+- **The momentum scheme may change during a run.** `solver.momentum.scheme`
+  may be scheduled (`[[schedule]]`) or re-read (`control.toml`) between
+  `"upwind"` and `"linear-upwind"`: a first-order start, then second
+  order. A change to or from `"central"` is refused.
+- **A transient run may start from a steady restart file.** `--restart`
+  with a steady restart file and a transient case starts the transient
+  run from the steady fields at `time.start_time` (no older time levels);
+  the log says so.
+- **Multi-rank MPI, step W1: canonical local mesh.** The local mesh of every rank now has bitwise the geometry of the one-rank mesh, on any number of ranks and any partition (D93 (1), (3)): faces stored flipped are marked (`Mesh::face_flip`) and evaluated in the node order of the global mesh, every cell lists its faces in global face order, halo cells take their geometry from the owner. Checked in tests on 1 to 4 ranks, METIS and RCB, hexahedra, tetrahedra, polyhedra and mixed, 2D and 3D, after renumbering, and across MPI processes in CI (`mpi_matrix`). `foehn mesh` with a partition reports the flipped faces and the differing faces and cells per rank (always 0, the run fails otherwise) in `mesh_report.md` and `mesh_report.json` (`canonical`) and writes the cell field `flipped_faces`. Runs without a decomposition do not change. Gallery 200, recipe 200, case `mesh/canonical_ranks.toml`.
+- **Fix: the bounded face velocity without a limiter crashed (D50).**
+  `solver.face_velocity = "bounded"` set by hand with no momentum limiter
+  read an empty limiter array and ended in a segmentation fault; the
+  limiter's per-cell epsilon is now set up whenever the face velocity uses
+  it, and an empty array is an error instead of a crash. The automatic
+  remediation was not affected.
+- **The skin swing, fully coupled cycles at the end and the restart of conjugate runs (D204).** `[energy.cycle] skin = "effusivity"` gives the held wall of the cycle-averaged loop the swing of a thin skin: the harmonics of the face heat flux over the averaged cycle times the surface response of a semi-infinite solid of effusivity √(k ρ c_p), with the swing amplitudes inside the quasi-Newton update; CYC003 warns where the skin depth reaches through the wall. `resolved_cycles` ends the loop with fully coupled cycles, started from the damped and delayed swing of the skin in depth, and reports the exact swing per face (`resolved_t_wall_min`, `resolved_t_wall_max`). On a thin-skin wall the loop ends at 1250 s within 0.016 K and 0.1 % on the swing of the periodic state, which the fully coupled run reaches only after 4400 to 5550 s. Conjugate runs now restart: `restart.h5` holds the temperatures of the solids with their old level and the state of the loop, and continuations are bit-identical in any phase of the loop; a restart with `[energy.acceleration]` is still refused. The heat ledger books what the swinging held cells store. New columns `swing_max`, `swing_change` in `cycle_coupling.csv` and `t_wall_amplitude`, `t_wall_min`, `t_wall_max` in `cycle_faces.csv`; gallery and recipe 202.
+- **Engineering gallery: shell and tube heat exchanger mesh (application
+  203).** `examples/applications/shell_tube_hx/mesh.py` turns a STEP
+  assembly (housing, seven tubes, two tubesheets, three segmental baffles)
+  into one conformal multi-region tet mesh with Gmsh: hot air on the shell
+  side, water on the tube side and four metal zones, the four nozzles
+  closed as named inlet and outlet faces, every interface shared node for
+  node (983 249 cells at level 2). A new page of the engineering gallery,
+  heat exchangers, holds the entry with a section and a cut-away of the
+  mesh; recipe 203 gives the steps for one's own assembly. The flow run
+  waits for two fluids with their own materials in one conjugate case
+  (ENE006).
+- **U-bend (D45).** New cases `ubend_sst.toml` and `ubend_sst_sharp.toml`:
+  the two-dimensional U-duct of Monson et al. (1990), Rc/H = 1, at
+  Re_b = 10⁵ with k-ω SST and a developed channel profile at the inlet (new
+  case `ubend_channel_profile.toml`, table by
+  `examples/studies/ubend_inlet_profile.py`), on structured meshes from
+  `examples/meshes/ubend.py` with the rounded turn of the experiment or with
+  sharp edges (`--sharp`: a square divider end and end wall). The rounded
+  case converges on three meshes from a potential-flow start (GCI in
+  gallery 204, `examples/studies/ubend_gci.py`): the inner wall separates at
+  θ = 139.8° (GCI 0.19 %) and reattaches 2.19 H behind the turn (GCI 2.9 %);
+  the wall pressures have a GCI of 0.27 % or less. The curvature correction
+  of SST moves the separation to 127.5° and the reattachment to 2.57 H. The
+  sharp-edged duct converges on the two coarser meshes with a gentler start
+  (relaxation 0.5, linear upwind from iteration 601, relaxation 0.8 from
+  1 201). No comparison with measurements yet (pending). Gallery and
+  recipe 204.
+- **Engineering gallery: flow cases of the shell and tube heat exchanger
+  (application 203).** `case_coflow.toml` and `case_counterflow.toml` set
+  the owner's conditions on the mesh of application 203: hot air at 300 °C
+  and 15 m/s on the shell side against 1.5 bar, water at 20 °C and 5 m/s
+  on the tube side against 1 bar, in coflow or counter flow, carbon steel,
+  the housing held at 25 °C outside, k-ω SST, everything from rest. They
+  run once several fluid materials share one conjugate case (D194).
+- **Several fluids in one conjugate case (D194, stage MF-A).** Fluid regions take a material of their own (`[regions.<name>] material`, a liquid or a gas) and the temperature at which it is evaluated (`temperature`); density per cell and face, viscosity per face, c_p, k and μ(T) per fluid in the energy equation, ν and ρ per cell in the turbulence models and wall functions, and the density per face in the boundary conditions. No fixed limit on the number of regions (32-bit region index). Fluid cells that touch only through solids form separate fluid parts: each needs its own pressure boundary (REG003), two different fluids sharing a face are refused as a two-phase interface (REG004), the log lists the parts (REG005), and settings not yet built for several fluids say so (REG006: variable density, gravity, rotating zones, passive scalars, convective and periodic boundaries); the coupled solver takes the density per cell in its pseudo-time term and continuity scale. The heat ledger books each fluid's enthalpy with its own h_s. Check V7.33 (planar form): a water / oil counterflow exchanger across a steel plate gives ε = 0.7756 against ε–NTU 0.7751 (gallery and recipe 206).
+- **The frozen-flow march and the warm-up history of the cycle loop (D118, D204).** `[energy.frozen_flow]` speeds up the thermal warm-up of a transient conjugate run: coupled steps until the flow has settled (a window test on the velocity with Aitken's extrapolation), then the temperatures of fluid and solids are marched alone with a longer `time_step` while velocity, pressure, mass flux and turbulence are held. A flow that follows the temperature (a viscosity form of T, buoyancy) is refreshed by coupled steps whenever a fluid temperature has moved by `refresh_change` (or every `refresh_every` frozen steps). A heated wall under a fluid whose viscosity halves over 17 K warms up in 557 steps instead of 6000 (17 s against 155 s), within 0.06 K of the fully coupled run; a flow that does not depend on the temperature is held once and matches to the time error of the long steps. `result.json` reports the phases, refreshes and solves per step; codes FRZ001 to FRZ004 and LIM010. `[energy.cycle] solid = "transient"` (with `march_cycles`, `march_steps`) turns the cycle-averaged loop into a warm-up history: each update marches fluid and solids under the cycle-mean flow and jumps the clock by whole periods; a pulsating channel warms up in 780 steps instead of 6000, within 0.6 % of the rise of the fully coupled cycle means. `cycle_coupling.csv` gains `march_time` and `march_jump`. A conjugate restart now also keeps μ(T) on the faces (a restart in a refresh was not bit-identical without it) and the state of the march; restarts are bit-identical in a frozen phase, in a refresh and after a jump of the clock. Gallery and recipe 208.
+- **U-bend with sharp edges: third mesh (gallery 204).** The finest of the
+  three sharp-edged meshes (201 600 cells) ran to its limit of 8 000
+  iterations without converging (the separated region behind the divider
+  end still grows slowly); with it, the reattachment has a GCI of 0.85 %
+  and the end-wall pressure below 0.01 %, while the pressure 10 H behind
+  the turn moved 4.6 % from the middle mesh. The level-2 values are marked
+  provisional.
+- **U-bend images drawn as in the literature (gallery 204).** The field
+  images of the U-duct now show the flow entering at the upper left and
+  leaving at the lower left, with inlet and outlet arrows; the case, the
+  mesh and the results are unchanged.
+- **Bounded convection of the scalars and the energy equation (D237).** `limiter = "mlp"` in `[solver.scalar]` and `[solver.energy]`: the multi-dimensional limiting process of Park & Kim (2012) bounds the linear-upwind reconstruction at every vertex by all cells that share it, with Nishikawa's R3 function (also R4, R5, Barth–Jespersen and Venkatakrishnan as `limiter_function`) and a threshold in the units of the field, ε = c (φ_max − φ_min) (`limiter_epsilon`, 0.01) or per cell (`limiter_epsilon_scaling = "cell"`); `limiter_relaxation` (0.5) damps the limit cycle of a steady run. Also new: the face limiter `barth-jespersen` (also for the momentum and the `foehn scalar` solver), the face clamp `bounded` and `verification.scalar_range`. On the oblique step on perturbed polyhedra c stays within [0, 1.0021] (Venkatakrishnan [−0.0175, 1.0178]); the air of the shell and tube exchanger stays within 0.6 K of its inlet temperature (Venkatakrishnan 12.6 K above). Venkatakrishnan stays the default; MLP is set in the T-junction (its scalar now converges with the mesh, order 2.1, GCI 11 %, gallery 196), the two heat-exchanger cases and the stirred-tank tracer. Refused for the momentum and turbulence (CASE004). Gallery and recipe 211.
+- **Shell and tube heat exchanger with two fluids (application 203, D194).** The exchanger runs hot air (300 °C, 15 m/s, out against 1.5 bar) on the shell side, water (20 °C, 5 m/s, out against 1 bar) on the tube side and carbon steel in one steady conjugate case, coflow and counter flow, on the level 0 mesh (477 921 tetrahedra) with k-ω SST, the coupled solver and the vertex limiter of D237. The air gives up 1.72 kW in both cases and leaves at about 124 °C (ε = 0.63, NTU 0.99); with the water carrying 2 600 times the heat capacity flow of the air (C_r = 3.8·10⁻⁴) the flow arrangement drops out, as ε-NTU says. A demonstration: one mesh, and the water-side heat flows swing by a few percent with the residuals stalled near 10⁻³. New `flow_images.py` draws the temperature and speed sections; recipe 203 gives the run commands; a README teaser.
+- **Steel temperatures of the shell and tube exchanger (application 203).** Two new images show the housing, the tubesheets, the tubes and the baffles coloured by temperature (20 to 30 °C), with a table of each part in coflow and counter flow: the steel follows the water, within about 4 K of its 20 °C, and is warmest near the air inlet (the housing at the inlet nozzle 27.7 °C, the rim of the first baffle 27.3 °C). The coflow images and the README teaser are redrawn from the state at iteration 3 250: the earlier ones were drawn one iteration after a restart, which reset the memory of the vertex limiter and let the air in the inlet nozzle overshoot to 360 °C for that iteration. The limits now say that the water in the end chambers falls to 15.7 °C in a few cells, below its 20 °C inlet.
+- **Restart with the vertex limiter (D237).** With `limiter = "mlp"` the relaxation (`limiter_relaxation`) carries the limiter value ψ from one outer iteration to the next, so ψ is part of the state: restart.h5 now holds it (`scalar_psi_<name>` for the passive scalars, `cht_psi` for the energy of a conjugate case), and a run continued from it ends bit-identically to one without the interruption. Before, a restart started from ψ = 1 and its first iteration overshot: the air in the heat exchanger's inlet nozzle went up to 360 °C (inlet 300 °C) and settled again within 150 iterations. A file written by an older version still reads and starts from ψ = 1.
+- **Start values per region and per fluid part (D238, requirement).** Each domain of a multi-region case gets its own start values (`[regions.<name>.initial]`); by default every fluid part starts at the pressure of its own pressure boundaries (a Laplace solve between several values), with the operating pressure per part from MF-B. Later: start values on volume selections of the mesh (cell zones, named cell sets, the regions of D73). Specified in stage 7 §9c.4 with codes REG007–REG010 and checks V7.45 and V7.46; not built yet.
+- **Pressure values absolute by default, gauge optional (D239, requirement).** From case format 0.7 every pressure value in a case file is an absolute static pressure unless `[fluid] pressure_values = "gauge"`; the solver keeps solving the gauge part against an operating pressure that each fluid part takes from its own boundaries, and older files keep their gauge meaning (and their results) through a new changed-default rule of `foehn case upgrade`. Not built yet.
+- **Roadmap: 7b2 moves to v1.1.** The laminar natural-convection benchmarks (square cavity Ra 1e3 to 1e6, vertical plate, mixed convection) and the heated D45 cases with SGDH are no longer part of v1.0 (maintainer decision 2026-11-23, D235, section 7a). The cavity will be graded on its own GCI and energy balance, because the published cavity values are numbers from other codes (D201).
+- **Multi-rank MPI, step W2: exact reductions.** Sums, dot products, residual norms and min/max no longer depend on the order of the terms, the thread count or the number of ranks (D31 (1), D93 (4)). `foehncraft_core::exact::ExactSum` is a long accumulator over the whole binary64 range (Kulisch 1971; Collange et al. 2015), rounded once to nearest even, with NaN and infinities counted apart and a batched path (one integer bin per exponent). `Communicator::sum_exact`, `sum_exact_many` and `all_sum_i64` reduce it across ranks as one all-reduce of 71 integers; `min` and `max` are order-independent (`min_total`, `max_total`). The CPU backend and the flow CPU device compute dot products, norms and min/max exactly, the AMG eigenvalue estimate too, and about 30 sums over cells, faces and patches of the flow crate (balances, torques, mass flows, volumes, sources) are exact. One-rank results change once in the last bits against v0.7; no reference band is affected. **GPU:** the GPU keeps its block sums until v1.1 (owner decision of 2026-11-23), so CPU and GPU runs now agree to rounding, not bitwise. Partitioned `foehn mesh` runs check sums over the ranks against one rank (`reductions` in the report); the example `mpi_reductions` checks the same across 1 to 4 MPI processes in CI. Measured cost (D93, 4-core Xeon of the cloud session, two runs each against main): exact dot product 2.3 to 3.5 ns per value on one thread against 0.6 to 0.9 ns for the block sum, 0.7 to 0.9 against 0.3 to 0.6 ns on 4 threads (`exact_reduction_cost` example); per outer iteration +2 to +7 % on the cavity with 970 225 polyhedra (30 SIMPLEC iterations, 4 threads) and +18 to +25 % on the 64 × 64 cavity (4 096 cells, one thread, where the BiCGStab dot products weigh most); the same iteration counts and results to the printed digits. Gallery 219, recipe 219, case `mesh/exact_reductions.toml`.
+- **Pressure values absolute by default, gauge optional (D239, case format 0.7).** Every pressure value of a case file (boundary `pressure` and `total_pressure`, numbers and expressions, `[initial] pressure`, `[pressure] reference_value`) is now an absolute static pressure; `[fluid] pressure_values = "gauge"` keeps values relative to the operating pressure. Each fluid part takes its operating pressure from its own pressure boundaries (static outlets first), or from `[fluid]` / the new `[regions.<name>] operating_pressure`; the reader turns the case into its gauge twin, so the solver is unchanged and an absolute case runs the same bits as its gauge twin, and each gas's density follows the pressure of its own part. The `pressure` field (with the VTKHDF attributes `pressure_values` and `operating_pressure`), probes and the mean pressures of `boundaries.csv` are written in the file's convention; the log (PRS005) and `flow.json` (`pressure_values`) state the convention and the operating pressure of every part. Checks PRS001 (absolute value ≤ 0), PRS002 (a gas below 1 kPa looks like a gauge value), PRS003 (operating pressure from expressions only), PRS004 (one absolute start pressure for parts of different operating pressures). The case-format migration has a second kind of rule, a changed default: files of format 0.6 and older read as gauge values (a note) and keep their results; `foehn case upgrade` writes `pressure_values = "gauge"` into them. New case `cht_two_fluids_absolute.toml` (water at 1 bar, oil at 1.5 bar). Gallery and recipe 220.
+- **Start values per region and per fluid part (D238).** `[regions.<name>.initial]` sets `velocity`, `pressure`, `temperature` and `k` with `omega` or `epsilon` of a region (numbers or expressions of x, y, z; a solid takes `temperature` only), before `[initial]` and `[energy] initial`; `temperature = "inlet"` starts a fluid region at the inflow-weighted inlet temperature of its fluid part. Without a start pressure every fluid part now starts from its own pressure boundaries: at their value, or on a Laplace solve between two different values (a total-pressure inlet and an outlet), so a part driven by a pressure difference starts on its pressure line; not with `[initial] pressure`, a reference cell or gravity, so the cases of before keep their start. The log (REG010) and `flow.json` (`start_values`) list every start value and its source; checks REG007 (a key a region table cannot take), REG008 (a value not > 0), REG009 (an `"inlet"` temperature without an inlet). New case `cht_two_fluids_start.toml` (2251 instead of 2616 iterations from a uniform start). Gallery and recipe 221.
+- **Docs: multi-rank MPI moves from v1.0 to v1.1 (D235, maintainer decision 2026-11-23).** Section 7a of the requirements, D235, the stage 8 plan and the MPI sizing note say so; W1 (#200) and W2 (#219) stay on `main` as groundwork. The README lists the internal-flow cases of D45 under "What works today", says that GPU results now agree with the CPU to rounding (since W2), and describes v1.0 as runs in one process.
+
 ## 0.7 (2026-11-22) – stage 7 (part): energy equation, conjugate heat transfer and agents
 
 
@@ -290,6 +586,7 @@ Nothing yet.
 
 | Version | Stage | Highlights |
 |---|---|---|
+| 1.0.0 (2026-11-23) | 8 (part) Milestone 1 | The internal-flow cases of D45 (pipe, plane diffuser, U-bend, T-junction on polyhedra) with grid convergence, several fluids in one conjugate case (D194), gravity, Boussinesq buoyancy and the low-Mach variable density (7b1, 7c), absolute pressure values and per-region start values (D239, D238; case format 0.7 stable), the cycle-averaged loop and the frozen-flow march for slow thermal transients (D204, D118), the operator exactness check with quadratic fits (D236), the MLP vertex limiter (D237), exact CPU reductions (MPI W1, W2). **Pipe u_τ +4.5 % from DNS (GCI 0.2 %); diffuser reattachment GCI 0.36 %; U-bend separation GCI 0.19 %; stratified box at rest to 10⁻¹⁵ m/s; closed box p₀(t) exact; warm-ups in a tenth of the steps within 0.06 K.** Gallery 186–221, recipes up to 221 |
 | 0.7 (2026-11-22) | 7 (part) Energy, conjugate heat transfer, agents | Energy equation of the fluid with temperature-dependent properties, conjugate heat transfer with solid regions (steady and transient, laminar and turbulent, contact resistances, orthotropic solids, heat sources, thermal acceleration of solids), the tool registry, journal and replay, the MCP server `foehn mcp`, run limits and budgets, the live control port, run limitations from the verification status page, manufactured solutions of every turbulence model, the clean-room rework of the reference numbers. **CHT checks exact to round-off (V7.4, V7.6 to 10⁻¹² K, V7.36 to 10⁻⁴); heat balance closes to 10⁻¹¹ in every step; thermal acceleration ends within 0.2 % of the steady solution.** Gallery 131–184, recipes up to 184 |
 | 0.6 (2026-11-20) | 6 RANS turbulence, heat transfer, rotating machinery | Six RANS models: k-ω SST 2003 (with the curvature and rotation correction and QCR2000/QCR2013), standard and realizable k-ε, k-ε-ζ-f, k-ε-ζ-f₀ and the elliptic-blending k-ε; wall treatments `low-re`, `automatic`, `scalable`, `standard`, `compound`, `compound-2023` and rough walls; passive scalars with turbulent diffusivity and thermal wall functions (also for high Prandtl numbers); periodic boundaries; rotating machinery with the moving reference frame, sliding meshes (conformal stepping and imprinted interfaces of any shape of revolution, several rotors), torque, shaft power and machine performance; the coupled pressure–velocity algorithm with pseudo-time steps and multigrid for momentum and turbulence; SU2, OpenFOAM, CGNS, industry `.msh` and VTK mesh readers; derived turbulence fields, transient statistics, the grid convergence study of the models; the new log, case format 0.6 and `[[schedule]]`. **TMR flat plate C_f +0.37 % (SST) and within −2.6 to +2.4 % for first-cell y⁺ 0.24 to 85; channel at Re_τ 395 U_b⁺ −0.7 % (SST) and EB C_f 97.8–99.1 % of DNS; backward-facing step x_r/H +0.5 % (k-ε against the published k-ε) and +0.6 % (k-ε-ζ-f₀ against the experiment); impinging jet Nu₀ −0.2 % (SST); heated channel Nu within −2.6 to +1.0 % of DNS; GPU bitwise equal to the CPU for 14 turbulence cases on a Tesla T4; the coupled algorithm settles the step in about 70 instead of 600 iterations.** Gallery 26–134, recipes 36–134 |
 | 0.5 (2026-11-16) | 5 Transient flow, run control, Python | Transient incompressible flow: PISO with variable-step BDF2 and Crank–Nicolson, outer correctors for large time steps, a time step from the integration error, output at exact times, restart files and control files; the whole flow loop on NVIDIA GPUs; adjoint-ready kernels (dual numbers, transposed matrices, checkpointing); the run contract for scripts and agents (`--json`, `--set`, `result.json`, run record, exit codes and signals, case schema, diagnostic codes, estimate, limits, provenance); the conservation ledger and the divergence report; the bounded central scheme and the boundary conditions of D29 (slip, wedge, tables, backflow, convective outlet); derived fields; expressions, the material database and regions; the Python package `foehncraft` with studies; the grid convergence index of every sweep and a generated verification manual; all scripts in Python. **Taylor–Green time order 2.0–2.4 and space order 2.1; Schäfer & Turek 2D-1 inside all reference ranges, C_D extrapolated to 5.5797 ± 0.0004 from three meshes; GPU flow loop bitwise equal to the CPU on a Tesla T4 (722 ns per cell and iteration on 970 225 polyhedra); a case built in Python is bitwise its TOML file.** Commands `foehn materials`, `foehn post derive`, `foehn schema`; gallery 14–25, recipes 21–35 |
@@ -298,6 +595,15 @@ Nothing yet.
 | 0.2 (2026-11-14) | 2 Operators on a scalar equation | Finite-volume operators on a scalar transport equation, one source for the CPU and the NVIDIA GPU: least-squares gradients (exact for linear fields, error 6e-15 on all mesh types), linear upwind with Venkatakrishnan and Venkatakrishnan–Wang limiters (no new extrema at K = 0), over-relaxed non-orthogonal diffusion, reproducible gather-based assembly into sliced ELL, BiCGStab. Observed order 1.87–2.08 on hex, tet, poly and mixed meshes in 2D and 3D. **GPU and CPU results bitwise equal on a Tesla T4** (912 673 polyhedra, 311 ns per cell and iteration). New command `cfdcraft scalar`, seven case files, gallery 8–9, recipes 12–14 |
 | 0.1 (2026-11-14) | 1 Mesh | Polyhedral face-based mesh with exact geometry (every cell closed to 1e-15, volumes exact), Gmsh 4.1 reader, built-in test mesher (hex, tet, poly, mixed; 2D and 3D; graded, refined, perturbed), quality report, VTKHDF output for ParaView, METIS and RCB partitioning with a solver-ready halo layout and multi-field halo exchange (tested over MPI on 2–4 ranks), particle point location on all mesh types, golden-value test matrix, `cfdcraft mesh` command. G1 rerun on polyhedral and shuffled meshes: bitwise equal; quiet-machine verdict open (O15) |
 | 0.0 (2026-11-14) | 0 Foundations and gate G1 | Cargo workspace, CI on Linux, macOS and Windows with MPI runs on 4 ranks, the G1 kernel benchmark. **G1 GPU verdict passed on a Tesla T4: single-source Rust kernels within 1.0 % of hand-written CUDA C, bitwise equal results**; **CPU verdict passed on an i9-9900K: single-source bodies within 1.8 % of hand-written loops, in two runs** |
+
+Release 1.0.0 is milestone 1: incompressible and low-Mach flow, steady
+and transient, laminar and RANS, with the energy equation, conjugate heat
+transfer with several fluids and solids, buoyancy and rotating machinery,
+on CPUs and NVIDIA GPUs in one process, verified case by case on the
+[verification status](docs/verification/status.md) page. Multi-rank MPI,
+natural-convection benchmarks and the rest of stage 7 follow in 1.1
+(requirements section 7a). The Cargo version of the crates and of the
+Python package is now 1.0.0; the release is the Git tag `v1.0.0` (D46).
 
 Release 0.7 is the first part of stage 7: the energy equation of the
 fluid, conjugate heat transfer with solid regions and the tools for agents

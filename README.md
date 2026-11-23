@@ -10,17 +10,13 @@
 
 ---
 
-> **Status: stage 6 done (RANS turbulence, heat transfer in forced
-> convection, rotating machinery), stage 7 under way, release 0.7.** The stage
-> plan and every decision are in [docs/requirements.md](docs/requirements.md);
-> [What works today](#what-works-today) lists what is on `main` now. Stage 7 is
-> under way: the energy equation of the fluid and conjugate heat transfer
-> with solid regions, steady and transient, laminar and turbulent, with
-> contact resistances, orthotropic solids, thermal acceleration of the
-> solids, the frozen-flow march and the cycle-averaged loop for periodic
-> flows, are in, and so are
-> gravity, the Boussinesq buoyancy and the low-Mach variable density
-> ρ(T, p₀).
+> **Status: release 1.0.0, milestone 1.** Incompressible and low-Mach
+> flow, laminar and RANS, the energy equation, conjugate heat transfer with
+> several fluids and solids, buoyancy and rotating machinery, on CPUs and
+> NVIDIA GPUs in one process. The stage plan and every decision are in
+> [docs/requirements.md](docs/requirements.md);
+> [What works today](#what-works-today) lists what is on `main` now.
+> Multi-rank MPI and the natural-convection benchmarks follow in 1.1.
 
 [![CI](https://github.com/chiefenne/Foehncraft/actions/workflows/ci.yml/badge.svg)](https://github.com/chiefenne/Foehncraft/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/chiefenne/Foehncraft)](https://github.com/chiefenne/Foehncraft/releases)
