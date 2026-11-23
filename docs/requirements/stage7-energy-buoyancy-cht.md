@@ -943,6 +943,108 @@ interfaces are found automatically from the cell zones; named interfaces
   different materials touching), REG005 info (number of fluid parts, regions
   and materials, listed in the log).
 
+### 9c.4 Start values per region and per fluid part (D238)
+
+Added 2026-11-23 at the maintainer's request. In a case of several domains
+every region gets its own start values, so that no domain starts far from
+its own operating state. The pressure matters most: a fluid part that starts
+at one uniform value against an outlet held at another sees the whole jump
+across the outlet cells in its first iterations, and the pressure correction
+turns it into a burst of velocity. In the heat exchanger of application 203
+the water would start at the water outlet pressure and the air at the air
+outlet pressure.
+
+**As of #206 (MF-A)** the start values are case-wide: `[initial] velocity`
+and `pressure` are one value for the whole case, `k`, `omega` and
+`epsilon` one number or expression of x, y, z, `[energy] initial` one
+temperature for every fluid and solid region. Only the turbulence default is
+per part: without `[initial] k`, each fluid part starts from its own first
+inlet. `[regions.<name>] temperature` is the temperature at which the
+region's properties are taken, not a start value.
+
+**Requirement:**
+
+1. **A start table per region**, `[regions.<name>.initial]`, with the keys
+   of `[initial]` (`velocity`, `pressure`, `potential_flow`, `k`, `omega`,
+   `epsilon`, `turbulence_intensity`, `viscosity_ratio`, `zeta`, later the
+   passive scalars) and `temperature`. Each value is a number or an
+   expression of x, y, z (D53; three of them for the velocity). A solid
+   region takes only `temperature`. Order: the region's table, then the
+   case-wide `[initial]` and `[energy] initial`, then the defaults below.
+2. **Pressure per fluid part from its own boundaries** (default when no
+   start pressure is given). A part with one pressure value on its pressure
+   boundaries (`static-pressure-outlet`, `total-pressure-inlet` with the
+   static pressure of the start velocity) starts at that value. A part with
+   different values starts from the solution of a Laplace equation for the
+   pressure with those values on its pressure boundaries and zero normal
+   gradient elsewhere (one solve with the pressure multigrid, as the
+   potential flow of D52), so the start field runs smoothly from one
+   boundary to the other. A closed part starts at its reference value
+   (MF-B). With gravity, the hydrostatic part of each part's own reference
+   density is added (D153, MF-B). Cases that give `[initial] pressure`, and
+   cases whose pressure boundaries are all at 0 Pa, do not change (bitwise).
+3. **Operating pressure per part** (with MF-B): `[regions.<name>]
+   operating_pressure`, so that the gauge values of each part refer to its
+   own absolute level (the water at 1 bar beside the air at 1.5 bar) and the
+   ideal-gas density of each gas comes from the absolute pressure of its own
+   part. The case-wide `[fluid] operating_pressure` stays the default.
+4. **Temperature per region:** a number or an expression, or for a fluid
+   part `temperature = "inlet"`, the mass-flow weighted mean of its inlet
+   temperatures. The default stays `[energy] initial`.
+5. **Velocity and turbulence per part:** `velocity` or `potential_flow` per
+   fluid region (the potential flow solved part by part); turbulence values
+   per region, by default from the part's own first inlet at that inlet's
+   speed, as built in MF-A.
+6. **Restart:** the fields of a restart file (D42) replace every start
+   value; the start tables only set up a new run.
+7. **Report:** the start values of every part and region in the log and in
+   `flow.json`, with where each came from (given, boundary value, Laplace
+   solve between N boundaries, inlet, case-wide default), for people and
+   agents (D77).
+
+**Later: start values for parts of a region from volume selections of the
+mesh.** `[[initial.patch]]` entries set start values in a selection of
+cells, applied in the order written after the region tables, the later
+entry winning where two overlap:
+
+- `cells`: one or more cell zones of the mesh (also zones inside one region,
+  such as the baffles of the steel region), a named cell set of the mesh, or
+  a geometric region of D73 (box, sphere, cylinder, half space and their
+  boolean combinations);
+- the same keys and value forms as a region table;
+- the mesh readers keep the named cell sets of their formats beside the
+  zone index, overlapping sets allowed (Gmsh physical volumes, OpenFOAM
+  `cellZones` and `cellSets`, Fluent cell zones, CGNS families, an integer
+  cell field of a VTU or VTKHDF file), and `foehn mesh` lists zones and sets
+  with their cell counts;
+- a region, or a selection, may also start from the result of another run
+  (D52, interpolated onto the mesh of the case), for example the shell side
+  from an air-only run.
+
+Established practice does the same: per-zone patching of start values on
+cell zones or marked cells, selections by geometric shapes, and a Laplace
+initialization of pressure and velocity from the boundary values. Flaw not
+to copy: one start value for all zones by default, so that a forgotten patch
+goes unnoticed; here every part starts from its own boundaries.
+
+**Codes:**
+
+- REG007 error: a start value that the region or selection cannot take
+  (velocity, pressure or turbulence in solid cells, `"inlet"` for a part
+  without an inlet, a passive scalar the case does not solve).
+- REG008 note: the start values per part and region and their source
+  (item 7).
+- REG009 warning: a given start pressure that differs from the values of the
+  part's pressure boundaries by more than ten times the dynamic pressure of
+  its fastest inlet (1 kPa without one); the first iterations carry this
+  jump.
+- REG010 error (with the patches): a selection that holds no cell, or names
+  a zone or cell set the mesh does not have.
+
+Checks V7.45 and V7.46 (§14.3b). Stage: items 1 to 7 with MF-B, before the
+variable density, because the density of each gas follows the absolute
+pressure of its own part; the patches later, with the regions of D73.
+
 
 ## 9d. Cycle-averaged coupling of periodic flows (D204)
 
@@ -1638,6 +1740,8 @@ energy to round-off).
 | V7.33 | Laminar double-pipe counterflow exchanger: water in the inner tube, an oil in the annulus, the tube wall meshed (copper) and, second run, as a thin wall | outlet temperatures, heat duty, effectiveness | thin wall within 0.5 % of the meshed wall; effectiveness against ε–NTU with the fully developed Nusselt numbers of Shah & London (1978), within 2 % for a long exchanger; ledger closes to round-off between the two fluids and the wall |
 | V7.34 | Three fluid parts and four materials in one case (two closed, one open), one closed part without reference | pressure levels per part, REG003 | each part reaches its own reference; the refused set-up gives REG003; results of each part equal to the part run alone (bitwise) |
 | V7.35 | Tube-and-fin exchanger cell: one row of three tubes (water) with plate fins (aluminium, as shell thin walls joined to the tube walls) in air, periodic in the fin pitch | heat duty, fin efficiency, air-side pressure drop | fin efficiency against the straight-fin formula where it applies (±2 %); duty equal from the water side, the air side and the ledger to the solver tolerance; GCI ≤ 2 % |
+| V7.45 | Start values per part (D238): two fluid parts across a solid plate (the case of `cht_counterflow_two_fluids`), outlets at 1.0·10⁵ Pa and 1.5·10⁵ Pa as gauge values; a third run with a total-pressure inlet and a static-pressure outlet in one straight channel | the start fields at iteration 0, the largest face speed of the first iteration, the converged fields | every cell of each part starts at its own outlet value exactly; the channel starts linear between its two boundaries to the solver tolerance; the largest face speed of the first iteration within twice the largest inlet speed (the uniform start at 0 is reported beside it); converged fields equal to those of the uniform start to the solver tolerance; cases without the new keys unchanged (bitwise) |
+| V7.46 | Patches from mesh volume selections (D238, later): a solid block with a cube-shaped cell zone and an overlapping cell set, a hot patch on each, transient conduction | the start field, the heat content at t = 0, the ledger | each patch holds exactly in its cells, the later one where they overlap; the heat content at t = 0 equals Σ ρ c_p V (T − T_ref) of the patches to round-off; a restart ignores the patches (bitwise continuation) |
 
 ### 14.3c Turbulent, transient and cycle-averaged conjugate heat transfer (7d5, 7d6, D204)
 
