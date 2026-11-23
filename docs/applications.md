@@ -65,4 +65,4 @@ contents.
 |---|---|---|
 | <a id="stirred-tank"></a>131 | [Stirred tank with a three-blade hydrofoil: power and pumping number](applications/rotating-machinery.md#stirred-tank) | [Rotating machinery](applications/rotating-machinery.md) |
 | <a id="fyfe-stirred-tank"></a>161 | [Stirred 2 L lab tank of Fyfe et al.: power number and mixing time against measurements](applications/rotating-machinery.md#fyfe-stirred-tank) | [Rotating machinery](applications/rotating-machinery.md) |
-| <a id="shell-tube-hx"></a>203 | [Shell and tube heat exchanger: a conformal multi-region tet mesh from a STEP assembly](applications/heat-exchangers.md#shell-tube-hx) | [Heat exchangers](applications/heat-exchangers.md) |
+| <a id="shell-tube-hx"></a>203 | [Shell and tube heat exchanger: hot air, water and steel in one conjugate case](applications/heat-exchangers.md#shell-tube-hx) | [Heat exchangers](applications/heat-exchangers.md) |

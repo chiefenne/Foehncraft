@@ -131,7 +131,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="diffuser"></a>199 | [Run an asymmetric diffuser, its grid study and a transient run from the steady state](recipes/turbulence.md#diffuser) | [Turbulence models](recipes/turbulence.md) |
 | <a id="canonical-ranks"></a>200 | [Check that every rank has the bits of one rank (canonical local mesh)](recipes/meshes.md#canonical-ranks) | [Meshes](recipes/meshes.md) |
 | <a id="cht-cycle-skin"></a>202 | [Get the swing of the wall temperature from the cycle loop, and restart a conjugate run](recipes/energy.md#cht-cycle-skin) | [Energy equation and heat transfer](recipes/energy.md) |
-| <a id="shell-tube-hx-recipe"></a>203 | [Mesh a multi-region heat exchanger from a STEP assembly with Gmsh](recipes/applications.md#shell-tube-hx-recipe) | [Engineering gallery](recipes/applications.md) |
+| <a id="shell-tube-hx-recipe"></a>203 | [Mesh and run a multi-region heat exchanger from a STEP assembly](recipes/applications.md#shell-tube-hx-recipe) | [Engineering gallery](recipes/applications.md) |
 | <a id="ubend"></a>204 | [Run a U-bend, its grid study and the sharp-edged variant](recipes/turbulence.md#ubend) | [Turbulence models](recipes/turbulence.md) |
 | <a id="two-fluids"></a>206 | [Put several fluids in one conjugate case (water and air in a heat exchanger)](recipes/energy.md#two-fluids) | [Energy equation and heat transfer](recipes/energy.md) |
 | <a id="cht-frozen-flow"></a>208 | [Warm up a conjugate run with the flow held, or the warm-up history of a periodic flow](recipes/energy.md#cht-frozen-flow) | [Energy equation and heat transfer](recipes/energy.md) |
