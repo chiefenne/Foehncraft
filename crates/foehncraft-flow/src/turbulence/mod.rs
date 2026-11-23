@@ -2401,7 +2401,9 @@ impl Turbulence {
         dev.upload(t.d, &d)?;
         t.wall_distance = d;
         // the start values (specification 7.3)
-        let (k0, w0) = t.initial_values(dev, case, mesh, geo, bc_arrays, &env)?;
+        let (mut k0, mut w0) = t.initial_values(dev, case, mesh, geo, bc_arrays, &env)?;
+        // the start values of the regions (D238)
+        crate::start::turbulence(case, mesh, geo, &env, t.eps, t.c_mu, &mut k0, &mut w0)?;
         dev.upload(t.k.phi, &k0)?;
         dev.upload(t.w.phi, &w0)?;
         if let Some(z) = &mut t.zf {

@@ -309,6 +309,13 @@ pub fn apply_entry(
                 new: show(Some(&v)),
             });
         }
+        // a pressure value in the file's convention (absolute, D239) is
+        // set as the solver's gauge value
+        let v = case
+            .pressure_frame
+            .as_ref()
+            .and_then(|f| f.gauge_value(&k, &v))
+            .unwrap_or(v);
         set(&mut merged, &k, Some(&v));
     }
     let mut c: FlowCase = merged
@@ -322,6 +329,7 @@ pub fn apply_entry(
     c.boundary_scalar = case.boundary_scalar.clone();
     c.boundary_energy = case.boundary_energy.clone();
     c.fluid_view = case.fluid_view.clone();
+    c.pressure_frame = case.pressure_frame.clone();
     // the schedule was checked with the case; validating the setting values
     // must not check it again
     let sched = std::mem::take(&mut c.schedule);

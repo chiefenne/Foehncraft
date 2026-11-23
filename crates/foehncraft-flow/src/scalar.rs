@@ -2618,7 +2618,9 @@ impl Scalars {
             z: put(&lsq.z)?,
         };
         let ini = expr::value(&sec.initial, env, Vars::SPACE, "energy.initial")?;
-        let phi0: Vec<f64> = (0..nc).map(|c| ini.at(geo.cell_centroid[c], 0.0)).collect();
+        let mut phi0: Vec<f64> = (0..nc).map(|c| ini.at(geo.cell_centroid[c], 0.0)).collect();
+        // the start temperatures of the regions (D238)
+        crate::start::temperature(case, mesh, geo, env, &mut phi0)?;
         if let Some(c) = phi0.iter().position(|t| !(*t > 0.0 && t.is_finite())) {
             return Err(diag::err(
                 Diagnostic::new(

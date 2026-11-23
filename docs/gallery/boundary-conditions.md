@@ -1,11 +1,12 @@
 # Boundary conditions of the flow solver
 
-Part of the [Example gallery](../gallery.md): slip walls, axisymmetric wedges, inlet profiles from tables, backflow treatment at pressure outlets and the convective outlet (D29), periodic pairs with the heat-flux jump of the scalars (D29, D109 (1)).
+Part of the [Example gallery](../gallery.md): slip walls, axisymmetric wedges, inlet profiles from tables, backflow treatment at pressure outlets and the convective outlet (D29), periodic pairs with the heat-flux jump of the scalars (D29, D109 (1)), and absolute or gauge pressure values with an operating pressure per fluid part (D239).
 
 | # | Example | Stage | Feature |
 |---|---|---|---|
 | 21 | [Boundary conditions: slip walls, wedges, tables, backflow, convective outlets](#boundary-conditions) | 5 | slip wall, axisymmetric wedge mesh, inlet profile from a table, backflow treatment at pressure outlets, convective outlet |
 | 67 | [Periodic modules: a channel and a short heated pipe](#periodic) | 6 | `type = "periodic"`, `mass_flow`, `pressure_gradient`, `[boundary.<name>.scalar.<scalar>] periodic = "heat-flux"`, `bulk` |
+| 220 | [Absolute pressures: two fluids at 1 bar and 1.5 bar](#absolute-pressure) | 7 | `[fluid] pressure_values`, `operating_pressure`, `[regions.<name>] operating_pressure`, case format 0.7 |
 
 ---
 
@@ -168,6 +169,78 @@ target/release/foehn flow examples/cases/flow/pipe_heated_periodic.toml --out ou
     --set 'output.lines=[{name="radius",from=[0.5,0.0078125,0.0],to=[0.5,0.4921875,0.0],points=32}]'
 python3 -m tools.plot.periodic_chart docs/figures/gallery/periodic.svg \
     output/pois_periodic output/heated_periodic output/pipe_periodic output/pipe_mid
+```
+
+[↑ back to top](#boundary-conditions-of-the-flow-solver)
+
+---
+
+<a id="absolute-pressure"></a>
+## 220. Absolute pressures: two fluids at 1 bar and 1.5 bar
+
+<img src="../figures/gallery/pressure_values_two_parts.png" alt="Top: the absolute pressure in a parallel-plate counterflow exchanger 0.5 m long, the height stretched 25 times: the water channel below the steel plate is dark at 1.0 bar, the oil channel above it light green at 1.5 bar. Middle: the gauge pressure of each part relative to its own operating pressure, from 0 at the outlets to 3 Pa at the water inlet on the left and 45 Pa at the oil inlet on the right, white to red. Bottom: the gauge pressure along the middle of each channel, the water falling linearly from 3.1 Pa to 0 at x = 0.5 m, the oil rising from 0 at x = 0 to 45 Pa" width="1210" height="990">
+
+**What the values mean.** From case format 0.7 every pressure value of
+a case file is an absolute static pressure (`[fluid] pressure_values =
+"absolute"`, the default, D239): an outlet to the atmosphere is
+`pressure = 1.01325e5`, the water of a heat exchanger leaves at
+`1.0e5` and the air at `1.5e5`. `pressure_values = "gauge"` keeps the
+older meaning, values relative to the operating pressure,
+p = p_op + p_gauge. Files of format 0.6 and older mean gauge: they read
+with a note and keep their results bit for bit; `foehn case upgrade`
+writes `pressure_values = "gauge"` into them.
+
+**The operating pressure of every part.** The solver keeps working with the
+gauge pressure p − p_op. With absolute values p_op is not a setting:
+each fluid part (fluid cells connected without a solid between them,
+D194) takes it from its own pressure boundaries, the static-pressure
+outlets first (the smallest value), then the total-pressure outlets, then
+the pressure inlets; a closed part from `[pressure] reference_value` or
+`[initial] pressure`, else 101 325 Pa. The reader then writes every value
+as its difference to the part's p_op (boundary values, expressions,
+`[initial] pressure`, `[pressure] reference_value`) and sets
+`[fluid] operating_pressure` and `[regions.<name>] operating_pressure`,
+so that each gas's density follows the absolute pressure of its own part.
+`case.resolved.toml` is that gauge twin. For a value within a factor 2 of
+p_op the difference is exact (Sterbenz's lemma), so the absolute case and
+the gauge case run the same bits.
+
+**The case.** `cht_two_fluids_absolute.toml` is the water / oil
+counterflow exchanger of gallery 206 with its two outlets at their
+absolute pressures, the water at 1 bar and the oil at 1.5 bar. The log
+names the convention and the two operating pressures:
+
+```
+[PRS005] pressure values are absolute (D239); the solver works with p - p_op, the outputs are absolute
+[PRS005]   part 1 (regions water): operating pressure 100000 Pa (boundary xmax)
+[PRS005]   part 2 (regions oil): operating pressure 150000 Pa (boundary oil_out)
+```
+
+and `flow.json` holds them as `pressure_values`. The `pressure` field of
+`fields.vtkhdf` (attributes `pressure_values`, `operating_pressure`), the
+probes and the mean pressures of `boundaries.csv` are absolute; forces
+come from p − p_op as before. Every part starts at its own outlet
+pressure (gauge 0 in each of its cells), so the jump of half a bar across
+the plate never reaches the pressure correction. The residual history and
+the mass flows are those of the gauge case to the last bit.
+
+**Checks.** An absolute value of 0 or below is refused (PRS001, the
+message suggests `pressure_values = "gauge"`); a value below 1 kPa in a
+gas looks like a gauge value (PRS002, warning); a part whose pressure
+boundaries are all expressions needs an explicit `operating_pressure`
+(PRS003); one case-wide absolute `[initial] pressure` for parts of
+different operating pressures is refused (PRS004).
+
+| | |
+|---|---|
+| Code | `foehncraft_flow::pressure_values` (`resolve`, `Frame`), the changed-default rule of `foehncraft_mesh::case_format`, D239 |
+| Case file | `flow/cht_two_fluids_absolute.toml` |
+| Tests | `crates/foehncraft-flow/tests/pressure_values.rs` (`an_absolute_case_and_its_gauge_twin_run_the_same_bits`, `two_parts_take_their_own_outlet_pressures`, `older_files_keep_meaning_gauge`, `an_absolute_zero_is_refused`, `values_become_gauge_relative_to_the_outlet`), `case_format::tests::a_changed_default_keeps_the_meaning_of_older_files` |
+| Recipe | [220](../recipes/boundary-conditions.md#absolute-pressure) |
+
+```
+target/release/foehn flow examples/cases/flow/cht_two_fluids_absolute.toml --out output/two_fluids_absolute
+python3 -m tools.plot.pressure_values docs/figures/gallery output/two_fluids_absolute
 ```
 
 [↑ back to top](#boundary-conditions-of-the-flow-solver)

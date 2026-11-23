@@ -1063,6 +1063,34 @@
    "range": {}
   },
   {
+   "id": "run.pressure-values",
+   "title": "Absolute or gauge pressure values, operating pressure per fluid part",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "`[output.coefficients] reference_pressure` (an absolute reference of the pressure coefficient) is not built",
+    "the vapour-pressure warning of a liquid is not built (no material has a vapour pressure yet)",
+    "a pressure boundary shared by two fluid parts takes the operating pressure of the first part"
+   ],
+   "range": {}
+  },
+  {
+   "id": "run.start-values",
+   "title": "Start values per region and per fluid part",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "the hydrostatic start pressure per part with gravity is not built (gravity keeps the case-wide start)",
+    "the Laplace start is a Jacobi-preconditioned CG, not the pressure multigrid",
+    "volume selections inside a region (`[[initial.patch]]`) and a region started from another run come later (D73, D52)"
+   ],
+   "range": {}
+  },
+  {
    "id": "run.restart-control",
    "title": "Restart and control files (.stop, .result_N, .read_toml_N)",
    "grade": "verified",

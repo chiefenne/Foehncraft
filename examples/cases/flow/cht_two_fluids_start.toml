@@ -1,0 +1,116 @@
+# Start values per region and per fluid part (D238): the water / oil
+# counterflow exchanger of `cht_two_fluids_absolute.toml`, its oil now
+# driven by a total pressure of 1.50046 bar against its outlet at 1.5 bar.
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/cht_two_fluids_start.toml
+#
+# Every region starts on its own (`[regions.<name>.initial]`): the water and
+# the oil at the temperatures of their own inlets (`temperature = "inlet"`,
+# 340 K and 300 K), the steel plate between them at 320 K. Without a start
+# pressure each fluid part starts from its own pressure boundaries: the
+# water at its outlet (1 bar), the oil on the solution of a Laplace
+# equation between its inlet and its outlet, so its pressure falls
+# smoothly along the channel from the first iteration on. The log (REG010)
+# and `flow.json` (`start_values`) list every start value and its source.
+# The oil's pressure drop drives the same flow as the velocity inlet of
+# `cht_counterflow_two_fluids.toml` (12 mu L U / h^2 = 46 Pa for the mean
+# speed of 6.1 mm/s).
+
+case_format = "0.7"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [0.5, 0.0045, 0.001]
+cells = [200, 18, 1]
+split = [
+  { boundary = "xmin", axis = "y", at = 0.0025, name = "oil_out" },
+  { boundary = "xmin", axis = "y", at = 0.002, name = "plate_left" },
+  { boundary = "xmax", axis = "y", at = 0.0025, name = "oil_in" },
+  { boundary = "xmax", axis = "y", at = 0.002, name = "plate_right" },
+]
+zones = [
+  { name = "water", lower = [0.0, 0.0, 0.0], upper = [0.5, 0.002, 0.001] },
+  { name = "plate", lower = [0.0, 0.002, 0.0], upper = [0.5, 0.0025, 0.001] },
+  { name = "oil", lower = [0.0, 0.0025, 0.0], upper = [0.5, 0.0045, 0.001] },
+]
+
+[fluid]
+material = "water"
+temperature = 300.0
+
+[materials.light-oil]
+kind = "liquid"
+description = "a made-up light oil with constant properties (not a database material)"
+density = 850.0
+viscosity = 0.005
+specific_heat = 2000.0
+conductivity = 0.13
+
+[materials.plate-steel]
+kind = "solid"
+description = "a stainless steel plate with constant properties"
+density = 7900.0
+specific_heat = 500.0
+conductivity = 15.0
+
+[regions.water]
+kind = "fluid"
+zones = ["water"]
+[regions.water.initial]
+temperature = "inlet"      # 340 K, its inlet
+
+[regions.oil]
+kind = "fluid"
+zones = ["oil"]
+material = "light-oil"
+[regions.oil.initial]
+temperature = "inlet"      # 300 K, its inlet
+
+[regions.plate]
+kind = "solid"
+zones = ["plate"]
+material = "plate-steel"
+[regions.plate.initial]
+temperature = 320.0        # between the two
+
+[energy]
+initial = 320.0
+temperature_dependent = false
+
+# water: mean speed 2.5 mm/s (Re = 11.7), fully developed profile
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = ["0.015*(y/0.002)*(1 - y/0.002)", "0", "0"]
+[boundary.xmin.energy]
+temperature = 340.0
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 1.0e5          # water outlet, 1 bar absolute
+
+# oil: driven by its total pressure, 46 Pa above its outlet
+[boundary.oil_in]
+type = "total-pressure-inlet"
+total_pressure = 150046.0
+[boundary.oil_in.energy]
+temperature = 300.0
+[boundary.oil_out]
+type = "static-pressure-outlet"
+pressure = 1.5e5          # oil outlet, 1.5 bar absolute
+
+[boundary.plate_left]
+type = "wall"
+[boundary.plate_right]
+type = "wall"
+[boundary.ymin]
+type = "wall"
+[boundary.ymax]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-9
+max_iterations = 3000

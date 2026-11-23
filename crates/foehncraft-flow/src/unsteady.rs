@@ -293,6 +293,8 @@ struct RunSpec {
 /// The result of one run that the sweeps need.
 struct RunOut {
     solve: Solve,
+    /// The start values of the regions and parts (D238).
+    start_values: Vec<crate::start::StartValue>,
     u: Soa3,
     /// Final scalar fields, in the order of the case's scalar sections
     /// (on the full mesh in a conjugate case).
@@ -359,6 +361,8 @@ pub fn run(
         warnings: Vec::new(),
         failures: Vec::new(),
         seconds: 0.0,
+        pressure_values: case.pressure_frame.as_ref().map(|f| f.json()),
+        start_values: Vec::new(),
     };
     std::fs::write(out.join("case.resolved.toml"), case.resolved_toml()?)?;
     let mut outs: Vec<RunOut> = Vec::new();
@@ -388,6 +392,7 @@ pub fn run(
         );
         findings.extend(crate::turbulence::setup_findings(case));
         findings.extend(crate::energy::setup_findings(case));
+        findings.extend(crate::pressure_values::setup_findings(case));
         findings.extend(crate::buoyancy::setup_findings(case, &mesh, &geo));
         steer.set_cells(mesh.n_cells, usize::from(case.run.backend != "cpu"));
         if ri == 0 {
@@ -473,6 +478,9 @@ pub fn run(
             specs.len() == 1,
         )?;
         rep.stopped |= r.stopped;
+        if rep.start_values.is_empty() {
+            rep.start_values = r.start_values.clone();
+        }
         outs.push(r);
         if rep.stopped {
             rep.stop = steer.stop.clone();
@@ -1102,6 +1110,7 @@ fn run_one<F: FnMut(&str)>(
     let mut af = AnalyticFaces::new(&case, mesh, &ub0);
     let mut dt = dt0;
     let mut restart_from = None;
+    let mut start_values = Vec::new();
     let mut cycle_state: Option<Vec<u8>> = None;
     let mut frozen_state: Option<Vec<u8>> = None;
     let restart_file = if single {
@@ -1210,6 +1219,37 @@ fn run_one<F: FnMut(&str)>(
                 )
             }
         };
+        // the start values of the regions and parts (D238)
+        let analytic_start = analytic0
+            .filter(|a| a.is_transient() || case.initial.from_analytic)
+            .is_some();
+        let (u, p) = match (!analytic_start)
+            .then(|| {
+                crate::start::initial_flow(
+                    &case,
+                    mesh,
+                    geo,
+                    case.initial.velocity,
+                    p[0],
+                    reference_cell.is_some(),
+                )
+            })
+            .transpose()?
+            .flatten()
+        {
+            Some((u, p, lines)) => {
+                start_values = lines;
+                (u, p)
+            }
+            None => (u, p),
+        };
+        start_values.extend(crate::start::temperature_report(&case, mesh, geo)?);
+        start_values.extend(crate::start::turbulence_report(&case));
+        if !start_values.is_empty() {
+            for n in crate::start::notes(&start_values) {
+                lg.note(n.as_str());
+            }
+        }
         af.update(&case, mesh, geo, &mut fl, time0.start_time)?;
         tv.update(&case, mesh, geo, &mut fl, time0.start_time)?;
         fl.initialise(&u, &p)?;
@@ -2881,6 +2921,7 @@ fn run_one<F: FnMut(&str)>(
         solve,
         volume,
         stopped,
+        start_values,
     })
 }
 

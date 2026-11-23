@@ -192,7 +192,13 @@ validated range, one mesh only, …) in its report and its JSON result.
   turning, with blowing or suction), slip walls and symmetry planes,
   axisymmetric wedges, periodic pairs driven by a mass flow or a pressure
   gradient, inlet profiles from tables, backflow handling, convective
-  outlets.
+  outlets. Pressure values are absolute static pressures (case format
+  0.7, gauge optional): every fluid part takes its operating pressure
+  from its own outlet, and the solver keeps the gauge pressure, so an
+  absolute case and its gauge twin run the same bits (D239).
+  Every region and fluid part starts on its own: start tables per
+  region, `"inlet"` temperatures, and each part's start pressure from its
+  own boundaries (a Laplace solve between two values, D238).
 - **Cases and properties.** TOML case files with checks and guidance;
   boundary values, sources and viscosities as expressions; a material
   database (air, water, oils, glycols) with sources.

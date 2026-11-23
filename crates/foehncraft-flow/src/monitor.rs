@@ -19,6 +19,9 @@ pub struct Probes {
     /// Points.
     pub points: Vec<[f64; 3]>,
     cells: Vec<usize>,
+    /// The operating pressure added to the pressure of each probe: absolute
+    /// pressure values (D239); empty with gauge values.
+    offsets: Vec<f64>,
 }
 
 impl Probes {
@@ -35,11 +38,23 @@ impl Probes {
             names.push(n.clone());
             points.push(*x);
         }
-        let cells = points.iter().map(|&x| locate(loc, geo, x)).collect();
+        let cells: Vec<usize> = points.iter().map(|&x| locate(loc, geo, x)).collect();
+        let offsets = case
+            .pressure_frame
+            .as_ref()
+            .and_then(|f| f.cell_offsets(case, loc.mesh()))
+            .map(|o| {
+                cells
+                    .iter()
+                    .map(|&c| o.get(c).copied().unwrap_or(0.0))
+                    .collect()
+            })
+            .unwrap_or_default();
         Self {
             names,
             points,
             cells,
+            offsets,
         }
     }
 
@@ -52,6 +67,7 @@ impl Probes {
             names: self.names.clone(),
             points: self.points.clone(),
             cells: self.points.iter().map(|&x| locate(&loc, geo, x)).collect(),
+            offsets: self.offsets.clone(),
         }
     }
 
@@ -61,7 +77,14 @@ impl Probes {
         self.cells
             .iter()
             .zip(&self.points)
-            .map(|(&c, &x)| value_at(sol, geo, c, x))
+            .enumerate()
+            .map(|(i, (&c, &x))| {
+                let (u, p) = value_at(sol, geo, c, x);
+                match self.offsets.get(i) {
+                    Some(o) => (u, p + o),
+                    None => (u, p),
+                }
+            })
             .collect()
     }
 

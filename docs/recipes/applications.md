@@ -68,7 +68,7 @@ zones = ["tubes", "tubesheets", "baffles", "housing"]
 material = "steel"
 ```
 
-The exchanger's own flow cases are `case_coflow.toml` and `case_counterflow.toml`: air on the shell side and water on the tube side, each fluid region with its own material (D194), the water turned round between them. The case files name level 2; the results of application 203 are from level 0:
+The exchanger's own flow cases are `case_coflow.toml` and `case_counterflow.toml`: air on the shell side and water on the tube side, each fluid region with its own material (D194), the water turned round between them. The outlet pressures are absolute (`1.5e5` for the air, `1.0e5` for the water, D239), and `[regions.air.initial] temperature = "inlet"` starts the air at its 300 °C (D238). The case files name level 2; the results of application 203 are from level 0:
 
 ```
 python3 examples/applications/shell_tube_hx/mesh.py --level 0      # 477 921 cells

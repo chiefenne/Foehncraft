@@ -1299,6 +1299,9 @@ pub fn fluid_of(case: &crate::case::FlowCase, env: &Env, region: Option<&str>) -
     if let Some(t) = sec.and_then(|r| r.temperature) {
         cond.temperature = t;
     }
+    if let Some(p) = sec.and_then(|r| r.operating_pressure) {
+        cond.pressure = p;
+    }
     let material = match own {
         Some(_) => sec.and_then(|r| r.material.clone()),
         None => case.fluid.material.clone(),

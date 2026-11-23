@@ -32,7 +32,7 @@ one steady conjugate case, with the water in coflow and in counter flow.
 | Interfaces | found by the solver from the cell zones (`interface-<region>`, recipe 156); the two fluids touch nowhere |
 | Run cost | meshing 40 s (level 0) to 2 min (level 2) on one core; the flow on level 0, 2 500 iterations in 90 min on four cores |
 | Confidence | **demonstration**: one mesh (level 0), the water-side heat flows not settled (C3), see the check card |
-| Boundary conditions | hot air in through `shell_nozzle_front` at 15 m/s and 300 °C, out through `shell_nozzle_rear` at 1.5 bar; water in through a top nozzle at 5 m/s and 20 °C, out through the other at 1 bar (held at 1.5 bar in the model, see Limits); housing outside at 25 °C; everything starts at rest |
+| Boundary conditions | hot air in through `shell_nozzle_front` at 15 m/s and 300 °C, out through `shell_nozzle_rear` at 1.5 bar; water in through a top nozzle at 5 m/s and 20 °C, out through the other at 1 bar (absolute values, case format 0.7: each fluid at its own operating pressure, D239); housing outside at 25 °C; everything starts at rest, the air at 300 °C and the water at 20 °C, each at its own outlet pressure (D238) |
 | Case files | `applications/shell_tube_hx/mesh.toml` (mesh check); `case_coflow.toml` (water in at `tube_nozzle_front`, the air's end) and `case_counterflow.toml` (water in at `tube_nozzle_rear`); `flow_images.py` draws the flow and steel images |
 
 ### The mesh
@@ -88,10 +88,8 @@ fluids share a face or a nozzle face is missing.
 
 Two steady conjugate cases share the mesh. Air enters the shell side
 through the side nozzle at the front end (x = −100 mm) at 15 m/s and
-300 °C and leaves at the rear end against 1.5 bar (the operating pressure
-of its ideal-gas density; the solved pressures are gauge values). Water
-enters at 5 m/s and 20 °C and leaves against 1 bar (in the model against
-1.5 bar, see Limits): through
+300 °C and leaves at the rear end against 1.5 bar. Water
+enters at 5 m/s and 20 °C and leaves against 1 bar: through
 `tube_nozzle_front` in `case_coflow.toml`, so both streams run from the
 front to the rear end, and through `tube_nozzle_rear` in
 `case_counterflow.toml`, against the air (counter flow overall; in the
@@ -101,6 +99,13 @@ held at 25 °C, the metal is plain carbon steel. Reynolds numbers: about
 (5.1 m/s, d = 15 mm); k-ω SST with the automatic wall treatment and the
 thermal wall function. Each fluid region names its own material
 (`[regions.air]` with air, `[regions.water]` with water, D194).
+The pressures are absolute (case format 0.7, D239): `pressure = 1.5e5`
+at the air outlet and `1.0e5` at the water outlet, and each fluid takes
+its own outlet as its operating pressure (the log lists both, PRS005).
+Each region starts on its own (D238): `[regions.air.initial] temperature
+= "inlet"` starts the air at its 300 °C, the water at its 20 °C, the
+steel at the 20 °C of `[energy] initial`, and each fluid at its own
+outlet pressure (REG010).
 
 ### Results
 
@@ -212,10 +217,12 @@ bounded: in the slow recirculation of the end chambers 145 of its
 137 791 cells (coflow; 230 in counter flow) lie below 19.5 °C, the lowest
 at 15.7 °C, below its 20 °C inlet; the vertex limiter bounds the
 reconstruction, not the stalled steady iteration. The air stays within
-0.5 K of its 300 °C inlet. The operating pressure is one value for the
-whole case, so the water outlet, at 0 Pa gauge like the air outlet, sits
-at 1.5 bar absolute instead of 1 bar; the water's density is constant, so
-the results do not change. An operating pressure per fluid part comes
-with D238 (MF-B of D194).
+0.5 K of its 300 °C inlet. The results above were run with gauge values
+and one operating pressure of 1.5 bar for both fluids (the water outlet at
+1.5 bar instead of 1 bar) and with the air starting cold; the case files
+now give absolute pressures, each fluid takes its own outlet as its
+operating pressure (D239), and the air starts at its 300 °C (D238). The
+water's density is constant and the air's operating pressure is the same,
+so the converged results do not change; the runs were not repeated.
 
 Recipe: [203](../recipes/applications.md#shell-tube-hx-recipe).
