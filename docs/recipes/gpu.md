@@ -36,7 +36,7 @@ target/release/foehn scalar examples/cases/scalar/mms_poly_box.toml --backends c
 `mms_poly_gpu.toml` solves on the CPU and twice on the GPU (`run.backends =
 ["cpu", "cuda", "cuda"]`); the column "vs first backend" of the report says
 "bitwise equal" when a GPU run reproduces the CPU run bit for bit, and the
-run fails if any difference exceeds 1e-10. Keys: `run.backends`,
+run fails if any difference exceeds 1e-10. Since MPI step W2 (#219) the CPU sums exactly and the GPU keeps block sums, so GPU results agree with the CPU to rounding, not bitwise, until the GPU sums exactly too (v1.1, owner decision of 2026-11-23). Keys: `run.backends`,
 `run.rust_ptx` (or `--rust-ptx`).
 
 [↑ back to top](#gpu-runs)
@@ -83,8 +83,8 @@ solve bit for bit. Keys: `study.backends`, `study.solvers`,
 
 Every flow case runs on the GPU as it is: the whole flow loop (gradients,
 limiters, momentum and pressure-correction assembly, Rhie–Chow fluxes,
-corrections, the BiCGStab and CG + multigrid solves) stays on the device,
-and the results are bitwise those of the CPU (D31). Needs an NVIDIA GPU of
+corrections, the BiCGStab and CG + multigrid solves) stays on the device.
+Up to v0.7 the results were bitwise those of the CPU (D31); Since MPI step W2 (#219) the CPU sums exactly and the GPU keeps block sums, so GPU results agree with the CPU to rounding, not bitwise, until the GPU sums exactly too (v1.1, owner decision of 2026-11-23). Needs an NVIDIA GPU of
 compute capability 7.0 or newer with its driver; the build needs no CUDA
 toolkit, the kernels need the nightly toolchain (installed by
 `rust-toolchain.toml` on first use). From the repository root:
@@ -102,8 +102,12 @@ directories (`pip install h5py numpy` once):
 ```
 target/release/foehn flow examples/cases/flow/cylinder_re100_gpu.toml --backend cpu  --out output/gpu/cpu
 target/release/foehn flow examples/cases/flow/cylinder_re100_gpu.toml --backend cuda --out output/gpu/cuda
-python3 -m tools.check.compare_runs output/gpu/cpu output/gpu/cuda    # "bitwise equal", exit code 0
+python3 -m tools.check.compare_runs output/gpu/cpu output/gpu/cuda    # until v1.1: differences in the last bits
 ```
+
+Until the GPU sums exactly (v1.1), `compare_runs` reports the CPU and GPU
+outputs as different in the last bits; two CPU runs with different thread
+counts stay bitwise equal.
 
 `python3 -m tools.bench.stage5_cloud` does this for eight cases, from Couette
 flow to the cavity on one million polyhedra, and writes

@@ -4,9 +4,10 @@
 //! stay in GPU memory for the whole run. The argument block of an entry is
 //! passed by value as a kernel parameter; it is the same `#[repr(C)]` struct
 //! the CPU executor passes to the same body, so the two cannot disagree on
-//! the arguments, and they agree bitwise on the results (no fused
-//! multiply-adds in the PTX, IEEE division, the reductions in the fixed
-//! blocks and tree of D31).
+//! the arguments; every entry gives the CPU's bits (no fused multiply-adds
+//! in the PTX, IEEE division). The reductions differ: fixed blocks and tree
+//! here, exact sums on the CPU since MPI step W2, so whole runs agree to
+//! rounding, not bitwise, until v1.1 (owner decision of 2026-11-23).
 //!
 //! The linear solves run on the GPU backend of `foehncraft-fv`
 //! (`crate::fv::CudaBackend`) with device-to-device copies of the matrix,

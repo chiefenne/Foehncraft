@@ -46,11 +46,10 @@ pub trait Communicator {
     fn sum_exact_many(&self, locals: &[ExactSum]) -> Vec<f64> {
         let mut w: Vec<i64> = locals.iter().flat_map(|l| l.to_words()).collect();
         self.all_sum_i64(&mut w);
-        w.chunks_exact(WORDS)
-            .map(|c| {
-                let a: &[i64; WORDS] = c.try_into().expect("chunk of WORDS");
-                ExactSum::from_words(a).value()
-            })
+        w.as_chunks::<WORDS>()
+            .0
+            .iter()
+            .map(|a| ExactSum::from_words(a).value())
             .collect()
     }
 
