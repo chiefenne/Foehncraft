@@ -15,7 +15,9 @@ line (recipe 26).
 | `fluid.viscosity` | 1e-3 | dynamic viscosity μ (Pa s), or from `fluid.material`; an expression of x, y, z gives a viscosity that varies in space |
 | `fluid.material` | none | a material of `[materials]` or of the database (`foehn materials`), below |
 | `fluid.temperature` | 293.15 | the temperature at which the material properties are evaluated (K; isothermal until the energy equation) |
-| `fluid.operating_pressure` | 101325 | the pressure at which they are evaluated (Pa) |
+| `fluid.pressure_values` | `"absolute"` (format 0.7; older files `"gauge"`) | what every pressure value of the file is (D239): absolute static pressures, or `"gauge"` values relative to the operating pressure, p = p_op + p_gauge; the outputs follow the same convention ([recipe 220](../recipes/boundary-conditions.md#absolute-pressure)) |
+| `fluid.operating_pressure` | from the outlets (absolute values), 101325 (gauge values) | p_op (Pa): the level of the solver's gauge pressure and the pressure at which the properties are evaluated; with absolute values each fluid part takes it from its own pressure boundaries |
+| `regions.<name>.operating_pressure` | the part's own outlet | p_op of a fluid region's part (Pa); the reader sets it with absolute values |
 | `flow.convection` | true | false: Stokes flow |
 | `flow.body_force` | `[0, 0, 0]` | body force per unit volume (N/m³); each component a number or an expression of x, y, z, t |
 | `gravity.vector` | none | the gravitational acceleration g (m/s²); with it the solved pressure is the reduced pressure p′ = p − ρ_ref g·(x − x_ref) and the output has `static_pressure` p as well (D153, [recipe 186](../recipes/energy.md#buoyancy)) |
@@ -64,7 +66,7 @@ line (recipe 26).
 | `solver.pressure.preconditioner` | `"amg"` | `amg` (stage 3) or `jacobi` |
 | `solver.pressure.amg.*` | as `linear.amg.*` of the [Poisson cases](poisson.md#poisson-case-file-keys) | multigrid settings |
 | `solver.amg_rebuild` | 10 | rebuild the hierarchy every N outer iterations |
-| `case_format` | current (`"0.6"`; absent = `"0.5"`) | version of the case-file format; keys renamed later are mapped on reading and logged, `foehn case upgrade` rewrites the file |
+| `case_format` | current (`"0.7"`; absent = `"0.5"`) | version of the case-file format; keys renamed later are mapped on reading and logged, defaults changed later keep their old value in an older file (`fluid.pressure_values = "gauge"` before 0.7), `foehn case upgrade` rewrites the file |
 | `log.style` | `"asterisk"` | frames of the log: `asterisk` (horizontal rules only) or `box` (drawn with box characters); console and `flow.log` are identical, without colour |
 | `solver.log_every` | 10 | a log line every N outer iterations |
 | `schedule[].at_iteration` | none | steady: the iteration from whose start the values of `set` hold (one trigger per entry, entries in ascending order, D128) |

@@ -19,7 +19,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | [Passive scalars and the wall distance](gallery/scalars.md) | passive scalars carried by the flow, the bounded BDF2, the exact wall distance | 63, 211 |
 | [Energy equation and heat transfer](gallery/energy.md) | the energy equation of the fluid with temperature-dependent properties, viscous heating and thermal walls: a heated cavity, conduction with k(T), Couette flow heated by friction, conjugate heat transfer with solid regions, laminar and turbulent (a finned heat sink) | 154, 156, 158, 159, 160, 180, 190, 202, 208, 206, 186, 195 |
 | [Turbulence models](gallery/turbulence.md) | the RANS turbulence models of stage 6 with their wall treatments: k-ω SST on the TMR flat plate and in a channel | 68, 71, 73, 74, 88, 89, 90, 113, 115, 141, 140, 184, 194, 197, 193, 199, 204 |
-| [Boundary conditions](gallery/boundary-conditions.md) | slip walls, axisymmetric wedges, inlet profiles from tables, backflow at pressure outlets, convective outlets, periodic modules | 21, 67 |
+| [Boundary conditions](gallery/boundary-conditions.md) | slip walls, axisymmetric wedges, inlet profiles from tables, backflow at pressure outlets, convective outlets, periodic modules | 21, 67, 220 |
 | [Expressions and materials](gallery/properties.md) | boundary values, body forces and viscosities as expressions, the material database, regions, walls with a mass flux | 23 |
 | [Python](gallery/python.md) | cases built, run and studied from Python: expressions with Python operators, callbacks, study tables | 24 |
 | [Verification](gallery/verification.md) | the discretisation uncertainty of mesh sweeps (grid convergence index) and the generated verification manual | 25, 170 |
@@ -123,6 +123,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | <a id="two-fluids"></a>206 | [Water and oil in counterflow across a steel plate: two fluids in one conjugate case](gallery/energy.md#two-fluids) | [Energy equation and heat transfer](gallery/energy.md) |
 | <a id="cht-frozen-flow"></a>208 | [A heated wall warmed up with the flow held, and a pulsating channel warmed up by the cycle loop](gallery/energy.md#cht-frozen-flow) | [Energy equation and heat transfer](gallery/energy.md) |
 | <a id="mlp-limiter"></a>211 | [A step that stays a step: the MLP vertex limiter](gallery/scalars.md#mlp-limiter) | [Passive scalars and the wall distance](gallery/scalars.md) |
+| <a id="absolute-pressure"></a>220 | [Absolute pressures: two fluids at 1 bar and 1.5 bar](gallery/boundary-conditions.md#absolute-pressure) | [Boundary conditions](gallery/boundary-conditions.md) |
 
 ## Adding a feature
 

@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**105 features: 49 verified, 53 partial, 3 unverified.**
+**106 features: 49 verified, 54 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -117,6 +117,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Cases and properties | [Material database (air, water, oils, glycols)](#case-materials) | partial |
 | Cases and properties | [Settings that change on a schedule](#case-schedule) | partial |
 | Cases and properties | [Case checks and guidance (unknown keys, boundary checks)](#case-checks-guidance) | partial |
+| Runs and results | [Absolute or gauge pressure values, operating pressure per fluid part](#run-pressure-values) | partial |
 | Runs and results | [Restart and control files (.stop, .result_N, .read_toml_N)](#run-restart-control) | verified |
 | Runs and results | [Derived fields (vorticity, Q, λ₂, wall shear, y⁺, turbulence fields)](#run-derived-fields) | verified |
 | Runs and results | [Statistics of transient runs (mean, RMS, phase averages, confidence)](#run-statistics) | verified |
@@ -1390,6 +1391,27 @@ Gaps:
 - consistency: [`boundary_check_rejects_an_unbalanced_closed_domain`](../../crates/foehncraft-flow/tests/stage4.rs): an unbalanced closed domain is refused
 
 ## Runs and results
+
+<a id="run-pressure-values"></a>
+
+### Absolute or gauge pressure values, operating pressure per fluid part
+
+**partial** (gaps written) · id `run.pressure-values` · switch `[fluid] pressure_values` · decisions D239
+
+- consistency: [`cht_two_fluids_absolute`](../../examples/cases/flow/cht_two_fluids_absolute.toml): water at 1 bar and oil at 1.5 bar across a steel plate: each part takes its own outlet as its operating pressure, absolute field and boundary values (passes in CI (set linux-3), not yet in the manual) ([results](../gallery/boundary-conditions.md#absolute-pressure))
+- contract (bitwise): [`an_absolute_case_and_its_gauge_twin_run_the_same_bits`](../../crates/foehncraft-flow/tests/pressure_values.rs): an absolute channel at 1 bar and its gauge twin: the same residual history and mass flows, boundary pressures apart by p_op
+- contract (bitwise): [`two_parts_take_their_own_outlet_pressures`](../../crates/foehncraft-flow/tests/pressure_values.rs): two fluid parts at 1 and 1.5 bar against the gauge twin with region operating pressures: the same bits
+- consistency: [`older_files_keep_meaning_gauge`](../../crates/foehncraft-flow/tests/pressure_values.rs): files of format 0.6 and without a format read as gauge values with a note
+- consistency: [`a_changed_default_keeps_the_meaning_of_older_files`](../../crates/foehncraft-mesh/src/case_format.rs): the changed default goes into older flow cases only, `foehn case upgrade` writes it
+- contract (diagnostics): [`an_absolute_zero_is_refused`](../../crates/foehncraft-flow/tests/pressure_values.rs): an absolute 0 Pa is refused with PRS001 and the hint `pressure_values = "gauge"`
+
+Gaps:
+
+- `[output.coefficients] reference_pressure` (an absolute reference of the pressure coefficient) is not built
+- the vapour-pressure warning of a liquid is not built (no material has a vapour pressure yet)
+- a pressure boundary shared by two fluid parts takes the operating pressure of the first part
+
+Contracts: `bitwise`, `diagnostics`.
 
 <a id="run-restart-control"></a>
 
