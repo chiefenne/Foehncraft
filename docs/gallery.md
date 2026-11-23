@@ -13,7 +13,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | Page | What it covers | Examples |
 |---|---|---|
 | [Kernel benchmarks and GPU runs](gallery/benchmarks.md) | gate G1 on CPUs and GPUs, on box, polyhedral and tetrahedral meshes, and the flow loop on a GPU | 1, 2, 7, 16 |
-| [Meshes](gallery/meshes.md) | the built-in test mesher in 2D and 3D, partitioning, the Gmsh reader and flow on poor Gmsh meshes | 3, 4, 5, 6, 26, 127, 129, 134, 138, 189, 200 |
+| [Meshes](gallery/meshes.md) | the built-in test mesher in 2D and 3D, partitioning, the Gmsh reader and flow on poor Gmsh meshes | 3, 4, 5, 6, 26, 127, 129, 134, 138, 189, 200, 219 |
 | [Scalar transport and the pressure solver](gallery/scalar-pressure.md) | convection–diffusion order of accuracy, convection schemes and limiters, the pressure multigrid | 8, 9, 10, 11 |
 | [Incompressible flow](gallery/flow.md) | steady and transient laminar verification and benchmarks: cavity, Poiseuille, Taylor–Green, cylinder, time-step control | 12, 13, 14, 15, 20, 78, 80, 81, 83, 85, 86, 87, 94, 95, 96, 98, 99, 100, 101, 102, 103, 196 |
 | [Passive scalars and the wall distance](gallery/scalars.md) | passive scalars carried by the flow, the bounded BDF2, the exact wall distance | 63, 211 |
@@ -123,6 +123,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | <a id="two-fluids"></a>206 | [Water and oil in counterflow across a steel plate: two fluids in one conjugate case](gallery/energy.md#two-fluids) | [Energy equation and heat transfer](gallery/energy.md) |
 | <a id="cht-frozen-flow"></a>208 | [A heated wall warmed up with the flow held, and a pulsating channel warmed up by the cycle loop](gallery/energy.md#cht-frozen-flow) | [Energy equation and heat transfer](gallery/energy.md) |
 | <a id="mlp-limiter"></a>211 | [A step that stays a step: the MLP vertex limiter](gallery/scalars.md#mlp-limiter) | [Passive scalars and the wall distance](gallery/scalars.md) |
+| <a id="exact-reductions"></a>219 | [Sums that do not care how many ranks there are: exact reductions](gallery/meshes.md#exact-reductions) | [Meshes](gallery/meshes.md) |
 | <a id="absolute-pressure"></a>220 | [Absolute pressures: two fluids at 1 bar and 1.5 bar](gallery/boundary-conditions.md#absolute-pressure) | [Boundary conditions](gallery/boundary-conditions.md) |
 | <a id="start-values"></a>221 | [Start values per region and per fluid part: every domain of an exchanger starts on its own](gallery/energy.md#start-values) | [Energy equation and heat transfer](gallery/energy.md) |
 
