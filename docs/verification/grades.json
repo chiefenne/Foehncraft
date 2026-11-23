@@ -170,6 +170,7 @@
     "not the default: Venkatakrishnan stays the limiter of the scalars and the energy equation until a full validation run",
     "ε = 0 and the per-cell ε can stall a steady run (the T-junction from the medium mesh on)",
     "on a smooth manufactured solution on polyhedra the error with R3 is 2.5 times the unlimited one (second order kept)",
+    "bounds the reconstruction, not a stalled steady iteration: the water of the heat exchanger (application 203) falls to 15.7 °C in a few end-chamber cells, below its 20 °C inlet",
     "not run on a GPU"
    ],
    "range": {}
