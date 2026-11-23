@@ -33,7 +33,7 @@ one steady conjugate case, with the water in coflow and in counter flow.
 | Run cost | meshing 40 s (level 0) to 2 min (level 2) on one core; the flow on level 0, 2 500 iterations in 90 min on four cores |
 | Confidence | **demonstration**: one mesh (level 0), the water-side heat flows not settled (C3), see the check card |
 | Boundary conditions | hot air in through `shell_nozzle_front` at 15 m/s and 300 °C, out through `shell_nozzle_rear` at 1.5 bar; water in through a top nozzle at 5 m/s and 20 °C, out through the other at 1 bar; housing outside at 25 °C; everything starts at rest |
-| Case files | `applications/shell_tube_hx/mesh.toml` (mesh check); `case_coflow.toml` (water in at `tube_nozzle_front`, the air's end) and `case_counterflow.toml` (water in at `tube_nozzle_rear`); `flow_images.py` draws the flow images |
+| Case files | `applications/shell_tube_hx/mesh.toml` (mesh check); `case_coflow.toml` (water in at `tube_nozzle_front`, the air's end) and `case_counterflow.toml` (water in at `tube_nozzle_rear`); `flow_images.py` draws the flow and steel images |
 
 ### The mesh
 
@@ -144,6 +144,40 @@ within the swing of the iterations. The water also takes up the heat that
 enters through the outer housing face, held at 25 °C above the 20 °C of
 the water: 0.8 kW, almost half of the air's heat.
 
+### Steel temperatures
+
+<img src="../figures/applications/hx_steel_cutaway.png" alt="Cut-away of the exchanger, the housing cut open at x = 0 around the whole tube bundle, coloured by the steel temperature from 20 to 30 °C: the tubes and the tubesheets dark at 20 to 24 °C, the rims of the three baffles and the housing near the air nozzles warmer, up to about 27 °C" width="800" height="507">
+
+*Coflow, iteration 3 250: the housing cut open at x = 0 around the whole
+tube bundle. The colour range is 20 to 30 °C, not the 15 to 300 °C of the
+flow images: the steel stays within a few kelvin of the water.*
+
+<img src="../figures/applications/hx_steel_bundle.png" alt="The tube bundle alone from the other side, coloured by the steel temperature from 20 to 30 °C: seven dark tubes near 21 °C, the two tubesheets at 21 to 24 °C, the three segmental baffles warmest at their rims and their cut edges, about 26 to 27 °C" width="800" height="527">
+
+*The bundle from the other side: the tubes, the two tubesheets and the
+three baffles.*
+
+| Part | Coflow: min / mean / max (°C) | Counter flow: min / mean / max (°C) |
+|---|---|---|
+| Tubes | 20.4 / 21.4 / 24.0 | 20.3 / 21.4 / 24.2 |
+| Tubesheets | 20.7 / 22.3 / 24.5 | 20.4 / 22.2 / 24.8 |
+| Baffles | 22.0 / 23.9 / 27.3 | 21.9 / 23.9 / 27.6 |
+| Housing | 21.3 / 24.9 / 27.7 | 21.4 / 24.9 / 27.7 |
+
+The steel follows the water, not the air. The water at 5 m/s takes up heat
+far better than the air gives it off, so the tube walls sit within about 4 K
+of the 20 °C water while the air around them is at 120 to 300 °C. All
+parts are warmest near the air inlet, where the path to the water is
+longest: the housing where the inlet nozzle joins the shell (27.7 °C),
+the rim of the first baffle, far from the tubes (27.3 °C), and the ends
+of the tubes at the front tubesheet (24.0 °C). The baffles are warmer at
+their rims and cut edges than between the tubes. The housing is held at
+25 °C on its outer face; inside the end chambers the water cools it to
+about 21 °C. Coflow and counter flow differ by 0.15 K on average in the
+steel and by at most 1.5 K in a single cell. The values are cell values
+of the level 0 mesh, whose walls are only a few cells thick (a
+demonstration, like the rest of the entry).
+
 ### Check card
 
 | Check | Result |
@@ -172,6 +206,11 @@ pressure drop downstream are too high (variable density with several
 fluids comes with MF-B of D194). With these flow rates the two cases cannot
 show a difference between coflow and counter flow (C_r ≈ 0, see above);
 water slow enough for C_r near 1 is laminar and waits for turbulence
-models per fluid region (MF-C of D194).
+models per fluid region (MF-C of D194). The water is not strictly
+bounded: in the slow recirculation of the end chambers 145 of its
+137 791 cells (coflow; 230 in counter flow) lie below 19.5 °C, the lowest
+at 15.7 °C, below its 20 °C inlet; the vertex limiter bounds the
+reconstruction, not the stalled steady iteration. The air stays within
+0.5 K of its 300 °C inlet.
 
 Recipe: [203](../recipes/applications.md#shell-tube-hx-recipe).
