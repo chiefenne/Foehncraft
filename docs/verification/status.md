@@ -1136,8 +1136,9 @@ Gaps:
 
 - V7.33 in its planar form only (no double pipe, no thin-wall run: thin walls between fluids come with MF-D)
 - V7.34 (closed parts with their own reference and p₀) and V7.35 (tube-and-fin cell) not built yet (MF-B, MF-D)
-- variable density, gravity, rotating zones, passive scalars and the coupled solver refused with several fluids (REG006)
+- variable density, gravity, rotating zones and passive scalars refused with several fluids (REG006)
 - one turbulence model for all fluids (models per region: MF-C)
+- the shell and tube exchanger (application 203) is a demonstration: one mesh, the water-side heat flows swing by a few percent (C3), constant fluid properties, no comparison with a tube-bank correlation
 
 <a id="cht-turbulent"></a>
 

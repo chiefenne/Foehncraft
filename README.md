@@ -41,9 +41,12 @@
     <td><a href="docs/gallery/flow.md#turbulent-rotor"><img src="assets/readme/stirred_vessel_mrf.jpg" alt="Speed and streamlines in a turbulent stirred vessel with a five-blade rotor and three baffles, moving reference frame" width="300" height="200"></a></td>
     <td><a href="docs/gallery/flow.md#several-rotors"><img src="assets/readme/twin_rotors_vorticity.jpg" alt="Vorticity of two rotors with three and five blades turning at their own speeds on a sliding mesh" width="300" height="200"></a></td>
   </tr>
+  <tr>
+    <td colspan="3"><a href="docs/applications/heat-exchangers.md#shell-tube-hx"><img src="assets/readme/heat_exchanger_temperature.jpg" alt="Temperature on a section through a shell and tube heat exchanger: hot air at 300 °C cools across the baffle compartments around water-cooled steel tubes" width="900" height="300"></a></td>
+  </tr>
 </table>
 
-<sub>Real results of Foehncraft, each linked to its gallery entry: the Kármán vortex street (Schäfer &amp; Turek benchmark); the lid-driven cavity on a million polyhedra; a T-junction and a pin-fin array on Gmsh tetrahedra; a turbulent jet on a heated plate (k-ε-ζ-f₀); a stirred vessel in water with k-ω SST and the moving reference frame; two rotors on a sliding mesh.</sub>
+<sub>Real results of Foehncraft, each linked to its gallery entry: the Kármán vortex street (Schäfer &amp; Turek benchmark); the lid-driven cavity on a million polyhedra; a T-junction and a pin-fin array on Gmsh tetrahedra; a turbulent jet on a heated plate (k-ε-ζ-f₀); a stirred vessel in water with k-ω SST and the moving reference frame; two rotors on a sliding mesh; a shell and tube heat exchanger with hot air, water and steel in one conjugate case.</sub>
 
 ## What works today
 
@@ -152,7 +155,9 @@ validated range, one mesh only, …) in its report and its JSON result.
   the temperature at which it is evaluated, beside any number of solids;
   fluids that touch only through solids are separate parts of the flow,
   each with its own pressure level; a water / oil counterflow exchanger
-  across a steel plate meets ε–NTU to 0.07 %.
+  across a steel plate meets ε–NTU to 0.07 %, and a shell and tube
+  exchanger runs hot air, water and steel in one case on 0.48 M
+  tetrahedra (application 203, a demonstration on one mesh).
 - **Gravity and buoyancy.** `[gravity]` and the Boussinesq buoyancy
   (`[buoyancy] model = "boussinesq"`) in SIMPLEC and the coupled algorithm.
   The solver works with the reduced pressure p′ = p − ρ_ref g·(x − x_ref)
