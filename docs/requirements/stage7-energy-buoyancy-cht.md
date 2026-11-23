@@ -987,7 +987,10 @@ region's properties are taken, not a start value.
    operating_pressure`, so that the gauge values of each part refer to its
    own absolute level (the water at 1 bar beside the air at 1.5 bar) and the
    ideal-gas density of each gas comes from the absolute pressure of its own
-   part. The case-wide `[fluid] operating_pressure` stays the default.
+   part. The case-wide `[fluid] operating_pressure` stays the default for
+   gauge values; with absolute values (the default of D239) each part takes
+   its operating pressure from its own pressure boundaries and the user does
+   not set one.
 4. **Temperature per region:** a number or an expression, or for a fluid
    part `temperature = "inlet"`, the mass-flow weighted mean of its inlet
    temperatures. The default stays `[energy] initial`.
@@ -1740,7 +1743,7 @@ energy to round-off).
 | V7.33 | Laminar double-pipe counterflow exchanger: water in the inner tube, an oil in the annulus, the tube wall meshed (copper) and, second run, as a thin wall | outlet temperatures, heat duty, effectiveness | thin wall within 0.5 % of the meshed wall; effectiveness against ε–NTU with the fully developed Nusselt numbers of Shah & London (1978), within 2 % for a long exchanger; ledger closes to round-off between the two fluids and the wall |
 | V7.34 | Three fluid parts and four materials in one case (two closed, one open), one closed part without reference | pressure levels per part, REG003 | each part reaches its own reference; the refused set-up gives REG003; results of each part equal to the part run alone (bitwise) |
 | V7.35 | Tube-and-fin exchanger cell: one row of three tubes (water) with plate fins (aluminium, as shell thin walls joined to the tube walls) in air, periodic in the fin pitch | heat duty, fin efficiency, air-side pressure drop | fin efficiency against the straight-fin formula where it applies (±2 %); duty equal from the water side, the air side and the ledger to the solver tolerance; GCI ≤ 2 % |
-| V7.45 | Start values per part (D238): two fluid parts across a solid plate (the case of `cht_counterflow_two_fluids`), outlets at 1.0·10⁵ Pa and 1.5·10⁵ Pa as gauge values; a third run with a total-pressure inlet and a static-pressure outlet in one straight channel | the start fields at iteration 0, the largest face speed of the first iteration, the converged fields | every cell of each part starts at its own outlet value exactly; the channel starts linear between its two boundaries to the solver tolerance; the largest face speed of the first iteration within twice the largest inlet speed (the uniform start at 0 is reported beside it); converged fields equal to those of the uniform start to the solver tolerance; cases without the new keys unchanged (bitwise) |
+| V7.45 | Start values per part (D238): two fluid parts across a solid plate (the case of `cht_counterflow_two_fluids`), outlets at 1.0·10⁵ Pa and 1.5·10⁵ Pa, as absolute values (D239) and, second run, as gauge values (the solved gauge fields bitwise the same); a third run with a total-pressure inlet and a static-pressure outlet in one straight channel | the start fields at iteration 0, the largest face speed of the first iteration, the converged fields | every cell of each part starts at its own outlet value exactly; the channel starts linear between its two boundaries to the solver tolerance; the largest face speed of the first iteration within twice the largest inlet speed (the uniform start at 0 is reported beside it); converged fields equal to those of the uniform start to the solver tolerance; cases without the new keys unchanged (bitwise) |
 | V7.46 | Patches from mesh volume selections (D238, later): a solid block with a cube-shaped cell zone and an overlapping cell set, a hot patch on each, transient conduction | the start field, the heat content at t = 0, the ledger | each patch holds exactly in its cells, the later one where they overlap; the heat content at t = 0 equals Σ ρ c_p V (T − T_ref) of the patches to round-off; a restart ignores the patches (bitwise continuation) |
 
 ### 14.3c Turbulent, transient and cycle-averaged conjugate heat transfer (7d5, 7d6, D204)
