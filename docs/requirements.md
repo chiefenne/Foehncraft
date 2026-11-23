@@ -456,7 +456,7 @@ heat transfer), and v1.0 at the end of stage 8. Every stage ends with:
   maintainer, marked `gpu`; long runs marked `slow`);
 - a gallery example, case files and a recipe for each new feature (D18);
 - updated documentation and `CHANGELOG.md` (D46);
-- a Git tag `v0.<stage>`.
+- a Git tag `v0.<stage>` (from release 1.0.0 on: `v<major>.<minor>.<patch>`, for example `v1.0.0`).
 
 | Stage | Content | Tests, acceptance |
 |-------|---------|-------------------|
@@ -480,7 +480,7 @@ v0.7 is tagged and the clean-room replacement of other solvers' numbers (E1 to E
 2. Cell-quality remediation (D50): automatic remediation of skewed cells with the bounded face velocity, also on the D45 cases (gallery 26, #146, #201). The other metrics of D50 stay open.
 3. Absolute pressure values by default, gauge optional (D239, case format 0.7; decided 2026-11-23: before v1.0, so that the case format is stable from the first release on). Done (#220). Start values per region and per fluid part (D238). Done (#221).
 4. Exact reductions (MPI step W2, D31 (1), D93 (4)): CPU dot products, norms, min/max and the flow sums are bitwise the same on any number of threads. Done (#219, with the canonical local mesh of W1, #200).
-5. User documentation, changelog on top, tag `v1.0`.
+5. User documentation, changelog on top, tag `v1.0`. Done: release 1.0.0 on 2026-11-23 (#223, tag `v1.0.0`); docs and links reviewed after the release (#PRNUM).
 
 **After v1.0 (v1.1 unless stated):** multi-rank MPI, moved from v1.0 on 2026-11-23 (maintainer decision): W3 onward of the [sizing](assessments/mpi-multi-rank-sizing.md) (distributed assembly and multigrid, the flow engine on ranks, output and restart on another rank count, `foehn run --ranks N`, everything on ranks including periodic faces, MRF, sliding interfaces and CHT views), overlapped halo exchange (D38), the reproducible mode across ranks (D31, D93), GPU exact sums and GPU-aware MPI, and the scaling measurements (O12); W1 and W2 are on `main` already. The regenerated verification manual (the last run is of 0.6.0). 7b2 laminar natural convection (cavity Ra 1e3 to 1e6, plate, mixed convection; heated D45 cases with SGDH: pipe, T-junction with hot and cold inflow), moved from v1.0 on 2026-11-23; finding of the state check that day: the planned cavity references (de Vahl Davis, Le Quéré) are numbers from other codes, excluded as bands by D201, so the cavity is graded on its own GCI and the exact energy balance with those values shown as context only (the Ostrach plate is a similarity solution we solve ourselves; Aung and Worku still to check); not sized yet. 7b3 transient buoyancy, 7e1 to 7e4 (turbulent buoyancy, GGDH, heated step, high-Pr closures; GGDH and 7e4 data questions stay open), 7a2, 7a3, 7d3 general non-matching interfaces, 7d4, 7t2 shell conduction and baffles, D54, L20 compare runs, L21 headless previews. L13 stages 2 to 5 and adjoint A1 onward come after v1.0; the adjoint A0 spike and L13 stages 0 and 1 may run beside stage 8 when the maintainer gives the go.
 

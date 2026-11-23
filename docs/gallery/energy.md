@@ -628,6 +628,10 @@ target/release/foehn flow examples/cases/flow/cht_pulsating_channel_warmup.toml 
     --set energy.cycle.enabled=false
 pip install matplotlib h5py numpy
 python3 -m tools.plot.cht_frozen docs/figures/gallery output/frz output/frz_ref output/wu output/wu_ref
+```
+
+---
+
 <a id="two-fluids"></a>
 ## 206. Water and oil in counterflow across a steel plate: two fluids in one conjugate case
 

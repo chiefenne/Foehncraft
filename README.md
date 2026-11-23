@@ -46,11 +46,13 @@
 
 ## What works today
 
-Everything below is on `main`, verified by the cases of the
-[verification manual](docs/verification/manual.md) and shown in the
+Everything below is in release 1.0.0 and on `main`, checked by the
+verification cases of the [case catalogue](docs/cases.md) and shown in the
 [gallery](docs/gallery.md). How well each feature is checked (verified,
 partial or unverified, with the evidence and the known gaps) is on the
-[verification status](docs/verification/status.md) page, and every run
+[verification status](docs/verification/status.md) page (the generated
+[verification manual](docs/verification/manual.md) was last run on 0.6.0;
+its regeneration is in v1.1), and every run
 lists its limitations (a partial feature in use, a value outside the
 validated range, one mesh only, …) in its report and its JSON result.
 
@@ -387,7 +389,7 @@ Innsbruck since the early twentieth century. The command is `foehn`.
 
 ## Contributing
 
-The project is at stage 6 and has one maintainer. Comments on the
+The project is at release 1.0.0 (milestone 1) and has one maintainer. Comments on the
 requirements are welcome as GitHub issues. [CONTRIBUTING.md](CONTRIBUTING.md)
 has the rules every pull request follows, among them that it keeps this
 README and the documentation up to date with what it changes.

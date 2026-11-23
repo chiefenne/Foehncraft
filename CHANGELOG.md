@@ -4,6 +4,86 @@
 
 Nothing yet.
 
+## Summary
+
+| Version | Stage | Highlights |
+|---|---|---|
+| 1.0.0 (2026-11-23) | 8 (part) Milestone 1 | The internal-flow cases of D45 (pipe, plane diffuser, U-bend, T-junction on polyhedra) with grid convergence, several fluids in one conjugate case (D194), gravity, Boussinesq buoyancy and the low-Mach variable density (7b1, 7c), absolute pressure values and per-region start values (D239, D238; case format 0.7 stable), the cycle-averaged loop and the frozen-flow march for slow thermal transients (D204, D118), the operator exactness check with quadratic fits (D236), the MLP vertex limiter (D237), exact CPU reductions (MPI W1, W2). **Pipe u_τ +4.5 % from DNS (GCI 0.2 %); diffuser reattachment GCI 0.36 %; U-bend separation GCI 0.19 %; stratified box at rest to 10⁻¹⁵ m/s; closed box p₀(t) exact; warm-ups in a tenth of the steps within 0.06 K.** Gallery 186–221, recipes up to 221 |
+| 0.7 (2026-11-22) | 7 (part) Energy, conjugate heat transfer, agents | Energy equation of the fluid with temperature-dependent properties, conjugate heat transfer with solid regions (steady and transient, laminar and turbulent, contact resistances, orthotropic solids, heat sources, thermal acceleration of solids), the tool registry, journal and replay, the MCP server `foehn mcp`, run limits and budgets, the live control port, run limitations from the verification status page, manufactured solutions of every turbulence model, the clean-room rework of the reference numbers. **CHT checks exact to round-off (V7.4, V7.6 to 10⁻¹² K, V7.36 to 10⁻⁴); heat balance closes to 10⁻¹¹ in every step; thermal acceleration ends within 0.2 % of the steady solution.** Gallery 131–184, recipes up to 184 |
+| 0.6 (2026-11-20) | 6 RANS turbulence, heat transfer, rotating machinery | Six RANS models: k-ω SST 2003 (with the curvature and rotation correction and QCR2000/QCR2013), standard and realizable k-ε, k-ε-ζ-f, k-ε-ζ-f₀ and the elliptic-blending k-ε; wall treatments `low-re`, `automatic`, `scalable`, `standard`, `compound`, `compound-2023` and rough walls; passive scalars with turbulent diffusivity and thermal wall functions (also for high Prandtl numbers); periodic boundaries; rotating machinery with the moving reference frame, sliding meshes (conformal stepping and imprinted interfaces of any shape of revolution, several rotors), torque, shaft power and machine performance; the coupled pressure–velocity algorithm with pseudo-time steps and multigrid for momentum and turbulence; SU2, OpenFOAM, CGNS, industry `.msh` and VTK mesh readers; derived turbulence fields, transient statistics, the grid convergence study of the models; the new log, case format 0.6 and `[[schedule]]`. **TMR flat plate C_f +0.37 % (SST) and within −2.6 to +2.4 % for first-cell y⁺ 0.24 to 85; channel at Re_τ 395 U_b⁺ −0.7 % (SST) and EB C_f 97.8–99.1 % of DNS; backward-facing step x_r/H +0.5 % (k-ε against the published k-ε) and +0.6 % (k-ε-ζ-f₀ against the experiment); impinging jet Nu₀ −0.2 % (SST); heated channel Nu within −2.6 to +1.0 % of DNS; GPU bitwise equal to the CPU for 14 turbulence cases on a Tesla T4; the coupled algorithm settles the step in about 70 instead of 600 iterations.** Gallery 26–134, recipes 36–134 |
+| 0.5 (2026-11-16) | 5 Transient flow, run control, Python | Transient incompressible flow: PISO with variable-step BDF2 and Crank–Nicolson, outer correctors for large time steps, a time step from the integration error, output at exact times, restart files and control files; the whole flow loop on NVIDIA GPUs; adjoint-ready kernels (dual numbers, transposed matrices, checkpointing); the run contract for scripts and agents (`--json`, `--set`, `result.json`, run record, exit codes and signals, case schema, diagnostic codes, estimate, limits, provenance); the conservation ledger and the divergence report; the bounded central scheme and the boundary conditions of D29 (slip, wedge, tables, backflow, convective outlet); derived fields; expressions, the material database and regions; the Python package `foehncraft` with studies; the grid convergence index of every sweep and a generated verification manual; all scripts in Python. **Taylor–Green time order 2.0–2.4 and space order 2.1; Schäfer & Turek 2D-1 inside all reference ranges, C_D extrapolated to 5.5797 ± 0.0004 from three meshes; GPU flow loop bitwise equal to the CPU on a Tesla T4 (722 ns per cell and iteration on 970 225 polyhedra); a case built in Python is bitwise its TOML file.** Commands `foehn materials`, `foehn post derive`, `foehn schema`; gallery 14–25, recipes 21–35 |
+| 0.4 (2026-11-15) | 4 Laminar steady flow | First flow solver: steady incompressible laminar flow with SIMPLEC (and SIMPLE) on polyhedral meshes, relaxation-independent Rhie–Chow interpolation (Majumdar 1988), CG + AMG for the pressure correction, boundary conditions of D29 (walls also moving, velocity and mass-flow inlets, static and total pressure inlets and outlets, symmetry) with a check of their combination and guidance (D30), TOML case file with "did you mean" (D39), log, CSV, wall and line output (D43). **Couette exact to the iteration tolerance on all mesh types; Poiseuille observed order 1.80–2.00; lid-driven cavity within 0.4–1.4 % of Ghia et al. at Re 100 and 1000 in 2D and within 2.5 % on 3D tetrahedra and polyhedra.** New crate `cfdcraft-flow`, command `cfdcraft flow`, thirteen case files, gallery 12–13, recipes 18–20. CPU only; the GPU flow loop follows with stage 5 |
+| 0.3 (2026-11-14) | 3 Pressure solver | Pressure linear solver: smoothed-aggregation algebraic multigrid as the preconditioner of CG (Vaněk, Mandel, Brezina 1996), symmetric V-cycle with Chebyshev or Jacobi smoothing, float32 hierarchy with float64 Krylov iteration (mixed precision, D37), one kernel source for the CPU and the NVIDIA GPU, optional hypre 3.2.1 reference (BoomerAMG-PCG, built from source). **10–13 iterations from 512 to 274 625 cells on all mesh types; same solution as hypre to 1.6e-9; on a Tesla T4 6.5 ns per cell and iteration against 10.5 for hypre at 912 673 cells, all GPU results bitwise equal to the CPU.** New command `cfdcraft poisson`, four Poisson case files, gallery 10–11, recipes 15–17 |
+| 0.2 (2026-11-14) | 2 Operators on a scalar equation | Finite-volume operators on a scalar transport equation, one source for the CPU and the NVIDIA GPU: least-squares gradients (exact for linear fields, error 6e-15 on all mesh types), linear upwind with Venkatakrishnan and Venkatakrishnan–Wang limiters (no new extrema at K = 0), over-relaxed non-orthogonal diffusion, reproducible gather-based assembly into sliced ELL, BiCGStab. Observed order 1.87–2.08 on hex, tet, poly and mixed meshes in 2D and 3D. **GPU and CPU results bitwise equal on a Tesla T4** (912 673 polyhedra, 311 ns per cell and iteration). New command `cfdcraft scalar`, seven case files, gallery 8–9, recipes 12–14 |
+| 0.1 (2026-11-14) | 1 Mesh | Polyhedral face-based mesh with exact geometry (every cell closed to 1e-15, volumes exact), Gmsh 4.1 reader, built-in test mesher (hex, tet, poly, mixed; 2D and 3D; graded, refined, perturbed), quality report, VTKHDF output for ParaView, METIS and RCB partitioning with a solver-ready halo layout and multi-field halo exchange (tested over MPI on 2–4 ranks), particle point location on all mesh types, golden-value test matrix, `cfdcraft mesh` command. G1 rerun on polyhedral and shuffled meshes: bitwise equal; quiet-machine verdict open (O15) |
+| 0.0 (2026-11-14) | 0 Foundations and gate G1 | Cargo workspace, CI on Linux, macOS and Windows with MPI runs on 4 ranks, the G1 kernel benchmark. **G1 GPU verdict passed on a Tesla T4: single-source Rust kernels within 1.0 % of hand-written CUDA C, bitwise equal results**; **CPU verdict passed on an i9-9900K: single-source bodies within 1.8 % of hand-written loops, in two runs** |
+
+Release 1.0.0 is milestone 1: incompressible and low-Mach flow, steady
+and transient, laminar and RANS, with the energy equation, conjugate heat
+transfer with several fluids and solids, buoyancy and rotating machinery,
+on CPUs and NVIDIA GPUs in one process, verified case by case on the
+[verification status](docs/verification/status.md) page. Multi-rank MPI,
+natural-convection benchmarks and the rest of stage 7 follow in 1.1
+(requirements section 7a). The Cargo version of the crates and of the
+Python package is now 1.0.0; the release is the Git tag `v1.0.0` (D46).
+
+Release 0.7 is the first part of stage 7: the energy equation of the
+fluid, conjugate heat transfer with solid regions and the tools for agents
+(registry, MCP server, live control port). Buoyancy and variable density
+follow in later releases. The Cargo version of the crates is now 0.7.0;
+the release is the Git tag `v0.7` (D46).
+
+Release 0.6 closes stage 6: all six turbulence models, the wall
+treatments, passive scalars with thermal wall functions and rotating
+machinery are verified on the cases of the stage plan (TMR flat plate,
+channel against DNS, heated channel and pipe, backward-facing step of
+Driver & Seegmiller, impinging jet of the ERCOFTAC database,
+Taylor–Couette flow, stirred vessels), with the findings and the open
+points listed under "Known limits" of the 0.6 section and in the
+[stage 6 verification notes](docs/verification/stage6.md). The generated
+[verification manual](docs/verification/manual.md) lists every case with
+its pass bands. The Cargo version of the crates is now 0.6.0; the release
+is the Git tag `v0.6` (D46).
+
+Release 0.5 closes stage 5: the acceptance checks of the stage plan pass
+(Taylor–Green time and space order 2, also at Courant number 9 with outer
+correctors; the cylinder benchmark of Schäfer & Turek, at Re 20 inside all
+reference ranges, at Re 100 with C_L,max 0.5 % below its range on 24 576
+cells; restart bit-identical; expressions from TOML and from Python
+give the same run; the energy budget of the cavity closes; the GPU flow
+loop gives bitwise the CPU results). The generated
+[verification manual](docs/verification/manual.md) lists every case with
+its pass bands. The Cargo version of the crates is now 0.5.0; the release
+is the Git tag `v0.5` (D46).
+
+Release 0.4 closes stage 4: all acceptance tests of the stage plan pass
+(Couette at round-off, that is at the iteration tolerance; Poiseuille order
+1.8–2.2 on all mesh types; lid-driven cavity in 2D and 3D at Re 100 and 1000
+against Ghia et al.). The Cargo version of the crates is now 0.4.0; the
+release is the Git tag `v0.4` (D46).
+
+Release 0.3 closes stage 3: all acceptance tests of the stage plan pass
+(iteration count nearly independent of the mesh size, same converged result
+as hypre, GPU time per cell compared with hypre and reported). The Cargo
+version of the crates is now 0.3.0; the release is the Git tag `v0.3` (D46).
+
+Release 0.2 closes stage 2: all acceptance tests of the stage plan pass
+(exact gradients, no new extrema, observed order 1.8–2.2 on all mesh types,
+bitwise reproducible results, GPU and CPU bitwise equal on a Tesla T4). The
+Cargo version of the crates is now 0.2.0; the release is the Git tag `v0.2`
+(D46).
+
+Release 0.1 closes stage 1: all acceptance tests of the stage plan pass
+(closed cells, exact volumes, Gmsh files from Gmsh load, VTKHDF files load
+with VTK's reader, point location on all mesh types). The Cargo version of
+the crates is now 0.1.0; the release is the Git tag `v0.1` (D46).
+
+Release 0.0 closes stage 0: both verdicts of gate G1 are in (GPU: Tesla T4,
+CPU: i9-9900K, 2026-11-14, both PASS; O13 closed). The Cargo version of the
+crates stays 0.0.0; the release is the Git tag `v0.0` (D46).
+
+---
+
 ## 1.0.0 (2026-11-23) – milestone 1: a general purpose incompressible solver with heat transfer
 
 **Foehncraft 1.0 in one paragraph.** A finite-volume solver for
@@ -292,8 +372,8 @@ generated verification manual was last run on 0.6.0.
 - **Shell and tube heat exchanger with two fluids (application 203, D194).** The exchanger runs hot air (300 °C, 15 m/s, out against 1.5 bar) on the shell side, water (20 °C, 5 m/s, out against 1 bar) on the tube side and carbon steel in one steady conjugate case, coflow and counter flow, on the level 0 mesh (477 921 tetrahedra) with k-ω SST, the coupled solver and the vertex limiter of D237. The air gives up 1.72 kW in both cases and leaves at about 124 °C (ε = 0.63, NTU 0.99); with the water carrying 2 600 times the heat capacity flow of the air (C_r = 3.8·10⁻⁴) the flow arrangement drops out, as ε-NTU says. A demonstration: one mesh, and the water-side heat flows swing by a few percent with the residuals stalled near 10⁻³. New `flow_images.py` draws the temperature and speed sections; recipe 203 gives the run commands; a README teaser.
 - **Steel temperatures of the shell and tube exchanger (application 203).** Two new images show the housing, the tubesheets, the tubes and the baffles coloured by temperature (20 to 30 °C), with a table of each part in coflow and counter flow: the steel follows the water, within about 4 K of its 20 °C, and is warmest near the air inlet (the housing at the inlet nozzle 27.7 °C, the rim of the first baffle 27.3 °C). The coflow images and the README teaser are redrawn from the state at iteration 3 250: the earlier ones were drawn one iteration after a restart, which reset the memory of the vertex limiter and let the air in the inlet nozzle overshoot to 360 °C for that iteration. The limits now say that the water in the end chambers falls to 15.7 °C in a few cells, below its 20 °C inlet.
 - **Restart with the vertex limiter (D237).** With `limiter = "mlp"` the relaxation (`limiter_relaxation`) carries the limiter value ψ from one outer iteration to the next, so ψ is part of the state: restart.h5 now holds it (`scalar_psi_<name>` for the passive scalars, `cht_psi` for the energy of a conjugate case), and a run continued from it ends bit-identically to one without the interruption. Before, a restart started from ψ = 1 and its first iteration overshot: the air in the heat exchanger's inlet nozzle went up to 360 °C (inlet 300 °C) and settled again within 150 iterations. A file written by an older version still reads and starts from ψ = 1.
-- **Start values per region and per fluid part (D238, requirement).** Each domain of a multi-region case gets its own start values (`[regions.<name>.initial]`); by default every fluid part starts at the pressure of its own pressure boundaries (a Laplace solve between several values), with the operating pressure per part from MF-B. Later: start values on volume selections of the mesh (cell zones, named cell sets, the regions of D73). Specified in stage 7 §9c.4 with codes REG007–REG010 and checks V7.45 and V7.46; not built yet.
-- **Pressure values absolute by default, gauge optional (D239, requirement).** From case format 0.7 every pressure value in a case file is an absolute static pressure unless `[fluid] pressure_values = "gauge"`; the solver keeps solving the gauge part against an operating pressure that each fluid part takes from its own boundaries, and older files keep their gauge meaning (and their results) through a new changed-default rule of `foehn case upgrade`. Not built yet.
+- **Start values per region and per fluid part (D238, requirement).** Each domain of a multi-region case gets its own start values (`[regions.<name>.initial]`); by default every fluid part starts at the pressure of its own pressure boundaries (a Laplace solve between several values), with the operating pressure per part from MF-B. Later: start values on volume selections of the mesh (cell zones, named cell sets, the regions of D73). Specified in stage 7 §9c.4 with codes REG007–REG010 and checks V7.45 and V7.46; built in #221 (see below).
+- **Pressure values absolute by default, gauge optional (D239, requirement).** From case format 0.7 every pressure value in a case file is an absolute static pressure unless `[fluid] pressure_values = "gauge"`; the solver keeps solving the gauge part against an operating pressure that each fluid part takes from its own boundaries, and older files keep their gauge meaning (and their results) through a new changed-default rule of `foehn case upgrade`. Built in #220 (see below).
 - **Roadmap: 7b2 moves to v1.1.** The laminar natural-convection benchmarks (square cavity Ra 1e3 to 1e6, vertical plate, mixed convection) and the heated D45 cases with SGDH are no longer part of v1.0 (maintainer decision 2026-11-23, D235, section 7a). The cavity will be graded on its own GCI and energy balance, because the published cavity values are numbers from other codes (D201).
 - **Multi-rank MPI, step W2: exact reductions.** Sums, dot products, residual norms and min/max no longer depend on the order of the terms, the thread count or the number of ranks (D31 (1), D93 (4)). `foehncraft_core::exact::ExactSum` is a long accumulator over the whole binary64 range (Kulisch 1971; Collange et al. 2015), rounded once to nearest even, with NaN and infinities counted apart and a batched path (one integer bin per exponent). `Communicator::sum_exact`, `sum_exact_many` and `all_sum_i64` reduce it across ranks as one all-reduce of 71 integers; `min` and `max` are order-independent (`min_total`, `max_total`). The CPU backend and the flow CPU device compute dot products, norms and min/max exactly, the AMG eigenvalue estimate too, and about 30 sums over cells, faces and patches of the flow crate (balances, torques, mass flows, volumes, sources) are exact. One-rank results change once in the last bits against v0.7; no reference band is affected. **GPU:** the GPU keeps its block sums until v1.1 (owner decision of 2026-11-23), so CPU and GPU runs now agree to rounding, not bitwise. Partitioned `foehn mesh` runs check sums over the ranks against one rank (`reductions` in the report); the example `mpi_reductions` checks the same across 1 to 4 MPI processes in CI. Measured cost (D93, 4-core Xeon of the cloud session, two runs each against main): exact dot product 2.3 to 3.5 ns per value on one thread against 0.6 to 0.9 ns for the block sum, 0.7 to 0.9 against 0.3 to 0.6 ns on 4 threads (`exact_reduction_cost` example); per outer iteration +2 to +7 % on the cavity with 970 225 polyhedra (30 SIMPLEC iterations, 4 threads) and +18 to +25 % on the 64 × 64 cavity (4 096 cells, one thread, where the BiCGStab dot products weigh most); the same iteration counts and results to the printed digits. Gallery 219, recipe 219, case `mesh/exact_reductions.toml`.
 - **Pressure values absolute by default, gauge optional (D239, case format 0.7).** Every pressure value of a case file (boundary `pressure` and `total_pressure`, numbers and expressions, `[initial] pressure`, `[pressure] reference_value`) is now an absolute static pressure; `[fluid] pressure_values = "gauge"` keeps values relative to the operating pressure. Each fluid part takes its operating pressure from its own pressure boundaries (static outlets first), or from `[fluid]` / the new `[regions.<name>] operating_pressure`; the reader turns the case into its gauge twin, so the solver is unchanged and an absolute case runs the same bits as its gauge twin, and each gas's density follows the pressure of its own part. The `pressure` field (with the VTKHDF attributes `pressure_values` and `operating_pressure`), probes and the mean pressures of `boundaries.csv` are written in the file's convention; the log (PRS005) and `flow.json` (`pressure_values`) state the convention and the operating pressure of every part. Checks PRS001 (absolute value ≤ 0), PRS002 (a gas below 1 kPa looks like a gauge value), PRS003 (operating pressure from expressions only), PRS004 (one absolute start pressure for parts of different operating pressures). The case-format migration has a second kind of rule, a changed default: files of format 0.6 and older read as gauge values (a note) and keep their results; `foehn case upgrade` writes `pressure_values = "gauge"` into them. New case `cht_two_fluids_absolute.toml` (water at 1 bar, oil at 1.5 bar). Gallery and recipe 220.
@@ -580,87 +660,6 @@ State in D203 that Python stays the user front end.
   the gaps. Gallery and recipe 184.
 - **Requirements: L13 plan decisions.** The maintainer's answers to the eleven open questions are recorded in the [L13 plan](docs/requirements/l13-immersed-boundary-plan.md#9-owner-decisions-2026-11-22): tolerant dirty STL with Crane's methods as candidates, merged small cells, own near-body refinement, a 3D Python prototype before Rust, and a new stage 5 for prescribed rigid motion.
 - **Requirements: ids D225 to D234 for the immersed boundary stages.** Geometry kernel, penalisation pre-stage, cut cells, layered boundary, hand-off and rigid motion are entered in the requirements table.
-Nothing yet.
-
-## Summary
-
-| Version | Stage | Highlights |
-|---|---|---|
-| 1.0.0 (2026-11-23) | 8 (part) Milestone 1 | The internal-flow cases of D45 (pipe, plane diffuser, U-bend, T-junction on polyhedra) with grid convergence, several fluids in one conjugate case (D194), gravity, Boussinesq buoyancy and the low-Mach variable density (7b1, 7c), absolute pressure values and per-region start values (D239, D238; case format 0.7 stable), the cycle-averaged loop and the frozen-flow march for slow thermal transients (D204, D118), the operator exactness check with quadratic fits (D236), the MLP vertex limiter (D237), exact CPU reductions (MPI W1, W2). **Pipe u_τ +4.5 % from DNS (GCI 0.2 %); diffuser reattachment GCI 0.36 %; U-bend separation GCI 0.19 %; stratified box at rest to 10⁻¹⁵ m/s; closed box p₀(t) exact; warm-ups in a tenth of the steps within 0.06 K.** Gallery 186–221, recipes up to 221 |
-| 0.7 (2026-11-22) | 7 (part) Energy, conjugate heat transfer, agents | Energy equation of the fluid with temperature-dependent properties, conjugate heat transfer with solid regions (steady and transient, laminar and turbulent, contact resistances, orthotropic solids, heat sources, thermal acceleration of solids), the tool registry, journal and replay, the MCP server `foehn mcp`, run limits and budgets, the live control port, run limitations from the verification status page, manufactured solutions of every turbulence model, the clean-room rework of the reference numbers. **CHT checks exact to round-off (V7.4, V7.6 to 10⁻¹² K, V7.36 to 10⁻⁴); heat balance closes to 10⁻¹¹ in every step; thermal acceleration ends within 0.2 % of the steady solution.** Gallery 131–184, recipes up to 184 |
-| 0.6 (2026-11-20) | 6 RANS turbulence, heat transfer, rotating machinery | Six RANS models: k-ω SST 2003 (with the curvature and rotation correction and QCR2000/QCR2013), standard and realizable k-ε, k-ε-ζ-f, k-ε-ζ-f₀ and the elliptic-blending k-ε; wall treatments `low-re`, `automatic`, `scalable`, `standard`, `compound`, `compound-2023` and rough walls; passive scalars with turbulent diffusivity and thermal wall functions (also for high Prandtl numbers); periodic boundaries; rotating machinery with the moving reference frame, sliding meshes (conformal stepping and imprinted interfaces of any shape of revolution, several rotors), torque, shaft power and machine performance; the coupled pressure–velocity algorithm with pseudo-time steps and multigrid for momentum and turbulence; SU2, OpenFOAM, CGNS, industry `.msh` and VTK mesh readers; derived turbulence fields, transient statistics, the grid convergence study of the models; the new log, case format 0.6 and `[[schedule]]`. **TMR flat plate C_f +0.37 % (SST) and within −2.6 to +2.4 % for first-cell y⁺ 0.24 to 85; channel at Re_τ 395 U_b⁺ −0.7 % (SST) and EB C_f 97.8–99.1 % of DNS; backward-facing step x_r/H +0.5 % (k-ε against the published k-ε) and +0.6 % (k-ε-ζ-f₀ against the experiment); impinging jet Nu₀ −0.2 % (SST); heated channel Nu within −2.6 to +1.0 % of DNS; GPU bitwise equal to the CPU for 14 turbulence cases on a Tesla T4; the coupled algorithm settles the step in about 70 instead of 600 iterations.** Gallery 26–134, recipes 36–134 |
-| 0.5 (2026-11-16) | 5 Transient flow, run control, Python | Transient incompressible flow: PISO with variable-step BDF2 and Crank–Nicolson, outer correctors for large time steps, a time step from the integration error, output at exact times, restart files and control files; the whole flow loop on NVIDIA GPUs; adjoint-ready kernels (dual numbers, transposed matrices, checkpointing); the run contract for scripts and agents (`--json`, `--set`, `result.json`, run record, exit codes and signals, case schema, diagnostic codes, estimate, limits, provenance); the conservation ledger and the divergence report; the bounded central scheme and the boundary conditions of D29 (slip, wedge, tables, backflow, convective outlet); derived fields; expressions, the material database and regions; the Python package `foehncraft` with studies; the grid convergence index of every sweep and a generated verification manual; all scripts in Python. **Taylor–Green time order 2.0–2.4 and space order 2.1; Schäfer & Turek 2D-1 inside all reference ranges, C_D extrapolated to 5.5797 ± 0.0004 from three meshes; GPU flow loop bitwise equal to the CPU on a Tesla T4 (722 ns per cell and iteration on 970 225 polyhedra); a case built in Python is bitwise its TOML file.** Commands `foehn materials`, `foehn post derive`, `foehn schema`; gallery 14–25, recipes 21–35 |
-| 0.4 (2026-11-15) | 4 Laminar steady flow | First flow solver: steady incompressible laminar flow with SIMPLEC (and SIMPLE) on polyhedral meshes, relaxation-independent Rhie–Chow interpolation (Majumdar 1988), CG + AMG for the pressure correction, boundary conditions of D29 (walls also moving, velocity and mass-flow inlets, static and total pressure inlets and outlets, symmetry) with a check of their combination and guidance (D30), TOML case file with "did you mean" (D39), log, CSV, wall and line output (D43). **Couette exact to the iteration tolerance on all mesh types; Poiseuille observed order 1.80–2.00; lid-driven cavity within 0.4–1.4 % of Ghia et al. at Re 100 and 1000 in 2D and within 2.5 % on 3D tetrahedra and polyhedra.** New crate `cfdcraft-flow`, command `cfdcraft flow`, thirteen case files, gallery 12–13, recipes 18–20. CPU only; the GPU flow loop follows with stage 5 |
-| 0.3 (2026-11-14) | 3 Pressure solver | Pressure linear solver: smoothed-aggregation algebraic multigrid as the preconditioner of CG (Vaněk, Mandel, Brezina 1996), symmetric V-cycle with Chebyshev or Jacobi smoothing, float32 hierarchy with float64 Krylov iteration (mixed precision, D37), one kernel source for the CPU and the NVIDIA GPU, optional hypre 3.2.1 reference (BoomerAMG-PCG, built from source). **10–13 iterations from 512 to 274 625 cells on all mesh types; same solution as hypre to 1.6e-9; on a Tesla T4 6.5 ns per cell and iteration against 10.5 for hypre at 912 673 cells, all GPU results bitwise equal to the CPU.** New command `cfdcraft poisson`, four Poisson case files, gallery 10–11, recipes 15–17 |
-| 0.2 (2026-11-14) | 2 Operators on a scalar equation | Finite-volume operators on a scalar transport equation, one source for the CPU and the NVIDIA GPU: least-squares gradients (exact for linear fields, error 6e-15 on all mesh types), linear upwind with Venkatakrishnan and Venkatakrishnan–Wang limiters (no new extrema at K = 0), over-relaxed non-orthogonal diffusion, reproducible gather-based assembly into sliced ELL, BiCGStab. Observed order 1.87–2.08 on hex, tet, poly and mixed meshes in 2D and 3D. **GPU and CPU results bitwise equal on a Tesla T4** (912 673 polyhedra, 311 ns per cell and iteration). New command `cfdcraft scalar`, seven case files, gallery 8–9, recipes 12–14 |
-| 0.1 (2026-11-14) | 1 Mesh | Polyhedral face-based mesh with exact geometry (every cell closed to 1e-15, volumes exact), Gmsh 4.1 reader, built-in test mesher (hex, tet, poly, mixed; 2D and 3D; graded, refined, perturbed), quality report, VTKHDF output for ParaView, METIS and RCB partitioning with a solver-ready halo layout and multi-field halo exchange (tested over MPI on 2–4 ranks), particle point location on all mesh types, golden-value test matrix, `cfdcraft mesh` command. G1 rerun on polyhedral and shuffled meshes: bitwise equal; quiet-machine verdict open (O15) |
-| 0.0 (2026-11-14) | 0 Foundations and gate G1 | Cargo workspace, CI on Linux, macOS and Windows with MPI runs on 4 ranks, the G1 kernel benchmark. **G1 GPU verdict passed on a Tesla T4: single-source Rust kernels within 1.0 % of hand-written CUDA C, bitwise equal results**; **CPU verdict passed on an i9-9900K: single-source bodies within 1.8 % of hand-written loops, in two runs** |
-
-Release 1.0.0 is milestone 1: incompressible and low-Mach flow, steady
-and transient, laminar and RANS, with the energy equation, conjugate heat
-transfer with several fluids and solids, buoyancy and rotating machinery,
-on CPUs and NVIDIA GPUs in one process, verified case by case on the
-[verification status](docs/verification/status.md) page. Multi-rank MPI,
-natural-convection benchmarks and the rest of stage 7 follow in 1.1
-(requirements section 7a). The Cargo version of the crates and of the
-Python package is now 1.0.0; the release is the Git tag `v1.0.0` (D46).
-
-Release 0.7 is the first part of stage 7: the energy equation of the
-fluid, conjugate heat transfer with solid regions and the tools for agents
-(registry, MCP server, live control port). Buoyancy and variable density
-follow in later releases. The Cargo version of the crates is now 0.7.0;
-the release is the Git tag `v0.7` (D46).
-
-Release 0.6 closes stage 6: all six turbulence models, the wall
-treatments, passive scalars with thermal wall functions and rotating
-machinery are verified on the cases of the stage plan (TMR flat plate,
-channel against DNS, heated channel and pipe, backward-facing step of
-Driver & Seegmiller, impinging jet of the ERCOFTAC database,
-Taylor–Couette flow, stirred vessels), with the findings and the open
-points listed under "Known limits" of the 0.6 section and in the
-[stage 6 verification notes](docs/verification/stage6.md). The generated
-[verification manual](docs/verification/manual.md) lists every case with
-its pass bands. The Cargo version of the crates is now 0.6.0; the release
-is the Git tag `v0.6` (D46).
-
-Release 0.5 closes stage 5: the acceptance checks of the stage plan pass
-(Taylor–Green time and space order 2, also at Courant number 9 with outer
-correctors; the cylinder benchmark of Schäfer & Turek, at Re 20 inside all
-reference ranges, at Re 100 with C_L,max 0.5 % below its range on 24 576
-cells; restart bit-identical; expressions from TOML and from Python
-give the same run; the energy budget of the cavity closes; the GPU flow
-loop gives bitwise the CPU results). The generated
-[verification manual](docs/verification/manual.md) lists every case with
-its pass bands. The Cargo version of the crates is now 0.5.0; the release
-is the Git tag `v0.5` (D46).
-
-Release 0.4 closes stage 4: all acceptance tests of the stage plan pass
-(Couette at round-off, that is at the iteration tolerance; Poiseuille order
-1.8–2.2 on all mesh types; lid-driven cavity in 2D and 3D at Re 100 and 1000
-against Ghia et al.). The Cargo version of the crates is now 0.4.0; the
-release is the Git tag `v0.4` (D46).
-
-Release 0.3 closes stage 3: all acceptance tests of the stage plan pass
-(iteration count nearly independent of the mesh size, same converged result
-as hypre, GPU time per cell compared with hypre and reported). The Cargo
-version of the crates is now 0.3.0; the release is the Git tag `v0.3` (D46).
-
-Release 0.2 closes stage 2: all acceptance tests of the stage plan pass
-(exact gradients, no new extrema, observed order 1.8–2.2 on all mesh types,
-bitwise reproducible results, GPU and CPU bitwise equal on a Tesla T4). The
-Cargo version of the crates is now 0.2.0; the release is the Git tag `v0.2`
-(D46).
-
-Release 0.1 closes stage 1: all acceptance tests of the stage plan pass
-(closed cells, exact volumes, Gmsh files from Gmsh load, VTKHDF files load
-with VTK's reader, point location on all mesh types). The Cargo version of
-the crates is now 0.1.0; the release is the Git tag `v0.1` (D46).
-
-Release 0.0 closes stage 0: both verdicts of gate G1 are in (GPU: Tesla T4,
-CPU: i9-9900K, 2026-11-14, both PASS; O13 closed). The Cargo version of the
-crates stays 0.0.0; the release is the Git tag `v0.0` (D46).
-
----
 
 ## 0.6 (2026-11-20) – stage 6: RANS turbulence, heat transfer and rotating machinery
 
