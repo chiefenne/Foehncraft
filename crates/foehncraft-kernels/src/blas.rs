@@ -4,8 +4,11 @@
 //! each step is one pass over memory. Dot products are summed in blocks of
 //! [`foehncraft_core::repro::BLOCK`] values in sequential order
 //! ([`block_dot`]); the block sums are then combined in the fixed tree of
-//! [`foehncraft_core::repro::combine_block_sums`]. The CPU and the GPU use the
-//! same blocks, so a dot product is bitwise the same on both (D31).
+//! [`foehncraft_core::repro::combine_block_sums`]. The GPU uses these blocks;
+//! the CPU backends sum exactly since MPI step W2
+//! ([`foehncraft_core::exact`]), so CPU and GPU dot products agree to
+//! rounding, not bitwise, until the GPU sums exactly too (v1.1, owner
+//! decision of 2026-11-23).
 
 use crate::ld;
 use foehncraft_core::Real;

@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**107 features: 49 verified, 55 partial, 3 unverified.**
+**108 features: 50 verified, 55 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -132,6 +132,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Backends and interfaces | [Tool registry (foehn call, foehn commands, typed schemas)](#interface-tool-registry) | verified |
 | Backends and interfaces | [Journal and replay of tool calls](#interface-journal-replay) | verified |
 | Backends and interfaces | [MCP server (foehn mcp)](#interface-mcp) | verified |
+| Backends and interfaces | [Exact reductions: sums, dot products, norms and min/max independent of threads, order and ranks (MPI step W2)](#parallel-exact-reductions) | verified |
 
 ## Meshes
 
@@ -1610,3 +1611,17 @@ Contracts: `replay`, `schema`.
 - contract (diagnostics): [`refuses_to_start_without_both_roots`](../../crates/foehncraft-cli/tests/mcp.rs): no roots, no start
 
 Contracts: `equivalence`, `replay`, `control`, `diagnostics`.
+
+<a id="parallel-exact-reductions"></a>
+
+### Exact reductions: sums, dot products, norms and min/max independent of threads, order and ranks (MPI step W2)
+
+**verified** · id `parallel.exact-reductions` · switch `always on (CPU)` · decisions D31, D93
+
+- exact: [`correctly_rounded_against_an_integer_reference`](../../crates/foehncraft-core/src/exact.rs): the exact sum is the correctly rounded value of the binary64 terms (integer reference)
+- exact: [`rounding_is_to_nearest_even`](../../crates/foehncraft-core/src/exact.rs): ties to even, carries, subnormals, overflow, NaN and infinities
+- contract (bitwise): [`independent_of_order_and_grouping`](../../crates/foehncraft-core/src/exact.rs): any order and any split into parts, also through the integer image sent between ranks, gives the same bits
+- contract (bitwise): [`exact_reductions_independent_of_thread_count`](../../crates/foehncraft-parallel/src/repro.rs): 1 to 7 threads give the same bits
+- contract (bitwise): [`sums_over_ranks_are_bitwise_the_one_rank_sums`](../../crates/foehncraft-mesh/tests/exact_reductions.rs): sums over 1 to 9 ranks of decomposed meshes (four cell types, METIS and RCB) are bitwise the one-rank sums
+
+Contracts: `bitwise`.

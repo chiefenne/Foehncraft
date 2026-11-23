@@ -85,7 +85,7 @@ line (recipe 26).
 | `verification.lid_velocity` | 1 | lid speed for the reference comparison and the Reynolds number |
 | `verification.require_convergence` | none | fail unless the outer iterations converge |
 | `run.threads` | all cores | CPU threads (meshes below 20 000 cells run on one; the results are bitwise the same) |
-| `run.backend` | `cpu` | where the flow loop runs: `cpu`, or `cuda` in a build with the `cuda` feature (NVIDIA GPU of compute capability 7.0 or newer); the results are bitwise those of `cpu` (D31). `foehn flow --backend` overrides it |
+| `run.backend` | `cpu` | where the flow loop runs: `cpu`, or `cuda` in a build with the `cuda` feature (NVIDIA GPU of compute capability 7.0 or newer); the results were bitwise those of `cpu` up to v0.7; since MPI step W2 the CPU dot products and norms are exact and the GPU's are block sums, so the two agree to rounding, not bitwise, until v1.1 (D31). `foehn flow --backend` overrides it |
 | `run.ptx` | `target/nvptx64-nvidia-cuda/release/foehncraft_ptx_kernels.ptx` | PTX module of the `cuda` backend (`python3 gpu/ptx-kernels/build.py`); `foehn flow --ptx` overrides it |
 | `output.directory` | `output/<case name>` | output directory |
 | `output.vtkhdf` | true | write `fields.vtkhdf` |

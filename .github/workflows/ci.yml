@@ -396,6 +396,14 @@ jobs:
               SPIKE_KIND=$kind mpirun --oversubscribe -n $n target/release/examples/mpi_matrix
             done
           done
+      - run: cargo build --release -p foehncraft-mesh --features mpi --example mpi_reductions --locked
+      - name: Exact reductions bitwise equal to one rank (W2, 1 to 4 ranks)
+        run: |
+          for n in 1 2 3 4; do
+            for kind in poly hex; do
+              SPIKE_KIND=$kind mpirun --oversubscribe -n $n target/release/examples/mpi_reductions
+            done
+          done
 
   ptx:
     name: Single-source GPU kernels compile to PTX (G1, stages 2, 3 and 5)

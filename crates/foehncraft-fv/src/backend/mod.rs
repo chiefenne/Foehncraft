@@ -149,7 +149,7 @@ pub trait Backend: LevelOps {
     fn spmv(&mut self, x: V, out: V) -> anyhow::Result<()>;
     /// out = b − A x.
     fn residual(&mut self, x: V, b: V, out: V) -> anyhow::Result<()>;
-    /// (a, b) with the fixed block order.
+    /// (a, b): exact on the CPU (MPI step W2), fixed block order on the GPU.
     fn dot(&mut self, a: V, b: V) -> anyhow::Result<f64>;
     /// Minimum and maximum of a cell vector.
     fn min_max(&mut self, a: V) -> anyhow::Result<(f64, f64)>;

@@ -1,13 +1,14 @@
 //! Communicator abstraction.
 
-use foehncraft_core::repro::pairwise_sum;
+use foehncraft_core::exact::{ExactSum, WORDS, max_total, min_total};
 
 /// Communication between the ranks of a run.
 ///
-/// Reductions are reproducible (D31): every rank receives the same bits, and
-/// a rerun on the same number of ranks gives the same bits. The value can
-/// change with the number of ranks, because the summation order follows the
-/// decomposition.
+/// Reductions are exact and order-independent (D31 (1), D93 (4)): every rank
+/// receives the same bits, and the bits do not depend on the number of
+/// ranks or on the partition. A sum is reduced as the integer image of an
+/// [`ExactSum`] (one all-reduce of [`WORDS`] integers), so the reduction
+/// tree of the MPI library cannot change it.
 pub trait Communicator {
     /// Rank of this process, `0..size()`.
     fn rank(&self) -> usize;
@@ -21,17 +22,57 @@ pub trait Communicator {
     /// from rank `source` into `recv`. The basic step of a halo exchange.
     fn send_recv_f64(&self, send: &[f64], dest: usize, recv: &mut [f64], source: usize);
 
-    /// Sum over all ranks, bitwise identical on every rank: the local values
-    /// are gathered in rank order and summed in the fixed pairwise order.
-    fn sum_reproducible(&self, local: f64) -> f64 {
-        pairwise_sum(&self.all_gather_f64(local))
+    /// Element-wise integer sum of `buf` over all ranks, in place, on every
+    /// rank. Integer addition is associative, so the result does not depend
+    /// on the reduction tree. The sums must not overflow `i64`.
+    fn all_sum_i64(&self, buf: &mut [i64]);
+
+    /// The merge of the accumulators of all ranks, the same on every rank.
+    /// For fewer than 2³⁰ ranks.
+    fn merge_exact(&self, local: &ExactSum) -> ExactSum {
+        let mut w = local.to_words();
+        self.all_sum_i64(&mut w);
+        ExactSum::from_words(&w)
     }
 
-    /// Maximum over all ranks.
+    /// The exact sum over all ranks of the local accumulators, rounded
+    /// once: bitwise independent of the rank count and the partition.
+    fn sum_exact(&self, local: &ExactSum) -> f64 {
+        self.merge_exact(local).value()
+    }
+
+    /// Several exact sums in one all-reduce (for example the three
+    /// components of a force), in the order of `locals`.
+    fn sum_exact_many(&self, locals: &[ExactSum]) -> Vec<f64> {
+        let mut w: Vec<i64> = locals.iter().flat_map(|l| l.to_words()).collect();
+        self.all_sum_i64(&mut w);
+        w.as_chunks::<WORDS>()
+            .0
+            .iter()
+            .map(|a| ExactSum::from_words(a).value())
+            .collect()
+    }
+
+    /// Exact sum over all ranks of one value per rank (independent of the
+    /// rank order and count).
+    fn sum_reproducible(&self, local: f64) -> f64 {
+        let mut s = ExactSum::new();
+        s.add(local);
+        self.sum_exact(&s)
+    }
+
+    /// Maximum over all ranks ([`max_total`]: NaN propagates, +0 > −0).
     fn max(&self, local: f64) -> f64 {
         self.all_gather_f64(local)
             .into_iter()
-            .fold(f64::NEG_INFINITY, f64::max)
+            .fold(f64::NEG_INFINITY, max_total)
+    }
+
+    /// Minimum over all ranks ([`min_total`]: NaN propagates, −0 < +0).
+    fn min(&self, local: f64) -> f64 {
+        self.all_gather_f64(local)
+            .into_iter()
+            .fold(f64::INFINITY, min_total)
     }
 
     /// Name of the implementation, for logs.
@@ -57,6 +98,7 @@ impl Communicator for SerialComm {
         assert_eq!((dest, source), (0, 0), "a serial run has only rank 0");
         recv.copy_from_slice(send);
     }
+    fn all_sum_i64(&self, _buf: &mut [i64]) {}
     fn name(&self) -> &'static str {
         "serial"
     }
@@ -67,6 +109,7 @@ pub mod mpi_comm {
     //! MPI implementation of [`Communicator`].
 
     use super::Communicator;
+    use mpi::collective::SystemOperation;
     use mpi::environment::Universe;
     use mpi::topology::{Communicator as _, SimpleCommunicator};
     use mpi::traits::*;
@@ -119,6 +162,11 @@ pub mod mpi_comm {
                 sreq.wait();
             });
         }
+        fn all_sum_i64(&self, buf: &mut [i64]) {
+            let send = buf.to_vec();
+            self.world
+                .all_reduce_into(&send[..], buf, SystemOperation::sum());
+        }
         fn name(&self) -> &'static str {
             "mpi"
         }
@@ -137,5 +185,13 @@ mod tests {
         let mut r = [0.0; 3];
         c.send_recv_f64(&[1.0, 2.0, 3.0], 0, &mut r, 0);
         assert_eq!(r, [1.0, 2.0, 3.0]);
+        let mut acc = ExactSum::new();
+        acc.add_slice(&[1e300, 1.0, -1e300]);
+        assert_eq!(c.sum_exact(&acc), 1.0);
+        assert_eq!(
+            c.sum_exact_many(&[acc.clone(), ExactSum::new()]),
+            [1.0, 0.0]
+        );
+        assert_eq!(c.min(3.0), 3.0);
     }
 }

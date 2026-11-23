@@ -53,6 +53,7 @@ use crate::analytic::Analytic;
 use crate::diag;
 use crate::expr::{Env, Scalar, Value, Vars, Vector};
 use anyhow::Result;
+use foehncraft_core::exact::ExactSumIter as _;
 use foehncraft_kernels::flow::{
     FLUX_FIXED, FLUX_PRESSURE, FLUX_PRESSURE_NO_BACKFLOW, MOM_FIXED, MOM_OUTFLOW, MOM_SYMMETRY,
     PB_EXTRAPOLATE, PB_FIXED, PB_NO_BACKFLOW, PB_OUTLET, PB_TOTAL, PB_TOTAL_NO_BACKFLOW,
@@ -1434,7 +1435,7 @@ fn prescribed_outflow(
     let mut gross = 0.0;
     for p in &mesh.boundaries {
         let Some(bc) = bcs.get(&p.name) else { continue };
-        let area: f64 = p.range().map(|f| norm(geo.face_area[f])).sum();
+        let area: f64 = p.range().map(|f| norm(geo.face_area[f])).exact_sum();
         let ext = boundary_extent(mesh, p);
         let q = match bc {
             BoundaryCondition::VelocityInlet { .. } => p
@@ -1449,7 +1450,7 @@ fn prescribed_outflow(
                     gross += q.abs();
                     q
                 })
-                .sum(),
+                .exact_sum(),
             BoundaryCondition::MassFlowInlet { .. } => {
                 let mass_flow = bc.mass_flow_at(at.of(&p.name), at.t);
                 gross += mass_flow.abs();
@@ -1465,7 +1466,7 @@ fn prescribed_outflow(
                     gross += q.abs();
                     q
                 })
-                .sum(),
+                .exact_sum(),
             _ => continue,
         };
         out.insert(p.name.clone(), q);
@@ -2330,7 +2331,7 @@ pub fn check<'a>(
     // boundary that the flow enters and leaves (an exact solution) does not
     // make round-off look like an imbalance
     let (q, scale_q) = prescribed_outflow(mesh, geo, bcs, rho.into(), at);
-    let net: f64 = q.values().sum();
+    let net: f64 = q.values().exact_sum();
     let inflow: Vec<&str> = q
         .iter()
         .filter(|&(_, &v)| v < 0.0)
@@ -2393,7 +2394,7 @@ pub fn check<'a>(
                 )
             })
             .map(|(_, v)| *v)
-            .sum();
+            .exact_sum();
         let walls: Vec<&str> = q
             .keys()
             .filter(|n| {
@@ -2614,7 +2615,7 @@ pub fn arrays<'a>(
         let bc = bcs
             .get(&p.name)
             .ok_or_else(|| anyhow::anyhow!("no boundary condition for `{}`", p.name))?;
-        let area: f64 = p.range().map(|f| norm(geo.face_area[f])).sum();
+        let area: f64 = p.range().map(|f| norm(geo.face_area[f])).exact_sum();
         let ext = boundary_extent(mesh, p);
         let outlet = bc.is_pressure_outlet();
         let wall_like = bc.is_symmetry_like()

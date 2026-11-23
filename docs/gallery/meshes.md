@@ -15,6 +15,7 @@ Part of the [Example gallery](../gallery.md): the built-in test mesher in 2D and
 | 138 | [Taylor–Couette sliding case from a two-zone SU2 file](#su2-zones) | 6 | multi-zone SU2 and CGNS, rotor and stator as cell zones, interface boundaries, `[[sliding]]` (D195) |
 | 189 | [Which cells can the curvature correction and the QCR trust? The operator check](#operator-check) | 6 | gradient and Hessian on test fields, `MESH004`–`MESH006`, `LIM008`, `operators.csv` (D236) |
 | 200 | [Three ranks, the bits of one: the canonical local mesh](#canonical-ranks) | 8 | flipped faces, cell faces in global order, `foehn mesh` check per rank (MPI step W1, D93) |
+| 219 | [Sums that do not care how many ranks there are: exact reductions](#exact-reductions) | 8 | exact accumulator, sums over ranks bitwise one rank, the old rank-order sum for comparison (MPI step W2, D31, D93) |
 
 ---
 
@@ -455,6 +456,47 @@ python3 -m tools.mesh.render_mesh output/canonical_ranks/mesh.vtkhdf rank.png \
     --field rank --categorical --top --size 1000x560 --title "3 ranks (METIS)"
 python3 -m tools.mesh.render_mesh output/canonical_ranks/mesh.vtkhdf flipped.png \
     --field flipped_faces --top --size 1000x560 --title "faces stored flipped per cell"
+```
+
+[↑ back to top](#meshes)
+
+---
+
+<a id="exact-reductions"></a>
+## 219. Sums that do not care how many ranks there are: exact reductions
+
+<img src="../figures/gallery/exact_reductions_ulps.png" alt="Distance of the old rank-order sums from the one-rank value, 0 to 2 ulps, against 2 to 16 ranks; the exact sums stay at 0" width="1000" height="560">
+
+A perturbed polyhedral box (1 280 cells) split into 2 to 16 ranks with
+METIS. Every rank sums its own cells and boundary faces: the domain volume
+Σ V, its first moment Σ V x and the boundary area Σ |S|. Floating-point
+addition is not associative, so the old sum (a pairwise sum per rank, the
+rank sums then combined in rank order) lands 0 to 2 units in the last place
+away from the one-rank value, and which way it moves changes with every rank
+count (coloured lines). Since MPI step W2 each rank adds its terms without
+rounding into a long accumulator (the whole binary64 range as a 2176-bit
+integer, Kulisch 1971, Collange et al. 2015), the ranks add the integers
+(one all-reduce of 71 numbers), and the result is rounded once: the same
+bits on any number of ranks, threads and in any cell order (black line).
+The CPU solvers' dot products and residual norms, the balances, mass flows
+and torques use the same sums, so a residual history no longer depends on
+how the mesh is cut. Cost: about 2.3 to 3.5 ns per value on one core
+against 0.6 to 0.9 ns for the block sum, partly hidden by the threads; per
+outer iteration +2 to +7 % on a cavity of 970 225 polyhedra and +18 to
++25 % on a 4 096-cell cavity, where the solver's dot products weigh most.
+
+| | |
+|---|---|
+| Mesh | poly 3D, 16 × 10 × 8 base grid, 1 280 cells, nodes perturbed by 20 % |
+| Ranks | 2 to 16 (METIS), one halo layer, held in one process |
+| Case file | `mesh/exact_reductions.toml` |
+
+```
+F=examples/cases/mesh/exact_reductions.toml
+for n in $(seq 2 16); do
+    target/release/foehn mesh $F --parts $n --no-vtkhdf --locate 0 --out output/exact_reductions/p$n
+done
+python3 -m tools.plot.exact_reductions exact_reductions_ulps.png output/exact_reductions
 ```
 
 [↑ back to top](#meshes)

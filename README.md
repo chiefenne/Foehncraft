@@ -74,7 +74,9 @@ validated range, one mesh only, …) in its report and its JSON result.
   (bounded on tetrahedra and polyhedra, D237), linear upwind and bounded
   central convection, non-orthogonal correction, the time-step-independent
   Rhie–Chow interpolation; BDF2 and Crank–Nicolson; reproducible
-  (gather-based) assembly in double precision.
+  (gather-based) assembly in double precision; exact dot products, norms
+  and sums on the CPU, bitwise the same for any thread count, cell order
+  and number of ranks (MPI step W2).
 - **Pressure–velocity coupling.** SIMPLEC and SIMPLE for steady flow, PISO
   with outer correctors for transient flow (SIMPLEC-type correctors with
   outer iterations, stable on thin wedge cells at an axis), a time step from the
@@ -319,7 +321,7 @@ The [changelog](CHANGELOG.md) lists every release.
 |---|---|
 | `foehncraft-core` | generic floating-point type, index types, reproducible sums, counter-based random numbers (`no_std`) |
 | `foehncraft-kernels` | compute kernels, one source for CPU and GPU (`no_std`): benchmark, scalar operators, multigrid, flow |
-| `foehncraft-parallel` | communicator (serial, MPI), reproducible threaded reductions |
+| `foehncraft-parallel` | communicator (serial, MPI) with exact all-reduce, exact threaded reductions |
 | `foehncraft-mesh` | polyhedral mesh, geometry, quality report, mesh-format layer with the Gmsh, SU2, CGNS, OpenFOAM, Fluent .msh and VTK readers, test mesher (also the cylinder benchmark mesh and annuli for rotors), partitioning and halo, VTKHDF output, point location, wall distance, the imprint of sliding interfaces |
 | `foehncraft-fv` | finite-volume operators on a scalar (gradients, limiters, convection, diffusion, assembly), BiCGStab, and the pressure solver: CG with smoothed-aggregation multigrid in mixed precision, optional hypre reference; CPU backend (the GPU backend is in `foehncraft-cuda`) |
 | `foehncraft-flow` | incompressible flow: SIMPLEC and SIMPLE (steady), PISO with BDF2 and Crank–Nicolson (transient), the coupled algorithm, the Rhie–Chow interpolation, boundary conditions and their check, turbulence models and wall treatments, passive scalars and thermal wall functions, the moving reference frame and sliding meshes, torque and machine performance, restart and control files, probes and force coefficients, the flow device written once over a CPU or GPU executor, the `foehn flow` case, exact solutions, reference and benchmark data |

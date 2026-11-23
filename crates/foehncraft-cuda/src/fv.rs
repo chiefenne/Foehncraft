@@ -4,10 +4,11 @@
 //! stay on the GPU; only dot products (one value per block of 256) and the
 //! limiter range come back to the host.
 //!
-//! The PTX has no fused multiply-adds and IEEE-rounded division, and the
-//! block sums follow the CPU order, so CPU and GPU results are expected to
-//! agree bitwise (checked by `foehn scalar` with `backends = ["cpu",
-//! "cuda"]`).
+//! The PTX has no fused multiply-adds and IEEE-rounded division. The dot
+//! products are block sums in a fixed tree; the CPU backend sums exactly
+//! since MPI step W2, so CPU and GPU results agree to rounding, not bitwise,
+//! until the GPU sums exactly too (v1.1, owner decision of 2026-11-23;
+//! `foehn scalar` with `backends = ["cpu", "cuda"]` reports the difference).
 
 use anyhow::Context as _;
 use cudarc::driver::{

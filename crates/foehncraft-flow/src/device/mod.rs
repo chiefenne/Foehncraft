@@ -6,9 +6,12 @@
 //! bodies of `foehncraft_kernels::flow` in multi-threaded loops; a GPU device
 //! (next step of stage 5) launches the same bodies compiled to PTX
 //! (`gpu/ptx-kernels`) on device-resident data behind the same trait. Every
-//! operation writes each output from one index only, and the reductions use
-//! the fixed blocks of `foehncraft_core::repro`, so the result does not depend on
-//! the number of threads, and CPU and GPU agree bitwise (D31).
+//! operation writes each output from one index only, so the result does not
+//! depend on the number of threads (D31). The reductions of the CPU device
+//! are exact (`foehncraft_core::exact`, MPI step W2), independent also of the
+//! order of the cells and of the ranks; the GPU device keeps the fixed blocks
+//! of `foehncraft_core::repro` until v1.1, so CPU and GPU agree to rounding,
+//! not bitwise, in the meantime (owner decision of 2026-11-23).
 //!
 //! A device holds the static data of the run (mesh, geometry, least-squares
 //! weights, boundary-condition arrays, matrix structure) and the linear

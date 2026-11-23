@@ -44,6 +44,19 @@ pub trait Exec {
     fn copy(&mut self, src: Buf, dst: Buf) -> Result<()>;
     /// One value of a buffer.
     fn value(&mut self, b: Buf, i: usize) -> Result<f64>;
+    /// Exact dot product of two arrays of the executor (`y = None`: Σ x²),
+    /// when the executor can compute it exactly (D31 (1)); `None` tells the
+    /// caller to use the fixed block sums. The CPU executor is exact; the
+    /// GPU executor keeps the block sums until v1.1 (owner decision of
+    /// 2026-11-23), so CPU and GPU agree to rounding, not bitwise.
+    fn exact_dot(&mut self, _x: Raw<f64>, _y: Option<Raw<f64>>) -> Option<f64> {
+        None
+    }
+    /// Order-independent minimum and maximum of an array, when the executor
+    /// computes it on the host; `None`: the block path.
+    fn exact_min_max(&mut self, _x: Raw<f64>) -> Option<(f64, f64)> {
+        None
+    }
     /// Runs the body of `K` for the indices `0..n` (n > 0).
     fn launch<K: Entry>(&mut self, n: usize, a: &K::Args) -> Result<()>;
     /// Solves `val` x = `rhs` (see [`FlowDevice::solve`]).
@@ -378,6 +391,9 @@ impl<E: Exec> KernelFlow<E> {
 
     /// Σ x² of the first `n` entries of the raw array in the fixed blocks.
     fn sum_sq_raw(&mut self, x: Raw<f64>) -> Result<f64> {
+        if let Some(v) = self.x.exact_dot(x, None) {
+            return Ok(v);
+        }
         let n = x.len as usize;
         let nbk = n.div_ceil(BLOCK);
         let mut out = self.r(self.blocks);
@@ -600,6 +616,9 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             rx.len,
             ry.len
         );
+        if let Some(v) = self.x.exact_dot(rx, Some(ry)) {
+            return Ok(v);
+        }
         let n = rx.len as usize;
         let nbk = n.div_ceil(BLOCK);
         let mut out = self.r(self.blocks);
@@ -613,6 +632,9 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
 
     fn min_max(&mut self, x: Buf) -> Result<(f64, f64)> {
         let r = self.r(x);
+        if let Some(v) = self.x.exact_min_max(r) {
+            return Ok(v);
+        }
         let nbk = (r.len as usize).div_ceil(BLOCK);
         let (mut o1, mut o2) = (self.r(self.blocks), self.r(self.blocks2));
         ensure!(

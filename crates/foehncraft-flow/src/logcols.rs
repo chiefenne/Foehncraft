@@ -28,6 +28,7 @@ use crate::console::{Col, Group, Style, Table, sci};
 use crate::diag::CASE_BAD_VALUE;
 use crate::simplec::{Residuals, Solution};
 use anyhow::Result;
+use foehncraft_core::exact::ExactSumIter as _;
 use foehncraft_mesh::locate::Locator;
 use foehncraft_mesh::{Geometry, Mesh};
 use serde_json::{Value, json};
@@ -705,7 +706,7 @@ impl Columns {
                 Spec::BoundaryMassFlow(name) => {
                     let v = ctx.sol.and_then(|sol| {
                         let (_, r) = self.boundaries.iter().find(|(n, _)| n == name)?;
-                        Some(r.clone().map(|f| sol.mass_flux[f]).sum::<f64>())
+                        Some(r.clone().map(|f| sol.mass_flux[f]).exact_sum())
                     });
                     out.push(v.map_or_else(dash, num));
                 }

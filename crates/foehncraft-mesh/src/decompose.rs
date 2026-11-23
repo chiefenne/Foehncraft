@@ -562,3 +562,98 @@ pub fn canonical_check(
         })
         .collect()
 }
+/// One reduction of [`reduction_check`]: the exact value on the ranks and
+/// on one rank, and the old rank-order pairwise value for comparison.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ReductionValue {
+    /// What is summed.
+    pub name: String,
+    /// The exact sum over the ranks (local accumulators merged as the
+    /// integer all-reduce of a multi-rank run does it).
+    pub ranks: f64,
+    /// The exact sum over the whole mesh on one rank.
+    pub one_rank: f64,
+    /// Whether the two are bitwise equal (always; the run fails otherwise).
+    pub bitwise_equal: bool,
+    /// The sum before MPI step W2: a pairwise sum per rank, the rank sums
+    /// combined pairwise in rank order.
+    pub pairwise_ranks: f64,
+    /// Distance of `pairwise_ranks` from the exact one-rank value in units
+    /// in the last place (0: the same bits).
+    pub pairwise_ulps: u64,
+}
+
+/// Distance of two finite values of the same sign in units in the last
+/// place.
+fn ulps(a: f64, b: f64) -> u64 {
+    let key = |x: f64| {
+        let b = x.to_bits() as i64;
+        if b < 0 { i64::MIN - b } else { b }
+    };
+    key(a).abs_diff(key(b))
+}
+
+/// Exact reductions over a decomposition held in one process (MPI plan step
+/// W2, D31 (1), D93 (4)): the domain volume Σ V, its first moment Σ V x and
+/// the boundary area Σ |S| over the boundary faces, each summed per rank
+/// over the own cells and faces into an exact accumulator, the accumulators
+/// merged through their integer images (what `Communicator::sum_exact`
+/// sends), and compared bit for bit with the exact sum over `global`.
+pub fn reduction_check(
+    global: &Mesh,
+    global_geo: &Geometry,
+    locals: &[LocalMesh],
+) -> Vec<ReductionValue> {
+    use foehncraft_core::exact::{ExactSum, WORDS};
+    use foehncraft_core::repro::pairwise_sum;
+    let boundary: std::collections::HashSet<u64> = global.face_id[global.neighbour.len()..]
+        .iter()
+        .copied()
+        .collect();
+    // the three per-entity terms of a mesh, own cells `0..n` only
+    let terms = |m: &Mesh, g: &Geometry, n: usize| -> [Vec<f64>; 3] {
+        let v = g.cell_volume[..n].to_vec();
+        let vx = (0..n)
+            .map(|c| g.cell_volume[c] * g.cell_centroid[c][0])
+            .collect();
+        let area = (m.neighbour.len()..m.n_faces())
+            .filter(|&f| (m.owner[f] as usize) < n && boundary.contains(&m.face_id[f]))
+            .map(|f| crate::geometry::norm(g.face_area[f]))
+            .collect();
+        [v, vx, area]
+    };
+    let reference = terms(global, global_geo, global.n_cells);
+    let mut words = [[0i64; WORDS]; 3];
+    let mut rank_sums = [vec![], vec![], vec![]];
+    for l in locals {
+        let g = Geometry::compute(&l.mesh);
+        let t = terms(&l.mesh, &g, l.mesh.n_cells);
+        for q in 0..3 {
+            let mut acc = ExactSum::new();
+            acc.add_slice(&t[q]);
+            for (w, x) in words[q].iter_mut().zip(acc.to_words()) {
+                *w += x;
+            }
+            rank_sums[q].push(pairwise_sum(&t[q]));
+        }
+    }
+    ["volume", "first moment V x", "boundary area"]
+        .iter()
+        .enumerate()
+        .map(|(q, name)| {
+            let mut one = ExactSum::new();
+            one.add_slice(&reference[q]);
+            let one_rank = one.value();
+            let ranks = ExactSum::from_words(&words[q]).value();
+            let pairwise_ranks = pairwise_sum(&rank_sums[q]);
+            ReductionValue {
+                name: (*name).to_string(),
+                ranks,
+                one_rank,
+                bitwise_equal: ranks.to_bits() == one_rank.to_bits(),
+                pairwise_ranks,
+                pairwise_ulps: ulps(pairwise_ranks, one_rank),
+            }
+        })
+        .collect()
+}

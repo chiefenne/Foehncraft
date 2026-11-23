@@ -11,7 +11,7 @@ use crate::amg::cycle::LevelOps;
 use crate::amg::{Hierarchy, Precision, SellMatrix};
 use crate::disc::Discretisation;
 use foehncraft_core::Real;
-use foehncraft_core::repro::{BLOCK, combine_block_sums};
+use foehncraft_core::exact::{ExactSum, max_total, min_total};
 use foehncraft_kernels::fv::{self, FaceInputs, SellLayout, Vec3};
 use foehncraft_kernels::{amg, blas, spmv};
 use rayon::prelude::*;
@@ -19,18 +19,74 @@ use rayon::prelude::*;
 /// Indices per task of the parallel loops.
 const GRAIN: usize = 1 << 14;
 
+/// Values per task of the exact reductions.
+const EXACT_GRAIN: usize = 1 << 12;
+
+/// Exact dot product of `x` and `y` (D31 (1)): the exact sum of the rounded
+/// products, rounded once, so the bits depend neither on the thread count
+/// nor on the order or the split of the cells between ranks.
+pub fn exact_dot(w: &Workers, x: &[f64], y: &[f64]) -> f64 {
+    exact_dot_acc(w, x, y).value()
+}
+
+/// The accumulator of [`exact_dot`], for a reduction across ranks.
+pub fn exact_dot_acc(w: &Workers, x: &[f64], y: &[f64]) -> ExactSum {
+    assert_eq!(x.len(), y.len(), "dot product of unequal lengths");
+    let chunk = |(a, b): (&[f64], &[f64])| {
+        let mut s = ExactSum::new();
+        s.add_products(a, b);
+        s
+    };
+    let merge = |mut a: ExactSum, b: ExactSum| {
+        a.merge(&b);
+        a
+    };
+    if w.inline(x.len()) {
+        chunk((x, y))
+    } else {
+        w.install(|| {
+            x.par_chunks(EXACT_GRAIN)
+                .zip(y.par_chunks(EXACT_GRAIN))
+                .map(chunk)
+                .reduce(ExactSum::new, merge)
+        })
+    }
+}
+
+/// Minimum and maximum of `x`, independent of order and grouping
+/// ([`min_total`], [`max_total`]); (+∞, −∞) for no values.
+pub fn min_max(w: &Workers, x: &[f64]) -> (f64, f64) {
+    let fold = |c: &[f64]| {
+        c.iter()
+            .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), &v| {
+                (min_total(a, v), max_total(b, v))
+            })
+    };
+    if w.inline(x.len()) {
+        fold(x)
+    } else {
+        w.install(|| {
+            x.par_chunks(EXACT_GRAIN).map(fold).reduce(
+                || (f64::INFINITY, f64::NEG_INFINITY),
+                |(a, b), (c, d)| (min_total(a, c), max_total(b, d)),
+            )
+        })
+    }
+}
+
 /// The threads of the backend. Handing a loop to the pool costs two thread
 /// switches, more than the loop itself on a small mesh or on a coarse level
 /// of a multigrid cycle. So a pool of one thread and a loop of one task run
 /// on the calling thread. The values do not depend on where a loop runs
 /// (D31).
-struct Workers {
+pub struct Workers {
     pool: rayon::ThreadPool,
     serial: bool,
 }
 
 impl Workers {
-    fn new(threads: Option<usize>) -> anyhow::Result<Self> {
+    /// A pool of `threads` threads (`None`: one per core).
+    pub fn new(threads: Option<usize>) -> anyhow::Result<Self> {
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(threads.unwrap_or(0))
             .build()?;
@@ -500,34 +556,11 @@ impl Backend for CpuBackend {
 
     fn dot(&mut self, a: V, b: V) -> anyhow::Result<f64> {
         let (x, y) = (self.v(a), self.v(b));
-        let nb = x.len().div_ceil(BLOCK);
-        // SAFETY: blk * BLOCK < len.
-        let block = |blk: usize| unsafe { blas::block_dot(blk, x, y) };
-        let sums: Vec<f64> = if self.pool.inline(x.len()) {
-            (0..nb).map(block).collect()
-        } else {
-            self.pool
-                .install(|| (0..nb).into_par_iter().map(block).collect())
-        };
-        Ok(combine_block_sums(&sums))
+        Ok(exact_dot(&self.pool, x, y))
     }
 
     fn min_max(&mut self, a: V) -> anyhow::Result<(f64, f64)> {
-        let x = self.v(a);
-        let nb = x.len().div_ceil(BLOCK);
-        // SAFETY: blk * BLOCK < len.
-        let block = |blk: usize| unsafe { blas::block_min_max(blk, x) };
-        let mm: Vec<(f64, f64)> = if self.pool.inline(x.len()) {
-            (0..nb).map(block).collect()
-        } else {
-            self.pool
-                .install(|| (0..nb).into_par_iter().map(block).collect())
-        };
-        Ok(mm
-            .iter()
-            .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), &(c, d)| {
-                (a.min(c), b.max(d))
-            }))
+        Ok(min_max(&self.pool, self.v(a)))
     }
 
     fn update_p(&mut self, beta: f64, omega: f64) -> anyhow::Result<()> {

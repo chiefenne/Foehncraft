@@ -8,6 +8,8 @@
 //! - [`date`]: calendar dates from Unix time (D84).
 //! - [`dual`]: forward-mode dual numbers, a [`Real`] whose kernels return
 //!   exact derivatives next to their results (requirement D59).
+//! - [`exact`]: exact, order-independent sums, dot products and min/max
+//!   (D31 (1), D93 (4)): the same bits for any thread and rank count.
 //! - [`index`]: local (per rank) and global index types.
 //! - [`math`]: elementary functions written in Foehncraft, the same bits on
 //!   every CPU and GPU (D93 (6)), for expressions and properties.
@@ -18,6 +20,7 @@
 
 pub mod date;
 pub mod dual;
+pub mod exact;
 pub mod index;
 pub mod math;
 pub mod real;

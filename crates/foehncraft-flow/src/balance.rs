@@ -60,7 +60,7 @@
 use crate::case::{FlowCase, wall_face_values};
 use crate::diag::{self, Diagnostic};
 use crate::simplec::Solution;
-use foehncraft_core::repro::pairwise_sum;
+use foehncraft_core::exact::exact_sum;
 use foehncraft_kernels::flow::{MOM_FIXED, MOM_SYMMETRY};
 use foehncraft_mesh::geometry::{dot, norm};
 use foehncraft_mesh::{Geometry, Mesh};
@@ -366,14 +366,14 @@ pub fn rates(
         let t = BoundaryTerms {
             boundary: p.name.clone(),
             kind: bc.type_name().into(),
-            mass_flow: pairwise_sum(&m),
-            convective_power: pairwise_sum(&kc),
-            pressure_power: pairwise_sum(&pw),
-            viscous_power: pairwise_sum(&vw),
+            mass_flow: exact_sum(&m),
+            convective_power: exact_sum(&kc),
+            pressure_power: exact_sum(&pw),
+            viscous_power: exact_sum(&vw),
         };
         scale = scale
             .max(t.mass_flow.abs())
-            .max(rho * umax * pairwise_sum(&area));
+            .max(rho * umax * exact_sum(&area));
         boundaries.push(t);
     }
     // the variable density (stage 7c): the mass in the domain and the
@@ -390,18 +390,18 @@ pub fn rates(
                 }
             }
             let pd: Vec<f64> = (0..nc).map(|c| sol.p[c] * div[c]).collect();
-            (Some(pairwise_sum(&m)), Some(pairwise_sum(&pd)))
+            (Some(exact_sum(&m)), Some(exact_sum(&pd)))
         }
         None => (None, None),
     };
     Rates {
         mass,
         pressure_dilatation,
-        kinetic_energy: pairwise_sum(&ke),
+        kinetic_energy: exact_sum(&ke),
         boundaries,
-        body_force_power: pairwise_sum(&body),
-        pressure_source_power: pairwise_sum(&press),
-        viscous_dissipation: pairwise_sum(&phi),
+        body_force_power: exact_sum(&body),
+        pressure_source_power: exact_sum(&press),
+        viscous_dissipation: exact_sum(&phi),
         mass_scale: scale,
         rotors: crate::rotor::evaluate(sol, mesh, geo, case),
     }
@@ -614,7 +614,7 @@ impl Account {
     /// Every sum has a fixed order, so the closure is bitwise
     /// reproducible (D31).
     pub fn close(&self, storage: f64) -> Closure {
-        let boundary = pairwise_sum(&self.boundary_sums());
+        let boundary = exact_sum(&self.boundary_sums());
         let mut contributions = boundary;
         for t in self
             .terms
@@ -858,7 +858,7 @@ fn close(
             viscous_power: ke.value(VISCOUS_WORK, Some(b)),
         })
         .collect();
-    let wall_pressure = pairwise_sum(
+    let wall_pressure = exact_sum(
         &boundaries
             .iter()
             .map(|p| p.pressure_power)
@@ -874,7 +874,7 @@ fn close(
     // the views keep the signs of the reports, signed zeros included: the
     // outflow and the numerical dissipation (= −imbalance of the closure)
     // are formed from the terms in the sign the tables print
-    let out = pairwise_sum(&boundaries.iter().map(|p| p.mass_flow).collect::<Vec<_>>());
+    let out = exact_sum(&boundaries.iter().map(|p| p.mass_flow).collect::<Vec<_>>());
     let num = ck.contributions - storage_ke;
     let scale = mass.scale.unwrap_or(0.0);
     (
@@ -896,7 +896,7 @@ fn close(
             energy: ke.content.unwrap_or(0.0),
             storage: storage_ke,
             boundary: ck.boundary,
-            shaft: pairwise_sum(&shafts.iter().map(|t| t.power).collect::<Vec<_>>()),
+            shaft: exact_sum(&shafts.iter().map(|t| t.power).collect::<Vec<_>>()),
             body_force: ke.value(BODY_FORCE, None),
             viscous_dissipation: -ke.value(VISCOUS_DISSIPATION, None),
             numerical_dissipation: num,

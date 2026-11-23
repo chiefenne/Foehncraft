@@ -118,7 +118,7 @@ Limits, exit codes, restart and the energy ledger.
 
 ## The flow loop on a GPU
 
-CPU = GPU bitwise, not run by CI.
+CPU = GPU bitwise up to v0.7; since MPI step W2 (#219) the CPU sums exactly and the GPU in blocks, so they agree to rounding until v1.1. Not run by CI.
 
 | Case file | Mesh | Shows | Where |
 |---|---|---|---|

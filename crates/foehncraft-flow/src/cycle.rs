@@ -91,6 +91,7 @@ use crate::diag::Diagnostic;
 use crate::energy::CycleCoupling;
 use crate::simplec::Flow;
 use anyhow::Result;
+use foehncraft_core::exact::ExactSumIter as _;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 
@@ -1274,7 +1275,7 @@ impl Controller {
         hold(sc, dev, &self.solid, &t_new)?;
         self.held_mean = Some(t_new);
         let reference = self.tw_prev.as_ref().unwrap_or(&tw_fluid);
-        let area: f64 = self.faces.iter().map(|f| f.area).sum();
+        let area: f64 = self.faces.iter().map(|f| f.area).exact_sum();
         let (mut dmax, mut dmean, mut wmean) = (0.0_f64, 0.0, 0.0);
         for ((f, a), b) in self.faces.iter().zip(&tw).zip(reference) {
             dmax = dmax.max((a - b).abs());
