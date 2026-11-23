@@ -1063,6 +1063,21 @@
    "range": {}
   },
   {
+   "id": "run.pressure-values",
+   "title": "Absolute or gauge pressure values, operating pressure per fluid part",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "`[output.coefficients] reference_pressure` (an absolute reference of the pressure coefficient) is not built",
+    "the vapour-pressure warning of a liquid is not built (no material has a vapour pressure yet)",
+    "a pressure boundary shared by two fluid parts takes the operating pressure of the first part",
+    "`cht_two_fluids_absolute` has no run in the verification manual or in CI"
+   ],
+   "range": {}
+  },
+  {
    "id": "run.restart-control",
    "title": "Restart and control files (.stop, .result_N, .read_toml_N)",
    "grade": "verified",

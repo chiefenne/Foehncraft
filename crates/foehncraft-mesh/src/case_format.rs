@@ -472,7 +472,8 @@ mod tests {
         let mut t: toml::Table =
             toml::from_str("[solver]\nrelaxation_velocity = 0.5\nmax_iterations = 10\n").unwrap();
         let notes = migrate(&mut t).unwrap();
-        assert_eq!(notes.len(), 1);
+        // the rename and the changed default of D239
+        assert_eq!(notes.len(), 2, "{notes:?}");
         assert_eq!(t["solver"]["momentum"]["relaxation"].as_float(), Some(0.5));
         assert_eq!(t[KEY].as_str(), Some(CURRENT));
         assert!(

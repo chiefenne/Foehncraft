@@ -1123,6 +1123,12 @@ impl FlowCase {
         }
         // keys of an older case format are mapped (after the overrides, so
         // that `--set` may use the old names of an old file)
+        let has_convention = |v: &toml::Table| {
+            v.get("fluid")
+                .and_then(toml::Value::as_table)
+                .is_some_and(|f| f.contains_key("pressure_values"))
+        };
+        let stated = has_convention(&v);
         let notes = foehncraft_mesh::case_format::migrate(&mut v).map_err(|m| {
             diag::err(diag::Diagnostic::new(diag::CASE_BAD_VALUE, m).key("case_format"))
         })?;
@@ -1132,8 +1138,11 @@ impl FlowCase {
         // the per-physics sub-tables of the boundaries (D116)
         let boundary_scalar = crate::scalar::extract_boundary_tables(&mut v)?;
         let boundary_energy = crate::energy::extract_boundary_tables(&mut v)?;
+        // the changed default of D239 alone does not need the table: the
+        // text keeps the line numbers of its errors
+        let defaulted = !stated && has_convention(&v);
         let mut c: Self = if sets.is_empty()
-            && notes.is_empty()
+            && notes.len() == usize::from(defaulted)
             && boundary_scalar.is_empty()
             && boundary_energy.is_empty()
         {
@@ -1147,6 +1156,9 @@ impl FlowCase {
                 diag::err(d)
             })?
         };
+        if defaulted {
+            c.fluid.pressure_values = Some(crate::pressure_values::PressureValues::Gauge);
+        }
         c.case_format = Some(foehncraft_mesh::case_format::CURRENT.into());
         c.boundary_scalar = boundary_scalar;
         c.boundary_energy = boundary_energy;
@@ -4143,6 +4155,10 @@ pub(crate) fn boundary_summaries(
     // the torque of a wall about the axis of its rotor, or of the first
     // turning zone (D184)
     let rotors = crate::rotor::rotors(case, mesh);
+    let offsets = case
+        .pressure_frame
+        .as_ref()
+        .and_then(|f| f.cell_offsets(case, mesh));
     mesh.boundaries
         .iter()
         .enumerate()
@@ -4186,13 +4202,20 @@ pub(crate) fn boundary_summaries(
                 kind: bc.type_name().into(),
                 area,
                 mass_flow: q,
-                // in the case file's convention (D239); the forces stay
-                // those of p − p_op
+                // in the case file's convention (D239): the operating
+                // pressure of each face's part added; the forces stay those
+                // of p − p_op
                 mean_pressure: {
                     let m = if area > 0.0 { pa / area } else { 0.0 };
-                    match case.pressure_frame.as_deref().filter(|f| f.absolute()) {
-                        Some(f) => m + f.boundary_offset(&p.name),
-                        None => m,
+                    match &offsets {
+                        Some(o) if area > 0.0 => {
+                            let w: f64 = p
+                                .range()
+                                .map(|f| o[mesh.owner[f] as usize] * norm(geo.face_area[f]))
+                                .sum();
+                            m + w / area
+                        }
+                        _ => m,
                     }
                 },
                 force,

@@ -1,11 +1,12 @@
 # Boundary conditions of the flow solver
 
-Part of the [Recipes](../recipes.md): slip walls, wedges for axisymmetric flow, inlet profiles from tables, backflow at pressure outlets, convective outlets, periodic modules. The basic set of conditions is in [recipe 20](flow.md#flow-boundaries); every key is on the [key page](../cases/flow-keys.md#boundary-conditions-d29).
+Part of the [Recipes](../recipes.md): slip walls, wedges for axisymmetric flow, inlet profiles from tables, backflow at pressure outlets, convective outlets, periodic modules, absolute or gauge pressure values (D239). The basic set of conditions is in [recipe 20](flow.md#flow-boundaries); every key is on the [key page](../cases/flow-keys.md#boundary-conditions-d29).
 
 | # | Recipe |
 |---|---|
 | 29 | [Use slip walls, wedges, table profiles, backflow treatment and convective outlets](#boundary-conditions) |
 | 67 | [Compute a fully developed flow on one periodic module](#periodic) |
+| 220 | [Give pressures as absolute values, or keep gauge values](#absolute-pressure) |
 
 ---
 
@@ -174,5 +175,75 @@ Nu = q D_h / (Γ (T̄_w − T_b)), with the bulk value in the middle of the
 module, (T_b,a + T_b,b)/2, against the mean wall value. Without the
 heat-flux mode (`periodic = "periodic"`, the default) the scalar crosses
 the pair unchanged.
+
+[↑ back to top](#boundary-conditions-of-the-flow-solver)
+
+---
+
+<a id="absolute-pressure"></a>
+## 220. Give pressures as absolute values, or keep gauge values
+
+**When.** Always, from case format 0.7: the pressure values of a case file
+are absolute static pressures unless the file says otherwise (D239).
+
+```toml
+case_format = "0.7"
+
+[boundary.outlet]
+type = "static-pressure-outlet"
+pressure = 1.01325e5          # Pa, absolute: an outlet to the atmosphere
+
+[boundary.inlet]
+type = "total-pressure-inlet"
+total_pressure = 1.02325e5    # 1 kPa above the outlet
+```
+
+The operating pressure p_op of each fluid part comes from its own outlet
+(here 101 325 Pa), and the solver works with p − p_op. A case of several
+fluid parts (a heat exchanger) needs nothing more: each part takes its own
+outlet pressure, and its gas density follows it. To fix p_op yourself (an
+outlet given only by an expression, PRS003):
+
+```toml
+[fluid]
+operating_pressure = 1.5e5    # every part
+[regions.water]
+operating_pressure = 1.0e5    # one region's part
+```
+
+**Gauge values.** Values relative to the operating pressure, as in files
+of format 0.6 and older:
+
+```toml
+[fluid]
+pressure_values = "gauge"
+operating_pressure = 1.0e5    # default 101 325 Pa
+[boundary.outlet]
+type = "static-pressure-outlet"
+pressure = 0.0
+```
+
+**Older files.** They read as gauge values with a note in the log, and keep
+their results. `foehn case upgrade` writes the meaning into them:
+
+```
+target/release/foehn case upgrade examples/cases/flow/my_case.toml --write
+```
+
+**What to check.** The log lines `[PRS005]` and `flow.json` →
+`pressure_values` state the convention and p_op of every part with its
+source; `case.resolved.toml` shows the gauge values the solver used. The
+`pressure` field, probes and `boundaries.csv` are in the file's
+convention; pressure drops and forces are the same in both. An absolute
+value of 0 Pa is refused (PRS001): it was meant as a gauge value.
+
+**The two-fluid exchanger** (gallery 220):
+
+```
+cargo build --release -p foehncraft-cli
+target/release/foehn flow examples/cases/flow/cht_two_fluids_absolute.toml --out output/two_fluids_absolute
+grep PRS005 output/two_fluids_absolute/flow.log
+python3 -c "import json; print(json.load(open('output/two_fluids_absolute/flow.json'))['pressure_values'])"
+```
 
 [↑ back to top](#boundary-conditions-of-the-flow-solver)

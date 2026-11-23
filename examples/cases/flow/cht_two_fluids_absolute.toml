@@ -1,0 +1,111 @@
+# Absolute pressure values and two operating pressures in one case (D239):
+# the water / oil counterflow exchanger of `cht_counterflow_two_fluids.toml`
+# with its two outlets at their absolute pressures, the water at 1 bar and
+# the oil at 1.5 bar.
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/cht_two_fluids_absolute.toml
+#
+# From case format 0.7 every pressure value of a case file is an absolute
+# static pressure (`[fluid] pressure_values = "absolute"`, the default). Each
+# fluid part takes its operating pressure from its own outlet: the reader
+# turns the case into its gauge twin (outlets at 0 Pa, the water at
+# p_op = 1.0e5 Pa, the oil region at p_op = 1.5e5 Pa), so the solver runs
+# the same bits as the gauge case, and every part starts at its own outlet
+# pressure. The log (PRS005) and `flow.json` (`pressure_values`) state the
+# convention and the operating pressure of each part; the `pressure` field
+# and `boundaries.csv` are absolute. The results are those of
+# `cht_counterflow_two_fluids.toml` (V7.33): the water and the oil are
+# liquids, their densities do not depend on the pressure.
+
+case_format = "0.7"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [0.5, 0.0045, 0.001]
+cells = [200, 18, 1]
+split = [
+  { boundary = "xmin", axis = "y", at = 0.0025, name = "oil_out" },
+  { boundary = "xmin", axis = "y", at = 0.002, name = "plate_left" },
+  { boundary = "xmax", axis = "y", at = 0.0025, name = "oil_in" },
+  { boundary = "xmax", axis = "y", at = 0.002, name = "plate_right" },
+]
+zones = [
+  { name = "water", lower = [0.0, 0.0, 0.0], upper = [0.5, 0.002, 0.001] },
+  { name = "plate", lower = [0.0, 0.002, 0.0], upper = [0.5, 0.0025, 0.001] },
+  { name = "oil", lower = [0.0, 0.0025, 0.0], upper = [0.5, 0.0045, 0.001] },
+]
+
+[fluid]
+material = "water"
+temperature = 300.0
+
+[materials.light-oil]
+kind = "liquid"
+description = "a made-up light oil with constant properties (not a database material)"
+density = 850.0
+viscosity = 0.005
+specific_heat = 2000.0
+conductivity = 0.13
+
+[materials.plate-steel]
+kind = "solid"
+description = "a stainless steel plate with constant properties"
+density = 7900.0
+specific_heat = 500.0
+conductivity = 15.0
+
+[regions.water]
+kind = "fluid"
+zones = ["water"]
+
+[regions.oil]
+kind = "fluid"
+zones = ["oil"]
+material = "light-oil"
+
+[regions.plate]
+kind = "solid"
+zones = ["plate"]
+material = "plate-steel"
+
+[energy]
+initial = 320.0
+temperature_dependent = false
+
+# water: mean speed 2.5 mm/s (Re = 11.7), fully developed profile
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = ["0.015*(y/0.002)*(1 - y/0.002)", "0", "0"]
+[boundary.xmin.energy]
+temperature = 340.0
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 1.0e5          # water outlet, 1 bar absolute
+
+# oil: mean speed 6.1265 mm/s against x, the same capacity rate
+[boundary.oil_in]
+type = "velocity-inlet"
+velocity = ["-0.036759001803*((y - 0.0025)/0.002)*(1 - (y - 0.0025)/0.002)", "0", "0"]
+[boundary.oil_in.energy]
+temperature = 300.0
+[boundary.oil_out]
+type = "static-pressure-outlet"
+pressure = 1.5e5          # oil outlet, 1.5 bar absolute
+
+[boundary.plate_left]
+type = "wall"
+[boundary.plate_right]
+type = "wall"
+[boundary.ymin]
+type = "wall"
+[boundary.ymax]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-9
+max_iterations = 3000

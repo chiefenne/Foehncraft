@@ -160,11 +160,7 @@ impl Frame {
                 if k == u32::MAX || found[k as usize] {
                     continue;
                 }
-                if let Some(p) = self
-                    .parts
-                    .iter()
-                    .find(|p| p.boundaries.iter().any(|n| *n == b.name))
-                {
+                if let Some(p) = self.parts.iter().find(|p| p.boundaries.contains(&b.name)) {
                     op[k as usize] = p.operating_pressure;
                     found[k as usize] = true;
                 }
@@ -354,7 +350,7 @@ fn components(case: &FlowCase, mesh: &Mesh) -> Components {
     let mut id = vec![u32::MAX; nc];
     let mut of = vec![u32::MAX; nc];
     let mut n = 0u32;
-    for c in 0..nc {
+    for (c, oc) in of.iter_mut().enumerate() {
         if !is_fluid(c) {
             continue;
         }
@@ -363,7 +359,7 @@ fn components(case: &FlowCase, mesh: &Mesh) -> Components {
             id[r] = n;
             n += 1;
         }
-        of[c] = id[r];
+        *oc = id[r];
     }
     Components { of, n: n as usize }
 }
