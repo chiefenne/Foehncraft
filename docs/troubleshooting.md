@@ -27,6 +27,7 @@ Contents: [Build and start](#build-and-start) ·
 | `CASE002` unknown key | a key the case file does not have; the message names the nearest key. `foehn schema --markdown` or [keys.md](keys.md) lists them |
 | `CASE007` outside the roots | a mesh, table, restart file or the output folder lies outside `--read-root` / `--write-root`; move the file or widen the root |
 | `RUN006` not converged | the run reached `solver.max_iterations` before its tolerance; read the diagnosis at `[run.limits] diagnose_at` (`RUN016`, gallery 166) before adding iterations, and check a monitored quantity, not only the residual ([pitfalls](pitfalls.md#steady-runs)) |
+| `PRS001` or `PRS002` on a case that ran before | from case format 0.7 pressure values are absolute static pressures (D239): a boundary value of 0 Pa is refused, a gas below 1 kPa looks like a gauge value. Add `[fluid] pressure_values = "gauge"` for gauge values; files of format 0.6 and older keep their gauge meaning, and `foehn case upgrade FILE --write` writes the key into them |
 | exit code 3 | stopped: a signal, a `.stop` file, a limit of `[run.limits]` or a cancelled MCP call; a restart file and the final output are written, `--restart latest` goes on |
 | A limitation `LIM00x` in the summary | not an error: the result has a known limit (one mesh only, outside the validated range, …); say so when you report it (D199) |
 

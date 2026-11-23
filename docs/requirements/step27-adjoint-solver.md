@@ -24,7 +24,7 @@ Contents: [0](#0-where-we-stand-checked-in-the-repository) where we stand,
 [4](#4-stages) stages, [5](#5-verification-ladder) verification,
 [6](#6-tool-and-gradient-interface) interface, [7](#7-memory-and-cost)
 memory and cost, [8](#8-proposed-entries) entries,
-[9](#9-open-questions-for-the-maintainer) questions,
+[9](#9-decisions-of-the-maintainer-2026-11-22) questions,
 [10](#10-sources) sources.
 
 ## 0. Where we stand (checked in the repository)

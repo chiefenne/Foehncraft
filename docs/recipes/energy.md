@@ -745,6 +745,10 @@ target/release/foehn flow examples/cases/flow/cht_heated_wall_frozen.toml --out 
 target/release/foehn flow examples/cases/flow/cht_heated_wall_frozen.toml --out output/frz_ref \
     --set energy.frozen_flow.enabled=false
 target/release/foehn flow examples/cases/flow/cht_pulsating_channel_warmup.toml --out output/wu
+target/release/foehn flow examples/cases/flow/cht_pulsating_channel_warmup.toml --out output/wu_ref \
+    --set energy.cycle.enabled=false
+```
+
 <a id="two-fluids"></a>
 ## 206. Put several fluids in one conjugate case (water and air in a heat exchanger)
 
