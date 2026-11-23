@@ -177,6 +177,12 @@ codes! {
     REG_FLUIDS_TOUCH = "REG004", Error, "Two fluids of different materials (or temperatures) share a face: that is a two-phase interface (multiphase, L3); put a solid region or a thin wall between them, or give both regions the same fluid.";
     REG_PARTS = "REG005", Note, "The fluid parts of the case: their number, regions and fluids.";
     REG_FLUIDS_UNSUPPORTED = "REG006", Error, "A setting that does not yet work with several fluids in one case (D194): the variable density, gravity, a rotating zone or frame, passive scalars, a convective outlet or a periodic mass-flow drive.";
+    // pressure values absolute or gauge (D239)
+    PRS_NOT_POSITIVE = "PRS001", Error, "An absolute pressure value (`[fluid] pressure_values = \"absolute\"`, the default from case format 0.7, D239) that is zero or negative: a boundary `pressure` or `total_pressure`, `[initial] pressure`, `[pressure] reference_value` or an operating pressure; set `pressure_values = \"gauge\"` for values relative to the operating pressure.";
+    PRS_LOOKS_GAUGE = "PRS002", Warning, "An absolute pressure below 1 kPa in a gas (density below 50 kg/m³): it looks like a gauge value; set `[fluid] pressure_values = \"gauge\"` if it is one.";
+    PRS_NO_OPERATING = "PRS003", Error, "A fluid part whose operating pressure cannot be taken from its pressure boundaries (absolute values, D239): their values are expressions only; give `[fluid] operating_pressure` or `[regions.<name>] operating_pressure`.";
+    PRS_INITIAL_PARTS = "PRS004", Error, "A case-wide absolute `[initial] pressure` in a case whose fluid parts have different operating pressures: leave it out (each part starts at its own operating pressure) or give the start pressure per region.";
+    PRS_FRAME = "PRS005", Note, "The pressure convention of the case file (absolute or gauge) and the operating pressure of every fluid part with where it comes from (D239).";
     // moving reference frame and sliding mesh (D55, D182)
     MRF_SLIDING_ZONE = "MRF001", Error, "An `[[mrf]]` table and a `[[sliding]]` table that turn the same cells (one of them without a `zone`, or both with the same one): a zone is turned by a moving reference frame (steady or transient, D185) or by a sliding mesh (D182), not by both.";
     MRF_ENTRY = "MRF002", Error, "An `[[mrf]]` table with no or two angular velocities (`omega`, `rpm`), a zero axis, a cell zone the mesh does not have (with the nearest name as a hint), no `zone` where there are several tables, or a zone that two tables rotate.";

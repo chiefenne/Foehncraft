@@ -498,6 +498,12 @@ pub fn notes(case: &FlowCase) -> Vec<String> {
     case.notes
         .iter()
         .map(|n| crate::console::tagged("note", n))
+        .chain(
+            case.pressure_frame
+                .iter()
+                .flat_map(|f| f.notes())
+                .map(|n| crate::console::tagged("note", &n)),
+        )
         .collect()
 }
 

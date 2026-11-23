@@ -21,7 +21,7 @@ use toml_edit::{DocumentMut, Item, Table};
 pub const KEY: &str = "case_format";
 
 /// The format written by this version of the code.
-pub const CURRENT: &str = "0.6";
+pub const CURRENT: &str = "0.7";
 
 /// The format of a file without `case_format`.
 pub const UNVERSIONED: &str = "0.5";
@@ -106,6 +106,50 @@ pub const RULES: &[Rename] = &[
     ),
     r("0.6", "solver.amg", "solver.pressure.amg"),
 ];
+
+/// A default that changed: a file of an older format that does not set the
+/// key meant the old value, so reading it puts the old value in (the log
+/// notes it) and `foehn case upgrade` writes it into the file. Every
+/// existing case keeps its meaning and its results.
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct ChangedDefault {
+    /// The format that introduced the new default.
+    pub since: &'static str,
+    /// The key (dotted path from the top of the file).
+    pub key: &'static str,
+    /// The value of older files (a TOML string).
+    pub old: &'static str,
+    /// What the change means, for the note.
+    pub why: &'static str,
+}
+
+/// Every changed default since format 0.5, oldest first. They apply to
+/// flow cases only (see [`is_flow_case`]).
+pub const DEFAULTS: &[ChangedDefault] = &[ChangedDefault {
+    since: "0.7",
+    key: "fluid.pressure_values",
+    old: "gauge",
+    why: "pressure values are absolute by default from format 0.7 (D239); \
+          this file's values are gauge values",
+}];
+
+/// True for the table of a flow case: not a scalar case (`[problem]`), not
+/// a Poisson case (`[linear]`) and not a mesh case (only `[mesh]`,
+/// `[partition]`, `[check]`, `[output]`).
+pub fn is_flow_case(has_key: impl Fn(&str) -> bool, keys: &[&str]) -> bool {
+    if has_key("problem") || has_key("linear") {
+        return false;
+    }
+    keys.iter()
+        .any(|k| !matches!(*k, KEY | "mesh" | "partition" | "check" | "output"))
+}
+
+fn default_note(file: &str, d: &ChangedDefault) -> String {
+    format!(
+        "case format {file}: {} (`{} = \"{}\"`; `foehn case upgrade` writes it into the file)",
+        d.why, d.key, d.old
+    )
+}
 
 /// `major.minor` of a format string.
 fn parse(v: &str) -> Option<(u32, u32)> {
@@ -227,6 +271,16 @@ pub fn migrate(t: &mut toml::Table) -> Result<Vec<String>, String> {
             notes.push(note(&file, r));
         }
     }
+    let keys: Vec<String> = t.keys().cloned().collect();
+    let keys: Vec<&str> = keys.iter().map(String::as_str).collect();
+    if is_flow_case(|k| t.contains_key(k), &keys) {
+        for d in DEFAULTS.iter().filter(|d| older(&file, d.since)) {
+            if !has(t, d.key) {
+                put(t, d.key, toml::Value::String(d.old.to_string()))?;
+                notes.push(default_note(&file, d));
+            }
+        }
+    }
     t.insert(KEY.to_string(), toml::Value::String(CURRENT.to_string()));
     Ok(notes)
 }
@@ -278,6 +332,27 @@ fn has_item(t: &Table, path: &str) -> bool {
     }
 }
 
+/// Puts a changed default into the text: into its table when the file has
+/// one, else into a new table at the end.
+fn put_default(root: &mut Table, path: &str, v: &str) -> Result<(), String> {
+    let (head, key) = path.rsplit_once('.').unwrap_or(("", path));
+    if head.is_empty() {
+        root.insert(key, toml_edit::value(v));
+        return Ok(());
+    }
+    put_item(root, &format!("{head}.{key}"), toml_edit::value(v))?;
+    // a table created here is explicit, so that it is written
+    let mut t = &mut *root;
+    for part in head.split('.') {
+        let Some(sub) = t.get_mut(part).and_then(Item::as_table_mut) else {
+            break;
+        };
+        sub.set_implicit(false);
+        t = sub;
+    }
+    Ok(())
+}
+
 /// The text of a case file in the current format, with its comments, and
 /// one note per key that was renamed. The key `case_format` goes to the top.
 pub fn upgrade_text(text: &str) -> Result<(String, Vec<String>), String> {
@@ -305,6 +380,22 @@ pub fn upgrade_text(text: &str) -> Result<(String, Vec<String>), String> {
         if let Some(v) = take_item(root, r.from) {
             put_item(root, r.to, v)?;
             notes.push(note(&file, r).replace(" (`foehn case upgrade` rewrites the file)", ""));
+        }
+    }
+    {
+        let root = doc.as_table_mut();
+        let keys: Vec<String> = root.iter().map(|(k, _)| k.to_string()).collect();
+        let keys: Vec<&str> = keys.iter().map(String::as_str).collect();
+        if is_flow_case(|k| root.contains_key(k), &keys) {
+            for d in DEFAULTS.iter().filter(|d| older(&file, d.since)) {
+                if !has_item(root, d.key) {
+                    put_default(root, d.key, d.old)?;
+                    notes.push(format!(
+                        "case format {file}: {} (`{} = \"{}\"` written)",
+                        d.why, d.key, d.old
+                    ));
+                }
+            }
         }
     }
     let mut out = doc.to_string();
@@ -368,6 +459,7 @@ pub fn history() -> serde_json::Value {
         "current": CURRENT,
         "unversioned": UNVERSIONED,
         "renames": RULES,
+        "changed_defaults": DEFAULTS,
     })
 }
 
@@ -395,7 +487,7 @@ mod tests {
     #[test]
     fn a_current_file_keeps_its_old_keys_for_the_unknown_key_error() {
         let mut t: toml::Table =
-            toml::from_str("case_format = \"0.6\"\n[solver]\nrelaxation_velocity = 0.5\n").unwrap();
+            toml::from_str("case_format = \"0.7\"\n[solver]\nrelaxation_velocity = 0.5\n").unwrap();
         assert!(migrate(&mut t).unwrap().is_empty());
         assert!(
             t["solver"]
@@ -420,9 +512,11 @@ mod tests {
     fn the_text_keeps_its_comments() {
         let text = "# A case.\n# More.\n\n[mesh]\nfile = \"a.msh\"\n\n[mesh.patches]  # rename\nwall = \"w\"\n\n[solver]\nrelaxation_velocity = 0.5  # alpha\nlog_every = 5\n";
         let (out, notes) = upgrade_text(text).unwrap();
-        assert_eq!(notes.len(), 2);
+        // two renames and the changed default of D239
+        assert_eq!(notes.len(), 3);
         assert!(out.starts_with("# A case.\n# More.\n"));
-        assert!(out.contains("case_format = \"0.6\""));
+        assert!(out.contains("case_format = \"0.7\""));
+        assert!(out.contains("pressure_values = \"gauge\""), "{out}");
         assert!(out.contains("# alpha"));
         assert!(out.contains("[mesh.boundaries]"));
         assert!(out.contains("[solver.momentum]"));
@@ -448,5 +542,42 @@ mod tests {
         }
         let (out, notes) = upgrade_text("[fluid]\n[solver]\nscheme = \"upwind\"\n").unwrap();
         assert!(out.contains("momentum") && !notes.is_empty(), "{out}");
+    }
+
+    #[test]
+    fn a_changed_default_keeps_the_meaning_of_older_files() {
+        // an older flow case means gauge pressures: reading puts it in
+        let mut t: toml::Table = toml::from_str(
+            "case_format = \"0.6\"\n[boundary.out]\ntype = \"static-pressure-outlet\"\n",
+        )
+        .unwrap();
+        let notes = migrate(&mut t).unwrap();
+        assert_eq!(notes.len(), 1, "{notes:?}");
+        assert_eq!(t["fluid"]["pressure_values"].as_str(), Some("gauge"));
+        // a file that states it keeps its value; a current file gets nothing
+        let mut t: toml::Table =
+            toml::from_str("[fluid]\npressure_values = \"absolute\"\n").unwrap();
+        assert!(migrate(&mut t).unwrap().is_empty());
+        assert_eq!(t["fluid"]["pressure_values"].as_str(), Some("absolute"));
+        let mut t: toml::Table =
+            toml::from_str("case_format = \"0.7\"\n[fluid]\ndensity = 1.0\n").unwrap();
+        assert!(migrate(&mut t).unwrap().is_empty());
+        assert!(t["fluid"].get("pressure_values").is_none());
+        // mesh, scalar and Poisson cases have no pressure values
+        for text in ["[mesh]\nfile = \"a.msh\"\n", "[problem]\n", "[linear]\n"] {
+            let mut t: toml::Table = toml::from_str(text).unwrap();
+            migrate(&mut t).unwrap();
+            assert!(t.get("fluid").is_none(), "{text}");
+        }
+        // the text: into the existing [fluid] table, comments kept
+        let (out, _) =
+            upgrade_text("# c\n[fluid]  # air\ndensity = 1.2\n\n[boundary.out]\ntype = \"wall\"\n")
+                .unwrap();
+        let t: toml::Table = toml::from_str(&out).unwrap();
+        assert_eq!(t["fluid"]["pressure_values"].as_str(), Some("gauge"));
+        assert!(out.contains("# air"));
+        let (again, n2) = upgrade_text(&out).unwrap();
+        assert!(n2.is_empty());
+        assert_eq!(again, out);
     }
 }

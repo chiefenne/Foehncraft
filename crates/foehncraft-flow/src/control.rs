@@ -214,6 +214,7 @@ pub fn with_setting(
     let mut case: FlowCase = v.try_into()?;
     case.source = current.source.clone();
     case.overrides = current.overrides.clone();
+    case.pressure_frame = current.pressure_frame.clone();
     case.validate()?;
     let mut flat = BTreeMap::new();
     flatten("", &toml::Value::try_from(&case)?, &mut flat);
@@ -275,6 +276,7 @@ pub fn reread(path: &Path, current: &FlowCase, fired: usize) -> Result<Reread> {
     let mut case: FlowCase = merged.try_into()?;
     case.source = current.source.clone();
     case.overrides = current.overrides.clone();
+    case.pressure_frame = current.pressure_frame.clone();
     case.validate()?;
     Ok(Reread {
         case,

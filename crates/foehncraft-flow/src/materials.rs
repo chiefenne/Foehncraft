@@ -712,6 +712,13 @@ pub struct RegionSection {
     /// heat exchanger.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub temperature: Option<f64>,
+    /// The operating pressure (Pa) of a fluid region (D238 (3), D239): the
+    /// absolute level of its gauge pressure and the pressure at which its
+    /// material is evaluated; default `[fluid] operating_pressure`. With
+    /// absolute pressure values the reader sets it from the region's own
+    /// fluid part (the water at 1 bar beside the air at 1.5 bar).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operating_pressure: Option<f64>,
 }
 
 /// The JSON Schema of `[materials]`: the include list and, for every other

@@ -106,10 +106,23 @@ pub struct FluidSection {
     /// evaluated (isothermal flow); default 293.15 K.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub temperature: Option<f64>,
-    /// The operating pressure (Pa) of the ideal-gas density; default
-    /// 101 325 Pa.
+    /// The operating pressure p_op (Pa): the absolute level of the gauge
+    /// pressure the solver works with, and the pressure of the ideal-gas
+    /// density. With absolute pressure values (the default) each fluid part
+    /// takes it from its own pressure boundaries and it is rarely given;
+    /// with gauge values the default is 101 325 Pa.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub operating_pressure: Option<f64>,
+    /// What the pressure values of the case file are (D239): `"absolute"`
+    /// static pressures (the default from case format 0.7) or `"gauge"`
+    /// values relative to the operating pressure, p = p_op + p_gauge (the
+    /// meaning of files of format 0.6 and older). It applies to every
+    /// pressure value of the file: boundary `pressure` and
+    /// `total_pressure` (numbers and expressions), `[initial] pressure`
+    /// and `[pressure] reference_value`; the outputs (fields, probes,
+    /// boundary values) are written in the same convention.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pressure_values: Option<crate::pressure_values::PressureValues>,
     /// Specific heat c_p (J/(kg K)) for the energy equation: a number or
     /// an expression of T; replaces the material's.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -901,6 +914,13 @@ pub struct FlowCase {
     /// The `--set key=value` overrides applied to the case file.
     #[serde(skip)]
     pub overrides: Vec<String>,
+    /// The pressure convention of the case file and the operating pressure
+    /// of every fluid part (D239): set by the reader, which turns absolute
+    /// values into the gauge values the solver works with; `None` for a
+    /// case built in code (gauge values).
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub pressure_frame: Option<std::sync::Arc<crate::pressure_values::Frame>>,
 }
 
 /// Adds "did you mean" to the unknown-field and unknown-variant messages of
@@ -1106,6 +1126,9 @@ impl FlowCase {
         let notes = foehncraft_mesh::case_format::migrate(&mut v).map_err(|m| {
             diag::err(diag::Diagnostic::new(diag::CASE_BAD_VALUE, m).key("case_format"))
         })?;
+        // which pressure values the file gives (D239: a value left out sits
+        // at the operating pressure)
+        let given = crate::pressure_values::Given::of(&v);
         // the per-physics sub-tables of the boundaries (D116)
         let boundary_scalar = crate::scalar::extract_boundary_tables(&mut v)?;
         let boundary_energy = crate::energy::extract_boundary_tables(&mut v)?;
@@ -1157,7 +1180,25 @@ impl FlowCase {
             e.frozen_flow = None;
         }
         c.validate()?;
+        // absolute pressure values become the gauge values of the solver,
+        // relative to the operating pressure of each fluid part (D239)
+        crate::pressure_values::resolve(&mut c, &given)?;
         Ok(c)
+    }
+
+    /// The number of the pressure or total pressure of a pressure boundary
+    /// (as the solver sees it: the gauge value, D239); `None` for an
+    /// expression or another kind of boundary.
+    pub fn boundary_pressure(&self, name: &str) -> Option<f64> {
+        match self.boundary.get(name)? {
+            BoundaryCondition::StaticPressureInlet { pressure, .. }
+            | BoundaryCondition::StaticPressureOutlet { pressure, .. } => pressure.number(),
+            BoundaryCondition::TotalPressureInlet { total_pressure, .. }
+            | BoundaryCondition::TotalPressureOutlet { total_pressure, .. } => {
+                total_pressure.number()
+            }
+            _ => None,
+        }
     }
 
     /// The constants and tables of the expressions.
@@ -1218,7 +1259,7 @@ impl FlowCase {
             // (D194); the [fluid] shorthand numbers stay those of [fluid]
             let rcond = crate::materials::Conditions {
                 temperature: r.temperature.unwrap_or(cond.temperature),
-                ..cond
+                pressure: r.operating_pressure.unwrap_or(cond.pressure),
             };
             if let Some(t) = r.temperature {
                 crate::need!(
@@ -1237,15 +1278,17 @@ impl FlowCase {
                     rcond,
                     &mut warnings,
                 )?,
-                None if r.temperature.is_some() => resolve_material(
-                    self.fluid.material.as_deref(),
-                    &self.materials,
-                    self.fluid.density.as_ref(),
-                    self.fluid.viscosity.as_ref(),
-                    &env,
-                    rcond,
-                    &mut warnings,
-                )?,
+                None if r.temperature.is_some() || r.operating_pressure.is_some() => {
+                    resolve_material(
+                        self.fluid.material.as_deref(),
+                        &self.materials,
+                        self.fluid.density.as_ref(),
+                        self.fluid.viscosity.as_ref(),
+                        &env,
+                        rcond,
+                        &mut warnings,
+                    )?
+                }
                 None => fluid.clone(),
             };
             if let Some(rho) = m.density.value.constant() {
@@ -2246,6 +2289,10 @@ pub struct FlowReport {
     pub failures: Vec<String>,
     /// Seconds.
     pub seconds: f64,
+    /// The pressure convention of the case file and the operating pressure
+    /// of every fluid part (D239), for people and agents.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pressure_values: Option<serde_json::Value>,
 }
 
 pub(crate) fn mesh_for(case: &FlowCase, level: Option<u32>) -> Result<(Mesh, Geometry, String)> {
@@ -2677,6 +2724,7 @@ pub fn run_steered(
         warnings: Vec::new(),
         failures: Vec::new(),
         seconds: 0.0,
+        pressure_values: case.pressure_frame.as_ref().map(|f| f.json()),
     };
     std::fs::write(out.join("case.resolved.toml"), case.resolved_toml()?)?;
     let last = levels.len() - 1;
@@ -2723,6 +2771,7 @@ pub fn run_steered(
         );
         findings.extend(crate::turbulence::setup_findings(&case));
         findings.extend(crate::energy::setup_findings(&case));
+        findings.extend(crate::pressure_values::setup_findings(&case));
         findings.extend(crate::buoyancy::setup_findings(&case, &mesh, &geo));
         if li == 0 {
             rep.findings = findings.clone();
@@ -4137,7 +4186,15 @@ pub(crate) fn boundary_summaries(
                 kind: bc.type_name().into(),
                 area,
                 mass_flow: q,
-                mean_pressure: if area > 0.0 { pa / area } else { 0.0 },
+                // in the case file's convention (D239); the forces stay
+                // those of p − p_op
+                mean_pressure: {
+                    let m = if area > 0.0 { pa / area } else { 0.0 };
+                    match case.pressure_frame.as_deref().filter(|f| f.absolute()) {
+                        Some(f) => m + f.boundary_offset(&p.name),
+                        None => m,
+                    }
+                },
                 force,
                 torque: axis.map(|_| torque),
             }
@@ -4397,6 +4454,15 @@ pub(crate) fn write_fields(
     }
     let derived = crate::derived::compute(case, &case.output.derived, mesh, geo, fl)?;
     let speed: Vec<f64> = (0..mesh.n_cells).map(|c| norm(fl.u.get(c))).collect();
+    // absolute pressure values (D239): the solver's gauge pressure plus the
+    // operating pressure of each cell's fluid part
+    let offsets = case
+        .pressure_frame
+        .as_ref()
+        .and_then(|f| f.cell_offsets(case, mesh));
+    let p_out: Option<Vec<f64>> = offsets
+        .as_ref()
+        .map(|o| (0..mesh.n_cells).map(|c| fl.p[c] + o[c]).collect());
     let mut fields = vec![
         CellField {
             name: "velocity_x",
@@ -4416,7 +4482,7 @@ pub(crate) fn write_fields(
         },
         CellField {
             name: "pressure",
-            values: &fl.p,
+            values: p_out.as_deref().unwrap_or(&fl.p),
         },
     ];
     // gravity (stage 7b1): `pressure` is the reduced pressure p′, the
@@ -4425,7 +4491,13 @@ pub(crate) fn write_fields(
     let static_p: Vec<f64>;
     if let Some(h) = hydro {
         static_p = (0..mesh.n_cells)
-            .map(|c| fl.p[c] + h.head(geo.cell_centroid[c]))
+            .map(|c| {
+                let p = fl.p[c] + h.head(geo.cell_centroid[c]);
+                match &offsets {
+                    Some(o) => p + o[c],
+                    None => p,
+                }
+            })
             .collect();
         fields.push(CellField {
             name: "static_pressure",
@@ -4548,6 +4620,14 @@ pub(crate) fn write_fields(
         ("case", Attr::Str(&name)),
         ("units", Attr::Str(&units)),
     ];
+    // the convention of `pressure` and the operating pressure (D239 (4))
+    if let Some(f) = case.pressure_frame.as_deref() {
+        attrs.push(("pressure_values", Attr::Str(f.pressure_values.as_str())));
+        attrs.push((
+            "operating_pressure",
+            Attr::F64(f.parts.first().map_or(0.0, |p| p.operating_pressure)),
+        ));
+    }
     match at {
         Some((n, Some(t))) => {
             attrs.push(("step", Attr::U64(n as u64)));

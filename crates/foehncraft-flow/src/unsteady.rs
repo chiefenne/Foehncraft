@@ -358,6 +358,7 @@ pub fn run(
         warnings: Vec::new(),
         failures: Vec::new(),
         seconds: 0.0,
+        pressure_values: case.pressure_frame.as_ref().map(|f| f.json()),
     };
     std::fs::write(out.join("case.resolved.toml"), case.resolved_toml()?)?;
     let mut outs: Vec<RunOut> = Vec::new();
@@ -387,6 +388,7 @@ pub fn run(
         );
         findings.extend(crate::turbulence::setup_findings(case));
         findings.extend(crate::energy::setup_findings(case));
+        findings.extend(crate::pressure_values::setup_findings(case));
         findings.extend(crate::buoyancy::setup_findings(case, &mesh, &geo));
         steer.set_cells(mesh.n_cells, usize::from(case.run.backend != "cpu"));
         if ri == 0 {
