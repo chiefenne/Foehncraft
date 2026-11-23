@@ -18,7 +18,9 @@
 //!   `x_old`; per boundary face `ub_<i>`, `pb`, and with convective outlets
 //!   (D29) the boundary velocity of the level before, `ub_old_<i>`;
 //! - the passive scalars (D51): attribute `scalars` (the names), per cell
-//!   `scalar_<name>` and, transient, `scalar_old_<name>` (the level before);
+//!   `scalar_<name>` and, transient, `scalar_old_<name>` (the level before),
+//!   with `limiter = "mlp"` also `scalar_psi_<name>`, the limiter value
+//!   that its relaxation carries between outer iterations (D237);
 //! - the periodic pairs (D29): `periodic_force`, the driving force per
 //!   pair;
 //! - the turbulence model (stage 6): attribute `turbulence` (the family:
@@ -43,6 +45,7 @@
 //!   hierarchy h was built from;
 //! - a conjugate case (stage 7): `cht_cell_id`, `cht_temperature` and,
 //!   transient, `cht_temperature_old` on the full mesh (fluid and solids),
+//!   with the energy limiter `mlp` also `cht_psi` (its limiter value, D237),
 //!   and with the cycle-averaged loop (D204) `cht_cycle_state`, the bytes of
 //!   its state as JSON (counters, accumulators, update history), with the
 //!   frozen-flow march (D118) `cht_frozen_state` (its phase, settling
@@ -107,6 +110,9 @@ pub struct ChtRestart {
     pub t: Vec<f64>,
     /// Transient: the level before.
     pub t_old: Option<Vec<f64>>,
+    /// The limiter value ψ per cell of the full mesh with the energy
+    /// limiter `mlp` (D237; its relaxation carries ψ between iterations).
+    pub psi: Option<Vec<f64>>,
     /// The state of the cycle-averaged loop (JSON), if the run has one.
     pub cycle: Option<Vec<u8>>,
     /// The state of the frozen-flow march (JSON, D118), if the run has one.
@@ -240,6 +246,9 @@ mod io {
                     if let Some(o) = &x.old {
                         ds(&g, &format!("scalar_old_{}", x.name), o)?;
                     }
+                    if let Some(p) = &x.psi {
+                        ds(&g, &format!("scalar_psi_{}", x.name), p)?;
+                    }
                 }
             }
             if !s.periodic_force.is_empty() {
@@ -342,6 +351,9 @@ mod io {
                 if let Some(o) = &c.t_old {
                     ds(&g, "cht_temperature_old", o)?;
                 }
+                if let Some(p) = &c.psi {
+                    ds(&g, "cht_psi", p)?;
+                }
                 if let Some(b) = &c.cycle {
                     g.new_dataset::<u8>()
                         .shape([b.len()])
@@ -389,11 +401,17 @@ mod io {
             .split_whitespace()
             .map(|n| {
                 let old = format!("scalar_old_{n}");
+                let psi = format!("scalar_psi_{n}");
                 Ok(crate::scalar::ScalarState {
                     name: n.to_string(),
                     phi: rd(g, &format!("scalar_{n}"))?,
                     old: if transient && g.link_exists(&old) {
                         Some(rd(g, &old)?)
+                    } else {
+                        None
+                    },
+                    psi: if g.link_exists(&psi) {
+                        Some(rd(g, &psi)?)
                     } else {
                         None
                     },
@@ -611,6 +629,11 @@ mod io {
                 } else {
                     None
                 },
+                psi: if g.link_exists("cht_psi") {
+                    Some(rd(&g, "cht_psi")?)
+                } else {
+                    None
+                },
                 cycle: if g.link_exists("cht_cycle_state") {
                     Some(g.dataset("cht_cycle_state")?.read_raw::<u8>()?)
                 } else {
@@ -770,6 +793,7 @@ impl Restart {
                         name: x.name.clone(),
                         phi: remap(&x.phi, &mc),
                         old: x.old.as_ref().map(|o| remap(o, &mc)),
+                        psi: x.psi.as_ref().map(|p| remap(p, &mc)),
                         wall: None,
                     })
                     .collect(),

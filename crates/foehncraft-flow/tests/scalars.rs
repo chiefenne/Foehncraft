@@ -445,6 +445,42 @@ max_cfl = 2.0
     let _ = std::fs::remove_dir_all(&db);
 }
 
+/// The vertex limiter (D237) keeps a memory: its relaxation blends the
+/// new limiter value ψ with the one of the iteration before. The restart
+/// file holds ψ (`scalar_psi_<name>`), so a steady run continued from it
+/// ends bit-identically to the run without the interruption; a file
+/// without ψ (an older version) starts from ψ = 1 and does not.
+#[cfg(feature = "hdf5")]
+#[test]
+fn mlp_limiter_restart_continues_bit_identically() {
+    use foehncraft_flow::restart;
+    let base = text("scalar_oblique_step_mlp.toml")
+        .replace("vtkhdf = true", "vtkhdf = false")
+        .replace("max_iterations = 1500", "max_iterations = 60")
+        .replace("require_convergence = true", "require_convergence = false")
+        .replace("scalar_range = [-0.005, 1.005]", "");
+    let (da, db) = (out("mlp_restart_full"), out("mlp_restart_cont"));
+    let mut first = parse(&base);
+    first.run.restart_at = vec![20];
+    first.run.restart_final = true;
+    run(&first, "full", &da, |_| {}).unwrap();
+    let mut second = parse(&base);
+    second.run.restart = Some(da.join("restart_000020.h5"));
+    second.run.restart_final = true;
+    run(&second, "cont", &db, |_| {}).unwrap();
+    let a = restart::read(&da.join("restart.h5")).unwrap();
+    let b = restart::read(&db.join("restart.h5")).unwrap();
+    assert_eq!(a.iteration, b.iteration);
+    assert!(a.state.scalars[0].psi.is_some(), "the restart file holds ψ");
+    assert_eq!(
+        a.state.scalars, b.state.scalars,
+        "the continued scalar differs"
+    );
+    assert_eq!(a.state.p, b.state.p);
+    let _ = std::fs::remove_dir_all(&da);
+    let _ = std::fs::remove_dir_all(&db);
+}
+
 /// The bounded convection of the scalars (D237) on the oblique step of
 /// `scalar_oblique_step_mlp.toml` (perturbed polyhedra): the face-neighbour
 /// limiter leaves [0, 1] by almost 2 %, the MLP limiter keeps the

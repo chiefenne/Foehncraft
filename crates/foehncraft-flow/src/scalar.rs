@@ -887,6 +887,11 @@ pub struct ScalarState {
     /// Transient: the cell values of the level before (φⁿ⁻¹ of the next
     /// step).
     pub old: Option<Vec<f64>>,
+    /// The limiter value ψ per cell of `limiter = "mlp"` (D237): its
+    /// relaxation (`limiter_relaxation`) carries ψ from one outer iteration
+    /// to the next, so a restart needs it to continue bit-identically.
+    /// `None` with the other limiters, which keep no memory.
+    pub psi: Option<Vec<f64>>,
     /// The boundary coefficients of the last solve (output only; not kept
     /// in restart files).
     pub wall: Option<ScalarWall>,
@@ -1786,6 +1791,10 @@ impl Scalars {
                         Some((o1, _, _)) => Some(dev.download(o1)?),
                         None => None,
                     },
+                    psi: match f.mlp {
+                        Some(_) => Some(dev.download(f.psi)?),
+                        None => None,
+                    },
                     wall: {
                         let g = dev.download(f.gamma)?;
                         let ni = g.len() - f.rules.len();
@@ -1814,6 +1823,13 @@ impl Scalars {
                     dev.upload(f.phi, &s.phi)?;
                     if let (Some((o1, _, _)), Some(o)) = (f.old, &s.old) {
                         dev.upload(o1, o)?;
+                    }
+                    // the memory of the MLP relaxation (a file without it
+                    // starts from ψ = 1, as a new run)
+                    if let (Some(_), Some(p)) = (f.mlp, &s.psi)
+                        && p.len() == s.phi.len()
+                    {
+                        dev.upload(f.psi, p)?;
                     }
                 }
                 None => missing.push(f.name.clone()),

@@ -674,6 +674,7 @@ pub(crate) fn restart_part(
         cell_id,
         t: st.phi,
         t_old: st.old,
+        psi: st.psi,
         cycle,
         frozen,
         viscosity,
@@ -731,6 +732,7 @@ pub(crate) fn load_restart(
         name: crate::energy::FIELD.into(),
         phi: remap(&r.t),
         old: r.t_old.as_deref().map(remap),
+        psi: r.psi.as_deref().map(remap),
         wall: None,
     };
     if let Some((sc, dev)) = energy_fields(fl) {
