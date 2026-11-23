@@ -1398,7 +1398,7 @@ Gaps:
 
 **partial** (gaps written) · id `run.pressure-values` · switch `[fluid] pressure_values` · decisions D239
 
-- consistency: [`cht_two_fluids_absolute`](../../examples/cases/flow/cht_two_fluids_absolute.toml): water at 1 bar and oil at 1.5 bar across a steel plate: each part takes its own outlet as its operating pressure, absolute field and boundary values ([results](../gallery/boundary-conditions.md#absolute-pressure)) **missing**
+- consistency: [`cht_two_fluids_absolute`](../../examples/cases/flow/cht_two_fluids_absolute.toml): water at 1 bar and oil at 1.5 bar across a steel plate: each part takes its own outlet as its operating pressure, absolute field and boundary values (passes in CI (set linux-3), not yet in the manual) ([results](../gallery/boundary-conditions.md#absolute-pressure))
 - contract (bitwise): [`an_absolute_case_and_its_gauge_twin_run_the_same_bits`](../../crates/foehncraft-flow/tests/pressure_values.rs): an absolute channel at 1 bar and its gauge twin: the same residual history and mass flows, boundary pressures apart by p_op
 - contract (bitwise): [`two_parts_take_their_own_outlet_pressures`](../../crates/foehncraft-flow/tests/pressure_values.rs): two fluid parts at 1 and 1.5 bar against the gauge twin with region operating pressures: the same bits
 - consistency: [`older_files_keep_meaning_gauge`](../../crates/foehncraft-flow/tests/pressure_values.rs): files of format 0.6 and without a format read as gauge values with a note
@@ -1410,7 +1410,6 @@ Gaps:
 - `[output.coefficients] reference_pressure` (an absolute reference of the pressure coefficient) is not built
 - the vapour-pressure warning of a liquid is not built (no material has a vapour pressure yet)
 - a pressure boundary shared by two fluid parts takes the operating pressure of the first part
-- `cht_two_fluids_absolute` has no run in the verification manual or in CI
 
 Contracts: `bitwise`, `diagnostics`.
 
