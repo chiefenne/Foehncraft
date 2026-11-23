@@ -1468,5 +1468,21 @@ evidence = [
   { kind = "contract", property = "diagnostics", test = "crates/foehncraft-cli/tests/mcp.rs::refuses_to_start_without_both_roots", what = "no roots, no start" },
 ]
 
+[[feature]]
+id = "parallel.exact-reductions"
+area = "Backends and interfaces"
+title = "Exact reductions: sums, dot products, norms and min/max independent of threads, order and ranks (MPI step W2)"
+switch = "always on (CPU)"
+decisions = ["D31", "D93"]
+infrastructure = true
+contracts = ["bitwise"]
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-core/src/exact.rs::correctly_rounded_against_an_integer_reference", what = "the exact sum is the correctly rounded value of the binary64 terms (integer reference)" },
+  { kind = "exact", test = "crates/foehncraft-core/src/exact.rs::rounding_is_to_nearest_even", what = "ties to even, carries, subnormals, overflow, NaN and infinities" },
+  { kind = "contract", property = "bitwise", test = "crates/foehncraft-core/src/exact.rs::independent_of_order_and_grouping", what = "any order and any split into parts, also through the integer image sent between ranks, gives the same bits" },
+  { kind = "contract", property = "bitwise", test = "crates/foehncraft-parallel/src/repro.rs::exact_reductions_independent_of_thread_count", what = "1 to 7 threads give the same bits" },
+  { kind = "contract", property = "bitwise", test = "crates/foehncraft-mesh/tests/exact_reductions.rs::sums_over_ranks_are_bitwise_the_one_rank_sums", what = "sums over 1 to 9 ranks of decomposed meshes (four cell types, METIS and RCB) are bitwise the one-rank sums" },
+]
+
 # ---------------------------------------------------------------- planned
 

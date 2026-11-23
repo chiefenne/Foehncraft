@@ -1178,6 +1178,14 @@
    "why": [],
    "gaps": [],
    "range": {}
+  },
+  {
+   "id": "parallel.exact-reductions",
+   "title": "Exact reductions: sums, dot products, norms and min/max independent of threads, order and ranks (MPI step W2)",
+   "grade": "verified",
+   "why": [],
+   "gaps": [],
+   "range": {}
   }
  ]
 }

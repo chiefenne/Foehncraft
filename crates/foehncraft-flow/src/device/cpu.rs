@@ -135,11 +135,7 @@ impl CpuExec {
             let mut s = ExactSum::new();
             match b {
                 Some(b) => s.add_products(a, b),
-                None => {
-                    for &v in a {
-                        s.add(v * v);
-                    }
-                }
+                None => s.add_products(a, a),
             }
             s
         };

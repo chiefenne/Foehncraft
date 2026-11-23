@@ -1,4 +1,4 @@
-"""Exact reductions over ranks (MPI step W2), gallery 219: for 1 to 16
+"""Exact reductions over ranks (MPI step W2), gallery 219: for 2 to 16
 ranks, how far the old sum (pairwise per rank, then in rank order) lands
 from the exact one-rank value, in units in the last place, for the domain
 volume, its first moment and the boundary area of
@@ -42,17 +42,17 @@ def main():
     colours = ["#1f77b4", "#d62728", "#2ca02c"]
     for name, col in zip(names, colours):
         ulps = [rows[p][name]["pairwise_ulps"] for p in parts]
-        ax.plot([1] + parts, [0] + ulps, "o-", color=col, lw=1.6, ms=5,
+        ax.plot(parts, ulps, "o-", color=col, lw=1.6, ms=5,
                 label=f"old: {name}")
     exact_bad = [p for p in parts for n in names if not rows[p][n]["bitwise_equal"]]
-    ax.plot([1] + parts, [0] * (len(parts) + 1), "s-", color="black", lw=2.2,
+    ax.plot(parts, [0] * len(parts), "s-", color="black", lw=2.2,
             ms=6, label="exact sums (W2), all three", zorder=5)
     ax.set_xlabel("ranks")
     ax.set_ylabel("distance from the one-rank value [ulp]")
-    ax.set_xticks([1] + parts)
-    ax.set_ylim(bottom=-0.5)
+    ax.set_xticks(parts)
+    ax.set_ylim(-0.4, 3.2)
     ax.grid(alpha=0.3)
-    ax.legend(frameon=False, fontsize=9, loc="upper left")
+    ax.legend(frameon=False, fontsize=9, loc="upper center", ncol=2)
     ax.set_title("Sums over ranks: the old rank-order sum moves, the exact sum does not"
                  + ("" if not exact_bad else "  (EXACT DIFFERS!)"), fontsize=11)
     fig.tight_layout()

@@ -15,6 +15,7 @@ Part of the [Recipes](../recipes.md): generate, read (Gmsh, SU2, CGNS, OpenFOAM,
 | 138 | [Run a rotor/stator sliding case from a multi-zone SU2 or CGNS file](#mesh-multizone) |
 | 189 | [Check which cells the velocity gradient and Hessian are exact on](#operator-check) |
 | 200 | [Check that every rank has the bits of one rank (canonical local mesh)](#canonical-ranks) |
+| 219 | [Sum over ranks exactly (and check it)](#exact-reductions) |
 
 ---
 
@@ -424,5 +425,51 @@ Prints `BITWISE EQUAL TO ONE RANK` and exits with 1 otherwise. In code:
 `decompose::canonical_check(&global, &Geometry::compute(&global), &locals)`;
 the reference is the mesh handed to `decompose` (after any renumbering), so
 runs without a decomposition do not change.
+
+[↑ back to top](#meshes)
+
+---
+
+<a id="exact-reductions"></a>
+## 219. Sum over ranks exactly (and check it)
+
+Every partitioned `foehn mesh` run also sums the domain volume, its first
+moment and the boundary area per rank into exact accumulators, merges them
+as an MPI all-reduce would, and stops with an error if any result differs
+in a bit from the one-rank sum (MPI step W2, D31 (1), D93 (4)):
+
+```
+target/release/foehn mesh examples/cases/mesh/exact_reductions.toml
+target/release/foehn mesh examples/cases/mesh/exact_reductions.toml --parts 13 --method rcb
+```
+
+`mesh_report.md` has the table "Exact reductions over the ranks" with the
+exact value, `bitwise = one rank` (always yes) and the old rank-order
+pairwise sum with its distance in ulps; `mesh_report.json` has the list
+`reductions` (`name`, `ranks`, `one_rank`, `bitwise_equal`,
+`pairwise_ranks`, `pairwise_ulps`).
+
+Across MPI processes, with a dot product, a residual norm with the halo from
+the exchange, a boundary flux, min and max and a force in one all-reduce
+(needs MPI as in recipe 4):
+
+```
+cargo build --release -p foehncraft-mesh --features mpi --example mpi_reductions
+for n in 1 2 3 4; do mpirun --oversubscribe -n $n target/release/examples/mpi_reductions; done
+```
+
+Prints `BITWISE EQUAL TO ONE RANK` and exits with 1 otherwise. In code:
+
+```rust
+use foehncraft_core::exact::{ExactSum, ExactSumIter as _};
+let mut acc = ExactSum::new();
+acc.add_products(&r, &r);                    // or add_slice, add
+let norm = comm.sum_exact(&acc).sqrt();      // the same bits on any rank count
+let area: f64 = faces.iter().map(|f| f.area).exact_sum();   // one rank
+let [fx, fy] = comm.sum_exact_many(&[ax, ay])[..] else { unreachable!() };
+```
+
+The cost per value of the exact dot product against the old block sum:
+`cargo run --release -p foehncraft-parallel --example exact_reduction_cost`.
 
 [↑ back to top](#meshes)

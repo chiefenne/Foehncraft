@@ -113,11 +113,19 @@ impl ExactSum {
         }
     }
 
-    /// Adds every value of `x`.
+    /// Adds every value of `x` (the batched path of [`Bins`]).
     pub fn add_slice(&mut self, x: &[f64]) {
-        for &v in x {
-            self.add(v);
+        if x.len() < SHORT {
+            for &v in x {
+                self.add(v);
+            }
+            return;
         }
+        let mut b = Bins::new();
+        for &v in x {
+            b.push(self, v);
+        }
+        b.flush(self);
     }
 
     /// Adds the rounded products `a[i] * b[i]`.
@@ -126,8 +134,44 @@ impl ExactSum {
     /// When the lengths differ.
     pub fn add_products(&mut self, a: &[f64], b: &[f64]) {
         assert_eq!(a.len(), b.len(), "dot product of unequal lengths");
+        if a.len() < SHORT {
+            for (&u, &v) in a.iter().zip(b) {
+                self.add(u * v);
+            }
+            return;
+        }
+        let mut bins = Bins::new();
         for (&u, &v) in a.iter().zip(b) {
-            self.add(u * v);
+            bins.push(self, u * v);
+        }
+        bins.flush(self);
+    }
+
+    /// Adds the signed integer `m` times 2^(pos − 1074), |m| < 2⁶³.
+    #[inline]
+    fn add_scaled(&mut self, m: i64, pos: usize) {
+        if m == 0 {
+            return;
+        }
+        let (l, s) = (pos / 32, pos % 32);
+        let v = (m.unsigned_abs() as u128) << s; // at most 63 + 31 bits
+        let (v0, v1, v2) = (
+            (v & 0xffff_ffff) as i64,
+            ((v >> 32) & 0xffff_ffff) as i64,
+            (v >> 64) as i64,
+        );
+        if m > 0 {
+            self.limb[l] += v0;
+            self.limb[l + 1] += v1;
+            self.limb[l + 2] += v2;
+        } else {
+            self.limb[l] -= v0;
+            self.limb[l + 1] -= v1;
+            self.limb[l + 2] -= v2;
+        }
+        self.pending += 1;
+        if self.pending >= PENDING_LIMIT {
+            self.normalise();
         }
     }
 
@@ -218,6 +262,75 @@ impl ExactSum {
         }
         let bits = round_magnitude(&mag);
         f64::from_bits(bits | if neg { 1u64 << 63 } else { 0 })
+    }
+}
+
+/// Below this length a slice is added value by value: setting up the
+/// 16 kB of bins would cost more than it saves.
+const SHORT: usize = 256;
+
+/// Values added to one bin before the bins are flushed: 2⁹ significands
+/// below 2⁵³ keep a bin below 2⁶².
+const BIN_BATCH: u32 = 512;
+
+/// The fast path of [`ExactSum::add_slice`] and
+/// [`ExactSum::add_products`]: one signed 64-bit integer per binary
+/// exponent collects the significands of that exponent without rounding
+/// (one integer addition per value), and the bins in the range touched are
+/// flushed into the long accumulator every [`BIN_BATCH`] values. Exact, so
+/// it gives the accumulator of [`ExactSum::add`] value by value.
+struct Bins {
+    bin: [i64; 2047],
+    count: u32,
+    lo: usize,
+    hi: usize,
+}
+
+impl Bins {
+    fn new() -> Self {
+        Self {
+            bin: [0; 2047],
+            count: 0,
+            lo: usize::MAX,
+            hi: 0,
+        }
+    }
+
+    #[inline(always)]
+    fn push(&mut self, acc: &mut ExactSum, x: f64) {
+        let b = x.to_bits();
+        let e = ((b >> 52) & 0x7ff) as usize;
+        if e == 0x7ff {
+            acc.add(x); // NaN and infinities: counted by the slow path
+            return;
+        }
+        let frac = (b & ((1u64 << 52) - 1)) as i64;
+        // subnormals (e = 0) share the scale of e = 1, without the hidden bit
+        let (m, k) = if e == 0 {
+            (frac, 1)
+        } else {
+            (frac | (1i64 << 52), e)
+        };
+        let m = if b >> 63 == 0 { m } else { -m };
+        self.bin[k] += m;
+        self.lo = self.lo.min(k);
+        self.hi = self.hi.max(k);
+        self.count += 1;
+        if self.count == BIN_BATCH {
+            self.flush(acc);
+        }
+    }
+
+    fn flush(&mut self, acc: &mut ExactSum) {
+        if self.lo <= self.hi {
+            for k in self.lo..=self.hi {
+                let m = core::mem::take(&mut self.bin[k]);
+                acc.add_scaled(m, k - 1);
+            }
+        }
+        self.count = 0;
+        self.lo = usize::MAX;
+        self.hi = 0;
     }
 }
 
@@ -500,6 +613,31 @@ mod tests {
         }
         s.add(0.5);
         assert_eq!(s.value(), 0.5);
+    }
+
+    #[test]
+    fn batched_path_equals_value_by_value() {
+        let mut v = wide(5000, 3);
+        v.extend([
+            f64::from_bits(1),
+            -f64::from_bits(7),
+            f64::MAX,
+            -f64::MAX,
+            0.0,
+            -0.0,
+        ]);
+        v.extend((0..3000).map(|i| 2f64.powi(-1060 + (i % 40))));
+        let mut slow = ExactSum::new();
+        for &x in &v {
+            slow.add(x);
+        }
+        let mut fast = ExactSum::new();
+        fast.add_slice(&v);
+        assert_eq!(fast.to_words(), slow.to_words());
+        assert_eq!(fast.value().to_bits(), slow.value().to_bits());
+        let mut nan = ExactSum::new();
+        nan.add_slice(&[1.0, f64::NAN, 2.0]);
+        assert!(nan.value().is_nan());
     }
 
     #[test]

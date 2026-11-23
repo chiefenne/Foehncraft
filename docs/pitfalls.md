@@ -273,6 +273,16 @@ that evaluates a face from its nodes on a local mesh (W3 onward) must use
 Do not compare partitions by tolerance when a bitwise comparison is
 possible: a tolerance hides the cause (D93).
 
+**Sums over ranks in rank order.** A pairwise or block sum per rank,
+combined in rank order, changes in the last bits with the rank count (0 to
+2 ulps on the 1 280-cell box of gallery 219, for each of volume, first
+moment and boundary area). **Do instead (W2, #219):** accumulate into
+`foehncraft_core::exact::ExactSum` (or `.exact_sum()` on an iterator) and
+reduce with `Communicator::sum_exact`; never `f64` partial sums. Several
+sums go in one all-reduce with `sum_exact_many`. For min and max use
+`min_total` and `max_total` (NaN propagates, −0 < +0), not `f64::min`,
+whose result for ±0 depends on the order.
+
 <a id="coupling-loops"></a>
 ## Coupling loops: the solid must see the flow's response
 
