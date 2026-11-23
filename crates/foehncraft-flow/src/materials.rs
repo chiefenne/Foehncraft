@@ -719,6 +719,11 @@ pub struct RegionSection {
     /// fluid part (the water at 1 bar beside the air at 1.5 bar).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub operating_pressure: Option<f64>,
+    /// The start values of the region (D238): velocity, pressure,
+    /// temperature and turbulence of a fluid region, the temperature of a
+    /// solid one; before the case-wide `[initial]` and `[energy] initial`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub initial: Option<crate::start::RegionInitial>,
 }
 
 /// The JSON Schema of `[materials]`: the include list and, for every other

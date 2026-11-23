@@ -177,6 +177,10 @@ codes! {
     REG_FLUIDS_TOUCH = "REG004", Error, "Two fluids of different materials (or temperatures) share a face: that is a two-phase interface (multiphase, L3); put a solid region or a thin wall between them, or give both regions the same fluid.";
     REG_PARTS = "REG005", Note, "The fluid parts of the case: their number, regions and fluids.";
     REG_FLUIDS_UNSUPPORTED = "REG006", Error, "A setting that does not yet work with several fluids in one case (D194): the variable density, gravity, a rotating zone or frame, passive scalars, a convective outlet or a periodic mass-flow drive.";
+    REG_INITIAL_KEY = "REG007", Error, "A key of `[regions.<name>.initial]` that does not fit: a solid region takes `temperature` only, turbulence start values come as `k` with one of `omega` or `epsilon`, and a start temperature needs `[energy]`.";
+    REG_INITIAL_VALUE = "REG008", Error, "A start temperature, k, omega or epsilon of `[regions.<name>.initial]` that is not > 0.";
+    REG_INITIAL_INLET = "REG009", Error, "`temperature = \"inlet\"` in `[regions.<name>.initial]` for a region whose fluid part has no inlet with `[boundary.<name>.energy] temperature`.";
+    REG_START = "REG010", Note, "The start values of the regions and fluid parts and where they come from: given, a boundary value, a Laplace solve between the pressure boundaries of a part, or the inlets.";
     // pressure values absolute or gauge (D239)
     PRS_NOT_POSITIVE = "PRS001", Error, "An absolute pressure value (`[fluid] pressure_values = \"absolute\"`, the default from case format 0.7, D239) that is zero or negative: a boundary `pressure` or `total_pressure`, `[initial] pressure`, `[pressure] reference_value` or an operating pressure; set `pressure_values = \"gauge\"` for values relative to the operating pressure.";
     PRS_LOOKS_GAUGE = "PRS002", Warning, "An absolute pressure below 1 kPa in a gas (density below 50 kg/m³): it looks like a gauge value; set `[fluid] pressure_values = \"gauge\"` if it is one.";

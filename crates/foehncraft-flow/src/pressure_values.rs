@@ -120,6 +120,9 @@ pub struct Frame {
     pub pressure_values: PressureValues,
     /// The fluid parts (one for a case of one connected fluid).
     pub parts: Vec<PartFrame>,
+    /// `[initial] pressure` is in the file: the case-wide start pressure
+    /// stays (no start pressure per part from its boundaries, D238).
+    pub initial_given: bool,
 }
 
 impl Frame {
@@ -293,9 +296,11 @@ fn pressure_of_mut(bc: &mut BoundaryCondition) -> Option<&mut Scalar> {
 
 /// The connected parts of the fluid cells of `mesh` (cells of solid regions
 /// are in none: `u32::MAX`).
-struct Components {
-    of: Vec<u32>,
-    n: usize,
+pub(crate) struct Components {
+    /// The part of every cell (`u32::MAX`: a solid cell).
+    pub of: Vec<u32>,
+    /// The number of parts.
+    pub n: usize,
 }
 
 fn zone_regions(case: &FlowCase, mesh: &Mesh) -> Vec<String> {
@@ -310,7 +315,7 @@ fn zone_regions(case: &FlowCase, mesh: &Mesh) -> Vec<String> {
         .collect()
 }
 
-fn components(case: &FlowCase, mesh: &Mesh) -> Components {
+pub(crate) fn components(case: &FlowCase, mesh: &Mesh) -> Components {
     let solid: Vec<bool> = mesh
         .zones
         .iter()
@@ -483,6 +488,7 @@ pub fn resolve(case: &mut FlowCase, given: &Given) -> Result<()> {
         let op = case.fluid.conditions().pressure;
         case.pressure_frame = Some(Arc::new(Frame {
             pressure_values: written,
+            initial_given: given.initial,
             parts: vec![PartFrame {
                 operating_pressure: op,
                 source: if case.fluid.operating_pressure.is_some() {
@@ -532,6 +538,21 @@ pub fn resolve(case: &mut FlowCase, given: &Given) -> Result<()> {
             case.pressure.reference_value,
             "pressure.reference_value".into(),
         ));
+    }
+    for (name, r) in &case.regions {
+        if let Some(v) = r
+            .initial
+            .as_ref()
+            .and_then(|i| i.pressure.as_ref())
+            .and_then(Scalar::number)
+            && v <= 0.0
+        {
+            return Err(not_positive(
+                &format!("[regions.{name}.initial] pressure"),
+                v,
+                format!("regions.{name}.initial.pressure"),
+            ));
+        }
     }
     let groups = groups(case)?;
     let mut parts = Vec::with_capacity(groups.len());
@@ -608,6 +629,7 @@ pub fn resolve(case: &mut FlowCase, given: &Given) -> Result<()> {
     let frame = Frame {
         pressure_values: written,
         parts,
+        initial_given: given.initial,
     };
     // the gauge twin: every value relative to its part's p_op
     let names: Vec<String> = case.boundary.keys().cloned().collect();
@@ -684,6 +706,17 @@ pub fn resolve(case: &mut FlowCase, given: &Given) -> Result<()> {
             {
                 sec.operating_pressure = Some(p.operating_pressure);
             }
+        }
+    }
+    // the start pressure of a region: relative to its own part
+    for (name, sec) in case.regions.iter_mut() {
+        let op = frame
+            .parts
+            .iter()
+            .find(|p| p.regions.contains(name))
+            .map_or(first, |p| p.operating_pressure);
+        if let Some(s) = sec.initial.as_mut().and_then(|i| i.pressure.as_mut()) {
+            *s = scalar_minus(s, op);
         }
     }
     case.fluid.pressure_values = Some(PressureValues::Gauge);

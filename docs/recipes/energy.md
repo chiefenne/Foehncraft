@@ -14,6 +14,7 @@ Part of the [Recipes](../recipes.md): the energy equation of the fluid (stage 7,
 | 202 | [Get the swing of the wall temperature from the cycle loop, and restart a conjugate run](#cht-cycle-skin) |
 | 208 | [Warm up a conjugate run with the flow held, or the warm-up history of a periodic flow](#cht-frozen-flow) |
 | 206 | [Put several fluids in one conjugate case (water and air in a heat exchanger)](#two-fluids) |
+| 221 | [Start every region and fluid part on its own](#start-values) |
 | 186 | [Switch on gravity and buoyancy; which pressure do my boundary values mean](#buoyancy) |
 | 195 | [Let the density of a gas follow its temperature (low-Mach variable density)](#variable-density) |
 
@@ -990,4 +991,44 @@ target/release/foehn flow examples/cases/flow/vd_heated_duct.toml --out output/d
 target/release/foehn flow examples/cases/flow/vd_closed_box_heating.toml --out output/box
 target/release/foehn flow examples/cases/flow/vd_closed_box_side_heated.toml --out output/side
 target/release/foehn flow examples/cases/flow/vd_mms_steady.toml --out output/vd_mms
+```
+
+<a id="start-values"></a>
+## 221. Start every region and fluid part on its own
+
+**When.** A case of several domains (fluids and solids at different
+temperatures and pressures, D238), or a part driven by two pressure values.
+
+```toml
+[regions.air.initial]
+temperature = 573.15          # K: the hot air starts hot
+velocity = [0.0, 0.0, 0.0]    # m/s (also k with omega or epsilon)
+
+[regions.water.initial]
+temperature = "inlet"         # the inlet temperature of its fluid part
+
+[regions.housing.initial]
+temperature = 298.15          # a solid takes temperature only
+```
+
+The region tables come before `[initial]` and `[energy] initial`.
+
+**The pressure.** Leave it out: each fluid part starts from its own
+pressure boundaries, at their value, or on a Laplace solve between two
+different values (a total-pressure inlet and an outlet). A
+`[regions.<name>.initial] pressure` (in the file's convention, absolute
+by default) sets it in that region; `[initial] pressure` keeps one start
+pressure for every cell.
+
+**What to check.** The `[REG010]` lines of the log and `flow.json` →
+`start_values` list every start value with its source (`given`,
+`boundary <name>`, `Laplace solve between N boundaries`, `inlet (...)`).
+REG007 names a key a region table cannot take, REG008 a value that is not
+> 0, REG009 an `"inlet"` temperature for a part without an inlet. A
+restart replaces the start values.
+
+**The two-fluid exchanger** (gallery 221):
+
+```
+target/release/foehn flow examples/cases/flow/cht_two_fluids_start.toml --out output/start_run
 ```

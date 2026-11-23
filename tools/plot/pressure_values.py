@@ -31,16 +31,17 @@ from tools.plot.turbulence_fields import read
 L, H, T, STRETCH = 0.5, 0.002, 0.0005, 25.0
 
 
-def panel(ax, quads, values, cmap, clim, label):
+def panel(ax, quads, values, cmap, clim, label, plate=True):
     q = [[(x, STRETCH * y) for x, y in c] for c in quads]
     pc = PolyCollection(q, array=values, cmap=cmap, edgecolors="face", linewidths=0.2)
     pc.set_clim(*clim)
     ax.add_collection(pc)
     ax.set_xlim(0.0, L)
     ax.set_ylim(0.0, STRETCH * (2 * H + T))
-    ax.axhspan(STRETCH * H, STRETCH * (H + T), color="0.55")
-    ax.text(0.25, STRETCH * (H + 0.5 * T), "steel plate", color="w", va="center",
-            ha="center", fontsize=8)
+    if plate:
+        ax.axhspan(STRETCH * H, STRETCH * (H + T), color="0.55")
+        ax.text(0.25, STRETCH * (H + 0.5 * T), "steel plate", color="w", va="center",
+                ha="center", fontsize=8)
     ax.set_yticks([STRETCH * v for v in (0.0, H, H + T, 2 * H + T)])
     ax.set_yticklabels(["0", "2", "2.5", "4.5"])
     ax.set_ylabel(f"y (mm, ×{STRETCH:g})")

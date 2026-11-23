@@ -20,14 +20,13 @@
 # Reynolds numbers: air in the nozzle 15 · 0.03 / 4.8e-5 ≈ 9 400, water in
 # the tubes (5.1 m/s, d = 15 mm) ≈ 7.6e4: k-omega SST with the automatic
 # wall treatment and the thermal wall function, on tetrahedra without
-# prism layers. The pressures are gauge values against the one operating
-# pressure of the case, the 1.5 bar of the air outlet (it sets the air's
-# ideal-gas density). The water outlet is at 0 Pa gauge as well, so the
-# model holds the water at 1.5 bar absolute, not the 1 bar above: with its
-# constant density that changes nothing. An operating pressure per fluid
-# part comes with D238 (MF-B of D194).
+# prism layers. The pressures are absolute (case format 0.7, D239): each
+# fluid takes its operating pressure from its own outlet, the air 1.5 bar
+# (it sets the air's ideal-gas density), the water 1 bar, and each starts
+# at that pressure (D238). The air starts at its inlet temperature of
+# 300 °C, the water at its 20 °C, the steel cold.
 
-case_format = "0.6"
+case_format = "0.7"
 
 [mesh]
 file = "hx_L2.msh"                    # metres; zones and boundaries of mesh.py
@@ -36,7 +35,6 @@ renumber = "rcm"
 [fluid]
 material = "air"                      # the shell side; the water is a region below
 temperature = 573.15                  # K: 300 °C at the inlet
-operating_pressure = 150000.0         # Pa: 1.5 bar at the air outlet
 
 [materials.carbon-steel]
 kind = "solid"
@@ -49,12 +47,16 @@ conductivity = 60.5                   # W/(m K)
 kind = "fluid"
 zones = ["shell_side"]
 material = "air"
+[regions.air.initial]
+temperature = "inlet"                 # 573.15 K: the air starts at its 300 °C
 
 [regions.water]
 kind = "fluid"
 zones = ["tube_side"]
 material = "water"
 temperature = 293.15                  # K: its properties at the 20 °C inlet (D194)
+[regions.water.initial]
+temperature = "inlet"                 # 293.15 K
 
 [regions.steel]
 kind = "solid"
@@ -66,7 +68,7 @@ model = "k-omega-sst"
 wall_treatment = "automatic"
 
 [energy]
-initial = 293.15                      # K: the metal and the water start cold
+initial = 293.15                      # K: the steel starts cold (the fluids: their region tables)
 turbulent_prandtl = 0.85
 wall_function = "kader"
 
@@ -86,7 +88,7 @@ temperature = 573.15                  # K: 300 °C
 
 [boundary.shell_nozzle_rear]
 type = "static-pressure-outlet"
-pressure = 0.0                        # gauge: 1.5 bar absolute (operating pressure)
+pressure = 1.5e5                      # Pa absolute: 1.5 bar (owner)
 turbulence_intensity = 0.05
 turbulence_length_scale = 0.0021
 
@@ -101,7 +103,7 @@ temperature = 293.15                  # K: 20 °C
 
 [boundary.tube_nozzle_rear]
 type = "static-pressure-outlet"
-pressure = 0.0                        # gauge: 1.5 bar absolute here (owner: 1 bar, see above)
+pressure = 1.0e5                      # Pa absolute: 1 bar (owner)
 turbulence_intensity = 0.05
 turbulence_length_scale = 0.0028
 

@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**106 features: 49 verified, 54 partial, 3 unverified.**
+**107 features: 49 verified, 55 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -118,6 +118,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Cases and properties | [Settings that change on a schedule](#case-schedule) | partial |
 | Cases and properties | [Case checks and guidance (unknown keys, boundary checks)](#case-checks-guidance) | partial |
 | Runs and results | [Absolute or gauge pressure values, operating pressure per fluid part](#run-pressure-values) | partial |
+| Runs and results | [Start values per region and per fluid part](#run-start-values) | partial |
 | Runs and results | [Restart and control files (.stop, .result_N, .read_toml_N)](#run-restart-control) | verified |
 | Runs and results | [Derived fields (vorticity, Q, λ₂, wall shear, y⁺, turbulence fields)](#run-derived-fields) | verified |
 | Runs and results | [Statistics of transient runs (mean, RMS, phase averages, confidence)](#run-statistics) | verified |
@@ -1412,6 +1413,25 @@ Gaps:
 - a pressure boundary shared by two fluid parts takes the operating pressure of the first part
 
 Contracts: `bitwise`, `diagnostics`.
+
+<a id="run-start-values"></a>
+
+### Start values per region and per fluid part
+
+**partial** (gaps written) · id `run.start-values` · switch `[regions.<name>.initial]` · decisions D238
+
+- consistency: [`cht_two_fluids_start`](../../examples/cases/flow/cht_two_fluids_start.toml): water and oil at their inlet temperatures, the plate at 320 K, the oil pressure on a Laplace solve between its total-pressure inlet and outlet; 2251 instead of 2616 iterations from a uniform start (passes in CI (set linux-3), not yet in the manual) ([results](../gallery/energy.md#start-values))
+- consistency: [`a_part_between_two_pressures_starts_on_the_laplace_solution`](../../crates/foehncraft-flow/src/start.rs): a channel between 10 Pa and 0 Pa starts on the exact straight line (1e-9)
+- consistency: [`every_region_and_part_starts_on_its_own`](../../crates/foehncraft-flow/tests/start_values.rs): two parts at their own outlet pressures, inlet temperatures per region, REG010 and `start_values`
+- contract (diagnostics): [`region_tables_are_checked`](../../crates/foehncraft-flow/tests/start_values.rs): REG007 for a velocity in a solid region, REG009 for an inlet temperature without an inlet
+
+Gaps:
+
+- the hydrostatic start pressure per part with gravity is not built (gravity keeps the case-wide start)
+- the Laplace start is a Jacobi-preconditioned CG, not the pressure multigrid
+- volume selections inside a region (`[[initial.patch]]`) and a region started from another run come later (D73, D52)
+
+Contracts: `diagnostics`.
 
 <a id="run-restart-control"></a>
 

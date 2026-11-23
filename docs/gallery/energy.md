@@ -14,6 +14,7 @@ Part of the [Example gallery](../gallery.md): the energy equation of the fluid (
 | 202 | [A thin-skin wall under a pulsating channel: the skin swing, fully coupled cycles at the end and the CHT restart](#cht-cycle-skin) | 7 | `[energy.cycle]` `skin`, `skin_harmonics`, `resolved_cycles`, `cycle_faces.csv` `t_wall_amplitude`, CHT `restart.h5` |
 | 208 | [A heated wall warmed up with the flow held, and a pulsating channel warmed up by the cycle loop](#cht-frozen-flow) | 7 | `[energy.frozen_flow]` `time_step`, `refresh_change`, `start`, `result.json` `frozen_flow`; `[energy.cycle] solid = "transient"`, `march_cycles`, `march_steps`, `cycle_coupling.csv` `march_jump` |
 | 206 | [Water and oil in counterflow across a steel plate: two fluids in one conjugate case](#two-fluids) | 7 | `[regions.<name>] kind = "fluid"` with `material`, `temperature`, fluid parts, REG003–REG006 |
+| 221 | [Start values per region and per fluid part: every domain of an exchanger starts on its own](#start-values) | 7 | `[regions.<name>.initial]`, `temperature = "inlet"`, the start pressure of every fluid part from its own boundaries, REG007–REG010, `flow.json` `start_values` |
 | 186 | [A warm strip in a closed air enclosure, and a stratified box that stays at rest](#buoyancy) | 7 | `[gravity]`, `[buoyancy] model = "boussinesq"`, `expansion_coefficient`, `static_pressure` |
 | 195 | [Air between walls at 960 K and 240 K, a heated duct and two closed boxes](#variable-density) | 7 | `[energy] density = "variable"`, `thermodynamic_pressure`, `pressure_work`, `[buoyancy] model = "variable-density"`, `density` |
 
@@ -801,4 +802,69 @@ target/release/foehn flow examples/cases/flow/vd_closed_box_side_heated.toml --o
 pip install matplotlib h5py numpy
 python3 -m tools.plot.variable_density docs/figures/gallery output/cavity output/duct \
     output/box output/side
+```
+
+---
+
+<a id="start-values"></a>
+## 221. Start values per region and per fluid part: every domain of an exchanger starts on its own
+
+<img src="../figures/gallery/start_values_two_parts.png" alt="Top: the start temperature of a parallel-plate counterflow exchanger 0.5 m long, the height stretched 25 times: the water channel below in red at 340 K, the steel plate in light grey at 320 K, the oil channel above in blue at 300 K. Middle: the start pressure of each fluid part relative to its own operating pressure: the water channel dark at 0 Pa, the oil channel rising from dark at x = 0 to yellow at 46 Pa at x = 0.5 m. Bottom left: the oil pressure along the middle of its channel, the start (Laplace) and the converged line on top of each other, straight from 0 to 46 Pa. Bottom right: the energy residual of the run with the start per region and part reaching 1e-9 after 2251 iterations, the run from a uniform start after 2616" width="1210" height="1045">
+
+**What starts where.** In a case of several domains every region gets its
+own start values (D238), so that no domain starts far from its operating
+state. `[regions.<name>.initial]` takes `velocity`, `pressure`,
+`temperature`, `k` with `omega` or `epsilon` (numbers or expressions of
+x, y, z), before the case-wide `[initial]` and `[energy] initial`; a
+solid region takes `temperature` only (REG007). `temperature = "inlet"`
+starts a fluid region at the temperature of the inlets of its fluid part
+(weighted by their inflow; exactly the inlet value when there is one).
+
+**The pressure of every part.** Without a start pressure every fluid part
+starts from its own pressure boundaries: at their value when they all
+have one, else on the solution of a Laplace equation with those values on
+them and zero normal gradient elsewhere (a total-pressure boundary counts
+with its total pressure: the fluid starts at rest). With absolute
+pressure values (D239) the parts' own outlets are their operating
+pressures, so the half bar between the water and the oil never reaches
+the pressure correction. Not with `[initial] pressure` (it stays the
+start of every cell), a reference cell, or gravity (the hydrostatic start
+per part comes later, with the variable density of several fluids).
+
+**The case.** `cht_two_fluids_start.toml` is the water / oil exchanger of
+gallery 220 with the oil driven by a total pressure 46 Pa above its outlet
+at 1.5 bar. The water and the oil start at their inlet temperatures, the
+plate at 320 K; the oil starts on the straight pressure line between its
+inlet and outlet, which is already its fully developed solution. The log
+says what started where, and `flow.json` holds the same as
+`start_values`:
+
+```
+[REG010] start values, part 2: pressure (absolute) 150000.115 to 150045.885 (Laplace solve between 2 boundaries (oil_out, oil_in; 1318 CG iterations, residual 7.3e-13))
+[REG010] start values, region oil: temperature 300 (inlet (oil_in))
+[REG010] start values, region plate: temperature 320 (given)
+[REG010] start values, region water: temperature 340 (inlet (xmin))
+```
+
+From the uniform start (every cell at 320 K and its part's outlet
+pressure) the same case needs 2616 iterations to the criterion 1e-9, from
+the start per region and part 2251. A restart replaces all start values.
+
+| | |
+|---|---|
+| Code | `foehncraft_flow::start` (`flow_fields`, `temperature`, `turbulence`, `validate`), D238 |
+| Case file | `flow/cht_two_fluids_start.toml` |
+| Tests | `crates/foehncraft-flow/tests/start_values.rs` (`every_region_and_part_starts_on_its_own`, `region_tables_are_checked`), `start::tests` (`a_part_between_two_pressures_starts_on_the_laplace_solution`, `one_outlet_at_zero_keeps_the_start`) |
+| Recipe | [221](../recipes/energy.md#start-values) |
+
+The start fields come from the case with `max_iterations = 0`, the uniform
+start from its gauge twin with `[initial] pressure = 0` and no region
+tables:
+
+```
+target/release/foehn flow examples/cases/flow/cht_two_fluids_start.toml --out output/start_run
+sed 's/max_iterations = 3000/max_iterations = 0/' examples/cases/flow/cht_two_fluids_start.toml > output/start0.toml
+target/release/foehn flow output/start0.toml --out output/start0
+pip install matplotlib h5py numpy
+python3 -m tools.plot.start_values docs/figures/gallery output/start0 output/start_run output/uniform
 ```
