@@ -19,7 +19,10 @@
 //! - [`amg`]: the smoothers, transfers and coarse solve of the algebraic
 //!   multigrid V-cycle (stage 3), generic over float32 and float64;
 //! - [`walk`]: the straight walk of a particle or a radiation bundle
-//!   through the cells (D47, D257), resumable on another rank.
+//!   through the cells (D47, D257), resumable on another rank;
+//! - [`radiation`]: Monte Carlo radiation (step 29): Owen-scrambled Sobol
+//!   points, the sampling of the bundles and their transport with exact
+//!   integer tallies.
 //!
 //! Each kernel is a *body*: a function that computes the result for one
 //! index (one face, one cell, one matrix row). A backend supplies the loop:
@@ -53,6 +56,7 @@ pub mod face;
 pub mod flow;
 pub mod fv;
 pub mod particle;
+pub mod radiation;
 pub mod scalar;
 pub mod spmv;
 pub mod turb;

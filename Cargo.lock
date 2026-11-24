@@ -467,6 +467,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "foehncraft-radiation"
+version = "1.0.1"
+dependencies = [
+ "foehncraft-core",
+ "foehncraft-kernels",
+ "foehncraft-mesh",
+ "foehncraft-parallel",
+ "rayon",
+]
+
+[[package]]
 name = "foehncraft-tools"
 version = "1.0.1"
 dependencies = [
