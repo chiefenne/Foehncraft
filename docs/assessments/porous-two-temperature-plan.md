@@ -187,7 +187,8 @@ Decided by the maintainer on 2026-11-24 (card 4): both sources.
   developing length (incremental pressure drop K(∞) about 1.43);
 - heat: Nu_T = 2.98 fully developed at constant wall temperature; the mean
   Nusselt number of the thermally developing flow over one brick length as a
-  function of x* (see Q1);
+  function of x*, boundary layers restarting at each brick joint (decided,
+  Q1);
 - h = Nu k_g / d_h, a = 4 ε / d_h from the brick geometry keys (`channel`,
   `pitch`, `brick_length`), so the user gives geometry and gets K, F, h·a,
   K_s,eff.
@@ -250,7 +251,8 @@ rows are owned by the rank that owns the cell; global ids of the solid rows
 follow the cell global ids, so the reproducible mode (D93) is kept. Sums of
 the outputs and the ledger use the exact sums of W2. GPU: the sink and the
 exchange are pointwise kernels; the extended matrix uses the existing device
-path of the energy equation. When ranks and GPU come in is question Q2.
+path of the energy equation. Ranks and GPU come in PM5, after the serial
+stages (Q2).
 
 ## 10. Verification and validation (D278)
 
@@ -283,12 +285,14 @@ time per step) on V4 and the gallery case.
 ## 11. Gallery, cases and recipes (D18)
 
 - **Gallery** (energy page, new topic "porous media"): the charging of a
-  storage like the maintainer's image: a brick stack between two plenums,
+  storage like the maintainer's image, **three-dimensional from the start**
+  (Q4): a stack of several bricks with housing between two plenums,
   solid and gas temperature side by side at three times (Rainbow
   Desaturated, D261), the thermocline curve over time, the pressure field.
   No symbol-like patterns.
 - **Cases**: `porous_darcy_block`, `porous_directional_block`,
-  `porous_schumann`, `storage_charge_2d` (later `storage_cycle_3d`).
+  `porous_schumann`, `storage_charge_3d` (later `storage_cycle_3d` with
+  charge and discharge).
 - **Recipes**: "add a porous region with brick axes", "make porous tables
   from a unit channel" (the study-layer pipeline), "charge and discharge a
   thermal storage" (schedule, frozen flow, outputs).
@@ -302,17 +306,19 @@ time per step) on V4 and the gallery case.
 | PM2 | Two temperatures: solid rows in the energy matrix, h·a, effective solid tensor, ledger account and entropy check; V3 to V6; benchmark against segregated | PM1 | 60 to 90 min |
 | PM3 | Correlations (Shah–London, brick geometry keys), table reader, outputs of D275, frozen-flow charging; gallery storage charge, cases, recipes | PM2, PM0 | 45 to 60 min, runs of minutes |
 | PM4 | Upscaling pipeline: study-layer quarter channel → table; V7; radiative factor c_rad when R1b is in | PM3; R1b for c_rad | 45 min code, 1 to 2 h runs |
-| PM5 | Ranks and GPU for the porous terms (if not in PM1/PM2, Q2) | W6 | 45 to 60 min |
+| PM5 | Ranks and GPU for the porous terms (Q2: after PM1 to PM4) | W6 | 45 to 60 min |
 
-## 13. Open questions (asked one at a time, answers recorded here)
+## 13. Questions and answers
 
-| # | Question | Proposal |
+All five answered by the maintainer on 2026-11-24 (18:36 to 18:40 UTC).
+
+| # | Question | Answer |
 |---|---|---|
-| Q1 | Default heat transfer coefficient | Mean Nusselt number of the thermally developing flow over one brick length (boundary layers restart at each joint), not the fully developed 2.98 |
-| Q2 | Ranks and GPU | Ranks and GPU from PM1, as radiation (D258, D259), once W6 has the energy equation on ranks |
-| Q3 | Reference data and ceramic properties | The maintainer provides a brick datasheet (k_s, ρ_s, c_s(T), emissivity) and, if available, measured charge data, each with a D201 entry |
-| Q4 | First gallery case | Two-dimensional stack between two plenums like the maintainer's image, then three-dimensional |
-| Q5 | Start before radiation | Start PM0 to PM3 now without radiation (k_rad zero), PM4 when R1b is in |
+| Q1 | Default heat transfer coefficient | **Developing flow per brick** (as proposed): the mean Nusselt number of the thermally developing flow over one brick length, boundary layers restart at each brick joint (D273) |
+| Q2 | Ranks and GPU | **Serial first** (one rank with threads) for PM1 to PM4; ranks and GPU in PM5 (D277) |
+| Q3 | Reference data and ceramic properties | **Both**: open-literature values of a cordierite-type ceramic with a D201 entry so that coding is not blocked; the maintainer's brick datasheet and any measured charge data replace them when available (D278 V8) |
+| Q4 | First gallery case | **Three-dimensional stack from the start**, not the proposed 2D case: several bricks with housing between two plenums; runs of about 1 to 2 hours (section 11) |
+| Q5 | Start before radiation | **Start PM0 to PM3 now** (as proposed), radiative conductivity zero; PM4 with c_rad when R1b is in. This is the maintainer's go for coding PM0 to PM3 |
 
 ## 14. References
 
