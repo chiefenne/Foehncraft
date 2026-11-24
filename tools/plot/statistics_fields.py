@@ -25,7 +25,7 @@ from matplotlib.collections import PolyCollection  # noqa: E402
 from matplotlib.colors import TwoSlopeNorm  # noqa: E402
 
 from tools.plot.turbulence_fields import read  # noqa: E402
-from tools.plot.colormaps import RAINBOW  # noqa: E402
+from tools.plot.colormaps import RAINBOW, UNIFORM  # noqa: E402
 
 U_MEAN = 1.0       # mean inlet velocity (m/s)
 D = 0.1            # cylinder diameter (m)
@@ -40,9 +40,9 @@ def main():
     phase = sys.argv[3] if len(sys.argv) == 4 else None
     quads, _, data = read(path)
     panels = [
-        ("mean_velocity_x", "⟨u⟩ / Ū", "RdBu_r", 1.0 / U_MEAN, "signed"),
+        ("mean_velocity_x", "⟨u⟩ / Ū", UNIFORM, 1.0 / U_MEAN, "signed"),
         ("rms_velocity_y", "v_rms / Ū", RAINBOW, 1.0 / U_MEAN, "pos"),
-        ("covariance_velocity_xy", "⟨u'v'⟩ / Ū²", "PuOr_r", 1.0 / U_MEAN**2, "signed"),
+        ("covariance_velocity_xy", "⟨u'v'⟩ / Ū²", UNIFORM, 1.0 / U_MEAN**2, "signed"),
     ]
     rows = len(panels) + (1 if phase else 0)
     fig, axes = plt.subplots(rows, 1, figsize=(8.4, 2.45 * rows), constrained_layout=True)

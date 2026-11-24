@@ -35,13 +35,13 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 from matplotlib.collections import PolyCollection  # noqa: E402
 from matplotlib.tri import LinearTriInterpolator, Triangulation  # noqa: E402
-from tools.plot.colormaps import RAINBOW  # noqa: E402
+from tools.plot.colormaps import RAINBOW, UNIFORM  # noqa: E402
 
 LABELS = {
     "swirl": ("u_θ (m/s)", RAINBOW),
     "meridional": ("|(u_r, u_z)| (m/s)", RAINBOW),
     "axial": ("u_z (m/s)", RAINBOW),
-    "radial": ("u_r (m/s)", "RdBu_r"),
+    "radial": ("u_r (m/s)", UNIFORM),
     "pressure": ("p − p_min (Pa)", "cividis"),
     "speed": ("|u| (m/s)", RAINBOW),
 }

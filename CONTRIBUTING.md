@@ -76,11 +76,13 @@ CI runs `python -m tools.docs.images --check`.
 Field pictures use the colour maps shared with KoflCraft and MurmelCraft
 (D261): **Rainbow Desaturated** for every field, **Inferno** as the second
 map (a second field beside the first, such as the temperature next to the
-flow), and a diverging map (`RdBu_r`, `coolwarm`) centred on zero for
-signed fields. In matplotlib scripts import the map from
-`tools/plot/colormaps.py` (`from tools.plot.colormaps import RAINBOW`,
-then `cmap=RAINBOW`); in ParaView use the preset `"Rainbow Desaturated"`,
-or `colormaps.rgb_points(lo, hi)` where the preset is missing. Line colours
+flow), and **Rainbow Uniform** (Colin Ware) for signed fields whose range
+is centred on zero (zero is its bright yellow middle). In matplotlib
+scripts import the maps from `tools/plot/colormaps.py`
+(`from tools.plot.colormaps import RAINBOW, UNIFORM`, then `cmap=RAINBOW`
+or `cmap=UNIFORM`); in ParaView use the presets `"Rainbow Desaturated"`
+and `"Rainbow Uniform"`, or `colormaps.rgb_points(lo, hi)` where the first
+is missing. Line colours
 (streamlines over a field, series in a chart) may use other maps.
 
 ### Images must not resemble symbols
