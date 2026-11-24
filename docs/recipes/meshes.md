@@ -20,6 +20,7 @@ Part of the [Recipes](../recipes.md): generate, read (Gmsh, SU2, CGNS, OpenFOAM,
 | 231 | [Use the multigrid preconditioner on ranks](#multigrid-ranks) |
 | 234 | [Solve a flow on ranks (and check it against one rank)](#flow-ranks) |
 | 244 | [Check a turbulent, heated or transient flow on ranks](#flow-models-ranks) |
+| 262 | [Write a restart on ranks and continue on another rank count](#restart-ranks) |
 
 ---
 
@@ -689,8 +690,54 @@ cargo run --release -p foehncraft-flow --example ranks_scaling -- 200 100 50 10
 Not on ranks yet, refused with an error that names them: the ζ-f and
 elliptic-blending models, the curvature correction and the QCR, the MLP
 limiter and quadratic gradients, gravity, turning zones (MRF, sliding),
-solid regions (conjugate heat transfer), a `[[schedule]]`, a level sweep
-and a restart. Monitors, probes and balances of a run on ranks come with
+solid regions (conjugate heat transfer), a `[[schedule]]` and a level
+sweep. Restarts work on ranks (recipe 262). Monitors, probes and balances of a run on ranks come with
 the run on ranks itself (MPI step W7, `foehn run --ranks N`).
+
+[↑ back to top](#meshes)
+
+---
+
+<a id="restart-ranks"></a>
+## 262. Write a restart on ranks and continue on another rank count
+
+With `[run] ranks` the run also gathers the restart of the largest rank
+count into `ranks.restart.h5`, in the order of the global mesh, and fails
+unless that file has the bytes of the restart one rank writes at the same
+iteration or step (MPI step W6, D84, D93):
+
+```
+target/release/foehn flow examples/cases/flow/ranks_restart_channel.toml
+```
+
+The log says `restart file gathered from 5 ranks (ranks.restart.h5): byte
+for byte the file of one rank`. Continue from it, on one rank and on
+every listed rank count (each rank takes its cells, faces and matrix rows
+by global identity, so the count that reads need not be the count that
+wrote):
+
+```
+target/release/foehn flow examples/cases/flow/ranks_restart_channel.toml \
+    --restart output/ranks_restart_channel/ranks.restart.h5 \
+    --set 'output.directory="output/ranks_restart_continued"'
+```
+
+Any restart file works the same way, a `restart.h5` of a run of one rank
+included; a file in another cell or face order is put into the global
+order by identity first (and its multigrid matrices are then rebuilt, as
+on one rank). Restarts of conjugate cases and of moving meshes are
+refused on ranks.
+
+In code (`foehncraft_flow::ranks`), per rank:
+
+```rust
+let layout = ranks::Layout::new(comm.clone(), &mesh, &local)?;  // collective
+let global = layout.gather(my_restart)?;          // every rank gets the whole file
+if comm.rank() == 0 { restart::write(&path, &global)?; }
+let mine = layout.scatter(restart::read(&path)?)?;  // on any rank count
+```
+
+and the whole check (write on 4, continue on 2, compare with one rank):
+`ranks::restart_check(&case, first, second, 4, 2, &dir)?`.
 
 [↑ back to top](#meshes)
