@@ -1623,6 +1623,9 @@ gaps = [
   "the gas state is sampled at the start of each sub-step (first order in the gas); the time of a wall hit is a chord fraction",
   "one process, constant droplet size; no rotating zones or periodic boundaries (SPR003)",
   "the CPU = GPU check of the parcel kernel runs in the PTX job of CI only",
+]
+
+[[feature]]
 id = "parallel.flow-models-ranks"
 area = "Backends and interfaces"
 title = "Turbulence, energy, scalars, transient runs and the coupled solver on several ranks, bitwise one rank (MPI step W5 part 2)"
