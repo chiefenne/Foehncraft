@@ -110,8 +110,9 @@ switch = 'mesh.format = "vtk"'
 evidence = [
   { kind = "consistency", test = "crates/foehncraft-mesh/tests/vtk.rs::every_encoding_reads_the_same_mesh", what = "every encoding reads the same mesh" },
   { kind = "consistency", test = "crates/foehncraft-mesh/tests/vtk.rs::round_trip_through_write_vtu", what = "round trip through the VTU writer" },
+  { kind = "consistency", test = "crates/foehncraft-mesh/src/format/vtk.rs::small_buffers_read_the_same_mesh", what = "streamed through buffers of odd sizes, every encoding reads the mesh of the whole file" },
 ]
-gaps = ["no flow case of the catalogue reads a VTK file"]
+gaps = ["no flow case of the catalogue reads a VTK file", "the peak memory of a large read (1 GB per million polyhedra) is measured by hand, not checked in CI"]
 
 [[feature]]
 id = "mesh.partition"

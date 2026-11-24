@@ -277,7 +277,8 @@ pub enum CellKind {
     Prism,
     /// 5 nodes: the quadrilateral base (0-3), then the apex.
     Pyramid,
-    /// Any closed set of polygons: the next entry of [`ElementMesh::poly`].
+    /// Any closed set of polygons: the next polyhedron of
+    /// [`ElementMesh::poly`].
     Polyhedron,
 }
 
@@ -305,9 +306,9 @@ pub struct ElementMesh {
     pub cell_kind: Vec<CellKind>,
     /// Nodes of the cells, concatenated (none for a polyhedron).
     pub cell_nodes: Vec<u32>,
-    /// The faces (node lists) of the polyhedra, one entry per
+    /// The faces (node lists) of the polyhedra, one polyhedron per
     /// [`CellKind::Polyhedron`] cell in cell order.
-    pub poly: Vec<Vec<Vec<u32>>>,
+    pub poly: Polyhedra,
     /// Zone of each cell (index into `zones`).
     pub cell_zone: Vec<u32>,
     /// Zone names (`fluid` if empty).
@@ -328,6 +329,126 @@ pub struct ElementMesh {
     /// What names a boundary in the file, in warnings
     /// (`surface physical group`, `marker`).
     pub group_word: &'static str,
+}
+
+/// The faces of the polyhedra of an [`ElementMesh`], kept as VTK face
+/// streams in one flat array: for each polyhedron its number of faces,
+/// then each face as its number of nodes and the nodes. A mesh of millions
+/// of polyhedra is so a few large arrays of `u32` instead of one
+/// allocation per face (a VTK reader moves the face stream of the file in
+/// without a copy).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Polyhedra {
+    stream: Vec<u32>,
+    /// Start of each polyhedron in `stream`.
+    start: Vec<usize>,
+}
+
+impl Polyhedra {
+    /// Polyhedra whose face streams are in `stream`, starting at `start`;
+    /// the caller has checked each with [`check_face_stream`].
+    pub(crate) fn from_parts(stream: Vec<u32>, start: Vec<usize>) -> Self {
+        Self { stream, start }
+    }
+
+    /// Adds a polyhedron from its faces.
+    pub fn push<I>(&mut self, faces: I)
+    where
+        I: IntoIterator,
+        I::Item: AsRef<[u32]>,
+    {
+        let at = self.stream.len();
+        self.start.push(at);
+        self.stream.push(0);
+        let mut n = 0u32;
+        for f in faces {
+            let f = f.as_ref();
+            self.stream.push(f.len() as u32);
+            self.stream.extend_from_slice(f);
+            n += 1;
+        }
+        self.stream[at] = n;
+    }
+
+    /// Number of polyhedra.
+    pub fn len(&self) -> usize {
+        self.start.len()
+    }
+
+    /// True without polyhedra.
+    pub fn is_empty(&self) -> bool {
+        self.start.is_empty()
+    }
+
+    /// The faces of polyhedron `p` (none for an index out of range).
+    pub fn faces(&self, p: usize) -> Faces<'_> {
+        let at = self.start.get(p).copied().unwrap_or(self.stream.len());
+        Faces {
+            s: &self.stream,
+            at: at + 1,
+            left: self.stream.get(at).copied().unwrap_or(0),
+        }
+    }
+
+    /// Calls `f` on every node of every face.
+    fn nodes_mut(&mut self, mut f: impl FnMut(&mut u32)) {
+        let Self { stream, start } = self;
+        for &s in start.iter() {
+            let nf = stream.get(s).copied().unwrap_or(0);
+            let mut at = s + 1;
+            for _ in 0..nf {
+                let Some(&k) = stream.get(at) else { break };
+                let end = (at + 1 + k as usize).min(stream.len());
+                stream[at + 1..end].iter_mut().for_each(&mut f);
+                at = end;
+            }
+        }
+    }
+}
+
+/// The faces of one polyhedron of [`Polyhedra`].
+#[derive(Debug, Clone)]
+pub struct Faces<'a> {
+    s: &'a [u32],
+    at: usize,
+    left: u32,
+}
+
+impl<'a> Iterator for Faces<'a> {
+    type Item = &'a [u32];
+
+    fn next(&mut self) -> Option<&'a [u32]> {
+        if self.left == 0 {
+            return None;
+        }
+        let k = *self.s.get(self.at)? as usize;
+        let f = self.s.get(self.at + 1..self.at + 1 + k)?;
+        self.at += 1 + k;
+        self.left -= 1;
+        Some(f)
+    }
+}
+
+/// Checks the face stream of polyhedron `cell` (`n_faces, n0, nodes,
+/// n1, nodes, ...`): at least one face, at least three nodes a face, and
+/// no face beyond the end of `s`.
+pub(crate) fn check_face_stream(s: &[u32], cell: usize) -> Result<(), String> {
+    let nf = s.first().copied().unwrap_or(0);
+    if nf == 0 {
+        return Err(format!("polyhedron {cell} has no faces"));
+    }
+    let mut at = 1usize;
+    for _ in 0..nf {
+        let k = *s.get(at).ok_or("a polyhedron face stream ends too early")? as usize;
+        if k < 3 {
+            return Err(format!("polyhedron {cell} has a face of {k} points"));
+        }
+        at += 1 + k;
+        if at > s.len() {
+            return Err("a polyhedron face stream ends too early".into());
+        }
+    }
+    Ok(())
 }
 
 /// A mesh built from an [`ElementMesh`].
@@ -353,7 +474,11 @@ impl ElementMesh {
     /// Adds a polyhedral cell from its faces (the orientation of the faces
     /// need not be consistent with the cell: it is made outward from the
     /// volume, but all faces of one cell must agree).
-    pub fn add_polyhedron(&mut self, faces: Vec<Vec<u32>>, zone: u32) {
+    pub fn add_polyhedron<I>(&mut self, faces: I, zone: u32)
+    where
+        I: IntoIterator,
+        I::Item: AsRef<[u32]>,
+    {
         self.cell_kind.push(CellKind::Polyhedron);
         self.poly.push(faces);
         self.cell_zone.push(zone);
@@ -421,9 +546,11 @@ impl ElementMesh {
         for v in &mut self.cell_nodes {
             *v = map[*v as usize];
         }
-        for v in self.poly.iter_mut().flatten().flatten() {
-            *v = map[*v as usize];
-        }
+        self.poly.nodes_mut(|v| {
+            if let Some(&m) = map.get(*v as usize) {
+                *v = m;
+            }
+        });
         for v in &mut self.face_nodes {
             *v = map[*v as usize];
         }
@@ -454,11 +581,27 @@ impl ElementMesh {
     /// keep their order of first use by the cells), matches the faces,
     /// names the boundary faces and drops empty boundaries.
     pub fn into_mesh(self) -> Result<Built, String> {
-        let n_cells = self.cell_kind.len();
+        // the inputs are dropped as soon as they are used: a reader of a
+        // large mesh peaks here
+        let ElementMesh {
+            points: input,
+            cell_kind,
+            cell_nodes,
+            poly,
+            cell_zone,
+            zones,
+            face_ptr,
+            face_nodes,
+            face_boundary,
+            boundaries,
+            face_word,
+            group_word,
+        } = self;
+        let n_cells = cell_kind.len();
         if n_cells == 0 {
             return Err("the file has no 3D cells".into());
         }
-        let np = self.points.len();
+        let np = input.len();
         let mut new_index = vec![u32::MAX; np];
         let mut points: Vec<[f64; 3]> = Vec::new();
         let mut use_node = |n: u32| -> Result<(), String> {
@@ -468,46 +611,60 @@ impl ElementMesh {
             }
             if new_index[i] == u32::MAX {
                 new_index[i] = points.len() as u32;
-                points.push(self.points[i]);
+                points.push(input[i]);
             }
             Ok(())
         };
         {
             let (mut at, mut ip) = (0usize, 0usize);
-            for &kind in &self.cell_kind {
+            for &kind in &cell_kind {
                 if kind == CellKind::Polyhedron {
-                    for &n in self.poly[ip].iter().flatten() {
+                    for &n in poly.faces(ip).flatten() {
                         use_node(n)?;
                     }
                     ip += 1;
                 } else {
-                    for &n in &self.cell_nodes[at..at + kind.nodes()] {
+                    for &n in &cell_nodes[at..at + kind.nodes()] {
                         use_node(n)?;
                     }
                     at += kind.nodes();
                 }
             }
         }
+        drop(input);
 
         let mut soup = CellSoup::new(points);
         let (mut at, mut ip) = (0usize, 0usize);
-        for (c, &kind) in self.cell_kind.iter().enumerate() {
+        // the renumbered faces of one polyhedron
+        let mut buf: Vec<u32> = Vec::new();
+        let mut ends: Vec<usize> = Vec::new();
+        for (c, &kind) in cell_kind.iter().enumerate() {
             if kind == CellKind::Polyhedron {
-                let faces: Vec<Vec<u32>> = self.poly[ip]
-                    .iter()
-                    .map(|f| f.iter().map(|&n| new_index[n as usize]).collect())
-                    .collect();
+                buf.clear();
+                ends.clear();
+                for f in poly.faces(ip) {
+                    buf.extend(f.iter().map(|&n| new_index[n as usize]));
+                    ends.push(buf.len());
+                }
                 ip += 1;
-                soup.add_cell_in_zone(faces.iter().map(|f| &f[..]), self.cell_zone[c]);
+                let mut s = 0;
+                soup.add_cell_in_zone(
+                    ends.iter().map(|&e| {
+                        let f = &buf[s..e];
+                        s = e;
+                        f
+                    }),
+                    cell_zone[c],
+                );
                 continue;
             }
-            let e = &self.cell_nodes[at..at + kind.nodes()];
+            let e = &cell_nodes[at..at + kind.nodes()];
             at += kind.nodes();
             let mut v = [0u32; 8];
             for (k, &n) in e.iter().enumerate() {
                 v[k] = new_index[n as usize];
             }
-            let z = self.cell_zone[c];
+            let z = cell_zone[c];
             match kind {
                 CellKind::Tetrahedron => {
                     let f = tet_faces(&[v[0], v[1], v[2], v[3]]);
@@ -540,19 +697,20 @@ impl ElementMesh {
                 CellKind::Polyhedron => unreachable!(),
             }
         }
-        let zones = if self.zones.is_empty() {
+        drop((poly, cell_nodes, cell_kind, cell_zone, buf, ends));
+        let zones = if zones.is_empty() {
             vec!["fluid".to_string()]
         } else {
-            self.zones
+            zones
         };
         soup.set_zone_names(zones);
 
         // boundary faces by their sorted nodes
         let mut warnings = Vec::new();
-        let mut face_boundary: HashMap<Vec<u32>, u32> = HashMap::new();
+        let mut named: HashMap<Vec<u32>, u32> = HashMap::new();
         let mut skipped = 0usize;
-        for (f, &b) in self.face_boundary.iter().enumerate() {
-            let nodes = &self.face_nodes[self.face_ptr[f] as usize..self.face_ptr[f + 1] as usize];
+        for (f, &b) in face_boundary.iter().enumerate() {
+            let nodes = &face_nodes[face_ptr[f] as usize..face_ptr[f + 1] as usize];
             let mut k = Vec::with_capacity(nodes.len());
             let mut ok = true;
             for &n in nodes {
@@ -569,25 +727,25 @@ impl ElementMesh {
                 continue;
             }
             k.sort_unstable();
-            face_boundary.insert(k, b);
+            named.insert(k, b);
         }
         if skipped > 0 {
             warnings.push(format!(
                 "{skipped} {} are not faces of any cell and are ignored",
-                self.face_word
+                face_word
             ));
         }
-        let mut boundary_names = self.boundaries;
+        let mut boundary_names = boundaries;
         let default = boundary_names.len() as u32;
         boundary_names.push("default".into());
         let unnamed = std::cell::Cell::new(0usize);
         let used = std::cell::Cell::new(0usize);
-        let n_face_boundary = face_boundary.len();
+        let n_face_boundary = named.len();
         let names: Vec<&str> = boundary_names.iter().map(|s| s.as_str()).collect();
         let mut mesh = soup.finish(&names, |bf| {
             let mut k = bf.nodes.to_vec();
             k.sort_unstable();
-            let b = match face_boundary.get(&k) {
+            let b = match named.get(&k) {
                 Some(&b) => {
                     used.set(used.get() + 1);
                     b
@@ -603,14 +761,14 @@ impl ElementMesh {
             warnings.push(format!(
                 "{} boundary faces belong to no {} and are in the boundary 'default'",
                 unnamed.get(),
-                self.group_word
+                group_word
             ));
         }
         if used.get() < n_face_boundary {
             warnings.push(format!(
                 "{} {} lie inside the domain (internal surfaces) and are ignored",
                 n_face_boundary - used.get(),
-                self.face_word
+                face_word
             ));
         }
         mesh.boundaries.retain(|p| p.len > 0);
