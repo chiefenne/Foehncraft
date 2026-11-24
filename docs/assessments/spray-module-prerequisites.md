@@ -4,8 +4,8 @@ Assessment, 2026-11-24. Requested by the maintainer: "add the Lagrangian spray
 module as soon as possible; which stages are missing so we can start?"
 Discussion only, no code. State read: `main` at b431abe (v1.0.0 plus #224 to
 #227), `docs/requirements.md` (L12, D47, D93, D107, D108, D117, D121 to D124,
-D190), the [wall film assessment](../requirements.md), the
-[MPI sizing](mpi-multi-rank-sizing.md) and the crates.
+D190), the wall film decisions in
+[requirements](../requirements.md), the [MPI sizing](mpi-multi-rank-sizing.md) and the crates.
 
 ## 1. Answer in short
 
