@@ -32,6 +32,20 @@ pub trait Exec {
     fn device(&self) -> String;
     /// A new buffer of `n` zeros.
     fn alloc(&mut self, n: usize) -> Result<Buf>;
+    /// A new buffer of `n` zeros that is neither a cell nor a face field
+    /// (on ranks every entry is the rank's own).
+    fn alloc_plain(&mut self, n: usize) -> Result<Buf> {
+        self.alloc(n)
+    }
+    /// On ranks (MPI step W5): fills the halo entries of the cell buffers
+    /// among `bufs` from their owners; other buffers are left alone.
+    fn exchange(&mut self, _bufs: &[Buf]) -> Result<()> {
+        Ok(())
+    }
+    /// The executor runs one rank of several.
+    fn on_ranks(&self) -> bool {
+        false
+    }
     /// A static array of the run (mesh data), kept until the executor ends.
     fn alloc_u32(&mut self, v: &[u32]) -> Result<Raw<u32>>;
     /// The address and length of a buffer.
@@ -40,6 +54,10 @@ pub trait Exec {
     fn upload(&mut self, b: Buf, v: &[f64]) -> Result<()>;
     /// Copies a buffer to the host.
     fn download(&mut self, b: Buf) -> Result<Vec<f64>>;
+    /// Copies a buffer to the host with the halo of a cell buffer on ranks.
+    fn download_with_halo(&mut self, b: Buf) -> Result<Vec<f64>> {
+        self.download(b)
+    }
     /// dst = src.
     fn copy(&mut self, src: Buf, dst: Buf) -> Result<()>;
     /// One value of a buffer.
@@ -271,10 +289,10 @@ impl<E: Exec> KernelFlow<E> {
             eps2_one: x.alloc(1)?,
             scratch: x.alloc(nb)?,
             zero_cells: x.alloc(nc)?,
-            blocks: x.alloc(n_blocks)?,
-            blocks2: x.alloc(n_blocks)?,
-            rs_v: x.alloc(3 * nc)?,
-            rs_w: x.alloc(3 * nc)?,
+            blocks: x.alloc_plain(n_blocks)?,
+            blocks2: x.alloc_plain(n_blocks)?,
+            rs_v: x.alloc_plain(3 * nc)?,
+            rs_w: x.alloc_plain(3 * nc)?,
             masks,
             conv,
             beta,
@@ -430,11 +448,25 @@ impl<E: Exec> KernelFlow<E> {
             x: self.r(x),
             out: self.r(out),
         };
-        self.go::<K>(n, &a)
+        self.go::<K>(n, &a)?;
+        // an own-cell loop: the halo of its output from the owners
+        if n == self.nc {
+            self.x.exchange(&[out])?;
+        }
+        Ok(())
     }
 }
 
 impl<E: Exec> KernelFlow<E> {
+    /// Fails on ranks: the operation does not run there yet.
+    fn not_on_ranks(&self, what: &str) -> Result<()> {
+        ensure!(
+            !self.x.on_ranks(),
+            "{what} does not run on ranks yet (MPI step W5)"
+        );
+        Ok(())
+    }
+
     fn product<K: Entry<Args = e::ProductArgs>>(
         &mut self,
         val: Buf,
@@ -448,7 +480,8 @@ impl<E: Exec> KernelFlow<E> {
             x: self.r(x),
             out: self.r(out),
         };
-        self.go::<K>(self.nc, &args)
+        self.go::<K>(self.nc, &args)?;
+        self.x.exchange(&[out])
     }
 }
 
@@ -477,17 +510,17 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
     }
 
     fn upload(&mut self, b: Buf, v: &[f64]) -> Result<()> {
-        ensure!(
-            self.r(b).len as usize == v.len(),
-            "upload of {} values into {}",
-            v.len(),
-            self.r(b).len
-        );
+        // the executor checks the length (on ranks a cell buffer takes the
+        // own cells or the own and halo cells)
         self.x.upload(b, v)
     }
 
     fn download(&mut self, b: Buf) -> Result<Vec<f64>> {
         self.x.download(b)
+    }
+
+    fn download_with_halo(&mut self, b: Buf) -> Result<Vec<f64>> {
+        self.x.download_with_halo(b)
     }
 
     fn copy(&mut self, src: Buf, dst: Buf) -> Result<()> {
@@ -542,7 +575,8 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             den: opt(den),
             out: self.r(out),
         };
-        self.go::<e::PseudoCoefficient>(self.nc, &args)
+        self.go::<e::PseudoCoefficient>(self.nc, &args)?;
+        self.x.exchange(&[out])
     }
 
     fn scaled_difference(&mut self, out: Buf, a: f64, x: Buf, y: Buf) -> Result<()> {
@@ -735,7 +769,8 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             jump: Raw::EMPTY,
             out: self.r3(out),
         };
-        self.go::<e::Gradient>(self.nc, &args)
+        self.go::<e::Gradient>(self.nc, &args)?;
+        self.x.exchange(&out.all())
     }
 
     fn limiter(&mut self, phi: Buf, value: Buf, grad: Buf3, eps2: Eps2, out: Buf) -> Result<()> {
@@ -754,7 +789,8 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             eps2: e2,
             out: self.r(out),
         };
-        self.go::<e::Limiter>(self.nc, &args)
+        self.go::<e::Limiter>(self.nc, &args)?;
+        self.x.exchange(&[out])
     }
 
     fn gradient_with(
@@ -779,7 +815,8 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             jump: jump.map_or(Raw::EMPTY, |b| self.r(b)),
             out: self.r3(out),
         };
-        self.go::<e::Gradient>(self.nc, &args)
+        self.go::<e::Gradient>(self.nc, &args)?;
+        self.x.exchange(&out.all())
     }
 
     fn limiter_with(
@@ -807,7 +844,8 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             eps2: e2,
             out: self.r(out),
         };
-        self.go::<e::Limiter>(self.nc, &args)
+        self.go::<e::Limiter>(self.nc, &args)?;
+        self.x.exchange(&[out])
     }
 
     fn scalar_faces(&mut self, a: &ScalarFaceArgs) -> Result<()> {
@@ -902,7 +940,8 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             diag: self.r(a.diag),
             order: self.r(a.order),
         };
-        self.go::<e::ScalarRows>(self.nc, &args)
+        self.go::<e::ScalarRows>(self.nc, &args)?;
+        self.x.exchange(&[a.rhs, a.diag, a.order])
     }
 
     fn scalar_scale(
@@ -1066,7 +1105,10 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             dc: self.r(a.dc),
             diag: self.r3(a.diag),
         };
-        self.go::<e::MomentumRows>(self.nc, &args)
+        self.go::<e::MomentumRows>(self.nc, &args)?;
+        self.x.exchange(&[
+            a.rhs.x, a.rhs.y, a.rhs.z, a.d, a.ds, a.dc, a.diag.x, a.diag.y, a.diag.z,
+        ])
     }
 
     fn momentum_operator(&mut self, cp: Buf, cn: Buf, bf: Buf3, u: Buf3, out: Buf3) -> Result<()> {
@@ -1082,7 +1124,8 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             u: self.r3(u),
             out: self.r3(out),
         };
-        self.go::<e::MomentumOperator>(self.nc, &args)
+        self.go::<e::MomentumOperator>(self.nc, &args)?;
+        self.x.exchange(&out.all())
     }
 
     fn residual_scale(&mut self, u: Buf3, rhs: Buf3, diag: Buf3, alpha: f64) -> Result<f64> {
@@ -1149,7 +1192,8 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             val: self.r(val),
             rhs: self.r(rhs),
         };
-        self.go::<e::PressureRows>(self.nc, &args)
+        self.go::<e::PressureRows>(self.nc, &args)?;
+        self.x.exchange(&[rhs])
     }
 
     fn correct_fluxes(&mut self, cf: Buf, m: Buf, pc: Buf, out: Buf) -> Result<()> {
@@ -1173,7 +1217,8 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             grad: self.r3(grad),
             u: self.r3(u),
         };
-        self.go::<e::CorrectVelocity>(self.nc, &args)
+        self.go::<e::CorrectVelocity>(self.nc, &args)?;
+        self.x.exchange(&u.all())
     }
 
     fn neighbour_correction(
@@ -1193,7 +1238,8 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             out: self.r(out),
             own,
         };
-        self.go::<e::NeighbourCorrection>(self.nc, &args)
+        self.go::<e::NeighbourCorrection>(self.nc, &args)?;
+        self.x.exchange(&[out])
     }
 
     fn delta_flux(&mut self, delta: Buf3, out: Buf) -> Result<()> {
@@ -1207,6 +1253,7 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
     }
 
     fn transpose(&mut self, val: Buf, out: Buf) -> Result<()> {
+        self.not_on_ranks("transpose")?;
         let n = self.m.transpose.len as usize;
         ensure!(
             self.r(val).len as usize == n && self.r(out).len as usize == n,
@@ -1337,6 +1384,7 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
     }
 
     fn wall_setup(&mut self, w: &WallStatic) -> Result<()> {
+        self.not_on_ranks("wall setup")?;
         ensure!(
             w.ptr.len() == w.cells.len() + 1 && w.slots.len() == w.faces.len(),
             "flow device: inconsistent wall arrays"
@@ -1354,6 +1402,7 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
     }
 
     fn sst_cells(&mut self, a: &SstCellOps) -> Result<()> {
+        self.not_on_ranks("sst cells")?;
         let mut ins = vec![a.k, a.w, a.d];
         for g in &a.grad_u {
             ins.extend(g.all());
@@ -1409,6 +1458,7 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
     }
 
     fn strain_component(&mut self, grad_u: [Buf3; 3], comp: u32, out: Buf) -> Result<()> {
+        self.not_on_ranks("strain component")?;
         let ins: Vec<Buf> = grad_u.iter().flat_map(|g| g.all()).collect();
         check(&[out], &ins)?;
         let args = self.curvature_args(grad_u, out);
@@ -1424,6 +1474,7 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
         old: Option<(Buf, Buf, f64)>,
         out: Buf,
     ) -> Result<()> {
+        self.not_on_ranks("convective derivative")?;
         let mut ins = u.all().to_vec();
         ins.extend(grad.all());
         if let Some(v) = v_frame {
@@ -1449,6 +1500,7 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
     }
 
     fn curvature_cells(&mut self, a: &CurvatureOps) -> Result<()> {
+        self.not_on_ranks("curvature cells")?;
         let mut ins: Vec<Buf> = a.grad_u.iter().flat_map(|g| g.all()).collect();
         ins.extend(a.dsdt);
         ins.push(a.w);
@@ -1478,6 +1530,7 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
         mode: u32,
         tau: [Buf; 6],
     ) -> Result<()> {
+        self.not_on_ranks("qcr cells")?;
         let mut ins: Vec<Buf> = grad_u.iter().flat_map(|g| g.all()).collect();
         ins.push(nu_t);
         check(&tau, &ins)?;
@@ -1500,6 +1553,7 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
         gtau: Option<[Buf3; 6]>,
         bf: Buf3,
     ) -> Result<()> {
+        self.not_on_ranks("explicit stress faces")?;
         let mut ins = tau.to_vec();
         if let Some(g) = gtau {
             ins.extend(g.iter().flat_map(|b| b.all()));
@@ -1519,6 +1573,7 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
     }
 
     fn vertex_setup(&mut self, s: &VertexStencil) -> Result<usize> {
+        self.not_on_ranks("vertex setup")?;
         let nv = s.vert_ptr.len().saturating_sub(1);
         ensure!(
             nv > 0
@@ -1558,6 +1613,7 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
     }
 
     fn mlp_limiter(&mut self, a: &MlpOps) -> Result<()> {
+        self.not_on_ranks("mlp limiter")?;
         let Some(&v) = self.vert.get(a.slot) else {
             anyhow::bail!("flow device: no vertex stencil {}", a.slot);
         };
@@ -1592,6 +1648,7 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
     }
 
     fn quadratic_setup(&mut self, cells: &[u32], ptr: &[u32], idx: &[u32]) -> Result<usize> {
+        self.not_on_ranks("quadratic setup")?;
         ensure!(
             !cells.is_empty()
                 && ptr.len() == cells.len() + 1
@@ -1616,6 +1673,7 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
         ub: Buf3,
         out: [Buf3; 3],
     ) -> Result<()> {
+        self.not_on_ranks("quadratic gradient")?;
         let Some(&[cells, ptr, idx]) = self.quad.get(slot) else {
             anyhow::bail!("flow device: no quadratic stencil {slot}");
         };
@@ -1639,6 +1697,7 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
     }
 
     fn keps_cells(&mut self, a: &KepsCellOps) -> Result<()> {
+        self.not_on_ranks("keps cells")?;
         let mut ins = vec![a.k, a.e];
         for g in &a.grad_u {
             ins.extend(g.all());
@@ -1685,6 +1744,7 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
     }
 
     fn zeta_f_cells(&mut self, a: &ZetaFCellOps) -> Result<()> {
+        self.not_on_ranks("zeta f cells")?;
         let mut ins = vec![a.k, a.e, a.zeta, a.f];
         for g in &a.grad_u {
             ins.extend(g.all());
@@ -1900,6 +1960,7 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
         rel_old: Option<(Buf, f64)>,
         work: Buf,
     ) -> Result<usize> {
+        self.not_on_ranks("floor")?;
         check(&[work], &[x])?;
         if let Some((old, _)) = rel_old {
             check(&[work], &[old])?;
@@ -1919,6 +1980,7 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
     }
 
     fn wall_cells(&mut self, a: &WallCellOps) -> Result<()> {
+        self.not_on_ranks("wall cells")?;
         let Some([_, cells, ptr, slots]) = self.wall else {
             anyhow::bail!("flow device: wall_cells before wall_setup");
         };

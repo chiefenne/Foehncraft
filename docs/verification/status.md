@@ -136,6 +136,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Backends and interfaces | [Exact reductions: sums, dot products, norms and min/max independent of threads, order and ranks (MPI step W2)](#parallel-exact-reductions) | verified |
 | Backends and interfaces | [The steady scalar solver on several ranks, bitwise one rank (MPI step W3)](#parallel-scalar-ranks) | partial |
 | Backends and interfaces | [Multigrid on several ranks with the replicated setup, bitwise one rank (MPI step W4)](#parallel-multigrid-ranks) | partial |
+| Backends and interfaces | [Steady SIMPLEC on several ranks, bitwise one rank (MPI step W5 part 1)](#parallel-flow-ranks) | partial |
 
 ## Meshes
 
@@ -1661,7 +1662,7 @@ Contracts: `bitwise`.
 
 Gaps:
 
-- the flow engine on ranks (W5) follows
+- the flow engine on ranks: steady SIMPLEC in W5 part 1 (parallel.flow-ranks), the rest in part 2
 
 Contracts: `bitwise`.
 
@@ -1677,6 +1678,23 @@ Contracts: `bitwise`.
 Gaps:
 
 - the setup is replicated: every rank builds the whole hierarchy, so setup time and memory do not fall with the rank count (a distributed setup is not planned before the scaling numbers ask for it)
-- the flow engine on ranks (W5) follows
+- the flow engine on ranks: steady SIMPLEC in W5 part 1 (parallel.flow-ranks), the rest in part 2
+
+Contracts: `bitwise`.
+
+<a id="parallel-flow-ranks"></a>
+
+### Steady SIMPLEC on several ranks, bitwise one rank (MPI step W5 part 1)
+
+**partial** (gaps written) · id `parallel.flow-ranks` · switch `[run] ranks of foehn flow` · decisions D31, D93
+
+- contract (bitwise): [`steady_flow_on_ranks_is_bitwise_one_rank`](../../crates/foehncraft-flow/tests/ranks.rs): 1 to 4 ranks (RCB), 2 threads per rank: a channel with a moving wall on polyhedra (linear upwind, Venkatakrishnan), mixed cells (bounded central) and tetrahedra (Jacobi pressure solve); velocity, pressure, pressure gradient, limiter and residual history bitwise one rank
+- contract (bitwise): [`ranks_channel_poly`](../../examples/cases/flow/ranks_channel_poly.toml): a channel with the upper wall moving against the inflow, potential-flow start, 103 outer iterations on 2, 3 and 5 ranks, every rank bitwise the one-rank run (the run fails otherwise) (passes in CI (set linux-2), not yet in the manual)
+
+Gaps:
+
+- steady SIMPLEC only: turbulence and wall distance, scalars, energy, transient runs, turning zones, grid levels, regions and the coupled solver on ranks are W5 part 2
+- on the CPU flow device only (GPU ranks are not in scope of v1.1)
+- no scaling numbers yet (1M cells, W9)
 
 Contracts: `bitwise`.

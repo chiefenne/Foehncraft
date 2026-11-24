@@ -18,6 +18,7 @@ Part of the [Example gallery](../gallery.md): the built-in test mesher in 2D and
 | 219 | [Sums that do not care how many ranks there are: exact reductions](#exact-reductions) | 8 | exact accumulator, sums over ranks bitwise one rank, the old rank-order sum for comparison (MPI step W2, D31, D93) |
 | 230 | [Five ranks, one solution: the scalar solver on ranks](#scalar-ranks) | 8 | faces in global orientation, halo exchange before every read across a face, the whole scalar solver bitwise one rank (MPI step W3, D93) |
 | 231 | [Five ranks, one hierarchy: multigrid on ranks](#multigrid-ranks) | 8 | replicated multigrid setup, distributed V-cycle with a halo exchange per level, CG + multigrid bitwise one rank (MPI step W4, D93) |
+| 234 | [Five ranks, one flow: SIMPLEC on ranks](#flow-ranks) | 8 | the flow device on a local mesh, halo exchange after every kernel that writes cells, exact sums, steady SIMPLEC bitwise one rank (MPI step W5, D93) |
 
 ---
 
@@ -583,6 +584,52 @@ python3 -m tools.mesh.render_mesh output/ranks_poisson_amg_poly_box/fields.vtkhd
     --title "phi on 5 ranks, CG + multigrid: bitwise the one-rank solution"
 python3 -m tools.mesh.render_mesh output/ranks_poisson_amg_poly_box/fields.vtkhdf rank.png \
     --field rank --categorical --cut --size 1000x620 --title "5 ranks (RCB) of the polyhedral box"
+```
+
+[↑ back to top](#meshes)
+
+---
+
+<a id="flow-ranks"></a>
+## 234. Five ranks, one flow: SIMPLEC on ranks
+
+<img src="../figures/gallery/ranks_flow_speed.png" alt="Speed in a channel whose upper wall moves against the inflow, solved with SIMPLEC on five ranks" width="1200" height="460">
+
+<img src="../figures/gallery/ranks_flow_rank.png" alt="The five ranks of the recursive coordinate bisection of the polygonal channel" width="1200" height="460">
+
+A channel three heights long on a perturbed polygonal mesh: uniform
+inflow from the left at 1 m/s, a pressure outlet on the right, the lower
+wall at rest and the upper wall moving at 1 m/s against the inflow, which
+drags the fluid near it backwards (Re = 100 on the height). The flow
+starts from potential flow and converges with steady SIMPLEC (linear
+upwind with the Venkatakrishnan limiter) in 103 outer iterations; then
+the run solves it again on 2, 3 and 5 ranks, every rank a thread of the
+process with its own local mesh and halo exchange. The flow device keeps
+each cell field as own plus halo cells, exchanges the halo after every
+kernel that writes cells (gradients, limiters, momentum and pressure
+rows, the velocity correction), sums residuals and norms over the own
+cells exactly across ranks and solves the linear systems with the scalar
+backend on ranks of W3 and W4. Decisions that every rank must take alike
+(the pressure reference, the mesh skewness) are taken globally. Velocity,
+pressure, pressure gradient, limiter and residual history of every rank
+are bitwise those of one rank; the run fails otherwise. The same check
+runs across MPI processes in CI (`mpi_flow`, 1 to 4 ranks) on polyhedra,
+mixed cells and tetrahedra.
+
+| | |
+|---|---|
+| Mesh | poly 2D, 90 × 30 base grid, 2 821 cells, nodes perturbed by 10 % |
+| Ranks | 2, 3, 5 (recursive coordinate bisection), one halo layer |
+| Solver | steady SIMPLEC, potential-flow start, 103 outer iterations to 10⁻⁶ |
+| Case file | `flow/ranks_channel_poly.toml` |
+
+```
+target/release/foehn flow examples/cases/flow/ranks_channel_poly.toml
+python3 -m tools.mesh.render_mesh output/ranks_channel_poly/ranks.vtkhdf speed.png \
+    --field speed --top --size 1200x460 --zoom 1.9 \
+    --title "speed (m/s) on 5 ranks: bitwise the one-rank solution"
+python3 -m tools.mesh.render_mesh output/ranks_channel_poly/ranks.vtkhdf rank.png \
+    --field rank --categorical --top --size 1200x460 --zoom 1.9 --title "5 ranks (RCB) of the channel"
 ```
 
 [↑ back to top](#meshes)

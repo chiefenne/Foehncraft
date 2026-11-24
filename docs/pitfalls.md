@@ -280,6 +280,19 @@ the one of owner and neighbour below `n_cells`.
 Do not compare partitions by tolerance when a bitwise comparison is
 possible: a tolerance hides the cause (D93).
 
+**A decision taken on the local mesh** (W5, #234). The flow solver picks a
+pressure reference cell when no boundary fixes the pressure; on ranks a
+part without the outlet decided "no pressure boundary" on its own and
+pinned a cell, and every field of every rank differed from one rank. The
+same holds for the mesh skewness that switches gradient corrections, and
+for any choice made from what a rank sees. **Do instead:** reduce such a
+decision over all ranks (`any`, `comm.max`) before it is used, and agree
+on anything that steers a collective (for example the kind of a device
+buffer, which decides whether it is exchanged) with `comm.min`, so that
+no rank skips an exchange the others wait for. Start fields from a global
+construction (potential flow, smooth fields) are computed on the global
+mesh and each rank keeps its cells (`local.cell_position`).
+
 **Sums over ranks in rank order.** A pairwise or block sum per rank,
 combined in rank order, changes in the last bits with the rank count (0 to
 2 ulps on the 1 280-cell box of gallery 219, for each of volume, first

@@ -721,6 +721,9 @@ pub struct Setup<'a> {
     pub eps2: &'a [f64],
     /// CPU threads.
     pub threads: Option<usize>,
+    /// The other ranks, when the run is one rank of several (MPI step W5;
+    /// the CPU device only).
+    pub ranks: Option<foehncraft_mesh::decompose::Ranks>,
 }
 
 /// The operations of the flow algorithms. Buffers are created by
@@ -738,6 +741,11 @@ pub trait FlowDevice {
     fn upload(&mut self, b: Buf, v: &[f64]) -> Result<()>;
     /// Copies a buffer to the host.
     fn download(&mut self, b: Buf) -> Result<Vec<f64>>;
+    /// Copies a buffer to the host with the halo entries of a cell buffer
+    /// on ranks (MPI step W5; otherwise as [`download`](Self::download)).
+    fn download_with_halo(&mut self, b: Buf) -> Result<Vec<f64>> {
+        self.download(b)
+    }
     /// dst = src.
     fn copy(&mut self, src: Buf, dst: Buf) -> Result<()>;
     /// b = v everywhere.
@@ -1091,6 +1099,10 @@ pub fn available() -> Vec<&'static str> {
 /// Creates a device: `cpu`, or `cuda` when the build registered it (`ptx`
 /// names its kernel module, from `gpu/ptx-kernels`).
 pub fn create(name: &str, s: &Setup, ptx: &std::path::Path) -> Result<Box<dyn FlowDevice>> {
+    anyhow::ensure!(
+        s.ranks.is_none() || name == "cpu",
+        "on ranks the flow runs on the CPU device (MPI step W5)"
+    );
     match name {
         "cpu" => Ok(Box::new(cpu::CpuFlow::cpu(s)?)),
         "cuda" => match GPU.get() {

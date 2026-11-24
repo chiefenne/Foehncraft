@@ -18,6 +18,7 @@ Part of the [Recipes](../recipes.md): generate, read (Gmsh, SU2, CGNS, OpenFOAM,
 | 219 | [Sum over ranks exactly (and check it)](#exact-reductions) |
 | 230 | [Solve a scalar on ranks (and check it against one rank)](#scalar-ranks) |
 | 231 | [Use the multigrid preconditioner on ranks](#multigrid-ranks) |
+| 234 | [Solve a flow on ranks (and check it against one rank)](#flow-ranks) |
 
 ---
 
@@ -569,5 +570,55 @@ let mine = amg::dist::distribute(&h, &owner, &order, rank, size);
 
 `CpuBackend::amg_load` does this itself on a backend made with
 `CpuBackend::on_ranks`.
+
+[↑ back to top](#meshes)
+
+---
+
+<a id="flow-ranks"></a>
+## 234. Solve a flow on ranks (and check it against one rank)
+
+List rank counts under `[run]` of a steady laminar flow case: after the
+run the flow is solved again from the same start on each rank count, the
+ranks as threads of this process (recursive coordinate bisection, one
+halo layer), and the run fails unless every rank's cells are bitwise
+those of one rank (MPI step W5, D93):
+
+```toml
+[run]
+ranks = [2, 3, 5]
+```
+
+```
+target/release/foehn flow examples/cases/flow/ranks_channel_poly.toml
+```
+
+The log says `solve on N ranks: K outer iterations, bitwise equal to one
+rank` for every count; `ranks.vtkhdf` holds the solution of the largest
+count with the cell field `rank`. So far this covers steady SIMPLEC
+without turbulence, scalars, energy, gravity, turning zones, a schedule,
+grid levels, regions or the coupled algorithm; a case with one of them
+and `[run] ranks` stops with an error that names it. Transient flow,
+energy, scalars, turbulence and the coupled solver follow in the second
+part of W5.
+
+Across MPI processes (needs MPI as in recipe 4):
+
+```
+cargo build --release -p foehncraft-flow --features mpi --example mpi_flow
+for n in 1 2 3 4; do mpirun --oversubscribe -n $n target/release/examples/mpi_flow; done
+```
+
+In code (`foehncraft_flow::ranks`), one rank's flow on its part: the
+`Target` carries the ranks (`Target { ranks: Some(Ranks::new(comm, &local, &part)), .. }`),
+the CPU flow device does the rest, and the one-rank solver runs unchanged:
+
+```rust
+let part = partition(&mesh, &geo, size, Method::Rcb)?;
+let reference = ranks::solve_one(&case, &mesh, iterations, Some(1))?;
+let mine = ranks::solve_part(&case, &mesh, &part, comm.clone(), iterations, Some(1))?;
+let c = ranks::check(comm.rank(), &mine, &reference);  // cell by cell, bit for bit
+assert!(c.bitwise());
+```
 
 [↑ back to top](#meshes)
