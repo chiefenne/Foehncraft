@@ -30,13 +30,16 @@
 //!
 //! [`exact`] has the exact solutions of the verification cases (section 3
 //! of `docs/requirements/step29-radiation.md`); [`output`] writes the fields
-//! of a call as VTKHDF and CSV.
+//! of a call as VTKHDF and CSV; [`Domain::trace`] records the paths of
+//! chosen bundles of a call.
 
 pub mod device;
 pub mod exact;
 pub mod output;
 mod solve;
+pub mod trace;
 
 pub use device::{CpuDevicePath, DeviceTallies, GpuFactory, Transport, gpu_backend, register_gpu};
-pub use foehncraft_kernels::radiation::WallKind;
+pub use foehncraft_kernels::radiation::{Trace, WallKind};
 pub use solve::{Domain, Ledger, Points, SIGMA, Settings, Solution, Wall};
+pub use trace::{Path, PathPoint, Source, Traced};

@@ -6,7 +6,7 @@
 //! pip install gmsh
 //! python3 examples/meshes/furnace.py --out output/furnace.msh
 //! cargo run --release -p foehncraft-radiation --example furnace -- \
-//!     output/furnace.msh output/furnace [BUNDLES]
+//!     output/furnace.msh output/furnace [BUNDLES] [PATHS]
 //! ```
 //!
 //! The flame leaves the burner disc in the front wall along x and rises
@@ -22,10 +22,21 @@
 //! incident and net flux on the walls), `cells.csv` and `walls.csv` (for
 //! `tools/plot/radiation_furnace.py`) and prints the energy account and the
 //! power the tubes take up.
+//!
+//! With `PATHS` > 0 it also traces about that many bundles of the same
+//! call (`Domain::trace`): the emitters are drawn in proportion to their
+//! power (systematic sampling over the cells, then the wall faces), so the
+//! traced bundles are a fair sample of the call's bundles. `paths.csv` has
+//! one row per point of a path: where the bundle was emitted, leaves a
+//! cell, meets a wall and ends, with the fraction of its energy it still
+//! carries (for `tools/plot/radiation_paths.py`).
 
 use foehncraft_mesh::Geometry;
+use foehncraft_mesh::geometry::norm;
 use foehncraft_radiation::output::{cell_csv, wall_csv};
-use foehncraft_radiation::{Domain, Settings, Wall};
+use foehncraft_radiation::{Domain, SIGMA, Settings, Source, Trace, Wall, WallKind};
+use std::collections::HashMap;
+use std::fmt::Write;
 use std::time::Instant;
 
 /// Gas temperature (K) and absorption coefficient (1/m) at a point.
@@ -44,9 +55,10 @@ fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().collect();
     anyhow::ensure!(
         args.len() >= 3,
-        "usage: furnace MESH.msh OUT_DIR [BUNDLES] (mesh from examples/meshes/furnace.py)"
+        "usage: furnace MESH.msh OUT_DIR [BUNDLES] [PATHS] (mesh from examples/meshes/furnace.py)"
     );
     let bundles: u64 = args.get(3).map_or(Ok(4_000_000), |b| b.parse())?;
+    let paths: u32 = args.get(4).map_or(Ok(0), |b| b.parse())?;
     let out = std::path::Path::new(&args[2]);
     std::fs::create_dir_all(out)?;
 
@@ -71,7 +83,8 @@ fn main() -> anyhow::Result<()> {
         ..Settings::default()
     };
     let start = Instant::now();
-    let sol = Domain::whole(&mesh, &geo).solve(&t, &kappa, &walls, &s)?;
+    let domain = Domain::whole(&mesh, &geo);
+    let sol = domain.solve(&t, &kappa, &walls, &s)?;
     let seconds = start.elapsed().as_secs_f64();
 
     let l = &sol.ledger;
@@ -142,6 +155,84 @@ fn main() -> anyhow::Result<()> {
             ],
         )?;
     }
+    if paths > 0 {
+        let picks = sample(&mesh, &geo, &t, &kappa, &walls, paths);
+        let start = Instant::now();
+        let traced = domain.trace(&t, &kappa, &walls, &s, |src| {
+            picks.get(&src).copied().unwrap_or(0)
+        })?;
+        let mut csv = String::from("path,source,point,at,x,y,z,fraction\n");
+        let (mut escaped, mut points) = (0, 0);
+        for (i, p) in traced.paths.iter().enumerate() {
+            let source = match p.source {
+                Source::Cell(_) => "gas",
+                Source::Wall(_) => "wall",
+            };
+            let [x, y, z] = p.start;
+            let _ = writeln!(csv, "{i},{source},0,emitted,{x:e},{y:e},{z:e},1");
+            for (k, q) in p.points.iter().enumerate() {
+                let at = match q.at {
+                    Trace::Cell => "cell",
+                    Trace::Wall => "wall",
+                    Trace::Mirror => "mirror",
+                    Trace::Absorbed => "absorbed",
+                    Trace::Escaped => "escaped",
+                    Trace::Lost => "lost",
+                };
+                let [x, y, z] = q.x;
+                let f = q.w as f64 / p.w0 as f64;
+                let _ = writeln!(csv, "{i},{source},{},{at},{x:e},{y:e},{z:e},{f:e}", k + 1);
+            }
+            points += p.points.len();
+            escaped += usize::from(p.escaped > 0);
+        }
+        std::fs::write(out.join("paths.csv"), csv)?;
+        println!(
+            "  traced {} bundles ({points} points) in {:.2} s, {escaped} of them leave through the opening",
+            traced.paths.len(),
+            start.elapsed().as_secs_f64(),
+        );
+    }
     println!("  wrote {}", out.display());
     Ok(())
+}
+
+/// About `n` emitters drawn in proportion to their power, by systematic
+/// sampling over the cells and then the grey wall faces: how many bundles
+/// to trace from each.
+fn sample(
+    mesh: &foehncraft_mesh::Mesh,
+    geo: &Geometry,
+    t: &[f64],
+    kappa: &[f64],
+    walls: &[Wall],
+    n: u32,
+) -> HashMap<Source, u32> {
+    let first = mesh.n_interior_faces();
+    let mut power: Vec<(Source, f64)> = (0..mesh.n_cells)
+        .map(|c| {
+            let p = 4.0 * kappa[c] * SIGMA * t[c].powi(4) * geo.cell_volume[c];
+            (Source::Cell(c), p)
+        })
+        .collect();
+    for (b, w) in mesh.boundaries.iter().zip(walls) {
+        if w.kind != WallKind::Grey {
+            continue;
+        }
+        for f in b.range() {
+            let p = w.emissivity * SIGMA * w.temperature.powi(4) * norm(geo.face_area[f]);
+            power.push((Source::Wall(f - first), p));
+        }
+    }
+    let total: f64 = power.iter().map(|p| p.1).sum();
+    let step = total / f64::from(n);
+    let (mut picks, mut sum, mut next) = (HashMap::new(), 0.0, 0.5 * step);
+    for (src, p) in power {
+        sum += p;
+        while sum > next {
+            *picks.entry(src).or_insert(0) += 1;
+            next += step;
+        }
+    }
+    picks
 }
