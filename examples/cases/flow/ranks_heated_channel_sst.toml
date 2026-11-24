@@ -1,0 +1,81 @@
+# A turbulent channel with a heated lower wall, solved on 2, 3 and 5 ranks:
+# SIMPLEC with the k-omega SST model and the energy equation on the ranks of
+# a decomposed polygonal mesh gives bitwise the solution of one rank (MPI
+# step W5, D93).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/ranks_heated_channel_sst.toml
+#
+# Air-like fluid at 300 K enters from the left at 1 m/s (Re = 10 000 on the
+# channel height of 1 m) and leaves through a pressure outlet; the lower
+# wall is held at 330 K, the upper wall is adiabatic. The flow starts from
+# potential flow (D52). After the run the case is solved again on 2, 3 and
+# 5 ranks, every rank a thread of this process with its own halo exchange,
+# and the run fails unless every rank's velocity, pressure, temperature, k,
+# omega and nu_t and the residual history are bitwise those of one rank.
+# `ranks.vtkhdf` holds the five-rank solution and the cell field `rank`.
+
+case_format = "0.7"
+
+[mesh.generate]
+type = "poly"
+dimension = 2
+upper = [3.0, 1.0, 0.1]
+cells = [90, 30, 1]
+perturb = 0.1
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 1e-4
+specific_heat = 1000.0
+conductivity = 0.14            # Pr = 0.71
+
+[turbulence]
+model = "k-omega-sst"
+
+[initial]
+potential_flow = true
+turbulence_intensity = 0.05
+viscosity_ratio = 10.0
+
+[energy]
+initial = 300.0
+
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [1.0, 0.0, 0.0]
+[boundary.xmin.energy]
+temperature = 300.0
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 101325.0
+[boundary.ymin]
+type = "wall"
+[boundary.ymin.energy]
+temperature = 330.0
+[boundary.ymax]
+type = "wall"
+[boundary.ymax.energy]
+heat_flux = 0.0                # adiabatic
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-5
+max_iterations = 2000
+
+[solver.momentum]
+relaxation = 0.8
+limiter = "venkatakrishnan"
+
+[run]
+ranks = [2, 3, 5]
+
+[[output.lines]]
+name = "outlet"
+from = [2.9, 0.0, 0.05]
+to = [2.9, 1.0, 0.05]

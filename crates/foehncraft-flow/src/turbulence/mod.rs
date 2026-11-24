@@ -2383,15 +2383,16 @@ impl Turbulence {
         }
         // the wall distance (D48), unless the caller has it (the sliding
         // mesh by imprinting keeps it per part, D182)
-        let d = if t.walls.is_empty() {
-            vec![1e10; nc]
-        } else if let Some(d) = wall_distance {
+        // (given first: a rank's part may hold no wall face, MPI step W5)
+        let d = if let Some(d) = wall_distance {
             anyhow::ensure!(
                 d.len() == nc,
                 "a wall distance of {} cells for {nc}",
                 d.len()
             );
             d
+        } else if t.walls.is_empty() {
+            vec![1e10; nc]
         } else {
             match t.section.wall_distance {
                 WallDistanceMethod::Exact => crate::derived::wall_distance(case, mesh, geo)?,
@@ -3642,8 +3643,9 @@ impl Turbulence {
             built.resize(slot + 1, None);
         }
         let cur = dev.download(self.val)?;
+        let comm = dev.comm();
         let keep = built[slot].as_ref().is_some_and(|m| {
-            crate::coupled::matrix_change(&cur, m, None, &[]) <= self.settings.reuse
+            crate::coupled::matrix_change(&cur, m, None, &[], comm.as_ref()) <= self.settings.reuse
         });
         if keep {
             dev.amg_select(slot)?;
