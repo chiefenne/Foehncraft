@@ -222,6 +222,7 @@ dependencies = [
  "foehncraft-kernels",
  "foehncraft-parallel",
  "hdf5-metno",
+ "ndarray",
  "rayon",
  "schemars",
  "serde",

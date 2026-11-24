@@ -174,7 +174,12 @@ switch = "output.vtkhdf"
 evidence = [
   { kind = "consistency", test = "crates/foehncraft-mesh/tests/vtkhdf.rs::write_all_types", what = "every cell type written; CI checks the files of the cases" },
   { kind = "consistency", test = "crates/foehncraft-mesh/src/vtkhdf.rs::standard_cells_in_vtk_order", what = "tetrahedra, hexahedra, prisms and pyramids in VTK's node order: VTK's outward faces (VTK 9.7 GetFace tables) are the cell's outward faces, positive volume, also for cells given inside out" },
+  { kind = "consistency", test = "crates/foehncraft-mesh/tests/vtkhdf_read.rs::blocked_output_keeps_the_layout", what = "blocked layout 1: runs of owned cells, exactly their point neighbours as ghosts, point owners, block bounds and ranges, owner cells; a renumbering keeps the blocks" },
+  { kind = "consistency", test = "crates/foehncraft-mesh/tests/vtkhdf_read.rs::blocked_output_of_any_block_size_reads_alike", what = "the same mesh and volumes from one cell per block to one block" },
+  { kind = "consistency", test = "crates/foehncraft-mesh/tests/vtkhdf.rs::size_estimate_matches_the_file", what = "the size estimate of the run plan against the written file, two blocks" },
+  { kind = "consistency", test = "python/tests/test_vtkhdf.py::test_blocks_come_back_in_one_piece", what = "scripts get the blocks back as one grid in the order of the identities" },
 ]
+gaps = ["the parallel writer (all ranks into one file) is still serial", "ParaView reads the blocks through VTK 9.7.2 here; the maintainer's ParaView is not checked"]
 
 # ---------------------------------------------------------------- numerics
 

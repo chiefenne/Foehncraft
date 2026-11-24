@@ -30,13 +30,14 @@ import matplotlib.tri as mtri  # noqa: E402
 import numpy as np  # noqa: E402
 from matplotlib.colors import LogNorm  # noqa: E402
 from tools.plot.colormaps import RAINBOW  # noqa: E402
+from tools.plot.vtkhdf import internal  # noqa: E402
 
 
 def centroids(path):
     """Cell centroids (mean of the cell's points) and the cell data."""
     import h5py
     with h5py.File(path, "r") as f:
-        g = f["VTKHDF/internal"]
+        g = internal(f)
         pts = g["Points"][:]
         conn = g["Connectivity"][:]
         off = g["Offsets"][:]

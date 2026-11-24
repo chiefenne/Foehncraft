@@ -90,7 +90,8 @@ validated range, one mesh only, …) in its report and its JSON result.
   bounded Rhie–Chow face velocity); an operator exactness check that flags
   the cells where the velocity gradient or Hessian is not exact for a
   quadratic field (D236); partitioning with METIS and halos;
-  VTKHDF output for ParaView.
+  VTKHDF output for ParaView, in blocks that MurmelCraft reads in parts,
+  written block by block.
 - **Numerics.** Cell-centred finite volumes with weighted least-squares
   gradients, Venkatakrishnan(-Wang) limiters, for the scalars and the
   temperature also the vertex-based MLP limiter with Nishikawa's R3

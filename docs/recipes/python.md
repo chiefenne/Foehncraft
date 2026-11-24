@@ -61,6 +61,10 @@ res.ok, res.status, res.exit_code, res.orders
 res.value("errors.l2"), res.value("boundaries.ymin.force.0")
 res.table("residuals")["continuity"]      # any CSV of the run as columns
 res.fields()["velocity_x"]                # VTKHDF cell data (h5py)
+
+from foehncraft.vtkhdf import internal     # the blocks of fields.vtkhdf in one piece
+g = internal("output/my_case/fields.vtkhdf")
+g["Points"], g["Connectivity"], g["Offsets"], g["CellData/pressure"]
 ```
 
 **Materials** from the solver's database, and materials of a case:
