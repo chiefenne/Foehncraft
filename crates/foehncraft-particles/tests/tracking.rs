@@ -280,8 +280,8 @@ fn elastic_bounce_keeps_the_parcel_inside() {
     let v = sp.parcels.v[0];
     let speed = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
     assert!(speed > 0.0 && speed < 2.0);
-    for k in 0..3 {
-        assert!((0.0..=1.0).contains(&sp.parcels.x[0][k]));
+    for xk in &sp.parcels.x[0] {
+        assert!((0.0..=1.0).contains(xk));
     }
 }
 
