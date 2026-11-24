@@ -321,7 +321,7 @@ pub fn read_points(path: impl AsRef<Path>) -> Result<PointFile> {
     let n = shape[0];
     let flat: Vec<f64> = pts.read_raw()?;
     anyhow::ensure!(flat.len() == 3 * n, "{}: Points is cut off", path.display());
-    out.points = flat.chunks_exact(3).map(|c| [c[0], c[1], c[2]]).collect();
+    out.points = flat.as_chunks::<3>().0.to_vec();
     if let Ok(pd) = g.group("PointData") {
         for name in pd.member_names().unwrap_or_default() {
             let Ok(d) = pd.dataset(&name) else { continue };

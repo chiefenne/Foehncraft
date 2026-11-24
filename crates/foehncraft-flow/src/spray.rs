@@ -399,7 +399,7 @@ pub fn file_statistics(
     let count = field("droplets", 1)?;
     let vel = field("velocity", 3)?;
     let id: Vec<u64> = field("parcel_id", 1)?.iter().map(|&x| x as u64).collect();
-    let v: Vec<[f64; 3]> = vel.chunks_exact(3).map(|c| [c[0], c[1], c[2]]).collect();
+    let v: Vec<[f64; 3]> = vel.as_chunks::<3>().0.to_vec();
     let rho = pf
         .numbers
         .get("liquid_density")
