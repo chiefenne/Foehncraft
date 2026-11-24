@@ -181,6 +181,7 @@ dependencies = [
  "foehncraft-kernels",
  "foehncraft-mesh",
  "foehncraft-parallel",
+ "foehncraft-particles",
  "hdf5-metno",
  "rayon",
  "schemars",
@@ -236,6 +237,21 @@ version = "1.0.1"
 dependencies = [
  "foehncraft-core",
  "rayon",
+]
+
+[[package]]
+name = "foehncraft-particles"
+version = "1.0.1"
+dependencies = [
+ "anyhow",
+ "foehncraft-core",
+ "foehncraft-kernels",
+ "foehncraft-mesh",
+ "rayon",
+ "schemars",
+ "serde",
+ "serde_json",
+ "toml",
 ]
 
 [[package]]
