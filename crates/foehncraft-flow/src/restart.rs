@@ -740,11 +740,44 @@ fn remap(v: &[f64], m: &[usize]) -> Vec<f64> {
     m.iter().map(|&i| v[i]).collect()
 }
 
-fn remap3(v: &Soa3, m: &[usize]) -> Soa3 {
-    Soa3 {
-        x: remap(&v.x, m),
-        y: remap(&v.y, m),
-        z: remap(&v.z, m),
+/// What a restart's arrays become: every array per cell, per face and per
+/// boundary face and every matrix (in the sliced-ELL storage of the
+/// discretisation) goes through one of the four maps, always in the same
+/// order ([`Restart::map_fields`]). A reordering by identity
+/// ([`Restart::to_local`]), the gather of the ranks' parts into the global
+/// order and the scatter of a global file to a rank's part
+/// ([`crate::ranks`], MPI step W6) are such maps; on ranks every rank
+/// calls them in the same order, so they may communicate.
+pub trait FieldMap {
+    /// An array per cell.
+    fn cells(&mut self, v: &[f64]) -> Result<Vec<f64>>;
+    /// An array per face.
+    fn faces(&mut self, v: &[f64]) -> Result<Vec<f64>>;
+    /// An array per boundary face.
+    fn boundary(&mut self, v: &[f64]) -> Result<Vec<f64>>;
+    /// A matrix; `None` drops it (its hierarchy is then rebuilt).
+    fn matrix(&mut self, v: &[f64]) -> Result<Option<Vec<f64>>>;
+}
+
+struct Reorder {
+    mc: Vec<usize>,
+    mf: Vec<usize>,
+    mb: Vec<usize>,
+}
+
+impl FieldMap for Reorder {
+    fn cells(&mut self, v: &[f64]) -> Result<Vec<f64>> {
+        Ok(remap(v, &self.mc))
+    }
+    fn faces(&mut self, v: &[f64]) -> Result<Vec<f64>> {
+        Ok(remap(v, &self.mf))
+    }
+    fn boundary(&mut self, v: &[f64]) -> Result<Vec<f64>> {
+        Ok(remap(v, &self.mb))
+    }
+    fn matrix(&mut self, _: &[f64]) -> Result<Option<Vec<f64>>> {
+        // the matrices follow the old cell and face order: rebuilt
+        Ok(None)
     }
 }
 
@@ -753,7 +786,7 @@ impl Restart {
     /// `cell_id`, `face_id` (n_interior interior faces); false in the second
     /// value when the order differed (the multigrid matrix is then dropped).
     pub fn to_local(
-        mut self,
+        self,
         cell_id: &[u64],
         face_id: &[u64],
         n_interior: usize,
@@ -761,101 +794,165 @@ impl Restart {
         let n_cells = cell_id.len();
         let mc = mapping(&self.cell_id, cell_id)?;
         let mf = mapping(&self.face_id, face_id)?;
-        let same = mc.is_none() && mf.is_none();
+        if mc.is_none() && mf.is_none() {
+            return Ok((self, true));
+        }
         let ident = |n: usize| (0..n).collect::<Vec<usize>>();
-        if !same {
-            let mc = mc.unwrap_or_else(|| ident(n_cells));
-            let mf = mf.unwrap_or_else(|| ident(face_id.len()));
-            // boundary faces: the positions among the boundary faces
-            let mb: Vec<usize> = mf[n_interior..].iter().map(|&i| i - n_interior).collect();
-            anyhow::ensure!(
-                mf[n_interior..].iter().all(|&i| i >= n_interior),
-                "the restart file has another split of interior and boundary faces"
-            );
-            let s = &self.state;
-            self.state = State {
-                u: remap3(&s.u, &mc),
-                p: remap(&s.p, &mc),
-                mass_flux: remap(&s.mass_flux, &mf),
-                ub: remap3(&s.ub, &mb),
-                pb: remap(&s.pb, &mb),
-                grad_u: [
-                    remap3(&s.grad_u[0], &mc),
-                    remap3(&s.grad_u[1], &mc),
-                    remap3(&s.grad_u[2], &mc),
-                ],
-                grad_p: remap3(&s.grad_p, &mc),
-                psi: remap3(&s.psi, &mc),
-                scalars: s
-                    .scalars
-                    .iter()
-                    .map(|x| crate::scalar::ScalarState {
+        let mc = mc.unwrap_or_else(|| ident(n_cells));
+        let mf = mf.unwrap_or_else(|| ident(face_id.len()));
+        anyhow::ensure!(
+            mf[n_interior..].iter().all(|&i| i >= n_interior),
+            "the restart file has another split of interior and boundary faces"
+        );
+        // boundary faces: the positions among the boundary faces
+        let mb: Vec<usize> = mf[n_interior..].iter().map(|&i| i - n_interior).collect();
+        let r = self.map_fields(&mut Reorder { mc, mf, mb }, cell_id, face_id)?;
+        Ok((r, false))
+    }
+
+    /// Every array and matrix through `m` (see [`FieldMap`]); the result
+    /// carries the identities `cell_id`, `face_id`. A matrix that `m`
+    /// drops leaves its hierarchy to be rebuilt. The temperature of a
+    /// conjugate case (on its own full mesh) and the points of a moving
+    /// mesh are not mapped: the caller refuses them where they cannot be.
+    pub fn map_fields(
+        mut self,
+        m: &mut dyn FieldMap,
+        cell_id: &[u64],
+        face_id: &[u64],
+    ) -> Result<Self> {
+        let opt = |m: &mut dyn FieldMap,
+                   v: &Option<Vec<f64>>,
+                   f: fn(&mut dyn FieldMap, &[f64]) -> Result<Vec<f64>>|
+         -> Result<Option<Vec<f64>>> { v.as_ref().map(|v| f(m, v)).transpose() };
+        let c3 = |m: &mut dyn FieldMap, v: &Soa3| -> Result<Soa3> {
+            Ok(Soa3 {
+                x: m.cells(&v.x)?,
+                y: m.cells(&v.y)?,
+                z: m.cells(&v.z)?,
+            })
+        };
+        let cells: fn(&mut dyn FieldMap, &[f64]) -> Result<Vec<f64>> = |m, v| m.cells(v);
+        let bnd: fn(&mut dyn FieldMap, &[f64]) -> Result<Vec<f64>> = |m, v| m.boundary(v);
+        let s = &self.state;
+        let state = State {
+            u: c3(m, &s.u)?,
+            p: m.cells(&s.p)?,
+            mass_flux: m.faces(&s.mass_flux)?,
+            ub: Soa3 {
+                x: m.boundary(&s.ub.x)?,
+                y: m.boundary(&s.ub.y)?,
+                z: m.boundary(&s.ub.z)?,
+            },
+            pb: m.boundary(&s.pb)?,
+            grad_u: [
+                c3(m, &s.grad_u[0])?,
+                c3(m, &s.grad_u[1])?,
+                c3(m, &s.grad_u[2])?,
+            ],
+            grad_p: c3(m, &s.grad_p)?,
+            psi: c3(m, &s.psi)?,
+            scalars: s
+                .scalars
+                .iter()
+                .map(|x| {
+                    Ok(crate::scalar::ScalarState {
                         name: x.name.clone(),
-                        phi: remap(&x.phi, &mc),
-                        old: x.old.as_ref().map(|o| remap(o, &mc)),
-                        psi: x.psi.as_ref().map(|p| remap(p, &mc)),
+                        phi: m.cells(&x.phi)?,
+                        old: opt(m, &x.old, cells)?,
+                        psi: opt(m, &x.psi, cells)?,
                         wall: None,
                     })
-                    .collect(),
-                periodic_force: s.periodic_force.clone(),
-                turbulence: s.turbulence.as_ref().map(|t| crate::turbulence::TurbState {
+                })
+                .collect::<Result<_>>()?,
+            periodic_force: s.periodic_force.clone(),
+            turbulence: match &s.turbulence {
+                None => None,
+                Some(t) => Some(crate::turbulence::TurbState {
                     epsilon: t.epsilon,
-                    k: remap(&t.k, &mc),
-                    omega: remap(&t.omega, &mc),
-                    nu_t: remap(&t.nu_t, &mc),
-                    k_old: t.k_old.as_ref().map(|o| remap(o, &mc)),
-                    omega_old: t.omega_old.as_ref().map(|o| remap(o, &mc)),
-                    mu_eff: remap(&t.mu_eff, &mf),
-                    k_b: remap(&t.k_b, &mb),
-                    omega_b: remap(&t.omega_b, &mb),
-                    u_tau: remap(&t.u_tau, &mb),
-                    y_plus: remap(&t.y_plus, &mb),
-                    wall_blending: t.wall_blending.as_ref().map(|o| remap(o, &mb)),
-                    p_modified: remap(&t.p_modified, &mc),
-                    pb_modified: remap(&t.pb_modified, &mb),
-                    wall_distance: remap(&t.wall_distance, &mc),
-                    zeta: t.zeta.as_ref().map(|z| crate::turbulence::ZetaState {
-                        zeta: remap(&z.zeta, &mc),
-                        f: remap(&z.f, &mc),
-                        zeta_old: z.zeta_old.as_ref().map(|o| remap(o, &mc)),
-                        zeta_b: remap(&z.zeta_b, &mb),
-                        f_b: remap(&z.f_b, &mb),
-                        t: remap(&z.t, &mc),
-                    }),
-                    // the matrices follow the old face order: rebuilt
-                    amg: Vec::new(),
-                    fr1: t.fr1.as_ref().map(|o| remap(o, &mc)),
+                    k: m.cells(&t.k)?,
+                    omega: m.cells(&t.omega)?,
+                    nu_t: m.cells(&t.nu_t)?,
+                    k_old: opt(m, &t.k_old, cells)?,
+                    omega_old: opt(m, &t.omega_old, cells)?,
+                    mu_eff: m.faces(&t.mu_eff)?,
+                    k_b: m.boundary(&t.k_b)?,
+                    omega_b: m.boundary(&t.omega_b)?,
+                    u_tau: m.boundary(&t.u_tau)?,
+                    y_plus: m.boundary(&t.y_plus)?,
+                    wall_blending: opt(m, &t.wall_blending, bnd)?,
+                    p_modified: m.cells(&t.p_modified)?,
+                    pb_modified: m.boundary(&t.pb_modified)?,
+                    wall_distance: m.cells(&t.wall_distance)?,
+                    zeta: match &t.zeta {
+                        None => None,
+                        Some(z) => Some(crate::turbulence::ZetaState {
+                            zeta: m.cells(&z.zeta)?,
+                            f: m.cells(&z.f)?,
+                            zeta_old: opt(m, &z.zeta_old, cells)?,
+                            zeta_b: m.boundary(&z.zeta_b)?,
+                            f_b: m.boundary(&z.f_b)?,
+                            t: m.cells(&z.t)?,
+                        }),
+                    },
+                    amg: {
+                        let mut kept = Vec::new();
+                        for (slot, a) in &t.amg {
+                            if let Some(a) = m.matrix(a)? {
+                                kept.push((*slot, a));
+                            }
+                        }
+                        kept
+                    },
+                    fr1: opt(m, &t.fr1, cells)?,
                 }),
+            },
+        };
+        self.state = state;
+        if let Some((o, ..)) = &mut self.transient {
+            let c3a = |m: &mut dyn FieldMap, u: &[Vec<f64>; 3]| -> Result<[Vec<f64>; 3]> {
+                Ok([m.cells(&u[0])?, m.cells(&u[1])?, m.cells(&u[2])?])
             };
-            if let Some((o, ..)) = &mut self.transient {
-                *o = OldLevels {
-                    u_old: [
-                        remap(&o.u_old[0], &mc),
-                        remap(&o.u_old[1], &mc),
-                        remap(&o.u_old[2], &mc),
-                    ],
-                    m_old: remap(&o.m_old, &mf),
-                    x_cur: remap(&o.x_cur, &mf),
-                    x_old: remap(&o.x_old, &mf),
-                    g_old: o.g_old.iter().map(|v| remap(v, &mc)).collect(),
-                    u_old2: o
-                        .u_old2
-                        .as_ref()
-                        .map(|u| [remap(&u[0], &mc), remap(&u[1], &mc), remap(&u[2], &mc)]),
-                    ub_old: o
-                        .ub_old
-                        .as_ref()
-                        .map(|u| [remap(&u[0], &mb), remap(&u[1], &mb), remap(&u[2], &mb)]),
-                };
-            }
-            if let Some(geo) = &mut self.geometry {
-                geo.volumes = geo.volumes.iter().map(|v| remap(v, &mc)).collect();
-            }
-            self.amg_matrix = None;
-            self.sweep = Default::default();
-            self.cell_id = cell_id.to_vec();
-            self.face_id = face_id.to_vec();
+            *o = OldLevels {
+                u_old: c3a(m, &o.u_old)?,
+                m_old: m.faces(&o.m_old)?,
+                x_cur: m.faces(&o.x_cur)?,
+                x_old: m.faces(&o.x_old)?,
+                g_old: o.g_old.iter().map(|v| m.cells(v)).collect::<Result<_>>()?,
+                u_old2: o.u_old2.as_ref().map(|u| c3a(m, u)).transpose()?,
+                ub_old: match &o.ub_old {
+                    None => None,
+                    Some(u) => Some([m.boundary(&u[0])?, m.boundary(&u[1])?, m.boundary(&u[2])?]),
+                },
+            };
         }
-        Ok((self, same))
+        if let Some(geo) = &mut self.geometry {
+            geo.volumes = geo
+                .volumes
+                .iter()
+                .map(|v| m.cells(v))
+                .collect::<Result<_>>()?;
+        }
+        self.amg_matrix = opt_matrix(m, &self.amg_matrix)?;
+        // the momentum hierarchies (D179): `matrix` per hierarchy, `slot`
+        // the hierarchy of each velocity component
+        let mut sweep = crate::coupled::SweepState::default();
+        for h in 0..3 {
+            sweep.matrix[h] = opt_matrix(m, &self.sweep.matrix[h])?;
+        }
+        for i in 0..3 {
+            sweep.slot[i] = self.sweep.slot[i].filter(|&h| sweep.matrix[h].is_some());
+        }
+        self.sweep = sweep;
+        self.cell_id = cell_id.to_vec();
+        self.face_id = face_id.to_vec();
+        Ok(self)
+    }
+}
+
+fn opt_matrix(m: &mut dyn FieldMap, a: &Option<Vec<f64>>) -> Result<Option<Vec<f64>>> {
+    match a {
+        Some(a) => m.matrix(a),
+        None => Ok(None),
     }
 }
