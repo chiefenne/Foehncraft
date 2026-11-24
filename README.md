@@ -222,6 +222,16 @@ validated range, one mesh only, …) in its report and its JSON result.
   the U-bend, also with sharp edges (gallery
   [193](docs/gallery/turbulence.md#pipe-turbulent), [196](docs/gallery/flow.md#tjunction-mixing),
   [199](docs/gallery/turbulence.md#diffuser), [204](docs/gallery/turbulence.md#ubend)).
+- **Thermal radiation (R1a).** Monte Carlo transport of energy bundles
+  through grey absorbing-emitting gas on a prescribed temperature field,
+  with grey diffuse walls, symmetry planes and openings: emission from
+  scrambled Sobol points, the exact path length in every cell, integer
+  tallies with an energy account that closes exactly, bitwise the same on
+  any number of threads and ranks; the bundle transport also runs on
+  NVIDIA GPUs. Checked against six exact cases (slab, enclosure, parallel
+  plates, cube of grey gas) and shown on a box furnace with cooled tubes
+  ([gallery 259](docs/gallery/radiation.md#furnace)). The coupling to the
+  energy equation follows (R1b).
 - **Rotating machinery.** The moving reference frame (steady and transient
   frozen rotor), the sliding mesh by conformal stepping and by imprinting
   the interface in every step, several rotors at their own speeds,

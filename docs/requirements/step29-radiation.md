@@ -124,7 +124,24 @@ Status of R1a (coding started on the maintainer's go, 2026-11-24):
    on the CPU in the tests and gives bitwise the CPU result. The CPU = GPU
    check on a GPU: `python3 -m tools.bench.radiation_cloud` or
    `tools/notebooks/radiation_colab.ipynb`.
-4. Output, cube case and gallery. R1b to R1g: not sized yet.
+4. **Output, cube case and gallery: #259.** `output::write_vtkhdf`
+   (source and its error per cell, incident and net flux per wall face,
+   the energy account as attributes) and CSV tables. Case 5: the exact
+   flux into a cold black wall of a cube of grey gas, the gas emission
+   integrated over the five other walls by adaptive Gauss–Legendre
+   quadrature (`exact::cube_wall_flux`), so no published numbers and no
+   D201 entry are needed; 600 wall faces of 10³ hexahedra at κL = 1 give a
+   mean z² of 0.74, and every wall mean is within 0.08 % (0.17 % on
+   perturbed polyhedra). Case 6: `Settings::points` switches to keyed
+   pseudo-random emission; over 16 calls per point the error falls as N^-0.70 (slab) and N^-0.63 (plates) with the Sobol points against N^-0.52 and N^-0.50 with pseudo-random ones, 13 and 8 times smaller at 512 000 bundles (`examples/sobol_study.rs`). The wall emission is one
+   stratified point of four dimensions (the rest of the triangle pick is
+   the first coordinate in the triangle). The gallery case is the box
+   furnace with seven cooled tubes of D255 on a prescribed flame
+   (`examples/meshes/furnace.py`, example `furnace`, gallery and recipe
+   259). One million bundles in the furnace take 84 s on one thread and
+   20 s on four; on MPI ranks with one thread each the case of
+   `mpi_radiation` speeds up 1.9 times on two and 3.6 times on four ranks.
+   The GPU time waits for the Colab run. R1b to R1g: not sized yet.
 
 ## 6. References
 

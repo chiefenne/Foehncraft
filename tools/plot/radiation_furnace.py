@@ -87,16 +87,19 @@ def plane(out, cells):
     src = column(cells, "source")[band] * 1e-3
     fig, axes = plt.subplots(2, 1, figsize=(8.2, 9.6), constrained_layout=True)
     ax = axes[0]
+    # the band of cell centres stops half a cell short of the walls, where
+    # the gas is at its lowest temperature
+    ax.set_facecolor(plt.get_cmap(RAINBOW)(0.0))
     cs = ax.tricontourf(tri, t, levels=48, cmap=RAINBOW)
     fig.colorbar(cs, ax=ax, label="temperature (K)", shrink=0.9, ticks=np.arange(1300, 2000, 100))
     tubes(ax)
-    yb, zb, rb = BURNER
+    _yb, zb, rb = BURNER
     ax.plot([0, 0], [zb - rb, zb + rb], color="k", lw=4, solid_capstyle="butt")
     ax.annotate("burner", (0.03, zb), xytext=(0.25, 0.25), fontsize=9,
-                arrowprops=dict(arrowstyle="-", lw=0.6))
+                arrowprops={"arrowstyle": "-", "lw": 0.6})
     ax.plot([LENGTH, LENGTH], [OUTLET[2], OUTLET[3]], color="w", lw=4, solid_capstyle="butt")
     ax.annotate("outlet", (LENGTH - 0.03, 0.5 * (OUTLET[2] + OUTLET[3])), xytext=(3.25, 1.45),
-                fontsize=9, arrowprops=dict(arrowstyle="-", lw=0.6))
+                fontsize=9, arrowprops={"arrowstyle": "-", "lw": 0.6})
     frame(ax, "Prescribed flame: temperature on the mid-depth plane")
     ax = axes[1]
     lim = np.percentile(np.abs(src), 99.5)
@@ -138,9 +141,9 @@ def walls(out, faces):
         sel = tube == i
         order = np.argsort(angle[sel])
         a, v = angle[sel][order], net[on][sel][order]
-        bins = np.linspace(0, 360, 37)
+        bins = np.linspace(0, 360, 25)
         k = np.digitize(a, bins) - 1
-        mean = np.array([v[k == j].mean() if np.any(k == j) else np.nan for j in range(36)])
+        mean = np.array([v[k == j].mean() if np.any(k == j) else np.nan for j in range(24)])
         ax.plot(0.5 * (bins[1:] + bins[:-1]), mean, marker="o", ms=3, lw=1.2,
                 label=f"tube {i + 1} (x = {TUBE_X[i]:.1f} m), mean {q[i]:.0f} kW/m²")
     ax.set_xlim(0, 360)
@@ -169,7 +172,7 @@ def sobol(out, path):
         ax.loglog(n, r, "--o", color=c, ms=4, label=f"{label}, pseudo-random")
         ax.loglog(n, s, "-s", color=c, ms=4, label=f"{label}, scrambled Sobol")
     ref = column(rows, "slab_random")[0] * (n / n[0]) ** -0.5
-    ax.loglog(n, ref, ":", color="0.5", lw=1, label="N^-1/2")
+    ax.loglog(n, ref, ":", color="0.5", lw=1, label=r"$N^{-1/2}$")
     ax.set_xlabel("bundles N")
     ax.set_ylabel("root-mean-square relative error")
     ax.set_title("Emission points: scrambled Sobol against pseudo-random", fontsize=11)

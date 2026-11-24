@@ -211,6 +211,7 @@ fn in_wall(name: &str, x: [f64; 3]) -> (usize, [f64; 2]) {
 /// the five other walls), and the mean flux of every wall, on a hex mesh;
 /// the wall means on a perturbed polyhedral mesh.
 #[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
 fn case5_cube_enclosure() {
     let (t, kl) = (1000.0f64, 1.0);
     let et4 = SIGMA * t.powi(4);
@@ -300,6 +301,7 @@ fn case5_cube_enclosure() {
 /// independent calls: the scrambled Sobol points converge faster and are
 /// several times more accurate at the largest number of bundles.
 #[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
 fn case6_sobol_against_random() {
     let t = 1000.0f64;
     let et4 = SIGMA * t.powi(4);

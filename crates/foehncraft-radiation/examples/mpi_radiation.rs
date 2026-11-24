@@ -5,7 +5,11 @@
 //! cargo build --release -p foehncraft-radiation --features mpi --example mpi_radiation
 //! mpirun -n 1 target/release/examples/mpi_radiation
 //! mpirun -n 4 target/release/examples/mpi_radiation
+//! RAYON_NUM_THREADS=1 RADIATION_BUNDLES=2000000 mpirun -n 4 target/release/examples/mpi_radiation
 //! ```
+//!
+//! `RADIATION_BUNDLES` sets the number of bundles (200 000 by default); the
+//! example prints the time of the call on the ranks and on one rank.
 //!
 //! Every rank builds the global mesh (polyhedra, perturbed and turned),
 //! with a temperature and an absorption coefficient that vary in space,
@@ -25,6 +29,7 @@ use foehncraft_mesh::partition::{Method, partition};
 use foehncraft_parallel::{Communicator, MpiComm};
 use foehncraft_radiation::{Domain, Settings, Wall};
 use std::collections::HashMap;
+use std::time::Instant;
 
 fn wall(name: &str) -> Wall {
     match name {
@@ -58,15 +63,21 @@ fn main() {
         .collect();
     let kappa: Vec<f64> = geo.cell_centroid.iter().map(|x| 0.2 + 1.5 * x[2]).collect();
     let walls: Vec<Wall> = global.boundaries.iter().map(|b| wall(&b.name)).collect();
+    let bundles = std::env::var("RADIATION_BUNDLES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(200_000);
     let settings = Settings {
-        bundles: 200_000,
+        bundles,
         ..Settings::default()
     };
 
     // the reference: the whole mesh on every rank
+    let start = Instant::now();
     let one = Domain::whole(&global, &geo)
         .solve(&t, &kappa, &walls, &settings)
         .expect("radiation call");
+    let one_seconds = start.elapsed().as_secs_f64();
     let first = global.n_interior_faces();
     let slot: HashMap<u64, usize> = (first..global.n_faces())
         .map(|f| (global.face_id[f], f - first))
@@ -91,9 +102,15 @@ fn main() {
         .iter()
         .map(|b| wall(&b.name))
         .collect();
+    // the time of the call on the ranks, from a common start to the last
+    // rank's end
+    comm.all_sum_i64(&mut [0]);
+    let start = Instant::now();
     let mine = Domain::rank(&local, &lgeo, &comm)
         .solve(&lt, &lk, &lw, &settings)
         .expect("radiation call");
+    comm.all_sum_i64(&mut [0]);
+    let rank_seconds = start.elapsed().as_secs_f64();
 
     let mut cells = vec![0i64; 2 * n];
     for (c, &p) in pos.iter().enumerate() {
@@ -124,6 +141,10 @@ fn main() {
         println!(
             "{size} ranks, {n} cells, {} bundles, {} hand-overs",
             mine.bundles, mine.hand_overs
+        );
+        println!(
+            "  time: {rank_seconds:.2} s on {size} ranks with {} threads each, {one_seconds:.2} s on one rank",
+            rayon::current_num_threads()
         );
         println!(
             "  ledger (quanta): emitted {} = gas {} + walls {} + escaped {} + roulette {} + lost {}: {}",
