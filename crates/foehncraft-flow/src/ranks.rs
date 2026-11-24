@@ -190,6 +190,7 @@ impl Solver {
             },
             geometry: None,
             cht: None,
+            spray: None,
         })
     }
 
@@ -611,6 +612,7 @@ pub fn supported(case: &FlowCase) -> Result<()> {
             "the curvature correction or the QCR",
         ),
         (case.gravity.is_some(), "gravity"),
+        (!case.spray.is_empty(), "sprays"),
         (
             !case.mrf.is_empty() || !case.sliding.is_empty(),
             "turning zones",
@@ -1298,8 +1300,8 @@ impl Layout {
 /// case's full mesh, the points of a moving mesh) are refused there.
 fn local_only(r: &crate::restart::Restart) -> Result<()> {
     anyhow::ensure!(
-        r.cht.is_none() && r.geometry.is_none(),
-        "restart files of conjugate cases and moving meshes are not on ranks yet"
+        r.cht.is_none() && r.geometry.is_none() && r.spray.is_none(),
+        "restart files of conjugate cases, moving meshes and sprays are not on ranks yet"
     );
     Ok(())
 }
