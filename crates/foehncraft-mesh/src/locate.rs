@@ -21,11 +21,16 @@
 //! the neighbouring rank, so a halo of one cell layer suffices).
 //!
 //! Point location walks from a hint cell to the point; if the walk is
-//! blocked (by a boundary of a non-convex domain) a search over a uniform
-//! grid of cell bounding boxes finds the cell.
+//! blocked (by a boundary of a non-convex domain), or no hint is known, a
+//! bounding volume hierarchy over the cell boxes
+//! ([`crate::query::CellTree`], D108 part 2) finds the cell: O(log n) per
+//! query also on strongly graded meshes. The former uniform grid of cell
+//! boxes is kept as [`Locator::locate_search_grid`], the reference of the
+//! tests and of the benchmark `examples/locate_bench.rs`.
 
 use crate::geometry::{Geometry, add, cross, dot, node_average, scale, sub};
 use crate::mesh::Mesh;
+use crate::query::CellTree;
 use std::sync::OnceLock;
 
 /// A position inside the mesh: the point and the tetrahedron that holds it.
@@ -80,6 +85,7 @@ pub struct Locator<'a> {
     mesh: &'a Mesh,
     apex: Vec<[f64; 3]>,
     fan: Vec<[f64; 3]>,
+    tree: OnceLock<CellTree>,
     bins: OnceLock<Bins>,
 }
 
@@ -113,6 +119,7 @@ impl<'a> Locator<'a> {
             mesh,
             apex,
             fan,
+            tree: OnceLock::new(),
             bins: OnceLock::new(),
         }
     }
@@ -320,8 +327,9 @@ impl<'a> Locator<'a> {
         }
     }
 
-    /// Cell containing `x`: a walk from cell `hint`, with the bin search as
-    /// fallback. `None` if `x` lies outside the mesh.
+    /// Cell containing `x`: a walk from cell `hint`, with the search of
+    /// [`locate_search`](Self::locate_search) as fallback. `None` if `x`
+    /// lies outside the mesh.
     pub fn locate(&self, x: [f64; 3], hint: usize) -> Option<usize> {
         let t = self.track(self.start(hint), x);
         if t.end == TrackEnd::Reached && self.contains(t.position.cell, x) {
@@ -330,8 +338,32 @@ impl<'a> Locator<'a> {
         self.locate_search(x)
     }
 
-    /// Cell containing `x` by search over the bins of cell bounding boxes.
+    /// Cell containing `x` by the hierarchy over the cell boxes (built on
+    /// the first call): the smallest cell index among the cells that
+    /// contain `x`, so the answer does not depend on the tree (D93). `None`
+    /// if `x` lies outside the mesh.
     pub fn locate_search(&self, x: [f64; 3]) -> Option<usize> {
+        let tree = self.cell_tree();
+        let mut best = usize::MAX;
+        tree.for_each_candidate(x, |c| {
+            if c < best && self.contains(c, x) {
+                best = c;
+            }
+        });
+        (best != usize::MAX).then_some(best)
+    }
+
+    /// The hierarchy over the cell boxes (built on the first call).
+    pub fn cell_tree(&self) -> &CellTree {
+        self.tree.get_or_init(|| CellTree::build(self.mesh))
+    }
+
+    /// Cell containing `x` by the former search over a uniform grid of cell
+    /// boxes (bin size twice the mean cell size): the first cell, in index
+    /// order, of the bin of `x` that contains it. Kept as the reference of
+    /// the tests and of the benchmark; [`locate_search`](Self::locate_search)
+    /// gives the same cell.
+    pub fn locate_search_grid(&self, x: [f64; 3]) -> Option<usize> {
         let b = self.bins.get_or_init(|| Bins::build(self.mesh));
         let mut idx = [0usize; 3];
         for d in 0..3 {

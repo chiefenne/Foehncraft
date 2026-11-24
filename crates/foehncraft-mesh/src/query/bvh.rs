@@ -9,8 +9,10 @@
 //! **Build** (host): top-down with the surface-area heuristic over binned
 //! triangle centroids (MacDonald & Booth 1990; the binned form of Wald
 //! 2007), 16 bins per axis, leaves of at most [`LEAF`] triangles. The
-//! build sorts with total orders only (centroid coordinate, then triangle
-//! index), so the tree is the same on every machine.
+//! build orders with total orders only (bin of the centroid coordinate,
+//! then triangle index), so the tree is the same on every machine. The
+//! same build makes the hierarchy over cell boxes of
+//! [`super::cells::CellTree`].
 //!
 //! **Query**: depth-first with an explicit stack, the nearer child first,
 //! a subtree skipped when its box is farther than the best distance so
@@ -104,25 +106,25 @@ impl SurfaceFaces {
 
 /// An axis-aligned box.
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct Aabb {
-    lo: [f64; 3],
-    hi: [f64; 3],
+pub(crate) struct Aabb {
+    pub(crate) lo: [f64; 3],
+    pub(crate) hi: [f64; 3],
 }
 
 impl Aabb {
-    const EMPTY: Aabb = Aabb {
+    pub(crate) const EMPTY: Aabb = Aabb {
         lo: [f64::INFINITY; 3],
         hi: [f64::NEG_INFINITY; 3],
     };
 
-    fn grow(&mut self, p: [f64; 3]) {
+    pub(crate) fn grow(&mut self, p: [f64; 3]) {
         for i in 0..3 {
             self.lo[i] = self.lo[i].min(p[i]);
             self.hi[i] = self.hi[i].max(p[i]);
         }
     }
 
-    fn merge(&mut self, o: &Aabb) {
+    pub(crate) fn merge(&mut self, o: &Aabb) {
         for i in 0..3 {
             self.lo[i] = self.lo[i].min(o.lo[i]);
             self.hi[i] = self.hi[i].max(o.hi[i]);
@@ -155,15 +157,68 @@ impl Aabb {
 }
 
 /// A node: an inner node holds its two children, a leaf a range of the
-/// triangle order.
+/// item order.
 #[derive(Debug, Clone, Copy)]
-struct Node {
-    bx: Aabb,
+pub(crate) struct Node {
+    pub(crate) bx: Aabb,
     /// Inner: index of the left child (the right one follows it). Leaf:
     /// start in `order`.
-    first: u32,
-    /// 0 for an inner node, else the number of triangles of the leaf.
-    count: u32,
+    pub(crate) first: u32,
+    /// 0 for an inner node, else the number of items of the leaf.
+    pub(crate) count: u32,
+}
+
+/// Builds the nodes over items with centroids `cent` and boxes `bx`
+/// (binned surface-area heuristic, at most [`LEAF`] items per leaf);
+/// returns the nodes (root first) and the items in leaf order. The result
+/// depends only on the input values and their order (D93).
+pub(crate) fn build_nodes(cent: &[[f64; 3]], bx: &[Aabb]) -> (Vec<Node>, Vec<u32>) {
+    let n = cent.len();
+    let mut order: Vec<u32> = (0..n as u32).collect();
+    let mut nodes = Vec::with_capacity(2 * n.max(1));
+    if n > 0 {
+        nodes.push(Node {
+            bx: Aabb::EMPTY,
+            first: 0,
+            count: 0,
+        });
+        // (node, start, end) still to split
+        let mut todo = vec![(0usize, 0usize, n)];
+        let mut scratch = Vec::new();
+        while let Some((id, s, e)) = todo.pop() {
+            let mut b = Aabb::EMPTY;
+            for &t in &order[s..e] {
+                b.merge(&bx[t as usize]);
+            }
+            nodes[id].bx = b;
+            let split = if e - s > LEAF {
+                split(&mut order[s..e], cent, bx, &mut scratch)
+            } else {
+                None
+            };
+            match split {
+                Some(m) => {
+                    let left = nodes.len();
+                    for _ in 0..2 {
+                        nodes.push(Node {
+                            bx: Aabb::EMPTY,
+                            first: 0,
+                            count: 0,
+                        });
+                    }
+                    nodes[id].first = left as u32;
+                    nodes[id].count = 0;
+                    todo.push((left + 1, s + m, e));
+                    todo.push((left, s, s + m));
+                }
+                None => {
+                    nodes[id].first = s as u32;
+                    nodes[id].count = (e - s) as u32;
+                }
+            }
+        }
+    }
+    (nodes, order)
 }
 
 /// The closest point of a surface to a query point.
@@ -193,8 +248,6 @@ pub struct Bvh {
 impl Bvh {
     /// Builds the hierarchy (surface-area heuristic, binned).
     pub fn build(faces: SurfaceFaces) -> Self {
-        let n = faces.tris.len();
-        let mut order: Vec<u32> = (0..n as u32).collect();
         let cent: Vec<[f64; 3]> = faces
             .tris
             .iter()
@@ -217,48 +270,7 @@ impl Bvh {
                 b
             })
             .collect();
-        let mut nodes = Vec::with_capacity(2 * n.max(1));
-        if n > 0 {
-            nodes.push(Node {
-                bx: Aabb::EMPTY,
-                first: 0,
-                count: 0,
-            });
-            // (node, start, end) still to split
-            let mut todo = vec![(0usize, 0usize, n)];
-            while let Some((id, s, e)) = todo.pop() {
-                let mut bx = Aabb::EMPTY;
-                for &t in &order[s..e] {
-                    bx.merge(&tbox[t as usize]);
-                }
-                nodes[id].bx = bx;
-                let split = if e - s > LEAF {
-                    split(&mut order[s..e], &cent, &tbox)
-                } else {
-                    None
-                };
-                match split {
-                    Some(m) => {
-                        let left = nodes.len();
-                        for _ in 0..2 {
-                            nodes.push(Node {
-                                bx: Aabb::EMPTY,
-                                first: 0,
-                                count: 0,
-                            });
-                        }
-                        nodes[id].first = left as u32;
-                        nodes[id].count = 0;
-                        todo.push((left + 1, s + m, e));
-                        todo.push((left, s, s + m));
-                    }
-                    None => {
-                        nodes[id].first = s as u32;
-                        nodes[id].count = (e - s) as u32;
-                    }
-                }
-            }
-        }
+        let (nodes, order) = build_nodes(&cent, &tbox);
         Bvh {
             faces,
             nodes,
@@ -370,10 +382,17 @@ impl Bvh {
     }
 }
 
-/// Sorts `order` (a range of triangles) by the best split of the binned
-/// surface-area heuristic and returns the size of the left part, or `None`
-/// when no split is cheaper than a leaf.
-fn split(order: &mut [u32], cent: &[[f64; 3]], tbox: &[Aabb]) -> Option<usize> {
+/// Orders `order` (a range of items, ascending on entry) by the best split
+/// of the binned surface-area heuristic and returns the size of the left
+/// part, or `None` when no split is cheaper than a leaf. Both parts stay
+/// ascending: the split is a stable partition of an ascending range, the
+/// same order as a sort by (side, index), in linear time.
+fn split(
+    order: &mut [u32],
+    cent: &[[f64; 3]],
+    tbox: &[Aabb],
+    scratch: &mut Vec<u32>,
+) -> Option<usize> {
     let n = order.len();
     let mut cb = Aabb::EMPTY;
     for &t in order.iter() {
@@ -431,11 +450,19 @@ fn split(order: &mut [u32], cent: &[[f64; 3]], tbox: &[Aabb]) -> Option<usize> {
             let w = (hi - lo) / BINS as f64;
             let bin_of = |c: f64| (((c - lo) / w) as usize).min(BINS - 1);
             // a stable total order: left bins first, then by index
-            order.sort_by_key(|&t| (bin_of(cent[t as usize][axis]) > bin, t));
-            let m = order
-                .iter()
-                .take_while(|&&t| bin_of(cent[t as usize][axis]) <= bin)
-                .count();
+            debug_assert!(order.windows(2).all(|w| w[0] < w[1]));
+            scratch.clear();
+            let mut m = 0;
+            for i in 0..n {
+                let t = order[i];
+                if bin_of(cent[t as usize][axis]) <= bin {
+                    order[m] = t;
+                    m += 1;
+                } else {
+                    scratch.push(t);
+                }
+            }
+            order[m..].copy_from_slice(scratch);
             Some(m)
         }
         Some(_) => None,

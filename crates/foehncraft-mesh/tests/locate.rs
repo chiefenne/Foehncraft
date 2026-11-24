@@ -98,3 +98,41 @@ fn locate_and_track_on_all_mesh_types() {
         }
     }
 }
+
+/// The search by the hierarchy over cell boxes gives the same cell as the
+/// former uniform grid and the smallest cell that contains the point (brute
+/// force), on uniform and strongly graded meshes of every type, and nothing
+/// outside the mesh (D108 part 2).
+#[test]
+fn cell_tree_search_agrees_with_grid_and_brute_force() {
+    use foehncraft_mesh::generate::Grading;
+    for kind in [Kind::Hex, Kind::Tet, Kind::Poly, Kind::Mixed] {
+        for ratio in [1.0, 1000.0] {
+            let mut s = BoxSpec::new(kind, 3, [8, 10, 6]);
+            s.perturb = 0.2;
+            s.upper = [2.0, 1.0, 0.5];
+            s.grading.y = Grading {
+                ratio,
+                symmetric: true,
+            };
+            let m = s.generate().unwrap();
+            let g = Geometry::compute(&m);
+            let loc = Locator::new(&m, &g);
+            let name = format!("{} ratio {ratio}", kind.name());
+            for i in 0..200u64 {
+                let x = point(13, i, [-0.1, -0.1, -0.1], [2.1, 1.1, 0.6]);
+                let brute = (0..m.n_cells).find(|&c| loc.contains(c, x));
+                let tree = loc.locate_search(x);
+                assert_eq!(tree, brute, "{name}: {x:?}");
+                assert_eq!(loc.locate_search_grid(x), brute, "{name}: grid {x:?}");
+            }
+            // every cell centroid is found in its own cell
+            for c in 0..m.n_cells {
+                let x = g.cell_centroid[c];
+                let found = loc.locate_search(x).unwrap();
+                assert!(loc.contains(found, x));
+                assert!(found <= c || !loc.contains(c, x), "{name}: centroid of {c}");
+            }
+        }
+    }
+}
