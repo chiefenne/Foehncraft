@@ -9,6 +9,9 @@
 //!   (stage 6, D116): bounded form, point-implicit sources, bounded BDF2;
 //! - [`turb`]: the turbulence models (stage 6): invariants and the D166
 //!   features, k-ω SST 2003, its wall treatments;
+//! - [`particle`]: the parcel step of the Lagrangian sprays (L12): exact
+//!   relaxation of the parcel velocity to the gas velocity with the drag of
+//!   Schiller and Naumann, gravity and buoyancy;
 //! - [`blas`]: vector operations and reproducible block dot products of the
 //!   Krylov solvers;
 //! - [`expr`]: the stack machine of the compiled case-file expressions (D53);
@@ -47,6 +50,7 @@ pub mod expr;
 pub mod face;
 pub mod flow;
 pub mod fv;
+pub mod particle;
 pub mod scalar;
 pub mod spmv;
 pub mod turb;

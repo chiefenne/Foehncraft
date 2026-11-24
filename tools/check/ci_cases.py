@@ -64,6 +64,7 @@ FLOW = {
         "buoyancy_box_at_rest", "buoyancy_slot", "buoyancy_channel_reduced",
         "buoyancy_channel_static", "buoyancy_open_box", "buoyancy_enclosure_plume",
         "vd_heated_duct", "vd_closed_box_heating", "vd_closed_box_side_heated", "vd_mms_steady",
+        "spray_duct",
     ],
     "long": [
         "cylinder_re100", "cylinder_re100_short", "cylinder_re100_statistics", "cylinder_re100_convective", "cylinder_re20_gci",
@@ -82,6 +83,7 @@ FLOW = {
 }
 LINUX = ("linux-1", "linux-2", "linux-3", "long")
 
+# Files named *_injectors.toml are included by a case (D246), not run.
 # Cases whose expected exit code is not 0: the steady cylinder that sheds is
 # stopped by its diagnosis on purpose (D198, exit code 3 = stopped).
 EXPECTED_EXIT = {F + "cylinder_steady_diagnosis.toml": 3}
@@ -92,7 +94,7 @@ def _files(pattern: str) -> list[str]:
     return sorted(
         str(p.relative_to(ROOT)).replace("\\", "/")
         for p in ROOT.glob(pattern)
-        if not p.name.endswith("_gpu.toml")
+        if not p.name.endswith(("_gpu.toml", "_injectors.toml"))
     )
 
 

@@ -33,6 +33,7 @@ foehncraft-kernels = { path = "crates/foehncraft-kernels", version = "1.0.1" }
 foehncraft-parallel = { path = "crates/foehncraft-parallel", version = "1.0.1" }
 foehncraft-mesh = { path = "crates/foehncraft-mesh", version = "1.0.1", default-features = false }
 foehncraft-fv = { path = "crates/foehncraft-fv", version = "1.0.1", default-features = false }
+foehncraft-particles = { path = "crates/foehncraft-particles", version = "1.0.1", default-features = false }
 foehncraft-flow = { path = "crates/foehncraft-flow", version = "1.0.1", default-features = false }
 foehncraft-bench = { path = "crates/foehncraft-bench", version = "1.0.1" }
 foehncraft-cuda = { path = "crates/foehncraft-cuda", version = "1.0.1" }
