@@ -29,6 +29,7 @@ toml.workspace = true
 anyhow = "1"
 schemars.workspace = true
 sha2.workspace = true
+blake3.workspace = true
 hdf5-metno = { workspace = true, optional = true }
 
 [dev-dependencies]

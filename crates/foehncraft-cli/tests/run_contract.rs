@@ -153,6 +153,13 @@ fn json_result_and_byte_identical_files() {
         !names.contains(&"flow.log") && !names.contains(&"run.jsonl"),
         "{names:?}"
     );
+    // each with its size and BLAKE3 hash (format 2.0; SHA-256 before)
+    for f in v["files"].as_array().unwrap() {
+        let b = bytes(&a.join(f["name"].as_str().unwrap()));
+        assert_eq!(f["bytes"], b.len() as u64, "{f}");
+        assert_eq!(f["blake3"], blake3::hash(&b).to_hex().as_str(), "{f}");
+        assert!(f.get("sha256").is_none(), "{f}");
+    }
 }
 
 /// D199 evidence (schema): every row of `run.jsonl` is one JSON object with a
@@ -598,7 +605,7 @@ fn configurable_log_columns_change_no_result() {
         .lines()
         .map(|l| serde_json::from_str(l).unwrap())
         .collect();
-    assert_eq!(rows[0]["format_version"], "1.1");
+    assert_eq!(rows[0]["format_version"], "2.0");
     let cols = rows
         .iter()
         .find(|r| r["type"] == "columns")

@@ -44,5 +44,9 @@ serde_json.workspace = true
 [target.'cfg(unix)'.dependencies]
 signal-hook.workspace = true
 
+[dev-dependencies]
+# The BLAKE3 hashes of result.json checked in run_contract.rs (D84).
+blake3.workspace = true
+
 [lints]
 workspace = true

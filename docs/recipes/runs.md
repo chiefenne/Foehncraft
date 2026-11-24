@@ -140,7 +140,7 @@ target/release/foehn --json flow examples/cases/flow/cavity_re100_budget.toml --
 ```
 
 **Compare results**: two identical runs give byte-identical outputs
-(D84); `result.json` lists their SHA-256 hashes, and
+(D84); `result.json` lists their BLAKE3 hashes, and
 `provenance.case_hash` with `provenance.commit` says whether two results
 are comparable. The keys and their units: `foehn schema` (JSON Schema)
 and [keys.md](../keys.md).

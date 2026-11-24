@@ -97,8 +97,12 @@ class Result:
 
     @property
     def files(self) -> dict[str, str]:
-        """The output files with their SHA-256 (D84)."""
-        return {f["name"]: f["sha256"] for f in self.summary.get("files", [])}
+        """The output files with their BLAKE3 hash (D84; SHA-256 in
+        results of format 1.x, read as well)."""
+        return {
+            f["name"]: f.get("blake3", f.get("sha256"))
+            for f in self.summary.get("files", [])
+        }
 
     def value(self, key: str, solve: int = -1, default=None):
         """A value of a solve by dotted key, e.g. `"errors.l2"`,

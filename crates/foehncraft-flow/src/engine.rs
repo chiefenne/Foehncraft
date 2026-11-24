@@ -21,7 +21,7 @@
 //!
 //! `result.json` holds no timings: two runs of the same case with the same
 //! binary on the same hardware give the same bytes, and its `files` list
-//! holds the size and SHA-256 hash of every other output file except the
+//! holds the size and BLAKE3 hash of every other output file except the
 //! four that record wall-clock times (`flow.log`, `flow.md`, `flow.json`,
 //! `run.jsonl`), so comparing two `result.json` files compares every
 //! result of two runs (D84).
@@ -40,8 +40,9 @@ use std::time::Instant;
 
 /// Version of the machine formats of this module (D80): `result.json`,
 /// `run.jsonl`, the check report and the error object. Within a major
-/// version only additive changes.
-pub const FORMAT_VERSION: &str = "1.1";
+/// version only additive changes. 2.0 (2026-11-24): the `files` of
+/// `result.json` carry `blake3` in place of `sha256` (D84).
+pub const FORMAT_VERSION: &str = "2.0";
 
 /// Output files that record wall-clock times; every other file of a run is
 /// byte-identical between two runs of the same case (D84).
@@ -750,8 +751,8 @@ pub struct FileHash {
     pub name: String,
     /// Size.
     pub bytes: u64,
-    /// SHA-256 (hex).
-    pub sha256: String,
+    /// BLAKE3 hash (hex); SHA-256 before format 2.0.
+    pub blake3: String,
 }
 
 /// Size and hash of every output file of `dir` except the measured ones
@@ -776,15 +777,40 @@ pub fn file_hashes(dir: &Path) -> Result<Vec<FileHash>> {
         if !e.file_type().is_ok_and(|t| t.is_file()) {
             continue;
         }
-        let bytes = std::fs::read(e.path())?;
+        let (bytes, blake3) = file_blake3(&e.path())?;
         out.push(FileHash {
             name,
-            bytes: bytes.len() as u64,
-            sha256: sha256(&bytes),
+            bytes,
+            blake3,
         });
     }
     out.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(out)
+}
+
+/// The size and BLAKE3 hash (hex) of the file at `path`, read in pieces of
+/// 16 MiB so a field file of many gigabytes is never held whole; each
+/// piece is hashed on every core. SHA-256 took 17 s for a 5 GB file on a
+/// CPU without SHA instructions (the maintainer's choice of BLAKE3,
+/// 2026-11-24).
+pub fn file_blake3(path: &Path) -> Result<(u64, String)> {
+    use std::io::Read as _;
+    let mut f =
+        std::fs::File::open(path).with_context(|| format!("cannot read {}", path.display()))?;
+    let mut h = blake3::Hasher::new();
+    let mut buf = vec![0u8; 16 << 20];
+    let mut bytes = 0u64;
+    loop {
+        let n = match f.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => n,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(e) => return Err(e).with_context(|| format!("cannot read {}", path.display())),
+        };
+        h.update_rayon(&buf[..n]);
+        bytes += n as u64;
+    }
+    Ok((bytes, h.finalize().to_hex().to_string()))
 }
 
 /// The date of the run: `SOURCE_DATE_EPOCH` when set (D84), else now
@@ -1740,7 +1766,7 @@ pub struct ResultSummary {
     /// Discretisation uncertainty of a sweep (D67): per monitored quantity
     /// the observed order, the extrapolated value and the GCI.
     pub uncertainty: Vec<crate::uncertainty::Estimate>,
-    /// Output files with sizes and SHA-256 hashes (D84).
+    /// Output files with sizes and BLAKE3 hashes (D84).
     pub files: Vec<FileHash>,
     /// What the user must know before trusting the result (D199): codes
     /// LIM001 to LIM006, the feature and a message. They change neither
