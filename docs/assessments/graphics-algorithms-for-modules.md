@@ -112,6 +112,14 @@ size grading.
 | Bitwise reproducibility | kept: when two cells claim a point on a shared face or edge, the smallest global cell id wins, as the wall query does |
 | MPI | the hierarchy is built per rank over its cells and halo; donor search across ranks needs the global box hierarchy of the rank boxes (small), the same design as the replicated wall BVH |
 
+**Done (#235, 2026-11-24):** the point search of the locator uses the
+hierarchy; measured 5 to 20 times faster per query than the bin grid on the
+repository's meshes and on graded test meshes, 1 to 7 candidate cells per
+query ([benchmark](../benchmarks/point-location.md)). The benchmark also
+found that the area-weighted face centroid leaves the face on twisted,
+ribbon-thin faces, which moves the cell apex out of the cell; that goes to
+step 2.
+
 ### 3.2 Exact geometric predicates and a tracker that cannot lose a parcel
 
 The tracker decides the exit face from signed tetrahedron volumes in
