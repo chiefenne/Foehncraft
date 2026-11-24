@@ -335,7 +335,7 @@ checksum = "1c66915cc5391097de7a2b0b972e8505aa33c0df401fd3a6811dbdb32881ba48"
 
 [[package]]
 name = "foehncraft-bench"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "foehncraft-core",
@@ -349,7 +349,7 @@ dependencies = [
 
 [[package]]
 name = "foehncraft-cli"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -363,11 +363,11 @@ dependencies = [
 
 [[package]]
 name = "foehncraft-core"
-version = "1.0.0"
+version = "1.0.1"
 
 [[package]]
 name = "foehncraft-cuda"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "cudarc",
@@ -380,7 +380,7 @@ dependencies = [
 
 [[package]]
 name = "foehncraft-flow"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "foehncraft-bench",
@@ -399,7 +399,7 @@ dependencies = [
 
 [[package]]
 name = "foehncraft-fv"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "cc",
@@ -416,14 +416,14 @@ dependencies = [
 
 [[package]]
 name = "foehncraft-kernels"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "foehncraft-core",
 ]
 
 [[package]]
 name = "foehncraft-mesh"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "foehncraft-core",
@@ -441,7 +441,7 @@ dependencies = [
 
 [[package]]
 name = "foehncraft-parallel"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "foehncraft-core",
  "mpi",
@@ -450,7 +450,7 @@ dependencies = [
 
 [[package]]
 name = "foehncraft-tools"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "foehncraft-bench",
