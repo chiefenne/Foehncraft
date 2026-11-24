@@ -86,7 +86,8 @@ mod tests {
     #[test]
     fn backends_agree_bit_for_bit() {
         let n = 5000;
-        let r = |k: u64, i: usize, lo: f64, hi: f64| lo + (hi - lo) * rng::uniform([77, k, i as u64]);
+        let r =
+            |k: u64, i: usize, lo: f64, hi: f64| lo + (hi - lo) * rng::uniform([77, k, i as u64]);
         let col = |k: u64, lo: f64, hi: f64| (0..n).map(|i| r(k, i, lo, hi)).collect::<Vec<_>>();
         let v = [col(1, -5.0, 5.0), col(2, -5.0, 5.0), col(3, -5.0, 5.0)];
         let u = [col(4, -5.0, 5.0), col(5, -5.0, 5.0), col(6, -5.0, 5.0)];
@@ -114,7 +115,10 @@ mod tests {
                 .build()
                 .unwrap();
             let par = pool.install(|| step_parallel(&a));
-            assert!(seq == par, "{threads} threads differ from the sequential loop");
+            assert!(
+                seq == par,
+                "{threads} threads differ from the sequential loop"
+            );
         }
         // and the per-parcel body
         for i in (0..n).step_by(97) {

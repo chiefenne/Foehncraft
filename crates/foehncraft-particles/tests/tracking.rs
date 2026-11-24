@@ -68,7 +68,14 @@ fn accel(v: [f64; 3], u: [f64; 3], d: f64, g: [f64; 3]) -> [f64; 3] {
 }
 
 /// Reference: RK4 with small steps, uniform gas.
-fn rk4(x0: [f64; 3], v0: [f64; 3], u: [f64; 3], d: f64, g: [f64; 3], t: f64) -> ([f64; 3], [f64; 3]) {
+fn rk4(
+    x0: [f64; 3],
+    v0: [f64; 3],
+    u: [f64; 3],
+    d: f64,
+    g: [f64; 3],
+    t: f64,
+) -> ([f64; 3], [f64; 3]) {
     let n = 20000;
     let h = t / n as f64;
     let (mut x, mut v) = (x0, v0);
@@ -76,9 +83,17 @@ fn rk4(x0: [f64; 3], v0: [f64; 3], u: [f64; 3], d: f64, g: [f64; 3], t: f64) -> 
         let f = |v: [f64; 3]| accel(v, u, d, g);
         let k1v = f(v);
         let k1x = v;
-        let v2 = [v[0] + 0.5 * h * k1v[0], v[1] + 0.5 * h * k1v[1], v[2] + 0.5 * h * k1v[2]];
+        let v2 = [
+            v[0] + 0.5 * h * k1v[0],
+            v[1] + 0.5 * h * k1v[1],
+            v[2] + 0.5 * h * k1v[2],
+        ];
         let k2v = f(v2);
-        let v3 = [v[0] + 0.5 * h * k2v[0], v[1] + 0.5 * h * k2v[1], v[2] + 0.5 * h * k2v[2]];
+        let v3 = [
+            v[0] + 0.5 * h * k2v[0],
+            v[1] + 0.5 * h * k2v[1],
+            v[2] + 0.5 * h * k2v[2],
+        ];
         let k3v = f(v3);
         let v4 = [v[0] + h * k3v[0], v[1] + h * k3v[1], v[2] + h * k3v[2]];
         let k4v = f(v4);
@@ -118,8 +133,13 @@ fn parcel_follows_the_reference_integration() {
         let mut cfg = SpraySection::default();
         cfg.injectors = vec![injector([0.2, 0.5, 0.9], [1.0, 0.0, 0.0], 0.5, d)];
         cfg.injectors[0].parcels_per_second = 1.0; // one parcel at t = 0.5
-        let mut sp = Spray::new(&cfg, &env, rules(m.boundaries.len(), BoundaryMode::Escape), g)
-            .unwrap();
+        let mut sp = Spray::new(
+            &cfg,
+            &env,
+            rules(m.boundaries.len(), BoundaryMode::Escape),
+            g,
+        )
+        .unwrap();
         let gas = Field(|_, _| u);
         let dt = 0.01;
         let mut t = 0.0;
@@ -128,7 +148,11 @@ fn parcel_follows_the_reference_integration() {
             sp.advance(&env, &gas, t, dt).unwrap();
             t += dt;
         }
-        assert_eq!(sp.parcels.len(), 1, "{kind:?}: the parcel must still be in the box");
+        assert_eq!(
+            sp.parcels.len(),
+            1,
+            "{kind:?}: the parcel must still be in the box"
+        );
         let (xr, vr) = rk4([0.2, 0.5, 0.9], [0.5, 0.0, 0.0], u, d, g, t - 0.5);
         let x = sp.parcels.x[0];
         let v = sp.parcels.v[0];
@@ -157,7 +181,11 @@ fn parcel_follows_the_reference_integration() {
 /// wall mode, and the tracker contract holds for every parcel.
 #[test]
 fn mass_books_close_and_parcels_stay_in_their_cells() {
-    for mode in [BoundaryMode::Stick, BoundaryMode::Rebound, BoundaryMode::Escape] {
+    for mode in [
+        BoundaryMode::Stick,
+        BoundaryMode::Rebound,
+        BoundaryMode::Escape,
+    ] {
         for kind in [Kind::Hex, Kind::Tet, Kind::Poly] {
             let m = mesh_of(kind, 3, [5, 5, 5], [1.0, 1.0, 1.0]);
             let geo = Geometry::compute(&m);
@@ -172,7 +200,13 @@ fn mass_books_close_and_parcels_stay_in_their_cells() {
             inj.half_angle = 25.0;
             inj.parcels_per_second = 120.0;
             cfg.injectors = vec![inj];
-            let mut sp = Spray::new(&cfg, &env, rules(m.boundaries.len(), mode), [0.0, 0.0, -9.81]).unwrap();
+            let mut sp = Spray::new(
+                &cfg,
+                &env,
+                rules(m.boundaries.len(), mode),
+                [0.0, 0.0, -9.81],
+            )
+            .unwrap();
             // a swirling gas keeps the parcels moving through many cells
             let gas = Field(|_, x| [-(x[1] - 0.5), x[0] - 0.5, 0.0]);
             let dt = 0.01;
@@ -227,7 +261,13 @@ fn elastic_bounce_keeps_the_parcel_inside() {
     inj.parcels_per_second = 1.0;
     inj.end = Some(1.0);
     cfg.injectors = vec![inj];
-    let mut sp = Spray::new(&cfg, &env, rules(m.boundaries.len(), BoundaryMode::Rebound), [0.0; 3]).unwrap();
+    let mut sp = Spray::new(
+        &cfg,
+        &env,
+        rules(m.boundaries.len(), BoundaryMode::Rebound),
+        [0.0; 3],
+    )
+    .unwrap();
     let gas = Field(|_, _| [0.0; 3]);
     for s in 0..400 {
         sp.advance(&env, &gas, s as f64 * 0.005, 0.005).unwrap();
@@ -264,7 +304,13 @@ fn threads_do_not_change_a_bit() {
             inj.half_angle = 30.0;
             inj.parcels_per_second = 800.0;
             cfg.injectors = vec![inj];
-            let mut sp = Spray::new(&cfg, &env, rules(m.boundaries.len(), BoundaryMode::Rebound), [0.0, 0.0, -9.81]).unwrap();
+            let mut sp = Spray::new(
+                &cfg,
+                &env,
+                rules(m.boundaries.len(), BoundaryMode::Rebound),
+                [0.0, 0.0, -9.81],
+            )
+            .unwrap();
             let gas = Field(|_, x| [0.3 * (x[1] - 0.5), -0.3 * (x[0] - 0.5), 0.1]);
             for s in 0..60 {
                 sp.advance(&env, &gas, s as f64 * 0.01, 0.01).unwrap();
@@ -294,7 +340,15 @@ fn restart_state_continues_bitwise() {
     inj.half_angle = 30.0;
     inj.parcels_per_second = 500.0;
     cfg.injectors = vec![inj];
-    let make = || Spray::new(&cfg, &env, rules(m.boundaries.len(), BoundaryMode::Rebound), [0.0, 0.0, -9.81]).unwrap();
+    let make = || {
+        Spray::new(
+            &cfg,
+            &env,
+            rules(m.boundaries.len(), BoundaryMode::Rebound),
+            [0.0, 0.0, -9.81],
+        )
+        .unwrap()
+    };
     let gas = Field(|_, x| [0.3 * (x[1] - 0.5), -0.3 * (x[0] - 0.5), 0.1]);
     let mut a = make();
     for s in 0..40 {
@@ -326,6 +380,11 @@ fn injector_outside_the_mesh_is_refused() {
     };
     let mut cfg = SpraySection::default();
     cfg.injectors = vec![injector([3.0, 0.5, 0.5], [1.0, 0.0, 0.0], 1.0, 1e-4)];
-    let r = Spray::new(&cfg, &env, rules(m.boundaries.len(), BoundaryMode::Stick), [0.0; 3]);
+    let r = Spray::new(
+        &cfg,
+        &env,
+        rules(m.boundaries.len(), BoundaryMode::Stick),
+        [0.0; 3],
+    );
     assert!(r.err().unwrap().to_string().contains("outside the mesh"));
 }

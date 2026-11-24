@@ -194,7 +194,11 @@ mod tests {
         let dt = 3.0 * tau;
         let s = parcel_step(&input([0.0; 3], [0.0; 3], d, dt));
         let exact = -g_eff * tau * (1.0 - (-3.0f64).exp());
-        assert!((s.v[2] - exact).abs() < 1e-9 * g_eff * tau, "{} {exact}", s.v[2]);
+        assert!(
+            (s.v[2] - exact).abs() < 1e-9 * g_eff * tau,
+            "{} {exact}",
+            s.v[2]
+        );
         assert!((s.tau / tau - 1.0).abs() < 1e-4, "{} {tau}", s.tau);
         // a long step reaches the terminal velocity, however large τ/Δt
         let s = parcel_step(&input([0.0; 3], [0.0; 3], d, 1e3 * tau));

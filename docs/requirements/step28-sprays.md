@@ -50,3 +50,11 @@ it appears in a table.
 - SP6 (which atomisation regime first) is undecided.
 - Liquids beyond water (ethanol, n-heptane, n-dodecane) need source entries
   in `DATA_SOURCES.md` before use.
+
+## 5. Status
+
+SP1 is implemented (PR #242): `[spray]` with an included injector file,
+constant droplet size, exact exponential drag and gravity, tracking on the
+locator, stick, rebound, escape and mirror boundaries, mass book (SPR001 to
+SPR005), parcel output and restart, the parcel kernel in `foehncraft-kernels`
+with a PTX entry. Not yet checked by the PTX job of CI at the time of writing.

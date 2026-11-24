@@ -51,7 +51,9 @@ pub fn validate(case: &FlowCase) -> Result<()> {
             return Err(err(
                 diag::SPRAY_UNSUPPORTED,
                 &format!("boundary.{name}"),
-                format!("[spray] with the periodic boundary {name} is not available in this version"),
+                format!(
+                    "[spray] with the periodic boundary {name} is not available in this version"
+                ),
             ));
         }
     }

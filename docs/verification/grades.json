@@ -1226,6 +1226,24 @@
     "the multigrid preconditioner on ranks (W4) and the flow engine on ranks (W5) follow"
    ],
    "range": {}
+  },
+  {
+   "id": "sprays.one-way",
+   "title": "Lagrangian spray parcels, one way (L12, SP1)",
+   "grade": "partial",
+   "why": [
+    "a model without reference data",
+    "gaps written"
+   ],
+   "gaps": [
+    "no reference-data case (terminal velocity in the Schiller-Naumann range, a prescribed vortex, grid turbulence)",
+    "the gas does not feel the droplets (two-way coupling is SP2); no turbulent dispersion, evaporation or breakup",
+    "the gas state is sampled at the start of each sub-step (first order in the gas); the time of a wall hit is a chord fraction",
+    "one process, constant droplet size; no rotating zones or periodic boundaries (SPR003)",
+    "the CPU = GPU check of the parcel kernel runs in the PTX job of CI only",
+    "`spray_duct_injectors` has no run in the verification manual or in CI"
+   ],
+   "range": {}
   }
  ]
 }

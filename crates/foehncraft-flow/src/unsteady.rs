@@ -1131,15 +1131,19 @@ fn run_one<F: FnMut(&str)>(
                         geo: geo0,
                         loc: &loc,
                     };
-                    sp.restore(&env, b)
-                        .map_err(|e| crate::diag::err(crate::diag::Diagnostic::new(
+                    sp.restore(&env, b).map_err(|e| {
+                        crate::diag::err(crate::diag::Diagnostic::new(
                             crate::diag::SPRAY_CONFIG,
-                            format!("{}: the spray state of the restart file: {e:#}", path.display()),
-                        )))?;
+                            format!(
+                                "{}: the spray state of the restart file: {e:#}",
+                                path.display()
+                            ),
+                        ))
+                    })?;
                 }
-                None => lg.note(
-                    "the restart file holds no spray state: the run starts without parcels",
-                ),
+                None => {
+                    lg.note("the restart file holds no spray state: the run starts without parcels")
+                }
             }
         }
         if let Some((old, clock, dt_next, scheme)) = r.transient.clone() {

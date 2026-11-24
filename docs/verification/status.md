@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**109 features: 50 verified, 56 partial, 3 unverified.**
+**110 features: 50 verified, 57 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -134,6 +134,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Backends and interfaces | [MCP server (foehn mcp)](#interface-mcp) | verified |
 | Backends and interfaces | [Exact reductions: sums, dot products, norms and min/max independent of threads, order and ranks (MPI step W2)](#parallel-exact-reductions) | verified |
 | Backends and interfaces | [The steady scalar solver on several ranks, bitwise one rank (MPI step W3)](#parallel-scalar-ranks) | partial |
+| Sprays | [Lagrangian spray parcels, one way (L12, SP1)](#sprays-one-way) | partial |
 
 ## Meshes
 
@@ -1642,3 +1643,28 @@ Gaps:
 - the multigrid preconditioner on ranks (W4) and the flow engine on ranks (W5) follow
 
 Contracts: `bitwise`.
+
+## Sprays
+
+<a id="sprays-one-way"></a>
+
+### Lagrangian spray parcels, one way (L12, SP1)
+
+**partial** (a model without reference data; gaps written) · id `sprays.one-way` · switch `[spray] include = "..."` · decisions D240, D245, D246
+
+- contract (diagnostics): [`spray_duct`](../../examples/cases/flow/spray_duct.toml): water droplets of 150 µm in an air duct: the mass book injected = in the flow + stuck + left + lost closes to round-off (the run stops with SPR005 otherwise); 71 % of the liquid sticks on the lower wall (passes in CI (set linux-3), not yet in the manual) ([results](../cases/flow.md#lagrangian-sprays))
+- contract (schema): [`spray_duct_injectors`](../../examples/cases/flow/spray_duct_injectors.toml): the included injector and liquid file of spray_duct ([results](../cases/flow.md#lagrangian-sprays)) **missing**
+- exact: [`stokes_relaxation_and_terminal_velocity`](../../crates/foehncraft-kernels/src/particle.rs): Stokes relaxation and terminal velocity of the exact exponential step to 10⁻⁹
+- consistency: [`parcel_follows_the_reference_integration`](../../crates/foehncraft-particles/tests/tracking.rs): trajectories on hexahedral, tetrahedral, polyhedral and mixed meshes against a fourth-order reference integration
+- exact: [`mass_books_close_and_parcels_stay_in_their_cells`](../../crates/foehncraft-particles/tests/tracking.rs): mass books for stick, rebound and escape; every parcel is in its cell
+- exact: [`threads_do_not_change_a_bit`](../../crates/foehncraft-particles/tests/tracking.rs): bitwise equal results on 1, 2 and 4 threads
+- exact: [`restart_state_continues_bitwise`](../../crates/foehncraft-particles/tests/tracking.rs): a restart continues the parcels bit for bit
+
+Gaps:
+
+- no reference-data case (terminal velocity in the Schiller-Naumann range, a prescribed vortex, grid turbulence)
+- the gas does not feel the droplets (two-way coupling is SP2); no turbulent dispersion, evaporation or breakup
+- the gas state is sampled at the start of each sub-step (first order in the gas); the time of a wall hit is a chord fraction
+- one process, constant droplet size; no rotating zones or periodic boundaries (SPR003)
+- the CPU = GPU check of the parcel kernel runs in the PTX job of CI only
+- `spray_duct_injectors` has no run in the verification manual or in CI

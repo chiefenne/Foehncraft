@@ -514,7 +514,11 @@ impl Spray {
     pub fn restore(&mut self, env: &Env, bytes: &[u8]) -> Result<()> {
         let s: Saved = serde_json::from_slice(bytes)?;
         if s.format != FORMAT || s.version != 1 {
-            bail!("the restart holds a spray state of format {} version {}", s.format, s.version);
+            bail!(
+                "the restart holds a spray state of format {} version {}",
+                s.format,
+                s.version
+            );
         }
         let names: Vec<&str> = s.injectors.iter().map(|i| i.name.as_str()).collect();
         let mine: Vec<&str> = self.injectors.iter().map(|i| i.name.as_str()).collect();

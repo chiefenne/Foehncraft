@@ -19,6 +19,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | [Energy equation and heat transfer](recipes/energy.md) | the temperature of a flow: properties of T, thermal wall conditions, viscous heating, the heat balance, solid regions and conjugate heat transfer, laminar, turbulent and transient, thermal acceleration, the cycle loop and the frozen-flow march, several fluids, start values per region, buoyancy and variable density | 154, 156, 158, 159, 160, 180, 190, 202, 208, 206, 186, 195, 221 |
 | [Turbulence models](recipes/turbulence.md) | RANS turbulence models: the model, the wall treatment by the mesh, inlet turbulence, roughness, the near-wall checks, curvature correction and QCR on any mesh, the internal flows of D45 (pipe, diffuser, U-bend) | 68, 71, 73, 74, 88, 89, 90, 113, 115, 141, 140, 194, 193, 199, 197, 204 |
 | [Boundary conditions](recipes/boundary-conditions.md) | slip walls, wedges for axisymmetric flow, inlet profiles from tables, backflow at pressure outlets, convective outlets, periodic modules, absolute or gauge pressure values (D239) | 29, 67, 220 |
+| [Lagrangian sprays](recipes/sprays.md) | spray droplets into a flow with an injector file, wall behaviour, the mass book | 242 |
 | [Expressions and materials](recipes/properties.md) | values as expressions of x, y, z and t, constants and tables, wall mass flux, the material database, regions | 31, 32 |
 | [Python](recipes/python.md) | the `foehncraft` package: cases, expressions, runs with callbacks, results, materials, studies | 33 |
 | [Verification](recipes/verification.md) | the discretisation uncertainty of a sweep (GCI), the generated verification manual | 34, 35, 165, 170 |
@@ -141,6 +142,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="start-values"></a>221 | [Start every region and fluid part on its own](recipes/energy.md#start-values) | [Energy equation and heat transfer](recipes/energy.md) |
 | <a id="curved-blades"></a>225 | [Mesh a rotor with curved blades of constant thickness in Gmsh](recipes/flow.md#curved-blades) | [Incompressible flow](recipes/flow.md) |
 | <a id="scalar-ranks"></a>230 | [Solve a scalar on ranks (and check it against one rank)](recipes/meshes.md#scalar-ranks) | [Meshes](recipes/meshes.md) |
+| <a id="spray-duct"></a>242 | [Spray droplets into a flow](recipes/sprays.md#spray-duct) | [Lagrangian sprays](recipes/sprays.md) |
 
 ## Adding a feature
 

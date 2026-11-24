@@ -1543,5 +1543,29 @@ gaps = [
   "the multigrid preconditioner on ranks (W4) and the flow engine on ranks (W5) follow",
 ]
 
+[[feature]]
+id = "sprays.one-way"
+area = "Sprays"
+title = "Lagrangian spray parcels, one way (L12, SP1)"
+switch = "[spray] include = \"...\""
+decisions = ["D240", "D245", "D246"]
+model = true
+evidence = [
+  { kind = "contract", property = "diagnostics", case = "spray_duct", what = "water droplets of 150 µm in an air duct: the mass book injected = in the flow + stuck + left + lost closes to round-off (the run stops with SPR005 otherwise); 71 % of the liquid sticks on the lower wall", doc = "docs/cases/flow.md#lagrangian-sprays" },
+  { kind = "contract", property = "schema", case = "spray_duct_injectors", what = "the included injector and liquid file of spray_duct", doc = "docs/cases/flow.md#lagrangian-sprays" },
+  { kind = "exact", test = "crates/foehncraft-kernels/src/particle.rs::stokes_relaxation_and_terminal_velocity", what = "Stokes relaxation and terminal velocity of the exact exponential step to 10⁻⁹" },
+  { kind = "consistency", test = "crates/foehncraft-particles/tests/tracking.rs::parcel_follows_the_reference_integration", what = "trajectories on hexahedral, tetrahedral, polyhedral and mixed meshes against a fourth-order reference integration" },
+  { kind = "exact", test = "crates/foehncraft-particles/tests/tracking.rs::mass_books_close_and_parcels_stay_in_their_cells", what = "mass books for stick, rebound and escape; every parcel is in its cell" },
+  { kind = "exact", test = "crates/foehncraft-particles/tests/tracking.rs::threads_do_not_change_a_bit", what = "bitwise equal results on 1, 2 and 4 threads" },
+  { kind = "exact", test = "crates/foehncraft-particles/tests/tracking.rs::restart_state_continues_bitwise", what = "a restart continues the parcels bit for bit" },
+]
+gaps = [
+  "no reference-data case (terminal velocity in the Schiller-Naumann range, a prescribed vortex, grid turbulence)",
+  "the gas does not feel the droplets (two-way coupling is SP2); no turbulent dispersion, evaporation or breakup",
+  "the gas state is sampled at the start of each sub-step (first order in the gas); the time of a wall hit is a chord fraction",
+  "one process, constant droplet size; no rotating zones or periodic boundaries (SPR003)",
+  "the CPU = GPU check of the parcel kernel runs in the PTX job of CI only",
+]
+
 # ---------------------------------------------------------------- planned
 

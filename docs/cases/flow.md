@@ -14,6 +14,7 @@ On this page:
 - [Passive scalars](#passive-scalars)
 - [Energy equation](#energy-equation)
 - [Gravity and buoyancy](#gravity-and-buoyancy)
+- [Lagrangian sprays](#lagrangian-sprays)
 
 Stage 4: steady incompressible laminar flow, SIMPLEC with the Rhie–Chow
 interpolation ([explanation](../verification/stage4.md)). Stage 5: transient
@@ -291,3 +292,14 @@ on the [key page](../keys.md) and in [recipe
 | `flow/vd_closed_box_heating.toml` | generated hex 2D, 10 × 10 cells | check V7c.2: a closed box of gas at rest heated uniformly with 10⁴ W/m³ warms with c_v; T = 359.190 K and p₀ = 121 316 Pa after 5 s, both linear in t and exact to 10⁻¹⁰ with any Δt | [recipe 195](../recipes/energy.md#variable-density) |
 | `flow/vd_closed_box_side_heated.toml` | generated hex 2D, 32 × 32 cells | check V7c.3: a closed box of air heated through one wall at 400 K for 2 s: p₀ rises to 117 630 Pa, the gas far from the wall is compressed to 321 K, the mass stays to round-off (10⁻¹⁵) | [gallery 195](../gallery/energy.md#variable-density), [recipe 195](../recipes/energy.md#variable-density) |
 | `flow/vd_mms_steady.toml` | generated hex 2D, 16² to 64² cells (3 levels) | check V7c.4: manufactured solution with ρ = 1/T, a divergence-free mass flux, the full stress and a closed volume (`tools/verification/vd_mms.py`); observed orders 2.22 and 1.92 (velocity), 1.86 and 1.90 (temperature), 1.8–2.2 required | [recipe 195](../recipes/energy.md#variable-density) |
+
+## Lagrangian sprays
+
+`[spray]` with an included injector file (L12, SP1, D246): droplets as
+parcels in a transient flow, one way (the gas does not feel them yet). The
+keys are on the [key page](flow-keys.md); the run writes `spray.csv` and
+`spray/parcels_<step>.vtkhdf`.
+
+| Case file | Mesh | Shows | Where |
+|---|---|---|---|
+| `flow/spray_duct.toml` | generated hex 2D, 80 × 20 cells | 10 g/s of 150 µm water droplets sprayed from the upper wall into air at 4 m/s; about 70 % stick on the lower wall, the mass book closes; the injector is in `flow/spray_duct_injectors.toml` | [gallery 242](../gallery/sprays.md#spray-duct), [recipe 242](../recipes/sprays.md#spray-duct) |

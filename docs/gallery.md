@@ -20,6 +20,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | [Energy equation and heat transfer](gallery/energy.md) | the energy equation of the fluid with temperature-dependent properties, viscous heating and thermal walls: a heated cavity, conduction with k(T), Couette flow heated by friction, conjugate heat transfer with solid regions, laminar and turbulent (a finned heat sink), transient, contact resistances, thermal acceleration, the cycle-averaged loop and the frozen-flow march, two fluids in one case, start values per region, gravity with Boussinesq buoyancy and the low-Mach variable density | 154, 156, 158, 159, 160, 180, 190, 202, 208, 206, 186, 195, 221 |
 | [Turbulence models](gallery/turbulence.md) | the RANS turbulence models with their wall treatments (k-ω SST, the k-ε family, k-ε-ζ-f, k-ε-ζ-f₀, elliptic-blending k-ε) on the flat plate, the channel, the backward-facing step and the impinging jet; curvature correction and QCR; manufactured solutions; the internal flows of D45 (pipe, plane diffuser, U-bend) with GCI | 68, 71, 73, 74, 88, 89, 90, 113, 115, 141, 140, 184, 194, 197, 193, 199, 204 |
 | [Boundary conditions](gallery/boundary-conditions.md) | slip walls, axisymmetric wedges, inlet profiles from tables, backflow at pressure outlets, convective outlets, periodic modules, absolute pressure values (D239) | 21, 67, 220 |
+| [Lagrangian sprays](gallery/sprays.md) | droplets as Lagrangian parcels in the gas flow: injectors, drag, gravity, wall behaviour, the mass book | 242 |
 | [Expressions and materials](gallery/properties.md) | boundary values, body forces and viscosities as expressions, the material database, regions, walls with a mass flux | 23 |
 | [Python](gallery/python.md) | cases built, run and studied from Python: expressions with Python operators, callbacks, study tables | 24 |
 | [Verification](gallery/verification.md) | the discretisation uncertainty of mesh sweeps (grid convergence index) and the generated verification manual | 25, 170 |
@@ -128,6 +129,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | <a id="start-values"></a>221 | [Start values per region and per fluid part: every domain of an exchanger starts on its own](gallery/energy.md#start-values) | [Energy equation and heat transfer](gallery/energy.md) |
 | <a id="curved-blades"></a>225 | [Three stirrers, one with seven curved blades: circular-arc blades of constant thickness from Gmsh](gallery/flow.md#curved-blades) | [Incompressible flow](gallery/flow.md) |
 | <a id="scalar-ranks"></a>230 | [Five ranks, one solution: the scalar solver on ranks](gallery/meshes.md#scalar-ranks) | [Meshes](gallery/meshes.md) |
+| <a id="spray-duct"></a>242 | [Water droplets sprayed into an air duct](gallery/sprays.md#spray-duct) | [Lagrangian sprays](gallery/sprays.md) |
 
 ## Adding a feature
 
