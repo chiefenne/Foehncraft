@@ -137,7 +137,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Backends and interfaces | [The steady scalar solver on several ranks, bitwise one rank (MPI step W3)](#parallel-scalar-ranks) | partial |
 | Backends and interfaces | [Multigrid on several ranks with the replicated setup, bitwise one rank (MPI step W4)](#parallel-multigrid-ranks) | partial |
 | Backends and interfaces | [Steady SIMPLEC on several ranks, bitwise one rank (MPI step W5 part 1)](#parallel-flow-ranks) | partial |
-| Sprays | [Lagrangian spray parcels, one way (L12, SP1)](#sprays-one-way) | partial |
+| Backends and interfaces | [Turbulence, energy, scalars, transient runs and the coupled solver on several ranks, bitwise one rank (MPI step W5 part 2)](#parallel-flow-models-ranks) | partial |
 
 ## Meshes
 
@@ -282,6 +282,7 @@ Gaps:
 **partial** (no exact or manufactured solution) · id `mesh.vtkhdf` · switch `output.vtkhdf`
 
 - consistency: [`write_all_types`](../../crates/foehncraft-mesh/tests/vtkhdf.rs): every cell type written; CI checks the files of the cases
+- consistency: [`standard_cells_in_vtk_order`](../../crates/foehncraft-mesh/src/vtkhdf.rs): tetrahedra, hexahedra, prisms and pyramids in VTK's node order: VTK's outward faces (VTK 9.7 GetFace tables) are the cell's outward faces, positive volume, also for cells given inside out
 
 ## Numerics
 
@@ -1691,38 +1692,31 @@ Contracts: `bitwise`.
 
 **partial** (gaps written) · id `parallel.flow-ranks` · switch `[run] ranks of foehn flow` · decisions D31, D93
 
-- contract (bitwise): [`steady_flow_on_ranks_is_bitwise_one_rank`](../../crates/foehncraft-flow/tests/ranks.rs): 1 to 4 ranks (RCB), 2 threads per rank: a channel with a moving wall on polyhedra (linear upwind, Venkatakrishnan), mixed cells (bounded central) and tetrahedra (Jacobi pressure solve); velocity, pressure, pressure gradient, limiter and residual history bitwise one rank
+- contract (bitwise): [`flow_on_ranks_is_bitwise_one_rank`](../../crates/foehncraft-flow/tests/ranks.rs): 1 to 4 ranks (RCB), 2 threads per rank: a channel with a moving wall on polyhedra (linear upwind, Venkatakrishnan), mixed cells (bounded central) and tetrahedra (Jacobi pressure solve); velocity, pressure, pressure gradient, limiter and residual history bitwise one rank
 - contract (bitwise): [`ranks_channel_poly`](../../examples/cases/flow/ranks_channel_poly.toml): a channel with the upper wall moving against the inflow, potential-flow start, 103 outer iterations on 2, 3 and 5 ranks, every rank bitwise the one-rank run (the run fails otherwise) (passes in CI (set linux-2), not yet in the manual)
 
 Gaps:
 
-- steady SIMPLEC only: turbulence and wall distance, scalars, energy, transient runs, turning zones, grid levels, regions and the coupled solver on ranks are W5 part 2
+- turbulence, scalars, energy, transient runs and the coupled solver on ranks: parallel.flow-models-ranks
 - on the CPU flow device only (GPU ranks are not in scope of v1.1)
 - no scaling numbers yet (1M cells, W9)
 
 Contracts: `bitwise`.
 
-## Sprays
+<a id="parallel-flow-models-ranks"></a>
 
-<a id="sprays-one-way"></a>
+### Turbulence, energy, scalars, transient runs and the coupled solver on several ranks, bitwise one rank (MPI step W5 part 2)
 
-### Lagrangian spray parcels, one way (L12, SP1)
+**partial** (gaps written) · id `parallel.flow-models-ranks` · switch `[run] ranks of foehn flow` · decisions D31, D93, D48
 
-**partial** (a model without reference data; gaps written) · id `sprays.one-way` · switch `[spray] include = "..."` · decisions D240, D245, D246
-
-- contract (diagnostics): [`spray_duct`](../../examples/cases/flow/spray_duct.toml): water droplets of 150 µm in an air duct: the mass book injected = in the flow + stuck + left + lost closes to round-off (the run stops with SPR005 otherwise); 71 % of the liquid sticks on the lower wall (passes in CI (set linux-3), not yet in the manual) ([results](../cases/flow.md#lagrangian-sprays))
-- contract (schema): [`spray_duct_injectors`](../../examples/cases/flow/spray_duct_injectors.toml): the included injector and liquid file of spray_duct ([results](../cases/flow.md#lagrangian-sprays)) **missing**
-- exact: [`stokes_relaxation_and_terminal_velocity`](../../crates/foehncraft-kernels/src/particle.rs): Stokes relaxation and terminal velocity of the exact exponential step to 10⁻⁹
-- consistency: [`parcel_follows_the_reference_integration`](../../crates/foehncraft-particles/tests/tracking.rs): trajectories on hexahedral, tetrahedral, polyhedral and mixed meshes against a fourth-order reference integration
-- exact: [`mass_books_close_and_parcels_stay_in_their_cells`](../../crates/foehncraft-particles/tests/tracking.rs): mass books for stick, rebound and escape; every parcel is in its cell
-- exact: [`threads_do_not_change_a_bit`](../../crates/foehncraft-particles/tests/tracking.rs): bitwise equal results on 1, 2 and 4 threads
-- exact: [`restart_state_continues_bitwise`](../../crates/foehncraft-particles/tests/tracking.rs): a restart continues the parcels bit for bit
+- contract (bitwise): [`flow_on_ranks_is_bitwise_one_rank`](../../crates/foehncraft-flow/tests/ranks.rs): 1 to 4 ranks (RCB), 2 threads per rank: transient PISO with BDF2, a passive scalar, the energy equation (transient), k-omega SST, k-epsilon with scalable wall functions and the coupled solver; velocity, pressure, pressure gradient, limiter, scalars, temperature, k, omega or epsilon, nu_t and residual history bitwise one rank
+- contract (bitwise): [`ranks_heated_channel_sst`](../../examples/cases/flow/ranks_heated_channel_sst.toml): a turbulent channel (k-omega SST, Re 10 000) with a heated wall and the energy equation, 70 outer iterations on 2, 3 and 5 ranks, every field of every rank bitwise the one-rank run (the run fails otherwise) (passes in CI (set linux-2), not yet in the manual)
 
 Gaps:
 
-- no reference-data case (terminal velocity in the Schiller-Naumann range, a prescribed vortex, grid turbulence)
-- the gas does not feel the droplets (two-way coupling is SP2); no turbulent dispersion, evaporation or breakup
-- the gas state is sampled at the start of each sub-step (first order in the gas); the time of a wall hit is a chord fraction
-- one process, constant droplet size; no rotating zones or periodic boundaries (SPR003)
-- the CPU = GPU check of the parcel kernel runs in the PTX job of CI only
-- `spray_duct_injectors` has no run in the verification manual or in CI
+- not on ranks yet (refused with an error): zeta-f and elliptic blending, curvature correction and QCR, the MLP limiter and quadratic gradients, gravity, turning zones, solid regions, schedules, level sweeps and restarts
+- monitors, probes and balances are not computed on ranks: they come with the run on ranks (W7)
+- transient runs are checked with the fixed time step, not the adaptive one
+- 1M cells on 4 cores split into 1, 2, 4 ranks (example ranks_scaling): +2, +10, +28 % time per iteration against threads only, bitwise; strong scaling over more cores is W9
+
+Contracts: `bitwise`.

@@ -46,6 +46,10 @@ pub trait Exec {
     fn on_ranks(&self) -> bool {
         false
     }
+    /// The communicator of the ranks.
+    fn comm(&self) -> Option<foehncraft_mesh::decompose::SharedComm> {
+        None
+    }
     /// A static array of the run (mesh data), kept until the executor ends.
     fn alloc_u32(&mut self, v: &[u32]) -> Result<Raw<u32>>;
     /// The address and length of a buffer.
@@ -521,6 +525,10 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
 
     fn download_with_halo(&mut self, b: Buf) -> Result<Vec<f64>> {
         self.x.download_with_halo(b)
+    }
+
+    fn comm(&self) -> Option<foehncraft_mesh::decompose::SharedComm> {
+        self.x.comm()
     }
 
     fn copy(&mut self, src: Buf, dst: Buf) -> Result<()> {
@@ -1384,7 +1392,6 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
     }
 
     fn wall_setup(&mut self, w: &WallStatic) -> Result<()> {
-        self.not_on_ranks("wall setup")?;
         ensure!(
             w.ptr.len() == w.cells.len() + 1 && w.slots.len() == w.faces.len(),
             "flow device: inconsistent wall arrays"
@@ -1402,7 +1409,6 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
     }
 
     fn sst_cells(&mut self, a: &SstCellOps) -> Result<()> {
-        self.not_on_ranks("sst cells")?;
         let mut ins = vec![a.k, a.w, a.d];
         for g in &a.grad_u {
             ins.extend(g.all());
@@ -1454,7 +1460,9 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             dw: self.r(a.dw),
             capped: self.r(a.capped),
         };
-        self.go::<e::SstCells>(self.nc, &args)
+        self.go::<e::SstCells>(self.nc, &args)?;
+        // (ν_t and F1 are read at faces)
+        self.x.exchange(&outs)
     }
 
     fn strain_component(&mut self, grad_u: [Buf3; 3], comp: u32, out: Buf) -> Result<()> {
@@ -1697,7 +1705,6 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
     }
 
     fn keps_cells(&mut self, a: &KepsCellOps) -> Result<()> {
-        self.not_on_ranks("keps cells")?;
         let mut ins = vec![a.k, a.e];
         for g in &a.grad_u {
             ins.extend(g.all());
@@ -1740,7 +1747,8 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             de: self.r(a.de),
             capped: self.r(a.capped),
         };
-        self.go::<e::KepsCells>(self.nc, &args)
+        self.go::<e::KepsCells>(self.nc, &args)?;
+        self.x.exchange(&outs)
     }
 
     fn zeta_f_cells(&mut self, a: &ZetaFCellOps) -> Result<()> {
@@ -1960,7 +1968,6 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
         rel_old: Option<(Buf, f64)>,
         work: Buf,
     ) -> Result<usize> {
-        self.not_on_ranks("floor")?;
         check(&[work], &[x])?;
         if let Some((old, _)) = rel_old {
             check(&[work], &[old])?;
@@ -1980,7 +1987,6 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
     }
 
     fn wall_cells(&mut self, a: &WallCellOps) -> Result<()> {
-        self.not_on_ranks("wall cells")?;
         let Some([_, cells, ptr, slots]) = self.wall else {
             anyhow::bail!("flow device: wall_cells before wall_setup");
         };
@@ -2003,7 +2009,10 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             fix_mask: self.r(a.fix_mask),
             phi: a.phi.map_or(Raw::EMPTY, |b| self.r(b)),
         };
-        self.go::<e::WallCells>(cells.len as usize, &args)
+        self.go::<e::WallCells>(cells.len as usize, &args)?;
+        let mut outs = vec![a.fix_val, a.fix_mask, a.wall_pk, a.prod_mask];
+        outs.extend(a.phi);
+        self.x.exchange(&outs)
     }
 
     fn sync(&mut self) -> Result<()> {

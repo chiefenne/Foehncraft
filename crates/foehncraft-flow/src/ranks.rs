@@ -10,8 +10,9 @@
 //! and W4. The algorithm is the one of one rank, unchanged, so every rank
 //! computes bitwise the values of its cells in the undecomposed run.
 //!
-//! [`solve_one`] and [`solve_part`] run a number of outer iterations of a
-//! case on the whole mesh and on one rank's part; [`check`] compares a
+//! [`solve_one`] and [`solve_part`] run a number of outer iterations or
+//! time steps of a case (with its scalars, energy equation and turbulence
+//! model) on the whole mesh and on one rank's part; [`check`] compares a
 //! part with the whole cell by cell (by global cell identity) and the
 //! residual histories entry by entry. [`check_cases`] are the cases of the
 //! tests and of the example `mpi_flow`.
@@ -36,8 +37,15 @@ pub struct FlowSolve {
     pub grad_p: [Vec<f64>; 3],
     /// Limiter of the velocity components.
     pub psi: [Vec<f64>; 3],
-    /// One line per outer iteration: every residual and iteration count.
+    /// The passive scalars and the energy (by name) and the turbulence
+    /// variables (`k`, `omega`, `nu_t`).
+    pub extra: Vec<(String, Vec<f64>)>,
+    /// One line per outer iteration or time step: every residual and
+    /// iteration count.
     pub history: Vec<String>,
+    /// Wall time of the outer iterations or time steps (s), without the
+    /// setup (not compared).
+    pub seconds: f64,
 }
 
 /// The result of comparing a rank's part with the one-rank solve.
@@ -47,7 +55,8 @@ pub struct RankCheck {
     pub rank: usize,
     /// Its own cells.
     pub cells: usize,
-    /// Cells whose velocity or pressure differs in any bit.
+    /// Cells whose velocity, pressure, scalars or turbulence variables
+    /// differ in any bit.
     pub differing_fields: usize,
     /// Cells whose pressure gradient or limiter differs in any bit.
     pub differing_gradients: usize,
@@ -80,31 +89,123 @@ impl CheckCase {
     }
 }
 
-/// A flow of `case` on `mesh` (whole or a rank's part).
-fn flow(case: &FlowCase, mesh: &Mesh, geo: &Geometry, target: &Target) -> Result<Flow> {
-    let phys = crate::case::physics(case)?;
-    let values = case.compiled_boundaries()?;
-    let turning = case.turning();
-    let at = crate::bc::At {
-        analytic: case.analytic.as_ref(),
-        values: &values,
-        t: 0.0,
-        turning: &turning,
-        hydrostatic: crate::buoyancy::hydrostatic(case),
-    };
-    let arrays = crate::bc::arrays(mesh, geo, &case.boundary, phys.rho, at)?;
-    let disc = crate::simplec::discretisation(mesh, geo, &arrays)?;
-    let phys = crate::case::physics_on(case, &phys, mesh, geo)?;
-    Flow::new(
-        disc,
-        arrays,
-        phys,
-        case.solver.clone(),
-        [0.0; 3],
-        0.0,
-        None,
-        target,
-    )
+/// The flow solver of `case` on `mesh` (whole or a rank's part) with its
+/// passive scalars, energy equation, turbulence model and time stepping;
+/// `wall_distance` of the cells of `mesh`, computed on the whole mesh.
+struct Solver {
+    fl: Flow,
+    tr: Option<crate::transient::Transient>,
+    dt: f64,
+}
+
+impl Solver {
+    fn new(
+        case: &FlowCase,
+        mesh: &Mesh,
+        geo: &Geometry,
+        target: &Target,
+        wall_distance: Option<Vec<f64>>,
+    ) -> Result<Self> {
+        let phys = crate::case::physics(case)?;
+        let values = case.compiled_boundaries()?;
+        let turning = case.turning();
+        let t0 = case.time.map_or(0.0, |t| t.start_time);
+        let at = crate::bc::At {
+            analytic: case.analytic.as_ref(),
+            values: &values,
+            t: t0,
+            turning: &turning,
+            hydrostatic: crate::buoyancy::hydrostatic(case),
+        };
+        let arrays = crate::bc::arrays(mesh, geo, &case.boundary, phys.rho, at)?;
+        let disc = crate::simplec::discretisation(mesh, geo, &arrays)?;
+        let phys = crate::case::physics_on(case, &phys, mesh, geo)?;
+        let mut fl = Flow::on(
+            disc,
+            arrays,
+            phys,
+            case.solver.clone(),
+            case.time.is_some(),
+            None,
+            target,
+        )?;
+        crate::scalar::attach(&mut fl, case, mesh, geo)?;
+        crate::density::attach(&mut fl, case)?;
+        crate::turbulence::attach_with(&mut fl, case, mesh, geo, wall_distance)?;
+        let (tr, dt) = match case.time {
+            Some(t) => (
+                Some(crate::transient::Transient::new(
+                    &mut fl,
+                    t.scheme,
+                    t.start_time,
+                )?),
+                t.time_step,
+            ),
+            None => (None, 0.0),
+        };
+        Ok(Self { fl, tr, dt })
+    }
+
+    /// Start fields of the own cells.
+    fn start(&mut self, u: &foehncraft_fv::disc::Soa3, p: &[f64]) -> Result<()> {
+        self.fl.initialise(u, p)?;
+        if let Some(tr) = self.tr.as_mut() {
+            tr.start(&mut self.fl)?;
+        }
+        Ok(())
+    }
+
+    /// One outer iteration or one time step: its record (every residual,
+    /// iteration count and Courant number, exactly) and the largest
+    /// residual.
+    fn advance(&mut self) -> Result<(String, f64)> {
+        Ok(match self.tr.as_mut() {
+            Some(tr) => {
+                let r = tr.step(&mut self.fl, self.dt)?;
+                (format!("{r:?}"), r.last.max())
+            }
+            None => {
+                let r = self.fl.iterate()?;
+                (format!("{r:?}"), r.max())
+            }
+        })
+    }
+
+    /// The fields of the own cells (`n`, global identities `ids`).
+    fn fields(&mut self, n: usize, ids: &[u64], history: Vec<String>) -> Result<FlowSolve> {
+        let s = self.fl.state()?;
+        let own = |v: &[f64]| v[..n].to_vec();
+        let mut extra: Vec<(String, Vec<f64>)> = s
+            .scalars
+            .iter()
+            .map(|sc| (sc.name.clone(), own(&sc.phi)))
+            .collect();
+        if let Some(t) = &s.turbulence {
+            extra.push(("k".into(), own(&t.k)));
+            extra.push(("omega".into(), own(&t.omega)));
+            extra.push(("nu_t".into(), own(&t.nu_t)));
+        }
+        Ok(FlowSolve {
+            cell_id: ids[..n].to_vec(),
+            u: [own(&s.u.x), own(&s.u.y), own(&s.u.z)],
+            p: own(&s.p),
+            grad_p: [own(&s.grad_p.x), own(&s.grad_p.y), own(&s.grad_p.z)],
+            psi: [own(&s.psi.x), own(&s.psi.y), own(&s.psi.z)],
+            extra,
+            history,
+            seconds: 0.0,
+        })
+    }
+}
+
+/// The wall distance of every cell of `global` when `case` has a
+/// turbulence model (the exact distance, D48), else `None`.
+fn global_wall_distance(case: &FlowCase, global: &Mesh) -> Result<Option<Vec<f64>>> {
+    if case.turbulence.is_laminar() {
+        return Ok(None);
+    }
+    let geo = Geometry::compute(global);
+    Ok(Some(crate::derived::wall_distance(case, global, &geo)?))
 }
 
 /// The start velocity: a smooth field that is not uniform, so that every
@@ -120,44 +221,25 @@ fn start(geo: &Geometry, n: usize) -> foehncraft_fv::disc::Soa3 {
     u
 }
 
-fn run(
-    fl: &mut Flow,
-    geo: &Geometry,
-    n: usize,
-    ids: &[u64],
-    iterations: usize,
-) -> Result<FlowSolve> {
-    fl.initialise(&start(geo, n), &vec![0.0; n])?;
-    let mut history = Vec::with_capacity(iterations);
-    for _ in 0..iterations {
-        let r = fl.iterate()?;
-        history.push(format!(
-            "{} {:?} {:?} {:?} {} {:?}",
-            r.iteration,
-            r.momentum.map(f64::to_bits),
-            r.continuity.to_bits(),
-            r.momentum_iterations,
-            r.pressure_iterations,
-            r.pseudo_step.map(f64::to_bits),
-        ));
+fn run(sv: &mut Solver, geo: &Geometry, n: usize, ids: &[u64], steps: usize) -> Result<FlowSolve> {
+    sv.start(&start(geo, n), &vec![0.0; n])?;
+    let mut history = Vec::with_capacity(steps);
+    let t = std::time::Instant::now();
+    for _ in 0..steps {
+        history.push(sv.advance()?.0);
     }
-    let s = fl.state()?;
-    let own = |v: &[f64]| v[..n].to_vec();
-    Ok(FlowSolve {
-        cell_id: ids[..n].to_vec(),
-        u: [own(&s.u.x), own(&s.u.y), own(&s.u.z)],
-        p: own(&s.p),
-        grad_p: [own(&s.grad_p.x), own(&s.grad_p.y), own(&s.grad_p.z)],
-        psi: [own(&s.psi.x), own(&s.psi.y), own(&s.psi.z)],
-        history,
-    })
+    let seconds = t.elapsed().as_secs_f64();
+    let mut s = sv.fields(n, ids, history)?;
+    s.seconds = seconds;
+    Ok(s)
 }
 
-/// The solve on the undecomposed mesh (the one-rank reference).
+/// The solve on the undecomposed mesh (the one-rank reference): `steps`
+/// outer iterations, or time steps of a transient case.
 pub fn solve_one(
     case: &FlowCase,
     mesh: &Mesh,
-    iterations: usize,
+    steps: usize,
     threads: Option<usize>,
 ) -> Result<FlowSolve> {
     let geo = Geometry::compute(mesh);
@@ -165,36 +247,37 @@ pub fn solve_one(
         threads,
         ..Target::default()
     };
-    let mut fl = flow(case, mesh, &geo, &target)?;
-    run(&mut fl, &geo, mesh.n_cells, &mesh.cell_id, iterations)
+    let mut sv = Solver::new(case, mesh, &geo, &target, global_wall_distance(case, mesh)?)?;
+    run(&mut sv, &geo, mesh.n_cells, &mesh.cell_id, steps)
 }
 
 /// The solve of `comm`'s rank on its part of `global` (`part`: the rank of
-/// every global cell, `layers` halo layers).
+/// every global cell, one halo layer).
 pub fn solve_part(
     case: &FlowCase,
     global: &Mesh,
     part: &[u32],
     comm: SharedComm,
-    iterations: usize,
+    steps: usize,
     threads: Option<usize>,
 ) -> Result<FlowSolve> {
     let local = extract(global, part, comm.rank(), 1).map_err(anyhow::Error::msg)?;
     local.mesh.validate().map_err(anyhow::Error::msg)?;
     let geo = local.geometry(&*comm);
+    let n = local.mesh.n_cells;
+    let d = global_wall_distance(case, global)?.map(|d| {
+        local.cell_position[..n]
+            .iter()
+            .map(|&g| d[g as usize])
+            .collect()
+    });
     let target = Target {
         threads,
         ranks: Some(Ranks::new(comm, &local, part)),
         ..Target::default()
     };
-    let mut fl = flow(case, &local.mesh, &geo, &target)?;
-    run(
-        &mut fl,
-        &geo,
-        local.mesh.n_cells,
-        &local.mesh.cell_id,
-        iterations,
-    )
+    let mut sv = Solver::new(case, &local.mesh, &geo, &target, d)?;
+    run(&mut sv, &geo, n, &local.mesh.cell_id, steps)
 }
 
 /// `mine` (a rank's part) against `reference` (one rank), cell by cell.
@@ -210,7 +293,12 @@ pub fn check(rank: usize, mine: &FlowSolve, reference: &FlowSolve) -> RankCheck 
     for (i, g) in mine.cell_id.iter().enumerate() {
         let r = at[g];
         let f = (0..3).any(|k| !same(mine.u[k][i], reference.u[k][r]))
-            || !same(mine.p[i], reference.p[r]);
+            || !same(mine.p[i], reference.p[r])
+            || mine
+                .extra
+                .iter()
+                .zip(&reference.extra)
+                .any(|((na, a), (nb, b))| na != nb || !same(a[i], b[r]));
         let d = (0..3).any(|k| {
             !same(mine.grad_p[k][i], reference.grad_p[k][r])
                 || !same(mine.psi[k][i], reference.psi[k][r])
@@ -223,16 +311,20 @@ pub fn check(rank: usize, mine: &FlowSolve, reference: &FlowSolve) -> RankCheck 
         cells: mine.cell_id.len(),
         differing_fields: fields,
         differing_gradients: grads,
-        same_history: mine.history == reference.history,
+        same_history: mine.history == reference.history
+            && mine.extra.len() == reference.extra.len(),
     }
 }
 
-/// The cases of the checks: steady SIMPLEC, laminar, on polyhedra, mixed
-/// cells and tetrahedra, a velocity inlet, walls, symmetry planes and a
-/// pressure outlet, linear upwind with the Venkatakrishnan limiter and
-/// bounded central, CG with Jacobi and with multigrid for the pressure.
+/// The cases of the checks, a channel with a velocity inlet, walls,
+/// symmetry planes and a pressure outlet on polyhedra, mixed cells and
+/// tetrahedra: steady SIMPLEC with linear upwind and the Venkatakrishnan
+/// limiter and bounded central, CG with Jacobi and with multigrid for the
+/// pressure; transient PISO with BDF2; a passive scalar; the energy
+/// equation (transient); the k-ω SST and the k-ε model with scalable wall
+/// functions; the coupled solver.
 pub fn check_cases() -> Result<Vec<CheckCase>> {
-    let case = |mesh: &str, solver: &str| -> Result<FlowCase> {
+    let with = |mesh: &str, solver: &str, fluid: &str, extra: &str| -> Result<FlowCase> {
         let text = format!(
             r#"
             case_format = "0.6"
@@ -241,6 +333,7 @@ pub fn check_cases() -> Result<Vec<CheckCase>> {
             [fluid]
             density = 1.0
             viscosity = 0.02
+            {fluid}
             [boundary.xmin]
             type = "velocity-inlet"
             velocity = [1.0, 0.1, 0.0]
@@ -259,10 +352,22 @@ pub fn check_cases() -> Result<Vec<CheckCase>> {
             [solver]
             max_iterations = 100
             {solver}
+            {extra}
             "#
         );
         FlowCase::from_toml(&text, std::path::Path::new("."))
     };
+    let case = |mesh: &str, solver: &str| with(mesh, solver, "", "");
+    let poly = r#"type = "poly"
+                dimension = 3
+                upper = [2.0, 1.0, 0.5]
+                cells = [8, 5, 3]
+                perturb = 0.15"#;
+    let mixed = r#"type = "mixed"
+                dimension = 3
+                upper = [2.0, 1.0, 0.5]
+                cells = [8, 6, 3]
+                perturb = 0.15"#;
     Ok(vec![
         CheckCase {
             name: "channel, polyhedra, linear upwind, CG + multigrid",
@@ -305,6 +410,97 @@ pub fn check_cases() -> Result<Vec<CheckCase>> {
             )?,
             iterations: 10,
         },
+        CheckCase {
+            name: "channel, polyhedra, transient, BDF2",
+            case: with(
+                poly,
+                r#"[solver.momentum]
+                limiter = "venkatakrishnan""#,
+                "",
+                r#"[time]
+                scheme = "bdf2"
+                time_step = 0.05
+                steps = 6"#,
+            )?,
+            iterations: 6,
+        },
+        CheckCase {
+            name: "channel, polyhedra, passive scalar",
+            case: with(
+                poly,
+                r#"[solver.momentum]
+                limiter = "venkatakrishnan""#,
+                "",
+                r#"[scalars.c]
+                diffusivity = 0.01
+                initial = "0.5 + 0.4 * sin(3 * x) * y"
+                [boundary.xmin.scalar.c]
+                value = 1.0
+                [boundary.ymin.scalar.c]
+                value = 0.0"#,
+            )?,
+            iterations: 8,
+        },
+        CheckCase {
+            name: "channel, mixed cells, energy, transient",
+            case: with(
+                mixed,
+                "",
+                r#"specific_heat = 1000.0
+                conductivity = 20.0"#,
+                r#"[energy]
+                initial = 300.0
+                [boundary.xmin.energy]
+                temperature = 300.0
+                [boundary.ymin.energy]
+                temperature = 320.0
+                [time]
+                scheme = "bdf2"
+                time_step = 0.05
+                steps = 5"#,
+            )?,
+            iterations: 5,
+        },
+        CheckCase {
+            name: "channel, polyhedra, SST",
+            case: with(
+                poly,
+                r#"[solver.momentum]
+                limiter = "venkatakrishnan""#,
+                "",
+                r#"[turbulence]
+                model = "k-omega-sst"
+                [initial]
+                turbulence_intensity = 0.05
+                viscosity_ratio = 10.0"#,
+            )?,
+            iterations: 8,
+        },
+        CheckCase {
+            name: "channel, mixed cells, k-epsilon, scalable wall functions",
+            case: with(
+                mixed,
+                "",
+                "",
+                r#"[turbulence]
+                model = "k-epsilon"
+                wall_treatment = "scalable"
+                [initial]
+                turbulence_intensity = 0.05
+                viscosity_ratio = 10.0"#,
+            )?,
+            iterations: 8,
+        },
+        CheckCase {
+            name: "channel, polyhedra, coupled solver",
+            case: case(
+                poly,
+                r#"algorithm = "coupled"
+                [solver.momentum]
+                limiter = "venkatakrishnan""#,
+            )?,
+            iterations: 6,
+        },
     ])
 }
 
@@ -329,20 +525,31 @@ impl RanksRun {
     }
 }
 
-/// Fails unless `[run] ranks` can solve `case`: steady SIMPLEC, laminar,
-/// without scalars, energy, turning zones, a schedule, levels or a restart
-/// (MPI step W5 so far).
+/// Fails unless `[run] ranks` can solve `case`: steady or transient
+/// SIMPLEC, PISO or the coupled solver, laminar or with the k-ω SST or a
+/// k-ε model, with passive scalars and the energy equation of one fluid;
+/// without gravity, turning zones, a schedule, levels, a restart, regions
+/// or the model options that are not on ranks yet (MPI step W5 so far).
 pub fn supported(case: &FlowCase) -> Result<()> {
+    use crate::turbulence::{QcrMode, TurbulenceModel as Model};
     let n = &case.run.ranks;
     anyhow::ensure!(
         n.iter().all(|&r| (1..=256).contains(&r)),
         "[run] ranks must lie in 1..=256"
     );
+    let t = &case.turbulence;
     let missing: Vec<&str> = [
-        (case.time.is_some(), "a transient run ([time])"),
-        (!case.turbulence.is_laminar(), "a turbulence model"),
-        (!case.scalars.is_empty(), "passive scalars"),
-        (case.energy.is_some(), "the energy equation"),
+        (
+            !matches!(
+                t.model,
+                Model::Laminar | Model::KOmegaSst | Model::KEpsilon | Model::RealizableKEpsilon
+            ),
+            "a turbulence model other than k-ω SST and k-ε",
+        ),
+        (
+            t.curvature_correction || t.qcr != QcrMode::None,
+            "the curvature correction or the QCR",
+        ),
         (case.gravity.is_some(), "gravity"),
         (
             !case.mrf.is_empty() || !case.sliding.is_empty(),
@@ -355,17 +562,13 @@ pub fn supported(case: &FlowCase) -> Result<()> {
             !case.regions.is_empty(),
             "regions (conjugate heat transfer)",
         ),
-        (
-            case.solver.algorithm(false) != crate::simplec::Algorithm::Simplec,
-            "the coupled solver",
-        ),
     ]
     .into_iter()
     .filter_map(|(on, what)| on.then_some(what))
     .collect();
     anyhow::ensure!(
         missing.is_empty(),
-        "[run] ranks solves steady laminar SIMPLEC flows so far (MPI step W5); this case has {}",
+        "[run] ranks does not solve this case yet (MPI step W5): it has {}",
         missing.join(", ")
     );
     Ok(())
@@ -409,38 +612,43 @@ fn solve_case(
     geo: &Geometry,
     target: &Target,
     (u, p): (foehncraft_fv::disc::Soa3, Vec<f64>),
+    wall_distance: Option<Vec<f64>>,
 ) -> Result<FlowSolve> {
-    let mut fl = flow(case, mesh, geo, target)?;
+    let mut sv = Solver::new(case, mesh, geo, target, wall_distance)?;
     let n = mesh.n_cells;
-    fl.initialise(&u, &p)?;
+    sv.start(&u, &p)?;
     if case.initial.potential_flow {
-        fl.potential_flow(mesh, geo)?;
-    }
-    let mut history = Vec::new();
-    for _ in 0..case.solver.max_iterations {
-        let r = fl.iterate()?;
-        history.push(format!(
-            "{} {:?} {:?} {:?} {}",
-            r.iteration,
-            r.momentum.map(f64::to_bits),
-            r.continuity.to_bits(),
-            r.momentum_iterations,
-            r.pressure_iterations,
-        ));
-        if r.max() < case.solver.tolerance {
-            break;
+        sv.fl.potential_flow(mesh, geo)?;
+        if let Some(tr) = sv.tr.as_mut() {
+            tr.start(&mut sv.fl)?;
         }
     }
-    let s = fl.state()?;
-    let own = |v: &[f64]| v[..n].to_vec();
-    Ok(FlowSolve {
-        cell_id: mesh.cell_id[..n].to_vec(),
-        u: [own(&s.u.x), own(&s.u.y), own(&s.u.z)],
-        p: own(&s.p),
-        grad_p: [own(&s.grad_p.x), own(&s.grad_p.y), own(&s.grad_p.z)],
-        psi: [own(&s.psi.x), own(&s.psi.y), own(&s.psi.z)],
-        history,
-    })
+    let mut history = Vec::new();
+    match case.time {
+        // a fixed number of time steps (D93 compares fixed steps; the
+        // adaptive step is the same on every rank, its Courant number a
+        // global maximum)
+        Some(t) => {
+            let steps = t.steps.unwrap_or_else(|| {
+                t.end_time.map_or(1, |e| {
+                    ((e - t.start_time) / t.time_step).round().max(1.0) as usize
+                })
+            });
+            for _ in 0..steps {
+                history.push(sv.advance()?.0);
+            }
+        }
+        None => {
+            for _ in 0..case.solver.max_iterations {
+                let (line, r) = sv.advance()?;
+                history.push(line);
+                if r < case.solver.tolerance {
+                    break;
+                }
+            }
+        }
+    }
+    sv.fields(n, &mesh.cell_id, history)
 }
 
 /// `[run] ranks` of a case: the flow on one rank, then on every listed
@@ -462,6 +670,7 @@ pub fn verify(
         .threads
         .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |c| c.get()));
     let start = start_fields(case, mesh, geo)?;
+    let distance = global_wall_distance(case, mesh)?;
     let one = solve_case(
         case,
         mesh,
@@ -471,6 +680,7 @@ pub fn verify(
             ..Target::default()
         },
         start.clone(),
+        distance.clone(),
     )?;
     let mut runs = Vec::new();
     let largest = case.run.ranks.iter().copied().max().unwrap_or(1);
@@ -495,7 +705,8 @@ pub fn verify(
                 y: pick(&start.0.y),
                 z: pick(&start.0.z),
             };
-            solve_case(case, &local.mesh, &lg, &target, (u, pick(&start.1)))
+            let d = distance.as_ref().map(|d| pick(d));
+            solve_case(case, &local.mesh, &lg, &target, (u, pick(&start.1)), d)
         });
         let mut run = RanksRun {
             ranks: n,
@@ -520,6 +731,43 @@ pub fn verify(
     Ok(runs)
 }
 
+/// `[run] ranks` of a case after its run: [`verify`] on its mesh, one
+/// line per rank count to `line`; returns the failures.
+pub(crate) fn report(
+    case: &FlowCase,
+    out: &std::path::Path,
+    line: &mut dyn FnMut(&str),
+) -> Result<Vec<String>> {
+    let (mesh, geo, _) = crate::case::mesh_for(case, None)?;
+    let what = if case.time.is_some() {
+        "time steps"
+    } else {
+        "outer iterations"
+    };
+    let mut failures = Vec::new();
+    for r in verify(case, &mesh, &geo, out)? {
+        let l = format!(
+            "solve on {} ranks: {} {what}, {}",
+            r.ranks,
+            r.iterations,
+            if r.bitwise() {
+                "bitwise equal to one rank".to_string()
+            } else {
+                format!(
+                    "{} cells and {} the history differ from one rank",
+                    r.differing_cells,
+                    if r.same_history { "not" } else { "also" }
+                )
+            }
+        );
+        line(&l);
+        if !r.bitwise() {
+            failures.push(l);
+        }
+    }
+    Ok(failures)
+}
+
 /// `ranks.vtkhdf`: the solution of the ranks on the global mesh and the
 /// rank of every cell.
 #[cfg(feature = "hdf5")]
@@ -537,6 +785,16 @@ fn write_ranks(
         .collect();
     let n = mesh.n_cells;
     let (mut u, mut p) = ([vec![0.0; n], vec![0.0; n], vec![0.0; n]], vec![0.0; n]);
+    // the scalars, the temperature and the turbulence variables
+    let mut extra: Vec<(String, Vec<f64>)> = parts
+        .first()
+        .map(|s| {
+            s.extra
+                .iter()
+                .map(|(name, _)| (name.clone(), vec![0.0; n]))
+                .collect()
+        })
+        .unwrap_or_default();
     for s in parts {
         for (i, g) in s.cell_id.iter().enumerate() {
             let c = at[g];
@@ -544,6 +802,9 @@ fn write_ranks(
                 uk[c] = sk[i];
             }
             p[c] = s.p[i];
+            for ((_, e), (_, se)) in extra.iter_mut().zip(&s.extra) {
+                e[c] = se[i];
+            }
         }
     }
     let speed: Vec<f64> = (0..n)
@@ -576,6 +837,12 @@ fn write_ranks(
             values: &rank,
         },
     ];
+    let mut fields = Vec::from(fields);
+    fields.extend(
+        extra
+            .iter()
+            .map(|(name, values)| CellField { name, values }),
+    );
     write_all(out.join("ranks.vtkhdf"), mesh, &fields, &[], &[])
 }
 

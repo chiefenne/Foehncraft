@@ -17,6 +17,7 @@ instead.
 - [Iteration counts in tests](#counts)
 - [Counts a file declares](#declared-counts)
 - [Memory of a mesh reader](#reader-memory)
+- [Node order of VTK's wedge](#vtk-wedge)
 - [Reference numbers of other solvers](#other-solver-numbers)
 - [Coupling loops: the solid must see the flow's response](#coupling-loops)
 - [Limiters on tetrahedra and polyhedra](#limiters)
@@ -255,6 +256,21 @@ smallest node (`builder::match_faces`) instead of sorting copies. The
 peak is then about twice the finished mesh (1 GB per million
 polyhedra). Measure the peak resident memory, not only the time
 (`/usr/bin/time -v` or `-l` on macOS).
+
+<a id="vtk-wedge"></a>
+## Node order of VTK's wedge
+
+Older VTK documentation and face tables of `vtkWedge` had the base
+`(0, 1, 2)` pointing away from `(3, 4, 5)`, the opposite of the
+hexahedron. VTK 9.7 lists `(0, 2, 1)` as the outward base, so `(0, 1, 2)`
+points towards `(3, 4, 5)`, as for the hexahedron, the tetrahedron and the
+pyramid; its parametric coordinates, its Jacobian and the volumes of
+`vtkCellSizeFilter` and `vtkMeshQuality` all agree. FoehnCraft's VTKHDF
+writer has always written that order; a "fix" proposed from the old
+documentation would have turned every prism inside out in ParaView. Check
+a node order with a volume computed by VTK itself
+(`tools/check/vtkhdf.py`) or against VTK's `GetFace` table, as
+`vtkhdf::tests::standard_cells_in_vtk_order` does, not with a comment.
 
 <a id="other-solver-numbers"></a>
 ## Reference numbers of other solvers

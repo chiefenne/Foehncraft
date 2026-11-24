@@ -991,6 +991,11 @@ pub(crate) struct Work {
 
 /// The flow solver state on one partition.
 pub struct Flow {
+    /// The communicator when this solver is one rank of several (MPI step
+    /// W5): what the ranks must decide alike is reduced over it.
+    pub(crate) comm: Option<foehncraft_mesh::decompose::SharedComm>,
+    /// Number of cells of all ranks (the own cells on one rank).
+    pub(crate) global_cells: usize,
     /// Host copy of the discretisation (geometry for the output).
     pub disc: Discretisation,
     /// Boundary arrays.
@@ -1285,10 +1290,12 @@ impl Flow {
             for (f, &v) in skew.iter().enumerate() {
                 if v > lim {
                     skewed_faces += 1;
-                    poor[disc.owner[f] as usize] = true;
-                    let n = disc.neighbour[f] as usize;
-                    if n < disc.n_cells {
-                        poor[n] = true;
+                    // (on ranks the owner of a processor face may be a
+                    // halo cell)
+                    for c in [disc.owner[f] as usize, disc.neighbour[f] as usize] {
+                        if c < disc.n_cells {
+                            poor[c] = true;
+                        }
                     }
                 }
             }
@@ -1542,7 +1549,18 @@ impl Flow {
         } else {
             None
         };
+        let comm = target.ranks.as_ref().map(|r| r.comm.clone());
+        let global_cells = match &comm {
+            Some(c) => {
+                let mut n = [disc.n_cells as i64];
+                c.all_sum_i64(&mut n);
+                n[0] as usize
+            }
+            None => disc.n_cells,
+        };
         Ok(Self {
+            comm,
+            global_cells,
             disc,
             bc,
             phys,

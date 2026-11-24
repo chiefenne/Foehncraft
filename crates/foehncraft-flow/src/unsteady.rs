@@ -365,6 +365,9 @@ pub fn run(
         start_values: Vec::new(),
     };
     std::fs::write(out.join("case.resolved.toml"), case.resolved_toml()?)?;
+    if !case.run.ranks.is_empty() {
+        crate::ranks::supported(case)?;
+    }
     let mut outs: Vec<RunOut> = Vec::new();
     let last = specs.len() - 1;
     for (ri, spec) in specs.iter().enumerate() {
@@ -721,6 +724,11 @@ pub fn run(
         0
     };
     crate::scalar::check_sweep(&mut rep, v, levels, &mut |l| lg.line(l));
+    if !case.run.ranks.is_empty() {
+        lg.line("");
+        let failures = crate::ranks::report(case, out, &mut |l| lg.line(l))?;
+        rep.failures.extend(failures);
+    }
     rep.seconds = t0.elapsed().as_secs_f64();
     crate::case::end_frames(&mut lg, &rep);
     lg.sync(&mut steer.record);
