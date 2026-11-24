@@ -82,8 +82,8 @@
 <text x="220" y="476.0" text-anchor="end">Runs and results</text>
 <rect x="230.0" y="462" width="244.6" height="20" fill="#2e9d5b"/>
 <text x="352.3" y="476.0" text-anchor="middle" fill="white" font-weight="bold">6</text>
-<rect x="474.6" y="462" width="122.3" height="20" fill="#e9a23b"/>
-<text x="535.8" y="476.0" text-anchor="middle" fill="white" font-weight="bold">3</text>
+<rect x="474.6" y="462" width="163.1" height="20" fill="#e9a23b"/>
+<text x="556.2" y="476.0" text-anchor="middle" fill="white" font-weight="bold">4</text>
 <text x="220" y="504.0" text-anchor="end">Backends and interfaces</text>
 <rect x="230.0" y="490" width="244.6" height="20" fill="#2e9d5b"/>
 <text x="352.3" y="504.0" text-anchor="middle" fill="white" font-weight="bold">6</text>

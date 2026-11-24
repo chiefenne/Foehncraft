@@ -334,3 +334,41 @@ vtkhdf = false
         assert!(e.relative < 1e-6, "{scheme}: {e:?}");
     }
 }
+
+/// D119, D161: the thermal account of the ledger is the heat balance of
+/// the energy equation as data (per boundary and source rows), closes to
+/// the same number, and is part of `result.json` next to mass and kinetic
+/// energy.
+#[test]
+fn the_thermal_account_is_the_heat_balance_as_data() {
+    let t = text("couette_viscous_heating.toml").replace("levels = [0, 1, 2]", "levels = [0]");
+    let r = run_case(&parse(&t), "ledger");
+    let s = r.solves.last().unwrap();
+    let e = s.scalars[0].energy.as_ref().unwrap();
+    let bal = &s.balance.as_ref().unwrap().last;
+    let q: Vec<&str> = bal.ledger.iter().map(|a| a.quantity.as_str()).collect();
+    assert_eq!(q, ["mass", "kinetic energy", "thermal energy"]);
+    let th = &bal.ledger[2];
+    // the sign of the closure is storage − contributions
+    assert!((th.imbalance + e.imbalance).abs() < 1e-12, "{th:?} {e:?}");
+    let src = th.terms.iter().find(|t| t.name == "heat sources").unwrap();
+    assert_eq!(src.value, e.source);
+    for w in ["ymin", "ymax"] {
+        let t = th
+            .terms
+            .iter()
+            .find(|t| t.name == "conduction" && t.boundary.as_deref() == Some(w));
+        let b = s.scalars[0]
+            .boundaries
+            .iter()
+            .find(|b| b.boundary == w)
+            .unwrap();
+        assert_eq!(t.unwrap().value, b.heat_flow.unwrap());
+    }
+    // the run record carries it
+    let j = serde_json::to_value(&r.solves).unwrap();
+    assert_eq!(
+        j[0]["balance"]["last"]["ledger"][2]["quantity"],
+        "thermal energy"
+    );
+}
