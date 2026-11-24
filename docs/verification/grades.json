@@ -922,11 +922,10 @@
    "title": "Gravity and the Boussinesq buoyancy (balanced force)",
    "grade": "partial",
    "why": [
-    "a model without reference data",
     "gaps written"
    ],
    "gaps": [
-    "no reference-data case (a measured natural-convection flow)",
+    "no measured natural-convection flow (the plate is checked against boundary-layer theory)",
     "the wall forces leave out the Archimedes part ρ_ref g V"
    ],
    "range": {}

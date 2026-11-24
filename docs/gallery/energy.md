@@ -18,6 +18,7 @@ Part of the [Example gallery](../gallery.md): the energy equation of the fluid (
 | 238 | [The conservation ledger as data: a heated cavity's mass, kinetic and thermal accounts](#ledger) | 7 | `result.json` `balance.last.ledger` and `pairs`, `Rates::book`, thermal account |
 | 186 | [A warm strip in a closed air enclosure, and a stratified box that stays at rest](#buoyancy) | 7 | `[gravity]`, `[buoyancy] model = "boussinesq"`, `expansion_coefficient`, `static_pressure` |
 | 195 | [Air between walls at 960 K and 240 K, a heated duct and two closed boxes](#variable-density) | 7 | `[energy] density = "variable"`, `thermodynamic_pressure`, `pressure_work`, `[buoyancy] model = "variable-density"`, `density` |
+| 272 | [Natural convection benchmarks: a heated square cavity at Ra 10³ to 10⁶, a vertical plate and mixed convection with flow reversal](#natural-convection) | 7 | `[buoyancy] model = "boussinesq"`, `[analytic] type = "buoyant-slot"` `mean_velocity`, periodic `mass_flow` with gravity, `wall_probes` heat flux |
 
 ---
 
@@ -807,6 +808,84 @@ target/release/foehn flow examples/cases/flow/vd_closed_box_side_heated.toml --o
 pip install matplotlib h5py numpy
 python3 -m tools.plot.variable_density docs/figures/gallery output/cavity output/duct \
     output/box output/side
+```
+
+---
+
+<a id="natural-convection"></a>
+## 272. Natural convection benchmarks: a heated square cavity at Ra 10³ to 10⁶, a vertical plate and mixed convection with flow reversal
+
+<img src="../figures/gallery/natural_convection_cavity.png" alt="Four square cavities of air side by side, Rayleigh number 10^3, 10^4, 10^5 and 10^6, the left wall hot and the right wall cold, coloured by temperature with white streamlines: at 10^3 the temperature bands are nearly vertical and one round roll fills the cavity; with rising Ra the hot and cold layers hug the side walls, the core becomes stratified, warm above and cold below, and the roll splits into two inner cores. Right: the mean Nusselt number of the hot wall against the Rayleigh number on logarithmic axes, 1.117, 2.244, 4.521, 8.826, each with its grid convergence index between 0.004 % and 0.124 %, with the de Vahl Davis values as black crosses on the same points" width="800" height="230">
+
+**A differentially heated square cavity (V7.15).**
+`natural_convection_cavity_ra1e5.toml` is air (Pr 0.71) in a closed
+square cavity, the left wall 1 K warmer and the right wall 1 K colder
+than the mean, top and bottom adiabatic, with the Boussinesq force about
+the mean temperature. The file is set up dimensionless so that the
+gravity alone sets the Rayleigh number (Ra = g/7.1·10⁻⁴); the same file
+runs Ra 10³ to 10⁶. Three nested meshes clustered to the walls (32², 64²,
+128²) give the mean Nusselt number of the hot wall extrapolated to zero
+cell size with its grid convergence index (our own estimate, D67): 1.1172
+(GCI 0.004 %), 2.2444 (0.006 %), 4.5213 (0.019 %, order 2.13) and 8.8255
+(0.124 %, order 2.12). The heat that enters through the hot wall leaves
+through the cold one to round-off on every mesh. For context only, not
+as a pass band (they are results of other codes, D201): de Vahl Davis
+(1983) gives 1.118, 2.243, 4.519 and 8.800, and Le Quéré (1991) 8.825
+at Ra 10⁶; our values lie within 0.07 %, 0.06 %, 0.05 % and 0.006 % of
+the most accurate of them. With rising Ra the flow changes from one slow
+round roll and nearly vertical isotherms (conduction) to thin layers
+along the side walls and a stratified core in which the roll splits
+into two inner cores. The coupled algorithm needs 1300 to 2700
+iterations on 128² cells; the weakest flow (Ra 10³) takes the most.
+
+<img src="../figures/gallery/natural_convection_plate.png" alt="Left: the temperature and the speed next to a vertical plate 1 m high, 5 times stretched across: a thin warm layer grows from the leading edge at height 0 and the upward velocity reaches 50 cm/s near the top. Middle: the local Nusselt number along the plate rising like x to the power 3/4, the computed curve on top of the dashed similarity solution, with the extrapolated values at 0.25, 0.5 and 0.75 m 0.37 %, 0.31 % and 0.26 % below it. Right: the velocity and temperature across the layer at mid height in similarity form, the cell values on the curves of the similarity solution" width="800" height="288">
+
+**Free convection along an isothermal vertical plate (V7.12).**
+`natural_convection_plate.toml` holds a plate 1 K above the ambient,
+Pr 0.71, Grashof number 10⁸ over its height. The ambient at rest enters
+through the bottom and the far side (total pressure 0, which with gravity
+is the ambient's own hydrostatic pressure, D153) and leaves through the
+top. The reference is the similarity solution of Ostrach (1953),
+Nu_x = 0.50209 (Gr_x/4)^¼, which `tools/verification/ostrach.py` solves
+by shooting (it gives Ostrach's tabulated 0.5046 at Pr 0.72). Three
+meshes graded to the wall and to the leading edge give the local heat
+flux at 0.25, 0.5 and 0.75 m with GCI 0.03 %, 0.02 % and 0.01 %; the
+extrapolated Nu_x is 0.37 %, 0.31 % and 0.26 % below the similarity
+solution, inside the band of 1 %. That small gap is the boundary-layer
+approximation of the theory, not a mesh error: it shrinks with
+Gr_x^(−¼) along the plate. Across the layer the velocity and the
+temperature fall on the similarity profiles F′(η) and H(η).
+
+<img src="../figures/gallery/mixed_convection_channel.png" alt="Left: the vertical velocity in a periodic piece of a vertical channel on a perturbed mesh, rising fast next to the hot wall on the left and falling next to the cold wall on the right. Middle and right: the vertical velocity across the channel, every cell on the exact curve, with the net flow up (the flow reverses next to the cold wall) and down (the flow reverses next to the hot wall), observed orders 2.14 and 2.08" width="800" height="256">
+
+**Fully developed mixed convection with flow reversal (V7.9).**
+`mixed_convection_channel.toml` is the buoyant slot of [gallery
+186](#buoyancy) with a net flow: a periodic pair holds the mass flow, a
+hot wall and a cold wall face each other, gravity points along the
+channel. The Boussinesq momentum equation is then linear, and the exact
+profile (Aung & Worku 1986) is the Poiseuille parabola plus the cubic of
+the slot, which the `buoyant-slot` solution now takes with a
+`mean_velocity`. At Gr/Re = 200, well above the reversal limit 72, the
+fluid rises fast at the hot wall and falls along the cold one while the
+net flow goes up; with the mass flow reversed it is the other way round.
+On meshes perturbed by 15 % the velocity error falls at second order
+both ways (2.14 and 2.08).
+
+```
+cargo build --release -p foehncraft-cli
+C=examples/cases/flow/natural_convection_cavity_ra1e5.toml
+target/release/foehn flow $C --out output/cav1e3 --set 'gravity.vector=[0,-0.71,0]'
+target/release/foehn flow $C --out output/cav1e4 --set 'gravity.vector=[0,-7.1,0]'
+target/release/foehn flow $C --out output/cav1e5
+target/release/foehn flow $C --out output/cav1e6 --set 'gravity.vector=[0,-710,0]'
+target/release/foehn flow examples/cases/flow/natural_convection_plate.toml --out output/plate
+M=examples/cases/flow/mixed_convection_channel.toml
+target/release/foehn flow $M --out output/up
+target/release/foehn flow $M --out output/down \
+    --set 'boundary.ymin.mass_flow=-2.5e-4' --set 'analytic.mean_velocity=-5e-3'
+pip install matplotlib h5py numpy scipy
+python3 -m tools.plot.natural_convection docs/figures/gallery output/cav1e3 output/cav1e4 \
+    output/cav1e5 output/cav1e6 output/plate output/up output/down
 ```
 
 ---
