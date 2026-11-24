@@ -145,6 +145,20 @@ rounding the construction.
 | Risk | low; the predicate is deterministic by construction, so it is *more* reproducible than rounding-dependent signs |
 | Reproducibility, MPI | kept and improved: both ranks that share a processor face decide the same way |
 
+**Correction (2026-11-24, while building step 2).** The paragraph above
+overstates the tracker's risk. In `locate.rs` the two sides of every shared
+triangle (a mesh face between two cells, and a face between two
+tetrahedra of one cell) evaluate the same signed volume with two vertices
+swapped and the first vertex the same, which in IEEE arithmetic gives the
+exact negation. The two sides therefore never disagree, and the walk cannot
+slip through a gap by rounding; exact predicates would only change *which*
+side a point exactly on a face is put on, not make the walk safer. The
+predicates were built (#236) for L13 and the ray casting of section 3.3,
+not for the tracker. The real robustness problem the step-1 benchmark found
+is the face centroid of twisted, ribbon-thin faces, which can put the cell
+apex outside the cell ([benchmark page](../benchmarks/point-location.md));
+that is fixed separately.
+
 ### 3.3 Ray casting on the BVH, and what to build it from
 
 Needed by: surface-to-surface radiation and view factors, spray impact on
@@ -175,6 +189,15 @@ impact points, headless renders (L21), and the inside/outside ray tests.
 | Expected gain | enabling, not a speed-up |
 | Cost | two PRs (closest hit and any hit, then the batched GPU form), not sized beyond that |
 | Risk | the watertight test of Woop, Benthin and Wald (2013) is widely used but patents with the title "Watertight ray triangle intersection" exist (section 8); our own predicate-based test avoids it |
+
+**Done (#248, 2026-11-24):** closest hit and any hit on the wall hierarchy
+with the predicate-based test (choice 1) and the conservative slab test
+(choice 2); the filtered predicate is the fast path, its exact stage the
+fallback, so no separate Möller–Trumbore path was needed. No leaks where
+Möller–Trumbore loses 9 to 13 % of rays aimed at edges and corners, at 1.3
+to 2 times its cost per test
+([benchmark](../benchmarks/ray-casting.md)). The batched GPU form waits for
+its first user.
 
 ### 3.4 Faster hierarchies: wide nodes, SIMD, GPU build
 

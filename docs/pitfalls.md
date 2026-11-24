@@ -16,6 +16,7 @@ instead.
 - [Timing small meshes](#timing)
 - [Iteration counts in tests](#counts)
 - [Counts a file declares](#declared-counts)
+- [Memory of a mesh reader](#reader-memory)
 - [Reference numbers of other solvers](#other-solver-numbers)
 - [Coupling loops: the solid must see the flow's response](#coupling-loops)
 - [Limiters on tetrahedra and polyhedra](#limiters)
@@ -237,6 +238,24 @@ item takes one byte at least), map sparse tags with a hash map instead of
 a table up to the largest tag, and compute `last - first + 1` with checked
 arithmetic (tests run in debug, where an overflow panics).
 
+<a id="reader-memory"></a>
+## Memory of a mesh reader
+
+A reader that loads the file whole and parses it into general containers
+needs many times the size of the mesh. The VTK reader before PR #245 read
+a 1.2 GB ASCII `.vtu` of 1 M polyhedra with a peak of 5.6 GB: the file, a
+copy without the appended data, the text of every element again, every
+number as `f64`, one `Vec` per polyhedron face in a hash map, a clone of
+those for the builder, then a sorted copy of every face to match them. A
+10 M-cell mesh would have needed some 56 GB. Read through a buffer, put the
+numbers straight into the arrays the mesh keeps (`u32` node ids, flat face
+streams, see `format::Polyhedra`), move arrays instead of cloning them,
+drop each input as soon as it is used, and match faces in groups of their
+smallest node (`builder::match_faces`) instead of sorting copies. The
+peak is then about twice the finished mesh (1 GB per million
+polyhedra). Measure the peak resident memory, not only the time
+(`/usr/bin/time -v` or `-l` on macOS).
+
 <a id="other-solver-numbers"></a>
 ## Reference numbers of other solvers
 
@@ -279,6 +298,19 @@ rank's part again; code that needs the own cell of a processor face takes
 the one of owner and neighbour below `n_cells`.
 Do not compare partitions by tolerance when a bitwise comparison is
 possible: a tolerance hides the cause (D93).
+
+**A decision taken on the local mesh** (W5, #234). The flow solver picks a
+pressure reference cell when no boundary fixes the pressure; on ranks a
+part without the outlet decided "no pressure boundary" on its own and
+pinned a cell, and every field of every rank differed from one rank. The
+same holds for the mesh skewness that switches gradient corrections, and
+for any choice made from what a rank sees. **Do instead:** reduce such a
+decision over all ranks (`any`, `comm.max`) before it is used, and agree
+on anything that steers a collective (for example the kind of a device
+buffer, which decides whether it is exchanged) with `comm.min`, so that
+no rank skips an exchange the others wait for. Start fields from a global
+construction (potential flow, smooth fields) are computed on the global
+mesh and each rank keeps its cells (`local.cell_position`).
 
 **Sums over ranks in rank order.** A pairwise or block sum per rank,
 combined in rank order, changes in the last bits with the rank count (0 to

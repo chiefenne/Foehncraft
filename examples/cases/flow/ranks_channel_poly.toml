@@ -1,0 +1,66 @@
+# A channel whose upper wall runs against the inflow, solved on 2, 3 and 5
+# ranks: steady SIMPLEC on the ranks of a decomposed polygonal mesh gives
+# bitwise the solution of one rank (MPI step W5, D93).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/ranks_channel_poly.toml
+#
+# Uniform inflow from the left (1 m/s), a pressure outlet on the right, the
+# lower wall at rest and the upper wall moving at 1 m/s to the left: the
+# upper wall drags a recirculation into the channel. Re = 100 on the
+# channel height. The flow starts from potential flow (D52); after the run
+# it is solved again on 2, 3 and 5 ranks, every rank a thread of this
+# process with its own halo exchange, and the run fails unless every
+# rank's velocity, pressure, pressure gradient, limiter and residual
+# history are bitwise those of one rank. `ranks.vtkhdf` holds the
+# five-rank solution and the cell field `rank`.
+
+case_format = "0.7"
+
+[mesh.generate]
+type = "poly"
+dimension = 2
+upper = [3.0, 1.0, 0.1]
+cells = [90, 30, 1]
+perturb = 0.1
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 0.01
+
+[initial]
+potential_flow = true
+
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [1.0, 0.0, 0.0]
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 101325.0
+[boundary.ymin]
+type = "wall"
+[boundary.ymax]
+type = "wall"
+velocity = [-1.0, 0.0, 0.0]
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-6
+max_iterations = 2000
+
+[solver.momentum]
+relaxation = 0.9
+limiter = "venkatakrishnan"
+
+[run]
+ranks = [2, 3, 5]
+
+[[output.lines]]
+name = "middle"
+from = [1.5, 0.0, 0.05]
+to = [1.5, 1.0, 0.05]

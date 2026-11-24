@@ -31,6 +31,7 @@ fn cavity(threads: Option<usize>) -> Flow {
             device: "cpu".into(),
             threads,
             ptx: Default::default(),
+            ranks: None,
         },
     )
     .unwrap();
@@ -229,6 +230,7 @@ fn checkpointed_reverse_sweep_meets_the_forward_levels_bitwise() {
                 device: "cpu".into(),
                 threads: None,
                 ptx: Default::default(),
+                ranks: None,
             },
         )
         .unwrap();
@@ -303,6 +305,7 @@ fn rejected_step_repeats_bitwise() {
                     device: "cpu".into(),
                     threads: None,
                     ptx: Default::default(),
+                    ranks: None,
                 },
             )
             .unwrap();

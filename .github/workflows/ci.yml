@@ -405,8 +405,11 @@ jobs:
             done
           done
       - run: cargo build --release -p foehncraft-fv --features mpi --example mpi_scalar --locked
-      - name: Scalar solver on ranks bitwise equal to one rank (W3, 1 to 4 ranks)
+      - name: Scalar solver and multigrid on ranks bitwise equal to one rank (W3, W4, 1 to 4 ranks)
         run: for n in 1 2 3 4; do mpirun --oversubscribe -n $n target/release/examples/mpi_scalar; done
+      - run: cargo build --release -p foehncraft-flow --features mpi --example mpi_flow --locked
+      - name: Steady flow on ranks bitwise equal to one rank (W5, 1 to 4 ranks)
+        run: for n in 1 2 3 4; do mpirun --oversubscribe -n $n target/release/examples/mpi_flow; done
 
   ptx:
     name: Single-source GPU kernels compile to PTX (G1, stages 2, 3 and 5)

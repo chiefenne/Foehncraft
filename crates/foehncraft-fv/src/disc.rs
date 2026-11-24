@@ -464,7 +464,12 @@ impl Discretisation {
             slot[f][1] = slot[q][0];
         }
         for [a, b] in slot {
-            debug_assert!(a != u32::MAX && b != u32::MAX);
+            // on ranks a processor face has a slot in the row of its own
+            // cell only (the halo cell has no row): no transposed slot
+            if a == u32::MAX || b == u32::MAX {
+                debug_assert!(self.n_halo > 0);
+                continue;
+            }
             map[a as usize] = b;
             map[b as usize] = a;
         }

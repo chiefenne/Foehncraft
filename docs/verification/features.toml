@@ -110,8 +110,9 @@ switch = 'mesh.format = "vtk"'
 evidence = [
   { kind = "consistency", test = "crates/foehncraft-mesh/tests/vtk.rs::every_encoding_reads_the_same_mesh", what = "every encoding reads the same mesh" },
   { kind = "consistency", test = "crates/foehncraft-mesh/tests/vtk.rs::round_trip_through_write_vtu", what = "round trip through the VTU writer" },
+  { kind = "consistency", test = "crates/foehncraft-mesh/src/format/vtk.rs::small_buffers_read_the_same_mesh", what = "streamed through buffers of odd sizes, every encoding reads the mesh of the whole file" },
 ]
-gaps = ["no flow case of the catalogue reads a VTK file"]
+gaps = ["no flow case of the catalogue reads a VTK file", "the peak memory of a large read (1 GB per million polyhedra) is measured by hand, not checked in CI"]
 
 [[feature]]
 id = "mesh.partition"
@@ -1561,7 +1562,7 @@ evidence = [
   { kind = "contract", property = "bitwise", case = "ranks_oblique_step_2d", what = "the oblique step on 2, 3 and 5 ranks: 67 outer iterations and phi bitwise the one-rank run (the run fails otherwise)" },
 ]
 gaps = [
-  "the flow engine on ranks (W5) follows",
+  "the flow engine on ranks: steady SIMPLEC in W5 part 1 (parallel.flow-ranks), the rest in part 2",
 ]
 
 [[feature]]
@@ -1578,7 +1579,25 @@ evidence = [
 ]
 gaps = [
   "the setup is replicated: every rank builds the whole hierarchy, so setup time and memory do not fall with the rank count (a distributed setup is not planned before the scaling numbers ask for it)",
-  "the flow engine on ranks (W5) follows",
+  "the flow engine on ranks: steady SIMPLEC in W5 part 1 (parallel.flow-ranks), the rest in part 2",
+]
+
+[[feature]]
+id = "parallel.flow-ranks"
+area = "Backends and interfaces"
+title = "Steady SIMPLEC on several ranks, bitwise one rank (MPI step W5 part 1)"
+switch = "[run] ranks of foehn flow"
+decisions = ["D31", "D93"]
+infrastructure = true
+contracts = ["bitwise"]
+evidence = [
+  { kind = "contract", property = "bitwise", test = "crates/foehncraft-flow/tests/ranks.rs::steady_flow_on_ranks_is_bitwise_one_rank", what = "1 to 4 ranks (RCB), 2 threads per rank: a channel with a moving wall on polyhedra (linear upwind, Venkatakrishnan), mixed cells (bounded central) and tetrahedra (Jacobi pressure solve); velocity, pressure, pressure gradient, limiter and residual history bitwise one rank" },
+  { kind = "contract", property = "bitwise", case = "ranks_channel_poly", what = "a channel with the upper wall moving against the inflow, potential-flow start, 103 outer iterations on 2, 3 and 5 ranks, every rank bitwise the one-rank run (the run fails otherwise)" },
+]
+gaps = [
+  "steady SIMPLEC only: turbulence and wall distance, scalars, energy, transient runs, turning zones, grid levels, regions and the coupled solver on ranks are W5 part 2",
+  "on the CPU flow device only (GPU ranks are not in scope of v1.1)",
+  "no scaling numbers yet (1M cells, W9)",
 ]
 
 [[feature]]

@@ -1,7 +1,7 @@
 [package]
 name = "foehncraft-py"
 description = "Python bindings of Foehncraft (the native module of the `foehncraft` package, D61)"
-version = "1.0.0"
+version = "1.0.1"
 edition = "2024"
 rust-version = "1.89"
 license = "MIT"

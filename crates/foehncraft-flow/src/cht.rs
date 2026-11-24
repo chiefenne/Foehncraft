@@ -783,6 +783,7 @@ pub fn attach(fl: &mut crate::simplec::Flow, view: Arc<FluidView>) -> Result<()>
             device: full.run.backend.clone(),
             threads: full.run.threads,
             ptx: full.run.ptx.clone(),
+            ranks: None,
         },
     )?;
     let nc = fe.disc.n_cells;

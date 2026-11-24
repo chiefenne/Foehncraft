@@ -13,6 +13,8 @@
 //! - [`index`]: local (per rank) and global index types.
 //! - [`math`]: elementary functions written in Foehncraft, the same bits on
 //!   every CPU and GPU (D93 (6)), for expressions and properties.
+//! - [`predicates`]: exact signs of the 2D and 3D orientation determinants
+//!   (Shewchuk 1997; D225), for geometry that must never decide wrongly.
 //! - [`repro`]: reductions with a fixed summation order (requirement D31).
 //! - [`rng`]: counter-based random numbers keyed by identity, step and event,
 //!   independent of thread or rank order (requirement D47).
@@ -23,6 +25,7 @@ pub mod dual;
 pub mod exact;
 pub mod index;
 pub mod math;
+pub mod predicates;
 pub mod real;
 pub mod repro;
 pub mod rng;

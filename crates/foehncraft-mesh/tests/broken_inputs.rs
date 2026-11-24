@@ -268,6 +268,7 @@ const FILES: &[(&str, &str)] = &[
     ("vtk/channel_mixed_ascii.vtu", "vtk"),
     ("vtk/channel_mixed_binary.vtu", "vtk"),
     ("vtk/channel_mixed_zlib.vtu", "vtk"),
+    ("vtk/channel_mixed_appended.vtu", "vtk"),
 ];
 
 fn reader(name: &str) -> &'static dyn MeshFormat {

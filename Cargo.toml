@@ -6,7 +6,6 @@ members = [
     "crates/foehncraft-parallel",
     "crates/foehncraft-mesh",
     "crates/foehncraft-fv",
-    "crates/foehncraft-particles",
     "crates/foehncraft-flow",
     "crates/foehncraft-bench",
     "crates/foehncraft-cuda",
@@ -21,7 +20,7 @@ members = [
 exclude = ["gpu/ptx-kernels", "crates/foehncraft-py"]
 
 [workspace.package]
-version = "1.0.0"
+version = "1.0.1"
 edition = "2024"
 rust-version = "1.89"
 license = "MIT"
@@ -29,16 +28,16 @@ repository = "https://github.com/chiefenne/Foehncraft"
 authors = ["Andreas Ennemoser"]
 
 [workspace.dependencies]
-foehncraft-core = { path = "crates/foehncraft-core", version = "1.0.0" }
-foehncraft-kernels = { path = "crates/foehncraft-kernels", version = "1.0.0" }
-foehncraft-parallel = { path = "crates/foehncraft-parallel", version = "1.0.0" }
-foehncraft-mesh = { path = "crates/foehncraft-mesh", version = "1.0.0", default-features = false }
-foehncraft-fv = { path = "crates/foehncraft-fv", version = "1.0.0", default-features = false }
-foehncraft-particles = { path = "crates/foehncraft-particles", version = "1.0.0", default-features = false }
-foehncraft-flow = { path = "crates/foehncraft-flow", version = "1.0.0", default-features = false }
-foehncraft-bench = { path = "crates/foehncraft-bench", version = "1.0.0" }
-foehncraft-cuda = { path = "crates/foehncraft-cuda", version = "1.0.0" }
-foehncraft-tools = { path = "crates/foehncraft-tools", version = "1.0.0", default-features = false }
+foehncraft-core = { path = "crates/foehncraft-core", version = "1.0.1" }
+foehncraft-kernels = { path = "crates/foehncraft-kernels", version = "1.0.1" }
+foehncraft-parallel = { path = "crates/foehncraft-parallel", version = "1.0.1" }
+foehncraft-mesh = { path = "crates/foehncraft-mesh", version = "1.0.1", default-features = false }
+foehncraft-fv = { path = "crates/foehncraft-fv", version = "1.0.1", default-features = false }
+foehncraft-particles = { path = "crates/foehncraft-particles", version = "1.0.1", default-features = false }
+foehncraft-flow = { path = "crates/foehncraft-flow", version = "1.0.1", default-features = false }
+foehncraft-bench = { path = "crates/foehncraft-bench", version = "1.0.1" }
+foehncraft-cuda = { path = "crates/foehncraft-cuda", version = "1.0.1" }
+foehncraft-tools = { path = "crates/foehncraft-tools", version = "1.0.1", default-features = false }
 rayon = "1.12"
 clap = { version = "4.6", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }

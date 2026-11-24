@@ -1211,6 +1211,10 @@ pub struct Target {
     pub threads: Option<usize>,
     /// PTX module of the CUDA device.
     pub ptx: std::path::PathBuf,
+    /// The other ranks, when this solver is one rank of several (MPI step
+    /// W5): the discretisation is then that of the rank's local mesh with
+    /// its halo cells.
+    pub ranks: Option<foehncraft_mesh::decompose::Ranks>,
 }
 
 impl Default for Target {
@@ -1219,6 +1223,7 @@ impl Default for Target {
             device: "cpu".into(),
             threads: None,
             ptx: std::path::PathBuf::new(),
+            ranks: None,
         }
     }
 }
@@ -1268,6 +1273,10 @@ impl Flow {
         // them take the same schemes
         let skew = face_skewness(&disc);
         let max_skewness = skew.iter().copied().fold(0.0, f64::max);
+        let max_skewness = match &target.ranks {
+            Some(r) => r.comm.max(max_skewness),
+            None => max_skewness,
+        };
         let (settings, changes) = settings.remedied(max_skewness);
         let remediation = {
             let lim = settings.skewness_limit;
@@ -1328,6 +1337,7 @@ impl Flow {
                 mu_face: phys.mu_face.as_deref().map(|v| v.as_slice()),
                 eps2: &eps2,
                 threads: target.threads,
+                ranks: target.ranks.clone(),
             },
             &target.ptx,
         )?;
@@ -1402,11 +1412,28 @@ impl Flow {
             gpc: cell3(&mut dev)?,
             zero_boundary: dev.alloc(nb)?,
         };
-        let reference_cell = if bc.has_pressure() {
+        // on ranks a pressure boundary anywhere fixes the level everywhere
+        let any = |local: bool| match &target.ranks {
+            Some(r) => r.comm.max(if local { 1.0 } else { 0.0 }) > 0.0,
+            None => local,
+        };
+        let has_pressure = any(bc.has_pressure());
+        let reference_cell = if has_pressure {
             None
         } else {
             Some(reference_cell.unwrap_or(0))
         };
+        if target.ranks.is_some() {
+            anyhow::ensure!(
+                has_pressure,
+                "on ranks a flow needs a pressure boundary (a reference cell does not run \
+                 on ranks yet, MPI step W5)"
+            );
+            anyhow::ensure!(
+                !any(bc.ub_rule.contains(&k::UB_CONVECTIVE)) && bc.drives.is_empty(),
+                "convective outlets and periodic driving do not run on ranks yet (MPI step W5)"
+            );
+        }
         let no_backflow = bc.flux_kind.contains(&k::FLUX_PRESSURE_NO_BACKFLOW);
         let conv = if bc.ub_rule.contains(&k::UB_CONVECTIVE) {
             let (c, beta) = dev.convective_buffers();
@@ -1840,10 +1867,11 @@ impl Flow {
                     w.zero_boundary,
                     w.gpc,
                 )?;
+                // with the halo: a processor face reads both of its cells
                 let g = [
-                    self.dev.download(w.gpc.x)?,
-                    self.dev.download(w.gpc.y)?,
-                    self.dev.download(w.gpc.z)?,
+                    self.dev.download_with_halo(w.gpc.x)?,
+                    self.dev.download_with_halo(w.gpc.y)?,
+                    self.dev.download_with_halo(w.gpc.z)?,
                 ];
                 let d = &self.disc;
                 let mut ms = m0.clone();
@@ -2986,25 +3014,21 @@ fn fixed_outflow(
 /// exact for a uniform velocity, since Σ_f (x_f − x_P) S_fᵀ = V_P I for a
 /// closed cell (the start of D52).
 fn velocity_of_fluxes(mesh: &Mesh, geo: &Geometry, m: &[f64], phys: &Physics, nc: usize) -> Soa3 {
-    // a periodic face counts for its owner only: its partner closes the
-    // cell across (D29)
-    let ni = mesh.periodic_start();
+    // per cell over its face list, which is in global face order (a
+    // periodic face is listed by its owner only: its partner closes the
+    // cell across, D29), so that the sums are those of one rank on a
+    // rank's part (MPI step W5)
     let mut u = Soa3::zeros(nc);
-    for (fi, &mf) in m.iter().enumerate() {
-        let xf = geo.face_centroid[fi];
-        let sides = [(mesh.owner[fi] as usize, 1.0), (usize::MAX, 0.0)];
-        let sides = if fi < ni {
-            [sides[0], (mesh.neighbour[fi] as usize, -1.0)]
-        } else {
-            sides
-        };
-        for (c, s) in sides {
-            if c < nc {
-                let xp = geo.cell_centroid[c];
-                u.x[c] += s * mf * (xf[0] - xp[0]);
-                u.y[c] += s * mf * (xf[1] - xp[1]);
-                u.z[c] += s * mf * (xf[2] - xp[2]);
-            }
+    for c in 0..nc {
+        let xp = geo.cell_centroid[c];
+        let (lo, hi) = (mesh.cell_ptr[c] as usize, mesh.cell_ptr[c + 1] as usize);
+        for &e in &mesh.cell_faces[lo..hi] {
+            let (fi, is_nb) = foehncraft_kernels::unpack_face(e);
+            let s = if is_nb { -1.0 } else { 1.0 };
+            let (xf, mf) = (geo.face_centroid[fi], m[fi]);
+            u.x[c] += s * mf * (xf[0] - xp[0]);
+            u.y[c] += s * mf * (xf[1] - xp[1]);
+            u.z[c] += s * mf * (xf[2] - xp[2]);
         }
     }
     for c in 0..nc {

@@ -270,6 +270,13 @@ pub struct RunSection {
     pub reread_every: usize,
     /// Limits of the run (D83).
     pub limits: Limits,
+    /// Also solve the flow on these numbers of ranks (MPI step W5): the
+    /// ranks run as threads of this process on the parts of a recursive
+    /// coordinate bisection, and the run fails unless every rank's cells
+    /// are bitwise those of one rank. Steady SIMPLEC, laminar, without
+    /// scalars, energy, turning zones or a schedule, so far.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub ranks: Vec<usize>,
 }
 
 /// `[run.limits]` (D83): when one is reached the run writes a restart file
@@ -390,6 +397,7 @@ impl Default for RunSection {
             restart_final: true,
             reread_every: 0,
             limits: Limits::default(),
+            ranks: Vec::new(),
         }
     }
 }
@@ -2754,6 +2762,9 @@ pub fn run_steered(
         start_values: Vec::new(),
     };
     std::fs::write(out.join("case.resolved.toml"), case.resolved_toml()?)?;
+    if !case.run.ranks.is_empty() {
+        crate::ranks::supported(&case)?;
+    }
     let last = levels.len() - 1;
     let single = levels.len() == 1;
     if !single && case.run.restart.is_some() {
@@ -2892,6 +2903,7 @@ pub fn run_steered(
                 device: case.run.backend.clone(),
                 threads: case.run.threads,
                 ptx: case.run.ptx.clone(),
+                ranks: None,
             },
         )?;
         let remediation = report_remediation(&fl, &mut lg, &mut rep.warnings);
@@ -3715,6 +3727,30 @@ pub fn run_steered(
             true,
         ),
     )?;
+    if !case.run.ranks.is_empty() {
+        let (mesh, geo, _) = mesh_for(&case, None)?;
+        lg.line("");
+        for r in crate::ranks::verify(&case, &mesh, &geo, out)? {
+            let line = format!(
+                "solve on {} ranks: {} outer iterations, {}",
+                r.ranks,
+                r.iterations,
+                if r.bitwise() {
+                    "bitwise equal to one rank".to_string()
+                } else {
+                    format!(
+                        "{} cells and {} the history differ from one rank",
+                        r.differing_cells,
+                        if r.same_history { "not" } else { "also" }
+                    )
+                }
+            );
+            lg.line(&line);
+            if !r.bitwise() {
+                rep.failures.push(line);
+            }
+        }
+    }
     rep.seconds = t0.elapsed().as_secs_f64();
     end_frames(&mut lg, &rep);
     lg.sync(&mut steer.record);

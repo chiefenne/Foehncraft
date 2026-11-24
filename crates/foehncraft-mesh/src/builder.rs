@@ -92,78 +92,85 @@ impl MeshBuilder {
     /// As [`Self::finish`], also returning the insertion index of each face
     /// of the mesh.
     pub fn finish_with_order(self) -> Result<(Mesh, Vec<u32>), String> {
-        let nf = self.a.len();
+        let MeshBuilder {
+            points,
+            n_cells,
+            ptr,
+            nodes,
+            a,
+            b,
+            boundary,
+            boundary_names,
+            cell_zone,
+            zones,
+        } = self;
+        let nf = a.len();
         // sort key: interior faces by (owner, neighbour), then boundary
         // faces by (boundary, owner); ties keep insertion order
         let mut order: Vec<u32> = (0..nf as u32).collect();
         let key = |f: usize| -> (u32, u32, u32) {
-            if self.boundary[f] == NONE {
-                let (p, n) = (self.a[f].min(self.b[f]), self.a[f].max(self.b[f]));
+            if boundary[f] == NONE {
+                let (p, n) = (a[f].min(b[f]), a[f].max(b[f]));
                 (0, p, n)
             } else {
-                (1 + self.boundary[f], self.a[f], 0)
+                (1 + boundary[f], a[f], 0)
             }
         };
         order.sort_by_key(|&f| (key(f as usize), f));
         let mut mesh = Mesh {
-            points: self.points,
-            n_cells: self.n_cells,
-            cell_zone: self.cell_zone,
-            zones: self.zones,
+            points,
+            n_cells,
+            cell_zone,
+            zones,
             ..Default::default()
         };
         mesh.face_id = (0..nf as u64).collect();
-        mesh.n_inner_cells = self.n_cells;
+        mesh.n_inner_cells = n_cells;
         mesh.face_ptr.reserve(nf + 1);
         mesh.face_ptr.push(0);
-        mesh.face_nodes.reserve(self.nodes.len());
+        mesh.face_nodes.reserve(nodes.len());
         mesh.owner.reserve(nf);
-        let mut boundary_count = vec![0usize; self.boundary_names.len()];
+        let mut boundary_count = vec![0usize; boundary_names.len()];
         for &f in &order {
             let f = f as usize;
-            let nodes = &self.nodes[self.ptr[f] as usize..self.ptr[f + 1] as usize];
-            let (a, b) = (self.a[f], self.b[f]);
-            if a as usize >= self.n_cells || (b != NONE && b as usize >= self.n_cells) {
-                return Err(format!("face with cell index out of range ({a}, {b})"));
+            let fnodes = &nodes[ptr[f] as usize..ptr[f + 1] as usize];
+            let (fa, fb) = (a[f], b[f]);
+            if fa as usize >= n_cells || (fb != NONE && fb as usize >= n_cells) {
+                return Err(format!("face with cell index out of range ({fa}, {fb})"));
             }
-            if b == NONE {
-                boundary_count[self.boundary[f] as usize] += 1;
-                mesh.face_nodes.extend_from_slice(nodes);
-                mesh.owner.push(a);
-            } else if a < b {
-                mesh.face_nodes.extend_from_slice(nodes);
-                mesh.owner.push(a);
-                mesh.neighbour.push(b);
+            if fb == NONE {
+                boundary_count[boundary[f] as usize] += 1;
+                mesh.face_nodes.extend_from_slice(fnodes);
+                mesh.owner.push(fa);
+            } else if fa < fb {
+                mesh.face_nodes.extend_from_slice(fnodes);
+                mesh.owner.push(fa);
+                mesh.neighbour.push(fb);
             } else {
                 // normal must point from the owner (smaller index): reverse
-                mesh.face_nodes.push(nodes[0]);
-                mesh.face_nodes.extend(nodes[1..].iter().rev());
-                mesh.owner.push(b);
-                mesh.neighbour.push(a);
+                mesh.face_nodes.push(fnodes[0]);
+                mesh.face_nodes.extend(fnodes[1..].iter().rev());
+                mesh.owner.push(fb);
+                mesh.neighbour.push(fa);
             }
             mesh.face_ptr.push(mesh.face_nodes.len() as u32);
         }
+        // the faces as given are no longer needed: a large mesh peaks here
+        drop((ptr, nodes, a, b, boundary));
         mesh.n_inner_faces = mesh.neighbour.len();
         let mut start = mesh.neighbour.len();
-        for (name, len) in self.boundary_names.into_iter().zip(boundary_count) {
+        for (name, len) in boundary_names.into_iter().zip(boundary_count) {
             mesh.boundaries.push(Boundary { name, start, len });
             start += len;
         }
-        for w in mesh.owner[..mesh.n_inner_faces]
-            .iter()
-            .zip(&mesh.neighbour)
-            .collect::<Vec<_>>()
-            .windows(2)
-        {
-            if w[0] == w[1] {
-                return Err(format!(
-                    "cells {} and {} share more than one face",
-                    w[0].0, w[0].1
-                ));
+        for f in 1..mesh.n_inner_faces {
+            let (p, n) = (mesh.owner[f], mesh.neighbour[f]);
+            if p == mesh.owner[f - 1] && n == mesh.neighbour[f - 1] {
+                return Err(format!("cells {p} and {n} share more than one face"));
             }
         }
         mesh.build_cell_faces();
-        mesh.cell_id = (0..self.n_cells as u64).collect();
+        mesh.cell_id = (0..n_cells as u64).collect();
         mesh.point_id = (0..mesh.points.len() as u64).collect();
         Ok((mesh, order))
     }
@@ -277,65 +284,39 @@ impl CellSoup {
         boundaries: &[&str],
         classify: impl Fn(BoundaryFace) -> String,
     ) -> Result<Mesh, String> {
-        let nf = self.face_ptr.len() - 1;
-        let nc = self.n_cells();
+        // the parts are dropped as soon as they are used: a reader of a
+        // large mesh peaks here
+        let CellSoup {
+            points,
+            cell_ptr,
+            face_ptr,
+            nodes,
+            zone,
+            zones,
+        } = self;
+        let nf = face_ptr.len() - 1;
+        let nc = cell_ptr.len() - 1;
+        let face_nodes = |f: usize| &nodes[face_ptr[f] as usize..face_ptr[f + 1] as usize];
         let mut face_cell = vec![0u32; nf];
         for c in 0..nc {
-            for f in self.cell_ptr[c]..self.cell_ptr[c + 1] {
+            for f in cell_ptr[c]..cell_ptr[c + 1] {
                 face_cell[f as usize] = c as u32;
             }
         }
-        // sorted node lists as matching keys
-        let mut keys: Vec<u32> = Vec::with_capacity(self.nodes.len());
-        let mut kptr = vec![0u32];
-        for f in 0..nf {
-            let start = keys.len();
-            keys.extend_from_slice(self.face_nodes(f));
-            keys[start..].sort_unstable();
-            kptr.push(keys.len() as u32);
-        }
-        let key = |f: usize| &keys[kptr[f] as usize..kptr[f + 1] as usize];
-        let mut order: Vec<u32> = (0..nf as u32).collect();
-        order.sort_unstable_by(|&x, &y| {
-            let (kx, ky) = (key(x as usize), key(y as usize));
-            kx.len()
-                .cmp(&ky.len())
-                .then_with(|| kx.cmp(ky))
-                .then(x.cmp(&y))
-        });
-        let mut partner = vec![NONE; nf];
-        let mut i = 0;
-        while i < nf {
-            let mut j = i + 1;
-            while j < nf && key(order[j] as usize) == key(order[i] as usize) {
-                j += 1;
-            }
-            match j - i {
-                1 => {}
-                2 => {
-                    let (x, y) = (order[i] as usize, order[i + 1] as usize);
-                    if face_cell[x] == face_cell[y] {
-                        return Err(format!("cell {} has a repeated face", face_cell[x]));
-                    }
-                    partner[x] = y as u32;
-                    partner[y] = x as u32;
-                }
-                k => {
-                    return Err(format!(
-                        "{k} cells share the face with nodes {:?}",
-                        key(order[i] as usize)
-                    ));
-                }
-            }
-            i = j;
-        }
+        drop(cell_ptr);
+        let mut partner = match_faces(&nodes, &face_ptr, &face_cell, points.len())?;
 
         // quadrilaterals against two triangles
+        let sorted3 = |f: usize| {
+            let n = face_nodes(f);
+            let mut k = [n[0], n[1], n[2]];
+            k.sort_unstable();
+            k
+        };
         let mut tris: HashMap<[u32; 3], u32> = HashMap::new();
         for f in 0..nf {
-            if partner[f] == NONE && kptr[f + 1] - kptr[f] == 3 {
-                let k = key(f);
-                tris.insert([k[0], k[1], k[2]], f as u32);
+            if partner[f] == NONE && face_ptr[f + 1] - face_ptr[f] == 3 {
+                tris.insert(sorted3(f), f as u32);
             }
         }
         let tri_key = |a: u32, b: u32, c: u32| {
@@ -348,10 +329,10 @@ impl CellSoup {
         let mut removed = vec![false; nf];
         if !tris.is_empty() {
             for f in 0..nf {
-                if partner[f] != NONE || self.face_nodes(f).len() != 4 {
+                if partner[f] != NONE || face_nodes(f).len() != 4 {
                     continue;
                 }
-                let q = self.face_nodes(f);
+                let q = face_nodes(f);
                 let (a, b, c, d) = (q[0], q[1], q[2], q[3]);
                 for (t1, t2) in [([a, b, c], [a, c, d]), ([a, b, d], [b, c, d])] {
                     let k1 = tri_key(t1[0], t1[1], t1[2]);
@@ -371,9 +352,10 @@ impl CellSoup {
                 }
             }
         }
+        drop(tris);
 
-        let mut b = MeshBuilder::new(self.points.clone(), nc);
-        b.set_zones(self.zones.clone(), self.zone.clone());
+        let mut b = MeshBuilder::new(Vec::new(), nc);
+        b.set_zones(zones, zone);
         for p in boundaries {
             b.declare_boundary(p);
         }
@@ -383,8 +365,8 @@ impl CellSoup {
             }
             let p = partner[f];
             if p == NONE {
-                let nodes = self.face_nodes(f);
-                let (s, centroid) = polygon_area_centroid(&self.points, nodes);
+                let nodes = face_nodes(f);
+                let (s, centroid) = polygon_area_centroid(&points, nodes);
                 let n = crate::geometry::norm(s);
                 let normal = s.map(|x| x / n);
                 let name = classify(BoundaryFace {
@@ -396,12 +378,102 @@ impl CellSoup {
             } else if removed[p as usize] {
                 // triangle matched to a split quadrilateral: added below
             } else if (f as u32) < p {
-                b.add_interior(self.face_nodes(f), face_cell[f], face_cell[p as usize]);
+                b.add_interior(face_nodes(f), face_cell[f], face_cell[p as usize]);
             }
         }
         for (nodes, cell, g) in split {
             b.add_interior(&nodes, cell, face_cell[g as usize]);
         }
+        drop((nodes, face_ptr, face_cell, partner, removed));
+        b.points = points;
         b.finish()
     }
+}
+
+/// The partner of each face: the other face with the same set of nodes
+/// (`NONE` for a face of one cell). Faces are grouped by their smallest
+/// node (a counting sort over the nodes) and compared only within a group,
+/// so the matching needs two integers per face and one per node instead of
+/// a sorted copy of every face. The pairs are those of a global sort by
+/// node set.
+fn match_faces(
+    nodes: &[u32],
+    face_ptr: &[u32],
+    face_cell: &[u32],
+    n_points: usize,
+) -> Result<Vec<u32>, String> {
+    let nf = face_ptr.len() - 1;
+    let face = |f: usize| &nodes[face_ptr[f] as usize..face_ptr[f + 1] as usize];
+    let smallest = |f: usize| face(f).iter().min().map_or(0, |&m| m as usize);
+    // the faces of each smallest node: group g is list[head[g]..head[g + 1]]
+    // (a node beyond the points, of a broken input, joins group n_points)
+    let mut head = vec![0u32; n_points + 3];
+    for f in 0..nf {
+        head[smallest(f).min(n_points) + 2] += 1;
+    }
+    for g in 2..head.len() {
+        head[g] += head[g - 1];
+    }
+    let mut list = vec![0u32; nf];
+    for f in 0..nf {
+        let g = smallest(f).min(n_points) + 1;
+        list[head[g] as usize] = f as u32;
+        head[g] += 1;
+    }
+    let mut partner = vec![NONE; nf];
+    // sorted node lists of the faces of one group
+    let mut keys: Vec<u32> = Vec::new();
+    let mut kptr: Vec<usize> = Vec::new();
+    let mut order: Vec<usize> = Vec::new();
+    for g in 0..=n_points {
+        let members = &list[head[g] as usize..head[g + 1] as usize];
+        if members.len() < 2 {
+            continue;
+        }
+        keys.clear();
+        kptr.clear();
+        kptr.push(0);
+        for &f in members {
+            let s = keys.len();
+            keys.extend_from_slice(face(f as usize));
+            keys[s..].sort_unstable();
+            kptr.push(keys.len());
+        }
+        let key = |i: usize| &keys[kptr[i]..kptr[i + 1]];
+        order.clear();
+        order.extend(0..members.len());
+        order.sort_unstable_by(|&x, &y| {
+            let (kx, ky) = (key(x), key(y));
+            kx.len()
+                .cmp(&ky.len())
+                .then_with(|| kx.cmp(ky))
+                .then(members[x].cmp(&members[y]))
+        });
+        let mut i = 0;
+        while i < order.len() {
+            let mut j = i + 1;
+            while j < order.len() && key(order[j]) == key(order[i]) {
+                j += 1;
+            }
+            match j - i {
+                1 => {}
+                2 => {
+                    let (x, y) = (members[order[i]] as usize, members[order[i + 1]] as usize);
+                    if face_cell[x] == face_cell[y] {
+                        return Err(format!("cell {} has a repeated face", face_cell[x]));
+                    }
+                    partner[x] = y as u32;
+                    partner[y] = x as u32;
+                }
+                k => {
+                    return Err(format!(
+                        "{k} cells share the face with nodes {:?}",
+                        key(order[i])
+                    ));
+                }
+            }
+            i = j;
+        }
+    }
+    Ok(partner)
 }
