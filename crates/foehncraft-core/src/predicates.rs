@@ -103,6 +103,11 @@ impl Expansion {
         e
     }
 
+    /// The nonzero components, smallest magnitude first.
+    fn parts(&self) -> &[f64] {
+        &self.c[..self.n]
+    }
+
     fn push(&mut self, v: f64) {
         if v != 0.0 {
             assert!(self.n < CAP, "expansion capacity");
@@ -116,8 +121,8 @@ impl Expansion {
     fn grow(&mut self, b: f64) {
         let mut q = b;
         let mut out = Self::ZERO;
-        for i in 0..self.n {
-            let (s, h) = two_sum(q, self.c[i]);
+        for &e in self.parts() {
+            let (s, h) = two_sum(q, e);
             out.push(h);
             q = s;
         }
@@ -128,8 +133,8 @@ impl Expansion {
     /// `self + other`, exactly (repeated Grow-Expansion).
     fn add(&self, other: &Expansion) -> Expansion {
         let mut r = *self;
-        for i in 0..other.n {
-            r.grow(other.c[i]);
+        for &e in other.parts() {
+            r.grow(e);
         }
         r
     }
@@ -137,8 +142,8 @@ impl Expansion {
     /// `self - other`, exactly.
     fn sub(&self, other: &Expansion) -> Expansion {
         let mut r = *self;
-        for i in 0..other.n {
-            r.grow(-other.c[i]);
+        for &e in other.parts() {
+            r.grow(-e);
         }
         r
     }
@@ -147,8 +152,8 @@ impl Expansion {
     /// parts added by Grow-Expansion.
     fn scale(&self, b: f64) -> Expansion {
         let mut r = Self::ZERO;
-        for i in 0..self.n {
-            let (x, y) = two_product(self.c[i], b);
+        for &e in self.parts() {
+            let (x, y) = two_product(e, b);
             r.grow(y);
             r.grow(x);
         }
@@ -158,8 +163,8 @@ impl Expansion {
     /// `self * other`, exactly.
     fn mul(&self, other: &Expansion) -> Expansion {
         let mut r = Self::ZERO;
-        for j in 0..other.n {
-            r = r.add(&self.scale(other.c[j]));
+        for &e in other.parts() {
+            r = r.add(&self.scale(e));
         }
         r
     }
