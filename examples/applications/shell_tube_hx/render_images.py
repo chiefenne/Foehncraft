@@ -29,6 +29,7 @@ z is up.
 """
 import os
 import sys
+import tempfile
 
 import numpy as np
 from PIL import Image, ImageFilter
@@ -71,8 +72,7 @@ README = sys.argv[3] if len(sys.argv) > 3 else None
 WIDTH = 1800
 SS = 2  # supersampling factor
 HERE = os.path.dirname(os.path.abspath(__file__))
-SCRATCH = os.path.join(OUT, ".hx_render_tmp")
-os.makedirs(SCRATCH, exist_ok=True)
+SCRATCH = tempfile.mkdtemp(prefix="hx_render_")  # the raw screenshots and the environment map
 CMAP = "Rainbow Desaturated"
 
 # ---------------------------------------------------------------- data
