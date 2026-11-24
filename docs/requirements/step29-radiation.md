@@ -5,7 +5,8 @@ Draft of 2026-11-24 for step 4 of the recommended order of the
 (the maintainer's "go your recommended order", 2026-11-24). It turns L15 (1)
 and the design constraints of D107 into stages that can be built one pull
 request at a time. The decisions in section 1 are **proposals until the
-maintainer answers them**; each gets its D number when answered. Coding of each
+maintainer answers them**; each gets its D number when answered, from the
+range D255 to D259 kept for this page. Coding of each
 stage starts on the maintainer's explicit go. Clean-room rules (D201) apply:
 methods from the open literature, reference data with a D201 entry before it
 appears in a table. Reacting flows are not part of this step; hot gas is given
@@ -20,8 +21,8 @@ specification of step 28 (the particle layer that radiation shares, D107 (1)).
 
 | # | Question | Proposal | Why |
 |---|---|---|---|
-| Q1 | Lead application, which decides the first gallery case and the validation order | **Answered 2026-11-24 as proposed (D247):** **a box furnace with hot grey gas and cooled tubes** (absorbing-emitting gas, optical thickness from thin to thick by one key), then the heat exchanger of application 203 for surface-to-surface exchange through transparent air | The furnace exercises everything R1 does (gas emission, absorption, walls); exact slab solutions and published cube-enclosure results exist for it. The heat exchanger is the thin-gas benchmark case named in the assessment |
-| Q2 | Standalone kernel before coupling | **Yes.** R1a solves radiation on prescribed temperature and absorption fields and is verified against exact solutions; coupling to the energy equation is R1b | The Monte Carlo noise, the ledger closure and the estimators are checked without a flow solve in the loop; R1b then only adds the coupling |
+| Q1 | Lead application, which decides the first gallery case and the validation order | **Answered 2026-11-24 as proposed (D255):** **a box furnace with hot grey gas and cooled tubes** (absorbing-emitting gas, optical thickness from thin to thick by one key), then the heat exchanger of application 203 for surface-to-surface exchange through transparent air | The furnace exercises everything R1 does (gas emission, absorption, walls); exact slab solutions and published cube-enclosure results exist for it. The heat exchanger is the thin-gas benchmark case named in the assessment |
+| Q2 | Standalone kernel before coupling | **Answered 2026-11-24 as proposed (D256): yes.** R1a solves radiation on prescribed temperature and absorption fields and is verified against exact solutions; coupling to the energy equation is R1b | The Monte Carlo noise, the ledger closure and the estimators are checked without a flow solve in the loop; R1b then only adds the coupling |
 | Q3 | Shared particle layer (D107 (1)) and the order against sprays SP1 | **The cell walk is shared now, the bundle store later.** R1a adds a walk that reports every cell and its exact path length (`Locator::walk`), built on the tracker that SP1 also uses; the structure-of-arrays bundle store and migration come with SP1 and SP3 and radiation moves onto them | Rays need no equation of motion, only the walk; neither module waits for the other, and there is still one tracker |
 | Q4 | Serial first, as sprays (D241) | **Yes.** R1a to R1d run on one process (threads allowed); a radiation case on more than one rank is refused with a diagnostic code; migration between ranks after MPI W3 to W5 | The same rule as sprays; bundles are keyed by identity (D107 (2)), so nothing is rewritten for ranks |
 | Q5 | GPU from the first pull request, as sprays (D245) | **No, from R1b.** R1a is CPU; the GPU kernels come once SP1 has put the walk on the device, with the CPU = GPU check | The walk on the GPU is SP1's work; doing it twice wastes it. Bundles are independent, so the CPU code is already in the form the wavefront kernels need |
