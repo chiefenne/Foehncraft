@@ -486,8 +486,8 @@ impl Gathered {
                             (last + 1).saturating_sub(first) * 3 * if double { 8 } else { 4 };
                         declared(need, c.bytes.len(), &format!("{place}: nodes"))?;
                         for i in first..=last {
-                            for k in 0..3 {
-                                self.points[i - 1][k] = c.real(double)?;
+                            for x in &mut self.points[i - 1] {
+                                *x = c.real(double)?;
                             }
                         }
                     }
