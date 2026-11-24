@@ -62,7 +62,7 @@ from paraview.simple import (
     Calculator, CellDatatoPointData, Clip, CreateTexture, CreateView, ExtractBlock,
     ExtractSurface, SurfaceNormals, GetColorTransferFunction, GetScalarBar,
     MergeBlocks, OpenDataFile, PointSource, Render, SaveScreenshot, Show, Slice,
-    StreamTracerWithCustomSource, Threshold, Transform, Tube, Delete, Hide,
+    StreamTracerWithCustomSource, Threshold, Transform, Tube,
 )
 from vtkmodules.util.numpy_support import vtk_to_numpy
 
