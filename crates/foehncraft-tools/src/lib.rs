@@ -384,6 +384,7 @@ pub fn registry() -> Vec<Entry> {
         entry::<diag_codes::Codes>(),
         entry::<materials::List>(),
         entry::<materials::Show>(),
+        entry::<materials::Steam>(),
         entry::<expression::Eval>(),
         entry::<mesh::Process>(),
         entry::<flow::Run>(),

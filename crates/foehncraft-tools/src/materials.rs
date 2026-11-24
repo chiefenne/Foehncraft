@@ -213,3 +213,115 @@ impl Tool for Show {
         evaluate(Some(&a.name), a.temperature, a.pressure, &a.include, ctx)
     }
 }
+
+/// Input of `materials.steam`: exactly one of the pairs (p, T), (p, h),
+/// (p, s), (p, x), (T, x), or p or T alone for the saturation line (SI
+/// units).
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SteamInput {
+    /// Pressure (Pa, absolute).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pressure: Option<f64>,
+    /// Temperature (K).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub temperature: Option<f64>,
+    /// Specific enthalpy (J/kg).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enthalpy: Option<f64>,
+    /// Specific entropy (J/(kg K)).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entropy: Option<f64>,
+    /// Quality (0 to 1) on the saturation line.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quality: Option<f64>,
+}
+
+/// A water or steam state, or the saturation line.
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+pub struct SteamOutput {
+    /// `foehncraft.steam`.
+    pub format: &'static str,
+    /// Format version of the engine.
+    pub format_version: &'static str,
+    /// `IAPWS-IF97`; the inputs given; `state` (region, phase, p, T, ρ, h,
+    /// u, s, c_p, c_v, w, quality, void fraction, μ, k, Pr, σ; for a
+    /// two-phase state the saturated phases and the mixture viscosities) or
+    /// `saturation` (T_s or p_s, h_fg, σ, the saturated liquid and vapour).
+    pub result: Value,
+}
+
+/// `materials.steam`.
+pub struct Steam;
+
+impl Tool for Steam {
+    const ID: &'static str = "materials.steam";
+    const VERSION: u32 = 1;
+    const SUMMARY: &'static str = "A water or steam state of IAPWS-IF97 from (p, T), (p, h), (p, s), (p, x) or (T, x), or the saturation line at p or T, with viscosity, conductivity and surface tension.";
+    const CATEGORY: Category = Category::Materials;
+    const ACTION: Action = Action::Read;
+    type Input = SteamInput;
+    type Output = SteamOutput;
+
+    fn call(a: SteamInput, ctx: &mut Ctx<'_>) -> Result<SteamOutput> {
+        use foehncraft_flow::steam;
+        let r = steam::query(steam::Query {
+            pressure: a.pressure,
+            temperature: a.temperature,
+            enthalpy: a.enthalpy,
+            entropy: a.entropy,
+            quality: a.quality,
+        })?;
+        steam_text(&r, ctx);
+        Ok(SteamOutput {
+            format: "foehncraft.steam",
+            format_version: engine::FORMAT_VERSION,
+            result: r,
+        })
+    }
+}
+
+fn steam_text(r: &Value, ctx: &mut Ctx<'_>) {
+    let rows = [
+        ("pressure", "Pa"),
+        ("temperature", "K"),
+        ("density", "kg/m³"),
+        ("enthalpy", "J/kg"),
+        ("entropy", "J/(kg K)"),
+        ("specific_heat", "J/(kg K)"),
+        ("speed_of_sound", "m/s"),
+        ("quality", "–"),
+        ("void_fraction", "–"),
+        ("viscosity", "Pa s"),
+        ("conductivity", "W/(m K)"),
+        ("prandtl", "–"),
+        ("surface_tension", "N/m"),
+    ];
+    let show = |s: &Value, ctx: &mut Ctx<'_>| {
+        for (k, unit) in rows {
+            if let Some(v) = s[k].as_f64() {
+                ctx.line(&format!("  {k:<16} {v:<14.8e} {unit}"));
+            }
+        }
+    };
+    if let Some(s) = r.get("state") {
+        ctx.line(&format!(
+            "IAPWS-IF97 state from {}: region {}, {}",
+            r["input"].as_str().unwrap_or(""),
+            s["region"],
+            s["phase"].as_str().unwrap_or("")
+        ));
+        show(s, ctx);
+    } else if let Some(s) = r.get("saturation") {
+        ctx.line(&format!(
+            "IAPWS-IF97 saturation at p = {} Pa, T = {} K: h_fg = {:.8e} J/kg",
+            s["pressure"],
+            s["temperature"],
+            s["enthalpy_of_evaporation"].as_f64().unwrap_or(f64::NAN)
+        ));
+        ctx.line(" saturated liquid:");
+        show(&s["liquid"], ctx);
+        ctx.line(" saturated vapour:");
+        show(&s["vapour"], ctx);
+    }
+}

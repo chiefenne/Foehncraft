@@ -59,6 +59,7 @@ pub mod particle;
 pub mod radiation;
 pub mod scalar;
 pub mod spmv;
+pub mod steam;
 pub mod turb;
 pub mod walk;
 

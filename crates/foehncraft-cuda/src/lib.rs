@@ -11,6 +11,8 @@
 //!   (entries `fv_*`, `blas_*`, `amg_*`);
 //! - `radiation`: the transport of the radiation bundles (entry
 //!   `radiation_transport`, step 29);
+//! - `steam`: water and steam states of IAPWS-IF97 (entry `steam_state`,
+//!   stage SF7a);
 //! - `bench`: the G1 benchmark backends `cuda-reference` (hand-written
 //!   CUDA C, `kernels/g1_reference.cu`) and `cuda-rust` (`g1_*`).
 //!
@@ -28,6 +30,8 @@ pub mod flow;
 pub mod fv;
 #[cfg(feature = "cuda")]
 pub mod radiation;
+#[cfg(feature = "cuda")]
+pub mod steam;
 
 /// Fails with a clear message when the NVIDIA driver library is missing
 /// (the bindings would panic on first use).
