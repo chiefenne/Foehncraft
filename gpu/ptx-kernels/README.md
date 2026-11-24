@@ -4,7 +4,9 @@ The kernel bodies of [`foehncraft-kernels`](../../crates/foehncraft-kernels),
 wrapped as PTX entry points for NVIDIA GPUs. The same bodies run in the CPU
 backends. Entry points: `g1_*` (gate G1, stage 0; `src/lib.rs`) and `fv_*`,
 `blas_*` (the scalar operators and Krylov vector operations of stage 2,
-`src/fv.rs`, launched by `crates/foehncraft-cuda/src/fv.rs`).
+`src/fv.rs`, launched by `crates/foehncraft-cuda/src/fv.rs`) and
+`radiation_transport` (the energy bundles of the radiation, step 29,
+`src/radiation.rs`, launched by `crates/foehncraft-cuda/src/radiation.rs`).
 
 For G1, this crate is the "single-source Rust" half of
 gate G1 (requirements D8, D11); the other half is the hand-written CUDA C
@@ -24,4 +26,7 @@ Not a member of the main Cargo workspace, because it is built for another
 target with another toolchain. CI builds it on every pull request and checks
 that all entry points are present; `python3 -m tools.check.kernels` then checks
 that the PTX has no atomic instructions and no fused or approximate f64
-arithmetic (R10).
+arithmetic (R10). The one exception is `radiation_transport`: its tallies
+are whole numbers of quanta added with 64-bit integer atomics, which give
+the same sum in any order (D269, proposed); floating-point atomics stay
+forbidden.

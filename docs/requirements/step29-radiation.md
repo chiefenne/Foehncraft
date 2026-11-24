@@ -110,7 +110,19 @@ Status of R1a (coding started on the maintainer's go, 2026-11-24):
    same tallies on 1, 2 and 4 threads and on 1 to 4 ranks (also with MPI in
    CI, `examples/mpi_radiation.rs`). The batch-mean error is conservative:
    the bundles of an emitter are stratified, the batches are not.
-3. Walk and kernel on the GPU.
+3. **Walk and kernel on the GPU** (in review). The PTX entry
+   `radiation_transport` (`gpu/ptx-kernels/src/radiation.rs`) runs the
+   kernel body of the CPU for one bundle per GPU thread; the tallies are
+   whole numbers of quanta added with 64-bit integer atomics, the same sum in
+   any order (D269, proposed: the one exception of R10, checked by
+   `tools/check/kernels.py`, which allows integer adds only in this entry).
+   The bundles are emitted on the host and sent in launches of 2²⁰. The
+   CUDA backend (`crates/foehncraft-cuda/src/radiation.rs`) registers with
+   `foehncraft_radiation::register_gpu`; `Domain::on_gpu` uses it. The data
+   path of the GPU (flat records, the entry body, tallies per launch) runs
+   on the CPU in the tests and gives bitwise the CPU result. The CPU = GPU
+   check on a GPU: `python3 -m tools.bench.radiation_cloud` or
+   `tools/notebooks/radiation_colab.ipynb`.
 4. Output, cube case and gallery. R1b to R1g: not sized yet.
 
 ## 6. References

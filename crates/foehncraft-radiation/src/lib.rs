@@ -22,11 +22,19 @@
 //! threads and, with the walk handed over at processor faces (D258), on any
 //! number of ranks.
 //!
+//! The bundles move on the CPU threads, or on a GPU (D259,
+//! [`Domain::on_gpu`] with the backend that `foehncraft_cuda::register`
+//! installs): the same kernel body, integer tallies, so the GPU gives
+//! bitwise the tallies of the CPU. [`CpuDevicePath`] runs the data path of
+//! the GPU on the CPU threads.
+//!
 //! [`exact`] has the exact solutions of the verification cases (section 3
 //! of `docs/requirements/step29-radiation.md`).
 
+pub mod device;
 pub mod exact;
 mod solve;
 
+pub use device::{CpuDevicePath, DeviceTallies, GpuFactory, Transport, gpu_backend, register_gpu};
 pub use foehncraft_kernels::radiation::WallKind;
 pub use solve::{Domain, Ledger, SIGMA, Settings, Solution, Wall};

@@ -8,7 +8,7 @@ use foehncraft_mesh::partition::{Method, partition};
 use foehncraft_mesh::{Geometry, Mesh};
 use foehncraft_parallel::{Communicator, ThreadComm};
 use foehncraft_radiation::exact::{parallel_rectangles, slab_source, slab_wall_flux};
-use foehncraft_radiation::{Domain, SIGMA, Settings, Solution, Wall};
+use foehncraft_radiation::{CpuDevicePath, Domain, SIGMA, Settings, Solution, Wall};
 
 fn mesh(kind: Kind, n: [usize; 3], upper: [f64; 3], perturb: f64) -> Mesh {
     let mut s = BoxSpec::new(kind, 3, n);
@@ -72,7 +72,9 @@ fn case1_isothermal_slab() {
             bundles: 200_000,
             ..Settings::default()
         };
-        let sol = Domain::whole(&m, &g).solve(&vec![t; m.n_cells], &vec![kappa; m.n_cells], &w, &s);
+        let sol = Domain::whole(&m, &g)
+            .solve(&vec![t; m.n_cells], &vec![kappa; m.n_cells], &w, &s)
+            .unwrap();
         check_ledger(&sol);
         assert_eq!(sol.ledger.escaped, 0);
         // flux into each plate (net = absorbed, the plates emit nothing)
@@ -123,8 +125,9 @@ fn case2_isothermal_enclosure() {
     let kappa: Vec<f64> = g.cell_centroid.iter().map(|c| 0.5 + c[0]).collect();
     for e in [1.0, 0.5] {
         let w = walls(&m, |_| Wall::grey(e, t));
-        let sol =
-            Domain::whole(&m, &g).solve(&vec![t; m.n_cells], &kappa, &w, &Settings::default());
+        let sol = Domain::whole(&m, &g)
+            .solve(&vec![t; m.n_cells], &kappa, &w, &Settings::default())
+            .unwrap();
         check_ledger(&sol);
         let scale = 4.0 * SIGMA * t.powi(4);
         let (mut z2, mut rel) = (0.0, 0.0);
@@ -172,7 +175,9 @@ fn case3_parallel_plates() {
             bundles: 200_000,
             ..Settings::default()
         };
-        let sol = Domain::whole(&m, &g).solve(&vec![t; m.n_cells], &vec![0.0; m.n_cells], &w, &s);
+        let sol = Domain::whole(&m, &g)
+            .solve(&vec![t; m.n_cells], &vec![0.0; m.n_cells], &w, &s)
+            .unwrap();
         check_ledger(&sol);
         assert_eq!(sol.ledger.absorbed_gas, 0);
         let hot: i64 = faces_of(&m, "xmin").map(|f| sol.wall_emitted[f]).sum();
@@ -231,7 +236,7 @@ fn case4_ledger_and_threads() {
             .num_threads(threads)
             .build()
             .unwrap()
-            .install(|| Domain::whole(&m, &g).solve(&t, &kappa, &w, &s))
+            .install(|| Domain::whole(&m, &g).solve(&t, &kappa, &w, &s).unwrap())
     };
     let one = run(1);
     check_ledger(&one);
@@ -240,8 +245,19 @@ fn case4_ledger_and_threads() {
     for threads in [2, 4] {
         assert_eq!(run(threads), one, "{threads} threads");
     }
+    // the data path of the GPU (flat records, the body of the PTX entry,
+    // tallies per launch) on the CPU gives bitwise the same, also when the
+    // bundles go in several launches
+    let device = Domain::whole(&m, &g)
+        .on_device(Box::new(CpuDevicePath))
+        .unwrap();
+    assert_eq!(device.device_name(), "cpu-device-path");
+    let launches = Settings { launch: 5000, ..s };
+    assert_eq!(device.solve(&t, &kappa, &w, &launches).unwrap(), one);
     // another call number gives other bundles
-    let other = Domain::whole(&m, &g).solve(&t, &kappa, &w, &Settings { call: 1, ..s });
+    let other = Domain::whole(&m, &g)
+        .solve(&t, &kappa, &w, &Settings { call: 1, ..s })
+        .unwrap();
     check_ledger(&other);
     assert_ne!(other.absorbed, one.absorbed);
 }
@@ -257,7 +273,7 @@ fn case4_ranks_are_bitwise_one_rank() {
         bundles: 40_000,
         ..Settings::default()
     };
-    let one = Domain::whole(&m, &g).solve(&t, &kappa, &w, &s);
+    let one = Domain::whole(&m, &g).solve(&t, &kappa, &w, &s).unwrap();
     check_ledger(&one);
     let first = m.n_interior_faces();
     let mut cases = vec![(2, Method::Rcb), (3, Method::Rcb), (4, Method::Rcb)];
@@ -284,7 +300,15 @@ fn case4_ranks_are_bitwise_one_rank() {
                 .iter()
                 .map(|b| w[m.boundaries.iter().position(|x| x.name == b.name).unwrap()])
                 .collect();
-            let sol = Domain::rank(&local, &lg, comm).solve(&lt, &lk, &lw, &s);
+            // one device per run: not on ranks
+            assert!(
+                Domain::rank(&local, &lg, comm)
+                    .on_device(Box::new(CpuDevicePath))
+                    .is_err()
+            );
+            let sol = Domain::rank(&local, &lg, comm)
+                .solve(&lt, &lk, &lw, &s)
+                .unwrap();
             let lfirst = local.mesh.n_interior_faces();
             let faces: Vec<u64> = (lfirst..local.mesh.n_faces())
                 .map(|f| local.mesh.face_id[f])
