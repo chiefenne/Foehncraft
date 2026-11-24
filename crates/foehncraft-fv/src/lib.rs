@@ -12,6 +12,8 @@
 //! - [`solver`]: outer deferred-correction iterations, BiCGStab and CG;
 //! - [`poisson`]: the `foehn poisson` linear-solver study (stage 3);
 //! - `hypre` (feature `hypre`): hypre's BoomerAMG as the reference solver;
+//! - [`ranks`]: scalar solves on the ranks of a decomposed mesh and their
+//!   bitwise check against one rank (MPI step W3);
 //! - [`verify`]: gradient exactness, limiter bounds and order-of-accuracy
 //!   sweeps (the acceptance checks of stage 2);
 //! - [`case`]: the `foehn scalar` case file and run.
@@ -25,6 +27,7 @@ pub mod exactness;
 pub mod hypre;
 pub mod poisson;
 pub mod problem;
+pub mod ranks;
 pub mod solver;
 pub mod verify;
 

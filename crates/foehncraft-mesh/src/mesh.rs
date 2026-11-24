@@ -10,10 +10,12 @@
 //!   [`crate::decompose`]). A solver can finish the inner cells while the
 //!   halo exchange is in flight (D38).
 //! - **Faces** come in three ranges:
-//!   1. inner faces `0..n_inner_faces`: both cells local, `owner < neighbour`;
-//!   2. processor faces `n_inner_faces..n_interior_faces()`: the neighbour is
-//!      a halo cell; kept apart so that their work can wait for the halo
-//!      exchange while the inner faces are computed (D38);
+//!   1. inner faces `0..n_inner_faces`: both cells local, `owner < neighbour`
+//!      (a rank's part keeps the orientation of the global mesh instead);
+//!   2. processor faces `n_inner_faces..n_interior_faces()`: one cell is
+//!      local, the other a halo cell (the owner where the global mesh says
+//!      so); kept apart so that their work can wait for the halo exchange
+//!      while the inner faces are computed (D38);
 //!   3. boundary faces `n_interior_faces()..n_faces()`, grouped by boundary.
 //!
 //!   `owner` has one entry per face, `neighbour` one per interior face. The
@@ -171,11 +173,13 @@ pub struct Mesh {
     /// Translational periodic faces (`None`: none; see the module docs).
     pub periodic: Option<Periodic>,
     /// Faces stored with the reverse orientation of the global mesh they
-    /// were extracted from (empty: none, the mesh is its own global mesh).
-    /// A flipped face has its owner and neighbour swapped and its nodes
-    /// reversed after the first one; geometry evaluates it in the global
-    /// node order and flips the sign, so every rank gets the bits of the
-    /// one-rank run (D93 (3); see [`crate::decompose`]).
+    /// were extracted from; empty for a mesh that is its own global mesh,
+    /// one entry per face for a rank's part (which this marks). A flipped
+    /// face has its owner and neighbour swapped and its nodes reversed
+    /// after the first one; geometry evaluates it in the global node order
+    /// and flips the sign (D93 (3)). Since MPI step W3
+    /// [`crate::decompose::extract`] keeps every face in its global
+    /// orientation, so all entries are false there.
     pub face_flip: Vec<bool>,
 }
 
@@ -320,6 +324,10 @@ impl Mesh {
         let ni = self.n_interior_faces();
         let nc = self.n_cells;
         let nt = nc + self.n_halo;
+        // a rank's part (marked by `face_flip`) lists the faces of a cell in
+        // global face order (the order of the mesh it was extracted from),
+        // not in local order, and keeps the global orientation of its faces
+        let local_order = self.face_flip.is_empty();
         if nt > MAX_LOCAL_INDEX as usize || self.face_nodes.len() > MAX_LOCAL_INDEX as usize {
             return Err("mesh exceeds the 32-bit local index range".into());
         }
@@ -345,17 +353,24 @@ impl Mesh {
                 return Err(format!("face {f}: node out of range"));
             }
             let p = self.owner[f] as usize;
-            if p >= nc {
+            let processor = f >= self.n_inner_faces && f < self.periodic_start();
+            if p >= nc && !(processor && p < nt) {
                 return Err(format!("face {f}: owner {p} is not a local cell"));
             }
             if f < ni {
                 let n = self.neighbour[f] as usize;
-                if f < self.n_inner_faces && (n >= nc || n <= p) {
+                // a rank's part keeps the global orientation of its faces,
+                // so its inner faces need not run from the lower cell
+                if f < self.n_inner_faces && (n >= nc || (n <= p && local_order) || n == p) {
                     return Err(format!("inner face {f}: cells {p}, {n} not ordered"));
                 }
-                if f >= self.n_inner_faces && f < self.periodic_start() && (n < nc || n >= nt) {
+                // a processor face joins one local cell and one halo cell
+                if processor && n >= nt {
+                    return Err(format!("processor face {f}: neighbour {n} out of range"));
+                }
+                if processor && ((p < nc) == (n < nc)) {
                     return Err(format!(
-                        "processor face {f}: neighbour {n} is not a halo cell"
+                        "processor face {f}: cells {p}, {n} are not one local and one halo cell"
                     ));
                 }
             }
@@ -427,11 +442,9 @@ impl Mesh {
             }
         }
         for f in self.n_inner_faces..self.periodic_start() {
-            if (self.owner[f] as usize) < self.n_inner_cells {
-                return Err(format!(
-                    "processor face {f} belongs to inner cell {}",
-                    self.owner[f]
-                ));
+            let own = (self.owner[f] as usize).min(self.neighbour[f] as usize);
+            if own < self.n_inner_cells {
+                return Err(format!("processor face {f} belongs to inner cell {own}"));
             }
         }
         if !self.face_flip.is_empty() && self.face_flip.len() != nf {
@@ -440,9 +453,6 @@ impl Mesh {
                 self.face_flip.len()
             ));
         }
-        // a rank's part lists the faces of a cell in global face order (the
-        // order of the mesh it was extracted from), not in local order
-        let local_order = self.face_flip.is_empty();
         let mut edges: Vec<(u32, u32)> = Vec::with_capacity(64);
         let mut seen: Vec<usize> = Vec::with_capacity(64);
         for c in 0..nc {
@@ -504,12 +514,26 @@ impl Mesh {
     /// Builds the cell-to-face lists from `owner` and `neighbour`.
     pub(crate) fn build_cell_faces(&mut self) {
         let nc = self.n_cells;
+        // a face is listed by each of its cells that is local: the owner
+        // (a halo cell may own a processor face of a rank's part) and the
+        // neighbour of an inner or processor face; a periodic face only by
+        // its owner
+        let paired = self.periodic_start();
+        let sides = |f: usize| {
+            let p = self.owner[f] as usize;
+            let n = if f < paired {
+                Some(self.neighbour[f] as usize)
+            } else {
+                None
+            };
+            (Some(p).filter(|&p| p < nc), n.filter(|&n| n < nc))
+        };
         let mut count = vec![0u32; nc + 1];
-        for &p in &self.owner {
-            count[p as usize + 1] += 1;
-        }
-        for &n in &self.neighbour[..self.n_inner_faces] {
-            count[n as usize + 1] += 1;
+        for f in 0..self.n_faces() {
+            let (p, n) = sides(f);
+            for c in [p, n].into_iter().flatten() {
+                count[c + 1] += 1;
+            }
         }
         for c in 0..nc {
             count[c + 1] += count[c];
@@ -518,11 +542,12 @@ impl Mesh {
         let mut cell_faces = vec![0u32; count[nc] as usize];
         // Faces are visited in ascending order, so each list is sorted.
         for f in 0..self.n_faces() {
-            let p = self.owner[f] as usize;
-            cell_faces[next[p] as usize] = pack_face(f as u32, false);
-            next[p] += 1;
-            if f < self.n_inner_faces {
-                let n = self.neighbour[f] as usize;
+            let (p, n) = sides(f);
+            if let Some(p) = p {
+                cell_faces[next[p] as usize] = pack_face(f as u32, false);
+                next[p] += 1;
+            }
+            if let Some(n) = n {
                 cell_faces[next[n] as usize] = pack_face(f as u32, true);
                 next[n] += 1;
             }

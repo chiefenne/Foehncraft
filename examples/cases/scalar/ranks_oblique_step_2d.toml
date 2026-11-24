@@ -1,0 +1,65 @@
+# The oblique step on four ranks: the steady scalar solver (gradient,
+# limiter, face coefficients, assembly, BiCGStab) on the ranks of a
+# decomposed mesh gives bitwise the solution of one rank (MPI step W3,
+# D93).
+#
+#   cargo run --release -p foehncraft-cli -- scalar examples/cases/scalar/ranks_oblique_step_2d.toml
+#
+# The problem of `oblique_step_2d.toml`: φ = 1 enters through ymin and
+# through xmin below y = 0.2, φ = 0 above it, nearly pure convection at
+# 30° on a perturbed polygonal mesh, linear upwind with the
+# Venkatakrishnan limiter at K = 0. The variant is solved once on all
+# cells, then on 2, 3 and 4 ranks: the mesh is cut by recursive coordinate
+# bisection, every rank runs as a thread of this process with its own
+# communicator and halo exchange, and the run fails unless φ on every rank
+# is bitwise that of the one-rank solve. The cell field `rank` of
+# `fields.vtkhdf` shows the four-rank partition.
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "poly"
+dimension = 2
+cells = [64, 64, 1]
+perturb = 0.1
+
+[mesh]
+renumber = "rcm"
+
+[problem]
+diffusivity = 1e-6
+velocity = [0.8660254037844387, 0.5, 0.0]
+
+[problem.boundary.xmin]
+type = "fixed-value"
+profile = "step"
+axis = 1
+at = 0.2
+below = 1.0
+above = 0.0
+[problem.boundary.ymin]
+type = "fixed-value"
+value = 1.0
+[problem.boundary.xmax]
+type = "zero-gradient"
+[problem.boundary.ymax]
+type = "zero-gradient"
+[problem.boundary.zmin]
+type = "zero-gradient"
+[problem.boundary.zmax]
+type = "zero-gradient"
+
+[solver]
+scheme = "linear-upwind"
+limiter = "venkatakrishnan"
+limiter_k = 0.0
+max_outer = 400
+
+[verification]
+bounds = [0.0, 1.0]
+
+[run]
+ranks = [2, 3, 5]
+
+[output]
+profile = { from = [0.8, 0.0, 0.5], to = [0.8, 1.0, 0.5], points = 400 }

@@ -1526,5 +1526,22 @@ evidence = [
   { kind = "contract", property = "bitwise", test = "crates/foehncraft-mesh/tests/exact_reductions.rs::sums_over_ranks_are_bitwise_the_one_rank_sums", what = "sums over 1 to 9 ranks of decomposed meshes (four cell types, METIS and RCB) are bitwise the one-rank sums" },
 ]
 
+[[feature]]
+id = "parallel.scalar-ranks"
+area = "Backends and interfaces"
+title = "The steady scalar solver on several ranks, bitwise one rank (MPI step W3)"
+switch = "[run] ranks"
+decisions = ["D31", "D93"]
+infrastructure = true
+contracts = ["bitwise"]
+evidence = [
+  { kind = "contract", property = "bitwise", test = "crates/foehncraft-fv/tests/ranks.rs::scalar_solves_on_ranks_are_bitwise_one_rank", what = "1 to 4 ranks (RCB), polyhedra, mixed cells and tetrahedra, linear upwind with Venkatakrishnan, bounded central with Venkatakrishnan-Wang, BiCGStab and CG: phi, gradient, limiter, every matrix entry, right-hand side and residual history bitwise one rank" },
+  { kind = "contract", property = "bitwise", test = "crates/foehncraft-fv/tests/ranks.rs::scattered_partitions_are_bitwise_one_rank", what = "a round-robin partition (almost every face a processor face) gives the same bits" },
+  { kind = "contract", property = "bitwise", case = "ranks_oblique_step_2d", what = "the oblique step on 2, 3 and 5 ranks: 67 outer iterations and phi bitwise the one-rank run (the run fails otherwise)" },
+]
+gaps = [
+  "the multigrid preconditioner on ranks (W4) and the flow engine on ranks (W5) follow",
+]
+
 # ---------------------------------------------------------------- planned
 

@@ -20,11 +20,14 @@ metis = ["foehncraft-mesh/metis"]
 # hypre (BoomerAMG with PCG) as the reference solver of `foehn poisson`
 # (D20): needs HYPRE_DIR, the install prefix of a sequential hypre build.
 hypre = ["dep:cc"]
+# MPI examples (system MPI library and libclang at build time).
+mpi = ["foehncraft-parallel/mpi", "foehncraft-mesh/mpi"]
 
 [dependencies]
 foehncraft-core.workspace = true
 foehncraft-kernels.workspace = true
 foehncraft-mesh.workspace = true
+foehncraft-parallel.workspace = true
 rayon.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -34,6 +37,10 @@ schemars.workspace = true
 
 [build-dependencies]
 cc = { version = "1", optional = true }
+
+[[example]]
+name = "mpi_scalar"
+required-features = ["mpi"]
 
 [lints]
 workspace = true

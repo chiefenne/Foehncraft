@@ -406,6 +406,7 @@ dependencies = [
  "foehncraft-core",
  "foehncraft-kernels",
  "foehncraft-mesh",
+ "foehncraft-parallel",
  "rayon",
  "schemars",
  "serde",

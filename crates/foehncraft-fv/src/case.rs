@@ -34,7 +34,7 @@
 use crate::backend::{self, V};
 use crate::disc::Discretisation;
 use crate::problem::Problem;
-use crate::solver::{self, Outcome, Settings};
+use crate::solver::{self, Outcome, Preconditioner, Settings};
 use crate::verify::{MmsResult, observed_orders};
 use anyhow::{Context, Result, bail, ensure};
 use foehncraft_mesh::case::{MeshSection, build_mesh};
@@ -78,12 +78,19 @@ pub struct RunSection {
     pub threads: Option<usize>,
     /// PTX module of the GPU backend.
     pub rust_ptx: PathBuf,
+    /// Also solve every variant on these numbers of ranks (MPI step W3):
+    /// the mesh is cut by recursive coordinate bisection and every rank
+    /// runs as a thread of this process with its own communicator, the
+    /// threads of `threads` shared among them. Each solve must give
+    /// bitwise the φ of the first backend, or the run fails.
+    pub ranks: Vec<usize>,
 }
 
 impl Default for RunSection {
     fn default() -> Self {
         Self {
             backends: vec!["cpu".into()],
+            ranks: Vec::new(),
             threads: None,
             rust_ptx: "target/nvptx64-nvidia-cuda/release/foehncraft_ptx_kernels.ptx".into(),
         }
@@ -179,6 +186,16 @@ impl ScalarCase {
                 .with_context(|| format!("variant {}", v.name))?;
         }
         ensure!(!c.run.backends.is_empty(), "[run] backends is empty");
+        ensure!(
+            c.run.ranks.iter().all(|&n| (1..=256).contains(&n)),
+            "[run] ranks must lie in 1..=256"
+        );
+        for v in std::iter::once(&c.solver).chain(c.variants.iter().map(|v| &v.solver)) {
+            ensure!(
+                c.run.ranks.is_empty() || v.preconditioner == Preconditioner::Jacobi,
+                "[run] ranks: the multigrid preconditioner runs on one rank until MPI step W4; use preconditioner = \"jacobi\""
+            );
+        }
         if c.verification.levels.len() >= 2 {
             ensure!(
                 c.mesh.generate.is_some(),
@@ -415,7 +432,13 @@ pub fn run(
                             out.join(vname)
                         };
                         std::fs::create_dir_all(&dir)?;
-                        write_fields(case, &dir, &mesh, &geo, &phi, &psi)?;
+                        let rank = case.run.ranks.iter().max().map(|&n| {
+                            rcb(&mesh, &geo, n)
+                                .iter()
+                                .map(|&r| r as f64)
+                                .collect::<Vec<_>>()
+                        });
+                        write_fields(case, &dir, &mesh, &geo, &phi, &psi, rank.as_deref())?;
                         if let Some(line) = &case.output.profile {
                             let p = sample(&mesh, &geo, &phi, line);
                             let mut csv = String::from("s,phi\n");
@@ -435,6 +458,33 @@ pub fn run(
                     }
                     first = Some(phi);
                 }
+            }
+            for &n in &case.run.ranks {
+                let solve = solve_on_ranks(case, &mesh, &geo, settings, n, first.as_deref())?;
+                log(&format!(
+                    "solve {}{} on {n} ranks: {} outer iterations, {}",
+                    if vname.is_empty() { "" } else { "variant " },
+                    vname,
+                    solve.outcome.outer,
+                    if solve.bitwise_equal == Some(true) {
+                        "bitwise equal to the first backend".to_string()
+                    } else {
+                        format!(
+                            "DIFFERS from the first backend ({:.2e} relative)",
+                            solve.diff_to_first.unwrap_or(f64::NAN)
+                        )
+                    }
+                ));
+                if solve.bitwise_equal != Some(true) {
+                    rep.failures.push(format!(
+                        "{vname} on {n} ranks: not bitwise equal to {}",
+                        case.run.backends[0]
+                    ));
+                }
+                rep.solves.push(Solve {
+                    variant: vname.clone(),
+                    ..solve
+                });
             }
         }
     }
@@ -476,6 +526,7 @@ fn write_fields(
     geo: &Geometry,
     phi: &[f64],
     psi: &[f64],
+    rank: Option<&[f64]>,
 ) -> Result<()> {
     use foehncraft_mesh::vtkhdf::{CellField, write};
     if !case.output.vtkhdf {
@@ -503,6 +554,12 @@ fn write_fields(
             values: &err,
         });
     }
+    if let Some(r) = rank {
+        fields.push(CellField {
+            name: "rank",
+            values: r,
+        });
+    }
     write(dir.join("fields.vtkhdf"), mesh, &fields)
 }
 
@@ -514,8 +571,96 @@ fn write_fields(
     _: &Geometry,
     _: &[f64],
     _: &[f64],
+    _: Option<&[f64]>,
 ) -> Result<()> {
     Ok(())
+}
+
+/// The partition of `mesh` into `n` ranks of the `[run] ranks` solves:
+/// recursive coordinate bisection (deterministic, no C library).
+fn rcb(mesh: &Mesh, geo: &Geometry, n: usize) -> Vec<u32> {
+    use foehncraft_mesh::partition::{Method, partition};
+    partition(mesh, geo, n, Method::Rcb).unwrap_or_else(|_| vec![0; mesh.n_cells])
+}
+
+/// One variant solved on `n` ranks, threads of this process (MPI step
+/// W3), φ gathered by global cell identity and compared bit for bit with
+/// `first` (the first backend's φ).
+fn solve_on_ranks(
+    case: &ScalarCase,
+    mesh: &Mesh,
+    geo: &Geometry,
+    settings: &Settings,
+    n: usize,
+    first: Option<&[f64]>,
+) -> Result<Solve> {
+    use foehncraft_mesh::decompose::SharedComm;
+    use foehncraft_parallel::ThreadComm;
+    let t = Instant::now();
+    let part = rcb(mesh, geo, n);
+    let cores = case
+        .run
+        .threads
+        .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |c| c.get()));
+    let per_rank = (cores / n).max(1);
+    let solves = ThreadComm::run(n, |c| {
+        let comm: SharedComm = c;
+        crate::ranks::solve_part(
+            mesh,
+            &part,
+            1,
+            comm,
+            &case.problem,
+            settings,
+            Some(per_rank),
+        )
+    });
+    let at: std::collections::HashMap<u64, usize> = mesh
+        .cell_id
+        .iter()
+        .enumerate()
+        .map(|(i, &g)| (g, i))
+        .collect();
+    let mut phi = vec![f64::NAN; mesh.n_cells];
+    let mut outcome = None;
+    for s in solves {
+        let s = s?;
+        for (id, v) in s.cell_id.iter().zip(&s.phi) {
+            phi[at[id]] = *v;
+        }
+        outcome.get_or_insert(s.outcome);
+    }
+    let outcome = outcome.unwrap_or_default();
+    let range = [
+        phi.iter().copied().fold(f64::INFINITY, f64::min),
+        phi.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+    ];
+    let (diff, bitwise) = match first {
+        None => (None, None),
+        Some(f) => {
+            let scale = f.iter().fold(0.0f64, |a, &b| a.max(b.abs())).max(1e-300);
+            let d = f
+                .iter()
+                .zip(&phi)
+                .fold(0.0f64, |a, (x, y)| a.max((x - y).abs()))
+                / scale;
+            let eq = f.iter().zip(&phi).all(|(x, y)| x.to_bits() == y.to_bits());
+            (Some(d), Some(eq))
+        }
+    };
+    let seconds = t.elapsed().as_secs_f64();
+    Ok(Solve {
+        variant: String::new(),
+        backend: format!("cpu, {n} ranks"),
+        device: format!("{n} ranks as threads of one process, {per_rank} threads each, RCB"),
+        cells: mesh.n_cells,
+        ns_per_cell_iteration: 1e9 * seconds / (mesh.n_cells as f64 * outcome.outer.max(1) as f64),
+        outcome,
+        mms: None,
+        range,
+        diff_to_first: diff,
+        bitwise_equal: bitwise,
+    })
 }
 
 /// φ of the cells that contain the points of `line` (cell values, no

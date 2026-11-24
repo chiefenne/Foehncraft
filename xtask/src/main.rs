@@ -27,7 +27,12 @@ const ALLOWED: &[(&str, &[&str])] = &[
     ),
     (
         "foehncraft-fv",
-        &["foehncraft-core", "foehncraft-kernels", "foehncraft-mesh"],
+        &[
+            "foehncraft-core",
+            "foehncraft-kernels",
+            "foehncraft-parallel",
+            "foehncraft-mesh",
+        ],
     ),
     (
         "foehncraft-flow",

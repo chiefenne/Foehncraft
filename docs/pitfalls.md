@@ -267,9 +267,16 @@ sum every cell over its faces in ascending global face id, copy halo values
 from the owner. Done in MPI step W1 (#200): `Mesh::face_flip` marks the
 flipped faces, `extract` lists cell faces in global order, and
 `Geometry::compute` is canonical on any local mesh; `foehn mesh` and the
-example `mpi_matrix` (1 to 4 ranks, four cell types, in CI) check it. Code
-that evaluates a face from its nodes on a local mesh (W3 onward) must use
-`Mesh::face_global_order`, not `Mesh::face`, where the bits matter.
+example `mpi_matrix` (1 to 4 ranks, four cell types, in CI) check it.
+**Flipping a face is not enough for the solver** (W3, #230): exact for the
+geometry (a sign), but the face formulas are asymmetric (the owner weight w
+against 1 − w, the upwind choice at a zero mass flux), so a flipped face
+gave 146 of 210 cells a different φ on one rank. Since W3 `extract` keeps
+every face in its global orientation (a processor face may be owned by the
+halo cell), and every face is computed on both of its ranks from the same
+inputs; `Mesh::face_flip` is all false there. Do not flip faces of a
+rank's part again; code that needs the own cell of a processor face takes
+the one of owner and neighbour below `n_cells`.
 Do not compare partitions by tolerance when a bitwise comparison is
 possible: a tolerance hides the cause (D93).
 

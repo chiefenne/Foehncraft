@@ -115,8 +115,12 @@ impl SellStructure {
 /// All host arrays of the scalar discretisation.
 #[derive(Debug, Clone, Default)]
 pub struct Discretisation {
-    /// Local cells.
+    /// Local (own) cells: the rows of the matrix.
     pub n_cells: usize,
+    /// Halo cells after the own cells (0 on one partition; MPI step W3):
+    /// the cell arrays of the discretisation (centroid, volume) and the
+    /// cell vectors of a backend have `n_cells + n_halo` entries.
+    pub n_halo: usize,
     /// Faces.
     pub n_faces: usize,
     /// Interior faces.
@@ -218,16 +222,28 @@ impl Discretisation {
         }
     }
 
-    /// Builds the discretisation of `problem` on `mesh`. The mesh must be a
-    /// single partition (no halo cells; the multi-rank operators follow with
-    /// stage 7).
+    /// Builds the discretisation of `problem` on `mesh`.
+    ///
+    /// On a rank's part of a decomposed mesh (MPI step W3) `geo` must hold
+    /// the volumes and centroids of the halo cells
+    /// ([`foehncraft_mesh::decompose::LocalMesh::geometry`]). Every face,
+    /// processor faces included, keeps its global orientation, so the
+    /// arrays of a face (diffusion factor, k, weight) are bitwise those of
+    /// the one-rank run, and the least-squares weights of an own cell sum
+    /// its faces in global face order; the matrix rows are the own cells,
+    /// their columns may be halo cells.
     pub fn new(mesh: &Mesh, geo: &Geometry, problem: &Problem) -> Result<Self> {
+        let nc = mesh.n_cells;
+        let nt = nc + mesh.n_halo;
         ensure!(
-            mesh.n_halo == 0,
-            "the stage-2 operators run on one partition (mesh has {} halo cells)",
+            geo.cell_centroid.len() >= nt && geo.cell_volume.len() >= nt,
+            "geometry without the {} halo cells of the mesh",
             mesh.n_halo
         );
-        let nc = mesh.n_cells;
+        ensure!(
+            mesh.n_halo == 0 || mesh.periodic.is_none(),
+            "periodic faces run on one partition"
+        );
         let nf = mesh.n_faces();
         let ni = mesh.n_interior_faces();
         let nb = nf - ni;
@@ -338,14 +354,15 @@ impl Discretisation {
         let sell = sell_structure(mesh);
         Ok(Self {
             n_cells: nc,
+            n_halo: mesh.n_halo,
             n_faces: nf,
             n_interior: ni,
             owner: mesh.owner.clone(),
             neighbour: mesh.neighbour.clone(),
             cell_ptr: mesh.cell_ptr.clone(),
             cell_faces: mesh.cell_faces.clone(),
-            cell_centroid: Soa3::from_aos(&xc[..nc]),
-            cell_volume: geo.cell_volume[..nc].to_vec(),
+            cell_centroid: Soa3::from_aos(&xc[..nt]),
+            cell_volume: geo.cell_volume[..nt].to_vec(),
             face_centroid: Soa3::from_aos(&geo.face_centroid),
             face_area: Soa3::from_aos(&geo.face_area),
             dgeo,
