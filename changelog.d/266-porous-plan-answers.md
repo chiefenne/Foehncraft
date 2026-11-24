@@ -1,0 +1,1 @@
+- **Porous plan: the maintainer's answers (D273, D277 to D279).** Documentation only. Developing-flow Nusselt number per brick by default, serial first with ranks and GPU in PM5, literature ceramic values until a datasheet arrives, a three-dimensional first gallery case, and the go for PM0 to PM3 before radiation.
