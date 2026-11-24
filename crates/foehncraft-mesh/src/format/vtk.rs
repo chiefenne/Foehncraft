@@ -126,7 +126,7 @@ struct Grid {
     names: HashMap<String, Vec<String>>,
 }
 
-const REGION_NAMES: [&str; 12] = [
+pub(crate) const REGION_NAMES: [&str; 12] = [
     "region",
     "gmsh:physical",
     "cellentityids",
@@ -145,7 +145,7 @@ fn is_region(name: &str) -> bool {
     REGION_NAMES.iter().any(|r| name.eq_ignore_ascii_case(r))
 }
 
-fn id_names(list: Option<&Vec<String>>) -> HashMap<i64, String> {
+pub(crate) fn id_names(list: Option<&Vec<String>>) -> HashMap<i64, String> {
     list.into_iter()
         .flatten()
         .filter_map(|e| {

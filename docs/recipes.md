@@ -101,7 +101,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="qcr"></a>115 | [Get the secondary flow of non-circular ducts with SST](recipes/turbulence.md#qcr) | [Turbulence models](recipes/turbulence.md) |
 | <a id="mesh-su2"></a>127 | [Read an SU2 mesh and map its markers to boundary conditions](recipes/meshes.md#mesh-su2) | [Meshes](recipes/meshes.md) |
 | <a id="mesh-cgns-openfoam"></a>129 | [Read a CGNS or OpenFOAM mesh](recipes/meshes.md#mesh-cgns-openfoam) | [Meshes](recipes/meshes.md) |
-| <a id="mesh-msh-vtk"></a>134 | [Read a Fluent `.msh` or VTK mesh, write a VTU](recipes/meshes.md#mesh-msh-vtk) | [Meshes](recipes/meshes.md) |
+| <a id="mesh-msh-vtk"></a>134 | [Read a Fluent `.msh`, VTK or VTKHDF mesh, write a VTU](recipes/meshes.md#mesh-msh-vtk) | [Meshes](recipes/meshes.md) |
 | <a id="mesh-multizone"></a>138 | [Run a rotor/stator sliding case from a multi-zone SU2 or CGNS file](recipes/meshes.md#mesh-multizone) | [Meshes](recipes/meshes.md) |
 | <a id="outlet-backflow"></a>140 | [Say what turbulence enters through an outlet](recipes/turbulence.md#outlet-backflow) | [Turbulence models](recipes/turbulence.md) |
 | <a id="k-sink"></a>141 | [Choose the sink of k of the ζ-f models](recipes/turbulence.md#k-sink) | [Turbulence models](recipes/turbulence.md) |

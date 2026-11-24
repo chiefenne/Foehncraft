@@ -27,6 +27,7 @@ import numpy as np
 from matplotlib.collections import PolyCollection
 
 from tools.plot.turbulence_fields import read
+from tools.plot.colormaps import RAINBOW
 
 L, H, T, STRETCH = 0.5, 0.002, 0.0005, 25.0
 
@@ -61,7 +62,7 @@ def main():
     gauge = np.where(water, p - op["water"], p - op["oil"])
     fig, axs = plt.subplots(3, 1, figsize=(11.0, 9.0), constrained_layout=True,
                             height_ratios=[1.0, 1.0, 1.2])
-    panel(axs[0], quads[fluid], p[fluid] / 1e5, "viridis", (0.95, 1.55),
+    panel(axs[0], quads[fluid], p[fluid] / 1e5, RAINBOW, (0.95, 1.55),
           "absolute pressure (bar)")
     axs[0].text(0.01, STRETCH * 0.5 * H, "water →  outlet 1.0 bar at x = 0.5 m", color="w",
                 va="center")

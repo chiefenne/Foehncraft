@@ -24,6 +24,7 @@ matplotlib.use("Agg")
 import h5py
 import matplotlib.pyplot as plt
 import numpy as np
+from tools.plot.colormaps import RAINBOW
 
 
 def section(d):
@@ -66,7 +67,7 @@ def main():
     fig, axes = plt.subplots(1, 2, figsize=(10, 4.6), constrained_layout=True)
     for ax, d, title in ((axes[0], off, "k-ω SST"), (axes[1], on, "k-ω SST with QCR2000")):
         Y, Z, U, V, W = section(d)
-        pc = ax.pcolormesh(Y, Z, U, cmap="viridis", vmin=0.0, vmax=1.4, shading="nearest")
+        pc = ax.pcolormesh(Y, Z, U, cmap=RAINBOW, vmin=0.0, vmax=1.4, shading="nearest")
         s = np.hypot(V, W)
         smax = s.max()
         yy = np.linspace(Y[0], Y[-1], len(Y))

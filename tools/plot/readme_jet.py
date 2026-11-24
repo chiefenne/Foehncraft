@@ -10,6 +10,10 @@ Needs h5py, NumPy, SciPy and Matplotlib.
 import sys, h5py, numpy as np, matplotlib
 matplotlib.use('Agg'); import matplotlib.pyplot as plt
 from scipy.interpolate import griddata
+try:  # tools/plot/colormaps.py, run as a module or as a script
+    from tools.plot.colormaps import RAINBOW
+except ImportError:
+    from colormaps import RAINBOW
 f=h5py.File(sys.argv[1]); g=f['VTKHDF/internal']
 P=g['Points'][:]; C=g['Connectivity'][:]; O=g['Offsets'][:]
 cen=np.array([P[C[O[i]:O[i+1]]].mean(0) for i in range(len(O)-1)])
@@ -29,7 +33,7 @@ fig=plt.figure(figsize=(6,4),dpi=150); ax=fig.add_axes([0,0,1,1]); bg='#0b0f17';
 if mode=='split':
     Tn=np.log10(np.maximum(T,1e-6)); L=RR<0
     ax.imshow(np.where(L,Tn,np.nan),origin='lower',extent=[-R,R,0,2],cmap='inferno',vmin=np.nanpercentile(Tn,8),vmax=Tn.max(),aspect='auto',interpolation='bilinear')
-    ax.imshow(np.where(~L,S,np.nan),origin='lower',extent=[-R,R,0,2],cmap='viridis',aspect='auto',interpolation='bilinear')
+    ax.imshow(np.where(~L,S,np.nan),origin='lower',extent=[-R,R,0,2],cmap=RAINBOW,aspect='auto',interpolation='bilinear')
     ax.plot([0,0],[0.03,2],color=(1,1,1,0.35),lw=0.6,ls='--')
     kw=dict(color='white',fontsize=8,alpha=0.85,va='top')
     ax.text(-R+0.06,1.95,'temperature',**kw); ax.text(R-0.06,1.95,'speed',ha='right',**kw)
@@ -37,7 +41,7 @@ elif mode=='theta':
     Tn=np.log10(np.maximum(T,1e-6)); 
     ax.imshow(np.where(np.isnan(Tn),np.nan,Tn),origin='lower',extent=[-R,R,0,2],cmap='inferno',vmin=np.nanpercentile(Tn,40),vmax=np.nanmax(Tn),aspect='auto',interpolation='bilinear')
 else:
-    ax.imshow(S,origin='lower',extent=[-R,R,0,2],cmap='magma',aspect='auto',interpolation='bilinear')
+    ax.imshow(S,origin='lower',extent=[-R,R,0,2],cmap=RAINBOW,aspect='auto',interpolation='bilinear')
 ax.streamplot(rr,xx,np.nan_to_num(UR),np.nan_to_num(UX),color=(1,1,1,0.55),density=1.6,linewidth=0.6,arrowsize=0.6)
 # plate coloured by wall temperature (heat transfer)
 ax.add_patch(plt.Rectangle((-R,-0.0),2*R,0.025,color='#9aa4b5'))

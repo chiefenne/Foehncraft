@@ -154,6 +154,7 @@ pub fn features_in_use(case: &FlowCase) -> Vec<&'static str> {
                 "su2" => "su2",
                 "cgns" => "cgns",
                 "vtk" | "vtu" => "vtk",
+                "vtkhdf" => "vtkhdf",
                 "msh" => "msh",
                 _ => "openfoam",
             }
@@ -165,6 +166,7 @@ pub fn features_in_use(case: &FlowCase) -> Vec<&'static str> {
         Some("su2") => f.push("mesh.su2"),
         Some("cgns") => f.push("mesh.cgns"),
         Some("vtk") => f.push("mesh.vtk"),
+        Some("vtkhdf") => f.push("mesh.vtkhdf-input"),
         Some("fluent_msh") => f.push("mesh.fluent-msh"),
         Some("openfoam") => f.push("mesh.openfoam"),
         _ => {}

@@ -115,6 +115,21 @@ evidence = [
 gaps = ["no flow case of the catalogue reads a VTK file", "the peak memory of a large read (1 GB per million polyhedra) is measured by hand, not checked in CI"]
 
 [[feature]]
+id = "mesh.vtkhdf-input"
+area = "Meshes"
+title = "VTKHDF reader (whole, partitioned and blocked files)"
+switch = 'mesh.format = "vtkhdf"'
+evidence = [
+  { kind = "consistency", test = "crates/foehncraft-mesh/tests/vtkhdf_read.rs::blocked_file_reads_as_its_vtu", what = "a blocked file (polyhedra, ghost layer, global point ids, original cell numbers) reads as the mesh of the .vtu of the same cells, bit for bit, for any block size and cell order" },
+  { kind = "consistency", test = "crates/foehncraft-mesh/tests/vtkhdf_read.rs::koflcraft_files_read_as_their_vtu", what = "KoflCraft's own blocked files (box4, channel) read as the mesh of the .vtu of the same export, bit for bit" },
+  { kind = "consistency", test = "crates/foehncraft-mesh/tests/vtkhdf_read.rs::koflcraft_channel_matches_its_evidence", what = "the channel reproduces its mesh-evidence.json: counts, total volume, patch faces and areas, zones" },
+  { kind = "consistency", test = "crates/foehncraft-mesh/tests/vtkhdf_read.rs::blocked_file_without_point_ids_joins_by_coordinates", what = "partitions without GlobalPointIds joined by coordinates, same mesh" },
+  { kind = "consistency", test = "crates/foehncraft-mesh/tests/vtkhdf_read.rs::own_output_reads_back_as_its_mesh", what = "FoehnCraft's own fields.vtkhdf reads back with the same cells, volumes, zones and boundaries" },
+  { kind = "contract", property = "diagnostics", test = "crates/foehncraft-mesh/tests/vtkhdf_read.rs::broken_counts_are_refused", what = "counts beyond the file and point ids beyond the points refused with a message" },
+]
+gaps = ["the KoflCraft fixtures in the repository hold one block each; the two-block sweep (99,160 cells) is checked by hand", "no flow case of the catalogue reads a VTKHDF file"]
+
+[[feature]]
 id = "mesh.partition"
 area = "Meshes"
 title = "Partitioning with METIS and halos"
