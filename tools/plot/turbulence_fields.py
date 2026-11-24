@@ -22,6 +22,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
+from tools.plot.vtkhdf import internal  # noqa: E402
 
 from tools.plot import backstep_chart as bc  # noqa: E402
 from tools.plot.colormaps import UNIFORM  # noqa: E402
@@ -62,7 +63,7 @@ def read(path):
     """As backstep_chart.fields, from any file."""
     import h5py
     with h5py.File(path, "r") as f:
-        g = f["VTKHDF/internal"]
+        g = internal(f)
         pts = g["Points"][:]
         conn = g["Connectivity"][:]
         off = g["Offsets"][:]

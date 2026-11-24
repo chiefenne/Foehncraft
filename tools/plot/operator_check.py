@@ -25,13 +25,14 @@ import numpy as np
 from matplotlib.collections import PolyCollection
 from matplotlib.colors import LogNorm
 from tools.plot.colormaps import RAINBOW
+from tools.plot.vtkhdf import internal
 
 
 def polygons(path):
     """The bottom face of every cell of a one-layer 2D mesh, in cell order."""
     import h5py
     with h5py.File(path, "r") as f:
-        g = f["VTKHDF/internal"]
+        g = internal(f)
         pts = g["Points"][:]
         conn = g["Connectivity"][:]
         off = g["Offsets"][:]

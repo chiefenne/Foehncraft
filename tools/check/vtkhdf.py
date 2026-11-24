@@ -40,26 +40,41 @@ def check(path):
     assert out.IsA("vtkPartitionedDataSetCollection"), out.GetClassName()
     names = [out.GetMetaData(i).Get(vtk.vtkCompositeDataSet.NAME())
              for i in range(out.GetNumberOfPartitionedDataSets())]
-    grid = out.GetPartitionedDataSet(names.index("internal")).GetPartition(0)
-    n = grid.GetNumberOfCells()
-    types = np.array([grid.GetCellType(i) for i in range(n)])
-    msg = f"{path}: {n} cells, {len(names) - 1} boundaries"
-    ours = grid.GetCellData().GetArray("volume")
-    # Volumes are compared only where Foehncraft wrote them (the mesh files);
-    # computing them for a field file without `volume` checked nothing and
-    # took minutes for polyhedral meshes.
-    if ours is not None:
+    parts = out.GetPartitionedDataSet(names.index("internal"))
+    n, types, err = 0, set(), 0.0
+    for k in range(parts.GetNumberOfPartitions()):
+        grid = parts.GetPartition(k)
+        # a blocked file (layout 1) repeats the cells next to a block as
+        # ghosts; each cell is checked in the block that owns it
+        ghost = grid.GetCellData().GetArray("vtkGhostType")
+        own = np.arange(grid.GetNumberOfCells())
+        if ghost is not None:
+            own = np.nonzero(v2n(ghost) == 0)[0]
+        n += len(own)
+        t = np.array([grid.GetCellType(int(i)) for i in own], dtype=int)
+        types |= set(t.tolist())
+        ours = grid.GetCellData().GetArray("volume")
+        # Volumes are compared only where Foehncraft wrote them (the mesh
+        # files); computing them for a field file without `volume` checked
+        # nothing and took minutes for polyhedral meshes.
+        if ours is None or len(own) == 0:
+            continue
         sizes = vtk.vtkCellSizeFilter()
         sizes.SetInputData(grid)
         sizes.Update()
-        vol = v2n(sizes.GetOutput().GetCellData().GetArray("Volume")).copy()
-        for i in np.nonzero(types == vtk.VTK_POLYHEDRON)[0]:
-            vol[i] = polyhedron_volume(grid.GetCell(i))
-        ours = v2n(ours)
-        err = abs(vol - ours).max() / abs(ours).max()
+        vol = v2n(sizes.GetOutput().GetCellData().GetArray("Volume"))[own].copy()
+        for j in np.nonzero(t == vtk.VTK_POLYHEDRON)[0]:
+            vol[j] = polyhedron_volume(grid.GetCell(int(own[j])))
+        ours = v2n(ours)[own]
+        err = max(err, abs(vol - ours).max() / abs(ours).max())
+    msg = f"{path}: {n} cells in {parts.GetNumberOfPartitions()} block(s), {len(names) - 1} boundaries"
+    if err > 0.0 or any(
+        parts.GetPartition(k).GetCellData().GetArray("volume") is not None
+        for k in range(parts.GetNumberOfPartitions())
+    ):
         msg += f", max relative volume difference {err:.1e}"
         assert err < 1e-8, msg
-    msg += f", VTK cell types {sorted(set(types.tolist()))}"
+    msg += f", VTK cell types {sorted(types)}"
     print(msg)
 
 

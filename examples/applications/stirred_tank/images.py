@@ -9,6 +9,9 @@ The run directory needs `fields.vtkhdf` (output.vtkhdf = true); the tank is
 T = 1 m, 90 rpm (mesh.py).
 """
 import sys, h5py, numpy as np
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "python"))
+from foehncraft.vtkhdf import internal  # noqa: E402  (fields.vtkhdf in one piece)
 import matplotlib; matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from scipy.spatial import cKDTree
@@ -17,7 +20,7 @@ sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[3]
 from tools.plot.colormaps import RAINBOW  # noqa: E402
 run, out = sys.argv[1], sys.argv[2]
 TIP = 9.42477796076938*0.2
-f = h5py.File(run+"/fields.vtkhdf","r"); g=f["VTKHDF/internal"]
+f = h5py.File(run+"/fields.vtkhdf","r"); g=internal(f)
 pts=g["Points"][:]; con=g["Connectivity"][:].reshape(-1,4)
 cen=pts[con].mean(axis=1); cd=g["CellData"]
 u=np.stack([cd["velocity_x"][:],cd["velocity_y"][:],cd["velocity_z"][:]],1)

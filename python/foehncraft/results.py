@@ -190,11 +190,20 @@ def read_csv(path) -> dict[str, list]:
 
 
 def read_vtkhdf(path, block: str = "internal") -> dict:
-    """The cell data of one block of a VTKHDF file as NumPy arrays."""
+    """The cell data of one block of a VTKHDF file as NumPy arrays. For
+    `internal` the blocks of the file come back in one piece
+    (`foehncraft.vtkhdf.internal`): each cell once, in the order of the cell
+    identities, and `points` each once, in the order of the point
+    identities."""
     import h5py
     import numpy as np
 
+    from .vtkhdf import internal
+
     with h5py.File(path, "r") as f:
+        if block == "internal":
+            g = internal(f)
+            return {**g["CellData"], "points": g["Points"]}
         g = f["VTKHDF"][block]
         out = {k: np.asarray(v) for k, v in g["CellData"].items()}
         if "Points" in g:

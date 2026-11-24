@@ -10,24 +10,27 @@ argument also the README teaser.
         output/hx_coflow/fields.vtkhdf docs/figures/applications [assets/readme]
 
 Off-screen; on a headless Linux box run it under xvfb-run. The script reads
-the `VTKHDF/internal` group of `fields.vtkhdf` (cell data `temperature`,
+the `VTKHDF/internal` blocks of `fields.vtkhdf` (cell data `temperature`,
 `speed`, `zone`); zone 1 is the water (tube side), zone 2 the air (shell
 side), the others are steel.
 """
 import sys
+from pathlib import Path
 
-import h5py
 import numpy as np
 import pyvista as pv
 from PIL import Image
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[3]))
 from tools.plot.colormaps import RAINBOW  # noqa: E402
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "python"))
+from foehncraft.vtkhdf import internal  # noqa: E402  (fields.vtkhdf in one piece)
+
 pv.OFF_SCREEN = True
 src, out = sys.argv[1], sys.argv[2]
 readme = sys.argv[3] if len(sys.argv) > 3 else None
 
-f = h5py.File(src, "r")["VTKHDF/internal"]
+f = internal(src)
 pts = f["Points"][()] * 1000.0  # mm
 conn, off = f["Connectivity"][()], f["Offsets"][()]
 g = pv.UnstructuredGrid(np.insert(conn, off[:-1], np.diff(off)), f["Types"][()], pts)

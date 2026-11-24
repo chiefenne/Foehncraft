@@ -60,3 +60,32 @@ fn write_all_types() {
     .unwrap();
     eprintln!("written to {}", dir.display());
 }
+
+/// Invariant: the size estimate of the run plan (`estimate_bytes`) is the
+/// written file within 1 %, here for a mesh of two blocks with ghosts.
+#[test]
+fn size_estimate_matches_the_file() {
+    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("vtkhdf");
+    std::fs::create_dir_all(&dir).unwrap();
+    let m = BoxSpec::new(Kind::Hex, 3, [41, 41, 41]).generate().unwrap();
+    assert!(m.n_cells > vtkhdf::BLOCK_CELLS);
+    let a: Vec<f64> = (0..m.n_cells).map(|c| c as f64).collect();
+    let p = dir.join("two_blocks.vtkhdf");
+    let fields = [
+        CellField {
+            name: "a",
+            values: &a,
+        },
+        CellField {
+            name: "b",
+            values: &a,
+        },
+    ];
+    vtkhdf::write(&p, &m, &fields).unwrap();
+    let size = std::fs::metadata(&p).unwrap().len() as f64;
+    let est = vtkhdf::estimate_bytes(&m, fields.len());
+    assert!(
+        (est - size).abs() <= 0.01 * size,
+        "estimate {est}, file {size}"
+    );
+}

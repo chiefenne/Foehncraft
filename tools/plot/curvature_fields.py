@@ -33,7 +33,7 @@ from matplotlib.colors import TwoSlopeNorm
 
 from tools.plot import backstep_chart as bc
 from tools.plot.turbulence_fields import read
-from tools.plot.colormaps import RAINBOW
+from tools.plot.colormaps import RAINBOW, UNIFORM
 
 
 def main():
@@ -56,7 +56,7 @@ def main():
     pc = bc.panel(axes[1], quads, r_on, RAINBOW, 0.0, hi)
     fig.colorbar(pc, ax=axes[1], label="ν_t / ν  with the correction", shrink=0.9, pad=0.01)
     m = min(np.percentile(np.abs(rel[keep]), 99.5), 0.5)
-    pc = bc.panel(axes[2], quads, rel, "PuOr_r", -m, m)
+    pc = bc.panel(axes[2], quads, rel, UNIFORM, -m, m)
     fig.colorbar(pc, ax=axes[2], label="change of ν_t against plain SST", shrink=0.9, pad=0.01)
     if xr:
         for ax in axes:

@@ -141,9 +141,13 @@
    "title": "VTKHDF output for ParaView",
    "grade": "partial",
    "why": [
-    "no exact or manufactured solution"
+    "no exact or manufactured solution",
+    "gaps written"
    ],
-   "gaps": [],
+   "gaps": [
+    "the parallel writer (all ranks into one file) is still serial",
+    "ParaView reads the blocks through VTK 9.7.2 here; the maintainer's ParaView is not checked"
+   ],
    "range": {}
   },
   {

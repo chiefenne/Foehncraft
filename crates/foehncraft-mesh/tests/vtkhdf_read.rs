@@ -445,10 +445,10 @@ fn blocked_file_without_original_ids_keeps_the_file_order() {
     assert_eq!(count(&vtu), count(&f));
 }
 
-/// Invariant: FoehnCraft's own `fields.vtkhdf` (one partition, linear
-/// cells and polyhedra, a real-valued zone array, boundary blocks without
-/// point ids) reads back as its mesh: the same cells in the order of their
-/// identities, the same volumes, zones and boundaries.
+/// Invariant: FoehnCraft's own `fields.vtkhdf` (blocked layout 1, linear
+/// cells and polyhedra, zones with their names) reads back as its mesh: the
+/// same cells in the order of their identities, the same volumes, zones
+/// and boundaries.
 #[test]
 fn own_output_reads_back_as_its_mesh() {
     use foehncraft_mesh::generate::{BoxSpec, Kind};
@@ -471,7 +471,7 @@ fn own_output_reads_back_as_its_mesh() {
     )
     .unwrap();
     let f = read(&p);
-    assert_eq!(f.format, "VTKHDF 2.4, 1 partition");
+    assert_eq!(f.format, "VTKHDF 2.4, 1 partition, blocked layout 1");
     let r = f.mesh;
     r.validate().unwrap();
     assert_eq!(r.n_cells, m.n_cells);
@@ -481,10 +481,9 @@ fn own_output_reads_back_as_its_mesh() {
     for (k, &c) in by_id.iter().enumerate() {
         let (a, b) = (g.cell_volume[c], gr.cell_volume[k]);
         assert!((a - b).abs() <= 1e-12 * a, "cell {c}: {a} {b}");
-        // no zone names in the file: the zones are named by number
         assert_eq!(
             r.zones[r.cell_zone[k] as usize],
-            format!("zone{}", m.cell_zone[c])
+            m.zones[m.cell_zone[c] as usize]
         );
     }
     let count = |m: &Mesh| -> Vec<(String, usize)> {
@@ -494,6 +493,263 @@ fn own_output_reads_back_as_its_mesh() {
             .collect()
     };
     assert_eq!(count(&m), count(&r));
+}
+
+/// The datasets of partition `p` of a 1-D dataset with `n[p]` rows per
+/// partition (`extra` more for offsets).
+fn rows<T: h5::H5Type + Clone>(g: &h5::Group, name: &str, n: &[i64], extra: usize) -> Vec<Vec<T>> {
+    let all: Vec<T> = g.dataset(name).unwrap().read_raw().unwrap();
+    let mut at = 0;
+    let mut out = Vec::new();
+    for &k in n {
+        let k = k as usize + extra;
+        out.push(all[at..at + k].to_vec());
+        at += k;
+    }
+    assert_eq!(at, all.len(), "{name}");
+    out
+}
+
+/// Invariant: the writer's file reads as the same mesh whatever the block
+/// size, down to one cell per block (every cell then a ghost of its
+/// neighbours' blocks).
+#[test]
+fn blocked_output_of_any_block_size_reads_alike() {
+    let (_, m) = source("blocked_output_of_any_block_size_reads_alike");
+    let g = Geometry::compute(&m);
+    let field = [CellField {
+        name: "volume",
+        values: &g.cell_volume,
+    }];
+    let one = dir().join("any_block_one.vtkhdf");
+    vtkhdf::write_blocks(&one, &m, &field, &[], &[], m.n_cells).unwrap();
+    let one = read(&one);
+    assert_eq!(one.format, "VTKHDF 2.4, 1 partition, blocked layout 1");
+    for block in [1, 7, 64] {
+        let p = dir().join(format!("any_block_{block}.vtkhdf"));
+        vtkhdf::write_blocks(&p, &m, &field, &[], &[], block).unwrap();
+        let f = read(&p);
+        let nb = m.n_cells.div_ceil(block);
+        assert_eq!(
+            f.format,
+            format!("VTKHDF 2.4, {nb} partitions, blocked layout 1")
+        );
+        same(&one.mesh, &f.mesh, &format!("{block} cells per block"));
+    }
+    // the cells in the order of their identities, the source's volumes
+    let gr = Geometry::compute(&one.mesh);
+    for c in 0..m.n_cells {
+        let (a, b) = (g.cell_volume[c], gr.cell_volume[c]);
+        assert!((a - b).abs() <= 1e-12 * a.abs(), "cell {c}: {a} {b}");
+    }
+}
+
+/// Invariant: the writer keeps the blocked layout (spec layout 1): owned
+/// cells in runs of the block size with consecutive file ids, then exactly
+/// the cells of other blocks that share a point with them; a point is owned
+/// by the lowest block whose owned cells use it; bounds, field ranges and
+/// owner cells as the mesh has them; and the layout does not change when
+/// the mesh is renumbered.
+#[test]
+fn blocked_output_keeps_the_layout() {
+    use std::collections::{BTreeMap, HashSet};
+    let (_, m) = source("blocked_output_keeps_the_layout");
+    let block = 7;
+    let values: Vec<f64> = (0..m.n_cells).map(|c| m.cell_id[c] as f64).collect();
+    let field = [CellField {
+        name: "id",
+        values: &values,
+    }];
+    let p = dir().join("layout.vtkhdf");
+    vtkhdf::write_blocks(&p, &m, &field, &[], &[], block).unwrap();
+    let file = h5::File::open(&p).unwrap();
+    let root = file.group("VTKHDF").unwrap();
+    let blocks: i64 = root
+        .attr("murmelcraft_blocks")
+        .unwrap()
+        .read_scalar()
+        .unwrap();
+    assert_eq!(blocks, 1);
+    let order: FixedAscii<7> = root.attr("block_order").unwrap().read_scalar().unwrap();
+    assert_eq!(order.as_str(), "hilbert");
+    let gi = root.group("internal").unwrap();
+    let size: i64 = gi.attr("block_cells").unwrap().read_scalar().unwrap();
+    assert_eq!(size, block as i64);
+    let nc: Vec<i64> = gi.dataset("NumberOfCells").unwrap().read_raw().unwrap();
+    let np: Vec<i64> = gi.dataset("NumberOfPoints").unwrap().read_raw().unwrap();
+    let cd = gi.group("CellData").unwrap();
+    let pd = gi.group("PointData").unwrap();
+    let fd = gi.group("FieldData").unwrap();
+    let file_ids = rows::<i64>(&cd, "GlobalCellIds", &nc, 0);
+    let original = rows::<i64>(&cd, "OriginalCellIds", &nc, 0);
+    let ghost = rows::<u8>(&cd, "vtkGhostType", &nc, 0);
+    let zone = rows::<u32>(&cd, "zone", &nc, 0);
+    let ids = rows::<f64>(&cd, "id", &nc, 0);
+    let point_ids = rows::<i64>(&pd, "GlobalPointIds", &np, 0);
+    let point_ghost = rows::<u8>(&pd, "vtkGhostType", &np, 0);
+    let xyz: Vec<f64> = gi.dataset("Points").unwrap().read_raw().unwrap();
+    let owned: Vec<i64> = fd.dataset("BlockOwnedCells").unwrap().read_raw().unwrap();
+    let bounds: Vec<f64> = fd.dataset("BlockBounds").unwrap().read_raw().unwrap();
+    let range: Vec<f64> = fd.dataset("BlockRange_id").unwrap().read_raw().unwrap();
+    let nb = m.n_cells.div_ceil(block);
+    assert_eq!(nc.len(), nb);
+    assert_eq!(owned.iter().sum::<i64>() as usize, m.n_cells);
+
+    // the mesh cell of each file id, the points of each cell by identity
+    let mut cell_of = vec![usize::MAX; m.n_cells];
+    let mut at = 0;
+    for (b, n) in owned.iter().enumerate() {
+        let n = *n as usize;
+        assert!(n == block || (b == nb - 1 && n <= block), "block {b}: {n}");
+        for k in 0..n {
+            assert_eq!(file_ids[b][k], (at + k) as i64);
+            assert_eq!(ghost[b][k], 0);
+            let c = original[b][k] as usize;
+            assert_eq!(m.cell_id[c] as usize, c, "a mesh read from a file");
+            cell_of[at + k] = c;
+        }
+        at += n;
+    }
+    assert!(cell_of.iter().all(|&c| c != usize::MAX));
+    let nodes: Vec<HashSet<i64>> = (0..m.n_cells)
+        .map(|c| {
+            m.cell_nodes(c)
+                .iter()
+                .map(|&p| m.point_id[p as usize] as i64)
+                .collect()
+        })
+        .collect();
+    let mut first_block: BTreeMap<i64, usize> = BTreeMap::new();
+    for (b, n) in owned.iter().enumerate() {
+        for k in 0..*n as usize {
+            for &p in &nodes[original[b][k] as usize] {
+                first_block.entry(p).or_insert(b);
+            }
+        }
+    }
+    let mut row = 0;
+    for b in 0..nb {
+        let own = owned[b] as usize;
+        let mine: HashSet<i64> = (0..own)
+            .flat_map(|k| nodes[original[b][k] as usize].iter().copied())
+            .collect();
+        // ghosts: exactly the other blocks' cells that share a point
+        let want: BTreeSet<i64> = (0..m.n_cells)
+            .filter(|&f| (f / block) != b && nodes[cell_of[f]].iter().any(|p| mine.contains(p)))
+            .map(|f| f as i64)
+            .collect();
+        let got: Vec<i64> = file_ids[b][own..].to_vec();
+        assert!(got.windows(2).all(|w| w[0] < w[1]), "ghosts in file order");
+        assert_eq!(
+            got.iter().copied().collect::<BTreeSet<_>>(),
+            want,
+            "block {b}"
+        );
+        for k in 0..nc[b] as usize {
+            let c = cell_of[file_ids[b][k] as usize];
+            assert_eq!(original[b][k] as usize, c);
+            assert_eq!(ghost[b][k], u8::from(k >= own));
+            assert_eq!(zone[b][k], m.cell_zone[c]);
+            assert_eq!(ids[b][k], values[c]);
+        }
+        // points: those of the partition's cells, owned by the lowest block
+        let all: HashSet<i64> = (0..nc[b] as usize)
+            .flat_map(|k| nodes[original[b][k] as usize].iter().copied())
+            .collect();
+        assert_eq!(point_ids[b].len(), all.len());
+        let mut lo = [f64::INFINITY; 3];
+        let mut hi = [f64::NEG_INFINITY; 3];
+        for (k, &p) in point_ids[b].iter().enumerate() {
+            assert!(all.contains(&p));
+            assert_eq!(
+                point_ghost[b][k],
+                u8::from(first_block[&p] != b),
+                "point {p}"
+            );
+            let x = &xyz[3 * (row + k)..3 * (row + k) + 3];
+            assert_eq!(x, &m.points[p as usize][..], "a mesh read from a file");
+            if mine.contains(&p) {
+                for d in 0..3 {
+                    lo[d] = lo[d].min(x[d]);
+                    hi[d] = hi[d].max(x[d]);
+                }
+            }
+        }
+        row += point_ids[b].len();
+        assert_eq!(
+            &bounds[6 * b..6 * b + 6],
+            &[lo, hi].concat()[..],
+            "block {b}"
+        );
+        let v: Vec<f64> = (0..own).map(|k| ids[b][k]).collect();
+        let r = [
+            v.iter().copied().fold(f64::INFINITY, f64::min),
+            v.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+        ];
+        assert_eq!(&range[2 * b..2 * b + 2], &r[..]);
+    }
+    // the owner cell of each boundary face holds the face's points
+    for bnd in &m.boundaries {
+        let gb = root.group(&bnd.name).unwrap();
+        let owner: Vec<i64> = gb
+            .dataset("CellData/OwnerCell")
+            .unwrap()
+            .read_raw()
+            .unwrap();
+        let gp: Vec<i64> = gb
+            .dataset("PointData/GlobalPointIds")
+            .unwrap()
+            .read_raw()
+            .unwrap();
+        let conn: Vec<i64> = gb
+            .dataset("Polygons/Connectivity")
+            .unwrap()
+            .read_raw()
+            .unwrap();
+        let off: Vec<i64> = gb.dataset("Polygons/Offsets").unwrap().read_raw().unwrap();
+        assert_eq!(owner.len(), bnd.len);
+        for (k, w) in off.windows(2).enumerate() {
+            let c = cell_of[owner[k] as usize];
+            for &v in &conn[w[0] as usize..w[1] as usize] {
+                assert!(nodes[c].contains(&gp[v as usize]), "{}: face {k}", bnd.name);
+            }
+        }
+    }
+    // a renumbered mesh keeps the cells, the blocks and the points
+    let mut r = m.clone();
+    foehncraft_mesh::renumber::renumber(&mut r, foehncraft_mesh::renumber::Ordering::Shuffle, 5)
+        .unwrap();
+    let values_r: Vec<f64> = (0..r.n_cells).map(|c| r.cell_id[c] as f64).collect();
+    let q = dir().join("layout_renumbered.vtkhdf");
+    vtkhdf::write_blocks(
+        &q,
+        &r,
+        &[CellField {
+            name: "id",
+            values: &values_r,
+        }],
+        &[],
+        &[],
+        block,
+    )
+    .unwrap();
+    let fr = h5::File::open(&q).unwrap();
+    for name in [
+        "internal/CellData/OriginalCellIds",
+        "internal/CellData/GlobalCellIds",
+        "internal/PointData/GlobalPointIds",
+        "internal/PointData/vtkGhostType",
+    ] {
+        let a: Vec<i64> = root.dataset(name).unwrap().read_raw().unwrap();
+        let b: Vec<i64> = fr
+            .group("VTKHDF")
+            .unwrap()
+            .dataset(name)
+            .unwrap()
+            .read_raw()
+            .unwrap();
+        assert_eq!(a, b, "{name}");
+    }
 }
 
 /// Invariant: counts beyond the file and ids beyond the points are refused

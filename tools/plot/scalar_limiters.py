@@ -32,6 +32,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.collections import PolyCollection
 from tools.plot.colormaps import RAINBOW
+from tools.plot.vtkhdf import internal
 
 X_CUT = 0.8
 SLOPE = 0.6
@@ -51,7 +52,7 @@ def polygons(path):
     """The bottom polygon of every cell of a 2D case one cell thick and its
     cell data."""
     with h5py.File(path, "r") as f:
-        g = f["VTKHDF/internal"]
+        g = internal(f)
         pts = g["Points"][:]
         conn = g["Connectivity"][:]
         off = g["Offsets"][:]

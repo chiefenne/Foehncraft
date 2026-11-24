@@ -14,6 +14,7 @@ Tetrahedral meshes only (the volume of a cell from its four nodes).
 import argparse
 import json
 import re
+import sys
 from pathlib import Path
 
 import h5py
@@ -22,6 +23,9 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "python"))
+from foehncraft.vtkhdf import internal  # noqa: E402  (fields.vtkhdf in one piece)
 
 T_TANK, D_IMP, N_REV = 0.135, 0.045, 200.0 / 60.0   # m, m, 1/s
 T_MEASURED = 18.7        # s, Fyfe et al. 2024, Table 3: 200 rpm, baffled, whole-reactor plateau time
@@ -34,7 +38,7 @@ def grenville(n_p):
 
 def read(path, scalar):
     with h5py.File(path, "r") as f:
-        g = f["VTKHDF/internal"]
+        g = internal(f)
         pts, con = g["Points"][:], g["Connectivity"][:].reshape(-1, 4)
         c = g["CellData"][scalar][:]
     return pts, con, c

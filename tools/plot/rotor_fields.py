@@ -51,6 +51,7 @@ import numpy as np  # noqa: E402
 from matplotlib.collections import PolyCollection  # noqa: E402
 from matplotlib.tri import LinearTriInterpolator, Triangulation  # noqa: E402
 from tools.plot.colormaps import RAINBOW, UNIFORM  # noqa: E402
+from tools.plot.vtkhdf import internal  # noqa: E402
 
 LABELS = {
     "speed": ("|u| (m/s)", RAINBOW),
@@ -79,7 +80,7 @@ def read(path):
     """The lower-z faces of the cells (polygons), their centroids and the
     cell data."""
     with h5py.File(path, "r") as f:
-        g = f["VTKHDF/internal"]
+        g = internal(f)
         pts = g["Points"][:]
         conn = g["Connectivity"][:]
         off = g["Offsets"][:]

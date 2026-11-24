@@ -8,13 +8,16 @@ white streamlines; the axisymmetric wedge mirrored about the jet axis.
 Needs h5py, NumPy, SciPy and Matplotlib.
 """
 import sys, h5py, numpy as np, matplotlib
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "python"))
+from foehncraft.vtkhdf import internal  # the blocks of fields.vtkhdf in one piece
 matplotlib.use('Agg'); import matplotlib.pyplot as plt
 from scipy.interpolate import griddata
 try:  # tools/plot/colormaps.py, run as a module or as a script
     from tools.plot.colormaps import RAINBOW
 except ImportError:
     from colormaps import RAINBOW
-f=h5py.File(sys.argv[1]); g=f['VTKHDF/internal']
+f=h5py.File(sys.argv[1]); g=internal(f)
 P=g['Points'][:]; C=g['Connectivity'][:]; O=g['Offsets'][:]
 cen=np.array([P[C[O[i]:O[i+1]]].mean(0) for i in range(len(O)-1)])
 x=cen[:,0]; r=np.hypot(cen[:,1],cen[:,2])

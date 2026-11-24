@@ -14,10 +14,14 @@ import argparse
 import csv
 import json
 import math
+import sys
 from pathlib import Path
 
 import h5py
 import numpy as np
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "python"))
+from foehncraft.vtkhdf import internal  # noqa: E402  (fields.vtkhdf in one piece)
 
 RHO = 998.2          # water at 20 °C (the material database)
 D = 0.4              # impeller diameter (m), as mesh.py
@@ -38,7 +42,7 @@ def boundaries(path):
 def cells(path):
     """Centroids, volumes and the velocity of the cells (tetrahedra)."""
     with h5py.File(path, "r") as f:
-        g = f["VTKHDF/internal"]
+        g = internal(f)
         pts = g["Points"][:]
         con = g["Connectivity"][:]
         off = g["Offsets"][:]

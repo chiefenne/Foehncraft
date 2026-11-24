@@ -27,6 +27,7 @@ import matplotlib.tri as mtri  # noqa: E402
 import numpy as np  # noqa: E402
 from matplotlib.collections import PolyCollection  # noqa: E402
 from tools.plot.colormaps import RAINBOW  # noqa: E402
+from tools.plot.vtkhdf import internal  # noqa: E402
 
 X_EXP = 6.26           # Driver & Seegmiller (1985), x_r/H
 WINDOW = (-3.0, 14.0, 0.0, 3.0)
@@ -36,7 +37,7 @@ U_REF = 1.0
 def fields(d):
     """Front-face quads (2D mesh, one hexahedron thick) and cell data."""
     with h5py.File(os.path.join(d, "fields.vtkhdf"), "r") as f:
-        g = f["VTKHDF/internal"]
+        g = internal(f)
         pts = g["Points"][:]
         conn = g["Connectivity"][:]
         off = g["Offsets"][:]

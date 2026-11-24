@@ -298,10 +298,19 @@ Gaps:
 
 ### VTKHDF output for ParaView
 
-**partial** (no exact or manufactured solution) · id `mesh.vtkhdf` · switch `output.vtkhdf`
+**partial** (no exact or manufactured solution; gaps written) · id `mesh.vtkhdf` · switch `output.vtkhdf`
 
 - consistency: [`write_all_types`](../../crates/foehncraft-mesh/tests/vtkhdf.rs): every cell type written; CI checks the files of the cases
 - consistency: [`standard_cells_in_vtk_order`](../../crates/foehncraft-mesh/src/vtkhdf.rs): tetrahedra, hexahedra, prisms and pyramids in VTK's node order: VTK's outward faces (VTK 9.7 GetFace tables) are the cell's outward faces, positive volume, also for cells given inside out
+- consistency: [`blocked_output_keeps_the_layout`](../../crates/foehncraft-mesh/tests/vtkhdf_read.rs): blocked layout 1: runs of owned cells, exactly their point neighbours as ghosts, point owners, block bounds and ranges, owner cells; a renumbering keeps the blocks
+- consistency: [`blocked_output_of_any_block_size_reads_alike`](../../crates/foehncraft-mesh/tests/vtkhdf_read.rs): the same mesh and volumes from one cell per block to one block
+- consistency: [`size_estimate_matches_the_file`](../../crates/foehncraft-mesh/tests/vtkhdf.rs): the size estimate of the run plan against the written file, two blocks
+- consistency: [`test_blocks_come_back_in_one_piece`](../../python/tests/test_vtkhdf.py): scripts get the blocks back as one grid in the order of the identities
+
+Gaps:
+
+- the parallel writer (all ranks into one file) is still serial
+- ParaView reads the blocks through VTK 9.7.2 here; the maintainer's ParaView is not checked
 
 ## Numerics
 
