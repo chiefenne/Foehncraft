@@ -20,6 +20,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.collections import PolyCollection
 
+from tools.plot.colormaps import RAINBOW
 from tools.plot.turbulence_fields import read
 
 
@@ -41,11 +42,11 @@ def duct(out, run):
         2, 1, figsize=(11.0, 6.4), constrained_layout=True, gridspec_kw={"height_ratios": [1.0, 0.62]}
     )
     ax = axs[0]
-    pc = PolyCollection(quads, array=d["speed"], cmap="Blues", edgecolors="face", linewidths=0.2)
+    pc = PolyCollection(quads, array=d["speed"], cmap=RAINBOW, edgecolors="face", linewidths=0.2)
     ax.add_collection(pc)
     fig.colorbar(pc, ax=ax, label="air speed (m/s)", shrink=0.9, pad=0.01)
     sc = ax.scatter(
-        x[:, 0], x[:, 1], c=speed, s=14, cmap="turbo", edgecolors="k", linewidths=0.25, zorder=3
+        x[:, 0], x[:, 1], c=speed, s=14, cmap="inferno", edgecolors="white", linewidths=0.4, zorder=3
     )
     cb = fig.colorbar(sc, ax=ax, label="droplet speed (m/s)", shrink=0.9, pad=0.01)
     cb.ax.tick_params(labelsize=8)
