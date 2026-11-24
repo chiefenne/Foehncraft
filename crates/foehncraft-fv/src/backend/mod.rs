@@ -191,6 +191,16 @@ pub trait Backend: LevelOps {
     }
     /// The host copy of the discretisation.
     fn discretisation(&self) -> Option<&Discretisation>;
+    /// The assembled matrix as CSR for the multigrid setup: on one rank
+    /// the matrix of the discretisation; on ranks (MPI step W4) the whole
+    /// matrix gathered on every rank, rows and columns in the order of the
+    /// global mesh, so the setup gives the hierarchy of the one-rank run.
+    fn amg_matrix(&mut self) -> anyhow::Result<crate::amg::Csr> {
+        let val = self.matrix_values()?;
+        self.discretisation()
+            .map(|d| d.matrix_csr(&val))
+            .ok_or_else(|| anyhow::anyhow!("backend without host discretisation"))
+    }
 }
 
 /// Builds a GPU backend on device `ordinal` from the discretisation and the

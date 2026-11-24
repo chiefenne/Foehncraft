@@ -11,6 +11,7 @@
 //! with ranks as threads ([`foehncraft_parallel::ThreadComm`]), the example
 //! `mpi_scalar` across MPI processes in CI.
 
+use crate::amg::ReductionSettings;
 use crate::backend::cpu::CpuBackend;
 use crate::backend::{Backend, V};
 use crate::disc::Discretisation;
@@ -41,6 +42,9 @@ pub struct ScalarSolve {
     pub matrix: HashMap<(u64, u64), f64>,
     /// The solver's outcome (residual history, iterations).
     pub outcome: Outcome,
+    /// φ after two cycles of the reduction multigrid (D179) on the last
+    /// matrix, when the case asks for it (empty otherwise).
+    pub reduction_phi: Vec<f64>,
 }
 
 /// What [`check`] found on one rank.
@@ -111,6 +115,7 @@ fn collect(
         rhs,
         matrix,
         outcome,
+        reduction_phi: Vec::new(),
     })
 }
 
@@ -120,10 +125,19 @@ fn run(
     ids: &[u64],
     phi0: f64,
     settings: &Settings,
+    reduction: Option<&ReductionSettings>,
 ) -> Result<ScalarSolve> {
     be.upload(V::Phi, &vec![phi0; d.n_cells])?;
     let outcome = solver::solve(be.as_mut(), settings, |_| {})?;
-    collect(be.as_mut(), d, ids, outcome)
+    let mut out = collect(be.as_mut(), d, ids, outcome)?;
+    if let Some(rs) = reduction {
+        // the reduction multigrid of the coupled momentum sweep on the last
+        // matrix (not symmetric), as a stationary iteration from φ = 0
+        solver::setup_reduction(be.as_mut(), rs)?;
+        solver::cycles(be.as_mut(), 2)?;
+        out.reduction_phi = be.download(V::Phi)?;
+    }
+    Ok(out)
 }
 
 /// The start value of φ: the offset of the manufactured solution, or 0.
@@ -136,12 +150,13 @@ pub fn solve_one(
     mesh: &Mesh,
     problem: &Problem,
     settings: &Settings,
+    reduction: Option<&ReductionSettings>,
     threads: Option<usize>,
 ) -> Result<ScalarSolve> {
     let geo = Geometry::compute(mesh);
     let d = Discretisation::new(mesh, &geo, problem)?;
     let be = Box::new(CpuBackend::new(d.clone(), threads)?);
-    run(be, &d, &mesh.cell_id, start(problem), settings)
+    run(be, &d, &mesh.cell_id, start(problem), settings, reduction)
 }
 
 /// The solve of this rank on its part of `global`: the local mesh with
@@ -149,6 +164,7 @@ pub fn solve_one(
 /// with the halo from the owners, the discretisation of the local mesh, and
 /// the solver on [`CpuBackend::on_ranks`]. Every rank calls it with the
 /// same arguments.
+#[allow(clippy::too_many_arguments)]
 pub fn solve_part(
     global: &Mesh,
     part: &[u32],
@@ -156,15 +172,23 @@ pub fn solve_part(
     comm: SharedComm,
     problem: &Problem,
     settings: &Settings,
+    reduction: Option<&ReductionSettings>,
     threads: Option<usize>,
 ) -> Result<ScalarSolve> {
     let local = extract(global, part, comm.rank(), layers).map_err(anyhow::Error::msg)?;
     local.mesh.validate().map_err(anyhow::Error::msg)?;
     let geo = local.geometry(&*comm);
     let d = Discretisation::new(&local.mesh, &geo, problem)?;
-    let ranks = Ranks::new(comm, &local);
+    let ranks = Ranks::new(comm, &local, part);
     let be = Box::new(CpuBackend::on_ranks(d.clone(), threads, ranks)?);
-    run(be, &d, &local.mesh.cell_id, start(problem), settings)
+    run(
+        be,
+        &d,
+        &local.mesh.cell_id,
+        start(problem),
+        settings,
+        reduction,
+    )
 }
 
 /// Compares this rank's solve with the one-rank reference, bit for bit.
@@ -197,6 +221,11 @@ pub fn check(rank: usize, reference: &ScalarSolve, mine: &ScalarSolve) -> RankCh
         if !same(mine.rhs[i], reference.rhs[g]) {
             out.differing_matrix += 1;
         }
+        if !mine.reduction_phi.is_empty()
+            && !same(mine.reduction_phi[i], reference.reduction_phi[g])
+        {
+            out.differing_phi += 1;
+        }
     }
     for (key, &v) in &mine.matrix {
         if reference.matrix.get(key).is_none_or(|&r| !same(r, v)) {
@@ -225,6 +254,8 @@ pub struct CheckCase {
     pub problem: Problem,
     /// Solver settings.
     pub settings: Settings,
+    /// Also two cycles of the reduction multigrid on the last matrix.
+    pub reduction: Option<ReductionSettings>,
 }
 
 /// The cases of the multi-rank check (tests and the example `mpi_scalar`):
@@ -235,7 +266,11 @@ pub struct CheckCase {
 ///   non-orthogonal correction, BiCGStab) on polyhedra;
 /// - the same with the bounded central scheme and the Venkatakrishnan–Wang
 ///   limiter (a global extremum) on a mixed 3D mesh;
-/// - diffusion of a manufactured solution (CG) on tetrahedra.
+/// - diffusion of a manufactured solution (CG) on tetrahedra;
+/// - the same with the smoothed-aggregation multigrid (CG + AMG, mixed
+///   precision, several levels) on polyhedra (MPI step W4);
+/// - the oblique step with BiCGStab + AMG on hexahedra, then two cycles of
+///   the reduction multigrid of D179 on its last matrix (W4).
 pub fn check_cases() -> Result<Vec<CheckCase>> {
     use foehncraft_mesh::generate::{BoxSpec, Kind};
     let mesh = |kind: Kind, dim: u8, cells: [usize; 3]| -> Result<Mesh> {
@@ -320,24 +355,57 @@ pub fn check_cases() -> Result<Vec<CheckCase>> {
         linear_max_iter: 60,
         ..Settings::default()
     };
+    let amg = crate::amg::AmgSettings {
+        max_coarse: 24,
+        ..Default::default()
+    };
+    let cg_amg = Settings {
+        preconditioner: crate::solver::Preconditioner::Amg,
+        amg,
+        ..cg.clone()
+    };
+    let lu_short = Settings {
+        max_outer: 6,
+        ..lu.clone()
+    };
     Ok(vec![
         CheckCase {
             name: "oblique step, polyhedra, linear upwind",
             mesh: mesh(Kind::Poly, 3, [6, 5, 4])?,
             problem: step("")?,
             settings: lu,
+            reduction: None,
         },
         CheckCase {
             name: "oblique step, mixed, bounded central",
             mesh: mesh(Kind::Mixed, 3, [7, 6, 5])?,
             problem: step("")?,
             settings: central,
+            reduction: None,
         },
         CheckCase {
             name: "manufactured diffusion, tetrahedra, CG",
             mesh: mesh(Kind::Tet, 3, [5, 5, 4])?,
-            problem: mms,
+            problem: mms.clone(),
             settings: cg,
+            reduction: None,
+        },
+        CheckCase {
+            name: "manufactured diffusion, hexahedra, CG + AMG",
+            mesh: mesh(Kind::Hex, 3, [10, 9, 8])?,
+            problem: mms,
+            settings: cg_amg,
+            reduction: None,
+        },
+        CheckCase {
+            name: "oblique step, hexahedra, reduction multigrid",
+            mesh: mesh(Kind::Hex, 3, [14, 12, 10])?,
+            problem: step("")?,
+            settings: lu_short,
+            reduction: Some(ReductionSettings {
+                max_coarse: 24,
+                ..Default::default()
+            }),
         },
     ])
 }

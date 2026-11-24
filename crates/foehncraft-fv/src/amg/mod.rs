@@ -41,6 +41,7 @@
 
 pub mod csr;
 pub mod cycle;
+pub mod dist;
 pub mod reduction;
 pub mod setup;
 

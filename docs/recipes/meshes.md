@@ -517,7 +517,7 @@ In code, one rank's solve on its part and the check
 let local = extract(&global, &part, comm.rank(), 1)?;      // faces in global orientation
 let geo = local.geometry(&*comm);                           // halo volumes and centroids
 let d = Discretisation::new(&local.mesh, &geo, &problem)?;
-let mut be = CpuBackend::on_ranks(d, threads, Ranks::new(comm, &local))?;
+let mut be = CpuBackend::on_ranks(d, threads, Ranks::new(comm, &local, &part))?;
 be.upload(V::Phi, &phi0)?;                                  // own cells
 let outcome = solver::solve(&mut be, &settings, |_| {})?;  // the one-rank solver, unchanged
 ```

@@ -1,0 +1,62 @@
+# The manufactured Poisson problem of `poisson_amg_poly_box.toml` on 2, 3
+# and 5 ranks: CG with the smoothed-aggregation multigrid on the ranks of a
+# decomposed polyhedral mesh gives bitwise the solution of one rank (MPI
+# step W4, D93).
+#
+#   cargo run --release -p foehncraft-cli -- scalar examples/cases/scalar/ranks_poisson_amg_poly_box.toml
+#
+# −∇·(Γ∇φ) = s with Γ = 1, no convection, the exact solution fixed on all
+# six patches. Every rank gathers the matrix in global order and builds
+# the whole hierarchy (the aggregates of the one-rank run); the V-cycle
+# then runs on the rows each rank owns, with a halo exchange per level and
+# the coarsest level gathered and solved on every rank. The variant is
+# solved once on all cells, then on 2, 3 and 5 ranks, every rank a thread
+# of this process, and the run fails unless φ on every rank is bitwise
+# that of the one-rank solve. The cell field `rank` of `fields.vtkhdf`
+# shows the five-rank partition.
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "poly"
+cells = [14, 14, 14]
+perturb = 0.15
+
+[mesh]
+renumber = "rcm"
+
+[problem]
+diffusivity = 1.0
+velocity = [0.0, 0.0, 0.0]
+manufactured = {}
+
+[problem.boundary.xmin]
+type = "fixed-value"
+profile = "manufactured"
+[problem.boundary.xmax]
+type = "fixed-value"
+profile = "manufactured"
+[problem.boundary.ymin]
+type = "fixed-value"
+profile = "manufactured"
+[problem.boundary.ymax]
+type = "fixed-value"
+profile = "manufactured"
+[problem.boundary.zmin]
+type = "fixed-value"
+profile = "manufactured"
+[problem.boundary.zmax]
+type = "fixed-value"
+profile = "manufactured"
+
+[solver]
+scheme = "upwind"            # no convection: the scheme does not matter
+nonorth_correction = true
+tolerance = 1e-10
+linear_solver = "cg"
+preconditioner = "amg"
+linear_tolerance = 1e-4      # per outer iteration
+amg = { smoother = "chebyshev", degree = 2, precision = "mixed" }
+
+[run]
+ranks = [2, 3, 5]

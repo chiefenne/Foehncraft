@@ -26,8 +26,14 @@ fn main() {
     for case in check_cases().expect("check cases") {
         let geo = Geometry::compute(&case.mesh);
         let part = partition(&case.mesh, &geo, size, Method::Rcb).expect("partition");
-        let reference =
-            solve_one(&case.mesh, &case.problem, &case.settings, Some(1)).expect("one rank");
+        let reference = solve_one(
+            &case.mesh,
+            &case.problem,
+            &case.settings,
+            case.reduction.as_ref(),
+            Some(1),
+        )
+        .expect("one rank");
         let mine = solve_part(
             &case.mesh,
             &part,
@@ -35,6 +41,7 @@ fn main() {
             comm.clone(),
             &case.problem,
             &case.settings,
+            case.reduction.as_ref(),
             Some(1),
         )
         .expect("ranks");
