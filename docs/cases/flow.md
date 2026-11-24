@@ -15,6 +15,7 @@ On this page:
 - [Energy equation](#energy-equation)
 - [Gravity and buoyancy](#gravity-and-buoyancy)
 - [Lagrangian sprays](#lagrangian-sprays)
+- [Porous regions](#porous-regions)
 
 Stage 4: steady incompressible laminar flow, SIMPLEC with the Rhie–Chow
 interpolation ([explanation](../verification/stage4.md)). Stage 5: transient
@@ -311,3 +312,14 @@ keys are on the [key page](flow-keys.md); the run writes `spray.csv` and
 | Case file | Mesh | Shows | Where |
 |---|---|---|---|
 | `flow/spray_duct.toml` | generated hex 2D, 80 × 20 cells | 10 g/s of 150 µm water droplets sprayed from the upper wall into air at 4 m/s; about 70 % stick on the lower wall, the mass book closes; the injector is in `flow/spray_duct_injectors.toml` | [gallery 242](../gallery/sprays.md#spray-duct), [recipe 242](../recipes/sprays.md#spray-duct) |
+
+## Porous regions
+
+`kind = "porous"` with `[regions.<name>.porous]` (D270, porous plan PM1):
+a Darcy–Forchheimer resistance in the axes of the region, the velocity is
+the superficial one. The keys are on the [key page](flow-keys.md).
+
+| Case file | Mesh | Shows | Where |
+|---|---|---|---|
+| `flow/porous_darcy_block.toml` | generated hex 2D, 100 × 4 cells | check V1: a porous block (K⁻¹ = 10⁶ 1/m², F = 10 1/m) in a duct with slip walls; the drop 4.780 Pa against the exact 4.8 Pa (0.41 %), second order in the cell size | [gallery 273](../gallery/porous.md#porous-flow), [recipe 273](../recipes/porous.md#porous-flow) |
+| `flow/porous_honeycomb_channel.toml` | generated hex 2D, 240 × 80 cells | a ceramic honeycomb block (6.9 mm channels, ε = 0.256) in an air channel at 10 cm/s, channels along the flow; with `blocking = 1` the same resistance in every direction | [gallery 273](../gallery/porous.md#porous-flow), [recipe 273](../recipes/porous.md#porous-flow) |

@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**115 features: 50 verified, 62 partial, 3 unverified.**
+**116 features: 50 verified, 63 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -140,6 +140,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Backends and interfaces | [Steady SIMPLEC on several ranks, bitwise one rank (MPI step W5 part 1)](#parallel-flow-ranks) | partial |
 | Backends and interfaces | [Turbulence, energy, scalars, transient runs and the coupled solver on several ranks, bitwise one rank (MPI step W5 part 2)](#parallel-flow-models-ranks) | partial |
 | Sprays | [Lagrangian spray parcels, one way (L12, SP1)](#sprays-one-way) | partial |
+| Flow models | [Porous regions with a direction-dependent Darcy-Forchheimer resistance (D270, PM1)](#porous-darcy-forchheimer) | partial |
 
 ## Meshes
 
@@ -1782,3 +1783,28 @@ Gaps:
 - one process, constant droplet size; no rotating zones or periodic boundaries (SPR003)
 - the CPU = GPU check of the parcel kernel runs in the PTX job of CI only
 - `spray_duct_injectors` has no run in the verification manual or in CI
+
+## Flow models
+
+<a id="porous-darcy-forchheimer"></a>
+
+### Porous regions with a direction-dependent Darcy-Forchheimer resistance (D270, PM1)
+
+**partial** (a model without reference data; gaps written) · id `porous.darcy-forchheimer` · switch `[regions.<name>] kind = "porous"` · decisions D270
+
+- exact: [`a_duct_filled_with_a_porous_matrix_has_the_exact_pressure_drop`](../../crates/foehncraft-flow/tests/porous.rs): a duct filled with the matrix: the drop (mu/K + rho F U/2) U L to 1e-8
+- exact: [`channels_across_the_flow_give_the_across_resistance`](../../crates/foehncraft-flow/tests/porous.rs): a direction-dependent matrix with its first axis across and along the flow: the second and the first principal value, to 1e-8
+- exact: [`a_block_in_a_duct_converges_to_the_exact_pressure_drop`](../../crates/foehncraft-flow/tests/porous.rs): a block in a duct on 50, 100 and 200 cells: 0.41 % off on 100 cells, observed order about 2 (above 1.5 required)
+- consistency: [`honeycomb_values_of_the_brick`](../../crates/foehncraft-flow/src/porous.rs): the honeycomb values against the formulas, a turned tensor stays symmetric
+- exact: [`porous_darcy_block`](../../examples/cases/flow/porous_darcy_block.toml): check V1: a porous block in a duct with slip walls, 4.780 Pa against the exact 4.8 Pa on 100 cells (passes in CI (set linux-3), not yet in the manual) ([results](../cases/flow.md#porous-regions))
+- consistency: [`porous_honeycomb_channel`](../../examples/cases/flow/porous_honeycomb_channel.toml): a ceramic honeycomb block in an air channel, channels along the flow; no air leaves the block sideways (passes in CI (set linux-3), not yet in the manual) ([results](../cases/flow.md#porous-regions))
+- contract (diagnostics): [`porous_keys_are_checked`](../../crates/foehncraft-flow/tests/porous.rs): POR001 and POR002 for missing, contradicting and unsupported settings
+
+Gaps:
+
+- axes turned against the mesh axes are refused: the scalar Rhie-Chow factor cannot hold the tensor (a tensor factor is follow-up work)
+- channels across the main flow (a block that closes the channel) converge slowly
+- the drop at a jump of the resistance is second order, not exact (the pressure gradient sees the jump over one cell)
+- no energy, scalars or turbulence in porous regions (two temperatures are PM2); one process, CPU only
+- the kinetic-energy ledger does not book the work of the porous sink
+- no measured reference case (a packed bed with the Ergun law, a honeycomb with a measured drop)

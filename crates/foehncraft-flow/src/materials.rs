@@ -684,7 +684,7 @@ pub enum RegionKind {
     Fluid,
     /// A solid (conjugate heat transfer, with L1).
     Solid,
-    /// A porous zone (with L1 and D55).
+    /// A porous zone: the gas flows through a fixed matrix (D270).
     Porous,
 }
 
@@ -693,18 +693,25 @@ pub enum RegionKind {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct RegionSection {
-    /// Fluid, solid or porous; this version solves fluids only.
+    /// Fluid, solid or porous.
     pub kind: RegionKind,
     /// The cell zones of the region (mesh zone names).
     pub zones: Vec<String>,
     /// The material; default the material of `[fluid]`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub material: Option<String>,
-    /// The first two principal axes of an orthotropic conductivity in this
-    /// region (stage 7d2, L48): one material oriented differently in every
-    /// part; default the axes of the material.
+    /// The first two principal axes of an orthotropic conductivity or of a
+    /// porous resistance in this region (stage 7d2, L48; D270): one material
+    /// oriented differently in every part; default the axes of the material.
+    /// A porous region with direction-dependent values needs them, along
+    /// the mesh axes in this version (POR002).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub axes: Option<[[f64; 3]; 2]>,
+    /// The matrix of a porous region (D270): its resistances, or the
+    /// channels of a honeycomb; the first of `axes` runs along the
+    /// channels.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub porous: Option<crate::porous::PorousSection>,
     /// The temperature (K) at which the region's material is evaluated
     /// where its properties stay constant (D194): the density without the
     /// variable density, and every property of an isothermal run; default

@@ -177,7 +177,7 @@ codes! {
     THM_NO_ENERGY = "THM009", Error, "A `[boundary.<name>.energy]` table without `[energy]`: the energy equation is solved only with an `[energy]` table.";
     ENE_BOUNDARY = "THM010", Error, "A `[boundary.<name>.energy]` table for an unknown boundary, without exactly one condition (`temperature`, `heat_flux`, `heat_flow`, or `heat_transfer_coefficient` with `ambient_temperature`), or with `heat_transfer_coefficient` and `ambient_temperature` apart.";
     ENE_INLET = "THM011", Error, "An inlet without `[boundary.<name>.energy] temperature` in a run with the energy equation.";
-    REG_NOT_FLUID = "REG001", Error, "A region that is not a fluid where it cannot be: a solid region without `[energy]` (solids are solved by the energy equation, stage 7d1), a porous zone (not in this version), or a solid material as the `[fluid]`.";
+    REG_NOT_FLUID = "REG001", Error, "A region that is not a fluid where it cannot be: a solid region without `[energy]` (solids are solved by the energy equation, stage 7d1), or a solid material as the `[fluid]`.";
     REG_ZONE = "REG002", Error, "A region that names a cell zone the mesh does not have, or a zone in two regions.";
     REG_PART_REFERENCE = "REG003", Error, "A fluid part (fluid cells connected without a solid between them) without a pressure boundary in a case of several fluid parts: give it a pressure outlet or inlet; a closed part of its own comes with stage MF-B.";
     REG_FLUIDS_TOUCH = "REG004", Error, "Two fluids of different materials (or temperatures) share a face: that is a two-phase interface (multiphase, L3); put a solid region or a thin wall between them, or give both regions the same fluid.";
@@ -185,6 +185,8 @@ codes! {
     REG_FLUIDS_UNSUPPORTED = "REG006", Error, "A setting that does not yet work with several fluids in one case (D194): the variable density, gravity, a rotating zone or frame, passive scalars, a convective outlet or a periodic mass-flow drive.";
     REG_INITIAL_KEY = "REG007", Error, "A key of `[regions.<name>.initial]` that does not fit: a solid region takes `temperature` only, turbulence start values come as `k` with one of `omega` or `epsilon`, and a start temperature needs `[energy]`.";
     REG_INITIAL_VALUE = "REG008", Error, "A start temperature, k, omega or epsilon of `[regions.<name>.initial]` that is not > 0.";
+    POROUS = "POR001", Error, "A porous region without its matrix (`[regions.<name>.porous]` with `viscous`/`inertial` or `honeycomb`), contradicting or invalid values, direction-dependent values without `axes`, or a matrix in a region that is not porous.";
+    POROUS_UNSUPPORTED = "POR002", Error, "A setting that does not yet work with porous regions (porous plan, D279): the energy equation (stage PM2), passive scalars, a turbulence model, a rotating zone, the GPU (stage PM5), or direction-dependent resistances whose axes are turned against the mesh axes.";
     REG_INITIAL_INLET = "REG009", Error, "`temperature = \"inlet\"` in `[regions.<name>.initial]` for a region whose fluid part has no inlet with `[boundary.<name>.energy] temperature`.";
     REG_START = "REG010", Note, "The start values of the regions and fluid parts and where they come from: given, a boundary value, a Laplace solve between the pressure boundaries of a part, or the inlets.";
     // pressure values absolute or gauge (D239)
@@ -533,7 +535,7 @@ mod tests {
                 [
                     "CASE", "SCHED", "BC", "SCAL", "RUN", "GEN", "DIV", "BAL", "EXPR", "MAT",
                     "REG", "MESH", "TURB", "MRF", "SLD", "ROT", "STAT", "ENE", "THM", "CHT",
-                    "TOOL", "LIM", "MCP", "ACC", "CYC", "BUO", "FRZ", "PRS", "SPR"
+                    "TOOL", "LIM", "MCP", "ACC", "CYC", "BUO", "FRZ", "PRS", "SPR", "POR"
                 ]
                 .contains(&p),
                 "{}",

@@ -214,6 +214,7 @@ validated range, one mesh only, …) in its report and its JSON result.
   and air between walls at 960 K and 240 K has a heat flow with GCI
   0.02 % (gallery 195).
 - **Lagrangian sprays (L12, SP1).** Droplets as parcels in a transient flow run (`[spray]` with an included injector file): exact exponential integration of drag (Schiller and Naumann) and gravity, tracking on the mesh locator, stick, rebound, escape or mirror at boundaries, a mass book that stops the run when it does not close, parcel files and restart, results bitwise equal on 1 to 4 threads, one source for CPU and GPU kernels. One way, one process, constant droplet size; coupling to the gas follows in SP2 ([gallery 242](docs/gallery/sprays.md#spray-duct)).
+- **Porous regions (D270, PM1).** `kind = "porous"` with a Darcy–Forchheimer resistance in the superficial velocity: one value or three principal values along the axes of the region, or the `honeycomb` shorthand for square ceramic channels (Shah & London). A duct filled with the matrix gives the exact pressure drop, a block in a duct reaches it with second order. Axes along the mesh axes, laminar isothermal flow, one process, CPU only; the two temperatures of gas and solid follow in PM2 ([gallery 273](docs/gallery/porous.md#porous-flow)).
 - **Internal flows (D45).** Turbulent pipe flow against DNS, the
   asymmetric plane diffuser of Buice & Eaton, the U-bend of Monson et al.
   and a laminar T-junction mixing a passive scalar on polyhedra, each with

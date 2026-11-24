@@ -66,6 +66,7 @@ pub mod materials;
 pub mod monitor;
 pub mod operators;
 pub mod plot;
+pub mod porous;
 pub mod pressure_values;
 pub mod ranks;
 pub mod restart;
