@@ -89,7 +89,7 @@ The check "CI OK" sums up all jobs.
 <a id="release"></a>
 ## 6. Make a release (tag and GitHub release)
 
-A release is a Git tag `v<version>` (D46; `v0.1` to `v0.7`, then `v1.0.0`) plus a GitHub release. Steps:
+A release is a Git tag `v<version>` (D46; `v0.1` to `v0.7`, then `v1.0.0` and `v1.0.1`) plus a GitHub release. Steps:
 
 1. A pull request runs `python -m tools.release.changelog` (moves the
    fragments of `changelog.d/` into `## Unreleased`), then moves that section to
