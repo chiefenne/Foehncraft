@@ -14,7 +14,7 @@ from commercial documentation. Reacting flows are not part of this step.
 | D240 | **Lead application: water-spray cooling of a hot gas stream.** It decides the validation list and the first gallery case: injectors spraying water into a hot air duct, gas cooled by sensible heat first (SP2), then by evaporation (SP5). Urea-water for SCR, fuel sprays, painting and scrubbers follow with their own cases. |
 | D241 | **Serial release first.** SP0 to SP2, SP4 and SP5 run on one process (threads allowed). A spray case started on more than one rank is refused with a diagnostic code. Parcel migration between ranks (SP3) is planned after MPI W3 to W5 are merged. All parcel kernels are pure functions of (parcel, gas state), so nothing is rewritten for SP3. |
 | D242 | **Droplet size input.** Three forms as case keys: constant diameter, Rosin-Rammler (Rosin and Rammler 1933) and log-normal; a table form is not in v1. SP1 ships constant diameter, SP2 adds the two distributions. Sizes are drawn from the counter-based generator (stream `SPRAY_INJECTION`, D121). |
-| D243 | **Turbulent dispersion: eddy-lifetime model first** (Gosman and Ioannides 1983), using k and epsilon (or omega) at the parcel, stream `SPRAY_DISPERSION`. *This question was skipped by the maintainer; the recommended default is recorded and can be changed before SP2 starts.* The continuous random walk is a later option. |
+| D243 | **Turbulent dispersion: eddy-lifetime model first** (Gosman and Ioannides 1983), using k and epsilon (or omega) at the parcel, stream `SPRAY_DISPERSION`. **Answered by the maintainer 2026-11-24: both models as values of one case key** (`dispersion = "eddy-lifetime"` or `"random-walk"`, same stream): eddy lifetime ships in SP2, the continuous random walk follows behind the same key. |
 | D244 | **The spray ledger pair waits for the ledger as data (D119, stage 7 part 7.0a).** SP2 (two-way coupling) starts only when 7.0a is on `main`; the gas-parcel exchange (momentum, mass, enthalpy) is then booked as ledger rows with opposite signs on both sides. Consequence: 7.0a becomes a prerequisite of SP2, not of SP1. |
 | D245 | **GPU kernels from SP1.** Parcel kernels are single-source from the first pull request, compile to PTX in the existing CI job, and have a CPU = GPU check (to the tolerance of the exact-sum policy of 2026-11-23). SP1 is therefore larger than planned; the separate stage SP9 reduces to multi-GPU and performance work. |
 | D246 | **Injector keys in an included file** (D114). The case file names the spray file (`[spray] include = "spray.toml"`); injectors (`[[injector]]`: position, direction or cone, mass flow over time, size form, liquid, temperature) and size or rate tables live there. The resolved case (`case.resolved.toml`) holds the merged keys, so a run stays reproducible and agent-readable. |
@@ -46,7 +46,7 @@ it appears in a table.
 
 ## 4. Open points
 
-- D243 (dispersion model) is a default, not an answer.
+- D243 (dispersion model) is answered: both models as one key (2026-11-24).
 - SP6 (which atomisation regime first) is undecided.
 - Liquids beyond water (ethanol, n-heptane, n-dodecane) need source entries
   in `DATA_SOURCES.md` before use.
