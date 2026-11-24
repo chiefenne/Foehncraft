@@ -63,7 +63,7 @@ a recipe on the new topic pages `docs/{gallery,recipes,cases}/energy.md`
 | PR | Content | Validation | Gallery / recipe |
 |---|---|---|---|
 | 7b1 | `[gravity]`, Boussinesq, reduced pressure p′ and `pressure_kind`, balanced-force face flux and cell force (D154) in **SIMPLEC and coupled**, wall pressure from the reduced jump, BUO codes | V7.7 (a) stratified box at rest, max \|u\| ≤ 1e-10 √(gL), oblique g, 4 mesh types perturbed | recipe "switch on gravity"; static-pressure field of the box |
-| 7b2 | Laminar natural convection benchmarks (moved to v1.1 on 2026-11-23) | V7.15 square cavity Ra 1e3–1e6 (de Vahl Davis, Le Quéré), V7.12 Ostrach plate, V7.9 Aung–Worku mixed convection | cavity T and velocity at Ra 1e6; plate boundary layer |
+| 7b2 | Laminar natural convection benchmarks (moved to v1.1 on 2026-11-23; done in #272: cavity graded on its own GCI and with the references as context, D201; the heated D45 cases with SGDH wait for 7e1) | V7.15 square cavity Ra 1e3–1e6 (de Vahl Davis, Le Quéré), V7.12 Ostrach plate, V7.9 Aung–Worku mixed convection | cavity T and velocity at Ra 1e6; plate boundary layer |
 | 7b3 | Transient buoyancy | V7.13 transient MMS (BDF2, CN), V7.8 Rayleigh–Bénard onset Ra_c 1707.76, V7.16 cubic cavity (Tric et al.) | 3D cubic cavity iso-surfaces of T; Rayleigh–Bénard rolls (2D, rolls in a row, not cells in a grid) |
 | 7c | Low-Mach variable density ρ(T, p₀), closed volume p₀(t), pressure work options | V7.7 (b) gas column, (c) density step; V7.17 large-ΔT cavity (Vierendeels et al.), mass to round-off | large-ΔT cavity density field |
 

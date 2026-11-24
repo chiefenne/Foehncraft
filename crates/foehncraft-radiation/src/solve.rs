@@ -1,10 +1,11 @@
 //! One radiation call on a mesh or on one rank's part of it (R1a).
 
+use crate::device::{DeviceTallies, Transport};
 use foehncraft_core::exact::ExactSum;
 use foehncraft_core::rng::{keyed, stream};
 use foehncraft_kernels::radiation::{
-    Bundle, Fate, Medium, Tally, WallKind, cosine_about, isotropic, owen_sobol4, point_in_tet,
-    point_in_triangle, sobol_seed, transport,
+    BUNDLE_WORDS, Bundle, Fate, Medium, Tally, WallKind, cosine_about, isotropic, owen_sobol4,
+    point_in_tet, point_in_triangle, sobol_seed, transport,
 };
 use foehncraft_kernels::walk::{Walk, WalkMesh, inner};
 use foehncraft_mesh::decompose::LocalMesh;
@@ -14,6 +15,7 @@ use foehncraft_mesh::locate::{Locator, step_limit};
 use foehncraft_mesh::{Geometry, Mesh};
 use foehncraft_parallel::{Communicator, SerialComm};
 use rayon::prelude::*;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicI64, Ordering};
 
 /// Stefan–Boltzmann constant (W/(m² K⁴), CODATA 2018, exact in the SI).
@@ -83,6 +85,8 @@ pub struct Settings {
     pub batches: u32,
     /// Number of the call (keys the random numbers, D107 (2)).
     pub call: u64,
+    /// Bundles per launch on a device (2²⁰: about 180 MB of records).
+    pub launch: u64,
 }
 
 impl Default for Settings {
@@ -91,6 +95,7 @@ impl Default for Settings {
             bundles: 100_000,
             batches: 8,
             call: 0,
+            launch: 1 << 20,
         }
     }
 }
@@ -187,6 +192,8 @@ pub struct Domain<'a> {
     /// Boundary of each boundary face.
     boundary: Vec<u32>,
     max_steps: u32,
+    /// The device that moves the bundles, if not the CPU threads.
+    device: Option<Mutex<Box<dyn Transport + 'a>>>,
 }
 
 /// Where bundles start: the tetrahedra of the cells and the fan triangles
@@ -334,6 +341,38 @@ impl<'a> Domain<'a> {
             },
             boundary,
             max_steps: step_limit(n_global),
+            device: None,
+        }
+    }
+
+    /// Moves the bundles on `device` instead of the CPU threads (D259):
+    /// the bundles are emitted on the host and transported by the device
+    /// in launches of [`Settings::launch`] bundles. One device per run: not on ranks
+    /// (GPU with ranks comes with version 1.1).
+    pub fn on_device(mut self, device: Box<dyn Transport + 'a>) -> anyhow::Result<Self> {
+        anyhow::ensure!(
+            self.link.is_none(),
+            "radiation on a device runs on one rank (GPU with ranks comes in version 1.1)"
+        );
+        self.device = Some(Mutex::new(device));
+        Ok(self)
+    }
+
+    /// Moves the bundles on the registered GPU backend, device `ordinal`,
+    /// with the kernel module `ptx` (`python3 gpu/ptx-kernels/build.py`).
+    pub fn on_gpu(self, ordinal: usize, ptx: &std::path::Path) -> anyhow::Result<Self> {
+        let gpu = crate::device::create_gpu(&self.locator.walk_mesh(), ordinal, ptx)?;
+        self.on_device(gpu)
+    }
+
+    /// The name of the device that moves the bundles (`cpu` for the CPU
+    /// threads).
+    pub fn device_name(&self) -> String {
+        match &self.device {
+            Some(d) => d
+                .lock()
+                .map_or_else(|_| "poisoned".into(), |d| d.name().to_string()),
+            None => "cpu".into(),
         }
     }
 
@@ -355,7 +394,7 @@ impl<'a> Domain<'a> {
         kappa: &[f64],
         walls: &[Wall],
         s: &Settings,
-    ) -> Solution {
+    ) -> anyhow::Result<Solution> {
         let mesh = self.mesh;
         let (nc, nb) = (mesh.n_cells, self.shapes.normal.len());
         assert_eq!(temperature.len(), nc, "one temperature per own cell");
@@ -386,7 +425,7 @@ impl<'a> Domain<'a> {
         total.add_slice(&face_power);
         let total = comm.sum_exact(&total);
         if total <= 0.0 {
-            return self.empty(nc, nb);
+            return Ok(self.empty(nc, nb));
         }
         let quantum = total / QUANTA;
 
@@ -457,25 +496,56 @@ impl<'a> Domain<'a> {
         let b = s.batches as usize;
         let tally = Tallies::new(b, nc, nb);
         let shapes = &self.shapes;
-        let mut queue: Vec<Bundle> = emitters
-            .par_iter()
-            .map(|e| {
-                let mut handed = Vec::new();
-                let base = e.quanta / i64::from(e.bundles);
-                let rest = e.quanta % i64::from(e.bundles);
-                for k in 0..e.bundles {
-                    let w = base + i64::from(i64::from(k) < rest);
-                    let mut bundle = shapes.emit(e, k, w, s, &wm);
-                    if transport(&wm, &medium, &mut bundle, s.call, &tally) == Fate::HandOver {
-                        handed.push(bundle);
-                    }
+        let weight = |e: &Emitter, k: u32| {
+            let base = e.quanta / i64::from(e.bundles);
+            base + i64::from(i64::from(k) < e.quanta % i64::from(e.bundles))
+        };
+        let mut queue: Vec<Bundle> = Vec::new();
+        if let Some(device) = &self.device {
+            // emission on the host, transport on the device, in launches
+            let mut device = device
+                .lock()
+                .map_err(|_| anyhow::anyhow!("radiation device poisoned"))?;
+            let mut start = 0;
+            while start < emitters.len() {
+                let mut end = start;
+                let mut n = 0u64;
+                while end < emitters.len()
+                    && (n == 0 || n + u64::from(emitters[end].bundles) <= s.launch)
+                {
+                    n += u64::from(emitters[end].bundles);
+                    end += 1;
                 }
-                handed
-            })
-            .collect::<Vec<_>>()
-            .into_iter()
-            .flatten()
-            .collect();
+                let words: Vec<u64> = emitters[start..end]
+                    .par_iter()
+                    .flat_map_iter(|e| {
+                        (0..e.bundles)
+                            .flat_map(move |k| shapes.emit(e, k, weight(e, k), s, &wm).to_words())
+                    })
+                    .collect();
+                debug_assert_eq!(words.len() as u64, n * BUNDLE_WORDS as u64);
+                let t = device.run(&wm, &medium, &words, s.call, b)?;
+                tally.add(&t)?;
+                start = end;
+            }
+        } else {
+            queue = emitters
+                .par_iter()
+                .map(|e| {
+                    let mut handed = Vec::new();
+                    for k in 0..e.bundles {
+                        let mut bundle = shapes.emit(e, k, weight(e, k), s, &wm);
+                        if transport(&wm, &medium, &mut bundle, s.call, &tally) == Fate::HandOver {
+                            handed.push(bundle);
+                        }
+                    }
+                    handed
+                })
+                .collect::<Vec<_>>()
+                .into_iter()
+                .flatten()
+                .collect();
+        }
         let mut hand_overs = 0i64;
         if let Some(link) = &self.link {
             let hand = HandOver::new(link.local, PAYLOAD);
@@ -560,7 +630,7 @@ impl<'a> Domain<'a> {
             hand_overs,
         ];
         comm.all_sum_i64(&mut sums);
-        Solution {
+        Ok(Solution {
             quantum,
             source,
             source_error,
@@ -581,7 +651,7 @@ impl<'a> Domain<'a> {
             },
             bundles: sums[6],
             hand_overs: sums[7],
-        }
+        })
     }
 
     fn empty(&self, nc: usize, nb: usize) -> Solution {
@@ -695,6 +765,29 @@ impl Tallies {
             nc,
             nb,
         }
+    }
+
+    /// Adds the tallies of a device.
+    fn add(&self, t: &DeviceTallies) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            t.cell.len() == self.cell.len()
+                && t.incident.len() == self.incident.len()
+                && t.absorbed.len() == self.absorbed.len(),
+            "device tallies of the wrong size"
+        );
+        for (a, &v) in self.cell.iter().zip(&t.cell) {
+            a.fetch_add(v, Ordering::Relaxed);
+        }
+        for (a, &v) in self.incident.iter().zip(&t.incident) {
+            a.fetch_add(v, Ordering::Relaxed);
+        }
+        for (a, &v) in self.absorbed.iter().zip(&t.absorbed) {
+            a.fetch_add(v, Ordering::Relaxed);
+        }
+        self.escaped.fetch_add(t.ledger[0], Ordering::Relaxed);
+        self.roulette.fetch_add(t.ledger[1], Ordering::Relaxed);
+        self.lost.fetch_add(t.ledger[2], Ordering::Relaxed);
+        Ok(())
     }
 
     fn cell_totals(&self) -> Vec<i64> {

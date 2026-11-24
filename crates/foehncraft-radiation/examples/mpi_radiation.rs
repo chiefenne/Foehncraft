@@ -64,7 +64,9 @@ fn main() {
     };
 
     // the reference: the whole mesh on every rank
-    let one = Domain::whole(&global, &geo).solve(&t, &kappa, &walls, &settings);
+    let one = Domain::whole(&global, &geo)
+        .solve(&t, &kappa, &walls, &settings)
+        .expect("radiation call");
     let first = global.n_interior_faces();
     let slot: HashMap<u64, usize> = (first..global.n_faces())
         .map(|f| (global.face_id[f], f - first))
@@ -89,7 +91,9 @@ fn main() {
         .iter()
         .map(|b| wall(&b.name))
         .collect();
-    let mine = Domain::rank(&local, &lgeo, &comm).solve(&lt, &lk, &lw, &settings);
+    let mine = Domain::rank(&local, &lgeo, &comm)
+        .solve(&lt, &lk, &lw, &settings)
+        .expect("radiation call");
 
     let mut cells = vec![0i64; 2 * n];
     for (c, &p) in pos.iter().enumerate() {

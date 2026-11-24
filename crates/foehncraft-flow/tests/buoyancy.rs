@@ -137,6 +137,32 @@ fn buoyant_slot_has_second_order() {
     }
 }
 
+/// Fully developed mixed convection between a hot and a cold vertical
+/// wall (V7.9, Aung & Worku 1986): the Poiseuille parabola plus the cubic
+/// of the slot, with the flow reversed at the cold wall (net flow up) or
+/// at the hot wall (net flow down), to second order on perturbed meshes.
+#[test]
+fn mixed_convection_has_second_order_both_ways() {
+    let up = text("mixed_convection_channel.toml");
+    let down = up
+        .replace("mass_flow = 2.5e-4", "mass_flow = -2.5e-4")
+        .replace("mean_velocity = 5e-3", "mean_velocity = -5e-3");
+    assert_ne!(up, down);
+    for (name, t) in [("mixed_up", up), ("mixed_down", down)] {
+        let r = run(&parse(&t), name, &out(name), |_| {}).unwrap();
+        let _ = std::fs::remove_dir_all(out(name));
+        assert!(r.failures.is_empty(), "{name}: {:?}", r.failures);
+        assert!(r.orders.len() == 2, "{name}: {:?}", r.orders);
+        for o in &r.orders {
+            assert!(
+                (1.8..2.3).contains(o),
+                "{name}: observed orders {:?}",
+                r.orders
+            );
+        }
+    }
+}
+
 /// The reduced and the static outlet value describe the same flow: a tall
 /// channel run once with `pressure_kind = "reduced"` (0) and once with
 /// `"static"` (the hydrostatic profile) gives the same velocity.

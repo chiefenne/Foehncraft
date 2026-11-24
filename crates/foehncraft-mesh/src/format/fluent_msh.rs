@@ -40,9 +40,25 @@
 //! - The side of a face is decided by geometry: the face is turned so that
 //!   its normal points out of `c0`, so files with either orientation
 //!   convention read alike.
-//! - Only ASCII files are read (the binary sections 2010, 2012 and 2013 are
-//!   refused with a hint), and 3D (2D files: extrude the mesh in the mesher).
-//!   Periodic zones are ordinary boundaries.
+//! - ASCII and binary files are read, 3D only (2D files: extrude the mesh in
+//!   the mesher). Periodic zones are ordinary boundaries.
+//! - Binary files: a section of index `2000 + i` (single precision) or
+//!   `3000 + i` (double precision) is the binary form of the text section
+//!   `i`. Its header is text as above; its data block holds the numbers as
+//!   little-endian binary, coordinates as 32-bit or 64-bit reals, everything
+//!   else (node and cell numbers, node counts of mixed faces, element types)
+//!   as 32-bit integers; the words `End of Binary Section 20xx` close it:
+//!
+//!   ```text
+//!   (3010 (1 1 N 1 3)(<N x 3 reals>)End of Binary Section 3010)
+//!   (2012 (1 1 M 1 0)(<M element types>)End of Binary Section 2012)
+//!   (2013 (3 1 F 2 0)(<n n0 n1 .. c0 c1, per face>)End of Binary Section 2013)
+//!   ```
+//!
+//!   Sections 2010/3010, 2012/3012, 2013/3013 and 2018/3018 (periodic face
+//!   pairs) are read by their counts; other binary sections are skipped up
+//!   to their closing words. ASCII and binary sections may be mixed in one
+//!   file.
 //! - It shares the extension `.msh` with Gmsh: the first bytes decide.
 
 use super::{MeshFile, MeshFormat, ReadOptions, declared};
@@ -61,7 +77,7 @@ impl MeshFormat for IndustryMsh {
     }
 
     fn title(&self) -> &'static str {
-        "Fluent face-based .msh, ASCII, 3D, polyhedral"
+        "Fluent face-based .msh, ASCII and binary, 3D, polyhedral"
     }
 
     fn extensions(&self) -> &'static [&'static str] {
@@ -82,13 +98,12 @@ impl MeshFormat for IndustryMsh {
     }
 }
 
-/// The text between the parenthesis at `at` and its partner, and the
+/// The bytes between the parenthesis at `at` and its partner, and the
 /// position after the partner. Quoted strings may hold parentheses.
-fn balanced(t: &str, at: usize) -> Result<(&str, usize), String> {
-    let b = t.as_bytes();
+fn balanced(t: &[u8], at: usize) -> Result<(&[u8], usize), String> {
     let (mut depth, mut i, mut quoted) = (0usize, at, false);
-    while i < b.len() {
-        match b[i] {
+    while i < t.len() {
+        match t[i] {
             b'"' => quoted = !quoted,
             b'(' if !quoted => depth += 1,
             b')' if !quoted => {
@@ -104,11 +119,8 @@ fn balanced(t: &str, at: usize) -> Result<(&str, usize), String> {
     Err(format!("line {}: a section is not closed", line_of(t, at)))
 }
 
-fn line_of(t: &str, at: usize) -> usize {
-    1 + t.as_bytes()[..at.min(t.len())]
-        .iter()
-        .filter(|&&c| c == b'\n')
-        .count()
+fn line_of(t: &[u8], at: usize) -> usize {
+    1 + t[..at.min(t.len())].iter().filter(|&&c| c == b'\n').count()
 }
 
 fn hex(tok: &str, what: &str) -> Result<usize, String> {
@@ -116,12 +128,26 @@ fn hex(tok: &str, what: &str) -> Result<usize, String> {
         .map_err(|_| format!("{what}: '{tok}' is not a hexadecimal number"))
 }
 
-/// A section: its index, its header list and its data list (if any).
+/// The leading decimal number of a section (its index) and the position
+/// after it.
+fn index_at(t: &[u8], at: usize) -> Option<(usize, usize)> {
+    let mut i = at;
+    while i < t.len() && t[i].is_ascii_whitespace() {
+        i += 1;
+    }
+    let s = i;
+    while i < t.len() && t[i].is_ascii_digit() {
+        i += 1;
+    }
+    let n = std::str::from_utf8(&t[s..i]).ok()?.parse().ok()?;
+    Some((n, i))
+}
+
+/// A text section: its index, its header list and its data list (if any).
 struct Section<'a> {
     index: usize,
     header: Vec<&'a str>,
     data: Option<&'a str>,
-    line: usize,
 }
 
 fn section(body: &str, line: usize) -> Result<Section<'_>, String> {
@@ -137,11 +163,18 @@ fn section(body: &str, line: usize) -> Result<Section<'_>, String> {
     let mut data = None;
     match rest.find('(') {
         Some(h) if index != 0 && index != 1 => {
-            let (head, after) = balanced(rest, h)?;
-            header = head.split_ascii_whitespace().collect();
+            let (head, after) = balanced(rest.as_bytes(), h)?;
+            header = std::str::from_utf8(head)
+                .map_err(|_| format!("line {line}: the header is not text"))?
+                .split_ascii_whitespace()
+                .collect();
             let tail = &rest[after..];
             if let Some(d) = tail.find('(') {
-                data = Some(balanced(tail, d)?.0);
+                let (bytes, _) = balanced(tail.as_bytes(), d)?;
+                data = Some(
+                    std::str::from_utf8(bytes)
+                        .map_err(|_| format!("line {line}: the data is not text"))?,
+                );
             }
         }
         _ => header = rest.split_ascii_whitespace().collect(),
@@ -150,7 +183,6 @@ fn section(body: &str, line: usize) -> Result<Section<'_>, String> {
         index,
         header,
         data,
-        line,
     })
 }
 
@@ -162,40 +194,205 @@ struct Face {
     c1: usize,
 }
 
-fn parse(bytes: &[u8]) -> Result<MeshFile, String> {
-    let t = std::str::from_utf8(bytes)
-        .map_err(|_| "not a text file: only the ASCII form of the format is read".to_string())?;
-    let mut warnings = Vec::new();
+/// Little-endian numbers of a binary data block, read one after the other.
+struct Cursor<'a> {
+    bytes: &'a [u8],
+    pos: usize,
+    what: String,
+}
 
-    let (mut n_nodes, mut n_cells, mut n_faces) = (0usize, 0usize, 0usize);
-    let mut dim = 3usize;
-    let mut points: Vec<[f64; 3]> = Vec::new();
-    let mut cell_ranges: Vec<(usize, usize, usize)> = Vec::new(); // zone, first, last
-    let mut face_zone_type: HashMap<usize, usize> = HashMap::new();
-    let mut faces: Vec<Face> = Vec::new();
-    let mut names: HashMap<String, String> = HashMap::new();
-    let mut periodic = false;
+impl Cursor<'_> {
+    fn take<const N: usize>(&mut self) -> Result<[u8; N], String> {
+        let end = self.pos + N;
+        let b = self
+            .bytes
+            .get(self.pos..end)
+            .ok_or_else(|| format!("{}: the binary data ends too early", self.what))?;
+        self.pos = end;
+        let mut a = [0u8; N];
+        a.copy_from_slice(b);
+        Ok(a)
+    }
 
-    let mut pos = 0usize;
-    while let Some(off) = t[pos..].find(|c: char| !c.is_ascii_whitespace()) {
-        let at = pos + off;
-        if t.as_bytes()[at] != b'(' {
+    /// A 32-bit integer, refused when negative.
+    fn int(&mut self) -> Result<usize, String> {
+        let v = i32::from_le_bytes(self.take()?);
+        usize::try_from(v).map_err(|_| format!("{}: a negative number ({v})", self.what))
+    }
+
+    fn real(&mut self, double: bool) -> Result<f64, String> {
+        Ok(if double {
+            f64::from_le_bytes(self.take()?)
+        } else {
+            f32::from_le_bytes(self.take()?) as f64
+        })
+    }
+}
+
+/// What the sections give, gathered over the file.
+#[derive(Default)]
+struct Gathered {
+    n_nodes: usize,
+    n_cells: usize,
+    n_faces: usize,
+    points: Vec<[f64; 3]>,
+    /// zone, first, last
+    cell_ranges: Vec<(usize, usize, usize)>,
+    face_zone_type: HashMap<usize, usize>,
+    faces: Vec<Face>,
+    names: HashMap<String, String>,
+    periodic: bool,
+}
+
+/// The header numbers `zone first last type nd` of a node, cell or face
+/// section.
+fn header_hex(header: &[&str], i: usize, place: &str) -> Result<usize, String> {
+    hex(header.get(i).copied().unwrap_or(""), place)
+}
+
+impl Gathered {
+    /// Nodes `first..=last` of a node section; `None` when the section only
+    /// declares the count (zone 0) and so has no data.
+    fn node_range(
+        &mut self,
+        header: &[&str],
+        len: usize,
+        place: &str,
+    ) -> Result<Option<(usize, usize)>, String> {
+        let (zone, first, last) = (
+            header_hex(header, 0, place)?,
+            header_hex(header, 1, place)?,
+            header_hex(header, 2, place)?,
+        );
+        if let Some(nd) = header.get(4).and_then(|v| v.parse::<usize>().ok())
+            && nd != 3
+        {
             return Err(format!(
-                "line {}: expected a section in parentheses",
-                line_of(t, at)
+                "{place}: nodes with {nd} coordinates: only 3D meshes are read"
             ));
         }
-        let (body, next) = balanced(t, at)?;
-        pos = next;
-        let s = section(body, line_of(t, at))?;
-        let line = s.line;
+        let last = declared(last, len, &format!("{place}: nodes"))?;
+        if zone == 0 {
+            self.n_nodes = last;
+            self.points.resize(self.n_nodes, [0.0; 3]);
+            return Ok(None);
+        }
+        if last > self.points.len() {
+            if self.n_nodes == 0 {
+                self.points.resize(last, [0.0; 3]);
+            } else {
+                return Err(format!(
+                    "{place}: nodes up to {last} but only {} are declared",
+                    self.n_nodes
+                ));
+            }
+        }
+        Ok(Some((first.max(1), last)))
+    }
+
+    /// A cell section; returns its zone, its count and whether its cells
+    /// are of mixed type (then the element types follow as data).
+    fn cells(
+        &mut self,
+        header: &[&str],
+        len: usize,
+        place: &str,
+    ) -> Result<(usize, usize, bool), String> {
+        let (zone, first, last) = (
+            header_hex(header, 0, place)?,
+            header_hex(header, 1, place)?,
+            header_hex(header, 2, place)?,
+        );
+        let last = declared(last, len, &format!("{place}: cells"))?;
+        if zone == 0 {
+            self.n_cells = last;
+            return Ok((0, 0, false));
+        }
+        let ty = header
+            .get(4)
+            .and_then(|v| usize::from_str_radix(v, 16).ok());
+        if matches!(ty, Some(1 | 3)) {
+            return Err(format!(
+                "{place}: triangular or quadrilateral cells: only 3D meshes are read"
+            ));
+        }
+        self.cell_ranges.push((zone, first, last));
+        Ok((zone, (last + 1).saturating_sub(first), ty == Some(0)))
+    }
+
+    /// The header of a face section: `(zone, count, face type)`, or `None`
+    /// for the declaration of the count (zone 0).
+    fn face_header(
+        &mut self,
+        header: &[&str],
+        place: &str,
+    ) -> Result<Option<(usize, usize, usize)>, String> {
+        let (zone, first, last) = (
+            header_hex(header, 0, place)?,
+            header_hex(header, 1, place)?,
+            header_hex(header, 2, place)?,
+        );
+        if zone == 0 {
+            self.n_faces = last;
+            return Ok(None);
+        }
+        let (bc, ftype) = (header_hex(header, 3, place)?, header_hex(header, 4, place)?);
+        self.face_zone_type.insert(zone, bc);
+        let count = (last + 1)
+            .checked_sub(first)
+            .ok_or_else(|| format!("{place}: a face section ends before it starts"))?;
+        Ok(Some((zone, count, ftype)))
+    }
+
+    /// `count` faces of `zone`, their numbers from `num` (hexadecimal text
+    /// or binary integers).
+    fn faces(
+        &mut self,
+        zone: usize,
+        count: usize,
+        ftype: usize,
+        place: &str,
+        num: &mut dyn FnMut(&str) -> Result<usize, String>,
+    ) -> Result<(), String> {
+        self.faces.reserve(count);
+        for _ in 0..count {
+            let nn = match ftype {
+                0 | 5 => num("node count")?,
+                2..=4 => ftype,
+                _ => return Err(format!("{place}: unknown face type {ftype}")),
+            };
+            if !(2..=64).contains(&nn) {
+                return Err(format!("{place}: a face with {nn} nodes"));
+            }
+            let mut nodes = Vec::with_capacity(nn);
+            for _ in 0..nn {
+                let n = num("node")?;
+                if n == 0 || n > u32::MAX as usize {
+                    return Err(format!("{place}: a face refers to node {n}"));
+                }
+                nodes.push((n - 1) as u32);
+            }
+            let (c0, c1) = (num("cell")?, num("cell")?);
+            self.faces.push(Face {
+                zone,
+                nodes,
+                c0,
+                c1,
+            });
+        }
+        Ok(())
+    }
+
+    /// A text section.
+    fn text(&mut self, s: &Section<'_>, len: usize, line: usize) -> Result<(), String> {
+        let place = format!("line {line}");
         match s.index {
             2 => {
-                dim = s
+                let dim: usize = s
                     .header
                     .first()
                     .and_then(|v| v.parse().ok())
-                    .ok_or_else(|| format!("line {line}: the dimension is missing"))?;
+                    .ok_or_else(|| format!("{place}: the dimension is missing"))?;
                 if dim != 3 {
                     return Err(format!(
                         "the file is {dim}D: only 3D meshes are read (extrude a 2D mesh in the \
@@ -204,149 +401,226 @@ fn parse(bytes: &[u8]) -> Result<MeshFile, String> {
                 }
             }
             10 => {
-                let h = |i: usize| -> Result<usize, String> {
-                    hex(
-                        s.header.get(i).unwrap_or(&""),
-                        &format!("line {line}: node section"),
-                    )
+                let Some((first, last)) = self.node_range(&s.header, len, &place)? else {
+                    return Ok(());
                 };
-                let (zone, first, last) = (h(0)?, h(1)?, h(2)?);
-                if let Some(nd) = s.header.get(4).and_then(|v| v.parse::<usize>().ok())
-                    && nd != 3
-                {
-                    return Err(format!(
-                        "line {line}: nodes with {nd} coordinates: only 3D meshes are read"
-                    ));
-                }
-                let last = declared(last, t.len(), &format!("line {line}: nodes"))?;
-                if zone == 0 {
-                    n_nodes = last;
-                    points.resize(n_nodes, [0.0; 3]);
-                    continue;
-                }
-                let Some(d) = s.data else { continue };
-                if last > points.len() {
-                    if n_nodes == 0 {
-                        points.resize(last, [0.0; 3]);
-                    } else {
-                        return Err(format!(
-                            "line {line}: nodes up to {last} but only {n_nodes} are declared"
-                        ));
-                    }
-                }
+                let Some(d) = s.data else { return Ok(()) };
                 let mut it = d.split_ascii_whitespace();
-                for i in first.max(1)..=last {
+                for i in first..=last {
                     let mut p = [0.0; 3];
                     for c in &mut p {
                         *c = it
                             .next()
-                            .ok_or_else(|| format!("line {line}: too few node coordinates"))?
+                            .ok_or_else(|| format!("{place}: too few node coordinates"))?
                             .parse()
-                            .map_err(|_| {
-                                format!("line {line}: a node coordinate is not a number")
-                            })?;
+                            .map_err(|_| format!("{place}: a node coordinate is not a number"))?;
                     }
-                    points[i - 1] = p;
+                    self.points[i - 1] = p;
                 }
             }
             12 => {
-                let h = |i: usize| -> Result<usize, String> {
-                    hex(
-                        s.header.get(i).unwrap_or(&""),
-                        &format!("line {line}: cell section"),
-                    )
-                };
-                let (zone, first, last) = (h(0)?, h(1)?, h(2)?);
-                let last = declared(last, t.len(), &format!("line {line}: cells"))?;
-                if zone == 0 {
-                    n_cells = last;
-                    continue;
-                }
-                if let Some(ty) = s
-                    .header
-                    .get(4)
-                    .and_then(|v| usize::from_str_radix(v, 16).ok())
-                    && (ty == 1 || ty == 3)
-                {
-                    return Err(format!(
-                        "line {line}: triangular or quadrilateral cells: only 3D meshes are read"
-                    ));
-                }
-                cell_ranges.push((zone, first, last));
+                self.cells(&s.header, len, &place)?;
             }
             13 => {
-                let h = |i: usize| -> Result<usize, String> {
-                    hex(
-                        s.header.get(i).unwrap_or(&""),
-                        &format!("line {line}: face section"),
-                    )
+                let Some((zone, count, ftype)) = self.face_header(&s.header, &place)? else {
+                    return Ok(());
                 };
-                let (zone, _first, last) = (h(0)?, h(1)?, h(2)?);
-                if zone == 0 {
-                    n_faces = last;
-                    continue;
-                }
-                let (bc, ftype) = (h(3)?, h(4)?);
-                face_zone_type.insert(zone, bc);
-                let Some(d) = s.data else { continue };
-                let count = (last + 1)
-                    .checked_sub(h(1)?)
-                    .ok_or_else(|| format!("line {line}: a face section ends before it starts"))?;
-                let count = declared(count, d.len(), &format!("line {line}: faces"))?;
+                let Some(d) = s.data else { return Ok(()) };
+                let count = declared(count, d.len(), &format!("{place}: faces"))?;
                 let mut it = d.split_ascii_whitespace();
-                faces.reserve(count);
                 let mut num = |what: &str| -> Result<usize, String> {
                     let tok = it
                         .next()
-                        .ok_or_else(|| format!("line {line}: a face ends too early ({what})"))?;
-                    hex(tok, &format!("line {line}"))
+                        .ok_or_else(|| format!("{place}: a face ends too early ({what})"))?;
+                    hex(tok, &place)
                 };
-                for _ in 0..count {
-                    let nn = match ftype {
-                        0 | 5 => num("node count")?,
-                        2..=4 => ftype,
-                        _ => {
-                            return Err(format!("line {line}: unknown face type {ftype}"));
-                        }
-                    };
-                    if !(2..=64).contains(&nn) {
-                        return Err(format!("line {line}: a face with {nn} nodes"));
-                    }
-                    let mut nodes = Vec::with_capacity(nn);
-                    for _ in 0..nn {
-                        let n = num("node")?;
-                        if n == 0 || n > u32::MAX as usize {
-                            return Err(format!("line {line}: a face refers to node {n}"));
-                        }
-                        nodes.push((n - 1) as u32);
-                    }
-                    let (c0, c1) = (num("cell")?, num("cell")?);
-                    faces.push(Face {
-                        zone,
-                        nodes,
-                        c0,
-                        c1,
-                    });
-                }
+                self.faces(zone, count, ftype, &place, &mut num)?;
             }
-            18 => periodic = true,
-            2010 | 2012 | 2013 => {
-                return Err(format!(
-                    "line {line}: a binary section ({}): only ASCII files are read (write the \
-                     mesh as ASCII)",
-                    s.index
-                ));
-            }
+            18 => self.periodic = true,
             39 | 45 => {
                 // (45 (id type name)()): the type may be left out
                 if let (Some(id), Some(name)) = (s.header.first(), s.header.get(2)) {
-                    names.insert(id.to_ascii_lowercase(), name.to_string());
+                    self.names.insert(id.to_ascii_lowercase(), name.to_string());
                 }
             }
             _ => {}
         }
+        Ok(())
     }
-    let _ = dim;
+
+    /// A binary section `(2xxx (header)(data)End of Binary Section 2xxx)`
+    /// (single precision) or `3xxx` (double precision) that starts at `at`
+    /// with its index ending at `after`; returns the position after it.
+    fn binary(&mut self, t: &[u8], at: usize, index: usize, after: usize) -> Result<usize, String> {
+        let place = format!("section {index} at byte {at}");
+        let double = index / 1000 == 3;
+        let kind = index % 1000;
+        // the header: text in parentheses
+        let h = after
+            + t[after..]
+                .iter()
+                .position(|c| !c.is_ascii_whitespace())
+                .ok_or_else(|| format!("{place}: the section is not closed"))?;
+        if t[h] != b'(' {
+            return Err(format!("{place}: the header is missing"));
+        }
+        let (head, mut pos) = balanced(t, h)?;
+        let header: Vec<&str> = std::str::from_utf8(head)
+            .map_err(|_| format!("{place}: the header is not text"))?
+            .split_ascii_whitespace()
+            .collect();
+        // the data block, if any: '(' bytes ')'
+        while pos < t.len() && t[pos].is_ascii_whitespace() {
+            pos += 1;
+        }
+        if pos < t.len() && t[pos] == b'(' {
+            let mut c = Cursor {
+                bytes: &t[pos + 1..],
+                pos: 0,
+                what: place.clone(),
+            };
+            match kind {
+                10 => {
+                    if let Some((first, last)) = self.node_range(&header, t.len(), &place)? {
+                        let need =
+                            (last + 1).saturating_sub(first) * 3 * if double { 8 } else { 4 };
+                        declared(need, c.bytes.len(), &format!("{place}: nodes"))?;
+                        for i in first..=last {
+                            for x in &mut self.points[i - 1] {
+                                *x = c.real(double)?;
+                            }
+                        }
+                    }
+                }
+                12 => {
+                    let (zone, count, mixed) = self.cells(&header, t.len(), &place)?;
+                    if zone != 0 && mixed {
+                        // the element type of every cell: not needed
+                        let need = count
+                            .checked_mul(4)
+                            .ok_or_else(|| format!("{place}: too many cells"))?;
+                        declared(need, c.bytes.len(), &format!("{place}: cells"))?;
+                        c.pos = need;
+                    }
+                }
+                13 => {
+                    if let Some((zone, count, ftype)) = self.face_header(&header, &place)? {
+                        // a face takes at least 4 integers of 4 bytes
+                        declared(count, c.bytes.len() / 16, &format!("{place}: faces"))?;
+                        self.faces(zone, count, ftype, &place, &mut |_| c.int())?;
+                    }
+                }
+                18 => {
+                    // periodic face pairs: two integers each
+                    self.periodic = true;
+                    let (first, last) = (
+                        header_hex(&header, 0, &place)?,
+                        header_hex(&header, 1, &place)?,
+                    );
+                    let need = (last + 1)
+                        .saturating_sub(first)
+                        .checked_mul(8)
+                        .ok_or_else(|| format!("{place}: too many periodic faces"))?;
+                    declared(need, c.bytes.len(), &format!("{place}: periodic faces"))?;
+                    c.pos = need;
+                }
+                _ => {
+                    // a section not needed here: its data end before the
+                    // closing words
+                    let mark = b"End of Binary Section";
+                    let end = c
+                        .bytes
+                        .windows(mark.len())
+                        .position(|w| w == mark)
+                        .ok_or_else(|| {
+                            format!("{place}: the end of the binary section is not found")
+                        })?;
+                    c.pos = c.bytes[..end]
+                        .iter()
+                        .rposition(|&b| b == b')')
+                        .ok_or_else(|| format!("{place}: the data block is not closed"))?;
+                }
+            }
+            pos += 1 + c.pos;
+            if t.get(pos) != Some(&b')') {
+                return Err(format!(
+                    "{place}: the binary data do not end where the header says"
+                ));
+            }
+            pos += 1;
+        } else {
+            match kind {
+                10 => {
+                    self.node_range(&header, t.len(), &place)?;
+                }
+                12 => {
+                    self.cells(&header, t.len(), &place)?;
+                }
+                13 => {
+                    self.face_header(&header, &place)?;
+                }
+                _ => {}
+            }
+        }
+        // the closing words "End of Binary Section 2xxx" and ')'
+        let close = t[pos..]
+            .iter()
+            .position(|&b| b == b')')
+            .ok_or_else(|| format!("{place}: the section is not closed"))?;
+        if t[pos..pos + close].contains(&b'(') {
+            return Err(format!("{place}: the section is not closed"));
+        }
+        Ok(pos + close + 1)
+    }
+}
+
+fn parse(t: &[u8]) -> Result<MeshFile, String> {
+    let mut warnings = Vec::new();
+    let mut g = Gathered::default();
+    let mut binary = false;
+    let mut double = false;
+
+    let mut pos = 0usize;
+    while let Some(off) = t[pos..].iter().position(|c| !c.is_ascii_whitespace()) {
+        let at = pos + off;
+        if t[at] != b'(' {
+            return Err(format!(
+                "line {}: expected a section in parentheses",
+                line_of(t, at)
+            ));
+        }
+        match index_at(t, at + 1) {
+            Some((index, after)) if (2000..4000).contains(&index) => {
+                binary = true;
+                double |= index >= 3000;
+                pos = g.binary(t, at, index, after)?;
+            }
+            Some((0 | 1, _)) => {
+                // comments and headers: any bytes
+                pos = balanced(t, at)?.1;
+            }
+            _ => {
+                let (body, next) = balanced(t, at)?;
+                pos = next;
+                let line = line_of(t, at);
+                let body = std::str::from_utf8(body)
+                    .map_err(|_| format!("line {line}: the section is not text"))?;
+                let s = section(body, line)?;
+                g.text(&s, t.len(), line)?;
+            }
+        }
+    }
+    let Gathered {
+        mut n_cells,
+        n_faces,
+        points,
+        cell_ranges,
+        face_zone_type,
+        faces,
+        names,
+        periodic,
+        ..
+    } = g;
 
     if faces.is_empty() {
         return Err("the file has no faces (section 13)".into());
@@ -539,7 +813,12 @@ fn parse(bytes: &[u8]) -> Result<MeshFile, String> {
     Ok(MeshFile {
         mesh,
         reader: "fluent_msh",
-        format: "Fluent .msh ASCII 3D".into(),
+        format: match (binary, double) {
+            (false, _) => "Fluent .msh ASCII 3D",
+            (true, false) => "Fluent .msh binary single precision 3D",
+            (true, true) => "Fluent .msh binary double precision 3D",
+        }
+        .into(),
         warnings,
     })
 }

@@ -33,6 +33,7 @@ foehncraft-core = { path = "crates/foehncraft-core", version = "1.0.1" }
 foehncraft-kernels = { path = "crates/foehncraft-kernels", version = "1.0.1" }
 foehncraft-parallel = { path = "crates/foehncraft-parallel", version = "1.0.1" }
 foehncraft-mesh = { path = "crates/foehncraft-mesh", version = "1.0.1", default-features = false }
+foehncraft-radiation = { path = "crates/foehncraft-radiation", version = "1.0.1", default-features = false }
 foehncraft-fv = { path = "crates/foehncraft-fv", version = "1.0.1", default-features = false }
 foehncraft-particles = { path = "crates/foehncraft-particles", version = "1.0.1", default-features = false }
 foehncraft-flow = { path = "crates/foehncraft-flow", version = "1.0.1", default-features = false }
@@ -52,6 +53,9 @@ ndarray = { version = "0.17", default-features = false }
 metis = "0.2"
 cudarc = { version = "0.19", default-features = false }
 schemars = "1.2"
+# The hashes of output files in result.json (D84, maintainer's choice
+# 2026-11-24): CC0-1.0 OR Apache-2.0, with rayon (already a dependency).
+blake3 = { version = "1.8", features = ["rayon"] }
 sha2 = "0.11"
 signal-hook = "0.4"
 

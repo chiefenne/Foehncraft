@@ -263,6 +263,8 @@ const FILES: &[(&str, &str)] = &[
     ("multizone/rotor_stator.su2", "su2"),
     ("fluent_msh/channel_hex.msh", "fluent_msh"),
     ("fluent_msh/dual_polyhedra.msh", "fluent_msh"),
+    ("fluent_msh/channel_hex_binary.msh", "fluent_msh"),
+    ("fluent_msh/dual_polyhedra_binary.msh", "fluent_msh"),
     ("vtk/channel_mixed_ascii.vtk", "vtk"),
     ("vtk/channel_mixed_binary.vtk", "vtk"),
     ("vtk/channel_mixed_ascii.vtu", "vtk"),

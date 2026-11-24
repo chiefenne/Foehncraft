@@ -9,7 +9,10 @@ repository.workspace = true
 authors.workspace = true
 
 [features]
-default = ["hdf5"]
+default = ["hdf5", "blake3"]
+# BLAKE3 hashes of the output files in result.json (D84; C and assembly
+# in its build); without it they are SHA-256.
+blake3 = ["foehncraft-flow/blake3"]
 # VTKHDF output and restart files (HDF5 built from source).
 hdf5 = ["foehncraft-flow/hdf5", "foehncraft-mesh/hdf5", "foehncraft-fv/hdf5"]
 # METIS partitioning in `mesh.process` (built from source).

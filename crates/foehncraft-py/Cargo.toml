@@ -18,7 +18,10 @@ name = "_native"
 crate-type = ["cdylib"]
 
 [features]
-default = ["hdf5"]
+default = ["hdf5", "blake3"]
+# BLAKE3 hashes of the output files in result.json (D84; C and assembly
+# in its build); without it they are SHA-256.
+blake3 = ["foehncraft-flow/blake3", "foehncraft-tools/blake3"]
 # The extension module form (maturin sets it; plain `cargo build` links
 # against libpython instead).
 extension-module = ["pyo3/extension-module"]

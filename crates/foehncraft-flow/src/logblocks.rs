@@ -701,3 +701,77 @@ pub fn run_time(t: &crate::simplec::Timings, cells: usize, iterations: usize, un
     );
     f
 }
+
+/// The Limitations block (D214): what is known before the run to limit its
+/// result, after the settings blocks; `None` when nothing is. The closing
+/// frame keeps the full list, with those only known at the end.
+pub fn limitations(case: &FlowCase) -> Option<Frame> {
+    let list = crate::limitations::before_run(case);
+    if list.is_empty() {
+        return None;
+    }
+    let mut f = Frame::new("Limitations known before the run");
+    for l in &list {
+        f.push_kv(l.code, &l.message);
+    }
+    Some(f)
+}
+
+/// The Events block (D214): every change made during the run with its
+/// iteration or step, its wall-clock time and its code; `None` when nothing
+/// changed.
+pub fn events(events: &[crate::engine::EventLine], transient: bool) -> Option<Frame> {
+    if events.is_empty() {
+        return None;
+    }
+    let what = if transient { "step" } else { "iteration" };
+    let mut f = Frame::new("Events").summary().kv(
+        &format!(
+            "{:<6} {:>7}  {}",
+            if transient { "Step" } else { "Iter." },
+            "elapsed",
+            "code"
+        ),
+        "what happened",
+    );
+    for e in events {
+        // the message repeats the iteration or step
+        let prefix = format!("{what} {}: ", e.at);
+        let msg = e.message.strip_prefix(&prefix).unwrap_or(&e.message);
+        f.push_kv(
+            &format!("{:<6} {:>7}  {}", e.at, clock(e.elapsed), e.code),
+            msg,
+        );
+    }
+    Some(f)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::console::Style;
+    use crate::engine::EventLine;
+
+    #[test]
+    fn events_block_lists_changes_without_repeating_the_step() {
+        assert!(events(&[], true).is_none());
+        let f = events(
+            &[EventLine {
+                code: "RUN015",
+                at: 12,
+                elapsed: 3.2,
+                message: "step 12: schedule (step 12): time.time_step: 0.01 -> 0.005".into(),
+            }],
+            true,
+        )
+        .unwrap();
+        let text = f.render(Style::Asterisk).join("\n");
+        assert!(text.contains("Events:"), "{text}");
+        assert!(text.contains("12     0:00:03  RUN015"), "{text}");
+        assert!(
+            text.contains("schedule (step 12): time.time_step"),
+            "{text}"
+        );
+        assert!(!text.contains("step 12: schedule"), "{text}");
+    }
+}

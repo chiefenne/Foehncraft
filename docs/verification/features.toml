@@ -99,6 +99,8 @@ switch = 'mesh.format = "fluent_msh"'
 evidence = [
   { kind = "consistency", test = "crates/foehncraft-mesh/tests/fluent_msh.rs::polyhedral_cells_and_mixed_faces", what = "polyhedral cells and mixed faces" },
   { kind = "consistency", test = "crates/foehncraft-mesh/tests/fluent_msh.rs::face_orientation_does_not_matter", what = "face orientation does not change the mesh" },
+  { kind = "consistency", test = "crates/foehncraft-mesh/tests/fluent_msh.rs::binary_double_precision_polyhedra", what = "binary double-precision file gives the same mesh as the ASCII file" },
+  { kind = "consistency", test = "crates/foehncraft-mesh/tests/fluent_msh.rs::binary_single_precision_channel", what = "binary single-precision file gives the same mesh as the ASCII file" },
 ]
 gaps = ["no flow case of the catalogue reads a Fluent .msh file"]
 
@@ -1092,8 +1094,12 @@ evidence = [
   { kind = "exact", case = "buoyancy_slot", what = "the buoyant slot against its exact cubic profile, observed orders 2.14 and 2.13", doc = "docs/cases/flow.md#gravity-and-buoyancy" },
   { kind = "exact", test = "crates/foehncraft-flow/tests/buoyancy.rs::buoyant_slot_has_second_order", what = "observed orders in 1.8–2.3" },
   { kind = "consistency", case = "buoyancy_enclosure_plume", what = "a laminar plume in a closed air enclosure converges, mass and kinetic-energy ledgers close" },
+  { kind = "exact", case = "mixed_convection_channel", what = "V7.9 fully developed mixed convection with flow reversal (Aung & Worku 1986), Gr/Re = 200: observed orders 2.14 and 2.14 (net flow up), 2.16 and 2.08 (down)", doc = "docs/gallery/energy.md#natural-convection" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/buoyancy.rs::mixed_convection_has_second_order_both_ways", what = "observed orders in 1.8–2.3 with the net flow up and down" },
+  { kind = "reference-data", case = "natural_convection_plate", what = "V7.12 isothermal vertical plate, Pr 0.71, Gr_L = 10⁸: extrapolated local Nu_x within 0.4 % of the similarity solution of Ostrach (1953) at x = 0.25, 0.5, 0.75 L, GCI ≤ 0.03 %", doc = "docs/gallery/energy.md#natural-convection" },
+  { kind = "consistency", case = "natural_convection_cavity_ra1e5", what = "V7.15 differentially heated square cavity Ra 10³ to 10⁶: mean Nu order 2, GCI ≤ 0.1 %, hot-wall heat equals cold-wall heat to round-off (de Vahl Davis values as context only, D201)", doc = "docs/gallery/energy.md#natural-convection" },
 ]
-gaps = ["no reference-data case (a measured natural-convection flow)", "the wall forces leave out the Archimedes part ρ_ref g V"]
+gaps = ["no measured natural-convection flow (the plate is checked against boundary-layer theory)", "the wall forces leave out the Archimedes part ρ_ref g V"]
 
 [[feature]]
 id = "buoyancy.pressure-kind"
@@ -1416,11 +1422,13 @@ id = "run.log-records"
 area = "Runs and results"
 title = "Log columns and JSON records for scripts and agents"
 switch = "[log]"
-decisions = ["D77"]
+decisions = ["D77", "D214"]
 infrastructure = true
 contracts = ["schema", "equivalence", "bitwise"]
 evidence = [
   { kind = "consistency", case = "cavity_re100_columns", what = "the Ghia cavity with a chosen iteration table" },
+  { kind = "consistency", case = "cavity_re100_log_steps", what = "the transient cavity with a short log and columns changed during the run (D214)" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/log_detail.rs::summary_detail_leaves_out_the_table_but_not_the_record", what = "a shorter log keeps every row of run.jsonl" },
   { kind = "contract", property = "schema", test = "crates/foehncraft-cli/tests/run_contract.rs::run_record_rows_follow_their_schema", what = "every row of run.jsonl has a known type and the keys of that type; the header names the format" },
   { kind = "contract", property = "schema", test = "crates/foehncraft-cli/tests/run_contract.rs::json_result_and_byte_identical_files", what = "result.json is the object on standard output; header and end row of the run record" },
   { kind = "contract", property = "equivalence", test = "crates/foehncraft-cli/tests/run_contract.rs::configurable_log_columns_change_no_result", what = "log columns change no result; flow.log and run.jsonl carry the same content" },
@@ -1672,6 +1680,31 @@ gaps = [
   "no size classes, no time-averaged spray fields (D266, SP2), no evaporation numbers (SP5)",
   "a cut plane takes cell values and gradients (its cut_error is reported); a disc or rectangle snapped to the faces is a staircase of whole faces",
   "not with a sliding mesh (DAT001); one process",
+]
+
+[[feature]]
+id = "porous.darcy-forchheimer"
+area = "Flow models"
+title = "Porous regions with a direction-dependent Darcy-Forchheimer resistance (D270, PM1)"
+switch = "[regions.<name>] kind = \"porous\""
+decisions = ["D270"]
+model = true
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-flow/tests/porous.rs::a_duct_filled_with_a_porous_matrix_has_the_exact_pressure_drop", what = "a duct filled with the matrix: the drop (mu/K + rho F U/2) U L to 1e-8" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/porous.rs::channels_across_the_flow_give_the_across_resistance", what = "a direction-dependent matrix with its first axis across and along the flow: the second and the first principal value, to 1e-8" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/porous.rs::a_block_in_a_duct_converges_to_the_exact_pressure_drop", what = "a block in a duct on 50, 100 and 200 cells: 0.41 % off on 100 cells, observed order about 2 (above 1.5 required)" },
+  { kind = "consistency", test = "crates/foehncraft-flow/src/porous.rs::honeycomb_values_of_the_brick", what = "the honeycomb values against the formulas, a turned tensor stays symmetric" },
+  { kind = "exact", case = "porous_darcy_block", what = "check V1: a porous block in a duct with slip walls, 4.780 Pa against the exact 4.8 Pa on 100 cells", doc = "docs/cases/flow.md#porous-regions" },
+  { kind = "consistency", case = "porous_honeycomb_channel", what = "a ceramic honeycomb block in an air channel, channels along the flow; no air leaves the block sideways", doc = "docs/cases/flow.md#porous-regions" },
+  { kind = "contract", property = "diagnostics", test = "crates/foehncraft-flow/tests/porous.rs::porous_keys_are_checked", what = "POR001 and POR002 for missing, contradicting and unsupported settings" },
+]
+gaps = [
+  "axes turned against the mesh axes are refused: the scalar Rhie-Chow factor cannot hold the tensor (a tensor factor is follow-up work)",
+  "channels across the main flow (a block that closes the channel) converge slowly",
+  "the drop at a jump of the resistance is second order, not exact (the pressure gradient sees the jump over one cell)",
+  "no energy, scalars or turbulence in porous regions (two temperatures are PM2); one process, CPU only",
+  "the kinetic-energy ledger does not book the work of the porous sink",
+  "no measured reference case (a packed bed with the Ergun law, a honeycomb with a measured drop)",
 ]
 
 [[feature]]
