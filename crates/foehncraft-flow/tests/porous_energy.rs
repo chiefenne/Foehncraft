@@ -185,8 +185,8 @@ fn schumann_function_has_its_limits() {
     // as 1 − e^{−η}; J(x, y) + J(y, x) = 1 + e^{−x−y} I₀(2√(x y))
     assert!((schumann(2.0, 0.0).0 - (-2.0f64).exp()).abs() < 1e-10);
     assert!((schumann(0.0, 1.5).1 - (1.0 - (-1.5f64).exp())).abs() < 1e-10);
-    let (x, y) = (1.3, 2.1);
-    let z = 2.0 * (x * y as f64).sqrt();
+    let (x, y) = (1.3f64, 2.1f64);
+    let z = 2.0 * (x * y).sqrt();
     let id = 1.0 + (-x - y + z).exp() * i0e(z);
     assert!((schumann_j(x, y) + schumann_j(y, x) - id).abs() < 1e-10);
 }

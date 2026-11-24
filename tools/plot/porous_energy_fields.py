@@ -103,8 +103,14 @@ def schumann_figure(out, run):
     plt.close(fig)
 
 
-def field_panel(ax, quads, values, title, lo, hi):
-    pc = PolyCollection(quads * 100.0, array=values, cmap=RAINBOW, edgecolors="face",
+def field_panel(ax, quads, values, title, lo, hi, stack_only=False):
+    if stack_only:
+        # the matrix is only in the stack; the plenums are grey
+        y = quads.mean(axis=1)[:, 1]
+        values = np.where((y > 0.15) & (y < 0.85), values, np.nan)
+    cmap = matplotlib.colormaps[RAINBOW].copy()
+    cmap.set_bad("0.85")
+    pc = PolyCollection(quads * 100.0, array=values, cmap=cmap, edgecolors="face",
                         linewidths=0.2)
     pc.set_clim(lo, hi)
     ax.add_collection(pc)
@@ -128,7 +134,7 @@ def storage_figure(out, run):
         quads, _, d = read(path)
         ax = fig.add_subplot(gs[0, i])
         pc = field_panel(ax, quads, need(d, "matrix_temperature", path), f"matrix, {t:.0f} s",
-                         lo, hi)
+                         lo, hi, stack_only=True)
         if i == 0:
             ax.set_ylabel("y (cm)")
         else:
@@ -160,15 +166,17 @@ def storage_figure(out, run):
         y = c[sel, 1][o] * 100.0
         ax.plot(need(d, "temperature", path)[sel][o], y, "-", color=col, lw=1.3,
                 label=f"gas, {t:.0f} s")
-        ax.plot(need(d, "matrix_temperature", path)[sel][o], y, "--", color=col, lw=1.3,
+        tm = np.where((y > 15.0) & (y < 85.0), need(d, "matrix_temperature", path)[sel][o],
+                      np.nan)
+        ax.plot(tm, y, "--", color=col, lw=1.3,
                 label=f"matrix, {t:.0f} s")
     ax.axhspan(15.0, 85.0, color="0.92", zorder=0)
     ax.set_ylim(0.0, 100.0)
     ax.set_xlim(lo - 10.0, hi + 10.0)
     ax.set_xlabel("temperature (K) at x = 20 cm")
     ax.set_ylabel("y (cm)")
-    ax.legend(fontsize=8, loc="lower left")
-    ax.set_title("the stack is shaded", fontsize=10)
+    ax.legend(fontsize=8, loc="upper left")
+    ax.set_title("on the axis; the stack is shaded", fontsize=10)
     fig.suptitle("Charging a honeycomb store: air at 573 K from the top right into ceramic "
                  "bricks at 293 K (6.9 mm channels, ε = 0.26)", fontsize=12)
     fig.savefig(os.path.join(out, "porous_storage_charge.png"), dpi=110)

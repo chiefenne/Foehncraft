@@ -15,9 +15,14 @@
 # (1 − √ε) k_s across (D272).
 #
 # The matrix stores heat, so a thermocline moves down the stack about
-# 1 000 times slower than the air: after 6 000 s it is half way. The air
+# 7 000 times slower than the air in the channels: after 6 000 s it is
+# half way. The air
 # leaving the hot part of the stack is at the matrix temperature within a
 # few kelvin; at the front the two differ.
+#
+# The swirl in the upper plenum does not converge within the 10 outer
+# iterations of a step (Courant number 2 400); the flow in the stack is
+# uniform within 1 % and not affected.
 #
 # Simplifications of this stage: constant gas properties (air at about
 # 420 K; a density that follows T with porous regions comes later), no

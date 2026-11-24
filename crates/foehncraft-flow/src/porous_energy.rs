@@ -374,8 +374,8 @@ impl Matrix {
         }
         old[0] = self.ts.clone();
         if has_old && let Some(w) = extrapolate {
-            for r in 0..self.ts.len() {
-                self.ts[r] = (1.0 + w) * old[0][r] - w * old[1][r];
+            for ((t, a), b) in self.ts.iter_mut().zip(&old[0]).zip(&old[1]) {
+                *t = (1.0 + w) * a - w * b;
             }
         }
     }
@@ -484,9 +484,8 @@ impl Matrix {
             a_unrel[c] = dg[c] * alpha;
             rows.push(std::mem::take(&mut r));
         }
-        for s in 0..ns {
+        for (s, &h) in hv.iter().enumerate() {
             let c = self.cell[s] as usize;
-            let h = hv[s];
             if let Some(d) = rows[c].iter_mut().find(|e| e.0 as usize == c) {
                 d.1 += h;
             }
