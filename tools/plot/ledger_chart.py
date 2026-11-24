@@ -18,7 +18,6 @@ storage is drawn with the sign it has on the right-hand side of the
 closure (storage = sum of the terms).
 """
 import json
-import math
 import os
 import sys
 
