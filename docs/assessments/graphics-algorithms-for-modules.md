@@ -190,6 +190,15 @@ impact points, headless renders (L21), and the inside/outside ray tests.
 | Cost | two PRs (closest hit and any hit, then the batched GPU form), not sized beyond that |
 | Risk | the watertight test of Woop, Benthin and Wald (2013) is widely used but patents with the title "Watertight ray triangle intersection" exist (section 8); our own predicate-based test avoids it |
 
+**Done (#RAY, 2026-11-24):** closest hit and any hit on the wall hierarchy
+with the predicate-based test (choice 1) and the conservative slab test
+(choice 2); the filtered predicate is the fast path, its exact stage the
+fallback, so no separate Möller–Trumbore path was needed. No leaks where
+Möller–Trumbore loses 9 to 13 % of rays aimed at edges and corners, at 1.3
+to 2 times its cost per test
+([benchmark](../benchmarks/ray-casting.md)). The batched GPU form waits for
+its first user.
+
 ### 3.4 Faster hierarchies: wide nodes, SIMD, GPU build
 
 The state of the art is well documented (survey: Meister et al. 2021):

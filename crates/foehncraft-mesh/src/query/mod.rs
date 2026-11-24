@@ -8,14 +8,18 @@
 //! turning part at any angle without a rebuild ([`TurningWallDistance`],
 //! the sliding mesh of D182).
 //!
-//! Part 2 (first piece): the hierarchy over cell boxes ([`CellTree`]), the
-//! point search of [`crate::locate`] and the donor-candidate search. Ray
-//! casting and winding numbers follow with their users (D108 parts 2 and 3).
+//! Part 2: the hierarchy over cell boxes ([`CellTree`]), the point search
+//! of [`crate::locate`] and the donor-candidate search; ray casting on the
+//! surface hierarchy with an exact, watertight segment–triangle test
+//! ([`Bvh::first_hit`], [`Bvh::ray_first_hit`], [`Bvh::occluded`]).
+//! Winding numbers follow with their users (D108 part 3).
 
 pub mod bvh;
 pub mod cells;
+pub mod ray;
 pub mod turning;
 
 pub use bvh::{Bvh, Closest, SurfaceFaces, wall_distance};
 pub use cells::CellTree;
+pub use ray::{End, Hit, SegmentHit, segment_triangle};
 pub use turning::TurningWallDistance;
