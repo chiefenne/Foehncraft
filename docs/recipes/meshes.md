@@ -203,7 +203,7 @@ target/release/foehn flow examples/cases/flow/naca0012_su2_re1000.toml
 ```toml
 [mesh]
 file = "wing.su2"          # the format follows from the extension, or:
-format = "su2"             # gmsh | su2 | fluent_msh | cgns | vtk | openfoam, for a file with another extension
+format = "su2"             # gmsh | su2 | fluent_msh | cgns | vtk | vtkhdf | openfoam, for a file with another extension
 thickness = 0.01           # 2D files: layer thickness, in the file's units
 scale = 0.001              # millimetres to metres (after the extrusion)
 
@@ -268,9 +268,9 @@ and 2D CGNS files and structured zones are refused.
 ---
 
 <a id="mesh-msh-vtk"></a>
-## 134. Read a Fluent `.msh` or VTK mesh, write a VTU
+## 134. Read a Fluent `.msh`, VTK or VTKHDF mesh, write a VTU
 
-Two more readers (D191, D192) and a writer.
+Three more readers (D191, D192) and a writer.
 
 - **Fluent `.msh`.** The ASCII, 3D, face-based text file that many
   commercial meshers and solvers write: nodes, cells and faces with the two
@@ -297,19 +297,35 @@ Two more readers (D191, D192) and a writer.
   while it is read, whatever the encoding, so 10 M cells need about 10 GB.
   Appended raw binary is the fastest to read (1 M cells in 5 s, ASCII in
   8 s); prefer it for meshes of millions of cells.
+- **VTKHDF.** `.vtkhdf` files (VTK's HDF5 format, versions 1 and 2, read
+  through HDF5): an `UnstructuredGrid`, or a `PartitionedDataSetCollection`
+  whose block `internal` holds the cells and whose `PolyData` blocks are the
+  boundaries, named after the block. The grid may come in many partitions,
+  as KoflCraft's blocked `foehncraft.vtkhdf` does (blocks of 65,536 cells
+  with a layer of ghost cells): cells marked in `vtkGhostType` are dropped,
+  points are joined by `PointData/GlobalPointIds` (by their coordinates when
+  a file has none), and the cells take the order of `OriginalCellIds`, so
+  the file reads as the same mesh, bit for bit, as the `.vtu` of the same
+  export. Zones come from the cell array `zone` with `zone_names`, as in a
+  `.vtu`. The partitions are read one at a time, twice (sizes, then nodes
+  straight into place), never the file whole. A run's own `fields.vtkhdf`
+  reads back as its mesh too.
 - **Writing a VTU.** `output.vtu = true` in the mesh case, or `--vtu`:
 
 ```
 target/release/foehn mesh crates/foehncraft-mesh/tests/data/fluent_msh/dual_polyhedra.msh --vtu
 target/release/foehn mesh crates/foehncraft-mesh/tests/data/vtk/channel_mixed_zlib.vtu
+target/release/foehn mesh crates/foehncraft-mesh/tests/data/vtkhdf/channel.vtkhdf
 ```
 
 The `mesh.vtu` of the first command holds the 81 polyhedra and the boundaries
 `xmin` to `zmax` with their names; ParaView, and `foehn` itself, read it back.
+The third reads KoflCraft's blocked channel (776 cells, patches `inlet`,
+`outlet` and `walls`), the same mesh as its `channel.vtu`.
 
 ```toml
 [mesh]
-file = "channel.msh"        # Fluent .msh or Gmsh, by the content
+file = "channel.msh"        # Fluent .msh or Gmsh, by the content; or "foehncraft.vtkhdf"
 # format = "fluent_msh"   # to force it
 
 [mesh.boundaries]           # zone or region names to the names of the conditions

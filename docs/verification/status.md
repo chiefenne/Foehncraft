@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**112 features: 50 verified, 59 partial, 3 unverified.**
+**113 features: 50 verified, 60 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -32,6 +32,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Meshes | [OpenFOAM polyMesh reader](#mesh-openfoam) | partial |
 | Meshes | [Fluent face-based .msh reader](#mesh-fluent-msh) | partial |
 | Meshes | [VTK reader (.vtk, .vtu) and VTU writer](#mesh-vtk) | partial |
+| Meshes | [VTKHDF reader (whole, partitioned and blocked files)](#mesh-vtkhdf-input) | partial |
 | Meshes | [Partitioning with METIS and halos](#mesh-partition) | partial |
 | Meshes | [Quality report and automatic remediation of skewed cells](#mesh-quality-remediation) | partial |
 | Meshes | [Operator exactness check of the velocity gradient and Hessian](#mesh-operator-check) | partial |
@@ -231,6 +232,24 @@ Gaps:
 
 - no flow case of the catalogue reads a VTK file
 - the peak memory of a large read (1 GB per million polyhedra) is measured by hand, not checked in CI
+
+<a id="mesh-vtkhdf-input"></a>
+
+### VTKHDF reader (whole, partitioned and blocked files)
+
+**partial** (no exact or manufactured solution; gaps written) · id `mesh.vtkhdf-input` · switch `mesh.format = "vtkhdf"`
+
+- consistency: [`blocked_file_reads_as_its_vtu`](../../crates/foehncraft-mesh/tests/vtkhdf_read.rs): a blocked file (polyhedra, ghost layer, global point ids, original cell numbers) reads as the mesh of the .vtu of the same cells, bit for bit, for any block size and cell order
+- consistency: [`koflcraft_files_read_as_their_vtu`](../../crates/foehncraft-mesh/tests/vtkhdf_read.rs): KoflCraft's own blocked files (box4, channel) read as the mesh of the .vtu of the same export, bit for bit
+- consistency: [`koflcraft_channel_matches_its_evidence`](../../crates/foehncraft-mesh/tests/vtkhdf_read.rs): the channel reproduces its mesh-evidence.json: counts, total volume, patch faces and areas, zones
+- consistency: [`blocked_file_without_point_ids_joins_by_coordinates`](../../crates/foehncraft-mesh/tests/vtkhdf_read.rs): partitions without GlobalPointIds joined by coordinates, same mesh
+- consistency: [`own_output_reads_back_as_its_mesh`](../../crates/foehncraft-mesh/tests/vtkhdf_read.rs): FoehnCraft's own fields.vtkhdf reads back with the same cells, volumes, zones and boundaries
+- contract (diagnostics): [`broken_counts_are_refused`](../../crates/foehncraft-mesh/tests/vtkhdf_read.rs): counts beyond the file and point ids beyond the points refused with a message
+
+Gaps:
+
+- the KoflCraft fixtures in the repository hold one block each; the two-block sweep (99,160 cells) is checked by hand
+- no flow case of the catalogue reads a VTKHDF file
 
 <a id="mesh-partition"></a>
 

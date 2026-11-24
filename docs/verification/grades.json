@@ -86,6 +86,20 @@
    "range": {}
   },
   {
+   "id": "mesh.vtkhdf-input",
+   "title": "VTKHDF reader (whole, partitioned and blocked files)",
+   "grade": "partial",
+   "why": [
+    "no exact or manufactured solution",
+    "gaps written"
+   ],
+   "gaps": [
+    "the KoflCraft fixtures in the repository hold one block each; the two-block sweep (99,160 cells) is checked by hand",
+    "no flow case of the catalogue reads a VTKHDF file"
+   ],
+   "range": {}
+  },
+  {
    "id": "mesh.partition",
    "title": "Partitioning with METIS and halos",
    "grade": "partial",
