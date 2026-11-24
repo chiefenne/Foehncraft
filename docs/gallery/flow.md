@@ -24,6 +24,7 @@ Part of the [Example gallery](../gallery.md): steady and transient laminar verif
 | 101 | [Torque, shaft power and the performance of a machine: the rotor of the stirred vessel](#torque-power) | 6 | torque per wall and rotor, shaft power in the energy ledger, `[[output.machines]]`, `tools/plot/rotor_movie.py` |
 | 102 | [Several rotors at their own speeds, and the transient frozen rotor](#several-rotors) | 6 | several `[[sliding]]` tables, `[mesh.annulus] outer_rotor_layers`, `examples/meshes/twin_mixer.py`, `[[mrf]]` with `[time]` |
 | 103 | [Interfaces of any rotationally symmetric shape: a disc impeller in a pot, a turning duct section between cones](#revolved-interfaces) | 6 | `[[sliding]]` with disc, cone and pot interfaces (D186), `[mesh.revolved]`, `tools/plot/meridional_fields.py` |
+| 225 | [Three stirrers, one with seven curved blades: circular-arc blades of constant thickness from Gmsh](#curved-blades) | 6 | `examples/meshes/three_mixer.py` (`curved_blade`), three `[[sliding]]` tables |
 
 ---
 
@@ -1194,6 +1195,53 @@ rotors (contra-rotating stages) is not available yet, and conformal
 stepping takes one rotor. Details on the
 [verification page](../verification/stage6.md#several-rotors-and-the-transient-frozen-rotor-d185-pr-102).
 [Recipe 102](../recipes/flow.md#several-rotors).
+
+<a id="curved-blades"></a>
+## 225. Three stirrers, one with seven curved blades: circular-arc blades of constant thickness from Gmsh
+
+<img src="../figures/gallery/three_mixer_vorticity.png" alt="A vessel with three stirrers (three straight blades at +10 rad/s, five straight blades at −15 rad/s, seven backward-curved blades at +20 rad/s): the vorticity at t = 0.1, 0.2, 0.3 and 0.4 s after the start from rest" width="800" height="192">
+
+`examples/studies/three_mixer/sliding.toml` on the mesh of
+`examples/meshes/three_mixer.py` (26 060 cells, ν = 5·10⁻⁵ m²/s): the
+stadium vessel of [entry 102](#several-rotors), widened to 0.44 m, with
+three sliding rotors by imprinting, each with its own interface circle (64
+rotor and 96 stator intervals). Rotor A (left, three straight blades) turns
+anticlockwise at 10 rad/s, rotor B (right, five straight blades) clockwise
+at 15 rad/s, rotor C (middle, below, seven circular-arc blades, backward
+curved) anticlockwise at 20 rad/s. Each rotor drives a ring of its own vorticity, bounded by a ring of
+the opposite sign at the interface circle, and the tip vortices of the
+start-up are shed into the stator. 800 steps of 0.5 ms (0.64, 0.95 and
+1.27 revolutions) took 9.8 minutes on four cores, at a largest Courant
+number of 2.7. The shaft powers (`forces.csv`) fall from 19, 65 and
+143 mW at the start to a few mW and swing as the vortices of the rotors
+meet; for moments a rotor is turned by the flow of its neighbours (A at
+t = 0.3 s, B at t = 0.4 s).
+
+<img src="../figures/gallery/three_mixer_curved_rotor.png" alt="The rotor with seven curved blades at t = 0.4 s: the vorticity with the cell edges, the blades of constant thickness with round tips, and the imprinted interface circle" width="480" height="462">
+
+The curved blades: the camber line of each blade is a circle arc (radius
+40 mm) that leaves the hub radially and bends backward; the blade is the
+band between the two concentric arcs 2.5 mm inside and outside it, so the
+thickness is exactly 5 mm along the blade, closed by a half circle at the
+tip and by a line inside the hub. What goes wrong in the obvious build:
+
+- **The root on the hub circle.** A blade that starts with a straight end
+  on the hub circle leaves two thin cusps per blade where the end line and
+  the circle meet at a small angle: `foehn mesh` reports 98 faces above 70°
+  non-orthogonality (up to 86°). Let the root reach well into the hub
+  (here to 0.4 of the hub radius) and fuse hub and blades into one tool
+  before the cut: the roots of seven blades overlap inside the hub.
+- **The half circle of the tip.** A circle arc of exactly 180° is not fixed
+  by its start, centre and end point; OpenCASCADE picks one of the two. Two
+  quarter arcs through the nose point are unambiguous.
+- **An offset spline.** Two splines through points offset along the normal
+  of the camber line give a blade of nearly, not exactly, constant
+  thickness; the concentric arcs are exact and give fewer, longer curves.
+
+With these the mesh is as good as with straight blades: at most 70°
+non-orthogonality and 0.65 skewness, the same as the three straight-blade
+rotors (the worst faces are elsewhere in the vessel).
+[Recipe 225](../recipes/flow.md#curved-blades).
 
 <a id="revolved-interfaces"></a>
 ## 103. Interfaces of any rotationally symmetric shape: a disc impeller in a pot, a turning duct section between cones
