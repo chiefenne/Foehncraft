@@ -101,7 +101,7 @@ def cavity(out, runs):
         ax.streamplot(xu, yu, uxu, uyu, color="w", density=1.1, linewidth=0.6, arrowsize=0.6)
         nu, nu_x, gci = estimate(run, "scalars.temperature.xmin.heat_flow")
         nus.append((ra, nu_x / DEPTH, gci))
-        ax.set_title(f"Ra = 10^{int(np.log10(ra))}:  Nu = {nu_x / DEPTH:.3f}", fontsize=11)
+        ax.set_title(f"Ra = $10^{int(np.log10(ra))}$:  Nu = {nu_x / DEPTH:.3f}", fontsize=11)
         ax.set_xlim(0.0, 1.0)
         ax.set_ylim(0.0, 1.0)
         ax.set_aspect("equal")
@@ -121,8 +121,10 @@ def cavity(out, runs):
               label="de Vahl Davis 1983 (context)")
     for ra, nu, gci in nus:
         ax.annotate(f"GCI {100 * gci:.3f} %", (ra, nu), textcoords="offset points",
-                    xytext=(-8, 9), ha="right", fontsize=8)
+                    xytext=(8, -4), ha="left", va="top", fontsize=8)
     ax.set_xlabel("Rayleigh number")
+    ax.set_xlim(5e2, 4e6)
+    ax.set_ylim(0.8, 13.0)
     ax.set_ylabel("mean Nusselt number of the hot wall")
     ax.grid(alpha=0.3, which="both")
     ax.legend(fontsize=8, loc="upper left")
@@ -167,8 +169,8 @@ def plate(out, run):
         ax.set_title("Temperature" if i == 0 else "Speed", fontsize=11)
         fig.colorbar(pc, ax=ax, label=lab, shrink=0.9, pad=0.02, location="bottom")
     # local Nusselt number along the plate
-    w = np.genfromtxt(os.path.join(run, "wall_plate.csv"), delimiter=",", names=True,
-                      comments="#")
+    w = np.genfromtxt(os.path.join(run, "wall_plate.csv"), delimiter=",", names=True, skip_header=2,
+                      )
     o = np.argsort(w["y"])
     x = w["y"][o]
     q = w["temperature_flux"][o]

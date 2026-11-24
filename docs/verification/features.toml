@@ -1092,8 +1092,12 @@ evidence = [
   { kind = "exact", case = "buoyancy_slot", what = "the buoyant slot against its exact cubic profile, observed orders 2.14 and 2.13", doc = "docs/cases/flow.md#gravity-and-buoyancy" },
   { kind = "exact", test = "crates/foehncraft-flow/tests/buoyancy.rs::buoyant_slot_has_second_order", what = "observed orders in 1.8–2.3" },
   { kind = "consistency", case = "buoyancy_enclosure_plume", what = "a laminar plume in a closed air enclosure converges, mass and kinetic-energy ledgers close" },
+  { kind = "exact", case = "mixed_convection_channel", what = "V7.9 fully developed mixed convection with flow reversal (Aung & Worku 1986), Gr/Re = 200: observed orders 2.14 and 2.14 (net flow up), 2.16 and 2.08 (down)", doc = "docs/gallery/energy.md#natural-convection" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/buoyancy.rs::mixed_convection_has_second_order_both_ways", what = "observed orders in 1.8–2.3 with the net flow up and down" },
+  { kind = "reference-data", case = "natural_convection_plate", what = "V7.12 isothermal vertical plate, Pr 0.71, Gr_L = 10⁸: extrapolated local Nu_x within 0.4 % of the similarity solution of Ostrach (1953) at x = 0.25, 0.5, 0.75 L, GCI ≤ 0.03 %", doc = "docs/gallery/energy.md#natural-convection" },
+  { kind = "consistency", case = "natural_convection_cavity_ra1e5", what = "V7.15 differentially heated square cavity Ra 10³ to 10⁶: mean Nu order 2, GCI ≤ 0.1 %, hot-wall heat equals cold-wall heat to round-off (de Vahl Davis values as context only, D201)", doc = "docs/gallery/energy.md#natural-convection" },
 ]
-gaps = ["no reference-data case (a measured natural-convection flow)", "the wall forces leave out the Archimedes part ρ_ref g V"]
+gaps = ["no measured natural-convection flow (the plate is checked against boundary-layer theory)", "the wall forces leave out the Archimedes part ρ_ref g V"]
 
 [[feature]]
 id = "buoyancy.pressure-kind"

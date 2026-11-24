@@ -18,6 +18,7 @@ Part of the [Recipes](../recipes.md): the energy equation of the fluid (stage 7,
 | 238 | [Read the conservation ledger of a run as data, and book a module's rows on it](#ledger) |
 | 186 | [Switch on gravity and buoyancy; which pressure do my boundary values mean](#buoyancy) |
 | 195 | [Let the density of a gas follow its temperature (low-Mach variable density)](#variable-density) |
+| 272 | [Set up a natural convection case and check it: a closed cavity, an open plate, a channel with a net flow](#natural-convection) |
 
 ---
 
@@ -997,6 +998,62 @@ target/release/foehn flow examples/cases/flow/vd_closed_box_heating.toml --out o
 target/release/foehn flow examples/cases/flow/vd_closed_box_side_heated.toml --out output/side
 target/release/foehn flow examples/cases/flow/vd_mms_steady.toml --out output/vd_mms
 ```
+
+<a id="natural-convection"></a>
+## 272. Set up a natural convection case and check it: a closed cavity, an open plate, a channel with a net flow
+
+The three benchmarks of [gallery 272](../gallery/energy.md#natural-convection)
+are three kinds of buoyant flow; copy the one that fits.
+
+**Set the Rayleigh number with one key.** In a dimensionless set-up
+(`natural_convection_cavity_ra1e5.toml`: L = 1 m, ΔT = 1 K, ρ = 1, k = 1,
+c_p = 1000, μ = 7.1·10⁻⁴, β = 10⁻³) Ra = g β ΔT L³/(ν α) = g/7.1·10⁻⁴,
+so one override runs any Rayleigh number:
+
+```
+target/release/foehn flow examples/cases/flow/natural_convection_cavity_ra1e5.toml \
+    --out output/cav1e6 --set 'gravity.vector=[0,-710,0]'
+```
+
+Keep `[fluid] temperature` (the reference temperature of the Boussinesq
+force) at the mean of the wall temperatures; the force then has no net
+part and the reduced pressure stays small.
+
+**A closed cavity.** Walls only, `[boundary.<wall>.energy] temperature`
+on the heated walls and `heat_flux = 0.0` on the others (a wall without
+an energy table is adiabatic too, but THM005 names it). Use
+`algorithm = "coupled"`, cluster the mesh to the walls with
+`grading.x = { ratio = 4.0, symmetric = true }` (more at Ra ≥ 10⁶: the
+layers are thin), and `[verification] levels = [0, 1, 2]`: the report
+then lists the heat flow of every heated wall with its observed order,
+extrapolated value and GCI. The mean Nusselt number is
+Nu = Q/(k ΔT · depth) with Q the heat flow of the hot wall.
+
+**An open boundary layer.** Fluid that enters from an ambient at rest is
+a `total-pressure-inlet` with `total_pressure = 0.0` and the ambient
+`temperature`; where it leaves, a `static-pressure-outlet` with
+`pressure = 0.0`. With gravity both values are reduced pressures, the
+ambient's own hydrostatics ([recipe 186](#buoyancy)), so the box stays
+at rest where nothing is heated. Put the open sides at least five layer
+thicknesses away. To start a wall part way up a side, split the side:
+`split = [ { boundary = "xmin", axis = "y", at = 0.0, name = "plate" } ]`
+and make the part below a `slip-wall`. `wall_probes` on the plate give
+the heat flux (`temperature_flux`, W/m²) at chosen heights with its GCI;
+`wall_csv = true` gives it on every face. Nu_x = q x/(k ΔT).
+
+**A channel with a net flow and buoyancy.** A periodic pair along gravity
+with `mass_flow` gives fully developed mixed convection: the driving
+force the solver adjusts holds the mass flow, and the reduced pressure
+is periodic. `[analytic] type = "buoyant-slot"` with `mean_velocity`
+compares against the exact profile (Aung & Worku): the flow reverses
+next to the wall whose buoyancy opposes the net flow when
+g β ΔT D²/(48 ν) > 1.5 U_m (Gr/Re > 72).
+
+**The reference of the plate.** `python3 tools/verification/ostrach.py
+--pr 0.71` prints −H′(0) of the similarity solution (needs scipy);
+`--profile file.csv` writes F′(η) and H(η).
+
+---
 
 <a id="start-values"></a>
 ## 221. Start every region and fluid part on its own

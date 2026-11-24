@@ -197,7 +197,11 @@ validated range, one mesh only, …) in its report and its JSON result.
   pressure gradient (balanced force), so a stratified box at rest on a
   perturbed hex, tet, poly or mixed mesh stays at rest to 10⁻¹⁵ m/s; the
   buoyant slot meets its exact profile at second order, and a warm strip
-  in a closed air enclosure drives a laminar plume (gallery 186).
+  in a closed air enclosure drives a laminar plume (gallery 186). Laminar
+  natural convection benchmarks (gallery 272): the heated square cavity
+  at Ra 10³ to 10⁶ (mean Nu with GCI ≤ 0.12 %), the vertical plate within
+  0.4 % of the Ostrach similarity solution, and mixed convection with
+  flow reversal at second order against its exact profile.
 - **Variable density.** The low-Mach density ρ(T, p₀) of an ideal gas or a
   liquid in every cell and face (`[energy] density = "variable"`, or
   `[buoyancy] model = "variable-density"` with the body force (ρ − ρ_ref)
