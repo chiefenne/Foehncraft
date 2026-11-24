@@ -68,6 +68,7 @@ pub mod operators;
 pub mod plot;
 pub mod pressure_values;
 pub mod ranks;
+pub mod residual;
 pub mod restart;
 pub mod rotor;
 pub mod scalar;

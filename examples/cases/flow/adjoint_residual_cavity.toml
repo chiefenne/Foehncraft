@@ -1,0 +1,53 @@
+# The steady residual of the adjoint (L17 stage A0, gallery 267): a
+# lid-driven cavity at Re = 100 on 24 x 24 perturbed polygons.
+#
+#   cargo run --release -p foehncraft-flow --example adjoint_a0 -- \
+#       examples/cases/flow/adjoint_residual_cavity.toml output/adjoint_a0
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/adjoint_residual_cavity.toml
+#
+# The example runs the case twice, with SIMPLEC (as written here) and with
+# the coupled solver (`--set solver.algorithm="coupled"`), and evaluates
+# after every outer iteration the one residual R(q) = (R_u, R_c, R_ṁ) of
+# the steady discrete equations (`Flow::steady_residual`, the face fluxes
+# are part of the state): both algorithms drive the same R to round-off,
+# which is what the discrete adjoint (D220) will differentiate. Polygons
+# with perturbed nodes, so the skewness and non-orthogonal corrections are
+# in R. ρ = 1 kg/m³, μ = 0.01 Pa s, lid speed 1 m/s.
+
+case_format = "0.7"
+
+[mesh.generate]
+type = "poly"
+dimension = 2
+upper = [1.0, 1.0, 0.04]
+cells = [24, 24, 1]
+perturb = 0.15
+seed = 59
+
+[fluid]
+density = 1.0
+viscosity = 0.01
+
+[boundary.ymax]
+type = "wall"
+velocity = [1.0, 0.0, 0.0]     # the lid
+[boundary.xmin]
+type = "wall"
+[boundary.xmax]
+type = "wall"
+[boundary.ymin]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-10
+max_iterations = 2000
+
+[solver.momentum]
+relaxation = 0.8
+
+[solver.pressure]
+tolerance = 1e-10

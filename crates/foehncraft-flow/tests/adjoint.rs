@@ -21,6 +21,8 @@ use foehncraft_kernels::flow::{
     self as k, BoundaryInputs, FaceGeometry, FluxInputs, MomentumInputs, VelocityGradient,
 };
 use foehncraft_kernels::fv::{self, FaceInputs, Topology, Vec3};
+use foehncraft_kernels::reverse as rv;
+use rayon::prelude::*;
 use foehncraft_mesh::Geometry;
 use foehncraft_mesh::case::{MeshSection, build_mesh};
 use std::collections::BTreeMap;
@@ -117,18 +119,24 @@ impl<T: Real> Lifted<T> {
 }
 
 fn fixture() -> (Fixture, Data, Data) {
-    let sec: MeshSection = toml::from_str(
+    fixture_sized([4, 4, 3])
+}
+
+/// The fixture on a mixed mesh of `cells` blocks.
+fn fixture_sized(cells: [usize; 3]) -> (Fixture, Data, Data) {
+    let sec: MeshSection = toml::from_str(&format!(
         r#"
 [generate]
 type = "mixed"
 dimension = 3
 lower = [0.0, 0.0, 0.0]
 upper = [1.0, 1.0, 1.0]
-cells = [4, 4, 3]
+cells = [{}, {}, {}]
 perturb = 0.2
 seed = 59
 "#,
-    )
+        cells[0], cells[1], cells[2]
+    ))
     .unwrap();
     let (mesh, _, _) = build_mesh(&sec).unwrap();
     let geo = Geometry::compute(&mesh);
@@ -425,7 +433,19 @@ fn momentum_face_central<T: Real>(fx: &Fixture, l: &Lifted<T>, f: usize) -> Vec<
 }
 
 fn momentum_face_with<T: Real>(fx: &Fixture, l: &Lifted<T>, f: usize, central: T) -> Vec<T> {
-    let inp = MomentumInputs {
+    let inp = momentum_inputs(fx, l, central);
+    // SAFETY: f is a face of the mesh.
+    let (cp, cn, b) = unsafe { k::momentum_face(f, &inp) };
+    vec![cp, cn, b[0], b[1], b[2]]
+}
+
+/// The inputs of the momentum face kernel (`uc` = `u`, a steady state).
+fn momentum_inputs<'a, T: Real>(
+    fx: &'a Fixture,
+    l: &'a Lifted<T>,
+    central: T,
+) -> MomentumInputs<'a, T> {
+    MomentumInputs {
         topo: fx.topo(),
         geo: l.geo(),
         mass_flux: l.s("m"),
@@ -443,10 +463,7 @@ fn momentum_face_with<T: Real>(fx: &Fixture, l: &Lifted<T>, f: usize, central: T
         convection: T::ONE,
         transposed: T::ZERO,
         trace_free: T::ZERO,
-    };
-    // SAFETY: f is a face of the mesh.
-    let (cp, cn, b) = unsafe { k::momentum_face(f, &inp) };
-    vec![cp, cn, b[0], b[1], b[2]]
+    }
 }
 
 fn flux_inputs<'a, T: Real>(
@@ -661,4 +678,286 @@ fn fixture_has_every_boundary_kind() {
         }
     }
     assert!(fx.disc.bc_a.contains(&0.0) && fx.disc.bc_a.contains(&1.0));
+}
+
+// ---------------------------------------------------------------------
+// L17 stage A0 (D221 option A): the reverse sweep of the momentum face
+// kernel from local dual Jacobians, gathered over the inverse stencil.
+// ---------------------------------------------------------------------
+
+/// The arrays the reverse sweep differentiates (state and the viscosity);
+/// every other array is a constant of the linearisation.
+const REVERSE_ARRAYS: [&str; 17] = [
+    "m", "mu", "u.x", "u.y", "u.z", "gux.x", "gux.y", "gux.z", "guy.x", "guy.y", "guy.z",
+    "guz.x", "guz.y", "guz.z", "ub.x", "ub.y", "ub.z",
+];
+
+/// The direction `dir` on the differentiated arrays only.
+fn reverse_direction(dir: &Data) -> Data {
+    dir.iter()
+        .map(|(n, v)| {
+            let on = REVERSE_ARRAYS.contains(&n.as_str());
+            (n.clone(), v.iter().map(|&a| if on { a } else { 0.0 }).collect())
+        })
+        .collect()
+}
+
+/// The cotangents of the differentiated inputs from the output cotangents
+/// `ybar` (one per face): per face (ṁ̄, μ̄), per cell (ū, ∇̄u), per boundary
+/// face ū_b. `threads` sets the thread count of both loops.
+struct Reverse {
+    face: Vec<[f64; 2]>,
+    cell: Vec<[f64; rv::CELL]>,
+    boundary: Vec<[f64; 3]>,
+}
+
+fn reverse_sweep(fx: &Fixture, x: &Data, ybar: &[[f64; rv::OUT]], threads: usize) -> Reverse {
+    let l = shifted(x, x, 0.0, None);
+    let inp = momentum_inputs(fx, &l, 0.0);
+    let d = &fx.disc;
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(threads)
+        .build()
+        .unwrap();
+    pool.install(|| {
+        let face_bar: Vec<[f64; rv::LOCAL]> = (0..d.n_faces)
+            .into_par_iter()
+            .map(|f| {
+                let (jac, _) = rv::momentum_face_jacobian(f, &inp).expect("face inside the mesh");
+                rv::pullback(&jac, &ybar[f])
+            })
+            .collect();
+        let topo = fx.topo();
+        let cell = (0..d.n_cells)
+            .into_par_iter()
+            .map(|c| rv::gather_cell(c, &topo, &face_bar).expect("cell inside the mesh"))
+            .collect();
+        let face = face_bar
+            .iter()
+            .map(|x| [x[rv::IN_MASS_FLUX], x[rv::IN_MU]])
+            .collect();
+        let boundary = face_bar[d.n_interior..]
+            .iter()
+            .map(|x| [x[rv::IN_U_OTHER], x[rv::IN_U_OTHER + 1], x[rv::IN_U_OTHER + 2]])
+            .collect();
+        Reverse {
+            face,
+            cell,
+            boundary,
+        }
+    })
+}
+
+/// ⟨x̄, ẋ⟩ over all differentiated inputs, summed in a fixed order.
+fn reverse_dot(fx: &Fixture, r: &Reverse, xdot: &Data) -> f64 {
+    let d = &fx.disc;
+    let mut s = 0.0;
+    for f in 0..d.n_faces {
+        s += r.face[f][0] * xdot["m"][f] + r.face[f][1] * xdot["mu"][f];
+    }
+    let comp = ["x", "y", "z"];
+    for c in 0..d.n_cells {
+        for i in 0..3 {
+            s += r.cell[c][i] * xdot[&format!("u.{}", comp[i])][c];
+            for j in 0..3 {
+                s += r.cell[c][3 + 3 * i + j] * xdot[&format!("gu{}.{}", comp[i], comp[j])][c];
+            }
+        }
+    }
+    for (fb, b) in r.boundary.iter().enumerate() {
+        for i in 0..3 {
+            s += b[i] * xdot[&format!("ub.{}", comp[i])][fb];
+        }
+    }
+    s
+}
+
+fn random_cotangent(n: usize, seed: u64) -> Vec<[f64; rv::OUT]> {
+    let mut r = Rng(seed);
+    (0..n)
+        .map(|_| core::array::from_fn(|_| r.signed(0.1, 1.0)))
+        .collect()
+}
+
+/// The local evaluation of the reverse sweep reproduces the primal kernel
+/// on every face (the local copy reads the same inputs).
+#[test]
+fn reverse_local_copy_reproduces_the_primal() {
+    let (fx, x, _) = fixture();
+    let l = shifted(&x, &x, 0.0, None);
+    let inp = momentum_inputs(&fx, &l, 0.0);
+    for f in 0..fx.disc.n_faces {
+        let (_, val) = rv::momentum_face_jacobian(f, &inp).unwrap();
+        let y = momentum_face(&fx, &l, f);
+        for (a, b) in val.iter().zip(&y) {
+            assert!(a == b, "face {f}: local {a:e} against primal {b:e}");
+        }
+    }
+}
+
+/// Rung 1 of the verification ladder (D222): ⟨ȳ, J ẋ⟩ = ⟨Jᵀ ȳ, ẋ⟩ over the
+/// whole mesh, the forward side from the primal kernel on `Dual<1>` (not
+/// from the local blocks), the reverse side from the gathered sweep.
+#[test]
+fn reverse_dot_product_test() {
+    let (fx, x, dir) = fixture();
+    let xdot = reverse_direction(&dir);
+    let ld = dual(&x, &xdot, None);
+    let ybar = random_cotangent(fx.disc.n_faces, 0xa0_d0e);
+    let mut fwd = 0.0;
+    let mut scale = 0.0;
+    for (f, yb) in ybar.iter().enumerate() {
+        let y = momentum_face(&fx, &ld, f);
+        for (a, b) in yb.iter().zip(&y) {
+            fwd += a * b.d[0];
+            scale += (a * b.d[0]).abs();
+        }
+    }
+    let r = reverse_sweep(&fx, &x, &ybar, 1);
+    let rev = reverse_dot(&fx, &r, &xdot);
+    let e = (fwd - rev).abs() / scale;
+    println!("dot-product test: forward {fwd:.15e}, reverse {rev:.15e}, relative {e:.1e}");
+    assert!(e < 1e-13, "forward {fwd:e} against reverse {rev:e} ({e:.1e})");
+}
+
+/// Rung 5 at kernel level: the gradient of J(x) = Σ_f ȳ_f·y_f(x) from the
+/// reverse sweep against central finite differences of J along a random
+/// direction, with a step sweep (the best step is compared, the others are
+/// printed).
+#[test]
+fn reverse_gradient_against_finite_differences() {
+    let (fx, x, dir) = fixture();
+    let xdot = reverse_direction(&dir);
+    let ybar = random_cotangent(fx.disc.n_faces, 0xfd_a0);
+    let r = reverse_sweep(&fx, &x, &ybar, 1);
+    let g = reverse_dot(&fx, &r, &xdot);
+    let objective = |h: f64| -> f64 {
+        let l = Lifted(
+            x.iter()
+                .map(|(n, v)| {
+                    let w = v.iter().zip(&xdot[n]).map(|(a, b)| a + h * b).collect();
+                    (n.clone(), w)
+                })
+                .collect(),
+        );
+        let mut j = 0.0;
+        for (f, yb) in ybar.iter().enumerate() {
+            for (a, b) in yb.iter().zip(momentum_face(&fx, &l, f)) {
+                j += a * b;
+            }
+        }
+        j
+    };
+    let mut best = f64::INFINITY;
+    for h in [1e-3, 1e-4, 1e-5, 1e-6, 1e-7] {
+        let fd = (objective(h) - objective(-h)) / (2.0 * h);
+        let e = (fd - g).abs() / g.abs();
+        println!("step {h:.0e}: central difference {fd:.12e}, reverse {g:.12e}, relative {e:.1e}");
+        best = best.min(e);
+    }
+    assert!(best < 1e-8, "best relative difference {best:.1e}");
+}
+
+/// D31: the reverse sweep is bitwise the same on 1 and 4 threads.
+#[test]
+fn reverse_sweep_is_bitwise_reproducible() {
+    let (fx, x, _) = fixture_sized([8, 8, 6]);
+    let ybar = random_cotangent(fx.disc.n_faces, 0x31);
+    let (a, b) = (
+        reverse_sweep(&fx, &x, &ybar, 1),
+        reverse_sweep(&fx, &x, &ybar, 4),
+    );
+    let bits = |r: &Reverse| -> Vec<u64> {
+        r.face
+            .iter()
+            .flatten()
+            .chain(r.cell.iter().flatten())
+            .chain(r.boundary.iter().flatten())
+            .map(|v| v.to_bits())
+            .collect()
+    };
+    assert_eq!(bits(&a), bits(&b));
+}
+
+/// The cost of option A, printed for the A0 note: the primal face kernel,
+/// the local Jacobians (the stored mode builds them once), the pullback
+/// with stored blocks and the cell gather, per face and per call, on one
+/// thread. `FOEHN_A0_CELLS="nx,ny,nz"` sets the mesh (default 12,12,10).
+#[test]
+fn reverse_sweep_cost() {
+    let cells = std::env::var("FOEHN_A0_CELLS")
+        .ok()
+        .and_then(|s| {
+            let v: Vec<usize> = s.split(',').filter_map(|a| a.trim().parse().ok()).collect();
+            (v.len() == 3).then(|| [v[0], v[1], v[2]])
+        })
+        .unwrap_or([12, 12, 10]);
+    let (fx, x, _) = fixture_sized(cells);
+    let d = &fx.disc;
+    let l = shifted(&x, &x, 0.0, None);
+    let inp = momentum_inputs(&fx, &l, 0.0);
+    let ybar = random_cotangent(d.n_faces, 0xc0);
+    let reps = 3;
+    let time = |work: &mut dyn FnMut() -> f64| -> f64 {
+        let mut best = f64::INFINITY;
+        let mut sink = 0.0;
+        for _ in 0..reps {
+            let t = std::time::Instant::now();
+            sink += work();
+            best = best.min(t.elapsed().as_secs_f64());
+        }
+        std::hint::black_box(sink);
+        best
+    };
+    let primal = time(&mut || {
+        let mut s = 0.0;
+        for f in 0..d.n_faces {
+            // SAFETY: f is a face of the mesh.
+            let (cp, cn, b) = unsafe { k::momentum_face(f, &inp) };
+            s += cp + cn + b[0] + b[1] + b[2];
+        }
+        s
+    });
+    let mut jacs = Vec::new();
+    let jac = time(&mut || {
+        jacs = (0..d.n_faces)
+            .map(|f| rv::momentum_face_jacobian(f, &inp).unwrap().0)
+            .collect();
+        jacs.len() as f64
+    });
+    let mut face_bar = Vec::new();
+    let pull = time(&mut || {
+        face_bar = jacs
+            .iter()
+            .zip(&ybar)
+            .map(|(j, y)| rv::pullback(j, y))
+            .collect();
+        face_bar.len() as f64
+    });
+    let topo = fx.topo();
+    let gather = time(&mut || {
+        let mut s = 0.0;
+        for c in 0..d.n_cells {
+            s += rv::gather_cell(c, &topo, &face_bar).unwrap()[0];
+        }
+        s
+    });
+    let per = |t: f64| t / d.n_faces as f64 * 1e9;
+    println!(
+        "option A cost on {} cells, {} faces (one thread, best of {reps}):\n  primal face kernel {:.1} ns/face\n  local Jacobian (Dual<{}>) {:.1} ns/face = {:.1} x primal\n  pullback, stored block {:.1} ns/face = {:.1} x primal\n  cell gather {:.1} ns/face\n  stored mode per product {:.1} x primal, recompute mode {:.1} x primal\n  stored blocks {:.1} MB ({} B per face)",
+        d.n_cells,
+        d.n_faces,
+        per(primal),
+        rv::LOCAL,
+        per(jac),
+        jac / primal,
+        per(pull),
+        pull / primal,
+        per(gather),
+        (pull + gather) / primal,
+        (jac + pull + gather) / primal,
+        (jacs.len() * std::mem::size_of::<rv::LocalJacobian>()) as f64 / 1e6,
+        std::mem::size_of::<rv::LocalJacobian>(),
+    );
+    assert_eq!(face_bar.len(), d.n_faces);
 }
