@@ -80,7 +80,8 @@
     "gaps written"
    ],
    "gaps": [
-    "no flow case of the catalogue reads a VTK file"
+    "no flow case of the catalogue reads a VTK file",
+    "the peak memory of a large read (1 GB per million polyhedra) is measured by hand, not checked in CI"
    ],
    "range": {}
   },

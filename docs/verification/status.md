@@ -226,10 +226,12 @@ Gaps:
 
 - consistency: [`every_encoding_reads_the_same_mesh`](../../crates/foehncraft-mesh/tests/vtk.rs): every encoding reads the same mesh
 - consistency: [`round_trip_through_write_vtu`](../../crates/foehncraft-mesh/tests/vtk.rs): round trip through the VTU writer
+- consistency: [`small_buffers_read_the_same_mesh`](../../crates/foehncraft-mesh/src/format/vtk.rs): streamed through buffers of odd sizes, every encoding reads the mesh of the whole file
 
 Gaps:
 
 - no flow case of the catalogue reads a VTK file
+- the peak memory of a large read (1 GB per million polyhedra) is measured by hand, not checked in CI
 
 <a id="mesh-partition"></a>
 

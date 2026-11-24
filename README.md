@@ -10,7 +10,7 @@
 
 ---
 
-> **Status: release 1.0.0, milestone 1.** Incompressible and low-Mach
+> **Status: release 1.0.1, milestone 1.** Incompressible and low-Mach
 > flow, laminar and RANS, the energy equation, conjugate heat transfer with
 > several fluids and solids, buoyancy and rotating machinery, on CPUs and
 > NVIDIA GPUs in one process. The stage plan and every decision are in
@@ -70,7 +70,7 @@ second chat ([gallery 225](docs/gallery/flow.md#curved-blades));
 
 ## What works today
 
-Everything below is in release 1.0.0 and on `main`, checked by the
+Everything below is in release 1.0.1 and on `main`, checked by the
 verification cases of the [case catalogue](docs/cases.md) and shown in the
 [gallery](docs/gallery.md). How well each feature is checked (verified,
 partial or unverified, with the evidence and the known gaps) is on the
@@ -417,7 +417,7 @@ Innsbruck since the early twentieth century. The command is `foehn`.
 
 ## Contributing
 
-The project is at release 1.0.0 (milestone 1) and has one maintainer. Comments on the
+The project is at release 1.0.1 (milestone 1) and has one maintainer. Comments on the
 requirements are welcome as GitHub issues. [CONTRIBUTING.md](CONTRIBUTING.md)
 has the rules every pull request follows, among them that it keeps this
 README and the documentation up to date with what it changes.

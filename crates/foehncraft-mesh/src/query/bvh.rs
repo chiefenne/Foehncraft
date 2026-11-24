@@ -305,10 +305,10 @@ pub struct Closest {
 /// Bounding volume hierarchy over the triangles of a [`SurfaceFaces`].
 #[derive(Debug, Clone)]
 pub struct Bvh {
-    faces: SurfaceFaces,
-    nodes: Vec<Node>,
+    pub(crate) faces: SurfaceFaces,
+    pub(crate) nodes: Vec<Node>,
     /// Triangles in leaf order.
-    order: Vec<u32>,
+    pub(crate) order: Vec<u32>,
 }
 
 impl Bvh {
