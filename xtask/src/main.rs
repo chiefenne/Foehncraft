@@ -26,6 +26,15 @@ const ALLOWED: &[(&str, &[&str])] = &[
         ],
     ),
     (
+        "foehncraft-radiation",
+        &[
+            "foehncraft-core",
+            "foehncraft-kernels",
+            "foehncraft-parallel",
+            "foehncraft-mesh",
+        ],
+    ),
+    (
         "foehncraft-fv",
         &[
             "foehncraft-core",
@@ -105,6 +114,7 @@ const FORBIDDEN_PATHS: &[&str] = &[
     "foehncraft_bench::",
     "foehncraft_parallel::",
     "foehncraft_kernels::",
+    "foehncraft_radiation::",
 ];
 
 /// Engine entry points that front ends call only through a tool.
