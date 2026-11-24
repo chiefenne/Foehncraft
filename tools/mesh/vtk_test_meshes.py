@@ -10,6 +10,10 @@ Run from the repository root:
 Writes channel_mixed_ascii.vtk, channel_mixed_binary.vtk (legacy),
 channel_mixed_ascii.vtu, channel_mixed_binary.vtu (inline base64, no
 compression) and channel_mixed_zlib.vtu (zlib).
+
+channel_mixed_appended.vtu (appended raw binary, every cell a polyhedron,
+the names as field data) is written by Foehncraft's own writer,
+`format::vtk::write_vtu` with `binary = true`, from the same Gmsh mesh.
 """
 
 import meshio
