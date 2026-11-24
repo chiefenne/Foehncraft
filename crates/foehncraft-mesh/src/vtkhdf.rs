@@ -1,21 +1,37 @@
 //! VTKHDF output (D41).
 //!
 //! One HDF5 file in the VTKHDF format of VTK, read directly by ParaView
-//! (open the `.vtkhdf` file; reader "VTKHDF"). The file is a
-//! `PartitionedDataSetCollection`:
+//! (open the `.vtkhdf` file; reader "VTKHDF"), in the blocked layout that
+//! MurmelCraft reads in parts (layout 1, shared with KoflCraft's hand-off).
+//! The file is a `PartitionedDataSetCollection`:
 //!
-//! - block `internal`: the cells as an `UnstructuredGrid`; tetrahedra,
+//! - block `internal`: the cells as an `UnstructuredGrid` in partitions of
+//!   [`BLOCK_CELLS`] owned cells, the cells sorted along a Hilbert curve
+//!   through their centroids (Skilling 2004), each partition with one layer
+//!   of ghost cells (the cells of other blocks that share a point with its
+//!   own, `vtkGhostType` 1, carrying the same field values); tetrahedra,
 //!   hexahedra, prisms and pyramids as VTK's linear cells, everything else
-//!   as `VTK_POLYHEDRON` with its faces; cell fields under `CellData`;
-//! - one `PolyData` block per boundary boundary, named after the boundary, with
-//!   the boundary index and the boundary face fields ([`FaceField`], such as
-//!   the wall shear stress) as cell fields;
+//!   as `VTK_POLYHEDRON` with its faces; cell fields, `zone`,
+//!   `GlobalCellIds` (the cell's place in the file), `OriginalCellIds` (its
+//!   global identity) under `CellData`, `GlobalPointIds` under `PointData`,
+//!   and per block the owned cells, bounds and field ranges under
+//!   `FieldData`;
+//! - one `PolyData` block per boundary, named after the boundary, with
+//!   the boundary index, `OwnerCell` and the boundary face fields
+//!   ([`FaceField`], such as the wall shear stress) as cell fields;
 //! - an assembly `internal`, `boundary/<boundary>` for ParaView's block
 //!   selection.
 //!
-//! Cells, nodes and boundary faces are written in the order of their global
-//! identities (input order, R2), so the file does not depend on a
-//! renumbering of the cells.
+//! The order does not depend on a renumbering of the cells: blocks follow
+//! the centroids (ties by the global identities, input order, R2), the
+//! points of a block and the boundary faces follow their identities.
+//!
+//! The writer streams: the datasets are created at their full size from a
+//! first pass that counts each block, then each block's rows are built and
+//! written in turn, so the file never exists in memory whole. A million
+//! polyhedra with 6.2 million points take 0.26 GB beside the mesh and the
+//! fields while they are written (1.26 GB of whole-file arrays before).
+//! Points that no cell uses are not written.
 //!
 //! The format is described in the VTK documentation, "VTK File Formats",
 //! section "VTKHDF File Format". This writer is serial; the parallel writer
@@ -82,6 +98,9 @@ pub fn write_with(
     write_all(path, mesh, fields, &[], attrs)
 }
 
+/// Owned cells per block of the blocked layout (the ghosts come on top).
+pub const BLOCK_CELLS: usize = 65_536;
+
 /// As [`write_with`], with fields on the boundary faces, which go to the
 /// boundary blocks.
 pub fn write_all(
@@ -91,7 +110,22 @@ pub fn write_all(
     face_fields: &[FaceField],
     attrs: &[(&str, Attr)],
 ) -> Result<()> {
+    write_blocks(path, mesh, fields, face_fields, attrs, BLOCK_CELLS)
+}
+
+/// As [`write_all`] with `block` owned cells per block (small blocks for
+/// tests; files for MurmelCraft keep [`BLOCK_CELLS`]).
+#[doc(hidden)]
+pub fn write_blocks(
+    path: impl AsRef<Path>,
+    mesh: &Mesh,
+    fields: &[CellField],
+    face_fields: &[FaceField],
+    attrs: &[(&str, Attr)],
+    block: usize,
+) -> Result<()> {
     let path = path.as_ref();
+    anyhow::ensure!(block > 0, "blocks of 0 cells");
     let nb = mesh.n_boundary_faces();
     for f in face_fields {
         anyhow::ensure!(
@@ -128,12 +162,21 @@ pub fn write_all(
         }
     }
     let root = group(&file, "VTKHDF")?;
-    type_attr(&root, "PartitionedDataSetCollection")?;
+    ascii_attr(&root, "Type", "PartitionedDataSetCollection")?;
     version_attr(&root)?;
+    root.new_attr::<i64>()
+        .create("murmelcraft_blocks")?
+        .write_scalar(&1)?;
+    ascii_attr(&root, "block_order", "hilbert")?;
 
+    let layout = Layout::new(mesh, block);
     let internal = group(&root, "internal")?;
-    write_internal(&internal, mesh, fields)?;
+    write_internal(&internal, mesh, fields, &layout)?;
     index_attr(&internal, 0)?;
+    internal
+        .new_attr::<i64>()
+        .create("block_cells")?
+        .write_scalar(&(block as i64))?;
 
     let assembly = group(&root, "Assembly")?;
     assembly.link_soft("/VTKHDF/internal", "internal")?;
@@ -141,7 +184,7 @@ pub fn write_all(
     for (i, p) in mesh.boundaries.iter().enumerate() {
         let name = block_name(&p.name);
         let g = group(&root, &name)?;
-        write_boundary(&g, mesh, p.range(), i as f64, face_fields)?;
+        write_boundary(&g, mesh, p.range(), i as f64, face_fields, &layout.file_id)?;
         index_attr(&g, i as i64 + 1)?;
         boundary.link_soft(&format!("/VTKHDF/{name}"), &name)?;
     }
@@ -150,38 +193,38 @@ pub fn write_all(
 
 /// The size of the file that [`write()`] writes for `mesh` with `n_fields`
 /// cell fields, from the arrays it stores (an estimate within a few per
-/// cent: HDF5 adds headers of some kilobytes).
+/// cent: HDF5 adds headers of some kilobytes). The blocks and their ghosts
+/// are counted as the writer lays them out.
 pub fn estimate_bytes(mesh: &Mesh, n_fields: usize) -> f64 {
-    let nc = mesh.n_cells;
-    let mut ids = 0usize;
-    for c in 0..nc {
-        match mesh.cell_shape(c) {
-            CellShape::Tetrahedron => ids += 4,
-            CellShape::Hexahedron => ids += 8,
-            CellShape::Prism => ids += 6,
-            CellShape::Pyramid => ids += 5,
-            CellShape::Polyhedron => {
-                ids += mesh.cell_nodes(c).len();
-                for (f, _) in mesh.cell_face_iter(c) {
-                    // face connectivity, face offset, polyhedron-to-face id
-                    ids += (mesh.face_ptr[f + 1] - mesh.face_ptr[f]) as usize + 2;
-                }
-            }
-        }
-    }
-    // boundary blocks: points of each boundary and the face connectivity
+    let layout = Layout::new(mesh, BLOCK_CELLS);
+    let n = layout.counts(&sizes(mesh));
+    let nblocks = n.cells.len();
+    let sum = |v: &[usize]| v.iter().sum::<usize>();
+    let (cells, points) = (sum(&n.cells), sum(&n.points));
+    // per cell: type, two offsets, zone, two ids, ghost flag, fields
+    let per_cell = 1 + 8 + 8 + 4 + 8 + 8 + 1 + 8 * n_fields;
+    // per point: coordinates, id, ghost flag
+    let per_point = 24 + 8 + 1;
+    // connectivity, the faces of the polyhedra (offset and reference) and
+    // their connectivity
+    let ids = sum(&n.conn) + 2 * sum(&n.faces) + sum(&n.fconn);
+    // per block: six counts, three closing offsets, owned cells, bounds,
+    // field ranges
+    let index = nblocks * (9 * 8 + 8 + 48 + 16 * n_fields);
+    // boundary blocks: points with their ids, the face connectivity, per
+    // face an offset, the boundary index and the owner cell
     let mut boundary = 0usize;
     for p in &mesh.boundaries {
         let mut points = std::collections::HashSet::new();
         let mut nodes = 0usize;
         for f in p.range() {
-            let fnodes = &mesh.face_nodes[mesh.face_ptr[f] as usize..mesh.face_ptr[f + 1] as usize];
+            let fnodes = mesh.face(f);
             nodes += fnodes.len();
             points.extend(fnodes.iter().copied());
         }
-        boundary += points.len() * 24 + nodes * 8 + p.len * (8 + 1 + 8 + 8);
+        boundary += points.len() * (24 + 8) + nodes * 8 + p.len * (8 + 8 + 8);
     }
-    (mesh.n_points() * 24 + nc * (8 * (n_fields + 1) + 8 + 1 + 8 + 8) + ids * 8 + boundary) as f64
+    (cells * per_cell + points * per_point + ids * 8 + index + boundary) as f64
         + 8192.0 * (3 + mesh.boundaries.len()) as f64
 }
 
@@ -206,21 +249,21 @@ fn group(parent: &h5::Group, name: &str) -> Result<h5::Group> {
         .create(name)?)
 }
 
-fn type_attr(g: &h5::Group, t: &str) -> Result<()> {
+/// A fixed-length ASCII attribute of exactly the text's length, as VTK
+/// writes `Type`.
+fn ascii_attr(g: &h5::Group, name: &str, t: &str) -> Result<()> {
     macro_rules! fixed {
-        ($n:literal) => {{
-            let v = FixedAscii::<$n>::from_ascii(t.as_bytes())?;
-            g.new_attr::<FixedAscii<$n>>()
-                .create("Type")?
-                .write_scalar(&v)?;
-        }};
+        ($($n:literal)*) => {
+            match t.len() {
+                $($n => {
+                    let v = FixedAscii::<$n>::from_ascii(t.as_bytes())?;
+                    g.new_attr::<FixedAscii<$n>>().create(name)?.write_scalar(&v)?;
+                })*
+                _ => anyhow::bail!("unexpected attribute text {t}"),
+            }
+        };
     }
-    match t.len() {
-        8 => fixed!(8),
-        16 => fixed!(16),
-        28 => fixed!(28),
-        _ => anyhow::bail!("unexpected type name {t}"),
-    }
+    fixed!(7 8 16 28);
     Ok(())
 }
 
@@ -252,18 +295,6 @@ fn points_ds(g: &h5::Group, pts: &[[f64; 3]]) -> Result<()> {
         .create("Points")?
         .write_raw(&flat)?;
     Ok(())
-}
-
-/// The nodes in the order of their identities, and the output position of
-/// each local node.
-fn points_in_id_order(mesh: &Mesh) -> (Vec<[f64; 3]>, Vec<u32>) {
-    let mut order: Vec<usize> = (0..mesh.n_points()).collect();
-    order.sort_by_key(|&v| mesh.point_id[v]);
-    let mut pos = vec![0u32; mesh.n_points()];
-    for (k, &v) in order.iter().enumerate() {
-        pos[v] = k as u32;
-    }
-    (order.iter().map(|&v| mesh.points[v]).collect(), pos)
 }
 
 /// Nodes of face `f` ordered with the normal out of cell `c`.
@@ -356,71 +387,526 @@ fn standard_cell(mesh: &Mesh, c: usize) -> Option<(u8, Vec<i64>)> {
     })
 }
 
-fn write_internal(g: &h5::Group, mesh: &Mesh, fields: &[CellField]) -> Result<()> {
-    type_attr(g, "UnstructuredGrid")?;
-    version_attr(g)?;
-    let nc = mesh.n_cells;
-    let (pts, pos) = points_in_id_order(mesh);
-    let mut cells: Vec<usize> = (0..nc).collect();
-    cells.sort_by_key(|&c| mesh.cell_id[c]);
-    let mut types = Vec::with_capacity(nc);
-    let mut offsets: Vec<i64> = Vec::with_capacity(nc + 1);
-    let mut conn: Vec<i64> = Vec::with_capacity(8 * nc);
-    let mut poly_offsets: Vec<i64> = Vec::with_capacity(nc + 1);
-    let mut poly_faces: Vec<i64> = Vec::new();
-    let mut face_offsets: Vec<i64> = vec![0];
-    let mut face_conn: Vec<i64> = Vec::new();
-    offsets.push(0);
-    poly_offsets.push(0);
-    let p = |n: i64| pos[n as usize] as i64;
-    for &c in &cells {
-        match standard_cell(mesh, c) {
-            Some((t, v)) => {
-                types.push(t);
-                conn.extend(v.into_iter().map(p));
-            }
-            None => {
-                types.push(VTK_POLYHEDRON);
-                conn.extend(
-                    mesh.cell_nodes(c)
-                        .into_iter()
-                        .map(|n| pos[n as usize] as i64),
-                );
-                for (f, nb) in mesh.cell_face_iter(c) {
-                    poly_faces.push(face_offsets.len() as i64 - 1);
-                    face_conn.extend(outward(mesh, f, nb).into_iter().map(p));
-                    face_offsets.push(face_conn.len() as i64);
-                }
+/// The 3-D Hilbert index of a point of the 2²¹ grid (63 bits), from John
+/// Skilling, "Programming the Hilbert curve", AIP Conference Proceedings
+/// 707, 381 (2004): his `AxestoTranspose`, then the bits of the transposed
+/// index read from the top bit plane down, x, y, z within each plane.
+fn hilbert(mut x: [u32; 3]) -> u64 {
+    const BITS: u32 = 21;
+    let m = 1u32 << (BITS - 1);
+    // inverse undo
+    let mut q = m;
+    while q > 1 {
+        let p = q - 1;
+        for i in 0..3 {
+            if x[i] & q != 0 {
+                x[0] ^= p; // invert
+            } else {
+                let t = (x[0] ^ x[i]) & p; // exchange
+                x[0] ^= t;
+                x[i] ^= t;
             }
         }
-        offsets.push(conn.len() as i64);
-        poly_offsets.push(poly_faces.len() as i64);
+        q >>= 1;
     }
-    ds(g, "NumberOfPoints", &[mesh.n_points() as i64])?;
-    ds(g, "NumberOfCells", &[nc as i64])?;
-    ds(g, "NumberOfConnectivityIds", &[conn.len() as i64])?;
-    points_ds(g, &pts)?;
-    ds(g, "Types", &types)?;
-    ds(g, "Offsets", &offsets)?;
-    ds(g, "Connectivity", &conn)?;
-    ds(g, "NumberOfFaces", &[face_offsets.len() as i64 - 1])?;
-    ds(g, "NumberOfFaceConnectivityIds", &[face_conn.len() as i64])?;
-    ds(g, "NumberOfPolyhedronToFaceIds", &[poly_faces.len() as i64])?;
-    ds(g, "FaceOffsets", &face_offsets)?;
-    ds(g, "FaceConnectivity", &face_conn)?;
-    ds(g, "PolyhedronOffsets", &poly_offsets)?;
-    ds(g, "PolyhedronToFaces", &poly_faces)?;
+    // Gray encode
+    for i in 1..3 {
+        x[i] ^= x[i - 1];
+    }
+    let mut t = 0;
+    let mut q = m;
+    while q > 1 {
+        if x[2] & q != 0 {
+            t ^= q - 1;
+        }
+        q >>= 1;
+    }
+    for v in &mut x {
+        *v ^= t;
+    }
+    let mut h = 0u64;
+    for b in (0..BITS).rev() {
+        for v in x {
+            h = (h << 1) | u64::from((v >> b) & 1);
+        }
+    }
+    h
+}
+
+/// What a cell writes: a linear cell's VTK type and nodes in VTK's order,
+/// or a polyhedron's distinct nodes (in the order its faces first use
+/// them) and its faces with their normals out of the cell.
+enum Record {
+    Linear(u8, Vec<i64>),
+    Poly(Vec<i64>, Vec<Vec<i64>>),
+}
+
+impl Record {
+    fn of(mesh: &Mesh, c: usize) -> Record {
+        if let Some((t, v)) = standard_cell(mesh, c) {
+            return Record::Linear(t, v);
+        }
+        let faces: Vec<Vec<i64>> = mesh
+            .cell_face_iter(c)
+            .map(|(f, nb)| outward(mesh, f, nb))
+            .collect();
+        let mut nodes: Vec<i64> = Vec::with_capacity(16);
+        for &n in faces.iter().flatten() {
+            if !nodes.contains(&n) {
+                nodes.push(n);
+            }
+        }
+        Record::Poly(nodes, faces)
+    }
+
+    /// Connectivity ids, faces and face connectivity ids of the cell.
+    fn sizes(&self) -> [u32; 3] {
+        match self {
+            Record::Linear(_, v) => [v.len() as u32, 0, 0],
+            Record::Poly(n, f) => [
+                n.len() as u32,
+                f.len() as u32,
+                f.iter().map(Vec::len).sum::<usize>() as u32,
+            ],
+        }
+    }
+}
+
+/// [`Record::sizes`] of every cell.
+fn sizes(mesh: &Mesh) -> Vec<[u32; 3]> {
+    use rayon::prelude::*;
+    (0..mesh.n_cells)
+        .into_par_iter()
+        .map(|c| Record::of(mesh, c).sizes())
+        .collect()
+}
+
+/// One partition of `internal`: its cells (the owned ones in file order,
+/// then the ghosts in file order) and its points (by identity).
+struct Part {
+    cells: Vec<u32>,
+    owned: usize,
+    points: Vec<u32>,
+    /// Minimum then maximum of the points of the owned cells.
+    bounds: [f64; 6],
+}
+
+/// Rows of each partition.
+#[derive(Default)]
+struct Counts {
+    points: Vec<usize>,
+    cells: Vec<usize>,
+    conn: Vec<usize>,
+    faces: Vec<usize>,
+    fconn: Vec<usize>,
+}
+
+/// The blocked layout of a mesh: the cells in Hilbert order of their
+/// centroids, cut into runs of `size` owned cells, each run with one layer
+/// of ghost cells (the cells of other blocks that share a point with it).
+struct Layout {
+    /// File cell id of each local cell.
+    file_id: Vec<u32>,
+    /// The block that owns each point: the lowest block whose owned cells
+    /// use it.
+    point_block: Vec<u32>,
+    parts: Vec<Part>,
+}
+
+impl Layout {
+    fn new(mesh: &Mesh, size: usize) -> Layout {
+        use rayon::prelude::*;
+        let n = mesh.n_cells;
+        let np = mesh.n_points();
+        // each axis of the bounding box scaled to 0 … 2²¹ − 1 on its own
+        let (lo, hi) = mesh.bounding_box();
+        let top = f64::from((1u32 << 21) - 1);
+        let scale: [f64; 3] = std::array::from_fn(|k| {
+            let d = hi[k] - lo[k];
+            if d > 0.0 && d.is_finite() {
+                top / d
+            } else {
+                0.0
+            }
+        });
+        let key: Vec<u64> = (0..n)
+            .into_par_iter()
+            .map(|c| {
+                // the centroid summed in the order of the point identities,
+                // so that a renumbering does not move a cell
+                let mut nodes = mesh.cell_nodes(c);
+                nodes.sort_unstable_by_key(|&p| mesh.point_id[p as usize]);
+                let mut s = [0.0; 3];
+                for &p in &nodes {
+                    for (k, x) in s.iter_mut().enumerate() {
+                        *x += mesh.points[p as usize][k];
+                    }
+                }
+                let m = nodes.len().max(1) as f64;
+                hilbert(std::array::from_fn(|k| {
+                    let v = ((s[k] / m - lo[k]) * scale[k]).floor();
+                    if v >= 0.0 { v.min(top) as u32 } else { 0 }
+                }))
+            })
+            .collect();
+        // ties by the global identities
+        let mut order: Vec<u32> = (0..n as u32).collect();
+        order.par_sort_unstable_by_key(|&c| (key[c as usize], mesh.cell_id[c as usize]));
+        drop(key);
+        let mut file_id = vec![0u32; n];
+        for (k, &c) in order.iter().enumerate() {
+            file_id[c as usize] = k as u32;
+        }
+        // the cells around each point
+        let mut ptr = vec![0usize; np + 1];
+        for c in 0..n {
+            for p in mesh.cell_nodes(c) {
+                ptr[p as usize + 1] += 1;
+            }
+        }
+        for p in 0..np {
+            ptr[p + 1] += ptr[p];
+        }
+        let mut around = vec![0u32; ptr[np]];
+        let mut next = ptr[..np].to_vec();
+        for c in 0..n {
+            for p in mesh.cell_nodes(c) {
+                let p = p as usize;
+                around[next[p]] = c as u32;
+                next[p] += 1;
+            }
+        }
+        drop(next);
+        let point_block: Vec<u32> = (0..np)
+            .map(|p| {
+                around[ptr[p]..ptr[p + 1]]
+                    .iter()
+                    .map(|&c| file_id[c as usize] / size as u32)
+                    .min()
+                    .unwrap_or(u32::MAX)
+            })
+            .collect();
+        // the partitions: owned cells, their point neighbours, the points
+        let mut mark = vec![0u32; n];
+        let mut seen = vec![0u32; np];
+        let mut parts = Vec::with_capacity(n.div_ceil(size).max(1));
+        for (b, own) in order.chunks(size).enumerate() {
+            let tag = b as u32 + 1;
+            for &c in own {
+                mark[c as usize] = tag;
+            }
+            let mut points = Vec::new();
+            let mut ghosts = Vec::new();
+            let mut bounds = [f64::INFINITY; 6];
+            bounds[3..].fill(f64::NEG_INFINITY);
+            for &c in own {
+                for p in mesh.cell_nodes(c as usize) {
+                    let p = p as usize;
+                    if seen[p] == tag {
+                        continue;
+                    }
+                    seen[p] = tag;
+                    points.push(p as u32);
+                    for k in 0..3 {
+                        bounds[k] = bounds[k].min(mesh.points[p][k]);
+                        bounds[k + 3] = bounds[k + 3].max(mesh.points[p][k]);
+                    }
+                    for &d in &around[ptr[p]..ptr[p + 1]] {
+                        if mark[d as usize] != tag {
+                            mark[d as usize] = tag;
+                            ghosts.push(d);
+                        }
+                    }
+                }
+            }
+            ghosts.sort_unstable_by_key(|&c| file_id[c as usize]);
+            for &g in &ghosts {
+                for p in mesh.cell_nodes(g as usize) {
+                    if seen[p as usize] != tag {
+                        seen[p as usize] = tag;
+                        points.push(p);
+                    }
+                }
+            }
+            points.sort_unstable_by_key(|&p| mesh.point_id[p as usize]);
+            let mut cells = Vec::with_capacity(own.len() + ghosts.len());
+            cells.extend_from_slice(own);
+            cells.extend(ghosts);
+            parts.push(Part {
+                cells,
+                owned: own.len(),
+                points,
+                bounds,
+            });
+        }
+        if parts.is_empty() {
+            parts.push(Part {
+                cells: Vec::new(),
+                owned: 0,
+                points: Vec::new(),
+                bounds: [f64::NAN; 6],
+            });
+        }
+        Layout {
+            file_id,
+            point_block,
+            parts,
+        }
+    }
+
+    /// The rows of each partition, from the [`sizes`] of the cells.
+    fn counts(&self, sizes: &[[u32; 3]]) -> Counts {
+        let mut n = Counts::default();
+        for part in &self.parts {
+            let mut s = [0usize; 3];
+            for &c in &part.cells {
+                for (k, x) in s.iter_mut().enumerate() {
+                    *x += sizes[c as usize][k] as usize;
+                }
+            }
+            n.points.push(part.points.len());
+            n.cells.push(part.cells.len());
+            n.conn.push(s[0]);
+            n.faces.push(s[1]);
+            n.fconn.push(s[2]);
+        }
+        n
+    }
+}
+
+/// A contiguous dataset of `n` rows, written block by block with [`put`].
+fn dataset<T: h5::H5Type>(g: &h5::Group, name: &str, n: usize) -> Result<h5::Dataset> {
+    Ok(g.new_dataset::<T>().shape([n]).create(name)?)
+}
+
+/// A contiguous dataset of `n` rows of `cols` values.
+fn dataset2<T: h5::H5Type>(
+    g: &h5::Group,
+    name: &str,
+    n: usize,
+    cols: usize,
+) -> Result<h5::Dataset> {
+    Ok(g.new_dataset::<T>().shape([n, cols]).create(name)?)
+}
+
+/// Writes `v` to the rows from `at`.
+fn put<T: h5::H5Type>(d: &h5::Dataset, at: usize, v: &[T]) -> Result<()> {
+    if !v.is_empty() {
+        d.write_slice(v, at..at + v.len())?;
+    }
+    Ok(())
+}
+
+/// Writes the rows of `cols` values in `v` from row `at`.
+fn put2<T: h5::H5Type>(d: &h5::Dataset, at: usize, v: &[T], cols: usize) -> Result<()> {
+    let rows = v.len() / cols;
+    if rows > 0 {
+        let a = ndarray::ArrayView2::from_shape((rows, cols), v)?;
+        d.write_slice(a, (at..at + rows, ..))?;
+    }
+    Ok(())
+}
+
+/// Zone names as `id=name` entries in fixed-length strings of the longest
+/// entry (null-padded), as KoflCraft writes them.
+fn names_ds(g: &h5::Group, name: &str, entries: &[String]) -> Result<()> {
+    use h5::types::{FixedUnicode, VarLenUnicode};
+    let len = entries.iter().map(String::len).max().unwrap_or(1);
+    macro_rules! fixed {
+        ($($n:literal)*) => {
+            $(if len <= $n {
+                let v = entries
+                    .iter()
+                    .map(|e| e.parse::<FixedUnicode<$n>>())
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|e| anyhow::anyhow!("{e:?}"))?;
+                return ds(g, name, &v);
+            })*
+        };
+    }
+    fixed!(8 16 32 64 128 256);
+    let v = entries
+        .iter()
+        .map(|e| e.parse::<VarLenUnicode>())
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| anyhow::anyhow!("{e:?}"))?;
+    ds(g, name, &v)
+}
+
+fn write_internal(g: &h5::Group, mesh: &Mesh, fields: &[CellField], layout: &Layout) -> Result<()> {
+    use rayon::prelude::*;
+    ascii_attr(g, "Type", "UnstructuredGrid")?;
+    version_attr(g)?;
+    let n = layout.counts(&sizes(mesh));
+    let nb = layout.parts.len();
+    let sum = |v: &[usize]| v.iter().sum::<usize>();
+    let (tp, tc, tf) = (sum(&n.points), sum(&n.cells), sum(&n.faces));
+    let i64s = |v: &[usize]| v.iter().map(|&x| x as i64).collect::<Vec<_>>();
+    ds(g, "NumberOfPoints", &i64s(&n.points))?;
+    ds(g, "NumberOfCells", &i64s(&n.cells))?;
+    ds(g, "NumberOfConnectivityIds", &i64s(&n.conn))?;
+    let points = dataset2::<f64>(g, "Points", tp, 3)?;
+    let types = dataset::<u8>(g, "Types", tc)?;
+    let offsets = dataset::<i64>(g, "Offsets", tc + nb)?;
+    let conn = dataset::<i64>(g, "Connectivity", sum(&n.conn))?;
+    ds(g, "NumberOfFaces", &i64s(&n.faces))?;
+    ds(g, "NumberOfFaceConnectivityIds", &i64s(&n.fconn))?;
+    ds(g, "NumberOfPolyhedronToFaceIds", &i64s(&n.faces))?;
+    let face_offsets = dataset::<i64>(g, "FaceOffsets", tf + nb)?;
+    let face_conn = dataset::<i64>(g, "FaceConnectivity", sum(&n.fconn))?;
+    let poly_offsets = dataset::<i64>(g, "PolyhedronOffsets", tc + nb)?;
+    let poly_faces = dataset::<i64>(g, "PolyhedronToFaces", tf)?;
     let cd = group(g, "CellData")?;
-    for f in fields {
-        let v: Vec<f64> = cells.iter().map(|&c| f.values[c]).collect();
-        ds(&cd, f.name, &v)?;
+    let values = fields
+        .iter()
+        .map(|f| dataset::<f64>(&cd, f.name, tc))
+        .collect::<Result<Vec<_>>>()?;
+    let zone = if fields.iter().any(|f| f.name == "zone") {
+        None
+    } else {
+        Some(dataset::<u32>(&cd, "zone", tc)?)
+    };
+    let cell_ids = dataset::<i64>(&cd, "GlobalCellIds", tc)?;
+    let original = dataset::<i64>(&cd, "OriginalCellIds", tc)?;
+    let cell_ghost = dataset::<u8>(&cd, "vtkGhostType", tc)?;
+    let pd = group(g, "PointData")?;
+    let point_ids = dataset::<i64>(&pd, "GlobalPointIds", tp)?;
+    let point_ghost = dataset::<u8>(&pd, "vtkGhostType", tp)?;
+
+    let mut ranges = vec![Vec::with_capacity(2 * nb); fields.len()];
+    let mut local = vec![0u32; mesh.n_points()];
+    let (mut at_p, mut at_c, mut at_k, mut at_f, mut at_fk) = (0, 0, 0, 0, 0);
+    for (b, part) in layout.parts.iter().enumerate() {
+        let b32 = b as u32;
+        for (k, &p) in part.points.iter().enumerate() {
+            local[p as usize] = k as u32;
+        }
+        let xyz: Vec<f64> = part
+            .points
+            .iter()
+            .flat_map(|&p| mesh.points[p as usize])
+            .collect();
+        put2(&points, at_p, &xyz, 3)?;
+        drop(xyz);
+        let ids: Vec<i64> = part
+            .points
+            .iter()
+            .map(|&p| mesh.point_id[p as usize] as i64)
+            .collect();
+        put(&point_ids, at_p, &ids)?;
+        let ghost: Vec<u8> = part
+            .points
+            .iter()
+            .map(|&p| u8::from(layout.point_block[p as usize] != b32))
+            .collect();
+        put(&point_ghost, at_p, &ghost)?;
+
+        let records: Vec<Record> = part
+            .cells
+            .par_iter()
+            .map(|&c| Record::of(mesh, c as usize))
+            .collect();
+        let nc = part.cells.len();
+        let l = |v: &i64| local[*v as usize] as i64;
+        let mut t = Vec::with_capacity(nc);
+        let mut off = Vec::with_capacity(nc + 1);
+        let mut cn = Vec::with_capacity(n.conn[b]);
+        let mut poff = Vec::with_capacity(nc + 1);
+        let mut pf = Vec::with_capacity(n.faces[b]);
+        let mut foff = Vec::with_capacity(n.faces[b] + 1);
+        let mut fc = Vec::with_capacity(n.fconn[b]);
+        off.push(0i64);
+        poff.push(0i64);
+        foff.push(0i64);
+        for r in &records {
+            match r {
+                Record::Linear(ty, v) => {
+                    t.push(*ty);
+                    cn.extend(v.iter().map(l));
+                }
+                Record::Poly(v, faces) => {
+                    t.push(VTK_POLYHEDRON);
+                    cn.extend(v.iter().map(l));
+                    for f in faces {
+                        pf.push(foff.len() as i64 - 1);
+                        fc.extend(f.iter().map(l));
+                        foff.push(fc.len() as i64);
+                    }
+                }
+            }
+            off.push(cn.len() as i64);
+            poff.push(pf.len() as i64);
+        }
+        drop(records);
+        debug_assert_eq!(cn.len(), n.conn[b]);
+        debug_assert_eq!(fc.len(), n.fconn[b]);
+        put(&types, at_c, &t)?;
+        put(&offsets, at_c + b, &off)?;
+        put(&conn, at_k, &cn)?;
+        put(&poly_offsets, at_c + b, &poff)?;
+        put(&poly_faces, at_f, &pf)?;
+        put(&face_offsets, at_f + b, &foff)?;
+        put(&face_conn, at_fk, &fc)?;
+
+        for ((f, d), range) in fields.iter().zip(&values).zip(&mut ranges) {
+            let v: Vec<f64> = part.cells.iter().map(|&c| f.values[c as usize]).collect();
+            put(d, at_c, &v)?;
+            let (lo, hi) = v[..part.owned]
+                .iter()
+                .filter(|x| x.is_finite())
+                .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &x| {
+                    (lo.min(x), hi.max(x))
+                });
+            range.extend(if lo <= hi { [lo, hi] } else { [f64::NAN; 2] });
+        }
+        if let Some(d) = &zone {
+            let v: Vec<u32> = part
+                .cells
+                .iter()
+                .map(|&c| mesh.cell_zone[c as usize])
+                .collect();
+            put(d, at_c, &v)?;
+        }
+        let v: Vec<i64> = part
+            .cells
+            .iter()
+            .map(|&c| layout.file_id[c as usize] as i64)
+            .collect();
+        put(&cell_ids, at_c, &v)?;
+        let v: Vec<i64> = part
+            .cells
+            .iter()
+            .map(|&c| mesh.cell_id[c as usize] as i64)
+            .collect();
+        put(&original, at_c, &v)?;
+        let v: Vec<u8> = (0..nc).map(|k| u8::from(k >= part.owned)).collect();
+        put(&cell_ghost, at_c, &v)?;
+
+        at_p += n.points[b];
+        at_c += nc;
+        at_k += n.conn[b];
+        at_f += n.faces[b];
+        at_fk += n.fconn[b];
     }
-    let zone: Vec<f64> = cells.iter().map(|&c| mesh.cell_zone[c] as f64).collect();
-    if !fields.iter().any(|f| f.name == "zone") {
-        ds(&cd, "zone", &zone)?;
+
+    let fd = group(g, "FieldData")?;
+    let owned: Vec<i64> = layout.parts.iter().map(|p| p.owned as i64).collect();
+    ds(&fd, "BlockOwnedCells", &owned)?;
+    let bounds: Vec<f64> = layout.parts.iter().flat_map(|p| p.bounds).collect();
+    put2(&dataset2::<f64>(&fd, "BlockBounds", nb, 6)?, 0, &bounds, 6)?;
+    for (f, r) in fields.iter().zip(&ranges) {
+        let d = dataset2::<f64>(&fd, &format!("BlockRange_{}", f.name), nb, 2)?;
+        put2(&d, 0, r, 2)?;
     }
-    group(g, "PointData")?;
-    group(g, "FieldData")?;
+    if zone.is_some() && !mesh.zones.is_empty() {
+        let names: Vec<String> = mesh
+            .zones
+            .iter()
+            .enumerate()
+            .map(|(i, z)| format!("{i}={z}"))
+            .collect();
+        names_ds(&fd, "zone_names", &names)?;
+    }
     Ok(())
 }
 
@@ -430,11 +916,13 @@ fn write_boundary(
     faces: std::ops::Range<usize>,
     boundary: f64,
     face_fields: &[FaceField],
+    file_id: &[u32],
 ) -> Result<()> {
-    type_attr(g, "PolyData")?;
+    ascii_attr(g, "Type", "PolyData")?;
     version_attr(g)?;
     let mut map = std::collections::HashMap::new();
     let mut pts: Vec<[f64; 3]> = Vec::new();
+    let mut ids: Vec<i64> = Vec::new();
     let mut conn: Vec<i64> = Vec::new();
     let mut offsets: Vec<i64> = vec![0];
     let mut order: Vec<usize> = faces.clone().collect();
@@ -443,6 +931,7 @@ fn write_boundary(
         for &n in mesh.face(f) {
             let id = *map.entry(n).or_insert_with(|| {
                 pts.push(mesh.points[n as usize]);
+                ids.push(mesh.point_id[n as usize] as i64);
                 pts.len() as i64 - 1
             });
             conn.push(id);
@@ -465,12 +954,18 @@ fn write_boundary(
     }
     let cd = group(g, "CellData")?;
     ds(&cd, "boundary", &vec![boundary; faces.len()])?;
+    let owner: Vec<i64> = order
+        .iter()
+        .map(|&f| file_id[mesh.owner[f] as usize] as i64)
+        .collect();
+    ds(&cd, "OwnerCell", &owner)?;
     let ni = mesh.n_interior_faces();
     for ff in face_fields {
         let v: Vec<f64> = order.iter().map(|&f| ff.values[f - ni]).collect();
         ds(&cd, ff.name, &v)?;
     }
-    group(g, "PointData")?;
+    let pd = group(g, "PointData")?;
+    ds(&pd, "GlobalPointIds", &ids)?;
     group(g, "FieldData")?;
     Ok(())
 }

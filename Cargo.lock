@@ -432,6 +432,7 @@ dependencies = [
  "foehncraft-parallel",
  "hdf5-metno",
  "metis",
+ "ndarray",
  "rayon",
  "schemars",
  "serde",

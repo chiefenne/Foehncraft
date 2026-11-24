@@ -45,6 +45,8 @@ toml = "1.2"
 toml_edit = "0.25"
 mpi = "0.8"
 hdf5-metno = { version = "0.15", features = ["static"] }
+# the array views hdf5-metno writes slices from (already its dependency)
+ndarray = { version = "0.17", default-features = false }
 metis = "0.2"
 cudarc = { version = "0.19", default-features = false }
 schemars = "1.2"

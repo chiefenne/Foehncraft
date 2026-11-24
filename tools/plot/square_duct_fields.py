@@ -25,13 +25,14 @@ import h5py
 import matplotlib.pyplot as plt
 import numpy as np
 from tools.plot.colormaps import RAINBOW
+from tools.plot.vtkhdf import internal
 
 
 def section(d):
     """u, v, w on the cross-section of the first cell layer, mirrored to
     the whole duct (y, z from −1 to 1, the walls at ±1)."""
     with h5py.File(os.path.join(d, "fields.vtkhdf"), "r") as f:
-        g = f["VTKHDF/internal"]
+        g = internal(f)
         pts = g["Points"][:]
         cells = g["Connectivity"][:].reshape(-1, 8)
         u, v, w = (g["CellData"][f"velocity_{c}"][:] for c in "xyz")

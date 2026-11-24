@@ -12,7 +12,7 @@ authors.workspace = true
 default = ["hdf5", "metis"]
 # VTKHDF output through the HDF5 C library (D41, D9), built from its
 # bundled source (needs CMake and a C compiler, no HDF5 installation).
-hdf5 = ["dep:hdf5-metno"]
+hdf5 = ["dep:hdf5-metno", "dep:ndarray"]
 # Graph partitioning with METIS 5, built from source (D32).
 metis = ["dep:metis"]
 # MPI halo exchange example (system MPI library).
@@ -30,6 +30,7 @@ toml_edit.workspace = true
 anyhow = "1"
 schemars.workspace = true
 hdf5-metno = { workspace = true, optional = true }
+ndarray = { workspace = true, optional = true }
 metis = { workspace = true, optional = true }
 
 [[example]]

@@ -27,7 +27,9 @@ iteration; `residuals_level<N>.csv` per level of a sweep), `boundaries.csv`
 (per boundary: area, mass flow, mean pressure, force), `wall_<boundary>.csv` (per
 wall face: position, pressure, wall shear stress), `line_<name>.csv` for
 each sampling line, `fields.vtkhdf` (velocity, speed, pressure and, with an
-exact solution, the velocity error), `case.resolved.toml` (the case with
+exact solution, the velocity error; in blocks of 65,536 cells that ParaView
+opens as one data set, MurmelCraft reads in parts and scripts read in one
+piece with `foehncraft.vtkhdf.internal`), `case.resolved.toml` (the case with
 every default filled in), `flow.md` and `flow.json` (the report),
 `result.json` (the result summary for programs, without timings) and
 `run.jsonl` (the run record, one JSON object per row; both in

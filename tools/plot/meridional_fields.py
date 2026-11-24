@@ -36,6 +36,7 @@ import numpy as np  # noqa: E402
 from matplotlib.collections import PolyCollection  # noqa: E402
 from matplotlib.tri import LinearTriInterpolator, Triangulation  # noqa: E402
 from tools.plot.colormaps import RAINBOW  # noqa: E402
+from tools.plot.vtkhdf import internal  # noqa: E402
 
 LABELS = {
     "swirl": ("u_θ (m/s)", RAINBOW),
@@ -52,7 +53,7 @@ def read(path):
     """Rings of cells: (r, z) polygons, the cell data averaged over each ring,
     and the components of the velocity in (r, θ, z)."""
     with h5py.File(path, "r") as f:
-        g = f["VTKHDF/internal"]
+        g = internal(f)
         pts = g["Points"][:]
         conn = g["Connectivity"][:]
         off = g["Offsets"][:]
