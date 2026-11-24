@@ -44,7 +44,7 @@ def strip(o):
         if o.get("name") == "case.resolved.toml":
             # its lines are compared on their own, without the device keys
             # of [run] (backend, ptx, threads), so its hash and size may differ
-            o = {k: v for k, v in o.items() if k not in ("sha256", "bytes")}
+            o = {k: v for k, v in o.items() if k not in ("blake3", "sha256", "bytes")}
         return {k: strip(v) for k, v in o.items() if not any(s in k for s in SKIP_KEYS)}
     if isinstance(o, list):
         return [strip(v) for v in o]
@@ -60,7 +60,7 @@ def by_name(files):
     for f in files:
         if isinstance(f, dict) and "name" in f and f["name"] != "case.resolved.toml":
             if f["name"].endswith((".h5", ".vtkhdf")):
-                f = {k: v for k, v in f.items() if k not in ("sha256", "bytes")}
+                f = {k: v for k, v in f.items() if k not in ("blake3", "sha256", "bytes")}
             out[f["name"]] = f
     return out
 
