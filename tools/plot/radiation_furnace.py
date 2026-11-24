@@ -27,7 +27,7 @@ import numpy as np
 from matplotlib.colors import TwoSlopeNorm
 from matplotlib.patches import Circle
 
-from tools.plot.colormaps import RAINBOW
+from tools.plot.colormaps import RAINBOW, UNIFORM
 
 LENGTH, DEPTH, HEIGHT = 4.0, 2.0, 2.5
 TUBE_R, TUBE_Z = 0.08, 2.1
@@ -104,7 +104,10 @@ def plane(out, cells):
     ax = axes[1]
     lim = np.percentile(np.abs(src), 99.5)
     norm = TwoSlopeNorm(vcenter=0.0, vmin=-lim, vmax=max(lim * 0.25, src.max(initial=0.0)))
-    cs = ax.tricontourf(tri, np.clip(src, -lim, lim), levels=48, cmap="RdBu_r", norm=norm)
+    # a signed field centred on zero takes Rainbow Uniform (D261); the
+    # margin the cell centres leave at the walls shows the colour of zero
+    ax.set_facecolor(plt.get_cmap(UNIFORM)(norm(0.0)))
+    cs = ax.tricontourf(tri, np.clip(src, -lim, lim), levels=48, cmap=UNIFORM, norm=norm)
     fig.colorbar(cs, ax=ax, label="radiative source, absorbed − emitted (kW/m³)", shrink=0.9)
     tubes(ax)
     frame(ax, "Monte Carlo radiation: net source of the gas")
