@@ -781,6 +781,7 @@ fn build(case: &FlowCase, level: u32, m: &dyn Model) -> Built {
             device: "cpu".into(),
             threads: Some(1),
             ptx: Default::default(),
+            ranks: None,
         },
     )
     .unwrap();

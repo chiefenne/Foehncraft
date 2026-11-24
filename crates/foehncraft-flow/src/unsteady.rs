@@ -1041,6 +1041,7 @@ fn run_one<F: FnMut(&str)>(
         device: case.run.backend.clone(),
         threads: case.run.threads,
         ptx: case.run.ptx.clone(),
+        ranks: None,
     };
     let mut fl = Flow::on(
         disc,

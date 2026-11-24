@@ -15,6 +15,7 @@ use foehncraft_fv::amg::{AmgSettings, ReductionSettings};
 use foehncraft_fv::backend::{Backend, V};
 use foehncraft_fv::solver::{self as linear, Preconditioner};
 use foehncraft_kernels::entry::{Entry, Raw};
+use foehncraft_mesh::decompose::Ranks;
 use rayon::prelude::*;
 
 /// Indices per task of the loops.
@@ -77,14 +78,42 @@ impl<T> Drop for HostArray<T> {
 // SAFETY: the arrays are plain heap memory owned by the executor.
 unsafe impl<T: Send> Send for HostArray<T> {}
 
+/// What the entries of a buffer are, on ranks (MPI step W5): which of them
+/// a reduction takes and whether the halo is exchanged.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Kind {
+    /// One value per own and halo cell (allocated for `n_cells` or
+    /// `n_cells + n_halo` values): reductions take the own cells, the halo
+    /// is filled from the owners.
+    Cell,
+    /// One value per face: reductions take the faces whose owner cell is
+    /// own (a processor face counts once, on the rank of its owner).
+    Face,
+    /// Anything else: every entry is the rank's own.
+    Plain,
+}
+
+/// The rank's link to the other ranks and the layout of its local mesh.
+struct OnRanks {
+    ranks: Ranks,
+    n_cells: usize,
+    n_halo: usize,
+    n_faces: usize,
+    /// The faces whose owner cell is own.
+    face_own: Vec<bool>,
+}
+
 /// The CPU executor.
 pub struct CpuExec {
     bufs: Vec<HostArray<f64>>,
+    /// Kind and requested length of every buffer.
+    kinds: Vec<(Kind, usize)>,
     statics: Vec<HostArray<u32>>,
     pool: rayon::ThreadPool,
     /// The pool has one thread.
     serial: bool,
     be: Box<dyn Backend>,
+    ranks: Option<OnRanks>,
 }
 
 impl CpuExec {
@@ -100,14 +129,63 @@ impl CpuExec {
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(threads.unwrap_or(0))
             .build()?;
-        let be = foehncraft_fv::backend::create("cpu", s.disc, threads, std::path::Path::new(""))?;
+        let (be, ranks): (Box<dyn Backend>, _) = match &s.ranks {
+            None => (
+                foehncraft_fv::backend::create("cpu", s.disc, threads, std::path::Path::new(""))?,
+                None,
+            ),
+            Some(r) => {
+                let d = s.disc;
+                ensure!(
+                    d.n_faces != d.n_cells,
+                    "on ranks a part needs more faces than cells"
+                );
+                let face_own = (0..d.n_faces)
+                    .map(|f| (d.owner[f] as usize) < d.n_cells)
+                    .collect();
+                (
+                    Box::new(foehncraft_fv::backend::cpu::CpuBackend::on_ranks(
+                        d.clone(),
+                        threads,
+                        r.clone(),
+                    )?),
+                    Some(OnRanks {
+                        ranks: r.clone(),
+                        n_cells: d.n_cells,
+                        n_halo: d.n_halo,
+                        n_faces: d.n_faces,
+                        face_own,
+                    }),
+                )
+            }
+        };
         Ok(Self {
             bufs: Vec::new(),
+            kinds: Vec::new(),
             statics: Vec::new(),
             serial: pool.current_num_threads() == 1,
             pool,
             be,
+            ranks,
         })
+    }
+
+    /// The buffer whose values start at `ptr`, if any.
+    fn buffer_at(&self, ptr: u64) -> Option<usize> {
+        self.bufs.iter().position(|b| b.ptr as u64 == ptr)
+    }
+
+    /// The entries of `r` a reduction takes on ranks: the own cells of a
+    /// cell buffer, the own faces of a face buffer (as a mask), all others.
+    fn own_part(&self, r: Raw<f64>) -> (usize, Option<&[bool]>) {
+        let Some(o) = &self.ranks else {
+            return (r.len as usize, None);
+        };
+        match self.buffer_at(r.ptr).map(|i| self.kinds[i].0) {
+            Some(Kind::Cell) => (o.n_cells, None),
+            Some(Kind::Face) => (o.n_faces, Some(&o.face_own)),
+            _ => (r.len as usize, None),
+        }
     }
 
     fn b(&self, h: Buf) -> &[f64] {
@@ -171,10 +249,41 @@ impl Exec for CpuExec {
         if let Some(ys) = ys {
             assert_eq!(xs.len(), ys.len(), "dot product of unequal lengths");
         }
-        Some(self.exact_acc(xs, ys).value())
+        let Some(o) = &self.ranks else {
+            return Some(self.exact_acc(xs, ys).value());
+        };
+        // on ranks: the own entries, summed exactly over all ranks
+        let (n, mask) = self.own_part(x);
+        let acc = match mask {
+            None => self.exact_acc(&xs[..n], ys.map(|y| &y[..n])),
+            Some(m) => {
+                let mut s = ExactSum::new();
+                for (i, &own) in m.iter().enumerate() {
+                    if own {
+                        let a = xs[i];
+                        s.add_products(&[a], &[ys.map_or(a, |y| y[i])]);
+                    }
+                }
+                s
+            }
+        };
+        Some(o.ranks.comm.sum_exact(&acc))
     }
 
     fn exact_min_max(&mut self, x: Raw<f64>) -> Option<(f64, f64)> {
+        if let Some(o) = &self.ranks {
+            // on ranks: the own entries, the extrema over all ranks
+            let xs = self.host(x);
+            let (n, mask) = self.own_part(x);
+            let (lo, hi) = xs[..n]
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| mask.is_none_or(|m| m[*i]))
+                .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), (_, &v)| {
+                    (min_total(a, v), max_total(b, v))
+                });
+            return Some((o.ranks.comm.min(lo), o.ranks.comm.max(hi)));
+        }
         let xs = self.host(x);
         let fold = |c: &[f64]| {
             c.iter()
@@ -198,8 +307,63 @@ impl Exec for CpuExec {
     }
 
     fn alloc(&mut self, n: usize) -> Result<Buf> {
-        self.bufs.push(HostArray::new(vec![0.0; n]));
+        // on ranks a cell buffer has room for the halo; the kind is agreed
+        // by all ranks (a boundary buffer may have as many entries as the
+        // part has cells on one rank), so that every rank exchanges the
+        // same buffers
+        let (kind, len) = match &self.ranks {
+            Some(o) => {
+                let all = |local: bool| o.ranks.comm.min(if local { 1.0 } else { 0.0 }) > 0.0;
+                if all(n == o.n_cells || n == o.n_cells + o.n_halo) {
+                    (Kind::Cell, o.n_cells + o.n_halo)
+                } else if all(n == o.n_faces) {
+                    (Kind::Face, n)
+                } else {
+                    (Kind::Plain, n)
+                }
+            }
+            None => (Kind::Plain, n),
+        };
+        self.bufs.push(HostArray::new(vec![0.0; len]));
+        self.kinds.push((kind, n));
         Ok(Buf(self.bufs.len() as u32 - 1))
+    }
+
+    fn alloc_plain(&mut self, n: usize) -> Result<Buf> {
+        self.bufs.push(HostArray::new(vec![0.0; n]));
+        self.kinds.push((Kind::Plain, n));
+        Ok(Buf(self.bufs.len() as u32 - 1))
+    }
+
+    fn on_ranks(&self) -> bool {
+        self.ranks.is_some()
+    }
+
+    fn exchange(&mut self, bufs: &[Buf]) -> Result<()> {
+        let Some(o) = &self.ranks else {
+            return Ok(());
+        };
+        let mut idx: Vec<usize> = bufs
+            .iter()
+            .map(|b| b.index())
+            .filter(|&i| self.kinds[i].0 == Kind::Cell)
+            .collect();
+        idx.sort_unstable();
+        idx.dedup();
+        if idx.is_empty() {
+            return Ok(());
+        }
+        let mut fields: Vec<&mut [f64]> = idx
+            .iter()
+            .map(|&i| {
+                let a = &self.bufs[i];
+                // SAFETY: distinct buffers (deduplicated), each holding len
+                // initialised values; no launch runs during the exchange.
+                unsafe { std::slice::from_raw_parts_mut(a.ptr, a.len) }
+            })
+            .collect();
+        o.ranks.exchange(&mut fields);
+        Ok(())
     }
 
     fn alloc_u32(&mut self, v: &[u32]) -> Result<Raw<u32>> {
@@ -214,18 +378,33 @@ impl Exec for CpuExec {
     }
 
     fn upload(&mut self, b: Buf, v: &[f64]) -> Result<()> {
+        let (kind, n) = self.kinds[b.index()];
         let dst = self.bufs[b.0 as usize].slice_mut();
         ensure!(
-            dst.len() == v.len(),
+            dst.len() == v.len() || n == v.len(),
             "upload of {} values into {}",
             v.len(),
-            dst.len()
+            n
         );
-        dst.copy_from_slice(v);
+        dst[..v.len()].copy_from_slice(v);
+        // own cells only: the halo from the owners
+        if kind == Kind::Cell && v.len() < dst.len() {
+            self.exchange(&[b])?;
+        }
         Ok(())
     }
 
     fn download(&mut self, b: Buf) -> Result<Vec<f64>> {
+        // the requested length: a cell buffer without its halo
+        let n = self.kinds[b.index()].1;
+        let n = match &self.ranks {
+            Some(o) if self.kinds[b.index()].0 == Kind::Cell => o.n_cells,
+            _ => n,
+        };
+        Ok(self.b(b)[..n].to_vec())
+    }
+
+    fn download_with_halo(&mut self, b: Buf) -> Result<Vec<f64>> {
         Ok(self.b(b).to_vec())
     }
 
@@ -286,7 +465,8 @@ impl Exec for CpuExec {
             linear::bicgstab(be, pc, max_iter, tol, r0)?
         };
         let phi = be.download(V::Phi)?;
-        self.bufs[x.0 as usize].slice_mut().copy_from_slice(&phi);
+        self.bufs[x.0 as usize].slice_mut()[..phi.len()].copy_from_slice(&phi);
+        self.exchange(&[x])?;
         Ok((it, r0))
     }
 
@@ -313,7 +493,8 @@ impl Exec for CpuExec {
         be.upload(V::Rhs, self.bufs[rhs.0 as usize].slice())?;
         linear::cycles(be, cycles)?;
         let phi = be.download(V::Phi)?;
-        self.bufs[x.0 as usize].slice_mut().copy_from_slice(&phi);
+        self.bufs[x.0 as usize].slice_mut()[..phi.len()].copy_from_slice(&phi);
+        self.exchange(&[x])?;
         Ok(())
     }
 
