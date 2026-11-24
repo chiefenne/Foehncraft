@@ -72,6 +72,7 @@ const ALLOWED: &[(&str, &[&str])] = &[
             "foehncraft-fv",
             "foehncraft-flow",
             "foehncraft-bench",
+            "foehncraft-radiation",
         ],
     ),
     (
