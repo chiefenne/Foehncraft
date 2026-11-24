@@ -20,7 +20,10 @@ use foehncraft_mesh::partition::{Method, partition};
 use foehncraft_parallel::ThreadComm;
 
 fn main() -> anyhow::Result<()> {
-    let a: Vec<usize> = std::env::args().skip(1).filter_map(|x| x.parse().ok()).collect();
+    let a: Vec<usize> = std::env::args()
+        .skip(1)
+        .filter_map(|x| x.parse().ok())
+        .collect();
     let (nx, ny, nz, its) = match a.as_slice() {
         [x, y, z, i] => (*x, *y, *z, *i),
         _ => (100, 50, 25, 10),
@@ -75,7 +78,11 @@ fn main() -> anyhow::Result<()> {
     );
     println!(
         "{:>6} {:>8} {:>12.3} {:>14.4} {:>10}",
-        "none", cores, one.seconds, one.seconds / its as f64, "reference"
+        "none",
+        cores,
+        one.seconds,
+        one.seconds / its as f64,
+        "reference"
     );
     let mut counts = vec![1usize];
     let mut r = 2;
