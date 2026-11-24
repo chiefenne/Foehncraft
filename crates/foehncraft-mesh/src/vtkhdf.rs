@@ -240,7 +240,7 @@ pub fn write_points(
         }
     }
     let g = group(&file, "VTKHDF")?;
-    type_attr(&g, "PolyData")?;
+    ascii_attr(&g, "Type", "PolyData")?;
     version_attr(&g)?;
     ds(&g, "NumberOfPoints", &[n as i64])?;
     points_ds(&g, points)?;
