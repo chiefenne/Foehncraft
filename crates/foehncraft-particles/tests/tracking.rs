@@ -130,9 +130,12 @@ fn parcel_follows_the_reference_integration() {
         };
         // 40 µm: tau ≈ 0.12 s; Re of order 1
         let d = 40e-6;
-        let mut cfg = SpraySection::default();
-        cfg.injectors = vec![injector([0.2, 0.5, 0.9], [1.0, 0.0, 0.0], 0.5, d)];
-        cfg.injectors[0].parcels_per_second = 1.0; // one parcel at t = 0.5
+        let mut inj = injector([0.2, 0.5, 0.9], [1.0, 0.0, 0.0], 0.5, d);
+        inj.parcels_per_second = 1.0; // one parcel at t = 0.5
+        let cfg = SpraySection {
+            injectors: vec![inj],
+            ..SpraySection::default()
+        };
         let mut sp = Spray::new(
             &cfg,
             &env,
@@ -378,8 +381,10 @@ fn injector_outside_the_mesh_is_refused() {
         geo: &geo,
         loc: &loc,
     };
-    let mut cfg = SpraySection::default();
-    cfg.injectors = vec![injector([3.0, 0.5, 0.5], [1.0, 0.0, 0.0], 1.0, 1e-4)];
+    let cfg = SpraySection {
+        injectors: vec![injector([3.0, 0.5, 0.5], [1.0, 0.0, 0.0], 1.0, 1e-4)],
+        ..SpraySection::default()
+    };
     let r = Spray::new(
         &cfg,
         &env,

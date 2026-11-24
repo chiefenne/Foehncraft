@@ -456,15 +456,15 @@ impl Spray {
                             } else {
                                 (rule.e_normal, rule.e_tangential)
                             };
-                            for k in 0..3 {
-                                let vt = p.v[k] - vn * n[k];
-                                p.v[k] = et * vt - en * vn * n[k];
+                            for (vk, nk) in p.v.iter_mut().zip(n) {
+                                let vt = *vk - vn * nk;
+                                *vk = et * vt - en * vn * nk;
                             }
                             // a hair inside the cell, so the next track
                             // starts in it
                             let eps = 1e-6 * h;
-                            for k in 0..3 {
-                                p.x[k] -= eps * n[k];
+                            for (xk, nk) in p.x.iter_mut().zip(n) {
+                                *xk -= eps * nk;
                             }
                             rebounds += 1;
                         }
