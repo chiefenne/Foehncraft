@@ -75,7 +75,7 @@ use crate::device::{Buf, Buf3, Lsq, Mask, TimeTerms};
 use crate::simplec::{Algorithm, Flow, Residuals};
 use crate::turbulence::PseudoStep;
 use anyhow::Result;
-use foehncraft_core::exact::ExactSumIter as _;
+use foehncraft_core::exact::ExactSum;
 use foehncraft_fv::amg::ReductionSettings;
 use foehncraft_fv::solver::Preconditioner;
 use foehncraft_kernels::flow as k;
@@ -189,19 +189,36 @@ pub struct SweepState {
 
 /// Σ|a − b| / Σ|a| of two matrices in the same storage; `diag` replaces
 /// the diagonal of `a` (at the positions `dpos`).
-pub(crate) fn matrix_change(a: &[f64], b: &[f64], diag: Option<&[f64]>, dpos: &[usize]) -> f64 {
-    let mut num = 0.0;
-    let mut den = 0.0;
+pub(crate) fn matrix_change(
+    a: &[f64],
+    b: &[f64],
+    diag: Option<&[f64]>,
+    dpos: &[usize],
+    comm: Option<&foehncraft_mesh::decompose::SharedComm>,
+) -> f64 {
+    // exact sums, over all ranks when there are several (MPI step W5: the
+    // ranks keep or rebuild their hierarchies together)
+    let mut num = ExactSum::new();
+    let mut den = ExactSum::new();
     for (x, y) in a.iter().zip(b) {
-        num += (x - y).abs();
-        den += x.abs();
+        num.add((x - y).abs());
+        den.add(x.abs());
     }
     if let Some(d) = diag {
         for (&k, &di) in dpos.iter().zip(d) {
-            num += (di - b[k]).abs() - (a[k] - b[k]).abs();
-            den += di.abs() - a[k].abs();
+            num.add((di - b[k]).abs());
+            num.add(-(a[k] - b[k]).abs());
+            den.add(di.abs());
+            den.add(-a[k].abs());
         }
     }
+    let (num, den) = match comm {
+        Some(c) => {
+            let v = c.sum_exact_many(&[num, den]);
+            (v[0], v[1])
+        }
+        None => (num.value(), den.value()),
+    };
     if den > 0.0 { num / den } else { f64::INFINITY }
 }
 
@@ -420,18 +437,27 @@ impl Flow {
         let one = self.dev.alloc(nc)?;
         self.dev.fill(one, 1.0)?;
         let d = &self.disc;
-        let mut area = 0.0;
+        // an exact sum over the faces of own owner cells of all ranks (MPI
+        // step W5: a processor face counts once)
+        let mut sum = ExactSum::new();
         for f in 0..nf {
+            if d.owner[f] as usize >= d.n_cells {
+                continue;
+            }
             let a =
                 (d.face_area.x[f].powi(2) + d.face_area.y[f].powi(2) + d.face_area.z[f].powi(2))
                     .sqrt();
             let a = if f < d.n_interior { a } else { 0.5 * a };
-            area += if self.phys.zones {
+            sum.add(if self.phys.zones {
                 self.phys.rho_face_at(f) * a
             } else {
                 a
-            };
+            });
         }
+        let area = match &self.comm {
+            Some(c) => c.sum_exact(&sum),
+            None => sum.value(),
+        };
         let area = if self.phys.zones {
             area
         } else {
@@ -562,7 +588,8 @@ impl Flow {
                 let cw = self.coupled.as_ref().expect("coupled work");
                 let kept = match &self.sweep.matrix[slot] {
                     Some(m) if m.len() == val.len() => {
-                        matrix_change(&val, m, diag.as_deref(), &cw.dpos) <= reuse
+                        matrix_change(&val, m, diag.as_deref(), &cw.dpos, self.comm.as_ref())
+                            <= reuse
                     }
                     _ => false,
                 };
@@ -605,9 +632,15 @@ impl Flow {
         let cur = self.dev.download(self.w.val)?;
         // a hierarchy built in this outer iteration from the same matrix
         let fresh = self.coupled.as_ref().expect("coupled work").mg_fresh;
+        // (the same matrix on every rank, MPI step W5)
+        let comm = self.comm.clone();
         let shared = (0..3).filter(|&j| j != i && fresh[j]).find_map(|j| {
             let slot = self.sweep.slot[j]?;
-            (self.sweep.matrix[slot].as_ref() == Some(&cur)).then_some(slot)
+            let same = self.sweep.matrix[slot].as_ref() == Some(&cur);
+            let same = comm
+                .as_ref()
+                .map_or(same, |c| c.min(f64::from(u8::from(same))) > 0.0);
+            same.then_some(slot)
         });
         let slot = match shared {
             Some(slot) => {
@@ -911,7 +944,12 @@ impl Flow {
         }
         let cur = self.dev.download(self.w.pval)?;
         let old = self.amg_matrix.as_deref().unwrap_or_default();
-        Ok(old.len() != cur.len() || matrix_change(&cur, old, None, &[]) > reuse)
+        let comm = self.comm.clone();
+        let other = old.len() != cur.len();
+        let other = comm
+            .as_ref()
+            .map_or(other, |c| c.max(f64::from(u8::from(other))) > 0.0);
+        Ok(other || matrix_change(&cur, old, None, &[], comm.as_ref()) > reuse)
     }
 
     /// The length L of the automatic pseudo-time step: the volume of the
@@ -923,17 +961,30 @@ impl Flow {
             return l;
         }
         let d = &self.disc;
-        let volume: f64 = d.cell_volume.iter().exact_sum();
-        let mut area = 0.0;
+        // exact sums over the own cells and the boundary faces (which
+        // belong to own cells) of all ranks (MPI step W5)
+        let mut sums = [ExactSum::new(), ExactSum::new()];
+        for v in &d.cell_volume[..d.n_cells] {
+            sums[0].add(*v);
+        }
         for (fb, kind) in self.bc.mom_kind.iter().enumerate() {
             if *kind != k::MOM_SYMMETRY {
                 let f = d.n_interior + fb;
-                area += (d.face_area.x[f].powi(2)
-                    + d.face_area.y[f].powi(2)
-                    + d.face_area.z[f].powi(2))
-                .sqrt();
+                sums[1].add(
+                    (d.face_area.x[f].powi(2)
+                        + d.face_area.y[f].powi(2)
+                        + d.face_area.z[f].powi(2))
+                    .sqrt(),
+                );
             }
         }
+        let [volume, area] = match &self.comm {
+            Some(c) => {
+                let v = c.sum_exact_many(&sums);
+                [v[0], v[1]]
+            }
+            None => sums.map(|x| x.value()),
+        };
         let l = if area > 0.0 {
             volume / area
         } else {
@@ -958,6 +1009,7 @@ impl Flow {
                 sq = sq.max(b.ub[0][fb].powi(2) + b.ub[1][fb].powi(2) + b.ub[2][fb].powi(2));
             }
         }
+        let sq = self.comm.as_ref().map_or(sq, |c| c.max(sq));
         let u = sq.sqrt();
         self.pseudo_speed = Some(u);
         u
@@ -983,7 +1035,7 @@ impl Flow {
         // with buoyancy also the buoyancy velocity (stage 7b1): a fluid at
         // rest in a stratification has no other speed
         let buoyant = self.buoyancy.as_ref().map_or(0.0, |b| b.speed(length));
-        let speed = (cells / self.disc.n_cells as f64)
+        let speed = (cells / self.global_cells as f64)
             .sqrt()
             .max(bnd)
             .max(buoyant);

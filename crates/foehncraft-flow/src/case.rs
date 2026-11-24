@@ -273,8 +273,10 @@ pub struct RunSection {
     /// Also solve the flow on these numbers of ranks (MPI step W5): the
     /// ranks run as threads of this process on the parts of a recursive
     /// coordinate bisection, and the run fails unless every rank's cells
-    /// are bitwise those of one rank. Steady SIMPLEC, laminar, without
-    /// scalars, energy, turning zones or a schedule, so far.
+    /// are bitwise those of one rank. Steady and transient, SIMPLEC, PISO
+    /// and the coupled solver, laminar, k-ω SST and k-ε, passive scalars
+    /// and the energy equation of one fluid; not yet with gravity, turning
+    /// zones, regions, a schedule or a restart.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub ranks: Vec<usize>,
 }
@@ -3721,28 +3723,9 @@ pub fn run_steered(
         ),
     )?;
     if !case.run.ranks.is_empty() {
-        let (mesh, geo, _) = mesh_for(&case, None)?;
         lg.line("");
-        for r in crate::ranks::verify(&case, &mesh, &geo, out)? {
-            let line = format!(
-                "solve on {} ranks: {} outer iterations, {}",
-                r.ranks,
-                r.iterations,
-                if r.bitwise() {
-                    "bitwise equal to one rank".to_string()
-                } else {
-                    format!(
-                        "{} cells and {} the history differ from one rank",
-                        r.differing_cells,
-                        if r.same_history { "not" } else { "also" }
-                    )
-                }
-            );
-            lg.line(&line);
-            if !r.bitwise() {
-                rep.failures.push(line);
-            }
-        }
+        let failures = crate::ranks::report(&case, out, &mut |l| lg.line(l))?;
+        rep.failures.extend(failures);
     }
     rep.seconds = t0.elapsed().as_secs_f64();
     end_frames(&mut lg, &rep);

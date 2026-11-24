@@ -2892,10 +2892,11 @@ fn refresh_energy(
     link: Option<EnergyLink>,
     step: Option<(StepTime, Buf, Buf)>,
 ) -> Result<()> {
-    let tv = dev.download(phi)?;
+    // (on ranks with the halo cells, which faces read; MPI step W5)
+    let tv = dev.download_with_halo(phi)?;
     let a_old = dev.download(bc_a)?;
     let b_old = dev.download(bc_b)?;
-    let nc = tv.len();
+    let nc = e.volume.len();
     let nf = e.owner.len();
     let ni = e.neighbour.len();
     let nb = nf - ni;
@@ -2911,7 +2912,9 @@ fn refresh_energy(
         })
         .collect();
     let dep = e.dependent;
-    let mc = &e.mat_cell;
+    // the material of a cell; a halo cell (on ranks, one material only, see
+    // `add_energy`) has the fluid's
+    let mc = |c: usize| e.mat_cell.get(c).copied().unwrap_or(0);
     let mats = &e.mats;
     // a property at T (or at the material's temperature when they do not
     // follow T)
@@ -2920,7 +2923,7 @@ fn refresh_energy(
     };
     e.cp_cell = (0..nc)
         .map(|c| {
-            let m = &mats[mc[c] as usize];
+            let m = &mats[mc(c) as usize];
             at(m, &m.cp, tv[c])
         })
         .collect();
@@ -2945,9 +2948,9 @@ fn refresh_energy(
     };
     for f in 0..nf {
         let o = e.owner[f] as usize;
-        let mo = &mats[mc[o] as usize];
+        let mo = &mats[mc(o) as usize];
         cp_face.push(at(mo, &mo.cp, tf[f]));
-        if f < ni && mc[e.neighbour[f] as usize] != mc[o] {
+        if f < ni && mc(e.neighbour[f] as usize) != mc(o) {
             // two regions: the series of the two half cells and the
             // contact resistance (D157 §9.1), δ_P/(δ_P+δ_N) = 1 − w
             let n = e.neighbour[f] as usize;
@@ -2958,7 +2961,7 @@ fn refresh_energy(
                 let fa = &cd.faces[slot];
                 (fa.normal, fa.area / fa.dgeo, fa.spec)
             };
-            let mn = &mats[mc[n] as usize];
+            let mn = &mats[mc(n) as usize];
             let kp = mo.k_normal(tt(mo, tv[o]), nrm);
             let kn = mn.k_normal(tt(mn, tv[n]), nrm);
             let rc = spec.map_or(0.0, |i| cd.specs[i].at(tt(mo, 0.5 * (tv[o] + tv[n]))));
@@ -2971,7 +2974,7 @@ fn refresh_energy(
                     // solid half cell keeps δ/k
                     let i = i as usize;
                     let cf = if iw.fluid_owner[i] { o } else { n };
-                    let fl = &mats[mc[cf] as usize];
+                    let fl = &mats[mc(cf) as usize];
                     let cpf = at(fl, &fl.cp, tv[cf]);
                     let kf = at(fl, &fl.k, tv[cf]);
                     let muc = iw.mu[i] * cpf;
@@ -3037,7 +3040,7 @@ fn refresh_energy(
         ("conductivity", &e.k_face, &tf, false),
     ] {
         if let Some(i) = vals.iter().position(|v| !(*v > 0.0 && v.is_finite())) {
-            let m = if cell { mc[i] } else { mc[e.owner[i] as usize] };
+            let m = if cell { mc(i) } else { mc(e.owner[i] as usize) };
             let name = &mats[m as usize].name;
             let (whose, key) = if m == 0 && name == "fluid" {
                 ("the fluid's".to_string(), format!("fluid.{what}"))
@@ -3063,7 +3066,7 @@ fn refresh_energy(
     // ρ with the factor of a thermal acceleration (D213): the time term and
     // the storage of h_s take it, the convection (Ċ) does not
     let rho: Vec<f64> = (0..nc)
-        .map(|c| e.cell_rho(c) * e.inertia[mc[c] as usize])
+        .map(|c| e.cell_rho(c) * e.inertia[mc(c) as usize])
         .collect();
     let cap: Vec<f64> = e.cp_cell.iter().zip(&rho).map(|(c, r)| r * c).collect();
     dev.upload(e.capacity, &cap)?;
@@ -3108,13 +3111,13 @@ fn refresh_energy(
                 let mu = e.mats[0].mu.as_ref().expect("checked");
                 v = tf.iter().map(|&x| mu.at(x)).collect();
             } else {
-                let mc = &e.mat_cell;
+                let mc = |c: usize| e.mat_cell.get(c).copied().unwrap_or(0);
                 for f in 0..nf {
-                    let o = mc[e.owner[f] as usize] as usize;
+                    let o = mc(e.owner[f] as usize) as usize;
                     let m = if e.mats[o].fluid || f >= ni {
                         o
                     } else {
-                        mc[e.neighbour[f] as usize] as usize
+                        mc(e.neighbour[f] as usize) as usize
                     };
                     if let Some(mu) = &e.mats[m].mu {
                         v[f] = mu.at(tf[f]);

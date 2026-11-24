@@ -19,6 +19,7 @@ Part of the [Recipes](../recipes.md): generate, read (Gmsh, SU2, CGNS, OpenFOAM,
 | 230 | [Solve a scalar on ranks (and check it against one rank)](#scalar-ranks) |
 | 231 | [Use the multigrid preconditioner on ranks](#multigrid-ranks) |
 | 234 | [Solve a flow on ranks (and check it against one rank)](#flow-ranks) |
+| 244 | [Check a turbulent, heated or transient flow on ranks](#flow-models-ranks) |
 
 ---
 
@@ -602,12 +603,8 @@ target/release/foehn flow examples/cases/flow/ranks_channel_poly.toml
 
 The log says `solve on N ranks: K outer iterations, bitwise equal to one
 rank` for every count; `ranks.vtkhdf` holds the solution of the largest
-count with the cell field `rank`. So far this covers steady SIMPLEC
-without turbulence, scalars, energy, gravity, turning zones, a schedule,
-grid levels, regions or the coupled algorithm; a case with one of them
-and `[run] ranks` stops with an error that names it. Transient flow,
-energy, scalars, turbulence and the coupled solver follow in the second
-part of W5.
+count with the cell field `rank`. Turbulence, scalars, energy, transient
+runs and the coupled solver work too (recipe 244).
 
 Across MPI processes (needs MPI as in recipe 4):
 
@@ -627,5 +624,54 @@ let mine = ranks::solve_part(&case, &mesh, &part, comm.clone(), iterations, Some
 let c = ranks::check(comm.rank(), &mine, &reference);  // cell by cell, bit for bit
 assert!(c.bitwise());
 ```
+
+[↑ back to top](#meshes)
+
+---
+
+<a id="flow-models-ranks"></a>
+## 244. Check a turbulent, heated or transient flow on ranks
+
+`[run] ranks` works with the k-ω SST and the k-ε models (wall functions
+included), passive scalars, the energy equation of one fluid, transient
+runs (checked with PISO and BDF2) and the coupled solver (MPI step
+W5, D93):
+
+```toml
+[turbulence]
+model = "k-omega-sst"
+
+[energy]
+initial = 300.0
+
+[run]
+ranks = [2, 3, 5]
+```
+
+```
+target/release/foehn flow examples/cases/flow/ranks_heated_channel_sst.toml
+```
+
+Every rank's velocity, pressure, temperature, scalars, k, ω (or ε) and
+ν_t must be bitwise those of one rank, and so must the residual history
+(`solve on N ranks: K outer iterations, bitwise equal to one rank`);
+`ranks.vtkhdf` holds these fields of the largest rank count. A
+transient case is checked over its time steps with the fixed step
+`[time] time_step` (`steps`, or `end_time` over the step).
+
+The time of the iterations on ranks against threads only, on a channel
+of hexahedra of any size (cells in x, y, z and the iterations; every run
+is checked bitwise against the first):
+
+```
+cargo run --release -p foehncraft-flow --example ranks_scaling -- 200 100 50 10
+```
+
+Not on ranks yet, refused with an error that names them: the ζ-f and
+elliptic-blending models, the curvature correction and the QCR, the MLP
+limiter and quadratic gradients, gravity, turning zones (MRF, sliding),
+solid regions (conjugate heat transfer), a `[[schedule]]`, a level sweep
+and a restart. Monitors, probes and balances of a run on ranks come with
+the run on ranks itself (MPI step W7, `foehn run --ranks N`).
 
 [↑ back to top](#meshes)

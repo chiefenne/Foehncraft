@@ -746,6 +746,11 @@ pub trait FlowDevice {
     fn download_with_halo(&mut self, b: Buf) -> Result<Vec<f64>> {
         self.download(b)
     }
+    /// The communicator of the ranks when this device is one rank of
+    /// several (MPI step W5): host decisions are reduced over it.
+    fn comm(&self) -> Option<foehncraft_mesh::decompose::SharedComm> {
+        None
+    }
     /// dst = src.
     fn copy(&mut self, src: Buf, dst: Buf) -> Result<()>;
     /// b = v everywhere.

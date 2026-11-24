@@ -19,6 +19,7 @@ Part of the [Example gallery](../gallery.md): the built-in test mesher in 2D and
 | 230 | [Five ranks, one solution: the scalar solver on ranks](#scalar-ranks) | 8 | faces in global orientation, halo exchange before every read across a face, the whole scalar solver bitwise one rank (MPI step W3, D93) |
 | 231 | [Five ranks, one hierarchy: multigrid on ranks](#multigrid-ranks) | 8 | replicated multigrid setup, distributed V-cycle with a halo exchange per level, CG + multigrid bitwise one rank (MPI step W4, D93) |
 | 234 | [Five ranks, one flow: SIMPLEC on ranks](#flow-ranks) | 8 | the flow device on a local mesh, halo exchange after every kernel that writes cells, exact sums, steady SIMPLEC bitwise one rank (MPI step W5, D93) |
+| 244 | [Five ranks, one turbulent heated flow: models on ranks](#flow-models-ranks) | 8 | k-ω SST, k-ε, energy, passive scalars, transient PISO and the coupled solver on ranks, every field bitwise one rank (MPI step W5, D93) |
 
 ---
 
@@ -630,6 +631,54 @@ python3 -m tools.mesh.render_mesh output/ranks_channel_poly/ranks.vtkhdf speed.p
     --title "speed (m/s) on 5 ranks: bitwise the one-rank solution"
 python3 -m tools.mesh.render_mesh output/ranks_channel_poly/ranks.vtkhdf rank.png \
     --field rank --categorical --top --size 1200x460 --zoom 1.9 --title "5 ranks (RCB) of the channel"
+```
+
+[↑ back to top](#meshes)
+
+---
+
+<a id="flow-models-ranks"></a>
+## 244. Five ranks, one turbulent heated flow: models on ranks
+
+<img src="../figures/gallery/ranks_sst_temperature.png" alt="Temperature in a turbulent channel with a heated lower wall, k-omega SST, solved on five ranks" width="1200" height="460">
+
+<img src="../figures/gallery/ranks_sst_nut.png" alt="Turbulent viscosity in the same channel on five ranks" width="1200" height="460">
+
+The channel of gallery 234, now turbulent and heated: air-like fluid at
+300 K enters at 1 m/s (Re = 10 000 on the height), the lower wall is held
+at 330 K, the upper wall is adiabatic. SIMPLEC with the k-ω SST model and
+the energy equation converges from potential flow in 70 outer iterations;
+the run then solves the case again on 2, 3 and 5 ranks, every rank a
+thread of the process with its own halo exchange, and compares every
+cell of every rank with one rank: velocity, pressure, pressure gradient,
+limiter, temperature, k, ω and ν_t, and the residual history, bit for
+bit. To get there the turbulence cell kernels and the wall functions run
+on the own cells and exchange ν_t, F1 and the wall values; the wall
+distance comes from the whole mesh (a part may hold no wall); the energy
+refresh reads the halo temperatures at processor faces; and every
+decision a rank would take from its own cells (the pseudo-time length
+and speed of the coupled solver, the reuse of a multigrid hierarchy) is
+an exact sum or a maximum over all ranks. The tests and the MPI job of CI
+(`mpi_flow`, 1 to 4 ranks) check nine cases this way: steady SIMPLEC on
+three cell types, transient PISO with BDF2, a passive scalar, the energy
+equation in a transient run, k-ω SST, k-ε with scalable wall functions
+and the coupled solver.
+
+| | |
+|---|---|
+| Mesh | poly 2D, 90 × 30 base grid, 2 821 cells, nodes perturbed by 10 % |
+| Ranks | 2, 3, 5 (recursive coordinate bisection), one halo layer |
+| Physics | k-ω SST, energy equation (Pr = 0.71), lower wall 330 K, upper wall adiabatic |
+| Solver | steady SIMPLEC, potential-flow start, 70 outer iterations to 10⁻⁵ |
+| Case file | `flow/ranks_heated_channel_sst.toml` |
+
+```
+target/release/foehn flow examples/cases/flow/ranks_heated_channel_sst.toml
+python3 -m tools.mesh.render_mesh output/ranks_heated_channel_sst/ranks.vtkhdf temperature.png \
+    --field temperature --top --size 1200x460 --zoom 1.9 \
+    --title "temperature (K) on 5 ranks, k-omega SST: bitwise the one-rank solution"
+python3 -m tools.mesh.render_mesh output/ranks_heated_channel_sst/ranks.vtkhdf nut.png \
+    --field nu_t --top --size 1200x460 --zoom 1.9 --title "turbulent viscosity nu_t (m2/s) on 5 ranks"
 ```
 
 [↑ back to top](#meshes)

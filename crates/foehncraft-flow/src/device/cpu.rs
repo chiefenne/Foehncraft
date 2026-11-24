@@ -339,6 +339,10 @@ impl Exec for CpuExec {
         self.ranks.is_some()
     }
 
+    fn comm(&self) -> Option<foehncraft_mesh::decompose::SharedComm> {
+        self.ranks.as_ref().map(|o| o.ranks.comm.clone())
+    }
+
     fn exchange(&mut self, bufs: &[Buf]) -> Result<()> {
         let Some(o) = &self.ranks else {
             return Ok(());
