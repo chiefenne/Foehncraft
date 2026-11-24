@@ -145,6 +145,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="multigrid-ranks"></a>231 | [Use the multigrid preconditioner on ranks](recipes/meshes.md#multigrid-ranks) | [Meshes](recipes/meshes.md) |
 | <a id="flow-ranks"></a>234 | [Solve a flow on ranks (and check it against one rank)](recipes/meshes.md#flow-ranks) | [Meshes](recipes/meshes.md) |
 | <a id="ledger"></a>238 | [Read the conservation ledger of a run as data, and book a module's rows on it](recipes/energy.md#ledger) | [Energy equation and heat transfer](recipes/energy.md) |
+| <a id="spray-duct"></a>242 | [Spray droplets into a flow](recipes/sprays.md#spray-duct) | [Lagrangian sprays](recipes/sprays.md) |
 | <a id="flow-models-ranks"></a>244 | [Check a turbulent, heated or transient flow on ranks](recipes/meshes.md#flow-models-ranks) | [Meshes](recipes/meshes.md) |
 
 ## Adding a feature

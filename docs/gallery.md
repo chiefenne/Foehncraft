@@ -132,6 +132,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | <a id="multigrid-ranks"></a>231 | [Five ranks, one hierarchy: multigrid on ranks](gallery/meshes.md#multigrid-ranks) | [Meshes](gallery/meshes.md) |
 | <a id="flow-ranks"></a>234 | [Five ranks, one flow: SIMPLEC on ranks](gallery/meshes.md#flow-ranks) | [Meshes](gallery/meshes.md) |
 | <a id="ledger"></a>238 | [The conservation ledger as data: a heated cavity's mass, kinetic and thermal accounts](gallery/energy.md#ledger) | [Energy equation and heat transfer](gallery/energy.md) |
+| <a id="spray-duct"></a>242 | [Water droplets sprayed into an air duct](gallery/sprays.md#spray-duct) | [Lagrangian sprays](gallery/sprays.md) |
 | <a id="flow-models-ranks"></a>244 | [Five ranks, one turbulent heated flow: models on ranks](gallery/meshes.md#flow-models-ranks) | [Meshes](gallery/meshes.md) |
 
 ## Adding a feature
