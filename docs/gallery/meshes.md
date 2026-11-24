@@ -328,7 +328,8 @@ target/release/foehn mesh crates/foehncraft-mesh/tests/data/cgns/dual_ngon.cgns
 The dual of a tetrahedral unit cube (81 polyhedral cells, 582 faces, made by
 OpenFOAM's `polyDualMesh`) exists in the repository as an OpenFOAM
 `polyMesh` (gallery 129), as a CGNS NGON/NFACE file, as a Fluent `.msh`
-(`tests/data/fluent_msh/dual_polyhedra.msh`) and, written by Foehncraft
+(`tests/data/fluent_msh/dual_polyhedra.msh`, and its binary
+double-precision form `dual_polyhedra_binary.msh`) and, written by Foehncraft
 itself, as a VTK XML grid. Every reader gives the same 81 cells, the same
 six boundaries `xmin` to `zmax` of area 1 and the volume 1 (4e-16 closed);
 a `.vtu` written with `output.vtu` reads back with the same names. A mixed

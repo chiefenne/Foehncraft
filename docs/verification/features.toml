@@ -99,6 +99,8 @@ switch = 'mesh.format = "fluent_msh"'
 evidence = [
   { kind = "consistency", test = "crates/foehncraft-mesh/tests/fluent_msh.rs::polyhedral_cells_and_mixed_faces", what = "polyhedral cells and mixed faces" },
   { kind = "consistency", test = "crates/foehncraft-mesh/tests/fluent_msh.rs::face_orientation_does_not_matter", what = "face orientation does not change the mesh" },
+  { kind = "consistency", test = "crates/foehncraft-mesh/tests/fluent_msh.rs::binary_double_precision_polyhedra", what = "binary double-precision file gives the same mesh as the ASCII file" },
+  { kind = "consistency", test = "crates/foehncraft-mesh/tests/fluent_msh.rs::binary_single_precision_channel", what = "binary single-precision file gives the same mesh as the ASCII file" },
 ]
 gaps = ["no flow case of the catalogue reads a Fluent .msh file"]
 
@@ -1147,7 +1149,7 @@ evidence = [
 ]
 gaps = [
   "no reference-data case (a measured flow with a large temperature difference)",
-  "not yet with passive scalars, a restart, periodic meshes, convective outlets, mass-flow inlets, wall mass fluxes or rotating zones (ENE006)",
+  "not yet with passive scalars, a restart, periodic meshes, convective outlets, wall mass fluxes or rotating zones (ENE006)",
   "the turbulence outlet value ⅔ρk uses the reference density",
 ]
 
