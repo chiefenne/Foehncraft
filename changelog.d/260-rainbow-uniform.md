@@ -1,0 +1,1 @@
+- **Rainbow Uniform for signed fields (D261).** Field pictures of a signed quantity centred on zero (vorticity, flow angles, circumferential velocity, gauge pressure, Reynolds stress) use ParaView's Rainbow Uniform (Colin Ware, `colormaps.UNIFORM`), the same as MurmelCraft, in place of RdBu_r, PuOr_r and coolwarm.

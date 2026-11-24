@@ -9,12 +9,20 @@
 //!   (stage 6, D116): bounded form, point-implicit sources, bounded BDF2;
 //! - [`turb`]: the turbulence models (stage 6): invariants and the D166
 //!   features, k-ω SST 2003, its wall treatments;
+//! - [`particle`]: the parcel step of the Lagrangian sprays (L12): exact
+//!   relaxation of the parcel velocity to the gas velocity with the drag of
+//!   Schiller and Naumann, gravity and buoyancy;
 //! - [`blas`]: vector operations and reproducible block dot products of the
 //!   Krylov solvers;
 //! - [`expr`]: the stack machine of the compiled case-file expressions (D53);
 //! - [`adjoint`]: the transposed matrix and product for the adjoint (D59);
 //! - [`amg`]: the smoothers, transfers and coarse solve of the algebraic
-//!   multigrid V-cycle (stage 3), generic over float32 and float64.
+//!   multigrid V-cycle (stage 3), generic over float32 and float64;
+//! - [`walk`]: the straight walk of a particle or a radiation bundle
+//!   through the cells (D47, D257), resumable on another rank;
+//! - [`radiation`]: Monte Carlo radiation (step 29): Owen-scrambled Sobol
+//!   points, the sampling of the bundles and their transport with exact
+//!   integer tallies.
 //!
 //! Each kernel is a *body*: a function that computes the result for one
 //! index (one face, one cell, one matrix row). A backend supplies the loop:
@@ -47,9 +55,12 @@ pub mod expr;
 pub mod face;
 pub mod flow;
 pub mod fv;
+pub mod particle;
+pub mod radiation;
 pub mod scalar;
 pub mod spmv;
 pub mod turb;
+pub mod walk;
 
 use foehncraft_core::index::FLAG_BIT;
 

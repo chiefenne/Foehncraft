@@ -22,6 +22,7 @@ instead.
 - [Reference numbers of other solvers](#other-solver-numbers)
 - [Coupling loops: the solid must see the flow's response](#coupling-loops)
 - [Limiters on tetrahedra and polyhedra](#limiters)
+- [Porous resistances and the Rhie–Chow factor](#porous-rhie-chow)
 
 <a id="steady-runs"></a>
 ## Steady runs: budget and stopping
@@ -449,3 +450,25 @@ Found with the vertex limiter of D237 (#211):
   Every quantity that carries from one outer iteration to the next goes
   into restart.h5, with a bit-identical restart test; do not take images
   or results from the first iterations after a restart of an older file.
+
+<a id="porous-rhie-chow"></a>
+## Porous resistances and the Rhie–Chow factor
+
+Found with the porous regions of D270 (#273):
+- **A scalar Rhie–Chow factor cannot carry a turned resistance tensor.**
+  The factor D of the face fluxes is one number per cell. A honeycomb with
+  its channels turned 30° against the mesh (resistance 10⁴ times larger
+  across than along) stalled at a continuity residual of 5·10⁻³ whatever
+  the relaxation; with the smallest principal value in D the pressure
+  correction does not see the blocked direction, with the largest it does
+  not see the open one. Axes along the mesh axes converge. Turned axes need
+  a tensor (or face-projected) factor; until then they are refused
+  (POR002), do not try a scalar compromise again.
+- **Defer the off-diagonal part of the tensor.** Put Σ|a_ij| of the
+  off-diagonal resistance on the diagonal and the off-diagonal product
+  on the right side (deferred correction); the plain explicit
+  off-diagonal term with a 10⁴ blocking ratio broke BiCGStab (NaN).
+- **A block that closes the channel converges slowly.** Channels across
+  the main flow (the block an obstacle) left the x-momentum residual near
+  0.8 after 2 500 iterations while the pressure drop was settled; judge
+  such runs by the monitored drop, not the residual.

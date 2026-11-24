@@ -25,6 +25,7 @@ import numpy as np  # noqa: E402
 from tools.plot.vtkhdf import internal  # noqa: E402
 
 from tools.plot import backstep_chart as bc  # noqa: E402
+from tools.plot.colormaps import UNIFORM  # noqa: E402
 
 U_REF = 1.05   # u at x/H = -4, y/H = 5 (the reference of the step's C_p)
 
@@ -35,7 +36,7 @@ def main():
     out, path = sys.argv[1], sys.argv[2]
     quads, _, data = read(path)
     panels = [
-        ("reynolds_stress_xy", "u'v' / U_ref²  (−2 ν_t S_xy)", "RdBu_r", lambda v: v / U_REF**2, True),
+        ("reynolds_stress_xy", "u'v' / U_ref²  (−2 ν_t S_xy)", UNIFORM, lambda v: v / U_REF**2, True),
         ("viscosity_ratio", "ν_t / ν", "magma", lambda v: v, False),
         ("time_scale", "T U_ref / H  (time scale of the model)", "viridis", lambda v: v * U_REF, False),
     ]

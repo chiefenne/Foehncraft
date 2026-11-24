@@ -335,6 +335,80 @@ set = { solver.momentum.relaxation = 0.8 }
     assert_eq!(e.solver.momentum.relaxation, Some(0.8));
 }
 
+/// A re-read of the case file (`.read_toml_N`, `run.reread_every`) keeps
+/// the energy and scalar conditions of the boundaries too; before the fix
+/// an energy case with an inlet failed its validation after any re-read.
+/// A changed energy condition in the file is reported as not applied.
+#[test]
+fn a_reread_keeps_the_energy_conditions_of_the_boundaries() {
+    let d = out("reread_energy");
+    std::fs::create_dir_all(&d).unwrap();
+    let f = d.join("case.toml");
+    let text = r#"
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [2.0, 1.0, 0.05]
+cells = [8, 4, 1]
+[fluid]
+viscosity = 0.01
+specific_heat = 1000.0
+conductivity = 0.1
+[energy]
+initial = 300.0
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [1.0, 0.0, 0.0]
+[boundary.xmin.energy]
+temperature = 300.0
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymin]
+type = "wall"
+[boundary.ymin.energy]
+heat_flux = 100.0
+[boundary.ymax]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+[solver]
+max_iterations = 50
+"#;
+    std::fs::write(&f, text).unwrap();
+    let c = FlowCase::from_file(&f).unwrap();
+    std::fs::write(
+        &f,
+        text.replace("max_iterations = 50", "max_iterations = 60"),
+    )
+    .unwrap();
+    let rr = control::reread(&f, &c, 0).unwrap();
+    assert_eq!(rr.case.boundary_energy.len(), 2);
+    assert_eq!(rr.case.solver.max_iterations, 60);
+    assert!(rr.not_applied.is_empty(), "{:?}", rr.not_applied);
+    // a new inlet temperature is not applied during the run
+    std::fs::write(
+        &f,
+        text.replace("temperature = 300.0", "temperature = 400.0"),
+    )
+    .unwrap();
+    let rr = control::reread(&f, &c, 0).unwrap();
+    assert!(
+        rr.not_applied
+            .iter()
+            .any(|l| l.starts_with("boundary energy")),
+        "{:?}",
+        rr.not_applied
+    );
+    assert_eq!(
+        format!("{:?}", rr.case.boundary_energy),
+        format!("{:?}", c.boundary_energy)
+    );
+    let _ = std::fs::remove_dir_all(&d);
+}
+
 /// A first-order start: the momentum scheme switches from `upwind` to
 /// `linear-upwind` at a prepared iteration. Before it the history is the
 /// one of an upwind run, the change is logged, and the run converges to the

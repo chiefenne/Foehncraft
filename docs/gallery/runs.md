@@ -301,6 +301,54 @@ target/release/foehn flow examples/cases/flow/cavity_re100_transient.toml
 less output/cavity_re100_transient/flow.log
 ```
 
+**Shorter logs, columns that change, limitations and events (D214).** `[log] detail = "steps"` shows the box and the row of each logged time step without the table of its outer iterations, `"summary"` only the header blocks, messages, summaries and the closing frame; `run.jsonl` keeps every row either way. `log.columns` may change during the run (`[[schedule]]`, `run.set`, a re-read): the next row prints the new header. A block "Limitations known before the run" follows the settings blocks and a block "Events" before the closing frame lists every change made during the run, so a steered run can be reproduced from its log alone. Excerpt of `flow/cavity_re100_log_steps.toml` (32 x 32, 100 BDF2 steps, `detail = "steps"`, the columns changed at step 50):
+
+```
+               *******************************************************************************************************
+               *   Limitations known before the run                                                                  *
+               *******************************************************************************************************
+               *   LIM001                             Settings that change on a schedule is graded partial: no       *
+               *                                      exact or manufactured solution (docs/verification/status.md)   *
+               *   LIM004                             one mesh only: the discretisation uncertainty is not           *
+               *                                      estimated (a level sweep with `[verification] levels` gives    *
+               *                                      the GCI)                                                       *
+               *******************************************************************************************************
+
+  ...
+
+                               **********************************************************************
+                               *        40. TIME STEP     TIME = 4.00000E+00     DT = 1.00000E-01   *
+                               *            COURANT NUMBER = 2.881     OUTER ITERATIONS = 1         *
+                               **********************************************************************
+
+      40  4.0000E+00 1.00E-01 2.881   4.72E-04 4.19E-04 0.00E+00 4.22E-05       1    18
+      balance  mass +0.00e0  kinetic energy: dK/dt +3.611e-5 W, boundary +4.926e-3 W, dissipation 4.812e-3 W, numerical +7.821e-5 W (+1.6e-2)
+ %FOEHN-I-CASE, step 50: schedule (step 50): log.columns: (default) -> ["time.simulated", "time.courant", "residual.continuity", "max.velocity_magnitude"]
+
+                               **********************************************************************
+                               *        50. TIME STEP     TIME = 5.00000E+00     DT = 1.00000E-01   *
+                               *            COURANT NUMBER = 2.885     OUTER ITERATIONS = 1         *
+                               **********************************************************************
+
+         -- time ---------- -- scaled residuals  -- extremes --------
+    Step    Time [s] Cour.                 ResM        Umax     cell 
+      50  5.0000E+00 2.885             2.38E-05    9.02E-01     1011
+      balance  mass +0.00e0  kinetic energy: dK/dt +2.189e-5 W, boundary +4.915e-3 W, dissipation 4.816e-3 W, numerical +7.800e-5 W (+1.6e-2)
+
+  ...
+
+                ****************************************************************************************************
+                *                                                                                                  *
+                *   Events:                                                                                        *
+                *                                                                                                  *
+                *   Step   elapsed  code               what happened                                               *
+                *   50     0:00:00  RUN015             schedule (step 50): log.columns: (default) ->               *
+                *                                      ["time.simulated", "time.courant", "residual.continuity",   *
+                *                                      "max.velocity_magnitude"]                                   *
+                *                                                                                                  *
+                ****************************************************************************************************
+```
+
 [↑ back to top](#run-control-health-and-adjoint-readiness)
 
 ---

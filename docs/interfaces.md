@@ -121,7 +121,11 @@ Two runs of the same case with the same build give byte-identical files,
 on any thread count and on CPU and GPU (D31), except the measured files
 `flow.log`, `flow.md`, `flow.json` and `run.jsonl`, which hold timings.
 `result.json` holds nothing measured and is identical too; it lists every
-other output file with its SHA-256 hash. HDF5 files are written
+other output file with its size (`bytes`) and BLAKE3 hash (`blake3`;
+`sha256` in results of format 1.x, before 2026-11-24, and from a build
+without the feature `blake3`, which the C-free build of D87 leaves out). BLAKE3 hashes a
+file of many gigabytes in pieces on every core: SHA-256 took 17 s for a
+5 GB file on a CPU without SHA instructions. HDF5 files are written
 without object timestamps. Dates (in reports and in `run.jsonl`) come from
 `SOURCE_DATE_EPOCH` when it is set.
 
@@ -353,7 +357,12 @@ A code keeps its meaning; a retired code stays in the table.
 | `MAT007` | error | A fluid without specific heat or thermal conductivity in a run with the energy equation. |
 | `MAT008` | error | An orthotropic thermal conductivity without both axes, or with parallel axes. |
 | `MAT009` | error | A user material database file (`[materials] include`, `FOEHN_MATERIALS`) or a property data file (NASA-7 record, table file) that cannot be read or has the wrong format. |
-| `ENE006` | error | An energy setting this version does not have: a passive scalar named `temperature` beside `[energy]`, solid regions with a sliding mesh, a restart with `[energy.acceleration]`, passive scalars or a periodic mesh, or with the variable density (stage 7c) passive scalars, a restart, a periodic mesh, a convective outlet, a mass-flow inlet, a wall mass flux or a rotating zone. |
+| `SPR001` | error | A `[spray]` value that is out of range, an injector outside the mesh, a spray file (`[spray] include`) that cannot be read or defines `injector` or `liquid` twice, or a `[spray.boundary.<name>]` for a boundary the mesh does not have. |
+| `SPR002` | error | A `[spray]` in a steady case: the parcels need a transient run. |
+| `SPR003` | error | A `[spray]` in a case with MRF zones, sliding interfaces or a periodic boundary (not in this version). |
+| `SPR004` | warning | Parcels lost: the walk through the mesh failed or a parcel needed more than `[spray] max_substeps` sub-steps in a time step (counted in `spray.csv`). |
+| `SPR005` | error | The mass book of the sprays does not close: released liquid differs from the liquid in the flow, stuck, left and lost by more than round-off. |
+| `ENE006` | error | An energy setting this version does not have: a passive scalar named `temperature` beside `[energy]`, solid regions with a sliding mesh, a restart with `[energy.acceleration]`, passive scalars or a periodic mesh, or with the variable density (stage 7c) passive scalars, a restart, a periodic mesh, a convective outlet, a wall mass flux or a rotating zone. |
 | `ENE008` | error | An `[[energy.sources]]` entry for a region the case does not have, or without exactly one of `power` and `power_density`. |
 | `ENE009` | error | Variable-density settings that do not fit together: a density that does not depend on T, `density = "variable"` with the Boussinesq model, a closed volume with an inlet or outlet, a closed volume of a liquid, or `closed-volume` without the variable density. |
 | `CHT004` | error | An `[interfaces.<name>]` table that is not on a region interface (regions unknown, the same, two fluids, or not touching), or without exactly one of `contact_resistance` (≥ 0) and `thin_wall` (thickness > 0 with `conductivity` or `material`). |
@@ -386,7 +395,7 @@ A code keeps its meaning; a retired code stays in the table.
 | `BUO004` | warning | `[gravity]` with the energy equation but no buoyancy model (the temperature drives no flow); as information: a turbulence model with buoyancy, whose production of k by buoyancy comes in stage 7e1. |
 | `BUO005` | error | A variable density in a closed domain (no inlet, no outlet) without `[energy] thermodynamic_pressure = "closed-volume"`: the mass in the domain would not be conserved. |
 | `BUO006` | warning | A pressure boundary with `pressure_kind = "static"` over a height span whose hydrostatic difference ρ_ref g Δz is above the dynamic pressure: a uniform static value drives a flow through the opening. |
-| `REG001` | error | A region that is not a fluid where it cannot be: a solid region without `[energy]` (solids are solved by the energy equation, stage 7d1), a porous zone (not in this version), or a solid material as the `[fluid]`. |
+| `REG001` | error | A region that is not a fluid where it cannot be: a solid region without `[energy]` (solids are solved by the energy equation, stage 7d1), or a solid material as the `[fluid]`. |
 | `REG002` | error | A region that names a cell zone the mesh does not have, or a zone in two regions. |
 | `REG003` | error | A fluid part (fluid cells connected without a solid between them) without a pressure boundary in a case of several fluid parts: give it a pressure outlet or inlet; a closed part of its own comes with stage MF-B. |
 | `REG004` | error | Two fluids of different materials (or temperatures) share a face: that is a two-phase interface (multiphase, L3); put a solid region or a thin wall between them, or give both regions the same fluid. |
@@ -394,6 +403,8 @@ A code keeps its meaning; a retired code stays in the table.
 | `REG006` | error | A setting that does not yet work with several fluids in one case (D194): the variable density, gravity, a rotating zone or frame, passive scalars, a convective outlet or a periodic mass-flow drive. |
 | `REG007` | error | A key of `[regions.<name>.initial]` that does not fit: a solid region takes `temperature` only, turbulence start values come as `k` with one of `omega` or `epsilon`, and a start temperature needs `[energy]`. |
 | `REG008` | error | A start temperature, k, omega or epsilon of `[regions.<name>.initial]` that is not > 0. |
+| `POR001` | error | A porous region without its matrix (`[regions.<name>.porous]` with `viscous`/`inertial` or `honeycomb`), contradicting or invalid values, direction-dependent values without `axes`, or a matrix in a region that is not porous. |
+| `POR002` | error | A setting that does not yet work with porous regions (porous plan, D279): the energy equation (stage PM2), passive scalars, a turbulence model, a rotating zone, the GPU (stage PM5), or direction-dependent resistances whose axes are turned against the mesh axes. |
 | `REG009` | error | `temperature = "inlet"` in `[regions.<name>.initial]` for a region whose fluid part has no inlet with `[boundary.<name>.energy] temperature`. |
 | `REG010` | note | The start values of the regions and fluid parts and where they come from: given, a boundary value, a Laplace solve between the pressure boundaries of a part, or the inlets. |
 | `PRS001` | error | An absolute pressure value (`[fluid] pressure_values = "absolute"`, the default from case format 0.7, D239) that is zero or negative: a boundary `pressure` or `total_pressure`, `[initial] pressure`, `[pressure] reference_value` or an operating pressure; set `pressure_values = "gauge"` for values relative to the operating pressure. |
@@ -442,6 +453,7 @@ A code keeps its meaning; a retired code stays in the table.
 | `RUN022` | note | Stopped through the live control port (`run.stop`): restart file, final output, exit code 3 (L19). |
 | `RUN023` | note | A setting changed through the live control port (`run.set`): key, old and new value, with the equivalent `[[schedule]]` entry (L19). |
 | `RUN024` | warning | A setting asked for through the live control port that cannot be applied (not valid for the case at that point); the run goes on with the settings it had. |
+| `RUN025` | note | A setting changed by re-reading the case file (`.read_toml_N`, `[run] reread_every`): key, old and new value (D40, D214). |
 | `DIV001` | note | Divergence cause: the Courant number near the failing cells is large; reduce the time step. |
 | `DIV002` | note | Divergence cause: under-relaxation factors too large for the case. |
 | `DIV003` | note | Divergence cause: poor cells (skewness, non-orthogonality, volume ratio) at the failing cells. |

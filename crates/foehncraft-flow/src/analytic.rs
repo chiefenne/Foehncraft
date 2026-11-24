@@ -126,6 +126,15 @@ pub enum Analytic {
     /// hot wall and falls at the cold one with no net flow:
     /// v = (g β ΔT D²/(48 ν)) (ξ³ − ξ), ξ = 2 (x − x₀)/D − 1, u = 0, and a
     /// constant reduced pressure (its level is not compared).
+    ///
+    /// With a `mean_velocity` U_m ≠ 0 (a periodic pair along y that holds
+    /// the mass flow) it is fully developed mixed convection between walls
+    /// at different temperatures (Aung & Worku 1986, stage 7b2, V7.9): the
+    /// equations are linear, so the plane Poiseuille profile adds,
+    /// v = 6 U_m η (1 − η) + (g β ΔT D²/(48 ν)) (ξ³ − ξ), η = (ξ + 1)/2.
+    /// The flow reverses at the cold wall (U_m > 0) when
+    /// g β ΔT D²/(48 ν) > 1.5 U_m, that is Gr/Re > 72 with
+    /// Gr = g β ΔT D³/ν², Re = U_m D/ν.
     BuoyantSlot {
         /// x of the hot wall.
         #[serde(default)]
@@ -135,6 +144,9 @@ pub enum Analytic {
         upper: f64,
         /// g β ΔT (m/s²) of the wall temperature difference ΔT.
         buoyancy: f64,
+        /// Mean velocity U_m along +y (m/s); 0: no net flow.
+        #[serde(default)]
+        mean_velocity: f64,
         /// Kinematic viscosity ν (m²/s), set by the case from `[fluid]`.
         #[serde(default)]
         nu: f64,
@@ -307,13 +319,16 @@ impl Analytic {
                 lower,
                 upper,
                 buoyancy,
+                mean_velocity,
                 nu,
             } => {
                 let d = upper - lower;
                 let xi = 2.0 * (x[0] - lower) / d - 1.0;
+                let eta = 0.5 * (xi + 1.0);
                 [
                     0.0,
-                    buoyancy * d * d / (48.0 * nu) * (xi * xi * xi - xi),
+                    buoyancy * d * d / (48.0 * nu) * (xi * xi * xi - xi)
+                        + 6.0 * mean_velocity * eta * (1.0 - eta),
                     0.0,
                 ]
             }
@@ -505,11 +520,14 @@ impl Analytic {
                 lower,
                 upper,
                 buoyancy,
+                mean_velocity,
                 nu,
             } => {
-                // the largest speed, at ξ = ∓1/√3
+                // the largest speed of the buoyant part, at ξ = ∓1/√3, and
+                // the centre-line speed of the Poiseuille part
                 let d = upper - lower;
                 (buoyancy * d * d / (48.0 * nu)).abs() * 2.0 / (3.0 * 3f64.sqrt())
+                    + 1.5 * mean_velocity.abs()
             }
             Self::TaylorGreen { velocity, .. } => velocity.abs(),
             // the largest |ρu| = π A over the smallest ρ = 1/(1 + a)

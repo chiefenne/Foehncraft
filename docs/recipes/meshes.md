@@ -274,14 +274,17 @@ and 2D CGNS files and structured zones are refused.
 
 Three more readers (D191, D192) and a writer.
 
-- **Fluent `.msh`.** The ASCII, 3D, face-based text file that many
+- **Fluent `.msh`.** The 3D, face-based file, ASCII or binary, that many
   commercial meshers and solvers write: nodes, cells and faces with the two
   cells on each side, zones with names. Cell shapes do not matter, so
   polyhedral meshes read as they are. Every face zone that is not of the type
   `interior` is a boundary of its name, the cell zones are the cell zones.
   The extension `.msh` is shared with Gmsh: the first bytes tell them apart,
-  and `format = "fluent_msh"` forces the reader. Binary files and 2D files
-  are refused with the hint what to do.
+  and `format = "fluent_msh"` forces the reader. Binary files (sections
+  `2010`/`2012`/`2013`/`2018` in single precision, `30xx` in double
+  precision, little-endian) read like ASCII files, and the two may be mixed
+  in one file; other binary sections are skipped. 2D files are refused with
+  the hint what to do.
 - **VTK.** Legacy `.vtk` (ASCII, binary) and XML `.vtu` (ASCII, base64,
   appended, zlib-compressed: what ParaView saves). The volume cells are
   tetrahedra, hexahedra, wedges, pyramids and polyhedra; triangles and

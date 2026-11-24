@@ -191,6 +191,89 @@ pub fn write_blocks(
     Ok(())
 }
 
+/// A field on points (parcels): one value or one 3-vector per point.
+pub struct PointField<'a> {
+    /// Name shown in ParaView.
+    pub name: &'a str,
+    /// `n` values (scalar) or `3 n` values (vector, x y z of point 0 first).
+    pub values: &'a [f64],
+    /// 1 or 3.
+    pub components: usize,
+}
+
+/// Writes points (the parcels of the sprays, L12) as a VTKHDF `PolyData`
+/// file: one vertex cell per point, the fields as point data. The file
+/// holds no object timestamps, so the same content gives the same bytes
+/// (D84).
+pub fn write_points(
+    path: impl AsRef<Path>,
+    points: &[[f64; 3]],
+    fields: &[PointField],
+    attrs: &[(&str, Attr)],
+) -> Result<()> {
+    let path = path.as_ref();
+    let n = points.len();
+    for f in fields {
+        anyhow::ensure!(
+            (f.components == 1 || f.components == 3) && f.values.len() == n * f.components,
+            "point field {} has {} values for {n} points of {} components",
+            f.name,
+            f.values.len(),
+            f.components
+        );
+    }
+    let file = h5::File::with_options()
+        .with_fcpl(|p| p.obj_track_times(false))
+        .create(path)
+        .with_context(|| format!("creating {}", path.display()))?;
+    for (name, a) in attrs {
+        match a {
+            Attr::Str(v) => {
+                let v: h5::types::VarLenUnicode =
+                    v.parse().map_err(|e| anyhow::anyhow!("{e:?}"))?;
+                file.new_attr::<h5::types::VarLenUnicode>()
+                    .create(*name)?
+                    .write_scalar(&v)?;
+            }
+            Attr::F64(v) => file.new_attr::<f64>().create(*name)?.write_scalar(v)?,
+            Attr::U64(v) => file.new_attr::<u64>().create(*name)?.write_scalar(v)?,
+        }
+    }
+    let g = group(&file, "VTKHDF")?;
+    ascii_attr(&g, "Type", "PolyData")?;
+    version_attr(&g)?;
+    ds(&g, "NumberOfPoints", &[n as i64])?;
+    points_ds(&g, points)?;
+    let conn: Vec<i64> = (0..n as i64).collect();
+    let offsets: Vec<i64> = (0..=n as i64).collect();
+    for (name, cells, o, c) in [
+        ("Vertices", n, offsets, conn),
+        ("Lines", 0, vec![0i64], vec![]),
+        ("Strips", 0, vec![0], vec![]),
+        ("Polygons", 0, vec![0], vec![]),
+    ] {
+        let sg = group(&g, name)?;
+        ds(&sg, "NumberOfCells", &[cells as i64])?;
+        ds(&sg, "NumberOfConnectivityIds", &[c.len() as i64])?;
+        ds(&sg, "Offsets", &o)?;
+        ds(&sg, "Connectivity", &c)?;
+    }
+    let pd = group(&g, "PointData")?;
+    for f in fields {
+        if f.components == 1 {
+            ds(&pd, f.name, f.values)?;
+        } else {
+            pd.new_dataset::<f64>()
+                .shape([n, 3])
+                .create(f.name)?
+                .write_raw(f.values)?;
+        }
+    }
+    group(&g, "CellData")?;
+    group(&g, "FieldData")?;
+    Ok(())
+}
+
 /// The size of the file that [`write()`] writes for `mesh` with `n_fields`
 /// cell fields, from the arrays it stores (an estimate within a few per
 /// cent: HDF5 adds headers of some kilobytes). The blocks and their ghosts

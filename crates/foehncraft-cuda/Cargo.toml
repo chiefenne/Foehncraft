@@ -17,6 +17,7 @@ cuda = ["dep:cudarc"]
 [dependencies]
 foehncraft-core.workspace = true
 foehncraft-kernels.workspace = true
+foehncraft-radiation.workspace = true
 foehncraft-fv.workspace = true
 foehncraft-flow.workspace = true
 foehncraft-bench.workspace = true
@@ -25,3 +26,11 @@ cudarc = { workspace = true, optional = true, features = ["std", "driver", "nvrt
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+foehncraft-mesh.workspace = true
+rayon.workspace = true
+
+[[example]]
+name = "radiation_gpu"
+required-features = ["cuda"]

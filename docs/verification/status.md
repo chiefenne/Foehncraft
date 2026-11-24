@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**115 features: 50 verified, 62 partial, 3 unverified.**
+**117 features: 50 verified, 64 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -140,6 +140,8 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Backends and interfaces | [Steady SIMPLEC on several ranks, bitwise one rank (MPI step W5 part 1)](#parallel-flow-ranks) | partial |
 | Backends and interfaces | [Turbulence, energy, scalars, transient runs and the coupled solver on several ranks, bitwise one rank (MPI step W5 part 2)](#parallel-flow-models-ranks) | partial |
 | Backends and interfaces | [Restart files on ranks: gathered byte for byte the one-rank file, read on any rank count (MPI step W6)](#parallel-restart-ranks) | partial |
+| Sprays | [Lagrangian spray parcels, one way (L12, SP1)](#sprays-one-way) | partial |
+| Flow models | [Porous regions with a direction-dependent Darcy-Forchheimer resistance (D270, PM1)](#porous-darcy-forchheimer) | partial |
 
 ## Meshes
 
@@ -215,6 +217,8 @@ Gaps:
 
 - consistency: [`polyhedral_cells_and_mixed_faces`](../../crates/foehncraft-mesh/tests/fluent_msh.rs): polyhedral cells and mixed faces
 - consistency: [`face_orientation_does_not_matter`](../../crates/foehncraft-mesh/tests/fluent_msh.rs): face orientation does not change the mesh
+- consistency: [`binary_double_precision_polyhedra`](../../crates/foehncraft-mesh/tests/fluent_msh.rs): binary double-precision file gives the same mesh as the ASCII file
+- consistency: [`binary_single_precision_channel`](../../crates/foehncraft-mesh/tests/fluent_msh.rs): binary single-precision file gives the same mesh as the ASCII file
 
 Gaps:
 
@@ -1235,17 +1239,21 @@ Gaps:
 
 ### Gravity and the Boussinesq buoyancy (balanced force)
 
-**partial** (a model without reference data; gaps written) · id `buoyancy.boussinesq` · switch `[gravity], [buoyancy] model = "boussinesq"` · decisions D153, D154
+**partial** (gaps written) · id `buoyancy.boussinesq` · switch `[gravity], [buoyancy] model = "boussinesq"` · decisions D153, D154
 
 - exact: [`buoyancy_box_at_rest`](../../examples/cases/flow/buoyancy_box_at_rest.toml): a stratified box at rest along an oblique gravity on a perturbed mesh: largest speed 1·10⁻¹⁵ m/s (passes in CI (set linux-3), not yet in the manual) ([results](../gallery/energy.md#buoyancy))
 - exact: [`stratified_box_stays_at_rest`](../../crates/foehncraft-flow/tests/buoyancy.rs): the box at rest on hex, tet, poly and mixed 3D meshes, SIMPLEC and coupled, below 3·10⁻¹⁰ m/s
 - exact: [`buoyancy_slot`](../../examples/cases/flow/buoyancy_slot.toml): the buoyant slot against its exact cubic profile, observed orders 2.14 and 2.13 (passes in CI (set linux-3), not yet in the manual) ([results](../cases/flow.md#gravity-and-buoyancy))
 - exact: [`buoyant_slot_has_second_order`](../../crates/foehncraft-flow/tests/buoyancy.rs): observed orders in 1.8–2.3
 - consistency: [`buoyancy_enclosure_plume`](../../examples/cases/flow/buoyancy_enclosure_plume.toml): a laminar plume in a closed air enclosure converges, mass and kinetic-energy ledgers close (passes in CI (set linux-3), not yet in the manual)
+- exact: [`mixed_convection_channel`](../../examples/cases/flow/mixed_convection_channel.toml): V7.9 fully developed mixed convection with flow reversal (Aung & Worku 1986), Gr/Re = 200: observed orders 2.14 and 2.14 (net flow up), 2.16 and 2.08 (down) (passes in CI (set linux-3), not yet in the manual) ([results](../gallery/energy.md#natural-convection))
+- exact: [`mixed_convection_has_second_order_both_ways`](../../crates/foehncraft-flow/tests/buoyancy.rs): observed orders in 1.8–2.3 with the net flow up and down
+- reference-data: [`natural_convection_plate`](../../examples/cases/flow/natural_convection_plate.toml): V7.12 isothermal vertical plate, Pr 0.71, Gr_L = 10⁸: extrapolated local Nu_x within 0.4 % of the similarity solution of Ostrach (1953) at x = 0.25, 0.5, 0.75 L, GCI ≤ 0.03 % (passes in CI (set long), not yet in the manual) ([results](../gallery/energy.md#natural-convection))
+- consistency: [`natural_convection_cavity_ra1e5`](../../examples/cases/flow/natural_convection_cavity_ra1e5.toml): V7.15 differentially heated square cavity Ra 10³ to 10⁶: mean Nu order 2, GCI ≤ 0.1 %, hot-wall heat equals cold-wall heat to round-off (de Vahl Davis values as context only, D201) (passes in CI (set long), not yet in the manual) ([results](../gallery/energy.md#natural-convection))
 
 Gaps:
 
-- no reference-data case (a measured natural-convection flow)
+- no measured natural-convection flow (the plate is checked against boundary-layer theory)
 - the wall forces leave out the Archimedes part ρ_ref g V
 
 <a id="buoyancy-pressure-kind"></a>
@@ -1276,7 +1284,7 @@ Gaps:
 Gaps:
 
 - no reference-data case (a measured flow with a large temperature difference)
-- not yet with passive scalars, a restart, periodic meshes, convective outlets, mass-flow inlets, wall mass fluxes or rotating zones (ENE006)
+- not yet with passive scalars, a restart, periodic meshes, convective outlets, wall mass fluxes or rotating zones (ENE006)
 - the turbulence outlet value ⅔ρk uses the reference density
 
 <a id="buoyancy-closed-volume"></a>
@@ -1543,9 +1551,11 @@ Contracts: `bitwise`, `control`.
 
 ### Log columns and JSON records for scripts and agents
 
-**verified** · id `run.log-records` · switch `[log]` · decisions D77
+**verified** · id `run.log-records` · switch `[log]` · decisions D77, D214
 
 - consistency: [`cavity_re100_columns`](../../examples/cases/flow/cavity_re100_columns.toml): the Ghia cavity with a chosen iteration table (manual: largest deviation from Ghia et al. (1982), Re = 100 ≤ 0.02)
+- consistency: [`cavity_re100_log_steps`](../../examples/cases/flow/cavity_re100_log_steps.toml): the transient cavity with a short log and columns changed during the run (D214) (passes in CI (set linux-1), not yet in the manual)
+- consistency: [`summary_detail_leaves_out_the_table_but_not_the_record`](../../crates/foehncraft-flow/tests/log_detail.rs): a shorter log keeps every row of run.jsonl
 - contract (schema): [`run_record_rows_follow_their_schema`](../../crates/foehncraft-cli/tests/run_contract.rs): every row of run.jsonl has a known type and the keys of that type; the header names the format
 - contract (schema): [`json_result_and_byte_identical_files`](../../crates/foehncraft-cli/tests/run_contract.rs): result.json is the object on standard output; header and end row of the run record
 - contract (equivalence): [`configurable_log_columns_change_no_result`](../../crates/foehncraft-cli/tests/run_contract.rs): log columns change no result; flow.log and run.jsonl carry the same content
@@ -1766,3 +1776,53 @@ Gaps:
 - the VTKHDF field output of a run on ranks comes with the run on ranks (W7); [run] ranks writes ranks.vtkhdf gathered in global order
 
 Contracts: `bitwise`.
+
+## Sprays
+
+<a id="sprays-one-way"></a>
+
+### Lagrangian spray parcels, one way (L12, SP1)
+
+**partial** (a model without reference data; gaps written) · id `sprays.one-way` · switch `[spray] include = "..."` · decisions D240, D245, D246
+
+- contract (diagnostics): [`spray_duct`](../../examples/cases/flow/spray_duct.toml): water droplets of 150 µm in an air duct: the mass book injected = in the flow + stuck + left + lost closes to round-off (the run stops with SPR005 otherwise); 71 % of the liquid sticks on the lower wall (passes in CI (set linux-3), not yet in the manual) ([results](../cases/flow.md#lagrangian-sprays))
+- contract (schema): [`spray_duct_injectors`](../../examples/cases/flow/spray_duct_injectors.toml): the included injector and liquid file of spray_duct ([results](../cases/flow.md#lagrangian-sprays)) **missing**
+- exact: [`stokes_relaxation_and_terminal_velocity`](../../crates/foehncraft-kernels/src/particle.rs): Stokes relaxation and terminal velocity of the exact exponential step to 10⁻⁹
+- consistency: [`parcel_follows_the_reference_integration`](../../crates/foehncraft-particles/tests/tracking.rs): trajectories on hexahedral, tetrahedral, polyhedral and mixed meshes against a fourth-order reference integration
+- exact: [`mass_books_close_and_parcels_stay_in_their_cells`](../../crates/foehncraft-particles/tests/tracking.rs): mass books for stick, rebound and escape; every parcel is in its cell
+- exact: [`threads_do_not_change_a_bit`](../../crates/foehncraft-particles/tests/tracking.rs): bitwise equal results on 1, 2 and 4 threads
+- exact: [`restart_state_continues_bitwise`](../../crates/foehncraft-particles/tests/tracking.rs): a restart continues the parcels bit for bit
+
+Gaps:
+
+- no reference-data case (terminal velocity in the Schiller-Naumann range, a prescribed vortex, grid turbulence)
+- the gas does not feel the droplets (two-way coupling is SP2); no turbulent dispersion, evaporation or breakup
+- the gas state is sampled at the start of each sub-step (first order in the gas); the time of a wall hit is a chord fraction
+- one process, constant droplet size; no rotating zones or periodic boundaries (SPR003)
+- the CPU = GPU check of the parcel kernel runs in the PTX job of CI only
+- `spray_duct_injectors` has no run in the verification manual or in CI
+
+## Flow models
+
+<a id="porous-darcy-forchheimer"></a>
+
+### Porous regions with a direction-dependent Darcy-Forchheimer resistance (D270, PM1)
+
+**partial** (a model without reference data; gaps written) · id `porous.darcy-forchheimer` · switch `[regions.<name>] kind = "porous"` · decisions D270
+
+- exact: [`a_duct_filled_with_a_porous_matrix_has_the_exact_pressure_drop`](../../crates/foehncraft-flow/tests/porous.rs): a duct filled with the matrix: the drop (mu/K + rho F U/2) U L to 1e-8
+- exact: [`channels_across_the_flow_give_the_across_resistance`](../../crates/foehncraft-flow/tests/porous.rs): a direction-dependent matrix with its first axis across and along the flow: the second and the first principal value, to 1e-8
+- exact: [`a_block_in_a_duct_converges_to_the_exact_pressure_drop`](../../crates/foehncraft-flow/tests/porous.rs): a block in a duct on 50, 100 and 200 cells: 0.41 % off on 100 cells, observed order about 2 (above 1.5 required)
+- consistency: [`honeycomb_values_of_the_brick`](../../crates/foehncraft-flow/src/porous.rs): the honeycomb values against the formulas, a turned tensor stays symmetric
+- exact: [`porous_darcy_block`](../../examples/cases/flow/porous_darcy_block.toml): check V1: a porous block in a duct with slip walls, 4.780 Pa against the exact 4.8 Pa on 100 cells (passes in CI (set linux-3), not yet in the manual) ([results](../cases/flow.md#porous-regions))
+- consistency: [`porous_honeycomb_channel`](../../examples/cases/flow/porous_honeycomb_channel.toml): a ceramic honeycomb block in an air channel, channels along the flow; no air leaves the block sideways (passes in CI (set linux-3), not yet in the manual) ([results](../cases/flow.md#porous-regions))
+- contract (diagnostics): [`porous_keys_are_checked`](../../crates/foehncraft-flow/tests/porous.rs): POR001 and POR002 for missing, contradicting and unsupported settings
+
+Gaps:
+
+- axes turned against the mesh axes are refused: the scalar Rhie-Chow factor cannot hold the tensor (a tensor factor is follow-up work)
+- channels across the main flow (a block that closes the channel) converge slowly
+- the drop at a jump of the resistance is second order, not exact (the pressure gradient sees the jump over one cell)
+- no energy, scalars or turbulence in porous regions (two temperatures are PM2); one process, CPU only
+- the kinetic-energy ledger does not book the work of the porous sink
+- no measured reference case (a packed bed with the Ergun law, a honeycomb with a measured drop)

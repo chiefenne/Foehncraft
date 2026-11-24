@@ -438,6 +438,9 @@ pub fn run(
             lg.frame(&crate::logblocks::fluid(case));
             lg.frame(&crate::logblocks::solution(case, true));
             lg.frame(&crate::logblocks::boundaries(case, &quality));
+            if let Some(f) = crate::logblocks::limitations(case) {
+                lg.frame(&f);
+            }
             let mut any = false;
             for n in crate::logblocks::notes(case)
                 .into_iter()
@@ -864,6 +867,7 @@ fn restart_of(
     };
     Ok(Restart {
         cht: crate::cht::restart_part(fl, cycle, frozen)?,
+        spray: None,
         case: name.into(),
         cell_id: mesh.cell_id[..mesh.n_cells].to_vec(),
         face_id: mesh.face_id.clone(),
@@ -1036,6 +1040,7 @@ fn run_one<F: FnMut(&str)>(
     // (on the base mesh: a probe or the reference cell is found there, a
     // point inside a sliding rotor is a limit of variant B)
     let loc = Locator::new(mesh0, geo0);
+    let mut spray = crate::spray::create(&case, mesh0, geo0, &loc)?;
     let reference_cell = if arrays.has_pressure() {
         None
     } else {
@@ -1068,6 +1073,7 @@ fn run_one<F: FnMut(&str)>(
     crate::scalar::attach(&mut fl, &case, mesh, geo)?;
     crate::density::attach(&mut fl, &case)?;
     crate::buoyancy::attach(&mut fl, &case)?;
+    crate::porous::attach(&mut fl, &case, mesh)?;
     // the wall distance of the sliding mesh by imprinting: kept per part and
     // updated for the rotor angle of every step (D182, D48)
     let mut turning_distance = match (&imprint, &work) {
@@ -1130,6 +1136,29 @@ fn run_one<F: FnMut(&str)>(
     if let Some(path) = &restart_file {
         let r = restart::read(path)?;
         let (r, same) = r.to_local(&mesh.cell_id[..nc], &mesh.face_id, mesh.n_interior_faces())?;
+        if let Some(sp) = spray.as_mut() {
+            match &r.spray {
+                Some(b) => {
+                    let env = foehncraft_particles::Env {
+                        mesh: mesh0,
+                        geo: geo0,
+                        loc: &loc,
+                    };
+                    sp.restore(&env, b).map_err(|e| {
+                        crate::diag::err(crate::diag::Diagnostic::new(
+                            crate::diag::SPRAY_CONFIG,
+                            format!(
+                                "{}: the spray state of the restart file: {e:#}",
+                                path.display()
+                            ),
+                        ))
+                    })?;
+                }
+                None => {
+                    lg.note("the restart file holds no spray state: the run starts without parcels")
+                }
+            }
+        }
         if let Some((old, clock, dt_next, scheme)) = r.transient.clone() {
             if scheme != time0.scheme {
                 lg.note(&format!(
@@ -1482,6 +1511,18 @@ fn run_one<F: FnMut(&str)>(
         &bhead,
         cont,
     )?;
+    let mut spray_csv = if spray.is_some() {
+        Some(History::new(
+            out,
+            &suffix_name("spray", desc, last),
+            &crate::case::csv_preamble("spray", name, None, crate::spray::CSV_UNITS),
+            crate::spray::CSV_HEAD,
+            cont,
+        )?)
+    } else {
+        None
+    };
+    let mut spray_lost_warned = false;
     // the statistics of D71 (the final solve of a sweep only)
     let stat_cfg = case.output.statistics.clone().filter(|_| last);
     let stat_start = stat_cfg
@@ -1563,6 +1604,9 @@ fn run_one<F: FnMut(&str)>(
         case.time.unwrap_or_default().scheme.label()
     )));
     lg.line("");
+    if !case.log.detail.rows() {
+        lg.note("the table is not shown ([log] detail = \"summary\"); run.jsonl holds every row");
+    }
     lg.sync(&mut steer.record);
     let mut stopped = false;
     let (mut dt_min, mut dt_max, mut cfl_max) = (f64::INFINITY, 0.0f64, 0.0f64);
@@ -1818,7 +1862,7 @@ fn run_one<F: FnMut(&str)>(
                         files.push("fields_last_valid.vtkhdf");
                     }
                     if last && restart::AVAILABLE && imprint.is_none() {
-                        let rs = restart_of(
+                        let mut rs = restart_of(
                             &mut fl,
                             &tr,
                             mesh,
@@ -1827,6 +1871,7 @@ fn run_one<F: FnMut(&str)>(
                             cycle.as_ref(),
                             frozen.as_ref(),
                         )?;
+                        rs.spray = crate::spray::state(spray.as_ref())?;
                         restart::write(&out.join("restart.h5"), &rs)?;
                         files.push("restart.h5");
                     }
@@ -2001,6 +2046,24 @@ fn run_one<F: FnMut(&str)>(
                 steer.record.row(&row);
             }
         }
+        if let (Some(sp), Some(csv)) = (spray.as_mut(), spray_csv.as_mut()) {
+            let sol = Solution {
+                state: fl.state()?,
+                disc: &fl.disc,
+                phys: fl.physics(),
+            };
+            let lost = crate::spray::step(
+                &case, sp, &sol, mesh, geo, &loc, n, rp.time, h, out, name, csv,
+            )?;
+            if lost > 0 && !spray_lost_warned {
+                spray_lost_warned = true;
+                lg.warn(&format!(
+                    "{}: step {n}: {lost} parcel(s) lost (the walk failed or [spray] max_substeps \
+                     was exceeded); `spray.csv` counts them",
+                    crate::diag::SPRAY_LOST
+                ));
+            }
+        }
         let bal = {
             let sol = Solution {
                 state: fl.state()?,
@@ -2075,6 +2138,24 @@ fn run_one<F: FnMut(&str)>(
         if log_now {
             lg.sync(&mut steer.record);
             steer.record.flush();
+            // `log.columns` changed during the run (D214): new columns, the
+            // header row again
+            crate::logcols::refresh(
+                &mut cols,
+                &mut table,
+                &mut crate::logcols::Refresh {
+                    case: &case,
+                    mesh,
+                    geo,
+                    loc: &loc,
+                    transient: true,
+                    table_name: "step",
+                    first: "Step",
+                    at: n,
+                },
+                &mut |m| lg.warn(m),
+                steer,
+            );
             let sol = if cols.needs_state() {
                 Some(Solution {
                     state: fl.state()?,
@@ -2103,69 +2184,78 @@ fn run_one<F: FnMut(&str)>(
                 geo,
             );
             let cells: Vec<String> = entries.iter().map(|e| e.text.clone()).collect();
+            let detail = case.log.detail;
             // the box of the time step, then the table row
-            lg.line("");
-            let tb = crate::console::Frame::new(format!(
-                "{n:>7}. TIME STEP     TIME = {}     DT = {}",
-                crate::console::sci(rp.time, 5),
-                crate::console::sci(h, 5)
-            ))
-            .plain()
-            .text(format!(
-                "{}COURANT NUMBER = {:.3}     OUTER ITERATIONS = {}",
-                " ".repeat(9),
-                rp.cfl,
-                rp.outer
-            ));
-            for l in tb.render(case.log.style) {
-                lg.line(&l);
-            }
-            lg.line("");
-            // the residuals of every outer iteration of this step
-            let mut outer_table = crate::console::Table::new(
-                crate::console::Col::int("Outer", 6),
-                vec![
-                    crate::console::Group::new(
-                        "scaled residuals",
-                        ["ResU", "ResV", "ResW", "ResM"]
-                            .map(crate::console::Col::num)
-                            .into(),
-                    ),
-                    crate::console::Group::new(
-                        "linear iterations",
-                        vec![
-                            crate::console::Col::int("U", 4),
-                            crate::console::Col::int("V", 4),
-                            crate::console::Col::int("W", 4),
-                            crate::console::Col::int("P", 4),
-                        ],
-                    ),
-                ],
-                case.log.style,
-                0,
-            );
-            for (k, o) in tr.outer_log.iter().enumerate() {
-                let cells: Vec<String> = o
-                    .momentum
-                    .iter()
-                    .chain([&o.continuity])
-                    .map(|v| crate::console::sci3(*v))
-                    .chain(o.momentum_iterations.iter().map(ToString::to_string))
-                    .chain([o.pressure_iterations.to_string()])
-                    .collect();
-                for l in outer_table.row(k + 1, &cells) {
+            if detail.rows() {
+                lg.line("");
+                let tb = crate::console::Frame::new(format!(
+                    "{n:>7}. TIME STEP     TIME = {}     DT = {}",
+                    crate::console::sci(rp.time, 5),
+                    crate::console::sci(h, 5)
+                ))
+                .plain()
+                .text(format!(
+                    "{}COURANT NUMBER = {:.3}     OUTER ITERATIONS = {}",
+                    " ".repeat(9),
+                    rp.cfl,
+                    rp.outer
+                ));
+                for l in tb.render(case.log.style) {
                     lg.line(&l);
                 }
+                lg.line("");
             }
-            lg.line("");
-            for l in table.row(n, &cells) {
-                lg.line(&l);
+            // the residuals of every outer iteration of this step
+            if detail.outer() {
+                let mut outer_table = crate::console::Table::new(
+                    crate::console::Col::int("Outer", 6),
+                    vec![
+                        crate::console::Group::new(
+                            "scaled residuals",
+                            ["ResU", "ResV", "ResW", "ResM"]
+                                .map(crate::console::Col::num)
+                                .into(),
+                        ),
+                        crate::console::Group::new(
+                            "linear iterations",
+                            vec![
+                                crate::console::Col::int("U", 4),
+                                crate::console::Col::int("V", 4),
+                                crate::console::Col::int("W", 4),
+                                crate::console::Col::int("P", 4),
+                            ],
+                        ),
+                    ],
+                    case.log.style,
+                    0,
+                );
+                for (k, o) in tr.outer_log.iter().enumerate() {
+                    let cells: Vec<String> = o
+                        .momentum
+                        .iter()
+                        .chain([&o.continuity])
+                        .map(|v| crate::console::sci3(*v))
+                        .chain(o.momentum_iterations.iter().map(ToString::to_string))
+                        .chain([o.pressure_iterations.to_string()])
+                        .collect();
+                    for l in outer_table.row(k + 1, &cells) {
+                        lg.line(&l);
+                    }
+                }
+                lg.line("");
+            }
+            if detail.rows() {
+                for l in table.row(n, &cells) {
+                    lg.line(&l);
+                }
             }
             if steer.record.on() {
                 steer.record.row(&cols.record_row("step", n, &entries));
             }
-            lg.line(&balance::compact(&bal));
-            if case.balance.every > 0 && n.is_multiple_of(case.balance.every) {
+            if detail.rows() {
+                lg.line(&balance::compact(&bal));
+            }
+            if detail.rows() && case.balance.every > 0 && n.is_multiple_of(case.balance.every) {
                 lg.frame(&crate::logblocks::balance_block(
                     &format!("Balance of the run up to step {n}"),
                     &ledger.run(),
@@ -2368,7 +2458,7 @@ fn run_one<F: FnMut(&str)>(
             }
         }
         if restart_now && restart::AVAILABLE && imprint.is_none() {
-            let rs = restart_of(
+            let mut rs = restart_of(
                 &mut fl,
                 &tr,
                 mesh,
@@ -2377,6 +2467,7 @@ fn run_one<F: FnMut(&str)>(
                 cycle.as_ref(),
                 frozen.as_ref(),
             )?;
+            rs.spray = crate::spray::state(spray.as_ref())?;
             restart::write(&out.join("restart.h5"), &rs)?;
             if restart_numbered {
                 restart::write(&out.join(format!("restart_{n:06}.h5")), &rs)?;
@@ -2426,6 +2517,13 @@ fn run_one<F: FnMut(&str)>(
     let (mesh, geo) = current(&work, mesh0, geo0);
     history.flush()?;
     balance_csv.flush()?;
+    if let Some(f) = spray_csv.as_mut() {
+        f.flush()?;
+    }
+    if let Some(sp) = spray.as_ref() {
+        crate::spray::write_parcels(sp, out, name, tr.clock.step)?;
+        crate::spray::finish(sp)?;
+    }
     if let Some(f) = heat_csv.as_mut() {
         f.flush()?;
     }
@@ -2471,7 +2569,7 @@ fn run_one<F: FnMut(&str)>(
         lg.frame(&f);
     }
     if last && (case.run.restart_final || stopped) && restart::AVAILABLE && imprint.is_none() {
-        let rs = restart_of(
+        let mut rs = restart_of(
             &mut fl,
             &tr,
             mesh,
@@ -2480,6 +2578,7 @@ fn run_one<F: FnMut(&str)>(
             cycle.as_ref(),
             frozen.as_ref(),
         )?;
+        rs.spray = crate::spray::state(spray.as_ref())?;
         restart::write(&out.join("restart.h5"), &rs)?;
     }
     let scalars = crate::scalar::summaries(

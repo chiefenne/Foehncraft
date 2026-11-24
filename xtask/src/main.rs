@@ -26,6 +26,15 @@ const ALLOWED: &[(&str, &[&str])] = &[
         ],
     ),
     (
+        "foehncraft-radiation",
+        &[
+            "foehncraft-core",
+            "foehncraft-kernels",
+            "foehncraft-parallel",
+            "foehncraft-mesh",
+        ],
+    ),
+    (
         "foehncraft-fv",
         &[
             "foehncraft-core",
@@ -33,6 +42,12 @@ const ALLOWED: &[(&str, &[&str])] = &[
             "foehncraft-parallel",
             "foehncraft-mesh",
         ],
+    ),
+    // The Lagrangian parcels (L12): the parcel kernel and the tracker on the
+    // mesh locator; the gas enters through a trait, so no `foehncraft-fv`.
+    (
+        "foehncraft-particles",
+        &["foehncraft-core", "foehncraft-kernels", "foehncraft-mesh"],
     ),
     (
         "foehncraft-flow",
@@ -42,6 +57,7 @@ const ALLOWED: &[(&str, &[&str])] = &[
             "foehncraft-parallel",
             "foehncraft-mesh",
             "foehncraft-fv",
+            "foehncraft-particles",
         ],
     ),
     (
@@ -56,6 +72,7 @@ const ALLOWED: &[(&str, &[&str])] = &[
             "foehncraft-fv",
             "foehncraft-flow",
             "foehncraft-bench",
+            "foehncraft-radiation",
         ],
     ),
     (
@@ -98,6 +115,7 @@ const FORBIDDEN_PATHS: &[&str] = &[
     "foehncraft_bench::",
     "foehncraft_parallel::",
     "foehncraft_kernels::",
+    "foehncraft_radiation::",
 ];
 
 /// Engine entry points that front ends call only through a tool.

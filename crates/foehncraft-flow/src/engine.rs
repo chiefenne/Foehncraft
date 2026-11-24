@@ -21,7 +21,7 @@
 //!
 //! `result.json` holds no timings: two runs of the same case with the same
 //! binary on the same hardware give the same bytes, and its `files` list
-//! holds the size and SHA-256 hash of every other output file except the
+//! holds the size and BLAKE3 hash of every other output file except the
 //! four that record wall-clock times (`flow.log`, `flow.md`, `flow.json`,
 //! `run.jsonl`), so comparing two `result.json` files compares every
 //! result of two runs (D84).
@@ -40,8 +40,9 @@ use std::time::Instant;
 
 /// Version of the machine formats of this module (D80): `result.json`,
 /// `run.jsonl`, the check report and the error object. Within a major
-/// version only additive changes.
-pub const FORMAT_VERSION: &str = "1.1";
+/// version only additive changes. 2.0 (2026-11-24): the `files` of
+/// `result.json` carry `blake3` in place of `sha256` (D84).
+pub const FORMAT_VERSION: &str = "2.0";
 
 /// Output files that record wall-clock times; every other file of a run is
 /// byte-identical between two runs of the same case (D84).
@@ -185,7 +186,48 @@ pub struct Steer {
     pub(crate) notes: Vec<String>,
     /// The live control port of the run (L19), when it has one.
     pub(crate) live: Option<crate::live::Live>,
+    /// The changes made during the run, for the Events block of the log
+    /// (D214).
+    pub(crate) events: Vec<EventLine>,
 }
+
+/// One line of the Events block (D214): a change made during the run.
+#[derive(Debug, Clone, PartialEq)]
+pub struct EventLine {
+    /// The code (`RUN015`, `RUN023`, ...).
+    pub code: &'static str,
+    /// The iteration or step.
+    pub at: usize,
+    /// Wall-clock seconds since the start of the run.
+    pub elapsed: f64,
+    /// The message.
+    pub message: String,
+}
+
+/// The codes whose events go into the Events block (D214): every change of
+/// a setting (schedule, control port, re-read), every stop, the diagnosis
+/// and the steps of the thermal acceleration, the cycle-averaged loop and
+/// the frozen-flow march.
+pub const EVENT_CODES: &[&str] = &[
+    diag::RUN_STOP_FILE,
+    diag::RUN_SIGNAL,
+    diag::RUN_LIMIT_WALL_TIME,
+    diag::RUN_LIMIT_STEPS,
+    diag::RUN_LIMIT_OUTPUT,
+    diag::RUN_NOT_APPLIED,
+    diag::RUN_REREAD_INVALID,
+    diag::RUN_SCHEDULED,
+    diag::RUN_DIAGNOSIS,
+    diag::RUN_DIAGNOSIS_STOP,
+    diag::RUN_STUDY_BUDGET,
+    diag::RUN_CONTROL_STOP,
+    diag::RUN_CONTROL_SET,
+    diag::RUN_CONTROL_REJECTED,
+    diag::RUN_REREAD,
+    diag::ACC_PHASE,
+    diag::CYC_PHASE,
+    diag::FRZ_PHASE,
+];
 
 /// What a run has spent so far (cell-seconds, GPUs), and what the earlier
 /// runs of its study spent (D198 (c)).
@@ -236,6 +278,7 @@ impl Steer {
             spend: SpendMeter::new(),
             notes: Vec::new(),
             live: None,
+            events: Vec::new(),
         })
     }
 
@@ -252,6 +295,7 @@ impl Steer {
             spend: SpendMeter::new(),
             notes: Vec::new(),
             live: None,
+            events: Vec::new(),
         }
     }
 
@@ -422,6 +466,7 @@ impl Steer {
                 "message": s.message,
                 "at": done,
             }));
+            self.remember(s.code, done, &s.message);
             self.stop = Some(s.clone());
         }
         s
@@ -448,7 +493,8 @@ impl Steer {
         self.interrupts.take_restart()
     }
 
-    /// A warning or note with a code, into the run record.
+    /// A warning or note with a code, into the run record (and the Events
+    /// block of the log when it is a change, D214).
     pub(crate) fn event(&mut self, code: &'static str, at: usize, message: &str) {
         let sev = diag::info(code).map_or(Severity::Note, |i| i.severity);
         self.record.row(&serde_json::json!({
@@ -458,6 +504,20 @@ impl Steer {
             "message": message,
             "at": at,
         }));
+        self.remember(code, at, message);
+    }
+
+    /// Keeps an event for the Events block of the log (D214) when its code
+    /// is one of [`EVENT_CODES`].
+    pub(crate) fn remember(&mut self, code: &'static str, at: usize, message: &str) {
+        if EVENT_CODES.contains(&code) {
+            self.events.push(EventLine {
+                code,
+                at,
+                elapsed: self.start.elapsed().as_secs_f64(),
+                message: message.to_string(),
+            });
+        }
     }
 }
 
@@ -750,8 +810,13 @@ pub struct FileHash {
     pub name: String,
     /// Size.
     pub bytes: u64,
-    /// SHA-256 (hex).
-    pub sha256: String,
+    /// BLAKE3 hash (hex); SHA-256 before format 2.0.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blake3: Option<String>,
+    /// SHA-256 (hex), only from a build without the feature `blake3` (the
+    /// C-free build of D87) and in results before format 2.0.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sha256: Option<String>,
 }
 
 /// Size and hash of every output file of `dir` except the measured ones
@@ -776,15 +841,51 @@ pub fn file_hashes(dir: &Path) -> Result<Vec<FileHash>> {
         if !e.file_type().is_ok_and(|t| t.is_file()) {
             continue;
         }
-        let bytes = std::fs::read(e.path())?;
+        let (bytes, blake3, sha256) = file_hash(&e.path())?;
         out.push(FileHash {
             name,
-            bytes: bytes.len() as u64,
-            sha256: sha256(&bytes),
+            bytes,
+            blake3,
+            sha256,
         });
     }
     out.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(out)
+}
+
+/// The size and hash (hex) of the file at `path`: BLAKE3, or SHA-256 in a
+/// build without the feature `blake3` (D87). The file is read in pieces
+/// of 16 MiB, so a field file of many gigabytes is never held whole, and
+/// BLAKE3 hashes each piece on every core. SHA-256 took 17 s for a 5 GB
+/// file on a CPU without SHA instructions (the maintainer's choice of
+/// BLAKE3, 2026-11-24).
+pub fn file_hash(path: &Path) -> Result<(u64, Option<String>, Option<String>)> {
+    use std::io::Read as _;
+    let mut f =
+        std::fs::File::open(path).with_context(|| format!("cannot read {}", path.display()))?;
+    #[cfg(feature = "blake3")]
+    let mut h = blake3::Hasher::new();
+    #[cfg(not(feature = "blake3"))]
+    let mut h = Sha256::new();
+    let mut buf = vec![0u8; 16 << 20];
+    let mut bytes = 0u64;
+    loop {
+        let n = match f.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => n,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(e) => return Err(e).with_context(|| format!("cannot read {}", path.display())),
+        };
+        #[cfg(feature = "blake3")]
+        h.update_rayon(&buf[..n]);
+        #[cfg(not(feature = "blake3"))]
+        h.update(&buf[..n]);
+        bytes += n as u64;
+    }
+    #[cfg(feature = "blake3")]
+    return Ok((bytes, Some(h.finalize().to_hex().to_string()), None));
+    #[cfg(not(feature = "blake3"))]
+    return Ok((bytes, None, Some(hex(&h.finalize()))));
 }
 
 /// The date of the run: `SOURCE_DATE_EPOCH` when set (D84), else now
@@ -1740,7 +1841,7 @@ pub struct ResultSummary {
     /// Discretisation uncertainty of a sweep (D67): per monitored quantity
     /// the observed order, the extrapolated value and the GCI.
     pub uncertainty: Vec<crate::uncertainty::Estimate>,
-    /// Output files with sizes and SHA-256 hashes (D84).
+    /// Output files with sizes and BLAKE3 hashes (D84).
     pub files: Vec<FileHash>,
     /// What the user must know before trusting the result (D199): codes
     /// LIM001 to LIM006, the feature and a message. They change neither
@@ -1834,6 +1935,13 @@ pub fn run(
     })?;
     let mut case = case.clone();
     let mut steer = Steer::new(opts.interrupts.clone(), dir, true)?;
+    // box lines need a UTF-8 terminal; the asterisks are plain ASCII (D214)
+    if case.log.style == crate::console::Style::Box && !crate::console::utf8_locale() {
+        case.log.style = crate::console::Style::Asterisk;
+        steer.notes.push(
+            "the terminal is not UTF-8 (LC_ALL, LC_CTYPE, LANG): log.style \"box\" falls back to \"asterisk\"".into(),
+        );
+    }
     steer.record.observer = opts.observer.clone();
     steer.build = Some(opts.build.clone());
     // the live control port lives as long as the run (L19)
@@ -1925,6 +2033,7 @@ pub fn run(
     }
     let text = serde_json::to_string_pretty(&summary)?;
     std::fs::write(dir.join("result.json"), format!("{text}\n"))?;
+    events_frame(&case, &steer.events, dir, &mut log);
     closing_frame(
         &case,
         &summary,
@@ -1941,6 +2050,29 @@ pub fn run(
         report: res.ok(),
         summary,
     })
+}
+
+/// The Events block (D214): every change made during the run, with its
+/// iteration or step, its wall-clock time and its code, before the closing
+/// frame. Nothing when nothing changed. A steered run can be reproduced
+/// from it; the rows stay in `run.jsonl`.
+fn events_frame(case: &FlowCase, events: &[EventLine], dir: &Path, log: &mut impl FnMut(&str)) {
+    use std::io::Write as _;
+    let Some(f) = crate::logblocks::events(events, case.time.is_some()) else {
+        return;
+    };
+    let mut lines = vec![String::new()];
+    lines.extend(f.render(case.log.style));
+    for l in &lines {
+        log(l);
+    }
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(dir.join("flow.log"))
+    {
+        let _ = writeln!(file, "{}", lines.join("\n"));
+    }
 }
 
 /// The last frame of the log: the verdict and the exit code. It goes to the

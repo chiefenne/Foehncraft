@@ -16,9 +16,11 @@ The recipes are split by topic; each page has its own table of contents. The num
 | [GPU runs](recipes/gpu.md) | scalar operators, pressure solver and flow cases on an NVIDIA GPU (also a free Colab T4) | 14, 16, 24 |
 | [Incompressible flow](recipes/flow.md) | Couette, Poiseuille, cavity and cylinder runs, boundary conditions, transient runs, time-step control, the coupled algorithm, heat transfer in turbulent flow, rotating machinery, the T-junction mixing study | 18, 19, 20, 21, 23, 28, 78, 80, 81, 83, 85, 86, 87, 94, 95, 96, 98, 99, 100, 101, 102, 225, 103, 196 |
 | [Passive scalars and the wall distance](recipes/scalars.md) | passive scalars with their boundary conditions, bounds, exact solutions, the Nusselt number of a heated channel, the wall distance | 63, 211 |
-| [Energy equation and heat transfer](recipes/energy.md) | the temperature of a flow: properties of T, thermal wall conditions, viscous heating, the heat balance, solid regions and conjugate heat transfer, laminar, turbulent and transient, thermal acceleration, the cycle loop and the frozen-flow march, several fluids, start values per region, buoyancy and variable density | 154, 156, 158, 159, 160, 180, 190, 202, 208, 206, 186, 195, 221, 238 |
+| [Energy equation and heat transfer](recipes/energy.md) | the temperature of a flow: properties of T, thermal wall conditions, viscous heating, the heat balance, solid regions and conjugate heat transfer, laminar, turbulent and transient, thermal acceleration, the cycle loop and the frozen-flow march, several fluids, start values per region, buoyancy and variable density | 154, 156, 158, 159, 160, 180, 190, 202, 208, 206, 186, 195, 272, 221, 238 |
 | [Turbulence models](recipes/turbulence.md) | RANS turbulence models: the model, the wall treatment by the mesh, inlet turbulence, roughness, the near-wall checks, curvature correction and QCR on any mesh, the internal flows of D45 (pipe, diffuser, U-bend) | 68, 71, 73, 74, 88, 89, 90, 113, 115, 141, 140, 194, 193, 199, 197, 204 |
 | [Boundary conditions](recipes/boundary-conditions.md) | slip walls, wedges for axisymmetric flow, inlet profiles from tables, backflow at pressure outlets, convective outlets, periodic modules, absolute or gauge pressure values (D239) | 29, 67, 220 |
+| [Lagrangian sprays](recipes/sprays.md) | spray droplets into a flow with an injector file, wall behaviour, the mass book | 242 |
+| [Porous regions](recipes/porous.md) | porous blocks and honeycombs in a flow: resistances, axes, the honeycomb shorthand | 273 |
 | [Expressions and materials](recipes/properties.md) | values as expressions of x, y, z and t, constants and tables, wall mass flux, the material database, regions | 31, 32 |
 | [Python](recipes/python.md) | the `foehncraft` package: cases, expressions, runs with callbacks, results, materials, studies | 33 |
 | [Verification](recipes/verification.md) | the discretisation uncertainty of a sweep (GCI), the generated verification manual | 34, 35, 165, 170 |
@@ -144,7 +146,10 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="multigrid-ranks"></a>231 | [Use the multigrid preconditioner on ranks](recipes/meshes.md#multigrid-ranks) | [Meshes](recipes/meshes.md) |
 | <a id="flow-ranks"></a>234 | [Solve a flow on ranks (and check it against one rank)](recipes/meshes.md#flow-ranks) | [Meshes](recipes/meshes.md) |
 | <a id="ledger"></a>238 | [Read the conservation ledger of a run as data, and book a module's rows on it](recipes/energy.md#ledger) | [Energy equation and heat transfer](recipes/energy.md) |
+| <a id="spray-duct"></a>242 | [Spray droplets into a flow](recipes/sprays.md#spray-duct) | [Lagrangian sprays](recipes/sprays.md) |
 | <a id="flow-models-ranks"></a>244 | [Check a turbulent, heated or transient flow on ranks](recipes/meshes.md#flow-models-ranks) | [Meshes](recipes/meshes.md) |
+| <a id="natural-convection"></a>272 | [Set up a natural convection case and check it: a closed cavity, an open plate, a channel with a net flow](recipes/energy.md#natural-convection) | [Energy equation and heat transfer](recipes/energy.md) |
+| <a id="porous-flow"></a>273 | [Put a porous block or a honeycomb into a flow](recipes/porous.md#porous-flow) | [Porous regions](recipes/porous.md) |
 
 ## Adding a feature
 

@@ -1,0 +1,75 @@
+# Water droplets sprayed into an air duct (Lagrangian sprays, L12, SP1, D240).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/spray_duct.toml
+#
+# Air flows through a duct at 4 m/s. A nozzle in the upper wall sprays water
+# droplets of 150 µm downwards into the stream. The gas is solved by the
+# transient SST k-ω model; the droplets are Lagrangian parcels that feel the
+# gas (drag of Schiller and Naumann 1935) and gravity, one way: the gas does
+# not feel them yet (two-way coupling is SP2). Droplets that reach the lower
+# wall stick to it (`wall_mode = "stick"`), the rest leave through the
+# outlet. The injector is in the file `spray_duct_injectors.toml` (D246).
+#
+# Output: `spray/parcels_<step>.vtkhdf` (ParaView: open the file, "Point
+# Gaussian" or glyphs coloured by diameter or velocity) and `spray.csv`
+# (the mass book: injected = in the flow + stuck + left + lost). The run
+# stops with an error if the book does not close.
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [2.0, 0.4, 0.1]
+cells = [80, 20, 1]
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.2
+viscosity = 1.8e-5
+
+[gravity]
+vector = [0.0, -9.81, 0.0]
+
+[turbulence]
+model = "k-omega-sst"
+wall_treatment = "automatic"
+
+[initial]
+velocity = [4.0, 0.0, 0.0]
+turbulence_intensity = 0.05
+viscosity_ratio = 10.0
+
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [4.0, 0.0, 0.0]
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymin]
+type = "wall"
+[boundary.ymax]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[time]
+scheme = "bdf2"
+time_step = 0.005
+end_time = 1.5
+
+[spray]
+include = "spray_duct_injectors.toml"
+wall_mode = "stick"
+write_every = 50
+
+[solver]
+tolerance = 1e-6
+max_iterations = 300
+
+[verification]
+require_convergence = false

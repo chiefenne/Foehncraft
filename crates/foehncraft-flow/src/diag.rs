@@ -138,7 +138,13 @@ codes! {
     MAT_THERMAL = "MAT007", Error, "A fluid without specific heat or thermal conductivity in a run with the energy equation.";
     MAT_AXES = "MAT008", Error, "An orthotropic thermal conductivity without both axes, or with parallel axes.";
     MAT_FILE = "MAT009", Error, "A user material database file (`[materials] include`, `FOEHN_MATERIALS`) or a property data file (NASA-7 record, table file) that cannot be read or has the wrong format.";
-    ENE_UNSUPPORTED = "ENE006", Error, "An energy setting this version does not have: a passive scalar named `temperature` beside `[energy]`, solid regions with a sliding mesh, a restart with `[energy.acceleration]`, passive scalars or a periodic mesh, or with the variable density (stage 7c) passive scalars, a restart, a periodic mesh, a convective outlet, a mass-flow inlet, a wall mass flux or a rotating zone.";
+    // sprays (L12, D240 to D246)
+    SPRAY_CONFIG = "SPR001", Error, "A `[spray]` value that is out of range, an injector outside the mesh, a spray file (`[spray] include`) that cannot be read or defines `injector` or `liquid` twice, or a `[spray.boundary.<name>]` for a boundary the mesh does not have.";
+    SPRAY_STEADY = "SPR002", Error, "A `[spray]` in a steady case: the parcels need a transient run.";
+    SPRAY_UNSUPPORTED = "SPR003", Error, "A `[spray]` in a case with MRF zones, sliding interfaces or a periodic boundary (not in this version).";
+    SPRAY_LOST = "SPR004", Warning, "Parcels lost: the walk through the mesh failed or a parcel needed more than `[spray] max_substeps` sub-steps in a time step (counted in `spray.csv`).";
+    SPRAY_BOOK = "SPR005", Error, "The mass book of the sprays does not close: released liquid differs from the liquid in the flow, stuck, left and lost by more than round-off.";
+    ENE_UNSUPPORTED = "ENE006", Error, "An energy setting this version does not have: a passive scalar named `temperature` beside `[energy]`, solid regions with a sliding mesh, a restart with `[energy.acceleration]`, passive scalars or a periodic mesh, or with the variable density (stage 7c) passive scalars, a restart, a periodic mesh, a convective outlet, a wall mass flux or a rotating zone.";
     ENE_SOURCE = "ENE008", Error, "An `[[energy.sources]]` entry for a region the case does not have, or without exactly one of `power` and `power_density`.";
     CHT_INTERFACE = "CHT004", Error, "An `[interfaces.<name>]` table that is not on a region interface (regions unknown, the same, two fluids, or not touching), or without exactly one of `contact_resistance` (≥ 0) and `thin_wall` (thickness > 0 with `conductivity` or `material`).";
     ACC_SETTING = "ACC001", Error, "An `[energy.acceleration]` setting that cannot be used: a steady case, no solid region, a region that is not a solid, `inertia_scale` outside (0, 1] and not `\"auto\"`, `restore` neither `\"settled\"` nor a time ≥ 0, or a `period`, `window_steps`, `settle_tolerance` or `target_windows` out of range.";
@@ -171,7 +177,7 @@ codes! {
     THM_NO_ENERGY = "THM009", Error, "A `[boundary.<name>.energy]` table without `[energy]`: the energy equation is solved only with an `[energy]` table.";
     ENE_BOUNDARY = "THM010", Error, "A `[boundary.<name>.energy]` table for an unknown boundary, without exactly one condition (`temperature`, `heat_flux`, `heat_flow`, or `heat_transfer_coefficient` with `ambient_temperature`), or with `heat_transfer_coefficient` and `ambient_temperature` apart.";
     ENE_INLET = "THM011", Error, "An inlet without `[boundary.<name>.energy] temperature` in a run with the energy equation.";
-    REG_NOT_FLUID = "REG001", Error, "A region that is not a fluid where it cannot be: a solid region without `[energy]` (solids are solved by the energy equation, stage 7d1), a porous zone (not in this version), or a solid material as the `[fluid]`.";
+    REG_NOT_FLUID = "REG001", Error, "A region that is not a fluid where it cannot be: a solid region without `[energy]` (solids are solved by the energy equation, stage 7d1), or a solid material as the `[fluid]`.";
     REG_ZONE = "REG002", Error, "A region that names a cell zone the mesh does not have, or a zone in two regions.";
     REG_PART_REFERENCE = "REG003", Error, "A fluid part (fluid cells connected without a solid between them) without a pressure boundary in a case of several fluid parts: give it a pressure outlet or inlet; a closed part of its own comes with stage MF-B.";
     REG_FLUIDS_TOUCH = "REG004", Error, "Two fluids of different materials (or temperatures) share a face: that is a two-phase interface (multiphase, L3); put a solid region or a thin wall between them, or give both regions the same fluid.";
@@ -179,6 +185,8 @@ codes! {
     REG_FLUIDS_UNSUPPORTED = "REG006", Error, "A setting that does not yet work with several fluids in one case (D194): the variable density, gravity, a rotating zone or frame, passive scalars, a convective outlet or a periodic mass-flow drive.";
     REG_INITIAL_KEY = "REG007", Error, "A key of `[regions.<name>.initial]` that does not fit: a solid region takes `temperature` only, turbulence start values come as `k` with one of `omega` or `epsilon`, and a start temperature needs `[energy]`.";
     REG_INITIAL_VALUE = "REG008", Error, "A start temperature, k, omega or epsilon of `[regions.<name>.initial]` that is not > 0.";
+    POROUS = "POR001", Error, "A porous region without its matrix (`[regions.<name>.porous]` with `viscous`/`inertial` or `honeycomb`), contradicting or invalid values, direction-dependent values without `axes`, or a matrix in a region that is not porous.";
+    POROUS_UNSUPPORTED = "POR002", Error, "A setting that does not yet work with porous regions (porous plan, D279): the energy equation (stage PM2), passive scalars, a turbulence model, a rotating zone, the GPU (stage PM5), or direction-dependent resistances whose axes are turned against the mesh axes.";
     REG_INITIAL_INLET = "REG009", Error, "`temperature = \"inlet\"` in `[regions.<name>.initial]` for a region whose fluid part has no inlet with `[boundary.<name>.energy] temperature`.";
     REG_START = "REG010", Note, "The start values of the regions and fluid parts and where they come from: given, a boundary value, a Laplace solve between the pressure boundaries of a part, or the inlets.";
     // pressure values absolute or gauge (D239)
@@ -234,6 +242,7 @@ codes! {
     RUN_CONTROL_STOP = "RUN022", Note, "Stopped through the live control port (`run.stop`): restart file, final output, exit code 3 (L19).";
     RUN_CONTROL_SET = "RUN023", Note, "A setting changed through the live control port (`run.set`): key, old and new value, with the equivalent `[[schedule]]` entry (L19).";
     RUN_CONTROL_REJECTED = "RUN024", Warning, "A setting asked for through the live control port that cannot be applied (not valid for the case at that point); the run goes on with the settings it had.";
+    RUN_REREAD = "RUN025", Note, "A setting changed by re-reading the case file (`.read_toml_N`, `[run] reread_every`): key, old and new value (D40, D214).";
     // the causes of a divergence (D63)
     DIV_TIME_STEP = "DIV001", Note, "Divergence cause: the Courant number near the failing cells is large; reduce the time step.";
     DIV_RELAXATION = "DIV002", Note, "Divergence cause: under-relaxation factors too large for the case.";
@@ -526,7 +535,7 @@ mod tests {
                 [
                     "CASE", "SCHED", "BC", "SCAL", "RUN", "GEN", "DIV", "BAL", "EXPR", "MAT",
                     "REG", "MESH", "TURB", "MRF", "SLD", "ROT", "STAT", "ENE", "THM", "CHT",
-                    "TOOL", "LIM", "MCP", "ACC", "CYC", "BUO", "FRZ", "PRS"
+                    "TOOL", "LIM", "MCP", "ACC", "CYC", "BUO", "FRZ", "PRS", "SPR", "POR"
                 ]
                 .contains(&p),
                 "{}",

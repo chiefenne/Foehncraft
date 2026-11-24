@@ -198,7 +198,11 @@ validated range, one mesh only, …) in its report and its JSON result.
   pressure gradient (balanced force), so a stratified box at rest on a
   perturbed hex, tet, poly or mixed mesh stays at rest to 10⁻¹⁵ m/s; the
   buoyant slot meets its exact profile at second order, and a warm strip
-  in a closed air enclosure drives a laminar plume (gallery 186).
+  in a closed air enclosure drives a laminar plume (gallery 186). Laminar
+  natural convection benchmarks (gallery 272): the heated square cavity
+  at Ra 10³ to 10⁶ (mean Nu with GCI ≤ 0.12 %), the vertical plate within
+  0.4 % of the Ostrach similarity solution, and mixed convection with
+  flow reversal at second order against its exact profile.
 - **Variable density.** The low-Mach density ρ(T, p₀) of an ideal gas or a
   liquid in every cell and face (`[energy] density = "variable"`, or
   `[buoyancy] model = "variable-density"` with the body force (ρ − ρ_ref)
@@ -210,6 +214,8 @@ validated range, one mesh only, …) in its report and its JSON result.
   p₀(t), a manufactured solution with ρ = 1/T converges at second order,
   and air between walls at 960 K and 240 K has a heat flow with GCI
   0.02 % (gallery 195).
+- **Lagrangian sprays (L12, SP1).** Droplets as parcels in a transient flow run (`[spray]` with an included injector file): exact exponential integration of drag (Schiller and Naumann) and gravity, tracking on the mesh locator, stick, rebound, escape or mirror at boundaries, a mass book that stops the run when it does not close, parcel files and restart, results bitwise equal on 1 to 4 threads, one source for CPU and GPU kernels. One way, one process, constant droplet size; coupling to the gas follows in SP2 ([gallery 242](docs/gallery/sprays.md#spray-duct)).
+- **Porous regions (D270, PM1).** `kind = "porous"` with a Darcy–Forchheimer resistance in the superficial velocity: one value or three principal values along the axes of the region, or the `honeycomb` shorthand for square ceramic channels (Shah & London). A duct filled with the matrix gives the exact pressure drop, a block in a duct reaches it with second order. Axes along the mesh axes, laminar isothermal flow, one process, CPU only; the two temperatures of gas and solid follow in PM2 ([gallery 273](docs/gallery/porous.md#porous-flow)).
 - **Internal flows (D45).** Turbulent pipe flow against DNS, the
   asymmetric plane diffuser of Buice & Eaton, the U-bend of Monson et al.
   and a laminar T-junction mixing a passive scalar on polyhedra, each with
@@ -359,9 +365,10 @@ The [changelog](CHANGELOG.md) lists every release.
 | Crate | Content |
 |---|---|
 | `foehncraft-core` | generic floating-point type, index types, reproducible sums, counter-based random numbers (`no_std`) |
-| `foehncraft-kernels` | compute kernels, one source for CPU and GPU (`no_std`): benchmark, scalar operators, multigrid, flow |
+| `foehncraft-kernels` | compute kernels, one source for CPU and GPU (`no_std`): benchmark, scalar operators, multigrid, flow, the cell walk of particles and radiation |
 | `foehncraft-parallel` | communicator (serial, MPI) with exact all-reduce, exact threaded reductions |
-| `foehncraft-mesh` | polyhedral mesh, geometry, quality report, mesh-format layer with the Gmsh, SU2, CGNS, OpenFOAM, Fluent .msh, VTK and VTKHDF readers, test mesher (also the cylinder benchmark mesh and annuli for rotors), partitioning and halo, VTKHDF output, point location, wall distance, the imprint of sliding interfaces |
+| `foehncraft-mesh` | polyhedral mesh, geometry, quality report, mesh-format layer with the Gmsh, SU2, CGNS, OpenFOAM, Fluent .msh, VTK and VTKHDF readers, test mesher (also the cylinder benchmark mesh and annuli for rotors), partitioning and halo, VTKHDF output, point location and ray casting, the hand-over of walks between ranks, wall distance, the imprint of sliding interfaces |
+| `foehncraft-radiation` | thermal radiation by Monte Carlo energy bundles on the cell walk: emission from Owen-scrambled Sobol points, exact path lengths per cell, grey diffuse walls, symmetry planes and open boundaries, integer tallies with an exact energy account, bitwise the same on any number of threads and ranks; exact solutions of the verification cases |
 | `foehncraft-fv` | finite-volume operators on a scalar (gradients, limiters, convection, diffusion, assembly), BiCGStab, and the pressure solver: CG with smoothed-aggregation multigrid in mixed precision, optional hypre reference; CPU backend (the GPU backend is in `foehncraft-cuda`) |
 | `foehncraft-flow` | incompressible flow: SIMPLEC and SIMPLE (steady), PISO with BDF2 and Crank–Nicolson (transient), the coupled algorithm, the Rhie–Chow interpolation, boundary conditions and their check, turbulence models and wall treatments, passive scalars and thermal wall functions, the moving reference frame and sliding meshes, torque and machine performance, restart and control files, probes and force coefficients, the flow device written once over a CPU or GPU executor, the `foehn flow` case, exact solutions, reference and benchmark data |
 | `foehncraft-bench` | gate G1: kernel benchmark, CPU backends |

@@ -1,0 +1,18 @@
+# The injector of spray_duct.toml (D246): `[[injector]]` and `[liquid]`.
+# A parcel stands for the droplets of mass_flow / parcels_per_second of
+# liquid. Directions are uniform in the cone (counter-based random numbers
+# keyed by the parcel identity, so the spray is the same on every run).
+
+[liquid]
+name = "water"
+density = 998.0
+
+[[injector]]
+name = "nozzle"
+position = [0.1, 0.395, 0.05]
+direction = [0.3, -1.0, 0.0]
+speed = 10.0
+half_angle = 10.0
+mass_flow = 0.01
+diameter = 150e-6
+parcels_per_second = 2000.0

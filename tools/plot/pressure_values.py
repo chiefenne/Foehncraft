@@ -27,7 +27,7 @@ import numpy as np
 from matplotlib.collections import PolyCollection
 
 from tools.plot.turbulence_fields import read
-from tools.plot.colormaps import RAINBOW
+from tools.plot.colormaps import RAINBOW, UNIFORM
 
 L, H, T, STRETCH = 0.5, 0.002, 0.0005, 25.0
 
@@ -71,7 +71,7 @@ def main():
     axs[0].set_title("the case file: absolute values (pressure_values = \"absolute\")")
     g = gauge[fluid]
     lim = np.abs(g).max()
-    panel(axs[1], quads[fluid], g, "coolwarm", (-lim, lim), "p − p_op of the part (Pa)")
+    panel(axs[1], quads[fluid], g, UNIFORM, (-lim, lim), "p − p_op of the part (Pa)")
     axs[1].set_title("the solver: gauge pressure of each part, p_op from its own outlet "
                      f"(water {op['water']:.0f} Pa, oil {op['oil']:.0f} Pa)")
     twin = axs[2].twinx()
