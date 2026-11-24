@@ -752,7 +752,12 @@ pub struct FileHash {
     /// Size.
     pub bytes: u64,
     /// BLAKE3 hash (hex); SHA-256 before format 2.0.
-    pub blake3: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blake3: Option<String>,
+    /// SHA-256 (hex), only from a build without the feature `blake3` (the
+    /// C-free build of D87) and in results before format 2.0.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sha256: Option<String>,
 }
 
 /// Size and hash of every output file of `dir` except the measured ones
@@ -777,27 +782,32 @@ pub fn file_hashes(dir: &Path) -> Result<Vec<FileHash>> {
         if !e.file_type().is_ok_and(|t| t.is_file()) {
             continue;
         }
-        let (bytes, blake3) = file_blake3(&e.path())?;
+        let (bytes, blake3, sha256) = file_hash(&e.path())?;
         out.push(FileHash {
             name,
             bytes,
             blake3,
+            sha256,
         });
     }
     out.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(out)
 }
 
-/// The size and BLAKE3 hash (hex) of the file at `path`, read in pieces of
-/// 16 MiB so a field file of many gigabytes is never held whole; each
-/// piece is hashed on every core. SHA-256 took 17 s for a 5 GB file on a
-/// CPU without SHA instructions (the maintainer's choice of BLAKE3,
-/// 2026-11-24).
-pub fn file_blake3(path: &Path) -> Result<(u64, String)> {
+/// The size and hash (hex) of the file at `path`: BLAKE3, or SHA-256 in a
+/// build without the feature `blake3` (D87). The file is read in pieces
+/// of 16 MiB, so a field file of many gigabytes is never held whole, and
+/// BLAKE3 hashes each piece on every core. SHA-256 took 17 s for a 5 GB
+/// file on a CPU without SHA instructions (the maintainer's choice of
+/// BLAKE3, 2026-11-24).
+pub fn file_hash(path: &Path) -> Result<(u64, Option<String>, Option<String>)> {
     use std::io::Read as _;
     let mut f =
         std::fs::File::open(path).with_context(|| format!("cannot read {}", path.display()))?;
+    #[cfg(feature = "blake3")]
     let mut h = blake3::Hasher::new();
+    #[cfg(not(feature = "blake3"))]
+    let mut h = Sha256::new();
     let mut buf = vec![0u8; 16 << 20];
     let mut bytes = 0u64;
     loop {
@@ -807,10 +817,16 @@ pub fn file_blake3(path: &Path) -> Result<(u64, String)> {
             Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
             Err(e) => return Err(e).with_context(|| format!("cannot read {}", path.display())),
         };
+        #[cfg(feature = "blake3")]
         h.update_rayon(&buf[..n]);
+        #[cfg(not(feature = "blake3"))]
+        h.update(&buf[..n]);
         bytes += n as u64;
     }
-    Ok((bytes, h.finalize().to_hex().to_string()))
+    #[cfg(feature = "blake3")]
+    return Ok((bytes, Some(h.finalize().to_hex().to_string()), None));
+    #[cfg(not(feature = "blake3"))]
+    return Ok((bytes, None, Some(hex(&h.finalize()))));
 }
 
 /// The date of the run: `SOURCE_DATE_EPOCH` when set (D84), else now

@@ -122,7 +122,8 @@ on any thread count and on CPU and GPU (D31), except the measured files
 `flow.log`, `flow.md`, `flow.json` and `run.jsonl`, which hold timings.
 `result.json` holds nothing measured and is identical too; it lists every
 other output file with its size (`bytes`) and BLAKE3 hash (`blake3`;
-`sha256` in results of format 1.x, before 2026-11-24). BLAKE3 hashes a
+`sha256` in results of format 1.x, before 2026-11-24, and from a build
+without the feature `blake3`, which the C-free build of D87 leaves out). BLAKE3 hashes a
 file of many gigabytes in pieces on every core: SHA-256 took 17 s for a
 5 GB file on a CPU without SHA instructions. HDF5 files are written
 without object timestamps. Dates (in reports and in `run.jsonl`) come from
