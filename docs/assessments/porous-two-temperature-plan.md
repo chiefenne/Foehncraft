@@ -320,6 +320,19 @@ are in `honeycomb.length` (K(∞) = 1.43 over the brick length). V1 holds
 with second order at the block faces (0.41 % on 100 cells); a filled duct
 is exact.
 
+**PM2 as built (#275).** The matrix temperature is one more row per porous
+cell in the energy matrix: the device assembles the gas rows as before,
+the host adds the matrix rows (exchange h·a·V, conduction between porous
+neighbours, storage (1 − ε) ρ_s c_s in enthalpy form with the BDF
+coefficients of the run, relaxation) and solves the extended system with
+BiCGStab and Jacobi, deterministic. The gas in the region takes ε ρ c and
+ε k. The output and restart field is `matrix_temperature`; the matrix is an
+account of its own in the heat balance. V3, V4 (Schumann, second order,
+5.2·10⁻⁵ on 100 cells) and V5 hold. Not yet: contact of the matrix with a
+housing (D274), variable density, frozen-flow march, CHT restart of the
+matrix (PM3); the benchmark against a segregated loop was not run, the
+monolithic system converges in one solve per outer iteration.
+
 ## 13. Questions and answers
 
 All five answered by the maintainer on 2026-11-24 (18:36 to 18:40 UTC).

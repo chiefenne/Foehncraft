@@ -67,6 +67,7 @@ pub mod monitor;
 pub mod operators;
 pub mod plot;
 pub mod porous;
+pub mod porous_energy;
 pub mod pressure_values;
 pub mod ranks;
 pub mod residual;

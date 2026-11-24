@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**117 features: 50 verified, 64 partial, 3 unverified.**
+**118 features: 50 verified, 65 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -142,6 +142,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Backends and interfaces | [Turbulence, energy, scalars, transient runs and the coupled solver on several ranks, bitwise one rank (MPI step W5 part 2)](#parallel-flow-models-ranks) | partial |
 | Sprays | [Lagrangian spray parcels, one way (L12, SP1)](#sprays-one-way) | partial |
 | Flow models | [Porous regions with a direction-dependent Darcy-Forchheimer resistance (D270, PM1)](#porous-darcy-forchheimer) | partial |
+| Flow models | [Gas and matrix temperatures in porous regions, monolithic (D271, D272, PM2)](#porous-two-temperatures) | partial |
 
 ## Meshes
 
@@ -1828,6 +1829,29 @@ Gaps:
 - axes turned against the mesh axes are refused: the scalar Rhie-Chow factor cannot hold the tensor (a tensor factor is follow-up work)
 - channels across the main flow (a block that closes the channel) converge slowly
 - the drop at a jump of the resistance is second order, not exact (the pressure gradient sees the jump over one cell)
-- no energy, scalars or turbulence in porous regions (two temperatures are PM2); one process, CPU only
+- no scalars or turbulence in porous regions; one process, CPU only
 - the kinetic-energy ledger does not book the work of the porous sink
 - no measured reference case (a packed bed with the Ergun law, a honeycomb with a measured drop)
+
+<a id="porous-two-temperatures"></a>
+
+### Gas and matrix temperatures in porous regions, monolithic (D271, D272, PM2)
+
+**partial** (a model without reference data; gaps written) · id `porous.two-temperatures` · switch `[regions.<name>.porous] solid = "<material>" with [energy]` · decisions D271, D272
+
+- exact: [`gas_and_matrix_relax_to_each_other_exactly`](../../crates/foehncraft-flow/tests/porous_energy.rs): check V3: a closed box of gas and matrix follows the exact discrete decay of the two temperatures, heat kept to 1e-9
+- exact: [`a_bed_without_conduction_follows_schumann`](../../crates/foehncraft-flow/tests/porous_energy.rs): check V4: Schumann's bed on 25, 50 and 100 cells, L1 error 5.2e-5 of the step on 100 cells (below 1e-4 required), observed order about 2 (above 1.8 required), heat balance of every step to 1e-9
+- consistency: [`a_bed_with_a_large_exchange_is_in_equilibrium`](../../crates/foehncraft-flow/tests/porous_energy.rs): check V5: with h a = 1e5 gas and matrix within 0.1 K, the front at the speed of the mixture within 0.01 m
+- consistency: [`bicgstab_solves_a_small_nonsymmetric_system`](../../crates/foehncraft-flow/src/porous_energy.rs): the host solver of the extended system
+- exact: [`porous_schumann`](../../examples/cases/flow/porous_schumann.toml): check V4: gas and matrix against Schumann (1929) at 1000, 2000 and 3000 s on 100 cells (passes in CI (set linux-3), not yet in the manual) ([results](../cases/flow.md#porous-regions))
+- consistency: [`porous_storage_charge`](../../examples/cases/flow/porous_storage_charge.toml): charging a honeycomb store: the thermocline moves at the speed of the stored heat, heat balance closed to 3e-9 of the largest flow (passes in CI (set linux-3), not yet in the manual) ([results](../cases/flow.md#porous-regions))
+
+Gaps:
+
+- the matrix is adiabatic at the faces of the region: no contact with a housing or a neighbouring solid (D274, PM3)
+- constant gas properties: no density that follows T in porous cases (POR002); no cycle-averaged or accelerated energy modes, no frozen-flow march (PM3)
+- the extended system is solved on the host (BiCGStab, Jacobi), one process, CPU only (PM5)
+- no radiation in the channels (R1b); the Nusselt number is the fully developed one, the developing flow per brick is PM3 (D273)
+- a CHT restart does not carry the matrix temperature (a flow restart does)
+- no measured reference case (a packed bed or a honeycomb store with measured temperatures)
+- in porous_storage_charge the plenum swirl does not converge within 10 outer iterations at Courant 2400 (the stack flow is uniform within 1 %)

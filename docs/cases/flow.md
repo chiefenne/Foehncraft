@@ -318,9 +318,12 @@ keys are on the [key page](flow-keys.md); the run writes `spray.csv` and
 
 `kind = "porous"` with `[regions.<name>.porous]` (D270, porous plan PM1):
 a Darcy–Forchheimer resistance in the axes of the region, the velocity is
-the superficial one. The keys are on the [key page](flow-keys.md).
+the superficial one; with `[energy]` and `solid` gas and matrix have
+temperatures of their own (D271, PM2). The keys are on the [key page](flow-keys.md).
 
 | Case file | Mesh | Shows | Where |
 |---|---|---|---|
 | `flow/porous_darcy_block.toml` | generated hex 2D, 100 × 4 cells | check V1: a porous block (K⁻¹ = 10⁶ 1/m², F = 10 1/m) in a duct with slip walls; the drop 4.780 Pa against the exact 4.8 Pa (0.41 %), second order in the cell size | [gallery 273](../gallery/porous.md#porous-flow), [recipe 273](../recipes/porous.md#porous-flow) |
 | `flow/porous_honeycomb_channel.toml` | generated hex 2D, 240 × 80 cells | a ceramic honeycomb block (6.9 mm channels, ε = 0.256) in an air channel at 10 cm/s, channels along the flow; with `blocking = 1` the same resistance in every direction | [gallery 273](../gallery/porous.md#porous-flow), [recipe 273](../recipes/porous.md#porous-flow) |
+| `flow/porous_schumann.toml` | generated hex 2D, 100 × 1 cells | check V4: air at 400 K into a ceramic bed at 300 K, gas and matrix against the exact solution of Schumann (1929) at 1000, 2000 and 3000 s; L1 error 5.2·10⁻⁵ of the step, second order in the cell size; heat balance to 10⁻¹³ | [gallery 275](../gallery/porous.md#porous-two-temperatures), [recipe 275](../recipes/porous.md#porous-two-temperatures) |
+| `flow/porous_storage_charge.toml` | generated hex 2D, 40 × 100 cells | charging a honeycomb store: air at 573 K from the top right through a stack of ceramic bricks (6.9 mm channels, ε = 0.256) at 293 K; the thermocline half way after 6000 s, 200 steps in about 70 s | [gallery 275](../gallery/porous.md#porous-two-temperatures), [recipe 275](../recipes/porous.md#porous-two-temperatures) |

@@ -113,7 +113,7 @@ fn err(code: &'static str, key: String, msg: String) -> anyhow::Error {
 pub fn validate(case: &FlowCase) -> Result<()> {
     for (name, r) in &case.regions {
         let Some(i) = &r.initial else { continue };
-        if r.kind != RegionKind::Fluid {
+        if r.kind == RegionKind::Solid {
             let keys = i.flow_keys();
             if !keys.is_empty() || i.temperature_from_inlet() {
                 return Err(err(
@@ -222,7 +222,7 @@ pub fn flow_fields(
     // the region tables
     for (name, r) in &case.regions {
         let Some(i) = &r.initial else { continue };
-        if r.kind != RegionKind::Fluid {
+        if r.kind == RegionKind::Solid {
             continue;
         }
         let cells = cells_of(case, mesh, name);

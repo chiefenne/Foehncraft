@@ -1423,7 +1423,6 @@ pub fn fluid_of(case: &crate::case::FlowCase, env: &Env, region: Option<&str>) -
 /// axes of the region or of the material (7d2); MAT006 without one of
 /// them, MAT008 for an orthotropic k without axes.
 pub fn solid(case: &crate::case::FlowCase, env: &Env, region: &str) -> Result<Material> {
-    let cond: Conditions = case.fluid.conditions();
     let key = format!("regions.{region}.material");
     let Some(name) = case.regions.get(region).and_then(|r| r.material.clone()) else {
         return Err(diag::err(
@@ -1437,6 +1436,20 @@ pub fn solid(case: &crate::case::FlowCase, env: &Env, region: &str) -> Result<Ma
             .key(key),
         ));
     };
+    solid_material(case, env, region, &name, key)
+}
+
+/// The material `name` as the solid of `region` (a solid region, or the
+/// matrix of a porous region, D271), `key` the key that names it.
+pub fn solid_material(
+    case: &crate::case::FlowCase,
+    env: &Env,
+    region: &str,
+    name: &str,
+    key: String,
+) -> Result<Material> {
+    let cond: Conditions = case.fluid.conditions();
+    let name = name.to_string();
     let m = lookup(&name, &case.materials)?;
     let owner = format!("materials.{name}");
     let mut aniso = None;
@@ -1478,7 +1491,12 @@ pub fn solid(case: &crate::case::FlowCase, env: &Env, region: &str) -> Result<Ma
         None => None,
     };
     crate::need!(
-        aniso.is_some() || case.regions.get(region).and_then(|r| r.axes).is_none(),
+        // (the axes of a porous region orient its resistance and the
+        // conductivity of its structure, so a one-valued material is fine)
+        aniso.is_some()
+            || case.regions.get(region).is_none_or(|r| {
+                r.axes.is_none() || r.kind == crate::materials::RegionKind::Porous
+            }),
         MAT_AXES,
         "[regions.{region}] axes orient an orthotropic conductivity; material `{name}` has one value"
     );
