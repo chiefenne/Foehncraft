@@ -512,6 +512,12 @@ every output file (`properties_hash`, `materials_database`).
 | `regions.<name>.porous.porosity` | open volume fraction ε (0 < ε ≤ 1) |
 | `regions.<name>.porous.honeycomb` | `{ channel, pitch, length, blocking }` (m, m, m, ratio): square channels along the first axis, instead of `viscous`, `inertial` and `porosity` (Shah & London 1978; `blocking` default 10⁴) |
 | `regions.<name>.porous.source` | where the values come from (text) |
+| `regions.<name>.porous.solid` | with `[energy]`: the material of the matrix (density, specific_heat, conductivity); the region carries a matrix temperature of its own (D271) |
+| `regions.<name>.porous.heat_transfer_coefficient` | h between gas and matrix (W/(m² K)); a honeycomb takes Nu k_gas / d_h |
+| `regions.<name>.porous.specific_area` | a, wetted surface per volume (1/m); a honeycomb takes 4 ε / d_h |
+| `regions.<name>.porous.solid_conductivity` | effective conductivity of the matrix (W/(m K)), one value or three along the axes; default (1 − ε) k_s, of a honeycomb (1 − ε) k_s along and (1 − √ε) k_s across the channels (D272) |
+| `regions.<name>.porous.solid_initial` | start temperature of the matrix (K), a number or an expression of x, y, z (default: that of the gas) |
+| `regions.<name>.porous.honeycomb.nusselt` | Nu = h d_h / k_gas of the channels (default 2.98, laminar square duct at constant wall temperature) |
 | `regions.<name>.zones` | cell zones of the mesh (each zone in one region; unknown zones are REG002) |
 | `regions.<name>.material` | its material (default: that of `[fluid]`) |
 | `regions.<name>.axes` | the first two principal axes of an orthotropic conductivity or of the porous resistance in this region (porous: along the mesh axes for now, POR002), `[[..], [..]]` in the mesh frame (default: those of the material; one material oriented differently in every part) |
