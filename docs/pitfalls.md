@@ -18,6 +18,7 @@ instead.
 - [Counts a file declares](#declared-counts)
 - [Memory of a mesh reader](#reader-memory)
 - [Node order of VTK's wedge](#vtk-wedge)
+- [Arrays of a blocked VTKHDF file](#blocked-vtkhdf)
 - [Reference numbers of other solvers](#other-solver-numbers)
 - [Coupling loops: the solid must see the flow's response](#coupling-loops)
 - [Limiters on tetrahedra and polyhedra](#limiters)
@@ -271,6 +272,24 @@ documentation would have turned every prism inside out in ParaView. Check
 a node order with a volume computed by VTK itself
 (`tools/check/vtkhdf.py`) or against VTK's `GetFace` table, as
 `vtkhdf::tests::standard_cells_in_vtk_order` does, not with a comment.
+
+<a id="blocked-vtkhdf"></a>
+## Arrays of a blocked VTKHDF file
+
+`fields.vtkhdf` is written in blocks (layout 1, shared with MurmelCraft
+and KoflCraft): partitions of 65,536 cells along a Hilbert curve, each with
+its own points and a layer of ghost cells that repeat the cells of the
+neighbouring blocks with their values. Thirteen plot tools and examples
+read `Points`, `Connectivity` and `CellData` of `internal` whole; on a
+file of several blocks that indexes the points of one partition with the
+local ids of another, counts every ghost twice in a sum or a volume
+integral, and the cells no longer come in the order of their ids even in
+one block. Read the arrays through `foehncraft.vtkhdf.internal` (the
+tools through `tools.plot.vtkhdf`), which drops the ghosts and returns the
+cells and points in the order of their identities, the arrays of the
+single-piece file before; check a reader on a file of several blocks
+(`vtkhdf::write_blocks` with a small block size), not only on a small case
+that fits in one.
 
 <a id="other-solver-numbers"></a>
 ## Reference numbers of other solvers

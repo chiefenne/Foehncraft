@@ -391,9 +391,13 @@ fn standard_cell(mesh: &Mesh, c: usize) -> Option<(u8, Vec<i64>)> {
 /// Skilling, "Programming the Hilbert curve", AIP Conference Proceedings
 /// 707, 381 (2004): his `AxestoTranspose`, then the bits of the transposed
 /// index read from the top bit plane down, x, y, z within each plane.
-fn hilbert(mut x: [u32; 3]) -> u64 {
-    const BITS: u32 = 21;
-    let m = 1u32 << (BITS - 1);
+fn hilbert(x: [u32; 3]) -> u64 {
+    hilbert_bits(x, 21)
+}
+
+/// [`hilbert`] on the grid of `bits` bits per axis.
+fn hilbert_bits(mut x: [u32; 3], bits: u32) -> u64 {
+    let m = 1u32 << (bits - 1);
     // inverse undo
     let mut q = m;
     while q > 1 {
@@ -425,7 +429,7 @@ fn hilbert(mut x: [u32; 3]) -> u64 {
         *v ^= t;
     }
     let mut h = 0u64;
-    for b in (0..BITS).rev() {
+    for b in (0..bits).rev() {
         for v in x {
             h = (h << 1) | u64::from((v >> b) & 1);
         }
@@ -1132,5 +1136,34 @@ mod tests {
         }
         let all = [VTK_TETRA, VTK_HEXAHEDRON, VTK_WEDGE, VTK_PYRAMID];
         assert_eq!(seen.into_iter().collect::<Vec<_>>(), all);
+    }
+
+    /// Invariant: the Hilbert index visits every point of a 2^b grid once
+    /// (a bijection onto 0 … 8^b − 1), each step to a neighbour along one
+    /// axis, which is what keeps a block compact; the file's 21-bit index
+    /// starts at the origin and stays within 63 bits.
+    #[test]
+    fn hilbert_index_walks_the_grid_in_unit_steps() {
+        for bits in 1..=4u32 {
+            let n = 1u32 << bits;
+            let mut at = vec![None; (n * n * n) as usize];
+            for x in 0..n {
+                for y in 0..n {
+                    for z in 0..n {
+                        let h = hilbert_bits([x, y, z], bits) as usize;
+                        assert!(at[h].is_none(), "index {h} twice at {bits} bits");
+                        at[h] = Some([x, y, z]);
+                    }
+                }
+            }
+            for w in at.windows(2) {
+                let (a, b) = (w[0].unwrap(), w[1].unwrap());
+                let d: u32 = (0..3).map(|k| a[k].abs_diff(b[k])).sum();
+                assert_eq!(d, 1, "{a:?} then {b:?} at {bits} bits");
+            }
+        }
+        let top = (1u32 << 21) - 1;
+        assert_eq!(hilbert([0, 0, 0]), 0);
+        assert!(hilbert([top, top, top]) < 1 << 63);
     }
 }
