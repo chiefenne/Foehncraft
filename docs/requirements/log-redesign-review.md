@@ -1,6 +1,6 @@
 # Console log: review of the redesign and four additions (D214)
 
-Status: reviewed 2026-11-22; built 2026-11-24 (PR #PRNUM, section 5).
+Status: reviewed 2026-11-22; built 2026-11-24 (PR #269, section 5).
 
 ## 1. What is built
 
