@@ -540,8 +540,8 @@ fn write_ranks(
     for s in parts {
         for (i, g) in s.cell_id.iter().enumerate() {
             let c = at[g];
-            for k in 0..3 {
-                u[k][c] = s.u[k][i];
+            for (uk, sk) in u.iter_mut().zip(&s.u) {
+                uk[c] = sk[i];
             }
             p[c] = s.p[i];
         }
