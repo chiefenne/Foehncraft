@@ -19,10 +19,9 @@
 //! 1 MiB; neither the file nor the text of an array is ever held whole.
 //! The numbers go straight from the text, the base64 decoder or the
 //! inflated block into compact arrays: node ids as `u32`, the face streams
-//! of the polyhedra as one flat array that moves into the
-//! [`ElementMesh`](super::ElementMesh) without a copy. Appended data are
-//! read array by array at their offsets, and only the arrays the mesh needs
-//! are decoded. A mesh so takes about the memory of its arrays: a KoflCraft
+//! of the polyhedra as one flat array that moves into the [`ElementMesh`]
+//! without a copy. Appended data are read array by array at their offsets,
+//! and only the arrays the mesh needs are decoded. A mesh so takes about the memory of its arrays: a KoflCraft
 //! mesh of 10 M polyhedra is some 12 GB of ASCII text, which earlier took
 //! five times that in memory.
 //!
