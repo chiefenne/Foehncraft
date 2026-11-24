@@ -281,6 +281,7 @@ Gaps:
 **partial** (no exact or manufactured solution) · id `mesh.vtkhdf` · switch `output.vtkhdf`
 
 - consistency: [`write_all_types`](../../crates/foehncraft-mesh/tests/vtkhdf.rs): every cell type written; CI checks the files of the cases
+- consistency: [`standard_cells_in_vtk_order`](../../crates/foehncraft-mesh/src/vtkhdf.rs): tetrahedra, hexahedra, prisms and pyramids in VTK's node order: VTK's outward faces (VTK 9.7 GetFace tables) are the cell's outward faces, positive volume, also for cells given inside out
 
 ## Numerics
 

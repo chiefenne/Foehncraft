@@ -332,7 +332,12 @@ fn standard_cell(mesh: &Mesh, c: usize) -> Option<(u8, Vec<i64>)> {
             (VTK_HEXAHEDRON, v)
         }
         CellShape::Prism => {
-            // base normal towards the opposite triangle, as for the hexahedron
+            // base normal towards the opposite triangle, as for the
+            // hexahedron: VTK's wedge lists (0, 2, 1) as its outward base
+            // (vtkWedge, VTK 9.7), so (0, 1, 2) points towards (3, 4, 5).
+            // Older VTK documentation said the opposite; the volumes VTK
+            // computes and `tests::standard_cells_in_vtk_order` follow the
+            // face table.
             let t = first_with(3);
             let base = vec![t[0], t[2], t[1]];
             let mut v = base.clone();
@@ -468,4 +473,169 @@ fn write_boundary(
     group(g, "PointData")?;
     group(g, "FieldData")?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::format::{CellKind, ElementMesh};
+    use crate::generate::{BoxSpec, Kind};
+
+    /// The faces of VTK's linear cells, each with its normal out of the
+    /// cell, as `GetFace` lists them (vtkTetra, vtkHexahedron, vtkWedge,
+    /// vtkPyramid; VTK 9.7).
+    fn vtk_faces(t: u8) -> &'static [&'static [usize]] {
+        match t {
+            VTK_TETRA => &[&[0, 1, 3], &[1, 2, 3], &[2, 0, 3], &[0, 2, 1]],
+            VTK_HEXAHEDRON => &[
+                &[0, 4, 7, 3],
+                &[1, 2, 6, 5],
+                &[0, 1, 5, 4],
+                &[3, 7, 6, 2],
+                &[0, 3, 2, 1],
+                &[4, 5, 6, 7],
+            ],
+            VTK_WEDGE => &[
+                &[0, 2, 1],
+                &[3, 4, 5],
+                &[0, 1, 4, 3],
+                &[1, 2, 5, 4],
+                &[2, 0, 3, 5],
+            ],
+            VTK_PYRAMID => &[
+                &[0, 3, 2, 1],
+                &[0, 1, 4],
+                &[1, 2, 4],
+                &[2, 3, 4],
+                &[3, 0, 4],
+            ],
+            _ => unreachable!(),
+        }
+    }
+
+    /// `a` and `b` are the same cycle of nodes (same orientation).
+    fn same_cycle(a: &[i64], b: &[i64]) -> bool {
+        a.len() == b.len()
+            && (0..b.len()).any(|r| (0..a.len()).all(|k| a[k] == b[(k + r) % b.len()]))
+    }
+
+    /// Volume enclosed by faces, by the divergence theorem over triangles
+    /// fanned from each face's mean point; positive when they point out.
+    fn volume(points: &[[f64; 3]], faces: &[Vec<i64>]) -> f64 {
+        let mut v = 0.0;
+        for f in faces {
+            let p: Vec<[f64; 3]> = f.iter().map(|&n| points[n as usize]).collect();
+            let mut m = [0.0; 3];
+            for q in &p {
+                for d in 0..3 {
+                    m[d] += q[d] / p.len() as f64;
+                }
+            }
+            for k in 0..p.len() {
+                let (a, b) = (p[k], p[(k + 1) % p.len()]);
+                v += a[0] * (b[1] * m[2] - b[2] * m[1]) - a[1] * (b[0] * m[2] - b[2] * m[0])
+                    + a[2] * (b[0] * m[1] - b[1] * m[0]);
+            }
+        }
+        v / 6.0
+    }
+
+    fn one_cell(kind: CellKind, points: &[[f64; 3]], nodes: &[u32]) -> Mesh {
+        let mut em = ElementMesh {
+            points: points.to_vec(),
+            ..Default::default()
+        };
+        em.add_cell(kind, nodes, 0);
+        em.into_mesh().unwrap().mesh
+    }
+
+    /// Invariant: every tetrahedron, hexahedron, prism and pyramid is
+    /// written in VTK's node order, so VTK's own faces of the cell are the
+    /// cell's faces, pointing out, and VTK finds a positive volume. Cells
+    /// given inside out and perturbed generated meshes (faces seen from
+    /// both sides) included.
+    #[test]
+    fn standard_cells_in_vtk_order() {
+        let cube = [
+            [0.0, 0.0, 0.0],
+            [1.1, 0.1, 0.0],
+            [1.0, 0.9, 0.1],
+            [-0.1, 1.0, 0.0],
+            [0.1, 0.0, 1.0],
+            [1.0, 0.1, 1.2],
+            [1.1, 1.0, 0.9],
+            [0.0, 1.1, 1.0],
+        ];
+        let apex = [0.4, 0.6, 1.3];
+        let mut meshes = Vec::new();
+        for flip in [false, true] {
+            let o = |v: &[u32]| -> Vec<u32> {
+                let mut v = v.to_vec();
+                if flip {
+                    // the same cell given with its base the other way round
+                    let h = v.len() / 2;
+                    match v.len() {
+                        4 => v.swap(1, 2),
+                        5 => v.swap(1, 3),
+                        _ => {
+                            v[..h].reverse();
+                            v[h..].reverse();
+                        }
+                    }
+                }
+                v
+            };
+            meshes.push(one_cell(
+                CellKind::Hexahedron,
+                &cube,
+                &o(&[0, 1, 2, 3, 4, 5, 6, 7]),
+            ));
+            meshes.push(one_cell(CellKind::Prism, &cube, &o(&[0, 1, 3, 4, 5, 7])));
+            meshes.push(one_cell(CellKind::Tetrahedron, &cube, &o(&[0, 1, 3, 4])));
+            let mut p = cube[..4].to_vec();
+            p.push(apex);
+            meshes.push(one_cell(CellKind::Pyramid, &p, &o(&[0, 1, 2, 3, 4])));
+        }
+        for (kind, dim) in [
+            (Kind::Hex, 3),
+            (Kind::Tet, 2),
+            (Kind::Tet, 3),
+            (Kind::Mixed, 3),
+        ] {
+            let mut s = BoxSpec::new(kind, dim, [3, 3, 2]);
+            s.perturb = 0.2;
+            meshes.push(s.generate().unwrap());
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        for mesh in &meshes {
+            for c in 0..mesh.n_cells {
+                let Some((t, v)) = standard_cell(mesh, c) else {
+                    continue;
+                };
+                seen.insert(t);
+                let own: Vec<Vec<i64>> = mesh
+                    .cell_face_iter(c)
+                    .map(|(f, nb)| outward(mesh, f, nb))
+                    .collect();
+                let vtk: Vec<Vec<i64>> = vtk_faces(t)
+                    .iter()
+                    .map(|f| f.iter().map(|&k| v[k]).collect())
+                    .collect();
+                assert_eq!(vtk.len(), own.len(), "type {t}, cell {c}");
+                for f in &vtk {
+                    assert!(
+                        own.iter().any(|g| same_cycle(f, g)),
+                        "type {t}, cell {c}: VTK face {f:?} is not an outward face {own:?}"
+                    );
+                }
+                let (a, b) = (volume(&mesh.points, &vtk), volume(&mesh.points, &own));
+                assert!(
+                    a > 0.0 && (a - b).abs() <= 1e-12 * b,
+                    "type {t}, cell {c}: {a} {b}"
+                );
+            }
+        }
+        let all = [VTK_TETRA, VTK_HEXAHEDRON, VTK_WEDGE, VTK_PYRAMID];
+        assert_eq!(seen.into_iter().collect::<Vec<_>>(), all);
+    }
 }

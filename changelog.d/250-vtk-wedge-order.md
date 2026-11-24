@@ -1,0 +1,1 @@
+- **VTKHDF prisms checked against VTK's node order.** A test pins the node order of the tetrahedra, hexahedra, prisms and pyramids that `fields.vtkhdf` writes to VTK 9.7's own face tables. The prism base `(0, 1, 2)` points towards `(3, 4, 5)`, as FoehnCraft has always written it; older VTK documentation said the opposite (pitfall "Node order of VTK's wedge"). Files are unchanged.
