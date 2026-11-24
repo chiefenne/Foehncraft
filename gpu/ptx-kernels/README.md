@@ -28,5 +28,5 @@ that all entry points are present; `python3 -m tools.check.kernels` then checks
 that the PTX has no atomic instructions and no fused or approximate f64
 arithmetic (R10). The one exception is `radiation_transport`: its tallies
 are whole numbers of quanta added with 64-bit integer atomics, which give
-the same sum in any order (D269, proposed); floating-point atomics stay
+the same sum in any order (D269); floating-point atomics stay
 forbidden.
