@@ -128,7 +128,12 @@ correctly oriented closed surface), (c) the heat method for generalised signed d
 see item 3); the default method is **decided by this benchmark** (Q11). Metrics:
 error against the analytic sphere/torus distance, time per million nodes,
 behaviour on dirty input (holes, self-intersections, duplicate triangles;
-a ready test set is a part of the stage).
+a ready test set is a part of the stage). The zero level set of each field
+is extracted with subgrid marching tetrahedra (Baktash, Gillespie & Crane
+2025; full paper read before the stage starts) and compared with the input
+surface (two-sided Hausdorff distance, manifold and self-intersection
+check), which also tests the extraction of stage 1 and step 3e on known
+surfaces (owner decision 2026-11-24, graphics-algorithms assessment Q5).
 
 Sizing: surface check and predicates 2 PRs, winding numbers 1 PR, SDF 1 PR,
 surface–polygon intersection 2 to 3 PRs; code about 30 to 60 min per PR,
@@ -184,7 +189,12 @@ without meshing it". Cases: `immersed/penalised-cylinder.toml`,
 
 Iso-surface extraction: marching tetrahedra on a decomposed polyhedral cell
 (vertex values from cell values by inverse-distance), benchmarked against
-dual contouring for sharp features (stage 3 uses the same).
+dual contouring for sharp features and against subgrid marching tetrahedra
+(Baktash, Gillespie & Crane 2025: a manifold, intersection-free surface from
+the edge crossings, several patches per tetrahedron, so thin features of a
+coarse density field are kept; owner decision 2026-11-24, graphics-algorithms
+assessment Q5). Metrics: manifold and self-intersection check, triangle
+quality, area and enclosed volume against the field (stage 3 uses the same).
 
 Sizing: kernel and flow hook 1 PR (about 30 to 45 min code), keys and
 diagnostics 1 PR, verification table runs about 1 to 2 hours, topology search

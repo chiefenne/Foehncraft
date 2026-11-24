@@ -433,6 +433,10 @@ Titles only, to be read when an item starts; none was used for a ranking:
 5. **Subgrid marching tetrahedra.** Add it to the L13 stage 0 and stage 1
    benchmark lists after reading the full paper? Recommendation: yes.
 
+**Answers (owner 2026-11-24, "go your recommended order"):** all five as
+recommended. Question 5 is done in the L13 plan (stage 0 benchmark and
+stage 1 iso-surface extraction, #239).
+
 ## 12. References
 
 Open literature; each entry was checked against its bibliographic data,
