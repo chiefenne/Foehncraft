@@ -1,0 +1,69 @@
+# A ceramic honeycomb block in an air channel, its channels along the flow,
+# beside a block of the same resistance in every direction: the
+# direction-dependent resistance of a porous region
+# (D270, porous plan PM1; gallery entry of the porous regions).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/porous_honeycomb_channel.toml
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/porous_honeycomb_channel.toml \
+#       --set regions.brick.porous.honeycomb.blocking=1.0 --out output/porous_honeycomb_isotropic
+#
+# Air at 300 K (ρ = 1.177 kg/m³, μ = 1.85e-5 Pa s) enters a channel 0.6 m
+# long and 0.2 m high at 0.1 m/s (Re = 1 270 on the channel height). A
+# honeycomb block 0.15 m × 0.12 m sits in its middle: square channels
+# 6.9 mm wide on a pitch of 13.6 mm (open area ε = 0.256), the
+# "Solarstone" brick of the thermal storage. `honeycomb` gives the
+# resistances of laminar square-duct flow (f_D Re = 56.9, Shah & London
+# 1978) along the channels, 10⁴ times that across them, and the entrance
+# loss of a brick 0.15 m long. With the channels along the flow (the first
+# axis along x) most of the air passes through the block, which evens out
+# the velocity behind it, and no air leaves the block sideways; with the
+# same resistance in every direction (second command) part of the air
+# turns out of the block and goes around it.
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [0.6, 0.2, 0.005]
+cells = [240, 80, 1]
+zones = [
+  { name = "brick", lower = [0.225, 0.04, 0.0], upper = [0.375, 0.16, 0.005] },
+]
+
+[fluid]
+density = 1.177
+viscosity = 1.85e-5
+
+[regions.brick]
+kind = "porous"
+zones = ["brick"]
+axes = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]
+[regions.brick.porous]
+honeycomb = { channel = 6.9e-3, pitch = 13.6e-3, length = 0.15 }
+source = "square channels of laminar duct flow, Shah & London 1978"
+
+[initial]
+velocity = [0.1, 0.0, 0.0]
+
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [0.1, 0.0, 0.0]
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymin]
+type = "wall"
+[boundary.ymax]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-8
+max_iterations = 2500
+
+[output]
+wall_csv = false

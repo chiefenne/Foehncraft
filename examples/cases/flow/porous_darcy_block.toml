@@ -1,0 +1,67 @@
+# Gas through a porous block in a duct: the Darcy–Forchheimer sink of a
+# porous region (D270, porous plan PM1) against the exact pressure drop.
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/porous_darcy_block.toml
+#
+# A duct 1 m long and 0.1 m high with slip walls carries air (ρ = 1.2
+# kg/m³, μ = 1.8e-5 Pa s) at a superficial velocity U = 1 m/s. The block
+# 0.4 m < x < 0.6 m (length L = 0.2 m) has the viscous resistance
+# K⁻¹ = 10⁶ 1/m² and the inertial resistance F = 10 1/m. The flow stays
+# one-dimensional, so the pressure drop over the block is exact:
+#
+#   Δp = (μ K⁻¹ U + ½ ρ F U²) L = 3.6 + 1.2 = 4.8 Pa,
+#
+# and the clear duct before and after it has no pressure gradient. The
+# inlet pressure is Δp to the solver tolerance (check V1 of the porous
+# plan).
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [1.0, 0.1, 0.01]
+cells = [100, 4, 1]
+zones = [
+  { name = "block", lower = [0.4, 0.0, 0.0], upper = [0.6, 0.1, 0.01] },
+]
+
+[fluid]
+density = 1.2
+viscosity = 1.8e-5
+
+[regions.block]
+kind = "porous"
+zones = ["block"]
+[regions.block.porous]
+viscous = 1.0e6
+inertial = 10.0
+source = "chosen values for the exact check"
+
+[initial]
+velocity = [1.0, 0.0, 0.0]
+
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [1.0, 0.0, 0.0]
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymin]
+type = "slip-wall"
+[boundary.ymax]
+type = "slip-wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-10
+max_iterations = 2000
+
+[verification]
+require_convergence = true
+
+[output]
+wall_csv = false

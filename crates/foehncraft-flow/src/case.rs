@@ -1255,14 +1255,16 @@ impl FlowCase {
         for (name, r) in &self.regions {
             // solids belong to the energy equation (stage 7d1, crate::cht):
             // the flow runs on the fluid cells
-            if r.kind == RegionKind::Solid && self.energy.is_some() {
+            if (r.kind == RegionKind::Solid && self.energy.is_some())
+                || r.kind == RegionKind::Porous
+            {
                 continue;
             }
             crate::need!(
                 r.kind == RegionKind::Fluid,
                 REG_NOT_FLUID,
                 "[regions.{name}] kind = \"{}\": solid regions need the energy equation \
-                 ([energy], stage 7d1); porous zones are not in this version (D112)",
+                 ([energy], stage 7d1)",
                 match r.kind {
                     RegionKind::Solid => "solid",
                     RegionKind::Porous => "porous",
@@ -1395,6 +1397,7 @@ impl FlowCase {
         crate::buoyancy::validate(self)?;
         crate::density::validate(self)?;
         crate::fluids::validate(self)?;
+        crate::porous::validate(self)?;
         crate::turbulence::validate(self)?;
         let p = self.properties()?;
         let rho = p.density();
@@ -2915,6 +2918,7 @@ pub fn run_steered(
         crate::scalar::attach(&mut fl, &case, &mesh, &geo)?;
         crate::density::attach(&mut fl, &case)?;
         crate::buoyancy::attach(&mut fl, &case)?;
+        crate::porous::attach(&mut fl, &case, &mesh)?;
         crate::turbulence::attach(&mut fl, &case, &mesh, &geo)?;
         if let Some(notes) = crate::frame::attach(&mut fl, &case, &mesh, &geo)? {
             for l in &notes.lines {

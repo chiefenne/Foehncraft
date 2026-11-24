@@ -1070,6 +1070,7 @@ fn run_one<F: FnMut(&str)>(
     crate::scalar::attach(&mut fl, &case, mesh, geo)?;
     crate::density::attach(&mut fl, &case)?;
     crate::buoyancy::attach(&mut fl, &case)?;
+    crate::porous::attach(&mut fl, &case, mesh)?;
     // the wall distance of the sliding mesh by imprinting: kept per part and
     // updated for the rotor angle of every step (D182, D48)
     let mut turning_distance = match (&imprint, &work) {

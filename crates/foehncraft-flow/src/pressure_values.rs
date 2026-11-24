@@ -322,7 +322,7 @@ pub(crate) fn components(case: &FlowCase, mesh: &Mesh) -> Components {
         .map(|z| {
             case.regions
                 .values()
-                .any(|r| r.kind != RegionKind::Fluid && r.zones.contains(z))
+                .any(|r| r.kind == RegionKind::Solid && r.zones.contains(z))
         })
         .collect();
     let nc = mesh.n_cells;
