@@ -66,7 +66,7 @@ FLOW = {
         "vd_heated_duct", "vd_closed_box_heating", "vd_closed_box_side_heated", "vd_mms_steady",
         "mixed_convection_channel",
         "spray_duct", "spray_datums",
-        "porous_darcy_block", "porous_honeycomb_channel",
+        "porous_darcy_block", "porous_honeycomb_channel", "porous_schumann", "porous_storage_charge",
     ],
     "long": [
         "cylinder_re100", "cylinder_re100_short", "cylinder_re100_statistics", "cylinder_re100_convective", "cylinder_re20_gci",

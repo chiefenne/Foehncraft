@@ -1335,9 +1335,28 @@
     "axes turned against the mesh axes are refused: the scalar Rhie-Chow factor cannot hold the tensor (a tensor factor is follow-up work)",
     "channels across the main flow (a block that closes the channel) converge slowly",
     "the drop at a jump of the resistance is second order, not exact (the pressure gradient sees the jump over one cell)",
-    "no energy, scalars or turbulence in porous regions (two temperatures are PM2); one process, CPU only",
+    "no scalars or turbulence in porous regions; one process, CPU only",
     "the kinetic-energy ledger does not book the work of the porous sink",
     "no measured reference case (a packed bed with the Ergun law, a honeycomb with a measured drop)"
+   ],
+   "range": {}
+  },
+  {
+   "id": "porous.two-temperatures",
+   "title": "Gas and matrix temperatures in porous regions, monolithic (D271, D272, PM2)",
+   "grade": "partial",
+   "why": [
+    "a model without reference data",
+    "gaps written"
+   ],
+   "gaps": [
+    "the matrix is adiabatic at the faces of the region: no contact with a housing or a neighbouring solid (D274, PM3)",
+    "constant gas properties: no density that follows T in porous cases (POR002); no cycle-averaged or accelerated energy modes, no frozen-flow march (PM3)",
+    "the extended system is solved on the host (BiCGStab, Jacobi), one process, CPU only (PM5)",
+    "no radiation in the channels (R1b); the Nusselt number is the fully developed one, the developing flow per brick is PM3 (D273)",
+    "a CHT restart does not carry the matrix temperature (a flow restart does)",
+    "no measured reference case (a packed bed or a honeycomb store with measured temperatures)",
+    "in porous_storage_charge the plenum swirl does not converge within 10 outer iterations at Courant 2400 (the stack flow is uniform within 1 %)"
    ],
    "range": {}
   },

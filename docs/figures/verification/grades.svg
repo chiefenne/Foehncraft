@@ -93,7 +93,7 @@
 <rect x="230.0" y="518" width="81.5" height="20" fill="#e9a23b"/>
 <text x="270.8" y="532.0" text-anchor="middle" fill="white" font-weight="bold">2</text>
 <text x="220" y="560.0" text-anchor="end">Flow models</text>
-<rect x="230.0" y="546" width="40.8" height="20" fill="#e9a23b"/>
-<text x="250.4" y="560.0" text-anchor="middle" fill="white" font-weight="bold">1</text>
+<rect x="230.0" y="546" width="81.5" height="20" fill="#e9a23b"/>
+<text x="270.8" y="560.0" text-anchor="middle" fill="white" font-weight="bold">2</text>
 <text x="495.0" y="608" text-anchor="middle" fill="#555">features per area, grades computed from docs/verification/features.toml</text>
 </svg>
