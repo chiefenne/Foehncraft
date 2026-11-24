@@ -111,6 +111,61 @@ fn heated_duct_meets_the_one_dimensional_balances() {
     assert!(ke.relative > -1e-2, "numerical dissipation {}", ke.relative);
 }
 
+/// V7c.1 with a mass-flow inlet (porous plan PM0, D279): the gas enters
+/// with the mass flow ṁ = ρ_in u_in A of the velocity inlet. The inlet
+/// takes the density of the inlet temperature, so the run gives the
+/// velocity-inlet solution: the mass flow to round-off, the outlet
+/// temperature and the inlet pressure to the solver tolerance.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn heated_duct_with_a_mass_flow_inlet_is_the_velocity_inlet_duct() {
+    let area = 0.1 * 0.01;
+    let rho_in = P_OP / (R_GAS * 300.0);
+    let m_dot = rho_in * 1.0 * area;
+    let duct = text("vd_heated_duct.toml");
+    let mass = duct.replace(
+        "type = \"velocity-inlet\"\nvelocity = [1.0, 0.0, 0.0]\n[boundary.xmin.energy]",
+        &format!("type = \"mass-flow-inlet\"\nmass_flow = {m_dot:.17e}\n[boundary.xmin.energy]"),
+    );
+    assert_ne!(mass, duct);
+    let a = run_case(&parse(&duct), "duct_velocity");
+    let b = run_case(&parse(&mass), "duct_mass_flow");
+    let (sa, sb) = (&a.solves[0], &b.solves[0]);
+    assert!(sb.converged);
+    let bnd = |s: &foehncraft_flow::case::Solve, n: &str| {
+        s.boundaries.iter().find(|b| b.name == n).unwrap().clone()
+    };
+    let inl = bnd(sb, "xmin");
+    assert!(
+        ((-inl.mass_flow) - m_dot).abs() < 1e-12 * m_dot,
+        "inlet mass flow {} against {m_dot}",
+        -inl.mass_flow
+    );
+    let t_out = |s: &foehncraft_flow::case::Solve| {
+        let t = s.scalars.iter().find(|x| x.name == "temperature").unwrap();
+        t.boundaries
+            .iter()
+            .find(|x| x.boundary == "xmax")
+            .and_then(|x| x.mixed_mean)
+            .unwrap()
+    };
+    assert!(
+        (t_out(sa) - t_out(sb)).abs() < 1e-6 * (t_out(sa) - 300.0),
+        "outlet temperatures {} and {}",
+        t_out(sa),
+        t_out(sb)
+    );
+    let dp = |s: &foehncraft_flow::case::Solve| {
+        bnd(s, "xmin").mean_pressure - bnd(s, "xmax").mean_pressure
+    };
+    assert!(
+        (dp(sa) - dp(sb)).abs() < 1e-4 * dp(sa).abs(),
+        "pressure differences {} and {}",
+        dp(sa),
+        dp(sb)
+    );
+}
+
 /// V7c.2: a closed box of ideal gas at rest heated uniformly warms with
 /// c_v: p₀(t) = p₀(0) T(t)/T₀, T(t) = T₀ + q''' t/(ρ₀ c_v), linear in t, so
 /// exact at any Δt; the mass stays to round-off.

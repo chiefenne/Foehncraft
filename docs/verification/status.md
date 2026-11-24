@@ -1277,7 +1277,7 @@ Gaps:
 Gaps:
 
 - no reference-data case (a measured flow with a large temperature difference)
-- not yet with passive scalars, a restart, periodic meshes, convective outlets, mass-flow inlets, wall mass fluxes or rotating zones (ENE006)
+- not yet with passive scalars, a restart, periodic meshes, convective outlets, wall mass fluxes or rotating zones (ENE006)
 - the turbulence outlet value ⅔ρk uses the reference density
 
 <a id="buoyancy-closed-volume"></a>

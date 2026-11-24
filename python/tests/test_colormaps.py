@@ -54,3 +54,23 @@ def test_matplotlib_map_matches_the_points():
         # a table of 1024 entries: within two levels at the kinks
         assert all(abs(a - b) <= 2 for a, b in zip(got, want)), (t, got, want)
     assert matplotlib.colormaps[cm.RAINBOW + "_r"](0.0)[:3] == pytest.approx(cm.rgb("#E04D4D"))
+
+
+def test_rainbow_uniform_is_paraviews():
+    # ParaView's "Rainbow Uniform" (Colin Ware), the map of signed fields
+    # centred on zero, rounded to 8 bits: the same table as MurmelCraft's.
+    assert cm.UNIFORM == "rainbow_uniform"
+    assert cm.PARAVIEW_UNIFORM_PRESET == "Rainbow Uniform"
+    assert len(cm.UNIFORM_POINTS) == 43
+    assert cm.UNIFORM_POINTS[0] == "#0561FF"
+    assert cm.UNIFORM_POINTS[16] == "#46F327"
+    assert cm.UNIFORM_POINTS[21] == "#FFFF03"  # zero of a symmetric range
+    assert cm.UNIFORM_POINTS[36] == "#FD2636"
+    assert cm.UNIFORM_POINTS[42] == "#AE0D6A"
+
+
+def test_matplotlib_uniform_map():
+    matplotlib = pytest.importorskip("matplotlib")
+    m = matplotlib.colormaps[cm.UNIFORM]
+    assert [round(255 * v) for v in m(0.5)[:3]] == [0xFF, 0xFF, 0x03]
+    assert matplotlib.colormaps[cm.UNIFORM + "_r"](0.0)[:3] == pytest.approx(cm.rgb("#AE0D6A"))

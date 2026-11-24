@@ -45,5 +45,9 @@ required-features = ["mpi"]
 name = "mpi_reductions"
 required-features = ["mpi"]
 
+[[example]]
+name = "mpi_walk"
+required-features = ["mpi"]
+
 [lints]
 workspace = true

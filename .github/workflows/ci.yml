@@ -404,6 +404,17 @@ jobs:
               SPIKE_KIND=$kind mpirun --oversubscribe -n $n target/release/examples/mpi_reductions
             done
           done
+      - run: cargo build --release -p foehncraft-mesh --features mpi --example mpi_walk --locked
+      - name: Cell walk handed over between ranks bitwise equal to one rank (radiation R1a, 1 to 4 ranks)
+        run: |
+          for n in 1 2 3 4; do
+            for kind in poly tet mixed; do
+              SPIKE_KIND=$kind mpirun --oversubscribe -n $n target/release/examples/mpi_walk
+            done
+          done
+      - run: cargo build --release -p foehncraft-radiation --features mpi --example mpi_radiation --locked
+      - name: Radiation call on ranks bitwise equal to one rank (R1a, 1 to 4 ranks)
+        run: for n in 1 2 3 4; do mpirun --oversubscribe -n $n target/release/examples/mpi_radiation; done
       - run: cargo build --release -p foehncraft-fv --features mpi --example mpi_scalar --locked
       - name: Scalar solver and multigrid on ranks bitwise equal to one rank (W3, W4, 1 to 4 ranks)
         run: for n in 1 2 3 4; do mpirun --oversubscribe -n $n target/release/examples/mpi_scalar; done

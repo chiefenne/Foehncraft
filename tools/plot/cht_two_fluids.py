@@ -24,6 +24,7 @@ import numpy as np
 from matplotlib.collections import PolyCollection
 
 from tools.plot.turbulence_fields import read
+from tools.plot.colormaps import UNIFORM
 
 L, H, T, STRETCH = 0.5, 0.002, 0.0005, 25.0
 TW_IN, TO_IN = 340.0, 300.0
@@ -76,7 +77,7 @@ def main():
     axs[0].text(0.01, STRETCH * 0.5 * H, "water →", color="w", va="center")
     axs[0].text(0.01, STRETCH * (H + 0.5 * T), "steel", color="w", va="center", fontsize=8)
     axs[0].text(0.49, STRETCH * (1.5 * H + T), "← oil", color="w", va="center", ha="right")
-    field(axs[1], quads, 1000.0 * d["velocity_x"], "coolwarm", (-9.5, 9.5), "velocity x (mm/s)")
+    field(axs[1], quads, 1000.0 * d["velocity_x"], UNIFORM, (-9.5, 9.5), "velocity x (mm/s)")
     axs[1].set_xlabel("")
     xw, tw = bulk(quads, d, 0.0, H)
     xo, to = bulk(quads, d, H + T, 2 * H + T)

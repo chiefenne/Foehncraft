@@ -83,7 +83,35 @@ reference only (float32; assessment section 4.3).
 R1a: four pull requests (walk with the hand-over between ranks; kernel
 with cases 1 to 4 on threads and ranks; walk and kernel on the GPU with the
 CPU = GPU check; output, cube case and gallery), about 45 to 60 minutes of
-code each, verification runs of minutes. R1b to R1g: not sized yet.
+code each, verification runs of minutes.
+
+Status of R1a (coding started on the maintainer's go, 2026-11-24):
+
+1. **Walk and hand-over between ranks: #254.** The walk body
+   `foehncraft_kernels::walk` (one source for CPU and GPU; the particle
+   tracker of D47 now runs on it, with bitwise its former results) reports
+   every cell with the interval of the segment inside it;
+   `foehncraft_mesh::handover` hands a walk stopped at a processor face to
+   the rank behind it. Tests: the intervals tile the path, the exit point
+   is the first hit of the ray cast of D108 part 2 to 10⁻¹², the lengths in
+   a hex mesh are the chords; on 2 to 4 ranks (RCB and METIS, tetrahedral,
+   polyhedral and mixed meshes) every interval and every end are bitwise
+   those of one rank, also with MPI in the CI job (`examples/mpi_walk.rs`,
+   1 to 4 ranks, up to 2 311 hand-overs per run).
+2. **Kernel with the cases 1 to 4 on threads and ranks: #255.** The bundle
+   kernel `foehncraft_kernels::radiation` (scrambled Sobol emission,
+   track-length absorption, grey walls, mirrors, open boundaries, roulette,
+   integer quanta) and the crate `foehncraft-radiation` (emitters, rounds
+   of hand-overs, ledger, batch errors, exact solutions). Case 1 within
+   0.14 % of the exact wall flux for τ = 0.01 to 10 and every layer source
+   within three standard errors; case 2 with a mean net source of about 2 %
+   of the emission; case 3 within one standard error of the configuration
+   factor; case 4 closes the ledger to the quantum and gives bitwise the
+   same tallies on 1, 2 and 4 threads and on 1 to 4 ranks (also with MPI in
+   CI, `examples/mpi_radiation.rs`). The batch-mean error is conservative:
+   the bundles of an emitter are stratified, the batches are not.
+3. Walk and kernel on the GPU.
+4. Output, cube case and gallery. R1b to R1g: not sized yet.
 
 ## 6. References
 
