@@ -180,6 +180,7 @@ dependencies = [
  "foehncraft-fv",
  "foehncraft-kernels",
  "foehncraft-mesh",
+ "foehncraft-parallel",
  "hdf5-metno",
  "rayon",
  "schemars",
