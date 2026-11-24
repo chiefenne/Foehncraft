@@ -357,6 +357,15 @@ sums go in one all-reduce with `sum_exact_many`. For min and max use
 `min_total` and `max_total` (NaN propagates, −0 < +0), not `f64::min`,
 whose result for ±0 depends on the order.
 
+**Collective restart maps (W6, #262).** The gather and scatter of a
+restart communicate inside `Restart::map_fields`, so every rank must map
+the same arrays in the same order; a length check that fails on one rank
+only would leave the others waiting in the all-gather. Agree such checks
+with `comm.min` before the collective. The momentum sweep state keeps
+`matrix` per hierarchy and `slot` per velocity component: mapping them
+under one index dropped a hierarchy and made the gathered coupled-solver
+file differ from one rank in `momentum_amg_use`.
+
 <a id="coupling-loops"></a>
 ## Coupling loops: the solid must see the flow's response
 

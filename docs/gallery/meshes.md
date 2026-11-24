@@ -20,6 +20,7 @@ Part of the [Example gallery](../gallery.md): the built-in test mesher in 2D and
 | 231 | [Five ranks, one hierarchy: multigrid on ranks](#multigrid-ranks) | 8 | replicated multigrid setup, distributed V-cycle with a halo exchange per level, CG + multigrid bitwise one rank (MPI step W4, D93) |
 | 234 | [Five ranks, one flow: SIMPLEC on ranks](#flow-ranks) | 8 | the flow device on a local mesh, halo exchange after every kernel that writes cells, exact sums, steady SIMPLEC bitwise one rank (MPI step W5, D93) |
 | 244 | [Five ranks, one turbulent heated flow: models on ranks](#flow-models-ranks) | 8 | k-ω SST, k-ε, energy, passive scalars, transient PISO and the coupled solver on ranks, every field bitwise one rank (MPI step W5, D93) |
+| 262 | [Written on five ranks, read on any: restart files on ranks](#restart-ranks) | 8 | the restart gathered from the ranks has the bytes of the one-rank file; read on any rank count by global identity, the continuation bitwise one rank (MPI step W6, D84, D93) |
 
 ---
 
@@ -679,6 +680,52 @@ python3 -m tools.mesh.render_mesh output/ranks_heated_channel_sst/ranks.vtkhdf t
     --title "temperature (K) on 5 ranks, k-omega SST: bitwise the one-rank solution"
 python3 -m tools.mesh.render_mesh output/ranks_heated_channel_sst/ranks.vtkhdf nut.png \
     --field nu_t --top --size 1200x460 --zoom 1.9 --title "turbulent viscosity nu_t (m2/s) on 5 ranks"
+```
+
+[↑ back to top](#meshes)
+
+---
+
+<a id="restart-ranks"></a>
+## 262. Written on five ranks, read on any: restart files on ranks
+
+<img src="../figures/gallery/ranks_restart_speed.png" alt="Speed after 40 time steps of a transient channel flow, the restart gathered from five ranks" width="1200" height="460">
+
+<img src="../figures/gallery/ranks_restart_rank.png" alt="The five ranks of the channel whose restart file was gathered into the global order" width="1200" height="460">
+
+The channel of gallery 234 (the upper wall moves against the inflow,
+Re = 100), now marched in time: 40 steps of BDF2 from potential flow.
+After the run it is solved again on 2, 3 and 5 ranks, and the five ranks
+write their restart together: each rank sends its own cells, the faces
+whose owner cell it holds, its boundary faces and the own rows of every
+multigrid matrix, and the file is assembled in the order of the global
+mesh. Its bytes are those of the restart that one rank writes at the
+same step (`ranks.restart.h5`; the run fails otherwise). Reading goes the
+other way on any rank count: every rank takes its cells and faces by
+global identity and its matrix rows from the sliced-ELL storage of the
+whole mesh, so the multigrid hierarchy is rebuilt from the same matrix
+and the continuation is bitwise the run of one rank that was never
+interrupted. The tests check this for nine cases (steady SIMPLEC on
+polyhedra, mixed cells and tetrahedra, PISO with BDF2, a passive scalar,
+energy, k-ω SST, k-ε and the coupled solver with its momentum
+multigrid): written on 4 ranks and continued on 2, written on 2 and
+continued on 3.
+
+| | |
+|---|---|
+| Mesh | poly 2D, 90 × 30 base grid, 2 821 cells, nodes perturbed by 10 % |
+| Ranks | 2, 3, 5 (recursive coordinate bisection), one halo layer |
+| Solver | transient PISO, BDF2, Δt = 0.05 s, 40 steps from potential flow |
+| Restart | gathered from 5 ranks, byte for byte the one-rank file |
+| Case file | `flow/ranks_restart_channel.toml` |
+
+```
+target/release/foehn flow examples/cases/flow/ranks_restart_channel.toml
+python3 -m tools.mesh.render_mesh output/ranks_restart_channel/ranks.vtkhdf speed.png \
+    --field speed --top --size 1200x460 --zoom 1.9 \
+    --title "speed (m/s) at t = 2 s on 5 ranks: restart file byte for byte one rank"
+python3 -m tools.mesh.render_mesh output/ranks_restart_channel/ranks.vtkhdf rank.png \
+    --field rank --categorical --top --size 1200x460 --zoom 1.9 --title "5 ranks (RCB) that wrote one restart file"
 ```
 
 [↑ back to top](#meshes)
