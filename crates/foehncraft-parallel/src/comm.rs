@@ -109,6 +109,7 @@ pub mod mpi_comm {
     //! MPI implementation of [`Communicator`].
 
     use super::Communicator;
+    use mpi::Threading;
     use mpi::collective::SystemOperation;
     use mpi::environment::Universe;
     use mpi::topology::{Communicator as _, SimpleCommunicator};
@@ -116,20 +117,26 @@ pub mod mpi_comm {
 
     /// Communicator over `MPI_COMM_WORLD`. MPI is finalised when the value
     /// is dropped.
+    ///
+    /// MPI is initialised with the threading level "funneled": the rank's
+    /// worker threads (rayon) compute, and only the thread that initialised
+    /// MPI calls it. The value holds no communicator handle (the world
+    /// handle is taken per call), so it can be shared (`Send + Sync`) with
+    /// the solver structures of that thread, like the other
+    /// communicators.
     pub struct MpiComm {
-        _universe: Universe,
-        world: SimpleCommunicator,
+        universe: Universe,
     }
 
     impl MpiComm {
         /// Initialises MPI. Returns `None` if MPI was already initialised.
         pub fn init() -> Option<Self> {
-            let universe = mpi::initialize()?;
-            let world = universe.world();
-            Some(Self {
-                _universe: universe,
-                world,
-            })
+            let (universe, _level) = mpi::initialize_with_threading(Threading::Funneled)?;
+            Some(Self { universe })
+        }
+
+        fn world(&self) -> SimpleCommunicator {
+            self.universe.world()
         }
 
         /// Name and version of the MPI library.
@@ -140,22 +147,23 @@ pub mod mpi_comm {
 
     impl Communicator for MpiComm {
         fn rank(&self) -> usize {
-            self.world.rank() as usize
+            self.world().rank() as usize
         }
         fn size(&self) -> usize {
-            self.world.size() as usize
+            self.world().size() as usize
         }
         fn barrier(&self) {
-            self.world.barrier();
+            self.world().barrier();
         }
         fn all_gather_f64(&self, local: f64) -> Vec<f64> {
             let mut out = vec![0.0; self.size()];
-            self.world.all_gather_into(&local, &mut out[..]);
+            self.world().all_gather_into(&local, &mut out[..]);
             out
         }
         fn send_recv_f64(&self, send: &[f64], dest: usize, recv: &mut [f64], source: usize) {
-            let d = self.world.process_at_rank(dest as i32);
-            let s = self.world.process_at_rank(source as i32);
+            let world = self.world();
+            let d = world.process_at_rank(dest as i32);
+            let s = world.process_at_rank(source as i32);
             mpi::request::scope(|scope| {
                 let sreq = d.immediate_send(scope, send);
                 s.receive_into(recv);
@@ -164,7 +172,7 @@ pub mod mpi_comm {
         }
         fn all_sum_i64(&self, buf: &mut [i64]) {
             let send = buf.to_vec();
-            self.world
+            self.world()
                 .all_reduce_into(&send[..], buf, SystemOperation::sum());
         }
         fn name(&self) -> &'static str {

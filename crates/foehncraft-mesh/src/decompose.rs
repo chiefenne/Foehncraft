@@ -10,9 +10,11 @@
 //!   are each ordered by reverse Cuthill–McKee for locality, the halo cells
 //!   of one rank by layer, then by their order on that rank;
 //! - **faces**: inner faces (both cells on this rank), then processor faces
-//!   (own cell to halo cell, normal out of the own cell, grouped by
-//!   neighbouring rank), then the boundary faces with the same boundaries, in
-//!   the same order, on every rank.
+//!   (between an own cell and a halo cell, grouped by neighbouring rank),
+//!   then the boundary faces with the same boundaries, in the same order, on
+//!   every rank. Every face keeps the owner, the neighbour and the node
+//!   order of the global mesh, so a processor face is owned by the halo
+//!   cell where the global mesh says so.
 //!
 //! A solver step can therefore launch the inner faces and inner cells, wait
 //! for the halo, then do the processor faces and outer cells, with plain
@@ -26,12 +28,16 @@
 //! and every per-cell sum of a rank are bitwise those of the one-rank run on
 //! the global mesh, for any number of ranks and any partition:
 //!
-//! - an inner face whose global owner has the higher local index, and a
-//!   processor face whose global owner is the halo cell, is stored flipped
-//!   (owner and neighbour swapped, nodes reversed after the first one) and
-//!   marked in [`Mesh::face_flip`]; [`Geometry::compute`] evaluates it in
-//!   the node order of the global mesh and reverses the sign of the area
-//!   vector, which is exact;
+//! - every face keeps its global orientation: the owner and neighbour of
+//!   the global mesh and its node order (MPI step W3). So the geometry of
+//!   a face is bitwise the global one, and so is everything a kernel
+//!   computes on the face from the values of its two cells: interpolation
+//!   weights, upwind choices (also at a zero mass flux), limiters of the
+//!   face. W1 stored a face flipped (owner and neighbour swapped) where
+//!   the global owner had the higher local index or was a halo cell, which
+//!   kept the geometry exact (a sign) but not the asymmetric face formulas
+//!   (the owner weight w against 1 − w); [`Mesh::face_flip`] is all false
+//!   for a local mesh since W3 and only marks it as a rank's part;
 //! - every own cell lists its faces in ascending position in the global
 //!   mesh, so volume, centroid and every later per-cell sum over faces add
 //!   the same terms in the same order as on one rank;
@@ -225,17 +231,14 @@ pub fn extract(
         if f < ni {
             let q = global.neighbour[f] as usize;
             let (lp, lq) = (local[p], local[q]);
+            // every face keeps the owner and neighbour of the global mesh
+            // (MPI step W3), so every face formula sees its inputs in the
+            // roles of the one-rank run; a processor face may be owned by
+            // the halo cell
             match (part[p] == r, part[q] == r) {
-                (true, true) => {
-                    let (a, b, rev) = if lp < lq {
-                        (lp, lq, false)
-                    } else {
-                        (lq, lp, true)
-                    };
-                    faces.push((0, 0, a, b, f as u32, rev));
-                }
+                (true, true) => faces.push((0, 0, lp, lq, f as u32, false)),
                 (true, false) => faces.push((1, part[q], lp, lq, f as u32, false)),
-                (false, true) => faces.push((1, part[p], lq, lp, f as u32, true)),
+                (false, true) => faces.push((1, part[p], lp, lq, f as u32, false)),
                 (false, false) => {}
             }
         } else if part[p] == r {
@@ -377,6 +380,49 @@ pub fn decompose(
     (0..parts)
         .map(|r| extract(global, part, r, layers))
         .collect()
+}
+
+/// The communicator shared by the solver structures of a rank: `Send +
+/// Sync`, so a structure that runs its loops on worker threads can hold it
+/// (only the rank's own thread calls it).
+pub type SharedComm = std::sync::Arc<dyn Communicator + Send + Sync>;
+
+/// What a rank's solver needs to work with the other ranks (MPI step W3):
+/// the communicator and the halo exchange plan of its local mesh.
+#[derive(Clone)]
+pub struct Ranks {
+    /// The communicator.
+    pub comm: SharedComm,
+    /// The exchange plan of the rank's local mesh.
+    pub halo: HaloPlan,
+}
+
+impl std::fmt::Debug for Ranks {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Ranks")
+            .field("rank", &self.comm.rank())
+            .field("size", &self.comm.size())
+            .field("neighbours", &self.halo.neighbours.len())
+            .finish()
+    }
+}
+
+impl Ranks {
+    /// The link of `local`'s rank through `comm`.
+    pub fn new(comm: SharedComm, local: &LocalMesh) -> Self {
+        Self {
+            comm,
+            halo: local.halo.clone(),
+        }
+    }
+
+    /// Fills the halo entries of `fields` (one value per own and halo
+    /// cell) from their owners, one message per neighbouring rank.
+    pub fn exchange(&self, fields: &mut [&mut [f64]]) {
+        self.halo
+            .exchange_fields(&*self.comm, Transport::HostStaged, fields)
+            .expect("host-staged exchange");
+    }
 }
 
 impl HaloPlan {

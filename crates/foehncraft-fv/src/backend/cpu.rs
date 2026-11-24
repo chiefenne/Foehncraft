@@ -14,6 +14,7 @@ use foehncraft_core::Real;
 use foehncraft_core::exact::{ExactSum, max_total, min_total};
 use foehncraft_kernels::fv::{self, FaceInputs, SellLayout, Vec3};
 use foehncraft_kernels::{amg, blas, spmv};
+use foehncraft_mesh::decompose::Ranks;
 use rayon::prelude::*;
 
 /// Indices per task of the parallel loops.
@@ -120,6 +121,9 @@ pub struct CpuBackend {
     /// The hierarchies of the inactive slots, and the active slot.
     parked: Vec<Option<Amg>>,
     slot: usize,
+    /// The other ranks of a decomposed run (MPI step W3); `None` on one
+    /// partition.
+    ranks: Option<Ranks>,
 }
 
 /// One level of the hierarchy in precision `T`, with its cycle vectors.
@@ -279,10 +283,40 @@ unsafe impl Sync for Shared {}
 impl CpuBackend {
     /// New backend on `threads` threads (`None`: all cores).
     pub fn new(d: Discretisation, threads: Option<usize>) -> anyhow::Result<Self> {
+        Self::build(d, threads, None)
+    }
+
+    /// New backend for one rank of a decomposed run (MPI step W3): `d` is
+    /// the discretisation of the rank's local mesh, `ranks` its link to the
+    /// others. Cell vectors carry the halo cells after the own ones; an
+    /// operation that reads a vector across faces first fills its halo
+    /// from the owners (φ before the gradient, the gradient and ψ before
+    /// the face coefficients, x before a matrix product), dot products and
+    /// extrema are exact over all ranks. So every rank computes bitwise the
+    /// values of its cells in the one-rank run.
+    pub fn on_ranks(
+        d: Discretisation,
+        threads: Option<usize>,
+        ranks: Ranks,
+    ) -> anyhow::Result<Self> {
+        let halo: usize = ranks.halo.neighbours.iter().map(|n| n.recv.len()).sum();
+        anyhow::ensure!(
+            halo == d.n_halo,
+            "the halo plan has {halo} halo cells, the discretisation {}",
+            d.n_halo
+        );
+        Self::build(d, threads, Some(ranks))
+    }
+
+    fn build(
+        d: Discretisation,
+        threads: Option<usize>,
+        ranks: Option<Ranks>,
+    ) -> anyhow::Result<Self> {
         let pool = Workers::new(threads)?;
         let mut vecs = vec![Vec::new(); V::COUNT];
         for v in V::CELL {
-            vecs[v.index()] = vec![0.0; d.n_cells];
+            vecs[v.index()] = vec![0.0; d.n_cells + d.n_halo];
         }
         for v in V::FACE {
             vecs[v.index()] = vec![0.0; d.n_faces];
@@ -299,6 +333,7 @@ impl CpuBackend {
             amg: None,
             parked: Vec::new(),
             slot: 0,
+            ranks,
         })
     }
 
@@ -306,12 +341,34 @@ impl CpuBackend {
         &self.vecs[v.index()]
     }
 
-    /// Computes `out[i] = body(self, i)` into the scratch buffer and swaps it
-    /// in, so `out` may also be an input.
+    /// Fills the halo entries of the cell vectors `vs` from the owning
+    /// ranks (nothing on one partition).
+    fn exchange(&mut self, vs: &[V]) {
+        let Some(r) = &self.ranks else { return };
+        let mut taken: Vec<Vec<f64>> = vs
+            .iter()
+            .map(|v| std::mem::take(&mut self.vecs[v.index()]))
+            .collect();
+        {
+            let mut refs: Vec<&mut [f64]> = taken.iter_mut().map(|x| x.as_mut_slice()).collect();
+            r.exchange(&mut refs);
+        }
+        for (v, x) in vs.iter().zip(taken) {
+            self.vecs[v.index()] = x;
+        }
+    }
+
+    /// Computes `out[i] = body(self, i)` for the own cells into the scratch
+    /// buffer and swaps it in, so `out` may also be an input; the halo
+    /// entries of `out` are kept.
     fn map_into(&mut self, out: V, body: impl Fn(&Self, usize) -> f64 + Sync) {
-        let n = self.vecs[out.index()].len();
+        let len = self.vecs[out.index()].len();
+        let n = self.d.n_cells;
         let mut s = std::mem::take(&mut self.scratch);
-        s.resize(n, 0.0);
+        s.resize(len, 0.0);
+        s[n..].copy_from_slice(&self.vecs[out.index()][n..]);
+        let s_all = &mut s;
+        let s = &mut s_all[..n];
         let this = &*self;
         if this.pool.inline(n) {
             for (i, o) in s.iter_mut().enumerate() {
@@ -326,6 +383,7 @@ impl CpuBackend {
                 })
             });
         }
+        let mut s = std::mem::take(s_all);
         std::mem::swap(&mut s, &mut self.vecs[out.index()]);
         self.scratch = s;
     }
@@ -364,14 +422,27 @@ impl Backend for CpuBackend {
     }
 
     fn upload(&mut self, v: V, data: &[f64]) -> anyhow::Result<()> {
+        // a cell vector takes the own cells (the halo is filled by the
+        // exchange before it is read) or the own and halo cells
+        let own = self.d.n_cells;
         let t = &mut self.vecs[v.index()];
-        anyhow::ensure!(t.len() == data.len(), "upload of {v:?}: wrong length");
-        t.copy_from_slice(data);
+        let is_cell = V::CELL.contains(&v);
+        anyhow::ensure!(
+            t.len() == data.len() || (is_cell && data.len() == own),
+            "upload of {v:?}: wrong length"
+        );
+        t[..data.len()].copy_from_slice(data);
         Ok(())
     }
 
     fn download(&mut self, v: V) -> anyhow::Result<Vec<f64>> {
-        Ok(self.vecs[v.index()].clone())
+        // a cell vector without its halo
+        let x = &self.vecs[v.index()];
+        Ok(if V::CELL.contains(&v) {
+            x[..self.d.n_cells].to_vec()
+        } else {
+            x.clone()
+        })
     }
 
     fn sync(&mut self) -> anyhow::Result<()> {
@@ -379,9 +450,12 @@ impl Backend for CpuBackend {
     }
 
     fn gradient(&mut self) -> anyhow::Result<()> {
-        let mut gx = std::mem::take(&mut self.vecs[V::Gx.index()]);
-        let mut gy = std::mem::take(&mut self.vecs[V::Gy.index()]);
-        let mut gz = std::mem::take(&mut self.vecs[V::Gz.index()]);
+        self.exchange(&[V::Phi]);
+        let nc = self.d.n_cells;
+        let mut gx_all = std::mem::take(&mut self.vecs[V::Gx.index()]);
+        let mut gy_all = std::mem::take(&mut self.vecs[V::Gy.index()]);
+        let mut gz_all = std::mem::take(&mut self.vecs[V::Gz.index()]);
+        let (gx, gy, gz) = (&mut gx_all[..nc], &mut gy_all[..nc], &mut gz_all[..nc]);
         let (d, phi) = (&self.d, &self.vecs[V::Phi.index()]);
         let (topo, bc, w) = (d.topology(), d.boundary(), d.lsq.view());
         let fill = |first: usize, x: &mut [f64], y: &mut [f64], z: &mut [f64]| {
@@ -395,7 +469,7 @@ impl Backend for CpuBackend {
             }
         };
         if self.pool.inline(gx.len()) {
-            fill(0, &mut gx, &mut gy, &mut gz);
+            fill(0, gx, gy, gz);
         } else {
             self.pool.install(|| {
                 gx.par_chunks_mut(GRAIN)
@@ -405,9 +479,11 @@ impl Backend for CpuBackend {
                     .for_each(|(ci, ((x, y), z))| fill(ci * GRAIN, x, y, z))
             });
         }
-        self.vecs[V::Gx.index()] = gx;
-        self.vecs[V::Gy.index()] = gy;
-        self.vecs[V::Gz.index()] = gz;
+        self.vecs[V::Gx.index()] = gx_all;
+        self.vecs[V::Gy.index()] = gy_all;
+        self.vecs[V::Gz.index()] = gz_all;
+        // the face coefficients read the gradient of both cells of a face
+        self.exchange(&[V::Gx, V::Gy, V::Gz]);
         Ok(())
     }
 
@@ -449,6 +525,8 @@ impl Backend for CpuBackend {
                 )
             }
         });
+        // the face coefficients read ψ of the upwind cell
+        self.exchange(&[V::Psi]);
         Ok(())
     }
 
@@ -545,22 +623,32 @@ impl Backend for CpuBackend {
     }
 
     fn spmv(&mut self, x: V, out: V) -> anyhow::Result<()> {
+        self.exchange(&[x]);
         self.map_into(out, |s, r| s.sell_row(r, s.v(x)));
         Ok(())
     }
 
     fn residual(&mut self, x: V, b: V, out: V) -> anyhow::Result<()> {
+        self.exchange(&[x]);
         self.map_into(out, |s, r| s.v(b)[r] - s.sell_row(r, s.v(x)));
         Ok(())
     }
 
     fn dot(&mut self, a: V, b: V) -> anyhow::Result<f64> {
-        let (x, y) = (self.v(a), self.v(b));
-        Ok(exact_dot(&self.pool, x, y))
+        let n = self.d.n_cells;
+        let (x, y) = (&self.v(a)[..n], &self.v(b)[..n]);
+        Ok(match &self.ranks {
+            None => exact_dot(&self.pool, x, y),
+            Some(r) => r.comm.sum_exact(&exact_dot_acc(&self.pool, x, y)),
+        })
     }
 
     fn min_max(&mut self, a: V) -> anyhow::Result<(f64, f64)> {
-        Ok(min_max(&self.pool, self.v(a)))
+        let (lo, hi) = min_max(&self.pool, &self.v(a)[..self.d.n_cells]);
+        Ok(match &self.ranks {
+            None => (lo, hi),
+            Some(r) => (r.comm.min(lo), r.comm.max(hi)),
+        })
     }
 
     fn update_p(&mut self, beta: f64, omega: f64) -> anyhow::Result<()> {
@@ -619,7 +707,7 @@ impl Backend for CpuBackend {
         anyhow::ensure!(val.len() == self.val.len(), "set_matrix: wrong length");
         self.val.copy_from_slice(val);
         let dinv = diagonal_inverse(&self.d, val);
-        self.vecs[V::Dinv.index()] = dinv;
+        self.vecs[V::Dinv.index()][..dinv.len()].copy_from_slice(&dinv);
         Ok(())
     }
 
@@ -641,6 +729,10 @@ impl Backend for CpuBackend {
     }
 
     fn amg_load(&mut self, h: &Hierarchy) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            self.ranks.is_none(),
+            "the multigrid preconditioner runs on one rank (the distributed multigrid is MPI step W4); use the Jacobi preconditioner on ranks"
+        );
         anyhow::ensure!(
             h.levels.first().map_or(h.coarse_n, |l| l.a.n_rows) == self.d.n_cells,
             "hierarchy size does not match the mesh"
