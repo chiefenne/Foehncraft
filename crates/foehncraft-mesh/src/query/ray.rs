@@ -208,6 +208,55 @@ impl Bvh {
         self.trace(p, q, End::Open, true).is_some()
     }
 
+    /// Every face the segment from `p` to `q` meets, in (0, 1], ordered
+    /// by the parameter (ties by the global id). Hits at the same parameter
+    /// (within [`SLACK`]) and in the same direction count once, the face with
+    /// the smallest global id: a segment through an edge or a corner of the
+    /// surface is one crossing (the spray datums, D263).
+    pub fn all_hits(&self, p: [f64; 3], q: [f64; 3]) -> Vec<Hit> {
+        let mut found: Vec<Best> = Vec::new();
+        if self.nodes.is_empty() {
+            return Vec::new();
+        }
+        let d = sub(q, p);
+        let mut stack: Vec<u32> = Vec::with_capacity(64);
+        if self.nodes[0].bx.enter(p, d).is_some() {
+            stack.push(0);
+        }
+        while let Some(i) = stack.pop() {
+            let nd = self.nodes[i as usize];
+            if nd.count > 0 {
+                let s = nd.first as usize;
+                for &t in &self.order[s..s + nd.count as usize] {
+                    let t = t as usize;
+                    if let Some(h) = segment_triangle(p, q, &self.faces.tris[t], End::Closed) {
+                        let id = self.faces.global_id[self.faces.tri_face[t] as usize];
+                        found.push((h.t, id, t, h.weights));
+                    }
+                }
+            } else {
+                for c in [nd.first, nd.first + 1] {
+                    if self.nodes[c as usize].bx.enter(p, d).is_some() {
+                        stack.push(c);
+                    }
+                }
+            }
+        }
+        found.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)).then(a.2.cmp(&b.2)));
+        let mut out: Vec<Hit> = Vec::new();
+        for b in found {
+            let h = self.hit(p, q, b, b.0);
+            if let Some(last) = out.last()
+                && h.t - last.t <= SLACK
+                && h.entering == last.entering
+            {
+                continue;
+            }
+            out.push(h);
+        }
+        out
+    }
+
     /// The first hit by testing every triangle (for the tests and the
     /// benchmark).
     pub fn first_hit_brute_force(&self, p: [f64; 3], q: [f64; 3]) -> Option<Hit> {

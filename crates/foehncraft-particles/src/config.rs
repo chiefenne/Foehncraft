@@ -79,8 +79,17 @@ pub struct Injector {
     pub half_angle: f64,
     /// Mass flow of the liquid (kg/s).
     pub mass_flow: f64,
-    /// Droplet diameter (m): constant in this version.
+    /// Droplet diameter (m) when every droplet has the same size; leave it
+    /// out with `size`.
+    #[serde(default)]
     pub diameter: f64,
+    /// Droplet size distribution (D242): Rosin-Rammler or log-normal, as
+    /// the distribution of the liquid mass over the diameter. Every parcel
+    /// carries the same mass; its diameter is drawn from the distribution
+    /// with the counter-based generator keyed by the parcel identity
+    /// (D121), so the spray is the same on every run and thread count.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<crate::sizes::SizeDistribution>,
     /// Parcels released per second. A parcel stands for the droplets of
     /// `mass_flow / parcels_per_second` of liquid.
     pub parcels_per_second: f64,
@@ -126,6 +135,23 @@ pub struct SpraySection {
     /// A parcel file `spray/parcels_<step>.vtkhdf` every this many time
     /// steps (default 0: only at the end of the run).
     pub write_every: usize,
+    /// Liquid penetration (D265): the share of an injector's liquid mass in
+    /// the flow that lies within the penetration length (default 0.95).
+    pub penetration_fraction: f64,
+    /// How the penetration length is measured from the injector: `axial`
+    /// (along the injector axis, default) or `radial` (straight distance).
+    pub penetration: Penetration,
+}
+
+/// How the liquid penetration is measured (D265).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum Penetration {
+    /// Distance along the injector axis.
+    #[default]
+    Axial,
+    /// Straight distance from the injector position.
+    Radial,
 }
 
 /// The file of `include`: the injectors and the liquid.
@@ -150,6 +176,8 @@ impl Default for SpraySection {
             max_courant: 0.5,
             max_substeps: 100_000,
             write_every: 0,
+            penetration_fraction: 0.95,
+            penetration: Penetration::Axial,
         }
     }
 }
@@ -211,6 +239,9 @@ impl SpraySection {
         if !pos(self.max_courant) {
             bail!("[spray] max_courant must be positive");
         }
+        if !(self.penetration_fraction > 0.0 && self.penetration_fraction <= 1.0) {
+            bail!("[spray] penetration_fraction must be in (0, 1]");
+        }
         if self.max_substeps == 0 {
             bail!("[spray] max_substeps must be at least 1");
         }
@@ -233,9 +264,24 @@ impl SpraySection {
             if !(0.0..180.0).contains(&i.half_angle) {
                 bail!("[[spray.injector]] {n}: half_angle must be in [0, 180) degrees");
             }
+            match &i.size {
+                Some(sz) => {
+                    if i.diameter != 0.0 {
+                        bail!("[[spray.injector]] {n}: give either diameter or size, not both");
+                    }
+                    sz.validate()
+                        .map_err(|e| anyhow::anyhow!("[[spray.injector]] {n}: size: {e}"))?;
+                }
+                None => {
+                    if !pos(i.diameter) {
+                        bail!(
+                            "[[spray.injector]] {n}: diameter must be positive and finite (or give a size distribution)"
+                        );
+                    }
+                }
+            }
             for (k, v) in [
                 ("mass_flow", i.mass_flow),
-                ("diameter", i.diameter),
                 ("parcels_per_second", i.parcels_per_second),
             ] {
                 if !pos(v) {

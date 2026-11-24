@@ -157,6 +157,47 @@ class Result:
         """The values along `[[output.lines]]` `name`."""
         return self.table(f"line_{name}")
 
+    def datums(self, datum: str | None = None) -> dict[str, list]:
+        """`datums.csv` (SP1b, D267) as columns `<datum>.<quantity>`; with
+        `datum` only that datum's columns, named by the quantity, plus
+        `step` and `time`. An unknown datum raises a `KeyError` that lists
+        the datums of the file."""
+        cols = self.table("datums")
+        if datum is None:
+            return cols
+        names = sorted({k.split(".", 1)[0] for k in cols if "." in k})
+        if datum not in names:
+            raise KeyError(f"no datum {datum!r} in datums.csv; it has {', '.join(names)}")
+        out = {"step": cols["step"], "time": cols["time"]}
+        for k, v in cols.items():
+            if k.startswith(datum + "."):
+                out[k[len(datum) + 1 :]] = v
+        return out
+
+    def spray(self) -> dict[str, list]:
+        """`spray.csv`: the mass book, penetration and Sauter diameter per
+        step."""
+        return self.table("spray")
+
+    def spray_histogram(self, datum: str) -> dict[str, list]:
+        """`spray_hist_<datum>.csv`: the droplet size histogram of every
+        report interval (rows per bin)."""
+        p = self.out / f"spray_hist_{datum}.csv"
+        if not p.exists():
+            have = sorted(x.name[len("spray_hist_") : -4] for x in self.out.glob("spray_hist_*.csv"))
+            raise KeyError(f"no histogram of datum {datum!r}; there are {', '.join(have) or 'none'}")
+        return read_csv(p)
+
+    def series(self) -> list[dict]:
+        """The entries of `series.json` (step, time, files) in step order."""
+        with open(self.out / "series.json", encoding="utf-8") as f:
+            return json.load(f)["entries"]
+
+    def parcels(self, file: str) -> dict:
+        """The parcels of a parcel file (`spray/parcels_<step>.vtkhdf`) as
+        NumPy arrays (needs h5py): `points` and the point fields."""
+        return read_parcels(self.out / file)
+
     def record(self) -> list[dict]:
         """The rows of the run record (`run.jsonl`)."""
         with open(self.out / "run.jsonl", encoding="utf-8") as f:
@@ -208,4 +249,18 @@ def read_vtkhdf(path, block: str = "internal") -> dict:
         out = {k: np.asarray(v) for k, v in g["CellData"].items()}
         if "Points" in g:
             out["points"] = np.asarray(g["Points"])
+    return out
+
+
+def read_parcels(path) -> dict:
+    """The points and point fields of a parcel file as NumPy arrays."""
+    import h5py
+    import numpy as np
+
+    with h5py.File(path, "r") as f:
+        g = f["VTKHDF"]
+        out = {k: np.asarray(v) for k, v in g["PointData"].items()}
+        out["points"] = np.asarray(g["Points"])
+        for k, v in f.attrs.items():
+            out.setdefault("attrs", {})[k] = v.decode() if isinstance(v, bytes) else v
     return out

@@ -676,3 +676,37 @@ fn hand_written_broken_inputs_are_refused() {
     }
     assert!(n >= 5, "only {n} hand-written inputs");
 }
+
+/// The STL reader of the datum surfaces (D262): ASCII and binary files of
+/// a small surface, damaged in every way of the corpus, end in triangles or
+/// an error, never in a panic.
+#[test]
+fn stl_reader_survives_the_corpus() {
+    use foehncraft_mesh::format::stl;
+    let tris = vec![
+        [[0.0, 0.0, 0.5], [1.0, 0.0, 0.5], [1.0, 1.0, 0.5]],
+        [[0.0, 0.0, 0.5], [1.0, 1.0, 0.5], [0.0, 1.0, 0.5]],
+        [[0.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 1.0, 1.0]],
+    ];
+    for bytes in [
+        stl::to_ascii("s", &tris).into_bytes(),
+        stl::to_binary(&tris),
+    ] {
+        let mut errors = 0;
+        for (what, m) in mutations(&bytes) {
+            let r = std::panic::catch_unwind(|| stl::parse(&m));
+            match r {
+                Ok(Ok(t)) => {
+                    assert!(!MUST_FAIL.contains(&what.as_str()), "stl, {what}: read");
+                    assert!(t.iter().flatten().flatten().all(|x| x.is_finite()));
+                }
+                Ok(Err(e)) => {
+                    assert!(!e.trim().is_empty());
+                    errors += 1;
+                }
+                Err(_) => panic!("stl reader, {what}: panicked"),
+            }
+        }
+        assert!(errors > 0);
+    }
+}

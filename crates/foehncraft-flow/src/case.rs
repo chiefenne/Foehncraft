@@ -887,6 +887,11 @@ pub struct FlowCase {
     /// Lagrangian parcels of the sprays (L12): `[spray]`.
     #[serde(skip_serializing_if = "foehncraft_particles::SpraySection::is_empty")]
     pub spray: foehncraft_particles::SpraySection,
+    /// Datums of the reports (SP1b, D262): `[[datum]]` tables, named planes,
+    /// boundaries, interfaces, surfaces and volumes whose gas and liquid
+    /// flows go to `datums.csv`.
+    #[serde(rename = "datum", skip_serializing_if = "Vec::is_empty")]
+    pub datums: Vec<crate::datum::DatumSection>,
     /// The fluid view of a conjugate heat transfer case (stage 7d1): set on
     /// the case of the flow, which runs on the fluid cells only, with the
     /// full case and mesh behind it ([`crate::cht`]).
@@ -1193,6 +1198,7 @@ impl FlowCase {
         crate::expr::resolve_paths(&mut c.tables, dir);
         c.materials.resolve_paths(dir);
         c.spray.resolve_paths(dir);
+        crate::datum::resolve_paths(&mut c.datums, dir);
         c.solver.reduction_defaults = crate::turbulence::reduction_defaults(&c);
         // `[energy.cycle] enabled = false` runs the case fully coupled (the
         // reference of the loop, `--set energy.cycle.enabled=false`)
@@ -1461,6 +1467,7 @@ impl FlowCase {
         crate::sliding::validate(self)?;
         crate::rotor::validate(self)?;
         crate::spray::validate(self)?;
+        crate::datum::validate(self)?;
         if let Some(d) = &self.fluid.density
             && let Some(v) = d.number()
         {
@@ -1868,6 +1875,13 @@ pub struct Solve {
     pub rotors: Option<crate::rotor::Values>,
     /// Transient run.
     pub transient: Option<crate::unsteady::TransientSummary>,
+    /// The datums at the end of the run (SP1b, D267): the gas report of the
+    /// last row and the liquid through each over the run.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub datums: Option<Vec<crate::datum::DatumSummary>>,
+    /// The sprays at the end of the run (SP1b, D265, D267).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub spray: Option<crate::spray::SpraySummary>,
     /// Benchmark comparison.
     pub benchmark: Option<crate::monitor::BenchmarkResult>,
     /// Conservation ledger (D88, D89).
@@ -3590,6 +3604,8 @@ pub fn run_steered(
             coefficients,
             rotors: rotor_values,
             transient: None,
+            datums: None,
+            spray: None,
             benchmark,
             balance: Some(summary),
             remediation,
