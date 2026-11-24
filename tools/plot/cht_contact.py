@@ -35,7 +35,7 @@ from matplotlib.patches import Rectangle
 
 from tools.plot.energy_fields import line
 from tools.plot.turbulence_fields import read
-from tools.plot.colormaps import RAINBOW
+from tools.plot.colormaps import RAINBOW, UNIFORM
 
 
 def temperature_summary(run):
@@ -123,7 +123,7 @@ def patch(out, run):
     ax = axes[1]
     err = d["temperature_error"]
     lim = max(np.abs(err).max(), 1e-14)
-    pe = PolyCollection(quads, array=err, cmap="RdBu_r", edgecolors="face", linewidths=0.2)
+    pe = PolyCollection(quads, array=err, cmap=UNIFORM, edgecolors="face", linewidths=0.2)
     pe.set_clim(-lim, lim)
     ax.add_collection(pe)
     for xi in (0.4, 0.6):

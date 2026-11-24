@@ -1,5 +1,6 @@
-The colour map "Rainbow Desaturated" in tools/plot/colormaps.py is the table of
-eight control points of the ParaView preset of that name
+The colour maps "Rainbow Desaturated" and "Rainbow Uniform" (Colin Ware) in
+tools/plot/colormaps.py are the control points of the ParaView presets of
+those names
 (Remoting/Views/ColorMaps.json in github.com/Kitware/ParaView), shipped under
 the licence of ParaView:
 
