@@ -1118,7 +1118,7 @@ impl Flow {
         });
         let conv = self.convecting_flux()?;
         let scale = self.momentum_assembly(conv, alpha, 1.0, time)?;
-        let sym = self.bc.mom_kind.contains(&k::MOM_SYMMETRY);
+        let sym = self.per_component_diagonal();
         for (i, residual) in res.momentum.iter_mut().enumerate() {
             self.momentum_matrix(i, sym)?;
             self.dev.matrix_product(w.val, f.u.all()[i], t)?;

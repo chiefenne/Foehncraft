@@ -21,6 +21,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | [Turbulence models](gallery/turbulence.md) | the RANS turbulence models with their wall treatments (k-ω SST, the k-ε family, k-ε-ζ-f, k-ε-ζ-f₀, elliptic-blending k-ε) on the flat plate, the channel, the backward-facing step and the impinging jet; curvature correction and QCR; manufactured solutions; the internal flows of D45 (pipe, plane diffuser, U-bend) with GCI | 68, 71, 73, 74, 88, 89, 90, 113, 115, 141, 140, 184, 194, 197, 193, 199, 204 |
 | [Boundary conditions](gallery/boundary-conditions.md) | slip walls, axisymmetric wedges, inlet profiles from tables, backflow at pressure outlets, convective outlets, periodic modules, absolute pressure values (D239) | 21, 67, 220 |
 | [Lagrangian sprays](gallery/sprays.md) | droplets as Lagrangian parcels in the gas flow: injectors, drag, gravity, wall behaviour, the mass book | 242 |
+| [Porous regions](gallery/porous.md) | flow through porous matrices with a direction-dependent Darcy–Forchheimer resistance: a ceramic honeycomb, the exact pressure drop of a block | 273 |
 | [Immersed bodies](gallery/immersed.md) | bodies in the flow without a body-fitted mesh: Brinkman penalisation of primitive bodies (L13 stage 1) | |
 | [Expressions and materials](gallery/properties.md) | boundary values, body forces and viscosities as expressions, the material database, regions, walls with a mass flux | 23 |
 | [Python](gallery/python.md) | cases built, run and studied from Python: expressions with Python operators, callbacks, study tables | 24 |
@@ -136,6 +137,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | <a id="spray-duct"></a>242 | [Water droplets sprayed into an air duct](gallery/sprays.md#spray-duct) | [Lagrangian sprays](gallery/sprays.md) |
 | <a id="flow-models-ranks"></a>244 | [Five ranks, one turbulent heated flow: models on ranks](gallery/meshes.md#flow-models-ranks) | [Meshes](gallery/meshes.md) |
 | <a id="natural-convection"></a>272 | [Natural convection benchmarks: a heated square cavity at Ra 10³ to 10⁶, a vertical plate and mixed convection with flow reversal](gallery/energy.md#natural-convection) | [Energy equation and heat transfer](gallery/energy.md) |
+| <a id="porous-flow"></a>273 | [A ceramic honeycomb in an air channel, and a porous block against the exact pressure drop](gallery/porous.md#porous-flow) | [Porous regions](gallery/porous.md) |
 
 ## Adding a feature
 

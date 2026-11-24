@@ -506,10 +506,15 @@ every output file (`properties_hash`, `materials_database`).
 
 | Key | Meaning |
 |---|---|
-| `regions.<name>.kind` | `fluid` or `solid` (with `[energy]`, conjugate heat transfer); `porous` is refused (REG001) |
+| `regions.<name>.kind` | `fluid`, `solid` (with `[energy]`, conjugate heat transfer) or `porous` (a fluid region with a resistance, D270; needs `porous`) |
+| `regions.<name>.porous.viscous` | viscous resistance K⁻¹ (1/m²): one value, or three principal values along the axes of the region (POR001 without `axes`) |
+| `regions.<name>.porous.inertial` | inertial resistance F (1/m), as `viscous`; the sink is (μ K⁻¹ + ½ ρ \|u\| F) u |
+| `regions.<name>.porous.porosity` | open volume fraction ε (0 < ε ≤ 1) |
+| `regions.<name>.porous.honeycomb` | `{ channel, pitch, length, blocking }` (m, m, m, ratio): square channels along the first axis, instead of `viscous`, `inertial` and `porosity` (Shah & London 1978; `blocking` default 10⁴) |
+| `regions.<name>.porous.source` | where the values come from (text) |
 | `regions.<name>.zones` | cell zones of the mesh (each zone in one region; unknown zones are REG002) |
 | `regions.<name>.material` | its material (default: that of `[fluid]`) |
-| `regions.<name>.axes` | the first two principal axes of an orthotropic conductivity in this region, `[[..], [..]]` in the mesh frame (default: those of the material; one material oriented differently in every part) |
+| `regions.<name>.axes` | the first two principal axes of an orthotropic conductivity or of the porous resistance in this region (porous: along the mesh axes for now, POR002), `[[..], [..]]` in the mesh frame (default: those of the material; one material oriented differently in every part) |
 | `regions.<name>.initial.velocity`, `.pressure` | start values of a fluid region (numbers or expressions of x, y, z; the pressure in the file's convention), before `[initial]` (D238, [recipe 221](../recipes/energy.md#start-values)) |
 | `regions.<name>.initial.temperature` | start temperature of the region (K, a number or an expression), or `"inlet"` for a fluid region: the inflow-weighted inlet temperature of its fluid part; the only key of a solid region (REG007) |
 | `regions.<name>.initial.k` with `.omega` or `.epsilon` | turbulence start values of a fluid region |

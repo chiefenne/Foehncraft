@@ -1076,6 +1076,8 @@ pub struct Flow {
     pub(crate) pseudo_speed: Option<f64>,
     /// The rotating zones of the moving reference frame (D55), if any.
     pub(crate) frames: Option<crate::frame::Frames>,
+    /// The porous regions (D270), if any.
+    pub(crate) porous: Option<crate::porous::Porous>,
     /// The host copy of the least-squares weights of the pressure (the
     /// balanced force of gravity applies the same operator, D154).
     pub(crate) lsq_p: foehncraft_fv::disc::Soa3,
@@ -1601,6 +1603,7 @@ impl Flow {
             pseudo_length: None,
             pseudo_speed: None,
             frames: None,
+            porous: None,
             lsq_p,
             buoyancy: None,
             immersed: None,
@@ -2310,6 +2313,7 @@ impl Flow {
             }
         }
         self.add_coriolis()?;
+        self.add_porous(alpha, theta)?;
         let alg = self.settings.algorithm(self.transient);
         if alg == Algorithm::Simple
             || (alg == Algorithm::Piso && !self.settings.simplec_corrector())
@@ -2375,7 +2379,7 @@ impl Flow {
     /// `scale` and iterations into `res`.
     pub(crate) fn momentum_solve(&mut self, scale: f64, res: &mut Residuals) -> Result<()> {
         let (f, w) = (self.f, self.w);
-        let sym = self.bc.mom_kind.contains(&k::MOM_SYMMETRY);
+        let sym = self.per_component_diagonal();
         let s = &self.settings;
         let (tol, max) = (s.momentum_tol(self.transient), s.momentum.max_iter);
         for i in 0..3 {

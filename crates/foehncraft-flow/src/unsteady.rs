@@ -1073,6 +1073,7 @@ fn run_one<F: FnMut(&str)>(
     crate::scalar::attach(&mut fl, &case, mesh, geo)?;
     crate::density::attach(&mut fl, &case)?;
     crate::buoyancy::attach(&mut fl, &case)?;
+    crate::porous::attach(&mut fl, &case, mesh)?;
     for d in crate::immersed::attach(&mut fl, &case, mesh, geo)? {
         if d.severity == crate::diag::Severity::Warning {
             lg.warn(&format!("{}: {}", d.code, d.message));
