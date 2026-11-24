@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**111 features: 50 verified, 58 partial, 3 unverified.**
+**112 features: 50 verified, 59 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -137,6 +137,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Backends and interfaces | [The steady scalar solver on several ranks, bitwise one rank (MPI step W3)](#parallel-scalar-ranks) | partial |
 | Backends and interfaces | [Multigrid on several ranks with the replicated setup, bitwise one rank (MPI step W4)](#parallel-multigrid-ranks) | partial |
 | Backends and interfaces | [Steady SIMPLEC on several ranks, bitwise one rank (MPI step W5 part 1)](#parallel-flow-ranks) | partial |
+| Backends and interfaces | [Turbulence, energy, scalars, transient runs and the coupled solver on several ranks, bitwise one rank (MPI step W5 part 2)](#parallel-flow-models-ranks) | partial |
 
 ## Meshes
 
@@ -1688,13 +1689,31 @@ Contracts: `bitwise`.
 
 **partial** (gaps written) · id `parallel.flow-ranks` · switch `[run] ranks of foehn flow` · decisions D31, D93
 
-- contract (bitwise): [`steady_flow_on_ranks_is_bitwise_one_rank`](../../crates/foehncraft-flow/tests/ranks.rs): 1 to 4 ranks (RCB), 2 threads per rank: a channel with a moving wall on polyhedra (linear upwind, Venkatakrishnan), mixed cells (bounded central) and tetrahedra (Jacobi pressure solve); velocity, pressure, pressure gradient, limiter and residual history bitwise one rank
+- contract (bitwise): [`flow_on_ranks_is_bitwise_one_rank`](../../crates/foehncraft-flow/tests/ranks.rs): 1 to 4 ranks (RCB), 2 threads per rank: a channel with a moving wall on polyhedra (linear upwind, Venkatakrishnan), mixed cells (bounded central) and tetrahedra (Jacobi pressure solve); velocity, pressure, pressure gradient, limiter and residual history bitwise one rank
 - contract (bitwise): [`ranks_channel_poly`](../../examples/cases/flow/ranks_channel_poly.toml): a channel with the upper wall moving against the inflow, potential-flow start, 103 outer iterations on 2, 3 and 5 ranks, every rank bitwise the one-rank run (the run fails otherwise) (passes in CI (set linux-2), not yet in the manual)
 
 Gaps:
 
-- steady SIMPLEC only: turbulence and wall distance, scalars, energy, transient runs, turning zones, grid levels, regions and the coupled solver on ranks are W5 part 2
+- turbulence, scalars, energy, transient runs and the coupled solver on ranks: parallel.flow-models-ranks
 - on the CPU flow device only (GPU ranks are not in scope of v1.1)
+- no scaling numbers yet (1M cells, W9)
+
+Contracts: `bitwise`.
+
+<a id="parallel-flow-models-ranks"></a>
+
+### Turbulence, energy, scalars, transient runs and the coupled solver on several ranks, bitwise one rank (MPI step W5 part 2)
+
+**partial** (gaps written) · id `parallel.flow-models-ranks` · switch `[run] ranks of foehn flow` · decisions D31, D93, D48
+
+- contract (bitwise): [`flow_on_ranks_is_bitwise_one_rank`](../../crates/foehncraft-flow/tests/ranks.rs): 1 to 4 ranks (RCB), 2 threads per rank: transient PISO with BDF2, a passive scalar, the energy equation (transient), k-omega SST, k-epsilon with scalable wall functions and the coupled solver; velocity, pressure, pressure gradient, limiter, scalars, temperature, k, omega or epsilon, nu_t and residual history bitwise one rank
+- contract (bitwise): [`ranks_heated_channel_sst`](../../examples/cases/flow/ranks_heated_channel_sst.toml): a turbulent channel (k-omega SST, Re 10 000) with a heated wall and the energy equation, 70 outer iterations on 2, 3 and 5 ranks, every field of every rank bitwise the one-rank run (the run fails otherwise) (passes in CI (set linux-2), not yet in the manual)
+
+Gaps:
+
+- not on ranks yet (refused with an error): zeta-f and elliptic blending, curvature correction and QCR, the MLP limiter and quadratic gradients, gravity, turning zones, solid regions, schedules, level sweeps and restarts
+- monitors, probes and balances are not computed on ranks: they come with the run on ranks (W7)
+- transient runs are checked with the fixed time step, not the adaptive one
 - no scaling numbers yet (1M cells, W9)
 
 Contracts: `bitwise`.

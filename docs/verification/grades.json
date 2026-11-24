@@ -1262,8 +1262,23 @@
     "gaps written"
    ],
    "gaps": [
-    "steady SIMPLEC only: turbulence and wall distance, scalars, energy, transient runs, turning zones, grid levels, regions and the coupled solver on ranks are W5 part 2",
+    "turbulence, scalars, energy, transient runs and the coupled solver on ranks: parallel.flow-models-ranks",
     "on the CPU flow device only (GPU ranks are not in scope of v1.1)",
+    "no scaling numbers yet (1M cells, W9)"
+   ],
+   "range": {}
+  },
+  {
+   "id": "parallel.flow-models-ranks",
+   "title": "Turbulence, energy, scalars, transient runs and the coupled solver on several ranks, bitwise one rank (MPI step W5 part 2)",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "not on ranks yet (refused with an error): zeta-f and elliptic blending, curvature correction and QCR, the MLP limiter and quadratic gradients, gravity, turning zones, solid regions, schedules, level sweeps and restarts",
+    "monitors, probes and balances are not computed on ranks: they come with the run on ranks (W7)",
+    "transient runs are checked with the fixed time step, not the adaptive one",
     "no scaling numbers yet (1M cells, W9)"
    ],
    "range": {}
