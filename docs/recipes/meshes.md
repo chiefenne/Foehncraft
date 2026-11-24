@@ -652,6 +652,14 @@ Every rank's velocity, pressure, temperature, scalars, k, ω (or ε) and
 transient case is checked over its time steps with the fixed step
 `[time] time_step` (`steps`, or `end_time` over the step).
 
+The time of the iterations on ranks against threads only, on a channel
+of hexahedra of any size (cells in x, y, z and the iterations; every run
+is checked bitwise against the first):
+
+```
+cargo run --release -p foehncraft-flow --example ranks_scaling -- 200 100 50 10
+```
+
 Not on ranks yet, refused with an error that names them: the ζ-f and
 elliptic-blending models, the curvature correction and the QCR, the MLP
 limiter and quadratic gradients, gravity, turning zones (MRF, sliding),

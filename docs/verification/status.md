@@ -1714,6 +1714,6 @@ Gaps:
 - not on ranks yet (refused with an error): zeta-f and elliptic blending, curvature correction and QCR, the MLP limiter and quadratic gradients, gravity, turning zones, solid regions, schedules, level sweeps and restarts
 - monitors, probes and balances are not computed on ranks: they come with the run on ranks (W7)
 - transient runs are checked with the fixed time step, not the adaptive one
-- no scaling numbers yet (1M cells, W9)
+- 1M cells on 4 cores split into 1, 2, 4 ranks (example ranks_scaling): +2, +10, +28 % time per iteration against threads only, bitwise; strong scaling over more cores is W9
 
 Contracts: `bitwise`.

@@ -43,6 +43,9 @@ pub struct FlowSolve {
     /// One line per outer iteration or time step: every residual and
     /// iteration count.
     pub history: Vec<String>,
+    /// Wall time of the outer iterations or time steps (s), without the
+    /// setup (not compared).
+    pub seconds: f64,
 }
 
 /// The result of comparing a rank's part with the one-rank solve.
@@ -190,6 +193,7 @@ impl Solver {
             psi: [own(&s.psi.x), own(&s.psi.y), own(&s.psi.z)],
             extra,
             history,
+            seconds: 0.0,
         })
     }
 }
@@ -220,10 +224,14 @@ fn start(geo: &Geometry, n: usize) -> foehncraft_fv::disc::Soa3 {
 fn run(sv: &mut Solver, geo: &Geometry, n: usize, ids: &[u64], steps: usize) -> Result<FlowSolve> {
     sv.start(&start(geo, n), &vec![0.0; n])?;
     let mut history = Vec::with_capacity(steps);
+    let t = std::time::Instant::now();
     for _ in 0..steps {
         history.push(sv.advance()?.0);
     }
-    sv.fields(n, ids, history)
+    let seconds = t.elapsed().as_secs_f64();
+    let mut s = sv.fields(n, ids, history)?;
+    s.seconds = seconds;
+    Ok(s)
 }
 
 /// The solve on the undecomposed mesh (the one-rank reference): `steps`
