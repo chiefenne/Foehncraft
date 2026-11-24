@@ -17,6 +17,7 @@ that of mass and thermal energy is round-off. Sources are positive, sinks negati
 storage is drawn with the sign it has on the right-hand side of the
 closure (storage = sum of the terms).
 """
+
 import json
 import os
 import sys
@@ -51,7 +52,9 @@ def rows(account):
             continue
         if t["value"] == 0.0:
             continue
-        label = t["name"] if t.get("boundary") is None else f"{t['name']} ({t['boundary']})"
+        label = (
+            t["name"] if t.get("boundary") is None else f"{t['name']} ({t['boundary']})"
+        )
         out.append((label, t["value"], t["kind"]))
     out.append(("storage", account["storage"], "storage"))
     return out
@@ -89,9 +92,17 @@ def closure_panel(ax, accounts):
 def main(out_dir, run_dir):
     accounts = ledger(run_dir)
     by = {a["quantity"]: a for a in accounts}
-    fig, axs = plt.subplots(1, 3, figsize=(12.1, 3.6), gridspec_kw={"width_ratios": [1, 1, 0.8]})
-    terms_panel(axs[0], by["kinetic energy"], "kinetic energy: the lid drives, viscosity dissipates")
-    terms_panel(axs[1], by["thermal energy"], "thermal energy: the heat balance as rows")
+    fig, axs = plt.subplots(
+        1, 3, figsize=(12.1, 3.6), gridspec_kw={"width_ratios": [1, 1, 0.8]}
+    )
+    terms_panel(
+        axs[0],
+        by["kinetic energy"],
+        "kinetic energy: the lid drives, viscosity dissipates",
+    )
+    terms_panel(
+        axs[1], by["thermal energy"], "thermal energy: the heat balance as rows"
+    )
     closure_panel(axs[2], accounts)
     fig.tight_layout()
     os.makedirs(out_dir, exist_ok=True)
