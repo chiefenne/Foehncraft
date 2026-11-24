@@ -317,8 +317,8 @@ impl Moments {
     pub fn add(&mut self, spec: &HistSpec, d: f64, count: f64, mass: f64, v: [f64; 3]) {
         self.parcels += 1;
         let mut dk = 1.0;
-        for k in 0..5 {
-            self.s[k] += count * dk;
+        for sk in self.s.iter_mut() {
+            *sk += count * dk;
             dk *= d;
         }
         self.mass += mass;
