@@ -1,6 +1,6 @@
 # Ray casting: exact segment–triangle test against Möller–Trumbore
 
-Benchmark of 2026-11-24 for D108 part 2 (pull request #RAY), step 3 of the
+Benchmark of 2026-11-24 for D108 part 2 (pull request #248), step 3 of the
 [graphics-algorithms assessment](../assessments/graphics-algorithms-for-modules.md#33-ray-casting-on-the-bvh-and-what-to-build-it-from).
 
 **What is compared.** The test that decides whether a ray or a segment
