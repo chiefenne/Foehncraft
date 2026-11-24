@@ -387,6 +387,8 @@ pub fn transport<T: Tally>(
                 let dir = [d[0] * s, d[1] * s, d[2] * s];
                 let new_dir = match md.wall[f] {
                     WallKind::Open => {
+                        // the flux through the open face, none of it stays
+                        tally.wall(batch, f, b.w, 0);
                         tally.escaped(b.w);
                         b.w = 0;
                         return Fate::Done;
