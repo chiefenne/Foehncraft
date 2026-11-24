@@ -65,6 +65,41 @@ tube banks and the 1D steam side (SF1 to SF9): **about 16 to 25 hours of code**
 plus runs. The 3D boiling model (SF10) is **not sized yet**; a first guess is
 6 to 12 hours of code in several pull requests, with a high risk.
 
+## 1a. High-end target (maintainer, 2026-11-24: "Go high end here!!!")
+
+The path aims at an industrial-grade tool, not a demonstration:
+
+- **Full package boiler scope** as the end point of this path (SF9): swirl
+  burners, furnace chamber, membrane water walls, superheater, reheater and
+  economizer banks, drum circuit with natural circulation, steam output,
+  efficiency, tube metal temperatures, critical heat flux margin, NOx. Every
+  earlier stage is a step towards that case, not a separate showcase.
+- **Industrial-grade validation with measured data** at every level: laminar
+  flames, turbulent jet and swirl flames (TNF workshop data), pilot-scale gas
+  furnaces with in-flame temperature, species and wall heat-flux
+  measurements, subcooled and saturated flow boiling, circulation and critical
+  heat flux, tube-bank heat transfer and pressure drop, and full-scale boiler
+  acceptance data where it is published. Clean room (D201) still applies:
+  measurements and exact solutions only, no other solver's results.
+  Each validation case gets an error band stated before the run and a verdict
+  in `foehn compare` (L20).
+- **GPU and MPI from the first stage**, as radiation did (D258, D259): every
+  new kernel (species convection and diffusion, chemistry per cell, EDC,
+  NOx, IF97 states, 1D circuits on rank 0 with exact sums, porous bank terms)
+  is single-source for CPU and GPU with a CPU = GPU check, and every stage
+  runs bitwise the same on 1 to 4 ranks. The MPI items W6 to W9 move onto
+  the critical path (SF0), and GPU with ranks (v1.1) is needed by SF9.
+- **Scale target:** a package boiler of 10 to 30 million cells on one
+  multi-GPU node, and a utility boiler of 50 to 100 million cells on a
+  cluster ("designed for" until measured, W9).
+
+The added cost against the base plan: about 30 to 50 % more agent time per
+stage for the GPU and rank paths and their checks (as R1a), plus the
+validation runs, which are long (1 to 2 h each, several per stage). Revised
+totals: SF1 to SF5 about 11 to 17 h of code; to SF9 about 22 to 35 h of code;
+validation runs about 15 to 30 h spread over the stages. SF10 stays not sized
+yet.
+
 ## 2. What the furnace asks for
 
 | Zone | Physics | Scale | Solver part |
@@ -137,7 +172,7 @@ waits are separate. "Not sized yet" means there is no basis.
 
 | Stage | Content | Needs | Code (agent) | Runs |
 | --- | --- | --- | --- | --- |
-| SF0 | Prerequisites: MPI W6 (restart on ranks), W7 (run loop, monitors on ranks), solid regions on ranks; R1a part 4 (#259) | W5 | as in the MPI plan (W6 1 to 2 h, W7 45 to 90 min); solid regions on ranks 45 to 90 min | CI |
+| SF0 | Prerequisites (critical path, high-end target): MPI W6 (restart on ranks), W7 (run loop, monitors on ranks), W8, solid regions on ranks; R1a part 4 (#259); GPU with ranks (v1.1) before SF9 | W5 | as in the MPI plan (W6 1 to 2 h, W7 45 to 90 min); solid regions on ranks 45 to 90 min | CI |
 | SF1 | **Species transport.** N mass fractions on the 7c density (N − 1 transported, the last by closure, or all N with a mass-conserving correction velocity), mixture c_p and h from NASA-7 (exists), μ and k by Wilke and Mathur rules, Fick diffusion with Lewis or Schmidt numbers, turbulent Schmidt number, MLP-bounded convection, element ledger rows (D119), inlet compositions in mole or mass fractions. Checks: exact 1D diffusion, mixing layer, sum of Y = 1 to round-off, element closure. Gallery: coaxial jet mixing (CH₄ into air), case, recipe | 7c, D119 | 60 to 90 min (1 PR) | minutes |
 | SF2 | **Gas-phase chemistry.** The gas-phase slice of the chemistry program D120 (Arrhenius, third body, fall-off later), a stiff implicit integrator per cell with fixed elimination order (C14) for CPU = GPU and reproducibility (D93), global mechanisms (Westbrook–Dryer 2-step, Jones–Lindstedt 4-step), mechanism import from the YAML format of D103 (GRI-Mech 3.0 for checks), own chemical equilibrium by Gibbs minimisation. Checks: 0D constant-pressure reactor against the equilibrium and the adiabatic flame temperature, 1D laminar premixed flame speed of CH₄/air against measurements | SF1 | 90 to 150 min (2 PRs) | minutes |
 | SF3 | **Turbulence–chemistry interaction.** Eddy dissipation concept (Magnussen 1981; Magnussen 2005 constants) with the SF2 integrator in the fine structures, eddy dissipation model as fallback; heat release into h_s; limits and diagnostics for stiff cells. Validation: piloted non-premixed jet flame (Sandia Flame D, TNF workshop data) and a bluff-body flame. Gallery: jet flame temperature, OH and CO fields | SF2 | 60 to 90 min (1 PR) | 1 to 2 h |
