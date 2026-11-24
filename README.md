@@ -38,7 +38,7 @@
     <td><a href="docs/gallery/flow.md#several-rotors"><img src="assets/readme/twin_rotors_vorticity.jpg" alt="Vorticity of two rotors with three and five blades turning at their own speeds on a sliding mesh" width="300" height="200"></a></td>
   </tr>
   <tr>
-    <td colspan="3"><a href="docs/applications/heat-exchangers.md#shell-tube-hx"><img src="assets/readme/heat_exchanger_temperature.jpg" alt="Temperature on a section through a shell and tube heat exchanger: hot air at 300 °C cools across the baffle compartments around water-cooled steel tubes" width="900" height="300"></a></td>
+    <td colspan="3"><a href="docs/applications/heat-exchangers.md#shell-tube-hx"><img src="assets/readme/heat_exchanger_renderings.webp" alt="Shell and tube heat exchanger on about a million cells, two views that alternate: the steel housing cut open with the tube bundle coloured by its temperature and air streamlines coloured by speed, then the housing as glass with the air winding around the baffles from the inlet to the outlet nozzle" width="900" height="563"></a></td>
   </tr>
 </table>
 

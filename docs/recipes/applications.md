@@ -83,3 +83,13 @@ xvfb-run -a python3 examples/applications/shell_tube_hx/flow_images.py \
 
 `flow_images.py` writes the three flow images and the two images of the steel (`hx_steel_cutaway.png`, `hx_steel_bundle.png`, coloured from 20 to 30 °C; change `STEEL` in the script for another range). `flow.json` holds the heat flow and the mixed-mean temperature of every boundary (`solves[0].scalars`, the scalar `temperature`): the heat the air gives up is the sum of the enthalpy flows of the two shell nozzles, the water's the sum over the two tube nozzles. To continue a run, pass `--restart output/hx_coflow/restart.h5` with a larger `solver.max_iterations`; judge it by these heat flows and the air outlet temperature over the last few hundred iterations, not by the residuals, which stall near 10⁻³.
 
+The renderings of the application page and the README come from ParaView (6.2, its own `pvpython`); the script reads the level 2 counter-flow result:
+
+```
+/Applications/ParaView-6.2.0.app/Contents/bin/pvpython \
+    examples/applications/shell_tube_hx/render_images.py \
+    output/hx_counterflow/fields.vtkhdf docs/figures/applications assets/readme
+```
+
+About 35 s on an iMac. It writes `hx_render_hero.jpg`, `hx_render_cut.jpg`, `hx_render_airpath.jpg` and `hx_render_baffle.jpg`, and with the third argument the README teaser `heat_exchanger_renderings.webp`, the hero and the air path cross-fading every 3.5 s (made by plain `python3`, whose Pillow needs WebP support). The steel is shaded as metal (physically based, metallic and roughness) under a studio environment map that the script draws itself; OSPRay path tracing is not used, because in ParaView 6.2 on macOS its path tracer loses the red channel. Each colour range is the 2nd to 98th percentile of what the picture shows. Change the cameras at the end of each block (`CameraPosition`, `CameraFocalPoint`) for other views and the seed count of `air_streamlines` for more or fewer streamlines.
+
