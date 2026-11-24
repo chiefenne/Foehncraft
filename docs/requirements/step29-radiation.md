@@ -110,7 +110,7 @@ Status of R1a (coding started on the maintainer's go, 2026-11-24):
    same tallies on 1, 2 and 4 threads and on 1 to 4 ranks (also with MPI in
    CI, `examples/mpi_radiation.rs`). The batch-mean error is conservative:
    the bundles of an emitter are stratified, the batches are not.
-3. **Walk and kernel on the GPU** (in review). The PTX entry
+3. **Walk and kernel on the GPU: #257.** The PTX entry
    `radiation_transport` (`gpu/ptx-kernels/src/radiation.rs`) runs the
    kernel body of the CPU for one bundle per GPU thread; the tallies are
    whole numbers of quanta added with 64-bit integer atomics, the same sum in
