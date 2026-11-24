@@ -12,8 +12,11 @@
 #   Δp = (μ K⁻¹ U + ½ ρ F U²) L = 3.6 + 1.2 = 4.8 Pa,
 #
 # and the clear duct before and after it has no pressure gradient. The
-# inlet pressure is Δp to the solver tolerance (check V1 of the porous
-# plan).
+# resistance jumps at the block faces, which the pressure gradient of the
+# neighbouring cells sees over one cell: on 100 cells the inlet pressure is
+# 4.780 Pa (0.41 % low), and the error falls with the square of the cell
+# size (check V1 of the porous plan; a duct filled with the matrix is
+# exact to the solver tolerance).
 
 case_format = "0.6"
 

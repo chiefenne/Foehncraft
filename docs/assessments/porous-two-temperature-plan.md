@@ -308,6 +308,18 @@ time per step) on V4 and the gallery case.
 | PM4 | Upscaling pipeline: study-layer quarter channel → table; V7; radiative factor c_rad when R1b is in | PM3; R1b for c_rad | 45 min code, 1 to 2 h runs |
 | PM5 | Ranks and GPU for the porous terms (Q2: after PM1 to PM4) | W6 | 45 to 60 min |
 
+**PM1 as built (#273).** The sink is implicit in the momentum diagonal and
+the off-diagonal parts of the tensor are deferred; the Rhie–Chow factor
+takes the smallest principal value, because the factor is one number per
+cell. That is enough for axes along the mesh axes, and the build refuses
+turned axes (POR002): a turned honeycomb stalls with a scalar factor. A
+tensor (or projected) Rhie–Chow factor is the follow-up that lifts it; the
+3D storage of PM3 has its bricks along the mesh axes and does not need it.
+Channels across the main flow converge slowly. K_c/K_e of the brick ends
+are in `honeycomb.length` (K(∞) = 1.43 over the brick length). V1 holds
+with second order at the block faces (0.41 % on 100 cells); a filled duct
+is exact.
+
 ## 13. Questions and answers
 
 All five answered by the maintainer on 2026-11-24 (18:36 to 18:40 UTC).

@@ -1646,6 +1646,31 @@ gaps = [
 ]
 
 [[feature]]
+id = "porous.darcy-forchheimer"
+area = "Flow models"
+title = "Porous regions with a direction-dependent Darcy-Forchheimer resistance (D270, PM1)"
+switch = "[regions.<name>] kind = \"porous\""
+decisions = ["D270"]
+model = true
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-flow/tests/porous.rs::a_duct_filled_with_a_porous_matrix_has_the_exact_pressure_drop", what = "a duct filled with the matrix: the drop (mu/K + rho F U/2) U L to 1e-8" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/porous.rs::channels_across_the_flow_give_the_across_resistance", what = "a direction-dependent matrix with its first axis across and along the flow: the second and the first principal value, to 1e-8" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/porous.rs::a_block_in_a_duct_converges_to_the_exact_pressure_drop", what = "a block in a duct on 50, 100 and 200 cells: 0.41 % off on 100 cells, observed order about 2 (above 1.5 required)" },
+  { kind = "consistency", test = "crates/foehncraft-flow/src/porous.rs::honeycomb_values_of_the_brick", what = "the honeycomb values against the formulas, a turned tensor stays symmetric" },
+  { kind = "exact", case = "porous_darcy_block", what = "check V1: a porous block in a duct with slip walls, 4.780 Pa against the exact 4.8 Pa on 100 cells", doc = "docs/cases/flow.md#porous-regions" },
+  { kind = "consistency", case = "porous_honeycomb_channel", what = "a ceramic honeycomb block in an air channel, channels along the flow; no air leaves the block sideways", doc = "docs/cases/flow.md#porous-regions" },
+  { kind = "contract", property = "diagnostics", test = "crates/foehncraft-flow/tests/porous.rs::porous_keys_are_checked", what = "POR001 and POR002 for missing, contradicting and unsupported settings" },
+]
+gaps = [
+  "axes turned against the mesh axes are refused: the scalar Rhie-Chow factor cannot hold the tensor (a tensor factor is follow-up work)",
+  "channels across the main flow (a block that closes the channel) converge slowly",
+  "the drop at a jump of the resistance is second order, not exact (the pressure gradient sees the jump over one cell)",
+  "no energy, scalars or turbulence in porous regions (two temperatures are PM2); one process, CPU only",
+  "the kinetic-energy ledger does not book the work of the porous sink",
+  "no measured reference case (a packed bed with the Ergun law, a honeycomb with a measured drop)",
+]
+
+[[feature]]
 id = "parallel.flow-models-ranks"
 area = "Backends and interfaces"
 title = "Turbulence, energy, scalars, transient runs and the coupled solver on several ranks, bitwise one rank (MPI step W5 part 2)"

@@ -14,11 +14,12 @@
 # "Solarstone" brick of the thermal storage. `honeycomb` gives the
 # resistances of laminar square-duct flow (f_D Re = 56.9, Shah & London
 # 1978) along the channels, 10⁴ times that across them, and the entrance
-# loss of a brick 0.15 m long. With the channels along the flow (the first
-# axis along x) most of the air passes through the block, which evens out
-# the velocity behind it, and no air leaves the block sideways; with the
-# same resistance in every direction (second command) part of the air
-# turns out of the block and goes around it.
+# loss of a brick 0.15 m long. The block resists strongly, so most of the
+# air goes around it in both runs and about 1.5 cm/s passes through. With
+# the channels along the flow (the first axis along x) that air runs
+# straight through the block and leaves it only at its back face; with the
+# same resistance in every direction (second command) the air that enters
+# the front face turns out of the block through its upper and lower faces.
 
 case_format = "0.6"
 
