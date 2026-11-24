@@ -15,6 +15,7 @@ On this page:
 - [Energy equation](#energy-equation)
 - [Gravity and buoyancy](#gravity-and-buoyancy)
 - [Lagrangian sprays](#lagrangian-sprays)
+- [Immersed bodies](#immersed-bodies)
 
 Stage 4: steady incompressible laminar flow, SIMPLEC with the Rhie–Chow
 interpolation ([explanation](../verification/stage4.md)). Stage 5: transient
@@ -307,3 +308,15 @@ keys are on the [key page](flow-keys.md); the run writes `spray.csv` and
 | Case file | Mesh | Shows | Where |
 |---|---|---|---|
 | `flow/spray_duct.toml` | generated hex 2D, 80 × 20 cells | 10 g/s of 150 µm water droplets sprayed from the upper wall into air at 4 m/s; about 70 % stick on the lower wall, the mass book closes; the injector is in `flow/spray_duct_injectors.toml` | [gallery 242](../gallery/sprays.md#spray-duct), [recipe 242](../recipes/sprays.md#spray-duct) |
+
+## Immersed bodies
+
+`[immersed]` with `[[immersed.body]]` tables (L13 stage 1, D226): cylinders,
+spheres and boxes put into any mesh by Brinkman penalisation, laminar and
+isothermal only. The keys are on the [key page](../keys.md) (`immersed.*`);
+`result.json` has the force on every body, `derived = ["solid-fraction"]`
+writes χ.
+
+| Case file | Mesh | Shows | Where |
+|---|---|---|---|
+| `flow/immersed_cylinder_re20.toml` | generated hex 2D, 440 × 82 cells (h = D/20), no cylinder in the mesh | Schäfer & Turek 2D-1 with the cylinder as a penalised body: C_D 5.581 (in range), Δp 0.9 % above, C_L 35 % above the range (smeared wall); fails beyond 40 % of the range midpoint | [gallery 270](../gallery/immersed.md#penalised-cylinder), [recipe 270](../recipes/immersed.md#penalised-body) |

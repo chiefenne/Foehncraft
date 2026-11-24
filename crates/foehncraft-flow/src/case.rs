@@ -2930,10 +2930,10 @@ pub fn run_steered(
         for d in crate::immersed::attach(&mut fl, &case, &mesh, &geo)? {
             if d.severity == diag::Severity::Warning {
                 lg.warn(&format!("{}: {}", d.code, d.message));
+                rep.warnings.push(d);
             } else {
                 lg.note(&d.message);
             }
-            rep.warnings.push(d);
         }
         crate::turbulence::attach(&mut fl, &case, &mesh, &geo)?;
         if let Some(notes) = crate::frame::attach(&mut fl, &case, &mesh, &geo)? {

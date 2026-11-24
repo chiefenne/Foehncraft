@@ -562,6 +562,7 @@ pub fn supported(case: &FlowCase) -> Result<()> {
             !case.regions.is_empty(),
             "regions (conjugate heat transfer)",
         ),
+        (!case.immersed.is_empty(), "immersed bodies"),
     ]
     .into_iter()
     .filter_map(|(on, what)| on.then_some(what))

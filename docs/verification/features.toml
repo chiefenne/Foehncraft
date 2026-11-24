@@ -1664,5 +1664,28 @@ gaps = [
   "1M cells on 4 cores split into 1, 2, 4 ranks (example ranks_scaling): +2, +10, +28 % time per iteration against threads only, bitwise; strong scaling over more cores is W9",
 ]
 
+[[feature]]
+id = "immersed.penalisation"
+area = "Immersed bodies"
+title = "Immersed bodies by Brinkman penalisation, primitive shapes (L13 stage 1)"
+switch = "[immersed] with [[immersed.body]]"
+decisions = ["D226"]
+model = true
+evidence = [
+  { kind = "reference-data", case = "immersed_cylinder_re20", what = "Schäfer & Turek 2D-1 on a plain box mesh (h = D/20) with the cylinder penalised: C_D 5.581 in range, Δp 0.9 % above, C_L 35 % above the range; the run fails beyond 40 % of the range midpoint", doc = "docs/gallery/immersed.md#penalised-cylinder" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/immersed.rs::penalised_poiseuille_converges_to_the_exact_mass_flow", what = "plane Poiseuille flow between two penalised walls off the cell faces: mass flow error 20.5, 8.5, 2.3 % on 16, 32, 64 cells across (about first order); the body forces carry the driving force to 1e-4" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/immersed.rs::coupled_and_simplec_give_the_same_penalised_flow", what = "SIMPLEC and the coupled solver give the same mass flow to 1e-5" },
+  { kind = "exact", test = "crates/foehncraft-flow/src/immersed.rs::solid_volume_of_a_cylinder_converges", what = "the solid volume of a cylinder on a box mesh converges to π r² d with the number of sample points" },
+  { kind = "contract", property = "diagnostics", test = "crates/foehncraft-flow/tests/immersed.rs::unsupported_settings_are_refused", what = "IMM101 for a missing permeability or a bad body, IMM102 for a turbulence model" },
+]
+gaps = [
+  "the wall is smeared over about one cell: first order in h, lift 27 % above the benchmark range at h = D/40, wall shear stress and heat flux not accurate (by design of the pre-stage)",
+  "laminar and isothermal only: turbulence, energy, scalars, gravity, regions, rotating zones and sprays are refused (IMM102)",
+  "primitive bodies only (cylinder, sphere, box); STL bodies need the geometry kernel of stage 0",
+  "the coupled solver breaks down from rest when the sink exceeds about 1e5 times the viscous diagonal (K below about 1e-5 h²); SIMPLEC takes any K",
+  "not yet: density-field topology search, iso-surface extraction, the sweep in K (η) and h of the plan, MMS of the penalised equation, Stokes sphere, the drag gradient check with dual numbers",
+  "one rank only: `foehn run --ranks N` refuses immersed bodies",
+]
+
 # ---------------------------------------------------------------- planned
 

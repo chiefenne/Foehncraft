@@ -1170,7 +1170,14 @@ impl Flow {
         // velocity Σ a_P / (ρ Σ|S|), the mean diagonal coefficient over the
         // face areas (the mean normal speed where convection dominates,
         // ν/h in a fluid at rest)
-        let sc = self.dev.dot(w.diag.x, one)? / area;
+        let mut sum = self.dev.dot(w.diag.x, one)?;
+        if let Some(im) = self.immersed.as_ref() {
+            // without the Brinkman sink of immersed bodies (L13 stage 1):
+            // the stiff solid cells would set the scale of the fluid
+            let sink = im.sink;
+            sum -= self.dev.dot(sink, one)? / alpha;
+        }
+        let sc = sum / area;
         self.dev.lincomb(r.p, sc, r.p, 0.0, r.p)?;
         let tm = Instant::now();
         self.momentum_hierarchies_check(sym)?;

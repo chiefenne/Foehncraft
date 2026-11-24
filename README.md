@@ -210,6 +210,7 @@ validated range, one mesh only, …) in its report and its JSON result.
   and air between walls at 960 K and 240 K has a heat flow with GCI
   0.02 % (gallery 195).
 - **Lagrangian sprays (L12, SP1).** Droplets as parcels in a transient flow run (`[spray]` with an included injector file): exact exponential integration of drag (Schiller and Naumann) and gravity, tracking on the mesh locator, stick, rebound, escape or mirror at boundaries, a mass book that stops the run when it does not close, parcel files and restart, results bitwise equal on 1 to 4 threads, one source for CPU and GPU kernels. One way, one process, constant droplet size; coupling to the gas follows in SP2 ([gallery 242](docs/gallery/sprays.md#spray-duct)).
+- **Immersed bodies by penalisation (L13 stage 1).** Cylinders, spheres and boxes put into any mesh without meshing them (`[immersed]`): solid fraction per cell, an implicit Brinkman sink inside the momentum rows (CPU and GPU, SIMPLEC and coupled), the force on every body. Laminar and isothermal only, the wall smeared over a cell: the Re 20 cylinder on a plain box mesh gets drag and Δp within 1 % of the benchmark, lift 35 % high ([gallery 270](docs/gallery/immersed.md#penalised-cylinder)). Sharp cut-cell walls are stage 2.
 - **Internal flows (D45).** Turbulent pipe flow against DNS, the
   asymmetric plane diffuser of Buice & Eaton, the U-bend of Monson et al.
   and a laminar T-junction mixing a passive scalar on polyhedra, each with

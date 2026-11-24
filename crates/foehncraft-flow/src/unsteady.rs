@@ -1073,10 +1073,10 @@ fn run_one<F: FnMut(&str)>(
     for d in crate::immersed::attach(&mut fl, &case, mesh, geo)? {
         if d.severity == crate::diag::Severity::Warning {
             lg.warn(&format!("{}: {}", d.code, d.message));
+            warnings.push(d);
         } else {
             lg.note(&d.message);
         }
-        warnings.push(d);
     }
     // the wall distance of the sliding mesh by imprinting: kept per part and
     // updated for the rotor angle of every step (D182, D48)
