@@ -28,6 +28,7 @@ from commercial documentation. Reacting flows are not part of this step.
 | SP2 | Two-way momentum and sensible heat, size distributions, eddy-lifetime dispersion, ledger rows for the gas-parcel pair. The coupling follows section 5 (D247 to D252, D254): frozen gas state, sorted deposit, implicit relaxation form, closing step, passes inside the time step | SP1 and 7.0a |
 | SP4 | Minimal vapour species on the low-Mach density, liquid property set for water first | SP2 |
 | SP5 | Evaporation (Ranz-Marshall, Abramzon-Sirignano), closed-box mass and energy ledger test, the spray-cooling case. Vapour and enthalpy exchange in the relaxation form of D250, parcel integrators of D251, saturation limiter of D253, checks V28.1 to V28.8 | SP4 |
+| SP2s | Steady spray mode (D255): parcel streams through the steady gas field, relaxed sources, checks V28.9 to V28.11. Momentum and sensible heat first; evaporation in the steady mode when SP5 is merged | SP2 merged and V28.1 to V28.4 passed |
 | SP6 | Breakup and collision | decision on regime |
 | SP3 | Parcel migration between ranks | MPI W3 to W5 merged |
 | SP7 | Wall film | 7t2 surface mesh |
@@ -193,17 +194,33 @@ number taken from one gets its `DATA_SOURCES.md` entry first.
 
 - Default number of passes (D252): answered, converged passes with at most 3
   (2026-11-24).
-- **Steady sprays:** the lead application has a steady state. The steady
-  source-in-cell iteration (parcels tracked through the frozen steady field
-  every few outer iterations, sources under-relaxed) uses the same pass,
-  deposit and value-plus-slope form, but is not specified; to be decided
-  before SP2 is closed.
+- Steady sprays: answered, own stage SP2s after SP2 (2026-11-24, D255 in
+  section 5.9).
 - **Second order in time for the coupling:** an exponentially fitted weight
   between the old and the new gas state per cell (exact for the linear
   relaxation at any Δt/τ) is the candidate; decided from V28.4.
 - **Mesh independence of the sources** (kernels, parcel number control) and
   the **self-disturbance correction**: with the first case in which droplets
   are not small against the cells.
+
+### 5.9 Steady spray mode (D255, stage SP2s)
+
+Decided by the maintainer 2026-11-24: the steady mode is a stage of its own,
+built after the transient two-way coupling of SP2 is verified. The lead
+application (D240) has a steady state; marching it in time costs many more
+parcel passes than the steady iteration.
+
+| ID | Decision |
+|---|---|
+| D255 | **Steady spray mode: source-in-cell iteration with the rules of this section.** The method is the steady form of Crowe, Sharma and Stock (1977). (1) A parcel is a *stream*: it stands for a number of droplets per second, is started at its injector and followed through the frozen steady gas field until it leaves, sticks or has evaporated. The records hold the change of the mass flow, the momentum flow and the enthalpy flow of the stream per sub-step; the pass is the same pure function, the deposit the same sorted sum (D247 to D249), the integrators those of D251 with sub-steps along the path instead of a flow time step. (2) A stream pass runs every N outer iterations of the steady solver (key, default fixed with the stage). The gas takes the sources in value-plus-slope form (D250), relaxed between passes, S ← S + α (S_new − S), with α a case key. (3) Random numbers of dispersion are keyed by the stream and the event only, never by the pass: every pass draws the same numbers, so the iteration has a fixed point and can converge. The statistical error of that one sample is estimated by repeating the run with other stream keys (an option of the study tools, D196), not by drawing new numbers each pass. (4) There is no closing step, because no parcel state is carried from pass to pass. The ledger pair is exact for the sources of the last pass; the difference between the relaxed sources the gas holds and those of the last pass is the *source residual*, written to the run record, and part of the convergence test next to the monitored quantity (outlet gas temperature, evaporated mass flow). A run with the source residual above its tolerance is not reported as converged. (5) The limiter of D253 and the health numbers of D254 apply with the residence time of the gas in the cell in place of the time step. (6) Refused with a diagnostic code: injectors with a mass flow that changes in time, and a steady spray together with `[time]`; the wall film (SP7) stays transient. |
+
+Checks of the steady mode:
+
+| Check | Content | Passes when |
+|---|---|---|
+| V28.9 | Spray-cooling duct: steady mode against the transient run marched to its steady state | outlet gas temperature and evaporated mass flow agree within the error band of the time-step study (V28.4) |
+| V28.10 | Order independence of the steady mode: streams shuffled, 1 to 4 threads | fields and ledger bitwise equal |
+| V28.11 | Duct with more water than the gas can take | outlet at the adiabatic saturation state (exact, from the enthalpy balance); vapour fraction monotone along the duct; source residual falling with the passes |
 
 ### 5.8 References of this section
 
