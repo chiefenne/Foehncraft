@@ -1157,7 +1157,12 @@ gravity = 9.80665            # of the head H = dp_t / (rho g)
 - An animation of a field series: `fields_every = 10` in `[output]`, then
   `pvpython tools/plot/rotor_movie.py output/<case>` (colour map, isolines,
   colour bar and colours by options, see its header) and the `ffmpeg` command it
-  prints.
+  prints. Vectors are written as `NAME_x`, `NAME_y`, `NAME_z` and
+  `NAME_magnitude`: `--field vorticity --component z` (the signed vorticity
+  of a 2D case). Give a negative colour bound as one argument,
+  `--range=-60:60`: pvpython turns an argument `-60` into `--60` before the
+  script sees it. A GIF from the frames:
+  `ffmpeg -framerate 15 -i DIR/movie/frame_%04d.png -vf "scale=800:-1:flags=lanczos,split[a][b];[a]palettegen[p];[b][p]paletteuse" movie.gif`.
 
 [Gallery 101](../gallery/flow.md#torque-power); the keys are in
 [cases/flow-keys.md](../cases/flow-keys.md) and [keys.md](../keys.md).

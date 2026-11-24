@@ -8,15 +8,31 @@ series works. Run it with ParaView's Python from the repository root:
     pvpython tools/plot/rotor_movie.py output/sliding_turbulent
     pvpython tools/plot/rotor_movie.py output/sliding_turbulent \\
         --field vorticity_magnitude --range 0 40 --size 1600 1600
+    pvpython tools/plot/rotor_movie.py output/three_mixer \\
+        --field vorticity --component z --range=-60:60 --size 1600 800
 
 (on macOS: /Applications/ParaView-6.2.0.app/Contents/bin/pvpython). It
 writes DIR/movie/frame_0000.png, ... and prints the ffmpeg command that
-turns them into an MP4 (`brew install ffmpeg` on macOS).
+turns them into an MP4 (`brew install ffmpeg` on macOS). The picture fits
+the domain to its shape (`--size 1600 800` for a wide vessel), and the label
+gives the revolutions of every rotor of the case (A / B / C). A field name
+that is not in the series stops the script with the list of the cell fields
+that are.
 
 Options:
     --field NAME     cell field (default vorticity_magnitude; e.g. speed, k,
-                     pressure, relative_velocity_magnitude)
-    --range LO HI    fixed colour range (default 0 to the 99th percentile of
+                     pressure, relative_velocity_magnitude); a vector by its
+                     base name (vorticity, velocity) with --component
+    --component C    of a vector field: magnitude (default), x, y or z;
+                     Foehncraft writes vectors as NAME_x, NAME_y, NAME_z and
+                     NAME_magnitude, so `--field vorticity --component z`
+                     is the cell array vorticity_z (the signed vorticity of a
+                     2D case: use a range about zero, `--range=-60:60`)
+    --range LO HI    fixed colour range, also as one argument `--range=LO:HI`;
+                     pvpython turns an argument `-60` into `--60` before the
+                     script sees it, so give a negative bound as
+                     `--range=-60:60` (or `--range " -60" 60`) (default 0 to
+                     the 99th percentile of
                      the last frame)
     --size W H       pixels (default 1600 1600)
     --out DIR        where the frames go (default DIR/movie)
@@ -46,8 +62,8 @@ import re
 
 from paraview import servermanager
 from paraview.simple import (
-    CellDatatoPointData, ColorBy, Contour, CreateView, ExtractBlock, GetColorTransferFunction,
-    GetScalarBar, MergeBlocks, OpenDataFile, Render, SaveScreenshot, Show, Slice, Text,
+    CellDatatoPointData, ColorBy, Contour, CreateView, ExtractBlock, FeatureEdges,
+    GetColorTransferFunction, GetScalarBar, MergeBlocks, OpenDataFile, Render, SaveScreenshot, Show, Slice, Text,
 )
 from vtkmodules.util.numpy_support import vtk_to_numpy
 import numpy as np
@@ -81,8 +97,9 @@ def series(d, every):
 
 
 def case_times(d):
-    """Time step, start time and |Omega| from DIR/case.resolved.toml."""
-    dt, t0, omega = None, 0.0, None
+    """Time step, start time and the |Omega| of every rotor (in the order of
+    the case file) from DIR/case.resolved.toml."""
+    dt, t0, omega = None, 0.0, []
     try:
         with open(os.path.join(d, "case.resolved.toml")) as f:
             text = f.read()
@@ -102,29 +119,82 @@ def case_times(d):
             dt = val
         elif section == "time" and key == "start_time":
             t0 = val
-        elif section in ("sliding", "mrf") and key == "omega" and omega is None:
-            omega = abs(val)
-        elif section in ("sliding", "mrf") and key == "rpm" and omega is None:
-            omega = abs(val) * 2.0 * math.pi / 60.0
+        elif section in ("sliding", "mrf") and key == "omega":
+            omega.append(abs(val))
+        elif section in ("sliding", "mrf") and key == "rpm":
+            omega.append(abs(val) * 2.0 * math.pi / 60.0)
     return dt, t0, omega
 
 
-def values(src, field):
-    """The cell values of `field` of a source (merged to one grid)."""
+def colour_range(args):
+    """LO HI from `--range LO HI` or `--range=LO:HI` (also LO,HI); the
+    values may carry spaces (`" -60"`, which pvpython leaves alone)."""
+    parts = args[0].replace(",", ":").split(":") if len(args) == 1 else args
+    try:
+        lo, hi = (float(x) for x in parts)
+    except ValueError:
+        raise SystemExit(f"--range: two numbers, LO HI or LO:HI, not {' '.join(args)} "
+                         "(pvpython turns -60 into --60: write --range=-60:60)")
+    return lo, hi
+
+
+def block(reader, name):
+    """The blocks of the node `name` of a series file (`internal`: the
+    cells, `boundary`: the wall surfaces), else None. The writer puts both
+    in the data assembly; ParaView versions differ in whether a selector
+    goes to the assembly or to the hierarchy of the blocks, so try both."""
+    for assembly, selector in (("Assembly", f"//{name}"), ("Hierarchy", f"/Root/{name}"),
+                               ("Hierarchy", f"//{name}")):
+        part = ExtractBlock(Input=reader)
+        try:
+            part.Assembly = assembly
+        except Exception:  # noqa: BLE001  (ParaView without the property)
+            pass
+        part.Selectors = [selector]
+        part.UpdatePipeline()
+        if part.GetDataInformation().GetNumberOfCells() > 0:
+            return part
+    return None
+
+
+def fetch(src):
+    """The cell data of a source, merged to one grid."""
     merged = MergeBlocks(Input=src)
     merged.UpdatePipeline()
-    data = servermanager.Fetch(merged)
-    arr = data.GetCellData().GetArray(field)
-    if arr is None:
-        raise SystemExit(f"no cell field `{field}` in the series")
-    return vtk_to_numpy(arr)
+    return servermanager.Fetch(merged).GetCellData()
+
+
+def resolve(cells, field, component):
+    """The cell array to draw and the component index of a multi-component
+    array (None for a scalar): `field` itself, or of a vector written as
+    separate scalars the array `field`_`component`."""
+    names = [cells.GetArrayName(i) for i in range(cells.GetNumberOfArrays())]
+    if field in names:
+        arr = cells.GetArray(field)
+        if arr.GetNumberOfComponents() == 1:
+            return field, None
+        if component == "magnitude":
+            return field, -1
+        return field, "xyz".index(component)
+    if f"{field}_{component}" in names:
+        return f"{field}_{component}", None
+    raise SystemExit(f"no cell field `{field}` in the series; cell fields: {', '.join(names)}")
+
+
+def values(cells, name, comp):
+    """The values of the array `name` (its component `comp`, -1: magnitude)."""
+    v = vtk_to_numpy(cells.GetArray(name))
+    if comp is None:
+        return v
+    return np.linalg.norm(v, axis=1) if comp < 0 else v[:, comp]
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("dir")
     ap.add_argument("--field", default="vorticity_magnitude")
-    ap.add_argument("--range", type=float, nargs=2, default=None)
+    ap.add_argument("--component", choices=["magnitude", "x", "y", "z"], default="magnitude")
+    ap.add_argument("--range", nargs="+", default=None, metavar="LO HI")
     ap.add_argument("--size", type=int, nargs=2, default=[1600, 1600])
     ap.add_argument("--out", default=None)
     ap.add_argument("--every", type=int, default=1)
@@ -146,23 +216,27 @@ def main():
     dt, t0, omega = case_times(a.dir)
 
     reader = OpenDataFile(files[-1][1])
-    interior = ExtractBlock(Input=reader)
-    interior.Selectors = ["/Root/internal"]
-    walls = ExtractBlock(Input=reader)
-    walls.Selectors = ["/Root/boundary"]
-    interior.UpdatePipeline()
-    if interior.GetDataInformation().GetNumberOfCells() == 0:
+    interior = block(reader, "internal")
+    if interior is None:
         # a reader without the assembly names: take everything
         interior = reader
         interior.UpdatePipeline()
+    walls = block(reader, "boundary")
     info = interior.GetDataInformation()
     x0, x1, y0, y1, z0, z1 = info.GetBounds()
     zc = 0.5 * (z0 + z1)
+    cells = fetch(interior)
+    field, comp = resolve(cells, a.field, a.component)
     if a.range:
-        lo, hi = a.range
+        lo, hi = colour_range(a.range)
     else:
-        lo, hi = 0.0, float(np.percentile(values(interior, a.field), 99.0))
-    print(f"{len(files)} frames, {a.field} from {lo:.4g} to {hi:.4g}")
+        v = values(cells, field, comp)
+        if v.min() < 0.0:   # a signed field (a component): symmetric about zero
+            hi = float(np.percentile(np.abs(v), 99.0))
+            lo = -hi
+        else:
+            lo, hi = 0.0, float(np.percentile(v, 99.0))
+    print(f"{len(files)} frames, {field} from {lo:.4g} to {hi:.4g}")
 
     shown = interior
     if a.slice:
@@ -172,10 +246,24 @@ def main():
         shown.SliceType.Normal = [0.0, 0.0, 1.0]
     if not a.cells:
         shown = CellDatatoPointData(Input=shown)
-    lines = Slice(Input=walls)
-    lines.SliceType = "Plane"
-    lines.SliceType.Origin = [0.0, 0.0, zc]
-    lines.SliceType.Normal = [0.0, 0.0, 1.0]
+    if walls is not None:
+        lines = Slice(Input=walls)
+        lines.SliceType = "Plane"
+        lines.SliceType.Origin = [0.0, 0.0, zc]
+        lines.SliceType.Normal = [0.0, 0.0, 1.0]
+    else:
+        # no wall blocks found: the outline of the mid-depth cut of the
+        # cells (vessel, blades and hubs; also an interface whose two sides
+        # do not share their nodes)
+        cut = Slice(Input=interior)
+        cut.SliceType = "Plane"
+        cut.SliceType.Origin = [0.0, 0.0, zc]
+        cut.SliceType.Normal = [0.0, 0.0, 1.0]
+        lines = FeatureEdges(Input=cut)
+        opt(lines, "BoundaryEdges", 1)
+        opt(lines, "FeatureEdges", 0)
+        opt(lines, "NonManifoldEdges", 0)
+        opt(lines, "ManifoldEdges", 0)
 
     v = CreateView("RenderView")
     v.ViewSize = list(a.size)
@@ -185,10 +273,14 @@ def main():
     opt(v, "BackgroundColorMode", "Single Color")
 
     d = Show(shown, v)
-    ColorBy(d, ("CELLS" if a.cells else "POINTS", a.field))
+    where = "CELLS" if a.cells else "POINTS"
+    if comp is None:
+        ColorBy(d, (where, field))
+    else:
+        ColorBy(d, (where, field, "Magnitude" if comp < 0 else "XYZ"[comp]))
     opt(d, "Ambient", 1.0)
     opt(d, "Diffuse", 0.0)
-    lut = GetColorTransferFunction(a.field)
+    lut = GetColorTransferFunction(field)
     # the preset names differ between versions (ParaView 6 has no
     # "Inferno (matplotlib)"): try the names, else the table of inferno
     applied = False
@@ -210,20 +302,23 @@ def main():
     opt(lut, "AutomaticRescaleRangeMode", "Never")
     lut.RescaleTransferFunction(lo, hi)
     bar = GetScalarBar(lut, v)
-    for name, value in (("Title", a.field.replace("_magnitude", "").replace("_", " ")), ("ComponentTitle", ""),
+    for name, value in (("Title", field.replace("_magnitude", "").replace("_", " ")), ("ComponentTitle", ""),
                         ("TitleColor", [0.0, 0.0, 0.0]), ("LabelColor", [0.0, 0.0, 0.0]),
                         ("TitleFontSize", 14), ("LabelFontSize", 13), ("HorizontalTitle", 1),
-                        ("WindowLocation", "Any Location"), ("Orientation", "Vertical"),
-                        ("Position", [0.86, 0.25]), ("ScalarBarLength", 0.5)):
+                        ("WindowLocation", "Any Location"), ("WindowLocation", "AnyLocation"),
+                        ("Orientation", "Vertical"),
+                        ("Position", [0.86, 0.25]), ("ScalarBarLength", 0.5),
+                        ("RangeLabelFormat", "%-#.3g"), ("AddRangeLabels", 1)):
         opt(bar, name, value)
     d.SetScalarBarVisibility(v, a.colorbar == "on")
+    opt(bar, "Visibility", 1 if a.colorbar == "on" else 0)
 
     if a.isolines > 0 and not a.cells:
         mid = Slice(Input=shown)
         mid.SliceType = "Plane"
         mid.SliceType.Origin = [0.0, 0.0, zc]
         mid.SliceType.Normal = [0.0, 0.0, 1.0]
-        iso = Contour(Input=mid, ContourBy=["POINTS", a.field],
+        iso = Contour(Input=mid, ContourBy=["POINTS", field],
                       Isosurfaces=[lo + (hi - lo) * (k + 1) / (a.isolines + 1)
                                    for k in range(a.isolines)])
         ci = Show(iso, v)
@@ -240,6 +335,10 @@ def main():
     w.AmbientColor = list(a.wallcolor)
     w.DiffuseColor = list(a.wallcolor)
     opt(w, "LineWidth", 2.5)
+    if not a.slice:
+        # the cells are seen from +z: lift the lines of the mid-depth cut
+        # above the top faces, else the blades are hidden under them
+        opt(w, "Position", [0.0, 0.0, 0.5 * (z1 - z0) + 1e-3 * (x1 - x0)])
 
     label = Text(Text="")
     t = Show(label, v)
@@ -256,15 +355,26 @@ def main():
     v.CameraPosition = [xc, yc, zc + 10.0 * max(x1 - x0, y1 - y0)]
     v.CameraFocalPoint = [xc, yc, zc]
     v.CameraViewUp = [0.0, 1.0, 0.0]
-    v.CameraParallelScale = 0.6 * max(x1 - x0, y1 - y0)
+    # the parallel scale is half the visible height: fit the domain to the
+    # shape of the picture with a margin (and room for the colour bar)
+    pw, ph = a.size
+    room = 0.82 if a.colorbar == "on" else 0.96   # width share of the domain
+    scale = 0.5 * max((y1 - y0) / 0.86, (x1 - x0) * ph / (room * pw))
+    shift = 2.0 * scale * pw / ph * (0.5 - 0.5 * room)  # domain left of the bar
+    v.CameraParallelScale = scale
+    v.CameraFocalPoint = [xc + shift, yc, zc]
+    v.CameraPosition = [xc + shift, yc, zc + 10.0 * max(x1 - x0, y1 - y0)]
 
     for i, (step, f) in enumerate(files):
         reader.FileName = f
         if dt is not None:
             time = t0 + step * dt
             s = f"t = {time:.3f} s"
-            if omega:
-                s += f",  {time * omega / (2.0 * math.pi):.2f} revolutions"
+            turns = [time * w / (2.0 * math.pi) for w in omega]
+            if len(set(omega)) == 1:
+                s += f",  {turns[0]:.2f} revolutions"
+            elif turns:
+                s += ",  revolutions " + " / ".join(f"{n:.2f}" for n in turns)
         else:
             s = f"step {step}"
         label.Text = s
