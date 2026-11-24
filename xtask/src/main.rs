@@ -34,6 +34,12 @@ const ALLOWED: &[(&str, &[&str])] = &[
             "foehncraft-mesh",
         ],
     ),
+    // The Lagrangian parcels (L12): the parcel kernel and the tracker on the
+    // mesh locator; the gas enters through a trait, so no `foehncraft-fv`.
+    (
+        "foehncraft-particles",
+        &["foehncraft-core", "foehncraft-kernels", "foehncraft-mesh"],
+    ),
     (
         "foehncraft-flow",
         &[
@@ -42,6 +48,7 @@ const ALLOWED: &[(&str, &[&str])] = &[
             "foehncraft-parallel",
             "foehncraft-mesh",
             "foehncraft-fv",
+            "foehncraft-particles",
         ],
     ),
     (
