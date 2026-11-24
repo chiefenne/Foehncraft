@@ -1223,7 +1223,20 @@
     "gaps written"
    ],
    "gaps": [
-    "the multigrid preconditioner on ranks (W4) and the flow engine on ranks (W5) follow"
+    "the flow engine on ranks (W5) follows"
+   ],
+   "range": {}
+  },
+  {
+   "id": "parallel.multigrid-ranks",
+   "title": "Multigrid on several ranks with the replicated setup, bitwise one rank (MPI step W4)",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "the setup is replicated: every rank builds the whole hierarchy, so setup time and memory do not fall with the rank count (a distributed setup is not planned before the scaling numbers ask for it)",
+    "the flow engine on ranks (W5) follows"
    ],
    "range": {}
   }

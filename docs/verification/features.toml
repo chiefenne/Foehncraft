@@ -1540,7 +1540,24 @@ evidence = [
   { kind = "contract", property = "bitwise", case = "ranks_oblique_step_2d", what = "the oblique step on 2, 3 and 5 ranks: 67 outer iterations and phi bitwise the one-rank run (the run fails otherwise)" },
 ]
 gaps = [
-  "the multigrid preconditioner on ranks (W4) and the flow engine on ranks (W5) follow",
+  "the flow engine on ranks (W5) follows",
+]
+
+[[feature]]
+id = "parallel.multigrid-ranks"
+area = "Backends and interfaces"
+title = "Multigrid on several ranks with the replicated setup, bitwise one rank (MPI step W4)"
+switch = "preconditioner = \"amg\" with [run] ranks"
+decisions = ["D31", "D93", "D179"]
+infrastructure = true
+contracts = ["bitwise"]
+evidence = [
+  { kind = "contract", property = "bitwise", test = "crates/foehncraft-fv/tests/ranks.rs::scalar_solves_on_ranks_are_bitwise_one_rank", what = "1 to 4 ranks (RCB): CG + smoothed-aggregation multigrid on hexahedra and the reduction multigrid on a convection matrix give phi, residual history and the cycle result bitwise one rank" },
+  { kind = "contract", property = "bitwise", case = "ranks_poisson_amg_poly_box", what = "the manufactured Poisson problem with CG + multigrid (Chebyshev, mixed precision) on 2, 3 and 5 ranks: 21 outer iterations and phi bitwise the one-rank run (the run fails otherwise)" },
+]
+gaps = [
+  "the setup is replicated: every rank builds the whole hierarchy, so setup time and memory do not fall with the rank count (a distributed setup is not planned before the scaling numbers ask for it)",
+  "the flow engine on ranks (W5) follows",
 ]
 
 # ---------------------------------------------------------------- planned

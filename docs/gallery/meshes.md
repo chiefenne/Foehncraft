@@ -17,6 +17,7 @@ Part of the [Example gallery](../gallery.md): the built-in test mesher in 2D and
 | 200 | [Three ranks, the bits of one: the canonical local mesh](#canonical-ranks) | 8 | flipped faces, cell faces in global order, `foehn mesh` check per rank (MPI step W1, D93) |
 | 219 | [Sums that do not care how many ranks there are: exact reductions](#exact-reductions) | 8 | exact accumulator, sums over ranks bitwise one rank, the old rank-order sum for comparison (MPI step W2, D31, D93) |
 | 230 | [Five ranks, one solution: the scalar solver on ranks](#scalar-ranks) | 8 | faces in global orientation, halo exchange before every read across a face, the whole scalar solver bitwise one rank (MPI step W3, D93) |
+| 231 | [Five ranks, one hierarchy: multigrid on ranks](#multigrid-ranks) | 8 | replicated multigrid setup, distributed V-cycle with a halo exchange per level, CG + multigrid bitwise one rank (MPI step W4, D93) |
 
 ---
 
@@ -538,6 +539,50 @@ python3 -m tools.mesh.render_mesh output/ranks_oblique_step_2d/fields.vtkhdf phi
     --title "phi on 5 ranks: bitwise the one-rank solution"
 python3 -m tools.mesh.render_mesh output/ranks_oblique_step_2d/fields.vtkhdf rank.png \
     --field rank --categorical --top --size 1000x560 --title "5 ranks (RCB)"
+```
+
+[↑ back to top](#meshes)
+
+---
+
+<a id="multigrid-ranks"></a>
+## 231. Five ranks, one hierarchy: multigrid on ranks
+
+<img src="../figures/gallery/ranks_multigrid_phi.png" alt="Manufactured Poisson solution on a polyhedral box, cut open, solved with CG and multigrid on five ranks" width="1000" height="620">
+
+<img src="../figures/gallery/ranks_multigrid_rank.png" alt="The five ranks of the recursive coordinate bisection of the polyhedral box, cut open" width="1000" height="620">
+
+The manufactured Poisson problem of gallery 11 on a perturbed polyhedral
+box of 3 375 cells, solved with CG and the smoothed-aggregation multigrid
+(Chebyshev smoother of degree 2, mixed precision, non-orthogonal
+correction) once on all cells and then on 2, 3 and 5 ranks. Every rank
+gathers the matrix in global order and builds the whole hierarchy, so the
+aggregates are those of the one-rank run; then it keeps the rows it owns
+on every level (a coarse row belongs to the owner of the first fine row of
+its aggregate) and works out, without communicating, which entries it
+sends to and receives from every other rank. The V-cycle smooths,
+restricts and prolongs the own rows, exchanges the ghosts of a level
+before each read and gathers the coarsest level to solve it on every
+rank. Every row keeps its terms in global order, so all 21 outer
+iterations, the 99 CG iterations and the final φ are bitwise those of one
+rank; the run fails otherwise. The same check runs across MPI processes in
+CI (`mpi_scalar`, 1 to 4 ranks), also for the reduction multigrid of the
+coupled momentum sweep (D179) on a convection matrix.
+
+| | |
+|---|---|
+| Mesh | poly 3D, 14 × 14 × 14 base grid, 3 375 cells, nodes perturbed by 15 % |
+| Ranks | 2, 3, 5 (recursive coordinate bisection), one halo layer |
+| Solver | CG + smoothed-aggregation multigrid, Chebyshev degree 2, mixed precision, 21 outer iterations |
+| Case file | `scalar/ranks_poisson_amg_poly_box.toml` |
+
+```
+target/release/foehn scalar examples/cases/scalar/ranks_poisson_amg_poly_box.toml
+python3 -m tools.mesh.render_mesh output/ranks_poisson_amg_poly_box/fields.vtkhdf phi.png \
+    --field phi --cut --size 1000x620 \
+    --title "phi on 5 ranks, CG + multigrid: bitwise the one-rank solution"
+python3 -m tools.mesh.render_mesh output/ranks_poisson_amg_poly_box/fields.vtkhdf rank.png \
+    --field rank --categorical --cut --size 1000x620 --title "5 ranks (RCB) of the polyhedral box"
 ```
 
 [↑ back to top](#meshes)

@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**109 features: 50 verified, 56 partial, 3 unverified.**
+**110 features: 50 verified, 57 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -134,6 +134,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Backends and interfaces | [MCP server (foehn mcp)](#interface-mcp) | verified |
 | Backends and interfaces | [Exact reductions: sums, dot products, norms and min/max independent of threads, order and ranks (MPI step W2)](#parallel-exact-reductions) | verified |
 | Backends and interfaces | [The steady scalar solver on several ranks, bitwise one rank (MPI step W3)](#parallel-scalar-ranks) | partial |
+| Backends and interfaces | [Multigrid on several ranks with the replicated setup, bitwise one rank (MPI step W4)](#parallel-multigrid-ranks) | partial |
 
 ## Meshes
 
@@ -1639,6 +1640,22 @@ Contracts: `bitwise`.
 
 Gaps:
 
-- the multigrid preconditioner on ranks (W4) and the flow engine on ranks (W5) follow
+- the flow engine on ranks (W5) follows
+
+Contracts: `bitwise`.
+
+<a id="parallel-multigrid-ranks"></a>
+
+### Multigrid on several ranks with the replicated setup, bitwise one rank (MPI step W4)
+
+**partial** (gaps written) · id `parallel.multigrid-ranks` · switch `preconditioner = "amg" with [run] ranks` · decisions D31, D93, D179
+
+- contract (bitwise): [`scalar_solves_on_ranks_are_bitwise_one_rank`](../../crates/foehncraft-fv/tests/ranks.rs): 1 to 4 ranks (RCB): CG + smoothed-aggregation multigrid on hexahedra and the reduction multigrid on a convection matrix give phi, residual history and the cycle result bitwise one rank
+- contract (bitwise): [`ranks_poisson_amg_poly_box`](../../examples/cases/scalar/ranks_poisson_amg_poly_box.toml): the manufactured Poisson problem with CG + multigrid (Chebyshev, mixed precision) on 2, 3 and 5 ranks: 21 outer iterations and phi bitwise the one-rank run (the run fails otherwise) (passes in CI (set linux-1), not yet in the manual)
+
+Gaps:
+
+- the setup is replicated: every rank builds the whole hierarchy, so setup time and memory do not fall with the rank count (a distributed setup is not planned before the scaling numbers ask for it)
+- the flow engine on ranks (W5) follows
 
 Contracts: `bitwise`.

@@ -27,6 +27,7 @@ every case except `*_gpu.toml` (R5).
 | `scalar/oblique_step_2d.toml` | generated poly 2D, 2 401 cells | upwind, linear upwind, both limiters and the bounded central scheme (stage 5, D25) as `[[variants]]`; bounds check | [gallery 9](../gallery/scalar-pressure.md#oblique-step), [recipe 13](../recipes/scalar-pressure.md#scalar-schemes) |
 | `scalar/mms_poly_gpu.toml` | generated poly 3D, 912 673 cells | CPU against two GPU runs: GPU equals CPU and GPU run to run | [recipe 14](../recipes/gpu.md#scalar-gpu), `tools/notebooks/stage2_colab.ipynb` |
 | `scalar/ranks_oblique_step_2d.toml` | generated poly 2D, 4 225 cells | the oblique step with linear upwind and the Venkatakrishnan limiter on 2, 3 and 5 ranks, bitwise the one-rank solution (MPI step W3) | [gallery 230](../gallery/meshes.md#scalar-ranks), [recipe 230](../recipes/meshes.md#scalar-ranks) |
+| `scalar/ranks_poisson_amg_poly_box.toml` | generated poly 3D, 3 375 cells | the Poisson manufactured solution with CG + multigrid on 2, 3 and 5 ranks, bitwise the one-rank solution (MPI step W4) | [gallery 231](../gallery/meshes.md#multigrid-ranks), [recipe 231](../recipes/meshes.md#multigrid-ranks) |
 | `scalar/poisson_amg_poly_box.toml` | generated poly 3D, 729 to 35 937 cells | Poisson manufactured solution with CG + AMG (stage 3) against BiCGStab + Jacobi as `[[variants]]`; order of accuracy | [gallery 11](../gallery/scalar-pressure.md#poisson-amg-mms), [recipe 15](../recipes/scalar-pressure.md#poisson-study) |
 
 ## Scalar case-file keys
