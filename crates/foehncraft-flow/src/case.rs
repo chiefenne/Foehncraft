@@ -874,6 +874,9 @@ pub struct FlowCase {
         skip_serializing_if = "crate::buoyancy::BuoyancySection::is_default"
     )]
     pub buoyancy: crate::buoyancy::BuoyancySection,
+    /// Lagrangian parcels of the sprays (L12): `[spray]`.
+    #[serde(skip_serializing_if = "foehncraft_particles::SpraySection::is_empty")]
+    pub spray: foehncraft_particles::SpraySection,
     /// The fluid view of a conjugate heat transfer case (stage 7d1): set on
     /// the case of the flow, which runs on the fluid cells only, with the
     /// full case and mesh behind it ([`crate::cht`]).
@@ -1096,6 +1099,7 @@ impl FlowCase {
         }
         // the user material files and the data files of the materials
         self.materials.load()?;
+        crate::spray::load(&mut self.spray)?;
         // the expressions can be checked once the tables are read
         self.validate_expressions()?;
         Ok(())
@@ -1178,6 +1182,7 @@ impl FlowCase {
         }
         crate::expr::resolve_paths(&mut c.tables, dir);
         c.materials.resolve_paths(dir);
+        c.spray.resolve_paths(dir);
         c.solver.reduction_defaults = crate::turbulence::reduction_defaults(&c);
         // `[energy.cycle] enabled = false` runs the case fully coupled (the
         // reference of the loop, `--set energy.cycle.enabled=false`)
@@ -1445,6 +1450,7 @@ impl FlowCase {
         crate::start::validate(self)?;
         crate::sliding::validate(self)?;
         crate::rotor::validate(self)?;
+        crate::spray::validate(self)?;
         if let Some(d) = &self.fluid.density
             && let Some(v) = d.number()
         {
@@ -2535,6 +2541,7 @@ fn steady_restart(fl: &mut Flow, mesh: &Mesh, name: &str) -> Result<Restart> {
         transient: None,
         geometry: None,
         cht: crate::cht::restart_part(fl, None, None)?,
+        spray: None,
     })
 }
 

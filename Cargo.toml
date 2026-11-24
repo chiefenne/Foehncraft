@@ -6,6 +6,7 @@ members = [
     "crates/foehncraft-parallel",
     "crates/foehncraft-mesh",
     "crates/foehncraft-fv",
+    "crates/foehncraft-particles",
     "crates/foehncraft-flow",
     "crates/foehncraft-bench",
     "crates/foehncraft-cuda",
@@ -33,6 +34,7 @@ foehncraft-kernels = { path = "crates/foehncraft-kernels", version = "1.0.0" }
 foehncraft-parallel = { path = "crates/foehncraft-parallel", version = "1.0.0" }
 foehncraft-mesh = { path = "crates/foehncraft-mesh", version = "1.0.0", default-features = false }
 foehncraft-fv = { path = "crates/foehncraft-fv", version = "1.0.0", default-features = false }
+foehncraft-particles = { path = "crates/foehncraft-particles", version = "1.0.0", default-features = false }
 foehncraft-flow = { path = "crates/foehncraft-flow", version = "1.0.0", default-features = false }
 foehncraft-bench = { path = "crates/foehncraft-bench", version = "1.0.0" }
 foehncraft-cuda = { path = "crates/foehncraft-cuda", version = "1.0.0" }

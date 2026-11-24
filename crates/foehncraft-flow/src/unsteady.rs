@@ -856,6 +856,7 @@ fn restart_of(
     };
     Ok(Restart {
         cht: crate::cht::restart_part(fl, cycle, frozen)?,
+        spray: None,
         case: name.into(),
         cell_id: mesh.cell_id[..mesh.n_cells].to_vec(),
         face_id: mesh.face_id.clone(),

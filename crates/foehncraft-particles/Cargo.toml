@@ -1,0 +1,28 @@
+[package]
+name = "foehncraft-particles"
+description = "Foehncraft Lagrangian parcels: injectors, drag and gravity, tracking through the polyhedral mesh, walls, output and restart of the sprays (L12)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[features]
+default = ["hdf5"]
+# VTKHDF output of the parcels (HDF5 built from source).
+hdf5 = ["foehncraft-mesh/hdf5"]
+
+[dependencies]
+foehncraft-core.workspace = true
+foehncraft-kernels.workspace = true
+foehncraft-mesh.workspace = true
+rayon.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+schemars.workspace = true
+anyhow = "1"
+
+[lints]
+workspace = true
