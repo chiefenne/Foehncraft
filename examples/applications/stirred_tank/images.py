@@ -13,6 +13,8 @@ import matplotlib; matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from scipy.spatial import cKDTree
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[3]))
+from tools.plot.colormaps import RAINBOW  # noqa: E402
 run, out = sys.argv[1], sys.argv[2]
 TIP = 9.42477796076938*0.2
 f = h5py.File(run+"/fields.vtkhdf","r"); g=f["VTKHDF/internal"]
@@ -35,7 +37,7 @@ R,Z,i,ok=grid("v")
 U=u[i]; sp=np.linalg.norm(U,axis=1)
 mm=lambda v: np.where(ok,v,np.nan).reshape(R.shape)
 fig,ax=plt.subplots(figsize=(6.2,6.4),dpi=200)
-im=ax.pcolormesh(R,Z,mm(sp)/TIP,cmap="turbo",vmin=0,vmax=0.5,shading="auto",rasterized=True)
+im=ax.pcolormesh(R,Z,mm(sp)/TIP,cmap=RAINBOW,vmin=0,vmax=0.5,shading="auto",rasterized=True)
 ax.streamplot(R[0],Z[:,0],np.nan_to_num(mm(U[:,0])),np.nan_to_num(mm(U[:,2])),color="k",linewidth=0.5,density=2.0,arrowsize=0.6)
 ax.set_aspect("equal"); ax.set_xlabel("x  (m)"); ax.set_ylabel("z  (m)")
 cb=fig.colorbar(im,ax=ax,shrink=0.8,pad=0.02); cb.set_label("speed / tip speed  (-)")
@@ -46,7 +48,7 @@ zs=0.22; n=520; x=np.linspace(-0.5,0.5,n); X,Y=np.meshgrid(x,x)
 P=np.stack([X,Y,zs+0*X],-1).reshape(-1,3); d,i=tree.query(P); ok=((X**2+Y**2)<=0.25).reshape(-1)&(d<0.06)
 U=u[i]; sp=np.linalg.norm(U,axis=1)
 fig,ax=plt.subplots(figsize=(6.2,5.6),dpi=200)
-im=ax.pcolormesh(X,Y,np.where(ok,sp,np.nan).reshape(X.shape)/TIP,cmap="turbo",vmin=0,vmax=0.5,shading="auto",rasterized=True)
+im=ax.pcolormesh(X,Y,np.where(ok,sp,np.nan).reshape(X.shape)/TIP,cmap=RAINBOW,vmin=0,vmax=0.5,shading="auto",rasterized=True)
 th=np.linspace(0,2*np.pi,300); ax.plot(0.5*np.cos(th),0.5*np.sin(th),"k",lw=0.8)
 ax.set_aspect("equal"); ax.set_xlabel("x  (m)"); ax.set_ylabel("y  (m)")
 cb=fig.colorbar(im,ax=ax,shrink=0.8,pad=0.02); cb.set_label("speed / tip speed  (-)")

@@ -19,6 +19,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
+from tools.plot.colormaps import RAINBOW  # noqa: E402
 
 R, NU = 0.5, 1.0 / 5300.0
 
@@ -40,7 +41,7 @@ def main(out: str, run: str) -> None:
     rr, tt = np.meshgrid(r, th)
     fig = plt.figure(figsize=(11, 3.8), dpi=200)
     gs = fig.add_gridspec(1, 3, width_ratios=[1, 1, 1.35], wspace=0.7)
-    for i, (val, lab, cmap) in enumerate([(u, "u / U_b", "turbo"), (nut / NU, "$\\nu_t$ / $\\nu$", "magma")]):
+    for i, (val, lab, cmap) in enumerate([(u, "u / U_b", RAINBOW), (nut / NU, "$\\nu_t$ / $\\nu$", RAINBOW)]):
         ax = fig.add_subplot(gs[i])
         v = np.tile(val, (len(th), 1))
         m = ax.pcolormesh(rr * np.cos(tt), rr * np.sin(tt), v[:-1, :-1], cmap=cmap, shading="flat")

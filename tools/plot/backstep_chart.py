@@ -26,6 +26,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 import matplotlib.tri as mtri  # noqa: E402
 import numpy as np  # noqa: E402
 from matplotlib.collections import PolyCollection  # noqa: E402
+from tools.plot.colormaps import RAINBOW  # noqa: E402
 
 X_EXP = 6.26           # Driver & Seegmiller (1985), x_r/H
 WINDOW = (-3.0, 14.0, 0.0, 3.0)
@@ -147,7 +148,7 @@ def main():
     fig, axes = plt.subplots(n, 1, figsize=(11, 2.05 * n + 0.5), sharex=True,
                              constrained_layout=True)
     for ax, (label, quads, cen, data, xr) in zip(np.atleast_1d(axes), loaded):
-        pc = panel(ax, quads, data["k"] / U_REF**2, "magma", 0.0, kmax)
+        pc = panel(ax, quads, data["k"] / U_REF**2, RAINBOW, 0.0, kmax)
         gx, gy, u, v = grid_velocity(cen, data)
         ax.contour(gx, gy, u, levels=[0.0], colors="c", linewidths=0.9)
         marks(ax, xr)

@@ -24,6 +24,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.collections import PolyCollection
 from matplotlib.colors import LogNorm
+from tools.plot.colormaps import RAINBOW
 
 
 def polygons(path):
@@ -50,7 +51,7 @@ def errors(path):
 
 
 def panel(ax, polys, v, title):
-    pc = PolyCollection(polys, array=np.maximum(v, 1e-4), cmap="magma",
+    pc = PolyCollection(polys, array=np.maximum(v, 1e-4), cmap=RAINBOW,
                         norm=LogNorm(1e-3, 2.0), edgecolors="0.35", linewidths=0.2)
     ax.add_collection(pc)
     ax.set_xlim(0, 2)

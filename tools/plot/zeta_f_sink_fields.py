@@ -29,6 +29,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 import matplotlib.tri as mtri  # noqa: E402
 import numpy as np  # noqa: E402
 from matplotlib.colors import LogNorm  # noqa: E402
+from tools.plot.colormaps import RAINBOW  # noqa: E402
 
 
 def centroids(path):
@@ -93,7 +94,7 @@ def jet(out, runs):
     for ax, (label, r, x, k) in zip(axes, loaded):
         tri = mtri.Triangulation(r, x)
         cs = ax.tricontourf(tri, np.clip(k, 1.01e-5, 1.99e-2), levels=levels, norm=norm,
-                            cmap="viridis", extend="both")
+                            cmap=RAINBOW, extend="both")
         ax.set_xlim(window[0], window[1])
         ax.set_ylim(0, 1)
         ax.set_yticks([0, 0.5, 1])

@@ -30,6 +30,7 @@ import numpy as np
 from matplotlib.collections import PolyCollection
 
 from tools.plot.turbulence_fields import read
+from tools.plot.colormaps import RAINBOW
 
 
 def field(run):
@@ -57,7 +58,7 @@ def plume(out, run):
     )
     fig.colorbar(pc, ax=axs[0], label="temperature (K)", shrink=0.95, pad=0.01)
     axs[0].set_title(f"Temperature and streamlines; warmest air {d['temperature'].max():.1f} K", fontsize=11)
-    pc2 = PolyCollection(q, array=d["speed"] * 100.0, cmap="viridis", edgecolors="face", linewidths=0.2)
+    pc2 = PolyCollection(q, array=d["speed"] * 100.0, cmap=RAINBOW, edgecolors="face", linewidths=0.2)
     axs[1].add_collection(pc2)
     step = 5
     axs[1].quiver(
@@ -85,7 +86,7 @@ def plume(out, run):
 def box(out, run):
     quads, _, d = field(run)
     fig, axs = plt.subplots(1, 2, figsize=(12.0, 5.0), constrained_layout=True)
-    pc = PolyCollection(quads, array=d["static_pressure"], cmap="plasma", edgecolors="k", linewidths=0.25)
+    pc = PolyCollection(quads, array=d["static_pressure"], cmap=RAINBOW, edgecolors="k", linewidths=0.25)
     axs[0].add_collection(pc)
     fig.colorbar(pc, ax=axs[0], label="static pressure p (Pa)", shrink=0.95, pad=0.01)
     axs[0].annotate(
@@ -95,7 +96,7 @@ def box(out, run):
     axs[0].annotate("g", (0.80, 0.50), color="w", fontsize=15, fontweight="bold")
     axs[0].set_title("Static pressure: layered across gravity (37° from the y axis)", fontsize=11)
     s = np.log10(np.maximum(d["speed"], 1e-20))
-    pc2 = PolyCollection(quads, array=s, cmap="turbo", edgecolors="k", linewidths=0.25)
+    pc2 = PolyCollection(quads, array=s, cmap=RAINBOW, edgecolors="k", linewidths=0.25)
     pc2.set_clim(-17.0, -14.0)
     axs[1].add_collection(pc2)
     fig.colorbar(pc2, ax=axs[1], label="log₁₀ speed (m/s)", shrink=0.95, pad=0.01)
@@ -120,8 +121,8 @@ def kinds(out, reduced, static):
     fig = plt.figure(figsize=(13.0, 7.0), constrained_layout=True)
     gs = fig.add_gridspec(1, 4, width_ratios=[1, 1, 1.4, 1.4])
     panels = [
-        (a["pressure"], "reduced pressure p′\n(what the solver works with)", "viridis"),
-        (a["static_pressure"] / 1000.0, "static pressure p\n= p′ − ρ g y", "magma"),
+        (a["pressure"], "reduced pressure p′\n(what the solver works with)", RAINBOW),
+        (a["static_pressure"] / 1000.0, "static pressure p\n= p′ − ρ g y", RAINBOW),
     ]
     units = ["p′ (Pa)", "p (kPa)"]
     for i, (v, title, cmap) in enumerate(panels):

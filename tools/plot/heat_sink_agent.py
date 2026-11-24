@@ -39,6 +39,7 @@ import numpy as np
 from tools.plot.cht_turbulent import outline, panel
 from tools.plot.energy_fields import grid
 from tools.plot.turbulence_fields import read
+from tools.plot.colormaps import RAINBOW
 
 FIELDS = ["ticket", "tool", "start_s", "seconds", "outcome", "code", "pitch_mm", "note"]
 
@@ -147,7 +148,7 @@ def flow(study, out):
     for k, (p, (quads, _, d)) in enumerate(zip(pitch, data)):
         ax = fig.add_subplot(gs[k // 2, k % 2])
         xs, ys, solid = grid(quads, (d["zone"] > 0).astype(float))
-        panel(ax, quads, d["speed"], "viridis", "speed (m/s)", fig, xlim, ylim, 0.0, hi)
+        panel(ax, quads, d["speed"], RAINBOW, "speed (m/s)", fig, xlim, ylim, 0.0, hi)
         outline(ax, xs, ys, solid, "w")
         ax.set_aspect("equal")
         ax.set_title(f"pitch {p} mm", fontsize=10)
@@ -155,7 +156,7 @@ def flow(study, out):
         if k // 2 == 1:
             ax.set_xlabel("x (m)")
     ax = fig.add_subplot(gs[2, :])
-    cmap = plt.get_cmap("plasma")
+    cmap = plt.get_cmap(RAINBOW)
     for k, r in enumerate(runs):
         with open(os.path.join(r, "line_base_top.csv")) as f:
             lines = [ln for ln in f if not ln.startswith("#")]

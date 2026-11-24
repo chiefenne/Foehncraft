@@ -21,6 +21,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 import matplotlib.tri as mtri  # noqa: E402
+from tools.plot.colormaps import RAINBOW  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 FOEHN = os.environ.get("FOEHN", str(ROOT / "target/release/foehn"))
@@ -62,7 +63,7 @@ def main(out: str, mesh: str, work: str = "/tmp/tjunction_chart") -> None:
                  | ((cy > 0.0505) & (np.ptp(xs[tri.triangles], axis=1) > 0.06))
                  | ((cy > 0.0) & (np.ptp(ys[tri.triangles], axis=1) > 0.12)))
     fig, axs = plt.subplots(2, 1, figsize=(9, 5.4), dpi=200, sharex=True)
-    for ax, val, lab, cmap in [(axs[0], sp, "speed |u| (m/s)", "turbo"), (axs[1], th, "passive scalar θ", "viridis")]:
+    for ax, val, lab, cmap in [(axs[0], sp, "speed |u| (m/s)", RAINBOW), (axs[1], th, "passive scalar θ", RAINBOW)]:
         t = ax.tricontourf(tri, val, levels=40, cmap=cmap)
         fig.colorbar(t, ax=ax, label=lab, pad=0.02)
         ax.set_aspect("equal")

@@ -30,6 +30,7 @@ import numpy as np
 from matplotlib.collections import PolyCollection
 
 from tools.plot.turbulence_fields import read
+from tools.plot.colormaps import RAINBOW
 
 R_GAS = 8.314462618 / 0.0289647
 CP = 1005.0
@@ -80,7 +81,7 @@ def cavity(out, run):
     fig.colorbar(pc, ax=ax, label="temperature (K)", shrink=0.95, pad=0.01)
     ax.set_title("Temperature and streamlines", fontsize=11)
     ax2 = fig.add_subplot(gs[1])
-    pc2 = PolyCollection(q, array=d["density"], cmap="viridis", edgecolors="face", linewidths=0.1)
+    pc2 = PolyCollection(q, array=d["density"], cmap=RAINBOW, edgecolors="face", linewidths=0.1)
     ax2.add_collection(pc2)
     step = 8
     ax2.quiver(

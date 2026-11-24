@@ -35,6 +35,7 @@ from matplotlib.patches import Rectangle
 
 from tools.plot.energy_fields import line
 from tools.plot.turbulence_fields import read
+from tools.plot.colormaps import RAINBOW
 
 
 def temperature_summary(run):
@@ -104,7 +105,7 @@ def patch(out, run):
     x, y = c[:, 0], c[:, 1]
     fig, axes = plt.subplots(1, 2, figsize=(14.0, 6.0), constrained_layout=True)
     ax = axes[0]
-    pc = PolyCollection(quads, array=t, cmap="plasma", edgecolors="k", linewidths=0.3)
+    pc = PolyCollection(quads, array=t, cmap=RAINBOW, edgecolors="k", linewidths=0.3)
     ax.add_collection(pc)
     ax.tricontour(x, y, t, levels=np.arange(300.0, 375.0, 4.0), colors="w", linewidths=0.8)
     for xi in (0.4, 0.6):

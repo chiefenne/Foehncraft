@@ -20,6 +20,8 @@ import h5py
 import numpy as np
 import pyvista as pv
 from PIL import Image
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[3]))
+from tools.plot.colormaps import RAINBOW  # noqa: E402
 
 pv.OFF_SCREEN = True
 src, out = sys.argv[1], sys.argv[2]
@@ -76,7 +78,7 @@ sA = g.slice(normal=nA, origin=(0, 0, 0))
 centre = (0.0, 150.0, 0.0)
 
 p = plotter()
-p.add_mesh(sA, scalars="T_C", cmap="turbo", clim=(15, 300),
+p.add_mesh(sA, scalars="T_C", cmap=RAINBOW, clim=(15, 300),
            scalar_bar_args={**bar, "title": "temperature (°C)"})
 p.camera_position = cam(nA, centre, uA)
 p.camera.zoom(1.55)
@@ -87,7 +89,7 @@ p.screenshot(f"{out}/hx_flow_temperature.png")
 crop(f"{out}/hx_flow_temperature.png")
 
 p = plotter()
-p.add_mesh(sA, scalars="speed_fluid", cmap="viridis", clim=(0, 25), nan_color="#9aa1ad",
+p.add_mesh(sA, scalars="speed_fluid", cmap=RAINBOW, clim=(0, 25), nan_color="#9aa1ad",
            scalar_bar_args={**bar, "title": "speed (m/s)"})
 p.camera_position = cam(nA, centre, uA)
 p.camera.zoom(1.55)
@@ -97,7 +99,7 @@ crop(f"{out}/hx_flow_speed.png")
 # section B: x = 0 through the water nozzles and two tubes
 sB = g.slice(normal=(1, 0, 0), origin=(0, 0, 0))
 p = plotter()
-p.add_mesh(sB, scalars="T_C", cmap="turbo", clim=(15, 300),
+p.add_mesh(sB, scalars="T_C", cmap=RAINBOW, clim=(15, 300),
            scalar_bar_args={**bar, "title": "temperature (°C)"})
 p.camera_position = cam([1.0, 0, 0], (0, 150, 25), (0, 0, 1))
 p.camera.zoom(1.5)
@@ -140,7 +142,7 @@ if readme:
     p = pv.Plotter(off_screen=True, window_size=(2400, 800))
     p.set_background(BG)
     p.enable_anti_aliasing("ssaa")
-    p.add_mesh(sA, scalars="T_C", cmap="turbo", clim=(15, 300), show_scalar_bar=False)
+    p.add_mesh(sA, scalars="T_C", cmap=RAINBOW, clim=(15, 300), show_scalar_bar=False)
     p.camera_position = cam(nA, centre, uA)
     p.camera.zoom(1.6)
     tmp = f"{readme}/heat_exchanger_temperature.png"
