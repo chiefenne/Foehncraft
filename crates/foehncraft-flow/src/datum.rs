@@ -318,12 +318,12 @@ impl Built {
     }
 }
 
+/// Point, unit normal, bound, and the in-plane axes e1, e2 of the bound.
+type PlaneParts = ([f64; 3], [f64; 3], Bound, [f64; 3], [f64; 3]);
+
 /// The plane of a `plane` datum: point, unit normal, bound, e1, e2 of the
 /// bound.
-fn plane_of(
-    d: &DatumSection,
-    key: &str,
-) -> Result<([f64; 3], [f64; 3], Bound, [f64; 3], [f64; 3])> {
+fn plane_of(d: &DatumSection, key: &str) -> Result<PlaneParts> {
     let point = d
         .point
         .ok_or_else(|| err(key, format!("[[datum]] {}: a plane needs `point`", d.name)))?;
@@ -569,6 +569,53 @@ fn snapped_faces(
     (faces, side)
 }
 
+/// The gas side of a surface triangle: pieces smaller than a quarter of the
+/// size of the cell holding their centroid (midpoint subdivision, at most
+/// ten levels; six for pieces whose centroid is outside the mesh, which are
+/// dropped then), each with the cell of its centroid. A triangle much larger
+/// than the cells is thus sampled at many points instead of one.
+fn sample_triangle(
+    loc: &foehncraft_mesh::locate::Locator,
+    geo: &Geometry,
+    t: [[f64; 3]; 3],
+    out: &mut Vec<(usize, [f64; 3], [f64; 3])>,
+) {
+    let mut stack = vec![(t, 0u32)];
+    while let Some((t, depth)) = stack.pop() {
+        let x = [
+            (t[0][0] + t[1][0] + t[2][0]) / 3.0,
+            (t[0][1] + t[1][1] + t[2][1]) / 3.0,
+            (t[0][2] + t[1][2] + t[2][2]) / 3.0,
+        ];
+        let edge = (0..3)
+            .map(|i| {
+                let d = sub(t[(i + 1) % 3], t[i]);
+                (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
+            })
+            .fold(0.0, f64::max);
+        let cell = loc.locate_search(x);
+        let h = cell.map_or(0.0, |c| geo.cell_volume[c].cbrt());
+        if (cell.is_none() && depth < 6) || (depth < 10 && edge > 0.25 * h) {
+            let m = |a: [f64; 3], b: [f64; 3]| {
+                [
+                    0.5 * (a[0] + b[0]),
+                    0.5 * (a[1] + b[1]),
+                    0.5 * (a[2] + b[2]),
+                ]
+            };
+            let (ab, bc, ca) = (m(t[0], t[1]), m(t[1], t[2]), m(t[2], t[0]));
+            for s in [[t[0], ab, ca], [ab, t[1], bc], [ca, bc, t[2]], [ab, bc, ca]] {
+                stack.push((s, depth + 1));
+            }
+            continue;
+        }
+        if let Some(c) = cell {
+            let a = cross(sub(t[1], t[0]), sub(t[2], t[0]));
+            out.push((c, [0.5 * a[0], 0.5 * a[1], 0.5 * a[2]], x));
+        }
+    }
+}
+
 /// Builds the datums of the case on its mesh (DAT001, DAT002).
 pub fn build(case: &FlowCase, mesh: &Mesh, geo: &Geometry) -> Result<Vec<Built>> {
     let mut out = Vec::new();
@@ -710,24 +757,16 @@ pub fn build(case: &FlowCase, mesh: &Mesh, geo: &Geometry) -> Result<Vec<Built>>
                 for (k, t) in tris.iter().enumerate() {
                     let t = t.map(|v| v.map(|x| x * scale));
                     let a = cross(sub(t[1], t[0]), sub(t[2], t[0]));
-                    let area = [0.5 * a[0], 0.5 * a[1], 0.5 * a[2]];
                     let Some(nrm) = unit(a) else {
                         continue;
                     };
-                    let x = [
-                        (t[0][0] + t[1][0] + t[2][0]) / 3.0,
-                        (t[0][1] + t[1][1] + t[2][1]) / 3.0,
-                        (t[0][2] + t[1][2] + t[2][2]) / 3.0,
-                    ];
                     sf.tris.push(t);
                     sf.tri_face.push(sf.global_id.len() as u32);
                     sf.global_id.push(k as u64);
                     sf.mesh_face.push(usize::MAX);
                     // the direction of the hits: `entering` is against it
                     sf.normal.push(nrm);
-                    if let Some(c) = loc.locate_search(x) {
-                        cut.push((c, area, x));
-                    }
+                    sample_triangle(&loc, geo, t, &mut cut);
                 }
                 if sf.tris.is_empty() {
                     return Err(err(
@@ -907,9 +946,9 @@ impl Sums {
         self.mdot += mdot;
         self.vdot += mdot / rho;
         self.mabs += mdot.abs();
-        for k in 0..3 {
-            self.mom[k] += mdot * u[k];
-            self.ua[k] += u[k] * am;
+        for (k, &uk) in u.iter().enumerate() {
+            self.mom[k] += mdot * uk;
+            self.ua[k] += uk * am;
         }
         self.pa += p * am;
         if self.sa.len() < s.len() {

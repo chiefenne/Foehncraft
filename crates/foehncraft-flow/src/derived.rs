@@ -1266,7 +1266,7 @@ pub fn wall_exchange_from_restart(
 }
 
 /// The gas reports of the datums of `case` (`[[datum]]`, D262) for the
-/// solution in `restart` (the tool `datum.report`, D267): per datum its
+/// solution in `restart` (the tool `post.datums`, D267): per datum its
 /// name, type, whether it is exact, and the quantities of
 /// [`crate::datum::gas_report`]. `only` limits it to the datums named.
 pub fn datum_report(

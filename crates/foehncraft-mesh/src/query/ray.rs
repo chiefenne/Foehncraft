@@ -210,7 +210,7 @@ impl Bvh {
 
     /// Every face the segment from `p` to `q` meets, in (0, 1], ordered
     /// by the parameter (ties by the global id). Hits at the same parameter
-    /// (within [`SLACK`]) and in the same direction count once, the face with
+    /// (within the slack of the hit test) and in the same direction count once, the face with
     /// the smallest global id: a segment through an edge or a corner of the
     /// surface is one crossing (the spray datums, D263).
     pub fn all_hits(&self, p: [f64; 3], q: [f64; 3]) -> Vec<Hit> {

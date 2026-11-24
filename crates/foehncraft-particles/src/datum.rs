@@ -322,10 +322,10 @@ impl Moments {
             dk *= d;
         }
         self.mass += mass;
-        for k in 0..3 {
-            self.nv[k] += count * v[k];
-            self.nv2[k] += count * v[k] * v[k];
-            self.mv[k] += mass * v[k];
+        for (k, &vk) in v.iter().enumerate() {
+            self.nv[k] += count * vk;
+            self.nv2[k] += count * vk * vk;
+            self.mv[k] += mass * vk;
         }
         match spec.bin(d) {
             Ok(b) => {

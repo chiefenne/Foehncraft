@@ -96,8 +96,29 @@ require_convergence = false
 
 #[test]
 fn datums_close_with_the_boundaries() {
-    let case = FlowCase::from_toml(CASE, Path::new(".")).unwrap();
+    // a surface file across the duct at x = 0.63, two triangles much larger
+    // than the cells
     let d = out("close");
+    std::fs::create_dir_all(&d).unwrap();
+    let (x, y, z) = (0.63, 0.4, 0.1);
+    let tris = [
+        [[x, 0.0, 0.0], [x, y, 0.0], [x, y, z]],
+        [[x, 0.0, 0.0], [x, y, z], [x, 0.0, z]],
+    ];
+    let stl = d.join("section.stl");
+    std::fs::write(
+        &stl,
+        foehncraft_mesh::format::stl::to_ascii("section", &tris),
+    )
+    .unwrap();
+    let text = CASE.replace(
+        "[output]",
+        &format!(
+            "[[datum]]\nname = \"stl\"\ntype = \"surface\"\nfile = {:?}\n[output]",
+            stl.to_string_lossy()
+        ),
+    );
+    let case = FlowCase::from_toml(&text, Path::new(".")).unwrap();
     let r = run(&case, "datums", &d, |_| {}).unwrap();
     let s = r.solves.last().unwrap();
     let ds = s.datums.as_ref().expect("datums in the result");
@@ -122,6 +143,13 @@ fn datums_close_with_the_boundaries() {
     assert!(e < 1e-3, "cut error {e}");
     assert!(((cut - snapped) / snapped).abs() <= e * (1.0 + 1e-9) + 1e-15);
     assert!(q("middle", "volume") > 0.0);
+    // the surface file, sampled finer than the cells: within 1 % (its
+    // normal is +x by the order of the corners)
+    let stl = q("stl", "mass_flow");
+    assert!(
+        ((stl - snapped) / snapped).abs() < 1e-2,
+        "surface {stl} against {snapped}"
+    );
     // the liquid through the outlet datum is the escaped liquid of the book
     let sp = s.spray.as_ref().expect("spray summary");
     let escaped: f64 = sp.tally.escaped_mass.iter().sum();

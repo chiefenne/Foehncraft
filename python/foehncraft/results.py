@@ -184,8 +184,12 @@ class Result:
         report interval (rows per bin)."""
         p = self.out / f"spray_hist_{datum}.csv"
         if not p.exists():
-            have = sorted(x.name[len("spray_hist_") : -4] for x in self.out.glob("spray_hist_*.csv"))
-            raise KeyError(f"no histogram of datum {datum!r}; there are {', '.join(have) or 'none'}")
+            have = sorted(
+                x.name[len("spray_hist_") : -4] for x in self.out.glob("spray_hist_*.csv")
+            )
+            raise KeyError(
+                f"no histogram of datum {datum!r}; there are {', '.join(have) or 'none'}"
+            )
         return read_csv(p)
 
     def series(self) -> list[dict]:

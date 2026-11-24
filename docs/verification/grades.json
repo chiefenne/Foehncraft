@@ -1299,9 +1299,28 @@
     "no reference-data case (terminal velocity in the Schiller-Naumann range, a prescribed vortex, grid turbulence)",
     "the gas does not feel the droplets (two-way coupling is SP2); no turbulent dispersion, evaporation or breakup",
     "the gas state is sampled at the start of each sub-step (first order in the gas); the time of a wall hit is a chord fraction",
-    "one process, constant droplet size; no rotating zones or periodic boundaries (SPR003)",
+    "one process; no rotating zones or periodic boundaries (SPR003)",
     "the CPU = GPU check of the parcel kernel runs in the PTX job of CI only",
     "`spray_duct_injectors` has no run in the verification manual or in CI"
+   ],
+   "range": {}
+  },
+  {
+   "id": "sprays.datums-statistics",
+   "title": "Datums, liquid flow through them and droplet statistics (SP1b)",
+   "grade": "partial",
+   "why": [
+    "a model without reference data",
+    "gaps written"
+   ],
+   "gaps": [
+    "V28.12 not done: no measured anchor (terminal velocity of water drops against Gunn and Kinzer 1949)",
+    "no enthalpy flow through datums (comes with the energy equation of the sprays, SP5)",
+    "steady runs write no datums.csv (the gas through the datums of a steady result through `foehn call post.datums`)",
+    "no size classes, no time-averaged spray fields (D266, SP2), no evaporation numbers (SP5)",
+    "a cut plane takes cell values and gradients (its cut_error is reported); a disc or rectangle snapped to the faces is a staircase of whole faces",
+    "not with a sliding mesh (DAT001); one process",
+    "`spray_datums_injectors` has no run in the verification manual or in CI"
    ],
    "range": {}
   },

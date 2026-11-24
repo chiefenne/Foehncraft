@@ -144,7 +144,7 @@ impl Tool for Derive {
     }
 }
 
-/// Input of `datum.report`.
+/// Input of `post.datums`.
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DatumReportInput {
@@ -166,11 +166,11 @@ pub struct DatumReportInput {
     pub out: Option<PathBuf>,
 }
 
-/// `datum.report`.
+/// `post.datums`.
 pub struct DatumReport;
 
 impl Tool for DatumReport {
-    const ID: &'static str = "datum.report";
+    const ID: &'static str = "post.datums";
     const VERSION: u32 = 1;
     const SUMMARY: &'static str = "Gas flow through the datums of a case (mass, volume and momentum flow, area and mass-flow averages, cut error) from a restart file, without a rerun (D262, D267).";
     const CATEGORY: Category = Category::Post;
@@ -222,7 +222,7 @@ fn restart_of(
     }
 }
 
-/// Input of `spray.statistics` and `spray.penetration`.
+/// Input of `post.droplets` and `post.penetration`.
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SprayFileInput {
@@ -276,11 +276,11 @@ fn spray_file(
     foehncraft_flow::spray::file_statistics(&case, &a.file, spec, a.datum.as_deref())
 }
 
-/// `spray.statistics`.
+/// `post.droplets`.
 pub struct SprayStatistics;
 
 impl Tool for SprayStatistics {
-    const ID: &'static str = "spray.statistics";
+    const ID: &'static str = "post.droplets";
     const VERSION: u32 = 1;
     const SUMMARY: &'static str = "Droplet statistics of a parcel file: D10, D20, D30, D32, D43, Dv10, Dv50, Dv90, span, velocities, histogram and Rosin-Rammler fit, from the same moment sums as the run (D264, D267).";
     const CATEGORY: Category = Category::Post;
@@ -306,11 +306,11 @@ impl Tool for SprayStatistics {
     }
 }
 
-/// `spray.penetration`.
+/// `post.penetration`.
 pub struct SprayPenetration;
 
 impl Tool for SprayPenetration {
-    const ID: &'static str = "spray.penetration";
+    const ID: &'static str = "post.penetration";
     const VERSION: u32 = 1;
     const SUMMARY: &'static str = "Liquid penetration per injector of a parcel file: the distance within which the share `penetration_fraction` of the liquid lies, and the farthest parcel (D265, D267).";
     const CATEGORY: Category = Category::Post;

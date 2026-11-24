@@ -326,8 +326,8 @@ pub fn finish(sp: &foehncraft_particles::Spray) -> Result<()> {
     Ok(())
 }
 
-/// The statistics of a parcel file (the tools `spray.statistics` and
-/// `spray.penetration`, D267): the same sums as the run.
+/// The statistics of a parcel file (the tools `post.droplets` and
+/// `post.penetration`, D267): the same sums as the run.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct FileStatistics {
     /// The parcel file.
