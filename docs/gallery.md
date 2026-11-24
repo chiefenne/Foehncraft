@@ -136,6 +136,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | <a id="spray-duct"></a>242 | [Water droplets sprayed into an air duct](gallery/sprays.md#spray-duct) | [Lagrangian sprays](gallery/sprays.md) |
 | <a id="flow-models-ranks"></a>244 | [Five ranks, one turbulent heated flow: models on ranks](gallery/meshes.md#flow-models-ranks) | [Meshes](gallery/meshes.md) |
 | <a id="natural-convection"></a>272 | [Natural convection benchmarks: a heated square cavity at Ra 10³ to 10⁶, a vertical plate and mixed convection with flow reversal](gallery/energy.md#natural-convection) | [Energy equation and heat transfer](gallery/energy.md) |
+| <a id="porous-flow"></a>273 | [A ceramic honeycomb in an air channel, and a porous block against the exact pressure drop](gallery/porous.md#porous-flow) | [Porous regions](gallery/porous.md) |
 
 ## Adding a feature
 

@@ -149,6 +149,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="spray-duct"></a>242 | [Spray droplets into a flow](recipes/sprays.md#spray-duct) | [Lagrangian sprays](recipes/sprays.md) |
 | <a id="flow-models-ranks"></a>244 | [Check a turbulent, heated or transient flow on ranks](recipes/meshes.md#flow-models-ranks) | [Meshes](recipes/meshes.md) |
 | <a id="natural-convection"></a>272 | [Set up a natural convection case and check it: a closed cavity, an open plate, a channel with a net flow](recipes/energy.md#natural-convection) | [Energy equation and heat transfer](recipes/energy.md) |
+| <a id="porous-flow"></a>273 | [Put a porous block or a honeycomb into a flow](recipes/porous.md#porous-flow) | [Porous regions](recipes/porous.md) |
 
 ## Adding a feature
 
