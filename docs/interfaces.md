@@ -447,6 +447,7 @@ A code keeps its meaning; a retired code stays in the table.
 | `RUN022` | note | Stopped through the live control port (`run.stop`): restart file, final output, exit code 3 (L19). |
 | `RUN023` | note | A setting changed through the live control port (`run.set`): key, old and new value, with the equivalent `[[schedule]]` entry (L19). |
 | `RUN024` | warning | A setting asked for through the live control port that cannot be applied (not valid for the case at that point); the run goes on with the settings it had. |
+| `RUN025` | note | A setting changed by re-reading the case file (`.read_toml_N`, `[run] reread_every`): key, old and new value (D40, D214). |
 | `DIV001` | note | Divergence cause: the Courant number near the failing cells is large; reduce the time step. |
 | `DIV002` | note | Divergence cause: under-relaxation factors too large for the case. |
 | `DIV003` | note | Divergence cause: poor cells (skewness, non-orthogonality, volume ratio) at the failing cells. |
