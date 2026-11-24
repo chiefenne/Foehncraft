@@ -44,6 +44,30 @@
 
 <sub>Real results of Foehncraft, each linked to its gallery entry: the Kármán vortex street (Schäfer &amp; Turek benchmark); the lid-driven cavity on a million polyhedra; a T-junction and a pin-fin array on Gmsh tetrahedra; a turbulent jet on a heated plate (k-ε-ζ-f₀); a stirred vessel in water with k-ω SST and the moving reference frame; two rotors on a sliding mesh; a shell and tube heat exchanger with hot air, water and steel in one conjugate case.</sub>
 
+## From one sentence to a moving rotor
+
+> *"Make a 2D domain with three rotors (3, 5, 7 blades), each rotating with
+> different speed, one turns in opposite direction and make an animation of
+> the vorticity"*
+
+One sentence in a chat with an AI coding assistant connected to
+Foehncraft's MCP server (`foehn mcp`) started it. The assistant wrote the
+Gmsh mesh script and the case file, checked the mesh, ran the transient
+case with three sliding rotors through `foehn` (runs wait for the
+engineer's approval in the chat), and rendered the vorticity into this
+animation with ParaView. No GUI, no meshing by hand, no case file typed.
+
+<p align="center">
+  <a href="docs/gallery/flow.md#curved-blades"><img src="assets/readme/three_rotors.gif" alt="Animation of the vorticity in a vessel with three stirrers that start from rest: three straight blades at +10 rad/s, seven curved blades at +20 rad/s and five straight blades turning the other way at −15 rad/s" width="800" height="360"></a>
+</p>
+
+<sub>Three rotors on a sliding mesh by imprinting at +10, +20 and −15 rad/s,
+started from rest: 26 060 cells, 800 time steps in about ten minutes on four
+CPU cores. The seven curved blades and the movie script were refined in a
+second chat ([gallery 225](docs/gallery/flow.md#curved-blades));
+[MP4](assets/readme/three_rotors.mp4). Connect your own assistant:
+[docs/agents.md](docs/agents.md).</sub>
+
 ## What works today
 
 Everything below is in release 1.0.0 and on `main`, checked by the
