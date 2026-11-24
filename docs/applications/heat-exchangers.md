@@ -184,6 +184,34 @@ steel and by at most 1.5 K in a single cell. The values are cell values
 of the level 0 mesh, whose walls are only a few cells thick (a
 demonstration, like the rest of the entry).
 
+### Renderings
+
+The counter-flow case on level 2 (985 551 cells, stopped after 2 500
+iterations with the largest residual at 6·10⁻³), rendered with ParaView by
+`render_images.py`. Every colour range is the 2nd to 98th percentile of
+what the picture shows, so the variation inside each region is visible;
+the water has its own temperature range.
+
+<img src="../figures/applications/hx_render_hero.jpg" alt="The exchanger with a quarter of the steel housing cut away on a dark background: the tube bundle coloured by the steel temperature from 21 to 25 °C, the tubes cool, the baffles and the tubesheet rims warmest; air streamlines coloured by speed from 5 to 20 m/s wind through the baffle windows" width="800" height="500">
+
+*The steel housing with a quarter cut away; the bundle coloured by the
+steel temperature, the air streamlines from the inlet nozzle by speed.*
+
+<img src="../figures/applications/hx_render_airpath.jpg" alt="The housing as faint glass, the tubes, tubesheets and baffles in steel, and 1 400 streamlines from the inlet nozzle coloured by speed: the jet spreads over the first compartment, passes the baffle windows at up to 20 m/s alternately above and below and leaves through the outlet nozzle" width="800" height="500">
+
+*The air path: 1 400 streamlines seeded across the inlet nozzle wind
+around the three baffles to the outlet.*
+
+<img src="../figures/applications/hx_render_cut.jpg" alt="Lengthwise section at x = 0 on a white background: air temperature from 80 to 270 °C hot in the first compartment and coolest in the last, the water in the end chambers and the centre tube on its own range of 19.7 to 20.5 °C, the steel from 21 to 26 °C, thin outlines on the borders of the zones" width="800" height="352">
+
+*The plane x = 0 through the water nozzles and the centre tube, three
+temperature ranges: air, water and steel.*
+
+<img src="../figures/applications/hx_render_baffle.jpg" alt="Close-up section through the middle baffle at y = 150 mm: the baffle, tube walls and housing coloured by the steel temperature from 22 to 26 °C, the tube walls coolest, the housing warmest; the air speed in the baffle window above the cut from 3 to 22 m/s; the water in the seven tubes plain blue-grey" width="800" height="611">
+
+*Section through the middle baffle: the steel temperature of the baffle,
+the tube walls and the housing, the air speed in the baffle window.*
+
 ### Check card
 
 | Check | Result |
