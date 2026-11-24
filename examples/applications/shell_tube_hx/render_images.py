@@ -318,9 +318,22 @@ def air_streamlines(n_seeds, radius=13.0, x0=-85.0):
     return st
 
 
+# the hero and the air path share one camera and one size, so that the
+# README teaser cross-fades between them in place
+HERO_CAMERA = dict(position=[430, -260, 330], focal=[0, 150, 0], up=[0, 0, 1], angle=26)
+HERO_SIZE = (1600, 1000)
+
+
+def set_camera(v, c):
+    v.CameraPosition = c["position"]
+    v.CameraFocalPoint = c["focal"]
+    v.CameraViewUp = c["up"]
+    v.CameraViewAngle = c["angle"]
+
+
 # ======================================================================
 # 1. hero: the whole unit on a dark studio backdrop
-size = (1600, 1000)
+size = HERO_SIZE
 v = view(size)
 # a quarter of the housing cut away (the quadrant x > 0, z > 0 facing the camera)
 hs = Calculator(Input=surface(housing), ResultArrayName="q", Function="min(coordsX,coordsZ)")
@@ -339,10 +352,7 @@ d = Show(tb, v)
 coloured(d, v, "speed", sp_rng, "Air speed (m/s)", rough=0.5, lut_name="speed_air",
          bar=dict(pos=[0.33, 0.86], ink=[0.85, 0.87, 0.9]))
 Render(v)
-v.CameraPosition = [430, -260, 330]
-v.CameraFocalPoint = [0, 150, 0]
-v.CameraViewUp = [0, 0, 1]
-v.CameraViewAngle = 26
+set_camera(v, HERO_CAMERA)
 hero_img = save(v, "hx_render_hero", size, dark=True, crop=False)
 print("hero ranges: steel", st_rng, "speed", sp_rng)
 
@@ -401,7 +411,7 @@ print("cut ranges: air", a_rng, "water", w_rng, "steel", s_rng)
 
 # ======================================================================
 # 3. the air path around the baffles: glass housing, steel bundle, dense streamlines
-size = (1600, 1000)
+size = HERO_SIZE
 v = view(size)
 glass = surface(housing)
 d = Show(glass, v)
@@ -415,16 +425,13 @@ d = Show(surface(steel_bundle), v)
 steel(d, rough=0.25, aniso=0.3)
 st3 = air_streamlines(1400, radius=14.0, x0=-97.0)
 tb3 = Tube(Input=st3, Radius=0.45, NumberofSides=8)
-sp3 = prange(st3, "speed")
+sp3 = sp_rng  # the range of the hero: the bars of the two must match in the teaser
 d = Show(tb3, v)
 coloured(d, v, "speed", sp3, "Air speed (m/s)", rough=0.45, lut_name="speed_air3",
-         bar=dict(pos=[0.05, 0.86], ink=[0.85, 0.87, 0.9]))
+         bar=dict(pos=[0.33, 0.86], ink=[0.85, 0.87, 0.9]))  # where the hero has it
 v.EnableRenderOnInteraction = 0
 Render(v)
-v.CameraPosition = [520, -170, 380]
-v.CameraFocalPoint = [0, 150, 5]
-v.CameraViewUp = [0, 0, 1]
-v.CameraViewAngle = 25
+set_camera(v, HERO_CAMERA)  # the same view as the hero: the README teaser cross-fades them
 airpath_img = save(v, "hx_render_airpath", size, dark=True, crop=False)
 print("airpath range: speed", sp3)
 
