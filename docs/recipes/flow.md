@@ -25,6 +25,7 @@ Part of the [Recipes](../recipes.md): Couette, Poiseuille, cavity and cylinder r
 | 101 | [Read the torque and power of a rotor, and the head and efficiency of a machine](#torque-power) |
 | 102 | [Run several rotors at their own speeds, and a transient frozen rotor](#several-rotors) |
 | 103 | [Give a rotor an interface of any rotationally symmetric shape: discs, cones, pots](#revolved-interfaces) |
+| 225 | [Mesh a rotor with curved blades of constant thickness in Gmsh](#curved-blades) |
 
 ---
 
@@ -1229,6 +1230,52 @@ python3 examples/studies/mixer.py output/mixer --rotors
 
 [Gallery 102](../gallery/flow.md#several-rotors); the keys are in
 [cases/flow-keys.md](../cases/flow-keys.md) and [keys.md](../keys.md).
+
+<a id="curved-blades"></a>
+## 225. Mesh a rotor with curved blades of constant thickness in Gmsh
+
+```sh
+pip install gmsh
+python3 examples/meshes/three_mixer.py                 # three_mixer.msh, 26 060 cells
+cargo run --release -p foehncraft-cli -- mesh examples/meshes/three_mixer.msh
+cargo run --release -p foehncraft-cli -- flow examples/studies/three_mixer/sliding.toml
+```
+
+`curved_blade(rc)` in `examples/meshes/three_mixer.py` builds one blade
+about the origin with the Gmsh OpenCASCADE kernel; `rotor()` turns it to its
+place, as for the straight blades. The rules that make it mesh well:
+
+- Make the blade the band between two **concentric arcs** about the centre
+  of the camber circle (radii rc ∓ T/2): constant thickness, four curves.
+- Close the tip with a half circle built as **two quarter arcs** through the
+  nose point; `addCircleArc(start, centre, end)` of exactly 180° is
+  ambiguous.
+- End the root **well inside the hub** (here at 0.4 of the hub radius) and
+  **fuse hub and blades** into one tool before `occ.cut`: a root that ends
+  on the hub circle leaves cusps that `foehn mesh` shows as faces above 70°
+  non-orthogonality.
+- Check the mesh with `foehn mesh` (verdict, the non-orthogonality and
+  skewness rows of `mesh_report.md`) before the run.
+
+Change `R_CAMBER` for more or less curvature (a smaller radius bends more;
+the bisection in `camber_angle` finds the tip and root on the camber
+circle), `T_BLADE` for the thickness; the case file needs no change. For a
+forward-curved rotor turn the rotor the other way (`omega = -20.0` and the
+blade velocity with `speed_c = -20.0`). The images:
+
+```sh
+python3 -m tools.plot.rotor_fields three_mixer_vorticity.png \
+    output/three_mixer/fields_000200.vtkhdf output/three_mixer/fields_000400.vtkhdf \
+    output/three_mixer/fields_000600.vtkhdf output/three_mixer/fields.vtkhdf \
+    --quantities vorticity --limits=-60:60 --dpi 100 \
+    --labels "t = 0.1 s,t = 0.2 s,t = 0.3 s,t = 0.4 s"
+python3 -m tools.plot.rotor_fields three_mixer_curved_rotor.png \
+    output/three_mixer/fields.vtkhdf --quantities vorticity --limits=-60:60 \
+    --mesh --window=-0.065,0.065,-0.095,0.035 --dpi 120
+```
+
+[Gallery 225](../gallery/flow.md#curved-blades); several rotors in
+[recipe 102](#several-rotors).
 
 <a id="revolved-interfaces"></a>
 ## 103. Give a rotor an interface of any rotationally symmetric shape: discs, cones, pots
