@@ -99,6 +99,8 @@ switch = 'mesh.format = "fluent_msh"'
 evidence = [
   { kind = "consistency", test = "crates/foehncraft-mesh/tests/fluent_msh.rs::polyhedral_cells_and_mixed_faces", what = "polyhedral cells and mixed faces" },
   { kind = "consistency", test = "crates/foehncraft-mesh/tests/fluent_msh.rs::face_orientation_does_not_matter", what = "face orientation does not change the mesh" },
+  { kind = "consistency", test = "crates/foehncraft-mesh/tests/fluent_msh.rs::binary_double_precision_polyhedra", what = "binary double-precision file gives the same mesh as the ASCII file" },
+  { kind = "consistency", test = "crates/foehncraft-mesh/tests/fluent_msh.rs::binary_single_precision_channel", what = "binary single-precision file gives the same mesh as the ASCII file" },
 ]
 gaps = ["no flow case of the catalogue reads a Fluent .msh file"]
 
@@ -1092,8 +1094,12 @@ evidence = [
   { kind = "exact", case = "buoyancy_slot", what = "the buoyant slot against its exact cubic profile, observed orders 2.14 and 2.13", doc = "docs/cases/flow.md#gravity-and-buoyancy" },
   { kind = "exact", test = "crates/foehncraft-flow/tests/buoyancy.rs::buoyant_slot_has_second_order", what = "observed orders in 1.8–2.3" },
   { kind = "consistency", case = "buoyancy_enclosure_plume", what = "a laminar plume in a closed air enclosure converges, mass and kinetic-energy ledgers close" },
+  { kind = "exact", case = "mixed_convection_channel", what = "V7.9 fully developed mixed convection with flow reversal (Aung & Worku 1986), Gr/Re = 200: observed orders 2.14 and 2.14 (net flow up), 2.16 and 2.08 (down)", doc = "docs/gallery/energy.md#natural-convection" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/buoyancy.rs::mixed_convection_has_second_order_both_ways", what = "observed orders in 1.8–2.3 with the net flow up and down" },
+  { kind = "reference-data", case = "natural_convection_plate", what = "V7.12 isothermal vertical plate, Pr 0.71, Gr_L = 10⁸: extrapolated local Nu_x within 0.4 % of the similarity solution of Ostrach (1953) at x = 0.25, 0.5, 0.75 L, GCI ≤ 0.03 %", doc = "docs/gallery/energy.md#natural-convection" },
+  { kind = "consistency", case = "natural_convection_cavity_ra1e5", what = "V7.15 differentially heated square cavity Ra 10³ to 10⁶: mean Nu order 2, GCI ≤ 0.1 %, hot-wall heat equals cold-wall heat to round-off (de Vahl Davis values as context only, D201)", doc = "docs/gallery/energy.md#natural-convection" },
 ]
-gaps = ["no reference-data case (a measured natural-convection flow)", "the wall forces leave out the Archimedes part ρ_ref g V"]
+gaps = ["no measured natural-convection flow (the plate is checked against boundary-layer theory)", "the wall forces leave out the Archimedes part ρ_ref g V"]
 
 [[feature]]
 id = "buoyancy.pressure-kind"
@@ -1126,7 +1132,7 @@ evidence = [
 ]
 gaps = [
   "no reference-data case (a measured flow with a large temperature difference)",
-  "not yet with passive scalars, a restart, periodic meshes, convective outlets, mass-flow inlets, wall mass fluxes or rotating zones (ENE006)",
+  "not yet with passive scalars, a restart, periodic meshes, convective outlets, wall mass fluxes or rotating zones (ENE006)",
   "the turbulence outlet value ⅔ρk uses the reference density",
 ]
 
@@ -1416,11 +1422,13 @@ id = "run.log-records"
 area = "Runs and results"
 title = "Log columns and JSON records for scripts and agents"
 switch = "[log]"
-decisions = ["D77"]
+decisions = ["D77", "D214"]
 infrastructure = true
 contracts = ["schema", "equivalence", "bitwise"]
 evidence = [
   { kind = "consistency", case = "cavity_re100_columns", what = "the Ghia cavity with a chosen iteration table" },
+  { kind = "consistency", case = "cavity_re100_log_steps", what = "the transient cavity with a short log and columns changed during the run (D214)" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/log_detail.rs::summary_detail_leaves_out_the_table_but_not_the_record", what = "a shorter log keeps every row of run.jsonl" },
   { kind = "contract", property = "schema", test = "crates/foehncraft-cli/tests/run_contract.rs::run_record_rows_follow_their_schema", what = "every row of run.jsonl has a known type and the keys of that type; the header names the format" },
   { kind = "contract", property = "schema", test = "crates/foehncraft-cli/tests/run_contract.rs::json_result_and_byte_identical_files", what = "result.json is the object on standard output; header and end row of the run record" },
   { kind = "contract", property = "equivalence", test = "crates/foehncraft-cli/tests/run_contract.rs::configurable_log_columns_change_no_result", what = "log columns change no result; flow.log and run.jsonl carry the same content" },

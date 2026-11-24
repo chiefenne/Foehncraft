@@ -358,7 +358,7 @@ A code keeps its meaning; a retired code stays in the table.
 | `SPR003` | error | A `[spray]` in a case with MRF zones, sliding interfaces or a periodic boundary (not in this version). |
 | `SPR004` | warning | Parcels lost: the walk through the mesh failed or a parcel needed more than `[spray] max_substeps` sub-steps in a time step (counted in `spray.csv`). |
 | `SPR005` | error | The mass book of the sprays does not close: released liquid differs from the liquid in the flow, stuck, left and lost by more than round-off. |
-| `ENE006` | error | An energy setting this version does not have: a passive scalar named `temperature` beside `[energy]`, solid regions with a sliding mesh, a restart with `[energy.acceleration]`, passive scalars or a periodic mesh, or with the variable density (stage 7c) passive scalars, a restart, a periodic mesh, a convective outlet, a mass-flow inlet, a wall mass flux or a rotating zone. |
+| `ENE006` | error | An energy setting this version does not have: a passive scalar named `temperature` beside `[energy]`, solid regions with a sliding mesh, a restart with `[energy.acceleration]`, passive scalars or a periodic mesh, or with the variable density (stage 7c) passive scalars, a restart, a periodic mesh, a convective outlet, a wall mass flux or a rotating zone. |
 | `ENE008` | error | An `[[energy.sources]]` entry for a region the case does not have, or without exactly one of `power` and `power_density`. |
 | `ENE009` | error | Variable-density settings that do not fit together: a density that does not depend on T, `density = "variable"` with the Boussinesq model, a closed volume with an inlet or outlet, a closed volume of a liquid, or `closed-volume` without the variable density. |
 | `CHT004` | error | An `[interfaces.<name>]` table that is not on a region interface (regions unknown, the same, two fluids, or not touching), or without exactly one of `contact_resistance` (≥ 0) and `thin_wall` (thickness > 0 with `conductivity` or `material`). |
@@ -449,6 +449,7 @@ A code keeps its meaning; a retired code stays in the table.
 | `RUN022` | note | Stopped through the live control port (`run.stop`): restart file, final output, exit code 3 (L19). |
 | `RUN023` | note | A setting changed through the live control port (`run.set`): key, old and new value, with the equivalent `[[schedule]]` entry (L19). |
 | `RUN024` | warning | A setting asked for through the live control port that cannot be applied (not valid for the case at that point); the run goes on with the settings it had. |
+| `RUN025` | note | A setting changed by re-reading the case file (`.read_toml_N`, `[run] reread_every`): key, old and new value (D40, D214). |
 | `DIV001` | note | Divergence cause: the Courant number near the failing cells is large; reduce the time step. |
 | `DIV002` | note | Divergence cause: under-relaxation factors too large for the case. |
 | `DIV003` | note | Divergence cause: poor cells (skewness, non-orthogonality, volume ratio) at the failing cells. |

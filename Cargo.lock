@@ -376,6 +376,9 @@ dependencies = [
  "foehncraft-flow",
  "foehncraft-fv",
  "foehncraft-kernels",
+ "foehncraft-mesh",
+ "foehncraft-radiation",
+ "rayon",
 ]
 
 [[package]]
@@ -464,6 +467,18 @@ dependencies = [
  "serde",
  "serde_json",
  "toml",
+]
+
+[[package]]
+name = "foehncraft-radiation"
+version = "1.0.1"
+dependencies = [
+ "anyhow",
+ "foehncraft-core",
+ "foehncraft-kernels",
+ "foehncraft-mesh",
+ "foehncraft-parallel",
+ "rayon",
 ]
 
 [[package]]

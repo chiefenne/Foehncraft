@@ -379,8 +379,6 @@ pub fn validate(case: &crate::case::FlowCase) -> Result<()> {
         Some("a periodic mesh")
     } else if case.boundary.values().any(|b| b.is_convective_outlet()) {
         Some("a convective outlet")
-    } else if case.boundary.values().any(|b| b.is_mass_flow_inlet()) {
-        Some("a mass-flow inlet (use a velocity inlet)")
     } else if case.boundary.values().any(|b| b.has_wall_mass_flux()) {
         Some("a wall with a mass flux")
     } else if !case.mrf.is_empty() || !case.sliding.is_empty() {

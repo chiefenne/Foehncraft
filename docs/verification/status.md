@@ -217,6 +217,8 @@ Gaps:
 
 - consistency: [`polyhedral_cells_and_mixed_faces`](../../crates/foehncraft-mesh/tests/fluent_msh.rs): polyhedral cells and mixed faces
 - consistency: [`face_orientation_does_not_matter`](../../crates/foehncraft-mesh/tests/fluent_msh.rs): face orientation does not change the mesh
+- consistency: [`binary_double_precision_polyhedra`](../../crates/foehncraft-mesh/tests/fluent_msh.rs): binary double-precision file gives the same mesh as the ASCII file
+- consistency: [`binary_single_precision_channel`](../../crates/foehncraft-mesh/tests/fluent_msh.rs): binary single-precision file gives the same mesh as the ASCII file
 
 Gaps:
 
@@ -1237,17 +1239,21 @@ Gaps:
 
 ### Gravity and the Boussinesq buoyancy (balanced force)
 
-**partial** (a model without reference data; gaps written) · id `buoyancy.boussinesq` · switch `[gravity], [buoyancy] model = "boussinesq"` · decisions D153, D154
+**partial** (gaps written) · id `buoyancy.boussinesq` · switch `[gravity], [buoyancy] model = "boussinesq"` · decisions D153, D154
 
 - exact: [`buoyancy_box_at_rest`](../../examples/cases/flow/buoyancy_box_at_rest.toml): a stratified box at rest along an oblique gravity on a perturbed mesh: largest speed 1·10⁻¹⁵ m/s (passes in CI (set linux-3), not yet in the manual) ([results](../gallery/energy.md#buoyancy))
 - exact: [`stratified_box_stays_at_rest`](../../crates/foehncraft-flow/tests/buoyancy.rs): the box at rest on hex, tet, poly and mixed 3D meshes, SIMPLEC and coupled, below 3·10⁻¹⁰ m/s
 - exact: [`buoyancy_slot`](../../examples/cases/flow/buoyancy_slot.toml): the buoyant slot against its exact cubic profile, observed orders 2.14 and 2.13 (passes in CI (set linux-3), not yet in the manual) ([results](../cases/flow.md#gravity-and-buoyancy))
 - exact: [`buoyant_slot_has_second_order`](../../crates/foehncraft-flow/tests/buoyancy.rs): observed orders in 1.8–2.3
 - consistency: [`buoyancy_enclosure_plume`](../../examples/cases/flow/buoyancy_enclosure_plume.toml): a laminar plume in a closed air enclosure converges, mass and kinetic-energy ledgers close (passes in CI (set linux-3), not yet in the manual)
+- exact: [`mixed_convection_channel`](../../examples/cases/flow/mixed_convection_channel.toml): V7.9 fully developed mixed convection with flow reversal (Aung & Worku 1986), Gr/Re = 200: observed orders 2.14 and 2.14 (net flow up), 2.16 and 2.08 (down) (passes in CI (set linux-3), not yet in the manual) ([results](../gallery/energy.md#natural-convection))
+- exact: [`mixed_convection_has_second_order_both_ways`](../../crates/foehncraft-flow/tests/buoyancy.rs): observed orders in 1.8–2.3 with the net flow up and down
+- reference-data: [`natural_convection_plate`](../../examples/cases/flow/natural_convection_plate.toml): V7.12 isothermal vertical plate, Pr 0.71, Gr_L = 10⁸: extrapolated local Nu_x within 0.4 % of the similarity solution of Ostrach (1953) at x = 0.25, 0.5, 0.75 L, GCI ≤ 0.03 % (passes in CI (set long), not yet in the manual) ([results](../gallery/energy.md#natural-convection))
+- consistency: [`natural_convection_cavity_ra1e5`](../../examples/cases/flow/natural_convection_cavity_ra1e5.toml): V7.15 differentially heated square cavity Ra 10³ to 10⁶: mean Nu order 2, GCI ≤ 0.1 %, hot-wall heat equals cold-wall heat to round-off (de Vahl Davis values as context only, D201) (passes in CI (set long), not yet in the manual) ([results](../gallery/energy.md#natural-convection))
 
 Gaps:
 
-- no reference-data case (a measured natural-convection flow)
+- no measured natural-convection flow (the plate is checked against boundary-layer theory)
 - the wall forces leave out the Archimedes part ρ_ref g V
 
 <a id="buoyancy-pressure-kind"></a>
@@ -1278,7 +1284,7 @@ Gaps:
 Gaps:
 
 - no reference-data case (a measured flow with a large temperature difference)
-- not yet with passive scalars, a restart, periodic meshes, convective outlets, mass-flow inlets, wall mass fluxes or rotating zones (ENE006)
+- not yet with passive scalars, a restart, periodic meshes, convective outlets, wall mass fluxes or rotating zones (ENE006)
 - the turbulence outlet value ⅔ρk uses the reference density
 
 <a id="buoyancy-closed-volume"></a>
@@ -1545,9 +1551,11 @@ Contracts: `bitwise`, `control`.
 
 ### Log columns and JSON records for scripts and agents
 
-**verified** · id `run.log-records` · switch `[log]` · decisions D77
+**verified** · id `run.log-records` · switch `[log]` · decisions D77, D214
 
 - consistency: [`cavity_re100_columns`](../../examples/cases/flow/cavity_re100_columns.toml): the Ghia cavity with a chosen iteration table (manual: largest deviation from Ghia et al. (1982), Re = 100 ≤ 0.02)
+- consistency: [`cavity_re100_log_steps`](../../examples/cases/flow/cavity_re100_log_steps.toml): the transient cavity with a short log and columns changed during the run (D214) (passes in CI (set linux-1), not yet in the manual)
+- consistency: [`summary_detail_leaves_out_the_table_but_not_the_record`](../../crates/foehncraft-flow/tests/log_detail.rs): a shorter log keeps every row of run.jsonl
 - contract (schema): [`run_record_rows_follow_their_schema`](../../crates/foehncraft-cli/tests/run_contract.rs): every row of run.jsonl has a known type and the keys of that type; the header names the format
 - contract (schema): [`json_result_and_byte_identical_files`](../../crates/foehncraft-cli/tests/run_contract.rs): result.json is the object on standard output; header and end row of the run record
 - contract (equivalence): [`configurable_log_columns_change_no_result`](../../crates/foehncraft-cli/tests/run_contract.rs): log columns change no result; flow.log and run.jsonl carry the same content

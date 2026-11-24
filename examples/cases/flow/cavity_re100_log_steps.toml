@@ -1,0 +1,59 @@
+# Lid-driven cavity at Re = 100 in time, with a short log (D214).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/cavity_re100_log_steps.toml
+#
+# The transient cavity of cavity_re100_transient.toml on a 32 x 32 mesh for
+# 100 steps. `[log] detail = "steps"` shows the box and the table row of
+# every logged step, not the table of its outer iterations ("summary" would
+# leave out the table too; run.jsonl keeps every row at every level). At
+# step 50 a `[[schedule]]` entry changes the columns of the table: the
+# header row is printed again, a `columns` row goes to run.jsonl, and the
+# Events block before the closing frame lists the change. The Limitations
+# block after the settings blocks lists what limits the result before the
+# run starts (one mesh only).
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [1.0, 1.0, 0.03125]
+cells = [32, 32, 1]
+
+[fluid]
+density = 1.0
+viscosity = 0.01
+
+[boundary.ymax]
+type = "wall"
+velocity = [1.0, 0.0, 0.0]     # the lid
+[boundary.xmin]
+type = "wall"
+[boundary.xmax]
+type = "wall"
+[boundary.ymin]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+log_every = 10
+
+[time]
+scheme = "bdf2"
+time_step = 0.1
+steps = 100
+
+[log]
+detail = "steps"               # "full" (default), "steps" or "summary"
+
+[output]
+vtkhdf = false
+
+# from step 50: the continuity residual, the largest speed with its cell
+# and the Courant number
+[[schedule]]
+at_step = 50
+set = { log.columns = ["time.simulated", "time.courant", "residual.continuity", "max.velocity_magnitude"] }

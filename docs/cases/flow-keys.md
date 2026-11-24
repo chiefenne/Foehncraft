@@ -75,7 +75,7 @@ line (recipe 26).
 | `analytic.type` | none | exact solution for the checks: `uniform`, `couette`, `poiseuille` or `pipe-poiseuille` |
 | `analytic.lower`, `analytic.upper` | 0, 1 | channel walls (y) |
 | `analytic.wall_velocity` | 1 | Couette: speed of the upper wall |
-| `analytic.mean_velocity` | 1 | Poiseuille: mean velocity |
+| `analytic.mean_velocity` | 1 (`buoyant-slot`: 0) | Poiseuille: mean velocity; `buoyant-slot`: the net flow U_m along +y of mixed convection (Aung & Worku, [recipe 272](../recipes/energy.md#natural-convection)), v = 6 U_m η(1 − η) + (g β ΔT D²/(48 ν))(ξ³ − ξ) |
 | `analytic.x_outlet`, `analytic.pressure` / `pressure_outlet` | 1, 0 | Poiseuille: outlet position and pressure; Couette: the constant pressure |
 | `verification.levels` | none | refinement levels of `[mesh.generate]` or `[mesh.cylinder]`: a sweep; with `[analytic]` the observed order of the errors, with three or more levels the discretisation uncertainty of the monitored quantities (D67, [recipe 34](../recipes/verification.md#gci)) |
 | `verification.expected_order` | none | accepted range of the observed order on the finest pair (needs `[analytic]`) |

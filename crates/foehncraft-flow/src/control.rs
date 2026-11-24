@@ -16,8 +16,8 @@
 //! What a re-read applies ([`RUNTIME_KEYS`]): the output settings, the
 //! restart and re-read schedule, the stop criteria, the relaxation factors,
 //! the momentum scheme between `upwind` and `linear-upwind` (a first-order
-//! start, then second order), the linear-solver tolerances, the time-step settings and the balance
-//! report and tolerances. Every other
+//! start, then second order), the linear-solver tolerances, the time-step settings, the balance
+//! report and tolerances and the columns of the log table (`log.columns`, D214). Every other
 //! difference is reported as not applied (the state of the run belongs to
 //! the case it started with; stop the run and restart from the restart file
 //! to change those). A case file that no longer validates leaves everything
@@ -102,6 +102,7 @@ pub const RUNTIME_KEYS: &[&str] = &[
     "balance.tolerance_run",
     "balance.tolerance_energy",
     "balance.action",
+    "log.columns",
 ];
 
 /// What the control files ask for at one iteration or step.
@@ -273,10 +274,33 @@ pub fn reread(path: &Path, current: &FlowCase, fired: usize) -> Result<Reread> {
             not_applied.push(line);
         }
     }
+    // the scalar and energy sub-tables of the boundaries are kept outside
+    // the TOML of the case: a change of them is reported, not applied (the
+    // boundary conditions belong to the case the run started with)
+    for (name, changed) in [
+        (
+            "boundary energy conditions",
+            format!("{:?}", current.boundary_energy) != format!("{:?}", new.boundary_energy),
+        ),
+        (
+            "boundary scalar conditions",
+            format!("{:?}", current.boundary_scalar) != format!("{:?}", new.boundary_scalar),
+        ),
+    ] {
+        if changed {
+            not_applied.push(format!("{name}: changed in the file"));
+        }
+    }
     let mut case: FlowCase = merged.try_into()?;
     case.source = current.source.clone();
     case.overrides = current.overrides.clone();
+    case.notes = current.notes.clone();
     case.pressure_frame = current.pressure_frame.clone();
+    // the fields the round trip through TOML drops (as in
+    // `schedule::apply_entry`)
+    case.boundary_scalar = current.boundary_scalar.clone();
+    case.boundary_energy = current.boundary_energy.clone();
+    case.fluid_view = current.fluid_view.clone();
     case.validate()?;
     Ok(Reread {
         case,

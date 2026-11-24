@@ -1,0 +1,31 @@
+[package]
+name = "foehncraft-radiation"
+description = "Foehncraft radiation: Monte Carlo transport of energy bundles on the cell walk, exact integer tallies, on threads and ranks (step 29)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[features]
+default = ["metis"]
+# METIS partitions in the tests on ranks (D32).
+metis = ["foehncraft-mesh/metis"]
+# MPI example (system MPI library and libclang at build time).
+mpi = ["foehncraft-parallel/mpi", "foehncraft-mesh/mpi"]
+
+[dependencies]
+foehncraft-core.workspace = true
+foehncraft-kernels.workspace = true
+foehncraft-mesh.workspace = true
+foehncraft-parallel.workspace = true
+rayon.workspace = true
+anyhow = "1"
+
+[lints]
+workspace = true
+
+[[example]]
+name = "mpi_radiation"
+required-features = ["mpi"]

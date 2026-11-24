@@ -144,7 +144,7 @@ codes! {
     SPRAY_UNSUPPORTED = "SPR003", Error, "A `[spray]` in a case with MRF zones, sliding interfaces or a periodic boundary (not in this version).";
     SPRAY_LOST = "SPR004", Warning, "Parcels lost: the walk through the mesh failed or a parcel needed more than `[spray] max_substeps` sub-steps in a time step (counted in `spray.csv`).";
     SPRAY_BOOK = "SPR005", Error, "The mass book of the sprays does not close: released liquid differs from the liquid in the flow, stuck, left and lost by more than round-off.";
-    ENE_UNSUPPORTED = "ENE006", Error, "An energy setting this version does not have: a passive scalar named `temperature` beside `[energy]`, solid regions with a sliding mesh, a restart with `[energy.acceleration]`, passive scalars or a periodic mesh, or with the variable density (stage 7c) passive scalars, a restart, a periodic mesh, a convective outlet, a mass-flow inlet, a wall mass flux or a rotating zone.";
+    ENE_UNSUPPORTED = "ENE006", Error, "An energy setting this version does not have: a passive scalar named `temperature` beside `[energy]`, solid regions with a sliding mesh, a restart with `[energy.acceleration]`, passive scalars or a periodic mesh, or with the variable density (stage 7c) passive scalars, a restart, a periodic mesh, a convective outlet, a wall mass flux or a rotating zone.";
     ENE_SOURCE = "ENE008", Error, "An `[[energy.sources]]` entry for a region the case does not have, or without exactly one of `power` and `power_density`.";
     CHT_INTERFACE = "CHT004", Error, "An `[interfaces.<name>]` table that is not on a region interface (regions unknown, the same, two fluids, or not touching), or without exactly one of `contact_resistance` (≥ 0) and `thin_wall` (thickness > 0 with `conductivity` or `material`).";
     ACC_SETTING = "ACC001", Error, "An `[energy.acceleration]` setting that cannot be used: a steady case, no solid region, a region that is not a solid, `inertia_scale` outside (0, 1] and not `\"auto\"`, `restore` neither `\"settled\"` nor a time ≥ 0, or a `period`, `window_steps`, `settle_tolerance` or `target_windows` out of range.";
@@ -242,6 +242,7 @@ codes! {
     RUN_CONTROL_STOP = "RUN022", Note, "Stopped through the live control port (`run.stop`): restart file, final output, exit code 3 (L19).";
     RUN_CONTROL_SET = "RUN023", Note, "A setting changed through the live control port (`run.set`): key, old and new value, with the equivalent `[[schedule]]` entry (L19).";
     RUN_CONTROL_REJECTED = "RUN024", Warning, "A setting asked for through the live control port that cannot be applied (not valid for the case at that point); the run goes on with the settings it had.";
+    RUN_REREAD = "RUN025", Note, "A setting changed by re-reading the case file (`.read_toml_N`, `[run] reread_every`): key, old and new value (D40, D214).";
     // the causes of a divergence (D63)
     DIV_TIME_STEP = "DIV001", Note, "Divergence cause: the Courant number near the failing cells is large; reduce the time step.";
     DIV_RELAXATION = "DIV002", Note, "Divergence cause: under-relaxation factors too large for the case.";
