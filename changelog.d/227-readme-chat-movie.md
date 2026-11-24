@@ -1,0 +1,1 @@
+- **README: from one sentence to a moving rotor.** A new section before "What works today" shows the animation of the three-rotor vessel (gallery 225) with the one-sentence prompt that started it through `foehn mcp`, and links the MP4 and the guide to connect an assistant.
