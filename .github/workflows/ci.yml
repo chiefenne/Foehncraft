@@ -404,6 +404,9 @@ jobs:
               SPIKE_KIND=$kind mpirun --oversubscribe -n $n target/release/examples/mpi_reductions
             done
           done
+      - run: cargo build --release -p foehncraft-fv --features mpi --example mpi_scalar --locked
+      - name: Scalar solver on ranks bitwise equal to one rank (W3, 1 to 4 ranks)
+        run: for n in 1 2 3 4; do mpirun --oversubscribe -n $n target/release/examples/mpi_scalar; done
 
   ptx:
     name: Single-source GPU kernels compile to PTX (G1, stages 2, 3 and 5)

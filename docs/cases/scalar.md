@@ -26,6 +26,7 @@ every case except `*_gpu.toml` (R5).
 | `scalar/mms_poly_2d.toml` | generated poly 2D, 289 to 16 641 cells (4 levels) | planar solution, zero-gradient (symmetry) z boundaries | [recipe 12](../recipes/scalar-pressure.md#scalar-mms) |
 | `scalar/oblique_step_2d.toml` | generated poly 2D, 2 401 cells | upwind, linear upwind, both limiters and the bounded central scheme (stage 5, D25) as `[[variants]]`; bounds check | [gallery 9](../gallery/scalar-pressure.md#oblique-step), [recipe 13](../recipes/scalar-pressure.md#scalar-schemes) |
 | `scalar/mms_poly_gpu.toml` | generated poly 3D, 912 673 cells | CPU against two GPU runs: GPU equals CPU and GPU run to run | [recipe 14](../recipes/gpu.md#scalar-gpu), `tools/notebooks/stage2_colab.ipynb` |
+| `scalar/ranks_oblique_step_2d.toml` | generated poly 2D, 4 225 cells | the oblique step with linear upwind and the Venkatakrishnan limiter on 2, 3 and 5 ranks, bitwise the one-rank solution (MPI step W3) | [gallery 230](../gallery/meshes.md#scalar-ranks), [recipe 230](../recipes/meshes.md#scalar-ranks) |
 | `scalar/poisson_amg_poly_box.toml` | generated poly 3D, 729 to 35 937 cells | Poisson manufactured solution with CG + AMG (stage 3) against BiCGStab + Jacobi as `[[variants]]`; order of accuracy | [gallery 11](../gallery/scalar-pressure.md#poisson-amg-mms), [recipe 15](../recipes/scalar-pressure.md#poisson-study) |
 
 ## Scalar case-file keys
@@ -60,6 +61,7 @@ A boundary condition is required for every boundary.
 | `run.backends` | `["cpu"]` | `cpu`, `cpu-serial`, `cuda`; later backends are compared with the first |
 | `run.threads` | all cores | CPU threads |
 | `run.rust_ptx` | `target/nvptx64-nvidia-cuda/release/foehncraft_ptx_kernels.ptx` | PTX module of the GPU backend |
+| `run.ranks` | `[]` | also solve every variant on these numbers of ranks, as threads of this process (RCB partition, MPI step W3); every solve must be bitwise the first backend's, else the run fails; Jacobi preconditioner only until W4 |
 | `verification.levels` | none | refinement levels of `[mesh.generate]`; two or more: order-of-accuracy sweep |
 | `verification.expected_order` | none | `[lo, hi]`: fail if the order on the finest pair is outside |
 | `verification.bounds` | none | `[lo, hi]`: fail if φ leaves this range (by more than 1e-6) |

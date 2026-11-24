@@ -16,6 +16,7 @@ Part of the [Example gallery](../gallery.md): the built-in test mesher in 2D and
 | 189 | [Which cells can the curvature correction and the QCR trust? The operator check](#operator-check) | 6 | gradient and Hessian on test fields, `MESH004`–`MESH006`, `LIM008`, `operators.csv` (D236) |
 | 200 | [Three ranks, the bits of one: the canonical local mesh](#canonical-ranks) | 8 | flipped faces, cell faces in global order, `foehn mesh` check per rank (MPI step W1, D93) |
 | 219 | [Sums that do not care how many ranks there are: exact reductions](#exact-reductions) | 8 | exact accumulator, sums over ranks bitwise one rank, the old rank-order sum for comparison (MPI step W2, D31, D93) |
+| 230 | [Five ranks, one solution: the scalar solver on ranks](#scalar-ranks) | 8 | faces in global orientation, halo exchange before every read across a face, the whole scalar solver bitwise one rank (MPI step W3, D93) |
 
 ---
 
@@ -428,17 +429,16 @@ python3 -m tools.plot.operator_check docs/figures/gallery/operator_check.png out
 
 <img src="../figures/gallery/canonical_ranks_rank.png" alt="A perturbed 2D polyhedral mesh in three METIS parts, one colour per rank" width="800" height="448">
 
-<img src="../figures/gallery/canonical_ranks_flipped.png" alt="Faces each rank stores flipped against the global mesh, counted per cell" width="800" height="448">
-
 A perturbed 2D polyhedral mesh (325 cells) in three ranks with METIS and two
-halo layers. A rank's part is renumbered for locality, so on every rank
-some faces must be stored the other way round: a processor face is owned by
-the rank's own cell, and an inner face runs from the lower to the higher
-local cell. The lower picture counts those flipped faces per cell: 208,
-194 and 284 on ranks 0, 1 and 2. Since MPI step W1 a flipped face is
-marked, its geometry is evaluated in the node order of the global mesh with
-the sign of the area vector reversed (exact), every cell sums its faces in
-global face order, and halo cells take volume and centroid from their
+halo layers. A rank's part is renumbered for locality. In MPI step W1 a
+face whose global owner had the higher local index, or was a halo cell, was
+stored flipped (208, 194 and 284 faces on ranks 0, 1 and 2 of this case),
+its geometry evaluated in the node order of the global mesh with the sign
+of the area vector reversed (exact). Since MPI step W3 (gallery 230) every
+face keeps its global orientation, so there are no flipped faces and the
+`flipped_faces` field is 0; the asymmetric face formulas of the solver
+(the owner weight w against 1 − w) need that. Every cell sums its faces in
+global face order and halo cells take volume and centroid from their
 owner. The report of the run checks every face and cell of every rank
 against the one-rank mesh bit for bit: 0 faces and 0 cells differ (the run
 fails otherwise). Before W1, 30 to 40 % of the faces and all off-diagonal
@@ -454,8 +454,6 @@ matrix rows differed in the last bits (the MPI spike, #192).
 target/release/foehn mesh examples/cases/mesh/canonical_ranks.toml
 python3 -m tools.mesh.render_mesh output/canonical_ranks/mesh.vtkhdf rank.png \
     --field rank --categorical --top --size 1000x560 --title "3 ranks (METIS)"
-python3 -m tools.mesh.render_mesh output/canonical_ranks/mesh.vtkhdf flipped.png \
-    --field flipped_faces --top --size 1000x560 --title "faces stored flipped per cell"
 ```
 
 [↑ back to top](#meshes)
@@ -497,6 +495,49 @@ for n in $(seq 2 16); do
     target/release/foehn mesh $F --parts $n --no-vtkhdf --locate 0 --out output/exact_reductions/p$n
 done
 python3 -m tools.plot.exact_reductions exact_reductions_ulps.png output/exact_reductions
+```
+
+[↑ back to top](#meshes)
+
+---
+
+<a id="scalar-ranks"></a>
+## 230. Five ranks, one solution: the scalar solver on ranks
+
+<img src="../figures/gallery/ranks_scalar_phi.png" alt="Oblique step of a scalar convected at 30 degrees on a polygonal mesh, solved on five ranks" width="1000" height="560">
+
+<img src="../figures/gallery/ranks_scalar_rank.png" alt="The five ranks of the recursive coordinate bisection of the same mesh" width="1000" height="560">
+
+The oblique step of gallery 9 (nearly pure convection at 30°, linear upwind
+with the Venkatakrishnan limiter at K = 0, non-orthogonal correction,
+BiCGStab with Jacobi) on a perturbed 2D polygonal mesh of 4 225 cells,
+solved once on all cells and then on 2, 3 and 5 ranks. Every rank works on
+its part with one layer of halo cells: before the gradient it receives φ
+of its halo cells from their owners, before the face coefficients their
+gradient and limiter value, before every matrix product the vector, and
+every dot product and extremum is the exact sum or extremum over all ranks
+(W2). Processor faces are computed on both of their ranks from the same
+inputs, in the orientation of the global mesh. All 67 outer iterations,
+their residuals and linear iteration counts, and the final φ are bitwise
+those of the one-rank run on every rank count; the run fails otherwise.
+The ranks are threads of one process here, each with its own communicator;
+the same solver runs across MPI processes in CI (`mpi_scalar`, 1 to 4
+ranks).
+
+| | |
+|---|---|
+| Mesh | poly 2D, 64 × 64 base grid, 4 225 cells, nodes perturbed by 10 % |
+| Ranks | 2, 3, 5 (recursive coordinate bisection), one halo layer |
+| Solver | linear upwind, Venkatakrishnan K = 0, BiCGStab + Jacobi, 67 outer iterations |
+| Case file | `scalar/ranks_oblique_step_2d.toml` |
+
+```
+target/release/foehn scalar examples/cases/scalar/ranks_oblique_step_2d.toml
+python3 -m tools.mesh.render_mesh output/ranks_oblique_step_2d/fields.vtkhdf phi.png \
+    --field phi --range 0 1 --top --no-edges --size 1000x560 \
+    --title "phi on 5 ranks: bitwise the one-rank solution"
+python3 -m tools.mesh.render_mesh output/ranks_oblique_step_2d/fields.vtkhdf rank.png \
+    --field rank --categorical --top --size 1000x560 --title "5 ranks (RCB)"
 ```
 
 [↑ back to top](#meshes)

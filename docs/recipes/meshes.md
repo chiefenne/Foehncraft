@@ -16,6 +16,7 @@ Part of the [Recipes](../recipes.md): generate, read (Gmsh, SU2, CGNS, OpenFOAM,
 | 189 | [Check which cells the velocity gradient and Hessian are exact on](#operator-check) |
 | 200 | [Check that every rank has the bits of one rank (canonical local mesh)](#canonical-ranks) |
 | 219 | [Sum over ranks exactly (and check it)](#exact-reductions) |
+| 230 | [Solve a scalar on ranks (and check it against one rank)](#scalar-ranks) |
 
 ---
 
@@ -407,8 +408,9 @@ target/release/foehn mesh examples/cases/mesh/canonical_ranks.toml
 target/release/foehn mesh examples/cases/mesh/canonical_ranks.toml --parts 4 --method rcb
 ```
 
-`mesh_report.md` has the columns `flipped faces` and `faces, cells
-differing from one rank` (always `0, 0`) in the partition table;
+`mesh_report.md` has the columns `flipped faces` (0 since MPI step W3:
+faces keep their global orientation) and `faces, cells differing from one
+rank` (always `0, 0`) in the partition table;
 `mesh_report.json` has the list `canonical` with `rank`, `flipped_faces`,
 `differing_faces` and `differing_cells` for an agent or a script;
 `mesh.vtkhdf` has the cell fields `rank` and `flipped_faces`.
@@ -471,5 +473,53 @@ let [fx, fy] = comm.sum_exact_many(&[ax, ay])[..] else { unreachable!() };
 
 The cost per value of the exact dot product against the old block sum:
 `cargo run --release -p foehncraft-parallel --example exact_reduction_cost`.
+
+[↑ back to top](#meshes)
+
+---
+
+<a id="scalar-ranks"></a>
+## 230. Solve a scalar on ranks (and check it against one rank)
+
+List rank counts under `[run]` of a scalar case: every variant is solved
+once on all cells and then on each rank count, with the ranks as threads of
+this process (recursive coordinate bisection, one halo layer), and the run
+fails unless φ is bitwise the first backend's (MPI step W3, D93):
+
+```toml
+[run]
+ranks = [2, 3, 5]
+```
+
+```
+target/release/foehn scalar examples/cases/scalar/ranks_oblique_step_2d.toml
+```
+
+`scalar.md` and `scalar.json` list a solve per rank count (`backend` =
+`cpu, N ranks`, `bitwise_equal`); `fields.vtkhdf` gets the cell field
+`rank` of the largest count. The multigrid preconditioner runs on one rank
+until MPI step W4, so these variants use `preconditioner = "jacobi"`.
+
+Across MPI processes, the solution, gradient, limiter, every matrix entry
+and the residual history of three cases (polyhedra, mixed cells,
+tetrahedra; linear upwind, bounded central, BiCGStab, CG) compared bit for
+bit with one rank (needs MPI as in recipe 4):
+
+```
+cargo build --release -p foehncraft-fv --features mpi --example mpi_scalar
+for n in 1 2 3 4; do mpirun --oversubscribe -n $n target/release/examples/mpi_scalar; done
+```
+
+In code, one rank's solve on its part and the check
+(`foehncraft_fv::ranks`; `ThreadComm::run` gives ranks as threads in tests):
+
+```rust
+let local = extract(&global, &part, comm.rank(), 1)?;      // faces in global orientation
+let geo = local.geometry(&*comm);                           // halo volumes and centroids
+let d = Discretisation::new(&local.mesh, &geo, &problem)?;
+let mut be = CpuBackend::on_ranks(d, threads, Ranks::new(comm, &local))?;
+be.upload(V::Phi, &phi0)?;                                  // own cells
+let outcome = solver::solve(&mut be, &settings, |_| {})?;  // the one-rank solver, unchanged
+```
 
 [↑ back to top](#meshes)

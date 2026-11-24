@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**108 features: 50 verified, 55 partial, 3 unverified.**
+**109 features: 50 verified, 56 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -133,6 +133,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Backends and interfaces | [Journal and replay of tool calls](#interface-journal-replay) | verified |
 | Backends and interfaces | [MCP server (foehn mcp)](#interface-mcp) | verified |
 | Backends and interfaces | [Exact reductions: sums, dot products, norms and min/max independent of threads, order and ranks (MPI step W2)](#parallel-exact-reductions) | verified |
+| Backends and interfaces | [The steady scalar solver on several ranks, bitwise one rank (MPI step W3)](#parallel-scalar-ranks) | partial |
 
 ## Meshes
 
@@ -1623,5 +1624,21 @@ Contracts: `equivalence`, `replay`, `control`, `diagnostics`.
 - contract (bitwise): [`independent_of_order_and_grouping`](../../crates/foehncraft-core/src/exact.rs): any order and any split into parts, also through the integer image sent between ranks, gives the same bits
 - contract (bitwise): [`exact_reductions_independent_of_thread_count`](../../crates/foehncraft-parallel/src/repro.rs): 1 to 7 threads give the same bits
 - contract (bitwise): [`sums_over_ranks_are_bitwise_the_one_rank_sums`](../../crates/foehncraft-mesh/tests/exact_reductions.rs): sums over 1 to 9 ranks of decomposed meshes (four cell types, METIS and RCB) are bitwise the one-rank sums
+
+Contracts: `bitwise`.
+
+<a id="parallel-scalar-ranks"></a>
+
+### The steady scalar solver on several ranks, bitwise one rank (MPI step W3)
+
+**partial** (gaps written) · id `parallel.scalar-ranks` · switch `[run] ranks` · decisions D31, D93
+
+- contract (bitwise): [`scalar_solves_on_ranks_are_bitwise_one_rank`](../../crates/foehncraft-fv/tests/ranks.rs): 1 to 4 ranks (RCB), polyhedra, mixed cells and tetrahedra, linear upwind with Venkatakrishnan, bounded central with Venkatakrishnan-Wang, BiCGStab and CG: phi, gradient, limiter, every matrix entry, right-hand side and residual history bitwise one rank
+- contract (bitwise): [`scattered_partitions_are_bitwise_one_rank`](../../crates/foehncraft-fv/tests/ranks.rs): a round-robin partition (almost every face a processor face) gives the same bits
+- contract (bitwise): [`ranks_oblique_step_2d`](../../examples/cases/scalar/ranks_oblique_step_2d.toml): the oblique step on 2, 3 and 5 ranks: 67 outer iterations and phi bitwise the one-rank run (the run fails otherwise) (passes in CI (set linux-1), not yet in the manual)
+
+Gaps:
+
+- the multigrid preconditioner on ranks (W4) and the flow engine on ranks (W5) follow
 
 Contracts: `bitwise`.

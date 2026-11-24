@@ -1214,6 +1214,18 @@
    "why": [],
    "gaps": [],
    "range": {}
+  },
+  {
+   "id": "parallel.scalar-ranks",
+   "title": "The steady scalar solver on several ranks, bitwise one rank (MPI step W3)",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "the multigrid preconditioner on ranks (W4) and the flow engine on ranks (W5) follow"
+   ],
+   "range": {}
   }
  ]
 }

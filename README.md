@@ -98,7 +98,9 @@ validated range, one mesh only, …) in its report and its JSON result.
   Rhie–Chow interpolation; BDF2 and Crank–Nicolson; reproducible
   (gather-based) assembly in double precision; exact dot products, norms
   and sums on the CPU, bitwise the same for any thread count, cell order
-  and number of ranks (MPI step W2).
+  and number of ranks (MPI step W2); the steady scalar solver runs on
+  several ranks with bitwise the result of one (MPI step W3; the flow
+  engine on ranks follows in 1.1).
 - **Pressure–velocity coupling.** SIMPLEC and SIMPLE for steady flow, PISO
   with outer correctors for transient flow (SIMPLEC-type correctors with
   outer iterations, stable on thin wedge cells at an axis), a time step from the
