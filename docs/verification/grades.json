@@ -1116,7 +1116,7 @@
     "gaps written"
    ],
    "gaps": [
-    "the gas momentum account of the solver itself is not booked (it comes with the first exchange rows of the sprays, SP2)",
+    "the gas momentum account of the solver holds only the spray exchange (SP2a); the forces of the boundaries on the gas are not booked, so its imbalance is that force",
     "the viscous heating is not yet an exchange pair kinetic to thermal (the two sums are formed separately)",
     "the thermal account is in the last balance only, not over a run"
    ],
@@ -1296,7 +1296,7 @@
    ],
    "gaps": [
     "no reference-data case (terminal velocity in the Schiller-Naumann range, a prescribed vortex, grid turbulence)",
-    "the gas does not feel the droplets (two-way coupling is SP2); no turbulent dispersion, evaporation or breakup",
+    "one way by default; two-way momentum coupling is the row sprays.two-way-momentum; no turbulent dispersion, evaporation or breakup",
     "the gas state is sampled at the start of each sub-step (first order in the gas); the time of a wall hit is a chord fraction",
     "one process; no rotating zones or periodic boundaries (SPR003)",
     "the CPU = GPU check of the parcel kernel runs in the PTX job of CI only",
@@ -1320,6 +1320,27 @@
     "a cut plane takes cell values and gradients (its cut_error is reported); a disc or rectangle snapped to the faces is a staircase of whole faces",
     "not with a sliding mesh (DAT001); one process",
     "`spray_datums_injectors` has no run in the verification manual or in CI"
+   ],
+   "range": {}
+  },
+  {
+   "id": "sprays.two-way-momentum",
+   "title": "Two-way momentum coupling of the sprays (SP2a, D247 to D252)",
+   "grade": "partial",
+   "why": [
+    "a model without reference data",
+    "gaps written"
+   ],
+   "gaps": [
+    "no heat exchange yet (SP2b): two-way coupling refuses the energy equation (SPR003)",
+    "no turbulent dispersion (SP2c) and no turbulence modulation by the droplets (in no decision yet)",
+    "first order in time (V28.4); second order (an exponentially fitted weight per cell) is an open point of section 5.7",
+    "V28.6 (two neighbour cells) is covered only through the shuffled-storage test; no reference-data case of a dense spray against measurements",
+    "the time-step study as a registered tool (D254 (4)) is not built",
+    "point-source limit: no correction of the self-disturbance and no kernel smoothing; liquid volume fraction and parcels per cell are reported only",
+    "the slip-wall normal viscous stress is not booked on the gas momentum account (it is the boundary force)",
+    "PISO only; not with solid regions, the frozen-flow march, rotating zones or periodic boundaries (SPR003); one process",
+    "`spray_two_way_injectors` has no run in the verification manual or in CI"
    ],
    "range": {}
   },

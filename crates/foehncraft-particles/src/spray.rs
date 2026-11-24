@@ -523,20 +523,20 @@ impl Spray {
                         dp[k] += r.slope * d[k];
                     }
                 }
-                for k in 0..3 {
-                    o.p.v[k] += dp[k] / m;
+                for (v, d) in o.p.v.iter_mut().zip(dp) {
+                    *v += d / m;
                 }
             }
             for (j, &c) in sources.cells.iter().enumerate() {
                 let d = du(c);
-                for k in 0..3 {
-                    books.from_gas[k] -= sources.impulse[j][k] - sources.slope[j] * d[k];
+                for ((b, i), dk) in books.from_gas.iter_mut().zip(sources.impulse[j]).zip(d) {
+                    *b -= i - sources.slope[j] * dk;
                 }
             }
         } else {
             for imp in &sources.impulse {
-                for k in 0..3 {
-                    books.from_gas[k] -= imp[k];
+                for (b, i) in books.from_gas.iter_mut().zip(imp) {
+                    *b -= i;
                 }
             }
         }
@@ -891,6 +891,8 @@ impl Spray {
                 }
             }
             let target = [p.x[0] + s.dx[0], p.x[1] + s.dx[1], p.x[2] + s.dx[2]];
+            // the face the previous sub-step ended on (two-way tracking)
+            let on_face = p.face.map(|q| q.face);
             let start = p.face.take().or_else(|| {
                 env.loc.position_in(p.cell, p.x).or_else(|| {
                     env.loc
@@ -931,8 +933,23 @@ impl Spray {
                     });
                 }
             };
-            if two_way {
-                match first_face(env, start, target) {
+            // A parcel that moves along a face, with the gas of the two
+            // cells pushing it towards the face from both sides, would end
+            // every sub-step at that face after no time and chatter between
+            // the cells: a sub-step that starts on a face and goes straight
+            // back through it takes its full length instead (booked to the
+            // cell it starts in, the path below).
+            let ff = if two_way {
+                Some(first_face(env, start, target))
+            } else {
+                None
+            };
+            let ff = ff.filter(|f| {
+                !matches!(f, FirstFace::Interior { lambda, next, .. }
+                    if on_face == Some(next.face) && *lambda < 1e-9)
+            });
+            if let Some(ff) = ff {
+                match ff {
                     FirstFace::Reached(cell) => {
                         book(&mut records, &mut weight, &p, sub, s.v, s.tau);
                         if any_datum {
@@ -1516,7 +1533,7 @@ fn first_face(env: &Env, start: Position, target: [f64; 3]) -> FirstFace {
 /// bisection, 50 halvings (pure, the same bits on every thread).
 fn time_at_fraction(dx: &dyn Fn(f64) -> [f64; 3], chord: [f64; 3], lambda: f64, sub: f64) -> f64 {
     let l2 = chord[0] * chord[0] + chord[1] * chord[1] + chord[2] * chord[2];
-    if !(l2 > 0.0) || lambda <= 0.0 {
+    if l2.is_nan() || l2 <= 0.0 || lambda <= 0.0 {
         return 0.0;
     }
     if lambda >= 1.0 {

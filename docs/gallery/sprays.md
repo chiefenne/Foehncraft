@@ -6,6 +6,7 @@ Part of the [Example gallery](../gallery.md): droplets as Lagrangian parcels in 
 |---|---|---|---|
 | 242 | [Water droplets sprayed into an air duct](#spray-duct) | SP1 | `[spray]`, `[[injector]]`, `[liquid]`, drag of Schiller and Naumann, stick walls, mass book |
 | 265 | [Where the liquid goes: datums and droplet statistics](#spray-datums) | SP1b | `[[datum]]` (cut plane, plane on faces, disc, STL surface, boundary, box), Rosin-Rammler sizes, `datums.csv`, histograms, D32 and Dv50, penetration, `series.json` |
+| 280 | [A water spray that drives the air](#spray-two-way) | SP2 | `[spray.coupling] mode = "two-way"`, value-plus-slope momentum sources, passes inside the time step, coupling lag, momentum ledger pair, health numbers |
 
 ---
 
@@ -108,4 +109,77 @@ D32, centre of mass), `result.json` (all statistics with D20, D30, D43,
 Dv10, Dv90, span, velocity statistics and the fit), `series.json`.
 Picture: `python3 -m tools.plot.spray_datums OUT_DIR output/spray_datums`.
 [Recipe 265](../recipes/sprays.md#spray-datums),
+[case row](../cases/flow.md#lagrangian-sprays).
+
+<a id="spray-two-way"></a>
+## 280. A water spray that drives the air
+
+<img src="../figures/gallery/spray_two_way.png" alt="Left: air speed in a room of 1.2 m by 1.5 m after 2 s, with white arrows of the air velocity and the droplets as dots coloured by their diameter; the falling spray in the middle has pulled the air into a jet of up to 6 m/s that spreads over the floor and rises along the side walls in two large eddies. Right, over time: the downward force of the spray on the air, which rises to about 0.8 N in the first half second and stays there; the parcel passes of each time step, mostly three; and the coupling lag of the last pass, mostly below the tolerance of 10⁻³." width="1200" height="660">
+
+`spray_two_way.toml` is a room of still air, 1.2 m wide and 1.5 m high
+(2D, 60 × 75 cells, SST k-ω, Δt = 4 ms). A nozzle under the ceiling sprays
+50 g/s of water downwards at 15 m/s in a cone of 12° half angle, with
+Rosin-Rammler sizes from 50 to 400 µm (X = 150 µm, n = 2.5). With
+`[spray.coupling] mode = "two-way"` the drag on the droplets is a
+momentum source of the gas (D247 to D252): the falling spray pulls the air
+down into a jet of up to 6 m/s, which spreads over the floor and comes back
+up along the side walls to the vents in the ceiling. One way (SP1) the air
+would stay at rest.
+
+**How the coupling works.** A parcel pass tracks every parcel through one
+frozen gas state; each sub-step, which ends at every cell face, writes a
+record of the momentum the gas receives and its slope with respect to the
+gas velocity of the cell. The records are sorted by cell, parcel and
+sub-step and summed in that order, so the sources do not depend on the
+storage order of the parcels or the number of threads. The gas takes them
+as value plus slope, S = E − β (u − u*), like a porous sink: the slope sits
+on the diagonal and in the pressure correction, so a dense spray cannot
+push the gas past the droplets, however large the step. The passes run
+inside the outer iterations of the PISO step until the coupling lag is
+below 10⁻³ (at most three, the default). After the last gas solve a
+closing step gives each parcel the correction the gas received, so both
+books hold the same numbers.
+
+In this run the spray hands the air a steady 0.77 N downwards after the
+first half second. Of the 100 g injected, 85.7 g land on the floor
+(`wall_mode = "stick"`), 14.2 g are in the air and 0.1 g leave through the
+vents; no parcel is lost. The steps take 2.96 passes on average; 46 of the
+500 steps stop at the third pass with the lag above the tolerance (at most
+3.1 × 10⁻³; SPR006 warns once and `spray.csv` counts them). The strongest
+coupling of a cell, β Δt / (ρ V), is 0.77; the liquid fills at most 0.5 %
+of a cell, with at most 16 parcels in it. The run takes about 40 s on
+four cores.
+
+**What is checked** (V28.1 to V28.4). A cloud shot into one cell of gas
+at rest, with liquid loadings of 0.1 to 10 and time steps of 0.1 to 100
+droplet response times: gas and droplets reach one common velocity, the
+mixture keeps the momentum it was given, the force on the gas never
+changes sign, and the momentum the gas received plus the momentum of the
+parcels equals the momentum injected to round-off. One fixed pass is
+bounded and conservative too. Against a reference of the two-mass
+relaxation integrated by RK4 with small steps, the error falls at order
+0.99 and 0.96 as Δt halves from 2 ms to 0.5 ms. The sources are bitwise
+equal with the parcels stored in reverse order and on one thread (hex,
+tetrahedral and polyhedral meshes), whole runs on 1 and 4 threads; the
+slopes of one parcel add up to at most its mass. A parcel on a cell face
+with the gas of both cells pushing it back across the face is not lost.
+In the ledger the exchange is a pair (`spray drag` on the gas momentum,
+`from the gas` on the parcel momentum) whose residual is zero to the bit,
+and the parcel momentum account closes with the weight, the injection, the
+walls and the parcels that left. The gas momentum accounts hold only this
+term for now, so their imbalance is the force of the walls and the
+pressure on the gas.
+
+**What this version does not do.** Momentum only: no heat exchange (SP2b),
+no turbulent dispersion (SP2c), no evaporation (SP5). Not with the energy
+equation, conjugate heat transfer or an algorithm other than PISO (SPR003; the
+steady spray mode is SP2s). The slope is the diagonal of the coupling: a
+parcel that crosses cells in one step couples the neighbour cells only
+through the passes. First order in time (the gas state at the new time
+level, D248). One process. No time-step study tool yet (D254 (4)).
+
+Files: `spray.csv` (passes, coupling lag, gas force, power and the health
+numbers per step), `result.json` (coupling summary and ledger).
+Picture: `python3 -m tools.plot.spray_two_way OUT_DIR output/spray_two_way`.
+[Recipe 280](../recipes/sprays.md#spray-two-way),
 [case row](../cases/flow.md#lagrangian-sprays).

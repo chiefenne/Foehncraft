@@ -1,4 +1,4 @@
-"""A water spray that drives the air (Lagrangian sprays, two-way coupling SP2; gallery and recipe 277).
+"""A water spray that drives the air (Lagrangian sprays, two-way coupling SP2; gallery and recipe 280).
 
 spray_two_way.png: left, the air speed with arrows of the air velocity and the
 droplets coloured by their diameter at the end of the run; right, over time,
@@ -34,7 +34,7 @@ def field(d, name):
 
 def plot(out, run):
     quads, _, d = read(os.path.join(run, "fields.vtkhdf"))
-    vel = field(d, "velocity")
+    vel = np.column_stack([field(d, "velocity_x"), field(d, "velocity_y")])
     speed = np.hypot(vel[:, 0], vel[:, 1])
     last = sorted(glob.glob(os.path.join(run, "spray", "parcels_*.vtkhdf")))[-1]
     x, _, diam, attrs = parcels(last)

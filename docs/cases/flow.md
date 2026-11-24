@@ -305,8 +305,9 @@ on the [key page](../keys.md) and in [recipe
 ## Lagrangian sprays
 
 `[spray]` with an included injector file (L12, SP1, D246): droplets as
-parcels in a transient flow, one way (the gas does not feel them yet). The
-keys are on the [key page](flow-keys.md); the run writes `spray.csv` and
+parcels in a transient flow, one way or, with `[spray.coupling] mode =
+"two-way"` (SP2, D247 to D252), with the drag as a momentum source of the
+gas. The keys are on the [key page](flow-keys.md); the run writes `spray.csv` and
 `spray/parcels_<step>.vtkhdf`. `[[datum]]` tables (SP1b, D262) report the
 liquid and the gas through planes, surfaces and boundaries and the droplets
 in volumes, in `datums.csv` and `spray_hist_<datum>.csv`.
@@ -315,6 +316,7 @@ in volumes, in `datums.csv` and `spray_hist_<datum>.csv`.
 |---|---|---|---|
 | `flow/spray_duct.toml` | generated hex 2D, 80 × 20 cells | 10 g/s of 150 µm water droplets sprayed from the upper wall into air at 4 m/s; about 70 % stick on the lower wall, the mass book closes; the injector is in `flow/spray_duct_injectors.toml` | [gallery 242](../gallery/sprays.md#spray-duct), [recipe 242](../recipes/sprays.md#spray-duct) |
 | `flow/spray_datums.toml` | generated hex 2D, 80 × 20 cells | the duct of `spray_duct` with Rosin-Rammler sizes (X = 120 µm, n = 2.5; `flow/spray_datums_injectors.toml`) and seven datums: a cut plane, a plane on the faces, a disc, an STL surface (`flow/spray_datums_section.stl`), the outlet, the floor and a box; the outlet datum equals the escaped liquid to the bit, Dv50 91 µm at the outlet and 170 µm on the floor | [gallery 265](../gallery/sprays.md#spray-datums), [recipe 265](../recipes/sprays.md#spray-datums) |
+| `flow/spray_two_way.toml` | generated hex 2D, 60 × 75 cells | two-way coupling: 50 g/s of water (50 to 400 µm, `flow/spray_two_way_injectors.toml`) sprayed down from the ceiling of a room of still air pulls the air into a jet of up to 6 m/s; the spray hands the air 0.77 N, 2.96 passes per step on average, the momentum pair cancels to the bit | [gallery 280](../gallery/sprays.md#spray-two-way), [recipe 280](../recipes/sprays.md#spray-two-way) |
 
 ## Porous regions
 

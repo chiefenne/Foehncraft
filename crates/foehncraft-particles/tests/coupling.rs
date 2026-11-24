@@ -132,3 +132,60 @@ fn sp_rules(m: &foehncraft_mesh::Mesh) -> Vec<BoundaryRule> {
         m.boundaries.len()
     ]
 }
+
+/// Gas that pushes towards the plane x = 0.5 from both sides, cell by cell
+/// (the inflow towards the axis of a spray that entrains the gas).
+struct Converging(Vec<[f64; 3]>);
+
+impl Gas for Converging {
+    fn at(&self, cell: usize, _x: [f64; 3]) -> GasState {
+        let ux = if self.0[cell][0] < 0.5 { 0.5 } else { -0.5 };
+        GasState {
+            u: [ux, 0.0, 0.0],
+            rho: 1.2,
+            mu: 1.8e-5,
+        }
+    }
+}
+
+#[test]
+fn a_parcel_on_a_face_pushed_from_both_sides_is_not_lost() {
+    // the nozzle sits on the face x = 0.5 between two cells; the gas of each
+    // cell pushes the parcels back across it: two-way tracking must not end
+    // every sub-step at that face after no time
+    let mut s = BoxSpec::new(Kind::Hex, 3, [4, 4, 4]);
+    s.lower = [0.0; 3];
+    s.upper = [1.0; 3];
+    let m = s.generate().unwrap();
+    let geo = Geometry::compute(&m);
+    let loc = Locator::new(&m, &geo);
+    let env = Env {
+        mesh: &m,
+        geo: &geo,
+        loc: &loc,
+    };
+    let mut cfg = SpraySection {
+        injectors: vec![Injector {
+            name: "a".into(),
+            position: [0.5, 0.9, 0.4],
+            direction: [0.0, -1.0, 0.0],
+            speed: 2.0,
+            half_angle: 0.0,
+            mass_flow: 1e-3,
+            diameter: 100e-6,
+            size: None,
+            parcels_per_second: 2000.0,
+            start: 0.0,
+            end: None,
+        }],
+        ..SpraySection::default()
+    };
+    cfg.coupling.mode = CouplingMode::TwoWay;
+    let gas = Converging(geo.cell_centroid.clone());
+    let mut sp = Spray::new(&cfg, &env, sp_rules(&m), [0.0, 0.0, 0.0]).unwrap();
+    for n in 0..20 {
+        sp.advance(&env, &gas, n as f64 * 0.01, 0.01).unwrap();
+    }
+    assert!(sp.parcels.len() > 100, "{}", sp.parcels.len());
+    assert_eq!(sp.tally.lost_parcels, 0);
+}

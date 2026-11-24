@@ -303,7 +303,13 @@ classes, averaged fields (D266, SP2), `datums.csv` in steady runs, V28.12
   sub-step ends at every interior face (the walk stops at the first mesh
   face; the time to the face is found by bisection of the displacement
   projected on the chord) and when the particle Reynolds number would move
-  by more than `max_reynolds_change` (D251).
+  by more than `max_reynolds_change` (D251). A parcel that moves along a
+  face while the gas of the two cells pushes it back across from both
+  sides (the inflow towards the axis of a spray whose nozzle sits on a
+  face) would end every sub-step at that face after no time: a sub-step
+  that starts on a face and goes straight back through it takes its full
+  length, booked to the cell it starts in (found in the gallery run, test
+  `a_parcel_on_a_face_pushed_from_both_sides_is_not_lost`).
 - D248: the first pass sees the state the step starts from (not
   extrapolated); every later pass the current iterate.
 - D249: one record per sub-step (cell, parcel, sub-step, impulse to the gas,
