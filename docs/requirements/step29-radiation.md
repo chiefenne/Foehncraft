@@ -87,7 +87,7 @@ code each, verification runs of minutes.
 
 Status of R1a (coding started on the maintainer's go, 2026-11-24):
 
-1. **Walk and hand-over between ranks: #RWALK.** The walk body
+1. **Walk and hand-over between ranks: #254.** The walk body
    `foehncraft_kernels::walk` (one source for CPU and GPU; the particle
    tracker of D47 now runs on it, with bitwise its former results) reports
    every cell with the interval of the segment inside it;
