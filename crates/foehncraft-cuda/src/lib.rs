@@ -9,6 +9,8 @@
 //! - `flow`: the executor of the flow loop (entries `flow_*`);
 //! - `fv`: the scalar operators, Krylov vector operations and AMG V-cycle
 //!   (entries `fv_*`, `blas_*`, `amg_*`);
+//! - `radiation`: the transport of the radiation bundles (entry
+//!   `radiation_transport`, step 29);
 //! - `bench`: the G1 benchmark backends `cuda-reference` (hand-written
 //!   CUDA C, `kernels/g1_reference.cu`) and `cuda-rust` (`g1_*`).
 //!
@@ -24,6 +26,8 @@ pub mod bench;
 pub mod flow;
 #[cfg(feature = "cuda")]
 pub mod fv;
+#[cfg(feature = "cuda")]
+pub mod radiation;
 
 /// Fails with a clear message when the NVIDIA driver library is missing
 /// (the bindings would panic on first use).
@@ -39,7 +43,7 @@ pub(crate) fn driver() -> anyhow::Result<()> {
 }
 
 /// Registers the GPU backends of this build with the solver crates (`cuda`
-/// for the flow loop and the scalar operators, `cuda-reference` and
+/// for the flow loop, the scalar operators and the radiation, `cuda-reference` and
 /// `cuda-rust` for G1). Without the `cuda` feature it does nothing. Call it
 /// once at start-up, before any case is run.
 pub fn register() {
@@ -50,6 +54,10 @@ pub fn register() {
             Ok(Box::new(fv::CudaBackend::new(d, ordinal, ptx)?))
         });
         foehncraft_flow::device::register_gpu("cuda", flow::create);
+        foehncraft_radiation::register_gpu("cuda", |m, ordinal, ptx| {
+            driver()?;
+            Ok(Box::new(radiation::CudaRadiation::new(m, ordinal, ptx)?))
+        });
         foehncraft_bench::backend::register_gpu(&["cuda-reference", "cuda-rust"], |name, o| {
             driver()?;
             Ok(Box::new(match name {

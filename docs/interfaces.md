@@ -121,7 +121,11 @@ Two runs of the same case with the same build give byte-identical files,
 on any thread count and on CPU and GPU (D31), except the measured files
 `flow.log`, `flow.md`, `flow.json` and `run.jsonl`, which hold timings.
 `result.json` holds nothing measured and is identical too; it lists every
-other output file with its SHA-256 hash. HDF5 files are written
+other output file with its size (`bytes`) and BLAKE3 hash (`blake3`;
+`sha256` in results of format 1.x, before 2026-11-24, and from a build
+without the feature `blake3`, which the C-free build of D87 leaves out). BLAKE3 hashes a
+file of many gigabytes in pieces on every core: SHA-256 took 17 s for a
+5 GB file on a CPU without SHA instructions. HDF5 files are written
 without object timestamps. Dates (in reports and in `run.jsonl`) come from
 `SOURCE_DATE_EPOCH` when it is set.
 
@@ -362,7 +366,7 @@ A code keeps its meaning; a retired code stays in the table.
 | `IMM102` | error | An `[immersed]` body in a case it does not fit (L13 stage 1, D226): a turbulence model (penalised walls are laminar and low-Re only; a wall function on a penalised wall is refused), the energy equation (no penalised conjugate heat transfer, Q9), passive scalars, gravity, regions or several fluids, rotating zones, or sprays. |
 | `IMM103` | warning | An immersed body that the mesh does not resolve: no cell lies more than half inside it, or its solid volume on the mesh differs from its exact volume inside the mesh by more than 5 %. |
 | `IMM104` | note | The immersed bodies of the case: their solid volume on the mesh against the exact volume, the cells they touch and the sink coefficient μ/K. |
-| `ENE006` | error | An energy setting this version does not have: a passive scalar named `temperature` beside `[energy]`, solid regions with a sliding mesh, a restart with `[energy.acceleration]`, passive scalars or a periodic mesh, or with the variable density (stage 7c) passive scalars, a restart, a periodic mesh, a convective outlet, a mass-flow inlet, a wall mass flux or a rotating zone. |
+| `ENE006` | error | An energy setting this version does not have: a passive scalar named `temperature` beside `[energy]`, solid regions with a sliding mesh, a restart with `[energy.acceleration]`, passive scalars or a periodic mesh, or with the variable density (stage 7c) passive scalars, a restart, a periodic mesh, a convective outlet, a wall mass flux or a rotating zone. |
 | `ENE008` | error | An `[[energy.sources]]` entry for a region the case does not have, or without exactly one of `power` and `power_density`. |
 | `ENE009` | error | Variable-density settings that do not fit together: a density that does not depend on T, `density = "variable"` with the Boussinesq model, a closed volume with an inlet or outlet, a closed volume of a liquid, or `closed-volume` without the variable density. |
 | `CHT004` | error | An `[interfaces.<name>]` table that is not on a region interface (regions unknown, the same, two fluids, or not touching), or without exactly one of `contact_resistance` (≥ 0) and `thin_wall` (thickness > 0 with `conductivity` or `material`). |
@@ -451,6 +455,7 @@ A code keeps its meaning; a retired code stays in the table.
 | `RUN022` | note | Stopped through the live control port (`run.stop`): restart file, final output, exit code 3 (L19). |
 | `RUN023` | note | A setting changed through the live control port (`run.set`): key, old and new value, with the equivalent `[[schedule]]` entry (L19). |
 | `RUN024` | warning | A setting asked for through the live control port that cannot be applied (not valid for the case at that point); the run goes on with the settings it had. |
+| `RUN025` | note | A setting changed by re-reading the case file (`.read_toml_N`, `[run] reread_every`): key, old and new value (D40, D214). |
 | `DIV001` | note | Divergence cause: the Courant number near the failing cells is large; reduce the time step. |
 | `DIV002` | note | Divergence cause: under-relaxation factors too large for the case. |
 | `DIV003` | note | Divergence cause: poor cells (skewness, non-orthogonality, volume ratio) at the failing cells. |

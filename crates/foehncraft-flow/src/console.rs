@@ -41,6 +41,37 @@ pub enum Style {
     Box,
 }
 
+/// How much of the run the console and `flow.log` show (`[log] detail`,
+/// D214). `run.jsonl` keeps every row at every level.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "kebab-case")]
+pub enum Detail {
+    /// Everything: the header blocks, every table row, the box and the
+    /// outer-iteration table of every logged time step, the summaries.
+    #[default]
+    Full,
+    /// As `full`, but a logged time step shows its box and its table row,
+    /// not the table of its outer iterations.
+    Steps,
+    /// The header blocks, the messages, the summaries and the closing frame:
+    /// no table rows, no step boxes, no balance lines during the run.
+    Summary,
+}
+
+impl Detail {
+    /// Whether the table rows (and the balance lines) are shown.
+    pub fn rows(self) -> bool {
+        self != Detail::Summary
+    }
+
+    /// Whether the table of the outer iterations of a time step is shown.
+    pub fn outer(self) -> bool {
+        self == Detail::Full
+    }
+}
+
 /// `[log]`: how the console and `flow.log` look.
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
@@ -55,10 +86,17 @@ pub struct LogSection {
     /// `<kind>.<target>.<quantity>` (see `foehn schema`): residuals, linear
     /// iterations, values at probes or in cells, extremes with their cells,
     /// boundary mass flows, time quantities. Without it the default set
-    /// is shown. May be set only before the run.
+    /// is shown. May change during a run (`[[schedule]]`, `run.set`, a
+    /// re-read): the header row is printed again (D214).
     pub columns: Option<Vec<String>>,
     /// Significant digits of the numbers in the table (1 to 8).
     pub digits: usize,
+    /// How much the log shows: `"full"` (every row, every outer iteration
+    /// of a logged time step), `"steps"` (a logged time step shows its box
+    /// and its row, not its outer iterations) or `"summary"` (the header
+    /// blocks, the summaries and the closing frame). `run.jsonl` keeps
+    /// everything at every level.
+    pub detail: Detail,
 }
 
 impl Default for LogSection {
@@ -68,8 +106,29 @@ impl Default for LogSection {
             header_every: 40,
             columns: None,
             digits: 3,
+            detail: Detail::Full,
         }
     }
+}
+
+/// Whether the locale of the terminal is UTF-8: the first of `LC_ALL`,
+/// `LC_CTYPE` and `LANG` that is set names `UTF-8` (or `utf8`). With none
+/// set the terminal is taken to be UTF-8.
+pub fn utf8_locale() -> bool {
+    utf8_of(
+        ["LC_ALL", "LC_CTYPE", "LANG"]
+            .iter()
+            .find_map(|k| std::env::var(k).ok().filter(|v| !v.is_empty()))
+            .as_deref(),
+    )
+}
+
+/// [`utf8_locale`] for a locale string.
+pub fn utf8_of(locale: Option<&str>) -> bool {
+    locale.is_none_or(|v| {
+        let v = v.to_ascii_lowercase();
+        v.contains("utf-8") || v.contains("utf8")
+    })
 }
 
 /// A number as `9.88E-01`: `decimals` digits after the point, an exponent
@@ -593,6 +652,24 @@ pub fn clock(secs: f64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn box_lines_need_a_utf8_locale() {
+        assert!(utf8_of(None));
+        assert!(utf8_of(Some("en_US.UTF-8")));
+        assert!(utf8_of(Some("C.utf8")));
+        assert!(!utf8_of(Some("C")));
+        assert!(!utf8_of(Some("POSIX")));
+        assert!(!utf8_of(Some("de_AT.ISO-8859-1")));
+    }
+
+    #[test]
+    fn detail_levels() {
+        assert!(Detail::Full.rows() && Detail::Full.outer());
+        assert!(Detail::Steps.rows() && !Detail::Steps.outer());
+        assert!(!Detail::Summary.rows() && !Detail::Summary.outer());
+        assert_eq!(Detail::default(), Detail::Full);
+    }
 
     #[test]
     fn numbers_have_a_signed_two_digit_exponent() {

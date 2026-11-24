@@ -1,6 +1,6 @@
 # Console log: review of the redesign and four additions (D214)
 
-Status: reviewed 2026-11-22. Docs only; the build of the additions waits for the maintainer's go.
+Status: reviewed 2026-11-22; built 2026-11-24 (PR #269, section 5).
 
 ## 1. What is built
 
@@ -23,3 +23,12 @@ Rule that stays: the console text is a view. `run.jsonl` is the structured recor
 ## 4. Build
 
 One PR, after the current code threads finish and on the maintainer's go: `[log] detail`, the schedulable `log.columns`, the two blocks, tests that default logs stay byte-identical, gallery entry (extends 27), recipe, keys and schema.
+
+## 5. As built (2026-11-24)
+
+- `[log] detail = "full" | "steps" | "summary"`. `steps` leaves out the table of the outer iterations of a logged time step; `summary` leaves out the table rows, the boxes of the time steps and the balance lines during the run, and says so in one line under the table frame. A steady run shows the same at `full` and `steps`. `run.jsonl` is the same at every level.
+- `log.columns` is one of the run-time keys (D40): `[[schedule]]`, `run.set` and a re-read change it. The next logged row prints the new header; a `columns` row goes to `run.jsonl`. Names are checked as before (`CASE003`); columns that the mesh cannot give (a cell it does not have) are reported and the table keeps its columns.
+- "Limitations known before the run" follows the Boundary conditions block: LIM001 (grades of the features in use), LIM004 (one mesh), LIM007, LIM009, LIM010 (thermal acceleration, cycle coupling, frozen flow switched on). No block when the list is empty. The closing frame keeps the full list.
+- "Events" stands before the closing frame, one row per change with iteration or step, wall-clock time since the start and code: RUN001 to RUN005, RUN008, RUN009, RUN015 to RUN018, RUN022 to RUN025, ACC004, CYC005, FRZ003. No block when nothing changed. The changes a re-read applies are a new note `RUN025` (an `event` row in `run.jsonl`, additive).
+- `log.style = "box"` falls back to the asterisks when the first of `LC_ALL`, `LC_CTYPE`, `LANG` that is set does not name UTF-8, with a note under the banner.
+- The default log changes only by the two blocks; the table, the summaries and the closing frame are as before, and results are bitwise unchanged (the log only reads).
