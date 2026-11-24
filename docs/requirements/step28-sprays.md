@@ -6,6 +6,9 @@ Decisions of the maintainer, 2026-11-24, from the assessment
 explicit go. Clean-room rules (D201) apply: models from the open literature,
 constants as case keys with the literature value as default, no numbers copied
 from commercial documentation. Reacting flows are not part of this step.
+The validation matrix, the statistics and datum reports and the MurmelCraft
+viewer (D261 to D268) are in
+[step28-spray-validation-statistics](step28-spray-validation-statistics.md).
 
 ## 1. Decisions
 
@@ -25,6 +28,7 @@ from commercial documentation. Reacting flows are not part of this step.
 |---|---|---|
 | SP1 | Particle layer, one rank, one-way: SoA parcels, `[[injector]]`, tracker on `Locator`, exponential sub-stepping, Schiller-Naumann drag, gravity, stick and rebound walls, parcel block in the VTKHDF output and restart, **GPU kernels with CPU = GPU check**. Gallery example, case, recipe. | go |
 | 7.0a | Ledger as data (D119), in stage 7 | before SP2 |
+| SP1b | Datum object for gas and spray, liquid flow through datums, droplet statistics, structured output (D262 to D267), checks V28.12 to V28.15; details in [step28-spray-validation-statistics](step28-spray-validation-statistics.md) | SP1 merged and go |
 | SP2 | Two-way momentum and sensible heat, size distributions, eddy-lifetime dispersion, ledger rows for the gas-parcel pair. The coupling follows section 5 (D247 to D252, D254): frozen gas state, sorted deposit, implicit relaxation form, closing step, passes inside the time step | SP1 and 7.0a |
 | SP4 | Minimal vapour species on the low-Mach density, liquid property set for water first | SP2 |
 | SP5 | Evaporation (Ranz-Marshall, Abramzon-Sirignano), closed-box mass and energy ledger test, the spray-cooling case. Vapour and enthalpy exchange in the relaxation form of D250, parcel integrators of D251, saturation limiter of D253, checks V28.1 to V28.8 | SP4 |
@@ -43,12 +47,17 @@ Lumley 1971, Wells and Stock 1983); d-squared law (Godsave 1953, Spalding
 1953); closed-box evaporation with mass and enthalpy ledgers to round-off and
 entropy production not negative (D90); the spray-cooling case against the
 energy balance of the duct. Every reference data set gets its D201 entry before
-it appears in a table.
+it appears in a table. The measured anchors, the own ODE references and the
+stage of each check (V28.12 to V28.21) are in
+[step28-spray-validation-statistics](step28-spray-validation-statistics.md)
+(D261).
 
 ## 4. Open points
 
 - D243 (dispersion model) is answered: both models as one key (2026-11-24).
 - SP6 (which atomisation regime first) is undecided.
+- Turbulence modulation by particles is in no decision yet (see the
+  validation page, open points).
 - Liquids beyond water (ethanol, n-heptane, n-dodecane) need source entries
   in `DATA_SOURCES.md` before use.
 
