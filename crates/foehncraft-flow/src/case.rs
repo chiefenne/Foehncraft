@@ -884,6 +884,13 @@ pub struct FlowCase {
         skip_serializing_if = "crate::buoyancy::BuoyancySection::is_default"
     )]
     pub buoyancy: crate::buoyancy::BuoyancySection,
+    /// Bodies in the flow by Brinkman penalisation (L13 stage 1, D226):
+    /// `[immersed]` with `[[immersed.body]]` tables.
+    #[serde(
+        default,
+        skip_serializing_if = "crate::immersed::ImmersedSection::is_empty"
+    )]
+    pub immersed: crate::immersed::ImmersedSection,
     /// Lagrangian parcels of the sprays (L12): `[spray]`.
     #[serde(skip_serializing_if = "foehncraft_particles::SpraySection::is_empty")]
     pub spray: foehncraft_particles::SpraySection,
@@ -1461,6 +1468,7 @@ impl FlowCase {
         crate::sliding::validate(self)?;
         crate::rotor::validate(self)?;
         crate::spray::validate(self)?;
+        crate::immersed::check_case(self)?;
         if let Some(d) = &self.fluid.density
             && let Some(v) = d.number()
         {
@@ -1900,6 +1908,10 @@ pub struct Solve {
     /// and the largest Mach number.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub density: Option<crate::density::Summary>,
+    /// The immersed bodies (L13 stage 1): solid volume and the force of the
+    /// fluid on each.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub immersed: Vec<crate::immersed::BodyForce>,
 }
 
 /// The value of a wall probe at the end of a solve.
@@ -2915,6 +2927,14 @@ pub fn run_steered(
         crate::scalar::attach(&mut fl, &case, &mesh, &geo)?;
         crate::density::attach(&mut fl, &case)?;
         crate::buoyancy::attach(&mut fl, &case)?;
+        for d in crate::immersed::attach(&mut fl, &case, &mesh, &geo)? {
+            if d.severity == diag::Severity::Warning {
+                lg.warn(&format!("{}: {}", d.code, d.message));
+            } else {
+                lg.note(&d.message);
+            }
+            rep.warnings.push(d);
+        }
         crate::turbulence::attach(&mut fl, &case, &mesh, &geo)?;
         if let Some(notes) = crate::frame::attach(&mut fl, &case, &mesh, &geo)? {
             for l in &notes.lines {
@@ -3450,8 +3470,25 @@ pub fn run_steered(
         if let Some([cd, cl]) = coefficients {
             verification.push_kv("Force coefficients", format!("C_D {cd:.5}, C_L {cl:.5}"));
         }
-        let benchmark =
-            crate::unsteady::steady_benchmark_of(&case, sol, &mesh, &geo, &loc, &boundaries);
+        let immersed = crate::immersed::forces(&case, &mesh, &geo, &sol.u)?;
+        for b in &immersed {
+            verification.push_kv(
+                &format!("Immersed body {}", b.name),
+                format!(
+                    "force [{:.5e}, {:.5e}, {:.5e}] N, solid volume {:.5e} m³",
+                    b.force[0], b.force[1], b.force[2], b.solid_volume
+                ),
+            );
+        }
+        let benchmark = crate::unsteady::steady_benchmark_of(
+            &case,
+            sol,
+            &mesh,
+            &geo,
+            &loc,
+            &boundaries,
+            &immersed,
+        );
         if let Some(b) = &benchmark {
             crate::unsteady::log_benchmark(b, |l| {
                 verification.push_text(l.trim_start().to_string())
@@ -3601,6 +3638,7 @@ pub fn run_steered(
             turbulence,
             statistics: None,
             density,
+            immersed,
         });
         if stopped {
             rep.stopped = true;

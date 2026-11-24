@@ -57,6 +57,7 @@ pub mod expr;
 pub mod fluids;
 pub mod frame;
 pub mod frozen;
+pub mod immersed;
 pub mod limitations;
 pub mod limiter;
 pub mod live;

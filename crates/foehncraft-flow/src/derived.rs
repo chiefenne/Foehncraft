@@ -153,11 +153,13 @@ pub enum Derived {
     TurbulenceWall,
     /// f_r1 of the curvature correction of SST (-, D170).
     CurvatureCorrection,
+    /// χ, the solid fraction of the immersed bodies (-, L13 stage 1).
+    SolidFraction,
 }
 
 impl Derived {
     /// Every derived field, in the order they are written.
-    pub const ALL: [Derived; 21] = [
+    pub const ALL: [Derived; 22] = [
         Derived::Vorticity,
         Derived::QCriterion,
         Derived::Lambda2,
@@ -179,6 +181,7 @@ impl Derived {
         Derived::WallNormal,
         Derived::TurbulenceWall,
         Derived::CurvatureCorrection,
+        Derived::SolidFraction,
     ];
 
     /// The name in the case file.
@@ -205,6 +208,7 @@ impl Derived {
             Derived::WallNormal => "wall-normal",
             Derived::TurbulenceWall => "turbulence-wall",
             Derived::CurvatureCorrection => "curvature-correction",
+            Derived::SolidFraction => "solid-fraction",
         }
     }
 
@@ -299,6 +303,7 @@ impl Derived {
                 ("blending", "-"),
             ],
             Derived::CurvatureCorrection => &[("rotation_function", "-")],
+            Derived::SolidFraction => &[("solid_fraction", "-")],
         }
     }
 
@@ -906,6 +911,19 @@ pub fn compute(
             Derived::WallDistance => out
                 .cells
                 .push(("wall_distance", wall_distance(case, mesh, geo)?)),
+            Derived::SolidFraction => {
+                let bs = crate::immersed::bodies(&case.immersed).map_err(|_| {
+                    crate::diag::err(crate::diag::Diagnostic::new(
+                        crate::diag::CASE_INCONSISTENT,
+                        "derived field `solid-fraction` needs `[immersed]` bodies",
+                    ))
+                })?;
+                let per = crate::immersed::fractions(&bs, case.immersed.samples(), mesh, geo);
+                out.cells.push((
+                    "solid_fraction",
+                    crate::immersed::total_fraction(&per, mesh.n_cells),
+                ));
+            }
             Derived::WallShearStress => {
                 let w = walls.as_ref().expect("computed above");
                 for (i, n) in [

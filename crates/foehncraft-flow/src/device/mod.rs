@@ -227,6 +227,9 @@ pub struct MomentumRowArgs {
     pub theta: f64,
     /// Time terms (None: steady).
     pub time: Option<TimeTerms>,
+    /// Brinkman sink s_P (kg/s) per cell of immersed bodies (L13 stage 1,
+    /// D226); None: none.
+    pub sink: Option<Buf>,
     /// Output: matrix values.
     pub val: Buf,
     /// Output: right-hand sides.
