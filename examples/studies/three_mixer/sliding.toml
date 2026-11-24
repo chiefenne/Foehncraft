@@ -1,0 +1,104 @@
+# A vessel with three stirrers that turn at their own speeds (D185): three
+# sliding rotors by imprinting, each with its own interface circle, in one
+# stator. Rotor A (three straight blades) turns at +10 rad/s, rotor B (five
+# straight blades) at -15 rad/s and rotor C (seven circular-arc blades,
+# backward curved) at +20 rad/s, all about axes along z through their own
+# centres; transient, from rest.
+#
+#   pip install gmsh
+#   python3 examples/meshes/three_mixer.py
+#   cargo run --release -p foehncraft-cli -- flow examples/studies/three_mixer/sliding.toml
+#
+# The log has the angle, torque and shaft power of each rotor. 800 steps of
+# 0.5 ms (0.64, 0.95 and 1.27 revolutions of A, B and C).
+
+case_format = "0.6"
+
+[mesh]
+file = "../../meshes/three_mixer.msh"
+renumber = "rcm"
+
+[fluid]
+density = 1000.0
+viscosity = 0.05          # Pa s: nu = 5e-5 m^2/s
+
+[constants]
+speed_a = 10.0            # rad/s
+speed_b = -15.0           # rad/s
+speed_c = 20.0            # rad/s
+xa = -0.12                # m, rotor A axis
+xb = 0.12                 # m, rotor B axis
+yc = -0.03                # m, rotor C axis
+
+[flow]
+convection = true
+
+[time]
+scheme = "bdf2"
+time_step = 0.0005
+steps = 800
+start_time = 0.0
+
+[[sliding]]
+zone = "rotor_a"
+origin = [-0.12, 0.0, 0.0]
+axis = [0.0, 0.0, 1.0]
+omega = 10.0
+rotor_interface = "a_rotor_interface"
+stator_interface = "a_stator_interface"
+
+[[sliding]]
+zone = "rotor_b"
+origin = [0.12, 0.0, 0.0]
+axis = [0.0, 0.0, 1.0]
+omega = -15.0
+rotor_interface = "b_rotor_interface"
+stator_interface = "b_stator_interface"
+
+[[sliding]]
+zone = "rotor_c"
+origin = [0.0, -0.03, 0.0]
+axis = [0.0, 0.0, 1.0]
+omega = 20.0
+rotor_interface = "c_rotor_interface"
+stator_interface = "c_stator_interface"
+
+[boundary.blades_a]
+type = "wall"
+velocity = ["-speed_a * y", "speed_a * (x - xa)", 0.0]
+
+[boundary.blades_b]
+type = "wall"
+velocity = ["-speed_b * y", "speed_b * (x - xb)", 0.0]
+
+[boundary.blades_c]
+type = "wall"
+velocity = ["-speed_c * (y - yc)", "speed_c * x", 0.0]
+
+[boundary.vessel]
+type = "wall"
+
+[boundary.zmin]
+type = "symmetry"
+
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-8
+max_iterations = 3000
+extrapolation = false
+outer_iterations = 4
+
+[log]
+columns = ["time.simulated",
+           "rotor.rotor_a.angle", "rotor.rotor_b.angle", "rotor.rotor_c.angle",
+           "rotor.rotor_a.torque", "rotor.rotor_b.torque", "rotor.rotor_c.torque",
+           "rotor.rotor_a.power", "rotor.rotor_b.power", "rotor.rotor_c.power"]
+
+[output]
+vtkhdf = true
+wall_csv = false
+derived = ["vorticity"]
+fields_times = [0.1, 0.2, 0.3, 0.4]
+
