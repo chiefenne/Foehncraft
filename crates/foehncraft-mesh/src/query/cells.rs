@@ -24,6 +24,7 @@
 
 use super::bvh::{Aabb, Node, build_nodes};
 use crate::mesh::Mesh;
+use rayon::prelude::*;
 
 /// Relative margin of a cell box (of its largest side).
 pub const PAD: f64 = 1e-9;
@@ -41,23 +42,28 @@ pub struct CellTree {
 impl CellTree {
     /// Builds the hierarchy over the local cells (`0..mesh.n_cells`).
     pub fn build(mesh: &Mesh) -> Self {
-        let n = mesh.n_cells;
-        let mut boxes = Vec::with_capacity(n);
-        let mut cent = Vec::with_capacity(n);
-        for c in 0..n {
-            let mut b = Aabb::EMPTY;
-            for v in mesh.cell_nodes(c) {
-                b.grow(mesh.points[v as usize]);
-            }
-            let side = (0..3).map(|d| b.hi[d] - b.lo[d]).fold(0.0, f64::max);
-            let pad = PAD * side;
-            for d in 0..3 {
-                b.lo[d] -= pad;
-                b.hi[d] += pad;
-            }
-            cent.push(std::array::from_fn(|d| 0.5 * (b.lo[d] + b.hi[d])));
-            boxes.push(b);
-        }
+        // the boxes in parallel: a map, so the result does not depend on
+        // the threads
+        let boxes: Vec<Aabb> = (0..mesh.n_cells)
+            .into_par_iter()
+            .map(|c| {
+                let mut b = Aabb::EMPTY;
+                for v in mesh.cell_nodes(c) {
+                    b.grow(mesh.points[v as usize]);
+                }
+                let side = (0..3).map(|d| b.hi[d] - b.lo[d]).fold(0.0, f64::max);
+                let pad = PAD * side;
+                for d in 0..3 {
+                    b.lo[d] -= pad;
+                    b.hi[d] += pad;
+                }
+                b
+            })
+            .collect();
+        let cent: Vec<[f64; 3]> = boxes
+            .iter()
+            .map(|b| std::array::from_fn(|d| 0.5 * (b.lo[d] + b.hi[d])))
+            .collect();
         let (nodes, order) = build_nodes(&cent, &boxes);
         CellTree {
             nodes,
@@ -90,14 +96,14 @@ impl CellTree {
     /// order. The caller decides containment; use the smallest index among
     /// the cells that contain `x` for a deterministic answer.
     pub fn for_each_candidate(&self, x: [f64; 3], mut f: impl FnMut(usize)) {
-        self.walk(|b| holds(b, x), |c| f(c));
+        self.walk(|b| holds(b, x), &mut f);
     }
 
     /// Calls `f` for every cell whose box overlaps the box `[lo, hi]`
     /// (closed boxes, touching counts), in leaf order.
     pub fn for_each_overlap(&self, lo: [f64; 3], hi: [f64; 3], mut f: impl FnMut(usize)) {
         let q = Aabb { lo, hi };
-        self.walk(|b| overlaps(b, &q), |c| f(c));
+        self.walk(|b| overlaps(b, &q), &mut f);
     }
 
     /// The cells whose boxes hold `x`, ascending.
@@ -186,17 +192,49 @@ mod tests {
     }
 
     #[test]
-    fn build_is_reproducible() {
-        let mut s = BoxSpec::new(Kind::Mixed, 3, [8, 8, 8]);
+    fn build_is_reproducible_and_independent_of_threads() {
+        // more cells than the parallel threshold of the build
+        let mut s = BoxSpec::new(Kind::Hex, 3, [40, 36, 30]);
         s.perturb = 0.3;
+        s.grading.y = Grading {
+            ratio: 50.0,
+            symmetric: true,
+        };
         let m = s.generate().unwrap();
+        assert!(m.n_cells > 2 * (1 << 14));
         let a = CellTree::build(&m);
-        let b = CellTree::build(&m);
+        let b = rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .unwrap()
+            .install(|| CellTree::build(&m));
         assert_eq!(a.order, b.order);
         assert_eq!(a.nodes.len(), b.nodes.len());
         for (x, y) in a.nodes.iter().zip(&b.nodes) {
             assert_eq!((x.first, x.count), (y.first, y.count));
             assert_eq!(x.bx, y.bx);
+        }
+        // every item in exactly one leaf, every inner node's box holds its
+        // children's boxes
+        let mut seen = vec![0u8; a.len()];
+        for nd in &a.nodes {
+            if nd.count > 0 {
+                for &c in &a.order[nd.first as usize..(nd.first + nd.count) as usize] {
+                    seen[c as usize] += 1;
+                    assert!(holds(&nd.bx, a.boxes[c as usize].lo));
+                    assert!(holds(&nd.bx, a.boxes[c as usize].hi));
+                }
+            } else {
+                for ch in [nd.first, nd.first + 1] {
+                    let cb = a.nodes[ch as usize].bx;
+                    assert!(holds(&nd.bx, cb.lo) && holds(&nd.bx, cb.hi));
+                }
+            }
+        }
+        assert!(seen.iter().all(|&k| k == 1));
+        for i in 0..300u64 {
+            let x: [f64; 3] = std::array::from_fn(|d| rng::uniform([8, i, d as u64]));
+            assert_eq!(a.candidates(x), brute_candidates(&a, x));
         }
     }
 }

@@ -168,57 +168,123 @@ pub(crate) struct Node {
     pub(crate) count: u32,
 }
 
+/// Ranges at least this long split into two subtrees built in parallel.
+const PARALLEL: usize = 1 << 14;
+/// Depth below which no further parallel split is made (the serial build
+/// below it needs no recursion, whatever the shape of the tree).
+const PARALLEL_DEPTH: usize = 32;
+
 /// Builds the nodes over items with centroids `cent` and boxes `bx`
 /// (binned surface-area heuristic, at most [`LEAF`] items per leaf);
-/// returns the nodes (root first) and the items in leaf order. The result
-/// depends only on the input values and their order (D93).
+/// returns the nodes (root first, the two children of an inner node next to
+/// each other) and the items in leaf order. Large ranges build their two
+/// subtrees in parallel; where that happens depends only on the range
+/// sizes, so the tree depends only on the input values and their order, not
+/// on the threads (D93).
 pub(crate) fn build_nodes(cent: &[[f64; 3]], bx: &[Aabb]) -> (Vec<Node>, Vec<u32>) {
     let n = cent.len();
     let mut order: Vec<u32> = (0..n as u32).collect();
+    if n == 0 {
+        return (Vec::new(), order);
+    }
+    let nodes = build_range(&mut order, 0, 0, cent, bx);
+    (nodes, order)
+}
+
+/// The subtree over `order`, the items `start..start + order.len()` of the
+/// leaf order, root first.
+fn build_range(
+    order: &mut [u32],
+    start: usize,
+    depth: usize,
+    cent: &[[f64; 3]],
+    bx: &[Aabb],
+) -> Vec<Node> {
+    let n = order.len();
+    if n < PARALLEL || depth >= PARALLEL_DEPTH {
+        return build_serial(order, start, cent, bx);
+    }
+    let mut b = Aabb::EMPTY;
+    for &t in order.iter() {
+        b.merge(&bx[t as usize]);
+    }
+    let Some(m) = split(order, cent, bx, &mut Vec::new()) else {
+        return build_serial(order, start, cent, bx);
+    };
+    let (lo, hi) = order.split_at_mut(m);
+    let (l, r) = rayon::join(
+        || build_range(lo, start, depth + 1, cent, bx),
+        || build_range(hi, start + m, depth + 1, cent, bx),
+    );
+    // layout: root, left root, right root, rest of the left subtree, rest
+    // of the right subtree; inner nodes point to their (adjacent) children
+    let nl = l.len() as u32;
+    let mut nodes = Vec::with_capacity(1 + l.len() + r.len());
+    nodes.push(Node {
+        bx: b,
+        first: 1,
+        count: 0,
+    });
+    let moved = |nd: &Node, shift: u32| {
+        let mut nd = *nd;
+        if nd.count == 0 {
+            nd.first += shift;
+        }
+        nd
+    };
+    nodes.push(moved(&l[0], 2));
+    nodes.push(moved(&r[0], nl + 1));
+    nodes.extend(l[1..].iter().map(|nd| moved(nd, 2)));
+    nodes.extend(r[1..].iter().map(|nd| moved(nd, nl + 1)));
+    nodes
+}
+
+/// The subtree over `order` without recursion (an explicit list of the
+/// ranges still to split), root first.
+fn build_serial(order: &mut [u32], start: usize, cent: &[[f64; 3]], bx: &[Aabb]) -> Vec<Node> {
+    let n = order.len();
     let mut nodes = Vec::with_capacity(2 * n.max(1));
-    if n > 0 {
-        nodes.push(Node {
-            bx: Aabb::EMPTY,
-            first: 0,
-            count: 0,
-        });
-        // (node, start, end) still to split
-        let mut todo = vec![(0usize, 0usize, n)];
-        let mut scratch = Vec::new();
-        while let Some((id, s, e)) = todo.pop() {
-            let mut b = Aabb::EMPTY;
-            for &t in &order[s..e] {
-                b.merge(&bx[t as usize]);
+    nodes.push(Node {
+        bx: Aabb::EMPTY,
+        first: 0,
+        count: 0,
+    });
+    // (node, start, end) still to split
+    let mut todo = vec![(0usize, 0usize, n)];
+    let mut scratch = Vec::new();
+    while let Some((id, s, e)) = todo.pop() {
+        let mut b = Aabb::EMPTY;
+        for &t in &order[s..e] {
+            b.merge(&bx[t as usize]);
+        }
+        nodes[id].bx = b;
+        let split = if e - s > LEAF {
+            split(&mut order[s..e], cent, bx, &mut scratch)
+        } else {
+            None
+        };
+        match split {
+            Some(m) => {
+                let left = nodes.len();
+                for _ in 0..2 {
+                    nodes.push(Node {
+                        bx: Aabb::EMPTY,
+                        first: 0,
+                        count: 0,
+                    });
+                }
+                nodes[id].first = left as u32;
+                nodes[id].count = 0;
+                todo.push((left + 1, s + m, e));
+                todo.push((left, s, s + m));
             }
-            nodes[id].bx = b;
-            let split = if e - s > LEAF {
-                split(&mut order[s..e], cent, bx, &mut scratch)
-            } else {
-                None
-            };
-            match split {
-                Some(m) => {
-                    let left = nodes.len();
-                    for _ in 0..2 {
-                        nodes.push(Node {
-                            bx: Aabb::EMPTY,
-                            first: 0,
-                            count: 0,
-                        });
-                    }
-                    nodes[id].first = left as u32;
-                    nodes[id].count = 0;
-                    todo.push((left + 1, s + m, e));
-                    todo.push((left, s, s + m));
-                }
-                None => {
-                    nodes[id].first = s as u32;
-                    nodes[id].count = (e - s) as u32;
-                }
+            None => {
+                nodes[id].first = (start + s) as u32;
+                nodes[id].count = (e - s) as u32;
             }
         }
     }
-    (nodes, order)
+    nodes
 }
 
 /// The closest point of a surface to a query point.
@@ -394,15 +460,21 @@ fn split(
     scratch: &mut Vec<u32>,
 ) -> Option<usize> {
     let n = order.len();
-    let mut cb = Aabb::EMPTY;
-    for &t in order.iter() {
-        cb.grow(cent[t as usize]);
-    }
+    // boxes of the centroids and of the items; min and max are exact, so
+    // the chunked parallel form gives the same boxes as a serial loop
+    let (cb, bx) = chunked(
+        order,
+        || (Aabb::EMPTY, Aabb::EMPTY),
+        |acc, t| {
+            acc.0.grow(cent[t as usize]);
+            acc.1.merge(&tbox[t as usize]);
+        },
+        |a, b| {
+            a.0.merge(&b.0);
+            a.1.merge(&b.1);
+        },
+    );
     // cost of a leaf (relative units: one triangle test = 1, one box = 1)
-    let mut bx = Aabb::EMPTY;
-    for &t in order.iter() {
-        bx.merge(&tbox[t as usize]);
-    }
     let parent = bx.area().max(f64::MIN_POSITIVE);
     let mut best: Option<(f64, usize, usize)> = None; // (cost, axis, bin)
     for axis in 0..3 {
@@ -412,13 +484,22 @@ fn split(
         }
         let w = (hi - lo) / BINS as f64;
         let bin_of = |c: f64| (((c - lo) / w) as usize).min(BINS - 1);
-        let mut counts = [0usize; BINS];
-        let mut boxes = [Aabb::EMPTY; BINS];
-        for &t in order.iter() {
-            let b = bin_of(cent[t as usize][axis]);
-            counts[b] += 1;
-            boxes[b].merge(&tbox[t as usize]);
-        }
+        // counts are integers and boxes min and max: exact in any order
+        let (counts, boxes) = chunked(
+            order,
+            || ([0usize; BINS], [Aabb::EMPTY; BINS]),
+            |acc, t| {
+                let b = bin_of(cent[t as usize][axis]);
+                acc.0[b] += 1;
+                acc.1[b].merge(&tbox[t as usize]);
+            },
+            |a, b| {
+                for k in 0..BINS {
+                    a.0[k] += b.0[k];
+                    a.1[k].merge(&b.1[k]);
+                }
+            },
+        );
         // sweep: area and count of the left part of each split position
         let mut left_a = [0.0; BINS];
         let mut left_n = [0usize; BINS];
@@ -473,6 +554,32 @@ fn split(
         }
         None => None,
     }
+}
+
+/// Folds `items` with `add` into an accumulator from `init`, in parallel
+/// chunks merged by `merge` for long slices. Only for exact (associative
+/// and commutative) accumulations: integer counts, minima and maxima.
+fn chunked<A: Send>(
+    items: &[u32],
+    init: impl Fn() -> A + Sync,
+    add: impl Fn(&mut A, u32) + Sync,
+    merge: impl Fn(&mut A, A) + Sync,
+) -> A {
+    const CHUNK: usize = 1 << 15;
+    let fold = |ch: &[u32]| {
+        let mut a = init();
+        for &t in ch {
+            add(&mut a, t);
+        }
+        a
+    };
+    if items.len() < 2 * CHUNK {
+        return fold(items);
+    }
+    items.par_chunks(CHUNK).map(fold).reduce(&init, |mut a, b| {
+        merge(&mut a, b);
+        a
+    })
 }
 
 /// The closest point of triangle `t` to `x` (Ericson 2005, 5.1.5).
