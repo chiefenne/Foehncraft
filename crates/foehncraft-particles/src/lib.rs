@@ -12,20 +12,28 @@
 //!   the exact drag relaxation of `foehncraft_kernels::particle`, the
 //!   walls, the tallies, the state for a restart and the VTKHDF output.
 //!
-//! One-way coupling in this version: the parcels feel the gas, the gas does
-//! not feel them (two-way coupling is SP2). One process: parcel migration
-//! between ranks is SP3.
+//! - [`coupling`]: the records, the sorted per-cell sums and the books of
+//!   the two-way coupling (SP2, D247 to D252).
+//!
+//! One-way coupling by default; `[spray.coupling] mode = "two-way"` makes
+//! the drag a source of the gas momentum (SP2). One process: parcel
+//! migration between ranks is SP3.
 
 pub mod batch;
 pub mod config;
+pub mod coupling;
 pub mod datum;
 pub mod sizes;
 pub mod spray;
 
-pub use config::{BoundaryMode, Injector, Liquid, Penetration, SprayBoundary, SpraySection};
+pub use config::{
+    BoundaryMode, Coupling, CouplingMode, Injector, Liquid, Passes, PassesName, Penetration,
+    SprayBoundary, SpraySection,
+};
+pub use coupling::{CellSources, Record, StepBooks};
 pub use datum::{Bound, Datum, DatumTally, HistSpec, Moments, Shape, Stats, Surface, Volume};
 pub use sizes::SizeDistribution;
 pub use spray::{
-    BoundaryRule, Env, Gas, GasState, InjectorStats, Parcels, Spray, Tally, injector_stats,
+    BoundaryRule, Env, Gas, GasState, InjectorStats, Parcels, Pass, Spray, Tally, injector_stats,
     moments_of,
 };

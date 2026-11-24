@@ -1528,6 +1528,10 @@ fn run_one<F: FnMut(&str)>(
         None
     };
     let mut spray_lost_warned = false;
+    // the two-way coupling over the run and of the last step (SP2)
+    let mut spray_coupling: Option<crate::spray::CouplingSummary> = None;
+    let mut spray_step: Option<crate::spray::StepCoupling> = None;
+    let mut coupling_warned = false;
     let mut reports = (last && !datum_built.is_empty())
         .then(|| crate::datum::Reports::new(datum_built, out, name, cont));
     let mut series = last.then(|| crate::series::Series::new(out, name, cont));
@@ -1585,7 +1589,7 @@ fn run_one<F: FnMut(&str)>(
             disc: &fl.disc,
             phys: fl.physics(),
         };
-        let r = balance::rates(
+        let mut r = balance::rates(
             &sol,
             mesh,
             geo,
@@ -1594,6 +1598,10 @@ fn run_one<F: FnMut(&str)>(
             &geo.cell_volume,
             nonorth,
         );
+        if let Some(sp) = spray.as_ref().filter(|s| s.config().coupling.two_way()) {
+            let gm = crate::spray::gas_momentum(&sol, &geo.cell_volume);
+            crate::spray::book(&mut r, sp, None, dt, gm);
+        }
         Ledger::start(r, tr.clock.time, first_step, case.balance.tolerance_energy)
     };
     let mut last_balance = None;
@@ -1786,13 +1794,29 @@ fn run_one<F: FnMut(&str)>(
             });
         let min_dt = t.min_time_step;
         let mut tries = 0;
+        let mut spray_passes = None;
         let stepped = loop {
             af.update(&case, mesh, geo, &mut fl, t0 + h)?;
             tv.update(&case, mesh, geo, &mut fl, t0 + h)?;
             fl.keep_valid()?;
+            let two_way = spray.as_ref().filter(|s| s.config().coupling.two_way());
             let r = match &frozen {
                 Some(f) if frozen_step => {
                     tr.energy_step(&mut fl, h, f.restart_levels(), f.iterations())
+                }
+                // the parcel passes inside the step (SP2, D252)
+                _ if two_way.is_some() => {
+                    let sp = two_way.context("spray")?;
+                    let env = foehncraft_particles::Env {
+                        mesh,
+                        geo,
+                        loc: &loc,
+                    };
+                    let mut hk = crate::spray::TwoWay::new(sp, env, geo, t0, h);
+                    let r = tr.step_with(&mut fl, h, Some(&mut hk));
+                    fl.spray_momentum = None;
+                    spray_passes = Some(hk.finish());
+                    r
                 }
                 _ => tr.step(&mut fl, h),
             };
@@ -2060,9 +2084,33 @@ fn run_one<F: FnMut(&str)>(
                 disc: &fl.disc,
                 phys: fl.physics(),
             };
-            let (lost, file) = crate::spray::step(
-                &case, sp, &sol, mesh, geo, &loc, n, rp.time, h, out, name, csv,
-            )?;
+            let (lost, file) = match spray_passes.take() {
+                Some(done) => {
+                    drop(sol);
+                    let (lost, file, c) = crate::spray::step_coupled(
+                        &case, sp, &mut fl, done, mesh, geo, &loc, n, out, name, csv,
+                    )?;
+                    spray_coupling
+                        .get_or_insert_with(Default::default)
+                        .add(&c, h);
+                    if c.unconverged && !coupling_warned {
+                        coupling_warned = true;
+                        let m = format!(
+                            "step {n}: the spray passes ended at [spray.coupling] max_passes with \
+                             the coupling lag {:.2e} above the tolerance (more passes or a smaller \
+                             step; `spray.csv` counts such steps)",
+                            c.lag
+                        );
+                        lg.warn(&format!("{}: {m}", crate::diag::SPRAY_COUPLING));
+                        steer.event(crate::diag::SPRAY_COUPLING, n, &m);
+                    }
+                    spray_step = Some(c);
+                    (lost, file)
+                }
+                None => crate::spray::step(
+                    &case, sp, &sol, mesh, geo, &loc, n, rp.time, h, out, name, csv,
+                )?,
+            };
             if let (Some(f), Some(se)) = (file, series.as_mut()) {
                 se.add(n, rp.time, "parcels", &f)?;
             }
@@ -2090,6 +2138,11 @@ fn run_one<F: FnMut(&str)>(
                 &geo.cell_volume,
                 nonorth,
             );
+            let mut r = r;
+            if let Some(sp) = spray.as_ref().filter(|s| s.config().coupling.two_way()) {
+                let gm = crate::spray::gas_momentum(&sol, &geo.cell_volume);
+                crate::spray::book(&mut r, sp, spray_step.as_ref(), h, gm);
+            }
             // the tolerance may change during the run (D40)
             ledger.tolerance = case.balance.tolerance_energy;
             ledger.step(r, n, rp.time)
@@ -2564,9 +2617,10 @@ fn run_one<F: FnMut(&str)>(
     let datum_summary = reports
         .as_ref()
         .map(|r| r.summary(spray.as_ref(), &mesh.cell_zone));
-    let spray_summary = spray
-        .as_ref()
-        .map(|sp| crate::spray::summary(sp, &mesh.cell_zone));
+    let spray_summary = spray.as_ref().map(|sp| crate::spray::SpraySummary {
+        coupling: spray_coupling.clone(),
+        ..crate::spray::summary(sp, &mesh.cell_zone)
+    });
     if let Some(f) = heat_csv.as_mut() {
         f.flush()?;
     }

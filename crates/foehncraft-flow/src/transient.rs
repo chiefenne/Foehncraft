@@ -57,6 +57,19 @@ use foehncraft_fv::solver::Scheme;
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
 
+/// A module that takes part in the outer iterations of a time step
+/// ([`Transient::step_with`]).
+pub trait OuterHook {
+    /// The most outer iterations it may ask for.
+    fn max_outer(&self) -> usize;
+    /// Before the momentum assembly of outer iteration `k` (the gradients
+    /// of the current iterate are set).
+    fn before_momentum(&mut self, fl: &mut Flow, k: usize) -> Result<()>;
+    /// After the solves of outer iteration `k`: whether it wants another
+    /// outer iteration.
+    fn after_solve(&mut self, fl: &mut Flow, k: usize) -> Result<bool>;
+}
+
 /// Time integration (D28).
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, schemars::JsonSchema,
@@ -611,6 +624,19 @@ impl Transient {
     /// One time step of size `dt`. The prescribed boundary values of the new
     /// time are set beforehand ([`Flow::set_boundary_velocity`]).
     pub fn step(&mut self, fl: &mut Flow, dt: f64) -> Result<StepReport> {
+        self.step_with(fl, dt, None)
+    }
+
+    /// [`Transient::step`] with a module that takes part in every outer
+    /// iteration (the parcel passes of a two-way coupled spray, D252): it
+    /// sets its sources before each momentum assembly and may ask for more
+    /// outer iterations than `solver.outer_iterations`.
+    pub fn step_with(
+        &mut self,
+        fl: &mut Flow,
+        dt: f64,
+        mut hook: Option<&mut dyn OuterHook>,
+    ) -> Result<StepReport> {
         ensure!(dt > 0.0 && dt.is_finite(), "time step {dt} must be > 0");
         let s = fl.settings.clone();
         let (l, w, f) = (self.l, fl.w, fl.f);
@@ -825,7 +851,10 @@ impl Transient {
         let mut outer = 0;
         self.outer_log.clear();
         let rebuild_step = self.clock.step.is_multiple_of(s.amg_rebuild);
-        for k in 1..=s.outer_iterations {
+        let max_outer = s
+            .outer_iterations
+            .max(hook.as_ref().map_or(0, |h| h.max_outer()));
+        for k in 1..=max_outer {
             outer = k;
             fl.iteration += 1;
             let mut res = Residuals {
@@ -841,6 +870,9 @@ impl Transient {
             }
             fl.dev.sync()?;
             fl.timings.gradients += t.elapsed().as_secs_f64();
+            if let Some(h) = hook.as_deref_mut() {
+                h.before_momentum(fl, k)?;
+            }
             let t = Instant::now();
             let relax = if alpha < 1.0 {
                 fl.relaxation_term(alpha)?;
@@ -945,7 +977,12 @@ impl Transient {
             }
             last = res.clone();
             self.outer_log.push(res.clone());
-            if k > 1 && res.max() < s.outer_tolerance {
+            let flow_done = k >= s.outer_iterations || (k > 1 && res.max() < s.outer_tolerance);
+            let more = match hook.as_deref_mut() {
+                Some(h) => h.after_solve(fl, k)?,
+                None => false,
+            };
+            if flow_done && !more {
                 break;
             }
         }

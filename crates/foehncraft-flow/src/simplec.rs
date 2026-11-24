@@ -1073,6 +1073,9 @@ pub struct Flow {
     pub(crate) frames: Option<crate::frame::Frames>,
     /// The porous regions (D270), if any.
     pub(crate) porous: Option<crate::porous::Porous>,
+    /// The momentum sources of a two-way coupled spray in the current
+    /// outer iteration (SP2, D250), if any.
+    pub(crate) spray_momentum: Option<crate::spray::MomentumSource>,
     /// The host copy of the least-squares weights of the pressure (the
     /// balanced force of gravity applies the same operator, D154).
     pub(crate) lsq_p: foehncraft_fv::disc::Soa3,
@@ -1597,6 +1600,7 @@ impl Flow {
             pseudo_speed: None,
             frames: None,
             porous: None,
+            spray_momentum: None,
             lsq_p,
             buoyancy: None,
             buoyancy_source: None,
@@ -2283,6 +2287,7 @@ impl Flow {
         }
         self.add_coriolis()?;
         self.add_porous(alpha, theta)?;
+        self.add_spray_momentum(alpha, theta)?;
         let alg = self.settings.algorithm(self.transient);
         if alg == Algorithm::Simple
             || (alg == Algorithm::Piso && !self.settings.simplec_corrector())

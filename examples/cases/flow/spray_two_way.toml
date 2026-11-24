@@ -1,0 +1,87 @@
+# A water spray that drives the air it falls through (Lagrangian sprays,
+# two-way coupling, SP2, D247 to D252).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/spray_two_way.toml
+#
+# A room of still air, 1.2 m wide and 1.5 m high (2D). A nozzle under the
+# ceiling sprays 50 g/s of water downwards at 15 m/s as droplets of 50 to
+# 400 µm (Rosin-Rammler). With `[spray.coupling] mode = "two-way"` the drag
+# on the droplets is a source of the gas momentum: the falling spray pulls
+# the air down into a jet that spreads over the floor and returns along the
+# side walls to the vents at the top. One way (SP1) the air would stay at
+# rest.
+#
+# The coupling follows D247 to D252: every parcel pass sees one frozen gas
+# state, the exchange records are sorted and summed per cell, the gas takes
+# them in value-plus-slope form (implicit), the passes run inside the time
+# step until the coupling lag is below the tolerance (at most 3), and the
+# closing step gives the parcels what the gas received, so the momentum
+# pair of the ledger cancels to the bit. `spray.csv` has the passes, the
+# lag and the health numbers of every step.
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [1.2, 1.5, 0.1]
+cells = [60, 75, 1]
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.2
+viscosity = 1.8e-5
+
+[gravity]
+vector = [0.0, -9.81, 0.0]
+
+[turbulence]
+model = "k-omega-sst"
+wall_treatment = "automatic"
+
+[initial]
+velocity = [0.0, 0.0, 0.0]
+turbulence_intensity = 0.05
+viscosity_ratio = 10.0
+
+[boundary.xmin]
+type = "wall"
+[boundary.xmax]
+type = "wall"
+[boundary.ymin]
+type = "wall"
+[boundary.ymax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[time]
+scheme = "bdf2"
+time_step = 0.004
+end_time = 2.0
+
+[spray]
+include = "spray_two_way_injectors.toml"
+wall_mode = "stick"
+write_every = 25
+
+[spray.boundary.ymax]
+mode = "escape"
+
+[spray.coupling]
+mode = "two-way"
+passes = "converged"
+tolerance = 1e-3
+max_passes = 3
+
+[solver]
+tolerance = 1e-6
+max_iterations = 300
+
+[verification]
+require_convergence = false

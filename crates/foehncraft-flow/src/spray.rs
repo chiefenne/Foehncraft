@@ -57,6 +57,26 @@ pub fn validate(case: &FlowCase) -> Result<()> {
             ));
         }
     }
+    if s.coupling.two_way() {
+        let refuse = |what: &str| {
+            Err(err(
+                diag::SPRAY_UNSUPPORTED,
+                "spray.coupling",
+                format!("two-way spray coupling does not work with {what} in this version"),
+            ))
+        };
+        if case.energy.is_some() {
+            return refuse(
+                "the energy equation (the heat exchange of the parcels follows with stage SP2b)",
+            );
+        }
+        if case.fluid_view.is_some() {
+            return refuse("solid regions (conjugate heat transfer)");
+        }
+        if case.solver.algorithm(true) != crate::simplec::Algorithm::Piso {
+            return refuse("a transient algorithm other than PISO");
+        }
+    }
     for name in s.boundary.keys() {
         if !case.boundary.contains_key(name) {
             return Err(err(
@@ -140,7 +160,15 @@ pub const CSV_UNITS: &str = "step -; time s; parcels -; injected_kg kg; in_flow_
      diameter of the droplets in the flow); per injector <name>.parcels -, <name>.in_flow_kg kg, \
      <name>.penetration_m m (distance from the injector, along its axis or straight as [spray] \
      penetration says, within which the share [spray] penetration_fraction of the injector's \
-     liquid in the flow lies), <name>.farthest_m m (the farthest parcel, outlier-sensitive)";
+     liquid in the flow lies), <name>.farthest_m m (the farthest parcel, outlier-sensitive); \
+     two-way coupling (SP2): passes - (parcel passes of the step), coupling_lag - (largest change \
+     of the gas velocity of a spray cell against the frozen state of the last pass, over the \
+     larger of the largest slip velocity and the largest change of the gas velocity of a spray \
+     cell in the step), unconverged - (1: the passes ended at max_passes above the \
+     tolerance), gas_force_x/y/z N (momentum the gas received per second), gas_power_w W, \
+     coupling_max - (largest Δt/τ of the gas momentum of a cell, β Δt / (ρ V)), coupling_share - \
+     (share of the spray cells with Δt/τ above 1), liquid_fraction_max - (largest liquid volume \
+     fraction of a cell), parcels_per_cell_max -";
 
 /// The header of `spray.csv`.
 pub fn csv_head(sp: &foehncraft_particles::Spray) -> String {
@@ -153,6 +181,12 @@ pub fn csv_head(sp: &foehncraft_particles::Spray) -> String {
         h.push_str(&format!(
             ",{n}.parcels,{n}.in_flow_kg,{n}.penetration_m,{n}.farthest_m"
         ));
+    }
+    if sp.config().coupling.two_way() {
+        h.push_str(
+            ",passes,coupling_lag,unconverged,gas_force_x,gas_force_y,gas_force_z,\
+             gas_power_w,coupling_max,coupling_share,liquid_fraction_max,parcels_per_cell_max",
+        );
     }
     h
 }
@@ -172,6 +206,9 @@ pub struct SpraySummary {
     pub in_flow: foehncraft_particles::Stats,
     /// How the numbers are defined.
     pub definitions: &'static str,
+    /// The two-way coupling over the run (SP2), if any.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub coupling: Option<CouplingSummary>,
 }
 
 /// The definitions written with the statistics (D265).
@@ -196,6 +233,7 @@ pub fn summary(sp: &foehncraft_particles::Spray, zone: &[u32]) -> SpraySummary {
         injectors: sp.injector_stats(),
         in_flow: sp.moments(None, zone).stats(&spec),
         definitions: DEFINITIONS,
+        coupling: None,
     }
 }
 
@@ -220,8 +258,14 @@ pub fn state(spray: Option<&foehncraft_particles::Spray>) -> Result<Option<Vec<u
     spray.map(|s| s.state()).transpose()
 }
 
-/// One row of `spray.csv`.
-pub fn csv_row(step: usize, sp: &foehncraft_particles::Spray, zone: &[u32]) -> String {
+/// One row of `spray.csv`; with two-way coupling the passes, the
+/// coupling lag and the health numbers of the step (D254) close the row.
+pub fn csv_row(
+    step: usize,
+    sp: &foehncraft_particles::Spray,
+    zone: &[u32],
+    c: Option<&StepCoupling>,
+) -> String {
     let t = &sp.tally;
     let com = sp.centre_of_mass();
     let d32 = sp
@@ -233,6 +277,22 @@ pub fn csv_row(step: usize, sp: &foehncraft_particles::Spray, zone: &[u32]) -> S
         extra.push_str(&format!(
             ",{},{:e},{:e},{:e}",
             i.parcels, i.mass, i.penetration, i.farthest
+        ));
+    }
+    if let Some(c) = c {
+        extra.push_str(&format!(
+            ",{},{:e},{},{:e},{:e},{:e},{:e},{:e},{:e},{:e},{}",
+            c.passes,
+            c.lag,
+            u8::from(c.unconverged),
+            c.gas_momentum[0],
+            c.gas_momentum[1],
+            c.gas_momentum[2],
+            c.gas_power,
+            c.coupling_max,
+            c.coupling_share,
+            c.liquid_fraction_max,
+            c.parcels_per_cell_max
         ));
     }
     format!(
@@ -273,13 +333,79 @@ pub fn step(
     let lost0 = sp.tally.lost_parcels;
     let gas = FlowGas { sol, geo };
     sp.advance(&env, &gas, t_end - h, h)?;
-    csv.row(&csv_row(n, sp, &mesh.cell_zone));
+    csv.row(&csv_row(n, sp, &mesh.cell_zone, None));
     let every = case.spray.write_every;
     let mut file = None;
     if every > 0 && n.is_multiple_of(every) {
         file = write_parcels(sp, out, name, n)?;
     }
     Ok((sp.tally.lost_parcels - lost0, file))
+}
+
+/// As [`step`] for a two-way step: the closing step of the passes `done`
+/// (D250) instead of a one-way advance. Returns the parcels lost, the
+/// parcel file written and the coupling of the step.
+#[allow(clippy::too_many_arguments)]
+pub fn step_coupled(
+    case: &FlowCase,
+    sp: &mut foehncraft_particles::Spray,
+    fl: &mut crate::simplec::Flow,
+    done: Passes,
+    mesh: &Mesh,
+    geo: &Geometry,
+    loc: &foehncraft_mesh::locate::Locator,
+    n: usize,
+    out: &std::path::Path,
+    name: &str,
+    csv: &mut crate::monitor::History,
+) -> Result<(u64, Option<std::path::PathBuf>, StepCoupling)> {
+    let env = foehncraft_particles::Env { mesh, geo, loc };
+    let lost0 = sp.tally.lost_parcels;
+    let c = close(sp, &env, fl, done)?;
+    csv.row(&csv_row(n, sp, &mesh.cell_zone, Some(&c)));
+    let every = case.spray.write_every;
+    let mut file = None;
+    if every > 0 && n.is_multiple_of(every) {
+        file = write_parcels(sp, out, name, n)?;
+    }
+    Ok((sp.tally.lost_parcels - lost0, file, c))
+}
+
+/// The coupling over a run (D252, D254): health numbers in `result.json`.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
+pub struct CouplingSummary {
+    /// Coupled steps.
+    pub steps: u64,
+    /// Parcel passes over the run.
+    pub passes: u64,
+    /// Steps that ended at max_passes with the lag above the tolerance.
+    pub unconverged_steps: u64,
+    /// Largest coupling lag at the end of a step.
+    pub lag_max: f64,
+    /// Largest Δt/τ of the gas momentum of a spray cell.
+    pub coupling_max: f64,
+    /// Largest liquid volume fraction of a cell.
+    pub liquid_fraction_max: f64,
+    /// Most parcels in one cell.
+    pub parcels_per_cell_max: u32,
+    /// Momentum the gas received over the run (kg m/s).
+    pub gas_impulse: [f64; 3],
+}
+
+impl CouplingSummary {
+    /// Adds a step of size `dt`.
+    pub fn add(&mut self, c: &StepCoupling, dt: f64) {
+        self.steps += 1;
+        self.passes += u64::from(c.passes);
+        self.unconverged_steps += u64::from(c.unconverged);
+        self.lag_max = self.lag_max.max(c.lag);
+        self.coupling_max = self.coupling_max.max(c.coupling_max);
+        self.liquid_fraction_max = self.liquid_fraction_max.max(c.liquid_fraction_max);
+        self.parcels_per_cell_max = self.parcels_per_cell_max.max(c.parcels_per_cell_max);
+        for k in 0..3 {
+            self.gas_impulse[k] += dt * c.gas_momentum[k];
+        }
+    }
 }
 
 /// Writes `spray/parcels_<step>.vtkhdf`; returns its path (`None` in a
@@ -499,3 +625,459 @@ pub fn file_statistics(
 
 /// The bins of a droplet size histogram.
 pub use foehncraft_particles::HistSpec;
+
+// ---------------------------------------------------------------------------
+// Two-way coupling (SP2, D247 to D252)
+
+/// The momentum sources of a spray in value-plus-slope form (D250), per
+/// spray cell: S = E − β (u − u*), with E the exchange of the pass (N), β
+/// the summed slope (kg/s) and u* the frozen cell velocity of the pass.
+#[derive(Debug, Clone, Default)]
+pub struct MomentumSource {
+    /// Cells, ascending.
+    pub cells: Vec<u32>,
+    /// E per cell (N).
+    pub e: Vec<[f64; 3]>,
+    /// β per cell (kg/s).
+    pub beta: Vec<f64>,
+    /// u* per cell (m/s).
+    pub ustar: Vec<[f64; 3]>,
+}
+
+impl MomentumSource {
+    /// The sources of the per-cell sums `src` of a pass over a step `dt`,
+    /// frozen at the cell velocities `u`.
+    pub fn of(
+        src: &foehncraft_particles::CellSources,
+        dt: f64,
+        u: &dyn Fn(usize) -> [f64; 3],
+    ) -> Self {
+        Self {
+            cells: src.cells.clone(),
+            e: src
+                .impulse
+                .iter()
+                .map(|i| [i[0] / dt, i[1] / dt, i[2] / dt])
+                .collect(),
+            beta: src.slope.iter().map(|b| b / dt).collect(),
+            ustar: src.cells.iter().map(|&c| u(c as usize)).collect(),
+        }
+    }
+}
+
+impl crate::simplec::Flow {
+    /// Adds the momentum sources of a two-way coupled spray to the rows
+    /// just assembled (relaxation `alpha`), as the porous sink does: β on
+    /// the diagonal of each component (Patankar 1980), E + β u* on the
+    /// right-hand side, and β to D, D^s and D^C of the pressure correction.
+    pub(crate) fn add_spray_momentum(&mut self, alpha: f64, theta: f64) -> Result<()> {
+        let Some(src) = self.spray_momentum.as_ref() else {
+            return Ok(());
+        };
+        if src.cells.is_empty() {
+            return Ok(());
+        }
+        let (f, w) = (self.f, self.w);
+        let u: Vec<Vec<f64>> =
+            f.u.all()
+                .into_iter()
+                .map(|b| self.dev.download(b))
+                .collect::<Result<_>>()?;
+        let mut diag: Vec<Vec<f64>> = w
+            .diag
+            .all()
+            .into_iter()
+            .map(|b| self.dev.download(b))
+            .collect::<Result<_>>()?;
+        let mut rhs: Vec<Vec<f64>> = w
+            .rhs
+            .all()
+            .into_iter()
+            .map(|b| self.dev.download(b))
+            .collect::<Result<_>>()?;
+        let mut d = self.dev.download(w.d)?;
+        let mut ds = self.dev.download(w.ds)?;
+        let mut dc = self.dev.download(w.dc)?;
+        let vol = &self.disc.cell_volume;
+        for (j, &c) in src.cells.iter().enumerate() {
+            let c = c as usize;
+            let b = src.beta[j];
+            for i in 0..3 {
+                diag[i][c] += b / alpha;
+                rhs[i][c] += src.e[j][i] + b * src.ustar[j][i] + (b / alpha - b) * u[i][c];
+            }
+            let add = b / (alpha * vol[c]);
+            d[c] = 1.0 / (1.0 / d[c] + add);
+            dc[c] = 1.0 / (1.0 / dc[c] + add);
+            ds[c] = 1.0 / (1.0 / ds[c] + add / theta);
+        }
+        for (b, x) in w.diag.all().into_iter().zip(&diag) {
+            self.dev.upload(b, x)?;
+        }
+        for (b, x) in w.rhs.all().into_iter().zip(&rhs) {
+            self.dev.upload(b, x)?;
+        }
+        self.dev.upload(w.d, &d)?;
+        self.dev.upload(w.ds, &ds)?;
+        self.dev.upload(w.dc, &dc)?;
+        Ok(())
+    }
+}
+
+/// The parcel passes of one time step of a two-way coupled spray (D252):
+/// a pass from the old level in every outer iteration until the coupling
+/// lag is below the tolerance or the largest number of passes is reached.
+pub struct TwoWay<'a> {
+    sp: &'a foehncraft_particles::Spray,
+    env: foehncraft_particles::Env<'a>,
+    geo: &'a Geometry,
+    t0: f64,
+    dt: f64,
+    limit: u32,
+    converged: bool,
+    tolerance: f64,
+    /// Passes run so far in this step.
+    pub passes: u32,
+    /// The coupling lag after each pass.
+    pub lags: Vec<f64>,
+    /// The last pass and its frozen cell velocities.
+    pass: Option<(foehncraft_particles::Pass, Vec<[f64; 3]>)>,
+    /// The cell velocities of the start of the step (by cell).
+    u_old: Vec<(u32, [f64; 3])>,
+}
+
+impl<'a> TwoWay<'a> {
+    /// The passes of the step from `t0` of size `dt`.
+    pub fn new(
+        sp: &'a foehncraft_particles::Spray,
+        env: foehncraft_particles::Env<'a>,
+        geo: &'a Geometry,
+        t0: f64,
+        dt: f64,
+    ) -> Self {
+        let c = sp.config().coupling;
+        let (limit, converged) = c.pass_limit();
+        Self {
+            sp,
+            env,
+            geo,
+            t0,
+            dt,
+            limit,
+            converged,
+            tolerance: c.tolerance,
+            passes: 0,
+            lags: Vec::new(),
+            pass: None,
+            u_old: Vec::new(),
+        }
+    }
+
+    /// The passes of the step, for [`close`].
+    pub fn finish(mut self) -> Passes {
+        Passes {
+            passes: self.passes,
+            lag: self.lag(),
+            unconverged: self.unconverged(),
+            last: self.pass.take(),
+        }
+    }
+
+    /// The last coupling lag (0 before a pass).
+    pub fn lag(&self) -> f64 {
+        self.lags.last().copied().unwrap_or(0.0)
+    }
+
+    /// Whether the step ended at the largest number of passes with the lag
+    /// above the tolerance (a health number, D252).
+    pub fn unconverged(&self) -> bool {
+        self.converged && self.lag() > self.tolerance
+    }
+}
+
+/// The passes of one step ([`TwoWay::finish`]).
+pub struct Passes {
+    /// Passes run.
+    pub passes: u32,
+    /// Coupling lag of the last.
+    pub lag: f64,
+    /// Ended at the largest number with the lag above the tolerance.
+    pub unconverged: bool,
+    /// The last pass and its frozen cell velocities.
+    pub last: Option<(foehncraft_particles::Pass, Vec<[f64; 3]>)>,
+}
+
+/// The coupling lag of D252: the largest change of the gas velocity of a
+/// spray cell against the frozen state of the pass, over a velocity scale
+/// of the step: the larger of the largest slip velocity of the spray cells
+/// (|impulse| / slope of a cell) and the largest change of the gas velocity
+/// of a spray cell over the step (against `u_old`, the state the step
+/// started from). Both are velocity differences, so the measure does not
+/// depend on the frame; the second keeps it finite where the parcels have
+/// come to rest in the gas. The first pass of a step has a lag of 1 or
+/// less by construction.
+pub fn coupling_lag(
+    src: &foehncraft_particles::CellSources,
+    ustar: &[[f64; 3]],
+    u_old: &[[f64; 3]],
+    u: &dyn Fn(usize) -> [f64; 3],
+) -> f64 {
+    let norm = |a: [f64; 3], b: [f64; 3]| {
+        let d = [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+        (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
+    };
+    let (mut du, mut scale, mut umax) = (0.0f64, 0.0f64, 0.0f64);
+    for (j, &c) in src.cells.iter().enumerate() {
+        let un = u(c as usize);
+        du = du.max(norm(un, ustar[j]));
+        scale = scale.max(norm(un, u_old[j]));
+        let i = src.impulse[j];
+        if src.slope[j] > 0.0 {
+            scale = scale.max(norm(i, [0.0; 3]) / src.slope[j]);
+        }
+        umax = umax.max(norm(un, [0.0; 3]));
+    }
+    du / scale.max(1e-12 * (1.0 + umax))
+}
+
+fn fl_old(old: &[(u32, [f64; 3])], c: u32) -> Option<[f64; 3]> {
+    old.binary_search_by_key(&c, |x| x.0).ok().map(|i| old[i].1)
+}
+
+fn cell_velocity(st: &crate::simplec::State, c: usize) -> [f64; 3] {
+    st.u.get(c)
+}
+
+impl crate::transient::OuterHook for TwoWay<'_> {
+    fn max_outer(&self) -> usize {
+        self.limit as usize
+    }
+
+    fn before_momentum(&mut self, fl: &mut crate::simplec::Flow, _k: usize) -> Result<()> {
+        if self.passes >= self.limit {
+            // the sources of the last pass stay (the flow iterates on)
+            return Ok(());
+        }
+        let sol = Solution {
+            state: fl.state()?,
+            disc: &fl.disc,
+            phys: fl.physics(),
+        };
+        let gas = FlowGas {
+            sol: &sol,
+            geo: self.geo,
+        };
+        let pass = self.sp.pass(&self.env, &gas, self.t0, self.dt)?;
+        let src = MomentumSource::of(&pass.sources, self.dt, &|c| cell_velocity(&sol.state, c));
+        let ustar = src.ustar.clone();
+        if self.passes == 0 {
+            // the state the step starts from (D248: the first pass sees it)
+            self.u_old = src
+                .cells
+                .iter()
+                .copied()
+                .zip(ustar.iter().copied())
+                .collect();
+        }
+        // the old state of cells the first pass did not reach
+        let missing: Vec<u32> = src
+            .cells
+            .iter()
+            .copied()
+            .filter(|c| self.u_old.binary_search_by_key(c, |x| x.0).is_err())
+            .collect();
+        for c in missing {
+            // (the current iterate: the cell was not reached before)
+            let v = cell_velocity(&sol.state, c as usize);
+            let k = self.u_old.partition_point(|x| x.0 < c);
+            self.u_old.insert(k, (c, v));
+        }
+        drop(sol);
+        fl.spray_momentum = Some(src);
+        self.pass = Some((pass, ustar));
+        self.passes += 1;
+        Ok(())
+    }
+
+    fn after_solve(&mut self, fl: &mut crate::simplec::Flow, _k: usize) -> Result<bool> {
+        let Some((pass, ustar)) = self.pass.as_ref() else {
+            return Ok(false);
+        };
+        let st = fl.state()?;
+        let old: Vec<[f64; 3]> = pass
+            .sources
+            .cells
+            .iter()
+            .map(|&c| fl_old(&self.u_old, c).unwrap_or([0.0; 3]))
+            .collect();
+        let lag = coupling_lag(&pass.sources, ustar, &old, &|c| cell_velocity(&st, c));
+        self.lags.push(lag);
+        if self.passes >= self.limit {
+            return Ok(false);
+        }
+        Ok(!self.converged || lag > self.tolerance)
+    }
+}
+
+/// What the closing step of a two-way step leaves for the ledger and the
+/// health numbers (D244, D254).
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
+pub struct StepCoupling {
+    /// Passes of the step.
+    pub passes: u32,
+    /// Coupling lag of the last pass.
+    pub lag: f64,
+    /// The passes ended at the largest number with the lag above the
+    /// tolerance.
+    pub unconverged: bool,
+    /// Momentum the gas received per second, Σ over the spray cells of
+    /// E − β (u_new − u*) (N), summed in cell order.
+    pub gas_momentum: [f64; 3],
+    /// Power of that source on the gas, Σ u_new · S (W).
+    pub gas_power: f64,
+    /// The momentum books of the parcels (kg m/s over the step).
+    #[serde(skip)]
+    pub books: foehncraft_particles::StepBooks,
+    /// Largest Δt/τ of the gas momentum in a spray cell, β Δt / (ρ V) (D254 (3)).
+    pub coupling_max: f64,
+    /// Share of the spray cells with Δt/τ above 1.
+    pub coupling_share: f64,
+    /// Largest liquid volume fraction of a cell (D254 (5)).
+    pub liquid_fraction_max: f64,
+    /// Most parcels in one cell.
+    pub parcels_per_cell_max: u32,
+}
+
+/// The closing step of a two-way step (D250): the parcels receive what the
+/// gas gave up, the pass is committed, and the books of the step are
+/// returned.
+pub fn close(
+    sp: &mut foehncraft_particles::Spray,
+    env: &foehncraft_particles::Env,
+    fl: &mut crate::simplec::Flow,
+    done: Passes,
+) -> Result<StepCoupling> {
+    fl.spray_momentum = None;
+    let Passes {
+        passes,
+        lag,
+        unconverged,
+        last,
+    } = done;
+    let Some((pass, ustar)) = last else {
+        return Ok(StepCoupling::default());
+    };
+    let st = fl.state()?;
+    let phys = fl.physics();
+    let dt = pass.dt;
+    let src = pass.sources.clone();
+    let du = |c: u32| -> [f64; 3] {
+        match src.find(c) {
+            Some(j) => {
+                let u = st.u.get(c as usize);
+                [u[0] - ustar[j][0], u[1] - ustar[j][1], u[2] - ustar[j][2]]
+            }
+            None => [0.0; 3],
+        }
+    };
+    let mut out = StepCoupling {
+        passes,
+        lag,
+        unconverged,
+        ..Default::default()
+    };
+    let (mut above, vol) = (0usize, &env.geo.cell_volume);
+    for (j, &c) in src.cells.iter().enumerate() {
+        let d = du(c);
+        let u = st.u.get(c as usize);
+        let mut s = [0.0; 3];
+        for k in 0..3 {
+            s[k] = (src.impulse[j][k] - src.slope[j] * d[k]) / dt;
+            out.gas_momentum[k] += s[k];
+        }
+        out.gas_power += u[0] * s[0] + u[1] * s[1] + u[2] * s[2];
+        let cn = src.slope[j] / (phys.rho_at(c as usize) * vol[c as usize]);
+        out.coupling_max = out.coupling_max.max(cn);
+        if cn > 1.0 {
+            above += 1;
+        }
+    }
+    if !src.cells.is_empty() {
+        out.coupling_share = above as f64 / src.cells.len() as f64;
+    }
+    out.books = sp.commit(env, pass, Some(&du));
+    for (c, n, v) in sp.cell_loading() {
+        out.parcels_per_cell_max = out.parcels_per_cell_max.max(n);
+        out.liquid_fraction_max = out.liquid_fraction_max.max(v / vol[c as usize]);
+    }
+    Ok(out)
+}
+
+/// Pair ids of the gas-parcel momentum exchange in the ledger (D244).
+pub const PAIR_MOMENTUM: [u32; 3] = [2801, 2802, 2803];
+
+/// The ledger rows of a two-way spray at a state (D119, D244): the gas side
+/// of the momentum exchange on the momentum accounts of the domain (which
+/// hold only this term, so their imbalance is the force of the walls and
+/// boundaries on the gas), its power on the kinetic energy, and the
+/// accounts of the parcel momentum, which close to round-off. `c` is the
+/// coupling of the step that ended at this state (`None` at the start).
+pub fn book(
+    r: &mut crate::balance::Rates,
+    sp: &foehncraft_particles::Spray,
+    c: Option<&StepCoupling>,
+    dt: f64,
+    gas_momentum: [f64; 3],
+) {
+    use crate::balance::{Account, StepRule, Term, TermKind, names};
+    let z = StepCoupling::default();
+    let c = c.unwrap_or(&z);
+    let per = |x: f64| if dt > 0.0 { x / dt } else { 0.0 };
+    let b = &c.books;
+    let content = sp.momentum();
+    for k in 0..3 {
+        let mut g = Account::new(names::MOMENTUM[k], "kg m/s");
+        g.content = Some(gas_momentum[k]);
+        g.terms.push(
+            Term::volume("spray drag", TermKind::Exchange, c.gas_momentum[k])
+                .rule(StepRule::End)
+                .paired(PAIR_MOMENTUM[k]),
+        );
+        r.book(g);
+        let mut a = Account::new(&format!("parcel {}", names::MOMENTUM[k]), "kg m/s");
+        a.region = "parcels".into();
+        a.content = Some(content[k]);
+        for (name, v) in [
+            ("weight", per(b.gravity[k])),
+            ("injected", per(b.injected[k])),
+            ("left the flow", per(b.removed[k])),
+            ("walls", per(b.walls[k])),
+        ] {
+            a.terms
+                .push(Term::volume(name, TermKind::Source, v).rule(StepRule::End));
+        }
+        a.terms.push(
+            Term::volume("from the gas", TermKind::Exchange, -c.gas_momentum[k])
+                .rule(StepRule::End)
+                .paired(PAIR_MOMENTUM[k]),
+        );
+        r.book(a);
+    }
+    let mut ke = Account::new(names::KINETIC, "J");
+    ke.terms
+        .push(Term::volume("spray drag power", TermKind::Source, c.gas_power).rule(StepRule::End));
+    r.book(ke);
+}
+
+/// Σ ρ u V of the gas, in cell order (kg m/s).
+pub fn gas_momentum(sol: &Solution, vol: &[f64]) -> [f64; 3] {
+    let mut m = [0.0; 3];
+    for (c, &v) in vol.iter().enumerate().take(sol.disc.n_cells) {
+        let u = sol.state.u.get(c);
+        let r = sol.phys.rho_at(c) * v;
+        for k in 0..3 {
+            m[k] += r * u[k];
+        }
+    }
+    m
+}

@@ -1,0 +1,15 @@
+# The nozzle of spray_two_way.toml (D246).
+
+[liquid]
+name = "water"
+density = 998.0
+
+[[injector]]
+name = "nozzle"
+position = [0.6, 1.45, 0.05]
+direction = [0.0, -1.0, 0.0]
+speed = 15.0
+half_angle = 12.0
+mass_flow = 0.05
+parcels_per_second = 4000.0
+size = { distribution = "rosin-rammler", mean = 150e-6, spread = 2.5, min = 50e-6, max = 400e-6 }
