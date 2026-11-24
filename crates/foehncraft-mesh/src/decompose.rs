@@ -117,6 +117,9 @@ pub struct LocalMesh {
     pub processor_faces: Vec<usize>,
     /// The halo exchange plan.
     pub halo: HaloPlan,
+    /// Position in the global mesh of every own and halo cell (the row of
+    /// the one-rank matrix; MPI step W4).
+    pub cell_position: Vec<u32>,
 }
 
 /// Own cells of `rank` in local order (inner cells by RCM, then outer cells
@@ -356,6 +359,11 @@ pub fn extract(
 
     Ok(LocalMesh {
         rank,
+        cell_position: own
+            .iter()
+            .copied()
+            .chain(halo.iter().map(|h| h.2))
+            .collect(),
         mesh,
         halo_layer: halo.iter().map(|h| h.1).collect(),
         processor_faces,
@@ -387,14 +395,20 @@ pub fn decompose(
 /// (only the rank's own thread calls it).
 pub type SharedComm = std::sync::Arc<dyn Communicator + Send + Sync>;
 
-/// What a rank's solver needs to work with the other ranks (MPI step W3):
-/// the communicator and the halo exchange plan of its local mesh.
+/// What a rank's solver needs to work with the other ranks (MPI steps W3,
+/// W4): the communicator, the halo exchange plan of its local mesh, and
+/// where its cells sit in the global mesh (the replicated multigrid setup
+/// gathers the matrix in global order).
 #[derive(Clone)]
 pub struct Ranks {
     /// The communicator.
     pub comm: SharedComm,
     /// The exchange plan of the rank's local mesh.
     pub halo: HaloPlan,
+    /// Position in the global mesh of every own and halo cell.
+    pub position: Vec<u32>,
+    /// The rank of every cell of the global mesh (the partition), shared.
+    pub owner: std::sync::Arc<Vec<u32>>,
 }
 
 impl std::fmt::Debug for Ranks {
@@ -408,12 +422,20 @@ impl std::fmt::Debug for Ranks {
 }
 
 impl Ranks {
-    /// The link of `local`'s rank through `comm`.
-    pub fn new(comm: SharedComm, local: &LocalMesh) -> Self {
+    /// The link of `local`'s rank through `comm`; `part` is the partition
+    /// `local` was extracted with.
+    pub fn new(comm: SharedComm, local: &LocalMesh, part: &[u32]) -> Self {
         Self {
             comm,
             halo: local.halo.clone(),
+            position: local.cell_position.clone(),
+            owner: std::sync::Arc::new(part.to_vec()),
         }
+    }
+
+    /// Number of cells of the global mesh.
+    pub fn n_global(&self) -> usize {
+        self.owner.len()
     }
 
     /// Fills the halo entries of `fields` (one value per own and halo

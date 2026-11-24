@@ -34,7 +34,7 @@
 use crate::backend::{self, V};
 use crate::disc::Discretisation;
 use crate::problem::Problem;
-use crate::solver::{self, Outcome, Preconditioner, Settings};
+use crate::solver::{self, Outcome, Settings};
 use crate::verify::{MmsResult, observed_orders};
 use anyhow::{Context, Result, bail, ensure};
 use foehncraft_mesh::case::{MeshSection, build_mesh};
@@ -190,12 +190,6 @@ impl ScalarCase {
             c.run.ranks.iter().all(|&n| (1..=256).contains(&n)),
             "[run] ranks must lie in 1..=256"
         );
-        for v in std::iter::once(&c.solver).chain(c.variants.iter().map(|v| &v.solver)) {
-            ensure!(
-                c.run.ranks.is_empty() || v.preconditioner == Preconditioner::Jacobi,
-                "[run] ranks: the multigrid preconditioner runs on one rank until MPI step W4; use preconditioner = \"jacobi\""
-            );
-        }
         if c.verification.levels.len() >= 2 {
             ensure!(
                 c.mesh.generate.is_some(),
@@ -612,6 +606,7 @@ fn solve_on_ranks(
             comm,
             &case.problem,
             settings,
+            None,
             Some(per_rank),
         )
     });

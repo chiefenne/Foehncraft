@@ -15,7 +15,14 @@ use foehncraft_parallel::ThreadComm;
 #[test]
 fn scalar_solves_on_ranks_are_bitwise_one_rank() {
     for case in check_cases().unwrap() {
-        let reference = solve_one(&case.mesh, &case.problem, &case.settings, Some(1)).unwrap();
+        let reference = solve_one(
+            &case.mesh,
+            &case.problem,
+            &case.settings,
+            case.reduction.as_ref(),
+            Some(1),
+        )
+        .unwrap();
         assert!(
             reference.outcome.outer > 2,
             "{}: too few outer iterations",
@@ -35,6 +42,7 @@ fn scalar_solves_on_ranks_are_bitwise_one_rank() {
                     comm,
                     &case.problem,
                     &case.settings,
+                    case.reduction.as_ref(),
                     Some(2),
                 )
                 .unwrap();
@@ -59,7 +67,14 @@ fn scalar_solves_on_ranks_are_bitwise_one_rank() {
 #[test]
 fn scattered_partitions_are_bitwise_one_rank() {
     let case = &check_cases().unwrap()[0];
-    let reference = solve_one(&case.mesh, &case.problem, &case.settings, Some(1)).unwrap();
+    let reference = solve_one(
+        &case.mesh,
+        &case.problem,
+        &case.settings,
+        case.reduction.as_ref(),
+        Some(1),
+    )
+    .unwrap();
     let part: Vec<u32> = (0..case.mesh.n_cells as u32).map(|c| c % 3).collect();
     let checks = ThreadComm::run(3, |c| {
         let rank = foehncraft_parallel::Communicator::rank(&*c);
@@ -70,6 +85,7 @@ fn scattered_partitions_are_bitwise_one_rank() {
             c,
             &case.problem,
             &case.settings,
+            case.reduction.as_ref(),
             Some(1),
         )
         .unwrap();

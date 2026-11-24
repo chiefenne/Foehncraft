@@ -353,8 +353,7 @@ pub fn setup_amg_with(
     symmetric_part: bool,
 ) -> anyhow::Result<HierarchyInfo> {
     let t = Instant::now();
-    let val = be.matrix_values()?;
-    let a = be_matrix(be, &val)?;
+    let a = be.amg_matrix()?;
     let a = if symmetric_part {
         a.symmetric_part()
     } else {
@@ -375,8 +374,7 @@ pub fn setup_reduction(
     s: &ReductionSettings,
 ) -> anyhow::Result<HierarchyInfo> {
     let t = Instant::now();
-    let val = be.matrix_values()?;
-    let a = be_matrix(be, &val)?;
+    let a = be.amg_matrix()?;
     let mut h = amg::reduction::build(a, s)?;
     be.amg_load(&h)?;
     be.sync()?;
@@ -397,12 +395,6 @@ pub fn cycles(be: &mut dyn Backend, cycles: usize) -> anyhow::Result<()> {
         be.axpy(1.0, V::Z, V::Phi)?;
     }
     Ok(())
-}
-
-fn be_matrix(be: &dyn Backend, val: &[f64]) -> anyhow::Result<amg::Csr> {
-    be.discretisation()
-        .map(|d| d.matrix_csr(val))
-        .ok_or_else(|| anyhow::anyhow!("backend without host discretisation"))
 }
 
 /// out = M⁻¹ x.

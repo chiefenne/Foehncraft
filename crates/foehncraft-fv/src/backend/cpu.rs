@@ -8,6 +8,7 @@
 
 use super::{Backend, FaceSettings, Limiter, V};
 use crate::amg::cycle::LevelOps;
+use crate::amg::dist::{DistHierarchy, LevelPlan, distribute};
 use crate::amg::{Hierarchy, Precision, SellMatrix};
 use crate::disc::Discretisation;
 use foehncraft_core::Real;
@@ -145,6 +146,24 @@ struct AmgData<T> {
     b: Vec<Vec<T>>,
     w: Vec<Vec<T>>,
     d: Vec<Vec<T>>,
+    /// Layouts and exchanges of the levels on ranks (MPI step W4); `None`
+    /// on one rank.
+    plans: Option<Vec<LevelPlan>>,
+}
+
+/// Fills the ghost entries of `x` (a vector of a level in `plan`'s layout)
+/// from their owners: one message each way per peer.
+fn exchange_level<T: Real>(plan: &LevelPlan, ranks: &Ranks, x: &mut [T]) {
+    for peer in &plan.peers {
+        let send: Vec<f64> = peer.send.iter().map(|&i| x[i as usize].to_f64()).collect();
+        let mut recv = vec![0.0; peer.recv.len()];
+        ranks
+            .comm
+            .send_recv_f64(&send, peer.rank, &mut recv, peer.rank);
+        for (&i, v) in peer.recv.iter().zip(recv) {
+            x[i as usize] = T::from_f64(v);
+        }
+    }
 }
 
 enum Amg {
@@ -194,68 +213,160 @@ impl<T: Real> AmgData<T> {
             w: sizes[..levels.len()].iter().map(|&n| zeros(n)).collect(),
             d: sizes[..levels.len()].iter().map(|&n| zeros(n)).collect(),
             levels,
+            plans: None,
+        }
+    }
+
+    /// The part of a rank (MPI step W4): own rows with local columns, the
+    /// level vectors in the local layouts (own entries, then ghosts).
+    fn from_dist(h: &DistHierarchy) -> Self {
+        let cv = |v: &[f64]| v.iter().map(|&x| T::from_f64(x)).collect::<Vec<T>>();
+        let levels: Vec<LevelData<T>> = h
+            .levels
+            .iter()
+            .map(|l| LevelData {
+                a: SellMatrix::from_csr(&l.a),
+                dinv: cv(&l.dinv),
+                p: SellMatrix::from_csr(&l.p),
+                r: SellMatrix::from_csr(&l.r),
+                steps: l.steps.clone(),
+            })
+            .collect();
+        let sizes: Vec<usize> = h.plans.iter().map(|p| p.global.len()).collect();
+        let zeros = |n: usize| vec![T::ZERO; n];
+        Self {
+            coarse_n: h.coarse_n,
+            coarse_inv: cv(&h.coarse_inv),
+            x: sizes.iter().map(|&n| zeros(n)).collect(),
+            b: sizes.iter().map(|&n| zeros(n)).collect(),
+            w: sizes[..levels.len()].iter().map(|&n| zeros(n)).collect(),
+            d: sizes[..levels.len()].iter().map(|&n| zeros(n)).collect(),
+            levels,
+            plans: Some(h.plans.clone()),
+        }
+    }
+
+    /// Own entries of level `l` (all entries on one rank).
+    fn own(&self, l: usize) -> usize {
+        self.plans.as_ref().map_or(self.b[l].len(), |p| p[l].n_own)
+    }
+
+    /// Fills the ghosts of x_l (w_l with `residual`) on ranks.
+    fn exchange(&mut self, ranks: Option<&Ranks>, l: usize, residual: bool) {
+        if let (Some(p), Some(r)) = (&self.plans, ranks) {
+            let v = if residual {
+                &mut self.w[l]
+            } else {
+                &mut self.x[l]
+            };
+            exchange_level(&p[l], r, v);
         }
     }
 
     fn load_rhs(&mut self, pool: &Workers, r: &[f64]) {
-        // SAFETY: b_0 and r have one entry per cell.
-        par_fill(pool, &mut self.b[0], |i, _| unsafe { amg::convert(i, r) });
+        let n = self.own(0);
+        // SAFETY: the own entries of b_0 are the own cells of r.
+        par_fill(pool, &mut self.b[0][..n], |i, _| unsafe {
+            amg::convert(i, r)
+        });
     }
 
     fn store(&self, pool: &Workers, z: &mut [f64]) {
         let x = &self.x[0];
+        let n = self.own(0);
         // SAFETY: as above.
-        par_fill(pool, z, |i, _| unsafe { amg::convert(i, x) });
+        par_fill(pool, &mut z[..n], |i, _| unsafe { amg::convert(i, x) });
     }
 
     fn smooth_first(&mut self, pool: &Workers, l: usize, c2: f64) {
         let c2 = T::from_f64(c2);
+        let n = self.own(l);
         let (dinv, b) = (&self.levels[l].dinv, &self.b[l]);
-        // SAFETY: level vectors have one entry per row of A_l.
-        par_fill(pool, &mut self.d[l], |i, _| unsafe {
+        // SAFETY: the own entries of the level vectors are the rows of A_l.
+        par_fill(pool, &mut self.d[l][..n], |i, _| unsafe {
             amg::smooth_first(i, dinv, b, c2)
         });
-        self.x[l].copy_from_slice(&self.d[l]);
+        self.x[l][..n].copy_from_slice(&self.d[l][..n]);
     }
 
-    fn smooth_step(&mut self, pool: &Workers, l: usize, c1: f64, c2: f64) {
+    fn smooth_step(&mut self, pool: &Workers, ranks: Option<&Ranks>, l: usize, c1: f64, c2: f64) {
+        self.exchange(ranks, l, false);
         let (c1, c2) = (T::from_f64(c1), T::from_f64(c2));
+        let n = self.own(l);
         let lv = &self.levels[l];
         let (a, dinv, b, x) = (lv.a.view(), &lv.dinv, &self.b[l], &self.x[l]);
-        // SAFETY: A_l was built by `SellMatrix::from_csr` for these sizes.
-        par_fill(pool, &mut self.d[l], |i, di| unsafe {
+        // SAFETY: A_l was built by `SellMatrix::from_csr` for these sizes;
+        // its columns are inside the layout of x_l.
+        par_fill(pool, &mut self.d[l][..n], |i, di| unsafe {
             amg::smooth_step(i, &a, dinv, b, x, di, c1, c2)
         });
         let d = &self.d[l];
-        par_fill(pool, &mut self.x[l], |i, xi| amg::add(xi, d[i]));
+        par_fill(pool, &mut self.x[l][..n], |i, xi| amg::add(xi, d[i]));
     }
 
-    fn restrict(&mut self, pool: &Workers, l: usize) {
+    fn restrict(&mut self, pool: &Workers, ranks: Option<&Ranks>, l: usize) {
+        self.exchange(ranks, l, false);
+        let (n, nc) = (self.own(l), self.own(l + 1));
         let lv = &self.levels[l];
         let (a, b, x) = (lv.a.view(), &self.b[l], &self.x[l]);
         // SAFETY: as above.
-        par_fill(pool, &mut self.w[l], |i, _| unsafe {
+        par_fill(pool, &mut self.w[l][..n], |i, _| unsafe {
             amg::residual(i, &a, b, x)
         });
+        self.exchange(ranks, l, true);
+        let lv = &self.levels[l];
         let (r, w) = (lv.r.view(), &self.w[l]);
-        // SAFETY: R_l has the rows of level l + 1 and the columns of level l.
-        par_fill(pool, &mut self.b[l + 1], |i, _| unsafe { r.row(i, w) });
-    }
-
-    fn coarse(&mut self, pool: &Workers) {
-        let nl = self.levels.len();
-        let (n, m, b) = (self.coarse_n, &self.coarse_inv, &self.b[nl]);
-        // SAFETY: the dense inverse is n × n.
-        par_fill(pool, &mut self.x[nl], |i, _| unsafe {
-            amg::dense_row(i, n, m, b)
+        // SAFETY: R_l has the own rows of level l + 1 and the columns of
+        // level l.
+        par_fill(pool, &mut self.b[l + 1][..nc], |i, _| unsafe {
+            r.row(i, w)
         });
     }
 
-    fn prolong(&mut self, pool: &Workers, l: usize) {
+    fn coarse(&mut self, pool: &Workers, ranks: Option<&Ranks>) {
+        let nl = self.levels.len();
+        let n = self.coarse_n;
+        match (&self.plans, ranks) {
+            (Some(p), Some(r)) => {
+                // gather b_L whole (every entry is own or ghost), solve
+                // every row in global order (replicated), keep the layout
+                let plan = &p[nl];
+                exchange_level(plan, r, &mut self.b[nl]);
+                let mut bg = vec![T::ZERO; n];
+                for (k, &g) in plan.global.iter().enumerate() {
+                    bg[g as usize] = self.b[nl][k];
+                }
+                let mut xg = vec![T::ZERO; n];
+                let m = &self.coarse_inv;
+                // SAFETY: the dense inverse is n × n.
+                par_fill(pool, &mut xg, |i, _| unsafe {
+                    amg::dense_row(i, n, m, &bg)
+                });
+                for (k, &g) in plan.global.iter().enumerate() {
+                    self.x[nl][k] = xg[g as usize];
+                }
+            }
+            _ => {
+                let (m, b) = (&self.coarse_inv, &self.b[nl]);
+                // SAFETY: the dense inverse is n × n.
+                par_fill(pool, &mut self.x[nl], |i, _| unsafe {
+                    amg::dense_row(i, n, m, b)
+                });
+            }
+        }
+    }
+
+    fn prolong(&mut self, pool: &Workers, ranks: Option<&Ranks>, l: usize) {
+        // the coarsest level is whole after `coarse`
+        if l + 1 < self.levels.len() {
+            self.exchange(ranks, l + 1, false);
+        }
+        let n = self.own(l);
         let (lo, hi) = self.x.split_at_mut(l + 1);
         let (p, xc) = (self.levels[l].p.view(), &hi[0]);
-        // SAFETY: P_l has the rows of level l and the columns of level l + 1.
-        par_fill(pool, &mut lo[l], |i, xi| unsafe {
+        // SAFETY: P_l has the own rows of level l and the columns of level
+        // l + 1.
+        par_fill(pool, &mut lo[l][..n], |i, xi| unsafe {
             amg::prolong_add(i, &p, xc, xi)
         });
     }
@@ -728,11 +839,64 @@ impl Backend for CpuBackend {
         Ok(())
     }
 
+    fn amg_matrix(&mut self) -> anyhow::Result<crate::amg::Csr> {
+        let Some(r) = &self.ranks else {
+            return Ok(self.d.matrix_csr(&self.val));
+        };
+        // the own rows with global columns, gathered on every rank: the
+        // matrix of the one-rank run, rows and columns in global order
+        let d = &self.d;
+        let mut buf: Vec<f64> = Vec::new();
+        for c in 0..d.n_cells {
+            let lo = d.cell_ptr[c] as usize;
+            let hi = d.cell_ptr[c + 1] as usize;
+            let len = 1 + d.cell_faces[lo..hi]
+                .iter()
+                .filter(|&&e| foehncraft_kernels::unpack_face(e).0 < d.n_interior)
+                .count();
+            buf.push(r.position[c] as f64);
+            buf.push(len as f64);
+            for j in 0..len {
+                let k = d.sell.pos(c, j);
+                buf.push(r.position[d.sell.col[k] as usize] as f64);
+                buf.push(self.val[k]);
+            }
+        }
+        let n = r.n_global();
+        let mut rows: Vec<Vec<(u32, f64)>> = vec![Vec::new(); n];
+        for part in r.comm.all_gather_vec_f64(&buf) {
+            let mut k = 0;
+            while k < part.len() {
+                let (row, len) = (part[k] as usize, part[k + 1] as usize);
+                k += 2;
+                rows[row] = (0..len)
+                    .map(|j| (part[k + 2 * j] as u32, part[k + 2 * j + 1]))
+                    .collect();
+                k += 2 * len;
+            }
+        }
+        Ok(crate::amg::Csr::from_rows(n, rows))
+    }
+
     fn amg_load(&mut self, h: &Hierarchy) -> anyhow::Result<()> {
-        anyhow::ensure!(
-            self.ranks.is_none(),
-            "the multigrid preconditioner runs on one rank (the distributed multigrid is MPI step W4); use the Jacobi preconditioner on ranks"
-        );
+        if let Some(r) = &self.ranks {
+            anyhow::ensure!(
+                h.levels.first().map_or(h.coarse_n, |l| l.a.n_rows) == r.n_global(),
+                "hierarchy size does not match the global mesh"
+            );
+            let dist = distribute(
+                h,
+                &r.owner,
+                &r.position[..self.d.n_cells],
+                r.comm.rank(),
+                r.comm.size(),
+            );
+            self.amg = Some(match h.precision {
+                Precision::Mixed => Amg::F32(AmgData::from_dist(&dist)),
+                Precision::Double => Amg::F64(AmgData::from_dist(&dist)),
+            });
+            return Ok(());
+        }
         anyhow::ensure!(
             h.levels.first().map_or(h.coarse_n, |l| l.a.n_rows) == self.d.n_cells,
             "hierarchy size does not match the mesh"
@@ -792,25 +956,29 @@ impl LevelOps for CpuBackend {
 
     fn amg_smooth_step(&mut self, l: usize, c1: f64, c2: f64) -> anyhow::Result<()> {
         let pool = &self.pool;
-        with_amg!(self, a => a.smooth_step(pool, l, c1, c2));
+        let ranks = self.ranks.as_ref();
+        with_amg!(self, a => a.smooth_step(pool, ranks, l, c1, c2));
         Ok(())
     }
 
     fn amg_restrict(&mut self, l: usize) -> anyhow::Result<()> {
         let pool = &self.pool;
-        with_amg!(self, a => a.restrict(pool, l));
+        let ranks = self.ranks.as_ref();
+        with_amg!(self, a => a.restrict(pool, ranks, l));
         Ok(())
     }
 
     fn amg_coarse(&mut self) -> anyhow::Result<()> {
         let pool = &self.pool;
-        with_amg!(self, a => a.coarse(pool));
+        let ranks = self.ranks.as_ref();
+        with_amg!(self, a => a.coarse(pool, ranks));
         Ok(())
     }
 
     fn amg_prolong(&mut self, l: usize) -> anyhow::Result<()> {
         let pool = &self.pool;
-        with_amg!(self, a => a.prolong(pool, l));
+        let ranks = self.ranks.as_ref();
+        with_amg!(self, a => a.prolong(pool, ranks, l));
         Ok(())
     }
 }

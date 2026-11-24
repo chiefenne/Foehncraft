@@ -17,6 +17,7 @@ Part of the [Recipes](../recipes.md): generate, read (Gmsh, SU2, CGNS, OpenFOAM,
 | 200 | [Check that every rank has the bits of one rank (canonical local mesh)](#canonical-ranks) |
 | 219 | [Sum over ranks exactly (and check it)](#exact-reductions) |
 | 230 | [Solve a scalar on ranks (and check it against one rank)](#scalar-ranks) |
+| 231 | [Use the multigrid preconditioner on ranks](#multigrid-ranks) |
 
 ---
 
@@ -497,13 +498,13 @@ target/release/foehn scalar examples/cases/scalar/ranks_oblique_step_2d.toml
 
 `scalar.md` and `scalar.json` list a solve per rank count (`backend` =
 `cpu, N ranks`, `bitwise_equal`); `fields.vtkhdf` gets the cell field
-`rank` of the largest count. The multigrid preconditioner runs on one rank
-until MPI step W4, so these variants use `preconditioner = "jacobi"`.
+`rank` of the largest count. Since MPI step W4 the multigrid preconditioner
+runs on ranks too (recipe 231).
 
 Across MPI processes, the solution, gradient, limiter, every matrix entry
-and the residual history of three cases (polyhedra, mixed cells,
-tetrahedra; linear upwind, bounded central, BiCGStab, CG) compared bit for
-bit with one rank (needs MPI as in recipe 4):
+and the residual history of five cases (polyhedra, mixed cells,
+tetrahedra, hexahedra; linear upwind, bounded central, BiCGStab, CG, CG +
+multigrid, the reduction multigrid) compared bit for bit with one rank (needs MPI as in recipe 4):
 
 ```
 cargo build --release -p foehncraft-fv --features mpi --example mpi_scalar
@@ -517,9 +518,56 @@ In code, one rank's solve on its part and the check
 let local = extract(&global, &part, comm.rank(), 1)?;      // faces in global orientation
 let geo = local.geometry(&*comm);                           // halo volumes and centroids
 let d = Discretisation::new(&local.mesh, &geo, &problem)?;
-let mut be = CpuBackend::on_ranks(d, threads, Ranks::new(comm, &local))?;
+let mut be = CpuBackend::on_ranks(d, threads, Ranks::new(comm, &local, &part))?;
 be.upload(V::Phi, &phi0)?;                                  // own cells
 let outcome = solver::solve(&mut be, &settings, |_| {})?;  // the one-rank solver, unchanged
 ```
+
+[↑ back to top](#meshes)
+
+---
+
+<a id="multigrid-ranks"></a>
+## 231. Use the multigrid preconditioner on ranks
+
+Nothing changes in the case file: `preconditioner = "amg"` (CG on a
+symmetric matrix) runs on ranks as on one rank, and `[run] ranks` checks it
+bit for bit (MPI step W4, D93):
+
+```toml
+[solver]
+linear_solver = "cg"
+preconditioner = "amg"
+amg = { smoother = "chebyshev", degree = 2, precision = "mixed" }
+
+[run]
+ranks = [2, 3, 5]
+```
+
+```
+target/release/foehn scalar examples/cases/scalar/ranks_poisson_amg_poly_box.toml
+```
+
+The setup is replicated: every rank gathers the matrix in global order and
+builds the whole hierarchy, so the aggregates are those of one rank and the
+setup time does not fall with the rank count (`multigrid setup` in the
+phase times of `scalar.md`). The cycle is distributed: each rank smooths,
+restricts and prolongs its own rows, exchanges the ghosts of each level and
+gathers the coarsest level (at most `max_coarse` unknowns) to solve it
+itself. The reduction multigrid of the coupled momentum sweep (D179) uses
+the same plans.
+
+In code (`foehncraft_fv::amg::dist`), the per-rank part of a hierarchy and
+its exchange plans, worked out without communication:
+
+```rust
+let a = be.amg_matrix()?;                       // gathered, global order
+let h = amg::setup::build(a, &settings.amg)?;   // the one-rank hierarchy
+let mine = amg::dist::distribute(&h, &owner, &order, rank, size);
+// mine.plans[l]: own rows first, then ghosts by owner; peers with send/recv lists
+```
+
+`CpuBackend::amg_load` does this itself on a backend made with
+`CpuBackend::on_ranks`.
 
 [↑ back to top](#meshes)

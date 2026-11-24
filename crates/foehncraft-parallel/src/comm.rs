@@ -22,6 +22,24 @@ pub trait Communicator {
     /// from rank `source` into `recv`. The basic step of a halo exchange.
     fn send_recv_f64(&self, send: &[f64], dest: usize, recv: &mut [f64], source: usize);
 
+    /// The values of every rank, in rank order, on every rank (lengths may
+    /// differ). Built from [`Communicator::all_gather_f64`] and
+    /// [`Communicator::send_recv_f64`]: the lengths first, then a ring.
+    fn all_gather_vec_f64(&self, local: &[f64]) -> Vec<Vec<f64>> {
+        let (me, n) = (self.rank(), self.size());
+        let lens = self.all_gather_f64(local.len() as f64);
+        let mut out: Vec<Vec<f64>> = lens.iter().map(|&l| vec![0.0; l as usize]).collect();
+        out[me].copy_from_slice(local);
+        for k in 1..n {
+            let dest = (me + k) % n;
+            let source = (me + n - k) % n;
+            let mut recv = vec![0.0; lens[source] as usize];
+            self.send_recv_f64(local, dest, &mut recv, source);
+            out[source] = recv;
+        }
+        out
+    }
+
     /// Element-wise integer sum of `buf` over all ranks, in place, on every
     /// rank. Integer addition is associative, so the result does not depend
     /// on the reduction tree. The sums must not overflow `i64`.
