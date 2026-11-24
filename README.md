@@ -210,6 +210,7 @@ validated range, one mesh only, …) in its report and its JSON result.
   and air between walls at 960 K and 240 K has a heat flow with GCI
   0.02 % (gallery 195).
 - **Lagrangian sprays (L12, SP1).** Droplets as parcels in a transient flow run (`[spray]` with an included injector file): exact exponential integration of drag (Schiller and Naumann) and gravity, tracking on the mesh locator, stick, rebound, escape or mirror at boundaries, a mass book that stops the run when it does not close, parcel files and restart, results bitwise equal on 1 to 4 threads, one source for CPU and GPU kernels. One way, one process, constant droplet size; coupling to the gas follows in SP2 ([gallery 242](docs/gallery/sprays.md#spray-duct)).
+- **Adjoint, first stage (L17 A0).** The steady residual R(q) of SIMPLEC and the coupled solver as one callable (`Flow::steady_residual`, steady laminar flow), and the scatter-free reverse sweep of the momentum face kernel from local dual-number Jacobians, checked by a dot-product test and finite differences; the adjoint solve itself follows in A1 ([gallery 271](docs/gallery/verification.md#adjoint-a0)).
 - **Internal flows (D45).** Turbulent pipe flow against DNS, the
   asymmetric plane diffuser of Buice & Eaton, the U-bend of Monson et al.
   and a laminar T-junction mixing a passive scalar on polyhedra, each with

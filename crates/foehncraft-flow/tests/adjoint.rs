@@ -22,9 +22,9 @@ use foehncraft_kernels::flow::{
 };
 use foehncraft_kernels::fv::{self, FaceInputs, Topology, Vec3};
 use foehncraft_kernels::reverse as rv;
-use rayon::prelude::*;
 use foehncraft_mesh::Geometry;
 use foehncraft_mesh::case::{MeshSection, build_mesh};
+use rayon::prelude::*;
 use std::collections::BTreeMap;
 
 type D = Dual<1>;
@@ -688,8 +688,8 @@ fn fixture_has_every_boundary_kind() {
 /// The arrays the reverse sweep differentiates (state and the viscosity);
 /// every other array is a constant of the linearisation.
 const REVERSE_ARRAYS: [&str; 17] = [
-    "m", "mu", "u.x", "u.y", "u.z", "gux.x", "gux.y", "gux.z", "guy.x", "guy.y", "guy.z",
-    "guz.x", "guz.y", "guz.z", "ub.x", "ub.y", "ub.z",
+    "m", "mu", "u.x", "u.y", "u.z", "gux.x", "gux.y", "gux.z", "guy.x", "guy.y", "guy.z", "guz.x",
+    "guz.y", "guz.z", "ub.x", "ub.y", "ub.z",
 ];
 
 /// The direction `dir` on the differentiated arrays only.
@@ -697,7 +697,10 @@ fn reverse_direction(dir: &Data) -> Data {
     dir.iter()
         .map(|(n, v)| {
             let on = REVERSE_ARRAYS.contains(&n.as_str());
-            (n.clone(), v.iter().map(|&a| if on { a } else { 0.0 }).collect())
+            (
+                n.clone(),
+                v.iter().map(|&a| if on { a } else { 0.0 }).collect(),
+            )
         })
         .collect()
 }
@@ -738,7 +741,13 @@ fn reverse_sweep(fx: &Fixture, x: &Data, ybar: &[[f64; rv::OUT]], threads: usize
             .collect();
         let boundary = face_bar[d.n_interior..]
             .iter()
-            .map(|x| [x[rv::IN_U_OTHER], x[rv::IN_U_OTHER + 1], x[rv::IN_U_OTHER + 2]])
+            .map(|x| {
+                [
+                    x[rv::IN_U_OTHER],
+                    x[rv::IN_U_OTHER + 1],
+                    x[rv::IN_U_OTHER + 2],
+                ]
+            })
             .collect();
         Reverse {
             face,
@@ -749,24 +758,26 @@ fn reverse_sweep(fx: &Fixture, x: &Data, ybar: &[[f64; rv::OUT]], threads: usize
 }
 
 /// ⟨x̄, ẋ⟩ over all differentiated inputs, summed in a fixed order.
-fn reverse_dot(fx: &Fixture, r: &Reverse, xdot: &Data) -> f64 {
-    let d = &fx.disc;
+fn reverse_dot(r: &Reverse, xdot: &Data) -> f64 {
     let mut s = 0.0;
-    for f in 0..d.n_faces {
-        s += r.face[f][0] * xdot["m"][f] + r.face[f][1] * xdot["mu"][f];
+    for ((fb, m), mu) in r.face.iter().zip(&xdot["m"]).zip(&xdot["mu"]) {
+        s += fb[0] * m + fb[1] * mu;
     }
     let comp = ["x", "y", "z"];
-    for c in 0..d.n_cells {
-        for i in 0..3 {
-            s += r.cell[c][i] * xdot[&format!("u.{}", comp[i])][c];
-            for j in 0..3 {
-                s += r.cell[c][3 + 3 * i + j] * xdot[&format!("gu{}.{}", comp[i], comp[j])][c];
+    for i in 0..3 {
+        let u = &xdot[&format!("u.{}", comp[i])];
+        for (cb, du) in r.cell.iter().zip(u) {
+            s += cb[i] * du;
+        }
+        for j in 0..3 {
+            let g = &xdot[&format!("gu{}.{}", comp[i], comp[j])];
+            for (cb, dg) in r.cell.iter().zip(g) {
+                s += cb[3 + 3 * i + j] * dg;
             }
         }
-    }
-    for (fb, b) in r.boundary.iter().enumerate() {
-        for i in 0..3 {
-            s += b[i] * xdot[&format!("ub.{}", comp[i])][fb];
+        let ub = &xdot[&format!("ub.{}", comp[i])];
+        for (b, d) in r.boundary.iter().zip(ub) {
+            s += b[i] * d;
         }
     }
     s
@@ -814,10 +825,13 @@ fn reverse_dot_product_test() {
         }
     }
     let r = reverse_sweep(&fx, &x, &ybar, 1);
-    let rev = reverse_dot(&fx, &r, &xdot);
+    let rev = reverse_dot(&r, &xdot);
     let e = (fwd - rev).abs() / scale;
     println!("dot-product test: forward {fwd:.15e}, reverse {rev:.15e}, relative {e:.1e}");
-    assert!(e < 1e-13, "forward {fwd:e} against reverse {rev:e} ({e:.1e})");
+    assert!(
+        e < 1e-13,
+        "forward {fwd:e} against reverse {rev:e} ({e:.1e})"
+    );
 }
 
 /// Rung 5 at kernel level: the gradient of J(x) = Σ_f ȳ_f·y_f(x) from the
@@ -830,7 +844,7 @@ fn reverse_gradient_against_finite_differences() {
     let xdot = reverse_direction(&dir);
     let ybar = random_cotangent(fx.disc.n_faces, 0xfd_a0);
     let r = reverse_sweep(&fx, &x, &ybar, 1);
-    let g = reverse_dot(&fx, &r, &xdot);
+    let g = reverse_dot(&r, &xdot);
     let objective = |h: f64| -> f64 {
         let l = Lifted(
             x.iter()

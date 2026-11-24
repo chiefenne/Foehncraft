@@ -1,4 +1,4 @@
-"""The steady residual of the adjoint (L17 stage A0), gallery 267: left
+"""The steady residual of the adjoint (L17 stage A0), gallery 271: left
 the speed of the converged lid-driven cavity on perturbed polygons with
 streamlines, middle the momentum residual |R_u| per cell of the start
 fields after one outer iteration, right the three norms of the one
@@ -49,13 +49,13 @@ def main():
     ax.streamplot(gx, gy, interp(cells["ux"]), interp(cells["uy"]), color="white",
                   linewidth=0.6, density=1.1, arrowsize=0.6)
     fig.colorbar(t, ax=ax, shrink=0.85, label="speed |u| (m/s)")
-    ax.set_title("converged state, Re = 100, 576 polygons")
+    ax.set_title("converged speed, Re 100, 576 polygons", fontsize=10)
 
     ax = axes[1]
     r = np.log10(np.maximum(cells["r_start"], 1e-30))
     t = ax.tricontourf(tri, r, levels=40, cmap=RAINBOW)
     fig.colorbar(t, ax=ax, shrink=0.85, label="log10 |R_u| per cell (N)")
-    ax.set_title("momentum residual after one iteration")
+    ax.set_title("|R_u| per cell after one iteration", fontsize=10)
     for a in axes[:2]:
         a.set_aspect("equal")
         a.set_xlim(0, 1)
@@ -71,7 +71,7 @@ def main():
         ax.semilogy(hc["iteration"], hc[key], color=c, lw=1.4, ls="--", label=f"{labels[key]}, coupled")
     ax.set_xlabel("outer iteration")
     ax.set_ylabel("relative norm of R(q)")
-    ax.set_title("one residual, two algorithms")
+    ax.set_title("one residual R(q), two algorithms", fontsize=10)
     ax.grid(True, which="major", alpha=0.3)
     ax.legend(fontsize=8, ncol=2, loc="upper right")
     fig.tight_layout()

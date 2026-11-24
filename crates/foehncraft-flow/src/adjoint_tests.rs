@@ -488,14 +488,23 @@ const COUPLED: &str = "[solver]\nalgorithm = \"coupled\"\n[solver.pressure]\ntol
 #[test]
 fn steady_residual_vanishes_for_both_algorithms() {
     let early = cavity_run(SIMPLEC, 5).steady_residual().unwrap().norms();
-    println!("SIMPLEC after 5 iterations: |R_u| {:.2e}, |R_c| {:.2e}, |R_m| {:.2e}", early[0], early[1], early[2]);
+    println!(
+        "SIMPLEC after 5 iterations: |R_u| {:.2e}, |R_c| {:.2e}, |R_m| {:.2e}",
+        early[0], early[1], early[2]
+    );
     assert!(early[0] > 1e-3 && early[2] > 1e-3);
     for (name, extra, n) in [("SIMPLEC", SIMPLEC, 600), ("coupled", COUPLED, 150)] {
         let mut fl = cavity_run(extra, n);
         let r = fl.steady_residual().unwrap().norms();
-        println!("{name} after {n} iterations: |R_u| {:.2e}, |R_c| {:.2e}, |R_m| {:.2e}", r[0], r[1], r[2]);
+        println!(
+            "{name} after {n} iterations: |R_u| {:.2e}, |R_c| {:.2e}, |R_m| {:.2e}",
+            r[0], r[1], r[2]
+        );
         for (a, b) in r.iter().zip(&early) {
-            assert!(*a < 1e-6 && *a < 1e-4 * b, "{name}: {r:?} against {early:?}");
+            assert!(
+                *a < 1e-6 && *a < 1e-4 * b,
+                "{name}: {r:?} against {early:?}"
+            );
         }
     }
 }
@@ -509,10 +518,18 @@ fn steady_residual_is_independent_of_the_relaxation() {
     fl.settings.momentum.relaxation = Some(0.5);
     let b = fl.steady_residual().unwrap();
     let rel = |x: &[f64], y: &[f64]| {
-        let d: f64 = x.iter().zip(y).map(|(p, q)| (p - q).powi(2)).sum::<f64>().sqrt();
+        let d: f64 = x
+            .iter()
+            .zip(y)
+            .map(|(p, q)| (p - q).powi(2))
+            .sum::<f64>()
+            .sqrt();
         d / x.iter().map(|p| p * p).sum::<f64>().sqrt()
     };
-    let e = (rel(&a.mass_flux, &b.mass_flux), rel(&a.momentum[0], &b.momentum[0]));
+    let e = (
+        rel(&a.mass_flux, &b.mass_flux),
+        rel(&a.momentum[0], &b.momentum[0]),
+    );
     println!("relative change of R_m {:.1e}, of R_u,x {:.1e}", e.0, e.1);
     assert!(e.0 < 1e-10 && e.1 < 1e-10, "{e:?}");
 }
@@ -529,8 +546,14 @@ fn steady_residual_does_not_change_the_run() {
             a.iterate().unwrap();
             b.iterate().unwrap();
         }
-        let (ua, ub) = (a.dev.download(a.f.u.x).unwrap(), b.dev.download(b.f.u.x).unwrap());
-        let (pa, pb) = (a.dev.download(a.f.p).unwrap(), b.dev.download(b.f.p).unwrap());
+        let (ua, ub) = (
+            a.dev.download(a.f.u.x).unwrap(),
+            b.dev.download(b.f.u.x).unwrap(),
+        );
+        let (pa, pb) = (
+            a.dev.download(a.f.p).unwrap(),
+            b.dev.download(b.f.p).unwrap(),
+        );
         assert!(ua == ub && pa == pb, "a residual call changed the run");
     }
 }

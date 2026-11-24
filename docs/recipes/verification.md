@@ -8,6 +8,7 @@ Part of the [Recipes](../recipes.md): the discretisation uncertainty of a sweep 
 | 35 | [Regenerate the verification manual](#manual) |
 | 165 | [Grade a feature on the verification status page](#status) |
 | 170 | [Read and act on the limitations of a run](#limitations) |
+| 271 | [Evaluate the steady residual and check the reverse sweep of the adjoint](#adjoint-a0) |
 
 ---
 
@@ -172,3 +173,42 @@ What each code asks for:
 Limitations never change the exit code (0 stays 0), so scripts that test
 the exit code keep working; an agent reads the list.
 
+<a id="adjoint-a0"></a>
+## 271. Evaluate the steady residual and check the reverse sweep of the adjoint
+
+Stage A0 of the adjoint (L17, gallery 271). The residual of a steady
+laminar run, from Rust:
+
+```rust
+use foehncraft_flow::{case::FlowCase, residual::steady_flow};
+let case = FlowCase::from_file("examples/cases/flow/adjoint_residual_cavity.toml".as_ref())?;
+let mut fl = steady_flow(&case, Some(1))?;
+for _ in 0..300 {
+    fl.iterate()?;
+}
+let r = fl.steady_residual()?; // R_u, R_c, R_ṁ per cell and face
+println!("{:?}", r.norms());   // relative norms; the run is not changed
+```
+
+Turbulence, transported scalars, a variable density, time steps and
+several ranks are refused with CASE005 (they come with later stages).
+
+The residual history of both algorithms and the picture of gallery 271:
+
+```sh
+cargo run --release -p foehncraft-flow --example adjoint_a0 -- \
+    examples/cases/flow/adjoint_residual_cavity.toml output/adjoint_a0
+python3 -m tools.plot.adjoint_a0 docs/figures/gallery/adjoint_a0_residual.png output/adjoint_a0
+```
+
+The checks of the residual and of the reverse sweep (dot product, central
+differences, 1 against 4 threads, the cost table):
+
+```sh
+cargo test --release -p foehncraft-flow --lib steady_residual
+cargo test --release -p foehncraft-flow --test adjoint reverse -- --nocapture
+FOEHN_A0_CELLS=40,40,30 cargo test --release -p foehncraft-flow --test adjoint reverse_sweep_cost -- --nocapture
+```
+
+The compiler reverse mode (option B) needs a nightly toolchain and is not
+part of the workspace: see `tools/spikes/l17-enzyme-momentum-face/README.md`.

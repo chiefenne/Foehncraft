@@ -1,4 +1,4 @@
-# The steady residual of the adjoint (L17 stage A0, gallery 267): a
+# The steady residual of the adjoint (L17 stage A0, gallery 271): a
 # lid-driven cavity at Re = 100 on 24 x 24 perturbed polygons.
 #
 #   cargo run --release -p foehncraft-flow --example adjoint_a0 -- \

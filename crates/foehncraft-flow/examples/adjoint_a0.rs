@@ -1,6 +1,6 @@
 //! L17 stage A0: the one steady residual R(q) = (R_u, R_c, R_ṁ) of
 //! SIMPLEC and the coupled solver along both runs of one case, and the
-//! fields of the converged state (gallery 267).
+//! fields of the converged state (gallery 271).
 //!
 //! ```text
 //! cargo run --release -p foehncraft-flow --example adjoint_a0 -- \

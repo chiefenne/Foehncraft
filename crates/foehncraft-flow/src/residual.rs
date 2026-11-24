@@ -22,7 +22,7 @@
 //! q = (u, p, ṁ). The Rhie–Chow flux reads the momentum diagonal D = α V/a_P,
 //! and a_P holds the convection coefficients of ṁ, so ṁ is defined only
 //! implicitly by R_ṁ = 0 and is not a function of (u, p) alone. Written
-//! out, ṁ − ṁ* = α (ṁ − ρ ū·S) + ρ D̄ |S|²/(d·S) [jump], and D̄/α = V/a_P
+//! out, ṁ − ṁ* = α (ṁ − ρ ū·S) + ρ D̄ |S|²/(d·S) \[jump\], and D̄/α = V/a_P
 //! does not hold α: dividing by α makes R_ṁ independent of the relaxation,
 //! so the converged state and the residual are the same for every α_u and
 //! for both algorithms.
@@ -59,7 +59,12 @@ impl SteadyResidual {
     /// The three norms ‖R_u‖/scale, ‖R_c‖/‖ṁ‖, ‖R_ṁ‖/‖ṁ‖ (2-norms).
     pub fn norms(&self) -> [f64; 3] {
         let n = |v: &[f64]| v.iter().map(|a| a * a).sum::<f64>().sqrt();
-        let mu = self.momentum.iter().map(|v| n(v).powi(2)).sum::<f64>().sqrt();
+        let mu = self
+            .momentum
+            .iter()
+            .map(|v| n(v).powi(2))
+            .sum::<f64>()
+            .sqrt();
         let fs = self.flux_scale.max(f64::MIN_POSITIVE);
         [
             mu / self.momentum_scale.max(f64::MIN_POSITIVE),
@@ -91,7 +96,9 @@ impl Flow {
             return Err(unsupported("a turbulence model"));
         }
         if self.scalars.is_some() {
-            return Err(unsupported("transported scalars (energy or passive scalars)"));
+            return Err(unsupported(
+                "transported scalars (energy or passive scalars)",
+            ));
         }
         if self.density.is_some() {
             return Err(unsupported("a variable density"));

@@ -334,6 +334,27 @@ gaps = [
 ]
 
 [[feature]]
+id = "adjoint.a0"
+area = "Adjoint"
+title = "Adjoint stage A0: steady residual R(q) of both algorithms, reverse sweep of the momentum face"
+switch = "Flow::steady_residual, foehncraft_kernels::reverse (no case key yet)"
+decisions = ["D220", "D221", "D222"]
+evidence = [
+  { kind = "consistency", case = "adjoint_residual_cavity", what = "the cavity at Re 100 on perturbed polygons converges with SIMPLEC (the example adjoint_a0 runs it with both algorithms)", doc = "docs/verification/adjoint-a0.md" },
+  { kind = "consistency", test = "crates/foehncraft-flow/src/adjoint_tests.rs::steady_residual_vanishes_for_both_algorithms", what = "SIMPLEC and the coupled solver drive the one residual to 1e-16 and 1e-9 from 5e-2" },
+  { kind = "consistency", test = "crates/foehncraft-flow/src/adjoint_tests.rs::steady_residual_is_independent_of_the_relaxation", what = "R of one state for alpha 0.8 and 0.5 equal to 2e-13" },
+  { kind = "consistency", test = "crates/foehncraft-flow/src/adjoint_tests.rs::steady_residual_does_not_change_the_run", what = "a call between iterations leaves the run bitwise unchanged" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/adjoint.rs::reverse_dot_product_test", what = "dot-product test of the reverse sweep of the momentum face over a mixed mesh, 6e-17" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/adjoint.rs::reverse_gradient_against_finite_differences", what = "central differences of a face functional, 1e-12" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/adjoint.rs::reverse_sweep_is_bitwise_reproducible", what = "bitwise equal on 1 and 4 threads" },
+]
+gaps = [
+  "only the momentum face kernel has a reverse sweep; the gradient, limiter, boundary-value, Rhie-Chow and row kernels follow in A1, and with them the dot-product test on the whole R",
+  "periodic faces are not supported by the reverse sweep",
+  "no adjoint solve, objective or parameter yet (A1); laminar steady constant-density flow on one rank only",
+]
+
+[[feature]]
 id = "coupling.piso"
 area = "Pressure–velocity coupling"
 title = "PISO with outer correctors, transient"
