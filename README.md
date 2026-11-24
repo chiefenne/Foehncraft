@@ -197,7 +197,11 @@ validated range, one mesh only, …) in its report and its JSON result.
   pressure gradient (balanced force), so a stratified box at rest on a
   perturbed hex, tet, poly or mixed mesh stays at rest to 10⁻¹⁵ m/s; the
   buoyant slot meets its exact profile at second order, and a warm strip
-  in a closed air enclosure drives a laminar plume (gallery 186).
+  in a closed air enclosure drives a laminar plume (gallery 186). Laminar
+  natural convection benchmarks (gallery 272): the heated square cavity
+  at Ra 10³ to 10⁶ (mean Nu with GCI ≤ 0.12 %), the vertical plate within
+  0.4 % of the Ostrach similarity solution, and mixed convection with
+  flow reversal at second order against its exact profile.
 - **Variable density.** The low-Mach density ρ(T, p₀) of an ideal gas or a
   liquid in every cell and face (`[energy] density = "variable"`, or
   `[buoyancy] model = "variable-density"` with the body force (ρ − ρ_ref)
@@ -211,6 +215,7 @@ validated range, one mesh only, …) in its report and its JSON result.
   0.02 % (gallery 195).
 - **Lagrangian sprays (L12, SP1).** Droplets as parcels in a transient flow run (`[spray]` with an included injector file): exact exponential integration of drag (Schiller and Naumann) and gravity, tracking on the mesh locator, stick, rebound, escape or mirror at boundaries, a mass book that stops the run when it does not close, parcel files and restart, results bitwise equal on 1 to 4 threads, one source for CPU and GPU kernels. One way, one process, constant droplet size; coupling to the gas follows in SP2 ([gallery 242](docs/gallery/sprays.md#spray-duct)).
 - **Adjoint, first stage (L17 A0).** The steady residual R(q) of SIMPLEC and the coupled solver as one callable (`Flow::steady_residual`, steady laminar flow), and the scatter-free reverse sweep of the momentum face kernel from local dual-number Jacobians, checked by a dot-product test and finite differences; the adjoint solve itself follows in A1 ([gallery 271](docs/gallery/verification.md#adjoint-a0)).
+- **Porous regions (D270, PM1).** `kind = "porous"` with a Darcy–Forchheimer resistance in the superficial velocity: one value or three principal values along the axes of the region, or the `honeycomb` shorthand for square ceramic channels (Shah & London). A duct filled with the matrix gives the exact pressure drop, a block in a duct reaches it with second order. Axes along the mesh axes, laminar isothermal flow, one process, CPU only; the two temperatures of gas and solid follow in PM2 ([gallery 273](docs/gallery/porous.md#porous-flow)).
 - **Internal flows (D45).** Turbulent pipe flow against DNS, the
   asymmetric plane diffuser of Buice & Eaton, the U-bend of Monson et al.
   and a laminar T-junction mixing a passive scalar on polyhedra, each with

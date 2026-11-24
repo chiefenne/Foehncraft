@@ -1255,14 +1255,16 @@ impl FlowCase {
         for (name, r) in &self.regions {
             // solids belong to the energy equation (stage 7d1, crate::cht):
             // the flow runs on the fluid cells
-            if r.kind == RegionKind::Solid && self.energy.is_some() {
+            if (r.kind == RegionKind::Solid && self.energy.is_some())
+                || r.kind == RegionKind::Porous
+            {
                 continue;
             }
             crate::need!(
                 r.kind == RegionKind::Fluid,
                 REG_NOT_FLUID,
                 "[regions.{name}] kind = \"{}\": solid regions need the energy equation \
-                 ([energy], stage 7d1); porous zones are not in this version (D112)",
+                 ([energy], stage 7d1)",
                 match r.kind {
                     RegionKind::Solid => "solid",
                     RegionKind::Porous => "porous",
@@ -1395,6 +1397,7 @@ impl FlowCase {
         crate::buoyancy::validate(self)?;
         crate::density::validate(self)?;
         crate::fluids::validate(self)?;
+        crate::porous::validate(self)?;
         crate::turbulence::validate(self)?;
         let p = self.properties()?;
         let rho = p.density();
@@ -2844,6 +2847,9 @@ pub fn run_steered(
             lg.frame(&crate::logblocks::fluid(&case));
             lg.frame(&crate::logblocks::solution(&case, false));
             lg.frame(&crate::logblocks::boundaries(&case, &quality));
+            if let Some(f) = crate::logblocks::limitations(&case) {
+                lg.frame(&f);
+            }
             let mut any = false;
             for n in crate::logblocks::notes(&case)
                 .into_iter()
@@ -2915,6 +2921,7 @@ pub fn run_steered(
         crate::scalar::attach(&mut fl, &case, &mesh, &geo)?;
         crate::density::attach(&mut fl, &case)?;
         crate::buoyancy::attach(&mut fl, &case)?;
+        crate::porous::attach(&mut fl, &case, &mesh)?;
         crate::turbulence::attach(&mut fl, &case, &mesh, &geo)?;
         if let Some(notes) = crate::frame::attach(&mut fl, &case, &mesh, &geo)? {
             for l in &notes.lines {
@@ -3043,6 +3050,11 @@ pub fn run_steered(
             crate::logblocks::spelled(&case.solver.algorithm(false)).to_uppercase()
         )));
         lg.line("");
+        if !case.log.detail.rows() {
+            lg.note(
+                "the table is not shown ([log] detail = \"summary\"); run.jsonl holds every row",
+            );
+        }
         lg.sync(&mut steer.record);
         let mut sched = crate::schedule::Runner::default();
         // the iteration budget and its diagnosis (D198 (d)): reads the
@@ -3204,6 +3216,24 @@ pub fn run_steered(
             if it == first + 1 || it % case.solver.log_every == 0 || done {
                 lg.sync(&mut steer.record);
                 steer.record.flush();
+                // `log.columns` changed during the run (D214): new columns,
+                // the header row again
+                crate::logcols::refresh(
+                    &mut cols,
+                    &mut table,
+                    &mut crate::logcols::Refresh {
+                        case: &case,
+                        mesh: &mesh,
+                        geo: &geo,
+                        loc: &loc,
+                        transient: false,
+                        table_name: "iteration",
+                        first: "Iter",
+                        at: it,
+                    },
+                    &mut |m| lg.warn(m),
+                    steer,
+                );
                 let sol = if cols.needs_state() {
                     Some(Solution {
                         state: fl.state()?,
@@ -3226,8 +3256,10 @@ pub fn run_steered(
                     &geo,
                 );
                 let cells: Vec<String> = entries.iter().map(|e| e.text.clone()).collect();
-                for l in table.row(it, &cells) {
-                    lg.line(&l);
+                if case.log.detail.rows() {
+                    for l in table.row(it, &cells) {
+                        lg.line(&l);
+                    }
                 }
                 if steer.record.on() {
                     steer
@@ -3266,11 +3298,13 @@ pub fn run_steered(
                 if steer.record.on() {
                     steer.record.row(&balance::record_row(&b));
                 }
-                lg.frame(&crate::logblocks::balance_block(
-                    &format!("Balance of iteration {it}"),
-                    &b,
-                    false,
-                ));
+                if case.log.detail.rows() {
+                    lg.frame(&crate::logblocks::balance_block(
+                        &format!("Balance of iteration {it}"),
+                        &b,
+                        false,
+                    ));
+                }
             }
             // control files (D40), signals and limits (D64, D83)
             let req = control.check(it, case.run.reread_every);
@@ -3788,6 +3822,7 @@ pub(crate) fn schedule_step<F: FnMut(&str)>(
                 "new": c.new,
             }));
         }
+        steer.remember(diag::RUN_SCHEDULED, p.n, &m);
     }
     fl.set_settings(new.solver.clone())?;
     Ok(Some(std::mem::replace(case, new)))
@@ -3886,7 +3921,9 @@ pub(crate) fn reread_case<F: FnMut(&str)>(
                 lg.note(&format!("{what} {n}: case file re-read, nothing changed"));
             }
             for l in &rr.applied {
-                lg.note(&format!("{what} {n}: changed {l}"));
+                let m = format!("{what} {n}: changed {l}");
+                lg.note(&m);
+                steer.event(diag::RUN_REREAD, n, &m);
             }
             for l in &rr.not_applied {
                 let m = format!("{what} {n}: not applied (cannot change during a run): {l}");

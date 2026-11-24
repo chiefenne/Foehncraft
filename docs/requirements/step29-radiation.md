@@ -25,6 +25,7 @@ specification of step 28 (the particle layer that radiation shares, D107 (1)).
 | Q3 | Shared particle layer (D107 (1)) and the order against sprays SP1 | **Answered 2026-11-24 as proposed (D257): the cell walk is shared now, the bundle store later.** R1a adds a walk that reports every cell and its exact path length (`Locator::walk`), built on the tracker that SP1 also uses; the structure-of-arrays bundle store and migration come with SP1 and SP3 and radiation moves onto them | Rays need no equation of motion, only the walk; neither module waits for the other, and there is still one tracker |
 | Q4 | Serial first, as sprays (D241) | **Answered 2026-11-24 (D258): multi-rank from R1a**, not the proposed serial start. R1a runs on 1 to N ranks with threads on each rank. A bundle that enters a halo cell is handed to the rank that owns the cell (lengths first, then the bundle records, over `send_recv_f64`), in rounds until the global count of live bundles (`all_sum_i64`) is zero. The number of bundles of an emitter follows from its own power and the exact total power (`sum_exact`), so it does not depend on the partition; the fixed-point tallies are summed as integers. The result is therefore bitwise the same on 1 to 4 ranks. This moves the migration between ranks of D257 forward: R1a builds it on the shared walk, and SP3 uses it for parcels | The maintainer's choice. It builds on MPI W1 to W4 (canonical geometry, halo cells, exact reductions); the standalone kernel needs no flow on ranks. Bundles are keyed by identity (D107 (2)) and the geometry is canonical, so a bundle takes the same path in the same bits on every partition |
 | Q5 | GPU from the first pull request, as sprays (D245) | **Answered 2026-11-24 (D259): yes, GPU from R1a**, not the proposed start in R1b. The walk and the radiation kernel are single-source from R1a, compile to PTX in the existing CI job and have a CPU = GPU check (to the tolerance of the exact-sum policy of 2026-11-23, as D245; the integer tallies add no difference of their own). One GPU per run until GPU with ranks comes in version 1.1. Whichever of R1a and sprays SP1 comes first writes the walk on the device; the other reuses it (D257) | The maintainer's choice. Bundles are independent, so the kernel maps directly onto device threads; the device walk is written once for both modules |
+| Q6 | Atomic adds on the GPU (R10 forbids atomics in kernels) | **Answered 2026-11-24 as proposed (D269): integer atomics only.** The tallies of the bundle transport on the GPU are added with 64-bit integer atomics (`atom.add.u64`); floating-point atomics stay forbidden. `tools/check/kernels.py` allows integer adds only in the entry `radiation_transport` | Every bundle deposits into many cells; integer sums give the same result in any order, so the GPU keeps bitwise the tallies of the CPU, which is the reason R10 exists. The alternative, deposit records sorted and summed afterwards, is slower and needs more code |
 
 ## 2. Stages
 
@@ -110,7 +111,19 @@ Status of R1a (coding started on the maintainer's go, 2026-11-24):
    same tallies on 1, 2 and 4 threads and on 1 to 4 ranks (also with MPI in
    CI, `examples/mpi_radiation.rs`). The batch-mean error is conservative:
    the bundles of an emitter are stratified, the batches are not.
-3. Walk and kernel on the GPU.
+3. **Walk and kernel on the GPU: #257.** The PTX entry
+   `radiation_transport` (`gpu/ptx-kernels/src/radiation.rs`) runs the
+   kernel body of the CPU for one bundle per GPU thread; the tallies are
+   whole numbers of quanta added with 64-bit integer atomics, the same sum in
+   any order (D269, the one exception of R10, checked by
+   `tools/check/kernels.py`, which allows integer adds only in this entry).
+   The bundles are emitted on the host and sent in launches of 2²⁰. The
+   CUDA backend (`crates/foehncraft-cuda/src/radiation.rs`) registers with
+   `foehncraft_radiation::register_gpu`; `Domain::on_gpu` uses it. The data
+   path of the GPU (flat records, the entry body, tallies per launch) runs
+   on the CPU in the tests and gives bitwise the CPU result. The CPU = GPU
+   check on a GPU: `python3 -m tools.bench.radiation_cloud` or
+   `tools/notebooks/radiation_colab.ipynb`.
 4. Output, cube case and gallery. R1b to R1g: not sized yet.
 
 ## 6. References

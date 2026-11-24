@@ -936,11 +936,10 @@
    "title": "Gravity and the Boussinesq buoyancy (balanced force)",
    "grade": "partial",
    "why": [
-    "a model without reference data",
     "gaps written"
    ],
    "gaps": [
-    "no reference-data case (a measured natural-convection flow)",
+    "no measured natural-convection flow (the plate is checked against boundary-layer theory)",
     "the wall forces leave out the Archimedes part ρ_ref g V"
    ],
    "range": {}
@@ -1316,6 +1315,24 @@
     "one process, constant droplet size; no rotating zones or periodic boundaries (SPR003)",
     "the CPU = GPU check of the parcel kernel runs in the PTX job of CI only",
     "`spray_duct_injectors` has no run in the verification manual or in CI"
+   ],
+   "range": {}
+  },
+  {
+   "id": "porous.darcy-forchheimer",
+   "title": "Porous regions with a direction-dependent Darcy-Forchheimer resistance (D270, PM1)",
+   "grade": "partial",
+   "why": [
+    "a model without reference data",
+    "gaps written"
+   ],
+   "gaps": [
+    "axes turned against the mesh axes are refused: the scalar Rhie-Chow factor cannot hold the tensor (a tensor factor is follow-up work)",
+    "channels across the main flow (a block that closes the channel) converge slowly",
+    "the drop at a jump of the resistance is second order, not exact (the pressure gradient sees the jump over one cell)",
+    "no energy, scalars or turbulence in porous regions (two temperatures are PM2); one process, CPU only",
+    "the kinetic-energy ledger does not book the work of the porous sink",
+    "no measured reference case (a packed bed with the Ergun law, a honeycomb with a measured drop)"
    ],
    "range": {}
   },

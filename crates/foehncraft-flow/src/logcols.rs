@@ -423,8 +423,64 @@ pub struct RowCtx<'a> {
     pub rotors: Option<&'a crate::rotor::Values>,
 }
 
+/// What [`refresh`] needs to build the columns again.
+pub struct Refresh<'a> {
+    /// The case in force.
+    pub case: &'a crate::case::FlowCase,
+    /// The mesh.
+    pub mesh: &'a Mesh,
+    /// Its geometry.
+    pub geo: &'a Geometry,
+    /// The cell finder of the probes.
+    pub loc: &'a Locator<'a>,
+    /// A transient run.
+    pub transient: bool,
+    /// `iteration` or `step` (the `columns` row of the run record).
+    pub table_name: &'a str,
+    /// The title of the counter column.
+    pub first: &'a str,
+    /// The iteration or step.
+    pub at: usize,
+}
+
+/// Builds the columns and the table again when `log.columns` changed during
+/// the run (D214: `[[schedule]]`, `run.set`, a re-read): the next row
+/// prints the header again and a `columns` row goes to the run record.
+/// Columns that cannot be built (a cell the mesh does not have) are
+/// reported through `warn` and the table stays as it was.
+pub fn refresh(
+    cols: &mut Columns,
+    table: &mut Table,
+    r: &mut Refresh,
+    warn: &mut dyn FnMut(&str),
+    steer: &mut crate::engine::Steer,
+) {
+    if cols.names == r.case.log.columns {
+        return;
+    }
+    match Columns::build(r.case, r.mesh, r.geo, r.loc, r.transient) {
+        Ok(c) => {
+            *cols = c;
+            *table = cols.table(r.first, r.case.log.style, r.case.log.header_every);
+            if steer.record.on() {
+                steer.record.row(&cols.record_header(r.table_name, r.first));
+            }
+        }
+        Err(e) => {
+            warn(&format!(
+                "{} {}: the new log.columns are not used ({e:#}); the table keeps its columns",
+                r.table_name, r.at
+            ));
+            cols.names = r.case.log.columns.clone();
+        }
+    }
+}
+
 /// The table columns of a run.
 pub struct Columns {
+    /// `[log] columns` as the columns were built from (D214: a change
+    /// during the run rebuilds them).
+    names: Option<Vec<String>>,
     specs: Vec<Spec>,
     columns: Vec<Column>,
     digits: usize,
@@ -560,6 +616,7 @@ impl Columns {
             .flat_map(|s| layout(s, digits, transient))
             .collect();
         Ok(Self {
+            names: case.log.columns.clone(),
             specs,
             columns,
             digits,

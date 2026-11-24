@@ -28,7 +28,7 @@ F = "examples/cases/flow/"
 
 FLOW = {
     "linux-1": [
-        "cavity_re100", "cavity_re100_columns", "cavity_re100_energy", "cavity_re100_schedule", "cavity_re1000_poly3d", "couette_hex",
+        "cavity_re100", "cavity_re100_columns", "cavity_re100_energy", "cavity_re100_log_steps", "cavity_re100_schedule", "cavity_re1000_poly3d", "couette_hex",
         "couette_mixed", "couette_poly", "couette_tet", "channel_slip", "poiseuille_table",
         "couette_derived", "couette_viscosity", "couette_transpiration", "poiseuille_water",
         "pipe_gmsh_raw", "channel_heated", "channel_sst", "channel_keps", "channel_zeta_f",
@@ -64,13 +64,16 @@ FLOW = {
         "buoyancy_box_at_rest", "buoyancy_slot", "buoyancy_channel_reduced",
         "buoyancy_channel_static", "buoyancy_open_box", "buoyancy_enclosure_plume",
         "vd_heated_duct", "vd_closed_box_heating", "vd_closed_box_side_heated", "vd_mms_steady",
+        "mixed_convection_channel",
         "spray_duct",
+        "porous_darcy_block", "porous_honeycomb_channel",
     ],
     "long": [
         "cylinder_re100", "cylinder_re100_short", "cylinder_re100_statistics", "cylinder_re100_convective", "cylinder_re20_gci",
         "tmr_plate_zeta_f", "backstep_zeta_f0", "tmr_plate_eb", "backstep_eb", "impinging_jet",
         "cht_heat_sink_turbulent", "cylinder_steady_diagnosis", "vd_cavity_large_dt",
         "cht_pulsating_channel_skin", "cht_heated_wall_frozen", "cht_pulsating_channel_warmup",
+        "natural_convection_cavity_ra1e5", "natural_convection_plate",
     ],
     "quick": [
         "cavity_re100_budget", "couette_hex", "couette_mixed", "couette_poly", "couette_tet",

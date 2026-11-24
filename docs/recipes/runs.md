@@ -140,7 +140,7 @@ target/release/foehn --json flow examples/cases/flow/cavity_re100_budget.toml --
 ```
 
 **Compare results**: two identical runs give byte-identical outputs
-(D84); `result.json` lists their SHA-256 hashes, and
+(D84); `result.json` lists their BLAKE3 hashes, and
 `provenance.case_hash` with `provenance.commit` says whether two results
 are comparable. The keys and their units: `foehn schema` (JSON Schema)
 and [keys.md](../keys.md).
@@ -276,7 +276,25 @@ target/release/foehn flow examples/cases/flow/cavity_re100.toml --set 'log.colum
 target/release/foehn schema --markdown | grep '^| `log\.'
 ```
 
-Keys: `log.columns`, `log.digits`, `log.header_every`, `solver.log_every`, `output.probes`.
+**During the run (D214).** `log.columns` may change while the run goes: prepare it with `[[schedule]]`, send it through the control port (`run.set`) or edit the case file and re-read it. The next logged row prints the new header and `run.jsonl` gets a `columns` row; the Events block at the end lists the change.
+
+```toml
+[[schedule]]
+at_step = 50                      # steady: at_iteration
+set = { log.columns = ["time.simulated", "time.courant", "residual.continuity", "max.velocity_magnitude"] }
+```
+
+**How much the log shows.** `[log] detail = "full"` (default) shows everything; `"steps"` shows the box and the row of each logged time step but not the table of its outer iterations; `"summary"` leaves out the table, the step boxes and the balance lines and keeps the header blocks, the messages, the summaries, the Events block and the closing frame. `run.jsonl` holds every row at every level, so a script or an agent reads the same record either way.
+
+```
+target/release/foehn flow examples/cases/flow/cavity_re100_log_steps.toml
+target/release/foehn flow examples/cases/flow/cavity_re100_transient.toml --set 'log.detail="summary"'
+grep -A20 'Events:' runs/cavity_re100_log_steps/flow.log
+```
+
+Two blocks frame the run: "Limitations known before the run" after the Boundary conditions block (graded features, one mesh, thermal acceleration and the like; the closing frame keeps the full list, with what is only known at the end), and "Events" before the closing frame, one row per change with iteration or step, wall time since the start and code (`RUN015` schedule, `RUN023`/`RUN024` control port, `RUN025` re-read, stops, the diagnosis, `ACC004`). Neither block is printed when it would be empty. `log.style = "box"` falls back to asterisks when the terminal is not UTF-8.
+
+Keys: `log.columns`, `log.detail`, `log.digits`, `log.header_every`, `solver.log_every`, `output.probes`, `[[schedule]]`.
 
 [↑ back to top](#run-control-and-health)
 

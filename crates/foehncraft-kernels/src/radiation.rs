@@ -30,6 +30,7 @@
 //! radiation stream (D107 (2), D121), so a bundle's path does not depend on
 //! the thread, the rank or the order of the bundles.
 
+use crate::entry::Raw;
 use crate::walk::{Walk, WalkEnd, WalkMesh, walk};
 use foehncraft_core::math::{cos, exp, floor, sin, sqrt};
 use foehncraft_core::rng::{keyed, stream};
@@ -436,6 +437,188 @@ pub fn transport<T: Tally>(
     }
 }
 
+/// Words of a bundle in the flat records of the device path
+/// ([`Bundle::to_words`]).
+pub const BUNDLE_WORDS: usize = 22;
+
+impl Bundle {
+    /// The bundle as 64-bit words: the bits of origin, target, λ and x, then
+    /// cell, face, edge, entered, steps, crossed, the weights, the emitter,
+    /// the index, the event and the batch.
+    pub fn to_words(&self) -> [u64; BUNDLE_WORDS] {
+        let w = &self.walk;
+        [
+            w.origin[0].to_bits(),
+            w.origin[1].to_bits(),
+            w.origin[2].to_bits(),
+            w.target[0].to_bits(),
+            w.target[1].to_bits(),
+            w.target[2].to_bits(),
+            w.lambda.to_bits(),
+            w.x[0].to_bits(),
+            w.x[1].to_bits(),
+            w.x[2].to_bits(),
+            u64::from(w.cell),
+            u64::from(w.face),
+            u64::from(w.edge),
+            u64::from(w.entered),
+            u64::from(w.steps),
+            u64::from(w.crossed),
+            self.w as u64,
+            self.w0 as u64,
+            self.emitter,
+            u64::from(self.index),
+            u64::from(self.event),
+            u64::from(self.batch),
+        ]
+    }
+
+    /// The bundle of [`Bundle::to_words`] (`v` holds at least
+    /// [`BUNDLE_WORDS`] words).
+    pub fn from_words(v: &[u64]) -> Self {
+        let f = |k: usize| f64::from_bits(v[k]);
+        Self {
+            walk: Walk {
+                origin: [f(0), f(1), f(2)],
+                target: [f(3), f(4), f(5)],
+                lambda: f(6),
+                x: [f(7), f(8), f(9)],
+                cell: v[10] as u32,
+                face: v[11] as u32,
+                edge: v[12] as u32,
+                entered: v[13] as u32,
+                steps: v[14] as u32,
+                crossed: v[15] as u32,
+            },
+            w: v[16] as i64,
+            w0: v[17] as i64,
+            emitter: v[18],
+            index: v[19] as u32,
+            event: v[20] as u32,
+            batch: v[21] as u32,
+        }
+    }
+}
+
+/// Moves bundle `i` of the flat records `words` ([`Bundle::to_words`]) to
+/// its end: the body of the device path, the same on the CPU and the GPU.
+pub fn transport_words<T: Tally>(
+    m: &WalkMesh<'_>,
+    md: &Medium<'_>,
+    words: &[u64],
+    i: usize,
+    call: u64,
+    tally: &T,
+) -> Fate {
+    let mut b = Bundle::from_words(&words[i * BUNDLE_WORDS..(i + 1) * BUNDLE_WORDS]);
+    transport(m, md, &mut b, call, tally)
+}
+
+/// Argument block of the PTX entry `radiation_transport`
+/// (`gpu/ptx-kernels/src/radiation.rs`), one GPU thread per bundle: the
+/// walk mesh, the medium, the bundles and the integer tallies, as device
+/// addresses ([`Raw`]). The host side is `crates/foehncraft-cuda/src/radiation.rs`.
+/// The tallies are batch-major (`batch × n + i`); `ledger` holds the
+/// escaped, roulette and lost quanta, all as two's-complement sums.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct TransportArgs {
+    /// Node coordinates.
+    pub points: Raw<[f64; 3]>,
+    /// Face node offsets.
+    pub face_ptr: Raw<u32>,
+    /// Face nodes.
+    pub face_nodes: Raw<u32>,
+    /// Owner of each face.
+    pub owner: Raw<u32>,
+    /// Neighbour of each interior face.
+    pub neighbour: Raw<u32>,
+    /// Cell face offsets.
+    pub cell_ptr: Raw<u32>,
+    /// Packed cell faces.
+    pub cell_faces: Raw<u32>,
+    /// Apex of each cell.
+    pub apex: Raw<[f64; 3]>,
+    /// Fan point of each face.
+    pub fan: Raw<[f64; 3]>,
+    /// Number of local cells.
+    pub n_cells: u64,
+    /// First periodic face.
+    pub periodic_start: u64,
+    /// Absorption coefficient per cell.
+    pub kappa: Raw<f64>,
+    /// [`WallKind`] of each boundary face as its `u8` value.
+    pub wall: Raw<u8>,
+    /// Emissivity of each boundary face.
+    pub emissivity: Raw<f64>,
+    /// Inward unit normal of each boundary face.
+    pub normal: Raw<[f64; 3]>,
+    /// First boundary face.
+    pub first_boundary: u64,
+    /// Segment length.
+    pub reach: f64,
+    /// Step limit of a walk.
+    pub max_steps: u64,
+    /// Bundles, [`BUNDLE_WORDS`] words each.
+    pub bundles: Raw<u64>,
+    /// Number of bundles.
+    pub n_bundles: u64,
+    /// Number of the call.
+    pub call: u64,
+    /// Number of boundary faces.
+    pub n_boundary: u64,
+    /// Quanta absorbed per batch and cell.
+    pub cell: Raw<u64>,
+    /// Quanta arriving per batch and boundary face.
+    pub incident: Raw<u64>,
+    /// Quanta absorbed per batch and boundary face.
+    pub absorbed: Raw<u64>,
+    /// Escaped, roulette and lost quanta.
+    pub ledger: Raw<u64>,
+}
+
+/// Moves bundle `i` of the argument block (the body of the PTX entry).
+///
+/// # Safety
+/// The addresses of `a` hold the arrays of one walk mesh and medium (as
+/// for [`WalkMesh`] and [`Medium`], `wall` with valid [`WallKind`] values)
+/// and `n_bundles` records; `i < n_bundles`. The tallies are written only
+/// through `tally`.
+pub unsafe fn transport_entry<T: Tally>(i: usize, a: &TransportArgs, tally: &T) -> Fate {
+    // SAFETY: guaranteed by the caller; WallKind is repr(u8) and the host
+    // writes only its values into `wall`.
+    unsafe {
+        let m = WalkMesh {
+            points: a.points.get(),
+            face_ptr: a.face_ptr.get(),
+            face_nodes: a.face_nodes.get(),
+            owner: a.owner.get(),
+            neighbour: a.neighbour.get(),
+            cell_ptr: a.cell_ptr.get(),
+            cell_faces: a.cell_faces.get(),
+            apex: a.apex.get(),
+            fan: a.fan.get(),
+            n_cells: a.n_cells as usize,
+            periodic_start: a.periodic_start as usize,
+        };
+        let wall = if a.wall.len == 0 {
+            &[]
+        } else {
+            core::slice::from_raw_parts(a.wall.ptr as usize as *const WallKind, a.wall.len as usize)
+        };
+        let md = Medium {
+            kappa: a.kappa.get(),
+            wall,
+            emissivity: a.emissivity.get(),
+            normal: a.normal.get(),
+            first_boundary: a.first_boundary as usize,
+            reach: a.reach,
+            max_steps: a.max_steps as u32,
+        };
+        transport_words(&m, &md, a.bundles.get(), i, a.call, tally)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     extern crate std;
@@ -488,6 +671,27 @@ mod tests {
                     "seed {seed}, boxes {nx} x {ny}"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn bundle_words_round_trip() {
+        let b = Bundle {
+            walk: Walk::new([0.1, -2.5, 3.0], 17, 99, 3, [1e300, -0.0, 5e-324]),
+            w: (1 << 52) - 3,
+            w0: 1 << 40,
+            emitter: (1 << 50) + 7,
+            index: u32::MAX,
+            event: 12,
+            batch: 7,
+        };
+        let mut c = b;
+        c.walk.lambda = 0.375;
+        c.walk.steps = 40_000;
+        c.walk.crossed = 12;
+        c.walk.entered = 2;
+        for x in [b, c] {
+            assert_eq!(Bundle::from_words(&x.to_words()), x);
         }
     }
 

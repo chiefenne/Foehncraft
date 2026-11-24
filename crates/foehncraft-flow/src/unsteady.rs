@@ -438,6 +438,9 @@ pub fn run(
             lg.frame(&crate::logblocks::fluid(case));
             lg.frame(&crate::logblocks::solution(case, true));
             lg.frame(&crate::logblocks::boundaries(case, &quality));
+            if let Some(f) = crate::logblocks::limitations(case) {
+                lg.frame(&f);
+            }
             let mut any = false;
             for n in crate::logblocks::notes(case)
                 .into_iter()
@@ -1070,6 +1073,7 @@ fn run_one<F: FnMut(&str)>(
     crate::scalar::attach(&mut fl, &case, mesh, geo)?;
     crate::density::attach(&mut fl, &case)?;
     crate::buoyancy::attach(&mut fl, &case)?;
+    crate::porous::attach(&mut fl, &case, mesh)?;
     // the wall distance of the sliding mesh by imprinting: kept per part and
     // updated for the rotor angle of every step (D182, D48)
     let mut turning_distance = match (&imprint, &work) {
@@ -1600,6 +1604,9 @@ fn run_one<F: FnMut(&str)>(
         case.time.unwrap_or_default().scheme.label()
     )));
     lg.line("");
+    if !case.log.detail.rows() {
+        lg.note("the table is not shown ([log] detail = \"summary\"); run.jsonl holds every row");
+    }
     lg.sync(&mut steer.record);
     let mut stopped = false;
     let (mut dt_min, mut dt_max, mut cfl_max) = (f64::INFINITY, 0.0f64, 0.0f64);
@@ -2131,6 +2138,24 @@ fn run_one<F: FnMut(&str)>(
         if log_now {
             lg.sync(&mut steer.record);
             steer.record.flush();
+            // `log.columns` changed during the run (D214): new columns, the
+            // header row again
+            crate::logcols::refresh(
+                &mut cols,
+                &mut table,
+                &mut crate::logcols::Refresh {
+                    case: &case,
+                    mesh,
+                    geo,
+                    loc: &loc,
+                    transient: true,
+                    table_name: "step",
+                    first: "Step",
+                    at: n,
+                },
+                &mut |m| lg.warn(m),
+                steer,
+            );
             let sol = if cols.needs_state() {
                 Some(Solution {
                     state: fl.state()?,
@@ -2159,69 +2184,78 @@ fn run_one<F: FnMut(&str)>(
                 geo,
             );
             let cells: Vec<String> = entries.iter().map(|e| e.text.clone()).collect();
+            let detail = case.log.detail;
             // the box of the time step, then the table row
-            lg.line("");
-            let tb = crate::console::Frame::new(format!(
-                "{n:>7}. TIME STEP     TIME = {}     DT = {}",
-                crate::console::sci(rp.time, 5),
-                crate::console::sci(h, 5)
-            ))
-            .plain()
-            .text(format!(
-                "{}COURANT NUMBER = {:.3}     OUTER ITERATIONS = {}",
-                " ".repeat(9),
-                rp.cfl,
-                rp.outer
-            ));
-            for l in tb.render(case.log.style) {
-                lg.line(&l);
-            }
-            lg.line("");
-            // the residuals of every outer iteration of this step
-            let mut outer_table = crate::console::Table::new(
-                crate::console::Col::int("Outer", 6),
-                vec![
-                    crate::console::Group::new(
-                        "scaled residuals",
-                        ["ResU", "ResV", "ResW", "ResM"]
-                            .map(crate::console::Col::num)
-                            .into(),
-                    ),
-                    crate::console::Group::new(
-                        "linear iterations",
-                        vec![
-                            crate::console::Col::int("U", 4),
-                            crate::console::Col::int("V", 4),
-                            crate::console::Col::int("W", 4),
-                            crate::console::Col::int("P", 4),
-                        ],
-                    ),
-                ],
-                case.log.style,
-                0,
-            );
-            for (k, o) in tr.outer_log.iter().enumerate() {
-                let cells: Vec<String> = o
-                    .momentum
-                    .iter()
-                    .chain([&o.continuity])
-                    .map(|v| crate::console::sci3(*v))
-                    .chain(o.momentum_iterations.iter().map(ToString::to_string))
-                    .chain([o.pressure_iterations.to_string()])
-                    .collect();
-                for l in outer_table.row(k + 1, &cells) {
+            if detail.rows() {
+                lg.line("");
+                let tb = crate::console::Frame::new(format!(
+                    "{n:>7}. TIME STEP     TIME = {}     DT = {}",
+                    crate::console::sci(rp.time, 5),
+                    crate::console::sci(h, 5)
+                ))
+                .plain()
+                .text(format!(
+                    "{}COURANT NUMBER = {:.3}     OUTER ITERATIONS = {}",
+                    " ".repeat(9),
+                    rp.cfl,
+                    rp.outer
+                ));
+                for l in tb.render(case.log.style) {
                     lg.line(&l);
                 }
+                lg.line("");
             }
-            lg.line("");
-            for l in table.row(n, &cells) {
-                lg.line(&l);
+            // the residuals of every outer iteration of this step
+            if detail.outer() {
+                let mut outer_table = crate::console::Table::new(
+                    crate::console::Col::int("Outer", 6),
+                    vec![
+                        crate::console::Group::new(
+                            "scaled residuals",
+                            ["ResU", "ResV", "ResW", "ResM"]
+                                .map(crate::console::Col::num)
+                                .into(),
+                        ),
+                        crate::console::Group::new(
+                            "linear iterations",
+                            vec![
+                                crate::console::Col::int("U", 4),
+                                crate::console::Col::int("V", 4),
+                                crate::console::Col::int("W", 4),
+                                crate::console::Col::int("P", 4),
+                            ],
+                        ),
+                    ],
+                    case.log.style,
+                    0,
+                );
+                for (k, o) in tr.outer_log.iter().enumerate() {
+                    let cells: Vec<String> = o
+                        .momentum
+                        .iter()
+                        .chain([&o.continuity])
+                        .map(|v| crate::console::sci3(*v))
+                        .chain(o.momentum_iterations.iter().map(ToString::to_string))
+                        .chain([o.pressure_iterations.to_string()])
+                        .collect();
+                    for l in outer_table.row(k + 1, &cells) {
+                        lg.line(&l);
+                    }
+                }
+                lg.line("");
+            }
+            if detail.rows() {
+                for l in table.row(n, &cells) {
+                    lg.line(&l);
+                }
             }
             if steer.record.on() {
                 steer.record.row(&cols.record_row("step", n, &entries));
             }
-            lg.line(&balance::compact(&bal));
-            if case.balance.every > 0 && n.is_multiple_of(case.balance.every) {
+            if detail.rows() {
+                lg.line(&balance::compact(&bal));
+            }
+            if detail.rows() && case.balance.every > 0 && n.is_multiple_of(case.balance.every) {
                 lg.frame(&crate::logblocks::balance_block(
                     &format!("Balance of the run up to step {n}"),
                     &ledger.run(),
