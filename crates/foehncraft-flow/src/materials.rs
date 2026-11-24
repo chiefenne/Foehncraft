@@ -700,9 +700,11 @@ pub struct RegionSection {
     /// The material; default the material of `[fluid]`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub material: Option<String>,
-    /// The first two principal axes of an orthotropic conductivity in this
-    /// region (stage 7d2, L48): one material oriented differently in every
-    /// part; default the axes of the material.
+    /// The first two principal axes of an orthotropic conductivity or of a
+    /// porous resistance in this region (stage 7d2, L48; D270): one material
+    /// oriented differently in every part; default the axes of the material.
+    /// A porous region with direction-dependent values needs them, along
+    /// the mesh axes in this version (POR002).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub axes: Option<[[f64; 3]; 2]>,
     /// The matrix of a porous region (D270): its resistances, or the
