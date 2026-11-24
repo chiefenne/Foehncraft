@@ -97,6 +97,8 @@ The added cost against the base plan: about 30 to 50 % more agent time per
 stage for the GPU and rank paths and their checks (as R1a), plus the
 validation runs, which are long (1 to 2 h each, several per stage). Revised
 totals: SF1 to SF5 about 11 to 17 h of code; to SF9 about 22 to 35 h of code;
+with the fuel scope of D281 (SF2h, SF11, SF13, SF15, SF16) about 35 to 55 h of
+code, SF17 and SF10 not sized yet;
 validation runs about 15 to 30 h spread over the stages. SF10 stays not sized
 yet.
 
@@ -159,7 +161,7 @@ yet.
 | # | Question | Options | Recommendation | Decision |
 | --- | --- | --- | --- | --- |
 | Q1 (D280) | Priority: gas side or boiling first | (a) gas side and radiation first, walls at T_sat; (b) boiling first; (c) both in parallel threads | (a): radiation is the lead physics of the furnace, R1a's lead case is already a furnace (D255), and an evaporator wall at T_sat is a sound boundary condition until the steam side exists | **Answered 2026-11-24 (D280): (c) both in parallel threads.** The gas side (SF1 to SF6 with R1b, R1f) and the steam side (SF7a to SF7c) are built in two threads at the same time; they touch different crates and meet in SF5/SF7c (the walls switch from T_sat to the 1D circuit) |
-| Q2 (D281) | Fuel and chemistry scope of the first version | (a) natural gas, eddy dissipation concept with global mechanisms (2-step, 4-step); (b) natural gas, flamelet tables first; (c) natural gas with hydrogen blends from the start; (d) also oil and solid fuels | (a): the chemistry program of D120 is needed anyway for L28 and L31; the eddy dissipation concept works with a stiff integrator that we can make reproducible (D93) and run on the GPU; tables (SF13) later. Hydrogen blends are a small step after (a) | open |
+| Q2 (D281) | Fuel and chemistry scope of the first version | (a) natural gas, eddy dissipation concept with global mechanisms (2-step, 4-step); (b) natural gas, flamelet tables first; (c) natural gas with hydrogen blends from the start; (d) also oil and solid fuels | (a): the chemistry program of D120 is needed anyway for L28 and L31; the eddy dissipation concept works with a stiff integrator that we can make reproducible (D93) and run on the GPU; tables (SF13) later. Hydrogen blends are a small step after (a) | **Answered 2026-11-24 (D281): the most advanced scope**, read as the union of the options: gaseous fuels (natural gas with hydrogen blends up to pure hydrogen, with differential diffusion), fuel oil (L12 sprays with multicomponent evaporation) and solid fuels (coal and biomass particles: drying, devolatilisation, char oxidation, ash). Turbulence–chemistry: eddy dissipation concept with finite-rate chemistry (SF3) **and** non-adiabatic flamelet / progress-variable tables (SF13) in the first version. Soot (SF11) becomes part of the first version, because oil and coal flames are sooting. Stages SF15 to SF17 added |
 | Q3 (D282) | Water and steam side model | (a) 1D tube circuits with boiling correlations, coupled implicitly to the 3D walls; (b) 3D Eulerian two-fluid boiling for the tubes; (c) VOF with phase change | (a) first: this is what boiler design needs (circulation, pressure drop, critical heat flux margin, metal temperature); (b) later for local tube studies; (c) research only | open |
 | Q4 (D283) | Tube banks of the convective pass | (a) porous heat-exchanger zones on the porous module, calibrated from resolved bank sections; (b) resolve every tube; (c) both as options | (a) by default with (b) for a calibration section: the PM4 upscaling pipeline is the pattern; thousands of resolved tubes cost 10 to 100 times the cells | open |
 | Q5 (D284) | Extras in the first furnace version | (a) NOx post-step and fouling resistance per wall; (b) also soot; (c) also tube thermal stress; (d) all | (a): both are cheap and asked of every boiler study; gas flames are weakly sooting, so soot (SF11) can wait; stress needs L36 | open |
@@ -189,6 +191,10 @@ waits are separate. "Not sized yet" means there is no basis.
 | SF12 | Thermal stress of tubes and headers (one-way, L36) | L36 | not sized yet | — |
 | SF13 | Non-adiabatic flamelet or progress-variable tables as a second model | SF2 | 90 to 120 min | 1 h |
 | SF14 | VOF with phase change (resolved bubbles, research) | L3 VOF | not sized yet | — |
+| SF2h | **Hydrogen blends.** Mixture-averaged diffusion (differential diffusion, Soret optional), detailed H₂/O₂ sub-mechanism, flashback-relevant laminar flame speeds; checks: H₂/air and CH₄/H₂ laminar flame speeds against measurements | SF2 | 60 to 90 min | minutes |
+| SF15 | **Fuel oil.** On the spray module (SP2, SP4, SP5, SP6 breakup): multicomponent or continuous-thermodynamics evaporation of heavy fuel oil, pressure-swirl and air-blast atomiser injection, fuel vapour into the SF2/SF3 chemistry; validation: an open spray-flame data set with droplet and gas measurements | SP5, SP6, SF3 | 2 to 3 h (2 PRs) | 1 to 2 h |
+| SF16 | **Solid fuels.** Lagrangian particles of coal and biomass: drying, devolatilisation (two competing rates, Kobayashi et al. 1977), char oxidation and gasification (kinetic–diffusion, Baum & Street 1971; intrinsic rates later), particle heat-up with radiation, swelling and shape for biomass; volatiles into the gas chemistry; particle absorption and scattering in the Monte Carlo radiation (R1c); ash particles; on the L28 particle–gas chemistry (D120). Validation: pilot-scale pulverised-coal furnace with open in-flame data | SP2, SF3, R1c, L28 | 4 to 6 h (3 PRs) | 2 to 4 h |
+| SF17 | **Ash deposition, slagging and fouling as a computed layer** (particle sticking by viscosity or melt fraction, deposit growth, its thermal resistance and emissivity fed back to the CHT walls) | SF16, SF5 | not sized yet | hours |
 
 Order and parallel work:
 
@@ -196,6 +202,8 @@ Order and parallel work:
 SF0 ─┐
 SF1 → SF2 → SF3 ─┐
 R1b → R1f ───────┴→ SF5 → SF6
+SF2 → SF2h ; SF3 → SF13, SF11
+SP5, SP6 → SF15 ; L28, R1c → SF16 → SF17
 SF7a → SF7b → SF7c ─┐
 PM1..PM3 ───────────┴→ SF8 → SF9
 L3 core → SF10        (later)
