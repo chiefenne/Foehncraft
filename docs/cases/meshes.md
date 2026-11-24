@@ -33,7 +33,7 @@ Every key is optional; a case needs either `mesh.file` or a
 
 | Key | Default | Meaning |
 |---|---|---|
-| `mesh.file` | – | mesh file: Gmsh MSH 4.1, ASCII or binary (D33), SU2 `.su2`, ASCII, 2D or 3D, several zones in 3D (D187, D195), CGNS `.cgns`, HDF5, unstructured zones (D188, D195), an OpenFOAM case, `constant` or `polyMesh` directory, ASCII or binary (D188), the Fluent face-based `.msh`, ASCII, 3D (D191), or a VTK unstructured grid, `.vtk` or `.vtu` (D192) |
+| `mesh.file` | – | mesh file: Gmsh MSH 4.1, ASCII or binary (D33), SU2 `.su2`, ASCII, 2D or 3D, several zones in 3D (D187, D195), CGNS `.cgns`, HDF5, unstructured zones (D188, D195), an OpenFOAM case, `constant` or `polyMesh` directory, ASCII or binary (D188), the Fluent face-based `.msh`, ASCII or binary (single or double precision), 3D (D191), or a VTK unstructured grid, `.vtk` or `.vtu` (D192) |
 | `mesh.merge_nodes` | `false` | join coincident nodes of a multi-zone file (SU2 `NZONE` > 1, CGNS with several zones); off: the zones stay apart, each a cell zone, and their interface is two boundaries for `[[sliding]]` (D195) |
 | `mesh.format` | from the extension | `gmsh`, `su2`, `fluent_msh`, `cgns`, `vtk`, `vtkhdf` or `openfoam`; without it the extension or directory decides (`.msh`: the first bytes tell Gmsh from the Fluent format), else the first bytes of the file |
 | `mesh.thickness` | median edge length | layer thickness in z of a 2D file (SU2 `NDIME= 2`) extruded into one layer, in the units of the file |

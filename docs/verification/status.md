@@ -215,6 +215,8 @@ Gaps:
 
 - consistency: [`polyhedral_cells_and_mixed_faces`](../../crates/foehncraft-mesh/tests/fluent_msh.rs): polyhedral cells and mixed faces
 - consistency: [`face_orientation_does_not_matter`](../../crates/foehncraft-mesh/tests/fluent_msh.rs): face orientation does not change the mesh
+- consistency: [`binary_double_precision_polyhedra`](../../crates/foehncraft-mesh/tests/fluent_msh.rs): binary double-precision file gives the same mesh as the ASCII file
+- consistency: [`binary_single_precision_channel`](../../crates/foehncraft-mesh/tests/fluent_msh.rs): binary single-precision file gives the same mesh as the ASCII file
 
 Gaps:
 
