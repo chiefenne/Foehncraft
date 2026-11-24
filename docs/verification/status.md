@@ -1545,9 +1545,11 @@ Contracts: `bitwise`, `control`.
 
 ### Log columns and JSON records for scripts and agents
 
-**verified** · id `run.log-records` · switch `[log]` · decisions D77
+**verified** · id `run.log-records` · switch `[log]` · decisions D77, D214
 
 - consistency: [`cavity_re100_columns`](../../examples/cases/flow/cavity_re100_columns.toml): the Ghia cavity with a chosen iteration table (manual: largest deviation from Ghia et al. (1982), Re = 100 ≤ 0.02)
+- consistency: [`cavity_re100_log_steps`](../../examples/cases/flow/cavity_re100_log_steps.toml): the transient cavity with a short log and columns changed during the run (D214) (passes in CI (set linux-1), not yet in the manual)
+- consistency: [`summary_detail_leaves_out_the_table_but_not_the_record`](../../crates/foehncraft-flow/tests/log_detail.rs): a shorter log keeps every row of run.jsonl
 - contract (schema): [`run_record_rows_follow_their_schema`](../../crates/foehncraft-cli/tests/run_contract.rs): every row of run.jsonl has a known type and the keys of that type; the header names the format
 - contract (schema): [`json_result_and_byte_identical_files`](../../crates/foehncraft-cli/tests/run_contract.rs): result.json is the object on standard output; header and end row of the run record
 - contract (equivalence): [`configurable_log_columns_change_no_result`](../../crates/foehncraft-cli/tests/run_contract.rs): log columns change no result; flow.log and run.jsonl carry the same content

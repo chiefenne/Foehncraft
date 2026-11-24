@@ -408,6 +408,67 @@ fn measured(case: &FlowCase, rep: &FlowReport) -> Vec<(&'static str, f64, f64, S
     out
 }
 
+/// The limitations known before the run starts (D214), for the Limitations
+/// block of the log after the settings blocks: the grades of the features in
+/// use (LIM001), one mesh only (LIM004) and the switches whose history is
+/// not physical or carries cycle means (LIM007, LIM009, LIM010). The
+/// closing frame keeps the full list of [`of_run`], which adds those known
+/// only at the end (ranges, convergence, device, operators, remediation).
+pub fn before_run(case: &FlowCase) -> Vec<Limitation> {
+    let mut out = Vec::new();
+    for id in features_in_use(case) {
+        let Some(g) = grade(id) else { continue };
+        if g.grade == "verified" {
+            continue;
+        }
+        let why = g
+            .gaps
+            .first()
+            .or(g.why.first())
+            .map_or(String::new(), |x| format!(": {x}"));
+        out.push(Limitation::new(
+            diag::LIM_GRADE,
+            Some(id),
+            format!(
+                "{} is graded {}{why} (docs/verification/status.md)",
+                g.title, g.grade
+            ),
+        ));
+    }
+    if case.verification.levels.len() < 2 {
+        out.push(Limitation::new(
+            diag::LIM_ONE_MESH,
+            None,
+            "one mesh only: the discretisation uncertainty is not estimated (a level sweep with `[verification] levels` gives the GCI)".into(),
+        ));
+    }
+    if let Some(e) = &case.energy {
+        if e.acceleration.is_some() {
+            out.push(Limitation::new(
+                diag::LIM_ACCELERATED,
+                Some("cht.thermal-acceleration"),
+                "thermal acceleration of the solids: the history before the restore is not physical".into(),
+            ));
+        }
+        if e.cycle.is_some() {
+            out.push(Limitation::new(
+                diag::LIM_CYCLE,
+                Some("cht.cycle-coupling"),
+                "cycle-averaged coupling of the solids: their temperatures carry the cycle-mean heat transfer, not the swing over a cycle".into(),
+            ));
+        }
+        if e.frozen_flow.is_some() {
+            out.push(Limitation::new(
+                diag::LIM_FROZEN,
+                Some("cht.frozen-flow"),
+                "frozen-flow march: while the flow is held its history is that of the settled flow"
+                    .into(),
+            ));
+        }
+    }
+    out
+}
+
 /// The limitations of a finished run.
 pub fn of_run(case: &FlowCase, rep: &FlowReport) -> Vec<Limitation> {
     let mut out = Vec::new();

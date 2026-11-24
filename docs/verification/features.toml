@@ -1418,11 +1418,13 @@ id = "run.log-records"
 area = "Runs and results"
 title = "Log columns and JSON records for scripts and agents"
 switch = "[log]"
-decisions = ["D77"]
+decisions = ["D77", "D214"]
 infrastructure = true
 contracts = ["schema", "equivalence", "bitwise"]
 evidence = [
   { kind = "consistency", case = "cavity_re100_columns", what = "the Ghia cavity with a chosen iteration table" },
+  { kind = "consistency", case = "cavity_re100_log_steps", what = "the transient cavity with a short log and columns changed during the run (D214)" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/log_detail.rs::summary_detail_leaves_out_the_table_but_not_the_record", what = "a shorter log keeps every row of run.jsonl" },
   { kind = "contract", property = "schema", test = "crates/foehncraft-cli/tests/run_contract.rs::run_record_rows_follow_their_schema", what = "every row of run.jsonl has a known type and the keys of that type; the header names the format" },
   { kind = "contract", property = "schema", test = "crates/foehncraft-cli/tests/run_contract.rs::json_result_and_byte_identical_files", what = "result.json is the object on standard output; header and end row of the run record" },
   { kind = "contract", property = "equivalence", test = "crates/foehncraft-cli/tests/run_contract.rs::configurable_log_columns_change_no_result", what = "log columns change no result; flow.log and run.jsonl carry the same content" },

@@ -185,7 +185,48 @@ pub struct Steer {
     pub(crate) notes: Vec<String>,
     /// The live control port of the run (L19), when it has one.
     pub(crate) live: Option<crate::live::Live>,
+    /// The changes made during the run, for the Events block of the log
+    /// (D214).
+    pub(crate) events: Vec<EventLine>,
 }
+
+/// One line of the Events block (D214): a change made during the run.
+#[derive(Debug, Clone, PartialEq)]
+pub struct EventLine {
+    /// The code (`RUN015`, `RUN023`, ...).
+    pub code: &'static str,
+    /// The iteration or step.
+    pub at: usize,
+    /// Wall-clock seconds since the start of the run.
+    pub elapsed: f64,
+    /// The message.
+    pub message: String,
+}
+
+/// The codes whose events go into the Events block (D214): every change of
+/// a setting (schedule, control port, re-read), every stop, the diagnosis
+/// and the steps of the thermal acceleration, the cycle-averaged loop and
+/// the frozen-flow march.
+pub const EVENT_CODES: &[&str] = &[
+    diag::RUN_STOP_FILE,
+    diag::RUN_SIGNAL,
+    diag::RUN_LIMIT_WALL_TIME,
+    diag::RUN_LIMIT_STEPS,
+    diag::RUN_LIMIT_OUTPUT,
+    diag::RUN_NOT_APPLIED,
+    diag::RUN_REREAD_INVALID,
+    diag::RUN_SCHEDULED,
+    diag::RUN_DIAGNOSIS,
+    diag::RUN_DIAGNOSIS_STOP,
+    diag::RUN_STUDY_BUDGET,
+    diag::RUN_CONTROL_STOP,
+    diag::RUN_CONTROL_SET,
+    diag::RUN_CONTROL_REJECTED,
+    diag::RUN_REREAD,
+    diag::ACC_PHASE,
+    diag::CYC_PHASE,
+    diag::FRZ_PHASE,
+];
 
 /// What a run has spent so far (cell-seconds, GPUs), and what the earlier
 /// runs of its study spent (D198 (c)).
@@ -236,6 +277,7 @@ impl Steer {
             spend: SpendMeter::new(),
             notes: Vec::new(),
             live: None,
+            events: Vec::new(),
         })
     }
 
@@ -252,6 +294,7 @@ impl Steer {
             spend: SpendMeter::new(),
             notes: Vec::new(),
             live: None,
+            events: Vec::new(),
         }
     }
 
@@ -422,6 +465,7 @@ impl Steer {
                 "message": s.message,
                 "at": done,
             }));
+            self.remember(s.code, done, &s.message);
             self.stop = Some(s.clone());
         }
         s
@@ -448,7 +492,8 @@ impl Steer {
         self.interrupts.take_restart()
     }
 
-    /// A warning or note with a code, into the run record.
+    /// A warning or note with a code, into the run record (and the Events
+    /// block of the log when it is a change, D214).
     pub(crate) fn event(&mut self, code: &'static str, at: usize, message: &str) {
         let sev = diag::info(code).map_or(Severity::Note, |i| i.severity);
         self.record.row(&serde_json::json!({
@@ -458,6 +503,20 @@ impl Steer {
             "message": message,
             "at": at,
         }));
+        self.remember(code, at, message);
+    }
+
+    /// Keeps an event for the Events block of the log (D214) when its code
+    /// is one of [`EVENT_CODES`].
+    pub(crate) fn remember(&mut self, code: &'static str, at: usize, message: &str) {
+        if EVENT_CODES.contains(&code) {
+            self.events.push(EventLine {
+                code,
+                at,
+                elapsed: self.start.elapsed().as_secs_f64(),
+                message: message.to_string(),
+            });
+        }
     }
 }
 
@@ -1834,6 +1893,13 @@ pub fn run(
     })?;
     let mut case = case.clone();
     let mut steer = Steer::new(opts.interrupts.clone(), dir, true)?;
+    // box lines need a UTF-8 terminal; the asterisks are plain ASCII (D214)
+    if case.log.style == crate::console::Style::Box && !crate::console::utf8_locale() {
+        case.log.style = crate::console::Style::Asterisk;
+        steer.notes.push(
+            "the terminal is not UTF-8 (LC_ALL, LC_CTYPE, LANG): log.style \"box\" falls back to \"asterisk\"".into(),
+        );
+    }
     steer.record.observer = opts.observer.clone();
     steer.build = Some(opts.build.clone());
     // the live control port lives as long as the run (L19)
@@ -1925,6 +1991,7 @@ pub fn run(
     }
     let text = serde_json::to_string_pretty(&summary)?;
     std::fs::write(dir.join("result.json"), format!("{text}\n"))?;
+    events_frame(&case, &steer.events, dir, &mut log);
     closing_frame(
         &case,
         &summary,
@@ -1941,6 +2008,29 @@ pub fn run(
         report: res.ok(),
         summary,
     })
+}
+
+/// The Events block (D214): every change made during the run, with its
+/// iteration or step, its wall-clock time and its code, before the closing
+/// frame. Nothing when nothing changed. A steered run can be reproduced
+/// from it; the rows stay in `run.jsonl`.
+fn events_frame(case: &FlowCase, events: &[EventLine], dir: &Path, log: &mut impl FnMut(&str)) {
+    use std::io::Write as _;
+    let Some(f) = crate::logblocks::events(events, case.time.is_some()) else {
+        return;
+    };
+    let mut lines = vec![String::new()];
+    lines.extend(f.render(case.log.style));
+    for l in &lines {
+        log(l);
+    }
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(dir.join("flow.log"))
+    {
+        let _ = writeln!(file, "{}", lines.join("\n"));
+    }
 }
 
 /// The last frame of the log: the verdict and the exit code. It goes to the

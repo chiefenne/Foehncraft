@@ -240,6 +240,7 @@ codes! {
     RUN_CONTROL_STOP = "RUN022", Note, "Stopped through the live control port (`run.stop`): restart file, final output, exit code 3 (L19).";
     RUN_CONTROL_SET = "RUN023", Note, "A setting changed through the live control port (`run.set`): key, old and new value, with the equivalent `[[schedule]]` entry (L19).";
     RUN_CONTROL_REJECTED = "RUN024", Warning, "A setting asked for through the live control port that cannot be applied (not valid for the case at that point); the run goes on with the settings it had.";
+    RUN_REREAD = "RUN025", Note, "A setting changed by re-reading the case file (`.read_toml_N`, `[run] reread_every`): key, old and new value (D40, D214).";
     // the causes of a divergence (D63)
     DIV_TIME_STEP = "DIV001", Note, "Divergence cause: the Courant number near the failing cells is large; reduce the time step.";
     DIV_RELAXATION = "DIV002", Note, "Divergence cause: under-relaxation factors too large for the case.";
