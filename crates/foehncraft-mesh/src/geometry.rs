@@ -138,15 +138,64 @@ pub fn polygon_area_centroid<T: Coord>(points: &[[T; 3]], nodes: &[u32]) -> ([T;
     let n = scale(s, T::ONE / ns);
     let mut c = [T::ZERO; 3];
     let mut w = T::ZERO;
+    let mut turned = false;
     for i in 0..k {
         let p = points[nodes[i] as usize];
         let q = points[nodes[(i + 1) % k] as usize];
         let t = if k <= 32 { tri_s[i] } else { big[i] };
         let a = dot(t, n);
+        turned |= a.to_f64() <= 0.0;
         c = add(c, scale(add(add(p, q), m), a / T::from_f64(3.0)));
         w += a;
     }
-    (s, scale(c, T::ONE / w))
+    let centroid = scale(c, T::ONE / w);
+    if turned && !in_node_box(points, nodes, centroid) {
+        // a fan triangle turns against the mean normal and the centroid of
+        // the signed weights has left the box of the nodes, where the true
+        // centroid of a polygon always lies: a ribbon-thin face twisted
+        // along its length, whose signed weights nearly cancel. Weigh by
+        // the triangle areas instead, which keeps the centroid in the
+        // convex hull of the nodes. Every other face, planar or warped,
+        // convex or not, keeps the signed weights.
+        let mut c = [T::ZERO; 3];
+        let mut w = T::ZERO;
+        for i in 0..k {
+            let p = points[nodes[i] as usize];
+            let q = points[nodes[(i + 1) % k] as usize];
+            let t = if k <= 32 { tri_s[i] } else { big[i] };
+            let a = norm(t);
+            c = add(c, scale(add(add(p, q), m), a / T::from_f64(3.0)));
+            w += a;
+        }
+        if w.to_f64() > 0.0 {
+            return (s, scale(c, T::ONE / w));
+        }
+        return (s, m);
+    }
+    (s, centroid)
+}
+
+/// Relative margin of the node box in [`in_node_box`] (of its largest side).
+const BOX_MARGIN: f64 = 1e-9;
+
+/// `true` if `x` lies in the bounding box of the polygon's nodes, widened
+/// by [`BOX_MARGIN`].
+fn in_node_box<T: Coord>(points: &[[T; 3]], nodes: &[u32], x: [T; 3]) -> bool {
+    let mut lo = [f64::INFINITY; 3];
+    let mut hi = [f64::NEG_INFINITY; 3];
+    for &v in nodes {
+        let p = points[v as usize];
+        for d in 0..3 {
+            lo[d] = lo[d].min(p[d].to_f64());
+            hi[d] = hi[d].max(p[d].to_f64());
+        }
+    }
+    let side = (0..3).map(|d| hi[d] - lo[d]).fold(0.0, f64::max);
+    let pad = BOX_MARGIN * side;
+    (0..3).all(|d| {
+        let v = x[d].to_f64();
+        v >= lo[d] - pad && v <= hi[d] + pad
+    })
 }
 
 /// Below this many faces [`Geometry::faces`] runs on one thread.
@@ -428,5 +477,58 @@ mod tests {
             mesh.points.len()
         );
         assert!(checked > 10_000);
+    }
+
+    /// The twisted ribbon face found by the point-search benchmark (#235):
+    /// thickness 1.3e-5, length 0.017, twisted by 1.7e-3 across. The signed
+    /// weights put its centroid at z = 0.19; the area weights keep it on
+    /// the face.
+    #[test]
+    fn twisted_ribbon_face_keeps_its_centroid_on_the_face() {
+        let pts = vec![
+            [0.43840603849876486, 0.0, 0.0],
+            [0.4367040568405628, 1.2137783485223362e-5, 0.0],
+            [
+                0.4379280535783903,
+                1.2897727829962324e-5,
+                0.016268504775330917,
+            ],
+            [0.43617218170643896, 0.0, 0.016969859729795846],
+        ];
+        let (_, c) = polygon_area_centroid(&pts, &[0, 1, 2, 3]);
+        for d in 0..3 {
+            let lo = pts.iter().map(|p| p[d]).fold(f64::INFINITY, f64::min);
+            let hi = pts.iter().map(|p| p[d]).fold(f64::NEG_INFINITY, f64::max);
+            assert!(
+                c[d] >= lo && c[d] <= hi,
+                "axis {d}: {} not in [{lo}, {hi}]",
+                c[d]
+            );
+        }
+    }
+
+    /// A planar non-convex polygon whose fan triangles from the node
+    /// average turn both ways keeps the exact centroid of the signed
+    /// weights.
+    #[test]
+    fn planar_non_convex_polygon_keeps_the_exact_centroid() {
+        // a thin L-shaped hexagon in the plane z = 1: unit squares at
+        // (0..3, 0..1) and (0..1, 1..3), area 5
+        let pts = vec![
+            [0.0, 0.0, 1.0],
+            [3.0, 0.0, 1.0],
+            [3.0, 1.0, 1.0],
+            [1.0, 1.0, 1.0],
+            [1.0, 3.0, 1.0],
+            [0.0, 3.0, 1.0],
+        ];
+        let (s, c) = polygon_area_centroid(&pts, &[0, 1, 2, 3, 4, 5]);
+        assert!((s[2] - 5.0).abs() < 1e-14);
+        // centroid: (3 * (1.5, 0.5) + 2 * (0.5, 2)) / 5 = (1.1, 1.1)
+        assert!(
+            (c[0] - 1.1).abs() < 1e-14 && (c[1] - 1.1).abs() < 1e-14,
+            "{c:?}"
+        );
+        assert_eq!(c[2], 1.0);
     }
 }
