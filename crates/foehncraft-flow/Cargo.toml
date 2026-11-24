@@ -9,7 +9,11 @@ repository.workspace = true
 authors.workspace = true
 
 [features]
-default = ["hdf5"]
+default = ["hdf5", "blake3"]
+# BLAKE3 hashes of the output files in result.json (D84). Its build
+# script compiles C and assembly for speed, so the C-free build without
+# default features (D87) hashes with SHA-256 instead, named `sha256`.
+blake3 = ["dep:blake3"]
 # VTKHDF output of the fields (HDF5 built from source).
 hdf5 = ["foehncraft-fv/hdf5", "foehncraft-mesh/hdf5", "foehncraft-particles/hdf5", "dep:hdf5-metno"]
 # MPI examples (system MPI library and libclang at build time).
@@ -29,6 +33,7 @@ toml.workspace = true
 anyhow = "1"
 schemars.workspace = true
 sha2.workspace = true
+blake3 = { workspace = true, optional = true }
 hdf5-metno = { workspace = true, optional = true }
 
 [dev-dependencies]

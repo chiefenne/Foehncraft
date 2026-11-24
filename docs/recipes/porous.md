@@ -23,6 +23,7 @@ zones = ["block"]
 viscous = 1.0e6          # K⁻¹ (1/m²): one value, or three along the axes
 inertial = 10.0          # F (1/m); the sink is (μ K⁻¹ + ½ ρ |u| F) u
 porosity = 0.4           # optional here (needed with the two temperatures, 275)
+porosity = 0.4           # optional here (used by the two temperatures, PM2)
 source = "Ergun fit of the bed"
 ```
 
@@ -120,3 +121,5 @@ in the log and in `heat.csv` books the matrix as an account of its own
 `porosity`, `heat_transfer_coefficient` or `specific_area`; POR002 refuses
 `[energy.cycle]`, `[energy.acceleration]` and a density that follows the
 temperature in porous cases.
+support (energy, scalars, turbulence, rotating zones, the GPU, axes turned
+against the mesh).

@@ -391,7 +391,7 @@ Category `flow`, action `start-run`, version 1, streams the rows of the run reco
 | `time_orders` | array of number | Observed orders in time. |
 | `scalar_orders` | array of array of 2 string | Observed orders of the passive scalars with an exact solution (D51): name and orders; `<name> (time)` for a time-step sweep. |
 | `uncertainty` | array of object | Discretisation uncertainty of a sweep (D67): per monitored quantity the observed order, the extrapolated value and the GCI. |
-| `files` | array of object | Output files with sizes and SHA-256 hashes (D84). |
+| `files` | array of object | Output files with sizes and BLAKE3 hashes (D84). |
 | `limitations` | array of object | What the user must know before trusting the result (D199): codes LIM001 to LIM006, the feature and a message. They change neither `status` nor the exit code. |
 
 ## `result.read`

@@ -1,6 +1,7 @@
 # Porous regions
 
 Part of the [Example gallery](../gallery.md): flow through porous matrices such as packed beds, foams and ceramic honeycombs, with a direction-dependent Darcy–Forchheimer resistance (D270) and gas and matrix with temperatures of their own (D271, [porous plan](../assessments/porous-two-temperature-plan.md)).
+Part of the [Example gallery](../gallery.md): flow through porous matrices such as packed beds, foams and ceramic honeycombs, with a direction-dependent Darcy–Forchheimer resistance (D270, [porous plan](../assessments/porous-two-temperature-plan.md); two temperatures follow in PM2).
 
 | # | Example | Stage | Feature |
 |---|---|---|---|
@@ -50,6 +51,9 @@ cell and cannot hold the tensor, and a turned honeycomb stalls; a tensor
 factor is follow-up work. Channels across the main flow (a block that
 closes the channel) converge slowly. No scalars or turbulence in porous cases
 (POR002; energy came with [275](#porous-two-temperatures)), one process, CPU only. The kinetic-energy ledger does not book the
+closes the channel) converge slowly. No energy, scalars or turbulence in
+porous cases yet (POR002; the two temperatures of gas and solid are stage
+PM2), one process, CPU only. The kinetic-energy ledger does not book the
 work of the porous sink.
 
 **What is checked.** The exact drop of a filled duct, along and across the

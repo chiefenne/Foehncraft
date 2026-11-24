@@ -13,7 +13,10 @@ name = "foehn"
 path = "src/main.rs"
 
 [features]
-default = ["hdf5", "metis"]
+default = ["hdf5", "metis", "blake3"]
+# BLAKE3 hashes of the output files in result.json (D84; C and assembly
+# in its build); without it they are SHA-256.
+blake3 = ["foehncraft-flow/blake3"]
 # VTKHDF output (HDF5 built from source; needs CMake and a C compiler).
 hdf5 = ["foehncraft-flow/hdf5", "foehncraft-tools/hdf5"]
 # METIS partitioning (built from source).
@@ -43,6 +46,10 @@ serde_json.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 signal-hook.workspace = true
+
+[dev-dependencies]
+# The BLAKE3 hashes of result.json checked in run_contract.rs (D84).
+blake3.workspace = true
 
 [lints]
 workspace = true
