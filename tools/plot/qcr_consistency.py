@@ -31,6 +31,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import LogNorm
 from matplotlib.tri import Triangulation
+from tools.plot.colormaps import RAINBOW
 
 
 def cells(folder, mesh, level):
@@ -67,7 +68,7 @@ def main():
                        for i, j in [(0, 1), (1, 2), (2, 0)]], axis=0)
         tri.set_mask(edge > 4.0 * np.median(edge))
         pc = ax.tripcolor(tri, np.maximum(e, 1e-4), shading="gouraud",
-                          cmap="viridis", norm=norm)
+                          cmap=RAINBOW, norm=norm)
         ax.set_xlim(0.14, 0.43)
         ax.set_ylim(0.14, 0.43)
         ax.set_aspect("equal")

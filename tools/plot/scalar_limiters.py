@@ -31,6 +31,7 @@ import h5py
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.collections import PolyCollection
+from tools.plot.colormaps import RAINBOW
 
 X_CUT = 0.8
 SLOPE = 0.6
@@ -72,7 +73,7 @@ def extremes(run):
 
 
 def field(ax, polys, c, title):
-    pc = PolyCollection(polys, array=c, cmap="viridis", edgecolors="face", linewidths=0.2)
+    pc = PolyCollection(polys, array=c, cmap=RAINBOW, edgecolors="face", linewidths=0.2)
     pc.set_clim(0.0, 1.0)
     ax.add_collection(pc)
     # cells more than 0.1 % beyond the bounds, outlined

@@ -28,6 +28,7 @@ import numpy as np
 
 from tools.plot.pressure_values import H, L, STRETCH, T, panel
 from tools.plot.turbulence_fields import read
+from tools.plot.colormaps import RAINBOW
 
 
 def residuals(run):
@@ -59,7 +60,7 @@ def main():
                   "(\"inlet\"), the plate at 320 K")
     ax1 = fig.add_subplot(gs[1, :])
     g0 = np.where(water, d0["pressure"] - op["water"], d0["pressure"] - op["oil"])
-    panel(ax1, quads[fluid], g0[fluid], "viridis", (0.0, 46.0), "p − p_op of the part (Pa)")
+    panel(ax1, quads[fluid], g0[fluid], RAINBOW, (0.0, 46.0), "p − p_op of the part (Pa)")
     ax1.set_title("start pressure per fluid part: the water at its outlet (1 bar), the oil "
                   "on a Laplace solve between 1.50046 and 1.5 bar")
     ax2 = fig.add_subplot(gs[2, 0])

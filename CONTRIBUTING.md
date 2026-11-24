@@ -71,6 +71,18 @@ image takes no room until it has loaded, so a link to an entry far down a
 page lands thousands of pixels too high while the images above it arrive.
 CI runs `python -m tools.docs.images --check`.
 
+### Colour maps
+
+Field pictures use the colour maps shared with KoflCraft and MurmelCraft
+(D261): **Rainbow Desaturated** for every field, **Inferno** as the second
+map (a second field beside the first, such as the temperature next to the
+flow), and a diverging map (`RdBu_r`, `coolwarm`) centred on zero for
+signed fields. In matplotlib scripts import the map from
+`tools/plot/colormaps.py` (`from tools.plot.colormaps import RAINBOW`,
+then `cmap=RAINBOW`); in ParaView use the preset `"Rainbow Desaturated"`,
+or `colormaps.rgb_points(lo, hi)` where the preset is missing. Line colours
+(streamlines over a field, series in a chart) may use other maps.
+
 ### Images must not resemble symbols
 
 Never publish an image (gallery, README, docs, posts) whose pattern could

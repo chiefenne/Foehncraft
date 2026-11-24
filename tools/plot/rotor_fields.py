@@ -50,24 +50,25 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 from matplotlib.collections import PolyCollection  # noqa: E402
 from matplotlib.tri import LinearTriInterpolator, Triangulation  # noqa: E402
+from tools.plot.colormaps import RAINBOW  # noqa: E402
 
 LABELS = {
-    "speed": ("|u| (m/s)", "magma"),
-    "relative": ("|u − Ω×r| (m/s)", "magma"),
+    "speed": ("|u| (m/s)", RAINBOW),
+    "relative": ("|u − Ω×r| (m/s)", RAINBOW),
     "vorticity": ("ω_z (1/s)", "RdBu_r"),
-    "pressure": ("p − p_min (Pa)", "viridis"),
-    "relative_velocity_magnitude": ("|w| (m/s)", "magma"),
-    "frame_velocity_magnitude": ("|u| = Ω r (m/s)", "magma"),
+    "pressure": ("p − p_min (Pa)", RAINBOW),
+    "relative_velocity_magnitude": ("|w| (m/s)", RAINBOW),
+    "frame_velocity_magnitude": ("|u| = Ω r (m/s)", RAINBOW),
     "relative_flow_angle": ("β (°)", "RdBu_r"),
     "flow_angle": ("α (°)", "RdBu_r"),
-    "rothalpy": ("I − I_min (m²/s²)", "viridis"),
-    "relative_total_pressure": ("p + ½ρ|w|² − min (Pa)", "viridis"),
+    "rothalpy": ("I − I_min (m²/s²)", RAINBOW),
+    "relative_total_pressure": ("p + ½ρ|w|² − min (Pa)", RAINBOW),
     "velocity_circumferential": ("c_u (m/s)", "RdBu_r"),
     "relative_velocity_circumferential": ("w_u (m/s)", "RdBu_r"),
     "velocity_radial": ("c_r (m/s)", "RdBu_r"),
     "k": ("k (m²/s²)", "inferno"),
-    "nu_t": ("ν_t (m²/s)", "viridis"),
-    "viscosity_ratio": ("ν_t / ν", "viridis"),
+    "nu_t": ("ν_t (m²/s)", RAINBOW),
+    "viscosity_ratio": ("ν_t / ν", RAINBOW),
 }
 SIGNED = ("vorticity", "velocity_circumferential", "relative_velocity_circumferential",
           "velocity_radial")
@@ -204,7 +205,7 @@ def main():
         polys, cen, data = frames[k]
         val = quantity(name, cen, data, a.omega, a.rotor_radius, a.nu)
         base = name.partition("@")[0]
-        label, cmap = LABELS.get(base, (base, "viridis"))
+        label, cmap = LABELS.get(base, (base, RAINBOW))
         if limits[k]:
             lo, hi = (float(v) for v in limits[k].split(":"))
         elif base in SIGNED:

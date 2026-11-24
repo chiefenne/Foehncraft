@@ -35,14 +35,15 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 from matplotlib.collections import PolyCollection  # noqa: E402
 from matplotlib.tri import LinearTriInterpolator, Triangulation  # noqa: E402
+from tools.plot.colormaps import RAINBOW  # noqa: E402
 
 LABELS = {
-    "swirl": ("u_θ (m/s)", "magma"),
-    "meridional": ("|(u_r, u_z)| (m/s)", "viridis"),
-    "axial": ("u_z (m/s)", "viridis"),
+    "swirl": ("u_θ (m/s)", RAINBOW),
+    "meridional": ("|(u_r, u_z)| (m/s)", RAINBOW),
+    "axial": ("u_z (m/s)", RAINBOW),
     "radial": ("u_r (m/s)", "RdBu_r"),
     "pressure": ("p − p_min (Pa)", "cividis"),
-    "speed": ("|u| (m/s)", "magma"),
+    "speed": ("|u| (m/s)", RAINBOW),
 }
 SIGNED = ("radial",)
 
@@ -173,7 +174,7 @@ def main():
                              squeeze=False)
     for ax, name, title, lim in zip(axes[0], names, titles, limits):
         val = value(name, mean)
-        label, cmap = LABELS.get(name, (name, "viridis"))
+        label, cmap = LABELS.get(name, (name, RAINBOW))
         polys = list(shapes)
         vals = list(val)
         if mirror:

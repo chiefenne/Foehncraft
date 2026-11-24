@@ -34,6 +34,7 @@ import numpy as np
 from matplotlib.collections import PolyCollection
 
 from tools.plot.turbulence_fields import read
+from tools.plot.colormaps import RAINBOW
 
 
 def grid(quads, values):
@@ -85,10 +86,10 @@ def checks(out, mms, couette):
     fig, axes = plt.subplots(1, 3, figsize=(14.5, 4.2), constrained_layout=True)
     quads, _, d = read(os.path.join(mms, "fields.vtkhdf"))
     t = d["temperature"]
-    field(axes[0], quads, t, "plasma", "temperature (K)", fig)
+    field(axes[0], quads, t, RAINBOW, "temperature (K)", fig)
     axes[0].set_title("Conduction with k(T) = 1 + 0.01 (T − 300)")
     k = 1.0 + 0.01 * (t - 300.0)
-    field(axes[1], quads, k, "viridis", "conductivity k(T) (W/(m K))", fig)
+    field(axes[1], quads, k, RAINBOW, "conductivity k(T) (W/(m K))", fig)
     axes[1].set_title("k follows T in every outer iteration")
     ax = axes[2]
     y = np.linspace(0.0, 1.0, 201)
