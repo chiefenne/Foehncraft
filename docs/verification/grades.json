@@ -1223,7 +1223,7 @@
     "gaps written"
    ],
    "gaps": [
-    "the flow engine on ranks (W5) follows"
+    "the flow engine on ranks: steady SIMPLEC in W5 part 1 (parallel.flow-ranks), the rest in part 2"
    ],
    "range": {}
   },
@@ -1236,7 +1236,21 @@
    ],
    "gaps": [
     "the setup is replicated: every rank builds the whole hierarchy, so setup time and memory do not fall with the rank count (a distributed setup is not planned before the scaling numbers ask for it)",
-    "the flow engine on ranks (W5) follows"
+    "the flow engine on ranks: steady SIMPLEC in W5 part 1 (parallel.flow-ranks), the rest in part 2"
+   ],
+   "range": {}
+  },
+  {
+   "id": "parallel.flow-ranks",
+   "title": "Steady SIMPLEC on several ranks, bitwise one rank (MPI step W5 part 1)",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "steady SIMPLEC only: turbulence and wall distance, scalars, energy, transient runs, turning zones, grid levels, regions and the coupled solver on ranks are W5 part 2",
+    "on the CPU flow device only (GPU ranks are not in scope of v1.1)",
+    "no scaling numbers yet (1M cells, W9)"
    ],
    "range": {}
   }
