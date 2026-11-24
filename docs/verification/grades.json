@@ -1091,6 +1091,20 @@
    "range": {}
   },
   {
+   "id": "run.ledger",
+   "title": "Conservation ledger as data: module rows, thermal account, ledger in result.json",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "the gas momentum account of the solver itself is not booked (it comes with the first exchange rows of the sprays, SP2)",
+    "the viscous heating is not yet an exchange pair kinetic to thermal (the two sums are formed separately)",
+    "the thermal account is in the last balance only, not over a run"
+   ],
+   "range": {}
+  },
+  {
    "id": "run.restart-control",
    "title": "Restart and control files (.stop, .result_N, .read_toml_N)",
    "grade": "verified",
@@ -1223,7 +1237,20 @@
     "gaps written"
    ],
    "gaps": [
-    "the multigrid preconditioner on ranks (W4) and the flow engine on ranks (W5) follow"
+    "the flow engine on ranks (W5) follows"
+   ],
+   "range": {}
+  },
+  {
+   "id": "parallel.multigrid-ranks",
+   "title": "Multigrid on several ranks with the replicated setup, bitwise one rank (MPI step W4)",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "the setup is replicated: every rank builds the whole hierarchy, so setup time and memory do not fall with the rank count (a distributed setup is not planned before the scaling numbers ask for it)",
+    "the flow engine on ranks (W5) follows"
    ],
    "range": {}
   },

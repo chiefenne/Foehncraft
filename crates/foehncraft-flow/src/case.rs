@@ -3478,7 +3478,7 @@ pub fn run_steered(
             steer.record.row(&balance::record_row(&bal));
         }
         std::fs::write(out.join(format!("balance{suffix}.csv")), &bcsv)?;
-        let summary = BalanceSummary {
+        let mut summary = BalanceSummary {
             largest_mass_relative: bal.mass.relative.abs(),
             last: bal,
             ..Default::default()
@@ -3539,6 +3539,14 @@ pub fn run_steered(
                 lg.note(&d.message);
                 rep.warnings.push(d);
             }
+        }
+        // the thermal account of the final state (D119, D161)
+        if let Some(sm) = scalars.iter().find(|s| s.energy.is_some())
+            && let Some(e) = &sm.energy
+        {
+            summary
+                .last
+                .book(balance::thermal_account(e, &sm.boundaries));
         }
         let periodic = periodic_summaries(&mut fl, &mesh, &mut lg)?;
         let turbulence = turbulence_summary(&mut fl, &mesh, &mut lg, &mut rep.warnings)?;

@@ -15,6 +15,7 @@ Part of the [Recipes](../recipes.md): the energy equation of the fluid (stage 7,
 | 208 | [Warm up a conjugate run with the flow held, or the warm-up history of a periodic flow](#cht-frozen-flow) |
 | 206 | [Put several fluids in one conjugate case (water and air in a heat exchanger)](#two-fluids) |
 | 221 | [Start every region and fluid part on its own](#start-values) |
+| 238 | [Read the conservation ledger of a run as data, and book a module's rows on it](#ledger) |
 | 186 | [Switch on gravity and buoyancy; which pressure do my boundary values mean](#buoyancy) |
 | 195 | [Let the density of a gas follow its temperature (low-Mach variable density)](#variable-density) |
 
@@ -1036,3 +1037,35 @@ restart replaces the start values.
 ```
 target/release/foehn flow examples/cases/flow/cht_two_fluids_start.toml --out output/start_run
 ```
+
+<a id="ledger"></a>
+## 238. Read the conservation ledger of a run as data, and book a module's rows on it
+
+**When.** You want the balance of a run in a form a script or an agent
+reads (which term takes the heat, does an exchange pair cancel), or you
+write a module that exchanges mass, momentum or energy with the flow.
+
+**Read it.** After a run, `result.json` → `solves[-1].balance.last.ledger`
+lists the accounts (`mass`, `kinetic energy`, with the energy equation
+`thermal energy`): `content`, `storage`, `boundary`, `contributions`,
+`imbalance`, `relative` and the `terms` with `kind`, `name`, `boundary`,
+`pair`. `imbalance` is storage minus the sum of the terms; `relative` is
+the imbalance over the scale of the account. A transient run has the same
+under `balance.run` for mass and kinetic energy (integrals in kg and J).
+`balance.last.pairs` lists the residual of every exchange pair; zero to
+the bit means both sides book the same sum.
+
+```
+target/release/foehn flow examples/cases/flow/cavity_heated.toml --out output/cavity_heated
+python3 -c "import json; l=json.load(open('output/cavity_heated/result.json'))['solves'][-1]['balance']['last']['ledger']; [print(a['quantity'], a['imbalance']) for a in l]"
+python3 -m tools.plot.ledger_chart docs/figures/gallery output/cavity_heated
+```
+
+**Book rows (module authors).** At every state build an `Account` of the
+quantity (`balance::names`: `MASS`, `KINETIC`, `THERMAL`, `MOMENTUM[0..3]`)
+with `Term::volume(name, TermKind::Exchange, value).paired(id)` and give it
+to `Rates::book`; its terms join the account of the same quantity and
+region, otherwise it is an account of its own (give it `region` and
+`content`; the storage of a step is the change of the content). Book the
+same terms in the same order at every state. The partner of a pair books
+the same sum with the opposite sign in its own account.

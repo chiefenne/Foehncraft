@@ -1315,6 +1315,27 @@ gaps = [
 ]
 
 [[feature]]
+id = "run.ledger"
+area = "Runs and results"
+title = "Conservation ledger as data: module rows, thermal account, ledger in result.json"
+switch = "result.json solves[].balance.last.ledger, pairs"
+decisions = ["D119", "D244"]
+infrastructure = true
+contracts = ["schema"]
+evidence = [
+  { kind = "consistency", case = "cavity_heated", what = "the heated cavity: mass and thermal energy close to round-off, the kinetic-energy account shows the numerical dissipation", doc = "docs/gallery/energy.md#ledger" },
+  { kind = "contract", property = "schema", test = "crates/foehncraft-flow/tests/energy.rs::the_thermal_account_is_the_heat_balance_as_data", what = "result.json has mass, kinetic energy and thermal energy accounts with terms; the thermal closure is the negative of the heat-balance imbalance" },
+  { kind = "contract", property = "schema", test = "crates/foehncraft-flow/src/balance.rs::a_state_without_modules_has_two_accounts_and_no_pairs", what = "a state without modules has the two accounts and no pairs key" },
+  { kind = "consistency", test = "crates/foehncraft-flow/src/balance.rs::a_closed_box_with_a_spray_closes_every_step_and_the_run", what = "a closed box with a stand-in spray module: gas mass, momentum and heat gain what the parcels lose; every account closes to 1e-12 in every step and over the run, every pair cancels to the bit" },
+  { kind = "consistency", test = "crates/foehncraft-flow/src/balance.rs::a_missing_partner_shows_in_the_pair_residual", what = "a pair without its partner shows its value as residual" },
+]
+gaps = [
+  "the gas momentum account of the solver itself is not booked (it comes with the first exchange rows of the sprays, SP2)",
+  "the viscous heating is not yet an exchange pair kinetic to thermal (the two sums are formed separately)",
+  "the thermal account is in the last balance only, not over a run",
+]
+
+[[feature]]
 id = "run.restart-control"
 area = "Runs and results"
 title = "Restart and control files (.stop, .result_N, .read_toml_N)"
@@ -1540,7 +1561,24 @@ evidence = [
   { kind = "contract", property = "bitwise", case = "ranks_oblique_step_2d", what = "the oblique step on 2, 3 and 5 ranks: 67 outer iterations and phi bitwise the one-rank run (the run fails otherwise)" },
 ]
 gaps = [
-  "the multigrid preconditioner on ranks (W4) and the flow engine on ranks (W5) follow",
+  "the flow engine on ranks (W5) follows",
+]
+
+[[feature]]
+id = "parallel.multigrid-ranks"
+area = "Backends and interfaces"
+title = "Multigrid on several ranks with the replicated setup, bitwise one rank (MPI step W4)"
+switch = "preconditioner = \"amg\" with [run] ranks"
+decisions = ["D31", "D93", "D179"]
+infrastructure = true
+contracts = ["bitwise"]
+evidence = [
+  { kind = "contract", property = "bitwise", test = "crates/foehncraft-fv/tests/ranks.rs::scalar_solves_on_ranks_are_bitwise_one_rank", what = "1 to 4 ranks (RCB): CG + smoothed-aggregation multigrid on hexahedra and the reduction multigrid on a convection matrix give phi, residual history and the cycle result bitwise one rank" },
+  { kind = "contract", property = "bitwise", case = "ranks_poisson_amg_poly_box", what = "the manufactured Poisson problem with CG + multigrid (Chebyshev, mixed precision) on 2, 3 and 5 ranks: 21 outer iterations and phi bitwise the one-rank run (the run fails otherwise)" },
+]
+gaps = [
+  "the setup is replicated: every rank builds the whole hierarchy, so setup time and memory do not fall with the rank count (a distributed setup is not planned before the scaling numbers ask for it)",
+  "the flow engine on ranks (W5) follows",
 ]
 
 [[feature]]

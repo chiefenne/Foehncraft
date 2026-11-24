@@ -189,6 +189,11 @@ mod tests {
                 0.5
             });
             c.barrier();
+            let local: Vec<f64> = (0..r).map(|i| (10 * r + i) as f64).collect();
+            let all = c.all_gather_vec_f64(&local);
+            for (q, v) in all.iter().enumerate() {
+                assert_eq!(v, &(0..q).map(|i| (10 * q + i) as f64).collect::<Vec<_>>());
+            }
             (c.sum_exact(&acc), c.max(r as f64), c.min(r as f64))
         });
         assert!(out.iter().all(|&x| x == (1.0, 3.0, 0.0)));

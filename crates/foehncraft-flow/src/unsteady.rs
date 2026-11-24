@@ -2804,8 +2804,16 @@ fn run_one<F: FnMut(&str)>(
         }
         steer.record.row(&row);
     }
+    let mut last_balance = last_balance.unwrap_or_else(|| run_balance.clone());
+    // the thermal account of the last step (D119, D161), from the heat
+    // balance of the energy equation
+    if let Some(sm) = scalars.iter().find(|s| s.energy.is_some())
+        && let Some(e) = &sm.energy
+    {
+        last_balance.book(balance::thermal_account(e, &sm.boundaries));
+    }
     let balance_summary = BalanceSummary {
-        last: last_balance.unwrap_or_else(|| run_balance.clone()),
+        last: last_balance,
         largest_mass_relative: ledger.largest_mass_relative,
         steps: Some(ledger.steps),
         negative_steps: Some(ledger.negative_steps),
