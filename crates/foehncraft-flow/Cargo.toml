@@ -11,7 +11,7 @@ authors.workspace = true
 [features]
 default = ["hdf5"]
 # VTKHDF output of the fields (HDF5 built from source).
-hdf5 = ["foehncraft-fv/hdf5", "foehncraft-mesh/hdf5", "dep:hdf5-metno"]
+hdf5 = ["foehncraft-fv/hdf5", "foehncraft-mesh/hdf5", "foehncraft-particles/hdf5", "dep:hdf5-metno"]
 # MPI examples (system MPI library and libclang at build time).
 mpi = ["foehncraft-parallel/mpi", "foehncraft-mesh/mpi", "foehncraft-fv/mpi"]
 
@@ -20,6 +20,7 @@ foehncraft-core.workspace = true
 foehncraft-kernels.workspace = true
 foehncraft-mesh.workspace = true
 foehncraft-fv.workspace = true
+foehncraft-particles.workspace = true
 foehncraft-parallel.workspace = true
 rayon.workspace = true
 serde.workspace = true

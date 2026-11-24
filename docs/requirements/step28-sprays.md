@@ -268,3 +268,13 @@ Checks of the steady mode:
 - Subramaniam, S. (2013), Lagrangian-Eulerian methods for multiphase flows,
   Prog. Energy Combust. Sci. 39, 215–245.
 - Sun, R., Xiao, H. (2015): as in the assessment.
+
+## 6. Status
+
+SP1 is implemented (PR #242): `[spray]` with an included injector file,
+constant droplet size, exact exponential drag and gravity, tracking on the
+locator, stick, rebound, escape and mirror boundaries, mass book (SPR001 to
+SPR005), parcel output and restart, the parcel kernel in `foehncraft-kernels`
+with a PTX entry (the PTX job of CI checks it; it cannot be built without
+the nightly toolchain). SP1 is one way: parcel passes as pure functions
+(D247) and the sub-step rules of D251 are the first change of SP2.

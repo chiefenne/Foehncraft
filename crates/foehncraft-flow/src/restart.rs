@@ -52,6 +52,8 @@
 //!   windows and counters), and with a viscosity that follows T
 //!   `cht_viscosity` (μ(T) per face of the fluid view as the energy equation
 //!   last passed it to the flow);
+//! - the sprays (L12): `spray_state`, the bytes of the JSON state of the
+//!   parcels (their positions, the injector counters and the tallies);
 //! - optional, for meshes that move (D91, L22): `point_id`,
 //!   `points_x|y|z` and the cell volumes of the time levels `volume_<k>`
 //!   (attribute `volume_levels`); a fixed mesh leaves them out.
@@ -93,6 +95,9 @@ pub struct Restart {
     /// The geometry of the state, for meshes that move or deform (D91,
     /// L22): `None` for a fixed mesh, whose mesh file defines it.
     pub geometry: Option<RestartGeometry>,
+    /// The state of the sprays (L12; JSON of `foehncraft_particles::Spray::state`),
+    /// dataset `spray_state`; parcels follow their positions, not the cell order.
+    pub spray: Option<Vec<u8>>,
     /// The temperature of a conjugate case on the full mesh (fluid and
     /// solids, stage 7) and the state of its cycle-averaged loop (D204).
     pub cht: Option<ChtRestart>,
@@ -369,6 +374,12 @@ mod io {
                 if let Some(m) = &c.viscosity {
                     ds(&g, "cht_viscosity", m)?;
                 }
+            }
+            if let Some(b) = &r.spray {
+                g.new_dataset::<u8>()
+                    .shape([b.len()])
+                    .create("spray_state")?
+                    .write_raw(b)?;
             }
             if let Some(geo) = &r.geometry {
                 ds_u64(&g, "point_id", &geo.point_id)?;
@@ -653,8 +664,14 @@ mod io {
         } else {
             None
         };
+        let spray = if g.link_exists("spray_state") {
+            Some(g.dataset("spray_state")?.read_raw::<u8>()?)
+        } else {
+            None
+        };
         Ok(Restart {
             geometry,
+            spray,
             cht,
             case: rsattr(&g, "case")?,
             cell_id: g.dataset("cell_id")?.read_raw::<u64>()?,
