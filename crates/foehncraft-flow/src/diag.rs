@@ -186,7 +186,7 @@ codes! {
     REG_INITIAL_KEY = "REG007", Error, "A key of `[regions.<name>.initial]` that does not fit: a solid region takes `temperature` only, turbulence start values come as `k` with one of `omega` or `epsilon`, and a start temperature needs `[energy]`.";
     REG_INITIAL_VALUE = "REG008", Error, "A start temperature, k, omega or epsilon of `[regions.<name>.initial]` that is not > 0.";
     POROUS = "POR001", Error, "A porous region without its matrix (`[regions.<name>.porous]` with `viscous`/`inertial` or `honeycomb`), contradicting or invalid values, direction-dependent values without `axes`, or a matrix in a region that is not porous.";
-    POROUS_UNSUPPORTED = "POR002", Error, "A setting that does not yet work with porous regions (porous plan, D279): the energy equation (stage PM2), passive scalars, a turbulence model, a rotating zone, the GPU (stage PM5), or direction-dependent resistances whose axes are turned against the mesh axes.";
+    POROUS_UNSUPPORTED = "POR002", Error, "A setting that does not yet work with porous regions (porous plan, D279): with the energy equation a cycle-averaged or accelerated energy mode or a density that varies, passive scalars, a turbulence model, a rotating zone, the GPU (stage PM5), or direction-dependent resistances whose axes are turned against the mesh axes.";
     REG_INITIAL_INLET = "REG009", Error, "`temperature = \"inlet\"` in `[regions.<name>.initial]` for a region whose fluid part has no inlet with `[boundary.<name>.energy] temperature`.";
     REG_START = "REG010", Note, "The start values of the regions and fluid parts and where they come from: given, a boundary value, a Laplace solve between the pressure boundaries of a part, or the inlets.";
     // pressure values absolute or gauge (D239)

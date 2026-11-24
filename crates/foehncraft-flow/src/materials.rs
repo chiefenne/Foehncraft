@@ -1564,6 +1564,7 @@ enum CurveKind {
         dt: f64,
         v: Vec<f64>,
     },
+    Scaled(f64, Box<Curve>),
 }
 
 impl Curve {
@@ -1578,6 +1579,19 @@ impl Curve {
             kind: CurveKind::Constant(v),
             range: None,
             origin: format!("{v:?}"),
+        }
+    }
+
+    /// `f` times this curve (the gas share ε k of a porous region, D272).
+    pub fn scaled(&self, f: f64) -> Self {
+        let kind = match &self.kind {
+            CurveKind::Constant(v) => CurveKind::Constant(f * v),
+            _ => CurveKind::Scaled(f, Box::new(self.clone())),
+        };
+        Self {
+            kind,
+            range: None,
+            origin: format!("{f:?} × {}", self.origin),
         }
     }
 
@@ -1635,6 +1649,7 @@ impl Curve {
                 let w = x - i as f64;
                 v[i] + w * (v[i + 1] - v[i])
             }
+            CurveKind::Scaled(f, c) => f * c.at(t),
         }
     }
 }

@@ -1356,8 +1356,8 @@ fn run_one<F: FnMut(&str)>(
     // the sources bring in, what each region stores, what goes through
     // the interfaces of a conjugate case
     let heat_regions: Vec<String> = match fl.cht.as_deref() {
-        Some(c) => c.fe.scalars.as_ref().map(|s| s.energy_regions()),
-        None => fl.scalars.as_ref().map(|s| s.energy_regions()),
+        Some(c) => c.fe.scalars.as_ref().map(|s| s.energy_storage_names()),
+        None => fl.scalars.as_ref().map(|s| s.energy_storage_names()),
     }
     .unwrap_or_default();
     let heat_interfaces: Vec<String> = fl
