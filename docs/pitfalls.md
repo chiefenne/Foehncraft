@@ -16,6 +16,7 @@ instead.
 - [Timing small meshes](#timing)
 - [Iteration counts in tests](#counts)
 - [Counts a file declares](#declared-counts)
+- [Memory of a mesh reader](#reader-memory)
 - [Reference numbers of other solvers](#other-solver-numbers)
 - [Coupling loops: the solid must see the flow's response](#coupling-loops)
 - [Limiters on tetrahedra and polyhedra](#limiters)
@@ -236,6 +237,24 @@ the count against the size of the file first (`format::declared`: every
 item takes one byte at least), map sparse tags with a hash map instead of
 a table up to the largest tag, and compute `last - first + 1` with checked
 arithmetic (tests run in debug, where an overflow panics).
+
+<a id="reader-memory"></a>
+## Memory of a mesh reader
+
+A reader that loads the file whole and parses it into general containers
+needs many times the size of the mesh. The VTK reader before PR #245 read
+a 1.2 GB ASCII `.vtu` of 1 M polyhedra with a peak of 5.6 GB: the file, a
+copy without the appended data, the text of every element again, every
+number as `f64`, one `Vec` per polyhedron face in a hash map, a clone of
+those for the builder, then a sorted copy of every face to match them. A
+10 M-cell mesh would have needed some 56 GB. Read through a buffer, put the
+numbers straight into the arrays the mesh keeps (`u32` node ids, flat face
+streams, see `format::Polyhedra`), move arrays instead of cloning them,
+drop each input as soon as it is used, and match faces in groups of their
+smallest node (`builder::match_faces`) instead of sorting copies. The
+peak is then about twice the finished mesh (1 GB per million
+polyhedra). Measure the peak resident memory, not only the time
+(`/usr/bin/time -v` or `-l` on macOS).
 
 <a id="other-solver-numbers"></a>
 ## Reference numbers of other solvers

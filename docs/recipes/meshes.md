@@ -288,6 +288,13 @@ Two more readers (D191, D192) and a writer.
   `zone_names` and `boundary_names` (entries `3=inlet`), else a boundary is
   `boundary3`. A file with surface cells that carry no region number puts
   them in `default`.
+- **Large VTK files.** The reader streams the file: it never holds the file
+  or the text of an array whole, and it keeps node ids as 32-bit integers
+  and the faces of the polyhedra in one flat array. A mesh of 1 M
+  polyhedra (14 faces each, as KoflCraft writes them) peaks at about 1 GB
+  while it is read, whatever the encoding, so 10 M cells need about 10 GB.
+  Appended raw binary is the fastest to read (1 M cells in 5 s, ASCII in
+  8 s); prefer it for meshes of millions of cells.
 - **Writing a VTU.** `output.vtu = true` in the mesh case, or `--vtu`:
 
 ```
