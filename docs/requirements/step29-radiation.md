@@ -1,12 +1,11 @@
 # Step 29: Monte Carlo radiation, version 1 (L15), specification RD0
 
-Draft of 2026-11-24 for step 4 of the recommended order of the
+Specification of 2026-11-24 for step 4 of the recommended order of the
 [graphics-algorithms assessment](../assessments/graphics-algorithms-for-modules.md#10-recommended-order)
 (the maintainer's "go your recommended order", 2026-11-24). It turns L15 (1)
 and the design constraints of D107 into stages that can be built one pull
-request at a time. The decisions in section 1 are **proposals until the
-maintainer answers them**; each gets its D number when answered, from the
-range D255 to D259 kept for this page. Coding of each
+request at a time. The five questions of section 1 were answered by the
+maintainer on 2026-11-24 and are decisions D255 to D259. Coding of each
 stage starts on the maintainer's explicit go. Clean-room rules (D201) apply:
 methods from the open literature, reference data with a D201 entry before it
 appears in a table. Reacting flows are not part of this step; hot gas is given
@@ -17,22 +16,22 @@ graphics-algorithms assessment (null-collision on a majorant grid, stratified
 emission, ratio tracking, multiple importance sampling), and the spray
 specification of step 28 (the particle layer that radiation shares, D107 (1)).
 
-## 1. Questions and proposed answers
+## 1. Questions and decisions
 
-| # | Question | Proposal | Why |
+| # | Question | Decision | Why |
 |---|---|---|---|
 | Q1 | Lead application, which decides the first gallery case and the validation order | **Answered 2026-11-24 as proposed (D255):** **a box furnace with hot grey gas and cooled tubes** (absorbing-emitting gas, optical thickness from thin to thick by one key), then the heat exchanger of application 203 for surface-to-surface exchange through transparent air | The furnace exercises everything R1 does (gas emission, absorption, walls); exact slab solutions and published cube-enclosure results exist for it. The heat exchanger is the thin-gas benchmark case named in the assessment |
 | Q2 | Standalone kernel before coupling | **Answered 2026-11-24 as proposed (D256): yes.** R1a solves radiation on prescribed temperature and absorption fields and is verified against exact solutions; coupling to the energy equation is R1b | The Monte Carlo noise, the ledger closure and the estimators are checked without a flow solve in the loop; R1b then only adds the coupling |
 | Q3 | Shared particle layer (D107 (1)) and the order against sprays SP1 | **Answered 2026-11-24 as proposed (D257): the cell walk is shared now, the bundle store later.** R1a adds a walk that reports every cell and its exact path length (`Locator::walk`), built on the tracker that SP1 also uses; the structure-of-arrays bundle store and migration come with SP1 and SP3 and radiation moves onto them | Rays need no equation of motion, only the walk; neither module waits for the other, and there is still one tracker |
 | Q4 | Serial first, as sprays (D241) | **Answered 2026-11-24 (D258): multi-rank from R1a**, not the proposed serial start. R1a runs on 1 to N ranks with threads on each rank. A bundle that enters a halo cell is handed to the rank that owns the cell (lengths first, then the bundle records, over `send_recv_f64`), in rounds until the global count of live bundles (`all_sum_i64`) is zero. The number of bundles of an emitter follows from its own power and the exact total power (`sum_exact`), so it does not depend on the partition; the fixed-point tallies are summed as integers. The result is therefore bitwise the same on 1 to 4 ranks. This moves the migration between ranks of D257 forward: R1a builds it on the shared walk, and SP3 uses it for parcels | The maintainer's choice. It builds on MPI W1 to W4 (canonical geometry, halo cells, exact reductions); the standalone kernel needs no flow on ranks. Bundles are keyed by identity (D107 (2)) and the geometry is canonical, so a bundle takes the same path in the same bits on every partition |
-| Q5 | GPU from the first pull request, as sprays (D245) | **No, from R1b.** R1a is CPU; the GPU kernels come once SP1 has put the walk on the device, with the CPU = GPU check | The walk on the GPU is SP1's work; doing it twice wastes it. Bundles are independent, so the CPU code is already in the form the wavefront kernels need |
+| Q5 | GPU from the first pull request, as sprays (D245) | **Answered 2026-11-24 (D259): yes, GPU from R1a**, not the proposed start in R1b. The walk and the radiation kernel are single-source from R1a, compile to PTX in the existing CI job and have a CPU = GPU check (to the tolerance of the exact-sum policy of 2026-11-23, as D245; the integer tallies add no difference of their own). One GPU per run until GPU with ranks comes in version 1.1. Whichever of R1a and sprays SP1 comes first writes the walk on the device; the other reuses it (D257) | The maintainer's choice. Bundles are independent, so the kernel maps directly onto device threads; the device walk is written once for both modules |
 
 ## 2. Stages
 
 | Stage | Content | Starts when |
 |---|---|---|
-| R1a | **Kernel and verification.** Grey absorbing-emitting medium (no scattering) on prescribed T and absorption coefficient per cell; black or grey diffuse walls with a wall temperature, symmetry planes as specular mirrors, open boundaries where bundles escape. Emission: stratified inverse-CDF selection of the emitter (cell or wall face) by emitted power, Owen-scrambled Sobol points (Burley 2020) for position and direction, keyed by (emitter, bundle, call, event) (D107 (2)). Transport: `Locator::walk` with exact path length per cell; absorption weighting with the track-length estimator (each cell takes `w (1 − exp(−κ ℓ))`), the remainder followed to a wall or out; a bundle ends below a weight threshold by Russian roulette. Tallies in 64-bit fixed point (D107 (3)); emitted = absorbed + escaped per call to the fixed-point resolution (D107 (4)). On ranks (D258): hand-over of bundles at halo cells, rounds to a global zero count, bitwise the same tallies on 1 to 4 ranks. Output: source per cell (W/m³), incident and net flux per wall face, statistical error per cell. Benchmarks (threads and ranks) and the first gallery images | Q1 to Q5 answered, go |
-| R1b | **Coupling to the energy equation.** Source with the emission linearised in T (Fleck & Cummings 1971, D107 (5)), call every N outer iterations with a running average over calls, statistical error as a health number (D69), net wall flux into CHT walls (D160 interface), `[radiation]` case keys, ledger rows of the radiation module (needs 7.0a, D119), on ranks with the energy equation. GPU kernels with the CPU = GPU check. Gallery case, case file, recipe | R1a, 7.0a, MPI W5 (energy equation on ranks) |
+| R1a | **Kernel and verification.** Grey absorbing-emitting medium (no scattering) on prescribed T and absorption coefficient per cell; black or grey diffuse walls with a wall temperature, symmetry planes as specular mirrors, open boundaries where bundles escape. Emission: stratified inverse-CDF selection of the emitter (cell or wall face) by emitted power, Owen-scrambled Sobol points (Burley 2020) for position and direction, keyed by (emitter, bundle, call, event) (D107 (2)). Transport: `Locator::walk` with exact path length per cell; absorption weighting with the track-length estimator (each cell takes `w (1 − exp(−κ ℓ))`), the remainder followed to a wall or out; a bundle ends below a weight threshold by Russian roulette. Tallies in 64-bit fixed point (D107 (3)); emitted = absorbed + escaped per call to the fixed-point resolution (D107 (4)). On ranks (D258): hand-over of bundles at halo cells, rounds to a global zero count, bitwise the same tallies on 1 to 4 ranks. On the GPU (D259): single-source walk and kernel, CPU = GPU check. Output: source per cell (W/m³), incident and net flux per wall face, statistical error per cell. Benchmarks (threads, ranks and GPU) and the first gallery images | Q1 to Q5 answered, go |
+| R1b | **Coupling to the energy equation.** Source with the emission linearised in T (Fleck & Cummings 1971, D107 (5)), call every N outer iterations with a running average over calls, statistical error as a health number (D69), net wall flux into CHT walls (D160 interface), `[radiation]` case keys, ledger rows of the radiation module (needs 7.0a, D119), on ranks with the energy equation and on the GPU. Gallery case, case file, recipe | R1a, 7.0a, MPI W5 (energy equation on ranks) |
 | R1c | Scattering (isotropic, Henyey–Greenstein) and diffuse reflection at grey walls; next-event estimation towards walls with ratio tracking (Novák et al. 2014) | R1b |
 | R1d | Reciprocal estimator of the net exchange (Tessé et al. 2002); spike: multiple importance sampling between the forward and the reciprocal estimator (Veach & Guibas 1995) | R1c |
 | R1e | Null-collision tracking on a majorant grid (Woodcock et al. 1965; Galtier et al. 2013) as an option; **benchmark against the walk** on the furnace and the heat exchanger (same noise, time per radiation call); the faster one becomes the default | R1a (independent of R1b to R1d) |
@@ -61,7 +60,7 @@ R1a:
    configuration factors).
 4. **Ledger**: emitted = absorbed + escaped to the fixed-point resolution on
    every call; bitwise the same tallies on 1, 2 and 4 threads (D93) and on
-   1, 2 and 4 ranks (D258, in the MPI CI job).
+   1, 2 and 4 ranks (D258, in the MPI CI job); CPU = GPU (D259).
 5. **Cube enclosure with an isothermal grey gas** and cold black walls: wall
    flux distribution against published benchmark solutions (D201 entry first).
 6. **Sobol against pseudo-random emission**: error against N on cases 1
@@ -81,9 +80,10 @@ reference only (float32; assessment section 4.3).
 
 ## 5. Sizing
 
-R1a: three pull requests (walk with the hand-over between ranks; kernel
-with cases 1 to 4 on threads and ranks; output, cube case and gallery),
-about 45 to 60 minutes of code each, verification runs of minutes. R1b to R1g: not sized yet.
+R1a: four pull requests (walk with the hand-over between ranks; kernel
+with cases 1 to 4 on threads and ranks; walk and kernel on the GPU with the
+CPU = GPU check; output, cube case and gallery), about 45 to 60 minutes of
+code each, verification runs of minutes. R1b to R1g: not sized yet.
 
 ## 6. References
 
