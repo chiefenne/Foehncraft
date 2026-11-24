@@ -1091,6 +1091,20 @@
    "range": {}
   },
   {
+   "id": "run.ledger",
+   "title": "Conservation ledger as data: module rows, thermal account, ledger in result.json",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "the gas momentum account of the solver itself is not booked (it comes with the first exchange rows of the sprays, SP2)",
+    "the viscous heating is not yet an exchange pair kinetic to thermal (the two sums are formed separately)",
+    "the thermal account is in the last balance only, not over a run"
+   ],
+   "range": {}
+  },
+  {
    "id": "run.restart-control",
    "title": "Restart and control files (.stop, .result_N, .read_toml_N)",
    "grade": "verified",

@@ -15,6 +15,7 @@ Part of the [Example gallery](../gallery.md): the energy equation of the fluid (
 | 208 | [A heated wall warmed up with the flow held, and a pulsating channel warmed up by the cycle loop](#cht-frozen-flow) | 7 | `[energy.frozen_flow]` `time_step`, `refresh_change`, `start`, `result.json` `frozen_flow`; `[energy.cycle] solid = "transient"`, `march_cycles`, `march_steps`, `cycle_coupling.csv` `march_jump` |
 | 206 | [Water and oil in counterflow across a steel plate: two fluids in one conjugate case](#two-fluids) | 7 | `[regions.<name>] kind = "fluid"` with `material`, `temperature`, fluid parts, REG003–REG006 |
 | 221 | [Start values per region and per fluid part: every domain of an exchanger starts on its own](#start-values) | 7 | `[regions.<name>.initial]`, `temperature = "inlet"`, the start pressure of every fluid part from its own boundaries, REG007–REG010, `flow.json` `start_values` |
+| 238 | [The conservation ledger as data: a heated cavity's mass, kinetic and thermal accounts](#ledger) | 7 | `result.json` `balance.last.ledger` and `pairs`, `Rates::book`, thermal account |
 | 186 | [A warm strip in a closed air enclosure, and a stratified box that stays at rest](#buoyancy) | 7 | `[gravity]`, `[buoyancy] model = "boussinesq"`, `expansion_coefficient`, `static_pressure` |
 | 195 | [Air between walls at 960 K and 240 K, a heated duct and two closed boxes](#variable-density) | 7 | `[energy] density = "variable"`, `thermodynamic_pressure`, `pressure_work`, `[buoyancy] model = "variable-density"`, `density` |
 
@@ -871,4 +872,46 @@ sed 's/max_iterations = 3000/max_iterations = 0/' examples/cases/flow/cht_two_fl
 target/release/foehn flow output/start0.toml --out output/start0
 pip install matplotlib h5py numpy
 python3 -m tools.plot.start_values docs/figures/gallery output/start0 output/start_run output/uniform
+```
+
+<a id="ledger"></a>
+## 238. The conservation ledger as data: a heated cavity's mass, kinetic and thermal accounts
+
+<img src="../figures/gallery/ledger_cavity.png" alt="Three panels for the heated lid-driven cavity. Left: the kinetic-energy account as horizontal bars: the lid work in blue, the viscous dissipation in red, the storage zero. Middle: the thermal-energy account: the heat the lid at 310 K brings in and the heat the bottom at 300 K takes out in blue, nearly equal and opposite, the storage zero. Right: the closure of the mass, kinetic-energy and thermal-energy accounts, the imbalance over the largest term on a logarithmic axis: mass and thermal energy at round-off, the kinetic-energy account at 1.5e-2, the numerical dissipation of the scheme" width="1210" height="360">
+
+**What it is.** Every conserved quantity of a run is an *account* of named
+rows (D119): `quantity`, `unit`, `region`, the `content` at the end, the
+`storage`, and the `terms`, each with its kind (`boundary`, `source`,
+`dissipation`, `exchange`), its name, its boundary and, for an exchange,
+the id of its pair. One routine closes every account (imbalance = storage −
+contributions), so a new module adds a quantity without a new struct. The
+solver books mass, kinetic energy and, with the energy equation, thermal
+energy; `result.json` holds them under `solves[].balance.last.ledger`
+(additive, D80), with `pairs` for the residual of every exchange pair.
+
+**Why it matters for the sprays.** A module books its rows with
+`Rates::book`: the gas side of the spray adds an exchange term to the
+`mass`, `momentum x` … and `thermal energy` accounts, the parcels form
+accounts of their own, and the two sides of a pair cancel to the bit. The
+unit test `a_closed_box_with_a_spray_closes_every_step_and_the_run` is the
+closed-box check of the first spray case with a stand-in module: gas mass,
+momentum and heat gain what the parcels lose, every account closes to
+round-off in every step and over the run.
+
+**The case.** `cavity_heated.toml` (gallery 154), a Re = 100 cavity with
+the lid at 310 K and the bottom at 300 K. The ledger rows of the kinetic
+energy are the lid work and the dissipation; those of the thermal energy
+are the heat flows of the lid and the bottom.
+
+| | |
+|---|---|
+| Code | `foehncraft_flow::balance` (`Account`, `Term`, `Rates::book`, `AccountReport`, `thermal_account`), D119 |
+| Case file | `flow/cavity_heated.toml` |
+| Tests | `balance::tests` (`a_closed_box_with_a_spray_closes_every_step_and_the_run`, `module_rows_close_with_the_carrier_accounts`, `a_missing_partner_shows_in_the_pair_residual`, `the_thermal_account_closes_like_the_heat_balance`), `tests/energy.rs` (`the_thermal_account_is_the_heat_balance_as_data`) |
+| Recipe | [238](../recipes/energy.md#ledger) |
+
+```
+target/release/foehn flow examples/cases/flow/cavity_heated.toml --out output/cavity_heated
+pip install matplotlib
+python3 -m tools.plot.ledger_chart docs/figures/gallery output/cavity_heated
 ```

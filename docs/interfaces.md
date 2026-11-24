@@ -167,6 +167,14 @@ last step, with the terms per boundary), `run` (transient), `steps`,
 `negative_steps` (steps whose numerical dissipation is below
 −`tolerance_energy`:
 a health number, not an error) and `largest_mass_relative`.
+Each balance also carries `ledger` (D119): one entry per account
+(`mass`, `kinetic energy`, with the energy equation `thermal energy`, and
+the accounts a module books) with `quantity`, `unit`, `region`, `content`,
+`storage`, `boundary`, `contributions`, `imbalance`, `relative` and the
+`terms` (`name`, `kind` = `boundary`/`source`/`dissipation`/`exchange`/
+`part`, `boundary`, `pair`, `value`), and `pairs` (`pair`, `residual`), the
+sum of the two sides of every exchange pair. The thermal account is in
+`last` only. Both are additive; the fixed fields above are unchanged.
 
 ## Divergence report (D63)
 

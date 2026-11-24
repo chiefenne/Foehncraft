@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**109 features: 50 verified, 56 partial, 3 unverified.**
+**110 features: 50 verified, 57 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -119,6 +119,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Cases and properties | [Case checks and guidance (unknown keys, boundary checks)](#case-checks-guidance) | partial |
 | Runs and results | [Absolute or gauge pressure values, operating pressure per fluid part](#run-pressure-values) | partial |
 | Runs and results | [Start values per region and per fluid part](#run-start-values) | partial |
+| Runs and results | [Conservation ledger as data: module rows, thermal account, ledger in result.json](#run-ledger) | partial |
 | Runs and results | [Restart and control files (.stop, .result_N, .read_toml_N)](#run-restart-control) | verified |
 | Runs and results | [Derived fields (vorticity, Q, λ₂, wall shear, y⁺, turbulence fields)](#run-derived-fields) | verified |
 | Runs and results | [Statistics of transient runs (mean, RMS, phase averages, confidence)](#run-statistics) | verified |
@@ -1434,6 +1435,26 @@ Gaps:
 - volume selections inside a region (`[[initial.patch]]`) and a region started from another run come later (D73, D52)
 
 Contracts: `diagnostics`.
+
+<a id="run-ledger"></a>
+
+### Conservation ledger as data: module rows, thermal account, ledger in result.json
+
+**partial** (gaps written) · id `run.ledger` · switch `result.json solves[].balance.last.ledger, pairs` · decisions D119, D244
+
+- consistency: [`cavity_heated`](../../examples/cases/flow/cavity_heated.toml): the heated cavity: mass and thermal energy close to round-off, the kinetic-energy account shows the numerical dissipation (passes in CI (set linux-3), not yet in the manual) ([results](../gallery/energy.md#ledger))
+- contract (schema): [`the_thermal_account_is_the_heat_balance_as_data`](../../crates/foehncraft-flow/tests/energy.rs): result.json has mass, kinetic energy and thermal energy accounts with terms; the thermal closure is the negative of the heat-balance imbalance
+- contract (schema): [`a_state_without_modules_has_two_accounts_and_no_pairs`](../../crates/foehncraft-flow/src/balance.rs): a state without modules has the two accounts and no pairs key
+- consistency: [`a_closed_box_with_a_spray_closes_every_step_and_the_run`](../../crates/foehncraft-flow/src/balance.rs): a closed box with a stand-in spray module: gas mass, momentum and heat gain what the parcels lose; every account closes to 1e-12 in every step and over the run, every pair cancels to the bit
+- consistency: [`a_missing_partner_shows_in_the_pair_residual`](../../crates/foehncraft-flow/src/balance.rs): a pair without its partner shows its value as residual
+
+Gaps:
+
+- the gas momentum account of the solver itself is not booked (it comes with the first exchange rows of the sprays, SP2)
+- the viscous heating is not yet an exchange pair kinetic to thermal (the two sums are formed separately)
+- the thermal account is in the last balance only, not over a run
+
+Contracts: `schema`.
 
 <a id="run-restart-control"></a>
 
