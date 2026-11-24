@@ -541,6 +541,106 @@ fn cgns_reader_survives_damaged_nodes() {
     }
 }
 
+/// VTKHDF files are HDF5 files: the damage is done to the bytes (the HDF5
+/// library must refuse them) and, through HDF5, to the datasets.
+#[cfg(feature = "hdf5")]
+#[test]
+fn vtkhdf_reader_survives_the_corpus() {
+    for file in ["vtkhdf/box4.vtkhdf"] {
+        let bytes = std::fs::read(data(file)).unwrap();
+        for (k, (what, m)) in mutations(&bytes).into_iter().enumerate() {
+            if !(what.starts_with("truncated")
+                || what.starts_with("byte")
+                || what.starts_with("bytes")
+                || k % 16 == 0)
+            {
+                continue;
+            }
+            let dir = scratch(&format!("vtkhdf-{}-{k}", file.replace('/', "-")));
+            let p = dir.join("mesh.vtkhdf");
+            std::fs::write(&p, &m).unwrap();
+            let label = format!("vtkhdf reader, {file}, {what}");
+            let q = p.clone();
+            guarded(&label, move || {
+                reader("vtkhdf").read_path(&q, &ReadOptions::default())
+            });
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+    }
+}
+
+/// Paths of the integer datasets of an HDF5 file (counts, types, offsets,
+/// connectivity, ids, ghost flags, zones), in file order.
+#[cfg(feature = "hdf5")]
+fn int_datasets(g: &hdf5_metno::Group, at: &str, out: &mut Vec<String>) {
+    use hdf5_metno::types::TypeDescriptor;
+    for name in g.member_names().unwrap_or_default() {
+        let path = format!("{at}/{name}");
+        if let Ok(d) = g.dataset(&name) {
+            if matches!(
+                d.dtype().and_then(|t| t.to_descriptor()),
+                Ok(TypeDescriptor::Integer(_) | TypeDescriptor::Unsigned(_))
+            ) && d.size() > 0
+            {
+                out.push(path);
+            }
+        } else if let Ok(c) = g.group(&name) {
+            int_datasets(&c, &path, out);
+        }
+    }
+}
+
+/// The datasets of a VTKHDF file damaged: every integer dataset set to
+/// values out of range (stored in its own type where they fit).
+#[cfg(feature = "hdf5")]
+#[test]
+fn vtkhdf_reader_survives_damaged_datasets() {
+    let file = "vtkhdf/box4.vtkhdf";
+    let sets = {
+        let f = hdf5_metno::File::open(data(file)).unwrap();
+        let mut v = Vec::new();
+        int_datasets(&f, "", &mut v);
+        v
+    };
+    assert!(
+        sets.len() >= 20,
+        "{file}: only {} integer datasets",
+        sets.len()
+    );
+    let damage: [(&str, Damage); 6] = [
+        ("all -1", |_, _| -1),
+        ("all 0", |_, _| 0),
+        ("all i32::MAX", |_, _| i32::MAX as i64),
+        (
+            "first i32::MAX",
+            |i, v| if i == 0 { i32::MAX as i64 } else { v },
+        ),
+        ("last + 1", |_, v| v.saturating_add(1)),
+        ("every value + 7", |_, v| v.saturating_add(7)),
+    ];
+    for (k, set) in sets.iter().enumerate() {
+        for (what, f) in damage {
+            let dir = scratch(&format!("vtkhdf-set-{k}"));
+            let p = dir.join("mesh.vtkhdf");
+            std::fs::copy(data(file), &p).unwrap();
+            {
+                let h = hdf5_metno::File::open_rw(&p).unwrap();
+                let d = h.dataset(set).unwrap();
+                let v: Vec<i64> = d.read_raw().unwrap();
+                let w: Vec<i64> = v.iter().enumerate().map(|(i, &x)| f(i, x)).collect();
+                // HDF5 clips values that do not fit the stored type
+                d.write_raw(&w).unwrap();
+            }
+            let label = format!("vtkhdf reader, {file}, {set}, {what}");
+            let q = p.clone();
+            guarded(&label, move || {
+                reader("vtkhdf").read_path(&q, &ReadOptions::default())
+            });
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+    }
+}
+
 /// The hand-written inputs of `tests/data/broken`: `<name>.<ext>` read
 /// with the reader the extension (or the `reader` prefix of the name) names;
 /// each must end in an error.

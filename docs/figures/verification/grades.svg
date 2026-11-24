@@ -10,8 +10,8 @@
 <text x="220" y="84.0" text-anchor="end">Meshes</text>
 <rect x="230.0" y="70" width="81.5" height="20" fill="#2e9d5b"/>
 <text x="270.8" y="84.0" text-anchor="middle" fill="white" font-weight="bold">2</text>
-<rect x="311.5" y="70" width="366.9" height="20" fill="#e9a23b"/>
-<text x="495.0" y="84.0" text-anchor="middle" fill="white" font-weight="bold">9</text>
+<rect x="311.5" y="70" width="407.7" height="20" fill="#e9a23b"/>
+<text x="515.4" y="84.0" text-anchor="middle" fill="white" font-weight="bold">10</text>
 <text x="220" y="112.0" text-anchor="end">Numerics</text>
 <rect x="230.0" y="98" width="81.5" height="20" fill="#2e9d5b"/>
 <text x="270.8" y="112.0" text-anchor="middle" fill="white" font-weight="bold">2</text>

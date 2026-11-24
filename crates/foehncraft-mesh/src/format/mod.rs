@@ -1,7 +1,7 @@
 //! Mesh file formats (D33, D187): one reader interface for every format.
 //!
-//! A format is a [`MeshFormat`]: a name (`gmsh`, `su2`, `fluent_msh`, `cgns`,
-//! `openfoam`),
+//! A format is a [`MeshFormat`]: a name (`gmsh`, `su2`, `fluent_msh`, `vtk`,
+//! `cgns`, `vtkhdf`, `openfoam`),
 //! the file extensions it owns (an OpenFOAM mesh is a directory), a test of
 //! the first bytes of a file, and a reader.
 //! The readers are listed in [`FORMATS`]; [`read`] picks the reader from
@@ -30,6 +30,8 @@ mod inflate;
 pub mod openfoam;
 pub mod su2;
 pub mod vtk;
+#[cfg(feature = "hdf5")]
+pub mod vtkhdf;
 
 use crate::builder::CellSoup;
 use crate::generate::{hex_faces, tet_faces};
@@ -100,6 +102,8 @@ pub static FORMATS: &[&dyn MeshFormat] = &[
     &vtk::Vtk,
     #[cfg(feature = "hdf5")]
     &cgns::Cgns,
+    #[cfg(feature = "hdf5")]
+    &vtkhdf::VtkHdf,
     &openfoam::OpenFoam,
 ];
 
@@ -197,11 +201,17 @@ pub fn detect(
         return Ok(*f);
     }
     if !cfg!(feature = "hdf5")
-        && path
-            .extension()
-            .is_some_and(|e| e.eq_ignore_ascii_case("cgns"))
+        && let Some(ext) = path.extension().and_then(|e| e.to_str())
+        && (ext.eq_ignore_ascii_case("cgns") || ext.eq_ignore_ascii_case("vtkhdf"))
     {
-        return Err("CGNS files are read through HDF5: build with the feature `hdf5`".into());
+        return Err(format!(
+            "{} files are read through HDF5: build with the feature `hdf5`",
+            if ext.eq_ignore_ascii_case("cgns") {
+                "CGNS"
+            } else {
+                "VTKHDF"
+            }
+        ));
     }
     let head = &bytes[..bytes.len().min(4096)];
     if bytes.is_empty() {
