@@ -1,0 +1,109 @@
+# Laminar free convection along an isothermal vertical plate (stage 7b2,
+# V7.12): the boundary layer of Ostrach (1953) against its similarity
+# solution, which tools/verification/ostrach.py solves by shooting.
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/natural_convection_plate.toml
+#
+# The plate is the left boundary from its leading edge y = 0 to y = 1 m,
+# 1 K warmer than the ambient (301 K against 300 K); below the leading
+# edge the left boundary is a slip wall. The ambient at rest enters
+# through the bottom and the right side (total pressure 0: the reduced
+# pressure of the ambient's own hydrostatics, D153) at 300 K, and leaves
+# through the top. Dimensionless set-up: ρ = 1 kg/m³, μ = ν = 1e-4,
+# Pr = 0.71, g β ΔT = 1 m/s², so the Grashof number of the plate is
+# Gr_L = g β ΔT L³/ν² = 1e8 (laminar).
+#
+# Similarity theory: Nu_x = q x/(k ΔT) = 0.50209 (Gr_x/4)^(1/4) at
+# Pr 0.71 (−H'(0) of tools/verification/ostrach.py; 0.5046 at Pr 0.72 in
+# Ostrach's table), with x the distance from the leading edge (here the
+# y coordinate): at x = 0.25, 0.5, 0.75 m the local Nusselt number is
+# 12.55, 21.11, 28.61. The wall probes give the heat flux there and
+# its grid convergence index over three nested meshes; the boundary layer
+# is graded to the wall and to the leading edge. tools/plot/
+# natural_convection.py compares Nu_x along the plate and the velocity
+# and temperature profiles in similarity form.
+
+case_format = "0.7"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+lower = [0.0, -0.2, 0.0]
+upper = [0.4, 1.0, 0.01]
+cells = [32, 40, 1]
+segments = { x = [ { to = 0.4, cells = 32, ratio = 20.0 } ], y = [ { to = 0.0, cells = 8, ratio = 0.2 }, { to = 1.0, cells = 32, ratio = 8.0 } ] }
+split = [ { boundary = "xmin", axis = "y", at = 0.0, name = "plate" } ]
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+pressure_values = "gauge"
+density = 1.0
+viscosity = 1e-4
+specific_heat = 1000.0
+conductivity = 0.14084507042253522   # μ c_p / 0.71
+temperature = 300.0        # T_ref of the buoyancy, the ambient
+
+[energy]
+initial = 300.0
+
+[gravity]
+vector = [0.0, -100.0, 0.0]
+
+[buoyancy]
+model = "boussinesq"
+expansion_coefficient = 0.01
+
+[boundary.plate]
+type = "wall"
+[boundary.plate.energy]
+temperature = 301.0
+[boundary.xmin]
+type = "slip-wall"            # below the leading edge
+[boundary.xmin.energy]
+heat_flux = 0.0
+[boundary.ymin]
+type = "total-pressure-inlet"
+total_pressure = 0.0
+[boundary.ymin.energy]
+temperature = 300.0
+[boundary.xmax]
+type = "total-pressure-inlet" # the entrained ambient
+total_pressure = 0.0
+[boundary.xmax.energy]
+temperature = 300.0
+[boundary.ymax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+algorithm = "coupled"
+tolerance = 1e-8
+max_iterations = 3000
+
+[solver.energy]
+tolerance = 1e-12
+max_iter = 200
+
+[verification]
+levels = [0, 1, 2]
+require_convergence = true
+
+[output]
+wall_csv = true
+wall_probes = [
+  { name = "x025", boundary = "plate", point = [0.0, 0.25, 0.005] },
+  { name = "x050", boundary = "plate", point = [0.0, 0.50, 0.005] },
+  { name = "x075", boundary = "plate", point = [0.0, 0.75, 0.005] },
+]
+
+[[output.lines]]
+name = "x050"              # across the boundary layer at x = 0.5 m
+from = [0.0, 0.5, 0.005]
+to = [0.4, 0.5, 0.005]
+points = 401

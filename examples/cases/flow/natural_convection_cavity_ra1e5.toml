@@ -1,0 +1,103 @@
+# Natural convection of air in a differentially heated square cavity
+# (stage 7b2, V7.15): the hot and the cold side wall, adiabatic top and
+# bottom, the Boussinesq force about the mean temperature (D153).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/natural_convection_cavity_ra1e5.toml
+#
+# Dimensionless set-up: side L = 1 m, depth 0.01 m (one cell layer),
+# ρ = 1 kg/m³, c_p = 1000 J/(kg K), k = 1 W/(m K) (α = 1e-3 m²/s),
+# μ = 7.1e-4 Pa s (Pr = 0.71), β = 1e-3 1/K, walls 300.5 K and 299.5 K
+# (ΔT = 1 K), so the Rayleigh number Ra = g β ΔT L³/(ν α) = g/7.1e-4.
+# Here g = 71 m/s², Ra = 1e5. The mean Nusselt number of the hot wall is
+# Nu = Q/(k ΔT · depth) = 100 Q with the heat flow Q of the report (W).
+# The same file runs Ra = 1e3 to 1e6 with --set 'gravity.vector=[0,-g,0]'
+# (g = 0.71, 7.1, 71, 710); tools/plot/natural_convection.py runs all
+# four and draws the gallery images.
+#
+# Three nested meshes clustered to the walls (32², 64², 128², the end
+# cells a fourth of the middle ones) give the observed order, the
+# extrapolated value and the grid convergence index of the heat flow (our
+# own estimate; D201). The exact energy balance (hot-wall heat in equals
+# cold-wall heat out to round-off) is checked on every mesh. The mean Nu
+# of de Vahl Davis (1983), 1.118, 2.243, 4.519, 8.800 for Ra 1e3 to 1e6
+# (8.825 at 1e6 by Le Quéré 1991), are numbers of other codes: shown as
+# context only, not a pass band (D201).
+
+case_format = "0.7"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [1.0, 1.0, 0.01]
+cells = [32, 32, 1]
+grading.x = { ratio = 4.0, symmetric = true }
+grading.y = { ratio = 4.0, symmetric = true }
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 7.1e-4
+specific_heat = 1000.0
+conductivity = 1.0
+temperature = 300.0        # T_ref of the buoyancy, the mean temperature
+
+[energy]
+initial = 300.0
+
+[gravity]
+vector = [0.0, -71.0, 0.0]
+
+[buoyancy]
+model = "boussinesq"
+expansion_coefficient = 1e-3
+
+[boundary.xmin]
+type = "wall"
+[boundary.xmin.energy]
+temperature = 300.5
+[boundary.xmax]
+type = "wall"
+[boundary.xmax.energy]
+temperature = 299.5
+[boundary.ymin]
+type = "wall"
+[boundary.ymin.energy]
+heat_flux = 0.0
+[boundary.ymax]
+type = "wall"
+[boundary.ymax.energy]
+heat_flux = 0.0
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+algorithm = "coupled"
+tolerance = 1e-8
+max_iterations = 3000
+
+[solver.energy]
+tolerance = 1e-12
+max_iter = 200
+
+[verification]
+levels = [0, 1, 2]
+require_convergence = true
+
+[output]
+wall_csv = false
+
+[[output.lines]]
+name = "vertical"          # u on the vertical mid-line x = L/2
+from = [0.5, 0.0, 0.005]
+to = [0.5, 1.0, 0.005]
+points = 401
+
+[[output.lines]]
+name = "horizontal"        # v on the horizontal mid-line y = L/2
+from = [0.0, 0.5, 0.005]
+to = [1.0, 0.5, 0.005]
+points = 401

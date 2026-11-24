@@ -137,12 +137,63 @@ fn bad_files_give_clear_errors() {
     };
     use format::MeshFormat;
     assert!(e("(2 2)\n").contains("3D"));
-    assert!(e("(2 3)\n(2010 (1 1 4 1 3)(\n").contains("not closed"));
-    assert!(e("(2 3)\n(2010 (1 1 4 1 3)())\n").contains("binary"));
+    assert!(e("(2 3)\n(13 (1 1 4 1 3)(\n").contains("not closed"));
+    // binary sections: data shorter or longer than the header says
+    assert!(e("(2 3)\n(2010 (1 1 4 1 3)(\n").contains("more than the file"));
+    assert!(e("(2 3)\n(2010 (1 1 4 1 3)())\n").contains("more than the file"));
+    let mut b = b"(2 3)\n(3010 (1 1 1 1 3)(".to_vec();
+    b.extend_from_slice(&[0u8; 32]);
+    b.extend_from_slice(b")End of Binary Section 3010)\n");
+    let msg = format::fluent_msh::IndustryMsh
+        .parse(&b, &Default::default())
+        .unwrap_err();
+    assert!(msg.contains("do not end where the header says"), "{msg}");
+    assert!(e("(2 3)\n(2059 (1 1 2 1)(abc").contains("not found"));
     assert!(e("(2 3)\nhello\n").contains("line 2"));
     assert!(e("(2 3)\n(0 \"c\")\n").contains("no faces"));
     // a face of an unknown cell
     let s = "(2 3)\n(10 (0 1 3 0 3))\n(10 (1 1 3 1 3)(\n0 0 0\n1 0 0\n0 1 0\n))\n\
              (12 (0 1 1 0 0))\n(13 (3 1 1 3 3)(\n1 2 3 5 0\n))\n";
     assert!(e(s).contains("beyond"), "{}", e(s));
+}
+
+/// The binary form gives the same mesh as the ASCII form.
+fn same_mesh(ascii: &MeshFile, bin: &MeshFile, tol: f64) {
+    assert_eq!(ascii.mesh.n_cells, bin.mesh.n_cells);
+    assert_eq!(ascii.mesh.owner, bin.mesh.owner);
+    assert_eq!(ascii.mesh.neighbour, bin.mesh.neighbour);
+    assert_eq!(ascii.mesh.face_nodes, bin.mesh.face_nodes);
+    assert_eq!(names(ascii), names(bin));
+    assert_eq!(ascii.mesh.zones, bin.mesh.zones);
+    assert_eq!(ascii.mesh.cell_zone, bin.mesh.cell_zone);
+    for (a, b) in ascii.mesh.points.iter().zip(&bin.mesh.points) {
+        for k in 0..3 {
+            assert!(
+                (a[k] - b[k]).abs() <= tol * (1.0 + a[k].abs()),
+                "{a:?} {b:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn binary_single_precision_channel() {
+    let a = format::read(path("channel_hex.msh"), None).unwrap();
+    let b = format::read(path("channel_hex_binary.msh"), None).unwrap();
+    assert_eq!(b.reader, "fluent_msh");
+    assert!(b.format.contains("binary single"), "{}", b.format);
+    assert!(a.format.contains("ASCII"), "{}", a.format);
+    // the coordinates of the channel are exact in single precision
+    check(&b, 2.0);
+    same_mesh(&a, &b, 0.0);
+    assert!(b.warnings.is_empty(), "{:?}", b.warnings);
+}
+
+#[test]
+fn binary_double_precision_polyhedra() {
+    let a = format::read(path("dual_polyhedra.msh"), None).unwrap();
+    let b = format::read(path("dual_polyhedra_binary.msh"), None).unwrap();
+    assert!(b.format.contains("binary double"), "{}", b.format);
+    check(&b, 1.0);
+    same_mesh(&a, &b, 1e-15);
 }

@@ -1,0 +1,97 @@
+# Fully developed mixed convection in a vertical channel with walls at
+# different temperatures (stage 7b2, V7.9; Aung & Worku 1986): the buoyant
+# slot of buoyancy_slot.toml with a net upward flow.
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/mixed_convection_channel.toml
+#
+# Two vertical walls D = 1 m apart, the left one at 301 K, the right one at
+# 300 K, periodic in the vertical direction; the periodic pair holds the
+# mass flow 2.5e-4 kg/s (mean velocity U_m = 5e-3 m/s upwards) by a uniform
+# body force the solver adjusts. The temperature is linear between the
+# walls, and with the Boussinesq force about the mean temperature the
+# momentum equation is linear: the exact velocity is the Poiseuille
+# parabola plus the cubic of the slot,
+#
+#   v = 6 U_m η (1 − η) + (g β ΔT D²/(48 ν)) (ξ³ − ξ),  ξ = 2 η − 1 = 2x/D − 1.
+#
+# Here g β ΔT = 0.01 m/s², ν = 0.01 m²/s: Gr = g β ΔT D³/ν² = 100,
+# Re = U_m D/ν = 0.5, Gr/Re = 200. Above Gr/Re = 72 the flow reverses at
+# the cold wall: the fluid rises fast at the hot wall and falls along the
+# cold one while the net flow goes up (aiding flow at the hot wall,
+# opposing at the cold one). With mass_flow = -2.5e-4 and
+# mean_velocity = -5e-3 the net flow goes down and reverses at the hot
+# wall. Three perturbed meshes (8 × 2 to 32 × 8 cells, 15 %); the observed
+# order of the velocity error must lie in 1.8–2.3.
+
+case_format = "0.7"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [1.0, 0.25, 0.05]
+cells = [8, 2, 1]
+perturb = 0.15
+
+[fluid]
+density = 1.0
+viscosity = 0.01
+specific_heat = 1000.0
+conductivity = 1.0
+temperature = 300.5        # T_ref of the buoyancy, the mean temperature
+
+[energy]
+initial = 300.5
+
+[gravity]
+vector = [0.0, -1.0, 0.0]
+
+[buoyancy]
+model = "boussinesq"
+expansion_coefficient = 0.01
+
+[analytic]
+type = "buoyant-slot"
+lower = 0.0
+upper = 1.0
+buoyancy = 0.01            # g β ΔT (m/s²)
+mean_velocity = 5e-3       # U_m (m/s), upwards
+
+[boundary.xmin]
+type = "wall"
+[boundary.xmin.energy]
+temperature = 301.0
+[boundary.xmax]
+type = "wall"
+[boundary.xmax.energy]
+temperature = 300.0
+[boundary.ymin]
+type = "periodic"
+partner = "ymax"
+mass_flow = 2.5e-4         # kg/s from ymin towards ymax
+[boundary.ymax]
+type = "periodic"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-10
+max_iterations = 2500
+
+[solver.energy]
+tolerance = 1e-12
+max_iter = 200
+
+[verification]
+levels = [0, 1, 2]
+expected_order = [1.8, 2.3]
+
+[output]
+wall_csv = false
+
+[[output.lines]]
+name = "profile"           # v across the channel at mid height
+from = [0.0, 0.125, 0.025]
+to = [1.0, 0.125, 0.025]
+points = 201
