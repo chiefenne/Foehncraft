@@ -19,6 +19,7 @@
 mod amg;
 mod flow;
 mod fv;
+mod particle;
 
 use foehncraft_kernels::{face, spmv};
 use core::arch::nvptx::{_block_dim_x, _block_idx_x, _thread_idx_x};

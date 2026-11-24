@@ -149,6 +149,24 @@ pub unsafe fn parcel_step_at<T: Real>(i: usize, a: &ParcelArrays<'_, T>) -> Parc
     }
 }
 
+/// As [`parcel_step_at`] with the index checked: the entry for the CPU
+/// backends outside this crate.
+///
+/// # Panics
+/// When `i` is not smaller than the length of every array.
+#[inline]
+pub fn parcel_step_checked<T: Real>(i: usize, a: &ParcelArrays<'_, T>) -> ParcelStep<T> {
+    let n = a.dt.len();
+    assert!(
+        i < n
+            && a.v.iter().chain(a.u.iter()).all(|s| s.len() == n)
+            && [a.rho_g, a.mu_g, a.d, a.rho_p].iter().all(|s| s.len() == n),
+        "parcel {i} outside the arrays of the batch"
+    );
+    // SAFETY: i < n and every array has n entries (checked above).
+    unsafe { parcel_step_at(i, a) }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

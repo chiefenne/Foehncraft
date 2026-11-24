@@ -1,5 +1,7 @@
 //! Lagrangian parcels of the sprays (L12, version 1, D240 to D246).
 //!
+//! - [`batch`]: the parcel step for a batch of parcels, the CPU backends of the
+//!   kernel that also runs on the GPU (D245);
 //! - [`config`]: the `[spray]` table and its `include` file;
 //! - [`spray`]: the parcels in structure-of-arrays form, the injectors,
 //!   the tracking of each parcel through the polyhedral mesh (face walk of
@@ -11,6 +13,7 @@
 //! not feel them (two-way coupling is SP2). One process: parcel migration
 //! between ranks is SP3.
 
+pub mod batch;
 pub mod config;
 pub mod spray;
 

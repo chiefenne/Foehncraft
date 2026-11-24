@@ -1029,6 +1029,7 @@ fn run_one<F: FnMut(&str)>(
     // (on the base mesh: a probe or the reference cell is found there, a
     // point inside a sliding rotor is a limit of variant B)
     let loc = Locator::new(mesh0, geo0);
+    let mut spray = crate::spray::create(&case, mesh0, geo0, &loc)?;
     let reference_cell = if arrays.has_pressure() {
         None
     } else {
@@ -1122,6 +1123,25 @@ fn run_one<F: FnMut(&str)>(
     if let Some(path) = &restart_file {
         let r = restart::read(path)?;
         let (r, same) = r.to_local(&mesh.cell_id[..nc], &mesh.face_id, mesh.n_interior_faces())?;
+        if let Some(sp) = spray.as_mut() {
+            match &r.spray {
+                Some(b) => {
+                    let env = foehncraft_particles::Env {
+                        mesh: mesh0,
+                        geo: geo0,
+                        loc: &loc,
+                    };
+                    sp.restore(&env, b)
+                        .map_err(|e| crate::diag::err(crate::diag::Diagnostic::new(
+                            crate::diag::SPRAY_CONFIG,
+                            format!("{}: the spray state of the restart file: {e:#}", path.display()),
+                        )))?;
+                }
+                None => lg.note(
+                    "the restart file holds no spray state: the run starts without parcels",
+                ),
+            }
+        }
         if let Some((old, clock, dt_next, scheme)) = r.transient.clone() {
             if scheme != time0.scheme {
                 lg.note(&format!(
@@ -1474,6 +1494,18 @@ fn run_one<F: FnMut(&str)>(
         &bhead,
         cont,
     )?;
+    let mut spray_csv = if spray.is_some() {
+        Some(History::new(
+            out,
+            &suffix_name("spray", desc, last),
+            &crate::case::csv_preamble("spray", name, None, crate::spray::CSV_UNITS),
+            crate::spray::CSV_HEAD,
+            cont,
+        )?)
+    } else {
+        None
+    };
+    let mut spray_lost_warned = false;
     // the statistics of D71 (the final solve of a sweep only)
     let stat_cfg = case.output.statistics.clone().filter(|_| last);
     let stat_start = stat_cfg
@@ -1810,7 +1842,7 @@ fn run_one<F: FnMut(&str)>(
                         files.push("fields_last_valid.vtkhdf");
                     }
                     if last && restart::AVAILABLE && imprint.is_none() {
-                        let rs = restart_of(
+                        let mut rs = restart_of(
                             &mut fl,
                             &tr,
                             mesh,
@@ -1819,6 +1851,7 @@ fn run_one<F: FnMut(&str)>(
                             cycle.as_ref(),
                             frozen.as_ref(),
                         )?;
+                        rs.spray = crate::spray::state(spray.as_ref())?;
                         restart::write(&out.join("restart.h5"), &rs)?;
                         files.push("restart.h5");
                     }
@@ -1991,6 +2024,24 @@ fn run_one<F: FnMut(&str)>(
                     row["heat"] = serde_json::to_value(hb)?;
                 }
                 steer.record.row(&row);
+            }
+        }
+        if let (Some(sp), Some(csv)) = (spray.as_mut(), spray_csv.as_mut()) {
+            let sol = Solution {
+                state: fl.state()?,
+                disc: &fl.disc,
+                phys: fl.physics(),
+            };
+            let lost = crate::spray::step(
+                &case, sp, &sol, mesh, geo, &loc, n, rp.time, h, out, name, csv,
+            )?;
+            if lost > 0 && !spray_lost_warned {
+                spray_lost_warned = true;
+                lg.warn(&format!(
+                    "{}: step {n}: {lost} parcel(s) lost (the walk failed or [spray] max_substeps \
+                     was exceeded); `spray.csv` counts them",
+                    crate::diag::SPRAY_LOST
+                ));
             }
         }
         let bal = {
@@ -2360,7 +2411,7 @@ fn run_one<F: FnMut(&str)>(
             }
         }
         if restart_now && restart::AVAILABLE && imprint.is_none() {
-            let rs = restart_of(
+            let mut rs = restart_of(
                 &mut fl,
                 &tr,
                 mesh,
@@ -2369,6 +2420,7 @@ fn run_one<F: FnMut(&str)>(
                 cycle.as_ref(),
                 frozen.as_ref(),
             )?;
+            rs.spray = crate::spray::state(spray.as_ref())?;
             restart::write(&out.join("restart.h5"), &rs)?;
             if restart_numbered {
                 restart::write(&out.join(format!("restart_{n:06}.h5")), &rs)?;
@@ -2418,6 +2470,13 @@ fn run_one<F: FnMut(&str)>(
     let (mesh, geo) = current(&work, mesh0, geo0);
     history.flush()?;
     balance_csv.flush()?;
+    if let Some(f) = spray_csv.as_mut() {
+        f.flush()?;
+    }
+    if let Some(sp) = spray.as_ref() {
+        crate::spray::write_parcels(sp, out, name, tr.clock.step)?;
+        crate::spray::finish(sp)?;
+    }
     if let Some(f) = heat_csv.as_mut() {
         f.flush()?;
     }
@@ -2463,7 +2522,7 @@ fn run_one<F: FnMut(&str)>(
         lg.frame(&f);
     }
     if last && (case.run.restart_final || stopped) && restart::AVAILABLE && imprint.is_none() {
-        let rs = restart_of(
+        let mut rs = restart_of(
             &mut fl,
             &tr,
             mesh,
@@ -2472,6 +2531,7 @@ fn run_one<F: FnMut(&str)>(
             cycle.as_ref(),
             frozen.as_ref(),
         )?;
+        rs.spray = crate::spray::state(spray.as_ref())?;
         restart::write(&out.join("restart.h5"), &rs)?;
     }
     let scalars = crate::scalar::summaries(
