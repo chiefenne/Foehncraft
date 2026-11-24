@@ -2779,7 +2779,12 @@ impl Flow {
             return Ok(());
         };
         let tb = self.fluid_boundary_temperature(&t)?;
+        // the molar mass of a species mixture (SF1)
+        let molar = self.scalars.as_ref().and_then(|s| s.species_molar_factor());
         let d = self.density.as_deref_mut().expect("density");
+        if molar.is_some() {
+            d.set_molar(molar);
+        }
         d.refresh(&t, &tb);
         self.dev.set_density(&d.rho, &d.rho_face)?;
         self.phys.rho_var = Some(std::sync::Arc::new((d.rho.clone(), d.rho_face.clone())));

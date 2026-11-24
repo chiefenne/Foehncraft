@@ -77,6 +77,7 @@ pub mod schedule;
 pub mod schema;
 pub mod simplec;
 pub mod sliding;
+pub mod species;
 pub mod spray;
 pub mod start;
 pub mod statistics;

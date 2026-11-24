@@ -110,6 +110,9 @@ pub struct Variable {
     neighbour: Vec<u32>,
     weight: Vec<f64>,
     volume: Vec<f64>,
+    /// The factor M/M_fluid of a species mixture (stage SF1) per cell and
+    /// per boundary face: ρ = p₀ M/(R T) with the mixture's molar mass.
+    molar: Option<(Vec<f64>, Vec<f64>)>,
 }
 
 impl Variable {
@@ -142,6 +145,26 @@ impl Variable {
         (gamma.is_finite() && gamma > 1.0).then(|| (gamma * r_spec * t).sqrt())
     }
 
+    /// Sets the factor M/M_fluid of a species mixture per cell and per
+    /// boundary face (stage SF1), for the next refresh.
+    pub fn set_molar(&mut self, f: Option<(Vec<f64>, Vec<f64>)>) {
+        self.molar = f;
+    }
+
+    /// The molar factor of cell `c` (1 without species).
+    fn fc(&self, c: usize) -> f64 {
+        self.molar
+            .as_ref()
+            .map_or(1.0, |(m, _)| m.get(c).copied().unwrap_or(1.0))
+    }
+
+    /// The molar factor of boundary face `fb` (1 without species).
+    fn fb(&self, fb: usize) -> f64 {
+        self.molar
+            .as_ref()
+            .map_or(1.0, |(_, m)| m.get(fb).copied().unwrap_or(1.0))
+    }
+
     /// Recomputes p₀ (closed volume), the cell and the face densities from
     /// the cell temperatures `t` and the boundary-face temperatures `tb`.
     pub fn refresh(&mut self, t: &[f64], tb: &[f64]) {
@@ -150,11 +173,16 @@ impl Variable {
             let s: f64 = t
                 .iter()
                 .zip(&self.volume)
-                .map(|(&tc, v)| self.curve.at(tc) * v)
+                .enumerate()
+                .map(|(c, (&tc, v))| self.curve.at(tc) * self.fc(c) * v)
                 .exact_sum();
             self.p0 = self.mass * self.p_op / s;
         }
-        self.rho = t.iter().map(|&tc| self.at(tc)).collect();
+        self.rho = t
+            .iter()
+            .enumerate()
+            .map(|(c, &tc)| self.at(tc) * self.fc(c))
+            .collect();
         let ni = self.neighbour.len();
         let nf = self.owner.len();
         self.rho_face = (0..nf)
@@ -164,7 +192,7 @@ impl Variable {
                     w * self.rho[self.owner[f] as usize]
                         + (1.0 - w) * self.rho[self.neighbour[f] as usize]
                 } else {
-                    self.at(tb[f - ni])
+                    self.at(tb[f - ni]) * self.fb(f - ni)
                 }
             })
             .collect();
@@ -409,6 +437,7 @@ pub fn setup(
     d: &foehncraft_fv::disc::Discretisation,
     t: &[f64],
     tb: &[f64],
+    molar: Option<(Vec<f64>, Vec<f64>)>,
 ) -> Result<Option<Variable>> {
     if !wanted(case) {
         return Ok(None);
@@ -443,6 +472,7 @@ pub fn setup(
         neighbour: d.neighbour[..ni].to_vec(),
         weight: d.weight.clone(),
         volume: d.cell_volume[..d.n_cells].to_vec(),
+        molar,
     };
     // the start state at the operating pressure: its mass is that of the
     // closed volume
@@ -464,7 +494,8 @@ pub fn attach(fl: &mut crate::simplec::Flow, case: &crate::case::FlowCase) -> Re
         anyhow::bail!("the variable density needs the temperature of the energy equation");
     };
     let tb = fl.fluid_boundary_temperature(&t)?;
-    if let Some(v) = setup(case, &fl.disc, &t, &tb)? {
+    let molar = fl.scalars().and_then(|s| s.species_molar_factor());
+    if let Some(v) = setup(case, &fl.disc, &t, &tb, molar)? {
         fl.density = Some(Box::new(v));
     }
     fl.refresh_density()

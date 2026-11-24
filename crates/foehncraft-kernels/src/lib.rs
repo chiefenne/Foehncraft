@@ -22,7 +22,9 @@
 //!   through the cells (D47, D257), resumable on another rank;
 //! - [`radiation`]: Monte Carlo radiation (step 29): Owen-scrambled Sobol
 //!   points, the sampling of the bundles and their transport with exact
-//!   integer tallies.
+//!   integer tallies;
+//! - [`species`]: the properties of an ideal-gas mixture (stage SF1):
+//!   NASA-7 specific heat, Chapman–Enskog viscosity, Wilke and Mathur rules.
 //!
 //! Each kernel is a *body*: a function that computes the result for one
 //! index (one face, one cell, one matrix row). A backend supplies the loop:
@@ -58,6 +60,7 @@ pub mod fv;
 pub mod particle;
 pub mod radiation;
 pub mod scalar;
+pub mod species;
 pub mod spmv;
 pub mod turb;
 pub mod walk;
