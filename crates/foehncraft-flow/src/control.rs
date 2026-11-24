@@ -273,10 +273,33 @@ pub fn reread(path: &Path, current: &FlowCase, fired: usize) -> Result<Reread> {
             not_applied.push(line);
         }
     }
+    // the scalar and energy sub-tables of the boundaries are kept outside
+    // the TOML of the case: a change of them is reported, not applied (the
+    // boundary conditions belong to the case the run started with)
+    for (name, changed) in [
+        (
+            "boundary energy conditions",
+            format!("{:?}", current.boundary_energy) != format!("{:?}", new.boundary_energy),
+        ),
+        (
+            "boundary scalar conditions",
+            format!("{:?}", current.boundary_scalar) != format!("{:?}", new.boundary_scalar),
+        ),
+    ] {
+        if changed {
+            not_applied.push(format!("{name}: changed in the file"));
+        }
+    }
     let mut case: FlowCase = merged.try_into()?;
     case.source = current.source.clone();
     case.overrides = current.overrides.clone();
+    case.notes = current.notes.clone();
     case.pressure_frame = current.pressure_frame.clone();
+    // the fields the round trip through TOML drops (as in
+    // `schedule::apply_entry`)
+    case.boundary_scalar = current.boundary_scalar.clone();
+    case.boundary_energy = current.boundary_energy.clone();
+    case.fluid_view = current.fluid_view.clone();
     case.validate()?;
     Ok(Reread {
         case,
