@@ -1,0 +1,1 @@
+- docs: development path to an industrial steam furnace (gas reacting flows, radiation, CHT, 1D steam side with boiling, tube banks, NOx), stages SF0 to SF14 and decisions D280 to D285 (#276).
