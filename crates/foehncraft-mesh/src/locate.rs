@@ -20,6 +20,13 @@
 //! wall or outlet model) or at a processor face (the particle is handed to
 //! the neighbouring rank, so a halo of one cell layer suffices).
 //!
+//! The steps are the walk body [`foehncraft_kernels::walk`], one source for
+//! the CPU and the GPU (D259) and shared by particles and radiation bundles
+//! (D257). [`Locator::walk`] also reports every cell the segment passes,
+//! with the interval of the segment parameter inside it (the exact path
+//! length per cell); a walk stopped at a processor face goes on on the rank
+//! behind it through [`crate::handover`], bitwise as on one rank (D258).
+//!
 //! Point location walks from a hint cell to the point; if the walk is
 //! blocked (by a boundary of a non-convex domain), or no hint is known, a
 //! bounding volume hierarchy over the cell boxes
@@ -28,10 +35,19 @@
 //! boxes is kept as [`Locator::locate_search_grid`], the reference of the
 //! tests and of the benchmark `examples/locate_bench.rs`.
 
-use crate::geometry::{Geometry, add, cross, dot, node_average, scale, sub};
+use crate::geometry::{Geometry, add, node_average, scale, sub};
 use crate::mesh::Mesh;
 use crate::query::CellTree;
+pub use foehncraft_kernels::walk::{Walk, WalkEnd, WalkMesh};
+use foehncraft_kernels::walk::{inner, sides, walk};
 use std::sync::OnceLock;
+
+/// A step limit for walks on a mesh of `n_cells` cells: 64 + 16 tetrahedra
+/// per cell, at most 16 × 2²⁰ + 64. Give it the global cell count, so the
+/// limit is the same on every rank.
+pub fn step_limit(n_cells: usize) -> u32 {
+    (64 + 16 * n_cells.min(1 << 20)) as u32
+}
 
 /// A position inside the mesh: the point and the tetrahedron that holds it.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -97,14 +113,6 @@ struct Bins {
     cells: Vec<u32>,
 }
 
-/// Six times the signed volume of the tetrahedron (a, b, c, d), positive
-/// when `d` lies on the inner side of the outward-oriented triangle
-/// (a, b, c).
-#[inline(always)]
-fn inner(a: [f64; 3], b: [f64; 3], c: [f64; 3], d: [f64; 3]) -> f64 {
-    -dot(cross(sub(b, a), sub(c, a)), sub(d, a))
-}
-
 impl<'a> Locator<'a> {
     /// Prepares the decomposition (the fan points of the faces and the
     /// apexes of the local cells).
@@ -129,33 +137,30 @@ impl<'a> Locator<'a> {
         self.mesh
     }
 
+    /// The arrays of the walk body: the mesh and its tetrahedral
+    /// decomposition (see [`foehncraft_kernels::walk`]).
+    pub fn walk_mesh(&self) -> WalkMesh<'_> {
+        let m = self.mesh;
+        WalkMesh {
+            points: &m.points,
+            face_ptr: &m.face_ptr,
+            face_nodes: &m.face_nodes,
+            owner: &m.owner,
+            neighbour: &m.neighbour,
+            cell_ptr: &m.cell_ptr,
+            cell_faces: &m.cell_faces,
+            apex: &self.apex,
+            fan: &self.fan,
+            n_cells: m.n_cells,
+            periodic_start: m.periodic_start(),
+        }
+    }
+
     /// Vertices of tetrahedron (cell, face, edge), with its outer triangle
     /// (fan point, p, q) oriented outward from the cell: (apex, m, p, q).
     #[inline]
     fn tet(&self, cell: usize, face: usize, edge: usize) -> [[f64; 3]; 4] {
-        let nodes = self.mesh.face(face);
-        let k = nodes.len();
-        let mut p = self.mesh.points[nodes[edge] as usize];
-        let mut q = self.mesh.points[nodes[(edge + 1) % k] as usize];
-        if self.mesh.owner[face] as usize != cell {
-            std::mem::swap(&mut p, &mut q);
-        }
-        [self.apex[cell], self.fan[face], p, q]
-    }
-
-    /// Signed inner distances (volumes) of `x` to the four faces of a
-    /// tetrahedron (a, m, p, q), each face oriented outward: 0 = (m, p, q)
-    /// on the mesh face, 1 = (a, p, m), 2 = (a, m, q), 3 = (a, q, p). All
-    /// positive inside.
-    #[inline]
-    fn sides(t: &[[f64; 3]; 4], x: [f64; 3]) -> [f64; 4] {
-        let [a, m, p, q] = *t;
-        [
-            inner(m, p, q, x),
-            inner(a, p, m, x),
-            inner(a, m, q, x),
-            inner(a, q, p, x),
-        ]
+        self.walk_mesh().tet(cell, face, edge)
     }
 
     /// `true` if `x` lies in cell `c` (boundaries included, with a relative
@@ -168,7 +173,7 @@ impl<'a> Locator<'a> {
         for (f, _) in self.mesh.cell_face_iter(c) {
             for e in 0..self.mesh.face(f).len() {
                 let t = self.tet(c, f, e);
-                let s = Self::sides(&t, x);
+                let s = sides(&t, x);
                 let vol = inner(t[1], t[2], t[3], t[0]).abs();
                 let tol = -1e-12 * vol;
                 if s.iter().all(|&v| v >= tol) {
@@ -204,127 +209,80 @@ impl<'a> Locator<'a> {
 
     /// Moves a particle from `from` towards `to` along a straight line.
     pub fn track(&self, from: Position, to: [f64; 3]) -> Track {
-        let mesh = self.mesh;
-        let mut pos = from;
-        let a0 = from.x;
-        let d = sub(to, a0);
-        let mut lambda = 0.0f64;
-        let mut crossed = 0usize;
-        let mut entered = usize::MAX; // tet face we came through
-        let max_steps = 64 + 16 * mesh.n_cells.min(1 << 20);
-        for _ in 0..max_steps {
-            let t = self.tet(pos.cell, pos.face, pos.edge);
-            let sa = Self::sides(&t, pos.x);
-            let sb = Self::sides(&t, to);
-            // exit face: smallest crossing parameter among faces the target
-            // lies behind
-            let mut best = (f64::INFINITY, usize::MAX);
-            for j in 0..4 {
-                if sb[j] < 0.0 && j != entered {
-                    let s = sa[j].max(0.0);
-                    let l = s / (s - sb[j]);
-                    if l < best.0 {
-                        best = (l, j);
-                    }
-                }
+        let mut w = Walk::new(
+            from.x,
+            from.cell as u32,
+            from.face as u32,
+            from.edge as u32,
+            to,
+        );
+        let end = self.walk(&mut w, step_limit(self.mesh.n_cells), |_, _, _| true);
+        let (end, cell, crossed) = match end {
+            WalkEnd::Reached => (TrackEnd::Reached, w.cell, w.crossed),
+            WalkEnd::Boundary { face } => (
+                TrackEnd::Boundary {
+                    face: face as usize,
+                },
+                w.cell,
+                w.crossed,
+            ),
+            WalkEnd::Processor { face } => {
+                // the particle stays in the own cell, on the face
+                let f = face as usize;
+                let (p, q) = (self.mesh.owner[f], self.mesh.neighbour[f]);
+                let own = if p == w.cell { q } else { p };
+                (TrackEnd::Processor { face: f }, own, w.crossed - 1)
             }
-            if best.1 == usize::MAX {
-                pos.x = to;
-                return Track {
-                    position: pos,
-                    end: TrackEnd::Reached,
-                    fraction: 1.0,
-                    faces_crossed: crossed,
-                };
-            }
-            let l = best.0.clamp(0.0, 1.0);
-            // parameter along the whole segment
-            let rest = 1.0 - lambda;
-            lambda += l * rest;
-            pos.x = add(a0, scale(d, lambda));
-            let k = mesh.face(pos.face).len();
-            let owner = mesh.owner[pos.face] as usize == pos.cell;
-            match best.1 {
-                0 => {
-                    // through the mesh face
-                    let f = pos.face;
-                    if f >= mesh.n_interior_faces() || mesh.is_periodic(f) {
-                        return Track {
-                            position: pos,
-                            end: TrackEnd::Boundary { face: f },
-                            fraction: lambda,
-                            faces_crossed: crossed,
-                        };
-                    }
-                    let other = mesh.across(f, pos.cell).unwrap();
-                    if other >= mesh.n_cells {
-                        return Track {
-                            position: pos,
-                            end: TrackEnd::Processor { face: f },
-                            fraction: lambda,
-                            faces_crossed: crossed,
-                        };
-                    }
-                    pos.cell = other;
-                    crossed += 1;
-                    entered = 0;
-                }
-                j @ (1 | 2) => {
-                    // (a, p, m) or (a, m, q): neighbouring fan triangle; p is
-                    // node `edge` when the cell owns the face
-                    let towards_p = (j == 1) == owner;
-                    pos.edge = if towards_p {
-                        (pos.edge + k - 1) % k
-                    } else {
-                        (pos.edge + 1) % k
-                    };
-                    entered = 3 - j; // the shared face has the other index
-                }
-                _ => {
-                    // (a, q, p): the other face of the cell with edge p-q
-                    let nodes = mesh.face(pos.face);
-                    let (u, v) = (nodes[pos.edge], nodes[(pos.edge + 1) % k]);
-                    let mut found = None;
-                    for (g, _) in mesh.cell_face_iter(pos.cell) {
-                        if g == pos.face {
-                            continue;
-                        }
-                        let gn = mesh.face(g);
-                        let kg = gn.len();
-                        for e in 0..kg {
-                            let (x0, x1) = (gn[e], gn[(e + 1) % kg]);
-                            if (x0 == u && x1 == v) || (x0 == v && x1 == u) {
-                                found = Some((g, e));
-                            }
-                        }
-                    }
-                    match found {
-                        Some((g, e)) => {
-                            pos.face = g;
-                            pos.edge = e;
-                        }
-                        None => break,
-                    }
-                    entered = 3;
-                }
-            }
-            if lambda >= 1.0 {
-                // the target lies on the face just crossed
-                pos.x = to;
-                return Track {
-                    position: pos,
-                    end: TrackEnd::Reached,
-                    fraction: 1.0,
-                    faces_crossed: crossed,
-                };
-            }
-        }
+            WalkEnd::Lost | WalkEnd::Stopped => (TrackEnd::Lost, w.cell, w.crossed),
+        };
         Track {
-            position: pos,
-            end: TrackEnd::Lost,
-            fraction: lambda,
-            faces_crossed: crossed,
+            position: Position {
+                x: w.x,
+                cell: cell as usize,
+                face: w.face as usize,
+                edge: w.edge as usize,
+            },
+            end,
+            fraction: w.lambda,
+            faces_crossed: crossed as usize,
         }
+    }
+
+    /// Moves walk `w` towards its target (see [`foehncraft_kernels::walk`]):
+    /// `visit(cell, λ₀, λ₁)` gets every cell the segment passes with the
+    /// interval of the segment parameter inside it. `max_steps` limits the
+    /// tetrahedra of the whole walk ([`step_limit`] of the global cell
+    /// count gives the same limit on every rank).
+    ///
+    /// # Panics
+    /// If `w` does not stand in a tetrahedron of a local cell (cell, face
+    /// of that cell, edge of that face).
+    pub fn walk<F: FnMut(u32, f64, f64) -> bool>(
+        &self,
+        w: &mut Walk,
+        max_steps: u32,
+        visit: F,
+    ) -> WalkEnd {
+        let (c, f) = (w.cell as usize, w.face as usize);
+        assert!(
+            c < self.mesh.n_cells
+                && self.mesh.cell_face_iter(c).any(|(g, _)| g == f)
+                && (w.edge as usize) < self.mesh.face(f).len(),
+            "walk: ({c}, {f}, {}) is not a tetrahedron of a local cell",
+            w.edge
+        );
+        walk(&self.walk_mesh(), w, max_steps, visit)
+    }
+
+    /// The walk from `from` to `to`.
+    pub fn start_walk(&self, from: Position, to: [f64; 3]) -> Walk {
+        Walk::new(
+            from.x,
+            from.cell as u32,
+            from.face as u32,
+            from.edge as u32,
+            to,
+        )
     }
 
     /// Cell containing `x`: a walk from cell `hint`, with the search of
