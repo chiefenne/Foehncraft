@@ -158,6 +158,7 @@ title = "VTKHDF output for ParaView"
 switch = "output.vtkhdf"
 evidence = [
   { kind = "consistency", test = "crates/foehncraft-mesh/tests/vtkhdf.rs::write_all_types", what = "every cell type written; CI checks the files of the cases" },
+  { kind = "consistency", test = "crates/foehncraft-mesh/src/vtkhdf.rs::standard_cells_in_vtk_order", what = "tetrahedra, hexahedra, prisms and pyramids in VTK's node order: VTK's outward faces (VTK 9.7 GetFace tables) are the cell's outward faces, positive volume, also for cells given inside out" },
 ]
 
 # ---------------------------------------------------------------- numerics
