@@ -38,7 +38,7 @@ is serial).
 | Mesh | Cells | Grid build (s) | Tree build (s) | Queries | Grid (µs per query) | Tree (µs per query) | Speed-up | Candidate cells per query (tree) | Different answers |
 |---|---|---|---|---|---|---|---|---|---|
 | hex 64³ uniform | 262 144 | 0.116 | 0.097 | 400 000 | 12.95 | 1.91 | 6.8 | 1.2 | 0 |
-| hex 64³ graded 1e4 in y | 262 144 | 0.095 | 0.102 | 400 000 | 26.72 | 1.33 | 20.0 | 1.2 | 148 (see below) |
+| hex 64³ graded 1e4 in y | 262 144 | 0.095 | 0.102 | 400 000 | 26.72 | 1.33 | 20.0 | 1.2 | 0 (148 before #FC, see below) |
 | tet 24³ graded 1e3 in y | 82 944 | 0.032 | 0.035 | 165 888 | 8.35 | 1.07 | 7.8 | 6.5 | 0 |
 | poly 20³ graded 1e3 in y | 9 261 | 0.011 | 0.026 | 18 522 | 50.78 | 4.98 | 10.2 | 2.3 | 0 |
 | `naca0012.su2` (2D airfoil, boundary layer) | 6 420 | 0.002 | 0.005 | 12 840 | 6.95 | 0.87 | 8.0 | 1.6 | 0 |
@@ -68,10 +68,18 @@ face between z = 0 and 0.017), because the fan triangles' projected areas
 change sign and nearly cancel. The cell apex, and with it the tetrahedral
 decomposition, then leaves the cell. The grid tests such a cell when it
 shares the point's bin; the tree never tests a cell whose box does not hold
-the point, so its answer is the right one. The face-centroid fallback for
-twisted faces is a separate finding, recorded for step 2 of the
-assessment (exact predicates and the tracker); it does not occur on the
+the point, so its answer is the right one. It does not occur on the
 meshes of the repository (0 differences).
+
+**Fixed in #FC (2026-11-24).** When the fan triangles of a face turn
+against each other (a projected area of zero or less) and the area-weighted
+centroid leaves the bounding box of the face nodes, the centroid now uses
+the triangle area magnitudes as weights, which keeps it on the face. Planar
+faces, convex or not, keep the exact area centroid, so no other mesh
+changes (the golden geometry values are unchanged). With the fix the grid,
+the tree and the brute-force search agree on every query of every mesh
+above (rerun of `locate_bench`: 0 different answers, also on the graded
+hexahedra).
 
 ## Determinism and limits
 
