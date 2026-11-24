@@ -127,8 +127,7 @@ fn cell_tree_search_agrees_with_grid_and_brute_force() {
                 assert_eq!(loc.locate_search_grid(x), brute, "{name}: grid {x:?}");
             }
             // every cell centroid is found in its own cell
-            for c in 0..m.n_cells {
-                let x = g.cell_centroid[c];
+            for (c, &x) in g.cell_centroid.iter().enumerate().take(m.n_cells) {
                 let found = loc.locate_search(x).unwrap();
                 assert!(loc.contains(found, x));
                 assert!(found <= c || !loc.contains(c, x), "{name}: centroid of {c}");
