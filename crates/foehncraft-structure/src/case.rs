@@ -335,6 +335,10 @@ pub struct TransientKeys {
     /// Keep every n-th step in the results (default: at most 1000 kept).
     #[serde(default)]
     pub output_every: Option<usize>,
+    /// Times (s) whose whole displacement field goes into `structure.vtk`
+    /// (`transient_<i>`, the step nearest each).
+    #[serde(default)]
+    pub snapshots: Vec<f64>,
 }
 
 /// `[damping]`.
@@ -1176,6 +1180,8 @@ pub struct Transient {
     pub max_displacement: (f64, usize, f64),
     /// Displacements of every unknown at the end.
     pub last: Vec<f64>,
+    /// The fields at the requested snapshot times: (time, every unknown).
+    pub snapshots: Vec<(f64, Vec<f64>)>,
 }
 
 /// The load vectors (free unknowns) of each history: `None` constant.
@@ -1263,7 +1269,13 @@ fn transient(case: &Case, tk: &TransientKeys, built: &Built) -> Result<Transient
         strain: Vec::new(),
         max_displacement: (0.0, 0, 0.0),
         last: Vec::new(),
+        snapshots: Vec::new(),
     };
+    let snap_steps: Vec<usize> = tk
+        .snapshots
+        .iter()
+        .map(|&t| ((t / dt).round().max(0.0) as usize).min(steps))
+        .collect();
     let record = |out: &mut Transient, k: usize, t: f64, u: &[f64], v: &[f64]| {
         let full = sys.expand_zero(u);
         for n in 0..model.nodes.len() {
@@ -1281,6 +1293,11 @@ fn transient(case: &Case, tk: &TransientKeys, built: &Built) -> Result<Transient
             }
             out.kinetic.push(0.5 * sys.m.form(v, v));
             out.strain.push(0.5 * sys.k.form(u, u));
+        }
+        for &ks in &snap_steps {
+            if ks == k {
+                out.snapshots.push((t, full.clone()));
+            }
         }
         if k == steps {
             out.last = full;
@@ -1488,6 +1505,7 @@ impl Outcome {
                 "strain_energy": tr.strain,
                 "max_displacement": {"value": v, "node": n, "at": m.nodes[n], "time": t},
                 "points": points,
+                "snapshots": tr.snapshots.iter().map(|(t, _)| *t).collect::<Vec<_>>(),
             });
             match tr.method {
                 Method::Direct => j["rho_infinity"] = json!(tr.rho_infinity),
@@ -1594,6 +1612,9 @@ impl Outcome {
         }
         if let Some(tr) = &self.transient {
             vector(&mut s, "transient_end", &tr.last, 0, 1.0);
+            for (i, (_, u)) in tr.snapshots.iter().enumerate() {
+                vector(&mut s, &format!("transient_{}", i + 1), u, 0, 1.0);
+            }
         }
         s
     }
