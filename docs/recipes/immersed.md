@@ -7,6 +7,7 @@ Part of the [Recipes](../recipes.md): put bodies into the flow without meshing t
 | 270 | [Put a body in the flow without meshing it](#penalised-body) |
 | 291 | [Search the shape of a duct with a density field](#topology-search) |
 | 310 | [Check an STL surface before it becomes a body](#surface-check) |
+| 315 | [Cut a mesh exactly by an STL surface](#cut-moments) |
 
 ---
 
@@ -118,4 +119,25 @@ It prints the counts (triangles, distinct corners, pieces, area, enclosed volume
 
 **In code** (Rust, `foehncraft_mesh::surface`): `Surface::read_stl(path, scale)`, `check(&s)`, `s.winding_number(x)` (fast, β = 2) or `winding_number_exact(x)`, `s.inside(x)`, `s.signed_distance(x)` and `signed_distances(&points, Some(band))` (negative inside, ±band beyond the band), `s.crossings(p, q)` and `first_crossing(p, q)` (the exact points where a segment enters or leaves the body: the root along a mesh edge for the cut of stage 2).
 
+**Limits.** The fast winding number is within about 4e-3 of the exact sum next to the surface, which decides inside and outside except within a hair of the surface (there `inside` re-evaluates more precisely). The signed distance of a self-overlapping surface counts the buried triangles (its sign is right, its magnitude inside is the distance to the nearest triangle). The signed-distance benchmark and the exact cut followed in [recipe 315](#cut-moments).
+
+<a id="cut-moments"></a>
+## 315. Cut a mesh exactly by an STL surface
+
+The geometry kernel gives the numbers a cut-cell method needs, for any polyhedral mesh (Rust, `foehncraft_mesh::surface`):
+
+```rust
+let s = Surface::read_stl(path, 1e-3)?;            // file in mm
+let geo = Geometry::compute(&mesh);
+let cut = s.cut_moments(&mesh, &geo);
+// cut.cell_inside_volume[c], cut.cell_inside_centroid[c]   part of cell c inside the body
+// cut.face_inside_area[f], cut.face_inside_centroid[f]     part of face f inside (aperture = area / |S_f|)
+// cut.walls: WallPiece { cell, triangle, area (out of the body), centroid }
+```
+
+The fluid part of a cell is its volume minus the inside volume; the fluid aperture of a face is one minus the inside one. Use the signed distance (recipe 310, `signed_distances(&nodes, Some(band))`) where a level set is enough, and `cut_moments` where volumes, apertures and wall faces must be exact: the cut of a sphere is 40 to 2500 times more accurate than a linear level-set cut on 64³ to 8³ cells (gallery 315), and conservative (both cells of a face see the same aperture, every cell closes).
+
+**Which signed distance.** The default (closest point with winding-number sign) won the benchmark of gallery 315: exact on clean surfaces and sharp edges, no sign errors on holes and soups. Check the surface first (recipe 310): a patch of flipped triangles (IMM004) gives wrong signs next to it.
+
+**Limits.** The surface must be in general position with respect to the mesh except for edges lying in a mesh face (handled); a surface lying flat in a mesh face or a surface corner exactly on a mesh node is not decided consistently yet. The cut gives moments, not polygons: building cut cells into a mesh is stage 2 (D227).
 **Limits.** The fast winding number is within about 4e-3 of the exact sum next to the surface, which decides inside and outside except within a hair of the surface (there `inside` re-evaluates more precisely). The signed distance of a self-overlapping surface counts the buried triangles (its sign is right, its magnitude inside is the distance to the nearest triangle). Not yet: the signed-distance benchmark against fast sweeping and the heat method, and the exact triangle–cell clipping (the next parts of stage 0).

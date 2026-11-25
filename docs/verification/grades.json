@@ -1435,6 +1435,22 @@
    "range": {}
   },
   {
+   "id": "sprays.high-pressure-surface",
+   "title": "High-pressure droplet surface: Peng-Robinson phase equilibrium and latent heat (Spray A, SA1, D311, D312, D314)",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "above 550 K Peng-Robinson with one k_ij is 3 to 9 % low on the measured bubble pressures (the measured Henry constant falls faster with T); the surface vapour fraction moves by 2 to 6 % between the k_ij of the whole set and of the hot isotherms",
+    "the dissolved gas shifts the equilibrium but is not booked: the liquid stays pure fuel (D311)",
+    "the gas solver stays ideal (D317): the departure enthalpy of the dense vapour enters the gas as a sensible-heat deficit",
+    "no flow case yet: the n-dodecane vapour species data come with the liquid library; VA.4 to VA.9 (mixing line, Siebers liquid length, the Spray A case) are later stages",
+    "built-in high-pressure data for n-dodecane only; other liquids take the plain 1978 kappa (water: 11 % low on its vapour pressure at 320 K)"
+   ],
+   "range": {}
+  },
+  {
    "id": "porous.darcy-forchheimer",
    "title": "Porous regions with a direction-dependent Darcy-Forchheimer resistance (D270, PM1)",
    "grade": "partial",

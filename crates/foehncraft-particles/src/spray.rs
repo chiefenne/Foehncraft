@@ -3,6 +3,7 @@
 use crate::config::{BoundaryMode, Dispersion, Injector, Penetration, SpraySection};
 use crate::coupling::{CellSources, Record, StepBooks};
 use crate::datum::{Crossing, Datum, DatumTally, Moments, Shape, Surface, plane_crossing};
+use crate::equilibrium::{SurfacePoint, SurfaceTable};
 use anyhow::{Result, bail};
 use foehncraft_core::Real;
 use foehncraft_core::rng::{self, stream};
@@ -348,6 +349,14 @@ pub struct Tally {
     /// Parcels that evaporated completely.
     #[serde(default)]
     pub evaporated_parcels: u64,
+    /// Parcels at or above the critical mixing temperature of their
+    /// surface at the end of the last step (Peng-Robinson surface, D314:
+    /// no latent heat, diffusive mixing); a health number, not a total.
+    #[serde(default)]
+    pub critical_parcels: u64,
+    /// Their liquid mass (kg).
+    #[serde(default)]
+    pub critical_mass: f64,
 }
 
 /// The parcels released in a step, booked when the pass is committed.
@@ -413,6 +422,10 @@ pub struct Spray {
     planar: bool,
     /// The vapour of the liquid (evaporation, SP5).
     vapour: Option<Vapour>,
+    /// The Peng-Robinson surface states over the droplet temperature at
+    /// p₀ (`equilibrium = "peng-robinson"`, D311), from
+    /// [`Spray::set_surface_pressure`].
+    surface: Option<SurfaceTable>,
 }
 
 /// What `state()` writes and `restore()` reads (restart, D42).
@@ -506,6 +519,7 @@ impl Spray {
             parcels: Parcels::default(),
             planar: false,
             vapour: None,
+            surface: None,
             datums: Vec::new(),
             datum_tally: Vec::new(),
             tally: Tally {
@@ -532,17 +546,127 @@ impl Spray {
 
     /// Latent heat of the liquid at `t` (J/kg): L(T_ref) + h_v(T) −
     /// h_v(T_ref) − c_l (T − T_ref) (Kirchhoff's law with the vapour
-    /// enthalpy of the species data and the constant c_l of the liquid).
+    /// enthalpy of the species data and the constant c_l of the liquid);
+    /// with the Peng-Robinson surface times L_PR(T, p₀)/L_PR,sat(T) (D312),
+    /// 0 at and above the critical mixing state (D314). The gas receives
+    /// the vapour at c_l T + L, so the books close either way.
     pub fn latent_heat(&self, t: f64) -> f64 {
         let l = &self.cfg.liquid;
-        match &self.vapour {
+        let low = match &self.vapour {
             Some(v) => {
                 l.latent_heat + v.h(t)
                     - v.h(l.latent_heat_temperature)
                     - l.specific_heat * (t - l.latent_heat_temperature)
             }
             None => l.latent_heat,
+        };
+        match &self.surface {
+            Some(tab) => low * tab.at(t).latent_ratio,
+            None => low,
         }
+    }
+
+    /// The Peng-Robinson surface state at the droplet temperature `t`, or
+    /// `None` with Raoult's law.
+    pub fn surface_state(&self, t: f64) -> Option<SurfacePoint> {
+        self.surface.as_ref().map(|tab| tab.at(t))
+    }
+
+    /// The Peng-Robinson surface table, if built.
+    pub fn surface_table(&self) -> Option<&SurfaceTable> {
+        self.surface.as_ref()
+    }
+
+    /// Builds the Peng-Robinson surface table for the thermodynamic
+    /// pressure `p0` (Pa) of the run, when `[spray.evaporation]
+    /// equilibrium = "peng-robinson"` (D311); nothing with Raoult's law.
+    /// p₀ is one number per run here (a closed volume is refused with
+    /// evaporation), so the table is a pure function of the case and a
+    /// restart rebuilds the same bits.
+    pub fn set_surface_pressure(&mut self, p0: f64) -> Result<()> {
+        use crate::config::Equilibrium;
+        use foehncraft_kernels::realfluid::{self as rf, MAX};
+        let ev = &self.cfg.evaporation;
+        if ev.equilibrium != Equilibrium::PengRobinson {
+            self.surface = None;
+            return Ok(());
+        }
+        let pr = &ev.peng_robinson;
+        let key = "[spray.evaporation.peng_robinson]";
+        let consts = [
+            pr.critical_temperature,
+            pr.critical_pressure,
+            pr.acentric_factor,
+            pr.molar_mass,
+        ];
+        let (fuel, defaults): (rf::Component, Option<rf::fuels::Fuel>) = match consts {
+            [Some(tc), Some(pc), Some(w), Some(m)] => {
+                if !(tc > 0.0 && pc > 0.0 && m > 0.0 && w.is_finite()) {
+                    bail!(
+                        "{key}: critical_temperature {tc} K, critical_pressure {pc} Pa, acentric_factor {w}, molar_mass {m} kg/mol"
+                    );
+                }
+                (rf::Component::new(tc, pc, w, m), None)
+            }
+            [None, None, None, None] => {
+                let name = pr.fuel.as_deref().unwrap_or(&self.cfg.liquid.name);
+                let f = rf::fuels::by_name(name).ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "{key}: no high-pressure data for the liquid \"{name}\"; known: \
+                             \"n-dodecane\"; or give critical_temperature, critical_pressure, \
+                             acentric_factor and molar_mass"
+                    )
+                })?;
+                (f.component, Some(f))
+            }
+            _ => bail!(
+                "{key}: give all four of critical_temperature, critical_pressure, \
+                     acentric_factor and molar_mass, or none (then the data of `fuel`)"
+            ),
+        };
+        if pr.ambient.is_empty() || pr.ambient.len() + 1 > MAX {
+            bail!("{key}: ambient needs 1 to {} gases", MAX - 1);
+        }
+        let mut comps = vec![fuel];
+        let mut r = [0.0; MAX];
+        let mut sum = 0.0;
+        for (j, (name, &x)) in pr.ambient.iter().enumerate() {
+            let g = rf::gases::by_name(name).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "{key}: ambient gas \"{name}\" unknown; known: N2, O2, CO2, H2O, AR"
+                )
+            })?;
+            if !(x > 0.0 && x.is_finite()) {
+                bail!("{key}: ambient {name} = {x}: mole fractions are positive");
+            }
+            comps.push(g);
+            r[j + 1] = x;
+            sum += x;
+        }
+        for v in r.iter_mut().skip(1) {
+            *v /= sum;
+        }
+        for name in pr.k_ij.keys() {
+            if !pr.ambient.contains_key(name) {
+                bail!("{key}: k_ij.{name} names no gas of ambient");
+            }
+        }
+        let mut mix = rf::Mixture::new(&comps);
+        for (j, name) in pr.ambient.keys().enumerate() {
+            let k = match pr.k_ij.get(name) {
+                Some(&k) => k,
+                None => defaults.map_or(0.0, |f| f.k_with(name)),
+            };
+            mix.set_k(0, j + 1, k);
+        }
+        if !(pr.table_step > 0.0 && pr.table_step <= 10.0) {
+            bail!("{key}: table_step {} K: between 0 and 10 K", pr.table_step);
+        }
+        let t_lo = (self.cfg.liquid.temperature - 60.0).clamp(150.0, 250.0);
+        let t_hi = fuel.tc + 50.0;
+        let tab = SurfaceTable::build(&mix, &r, p0, t_lo, t_hi, pr.table_step)?;
+        self.surface = Some(tab);
+        Ok(())
     }
 
     /// Enthalpy of the vapour at `t` in the reference of the parcels (J/kg):
@@ -556,8 +680,14 @@ impl Spray {
         self.vapour.map_or(0.0, |v| v.cp(t))
     }
 
-    /// Saturation pressure of the liquid at `t` (Pa).
+    /// Saturation pressure of the liquid at `t` (Pa); with the
+    /// Peng-Robinson surface the partial pressure y_f p₀ of the fuel in the
+    /// equilibrium vapour at the surface (D311), which the Spalding numbers
+    /// then take unchanged.
     pub fn saturation_pressure(&self, t: f64) -> f64 {
+        if let Some(tab) = &self.surface {
+            return tab.at(t).y_fuel * tab.p0;
+        }
         match self.cfg.liquid.saturation {
             crate::config::Saturation::Water => evap::water::saturation_pressure(t),
         }
@@ -925,12 +1055,20 @@ impl Spray {
             // lost
             books.mass[2] = books.mass[1] - books.mass[0] - books.mass[3] - books.mass[4];
         }
+        self.tally.critical_parcels = 0;
+        self.tally.critical_mass = 0.0;
         for o in outcomes {
             self.tally.rebounds += o.rebounds;
             self.tally.substeps += o.substeps;
             let m = mass_of(o.p.d, o.p.count, rho_p);
             match o.fate {
-                Fate::Active => kept.push(&o.p),
+                Fate::Active => {
+                    if self.surface_state(o.p.temp).is_some_and(|s| !s.two_phase) {
+                        self.tally.critical_parcels += 1;
+                        self.tally.critical_mass += m;
+                    }
+                    kept.push(&o.p)
+                }
                 Fate::Stuck(f) => {
                     if let Some(b) = env.mesh.boundary_of(f) {
                         self.tally.deposited_mass[b] += m;

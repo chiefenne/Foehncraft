@@ -65,3 +65,17 @@ The folder `mcp/heat_sink_study/` holds the recorded study of an assistant
 | `mcp/heat_sink_study/journal.jsonl` | the session as `foehn mcp` journaled it: two checks, three refused runs, two live status calls, four sweep runs, the reads; `foehn run --script` replays it |
 | `mcp/heat_sink_study/results.csv` | what the assistant read from each run: iterations, the mean and maximum temperature of the base top, the pressure drop, the cell-hours spent |
 | `mcp/heat_sink_study/session.csv` | the 27 calls of the session with start, duration, outcome and refusal code; `tools/plot/heat_sink_agent.py` draws the timeline from it |
+
+The folder `mcp/spray_cooler/` holds the recorded chat of an assistant
+that sizes a spray cooler from one question
+([gallery 316](../gallery/runs.md#spray-cooler-chat),
+[recipe 316](../recipes/runs.md#spray-cooler-chat),
+[agents.md](../agents.md#a-recorded-chat-sizing-a-spray-cooler)):
+
+| File | Shows |
+|---|---|
+| `mcp/spray_cooler/foehn-mcp.toml` | the action table of the chat: start runs allowed, everything else refused, a cap of 40 000 cells |
+| `mcp/spray_cooler/spray_cooler.toml` | the case the assistant wrote: a duct 3 m by 0.2 m (2D), air at 300 °C and 5 m/s, k-ω SST, evaporating water as steady spray streams, outlet and mid-duct datums |
+| `mcp/spray_cooler/spray_cooler_nozzles.toml`, `_3.5.toml`, `_3.55.toml` | the three nozzles with 3, 3.5 and 3.55 g/s of water in all, switched with `set spray.include=…` |
+| `mcp/spray_cooler/journal.jsonl` | the session as `foehn mcp` journaled it, refusals and slips included; `foehn run --script` replays it |
+| `mcp/spray_cooler/results.csv` | what the assistant read from each run: the mass-flow mean outlet temperature, the vapour, the water evaporated |

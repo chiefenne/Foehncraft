@@ -20,19 +20,19 @@ The recipes are split by topic; each page has its own table of contents. The num
 | [Thermal radiation](recipes/radiation.md) | the radiation of a prescribed temperature field by Monte Carlo bundles: walls, noise, threads, ranks and the GPU, the checks against exact solutions | 259, 281 |
 | [Turbulence models](recipes/turbulence.md) | RANS turbulence models: the model, the wall treatment by the mesh, inlet turbulence, roughness, the near-wall checks, curvature correction and QCR on any mesh, the internal flows of D45 (pipe, diffuser, U-bend) | 68, 71, 73, 74, 88, 89, 90, 113, 115, 141, 140, 194, 193, 199, 197, 204 |
 | [Boundary conditions](recipes/boundary-conditions.md) | slip walls, wedges for axisymmetric flow, inlet profiles from tables, backflow at pressure outlets, convective outlets, periodic modules, absolute or gauge pressure values (D239) | 29, 67, 220 |
-| [Lagrangian sprays](recipes/sprays.md) | spray droplets into a flow with an injector file, wall behaviour, the mass book | 242, 265, 280, 283, 285, 292, 306 |
+| [Lagrangian sprays](recipes/sprays.md) | spray droplets into a flow with an injector file, wall behaviour, the mass book | 242, 265, 280, 283, 285, 292, 306, 314 |
 | [Porous regions](recipes/porous.md) | porous blocks and honeycombs in a flow: resistances, axes, the honeycomb shorthand | 273, 275 |
 | [Water and steam circuits](recipes/circuits.md) | a boiler circuit of tubes, headers and a drum: natural circulation, boiling wall temperatures, the CHF margin, the profiles | 312 |
 | [Structures](recipes/structure.md) | a structural case of beams, plates, solids and clamp springs: static and modal analyses, the clamp spring fitted to a measured frequency, runs in time with damping and temperatures, contact with a seat and a stop, temperatures from a flow case, the results | 295, 297, 299, 300, 302, 308 |
-| [Immersed bodies](recipes/immersed.md) | put a body in the flow without meshing it: `[immersed]`, the permeability, forces | 270, 291, 310 |
+| [Immersed bodies](recipes/immersed.md) | put a body in the flow without meshing it: `[immersed]`, the permeability, forces | 270, 291, 310, 315 |
 | [Moving meshes and solids](recipes/moving-solids.md) | move the mesh with a prescribed displacement: `[mesh_motion]`, moving walls, a piston on a closed volume | 296 |
 | [Species and reacting flows](recipes/species.md) | species of an ideal-gas mixture: names, compositions in mole or mass fractions, diffusion by Schmidt or Lewis numbers, mixture properties, the element ledger | 278, 289, 298 |
-| [Expressions and materials](recipes/properties.md) | values as expressions of x, y, z and t, constants and tables, wall mass flux, the material database, regions | 31, 32 |
+| [Expressions and materials](recipes/properties.md) | values as expressions of x, y, z and t, constants and tables, wall mass flux, the material database, regions | 31, 32, 277 |
 | [Python](recipes/python.md) | the `foehncraft` package: cases, expressions, runs with callbacks, results, materials, studies | 33 |
 | [Verification](recipes/verification.md) | the discretisation uncertainty of a sweep (GCI), the generated verification manual | 34, 35, 165, 170, 271 |
 | [Post-processing](recipes/post-processing.md) | derived fields with the output and from restart files (`foehn post derive`) | 30, 108, 110 |
 | [Engineering gallery](recipes/applications.md) | run an application of the Engineering Gallery and compare it with published data | 161, 203 |
-| [Run control and health](recipes/runs.md) | restart, stop and steer runs, drive runs from a script or an agent, balances and divergence reports, the log, scheduled changes and case upgrades, iteration budgets, the tool registry, journals, the MCP server and the control port | 22, 26, 27, 37, 38, 39, 166, 171, 172, 175, 177, 181 |
+| [Run control and health](recipes/runs.md) | restart, stop and steer runs, drive runs from a script or an agent, balances and divergence reports, the log, scheduled changes and case upgrades, iteration budgets, the tool registry, journals, the MCP server and the control port | 22, 26, 27, 37, 38, 39, 166, 171, 172, 175, 177, 181, 316 |
 
 ## All recipes by number
 
@@ -162,6 +162,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="natural-convection"></a>272 | [Set up a natural convection case and check it: a closed cavity, an open plate, a channel with a net flow](recipes/energy.md#natural-convection) | [Energy equation and heat transfer](recipes/energy.md) |
 | <a id="porous-flow"></a>273 | [Put a porous block or a honeycomb into a flow](recipes/porous.md#porous-flow) | [Porous regions](recipes/porous.md) |
 | <a id="porous-two-temperatures"></a>275 | [Give the matrix a temperature of its own: a packed bed or a heat store](recipes/porous.md#porous-two-temperatures) | [Porous regions](recipes/porous.md) |
+| <a id="steam-if97"></a>277 | [Use water and steam of IAPWS-IF97: states, saturation lines and the `if97` material form](recipes/properties.md#steam-if97) | [Expressions and materials](recipes/properties.md) |
 | <a id="species-transport"></a>278 | [Carry the species of a gas mixture with the flow](recipes/species.md#species-transport) | [Species and reacting flows](recipes/species.md) |
 | <a id="run-ranks"></a>279 | [Run a case on ranks](recipes/meshes.md#run-ranks) | [Meshes](recipes/meshes.md) |
 | <a id="spray-two-way"></a>280 | [Let the spray push the gas (two-way coupling)](recipes/sprays.md#spray-two-way) | [Lagrangian sprays](recipes/sprays.md) |
@@ -185,6 +186,9 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="spray-evaporation"></a>306 | [Let the droplets evaporate](recipes/sprays.md#spray-evaporation) | [Lagrangian sprays](recipes/sprays.md) |
 | <a id="structure-temperature-field"></a>308 | [Load a structure with the temperatures of a flow case](recipes/structure.md#structure-temperature-field) | [Structures](recipes/structure.md) |
 | <a id="surface-check"></a>310 | [Check an STL surface before it becomes a body](recipes/immersed.md#surface-check) | [Immersed bodies](recipes/immersed.md) |
+| <a id="spray-a-surface"></a>314 | [Evaporate fuel droplets at high ambient pressure](recipes/sprays.md#spray-a-surface) | [Lagrangian sprays](recipes/sprays.md) |
+| <a id="cut-moments"></a>315 | [Cut a mesh exactly by an STL surface](recipes/immersed.md#cut-moments) | [Immersed bodies](recipes/immersed.md) |
+| <a id="spray-cooler-chat"></a>316 | [Ask an assistant an engineering question: size a spray cooler](recipes/runs.md#spray-cooler-chat) | [Run control and health](recipes/runs.md) |
 
 ## Adding a feature
 

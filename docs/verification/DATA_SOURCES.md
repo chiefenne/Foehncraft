@@ -170,6 +170,42 @@ its use.
 - Adiabatic saturation (closed box and V28.11): an exact energy and mass
   balance of the case itself, no external number.
 
+## 3e. High-pressure droplet surface (Spray A, SA1)
+
+Published measurements and equations, quoted by
+`crates/foehncraft-particles/tests/high_pressure.rs` and the constants of
+`foehncraft_kernels::realfluid`; no data set is stored.
+
+- Vapour pressure of n-dodecane up to its critical point: eq. (3) and
+  table 1 of Ambrose, D., Walton, J. (1989), Vapour pressures up to their
+  critical temperatures of normal alkanes and 1-alkanols, Pure Appl. Chem.
+  61, 1395-1403, doi:10.1351/pac198961081395 (T_c = 658.65 K, p_c =
+  1.83 MPa, ω = 0.573, a = −9.08593, b = 2.77846, c = −5.1985,
+  d = −4.173). The coefficients were read from the text layer of the open
+  PDF; the test checks them against the normal boiling point 489.439 K of
+  Lemmon, E. W., Goodwin, A. R. H. (2000), J. Phys. Chem. Ref. Data 29,
+  1-39, doi:10.1063/1.556054, table 2 (0.1 % at 101.325 kPa). The
+  Mathias-Copeman coefficients of `fuels::N_DODECANE` are our fit to this
+  equation (300 to 655 K, every 5 K; reproduced by a test).
+- Bubble points of nitrogen + n-dodecane: García-Córdova, T.,
+  Justo-García, D. N., García-Flores, B. E., García-Sánchez, F. (2011),
+  Vapor-liquid equilibrium data for the nitrogen + dodecane system at
+  temperatures from (344 to 593) K and at pressures up to 60 MPa, J. Chem.
+  Eng. Data 56, 1555-1564, doi:10.1021/je1012372 (record read through NIST
+  ThermoML). The test quotes 21 of the points (three per isotherm, near 2,
+  5 and 12 MPa); k_ij = 0.205 is our fit to all 75 points up to 20 MPa
+  (mean deviation 2.7 %, at most 9.1 %).
+- Critical points of the ambient gases from their reference equations of
+  state (N₂: Span, Lemmon, Jacobsen, Wagner, Yokozeki 2000; O₂: Schmidt and
+  Wagner 1985; CO₂: Span and Wagner 1996; H₂O: Wagner and Pruss 2002; Ar:
+  Tegeler, Span, Wagner 1999); acentric factors from Poling, B. E.,
+  Prausnitz, J. M., O'Connell, J. P. (2001), The Properties of Gases and
+  Liquids, 5th ed., appendix A (**to verify** against the printed table).
+- The Peng-Robinson constants Ω_a, Ω_b and Z_c are the roots of the
+  critical conditions of the equation (Peng, D.-Y., Robinson, D. B. (1976),
+  Ind. Eng. Chem. Fundam. 15, 59-64, doi:10.1021/i160057a011), recomputed
+  to 19 digits by us; a test checks the triple root.
+
 ## 4. Rules for adding an entry
 
 1. A value goes into the repository only when a test or a validation page
