@@ -1,12 +1,15 @@
 # Structures
 
-Part of the [Example gallery](../gallery.md): the linear structural solver of the crate `foehncraft-structure` (L53, stage MS5 of the [moving solids plan](../assessments/moving-solids-reed-valves-plan.md)), made for reed valves and other parts that the flow moves. Part 1 has Euler–Bernoulli and Timoshenko beams, clamp springs per length of the clamp line (D290) with the fit to a measured frequency, static analysis and modes by shift-invert Lanczos with a Sturm check; part 2 adds MITC4 and MITC3+ shells for plates and reed petals; part 3 adds the response in time (generalised-α, mode superposition, Rayleigh and modal damping, Craig–Bampton reduction) and thermal strain loads from a temperature field. Solid elements and contact follow in the next parts of MS5; the coupling to the flow is MS6.
+Part of the [Example gallery](../gallery.md): the linear structural solver of the crate `foehncraft-structure` (L53, stage MS5 of the [moving solids plan](../assessments/moving-solids-reed-valves-plan.md)), made for reed valves and other parts that the flow moves. Part 1 has Euler–Bernoulli and Timoshenko beams, clamp springs per length of the clamp line (D290) with the fit to a measured frequency, static analysis and modes by shift-invert Lanczos with a Sturm check; part 2 adds MITC4 and MITC3+ shells for plates and reed petals; part 3 adds the response in time (generalised-α, mode superposition, Rayleigh and modal damping, Craig–Bampton reduction) and thermal strain loads from a temperature field. Part 3b and part 4 add quadratic solids and contact with a seat and a stop; MS6 starts the coupling to the flow with the temperatures of a solid region of a flow case as the thermal load.
 
 | # | Example | Stage | Feature |
 |---|---|---|---|
 | 295 | [A reed valve as a beam: modes, and the clamp spring against the frequency equation](#reed-beam) | MS5 | `structure.run`, `structure.fitclamp`, `[[beams]]`, `[[clamps]]` |
 | 297 | [A reed petal as a shell: bending and twist on clamp springs](#reed-plate) | MS5 | `structure.run`, `[[plates]]`, `[[pressures]]`, `[[clamps]] along` |
 | 299 | [A reed struck by a pressure pulse, and a hot reed](#reed-dynamics) | MS5 | `[transient]`, `[damping]`, `[histories]`, `[[temperatures]]` |
+| 300 | [A curved reed stop as a solid, read from Gmsh](#reed-stop) | MS5 | `[[solids]]` |
+| 302 | [A reed valve between its seat and its stop](#reed-valve-contact) | MS5 | `[[contacts]]`, `[contact]` |
+| 308 | [A heat sink warmed by its chip: the flow case's temperatures as the load](#heat-sink-hot) | MS6 | `[[temperature_fields]]` |
 
 ---
 
@@ -195,8 +198,9 @@ gas comes from 6 K hotter than the seat side (`[[temperatures]]`, with the
 material's `expansion` α = 1.2·10⁻⁵ 1/K). The thermal strain α ΔT
 lengthens the reed by 29 µm and bends it away from the hot side: the tip
 moves 0.17 mm towards its seat, a preload the valve did not have cold.
-The temperatures are given here; in a coupled run they come from the
-energy equation of a solid region of the flow case (MS6).
+The temperatures are given here; `[[temperature_fields]]` takes them from
+the energy equation of a solid region of a flow case
+([gallery 308](#heat-sink-hot)).
 
 **Verification** (`crates/foehncraft-structure/tests/dynamics.rs`,
 `tests/thermal.rs`):
@@ -218,7 +222,7 @@ energy equation of a solid region of the flow case (MS6).
 The pictures are made with `python3 -m tools.plot.structure_dynamics`
 (commands in its header). Not yet: temperature-dependent moduli (give E
 at the operating temperature), a start from a static state, base motion,
-and the temperature mapping from the flow case (MS6).
+and the temperature mapping from the flow case (now [gallery 308](#heat-sink-hot)).
 
 
 ---
@@ -330,3 +334,74 @@ in its header). Not yet: friction, curved or deformable seats and stops
 (contact between parts), a coefficient of restitution (the impacts are
 elastic; numerical damping, ρ∞ < 1, takes the energy of the high
 frequencies they excite), and the flow through the closing gap (MS6).
+
+
+---
+
+<a id="heat-sink-hot"></a>
+## 308. A heat sink warmed by its chip: the flow case's temperatures as the load
+
+The thermal load of a part in a flow comes from the flow case itself: the
+energy equation of a solid region of a conjugate heat transfer case gives
+the temperature of every cell of the metal, and the structure takes it at
+its own nodes (stage MS6, the owner's ask that the solid's energy equation
+be ours). `examples/cases/structure/heat_sink_hot.toml` reads the result of
+the turbulent heat sink case
+([`cht_heat_sink_turbulent.toml`](../cases/flow.md), k-ω SST, air at 5 m/s,
+2000 W/m² from a chip under the aluminium base) and maps the 680 cells of
+the zones `base`, `fin_1`, `fin_2` and `fin_3` onto the 6938 nodes of 1164
+twenty-node hexahedra of a mesh of its own (four elements through the
+depth, where the 2D flow case has one layer of cells):
+
+```toml
+[[temperature_fields]]
+parts = ["sink"]
+file = "../../../output/cht_heat_sink_turbulent/fields.vtkhdf"
+zones = ["base", "fin_1", "fin_2", "fin_3"]
+reference = 300.0           # the stress-free (bonding) temperature, K
+```
+
+<img src="../figures/gallery/structure_heat_sink_hot.png" alt="The aluminium heat sink with three fins: top left, the temperature mapped from the flow case onto its nodes, 327.6 K at the fin tips to 329.5 K in the middle of the base; top right, the base held at its underside, drawn 300 times its displacement and coloured by the von Mises stress, highest at the ends of the bond line; below, the temperature along the top of the base from the flow cells (line) and the mapped structural nodes (dots), with dips under the three fins" width="1200" height="760">
+
+The aluminium runs at 327.6 to 329.5 K, 28 K above the 300 K at which it
+was bonded to its board. The bond holds the underside: the warm base
+cannot grow, the stress in it is about E α ΔT/(1 − ν) ≈ 50 to 60 MPa, and
+it gathers at the ends of the bond line (192 MPa at the corner, a
+singularity of the sharp corner that grows with refinement; the colours
+end at the 99.5 % value). The fins are free and rise by α ΔT times their
+height: 18.5 µm at the tip of the third fin. The reaction forces add up to
+zero (10⁻¹⁰ N): a thermal load is self-equilibrated. Along the top of the
+base the mapped nodes follow the cells of the flow case, with the dips
+under the fins a little deeper at y = 5 mm, the surface the fins draw
+heat from, than in the cells at y = 4.5 mm.
+
+**How.** At every structural node the mapping fits a linear field
+T(y) = a + g·(y − x) to the 20 nearest cell centres of the chosen zones by
+weighted least squares (weights 1/(d² + ε²)) and takes a; beams and plates
+also take the slope g across their section. The fit is exact for a linear
+field on any cell shape and of second order for a smooth one; a node a
+little outside the cells (on the surface, or on a curved part) takes the
+field extrapolated along its slope, and one farther from the nearest
+centre than that cell's size is refused (`STR001`: units, `offset` or
+`zones` wrong). Directions the centres do not span, such as the depth of
+a 2D case, take no slope. Solids get a thermal strain α (T − T₀) at each
+node, interpolated by the quadratic shape functions; plates get the
+mid-surface value and α ∂T/∂n per node, bilinear over the element; beams
+get the mean over the element of the axis value and of α ∂T/∂y and
+α ∂T/∂z.
+
+**Verification** (`crates/foehncraft-structure/tests/mapping.rs`):
+
+| Check | Exact solution | Result |
+|---|---|---|
+| Linear field on hexahedra, tetrahedra and polyhedra, solid blocks of hex20 and tet10 | the node temperatures; a free body under a linear field is stress-free and moves by u = α[(T − T₀) x − ½ g \|x\|²] plus a rigid motion (Timoshenko & Goodier 1970) | node values to 10⁻⁹; the displacement less the exact one is rigid to 10⁻⁹ of α ΔT; von Mises below 10⁻⁸ E α ΔT |
+| T₀ + 40 K + 3000 K/m across a plate (MITC4, MITC3+) and a beam | `[[temperatures]]` with `change = 40` and `difference = 3000 h` | every unknown within 10⁻⁹ of the largest |
+| Smooth field 400 + 50 sin πx cos πy eᶻ, flow meshes of 8, 16, 32 cells | the field at the nodes | order 1.9 and 2.2; 0.28 K at 32 cells |
+| One layer of cells (a 2D case), hexahedra and prisms | a field linear in x and y | node values to 10⁻⁹ |
+| A zone or a field not in the file, an unknown part, no expansion, a structure outside the zones, bad `neighbours` or `max_distance`, a missing file | `STR001` | each refused; `offset` moves the structure into the zone |
+
+The picture is made with `python3 -m tools.plot.structure_heat_sink`
+(commands in its header). Not yet: a field that changes in time (one
+result file, scaled by a history), the temperature-dependent moduli,
+`.vtu` results (VTKHDF only), and mapping the other way (the structure's
+motion back to the flow, the FSI part of MS6).

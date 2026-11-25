@@ -375,6 +375,7 @@ fn pseudo_solve(a: [[f64; 3]; 3], b: [f64; 3]) -> [f64; 3] {
 
 /// Eigenvalues and eigenvectors (columns) of a symmetric 3 × 3 matrix by
 /// cyclic Jacobi rotations.
+#[allow(clippy::needless_range_loop)]
 fn jacobi3(mut a: [[f64; 3]; 3]) -> ([f64; 3], [[f64; 3]; 3]) {
     let mut v = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
     for _ in 0..50 {

@@ -1684,7 +1684,7 @@
     "gaps written"
    ],
    "gaps": [
-    "temperatures are given per part (uniform change and a linear difference across the thickness); the mapping of the temperature field of a solid region of the flow case is MS6",
+    "temperatures given per part are uniform with a linear difference across the thickness; a field from a flow case is `structure.temperature-field` (MS6)",
     "the moduli do not depend on temperature: give E at the operating temperature",
     "no thermal stresses of beams and shells in the output (the solids give the von Mises stress)"
    ],
@@ -1702,7 +1702,7 @@
     "a solid shares no nodes with beams and shells: no solid–shell or solid–beam connection yet",
     "the von Mises stress at the nodes (averaged over the elements around each) only; no stress components or principal stresses in the output",
     "Gmsh's complete second-order elements (27-node hexahedra, 9-node quadrilaterals), prisms and pyramids are refused",
-    "a uniform temperature change per part; a temperature field per node (from the flow case) is MS6",
+    "`[[temperatures]]` gives a uniform change per part; a field per node from a flow case is `structure.temperature-field`",
     "nearly incompressible materials (ν → 0.5) lock with full integration: ν = 0.49 is 1e-3 to 8e-3 off on the Lamé cylinder; no mixed or reduced-integration formulation"
    ],
    "range": {}
@@ -1722,6 +1722,23 @@
     "impacts are elastic: no coefficient of restitution; generalised-α with ρ∞ < 1 damps the high frequencies an impact excites, and the penalty contact of a shell node lasts far less than a step",
     "an impact is not resolved in time: no step cut at contact changes (plan 5.4) and no energy-conserving contact scheme; the energy of the reed example decays but is not checked against a balance",
     "the active-set loop refactors the matrix whenever the set changes (1990 factorisations in 2400 steps of the example)"
+   ],
+   "range": {}
+  },
+  {
+   "id": "structure.temperature-field",
+   "title": "Temperatures of a solid region of a flow case as the thermal load of beams, shells and solids: VTKHDF cell field, linear least-squares fit at the nodes (L53, MS6 part 1)",
+   "grade": "partial",
+   "why": [
+    "a model without reference data",
+    "gaps written"
+   ],
+   "gaps": [
+    "one result file per field, constant in time (a history scales T − reference): no series of results in a transient",
+    "VTKHDF results only (no .vtu or other formats)",
+    "the mapping is one way: the structure's motion and the fluid forces (the two-way FSI of MS6) are not coupled yet",
+    "the moduli do not depend on temperature",
+    "no check against a measured thermal deformation of a part in a flow"
    ],
    "range": {}
   }

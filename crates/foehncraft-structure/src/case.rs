@@ -1724,7 +1724,7 @@ fn map_temperature_fields(
             ];
             let f = mapper.fit(y);
             let limit = tf.max_distance.unwrap_or(f.size);
-            if !(f.distance <= limit) || !f.value.is_finite() {
+            if f.distance.is_nan() || f.distance > limit || !f.value.is_finite() {
                 return Err(bad(format!(
                     "{what}: the node at {x:?} is {:.3e} m from the nearest cell centre of the \
                      zones (limit {limit:.3e} m): the structure does not lie in the solid region \
@@ -1748,7 +1748,7 @@ fn map_temperature_fields(
             if let Some(r) = lines.get(part) {
                 let alpha = need(line_thermal[part].0, part)?;
                 for e in r.clone() {
-                    let b = model.beams[e].clone();
+                    let b = model.beams[e];
                     let f0 = fit(b.nodes[0], &model.nodes)?;
                     let f1 = fit(b.nodes[1], &model.nodes)?;
                     let mean = |f: &dyn Fn(&Fit) -> f64| 0.5 * (f(&f0) + f(&f1));
