@@ -169,6 +169,42 @@ pub fn heat_step<T: Real>(i: &HeatInput<T>) -> HeatStep<T> {
     }
 }
 
+/// The eddy of the eddy-lifetime model (Gosman and Ioannides 1983).
+#[derive(Clone, Copy, Debug)]
+pub struct EddyTimes<T> {
+    /// Eddy length scale l_e = C_μ^¾ k^{3/2} / ε (m).
+    pub length: T,
+    /// Eddy lifetime τ_e = l_e / (2k/3)^½ (s).
+    pub lifetime: T,
+    /// Interaction time: the shorter of the lifetime and the time the
+    /// parcel needs to cross the eddy, t_cr = −τ_p ln(1 − l_e / (τ_p |w|))
+    /// (the eddy is never crossed when l_e ≥ τ_p |w|) (s).
+    pub interaction: T,
+}
+
+/// The times of an eddy with the turbulence `k`, `eps` at the parcel, the
+/// parcel's momentum response time `tau_p` and its slip `slip` = |u + u' −
+/// v| at the start of the eddy (Gosman and Ioannides 1983; C_μ = 0.09).
+#[inline]
+pub fn eddy_times<T: Real>(k: T, eps: T, tau_p: T, slip: T) -> EddyTimes<T> {
+    let zero = T::from_f64(0.0);
+    let c = T::from_f64(0.164_316_767_251_549_8); // 0.09^¾
+    let length = c * k * k.sqrt_of() / eps;
+    let lifetime = length / (T::from_f64(2.0 / 3.0) * k).sqrt_of();
+    let reach = tau_p * slip;
+    let interaction = if reach > length && reach > zero {
+        let cross = -(tau_p * (T::from_f64(1.0) - length / reach).ln_of());
+        if cross < lifetime { cross } else { lifetime }
+    } else {
+        lifetime
+    };
+    EddyTimes {
+        length,
+        lifetime,
+        interaction,
+    }
+}
+
 /// Arrays of the parcel step, one entry per parcel (structure of arrays,
 /// D47).
 #[derive(Clone, Copy)]
@@ -304,6 +340,26 @@ mod tests {
 #[cfg(test)]
 mod heat_tests {
     use super::*;
+
+    #[test]
+    fn eddy_times_follow_gosman_and_ioannides() {
+        let (k, eps) = (0.6f64, 2.0f64);
+        let l = 0.09f64.powf(0.75) * k.powf(1.5) / eps;
+        let te = l / (2.0 * k / 3.0).sqrt();
+        // a tracer never crosses its eddy: the lifetime
+        let e = eddy_times(k, eps, 1e-9, 1.0);
+        assert!((e.length - l).abs() < 1e-15 * l && (e.lifetime - te).abs() < 1e-14 * te);
+        assert_eq!(e.interaction, e.lifetime);
+        // a heavy parcel with a large slip crosses it first
+        let (tau, w) = (1.0, 10.0 * l / te);
+        let e = eddy_times(k, eps, tau, w);
+        let cross = -tau * (1.0 - l / (tau * w)).ln();
+        assert!(cross < te && (e.interaction - cross).abs() < 1e-14 * cross);
+        // the crossing time tends to l/|w| for a parcel that is not
+        // slowed in the eddy
+        let e = eddy_times(k, eps, 1e6, w);
+        assert!((e.interaction - l / w).abs() < 1e-6 * l / w);
+    }
 
     #[test]
     fn heat_step_relaxes_exactly_and_halves_compose() {

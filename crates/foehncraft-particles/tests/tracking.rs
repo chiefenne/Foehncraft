@@ -27,6 +27,8 @@ impl<F: Fn(usize, [f64; 3]) -> [f64; 3] + Sync> Gas for Field<F> {
             t: f64::NAN,
             cp: 1006.0,
             k: 0.0,
+            tke: 0.0,
+            eps: 0.0,
         }
     }
 }

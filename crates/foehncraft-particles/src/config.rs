@@ -153,6 +153,28 @@ pub struct SpraySection {
     pub penetration: Penetration,
     /// The coupling of the parcels with the gas (SP2, D247 to D252).
     pub coupling: Coupling,
+    /// Turbulent dispersion of the parcels (D243): `none` (default) or
+    /// `eddy-lifetime` (Gosman and Ioannides 1983); `random-walk` follows
+    /// behind the same key. Needs a turbulence model.
+    pub dispersion: Dispersion,
+}
+
+/// The turbulent dispersion model of the parcels (D243).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum Dispersion {
+    /// The parcels see the mean gas velocity.
+    #[default]
+    None,
+    /// Eddy lifetime (Gosman and Ioannides 1983): a parcel sees the mean
+    /// gas velocity plus an isotropic Gaussian fluctuation of variance
+    /// 2k/3 per component, kept for the eddy interaction time, the shorter
+    /// of the eddy lifetime and the time the parcel needs to cross the
+    /// eddy.
+    EddyLifetime,
+    /// Continuous random walk (D243, answered 2026-11-24): follows; refused
+    /// in this version.
+    RandomWalk,
 }
 
 /// Whether the gas feels the parcels.
@@ -280,6 +302,7 @@ impl Default for SpraySection {
             penetration_fraction: 0.95,
             penetration: Penetration::Axial,
             coupling: Coupling::default(),
+            dispersion: Dispersion::None,
         }
     }
 }
@@ -327,6 +350,11 @@ impl SpraySection {
     /// Checks the values.
     pub fn validate(&self) -> Result<()> {
         let pos = |x: f64| x.is_finite() && x > 0.0;
+        if self.dispersion == Dispersion::RandomWalk {
+            bail!(
+                "[spray] dispersion = \"random-walk\" is not available in this version; use \"eddy-lifetime\""
+            );
+        }
         if !pos(self.liquid.density) {
             bail!("[spray.liquid] density must be positive and finite");
         }

@@ -1,0 +1,78 @@
+# Droplets spread by the turbulence of a duct (Lagrangian sprays, eddy-
+# lifetime dispersion, SP2c, D243).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/spray_dispersion.toml
+#
+# Air at 10 m/s with 10 % turbulence enters a duct of 3 m by 0.3 m (2D,
+# SST k-ω). A needle nozzle on the axis 0.2 m behind the inlet shoots
+# water droplets of 10 to 150 µm (Rosin-Rammler, X = 50 µm) straight
+# downstream at the speed of the air, without a cone: every sideways
+# movement of a droplet comes from the eddies. With `[spray] dispersion =
+# "eddy-lifetime"` (Gosman and Ioannides 1983) a parcel sees the mean gas
+# velocity plus a Gaussian fluctuation of variance 2k/3 per component,
+# kept for the life of the eddy or the time the droplet needs to cross
+# it. Small droplets follow the eddies and spread fast; large ones
+# respond slowly and spread less. Gravity is left out so that the spread
+# is the turbulence alone. The coupling is two-way, at a light loading.
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [3.0, 0.3, 0.1]
+cells = [150, 30, 1]
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.2
+viscosity = 1.8e-5
+
+[turbulence]
+model = "k-omega-sst"
+wall_treatment = "automatic"
+
+[initial]
+velocity = [10.0, 0.0, 0.0]
+turbulence_intensity = 0.1
+viscosity_ratio = 2000.0
+
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [10.0, 0.0, 0.0]
+turbulence_intensity = 0.1
+viscosity_ratio = 2000.0
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymin]
+type = "wall"
+[boundary.ymax]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[time]
+scheme = "bdf2"
+time_step = 0.002
+end_time = 0.6
+
+[spray]
+include = "spray_dispersion_injectors.toml"
+wall_mode = "stick"
+write_every = 25
+dispersion = "eddy-lifetime"
+
+[spray.coupling]
+mode = "two-way"
+
+[solver]
+tolerance = 1e-6
+max_iterations = 300
+
+[verification]
+require_convergence = false

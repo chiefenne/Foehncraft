@@ -30,6 +30,15 @@ pub fn validate(case: &FlowCase) -> Result<()> {
     if s.is_empty() {
         return Ok(());
     }
+    if s.dispersion != foehncraft_particles::Dispersion::None && case.turbulence.is_laminar() {
+        return Err(err(
+            diag::SPRAY_CONFIG,
+            "spray.dispersion",
+            "[spray] dispersion needs a turbulence model ([turbulence] model): a laminar gas has \
+             no k and ε for the eddies"
+                .into(),
+        ));
+    }
     if case.time.is_none() {
         return Err(err(
             diag::SPRAY_STEADY,
@@ -172,6 +181,17 @@ impl Gas for FlowGas<'_> {
             g.cp = h.cp[cell];
             g.k = h.k[cell];
         }
+        if let Some(t) = &self.sol.state.turbulence {
+            // the turbulence of the cell for the dispersion (D243): ε of the
+            // k-ε family, or ε = β* k ω with β* = C_μ = 0.09 (SST)
+            g.tke = t.k[cell].max(0.0);
+            g.eps = if t.epsilon {
+                t.omega[cell]
+            } else {
+                0.09 * g.tke * t.omega[cell]
+            }
+            .max(0.0);
+        }
         g
     }
 }
@@ -275,9 +295,12 @@ pub fn create(
         return Ok(None);
     }
     let env = foehncraft_particles::Env { mesh, geo, loc };
-    foehncraft_particles::Spray::new(&case.spray, &env, rules(case, mesh), gravity(case))
-        .map(Some)
-        .map_err(|e| err(diag::SPRAY_CONFIG, "spray", format!("{e:#}")))
+    let mut sp =
+        foehncraft_particles::Spray::new(&case.spray, &env, rules(case, mesh), gravity(case))
+            .map_err(|e| err(diag::SPRAY_CONFIG, "spray", format!("{e:#}")))?;
+    // a two-dimensional case lies in the x-y plane: eddies without z
+    sp.set_planar(crate::case::dimension(case) == 2);
+    Ok(Some(sp))
 }
 
 /// The state for a restart file.
