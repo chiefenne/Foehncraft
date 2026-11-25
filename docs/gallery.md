@@ -13,7 +13,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | Page | What it covers | Examples |
 |---|---|---|
 | [Kernel benchmarks and GPU runs](gallery/benchmarks.md) | gate G1 on CPUs and GPUs, on box, polyhedral and tetrahedral meshes, and the flow loop on a GPU | 1, 2, 7, 16 |
-| [Meshes](gallery/meshes.md) | the built-in test mesher in 2D and 3D, partitioning, the Gmsh, SU2, OpenFOAM, CGNS, Fluent `.msh` and VTK readers, flow on poor Gmsh meshes with remediation, the operator exactness check, the canonical local mesh and exact reductions over ranks | 3, 4, 5, 6, 26, 127, 129, 134, 138, 189, 200, 219, 230, 231, 234, 244, 262, 279, 290, 301 |
+| [Meshes](gallery/meshes.md) | the built-in test mesher in 2D and 3D, partitioning, the Gmsh, SU2, OpenFOAM, CGNS, Fluent `.msh` and VTK readers, flow on poor Gmsh meshes with remediation, the operator exactness check, the canonical local mesh and exact reductions over ranks | 3, 4, 5, 6, 26, 127, 129, 134, 138, 189, 200, 219, 230, 231, 234, 244, 262, 279, 290, 301, 304 |
 | [Scalar transport and the pressure solver](gallery/scalar-pressure.md) | convection–diffusion order of accuracy, convection schemes and limiters, the pressure multigrid | 8, 9, 10, 11 |
 | [Incompressible flow](gallery/flow.md) | steady and transient laminar verification and benchmarks (cavity, Poiseuille, Taylor–Green, cylinder, time-step control), the coupled algorithm and its multigrids, heat transfer in turbulent flow, rotating machinery (moving reference frame, sliding mesh, stirred vessels, several rotors) and the T-junction mixing study | 12, 13, 14, 15, 20, 78, 80, 81, 83, 85, 86, 87, 94, 95, 96, 98, 99, 100, 101, 102, 225, 103, 196 |
 | [Passive scalars and the wall distance](gallery/scalars.md) | passive scalars carried by the flow, the bounded BDF2, the exact wall distance, the MLP vertex limiter | 63, 211 |
@@ -163,6 +163,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | <a id="reed-plate"></a>297 | [A reed petal as a shell: bending and twist on clamp springs](gallery/structure.md#reed-plate) | [Structures](gallery/structure.md) |
 | <a id="reed-dynamics"></a>299 | [A reed struck by a pressure pulse, and a hot reed](gallery/structure.md#reed-dynamics) | [Structures](gallery/structure.md) |
 | <a id="run-ranks-mrf"></a>301 | [A stirred vessel on five ranks: rotating zones of MRF on ranks](gallery/meshes.md#run-ranks-mrf) | [Meshes](gallery/meshes.md) |
+| <a id="run-ranks-sliding"></a>304 | [A sliding rotor on five ranks: conformal stepping on ranks](gallery/meshes.md#run-ranks-sliding) | [Meshes](gallery/meshes.md) |
 
 ## Adding a feature
 
