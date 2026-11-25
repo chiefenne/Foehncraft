@@ -8,6 +8,7 @@ Part of the [Example gallery](../gallery.md): droplets as Lagrangian parcels in 
 | 265 | [Where the liquid goes: datums and droplet statistics](#spray-datums) | SP1b | `[[datum]]` (cut plane, plane on faces, disc, STL surface, boundary, box), Rosin-Rammler sizes, `datums.csv`, histograms, D32 and Dv50, penetration, `series.json` |
 | 280 | [A water spray that drives the air](#spray-two-way) | SP2 | `[spray.coupling] mode = "two-way"`, value-plus-slope momentum sources, passes inside the time step, coupling lag, momentum ledger pair, health numbers |
 | 283 | [Water droplets cool a hot air stream](#spray-cooling) | SP2 | two-way sensible heat: droplet temperature, Ranz-Marshall heat transfer, energy sources in value-plus-slope form, temperature lag, enthalpy ledger pair |
+| 285 | [Droplets spread by the turbulence of a duct](#spray-dispersion) | SP2 | `[spray] dispersion = "eddy-lifetime"` (Gosman and Ioannides), Gaussian eddies of variance 2k/3 keyed per parcel and eddy, eddy interaction time, crossing trajectories, spread by droplet size |
 
 ---
 
@@ -256,4 +257,70 @@ per step), `result.json` (coupling summary with the heat totals, ledger),
 parcel files with a `temperature` field.
 Picture: `python3 -m tools.plot.spray_cooling OUT_DIR output/spray_cooling`.
 [Recipe 283](../recipes/sprays.md#spray-cooling),
+[case row](../cases/flow.md#lagrangian-sprays).
+
+<a id="spray-dispersion"></a>
+## 285. Droplets spread by the turbulence of a duct
+
+<img src="../figures/gallery/spray_dispersion.png" alt="Top: turbulent kinetic energy of the air in a duct of 3 m by 0.3 m, from 1.5 m²/s² at the inlet on the left decaying to about 0.5 at the outlet, with the droplets as grey dots shaded by their diameter; they leave a needle nozzle on the axis at x = 0.2 m as a thin line and widen into a plume that fills the duct after about 2 m. Bottom left: the sideways spread of the droplets about the nozzle axis along the duct for three size classes; the small droplets of 20 to 60 µm spread fastest, the large ones of 150 to 300 µm slowest, and all approach the width of the duct. Bottom right: the distribution of y of the three classes between x = 2.3 and 2.7 m, the large droplets still gathered nearer the axis." width="1200" height="740">
+
+`spray_dispersion.toml` is a duct of 3 m by 0.3 m (2D, 150 × 30 cells,
+SST k-ω, Δt = 2 ms) with air entering at 10 m/s and 10 % turbulence
+(k = 1.5 m²/s², viscosity ratio 2000, so the turbulence lives over the
+length of the duct). A needle nozzle on the axis 0.2 m behind the inlet
+shoots 2 g/s of water straight downstream at the speed of the air, without
+a cone, as droplets of 20 to 300 µm (Rosin-Rammler, X = 120 µm, n = 2.5).
+Gravity is left out, so every sideways movement of a droplet comes from
+the turbulence: with `[spray] dispersion = "eddy-lifetime"` (D243) the
+line of droplets widens into a plume that fills the duct after about 2 m.
+
+**How the eddies work** (Gosman and Ioannides 1983). A parcel sees the
+mean gas velocity plus a fluctuation u′ whose components are Gaussian with
+variance 2k/3, drawn when it enters an eddy and kept while it stays in it.
+The eddy has the length l_e = C_μ^¾ k^{3/2}/ε and the lifetime
+τ_e = l_e/(2k/3)^½; the parcel leaves it after τ_e or, if it is heavy and
+slips through the eddy, after the crossing time
+t_cr = −τ_p ln(1 − l_e/(τ_p |u + u′ − v|)), whichever is shorter. A sub-step
+ends where the eddy ends (D251). The random numbers come from the stream
+`SPRAY_DISPERSION`, keyed by the parcel and the number of eddies it has
+entered (D121): every pass of a time step and every thread count draws the
+same numbers, so two-way coupling with dispersion stays bitwise
+reproducible and its passes can converge. ε comes from the k-ε family or
+as β* k ω from SST; in a 2D case the eddies have no z component.
+
+In this run the spread after 1 m is 5.4 cm for the droplets of 20 to
+60 µm, 4.4 cm for 60 to 150 µm and 2.9 cm for 150 to 300 µm: the large
+droplets respond more slowly to each eddy. Towards the end of the duct the
+walls limit the spread of all classes. Of the 1.2 g injected, 0.59 g leave
+through the outlet, 0.07 g stick on the walls and 0.54 g are in the duct;
+no parcel is lost. The coupling is two-way at a light loading (1.8 passes
+per step, none above the tolerance). The run takes about 20 s.
+
+**What is checked.** Tracers (1 µm) in turbulence at rest with uniform k
+and ε spread as the random walk the model is: after a time
+T = n τ_e + r the mean square displacement per component is
+(2k/3)(n τ_e² + r²); for 20 000 tracers it is within 1.3 % of that in
+each component (the band is four standard errors, 4 %), and the mean
+displacement is zero within four standard errors. Droplets of 300 µm that
+fall at 1.1 m/s through eddies of 5 cm cross them (16 eddies in 1 s
+against 5 for a tracer) and spread a third as far sideways. The eddy times
+of the kernel match the formulas, including the limit l_e/|w| for a parcel
+not slowed in the eddy. Sources, closing step and parcel states with
+eddies are bitwise equal with the parcels stored in reverse order and on
+one thread (hex, tetrahedral and polyhedral meshes), whole runs on 1 and 4
+threads; the momentum books close to round-off. A case without a
+turbulence model is refused (SPR001).
+
+**What this version does not do.** No continuous random walk yet (D243:
+the second value of the same key, refused for now). Isotropic eddies: no
+anisotropy near walls, where the model overestimates the wall-normal
+fluctuation (a known flaw of the eddy-lifetime model; deposition rates on
+walls are not to be trusted). The droplets do not change the turbulence
+(no turbulence modulation). Not compared yet with the grid-turbulence
+measurements of V28.17 (Snyder and Lumley 1971; Wells and Stock 1983).
+One process.
+
+Files: `spray.csv`, `result.json`, parcel files every 25 steps.
+Picture: `python3 -m tools.plot.spray_dispersion OUT_DIR output/spray_dispersion`.
+[Recipe 285](../recipes/sprays.md#spray-dispersion),
 [case row](../cases/flow.md#lagrangian-sprays).

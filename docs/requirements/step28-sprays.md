@@ -393,3 +393,31 @@ case). What the code does, against section 5:
   overshoot, enthalpy kept), V28.4 for heat (observed order 1.03 and 1.04
   against a fourth-order reference). V28.16 (one-dimensional dusty-gas
   duct) is not run yet.
+
+**SP2c (eddy-lifetime dispersion) is implemented** (`[spray] dispersion =
+"eddy-lifetime"`, D243). What the code does:
+
+- A parcel carries its eddy (fluctuation u′, time left, eddy count; in the
+  restart file, older files start new eddies). When the time left is used
+  up it enters a new eddy: u′ Gaussian with variance 2k/3 per component
+  (Box and Muller from the keyed uniforms of the stream `SPRAY_DISPERSION`,
+  key (parcel id, eddy count, component), D121), and the interaction time
+  min(τ_e, t_cr) of Gosman and Ioannides (1983), τ_e = l_e/(2k/3)^½,
+  l_e = C_μ^¾ k^{3/2}/ε, t_cr = −τ_p ln(1 − l_e/(τ_p |u + u′ − v|)).
+  Drag, Reynolds number and heat transfer see u + u′; a sub-step ends at
+  the end of the eddy (D251).
+- The pass stays a pure function of the committed parcels (D247): every
+  pass of a step and every thread count draws the same eddies; the eddy
+  the last pass ends in is committed with the parcel.
+- k from the turbulence model, ε from the k-ε family or β* k ω (SST,
+  β* = 0.09); in 2D cases the eddies have no z component. Without a
+  turbulence model the key is refused (SPR001). A cell without turbulence
+  (k or ε zero) ends the eddy.
+- **Found while testing:** an eddy whose rest is below what the step time
+  resolves made its sub-steps stall (the parcel was counted as lost after
+  `max_substeps`); such an eddy now ends.
+- Checks: tracers in uniform turbulence against the exact random walk of
+  the model (within 1.3 % for 20 000 tracers), crossing trajectories (heavy
+  droplets change eddies more often and spread less), V28.1 with eddies,
+  bitwise equal flow runs on 1 and 4 threads. V28.17 (grid turbulence
+  against Snyder and Lumley 1971 and Wells and Stock 1983) is not run yet.
