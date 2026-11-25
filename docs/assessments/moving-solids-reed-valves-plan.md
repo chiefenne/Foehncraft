@@ -32,8 +32,9 @@ source of code.
 New ids: requirements **L52** (solids moved by fluid forces through a lumped
 model) and **L53** (small linear structural solver and two-way FSI for reed
 valves) are entered in `requirements.md` with this page. Decision numbers
-**D286 to D292** are reserved for the cards of section 9 (provisional:
-re-checked against `main` before the answers are recorded). Stage ids use
+**D286 to D292** were answered by the maintainer on 2026-11-25 (section 9,
+seven cards) and are entered in `requirements.md`. Next free decision
+number: D293. Stage ids use
 the prefix **MS** (moving solids).
 
 ## 1. Answer in short
@@ -457,17 +458,17 @@ Everything is case-file driven and scriptable, with structured outputs:
 
 ## 9. Decisions for the maintainer (cards, one at a time)
 
-Each card is posted in the thread, the next only after the answer.
+Each card was posted in the thread, the next only after the answer. All seven were answered on 2026-11-25 between 12:39 and 12:42 UTC.
 
-| Card | Id | Question | Recommendation |
-|---|---|---|---|
-| 1 | D286 | How should the mesh follow a moving valve? | deforming mesh (morphing) with a rigid zone and sliding imprint for long strokes; morphing method chosen by a benchmark of classical and graphics methods; overset and immersed later |
-| 2 | D287 | How should a closing valve be handled? | minimum gap with sealing faces switched to walls; Brinkman blocking as the compared option |
-| 3 | D288 | How does the user enter spring, damping and other forces? | built-in elements, expressions, tables and a linear state-space block first; FMI co-simulation later |
-| 4 | D289 | Which structural solver for reeds? | own linear FE crate with beams, MITC shells and solids, modal reduction, contact; geometric nonlinearity later |
-| 5 | D290 | How is the mounting stiffness modelled? | clamp springs first (with calibration from a natural frequency), clamp parts in contact second |
-| 6 | D291 | Which fluids come first? | liquid and low-speed gas valves first; the all-speed form for choked gas valves as its own stage after MS6 |
-| 7 | D292 | Which references count for validation (D201)? | measurements and analytic results; the Turek–Hron FSI1 values allowed as an accepted benchmark like Schäfer & Turek, by its own decision |
+| Card | Id | Question | Recommendation | Maintainer's answer |
+|---|---|---|---|---|
+| 1 | D286 | How should the mesh follow a moving valve? | deforming mesh (morphing) with a rigid zone and sliding imprint for long strokes; morphing method chosen by a benchmark of classical and graphics methods; overset and immersed later | **All three** (2026-11-25 12:39 UTC): morphing with a rigid zone and the morphing benchmark (MS1), cell layering for long strokes (MS1b), immersed moving bodies (MS1c, after L13 stages 2 and 5) |
+| 2 | D287 | How should a closing valve be handled? | minimum gap with sealing faces switched to walls; Brinkman blocking as the compared option | **Minimum gap + sealing faces** (12:39 UTC), as recommended |
+| 3 | D288 | How does the user enter spring, damping and other forces? | built-in elements, expressions, tables and a linear state-space block first; FMI co-simulation later | **All three** (12:40 UTC): elements, expressions, tables and state space (MS2), then FMI 3.0 co-simulation units (MS2b), then sandboxed user code in WebAssembly (MS2c), each its own PR after MS2 |
+| 4 | D289 | Which structural solver for reeds? | own linear FE crate with beams, MITC shells and solids, modal reduction, contact; geometric nonlinearity later | **Own linear FE, geometric nonlinearity later** (12:41 UTC), as recommended (corotational shells stay MS9) |
+| 5 | D290 | How is the mounting stiffness modelled? | clamp springs first (with calibration from a natural frequency), clamp parts in contact second | **Clamp springs first, clamp parts later** (12:41 UTC), as recommended |
+| 6 | D291 | Which fluids come first? | liquid and low-speed gas valves first; the all-speed form for choked gas valves as its own stage after MS6 | **Liquid + low-speed gas, choked later** (12:42 UTC), as recommended (all-speed form = MS8 after MS6) |
+| 7 | D292 | Which references count for validation (D201)? | measurements and analytic results; the Turek–Hron FSI1 values allowed as an accepted benchmark like Schäfer & Turek, by its own decision | **Allow Turek–Hron like Schäfer–Turek** (12:42 UTC), as recommended: the published FSI1 values (later FSI2, FSI3) are an accepted benchmark class, scalars with citation, no data sets |
 
 ## 10. Stages and sizing
 
@@ -479,7 +480,11 @@ working rule 8).
 |---|---|---|---|---|
 | MS0 | Deforming mesh core (D91), L22 evenly compressed piston | 2–3 | 1.5–2.5 h | 1 h |
 | MS1 | Mesh motion solver + zones + quality guard + morphing benchmark (section 4.6) | 2–3 | 1.5–2.5 h | 1–2 h |
+| MS1b | Cell layering for long strokes (D286) | 1–2 | 1–2 h | 0.5–1 h |
+| MS1c | Immersed moving bodies driven by the body model (D286), after L13 stages 2 and 5 (D234) | – | not sized yet | – |
 | MS2 | Moving body with mechanical model, coupling (Aitken, added mass), restart, ledger | 2 | 1.5–2 h | 1 h |
+| MS2b | FMI 3.0 co-simulation units in the mechanical model (D288) | 1 | 1.5–2 h | 0.5 h |
+| MS2c | Sandboxed user code (WebAssembly) in the mechanical model (D288) | 1 | about 1.5 h | 0.5 h |
 | MS3 | Closure: minimum gap, sealing faces, impact events | 1–2 | 1–1.5 h | 1 h |
 | MS4 | Validation: added mass, VIV, relief valve, gallery | 1–2 | 0.5–1 h | 1–2 h |
 | MS5 | Structural crate: elements, modal, generalised-α, springs, contact, verification | 3–4 | 3–4.5 h | 1 h |
@@ -488,11 +493,11 @@ working rule 8).
 | MS8 | All-speed pressure correction for choked valve flow (with L10) | – | not sized yet | – |
 | MS9 | Corotational shells (large rotations), Turek–Hron FSI2/FSI3 | – | not sized yet | – |
 
-Totals: L52 (MS0 to MS4) code 6 to 9 h, runs 4 to 7 h; L53 (MS5, MS6) code
+Totals: L52 (MS0 to MS4) code 6 to 9 h, runs 4 to 7 h, plus MS1b, MS2b and MS2c code 4 to 5.5 h, runs 1.5 to 2 h; L53 (MS5, MS6) code
 5 to 7.5 h, runs 4 to 7 h. MS5 can run in parallel with MS1 to MS4 in its
 own thread (no shared files except the case schema).
 
-Order: MS0 → MS1 → MS2 → MS3 → MS4; MS5 in parallel from the start;
+Order: MS0 → MS1 → MS2 → MS3 → MS4, then MS1b, MS2b, MS2c; MS1c when L13 stages 2 and 5 exist; MS5 in parallel from the start;
 MS6 after MS3 and MS5. MPI ranks: MS0 must keep W7 working (geometry halos
 per step); body and structure on rank 0 with broadcast.
 
