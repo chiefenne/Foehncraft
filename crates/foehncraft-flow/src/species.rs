@@ -296,7 +296,7 @@ pub struct Resolved {
 }
 
 /// Standard atomic weights (kg/mol), as in GRI-Mech 3.0.
-fn atomic_weight(e: &str) -> f64 {
+pub fn atomic_weight(e: &str) -> f64 {
     match e {
         "H" => 1.00794e-3,
         "C" => 12.0107e-3,

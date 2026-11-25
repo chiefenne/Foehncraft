@@ -1,0 +1,29 @@
+# Constant-pressure adiabatic reactor of stoichiometric methane and air
+# (SF2): ignition from 1400 K at 1 atm and the approach to the chemical
+# equilibrium, with the mechanism gri30.
+#
+#   foehn chemistry reactor examples/cases/chemistry/reactor_methane_air_gri30.toml
+#
+# Writes the trace to output/reactor_methane_air_gri30/reactor.csv:
+# time, temperature and the mole fractions of every species.
+
+[reactor]
+mechanism = "gri30"
+pressure = 101325.0
+temperature = 1400.0
+end_time = 0.1
+equivalence_ratio = 1.0
+fuel = { CH4 = 1.0 }
+oxidiser = { O2 = 0.21, N2 = 0.79 }
+samples = 600
+spacing = "log"            # output times evenly in log t from 1e-7 s
+
+[reactor.check]
+# the end state is the Gibbs equilibrium of the same NASA-7 data
+temperature_difference = 0.01
+mole_fraction_difference = 1e-6
+equilibrium_temperature = [2690.0, 2705.0]
+element_drift = 1e-10
+# the ignition delay of this mechanism and integrator (3.4 ms; a
+# regression band, not a measurement)
+ignition_delay = [3.0e-3, 3.9e-3]

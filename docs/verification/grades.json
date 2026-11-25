@@ -1470,6 +1470,22 @@
    "range": {}
   },
   {
+   "id": "chemistry.reactor",
+   "title": "Gas-phase chemistry: mechanisms, stiff 0D reactor and chemical equilibrium (L2, steam furnace SF2a)",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "0D only: no chemistry in the flow cells and no heat release in the energy equation yet (SF2b)",
+    "no ignition delay or flame speed against measurements yet (the 1D laminar flame is SF2b); the reactor cases check the equilibrium and an ignition delay band of the code itself",
+    "the kernel is single-source no_std but not yet compiled to PTX or run on a GPU; no ranks (a 0D reactor has no mesh) until SF2b",
+    "the Westbrook-Dryer 2-step mechanism overshoots its own equilibrium by 277 K from 1400 K: its CO2 dissociation is an explicit reaction, not the reverse of the CO oxidation (a flaw of the published mechanism, kept as published)",
+    "PLOG, Chebyshev and SRI rates, surface and electrochemical reactions are refused"
+   ],
+   "range": {}
+  },
+  {
    "id": "parallel.flow-models-ranks",
    "title": "Turbulence, energy, scalars, transient runs and the coupled solver on several ranks, bitwise one rank (MPI step W5 part 2)",
    "grade": "partial",

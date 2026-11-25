@@ -18,6 +18,8 @@ envelope is on standard output ([gallery 171](../gallery/runs.md#tool-registry),
 | `ramp_expression.json` | `expression.eval` | a ramped parabolic inlet profile with constants, at three points |
 | `scalar_mms.json` | `study.scalar` | the manufactured-solution sweep of scalar transport on polygons (observed order about 2) |
 | `cavity_session.jsonl` | `journal.replay` | a script of four calls (check, run, derive, read) for `foehn run --script` (D197); not an input of `foehn call` but its `script` |
+| `equilibrium_methane_air.json` | `chemistry.equilibrium` | the adiabatic flame state of stoichiometric methane and air from 298.15 K with GRI-Mech 3.0 (T = 2224.9 K, SF2) |
+| `reactor_methane_air.json` | `chemistry.reactor` | the constant-pressure reactor of `reactor_methane_air_gri30.toml`: ignition after 3.4 ms and the end state at the equilibrium, the trace in `output/tools/reactor/reactor.csv` |
 | `page_cavity.json` | `result.page` | the first 100 rows of the residual history of that run; the answer's `next_cursor` gives the next page |
 
 The folder `mcp/` holds what an assistant session through `foehn mcp`

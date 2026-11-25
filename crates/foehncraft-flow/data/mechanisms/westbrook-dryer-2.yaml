@@ -1,0 +1,29 @@
+description: |-
+  Two-step global mechanism of methane of Westbrook & Dryer (1981),
+  "Simplified reaction mechanisms for the oxidation of hydrocarbon fuels
+  in flames", Combust. Sci. Technol. 27, 31-43: the fuel step (9a) of
+  table IV with the activation energy 48.4 kcal/mol and the CO step (9b)
+  with the forward rate of eq. (10) and the reverse rate of eq. (11).
+  Units cm, mol, s, cal/mol as in the paper. The species data come from
+  the built-in species database (GRI-Mech 3.0 thermo and transport).
+  Written for Foehncraft (SF2); the numbers are those of the paper.
+
+units: {length: cm, time: s, quantity: mol, activation-energy: cal/mol}
+
+phases:
+- name: westbrook-dryer-2
+  thermo: ideal-gas
+  elements: [O, H, C, N, Ar]
+  species: [CH4, O2, CO, CO2, H2O, N2, AR]
+  kinetics: gas
+
+reactions:
+- equation: CH4 + 1.5 O2 => CO + 2 H2O  # (9a)
+  rate-constant: {A: 2.8e+09, b: 0.0, Ea: 48400.0}
+  orders: {CH4: -0.3, O2: 1.3}
+- equation: CO + 0.5 O2 => CO2  # (9b), eq. (10): 10^14.6
+  rate-constant: {A: 3.981071705534973e+14, b: 0.0, Ea: 40000.0}
+  orders: {CO: 1.0, H2O: 0.5, O2: 0.25}
+  nonreactant-orders: true
+- equation: CO2 => CO + 0.5 O2  # reverse of (9b), eq. (11), d = 1
+  rate-constant: {A: 5.0e+08, b: 0.0, Ea: 40000.0}

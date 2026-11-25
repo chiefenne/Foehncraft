@@ -494,3 +494,23 @@ Found with the porous regions of D270 (#273):
   the main flow (the block an obstacle) left the x-momentum residual near
   0.8 after 2 500 iterations while the pressure drop was settled; judge
   such runs by the monitored drop, not the residual.
+
+<a id="chemistry-mechanisms"></a>
+## Reaction mechanisms and their units
+
+- **Check the units of a global mechanism against a second source.** The
+  rate constants of Jones & Lindstedt (1988) are in m, kmol, s; read as cm,
+  mol, s they are 178 to 1000 times too slow and the mechanism does not
+  ignite. A later paper that tabulates them in cm, mol, s (Si et al. 2020,
+  table 1) settles it; the unit test `the_built_in_mechanisms_load` keeps
+  both numbers side by side.
+- **A global mechanism need not end at its own equilibrium.** The 2-step
+  Westbrook–Dryer mechanism dissociates CO₂ by a reaction of its own, not
+  as the reverse of the CO oxidation, so its reactor ends far above the
+  equilibrium temperature (277 K from 1400 K). That is the published
+  mechanism, not a bug of the integrator: check an integrator with
+  GRI-Mech 3.0, whose reversible reactions stop at the Gibbs equilibrium.
+- **Finite differences of the Jacobian need an absolute floor in the
+  step.** A species at zero (AR in the global mechanisms) with a step
+  relative to its value gives a step of zero or round-off size; use
+  `1e-6·|z| + 1e-9`.
