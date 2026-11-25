@@ -172,3 +172,62 @@ impl Tool for FitClamp {
         Ok(f)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::{Ctx, call};
+    use foehncraft_flow::diag;
+    use foehncraft_flow::engine::BuildInfo;
+    use serde_json::json;
+    use std::path::PathBuf;
+
+    fn root() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
+    }
+
+    #[test]
+    fn structure_codes_are_registered() {
+        use foehncraft_structure::codes;
+        for c in [codes::CASE, codes::SINGULAR, codes::MODES, codes::FIT] {
+            assert!(
+                diag::info(c).is_some(),
+                "{c} is not in foehncraft_flow::diag"
+            );
+        }
+    }
+
+    #[test]
+    fn catalogue_cases_run_and_the_fit_matches() {
+        let tmp = std::env::temp_dir().join(format!("foehn-structure-{}", std::process::id()));
+        let mut ctx = Ctx::new(BuildInfo::default());
+        for name in ["reed_beam", "reed_beam_clamp_springs"] {
+            let case = root().join(format!("examples/cases/structure/{name}.toml"));
+            let out = tmp.join(name);
+            let r = call("structure.run", json!({"case": case, "out": out}), &mut ctx);
+            assert_eq!(r.status, "finished", "{name}: {:?}", r.diagnostics);
+            let res = &r.result;
+            assert_eq!(res["modal"]["sturm"]["ok"], true, "{name}");
+            assert!(out.join("structure.vtk").is_file());
+            let rigid = res["clamps"][0]["rotation"]["rigid"].as_bool().unwrap();
+            assert_eq!(rigid, name == "reed_beam");
+        }
+        // the fit of examples/cases/tools/structure_fit_clamp.json
+        let case = root().join("examples/cases/structure/reed_beam_clamp_springs.toml");
+        let r = call(
+            "structure.fit_clamp",
+            json!({"case": case, "frequency": 150.0}),
+            &mut ctx,
+        );
+        assert_eq!(r.status, "finished", "{:?}", r.diagnostics);
+        let f = r.result["frequency"].as_f64().unwrap();
+        assert!((f - 150.0).abs() < 1e-6, "{f}");
+        // above the rigid clamp: STR004
+        let r = call(
+            "structure.fit_clamp",
+            json!({"case": case, "frequency": 400.0}),
+            &mut ctx,
+        );
+        assert_eq!(r.diagnostics[0].code, "STR004");
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+}

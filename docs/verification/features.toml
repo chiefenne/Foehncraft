@@ -1942,3 +1942,50 @@ gaps = [
 
 # ---------------------------------------------------------------- planned
 
+
+# ---------------------------------------------------------------- structures
+
+[[feature]]
+id = "structure.beams"
+area = "Structures"
+title = "Linear structural solver: Euler–Bernoulli and Timoshenko beams, static and modal analyses (L53, MS5 part 1)"
+switch = "structure.run with [[beams]]"
+decisions = ["D289"]
+model = true
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-structure/tests/beams.rs::cantilever_tip_load_is_exact", what = "tip deflection and slope of a cantilever under a tip load, both theories, 1 to 40 elements: within 1e-8" },
+  { kind = "exact", test = "crates/foehncraft-structure/tests/beams.rs::cantilever_distributed_load_is_exact_at_the_nodes", what = "deflection under a uniform load at every node: within 1e-10 of the tip value" },
+  { kind = "exact", test = "crates/foehncraft-structure/tests/beams.rs::cantilever_frequencies_converge_at_fourth_order", what = "first five cantilever frequencies (Blevins 1979) within 2e-5 on 40 Euler–Bernoulli elements, observed order 3.8 to 4.2; Sturm check passes; first mode 61.3 % effective mass" },
+  { kind = "exact", test = "crates/foehncraft-structure/tests/beams.rs::thick_pinned_timoshenko_beam", what = "pinned round bar L/d = 10 against the Timoshenko frequency equation: within 1e-5 on 120 elements, second order, degenerate pairs found" },
+  { kind = "exact", test = "crates/foehncraft-structure/tests/beams.rs::free_free_beam_with_a_negative_shift", what = "free–free beam: six rigid modes at 0 with the whole mass, β₁L = 4.730 within 1e-6" },
+  { kind = "exact", test = "crates/foehncraft-structure/src/eigen.rs::lanczos_finds_the_lowest_of_a_chain", what = "shift-invert Lanczos on a spring–mass chain of 200 masses: the lowest eight within 1e-9" },
+  { kind = "exact", test = "crates/foehncraft-structure/src/ldlt.rs::solves_and_counts_inertia", what = "the sparse LDLᵀ solves to 1e-10 and its negative pivots equal the eigenvalues below the shift (Sylvester)" },
+  { kind = "contract", property = "diagnostics", test = "crates/foehncraft-structure/tests/beams.rs::unsupported_static_case_is_refused_with_its_code", what = "STR002 names the free unknown of an unsupported structure; STR001 for a support off the mesh" },
+]
+gaps = [
+  "beams only: MITC4/MITC3+ shells, quadratic solids, generalised-α, mode superposition, Craig–Bampton, damping and contact come in MS5 parts 2 to 4",
+  "the Timoshenko element's consistent mass converges at second order in the frequency of thick beams (7e-6 on 120 elements at L/d = 10)",
+  "no comparison with measured reed frequencies yet (MS6: Gasche et al. via González et al. 2017, Lemke et al. 2016)",
+  "the ordering is reverse Cuthill–McKee: the fill is an envelope, fine for slender reeds, large for compact 3D parts (no minimum-degree ordering yet)",
+  "the LDLᵀ factorisation does not pivot: a shift inside the spectrum can meet a zero pivot (STR002); shifts below the first mode are safe",
+  "linear (small rotations): large deflections need the corotational formulation of MS9",
+]
+
+[[feature]]
+id = "structure.clamp"
+area = "Structures"
+title = "Clamp springs per length of the clamp line and their fit to a measured frequency (D290)"
+switch = "structure.run with [[clamps]]; structure.fit_clamp"
+decisions = ["D290"]
+model = true
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-structure/tests/beams.rs::clamp_springs_static_is_exact", what = "tip deflection on rotational and translational clamp springs PL³/(3EI) + PL²/k_r + P/k_t within 1e-10; a clamp without springs is reported rigid" },
+  { kind = "exact", test = "crates/foehncraft-structure/tests/beams.rs::clamp_spring_frequency_against_the_frequency_equation", what = "first frequency on a rotational root spring, kL/EI = 0.3 to 300, against the frequency equation: within 1e-8" },
+  { kind = "exact", test = "crates/foehncraft-structure/tests/beams.rs::clamp_fit_recovers_the_spring", what = "the fit recovers the spring of the frequency equation within 1e-5 in fewer than 40 modal solves; STR004 above the rigid clamp" },
+  { kind = "consistency", test = "crates/foehncraft-tools/src/structure.rs::catalogue_cases_run_and_the_fit_matches", what = "the catalogue cases run through the registry, the fit of the tool input hits 150 Hz" },
+]
+gaps = [
+  "springs on a single node of a beam model: shells with the springs spread along the clamp edge come with MS5 part 2",
+  "clamp parts as solids in frictionless contact (the second way of D290) are not built",
+  "no measured reed with a known clamp to calibrate against yet (MS6)",
+]
