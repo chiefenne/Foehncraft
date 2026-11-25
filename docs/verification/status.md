@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**135 features: 50 verified, 82 partial, 3 unverified.**
+**137 features: 50 verified, 84 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -159,6 +159,8 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Structures | [Linear structural solver: Euler–Bernoulli and Timoshenko beams, static and modal analyses (L53, MS5 part 1)](#structure-beams) | partial |
 | Structures | [Clamp springs per length of the clamp line and their fit to a measured frequency (D290)](#structure-clamp) | partial |
 | Structures | [MITC4 and MITC3+ Reissner–Mindlin shells, plates clamped along an edge (L53, MS5 part 2)](#structure-shells) | partial |
+| Structures | [Structural dynamics: generalised-α, mode superposition, Rayleigh and modal damping, Craig–Bampton reduction (L53, MS5 part 3)](#structure-dynamics) | partial |
+| Structures | [Thermal strain loads on beams and shells from a temperature change and a difference across the thickness (L53, MS5 part 3)](#structure-thermal) | partial |
 | Moving meshes and solids | [Deforming meshes with a prescribed node displacement, and the piston (stage MS0)](#mesh-deforming) | partial |
 
 ## Meshes
@@ -2233,6 +2235,45 @@ Gaps:
 - MITC3+ converges more slowly than MITC4 on curved shells (0.96 of the roof's lift on 16 × 16), as published
 - beams and plates in one case share nodes but no eccentric (offset) connection
 - linear (small rotations): large deflections need the corotational formulation of MS9
+
+<a id="structure-dynamics"></a>
+
+### Structural dynamics: generalised-α, mode superposition, Rayleigh and modal damping, Craig–Bampton reduction (L53, MS5 part 3)
+
+**partial** (a model without reference data; gaps written) · id `structure.dynamics` · switch `structure.run with [transient], [damping], [histories]; dynamics::craig_bampton (library)` · decisions D289
+
+- exact: [`generalised_alpha_converges_at_second_order_to_the_damped_step_response`](../../crates/foehncraft-structure/tests/dynamics.rs): damped oscillator under a step force against the closed form, ρ∞ = 1, 0.8, 0.5, 0: observed order 2.00 to 2.02
+- exact: [`generalised_alpha_damps_high_frequencies_to_rho_infinity`](../../crates/foehncraft-structure/tests/dynamics.rs): amplification matrix at Δt = 10⁴ periods: characteristic polynomial (λ + ρ∞)³ within 1e-3 (Chung & Hulbert 1993)
+- exact: [`trapezoidal_rule_conserves_the_energy`](../../crates/foehncraft-structure/tests/dynamics.rs): ρ∞ = 1, undamped cantilever, constant force: ½vᵀMv + ½uᵀKu − fᵀu within 1e-10 of the largest strain energy over 2000 steps
+- exact: [`mode_superposition_is_exact_per_mode_and_meets_the_direct_method`](../../crates/foehncraft-structure/tests/dynamics.rs): modal step exact for the oscillator (1e-12) and for a ramp (1 vs 1000 steps 1e-10); with every mode the direct method converges to it at second order
+- exact: [`rayleigh_factors_from_two_ratios`](../../crates/foehncraft-structure/tests/dynamics.rs): Rayleigh factors give both ratios to rounding; logarithmic decrement of the damped oscillator within 0.2 %; STR001 for ratios no αM + βK can give
+- exact: [`craig_bampton_is_exact_with_every_mode_and_a_ritz_bound_with_few`](../../crates/foehncraft-structure/tests/dynamics.rs): with every interior mode the eigenvalues of the full model within 1e-8; with 2, 4, 8 modes Ritz upper bounds converging; static boundary response exact (1e-10)
+- consistency: [`transient_case_direct_and_modal_agree_on_a_ramped_load`](../../crates/foehncraft-structure/tests/thermal.rs): the case keys: a ramped tip force with Rayleigh damping, direct and modal (8 modes) within 0.2 %; CSV and kept times
+
+Gaps:
+
+- starts from rest only: no start from a static state or from given displacements and velocities in the case file
+- no prescribed motion in time (base excitation) yet: it comes with the coupling of MS6
+- Craig–Bampton is a library function: no case keys or tool for reduced models yet
+- mode superposition without a static (mode-acceleration) correction for the modes left out
+- linear: no geometric nonlinearity (MS9) and no contact (MS5 part 4)
+
+<a id="structure-thermal"></a>
+
+### Thermal strain loads on beams and shells from a temperature change and a difference across the thickness (L53, MS5 part 3)
+
+**partial** (a model without reference data; gaps written) · id `structure.thermal` · switch `structure.run with [[temperatures]] and the material's expansion` · decisions D289
+
+- exact: [`free_beam_expands_and_bends_without_stress`](../../crates/foehncraft-structure/tests/thermal.rs): cantilever, both theories: tip α ΔT L and −(α ΔT/h) L²/2 with slope (α ΔT/h) L within 1e-9; no reaction
+- exact: [`held_bar_carries_the_thermal_force`](../../crates/foehncraft-structure/tests/thermal.rs): bar held at both ends: reaction E A α ΔT within 1e-9
+- exact: [`free_plate_expands_and_bends_into_a_sphere`](../../crates/foehncraft-structure/tests/thermal.rs): free plate, MITC4 and MITC3+: in-plane α ΔT x within 1e-8, the sphere −(α ΔT/h)(x² + y²)/2 within 1e-6
+- contract (diagnostics): [`thermal_case_errors`](../../crates/foehncraft-structure/tests/thermal.rs): STR001 for a material without expansion, an unknown part or history, a bad table, modal without modes, both Rayleigh inputs
+
+Gaps:
+
+- temperatures are given per part (uniform change and a linear difference across the thickness); the mapping of the temperature field of a solid region of the flow case is MS6
+- the moduli do not depend on temperature: give E at the operating temperature
+- no thermal stresses in the output (no stresses at all yet)
 
 ## Moving meshes and solids
 
