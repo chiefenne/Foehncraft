@@ -279,6 +279,19 @@ validated range, one mesh only, …) in its report and its JSON result.
   contact by the propped cantilever and a mass bouncing on a stop
   ([gallery 302](docs/gallery/structure.md#reed-valve-contact)). The
   coupling to the flow is MS6.
+- **Water and steam circuits (steam furnace SF7b).** One-dimensional tube
+  circuits of a boiler on the IAPWS-IF97 states: tubes, headers, pressure
+  nodes and steam drums, solved together by a Newton method, so that the
+  natural circulation of a drum loop follows from gravity against the
+  losses. Two-phase friction by Friedel or the homogeneous model, void by
+  drift flux (Rouhani–Axelsson), wall temperatures by Gnielinski, Chen or
+  Gungor–Winterton, subcooled boiling from the Saha–Zuber point with the
+  Levy profile, the critical heat flux margin by Bowring or a look-up
+  table, run as the tool `circuits.run`. Checked by the exact split of
+  laminar parallel tubes, the heat and momentum balances of a riser and
+  the closed mass, energy and pressure balances of a drum loop
+  ([gallery 312](docs/gallery/circuits.md#water-steam-circuits)). The
+  coupling to the 3D furnace walls is SF7c.
 - **Rotating machinery.** The moving reference frame (steady and transient
   frozen rotor), the sliding mesh by conformal stepping and by imprinting
   the interface in every step, several rotors at their own speeds,
@@ -426,6 +439,7 @@ The [changelog](CHANGELOG.md) lists every release.
 | `foehncraft-mesh` | polyhedral mesh, geometry, quality report, mesh-format layer with the Gmsh, SU2, CGNS, OpenFOAM, Fluent .msh, VTK and VTKHDF readers, test mesher (also the cylinder benchmark mesh and annuli for rotors), partitioning and halo, VTKHDF output, point location and ray casting, the hand-over of walks between ranks, wall distance, the imprint of sliding interfaces |
 | `foehncraft-radiation` | thermal radiation by Monte Carlo energy bundles on the cell walk: emission from Owen-scrambled Sobol points, exact path lengths per cell, grey diffuse walls, symmetry planes and open boundaries, integer tallies with an exact energy account, bitwise the same on any number of threads and ranks; exact solutions of the verification cases |
 | `foehncraft-structure` | linear structural finite elements (L53): beams, shells, quadratic solids, dynamics, thermal loads, clamp springs, contact with rigid planes, the sparse LDLᵀ solver with its Sturm count, shift-invert Lanczos, the structural case file and the clamp fit |
+| `foehncraft-circuits` | one-dimensional water and steam tube circuits of a boiler (SF7b): tubes, headers and drums, two-phase pressure drop, flow boiling heat transfer, critical heat flux, natural circulation, the circuit case file |
 | `foehncraft-fv` | finite-volume operators on a scalar (gradients, limiters, convection, diffusion, assembly), BiCGStab, and the pressure solver: CG with smoothed-aggregation multigrid in mixed precision, optional hypre reference; CPU backend (the GPU backend is in `foehncraft-cuda`) |
 | `foehncraft-flow` | incompressible flow: SIMPLEC and SIMPLE (steady), PISO with BDF2 and Crank–Nicolson (transient), the coupled algorithm, the Rhie–Chow interpolation, boundary conditions and their check, turbulence models and wall treatments, passive scalars and thermal wall functions, the moving reference frame and sliding meshes, torque and machine performance, restart and control files, probes and force coefficients, the flow device written once over a CPU or GPU executor, the `foehn flow` case, exact solutions, reference and benchmark data |
 | `foehncraft-bench` | gate G1: kernel benchmark, CPU backends |

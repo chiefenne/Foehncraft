@@ -48,7 +48,7 @@ pub struct LookUpTable {
     pub g: Vec<f64>,
     /// Equilibrium qualities, increasing.
     pub x: Vec<f64>,
-    /// CHF (W/m²), index [ip][ig][ix]; NaN where the table has no value.
+    /// CHF (W/m²), index `(ip * n_g + ig) * n_x + ix`; NaN where the table has no value.
     pub chf: Vec<f64>,
 }
 

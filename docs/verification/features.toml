@@ -2317,3 +2317,34 @@ gaps = [
   "an impact is not resolved in time: no step cut at contact changes (plan 5.4) and no energy-conserving contact scheme; the energy of the reed example decays but is not checked against a balance",
   "the active-set loop refactors the matrix whenever the set changes (1990 factorisations in 2400 steps of the example)",
 ]
+
+[[feature]]
+id = "circuits.water-steam"
+area = "Energy"
+title = "One-dimensional water and steam tube circuits of a boiler: two-phase pressure drop, flow boiling, CHF margin and natural circulation (steam furnace SF7b)"
+switch = "circuits.run, [[nodes]] kind = \"drum\", [circuit] friction, void, boiling, subcooled, chf"
+decisions = ["D282", "D94"]
+model = true
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-circuits/tests/exact.rs::laminar_parallel_tubes_split_as_hagen_poiseuille", what = "laminar water between two parallel tubes of 2 m and 4 m: the Hagen-Poiseuille split 2:1 and the inlet pressure drop to 1e-6" },
+  { kind = "exact", test = "crates/foehncraft-circuits/tests/exact.rs::heated_tube_meets_the_energy_and_pressure_balances", what = "water at 16 MPa heated in a riser: outlet enthalpy h_in + Q/m to 1e-6 J/kg, pressure drop = friction + gravity + acceleration, acceleration G^2 (1/rho_out - 1/rho_in) to 2e-3, Gnielinski wall below saturation" },
+  { kind = "exact", test = "crates/foehncraft-circuits/tests/exact.rs::drum_loop_closes_its_mass_energy_and_pressure_balances", what = "drum boiler loop at 7 MPa with 30 risers: downcomer flow = riser flow to 1e-8, steam flow = heat/(h'' - h_feed) to 1e-6, pressure drops around the loop sum to zero within 1e-3 Pa; circulation ratio 16" },
+  { kind = "exact", test = "crates/foehncraft-circuits/src/correlations.rs::churchill_is_laminar_and_colebrook_like", what = "Churchill's friction factor is 64/Re in laminar flow to 1e-12 and within 2 % of Colebrook for smooth and rough tubes" },
+  { kind = "reference-data", test = "crates/foehncraft-circuits/tests/boiling.rs::chen_and_gungor_winterton_agree_on_the_wall_superheat", what = "two independent flow boiling correlations (Chen 1966, Gungor-Winterton 1986, each fitted to measured data) give wall superheats within a factor of two along an evaporator at 7 MPa, 400 kW/m2" },
+  { kind = "consistency", test = "crates/foehncraft-circuits/tests/boiling.rs::evaporator_passes_through_the_regimes_in_order", what = "regimes in order (liquid, subcooled, saturated boiling), vapour before the bulk saturates (Saha-Zuber, Levy), 0 <= x <= max(x_eq, 0) bound, nucleate superheat below 30 K, outlet enthalpy exact" },
+  { kind = "consistency", test = "crates/foehncraft-circuits/tests/boiling.rs::friedel_and_drift_flux_differ_from_homogeneous_as_expected", what = "drift flux gives less void and a heavier column than homogeneous in upflow; Friedel friction above the homogeneous model and below three times it" },
+  { kind = "consistency", test = "crates/foehncraft-circuits/tests/boiling.rs::a_high_heat_flux_reaches_the_chf_and_warns", what = "at 1 MW/m2 and low flow the Bowring CHF is exceeded: CIR004, post-CHF wall more than 50 K above saturation" },
+  { kind = "consistency", test = "crates/foehncraft-circuits/src/chf.rs::bowring_is_continuous_at_its_reference_pressure_and_falls_with_quality", what = "Bowring's two pressure branches meet at p_R = 1 (6.9 MPa) to 1e-6 and match the closed form there; CHF falls with quality" },
+  { kind = "exact", test = "crates/foehncraft-circuits/src/chf.rs::table_reads_and_interpolates", what = "a CHF table in the layout of the 2006 table: trilinear interpolation exact on linear data, the diameter factor (0.008/D)^0.5, missing grid points refused" },
+  { kind = "contract", property = "diagnostics", test = "crates/foehncraft-circuits/tests/boiling.rs::broken_cases_are_refused", what = "CIR001 for a tube to a missing node, a rise above the length, no pressure level, a drum without feedwater, an unknown key, a supercritical drum" },
+  { kind = "consistency", test = "crates/foehncraft-tools/src/circuits.rs::the_drum_loop_runs_through_the_tool", what = "circuits.run writes result.json and profiles.csv through the registry" },
+]
+gaps = [
+  "no comparison with measured void or wall temperatures yet (Bartolomei et al. 1982 not reachable from the build environment); the boiling correlations are checked against each other only",
+  "the CHF look-up table of Groeneveld et al. (2007) is not shipped (the paper was not reachable): chf = \"table\" reads it from a CSV file the user supplies, Bowring (1972) is the built-in default",
+  "post-dryout heat transfer is the vapour convection of Dougall-Rohsenow (1963) with no thermal non-equilibrium; no film boiling or rewetting",
+  "supercritical water takes Gnielinski with bulk properties: no correction for the pseudo-critical region",
+  "steady only: no density-wave or Ledinegg instability check, no transients (SF18)",
+  "the drift velocity is scaled by the sine of the tube angle; horizontal tubes have no stratified-flow void model",
+  "not yet coupled to the 3D furnace walls (SF7c)",
+]
