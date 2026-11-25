@@ -100,8 +100,9 @@ impl Winding {
                     area[i] += area[c];
                     first[i] = add(first[i], first[c]);
                     normal[i] = add(normal[i], normal[c]);
-                    for m in 0..9 {
-                        second[i][m] += second[c][m];
+                    let child = second[c];
+                    for (a, b) in second[i].iter_mut().zip(child) {
+                        *a += b;
                     }
                 }
             }
@@ -264,10 +265,7 @@ impl Surface {
     /// The winding numbers of many points, in parallel (each point summed
     /// in the same order whatever the threads).
     pub fn winding_numbers(&self, points: &[[f64; 3]]) -> Vec<f64> {
-        points
-            .par_iter()
-            .map(|&q| self.winding_number(q))
-            .collect()
+        points.par_iter().map(|&q| self.winding_number(q)).collect()
     }
 
     /// Whether `q` lies inside the body: winding number above one half.

@@ -122,7 +122,9 @@ pub fn cube() -> Vec<Triangle> {
 fn points(n: usize, lo: f64, hi: f64) -> Vec<[f64; 3]> {
     let mut s: u64 = 0x9e37_79b9_7f4a_7c15;
     let mut next = || {
-        s = s.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        s = s
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         lo + (hi - lo) * ((s >> 11) as f64 / (1u64 << 53) as f64)
     };
     (0..n).map(|_| [next(), next(), next()]).collect()
@@ -183,7 +185,10 @@ fn defects_are_reported_not_repaired() {
     assert_eq!(r.components, 2);
     assert!(r.findings.iter().any(|f| f.code == "IMM005"));
     // millimetres
-    let mm: Vec<Triangle> = tris.iter().map(|t| t.map(|p| p.map(|x| 50.0 * x))).collect();
+    let mm: Vec<Triangle> = tris
+        .iter()
+        .map(|t| t.map(|p| p.map(|x| 50.0 * x)))
+        .collect();
     let r = check(&Surface::new(&mm));
     assert!(r.findings.iter().any(|f| f.code == "IMM009"));
 }
@@ -193,23 +198,38 @@ fn degenerate_contacts_are_exact() {
     let base: Triangle = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
     let pair = |b: Triangle| check(&Surface::new(&[base, b])).n_intersecting;
     // a corner exactly on the face
-    assert_eq!(pair([[0.25, 0.25, 0.0], [0.3, 0.2, 1.0], [0.2, 0.3, 1.0]]), 1);
+    assert_eq!(
+        pair([[0.25, 0.25, 0.0], [0.3, 0.2, 1.0], [0.2, 0.3, 1.0]]),
+        1
+    );
     // a corner a hair above the face (1e-300 is exact in binary64)
-    assert_eq!(pair([[0.25, 0.25, 1e-300], [0.3, 0.2, 1.0], [0.2, 0.3, 1.0]]), 0);
+    assert_eq!(
+        pair([[0.25, 0.25, 1e-300], [0.3, 0.2, 1.0], [0.2, 0.3, 1.0]]),
+        0
+    );
     // coplanar overlap
     assert_eq!(pair([[0.2, 0.2, 0.0], [2.0, 0.2, 0.0], [0.2, 2.0, 0.0]]), 1);
     // coplanar, apart
     assert_eq!(pair([[1.0, 1.0, 0.0], [2.0, 1.0, 0.0], [1.0, 2.0, 0.0]]), 0);
     // an edge exactly through the edge of the other
-    assert_eq!(pair([[0.5, -1.0, 0.0], [0.5, 1.0, 0.0], [0.5, 0.0, 1.0]]), 1);
+    assert_eq!(
+        pair([[0.5, -1.0, 0.0], [0.5, 1.0, 0.0], [0.5, 0.0, 1.0]]),
+        1
+    );
     // shared edge, folded onto each other
     assert_eq!(pair([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.1, 0.1, 0.0]]), 1);
     // shared edge, a proper neighbour
     assert_eq!(pair([[1.0, 0.0, 0.0], [1.0, 1.0, 0.0], [0.0, 1.0, 0.0]]), 0);
     // shared corner, the other triangle pierces this one
-    assert_eq!(pair([[0.0, 0.0, 0.0], [0.5, 0.3, -1.0], [0.3, 0.5, 1.0]]), 1);
+    assert_eq!(
+        pair([[0.0, 0.0, 0.0], [0.5, 0.3, -1.0], [0.3, 0.5, 1.0]]),
+        1
+    );
     // shared corner only
-    assert_eq!(pair([[0.0, 0.0, 0.0], [-1.0, 0.0, 1.0], [0.0, -1.0, 1.0]]), 0);
+    assert_eq!(
+        pair([[0.0, 0.0, 0.0], [-1.0, 0.0, 1.0], [0.0, -1.0, 1.0]]),
+        0
+    );
 }
 
 #[test]
@@ -307,8 +327,18 @@ fn narrow_band_and_threads() {
     let one = run(1);
     for t in [2, 4] {
         let other = run(t);
-        assert!(one.0.iter().zip(&other.0).all(|(a, b)| a.to_bits() == b.to_bits()));
-        assert!(one.1.iter().zip(&other.1).all(|(a, b)| a.to_bits() == b.to_bits()));
+        assert!(
+            one.0
+                .iter()
+                .zip(&other.0)
+                .all(|(a, b)| a.to_bits() == b.to_bits())
+        );
+        assert!(
+            one.1
+                .iter()
+                .zip(&other.1)
+                .all(|(a, b)| a.to_bits() == b.to_bits())
+        );
     }
 }
 
@@ -326,7 +356,9 @@ fn crossings_find_the_exact_roots() {
     assert_eq!(c.len(), 1, "{c:?}");
     assert!(c[0].entering);
     assert_eq!(c[0].point[2], 0.0);
-    let f = s.first_crossing([0.25, 0.5, 2.0], [0.25, 0.5, 0.5]).unwrap();
+    let f = s
+        .first_crossing([0.25, 0.5, 2.0], [0.25, 0.5, 0.5])
+        .unwrap();
     assert!(f.entering);
     assert_eq!(f.point, [0.25, 0.5, 1.0]);
     assert_eq!(s.signed_distance([0.5, 0.5, 0.25]), -0.25);

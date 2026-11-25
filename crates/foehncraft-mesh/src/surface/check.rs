@@ -461,8 +461,12 @@ fn intersect(s: &Surface, i: usize, j: usize) -> bool {
             if !coplanar(&a, &b) {
                 return false;
             }
-            let xa = (0..3).find(|&x| shared.iter().all(|&(sx, _)| sx != x)).unwrap_or(0);
-            let yb = (0..3).find(|&y| shared.iter().all(|&(_, sy)| sy != y)).unwrap_or(0);
+            let xa = (0..3)
+                .find(|&x| shared.iter().all(|&(sx, _)| sx != x))
+                .unwrap_or(0);
+            let yb = (0..3)
+                .find(|&y| shared.iter().all(|&(_, sy)| sy != y))
+                .unwrap_or(0);
             let (u, w) = (a[shared[0].0], a[shared[1].0]);
             let d = drop_axis(&a);
             let (u, w) = (proj(u, d), proj(w, d));

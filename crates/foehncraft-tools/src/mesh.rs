@@ -131,7 +131,7 @@ impl Tool for Process {
     }
 }
 
-/// Input of `mesh.surface_check`.
+/// Input of `mesh.surface`.
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SurfaceInput {
@@ -147,7 +147,7 @@ fn one() -> f64 {
     1.0
 }
 
-/// Output of `mesh.surface_check`.
+/// Output of `mesh.surface`.
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct SurfaceOutput {
     /// Closed, outward, no self-intersections, no degenerate or duplicate
@@ -157,11 +157,11 @@ pub struct SurfaceOutput {
     pub report: foehncraft_mesh::surface::SurfaceReport,
 }
 
-/// `mesh.surface_check`: the surface check of L13 stage 0 (D225).
+/// `mesh.surface`: the surface check of L13 stage 0 (D225).
 pub struct SurfaceCheck;
 
 impl Tool for SurfaceCheck {
-    const ID: &'static str = "mesh.surface_check";
+    const ID: &'static str = "mesh.surface";
     const VERSION: u32 = 1;
     const SUMMARY: &'static str = "Check a triangle surface (STL) before it becomes an immersed body: closed, orientation, holes, non-manifold edges, self-intersections, degenerate and duplicate triangles, units (exact predicates, no repair).";
     const CATEGORY: Category = Category::Mesh;
@@ -174,7 +174,8 @@ impl Tool for SurfaceCheck {
         if !(a.scale.is_finite() && a.scale > 0.0) {
             return Err(bad("scale: a positive number"));
         }
-        let s = foehncraft_mesh::surface::Surface::read_stl(&a.input, a.scale).map_err(|e| bad(&e))?;
+        let s =
+            foehncraft_mesh::surface::Surface::read_stl(&a.input, a.scale).map_err(|e| bad(&e))?;
         let report = foehncraft_mesh::surface::check(&s);
         ctx.line(&format!(
             "{} triangles, {} corners, {} pieces, area {:.6e} m², volume {:.6e} m³, {}",
