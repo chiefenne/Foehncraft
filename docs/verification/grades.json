@@ -1655,6 +1655,38 @@
     "linear (small rotations): large deflections need the corotational formulation of MS9"
    ],
    "range": {}
+  },
+  {
+   "id": "structure.dynamics",
+   "title": "Structural dynamics: generalised-α, mode superposition, Rayleigh and modal damping, Craig–Bampton reduction (L53, MS5 part 3)",
+   "grade": "partial",
+   "why": [
+    "a model without reference data",
+    "gaps written"
+   ],
+   "gaps": [
+    "starts from rest only: no start from a static state or from given displacements and velocities in the case file",
+    "no prescribed motion in time (base excitation) yet: it comes with the coupling of MS6",
+    "Craig–Bampton is a library function: no case keys or tool for reduced models yet",
+    "mode superposition without a static (mode-acceleration) correction for the modes left out",
+    "linear: no geometric nonlinearity (MS9) and no contact (MS5 part 4)"
+   ],
+   "range": {}
+  },
+  {
+   "id": "structure.thermal",
+   "title": "Thermal strain loads on beams and shells from a temperature change and a difference across the thickness (L53, MS5 part 3)",
+   "grade": "partial",
+   "why": [
+    "a model without reference data",
+    "gaps written"
+   ],
+   "gaps": [
+    "temperatures are given per part (uniform change and a linear difference across the thickness); the mapping of the temperature field of a solid region of the flow case is MS6",
+    "the moduli do not depend on temperature: give E at the operating temperature",
+    "no thermal stresses in the output (no stresses at all yet)"
+   ],
+   "range": {}
   }
  ]
 }

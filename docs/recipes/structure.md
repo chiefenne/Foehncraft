@@ -6,6 +6,7 @@ Part of the [Recipes](../recipes.md): the linear structural solver `foehncraft-s
 |---|---|
 | 295 | [Run a structural case of beams and clamp springs, and fit the clamp to a measured frequency](#structure-case) |
 | 297 | [Model a flat reed as a shell clamped along an edge](#structure-plate) |
+| MMM | [Run a structure in time, with damping, load histories and temperatures](#structure-transient) |
 
 ---
 
@@ -137,4 +138,73 @@ Part of the [Recipes](../recipes.md): the linear structural solver `foehncraft-s
    the twist. Use 2 to 4 elements across a reed of a few millimetres for
    the bending modes and 8 to 16 for the twist and the modes across the
    width.
+
+---
+
+<a id="structure-transient"></a>
+## MMM. Run a structure in time, with damping, load histories and temperatures
+
+1. Add `[transient]` to a structural case. The run starts from rest at
+   t = 0; `time_step` sets the accuracy (20 to 50 steps per period of the
+   highest mode that matters):
+
+   ```toml
+   [transient]
+   end_time = 0.02
+   time_step = 2.5e-5
+   method = "direct"          # generalised-α; or "modal"
+   rho_infinity = 0.9         # 1: no numerical damping; lower damps the highest modes
+   snapshots = [0.001, 0.002] # fields into structure.vtk
+   ```
+
+   `method = "modal"` with `modes = n` superposes the lowest n modes,
+   each integrated exactly: fast, and right when the load does not excite
+   the modes left out.
+
+2. Damp it. `ratios` gives a damping ratio at two frequencies and the
+   run finds C = αM + βK; `rayleigh = [α, β]` gives the factors; the
+   modal method also takes `modal_ratio` for every mode:
+
+   ```toml
+   [damping]
+   ratios = [[154.0, 0.02], [1002.0, 0.02]]
+   ```
+
+3. Give loads a history. A table is linear between its points and holds
+   its last value; a sine takes `amplitude`, `frequency` (Hz), `phase`
+   (degrees) and `offset`. Loads without `history` are constant.
+
+   ```toml
+   [histories.pulse]
+   table = [[0.0, 0.0], [0.0005, 1.0], [0.001, 0.0]]
+
+   [[pressures]]
+   plate = "reed"
+   value = 3000.0
+   history = "pulse"
+   ```
+
+4. Load it with temperatures. The material needs `expansion` (1/K);
+   `change` is the rise from the stress-free state, `difference` the top
+   minus bottom across the thickness (plates: top along the normal; beams:
+   +z minus −z, and `difference_y` across the width):
+
+   ```toml
+   [materials.spring_steel]
+   young = 206e9
+   poisson = 0.3
+   density = 7850.0
+   expansion = 1.2e-5
+
+   [[temperatures]]
+   part = "reed"
+   change = 80.0
+   difference = 6.0
+   ```
+
+   Temperatures work in static and transient runs, and take a `history`.
+
+5. Read the results: `result.json` has `transient` (times, the named
+   points' displacements, kinetic and strain energy, the largest
+   displacement and when), `transient.csv` the same as columns.
 

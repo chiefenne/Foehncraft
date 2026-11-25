@@ -2149,3 +2149,46 @@ gaps = [
   "beams and plates in one case share nodes but no eccentric (offset) connection",
   "linear (small rotations): large deflections need the corotational formulation of MS9",
 ]
+
+[[feature]]
+id = "structure.dynamics"
+area = "Structures"
+title = "Structural dynamics: generalised-α, mode superposition, Rayleigh and modal damping, Craig–Bampton reduction (L53, MS5 part 3)"
+switch = "structure.run with [transient], [damping], [histories]; dynamics::craig_bampton (library)"
+decisions = ["D289"]
+model = true
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-structure/tests/dynamics.rs::generalised_alpha_converges_at_second_order_to_the_damped_step_response", what = "damped oscillator under a step force against the closed form, ρ∞ = 1, 0.8, 0.5, 0: observed order 2.00 to 2.02" },
+  { kind = "exact", test = "crates/foehncraft-structure/tests/dynamics.rs::generalised_alpha_damps_high_frequencies_to_rho_infinity", what = "amplification matrix at Δt = 10⁴ periods: characteristic polynomial (λ + ρ∞)³ within 1e-3 (Chung & Hulbert 1993)" },
+  { kind = "exact", test = "crates/foehncraft-structure/tests/dynamics.rs::trapezoidal_rule_conserves_the_energy", what = "ρ∞ = 1, undamped cantilever, constant force: ½vᵀMv + ½uᵀKu − fᵀu within 1e-10 of the largest strain energy over 2000 steps" },
+  { kind = "exact", test = "crates/foehncraft-structure/tests/dynamics.rs::mode_superposition_is_exact_per_mode_and_meets_the_direct_method", what = "modal step exact for the oscillator (1e-12) and for a ramp (1 vs 1000 steps 1e-10); with every mode the direct method converges to it at second order" },
+  { kind = "exact", test = "crates/foehncraft-structure/tests/dynamics.rs::rayleigh_factors_from_two_ratios", what = "Rayleigh factors give both ratios to rounding; logarithmic decrement of the damped oscillator within 0.2 %; STR001 for ratios no αM + βK can give" },
+  { kind = "exact", test = "crates/foehncraft-structure/tests/dynamics.rs::craig_bampton_is_exact_with_every_mode_and_a_ritz_bound_with_few", what = "with every interior mode the eigenvalues of the full model within 1e-8; with 2, 4, 8 modes Ritz upper bounds converging; static boundary response exact (1e-10)" },
+  { kind = "consistency", test = "crates/foehncraft-structure/tests/thermal.rs::transient_case_direct_and_modal_agree_on_a_ramped_load", what = "the case keys: a ramped tip force with Rayleigh damping, direct and modal (8 modes) within 0.2 %; CSV and kept times" },
+]
+gaps = [
+  "starts from rest only: no start from a static state or from given displacements and velocities in the case file",
+  "no prescribed motion in time (base excitation) yet: it comes with the coupling of MS6",
+  "Craig–Bampton is a library function: no case keys or tool for reduced models yet",
+  "mode superposition without a static (mode-acceleration) correction for the modes left out",
+  "linear: no geometric nonlinearity (MS9) and no contact (MS5 part 4)",
+]
+
+[[feature]]
+id = "structure.thermal"
+area = "Structures"
+title = "Thermal strain loads on beams and shells from a temperature change and a difference across the thickness (L53, MS5 part 3)"
+switch = "structure.run with [[temperatures]] and the material's expansion"
+decisions = ["D289"]
+model = true
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-structure/tests/thermal.rs::free_beam_expands_and_bends_without_stress", what = "cantilever, both theories: tip α ΔT L and −(α ΔT/h) L²/2 with slope (α ΔT/h) L within 1e-9; no reaction" },
+  { kind = "exact", test = "crates/foehncraft-structure/tests/thermal.rs::held_bar_carries_the_thermal_force", what = "bar held at both ends: reaction E A α ΔT within 1e-9" },
+  { kind = "exact", test = "crates/foehncraft-structure/tests/thermal.rs::free_plate_expands_and_bends_into_a_sphere", what = "free plate, MITC4 and MITC3+: in-plane α ΔT x within 1e-8, the sphere −(α ΔT/h)(x² + y²)/2 within 1e-6" },
+  { kind = "contract", property = "diagnostics", test = "crates/foehncraft-structure/tests/thermal.rs::thermal_case_errors", what = "STR001 for a material without expansion, an unknown part or history, a bad table, modal without modes, both Rayleigh inputs" },
+]
+gaps = [
+  "temperatures are given per part (uniform change and a linear difference across the thickness); the mapping of the temperature field of a solid region of the flow case is MS6",
+  "the moduli do not depend on temperature: give E at the operating temperature",
+  "no thermal stresses in the output (no stresses at all yet)",
+]

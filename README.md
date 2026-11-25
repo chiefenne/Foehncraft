@@ -249,10 +249,12 @@ validated range, one mesh only, …) in its report and its JSON result.
   of the call are traced and drawn over the net flux into the walls
   ([gallery 281](docs/gallery/radiation.md#furnace-paths)). The coupling
   to the energy equation follows (R1b).
-- **Structures (MS5, parts 1 and 2).** A small linear structural finite element
+- **Structures (MS5, parts 1 to 3).** A small linear structural finite element
   solver for reed valves and other parts the flow moves (L53):
   Euler–Bernoulli and Timoshenko beams, MITC4 and MITC3+ shells (plates
-  clamped along an edge, pressures), supports, springs, point masses,
+  clamped along an edge, pressures), responses in time (generalised-α,
+  mode superposition, Rayleigh damping, Craig–Bampton reduction), thermal
+  strain loads from temperatures, supports, springs, point masses,
   clamp springs per length of the clamp line (D290) and their fit to a
   measured natural frequency, static deflection and modes by shift-invert
   Lanczos with a Sturm check that no mode was missed, run as the tools
@@ -262,7 +264,10 @@ validated range, one mesh only, …) in its report and its JSON result.
   ([gallery 295](docs/gallery/structure.md#reed-beam)), the shells by the
   MacNeal–Harder patch tests, the Navier plate, Leissa's plate modes and
   the Scordelis–Lo roof ([gallery 297](docs/gallery/structure.md#reed-plate)).
-  Solids, dynamics and contact follow; the coupling to the flow is MS6.
+  The dynamics are checked against the damped oscillator and the thermal
+  loads against free thermal expansion and bending
+  ([gallery MMM](docs/gallery/structure.md#reed-dynamics)). Solids and
+  contact follow; the coupling to the flow is MS6.
 - **Rotating machinery.** The moving reference frame (steady and transient
   frozen rotor), the sliding mesh by conformal stepping and by imprinting
   the interface in every step, several rotors at their own speeds,
