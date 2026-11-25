@@ -213,6 +213,7 @@ fn viscosity_that_follows_the_temperature_refreshes_the_flow() {
 /// A run continued from a restart file written at `t_split` is
 /// bit-identical to the run without it (probes and heat balance of the
 /// last step, the phases of the march).
+#[cfg(feature = "hdf5")] // restart files are HDF5
 fn continues_bit_identically(label: &str, text: &str, t_split: f64) {
     let whole = out(&format!("{label}_whole"));
     let (a, b) = (out(&format!("{label}_a")), out(&format!("{label}_b")));
@@ -248,6 +249,7 @@ fn continues_bit_identically(label: &str, text: &str, t_split: f64) {
 /// The state of the march goes into restart.h5 (`cht_frozen_state`): a
 /// run restarted in a frozen phase, and in the coupled steps of a refresh,
 /// continues bit for bit as the run without the restart.
+#[cfg(feature = "hdf5")] // restart files are HDF5
 #[test]
 #[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
 fn frozen_flow_restart_continues_bit_identically() {

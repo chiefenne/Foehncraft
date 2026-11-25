@@ -206,8 +206,8 @@ differences, 1 against 4 threads, the cost table):
 
 ```sh
 cargo test --release -p foehncraft-flow --lib steady_residual
-cargo test --release -p foehncraft-flow --test adjoint reverse -- --nocapture
-FOEHN_A0_CELLS=40,40,30 cargo test --release -p foehncraft-flow --test adjoint reverse_sweep_cost -- --nocapture
+cargo test --release -p foehncraft-flow --test flow adjoint::reverse -- --nocapture
+FOEHN_A0_CELLS=40,40,30 cargo test --release -p foehncraft-flow --test flow adjoint::reverse_sweep_cost -- --nocapture
 ```
 
 The compiler reverse mode (option B) needs a nightly toolchain and is not

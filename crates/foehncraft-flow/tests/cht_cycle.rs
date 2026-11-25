@@ -262,6 +262,7 @@ fn wrong_settings_are_refused() {
 /// restart file written, then continued from it) and checks that the
 /// continuation is bit-identical: the last row of the probes, the heat
 /// flow over the interfaces and, with a loop, every update.
+#[cfg(feature = "hdf5")] // restart files are HDF5
 fn continues_bit_identically(label: &str, text: &str, t_split: f64) {
     let whole = out(&format!("{label}_whole"));
     let (a, b) = (out(&format!("{label}_a")), out(&format!("{label}_b")));
@@ -305,6 +306,7 @@ fn continues_bit_identically(label: &str, text: &str, t_split: f64) {
 /// one run through: a plain transient conjugate run, the loop restarted in
 /// the middle of a fluid phase, and the loop with the skin swing restarted
 /// in the middle of a fluid phase and in the fully coupled cycles.
+#[cfg(feature = "hdf5")] // restart files are HDF5
 #[test]
 #[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
 fn cht_restart_continues_bit_identically() {
@@ -325,6 +327,7 @@ fn cht_restart_continues_bit_identically() {
 
 /// The steady CHT restart: a steady conjugate run continued from its
 /// restart file starts from the temperatures of the solids it ended with.
+#[cfg(feature = "hdf5")] // restart files are HDF5
 #[test]
 #[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
 fn steady_cht_restart_keeps_the_solid_temperatures() {
@@ -544,6 +547,7 @@ fn transient_solid_phase_follows_the_warm_up() {
 
 /// A restart after a jump of the clock, in the middle of a fluid phase, is
 /// bit-identical to the run without it.
+#[cfg(feature = "hdf5")] // restart files are HDF5
 #[test]
 #[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
 fn transient_solid_phase_restart_continues_bit_identically() {

@@ -86,3 +86,12 @@ inherits = "release"
 codegen-units = 16
 lto = false
 debug = false
+
+# Profile of the CI job with debug assertions (main, nightly): the dev
+# profile (debug assertions, overflow checks) at opt-level 1 and without
+# debug info, so that the solver tests run several times faster than in an
+# unoptimised build and the link is smaller. Same checks as `cargo test`.
+[profile.ci-debug]
+inherits = "dev"
+opt-level = 1
+debug = false

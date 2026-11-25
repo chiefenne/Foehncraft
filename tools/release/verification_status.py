@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """The verification status page (D199): a grade for every feature.
 
-    python3 -m tools.release.verification_status           write the page
-    python3 -m tools.release.verification_status --check   fail when it is out of date
+    python3 -m tools.release.verification_status           write grades.json
+    python3 -m tools.release.verification_status --all     also the page and the chart
+    python3 -m tools.release.verification_status --check   fail when grades.json is out of date
 
 The feature table `docs/verification/features.toml` is written by hand and
 reviewed in pull requests: one row per switch a user can turn on, the
@@ -19,7 +20,13 @@ it is never written by hand. The script writes
 
 `--check` (CI, also on docs-only changes) refuses a table that names a case
 file, test or page that does not exist, leaves a catalogue case without a
-feature, or disagrees with the generated files.
+feature, or disagrees with grades.json.
+
+Pull requests commit the table and grades.json only (grades.json is
+compiled into the solver for LIM001, so its tests need it). The page and the
+chart carry totals, so two pull requests that each add a row would always
+conflict on them: they are regenerated on main after every merge by the
+workflow `docs-index.yml` (`--all`), like the number tables of the docs.
 
 Grade rules (D199, also printed on the page):
 
@@ -442,13 +449,15 @@ def render() -> tuple[str, str, str]:
     return page, json.dumps(data, indent=1, ensure_ascii=False) + "\n", svg(rows, data)
 
 
-def write() -> None:
-    """Regenerate the page and the grades (also called by verification_manual.py)."""
+def write(pages: bool = True) -> None:
+    """Regenerate the grades and, with `pages`, the page and the chart
+    (also called by verification_manual.py)."""
     page, grades, figure = render()
-    PAGE.write_text(page, encoding="utf-8", newline="\n")
     GRADES.write_text(grades, encoding="utf-8", newline="\n")
-    FIGURE.parent.mkdir(parents=True, exist_ok=True)
-    FIGURE.write_text(figure, encoding="utf-8", newline="\n")
+    if pages:
+        PAGE.write_text(page, encoding="utf-8", newline="\n")
+        FIGURE.parent.mkdir(parents=True, exist_ok=True)
+        FIGURE.write_text(figure, encoding="utf-8", newline="\n")
 
 
 def main(argv: list[str]) -> int:
@@ -458,19 +467,20 @@ def main(argv: list[str]) -> int:
         print(f"docs/verification/features.toml:\n{e}", file=sys.stderr)
         return 1
     if "--check" in argv:
-        stale = [p.relative_to(ROOT).as_posix() for p, text in ((PAGE, page), (GRADES, grades), (FIGURE, figure))
-                 if not p.is_file() or p.read_text(encoding="utf-8").replace("\r\n", "\n") != text]
-        if stale:
-            print("out of date: " + ", ".join(stale)
-                  + "\nregenerate with  python3 -m tools.release.verification_status", file=sys.stderr)
+        if not GRADES.is_file() or GRADES.read_text(encoding="utf-8").replace("\r\n", "\n") != grades:
+            print("out of date: docs/verification/grades.json"
+                  "\nregenerate with  python3 -m tools.release.verification_status", file=sys.stderr)
             return 1
-        print("the verification status page matches docs/verification/features.toml")
+        print("docs/verification/grades.json matches docs/verification/features.toml"
+              " (the page and the chart are regenerated on main)")
         return 0
-    write()
+    pages = "--all" in argv
+    write(pages)
     data = json.loads(grades)
     count = {g: sum(1 for f in data["features"] if f["grade"] == g) for g in GRADE_ORDER}
     print(f"{len(data['features'])} features: " + ", ".join(f"{v} {k}" for k, v in count.items())
-          + f"; wrote {PAGE.relative_to(ROOT).as_posix()}")
+          + f"; wrote {(PAGE if pages else GRADES).relative_to(ROOT).as_posix()}"
+          + ("" if pages else " (the page and the chart follow on main)"))
     return 0
 
 

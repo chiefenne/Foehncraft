@@ -62,7 +62,7 @@ target/release/foehn flow examples/cases/flow/poiseuille_hex.toml --threads 1 --
 The checks as tests (the solving ones in release builds):
 
 ```
-cargo test --release -p foehncraft-flow --test stage4
+cargo test --release -p foehncraft-flow --test flow stage4::
 ```
 
 [↑ back to top](#incompressible-flow)

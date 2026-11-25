@@ -7,6 +7,8 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
+# The integration tests are one program (tests/main.rs): see its header.
+autotests = false
 
 [features]
 default = ["hdf5", "blake3"]
@@ -39,6 +41,10 @@ hdf5-metno = { workspace = true, optional = true }
 [dev-dependencies]
 # the case reader of gate G1 in the broken-input corpus (D202)
 foehncraft-bench.workspace = true
+
+[[test]]
+name = "flow"
+path = "tests/main.rs"
 
 [[example]]
 name = "mpi_flow"

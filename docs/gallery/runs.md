@@ -53,7 +53,7 @@ the snapshots.
 | Report | [stage 5, part 3](../verification/stage5.md#adjoint-ready-kernels-part-3) |
 
 ```
-cargo test --release -p foehncraft-flow --test adjoint -- --nocapture   # Jacobians, one line per kernel
+cargo test --release -p foehncraft-flow --test flow adjoint:: -- --nocapture   # Jacobians, one line per kernel
 cargo test --release -p foehncraft-flow --lib -- adjoint_tests checkpoint   # transposed matrices, checkpointing
 python3 -m tools.plot.checkpoint_chart checkpoint_steps.svg
 ```
@@ -176,7 +176,7 @@ Error RUN014: the solution diverged in outer iteration 16 ...
 | Recipe | [27](../recipes/runs.md#health) |
 
 ```
-cargo test --release -p foehncraft-flow --test health
+cargo test --release -p foehncraft-flow --test flow health::
 python3 -m tools.plot.energy_budget_chart energy_budget.svg
 ```
 

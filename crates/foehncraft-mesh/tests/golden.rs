@@ -9,7 +9,7 @@
 //! file only for an intended change, with
 //!
 //! ```text
-//! FOEHNCRAFT_BLESS=1 cargo test -p foehncraft-mesh --test golden
+//! FOEHNCRAFT_BLESS=1 cargo test -p foehncraft-mesh --test mesh golden::
 //! ```
 //!
 //! and say why in the commit message.

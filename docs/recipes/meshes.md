@@ -120,7 +120,7 @@ combination of mesh type, dimension, perturbation, refinement and 1, 2 and
 4 ranks (R4). A difference fails the test. Only for an intended change:
 
 ```
-FOEHNCRAFT_BLESS=1 cargo test -p foehncraft-mesh --test golden
+FOEHNCRAFT_BLESS=1 cargo test -p foehncraft-mesh --test mesh golden::
 git diff crates/foehncraft-mesh/tests/golden/mesher.json
 ```
 
