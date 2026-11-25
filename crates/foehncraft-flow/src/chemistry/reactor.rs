@@ -91,7 +91,13 @@ impl IntegratorSection {
     }
 
     fn check(&self) -> Result<()> {
-        if !(self.rtol > 0.0 && self.rtol < 1.0 && self.atol > 0.0 && self.atol_temperature > 0.0) {
+        let finite = self.atol.is_finite() && self.atol_temperature.is_finite();
+        if !(finite
+            && self.rtol > 0.0
+            && self.rtol < 1.0
+            && self.atol > 0.0
+            && self.atol_temperature > 0.0)
+        {
             return Err(bad(
                 "reactor.integrator",
                 "rtol must lie in (0, 1) and atol, atol_temperature be > 0",
@@ -375,14 +381,30 @@ pub fn mole_of_mass(m: &Mechanism, y: &[f64]) -> Vec<f64> {
     inv.iter().map(|v| v / t).collect()
 }
 
-/// Runs the reactor of `case`; `base` is the folder of relative mechanism
-/// files.
-pub fn run(case: &ReactorCase, base: Option<&std::path::Path>) -> Result<ReactorResult> {
+/// Reads a reactor case file (TOML with `[reactor]`); returns the case and
+/// the folder that relative mechanism files are read from. Every error
+/// carries `CHM001`.
+pub fn read(path: &std::path::Path) -> Result<(ReactorCase, Option<std::path::PathBuf>)> {
+    let text = std::fs::read_to_string(path)
+        .map_err(|e| bad("reactor", format!("{}: {e}", path.display())))?;
+    let c: ReactorCase = toml::from_str(&text)
+        .map_err(|e| bad("reactor", format!("{}: {}", path.display(), e.message())))?;
+    Ok((c, path.parent().map(std::path::Path::to_path_buf)))
+}
+
+/// Checks a reactor case before it runs: the state, the samples, the
+/// integrator settings, the mechanism and the start mixture. Returns the
+/// mechanism and the start mole fractions.
+pub fn prepare(
+    case: &ReactorCase,
+    base: Option<&std::path::Path>,
+) -> Result<(Mechanism, Vec<f64>)> {
     let r = &case.reactor;
-    if !(r.pressure > 0.0 && r.temperature > 0.0 && r.end_time > 0.0) {
+    let finite = r.pressure.is_finite() && r.temperature.is_finite() && r.end_time.is_finite();
+    if !(finite && r.pressure > 0.0 && r.temperature > 0.0 && r.end_time > 0.0) {
         return Err(bad(
             "reactor",
-            "pressure, temperature and end_time must be > 0",
+            "pressure, temperature and end_time must be finite and > 0",
         ));
     }
     if r.samples == 0 || r.samples > 1_000_000 {
@@ -391,6 +413,14 @@ pub fn run(case: &ReactorCase, base: Option<&std::path::Path>) -> Result<Reactor
     r.integrator.check()?;
     let m = Mechanism::load(&r.mechanism, base)?;
     let x0 = mixture(&m, r)?;
+    Ok((m, x0))
+}
+
+/// Runs the reactor of `case`; `base` is the folder of relative mechanism
+/// files.
+pub fn run(case: &ReactorCase, base: Option<&std::path::Path>) -> Result<ReactorResult> {
+    let r = &case.reactor;
+    let (m, x0) = prepare(case, base)?;
     let y0 = mass_of_mole(&m, &x0);
     let n = m.len();
     let prog = m.program();

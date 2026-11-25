@@ -8,7 +8,8 @@ its own results and exits non-zero on failure).
 Sets (times are the Linux CI runner, main run of 2026-11-15):
   linux-1  mesh, scalar, poisson, the 3D cavities           about 2.2 min
   linux-2  cylinder Re 20, cavity Re 1000, Poiseuille       about 2.7 min
-  linux-3  Taylor-Green, transient cavity, the rest         about 2.2 min
+  linux-3  Taylor-Green, transient cavity, the rest, and the
+           chemistry reactors                               about 2.2 min
   long     cylinder Re 100 (long and short channels, statistics) and the
            cylinder Re 20 on three meshes                   main, nightly and full-ci only
   quick    macOS and Windows: mesh, scalar, poisson and the quick flows
@@ -119,6 +120,9 @@ def cases(name: str) -> list[tuple[str, str]]:
     if name not in FLOW:
         raise SystemExit(f"unknown set '{name}' (sets: {', '.join(FLOW)})")
     flow = [("flow", F + c + ".toml") for c in FLOW[name]]
+    if name == "linux-3":
+        # The 0D reactors of stage SF2 (each checks its own `[reactor.check]`).
+        flow += [("chemistry reactor", f) for f in _files("examples/cases/chemistry/*.toml")]
     return _base() + flow if name in ("linux-1", "quick") else flow
 
 
@@ -145,7 +149,7 @@ def run(name: str, foehn: str) -> int:
     for cmd, f in cases(name):
         print(f"::group::{cmd} {f}", flush=True)
         start = time.monotonic()
-        code = subprocess.run([foehn, cmd, f], cwd=ROOT).returncode
+        code = subprocess.run([foehn, *cmd.split(), f], cwd=ROOT).returncode
         if code != EXPECTED_EXIT.get(f, 0):
             print(f"::error::{cmd} {f} failed (exit code {code})", flush=True)
             status = 1

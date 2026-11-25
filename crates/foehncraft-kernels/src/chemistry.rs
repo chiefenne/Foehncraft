@@ -24,10 +24,10 @@
 //! and the reaction stops at the chemical equilibrium.
 //!
 //! - k_f = A T^b exp(−T_a/T) (modified Arrhenius);
-//! - three-body reactions multiply k_f by [M] = Σ α_k C_k (efficiencies α,
+//! - three-body reactions multiply k_f by \[M\] = Σ α_k C_k (efficiencies α,
 //!   the default for species not listed);
 //! - fall-off reactions blend the low- and high-pressure limits:
-//!   k_f = k_∞ P_r/(1 + P_r) F, P_r = k₀[M]/k_∞, with F = 1 (Lindemann) or
+//!   k_f = k_∞ P_r/(1 + P_r) F, P_r = k₀\[M\]/k_∞, with F = 1 (Lindemann) or
 //!   the broadening of Troe (Gilbert, Luther & Troe 1983): log F =
 //!   log F_c/(1 + ((log P_r + c)/(n − 0.14 (log P_r + c)))²), c = −0.4 −
 //!   0.67 log F_c, n = 0.75 − 1.27 log F_c, F_c = (1 − a) exp(−T/T₃) +
@@ -67,6 +67,16 @@
 //! elimination order of the SF2 plan). Rosenbrock stages are linear in the
 //! right-hand side, so element masses are conserved to round-off.
 
+// `!(x > 0.0)` is meant: it is true for NaN as well, so a broken state ends
+// in a refused step, never in a silent NaN. `max(..).min(..)` keeps a NaN
+// out (clamp would pass it on). The species loops index several arrays of
+// the same length by species.
+#![allow(
+    clippy::neg_cmp_op_on_partial_ord,
+    clippy::manual_clamp,
+    clippy::needless_range_loop
+)]
+
 use foehncraft_core::math;
 
 use crate::species::{R, Species};
@@ -76,7 +86,7 @@ pub const P_STANDARD: f64 = 101_325.0;
 
 /// An elementary reaction: k_f = A T^b exp(−T_a/T).
 pub const ELEMENTARY: u32 = 0;
-/// A three-body reaction: k_f [M].
+/// A three-body reaction: k_f \[M\].
 pub const THREE_BODY: u32 = 1;
 /// A fall-off reaction with the Lindemann form (F = 1).
 pub const LINDEMANN: u32 = 2;
@@ -219,8 +229,8 @@ fn arrhenius(r: &[f64; 3], t: f64, ln_t: f64) -> (f64, f64) {
 }
 
 /// The forward rate coefficient of reaction `rx` with its derivatives
-/// (k, ∂k/∂T, ∂k/∂[M]) at the third-body concentration `m` (the factor
-/// [M] of a three-body reaction included).
+/// (k, ∂k/∂T, ∂k/∂\[M\]) at the third-body concentration `m` (the factor
+/// \[M\] of a three-body reaction included).
 #[inline(always)]
 fn forward(rx: &Reaction, t: f64, ln_t: f64, m: f64) -> (f64, f64, f64) {
     let (k, dl) = arrhenius(&rx.rate, t, ln_t);

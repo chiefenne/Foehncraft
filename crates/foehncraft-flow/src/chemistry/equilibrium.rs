@@ -278,10 +278,8 @@ pub fn hp(m: &Mechanism, y: &[f64], t0: f64, p: f64) -> Result<State> {
         if !(next > lo && next < hi) {
             next = 0.5 * (lo + hi);
         }
-        if let Some(side) = last {
-            if side == (ft < 0.0) {
-                next = 0.5 * (next + 0.5 * (lo + hi));
-            }
+        if last == Some(ft < 0.0) {
+            next = 0.5 * (next + 0.5 * (lo + hi));
         }
         last = Some(ft < 0.0);
         t = next;

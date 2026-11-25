@@ -162,8 +162,8 @@ fn reversible_reactions_stop_at_the_gibbs_equilibrium() {
 }
 
 /// The adiabatic flame temperature of stoichiometric methane–air from 298
-/// K at 1 atm with dissociation: 2226 K (Turns 2012, "An introduction to
-/// combustion", 3rd ed., chapter 2, with the JANAF data); within 10 K.
+/// K at 1 atm with dissociation: 2226 K (S. R. Turns, 3rd ed., McGraw-Hill
+/// 2012, chapter 2, with the JANAF data); within 10 K.
 #[test]
 fn adiabatic_flame_temperature_of_methane_and_air() {
     let m = Mechanism::load("gri30", None).unwrap();

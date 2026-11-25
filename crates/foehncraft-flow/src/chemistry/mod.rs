@@ -13,6 +13,10 @@
 //! kernels of [`foehncraft_kernels::chemistry`], the same code for the
 //! cells of a flow (SF2b) and the GPU.
 
+// `!(x > 0.0)` is meant (true for NaN too, so a broken input is refused),
+// and `max(..).min(..)` keeps a NaN out where clamp would pass it on.
+#![allow(clippy::neg_cmp_op_on_partial_ord, clippy::manual_clamp)]
+
 pub mod equilibrium;
 pub mod mechanism;
 pub mod reactor;

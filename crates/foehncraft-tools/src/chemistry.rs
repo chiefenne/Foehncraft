@@ -19,18 +19,8 @@ fn section(
     match (case, inline) {
         (Some(p), None) => {
             ctx.roots.check_read(p, "the reactor case file")?;
-            let text =
-                std::fs::read_to_string(p).map_err(|e| anyhow::anyhow!("{}: {e}", p.display()))?;
-            let c: reactor::ReactorCase = toml::from_str(&text).map_err(|e| {
-                diag::err(
-                    diag::Diagnostic::new(
-                        diag::CHEMISTRY,
-                        format!("{}: {}", p.display(), e.message()),
-                    )
-                    .key("reactor"),
-                )
-            })?;
-            Ok((c.reactor, p.parent().map(Path::to_path_buf)))
+            let (c, base) = reactor::read(p)?;
+            Ok((c.reactor, base))
         }
         (None, Some(r)) => Ok((r.clone(), None)),
         _ => Err(diag::err(

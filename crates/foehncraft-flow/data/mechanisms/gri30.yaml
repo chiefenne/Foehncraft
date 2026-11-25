@@ -1,3 +1,9 @@
+# GRI-Mech 3.0 (Smith, Golden, Frenklach, Moriarty, Eiteneer, Goldenberg,
+# Bowman, Hanson, Song, Gardiner, Lissianski and Qin, 1999,
+# http://combustion.berkeley.edu/gri-mech/), free to use with its citation:
+# the mechanism, thermo and transport files of the authors converted one to
+# one to the YAML format of D103 by the ck2yaml converter (BSD licence).
+# Data only, no code. Built-in mechanism `gri30` of Foehncraft (SF2).
 description: |-
   GRI-Mech Version 3.0 7/30/99  CHEMKIN-II format
   See README30 file at anonymous FTP site unix.sri.com, directory gri;
