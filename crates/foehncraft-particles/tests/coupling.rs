@@ -15,10 +15,15 @@ struct Swirl;
 
 impl Gas for Swirl {
     fn at(&self, _cell: usize, x: [f64; 3]) -> GasState {
+        // a hot gas whose temperature varies in space: the heat exchange
+        // takes part in the order independence too (SP2b)
         GasState {
             u: [0.5 - x[1], x[0] - 0.5, 0.1],
             rho: 1.2,
             mu: 1.8e-5,
+            t: 500.0 + 100.0 * x[0] - 50.0 * x[2],
+            cp: 1030.0,
+            k: 0.04,
         }
     }
 }
@@ -31,6 +36,7 @@ fn reversed(p: &Parcels) -> Parcels {
     q.d.reverse();
     q.count.reverse();
     q.born.reverse();
+    q.temp.reverse();
     q.cell.reverse();
     q
 }
@@ -63,6 +69,7 @@ fn sources_do_not_depend_on_parcel_order_or_threads() {
                 parcels_per_second: 2000.0,
                 start: 0.0,
                 end: None,
+                temperature: None,
             }],
             ..SpraySection::default()
         };
@@ -86,9 +93,11 @@ fn sources_do_not_depend_on_parcel_order_or_threads() {
         // every sub-step lies in its cell: the records of a parcel name the
         // cells it passes; the slopes of a parcel are at most its mass
         let mut by_parcel: std::collections::BTreeMap<u64, f64> = Default::default();
+        let mut heat_by_parcel: std::collections::BTreeMap<u64, f64> = Default::default();
         for r in a.records() {
-            assert!(r.slope >= 0.0 && r.dt >= 0.0);
+            assert!(r.slope >= 0.0 && r.dt >= 0.0 && r.heat_slope >= 0.0);
             *by_parcel.entry(r.id).or_default() += r.slope;
+            *heat_by_parcel.entry(r.id).or_default() += r.heat_slope;
         }
         for (i, &id) in sp.parcels.id.iter().enumerate() {
             let mass = sp.parcel_mass(i);
@@ -96,6 +105,11 @@ fn sources_do_not_depend_on_parcel_order_or_threads() {
             assert!(
                 s <= mass * (1.0 + 1e-12),
                 "{kind:?}: slopes {s} above the mass {mass}"
+            );
+            let h = heat_by_parcel.get(&id).copied().unwrap_or(0.0);
+            assert!(
+                h <= mass * 4181.0 * (1.0 + 1e-12),
+                "{kind:?}: heat slopes {h}"
             );
         }
         // the storage order reversed, and on one thread: the same bits
@@ -110,7 +124,7 @@ fn sources_do_not_depend_on_parcel_order_or_threads() {
         assert_eq!(a.sources, b.sources, "{kind:?}");
         // and the committed parcels carry the same momentum after the
         // closing step
-        let du = |c: u32| [1e-3 * c as f64, -2e-3, 0.5e-3];
+        let du = |c: u32| ([1e-3 * c as f64, -2e-3, 0.5e-3], 0.2 - 0.01 * c as f64);
         let ba = sp.commit(&env, a, Some(&du));
         let bb = other.commit(&env, b, Some(&du));
         assert_eq!(ba, bb, "{kind:?}");
@@ -119,6 +133,13 @@ fn sources_do_not_depend_on_parcel_order_or_threads() {
                 ba.imbalance()[k].abs() < 1e-12 * (ba.end[k].abs() + ba.injected[k].abs() + 1e-30)
             );
         }
+        // the parcels took heat from the gas, and the enthalpy books close
+        assert!(ba.enthalpy[2] > 0.0, "{kind:?}: {:?}", ba.enthalpy);
+        assert!(
+            ba.heat_imbalance().abs() < 1e-12 * ba.enthalpy[1],
+            "{kind:?}: {:?}",
+            ba.enthalpy
+        );
     }
 }
 
@@ -140,11 +161,7 @@ struct Converging(Vec<[f64; 3]>);
 impl Gas for Converging {
     fn at(&self, cell: usize, _x: [f64; 3]) -> GasState {
         let ux = if self.0[cell][0] < 0.5 { 0.5 } else { -0.5 };
-        GasState {
-            u: [ux, 0.0, 0.0],
-            rho: 1.2,
-            mu: 1.8e-5,
-        }
+        GasState::isothermal([ux, 0.0, 0.0], 1.2, 1.8e-5)
     }
 }
 
@@ -177,6 +194,7 @@ fn a_parcel_on_a_face_pushed_from_both_sides_is_not_lost() {
             parcels_per_second: 2000.0,
             start: 0.0,
             end: None,
+            temperature: None,
         }],
         ..SpraySection::default()
     };

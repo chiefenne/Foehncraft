@@ -106,6 +106,69 @@ pub fn parcel_step<T: Real>(i: &ParcelInput<T>) -> ParcelStep<T> {
     ParcelStep { v, dx, tau, re }
 }
 
+/// Nusselt number of a sphere in a gas stream, Nu = 2 + 0.6 Re^½ Pr^⅓
+/// (Ranz and Marshall 1952).
+#[inline(always)]
+pub fn nusselt<T: Real>(re: T, pr: T) -> T {
+    let two = T::from_f64(2.0);
+    if re > T::from_f64(1e-30) && pr > T::from_f64(1e-30) {
+        two + T::from_f64(0.6) * re.sqrt_of() * (pr.ln_of() / T::from_f64(3.0)).exp_of()
+    } else {
+        two
+    }
+}
+
+/// The state of one parcel and the gas for the heat exchange (SP2b).
+#[derive(Clone, Copy, Debug)]
+pub struct HeatInput<T> {
+    /// Parcel temperature (K).
+    pub tp: T,
+    /// Gas temperature at the parcel (K).
+    pub tg: T,
+    /// Particle Reynolds number (of the drag step).
+    pub re: T,
+    /// Gas Prandtl number μ c_p / k.
+    pub pr: T,
+    /// Gas thermal conductivity (W/(m K)).
+    pub k_g: T,
+    /// Droplet diameter (m).
+    pub d: T,
+    /// Droplet density (kg/m³).
+    pub rho_p: T,
+    /// Droplet specific heat (J/(kg K)).
+    pub cp_p: T,
+    /// Interval (s).
+    pub dt: T,
+}
+
+/// The result of [`heat_step`].
+#[derive(Clone, Copy, Debug)]
+pub struct HeatStep<T> {
+    /// Parcel temperature at the end of the interval (K).
+    pub tp: T,
+    /// Thermal response time τ_h = ρ_p c_p d² / (6 Nu k_g) (s).
+    pub tau: T,
+    /// exp(−Δt/τ_h).
+    pub decay: T,
+}
+
+/// Temperature of one parcel over `dt` with the gas temperature and the
+/// heat transfer coefficient frozen: the exact solution of
+/// dT_p/dt = (T_g − T_p)/τ_h, T_p(Δt) = T_g + (T_p − T_g) e^(−Δt/τ_h)
+/// (sensible heat only, no evaporation; a uniform droplet temperature,
+/// Biot number small).
+#[inline]
+pub fn heat_step<T: Real>(i: &HeatInput<T>) -> HeatStep<T> {
+    let nu = nusselt(i.re, i.pr);
+    let tau = i.rho_p * i.cp_p * i.d * i.d / (T::from_f64(6.0) * nu * i.k_g);
+    let decay = (-(i.dt / tau)).exp_of();
+    HeatStep {
+        tp: i.tg + (i.tp - i.tg) * decay,
+        tau,
+        decay,
+    }
+}
+
 /// Arrays of the parcel step, one entry per parcel (structure of arrays,
 /// D47).
 #[derive(Clone, Copy)]
@@ -235,5 +298,43 @@ mod tests {
         // the two correlations meet within 0.5 % (Schiller and Naumann 1935)
         assert!((lo - hi).abs() / hi < 1e-2, "{lo} {hi}");
         assert!((drag_correction(1e-12_f64) - 1.0).abs() < 1e-8);
+    }
+}
+
+#[cfg(test)]
+mod heat_tests {
+    use super::*;
+
+    #[test]
+    fn heat_step_relaxes_exactly_and_halves_compose() {
+        let base = HeatInput {
+            tp: 293.15,
+            tg: 573.15,
+            re: 12.0,
+            pr: 0.7,
+            k_g: 0.044,
+            d: 100e-6,
+            rho_p: 998.0,
+            cp_p: 4181.0,
+            dt: 0.02,
+        };
+        let one = heat_step(&base);
+        let a = heat_step(&HeatInput { dt: 0.01, ..base });
+        let b = heat_step(&HeatInput {
+            tp: a.tp,
+            dt: 0.01,
+            ..base
+        });
+        assert!((one.tp - b.tp).abs() < 1e-9 * one.tp);
+        let nu = 2.0 + 0.6 * 12.0f64.sqrt() * 0.7f64.powf(1.0 / 3.0);
+        assert!((nusselt(12.0, 0.7) - nu).abs() < 1e-12);
+        let tau = 998.0 * 4181.0 * 1e-8 / (6.0 * nu * 0.044);
+        assert!((one.tau - tau).abs() < 1e-12 * tau);
+        // far beyond τ_h the parcel takes the gas temperature
+        let long = heat_step(&HeatInput {
+            dt: 100.0 * tau,
+            ..base
+        });
+        assert!((long.tp - 573.15).abs() < 1e-9);
     }
 }
