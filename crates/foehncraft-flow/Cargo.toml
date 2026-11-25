@@ -35,6 +35,7 @@ toml.workspace = true
 anyhow = "1"
 schemars.workspace = true
 sha2.workspace = true
+yaml-rust2.workspace = true
 blake3 = { workspace = true, optional = true }
 hdf5-metno = { workspace = true, optional = true }
 

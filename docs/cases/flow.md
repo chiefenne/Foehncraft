@@ -102,6 +102,7 @@ Couette and Poiseuille flow, the lid-driven cavity and the steady cylinder.
 | `flow/ranks_heated_channel_sst.toml` | generated poly 2D, 2 821 cells, perturbed by 10 % | a turbulent channel (k-ω SST, Re = 10 000) with a heated lower wall and the energy equation, solved again on 2, 3 and 5 ranks and bitwise the one-rank solution in every field (MPI step W5) | [gallery 244](../gallery/meshes.md#flow-models-ranks), [recipe 244](../recipes/meshes.md#flow-models-ranks) |
 | `flow/ranks_restart_channel.toml` | generated poly 2D, 2 821 cells, perturbed by 10 % | the channel of `ranks_channel_poly` marched 40 time steps with BDF2, solved again on 2, 3 and 5 ranks; the restart gathered from five ranks must have the bytes of the one-rank restart, and a run continued from it with `--restart` reads it on any rank count (MPI step W6) | [gallery 262](../gallery/meshes.md#restart-ranks), [recipe 262](../recipes/meshes.md#restart-ranks) |
 | `flow/ranks_run_channel.toml` | generated poly 2D, 2 821 cells, perturbed by 10 % | the channel of `ranks_channel_poly` solved on 5 ranks as the run itself (`[run] rank_count`, `--ranks N`); rank 0 writes every output file byte for byte as one rank does, plus `ranks.vtkhdf` with the rank of every cell (MPI step W7) | [gallery 279](../gallery/meshes.md#run-ranks), [recipe 279](../recipes/meshes.md#run-ranks) |
+| `flow/ranks_run_transient_sst.toml` | generated poly 2D, 2 821 cells, perturbed by 10 % | a heated turbulent channel (k-ω SST, energy, a passive dye) with the upper wall moving against the inflow, marched 180 BDF2 steps on 5 ranks as the run itself; every output file, the heat balance of every step and the turbulence summary byte for byte one rank (MPI step W7 part 2) | [gallery 290](../gallery/meshes.md#run-ranks-physics), [recipe 290](../recipes/meshes.md#run-ranks-physics) |
 
 ## Transient flow
 
@@ -315,7 +316,8 @@ parcels in a transient flow, one way or, with `[spray.coupling] mode =
 "two-way"` (SP2, D247 to D252), with the drag as a momentum source of the
 gas and, with `[energy]`, the heat as a source of the gas energy;
 `[spray] dispersion = "eddy-lifetime"` (SP2c, D243) lets the turbulence
-spread the parcels. The keys are on the [key page](flow-keys.md); the run writes `spray.csv` and
+spread the parcels. In a steady case `[spray.steady]` (SP2s, D260) runs the
+spray as streams through the steady gas, with relaxed sources. The keys are on the [key page](flow-keys.md); the run writes `spray.csv` and
 `spray/parcels_<step>.vtkhdf`. `[[datum]]` tables (SP1b, D262) report the
 liquid and the gas through planes, surfaces and boundaries and the droplets
 in volumes, in `datums.csv` and `spray_hist_<datum>.csv`.
@@ -327,6 +329,7 @@ in volumes, in `datums.csv` and `spray_hist_<datum>.csv`.
 | `flow/spray_two_way.toml` | generated hex 2D, 60 × 75 cells | two-way coupling: 50 g/s of water (50 to 400 µm, `flow/spray_two_way_injectors.toml`) sprayed down from the ceiling of a room of still air pulls the air into a jet of up to 6 m/s; the spray hands the air 0.77 N, 2.96 passes per step on average, the momentum pair cancels to the bit | [gallery 280](../gallery/sprays.md#spray-two-way), [recipe 280](../recipes/sprays.md#spray-two-way) |
 | `flow/spray_cooling.toml` | generated hex 2D, 100 × 20 cells | two-way heat: 10 g/s of water at 20 °C (20 to 200 µm, `flow/spray_cooling_injectors.toml`) sprayed into air at 300 °C and 5 m/s; the droplets take about 6.6 kW from the air, which leaves about 50 K cooler; the enthalpy pair cancels to the bit, 3.7 passes per step with `max_passes = 4` | [gallery 283](../gallery/sprays.md#spray-cooling), [recipe 283](../recipes/sprays.md#spray-cooling) |
 | `flow/spray_dispersion.toml` | generated hex 2D, 150 × 30 cells | eddy-lifetime dispersion: water droplets of 20 to 300 µm (`flow/spray_dispersion_injectors.toml`) shot along the axis of a duct with 10 % turbulence spread by the eddies alone (no gravity, no cone); after 1 m the small droplets spread 5.4 cm, the large ones 2.9 cm; no parcel lost | [gallery 285](../gallery/sprays.md#spray-dispersion), [recipe 285](../recipes/sprays.md#spray-dispersion) |
+| `flow/spray_cooling_steady.toml` | generated hex 2D, 100 × 20 cells | the duct of `spray_cooling` as a steady state in the steady spray mode (`[spray.steady]`, D260): 400 water streams through the frozen gas, sources relaxed every 10 iterations; converges in 526 iterations and 58 passes, 6.39 kW from the air (the transient run: 6.58 kW), source residual 1e-4, all liquid leaves through the outlet | [gallery 292](../gallery/sprays.md#spray-steady), [recipe 292](../recipes/sprays.md#spray-steady) |
 
 ## Porous regions
 

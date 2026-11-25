@@ -7,7 +7,8 @@
 //! 3), `flow` (steady incompressible laminar flow with SIMPLEC; stage 4)
 //! and `bench g1` (the GPU kernel gate of stage 0), `schema` (the JSON
 //! Schema of the flow case file, D77), `post derive` (derived fields from
-//! a restart file, D72), `materials` (the material database, D94),
+//! a restart file, D72), `materials` (the material database, D94), `chemistry` (the 0D reactor
+//! and the chemical equilibrium of a mechanism, SF2),
 //! `case resolve`, `diag codes`, `expression`, and `commands` and `call`
 //! (the tool registry, D196: the catalogue of every tool, and any tool run
 //! from JSON). The commands build the typed input of their tool of
@@ -126,6 +127,12 @@ enum Command {
     Case {
         #[command(subcommand)]
         case: CaseCmd,
+    },
+    /// Gas-phase chemistry (SF2): the 0D constant-pressure reactor of a
+    /// mechanism and the chemical equilibrium of a mixture.
+    Chemistry {
+        #[command(subcommand)]
+        chemistry: ChemistryCmd,
     },
     /// Post-processing of a finished or stopped flow run.
     Post {
@@ -314,6 +321,35 @@ struct DeriveArgs {
     /// `latest` looks.
     #[arg(long)]
     out: Option<PathBuf>,
+}
+
+#[derive(Subcommand)]
+enum ChemistryCmd {
+    /// Integrate the constant-pressure adiabatic reactor of a case file
+    /// (`[reactor]`) and compare its end state with the equilibrium; write
+    /// the trace as CSV.
+    Reactor(ReactorArgs),
+    /// The chemical equilibrium of the mixture of a reactor case file at
+    /// its enthalpy (adiabatic flame) or its temperature, and its pressure.
+    Equilibrium(EquilibriumArgs),
+}
+
+#[derive(clap::Args)]
+struct ReactorArgs {
+    /// Reactor case file (TOML with `[reactor]`).
+    case: PathBuf,
+    /// CSV file of the trace (default: the case file with `.csv`).
+    #[arg(long)]
+    csv: Option<PathBuf>,
+}
+
+#[derive(clap::Args)]
+struct EquilibriumArgs {
+    /// Reactor case file (TOML with `[reactor]`).
+    case: PathBuf,
+    /// Hold the temperature instead of the enthalpy.
+    #[arg(long)]
+    constant_temperature: bool,
 }
 
 #[derive(clap::Args)]
@@ -547,6 +583,7 @@ fn main() {
         Command::Materials(_) => "materials",
         Command::Case { .. } => "case",
         Command::Post { .. } => "post",
+        Command::Chemistry { .. } => "chemistry",
         Command::Diag { .. } => "diag",
         Command::Expression(_) => "expression",
         Command::Commands(_) => "commands",
@@ -579,6 +616,30 @@ fn main() {
         Command::Post {
             post: Post::Derive(a),
         } => derive(a, out),
+        Command::Chemistry {
+            chemistry: ChemistryCmd::Reactor(a),
+        } => typed::<tools::chemistry::Reactor>(
+            tools::chemistry::ReactorInput {
+                case: Some(a.case),
+                reactor: None,
+                csv: a.csv,
+            },
+            out,
+        ),
+        Command::Chemistry {
+            chemistry: ChemistryCmd::Equilibrium(a),
+        } => typed::<tools::chemistry::Equilibrium>(
+            tools::chemistry::EquilibriumInput {
+                case: Some(a.case),
+                reactor: None,
+                constant: if a.constant_temperature {
+                    tools::chemistry::Constant::Temperature
+                } else {
+                    tools::chemistry::Constant::Enthalpy
+                },
+            },
+            out,
+        ),
         Command::Bench {
             bench: Bench::Backends,
         } => typed::<tools::system::Backends>(NoInput {}, out),

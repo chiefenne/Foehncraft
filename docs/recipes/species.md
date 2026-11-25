@@ -5,6 +5,7 @@ Part of the [Recipes](../recipes.md): mixtures of ideal gases carried by the flo
 | # | Recipe |
 |---|---|
 | 278 | [Carry the species of a gas mixture with the flow](#species-transport) |
+| 289 | [Run a mechanism in a constant-pressure reactor and find the equilibrium](#gas-chemistry) |
 
 ---
 
@@ -88,3 +89,77 @@ the error of a transported species as for a passive scalar, and
 Mixing only, no reactions yet (SF2, SF3); every species has a Schmidt or a
 Lewis number (no mixture-averaged diffusion yet, SF2h); one fluid region.
 [Gallery 278](../gallery/species.md#species-transport).
+
+---
+
+<a id="gas-chemistry"></a>
+## 289. Run a mechanism in a constant-pressure reactor and find the equilibrium
+
+**Write the reactor.** A reactor case file has one table `[reactor]`: the
+mechanism, the pressure, the start temperature, the time and the mixture
+(the keys are on the [chemistry case page](../cases/chemistry.md#reactor-case-file-keys)):
+
+```toml
+[reactor]
+mechanism = "gri30"          # or "jones-lindstedt-4", "westbrook-dryer-2", "my_mech.yaml"
+pressure = 101325.0          # Pa
+temperature = 1400.0         # K
+end_time = 0.1               # s
+equivalence_ratio = 1.0      # or mole_fractions = { CH4 = 0.095, O2 = 0.19, N2 = 0.715 }
+fuel = { CH4 = 1.0 }
+oxidiser = { O2 = 0.21, N2 = 0.79 }
+samples = 600
+spacing = "log"              # output times evenly in log t
+```
+
+**Run it.** The trace (time, temperature, the mole fraction of every
+species) goes to `output/<case>/reactor.csv`; the log gives the ignition
+delay (the time of the largest dT/dt), the end state against the
+equilibrium at the start enthalpy, the element drift and the steps:
+
+    target/release/foehn chemistry reactor examples/cases/chemistry/reactor_methane_air_gri30.toml
+
+```
+reactor: gri30 (53 species, 325 reactions), p = 101325 Pa, T₀ = 1400 K, 0.1 s
+  ignition delay 3.427905e-3 s
+  T end 2697.701 K, equilibrium 2697.701 K, difference 4.105e-5 K
+  largest |x_end − x_eq| 4.338e-9, element drift 2.229e-13
+  2811 steps, 0 rejected, 0.379 s
+```
+
+**Make it a check.** `[reactor.check]` gives bands (`temperature_difference`,
+`mole_fraction_difference`, `equilibrium_temperature`, `ignition_delay`,
+`element_drift`); a band not met is reported and the exit code is 2, as for
+a flow case with `[verification]`.
+
+**Find the equilibrium.** The same file, at its enthalpy (the adiabatic
+flame state) or with `--constant-temperature` at its temperature:
+
+    target/release/foehn chemistry equilibrium examples/cases/chemistry/reactor_methane_air_gri30.toml
+
+From an agent or a script the two are the tools `chemistry.reactor` and
+`chemistry.equilibrium` ([tools.md](../tools.md)), with the `[reactor]`
+table inline or a case file:
+
+    target/release/foehn call chemistry.equilibrium --input examples/cases/tools/equilibrium_methane_air.json
+
+**Bring your own mechanism.** A YAML mechanism file of the Cantera format
+(D103) is read directly: `units`, the species of the first phase, NASA-7
+thermo and Lennard-Jones transport records, elementary, three-body and
+fall-off (Lindemann, Troe) reactions with efficiencies and `orders`. A
+species the file does not define is taken from the built-in GRI-Mech 3.0
+data, so a global mechanism needs only its reactions. PLOG, Chebyshev and
+SRI rates and specific colliders are refused (CHM001), as is a reaction
+that does not conserve its elements. If the integrator stops (CHM002),
+raise `[reactor.integrator] max_steps` or loosen `rtol`.
+
+**Mind the global mechanisms.** They are calibrated for flame speed and
+heat release. Jones & Lindstedt ignites at once and Westbrook & Dryer
+ends 277 K above its own equilibrium (its reverse CO step is not the
+equilibrium constant): do not use them for ignition or for burnt-gas
+temperatures. The images of the gallery:
+
+    python3 -m tools.plot.reactor_traces output/img
+
+[Gallery 289](../gallery/species.md#gas-chemistry).
+
