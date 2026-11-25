@@ -1,0 +1,1 @@
+{ "case": "examples/cases/structure/reed_beam_clamp_springs.toml", "clamp": 0, "spring": "rotation", "mode": 1, "frequency": 150.0 }

@@ -1,0 +1,46 @@
+# A reed valve modelled as a beam (L53, MS5): spring steel, 30 mm free
+# length, 6 mm wide, 0.2 mm thick, clamped at x = 0 and lifting along z.
+# Static deflection under a uniform pressure difference of 2 kPa over its
+# width, and the first eight modes (flapping, torsion, in-plane).
+#
+#   foehn call structure.run --input examples/cases/tools/structure_reed_beam.json
+
+[structure]
+name = "reed_beam"
+
+[analysis]
+static = true
+modes = 8
+
+[materials.spring_steel]
+young = 206e9
+poisson = 0.3
+density = 7850.0
+
+[sections.reed]
+shape = "rectangle"
+width = 6e-3        # local y = global y
+thickness = 0.2e-3  # local z = global z
+
+[[beams]]
+name = "reed"
+from = [0.0, 0.0, 0.0]
+to = [0.03, 0.0, 0.0]
+elements = 40
+section = "reed"
+material = "spring_steel"
+theory = "timoshenko"
+
+# rigid clamp: no springs given, the result says "rigid"
+[[clamps]]
+at = [0.0, 0.0, 0.0]
+normal = "z"
+line = "y"
+
+# 2 kPa over the 6 mm width
+[[line_loads]]
+beam = "reed"
+force_per_length = [0.0, 0.0, 12.0]
+
+[points]
+tip = [0.03, 0.0, 0.0]

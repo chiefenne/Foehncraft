@@ -298,6 +298,11 @@ codes! {
     TOOL_CONTROL = "TOOL007", Error, "A request to the live control port of a run (`run.status`, `run.stop`, `run.set`) that cannot be made or is refused: no run listens in the directory, the token is wrong, or the setting cannot be changed during a run (L19).";
     MCP_CANNOT_ASK = "MCP005", Error, "A call that needs the person's approval (`ask`), from a host that cannot ask (no MCP elicitation); the person allows it in `foehn-mcp.toml` or uses a host that asks.";
     MCP_POLICY = "MCP006", Error, "The action table `foehn-mcp.toml` cannot be read or written: not TOML, an unknown action kind or setting.";
+    // the structural solver (L53, crate foehncraft-structure)
+    STR_CASE = "STR001", Error, "A structural case or model that is not valid: an unknown key or a wrong value, a point that is not a node, a beam without length, a missing material or section, non-positive properties.";
+    STR_SINGULAR = "STR002", Error, "The stiffness of a structural case is singular: the structure can move freely (a missing support or clamp, or a mechanism); the message names the first free unknown. For the modes of a free structure give a negative `shift`.";
+    STR_MODES = "STR003", Warning, "A modal analysis may have missed modes: the Sturm count (the inertia of K − σM) finds more eigenvalues in the range than Lanczos returned, or Lanczos stopped above its tolerance.";
+    STR_FIT = "STR004", Error, "The clamp fit (D290) cannot reach the measured frequency: it lies at or above the frequency of the rigidly clamped model (the model is too soft), or the mode does not depend on the spring.";
     // anything else
     GENERAL = "GEN001", Error, "An error without a more specific code.";
 }
@@ -552,7 +557,7 @@ mod tests {
                     "CASE", "SCHED", "BC", "SCAL", "RUN", "GEN", "DIV", "BAL", "EXPR", "MAT",
                     "REG", "MESH", "TURB", "MRF", "SLD", "ROT", "STAT", "ENE", "THM", "CHT",
                     "TOOL", "LIM", "MCP", "ACC", "CYC", "BUO", "FRZ", "PRS", "SPR", "DAT", "POR",
-                    "IMM", "SPE", "CHM"
+                    "IMM", "SPE", "CHM", "STR"
                 ]
                 .contains(&p),
                 "{}",

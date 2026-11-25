@@ -1560,6 +1560,39 @@
     "MPI processes are run in CI with the steady laminar case only; the threads tests cover the same code"
    ],
    "range": {}
+  },
+  {
+   "id": "structure.beams",
+   "title": "Linear structural solver: Euler–Bernoulli and Timoshenko beams, static and modal analyses (L53, MS5 part 1)",
+   "grade": "partial",
+   "why": [
+    "a model without reference data",
+    "gaps written"
+   ],
+   "gaps": [
+    "beams only: MITC4/MITC3+ shells, quadratic solids, generalised-α, mode superposition, Craig–Bampton, damping and contact come in MS5 parts 2 to 4",
+    "the Timoshenko element's consistent mass converges at second order in the frequency of thick beams (7e-6 on 120 elements at L/d = 10)",
+    "no comparison with measured reed frequencies yet (MS6: Gasche et al. via González et al. 2017, Lemke et al. 2016)",
+    "the ordering is reverse Cuthill–McKee: the fill is an envelope, fine for slender reeds, large for compact 3D parts (no minimum-degree ordering yet)",
+    "the LDLᵀ factorisation does not pivot: a shift inside the spectrum can meet a zero pivot (STR002); shifts below the first mode are safe",
+    "linear (small rotations): large deflections need the corotational formulation of MS9"
+   ],
+   "range": {}
+  },
+  {
+   "id": "structure.clamp",
+   "title": "Clamp springs per length of the clamp line and their fit to a measured frequency (D290)",
+   "grade": "partial",
+   "why": [
+    "a model without reference data",
+    "gaps written"
+   ],
+   "gaps": [
+    "springs on a single node of a beam model: shells with the springs spread along the clamp edge come with MS5 part 2",
+    "clamp parts as solids in frictionless contact (the second way of D290) are not built",
+    "no measured reed with a known clamp to calibrate against yet (MS6)"
+   ],
+   "range": {}
   }
  ]
 }
