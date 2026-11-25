@@ -60,6 +60,10 @@ use foehncraft_mesh::{Geometry, Mesh};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+/// Temperature, specific heat and conductivity per cell (the gas the
+/// parcels see, SP2b).
+pub(crate) type CellGas = (Vec<f64>, Vec<f64>, Vec<f64>);
+
 /// `[scalars.<name>]`: a passive scalar.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -2394,10 +2398,7 @@ impl Scalars {
     /// The gas as the parcels see it for the heat exchange (SP2b): per
     /// cell the temperature, c_p and the conductivity of the material at
     /// that temperature (no turbulent part).
-    pub(crate) fn energy_gas(
-        &self,
-        dev: &mut dyn FlowDevice,
-    ) -> Result<Option<(Vec<f64>, Vec<f64>, Vec<f64>)>> {
+    pub(crate) fn energy_gas(&self, dev: &mut dyn FlowDevice) -> Result<Option<CellGas>> {
         let Some(f) = self.fields.iter().find(|f| f.energy.is_some()) else {
             return Ok(None);
         };
