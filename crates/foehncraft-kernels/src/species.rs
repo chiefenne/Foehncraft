@@ -14,9 +14,11 @@
 //!   Brokaw's (1969) correction 0.2 δ*²/T* for polar molecules, δ* =
 //!   μ_D²/(2 ε σ³) (Poling, Prausnitz & O'Connell 2001, eqs. 9-3.9, 9-4.3,
 //!   9-4.4).
-//! - Pure-species conductivity: the modified Eucken relation λ M/(μ C_v) =
-//!   1.32 + 1.77 R/C_v for molecules and λ = 15/4 R μ/M for atoms (Poling
-//!   et al. 2001, eqs. 10-3.3, 10-3.1).
+//! - Pure-species conductivity: for molecules the mean of the Eucken
+//!   relation λ M/(μ C_v) = 1 + 2.25 R/C_v and the modified Eucken relation
+//!   1.32 + 1.77 R/C_v, which bracket measured values (Poling et al. 2001,
+//!   section 10-3, eqs. 10-3.3, 10-3.4); λ = 15/4 R μ/M for atoms (eq.
+//!   10-3.1).
 //! - Mixture viscosity: Wilke (1950); mixture conductivity: Mathur, Tondon
 //!   & Saxena (1967), λ = ½ (Σ x_i λ_i + 1/Σ (x_i/λ_i)).
 //! - Binary diffusion coefficients (for Lewis-number checks and the
@@ -111,7 +113,10 @@ impl Species {
         if self.geometry == 0 {
             3.75 * R * mu / self.molar_mass
         } else {
-            mu / self.molar_mass * (1.32 * cv + 1.77 * R)
+            // the mean of the Eucken (λM/(μC_v) = 1 + 2.25 R/C_v) and the
+            // modified Eucken (1.32 + 1.77 R/C_v) values, between which
+            // measured conductivities of polyatomic gases lie
+            mu / self.molar_mass * (1.16 * cv + 2.01 * R)
         }
     }
 }

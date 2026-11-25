@@ -73,8 +73,6 @@ mole_fractions = { O2 = 0.21, N2 = 0.79 }
 [boundary.xmax]
 type = "static-pressure-outlet"
 pressure = 0.0
-[boundary.xmax.energy]
-temperature = 300.0
 
 [boundary.ymax]
 type = "slip-wall"
@@ -93,6 +91,9 @@ log_every = 100
 
 [solver.scalar]
 limiter = "mlp"
+
+[verification]
+require_convergence = true
 
 [output]
 wall_csv = false

@@ -16,6 +16,7 @@ On this page:
 - [Gravity and buoyancy](#gravity-and-buoyancy)
 - [Lagrangian sprays](#lagrangian-sprays)
 - [Porous regions](#porous-regions)
+- [Species](#species)
 
 Stage 4: steady incompressible laminar flow, SIMPLEC with the Rhie–Chow
 interpolation ([explanation](../verification/stage4.md)). Stage 5: transient
@@ -326,3 +327,15 @@ temperatures of their own (D271, PM2). The keys are on the [key page](flow-keys.
 | `flow/porous_honeycomb_channel.toml` | generated hex 2D, 240 × 80 cells | a ceramic honeycomb block (6.9 mm channels, ε = 0.256) in an air channel at 10 cm/s, channels along the flow; with `blocking = 1` the same resistance in every direction | [gallery 273](../gallery/porous.md#porous-flow), [recipe 273](../recipes/porous.md#porous-flow) |
 | `flow/porous_schumann.toml` | generated hex 2D, 100 × 1 cells | check V4: air at 400 K into a ceramic bed at 300 K, gas and matrix against the exact solution of Schumann (1929) at 1000, 2000 and 3000 s; L1 error 5.2·10⁻⁵ of the step, second order in the cell size; heat balance to 10⁻¹³ | [gallery 275](../gallery/porous.md#porous-two-temperatures), [recipe 275](../recipes/porous.md#porous-two-temperatures) |
 | `flow/porous_storage_charge.toml` | generated hex 2D, 40 × 100 cells | charging a honeycomb store: air at 573 K from the top right through a stack of ceramic bricks (6.9 mm channels, ε = 0.256) at 293 K; the thermocline half way after 6000 s, 200 steps in about 70 s | [gallery 275](../gallery/porous.md#porous-two-temperatures), [recipe 275](../recipes/porous.md#porous-two-temperatures) |
+
+## Species
+
+Mixtures of ideal gases (steam furnace stage SF1): `[species]` with the
+GRI-Mech 3.0 species, N − 1 mass fractions transported and the closure
+species by 1 − Σ; with the variable density ρ = p₀ M/(R T) of the mixture
+and its c_p, λ and μ. The keys are on the [key page](flow-keys.md#species).
+
+| Case file | Mesh | Shows | Where |
+|---|---|---|---|
+| `flow/species_binary_diffusion.toml` | generated hex 2D, 100 × 2 cells | CH₄ diffusing in N₂ at rest: the exact decay of a cosine mode, BDF2 to t = 50 s; L2 error 9.5·10⁻⁶, species and element accounts closed to round-off | [gallery 278](../gallery/species.md#species-transport), [recipe 278](../recipes/species.md#species-transport) |
+| `flow/species_coaxial_jet.toml` | generated hex 2D wedge, 90 × 40 cells | a laminar methane jet (r = 5 mm, 1 m/s) in a coflow of air at 0.2 m/s, isothermal, density from the mixture's molar mass (0.65 to 1.17 kg/m³), mixture properties from kinetic theory; 154 iterations, element accounts closed to 6.5·10⁻⁹ | [gallery 278](../gallery/species.md#species-transport), [recipe 278](../recipes/species.md#species-transport) |

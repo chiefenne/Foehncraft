@@ -4,7 +4,8 @@
 //! polyhedra, mixed cells and tetrahedra: steady SIMPLEC (linear upwind,
 //! bounded central, CG with multigrid and with Jacobi for the pressure),
 //! transient PISO with BDF2, a passive scalar, the energy equation, the
-//! k-ω SST and the k-ε model with wall functions, and the coupled solver.
+//! k-ω SST and the k-ε model with wall functions, the coupled solver, and
+//! the species of an ideal-gas mixture with mixture properties (SF1).
 //! Ranks are threads here ([`ThreadComm`]); the example `mpi_flow` runs the
 //! same check across MPI processes in CI.
 

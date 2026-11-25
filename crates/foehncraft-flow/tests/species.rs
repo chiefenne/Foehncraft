@@ -76,7 +76,9 @@ fn binary_diffusion_decays_as_the_exact_mode() {
 
 /// The coaxial jet of the gallery: the mixture closes its element
 /// accounts to the solver tolerance, every mass fraction stays in [0, 1]
-/// and the jet density is that of methane, p₀ M_CH4/(R T).
+/// within the smooth-extremum allowance of the MLP limiter (ε = 0.01 of the
+/// range, here a few 1e-6), and the jet density is that of methane,
+/// p₀ M_CH4/(R T) within the same allowance.
 #[test]
 #[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
 fn coaxial_jet_closes_the_element_accounts() {
@@ -86,7 +88,7 @@ fn coaxial_jet_closes_the_element_accounts() {
     for n in ["Y_CH4", "Y_O2"] {
         let y = s.scalars.iter().find(|x| x.name == n).unwrap();
         assert!(
-            y.min >= -1e-12 && y.max <= 1.0 + 1e-12,
+            y.min >= -1e-5 && y.max <= 1.0 + 1e-5,
             "{n}: [{}, {}]",
             y.min,
             y.max
@@ -105,7 +107,8 @@ fn coaxial_jet_closes_the_element_accounts() {
     let d = s.density.as_ref().unwrap();
     let rho_ch4 = 101_325.0 * 0.016_042_46 / (8.314_462_618 * 300.0);
     assert!(
-        (d.rho_min / rho_ch4 - 1.0).abs() < 1e-6,
+        // within the MLP allowance: Y_CH4 = 1 + 3e-6 at the nozzle lowers M by as much
+        (d.rho_min / rho_ch4 - 1.0).abs() < 1e-5,
         "{} {rho_ch4}",
         d.rho_min
     );

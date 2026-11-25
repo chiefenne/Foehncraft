@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**117 features: 50 verified, 64 partial, 3 unverified.**
+**118 features: 50 verified, 65 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -142,6 +142,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Sprays | [Lagrangian spray parcels, one way (L12, SP1)](#sprays-one-way) | partial |
 | Flow models | [Porous regions with a direction-dependent Darcy-Forchheimer resistance (D270, PM1)](#porous-darcy-forchheimer) | partial |
 | Flow models | [Gas and matrix temperatures in porous regions, monolithic (D271, D272, PM2)](#porous-two-temperatures) | partial |
+| Flow models | [Species transport of an ideal-gas mixture with mixture properties (L2, steam furnace SF1)](#species-transport) | partial |
 
 ## Meshes
 
@@ -1832,3 +1833,31 @@ Gaps:
 - a CHT restart does not carry the matrix temperature (a flow restart does)
 - no measured reference case (a packed bed or a honeycomb store with measured temperatures)
 - in porous_storage_charge the plenum swirl does not converge within 10 outer iterations at Courant 2400 (the stack flow is uniform within 1 %)
+
+<a id="species-transport"></a>
+
+### Species transport of an ideal-gas mixture with mixture properties (L2, steam furnace SF1)
+
+**partial** (gaps written) · id `species.transport` · switch `[species]` · decisions D17, D151, D119
+
+- exact: [`binary_diffusion_decays_as_the_exact_mode`](../../crates/foehncraft-flow/tests/species.rs): CH4 in N2 at rest: the exact decay of a cosine mode, BDF2 on 100 cells, L2 error 9.5e-6 (below 1e-4 required); species and element accounts of the closed slab to 1e-12
+- exact: [`species_binary_diffusion`](../../examples/cases/flow/species_binary_diffusion.toml): the same run from the command line, largest error 1.3e-5 (scalar_max_error 1e-4) (passes in CI (set linux-3), not yet in the manual) ([results](../cases/flow.md#species))
+- consistency: [`coaxial_jet_closes_the_element_accounts`](../../crates/foehncraft-flow/tests/species.rs): a methane jet in air on the variable density: C, H, O, N accounts closed below 1e-6 of the inflow (6.5e-9 measured), mass fractions in [0, 1] within the MLP allowance, jet density p0 M_CH4/(R T) to 1e-5 (3e-6 measured, the MLP allowance)
+- consistency: [`species_coaxial_jet`](../../examples/cases/flow/species_coaxial_jet.toml): the gallery jet from the command line: converged, element accounts closed (passes in CI (set linux-3), not yet in the manual) ([results](../gallery/species.md#species-transport))
+- reference-data: [`pure_gas_properties_match_measured_values`](../../crates/foehncraft-flow/src/species.rs): viscosity of N2, O2, CH4, Ar, H2, CO2 at 300 K within 3 % and conductivity within 5 % of measured values (Poling et al. 2001)
+- reference-data: [`air_as_a_mixture`](../../crates/foehncraft-flow/src/species.rs): air as O2, N2, Ar: M, c_p within 0.3 %, mu within 3 %, lambda within 4 % of Lemmon et al. (2004)
+- reference-data: [`binary_diffusion_of_methane_in_nitrogen`](../../crates/foehncraft-flow/src/species.rs): D of CH4-N2 at 298 K within 6 % of the measured 2.15e-5 m2/s (Marrero and Mason 1972)
+- consistency: [`nasa_polynomials_give_the_formation_enthalpy`](../../crates/foehncraft-flow/src/species.rs): the NASA-7 enthalpy of formation of CH4 within 0.2 % of the Active Thermochemical Tables, c_p continuous at the middle temperature
+- contract (bitwise): [`flow_on_ranks_is_bitwise_one_rank`](../../crates/foehncraft-flow/tests/ranks.rs): three species with mixture properties and the energy equation on 1 to 4 ranks, bitwise one rank
+- contract (diagnostics): [`the_reader_refuses_broken_species_tables`](../../crates/foehncraft-flow/tests/species.rs): SPE001 for unknown species, missing inlet compositions, fractions above one, mixture properties without energy, boundary tables without [species]
+
+Gaps:
+
+- no chemistry and no heat release (SF2, SF3); no enthalpy flux of the species diffusion in the energy equation (zero for isothermal mixing, needed with SF2)
+- Schmidt or Lewis numbers only: no mixture-averaged or multicomponent diffusion with a correction velocity (differential diffusion of hydrogen, SF2h)
+- one fluid region: no solids, porous regions or several fluids with species (SPE002)
+- the mixture is evaluated on the host once per outer iteration (as the energy properties); its device kernel follows with SF2; not run on a GPU in this PR
+- the MLP limiter lets mass fractions leave [0, 1] by its smooth-extremum allowance (a few 1e-6 in the jet); strictly bounded (limiter_epsilon = 0) stalls the steady residual
+- the ledger takes the linear-upwind reconstruction without the clip of bounded = true, and the bounded BDF2 fallback is not booked in the storage
+- no measured reference case of turbulent mixing yet (a jet with measured mass fractions)
+- on ranks without the variable density (stage 7c is refused on ranks, its cell and closed-volume sums need the halo and global sums) and without the MLP limiter (vertex setup not on ranks yet)

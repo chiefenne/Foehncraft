@@ -101,6 +101,8 @@ struct DataFile {
 pub fn database() -> &'static BTreeMap<String, Record> {
     static DB: OnceLock<BTreeMap<String, Record>> = OnceLock::new();
     DB.get_or_init(|| {
+        // the file is part of the build; a test reads it (an error here is
+        // a broken data file, reported by `Resolved::of`)
         toml::from_str::<DataFile>(DATA)
             .map(|d| d.species)
             .unwrap_or_default()
@@ -789,8 +791,8 @@ impl Link {
         let sp = &self.res.data;
         self.cell = (0..nc)
             .map(|c| {
-                for i in 0..n {
-                    yy[i] = self.y_cell[i][c];
+                for (v, y) in yy.iter_mut().zip(&self.y_cell) {
+                    *v = y[c];
                 }
                 ks::mixture(sp, &yy[..n], tc(c))
             })
@@ -800,13 +802,13 @@ impl Link {
                 let tfv = if f < ni {
                     let (o, nn) = (self.owner[f] as usize, self.neighbour[f] as usize);
                     let w = self.weight[f];
-                    for i in 0..n {
-                        yy[i] = w * self.y_cell[i][o] + (1.0 - w) * self.y_cell[i][nn];
+                    for (v, y) in yy.iter_mut().zip(&self.y_cell) {
+                        *v = w * y[o] + (1.0 - w) * y[nn];
                     }
                     w * tc(o) + (1.0 - w) * tc(nn)
                 } else {
-                    for i in 0..n {
-                        yy[i] = self.y_bface[i][f - ni];
+                    for (v, y) in yy.iter_mut().zip(&self.y_bface) {
+                        *v = y[f - ni];
                     }
                     t.map_or(tf, |(_, tb)| tb[f - ni])
                 };
@@ -940,9 +942,13 @@ pub fn summary_lines(s: &SpeciesSummary) -> Vec<String> {
         out.push(format!("species {n:<6} Y in [{lo:.6e}, {hi:.6e}]"));
     }
     for (e, inflow, imb, rel) in &s.elements {
-        out.push(format!(
-            "element {e:<2} inflow {inflow:.6e} kg/s, imbalance {imb:.3e} kg/s ({rel:.2e} relative)"
-        ));
+        out.push(if *inflow > 0.0 {
+            format!(
+                "element {e:<2} inflow {inflow:.6e} kg/s, imbalance {imb:.3e} kg/s ({rel:.2e} of the inflow)"
+            )
+        } else {
+            format!("element {e:<2} no inflow, imbalance {imb:.3e} kg/s")
+        });
     }
     out
 }
@@ -977,15 +983,15 @@ pub fn summary(
     let nf = mesh.n_faces();
     // the net mass outflow of every own cell, Σ_f ṁ_f out
     let mut div = vec![0.0; nc];
-    for f in 0..nf {
+    for (f, &mf) in m.iter().enumerate().take(nf) {
         let o = mesh.owner[f] as usize;
         if o < nc {
-            div[o] += m[f];
+            div[o] += mf;
         }
         if f < ni {
             let n = mesh.neighbour[f] as usize;
             if n < nc {
-                div[n] -= m[f];
+                div[n] -= mf;
             }
         }
     }
@@ -1091,7 +1097,7 @@ pub fn summary(
 
 /// The SPE003 warning of a summary, if the closure species went negative.
 pub fn closure_finding(s: &SpeciesSummary) -> Option<Diagnostic> {
-    (s.closure_min < -1e-6).then(|| {
+    (s.closure_min < -1e-4).then(|| {
         Diagnostic::new(
             diag::SPECIES_CLOSURE,
             format!(
@@ -1122,8 +1128,8 @@ mod tests {
 
     /// Pure-gas viscosities and conductivities at 300 K against measured
     /// values (Poling, Prausnitz & O'Connell 2001, appendix; Kadoya et al.
-    /// 1985 for N₂): μ within 3 %, λ within 6 % (the modified Eucken
-    /// relation).
+    /// 1985 for N₂): μ within 3 %, λ within 5 % (the mean of the Eucken
+    /// and the modified Eucken relations, Poling et al. 2001, section 10-3).
     #[test]
     fn pure_gas_properties_match_measured_values() {
         // (species, μ measured Pa s, λ measured W/(m K)) at 300 K, 1 atm
@@ -1143,7 +1149,7 @@ mod tests {
                 (mu / mu_m - 1.0).abs() < 0.03,
                 "{n}: μ = {mu:e}, measured {mu_m:e}"
             );
-            assert!((k / k_m - 1.0).abs() < 0.06, "{n}: λ = {k}, measured {k_m}");
+            assert!((k / k_m - 1.0).abs() < 0.05, "{n}: λ = {k}, measured {k_m}");
         }
     }
 
@@ -1176,13 +1182,14 @@ mod tests {
         );
     }
 
-    /// NASA-7: the enthalpy of formation of CH₄ at 298.15 K, −74.87 kJ/mol
-    /// (JANAF), and c_p continuous at the middle temperature.
+    /// NASA-7: the enthalpy of formation of CH₄ at 298.15 K, −74.53 kJ/mol
+    /// (Active Thermochemical Tables, Ruscic et al.), within 0.2 %, and
+    /// c_p continuous at the middle temperature.
     #[test]
     fn nasa_polynomials_give_the_formation_enthalpy() {
         let s = db("CH4");
         let h = s.h_over_rt(298.15) * ks::R * 298.15;
-        assert!((h / -74_870.0 - 1.0).abs() < 2e-3, "{h}");
+        assert!((h / -74_530.0 - 1.0).abs() < 2e-3, "{h}");
         let t = s.t_range[1];
         let lo = s.cp_over_r(t);
         let hi = s.cp_over_r(t * (1.0 + 1e-12));

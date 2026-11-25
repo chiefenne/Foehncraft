@@ -35,8 +35,8 @@ def main(path):
         assert th["model"] == "NASA7"
         tr = s["transport"]
         m = sum(WEIGHTS[e] * n for e, n in s["composition"].items()) / 1000.0
-        out.append(f'[species.{s["name"]}]')
-        comp = ", ".join(f"{e} = {n:g}" for e, n in s["composition"].items())
+        out.append(f'[species."{s["name"]}"]')
+        comp = ", ".join(f"{e} = {float(n)!r}" for e, n in s["composition"].items())
         out.append(f"composition = {{ {comp} }}")
         out.append(f"molar_mass = {round(m, 12)!r}")
         out.append(f"temperature = {th['temperature-ranges']!r}")

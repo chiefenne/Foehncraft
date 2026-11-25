@@ -1704,6 +1704,36 @@ gaps = [
 ]
 
 [[feature]]
+id = "species.transport"
+area = "Flow models"
+title = "Species transport of an ideal-gas mixture with mixture properties (L2, steam furnace SF1)"
+switch = "[species]"
+decisions = ["D17", "D151", "D119"]
+model = true
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-flow/tests/species.rs::binary_diffusion_decays_as_the_exact_mode", what = "CH4 in N2 at rest: the exact decay of a cosine mode, BDF2 on 100 cells, L2 error 9.5e-6 (below 1e-4 required); species and element accounts of the closed slab to 1e-12" },
+  { kind = "exact", case = "species_binary_diffusion", what = "the same run from the command line, largest error 1.3e-5 (scalar_max_error 1e-4)", doc = "docs/cases/flow.md#species" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/species.rs::coaxial_jet_closes_the_element_accounts", what = "a methane jet in air on the variable density: C, H, O, N accounts closed below 1e-6 of the inflow (6.5e-9 measured), mass fractions in [0, 1] within the MLP allowance, jet density p0 M_CH4/(R T) to 1e-5 (3e-6 measured, the MLP allowance)" },
+  { kind = "consistency", case = "species_coaxial_jet", what = "the gallery jet from the command line: converged, element accounts closed", doc = "docs/gallery/species.md#species-transport" },
+  { kind = "reference-data", test = "crates/foehncraft-flow/src/species.rs::pure_gas_properties_match_measured_values", what = "viscosity of N2, O2, CH4, Ar, H2, CO2 at 300 K within 3 % and conductivity within 5 % of measured values (Poling et al. 2001)" },
+  { kind = "reference-data", test = "crates/foehncraft-flow/src/species.rs::air_as_a_mixture", what = "air as O2, N2, Ar: M, c_p within 0.3 %, mu within 3 %, lambda within 4 % of Lemmon et al. (2004)" },
+  { kind = "reference-data", test = "crates/foehncraft-flow/src/species.rs::binary_diffusion_of_methane_in_nitrogen", what = "D of CH4-N2 at 298 K within 6 % of the measured 2.15e-5 m2/s (Marrero and Mason 1972)" },
+  { kind = "consistency", test = "crates/foehncraft-flow/src/species.rs::nasa_polynomials_give_the_formation_enthalpy", what = "the NASA-7 enthalpy of formation of CH4 within 0.2 % of the Active Thermochemical Tables, c_p continuous at the middle temperature" },
+  { kind = "contract", property = "bitwise", test = "crates/foehncraft-flow/tests/ranks.rs::flow_on_ranks_is_bitwise_one_rank", what = "three species with mixture properties and the energy equation on 1 to 4 ranks, bitwise one rank" },
+  { kind = "contract", property = "diagnostics", test = "crates/foehncraft-flow/tests/species.rs::the_reader_refuses_broken_species_tables", what = "SPE001 for unknown species, missing inlet compositions, fractions above one, mixture properties without energy, boundary tables without [species]" },
+]
+gaps = [
+  "no chemistry and no heat release (SF2, SF3); no enthalpy flux of the species diffusion in the energy equation (zero for isothermal mixing, needed with SF2)",
+  "Schmidt or Lewis numbers only: no mixture-averaged or multicomponent diffusion with a correction velocity (differential diffusion of hydrogen, SF2h)",
+  "one fluid region: no solids, porous regions or several fluids with species (SPE002)",
+  "the mixture is evaluated on the host once per outer iteration (as the energy properties); its device kernel follows with SF2; not run on a GPU in this PR",
+  "the MLP limiter lets mass fractions leave [0, 1] by its smooth-extremum allowance (a few 1e-6 in the jet); strictly bounded (limiter_epsilon = 0) stalls the steady residual",
+  "the ledger takes the linear-upwind reconstruction without the clip of bounded = true, and the bounded BDF2 fallback is not booked in the storage",
+  "no measured reference case of turbulent mixing yet (a jet with measured mass fractions)",
+  "on ranks without the variable density (stage 7c is refused on ranks, its cell and closed-volume sums need the halo and global sums) and without the MLP limiter (vertex setup not on ranks yet)",
+]
+
+[[feature]]
 id = "parallel.flow-models-ranks"
 area = "Backends and interfaces"
 title = "Turbulence, energy, scalars, transient runs and the coupled solver on several ranks, bitwise one rank (MPI step W5 part 2)"

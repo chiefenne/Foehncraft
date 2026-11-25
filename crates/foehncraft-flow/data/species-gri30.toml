@@ -5,8 +5,8 @@
 # Units: molar_mass kg/mol, temperatures K, well_depth (epsilon/k_B) K,
 # diameter Angstrom, dipole Debye, polarizability Angstrom^3.
 
-[species.H2]
-composition = { H = 2 }
+[species."H2"]
+composition = { H = 2.0 }
 molar_mass = 0.00201588
 temperature = [200.0, 1000.0, 3500.0]
 coefficients = [
@@ -19,8 +19,8 @@ diameter = 2.92
 polarizability = 0.79
 rotational_relaxation = 280.0
 
-[species.H]
-composition = { H = 1 }
+[species."H"]
+composition = { H = 1.0 }
 molar_mass = 0.00100794
 temperature = [200.0, 1000.0, 3500.0]
 coefficients = [
@@ -31,8 +31,8 @@ geometry = "atom"
 well_depth = 145.0
 diameter = 2.05
 
-[species.O]
-composition = { O = 1 }
+[species."O"]
+composition = { O = 1.0 }
 molar_mass = 0.0159994
 temperature = [200.0, 1000.0, 3500.0]
 coefficients = [
@@ -43,8 +43,8 @@ geometry = "atom"
 well_depth = 80.0
 diameter = 2.75
 
-[species.O2]
-composition = { O = 2 }
+[species."O2"]
+composition = { O = 2.0 }
 molar_mass = 0.0319988
 temperature = [200.0, 1000.0, 3500.0]
 coefficients = [
@@ -57,8 +57,8 @@ diameter = 3.458
 polarizability = 1.6
 rotational_relaxation = 3.8
 
-[species.OH]
-composition = { O = 1, H = 1 }
+[species."OH"]
+composition = { O = 1.0, H = 1.0 }
 molar_mass = 0.01700734
 temperature = [200.0, 1000.0, 3500.0]
 coefficients = [
@@ -69,8 +69,8 @@ geometry = "linear"
 well_depth = 80.0
 diameter = 2.75
 
-[species.H2O]
-composition = { H = 2, O = 1 }
+[species."H2O"]
+composition = { H = 2.0, O = 1.0 }
 molar_mass = 0.01801528
 temperature = [200.0, 1000.0, 3500.0]
 coefficients = [
@@ -83,8 +83,8 @@ diameter = 2.605
 dipole = 1.844
 rotational_relaxation = 4.0
 
-[species.HO2]
-composition = { H = 1, O = 2 }
+[species."HO2"]
+composition = { H = 1.0, O = 2.0 }
 molar_mass = 0.03300674
 temperature = [200.0, 1000.0, 3500.0]
 coefficients = [
@@ -96,8 +96,8 @@ well_depth = 107.4
 diameter = 3.458
 rotational_relaxation = 1.0
 
-[species.H2O2]
-composition = { H = 2, O = 2 }
+[species."H2O2"]
+composition = { H = 2.0, O = 2.0 }
 molar_mass = 0.03401468
 temperature = [200.0, 1000.0, 3500.0]
 coefficients = [
@@ -109,8 +109,8 @@ well_depth = 107.4
 diameter = 3.458
 rotational_relaxation = 3.8
 
-[species.C]
-composition = { C = 1 }
+[species."C"]
+composition = { C = 1.0 }
 molar_mass = 0.0120107
 temperature = [200.0, 1000.0, 3500.0]
 coefficients = [
@@ -121,8 +121,8 @@ geometry = "atom"
 well_depth = 71.4
 diameter = 3.298
 
-[species.CH]
-composition = { C = 1, H = 1 }
+[species."CH"]
+composition = { C = 1.0, H = 1.0 }
 molar_mass = 0.01301864
 temperature = [200.0, 1000.0, 3500.0]
 coefficients = [
@@ -133,8 +133,8 @@ geometry = "linear"
 well_depth = 80.0
 diameter = 2.75
 
-[species.CH2]
-composition = { C = 1, H = 2 }
+[species."CH2"]
+composition = { C = 1.0, H = 2.0 }
 molar_mass = 0.01402658
 temperature = [200.0, 1000.0, 3500.0]
 coefficients = [
@@ -145,8 +145,8 @@ geometry = "linear"
 well_depth = 144.0
 diameter = 3.8
 
-[species.CH2(S)]
-composition = { C = 1, H = 2 }
+[species."CH2(S)"]
+composition = { C = 1.0, H = 2.0 }
 molar_mass = 0.01402658
 temperature = [200.0, 1000.0, 3500.0]
 coefficients = [
@@ -157,8 +157,8 @@ geometry = "linear"
 well_depth = 144.0
 diameter = 3.8
 
-[species.CH3]
-composition = { C = 1, H = 3 }
+[species."CH3"]
+composition = { C = 1.0, H = 3.0 }
 molar_mass = 0.01503452
 temperature = [200.0, 1000.0, 3500.0]
 coefficients = [
@@ -169,8 +169,8 @@ geometry = "linear"
 well_depth = 144.0
 diameter = 3.8
 
-[species.CH4]
-composition = { C = 1, H = 4 }
+[species."CH4"]
+composition = { C = 1.0, H = 4.0 }
 molar_mass = 0.01604246
 temperature = [200.0, 1000.0, 3500.0]
 coefficients = [
@@ -183,8 +183,8 @@ diameter = 3.746
 polarizability = 2.6
 rotational_relaxation = 13.0
 
-[species.CO]
-composition = { C = 1, O = 1 }
+[species."CO"]
+composition = { C = 1.0, O = 1.0 }
 molar_mass = 0.0280101
 temperature = [200.0, 1000.0, 3500.0]
 coefficients = [
@@ -197,8 +197,8 @@ diameter = 3.65
 polarizability = 1.95
 rotational_relaxation = 1.8
 
-[species.CO2]
-composition = { C = 1, O = 2 }
+[species."CO2"]
+composition = { C = 1.0, O = 2.0 }
 molar_mass = 0.0440095
 temperature = [200.0, 1000.0, 3500.0]
 coefficients = [
@@ -211,8 +211,8 @@ diameter = 3.763
 polarizability = 2.65
 rotational_relaxation = 2.1
 
-[species.HCO]
-composition = { H = 1, C = 1, O = 1 }
+[species."HCO"]
+composition = { H = 1.0, C = 1.0, O = 1.0 }
 molar_mass = 0.02901804
 temperature = [200.0, 1000.0, 3500.0]
 coefficients = [
@@ -223,8 +223,8 @@ geometry = "nonlinear"
 well_depth = 498.0
 diameter = 3.59
 
-[species.CH2O]
-composition = { H = 2, C = 1, O = 1 }
+[species."CH2O"]
+composition = { H = 2.0, C = 1.0, O = 1.0 }
 molar_mass = 0.03002598
 temperature = [200.0, 1000.0, 3500.0]
 coefficients = [
@@ -236,8 +236,8 @@ well_depth = 498.0
 diameter = 3.59
 rotational_relaxation = 2.0
 
-[species.CH2OH]
-composition = { C = 1, H = 3, O = 1 }
+[species."CH2OH"]
+composition = { C = 1.0, H = 3.0, O = 1.0 }
 molar_mass = 0.03103392
 temperature = [200.0, 1000.0, 3500.0]
 coefficients = [
@@ -250,8 +250,8 @@ diameter = 3.69
 dipole = 1.7
 rotational_relaxation = 2.0
 
-[species.CH3O]
-composition = { C = 1, H = 3, O = 1 }
+[species."CH3O"]
+composition = { C = 1.0, H = 3.0, O = 1.0 }
 molar_mass = 0.03103392
 temperature = [300.0, 1000.0, 3000.0]
 coefficients = [
@@ -264,8 +264,8 @@ diameter = 3.69
 dipole = 1.7
 rotational_relaxation = 2.0
 
-[species.CH3OH]
-composition = { C = 1, H = 4, O = 1 }
+[species."CH3OH"]
+composition = { C = 1.0, H = 4.0, O = 1.0 }
 molar_mass = 0.03204186
 temperature = [200.0, 1000.0, 3500.0]
 coefficients = [
@@ -277,8 +277,8 @@ well_depth = 481.8
 diameter = 3.626
 rotational_relaxation = 1.0
 
-[species.C2H]
-composition = { C = 2, H = 1 }
+[species."C2H"]
+composition = { C = 2.0, H = 1.0 }
 molar_mass = 0.02502934
 temperature = [200.0, 1000.0, 3500.0]
 coefficients = [
@@ -290,8 +290,8 @@ well_depth = 209.0
 diameter = 4.1
 rotational_relaxation = 2.5
 
-[species.C2H2]
-composition = { C = 2, H = 2 }
+[species."C2H2"]
+composition = { C = 2.0, H = 2.0 }
 molar_mass = 0.02603728
 temperature = [200.0, 1000.0, 3500.0]
 coefficients = [
@@ -303,8 +303,8 @@ well_depth = 209.0
 diameter = 4.1
 rotational_relaxation = 2.5
 
-[species.C2H3]
-composition = { C = 2, H = 3 }
+[species."C2H3"]
+composition = { C = 2.0, H = 3.0 }
 molar_mass = 0.02704522
 temperature = [200.0, 1000.0, 3500.0]
 coefficients = [
@@ -316,8 +316,8 @@ well_depth = 209.0
 diameter = 4.1
 rotational_relaxation = 1.0
 
-[species.C2H4]
-composition = { C = 2, H = 4 }
+[species."C2H4"]
+composition = { C = 2.0, H = 4.0 }
 molar_mass = 0.02805316
 temperature = [200.0, 1000.0, 3500.0]
 coefficients = [
@@ -329,8 +329,8 @@ well_depth = 280.8
 diameter = 3.971
 rotational_relaxation = 1.5
 
-[species.C2H5]
-composition = { C = 2, H = 5 }
+[species."C2H5"]
+composition = { C = 2.0, H = 5.0 }
 molar_mass = 0.0290611
 temperature = [200.0, 1000.0, 3500.0]
 coefficients = [
@@ -342,8 +342,8 @@ well_depth = 252.3
 diameter = 4.302
 rotational_relaxation = 1.5
 
-[species.C2H6]
-composition = { C = 2, H = 6 }
+[species."C2H6"]
+composition = { C = 2.0, H = 6.0 }
 molar_mass = 0.03006904
 temperature = [200.0, 1000.0, 3500.0]
 coefficients = [
@@ -355,8 +355,8 @@ well_depth = 252.3
 diameter = 4.302
 rotational_relaxation = 1.5
 
-[species.HCCO]
-composition = { H = 1, C = 2, O = 1 }
+[species."HCCO"]
+composition = { H = 1.0, C = 2.0, O = 1.0 }
 molar_mass = 0.04102874
 temperature = [300.0, 1000.0, 4000.0]
 coefficients = [
@@ -368,8 +368,8 @@ well_depth = 150.0
 diameter = 2.5
 rotational_relaxation = 1.0
 
-[species.CH2CO]
-composition = { C = 2, H = 2, O = 1 }
+[species."CH2CO"]
+composition = { C = 2.0, H = 2.0, O = 1.0 }
 molar_mass = 0.04203668
 temperature = [200.0, 1000.0, 3500.0]
 coefficients = [
@@ -381,8 +381,8 @@ well_depth = 436.0
 diameter = 3.97
 rotational_relaxation = 2.0
 
-[species.HCCOH]
-composition = { C = 2, O = 1, H = 2 }
+[species."HCCOH"]
+composition = { C = 2.0, O = 1.0, H = 2.0 }
 molar_mass = 0.04203668
 temperature = [300.0, 1000.0, 5000.0]
 coefficients = [
@@ -394,8 +394,8 @@ well_depth = 436.0
 diameter = 3.97
 rotational_relaxation = 2.0
 
-[species.N]
-composition = { N = 1 }
+[species."N"]
+composition = { N = 1.0 }
 molar_mass = 0.0140067
 temperature = [200.0, 1000.0, 6000.0]
 coefficients = [
@@ -406,8 +406,8 @@ geometry = "atom"
 well_depth = 71.4
 diameter = 3.298
 
-[species.NH]
-composition = { N = 1, H = 1 }
+[species."NH"]
+composition = { N = 1.0, H = 1.0 }
 molar_mass = 0.01501464
 temperature = [200.0, 1000.0, 6000.0]
 coefficients = [
@@ -419,8 +419,8 @@ well_depth = 80.0
 diameter = 2.65
 rotational_relaxation = 4.0
 
-[species.NH2]
-composition = { N = 1, H = 2 }
+[species."NH2"]
+composition = { N = 1.0, H = 2.0 }
 molar_mass = 0.01602258
 temperature = [200.0, 1000.0, 6000.0]
 coefficients = [
@@ -433,8 +433,8 @@ diameter = 2.65
 polarizability = 2.26
 rotational_relaxation = 4.0
 
-[species.NH3]
-composition = { N = 1, H = 3 }
+[species."NH3"]
+composition = { N = 1.0, H = 3.0 }
 molar_mass = 0.01703052
 temperature = [200.0, 1000.0, 6000.0]
 coefficients = [
@@ -447,8 +447,8 @@ diameter = 2.92
 dipole = 1.47
 rotational_relaxation = 10.0
 
-[species.NNH]
-composition = { N = 2, H = 1 }
+[species."NNH"]
+composition = { N = 2.0, H = 1.0 }
 molar_mass = 0.02902134
 temperature = [200.0, 1000.0, 6000.0]
 coefficients = [
@@ -460,8 +460,8 @@ well_depth = 71.4
 diameter = 3.798
 rotational_relaxation = 1.0
 
-[species.False]
-composition = { N = 1, O = 1 }
+[species."False"]
+composition = { N = 1.0, O = 1.0 }
 molar_mass = 0.0300061
 temperature = [200.0, 1000.0, 6000.0]
 coefficients = [
@@ -474,8 +474,8 @@ diameter = 3.621
 polarizability = 1.76
 rotational_relaxation = 4.0
 
-[species.NO2]
-composition = { N = 1, O = 2 }
+[species."NO2"]
+composition = { N = 1.0, O = 2.0 }
 molar_mass = 0.0460055
 temperature = [200.0, 1000.0, 6000.0]
 coefficients = [
@@ -487,8 +487,8 @@ well_depth = 200.0
 diameter = 3.5
 rotational_relaxation = 1.0
 
-[species.N2O]
-composition = { N = 2, O = 1 }
+[species."N2O"]
+composition = { N = 2.0, O = 1.0 }
 molar_mass = 0.0440128
 temperature = [200.0, 1000.0, 6000.0]
 coefficients = [
@@ -500,8 +500,8 @@ well_depth = 232.4
 diameter = 3.828
 rotational_relaxation = 1.0
 
-[species.HNO]
-composition = { H = 1, N = 1, O = 1 }
+[species."HNO"]
+composition = { H = 1.0, N = 1.0, O = 1.0 }
 molar_mass = 0.03101404
 temperature = [200.0, 1000.0, 6000.0]
 coefficients = [
@@ -513,8 +513,8 @@ well_depth = 116.7
 diameter = 3.492
 rotational_relaxation = 1.0
 
-[species.CN]
-composition = { C = 1, N = 1 }
+[species."CN"]
+composition = { C = 1.0, N = 1.0 }
 molar_mass = 0.0260174
 temperature = [200.0, 1000.0, 6000.0]
 coefficients = [
@@ -526,8 +526,8 @@ well_depth = 75.0
 diameter = 3.856
 rotational_relaxation = 1.0
 
-[species.HCN]
-composition = { H = 1, C = 1, N = 1 }
+[species."HCN"]
+composition = { H = 1.0, C = 1.0, N = 1.0 }
 molar_mass = 0.02702534
 temperature = [200.0, 1000.0, 6000.0]
 coefficients = [
@@ -539,8 +539,8 @@ well_depth = 569.0
 diameter = 3.63
 rotational_relaxation = 1.0
 
-[species.H2CN]
-composition = { H = 2, C = 1, N = 1 }
+[species."H2CN"]
+composition = { H = 2.0, C = 1.0, N = 1.0 }
 molar_mass = 0.02803328
 temperature = [300.0, 1000.0, 4000.0]
 coefficients = [
@@ -552,8 +552,8 @@ well_depth = 569.0
 diameter = 3.63
 rotational_relaxation = 1.0
 
-[species.HCNN]
-composition = { C = 1, N = 2, H = 1 }
+[species."HCNN"]
+composition = { C = 1.0, N = 2.0, H = 1.0 }
 molar_mass = 0.04103204
 temperature = [300.0, 1000.0, 5000.0]
 coefficients = [
@@ -565,8 +565,8 @@ well_depth = 150.0
 diameter = 2.5
 rotational_relaxation = 1.0
 
-[species.HCNO]
-composition = { H = 1, N = 1, C = 1, O = 1 }
+[species."HCNO"]
+composition = { H = 1.0, N = 1.0, C = 1.0, O = 1.0 }
 molar_mass = 0.04302474
 temperature = [300.0, 1382.0, 5000.0]
 coefficients = [
@@ -578,8 +578,8 @@ well_depth = 232.4
 diameter = 3.828
 rotational_relaxation = 1.0
 
-[species.HOCN]
-composition = { H = 1, N = 1, C = 1, O = 1 }
+[species."HOCN"]
+composition = { H = 1.0, N = 1.0, C = 1.0, O = 1.0 }
 molar_mass = 0.04302474
 temperature = [300.0, 1368.0, 5000.0]
 coefficients = [
@@ -591,8 +591,8 @@ well_depth = 232.4
 diameter = 3.828
 rotational_relaxation = 1.0
 
-[species.HNCO]
-composition = { H = 1, N = 1, C = 1, O = 1 }
+[species."HNCO"]
+composition = { H = 1.0, N = 1.0, C = 1.0, O = 1.0 }
 molar_mass = 0.04302474
 temperature = [300.0, 1478.0, 5000.0]
 coefficients = [
@@ -604,8 +604,8 @@ well_depth = 232.4
 diameter = 3.828
 rotational_relaxation = 1.0
 
-[species.NCO]
-composition = { N = 1, C = 1, O = 1 }
+[species."NCO"]
+composition = { N = 1.0, C = 1.0, O = 1.0 }
 molar_mass = 0.0420168
 temperature = [200.0, 1000.0, 6000.0]
 coefficients = [
@@ -617,8 +617,8 @@ well_depth = 232.4
 diameter = 3.828
 rotational_relaxation = 1.0
 
-[species.N2]
-composition = { N = 2 }
+[species."N2"]
+composition = { N = 2.0 }
 molar_mass = 0.0280134
 temperature = [300.0, 1000.0, 5000.0]
 coefficients = [
@@ -631,8 +631,8 @@ diameter = 3.621
 polarizability = 1.76
 rotational_relaxation = 4.0
 
-[species.AR]
-composition = { Ar = 1 }
+[species."AR"]
+composition = { Ar = 1.0 }
 molar_mass = 0.039948
 temperature = [300.0, 1000.0, 5000.0]
 coefficients = [
@@ -643,8 +643,8 @@ geometry = "atom"
 well_depth = 136.5
 diameter = 3.33
 
-[species.C3H7]
-composition = { C = 3, H = 7 }
+[species."C3H7"]
+composition = { C = 3.0, H = 7.0 }
 molar_mass = 0.04308768
 temperature = [300.0, 1000.0, 5000.0]
 coefficients = [
@@ -656,8 +656,8 @@ well_depth = 266.8
 diameter = 4.982
 rotational_relaxation = 1.0
 
-[species.C3H8]
-composition = { C = 3, H = 8 }
+[species."C3H8"]
+composition = { C = 3.0, H = 8.0 }
 molar_mass = 0.04409562
 temperature = [300.0, 1000.0, 5000.0]
 coefficients = [
@@ -669,8 +669,8 @@ well_depth = 266.8
 diameter = 4.982
 rotational_relaxation = 1.0
 
-[species.CH2CHO]
-composition = { O = 1, H = 3, C = 2 }
+[species."CH2CHO"]
+composition = { O = 1.0, H = 3.0, C = 2.0 }
 molar_mass = 0.04304462
 temperature = [300.0, 1000.0, 5000.0]
 coefficients = [
@@ -682,8 +682,8 @@ well_depth = 436.0
 diameter = 3.97
 rotational_relaxation = 2.0
 
-[species.CH3CHO]
-composition = { C = 2, H = 4, O = 1 }
+[species."CH3CHO"]
+composition = { C = 2.0, H = 4.0, O = 1.0 }
 molar_mass = 0.04405256
 temperature = [200.0, 1000.0, 6000.0]
 coefficients = [
