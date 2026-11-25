@@ -761,6 +761,10 @@ pub struct Physics {
     /// bodies (L13 stage 1, D226); its force −s_P u_P is in the momentum
     /// rows.
     pub sink: Option<std::sync::Arc<Vec<f64>>>,
+    /// The solid fraction per cell for the output (the bodies, with a
+    /// topology search 1 − γ̃ of its design) and χ of the design alone
+    /// (for its force), as last set ([`Flow::set_immersed_fields`]).
+    pub immersed_fields: Option<std::sync::Arc<(Vec<f64>, Vec<f64>)>>,
     /// The variable density per cell and per face (stage 7c), as last
     /// refreshed (`None`: `rho` everywhere).
     pub rho_var: Option<std::sync::Arc<(Vec<f64>, Vec<f64>)>>,
@@ -782,6 +786,7 @@ impl Physics {
             source: None,
             buoyancy: None,
             sink: None,
+            immersed_fields: None,
             rho_var: None,
             zones: false,
         }
@@ -1743,6 +1748,12 @@ impl Flow {
         self.dev.upload(b, sink)?;
         self.phys.sink = Some(std::sync::Arc::new(sink.to_vec()));
         Ok(())
+    }
+
+    /// Sets the solid fraction of the output and χ of a topology design
+    /// (L13 stage 1, D226); both per local cell.
+    pub fn set_immersed_fields(&mut self, solid: Vec<f64>, design: Vec<f64>) {
+        self.phys.immersed_fields = Some(std::sync::Arc::new((solid, design)));
     }
 
     /// Keeps a device copy of the current u, p and ṁ as the last valid

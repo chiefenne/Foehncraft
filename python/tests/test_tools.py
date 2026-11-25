@@ -81,6 +81,14 @@ def test_every_tool_through_call(tmp_path):
             "case": ROOT / "examples/cases/bench/g1_ci_small.toml",
             "out": tmp_path / "g1",
         },
+        "structure.run": {
+            "case": ROOT / "examples/cases/structure/reed_beam.toml",
+            "out": tmp_path / "structure",
+        },
+        "structure.fitclamp": {
+            "case": ROOT / "examples/cases/structure/reed_beam_clamp_springs.toml",
+            "frequency": 150.0,
+        },
         # the 0D reactor and the equilibrium of stage SF2a
         "chemistry.reactor": {
             "case": ROOT / "examples/cases/chemistry/reactor_methane_air_jl4.toml",
@@ -115,6 +123,8 @@ def test_every_tool_through_call(tmp_path):
     assert results["case.estimate"]["cells"] == results["case.check"]["estimate"]["cells"]
     assert {d["name"] for d in results["post.datums"]["datums"]} == {"x06", "outlet"}
     assert results["post.penetration"]["injectors"][0]["name"] == "nozzle"
+    assert results["structure.run"]["modal"]["sturm"]["ok"]
+    assert abs(results["structure.fitclamp"]["frequency"] - 150.0) < 1e-3
     assert results["chemistry.reactor"]["failures"] == []
     assert 2690.0 < results["chemistry.equilibrium"]["state"]["temperature"] < 2705.0
 

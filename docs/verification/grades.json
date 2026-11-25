@@ -1541,10 +1541,27 @@
    "gaps": [
     "the wall is smeared over about one cell: first order in h, lift 27 % above the benchmark range at h = D/40, wall shear stress and heat flux not accurate (by design of the pre-stage)",
     "laminar and isothermal only: turbulence, energy, scalars, gravity, regions, rotating zones and sprays are refused (IMM102)",
-    "primitive bodies only (cylinder, sphere, box); STL bodies need the geometry kernel of stage 0",
+    "primitive bodies (cylinder, sphere, box) and `field` expressions only; STL bodies need the geometry kernel of stage 0",
     "the coupled solver breaks down from rest when the sink exceeds about 1e5 times the viscous diagonal (K below about 1e-5 h²); SIMPLEC takes any K",
-    "not yet: density-field topology search, iso-surface extraction, the sweep in K (η) and h of the plan, MMS of the penalised equation, Stokes sphere, the drag gradient check with dual numbers",
+    "the drag error depends on K/h²: with K = 0.01 h² the Stokes sphere array is 6.2, 5.5, 3.9, 2.6 % high on 16³ to 48³ (about first order); smaller K smears the body outward (up to +18 % at 1e-3 h² on 16³); in the Poiseuille channel the effective wall stays within half a cell (16 to 256 cells), its sign set by where the wall cuts its cell (sweeps run by tools/verification/immersed_sweeps.py, not in CI)",
+    "manufactured solution on 2D triangular prisms and the mixed 2D mesh: the velocity error stalls at about 2 % (6 % without the sink, so a gap of the flow discretisation on these meshes, not of the penalisation)",
     "one rank only: `foehn run --ranks N` refuses immersed bodies"
+   ],
+   "range": {}
+  },
+  {
+   "id": "immersed.topology",
+   "title": "Density-field topology search with the Brinkman penalisation, iso-surface by marching tetrahedra (L13 stage 1)",
+   "grade": "partial",
+   "why": [
+    "a model without reference data",
+    "gaps written"
+   ],
+   "gaps": [
+    "the gradient is exact for Stokes flow only; with convection it is the self-adjoint approximation (0.5 % at Re 20), exact gradients need the adjoint solver L17",
+    "objective is the dissipated power only, the design region a box, one rank, steady and laminar",
+    "the dual numbers of D59 are not used for the total derivative (no tangent or adjoint solve yet); the check is against central differences",
+    "marching tetrahedra rounds sharp edges and leaves slivers (smallest angles below 1°); dual contouring is more accurate on the benchmark but not guaranteed manifold, subgrid marching tetrahedra needs an exact field along each edge (tools/bench/isosurface.py)"
    ],
    "range": {}
   },
@@ -1575,6 +1592,39 @@
     "the scalar summary stops with an error on ranks for orthotropic solids, porous matrices, heat-flux periodic pairs, sprays and a variable density (all refused before the run by the rules above)",
     "Crank-Nicolson and PISO without outer iterations are not tested on ranks in this step (the solver on ranks is, W5)",
     "MPI processes are run in CI with the steady laminar case only; the threads tests cover the same code"
+   ],
+   "range": {}
+  },
+  {
+   "id": "structure.beams",
+   "title": "Linear structural solver: Euler–Bernoulli and Timoshenko beams, static and modal analyses (L53, MS5 part 1)",
+   "grade": "partial",
+   "why": [
+    "a model without reference data",
+    "gaps written"
+   ],
+   "gaps": [
+    "beams only: MITC4/MITC3+ shells, quadratic solids, generalised-α, mode superposition, Craig–Bampton, damping and contact come in MS5 parts 2 to 4",
+    "the Timoshenko element's consistent mass converges at second order in the frequency of thick beams (7e-6 on 120 elements at L/d = 10)",
+    "no comparison with measured reed frequencies yet (MS6: Gasche et al. via González et al. 2017, Lemke et al. 2016)",
+    "the ordering is reverse Cuthill–McKee: the fill is an envelope, fine for slender reeds, large for compact 3D parts (no minimum-degree ordering yet)",
+    "the LDLᵀ factorisation does not pivot: a shift inside the spectrum can meet a zero pivot (STR002); shifts below the first mode are safe",
+    "linear (small rotations): large deflections need the corotational formulation of MS9"
+   ],
+   "range": {}
+  },
+  {
+   "id": "structure.clamp",
+   "title": "Clamp springs per length of the clamp line and their fit to a measured frequency (D290)",
+   "grade": "partial",
+   "why": [
+    "a model without reference data",
+    "gaps written"
+   ],
+   "gaps": [
+    "springs on a single node of a beam model: shells with the springs spread along the clamp edge come with MS5 part 2",
+    "clamp parts as solids in frictionless contact (the second way of D290) are not built",
+    "no measured reed with a known clamp to calibrate against yet (MS6)"
    ],
    "range": {}
   }

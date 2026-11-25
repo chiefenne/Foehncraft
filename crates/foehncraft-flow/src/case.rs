@@ -1985,6 +1985,9 @@ pub struct Solve {
     /// the flame speed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub chemistry: Option<crate::chemistry::flow::Summary>,
+    /// The topology search (L13 stage 1, D226).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub topology: Option<crate::topology::TopologyReport>,
 }
 
 /// The value of a wall probe at the end of a solve.
@@ -3071,7 +3074,8 @@ pub fn run_steered(
         crate::density::attach(&mut fl, &case)?;
         crate::buoyancy::attach(&mut fl, &case)?;
         crate::porous::attach(&mut fl, &case, smesh)?;
-        for d in crate::immersed::attach(&mut fl, &case, smesh, sgeo)? {
+        let (imm_notes, mut topo) = crate::immersed::attach(&mut fl, &case, smesh, sgeo)?;
+        for d in imm_notes {
             if d.severity == diag::Severity::Warning {
                 lg.warn(&format!("{}: {}", d.code, d.message));
                 rep.warnings.push(d);
@@ -3385,10 +3389,23 @@ pub fn run_steered(
             let it = fl.iteration();
             let gas_done = res.max() < case.solver.tolerance;
             // the spray's source residual is part of the test (D260 (4))
-            let done = gas_done
+            let mut done = gas_done
                 && steady_spray
                     .as_mut()
                     .is_none_or(|s| s.settled(it, gas_done));
+            // the topology search (L13 stage 1, D226): a design update
+            // during the iterations; the run converges after the last one
+            if let Some(t) = topo.as_mut()
+                && !t.finished
+            {
+                if t.due(it, done) {
+                    let st = fl.state()?;
+                    let line = t.update(&st, smesh, it);
+                    crate::immersed::update_design(&mut fl, t, sgeo)?;
+                    lg.note(&line);
+                }
+                done = false;
+            }
             diag_hist.push(it, &residual_values(&res));
             if diag_hist.due(it)
                 && !done
@@ -3796,7 +3813,34 @@ pub fn run_steered(
         if let Some([cd, cl]) = coefficients {
             verification.push_kv("Force coefficients", format!("C_D {cd:.5}, C_L {cl:.5}"));
         }
-        let immersed = crate::immersed::forces(&case, &mesh, &geo, &sol.u)?;
+        let immersed = crate::immersed::forces(&case, &mesh, &geo, &sol.u, &sol.phys)?;
+        let topology = match &topo {
+            Some(t) => {
+                let surface = foehncraft_mesh::isosurface::extract(&mesh, &geo, &t.solid(), 0.5);
+                if lead {
+                    std::fs::write(out.join("topology.csv"), t.csv())?;
+                    std::fs::write(out.join("topology.stl"), surface.stl("topology"))?;
+                }
+                let phi = crate::topology::power(&sol.state, &mesh, case.rho());
+                let r = t.report(phi, &surface);
+                verification.push_kv(
+                    "Topology search",
+                    format!(
+                        "{} designs{}, Φ {:.5e} W (first {:.5e} W), fluid {:.4}, grey {:.3}; \
+                         topology.stl {} triangles",
+                        r.designs,
+                        if r.converged { ", converged" } else { "" },
+                        r.objective,
+                        r.first_objective,
+                        r.fluid_fraction,
+                        r.grey,
+                        r.triangles
+                    ),
+                );
+                Some(r)
+            }
+            None => None,
+        };
         for b in &immersed {
             verification.push_kv(
                 &format!("Immersed body {}", b.name),
@@ -4007,6 +4051,7 @@ pub fn run_steered(
             density,
             immersed,
             chemistry: None,
+            topology,
         });
         if stopped {
             rep.stopped = true;

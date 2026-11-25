@@ -1,0 +1,71 @@
+# Stokes flow through a simple cubic array of spheres, the sphere a
+# penalised body (L13 stage 1, D226): the drag check of the plan.
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/immersed_stokes_sphere.toml
+#
+# A unit cube, periodic in all three directions, with a sphere of radius
+# a = 0.2 m at its middle (solid fraction c = 4πa³/3 = 0.0335), μ = 1 Pa s,
+# Stokes flow, driven by the mean pressure gradient G = 1 Pa/m along x
+# through the periodic pair. At the steady state the body carries the whole
+# driving force, F = G L³ = 1 N; the result is the mean (superficial) velocity
+# U = Q/(ρ L²) of the periodic mass flow Q. The drag coefficient
+# K = F/(6π μ a U) of the array is 2.152 from the series of Hasimoto (1959)
+# extended by Sangani & Acrivos (1982),
+# K = 1/(1 − 1.7601 c^⅓ + c − 1.5593 c² + 3.9799 c^{8/3} − 3.0734 c^{10/3}),
+# which agrees within 1 % with the lattice-Boltzmann value 2.16 to 2.17 at
+# c = 0.034 of Bogner, Mohanty & Rüde (2015, table 1).
+#
+# The mesh has 32³ hexahedra (6.4 cells per radius), K = 0.01 h² (the
+# permeability, not the drag coefficient): the drag coefficient comes out
+# 3.9 % high; gallery 291 has the sweep in h and K/h². Coupled solver,
+# about 300 iterations.
+
+case_format = "0.7"
+
+[mesh.generate]
+type = "hex"
+upper = [1.0, 1.0, 1.0]
+cells = [32, 32, 32]
+
+[fluid]
+density = 1.0
+viscosity = 1.0
+pressure_values = "gauge"
+
+[flow]
+convection = false
+
+[immersed]
+permeability = 9.765625e-6
+
+[[immersed.body]]
+name = "sphere"
+shape = "sphere"
+centre = [0.5, 0.5, 0.5]
+radius = 0.2
+
+[boundary.xmin]
+type = "periodic"
+partner = "xmax"
+pressure_gradient = 1.0
+[boundary.xmax]
+type = "periodic"
+[boundary.ymin]
+type = "periodic"
+partner = "ymax"
+[boundary.ymax]
+type = "periodic"
+[boundary.zmin]
+type = "periodic"
+partner = "zmax"
+[boundary.zmax]
+type = "periodic"
+
+[solver]
+algorithm = "coupled"
+tolerance = 1e-9
+max_iterations = 3000
+
+[output]
+derived = ["solid-fraction"]
+wall_csv = false

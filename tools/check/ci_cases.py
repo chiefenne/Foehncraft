@@ -44,7 +44,7 @@ FLOW = {
         "tmr_plate_zeta_f0", "diffuser_sst_sharp", "ubend_sst_sharp", "ranks_channel_poly",
         "ranks_heated_channel_sst", "ranks_restart_channel", "ranks_run_channel",
         "ranks_run_transient_sst",
-        "immersed_cylinder_re20",
+        "immersed_cylinder_re20", "immersed_topology_bend", "immersed_mms",
     ],
     "linux-3": [
         "species_binary_diffusion", "species_coaxial_jet", "flame_methane_air_jl4",
@@ -80,6 +80,7 @@ FLOW = {
         "cht_pulsating_channel_skin", "cht_heated_wall_frozen", "cht_pulsating_channel_warmup",
         "natural_convection_cavity_ra1e5", "natural_convection_plate",
         "flame_methane_air_gri30",
+        "immersed_stokes_sphere",
     ],
     "quick": [
         "cavity_re100_budget", "couette_hex", "couette_mixed", "couette_poly", "couette_tet",
