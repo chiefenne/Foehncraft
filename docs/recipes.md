@@ -20,7 +20,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | [Thermal radiation](recipes/radiation.md) | the radiation of a prescribed temperature field by Monte Carlo bundles: walls, noise, threads, ranks and the GPU, the checks against exact solutions | 259, 281 |
 | [Turbulence models](recipes/turbulence.md) | RANS turbulence models: the model, the wall treatment by the mesh, inlet turbulence, roughness, the near-wall checks, curvature correction and QCR on any mesh, the internal flows of D45 (pipe, diffuser, U-bend) | 68, 71, 73, 74, 88, 89, 90, 113, 115, 141, 140, 194, 193, 199, 197, 204 |
 | [Boundary conditions](recipes/boundary-conditions.md) | slip walls, wedges for axisymmetric flow, inlet profiles from tables, backflow at pressure outlets, convective outlets, periodic modules, absolute or gauge pressure values (D239) | 29, 67, 220 |
-| [Lagrangian sprays](recipes/sprays.md) | spray droplets into a flow with an injector file, wall behaviour, the mass book | 242, 265, 280, 283, 285, 292 |
+| [Lagrangian sprays](recipes/sprays.md) | spray droplets into a flow with an injector file, wall behaviour, the mass book | 242, 265, 280, 283, 285, 292, 306 |
 | [Porous regions](recipes/porous.md) | porous blocks and honeycombs in a flow: resistances, axes, the honeycomb shorthand | 273, 275 |
 | [Structures](recipes/structure.md) | a structural case of beams, plates, solids and clamp springs: static and modal analyses, the clamp spring fitted to a measured frequency, runs in time with damping and temperatures, contact with a seat and a stop, the results | 295, 297, 299, 300, 302 |
 | [Immersed bodies](recipes/immersed.md) | put a body in the flow without meshing it: `[immersed]`, the permeability, forces | 270, 291 |
@@ -180,6 +180,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="structure-contact"></a>302 | [Let a reed touch its seat and its stop](recipes/structure.md#structure-contact) | [Structures](recipes/structure.md) |
 | <a id="run-ranks-sliding"></a>304 | [Run a sliding rotor in conformal stepping on ranks](recipes/meshes.md#run-ranks-sliding) | [Meshes](recipes/meshes.md) |
 | <a id="run-ranks-imprint"></a>305 | [Run a sliding rotor by imprinting on ranks](recipes/meshes.md#run-ranks-imprint) | [Meshes](recipes/meshes.md) |
+| <a id="spray-evaporation"></a>306 | [Let the droplets evaporate](recipes/sprays.md#spray-evaporation) | [Lagrangian sprays](recipes/sprays.md) |
 
 ## Adding a feature
 
