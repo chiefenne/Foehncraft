@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**140 features: 50 verified, 87 partial, 3 unverified.**
+**141 features: 50 verified, 88 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -155,6 +155,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Flow models | [Gas and matrix temperatures in porous regions, monolithic (D271, D272, PM2)](#porous-two-temperatures) | partial |
 | Flow models | [Species transport of an ideal-gas mixture with mixture properties (L2, steam furnace SF1)](#species-transport) | partial |
 | Flow models | [Gas-phase chemistry: mechanisms, stiff 0D reactor and chemical equilibrium (L2, steam furnace SF2a)](#chemistry-reactor) | partial |
+| Flow models | [Gas-phase chemistry in the cells of a transient laminar flow with heat release, the 1D premixed flame (L2, steam furnace SF2b)](#chemistry-flow) | partial |
 | Immersed bodies | [Immersed bodies by Brinkman penalisation, primitive shapes (L13 stage 1)](#immersed-penalisation) | partial |
 | Immersed bodies | [Density-field topology search with the Brinkman penalisation, iso-surface by marching tetrahedra (L13 stage 1)](#immersed-topology) | partial |
 | Structures | [Linear structural solver: Euler–Bernoulli and Timoshenko beams, static and modal analyses (L53, MS5 part 1)](#structure-beams) | partial |
@@ -2163,11 +2164,32 @@ Gaps:
 
 Gaps:
 
-- 0D only: no chemistry in the flow cells and no heat release in the energy equation yet (SF2b)
-- no ignition delay or flame speed against measurements yet (the 1D laminar flame is SF2b); the reactor cases check the equilibrium and an ignition delay band of the code itself
-- the kernel is single-source no_std but not yet compiled to PTX or run on a GPU; no ranks (a 0D reactor has no mesh) until SF2b
+- no ignition delay against shock-tube measurements; the reactor cases check the equilibrium and an ignition delay band of the code itself (chemistry in the flow cells and the flame speed: chemistry.flow)
 - the Westbrook-Dryer 2-step mechanism overshoots its own equilibrium by 277 K from 1400 K: its CO2 dissociation is an explicit reaction, not the reverse of the CO oxidation (a flaw of the published mechanism, kept as published)
 - PLOG, Chebyshev and SRI rates, surface and electrochemical reactions are refused
+
+<a id="chemistry-flow"></a>
+
+### Gas-phase chemistry in the cells of a transient laminar flow with heat release, the 1D premixed flame (L2, steam furnace SF2b)
+
+**partial** (gaps written) · id `chemistry.flow` · switch `[chemistry] mechanism, min_temperature, [chemistry.integrator], [chemistry.flame_speed]` · decisions D120, D93, D31
+
+- reference-data: [`flame_methane_air_gri30`](../../examples/cases/flow/flame_methane_air_gri30.toml): stoichiometric CH4-air at 300 K, 1 atm, GRI-Mech 3.0 with species Lewis numbers, 50 um cells: burning velocity from the fuel consumption 0.348 m/s (mean over 3 to 6 ms; elements conserved to 3e-13) against the measured 0.360 +- 0.017 m/s (experimental target compiled for FFCM-1, Smith, Tao and Wang 2016); band of the case [0.30, 0.42] m/s (passes in CI (set long), not yet in the manual)
+- consistency: [`flame_methane_air_jl4`](../../examples/cases/flow/flame_methane_air_jl4.toml): the 4-step mechanism of Jones & Lindstedt in the same tube with Lewis number 1: 0.430 m/s (the global mechanism burns faster than the measured 0.36 m/s), peak temperature 2250 K, its own adiabatic flame temperature; band [0.38, 0.48] m/s (passes in CI (set linux-3), not yet in the manual)
+- exact: [`the_entry_gives_the_bits_of_the_cell_body`](../../crates/foehncraft-kernels/src/chemistry.rs): the argument block and rows of the PTX entry chemistry_react give bitwise the states and step counts of the per-cell body that the CPU threads run; cells below min_temperature are left untouched
+- contract (diagnostics): [`flow_case_reader_survives_the_corpus`](../../crates/foehncraft-flow/tests/broken_inputs.rs): flow cases with a broken [chemistry] table end in a coded error (CHM001, CHM003), never a panic
+- consistency: recorded run (Tesla T4 (sm_75), tools/notebooks/sf2_chemistry_colab.ipynb, 2026-11-25): example chemistry_gpu: 4096 methane-air cells (900 to 2400 K, fresh, half and fully burnt) over one flow step, end states and step counts bitwise equal on CPU and GPU for GRI-Mech 3.0 and Jones-Lindstedt; GPU 1.7x (GRI) and 8.5x (Jones-Lindstedt) faster per cell than the 2 Colab CPU cores ([results](../gallery/species.md#reacting-flow-cells))
+
+Gaps:
+
+- first-order Lie splitting at the first outer iteration of each step: on 100 um cells halving the time step from 10 to 5 us raises the GRI-Mech flame speed at 4 ms from 0.264 to 0.285 m/s; no Strang splitting yet
+- species diffusion is Fickian with constant Lewis numbers per species (no mixture-averaged or multicomponent diffusion, no thermal diffusion); on 100 um cells Lewis 1 for every species gives 0.29 m/s for the GRI-Mech flame, the species Lewis numbers 0.33 m/s
+- the first steps after the start fields are out of mass balance by up to 6e-4 (BAL001 warning) while the flow adjusts to the expansion; 1e-7 later
+- the energy balance books the convected enthalpy with the fluid's c_p, not the mixture's: its imbalance shows about 26 % in a flame although the temperature equation uses the mixture c_p
+- transient only (CHM003 for steady runs), laminar only (turbulence-chemistry interaction is SF3), no sprays with chemistry
+- not on ranks: the variable density it needs (stage 7c) is not on ranks yet
+- GPU checked on one device only, the Tesla T4 (sm_75); one thread per cell with a dense Jacobian makes GRI-Mech 3.0 only 1.7x faster than 2 CPU cores (register spill; a block per cell or a sparse Jacobian would be needed); the flame cases themselves have not run with backend = "cuda"
+- the burning velocity oscillates by a few per cent as the flame crosses cells (period dx/(S_L - u_inlet)); the case averages over the second half of the run
 
 ## Immersed bodies
 

@@ -25,7 +25,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | [Structures](recipes/structure.md) | a structural case of beams, plates, solids and clamp springs: static and modal analyses, the clamp spring fitted to a measured frequency, runs in time with damping and temperatures, contact with a seat and a stop, the results | 295, 297, 299, 300, 302 |
 | [Immersed bodies](recipes/immersed.md) | put a body in the flow without meshing it: `[immersed]`, the permeability, forces | 270, 291 |
 | [Moving meshes and solids](recipes/moving-solids.md) | move the mesh with a prescribed displacement: `[mesh_motion]`, moving walls, a piston on a closed volume | 296 |
-| [Species and reacting flows](recipes/species.md) | species of an ideal-gas mixture: names, compositions in mole or mass fractions, diffusion by Schmidt or Lewis numbers, mixture properties, the element ledger | 278, 289 |
+| [Species and reacting flows](recipes/species.md) | species of an ideal-gas mixture: names, compositions in mole or mass fractions, diffusion by Schmidt or Lewis numbers, mixture properties, the element ledger | 278, 289, 298 |
 | [Expressions and materials](recipes/properties.md) | values as expressions of x, y, z and t, constants and tables, wall mass flux, the material database, regions | 31, 32 |
 | [Python](recipes/python.md) | the `foehncraft` package: cases, expressions, runs with callbacks, results, materials, studies | 33 |
 | [Verification](recipes/verification.md) | the discretisation uncertainty of a sweep (GCI), the generated verification manual | 34, 35, 165, 170, 271 |
@@ -174,6 +174,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="structure-case"></a>295 | [Run a structural case of beams and clamp springs, and fit the clamp to a measured frequency](recipes/structure.md#structure-case) | [Structures](recipes/structure.md) |
 | <a id="deforming-mesh"></a>296 | [Move the mesh with a prescribed displacement (a piston)](recipes/moving-solids.md#deforming-mesh) | [Moving meshes and solids](recipes/moving-solids.md) |
 | <a id="structure-plate"></a>297 | [Model a flat reed as a shell clamped along an edge](recipes/structure.md#structure-plate) | [Structures](recipes/structure.md) |
+| <a id="reacting-flow-cells"></a>298 | [Let the species react in the cells of a laminar flow](recipes/species.md#reacting-flow-cells) | [Species and reacting flows](recipes/species.md) |
 | <a id="structure-transient"></a>299 | [Run a structure in time, with damping, load histories and temperatures](recipes/structure.md#structure-transient) | [Structures](recipes/structure.md) |
 | <a id="structure-solid"></a>300 | [Model a thick part as a solid, from Gmsh or as a block](recipes/structure.md#structure-solid) | [Structures](recipes/structure.md) |
 | <a id="run-ranks-mrf"></a>301 | [Run a case with rotating zones (MRF) or a closed domain on ranks](recipes/meshes.md#run-ranks-mrf) | [Meshes](recipes/meshes.md) |
