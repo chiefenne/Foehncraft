@@ -243,10 +243,8 @@ pub struct Transient {
 /// level n and two for the level n−1 (D182).
 #[derive(Debug, Clone)]
 struct Content {
-    /// Entry i of the shifted array is entry `perm1[i]` of the old one
-    /// (one step), `perm2` for two steps.
-    perm1: Vec<usize>,
-    perm2: Vec<usize>,
+    /// How the cells move by one and by two steps.
+    shift: crate::sliding::Shift,
     /// The shifted velocities of the levels n and n−1.
     c1: Buf3,
     c2: Buf3,
@@ -369,15 +367,14 @@ impl Transient {
     /// as `perm` says (entry i of the moved array is entry `perm[i]` of
     /// the Eulerian one), once for the level n and twice for the level
     /// n−1: the sliding mesh of D182 ([`crate::sliding`]).
-    pub fn set_sliding(&mut self, fl: &mut Flow, perm: Vec<usize>) -> Result<()> {
+    pub fn set_sliding(&mut self, fl: &mut Flow, shift: crate::sliding::Shift) -> Result<()> {
         ensure!(
-            perm.len() == fl.disc.n_cells,
+            shift.cells() == fl.disc.n_cells,
             "the shift of the cells has {} entries for {} cells",
-            perm.len(),
+            shift.cells(),
             fl.disc.n_cells
         );
         let nc = fl.disc.n_cells;
-        let perm2: Vec<usize> = perm.iter().map(|&i| perm[i]).collect();
         let mut c3 = || -> Result<Buf3> {
             Ok(Buf3 {
                 x: fl.dev.alloc(nc)?,
@@ -386,12 +383,7 @@ impl Transient {
             })
         };
         let (c1, c2) = (c3()?, c3()?);
-        self.content = Some(Content {
-            perm1: perm,
-            perm2,
-            c1,
-            c2,
-        });
+        self.content = Some(Content { shift, c1, c2 });
         Ok(())
     }
 
@@ -812,11 +804,9 @@ impl Transient {
         // (the sliding mesh)
         let (u_old, u_old2) = match &self.content {
             Some(c) => {
-                for (src, dst, perm) in [(l.u_old, c.c1, &c.perm1), (l.u_old2, c.c2, &c.perm2)] {
+                for (src, dst, steps) in [(l.u_old, c.c1, 1), (l.u_old2, c.c2, 2)] {
                     for (&s, &d) in src.all().iter().zip(&dst.all()) {
-                        let v = fl.dev.download(s)?;
-                        let m: Vec<f64> = perm.iter().map(|&i| v[i]).collect();
-                        fl.dev.upload(d, &m)?;
+                        c.shift.moved(fl.dev.as_mut(), s, d, steps)?;
                     }
                 }
                 (c.c1, c.c2)
@@ -825,14 +815,13 @@ impl Transient {
         };
         // (level n−1 of the scalars is shifted in the same way)
         if let (Some(c), Some(sc)) = (&self.content, fl.scalars.as_mut()) {
-            sc.shift_old(fl.dev.as_mut(), &c.perm1, &c.perm2)?;
+            sc.shift_old(fl.dev.as_mut(), &c.shift)?;
         }
         // (and those of the turbulence variables)
         if let (Some(c), Some(tu)) = (&self.content, fl.turbulence.as_mut()) {
             tu.shift_old(
                 fl.dev.as_mut(),
-                &c.perm1,
-                &c.perm2,
+                &c.shift,
                 self.clock.levels >= 1,
                 bdf2.then(|| dt / self.clock.dt_prev),
             )?;

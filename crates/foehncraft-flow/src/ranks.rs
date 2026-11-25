@@ -683,9 +683,20 @@ impl RanksRun {
 /// k-ε model, with passive scalars and the energy equation of one fluid,
 /// in a rotating frame of the whole domain or with the rotating zones of
 /// `[[mrf]]`; from the start fields or a restart file (W6); without
-/// gravity, a sliding mesh, a schedule, levels, regions, the variable density or the model
+/// gravity, a sliding mesh (it runs on ranks in a run, not in this check), a schedule, levels, regions, the variable density or the model
 /// options that are not on ranks yet.
 pub fn supported(case: &FlowCase) -> Result<()> {
+    anyhow::ensure!(
+        case.sliding.is_empty(),
+        "[run] ranks does not solve this case yet: it has a sliding mesh ([[sliding]]); \
+         run it on ranks with [run] rank_count (foehn flow --ranks N)"
+    );
+    supported_solver(case)
+}
+
+/// What the flow solver on ranks refuses (see [`supported`]); a sliding
+/// mesh runs in a run on ranks ([`supported_run`]).
+fn supported_solver(case: &FlowCase) -> Result<()> {
     use crate::turbulence::{QcrMode, TurbulenceModel as Model};
     let n = &case.run.ranks;
     anyhow::ensure!(
@@ -707,7 +718,6 @@ pub fn supported(case: &FlowCase) -> Result<()> {
         ),
         (case.gravity.is_some(), "gravity"),
         (!case.spray.is_empty(), "sprays"),
-        (!case.sliding.is_empty(), "a sliding mesh ([[sliding]])"),
         (!case.schedule.is_empty(), "a [[schedule]]"),
         (
             case.mesh_motion.is_some(),
@@ -1678,6 +1688,21 @@ impl OnRanks {
         self.layout.scatter(r)
     }
 
+    /// The shift `perm` of the cells of the whole mesh by a sliding rotor
+    /// (D182) on this rank.
+    pub fn shift(&self, perm: Vec<usize>) -> crate::sliding::Shift {
+        let n = self.local.mesh.n_cells;
+        crate::sliding::Shift::on_ranks(
+            perm,
+            self.comm.clone(),
+            self.layout.all_cells.clone(),
+            self.local.cell_position[..n]
+                .iter()
+                .map(|&g| g as usize)
+                .collect(),
+        )
+    }
+
     /// `ranks.vtkhdf`: the whole mesh with the rank of every cell (cell
     /// field `rank`), written by rank 0 next to the output of a run on
     /// ranks. Nothing without HDF5.
@@ -1717,7 +1742,7 @@ pub fn supported_run(case: &FlowCase) -> Result<()> {
         (1..=256).contains(&n),
         "[run] rank_count must lie in 1..=256"
     );
-    supported(case).map_err(|e| {
+    supported_solver(case).map_err(|e| {
         anyhow::anyhow!(
             "{}",
             e.to_string().replace(
@@ -1728,6 +1753,12 @@ pub fn supported_run(case: &FlowCase) -> Result<()> {
     })?;
     let missing: Vec<&str> = [
         (case.species.is_some(), "species transport"),
+        (
+            case.sliding
+                .iter()
+                .any(crate::sliding::SlidingSection::imprinted),
+            "a sliding mesh by imprinting (`rotor_interface`; conformal stepping runs on ranks)",
+        ),
         (
             case.energy.as_ref().is_some_and(|e| {
                 e.acceleration.is_some() || e.cycle.is_some() || e.frozen_flow.is_some()

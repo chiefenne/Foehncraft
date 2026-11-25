@@ -87,8 +87,10 @@
 //! and the wall distance of every angle comes from the walls of the two
 //! parts kept apart ([`Imprinting::wall_distance`]: only cells nearer to
 //! the edge of their part than to its walls search the other part).
-//! - On the CPU, on one process (the shifted old levels are made through the
-//!   host).
+//! - On the CPU (the shifted old levels are made through the host); on
+//!   ranks (MPI) the plan is made on the whole mesh and the moved values
+//!   of the own cells are taken from the cells of all ranks ([`Shift`]),
+//!   in conformal stepping only.
 
 use crate::case::FlowCase;
 use crate::diag::{self, Diagnostic};
@@ -362,6 +364,110 @@ pub struct Plan {
     /// cell that is now at the place of cell i was at the place of cell
     /// `cell[i]` one step ago (identity outside the rotor).
     pub cell: Vec<usize>,
+}
+
+/// How the data of the rotor cells move by one and by two time steps
+/// (D182): entry i of an array moved by one step is entry `perm1[i]` of the
+/// array, `perm2` for two steps. On ranks (MPI) the permutations are those
+/// of the whole mesh: a rotor cell may land on a cell of another rank, so
+/// the own cells of every rank are gathered into the order of the whole
+/// mesh and each rank takes the moved values of its own cells (copies, so
+/// bitwise those of one rank).
+#[derive(Clone)]
+pub struct Shift {
+    perm1: Vec<usize>,
+    perm2: Vec<usize>,
+    ranks: Option<ShiftRanks>,
+}
+
+#[derive(Clone)]
+struct ShiftRanks {
+    comm: foehncraft_mesh::decompose::SharedComm,
+    /// The own cells of every rank as positions in the whole mesh.
+    all_cells: Vec<Vec<usize>>,
+    /// This rank's own cells as positions in the whole mesh.
+    own: Vec<usize>,
+}
+
+impl std::fmt::Debug for Shift {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Shift")
+            .field("cells", &self.perm1.len())
+            .field("ranks", &self.ranks.as_ref().map(|r| r.comm.size()))
+            .finish()
+    }
+}
+
+impl Shift {
+    /// The shift of the cells of one rank: `perm` for one step, applied
+    /// twice for two.
+    pub fn new(perm: Vec<usize>) -> Self {
+        let perm2 = perm.iter().map(|&i| perm[i]).collect();
+        Self {
+            perm1: perm,
+            perm2,
+            ranks: None,
+        }
+    }
+
+    /// The shift `perm` of the whole mesh on the rank of `comm`, whose own
+    /// cells are at the positions `own` of the whole mesh; `all_cells`: the
+    /// own cells of every rank (in rank order).
+    pub fn on_ranks(
+        perm: Vec<usize>,
+        comm: foehncraft_mesh::decompose::SharedComm,
+        all_cells: Vec<Vec<usize>>,
+        own: Vec<usize>,
+    ) -> Self {
+        Self {
+            ranks: Some(ShiftRanks {
+                comm,
+                all_cells,
+                own,
+            }),
+            ..Self::new(perm)
+        }
+    }
+
+    /// The number of cells the shift is made for: those of the solver on
+    /// one rank, the own cells on ranks.
+    pub fn cells(&self) -> usize {
+        self.ranks
+            .as_ref()
+            .map_or(self.perm1.len(), |r| r.own.len())
+    }
+
+    /// The own-cell values `v` moved by `steps` (1 or 2) steps. Collective
+    /// on ranks.
+    pub fn apply(&self, v: &[f64], steps: usize) -> Vec<f64> {
+        let perm = if steps == 2 { &self.perm2 } else { &self.perm1 };
+        match &self.ranks {
+            None => perm.iter().map(|&i| v[i]).collect(),
+            Some(r) => {
+                let all = r.comm.all_gather_vec_f64(v);
+                let mut whole = vec![0.0; perm.len()];
+                for (cells, vals) in r.all_cells.iter().zip(&all) {
+                    for (&p, &x) in cells.iter().zip(vals) {
+                        whole[p] = x;
+                    }
+                }
+                r.own.iter().map(|&p| whole[perm[p]]).collect()
+            }
+        }
+    }
+
+    /// `dst` = the cell buffer `src` moved by `steps` steps (`dst` may be
+    /// `src`; on ranks the halo of `dst` comes from its owners).
+    pub(crate) fn moved(
+        &self,
+        dev: &mut dyn crate::device::FlowDevice,
+        src: crate::device::Buf,
+        dst: crate::device::Buf,
+        steps: usize,
+    ) -> Result<()> {
+        let v = dev.download(src)?;
+        dev.upload(dst, &self.apply(&v, steps))
+    }
 }
 
 /// Points that can be found again within a tolerance.
@@ -1032,9 +1138,19 @@ pub fn carry(
 
 impl Sliding {
     /// Tells the transient run how the old levels of the time terms move
-    /// (call once, before the first step).
-    pub fn install(&self, fl: &mut Flow, tr: &mut Transient) -> Result<()> {
-        tr.set_sliding(fl, self.plan.cell.clone())
+    /// (call once, before the first step); on ranks (MPI) `on` is this
+    /// rank's part and the plan is that of the whole mesh.
+    pub(crate) fn install(
+        &self,
+        fl: &mut Flow,
+        tr: &mut Transient,
+        on: Option<&crate::ranks::OnRanks>,
+    ) -> Result<()> {
+        let shift = match on {
+            Some(o) => o.shift(self.plan.cell.clone()),
+            None => Shift::new(self.plan.cell.clone()),
+        };
+        tr.set_sliding(fl, shift)
     }
 }
 
