@@ -248,6 +248,61 @@ pub struct SolidKeys {
     pub material: String,
 }
 
+/// `[[contacts]]`: a rigid plane (a seat, a stop) that the nodes of a part
+/// may touch but not cross (MS5 part 4).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ContactKeys {
+    /// Name (for the results).
+    pub name: String,
+    /// The part whose nodes may touch it (a beam line, a plate or a
+    /// solid).
+    pub part: String,
+    /// A solid's named surface: only its nodes (default: every node of the
+    /// part).
+    #[serde(default)]
+    pub surface: Option<String>,
+    /// A point of the plane.
+    pub point: [f64; 3],
+    /// The plane's normal, pointing to the side the nodes stay on.
+    pub normal: [f64; 3],
+    /// Distance the nodes keep from the plane (m): half the thickness of a
+    /// plate or beam, so that its face touches (default 0).
+    #[serde(default)]
+    pub offset: f64,
+}
+
+/// `[contact]`: settings of the contact solution.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ContactSettings {
+    /// Penalty stiffness over the largest stiffness of a contact node
+    /// along its plane's normal (default 1000).
+    #[serde(default = "default_penalty")]
+    pub penalty: f64,
+    /// Largest penetration of a static solution, relative to the model
+    /// size (default 10⁻⁹).
+    #[serde(default = "default_contact_tol")]
+    pub tolerance: f64,
+}
+
+fn default_penalty() -> f64 {
+    1000.0
+}
+
+fn default_contact_tol() -> f64 {
+    1e-9
+}
+
+impl Default for ContactSettings {
+    fn default() -> Self {
+        Self {
+            penalty: default_penalty(),
+            tolerance: default_contact_tol(),
+        }
+    }
+}
+
 /// `[[pressures]]`: a uniform load per area on a plate, or on a named
 /// surface of a solid.
 #[derive(Debug, Clone, Deserialize)]
@@ -636,6 +691,12 @@ pub struct Case {
     /// `[damping]`.
     #[serde(default)]
     pub damping: DampingKeys,
+    /// `[[contacts]]`.
+    #[serde(default)]
+    pub contacts: Vec<ContactKeys>,
+    /// `[contact]`.
+    #[serde(default)]
+    pub contact: ContactSettings,
     /// `[points]`: named points whose results are reported.
     #[serde(default)]
     pub points: BTreeMap<String, [f64; 3]>,
@@ -730,6 +791,8 @@ pub struct Built {
     pub plates: BTreeMap<String, std::ops::Range<usize>>,
     /// The solid parts, by name.
     pub solids: BTreeMap<String, SolidPart>,
+    /// The contact planes with their nodes.
+    pub contacts: Vec<crate::contact::Plane>,
     /// The clamps.
     pub clamps: Vec<ClampInfo>,
     /// Named points and their nodes.
@@ -1427,6 +1490,48 @@ pub fn build(case: &Case) -> Result<Built, Error> {
             )));
         }
     }
+    let mut contacts = Vec::new();
+    for ck in &case.contacts {
+        let what = format!("[[contacts]] `{}`", ck.name);
+        if contacts.iter().any(|p: &crate::contact::Plane| p.name == ck.name) {
+            return Err(bad(format!("{what}: two contacts have this name")));
+        }
+        let len = crate::beam::norm(ck.normal);
+        if !(len > 0.0 && len.is_finite()) || ck.point.iter().any(|v| !v.is_finite()) {
+            return Err(bad(format!("{what}: `normal` must be a finite non-zero vector and `point` finite")));
+        }
+        if !(ck.offset.is_finite() && ck.offset >= 0.0) {
+            return Err(bad(format!("{what}: `offset` must be ≥ 0")));
+        }
+        let mut nodes: Vec<usize> = if let Some(sf) = &ck.surface {
+            surface(&ck.part, sf, &what)?.iter().flatten().copied().collect()
+        } else if let Some(r) = lines.get(&ck.part) {
+            r.clone().flat_map(|e| model.beams[e].nodes).collect()
+        } else if let Some(r) = plates.get(&ck.part) {
+            r.clone()
+                .flat_map(|e| model.shells[e].used().to_vec())
+                .collect()
+        } else if let Some(sp) = solids.get(&ck.part) {
+            sp.elements
+                .clone()
+                .flat_map(|e| model.solids[e].used().to_vec())
+                .collect()
+        } else {
+            return Err(bad(format!(
+                "{what}: no beam line, plate or solid `{}`",
+                ck.part
+            )));
+        };
+        nodes.sort_unstable();
+        nodes.dedup();
+        contacts.push(crate::contact::Plane {
+            name: ck.name.clone(),
+            point: ck.point,
+            normal: crate::beam::scale(ck.normal, 1.0 / len),
+            offset: ck.offset,
+            nodes,
+        });
+    }
     let mut points = BTreeMap::new();
     for (name, x) in &case.points {
         points.insert(name.clone(), find(&model, *x, &format!("[points] {name}"))?);
@@ -1436,6 +1541,7 @@ pub fn build(case: &Case) -> Result<Built, Error> {
         lines,
         plates,
         solids,
+        contacts,
         clamps,
         points,
     })
@@ -1452,6 +1558,19 @@ pub struct Outcome {
     pub modal: Option<Modal>,
     /// The transient result.
     pub transient: Option<Transient>,
+    /// The contact state of the static result.
+    pub contact: Option<StaticContact>,
+}
+
+/// The contact of a static solution.
+#[derive(Debug, Clone)]
+pub struct StaticContact {
+    /// Per plane: total force (N, along its normal) and nodes in contact.
+    pub planes: Vec<(f64, usize)>,
+    /// Largest penetration (m).
+    pub penetration: f64,
+    /// Linear solves.
+    pub solves: usize,
 }
 
 /// The response in time.
@@ -1483,6 +1602,12 @@ pub struct Transient {
     pub last: Vec<f64>,
     /// The fields at the requested snapshot times: (time, every unknown).
     pub snapshots: Vec<(f64, Vec<f64>)>,
+    /// Contact force of each plane (N) at the kept times.
+    pub contact_force: Vec<Vec<f64>>,
+    /// Largest penetration over every step (m).
+    pub penetration: f64,
+    /// Factorisations of the step matrix (contact).
+    pub factorisations: usize,
 }
 
 /// The load vectors (free unknowns) of each history: `None` constant.
@@ -1571,6 +1696,9 @@ fn transient(case: &Case, tk: &TransientKeys, built: &Built) -> Result<Transient
         max_displacement: (0.0, 0, 0.0),
         last: Vec::new(),
         snapshots: Vec::new(),
+        contact_force: vec![Vec::new(); built.contacts.len()],
+        penetration: 0.0,
+        factorisations: 0,
     };
     let snap_steps: Vec<usize> = tk
         .snapshots
@@ -1604,6 +1732,44 @@ fn transient(case: &Case, tk: &TransientKeys, built: &Built) -> Result<Transient
             out.last = full;
         }
     };
+    if !built.contacts.is_empty() {
+        if tk.method == Method::Modal {
+            return Err(bad(
+                "[transient] method = \"modal\" cannot take `[[contacts]]` (contact is not linear); use \"direct\"",
+            ));
+        }
+        let c = crate::contact::Contacts::new(
+            model,
+            &sys,
+            built.contacts.clone(),
+            case.contact.penalty,
+            case.contact.tolerance * model.size(),
+        )?;
+        let ga = GenAlpha::new(&sys, damping, dt, tk.rho_infinity)?;
+        let mut cache = crate::contact::StepCache::default();
+        let mut f0 = load(0.0);
+        let mut st = ga.initial(0.0, vec![0.0; nf], vec![0.0; nf], &f0)?;
+        record(&mut out, 0, 0.0, &st.u, &st.v);
+        for f in &mut out.contact_force {
+            f.push(0.0);
+        }
+        for k in 1..=steps {
+            let f1 = load(k as f64 * dt);
+            let (next, cs) = ga.step_contact(model, &c, &mut cache, &st, &f0, &f1)?;
+            st = next;
+            let kept = out.times.len();
+            record(&mut out, k, k as f64 * dt, &st.u, &st.v);
+            out.penetration = out.penetration.max(cs.penetration());
+            if out.times.len() > kept {
+                for (j, (f, _)) in cs.per_plane(&c).into_iter().enumerate() {
+                    out.contact_force[j].push(f);
+                }
+            }
+            f0 = f1;
+        }
+        out.factorisations = cache.factorisations;
+        return Ok(out);
+    }
     match tk.method {
         Method::Direct => {
             let ga = GenAlpha::new(&sys, damping, dt, tk.rho_infinity)?;
@@ -1657,10 +1823,45 @@ pub fn run(case: &Case) -> Result<Outcome, Error> {
             "[analysis] asks for nothing: set `static = true` or `modes`, or add `[transient]`",
         ));
     }
-    let statics = if case.analysis.statics {
-        Some(analysis::solve_static(&built.model)?)
+    let (statics, contact) = if !case.analysis.statics {
+        (None, None)
+    } else if built.contacts.is_empty() {
+        (Some(analysis::solve_static(&built.model)?), None)
     } else {
-        None
+        let model = &built.model;
+        let sys = model.assemble();
+        let tol = case.contact.tolerance * model.size();
+        let c = crate::contact::Contacts::new(
+            model,
+            &sys,
+            built.contacts.clone(),
+            case.contact.penalty,
+            tol,
+        )?;
+        let (uf, cs, solves) = crate::contact::solve_static(model, &sys, &c, tol)?;
+        let u = sys.expand(&uf);
+        let ku = sys.k_all.apply(&u);
+        let fc = c.force_vector(&cs, model.dofs());
+        // reactions of the supports and springs; the contact forces are
+        // reported per plane
+        let mut reactions: Vec<f64> = (0..u.len()).map(|i| ku[i] - sys.f_all[i] - fc[i]).collect();
+        for &(d, k) in &model.springs {
+            reactions[d] -= k * u[d];
+        }
+        let energy = 0.5 * crate::sparse::dot(&u, &ku);
+        (
+            Some(Static {
+                u,
+                reactions,
+                energy,
+                fill: 0,
+            }),
+            Some(StaticContact {
+                planes: cs.per_plane(&c),
+                penetration: cs.penetration(),
+                solves,
+            }),
+        )
     };
     let modal = if case.analysis.modes > 0 {
         Some(analysis::solve_modal(
@@ -1680,6 +1881,7 @@ pub fn run(case: &Case) -> Result<Outcome, Error> {
         statics,
         modal,
         transient,
+        contact,
     })
 }
 
@@ -1807,6 +2009,15 @@ impl Outcome {
                 "factor_entries": s.fill,
                 "points": points,
             });
+            if let Some(c) = &self.contact {
+                out["static"]["contact"] = json!({
+                    "planes": self.built.contacts.iter().zip(&c.planes).map(|(p, (f, n))| json!({
+                        "name": p.name, "force": f, "nodes_in_contact": n, "nodes": p.nodes.len(),
+                    })).collect::<Vec<_>>(),
+                    "penetration": c.penetration,
+                    "solves": c.solves,
+                });
+            }
             if !m.solids.is_empty() {
                 let vm = self.solid_von_mises(&s.u);
                 let (mut best, mut at) = (0.0, 0);
@@ -1878,6 +2089,15 @@ impl Outcome {
                 "points": points,
                 "snapshots": tr.snapshots.iter().map(|(t, _)| *t).collect::<Vec<_>>(),
             });
+            if !self.built.contacts.is_empty() {
+                j["contact"] = json!({
+                    "planes": self.built.contacts.iter().zip(&tr.contact_force).map(|(p, f)| json!({
+                        "name": p.name, "force": f,
+                    })).collect::<Vec<_>>(),
+                    "penetration": tr.penetration,
+                    "factorisations": tr.factorisations,
+                });
+            }
             match tr.method {
                 Method::Direct => j["rho_infinity"] = json!(tr.rho_infinity),
                 Method::Modal => {
@@ -1904,6 +2124,9 @@ impl Outcome {
         for k in tr.points.keys() {
             let _ = write!(s, ",{k}_ux,{k}_uy,{k}_uz");
         }
+        for p in &self.built.contacts {
+            let _ = write!(s, ",contact_{}", p.name);
+        }
         s.push('\n');
         for (i, t) in tr.times.iter().enumerate() {
             let _ = write!(s, "{t:.9e},{:.9e},{:.9e}", tr.kinetic[i], tr.strain[i]);
@@ -1911,13 +2134,17 @@ impl Outcome {
                 let u = h[i];
                 let _ = write!(s, ",{:.9e},{:.9e},{:.9e}", u[0], u[1], u[2]);
             }
+            for f in &tr.contact_force {
+                let _ = write!(s, ",{:.9e}", f.get(i).copied().unwrap_or(0.0));
+            }
             s.push('\n');
         }
         Some(s)
     }
 
     /// The mesh with the static displacement and the mode shapes, as a
-    /// legacy VTK polydata file (ParaView, VisIt). Mode shapes are scaled
+    /// legacy VTK file (ParaView, VisIt): polydata, or an unstructured grid
+    /// when the model has solids. Mode shapes are scaled
     /// to a largest translation of 1 (`mode_<n>`, and `mode_<n>_rotation`
     /// with the same factor).
     pub fn to_vtk(&self, name: &str) -> String {

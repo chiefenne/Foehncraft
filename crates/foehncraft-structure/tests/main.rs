@@ -13,6 +13,7 @@
 //! checks it in CI).
 
 mod beams;
+mod contact;
 mod dynamics;
 mod shells;
 mod solids;
