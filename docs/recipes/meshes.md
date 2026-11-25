@@ -21,6 +21,7 @@ Part of the [Recipes](../recipes.md): generate, read (Gmsh, SU2, CGNS, OpenFOAM,
 | 234 | [Solve a flow on ranks (and check it against one rank)](#flow-ranks) |
 | 244 | [Check a turbulent, heated or transient flow on ranks](#flow-models-ranks) |
 | 262 | [Write a restart on ranks and continue on another rank count](#restart-ranks) |
+| 279 | [Run a case on ranks](#run-ranks) |
 
 ---
 
@@ -692,7 +693,7 @@ elliptic-blending models, the curvature correction and the QCR, the MLP
 limiter and quadratic gradients, gravity, turning zones (MRF, sliding),
 solid regions (conjugate heat transfer), a `[[schedule]]` and a level
 sweep. Restarts work on ranks (recipe 262). Monitors, probes and balances of a run on ranks come with
-the run on ranks itself (MPI step W7, `foehn run --ranks N`).
+the run on ranks itself (MPI step W7, recipe 279).
 
 [↑ back to top](#meshes)
 
@@ -739,5 +740,49 @@ let mine = layout.scatter(restart::read(&path)?)?;  // on any rank count
 
 and the whole check (write on 4, continue on 2, compare with one rank):
 `ranks::restart_check(&case, first, second, 4, 2, &dir)?`.
+
+[↑ back to top](#meshes)
+
+---
+
+<a id="run-ranks"></a>
+## 279. Run a case on ranks
+
+Solve a steady case on N ranks with the output of one rank (MPI step W7):
+
+```
+target/release/foehn flow examples/cases/flow/ranks_run_channel.toml --ranks 5
+```
+
+or put `rank_count = 5` in `[run]`. Without an MPI launcher the ranks are
+threads of this process, and the cores (`run.threads`, default all) are
+shared among them. With a build that has the `mpi` feature (Open MPI or
+MPICH and libclang at build time) the ranks can be MPI processes:
+
+```
+cargo build --release -p foehncraft-cli --features mpi
+mpirun -n 5 target/release/foehn flow examples/cases/flow/ranks_run_channel.toml
+```
+
+Each process reads the case and the mesh. Rank 0 alone prints, journals
+and writes the output directory; the other ranks work in a scratch
+directory that is removed at the end. Agents set the input `ranks` of
+`flow.run`.
+
+The log says `solved on 5 ranks (threads communicator), 564 to 565 cells
+each`, and `ranks.vtkhdf` holds the rank of every cell. Every other file is
+byte for byte that of a run on one rank. Compare them yourself:
+
+```
+target/release/foehn flow examples/cases/flow/ranks_run_channel.toml --ranks 1 --out output/one
+cmp output/one/fields.vtkhdf output/ranks_run_channel/fields.vtkhdf
+```
+
+`.stop`, `.result_N`, `.read_toml_N`, signals and `[run.limits]` act on all
+ranks at the same iteration. Settings through the control port
+(`run.set`) are refused on ranks (warning `RUN024` in the log and in the
+answer of the port). Not on ranks yet, refused with an error that names
+them: transient runs, passive scalars, the energy equation and turbulence
+models (W7 part 2), and everything `[run] ranks` refuses (recipe 234).
 
 [↑ back to top](#meshes)

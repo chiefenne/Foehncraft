@@ -125,6 +125,7 @@ Category `case`, action `read`, version 1.
 | `end_time` | number | – | End time of a transient case in s (replaces `time.end_time` and `time.steps`). |
 | `backend` | string | – | Where the flow loop runs: cpu or cuda (overrides `run.backend`). |
 | `ptx` | string | – | PTX module of the cuda backend (overrides `run.ptx`). |
+| `ranks` | integer | – | Solve on this number of ranks (overrides `run.rank_count`, MPI step W7): threads of this process, or the processes of an MPI launcher. |
 
 ### Output
 
@@ -159,6 +160,7 @@ Category `case`, action `read`, version 1.
 | `end_time` | number | – | End time of a transient case in s (replaces `time.end_time` and `time.steps`). |
 | `backend` | string | – | Where the flow loop runs: cpu or cuda (overrides `run.backend`). |
 | `ptx` | string | – | PTX module of the cuda backend (overrides `run.ptx`). |
+| `ranks` | integer | – | Solve on this number of ranks (overrides `run.rank_count`, MPI step W7): threads of this process, or the processes of an MPI launcher. |
 
 ### Output
 
@@ -190,6 +192,7 @@ Category `case`, action `read`, version 1.
 | `end_time` | number | – | End time of a transient case in s (replaces `time.end_time` and `time.steps`). |
 | `backend` | string | – | Where the flow loop runs: cpu or cuda (overrides `run.backend`). |
 | `ptx` | string | – | PTX module of the cuda backend (overrides `run.ptx`). |
+| `ranks` | integer | – | Solve on this number of ranks (overrides `run.rank_count`, MPI step W7): threads of this process, or the processes of an MPI launcher. |
 
 ### Output
 
@@ -371,6 +374,7 @@ Category `flow`, action `start-run`, version 1, streams the rows of the run reco
 | `end_time` | number | – | End time of a transient case in s (replaces `time.end_time` and `time.steps`). |
 | `backend` | string | – | Where the flow loop runs: cpu or cuda (overrides `run.backend`). |
 | `ptx` | string | – | PTX module of the cuda backend (overrides `run.ptx`). |
+| `ranks` | integer | – | Solve on this number of ranks (overrides `run.rank_count`, MPI step W7): threads of this process, or the processes of an MPI launcher. |
 
 ### Output
 

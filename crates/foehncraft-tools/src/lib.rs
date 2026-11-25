@@ -32,6 +32,7 @@ pub mod journal;
 pub mod markdown;
 pub mod materials;
 pub mod mesh;
+pub mod mpi;
 pub mod post;
 pub mod study;
 pub mod system;

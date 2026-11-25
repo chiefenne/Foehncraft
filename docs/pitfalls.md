@@ -367,6 +367,17 @@ with `comm.min` before the collective. The momentum sweep state keeps
 under one index dropped a hierarchy and made the gathered coupled-solver
 file differ from one rank in `momentum_amg_use`.
 
+**Runs on ranks take every branch together (W7, #279).** Every rank runs
+the loop of the case, so a decision made from rank-local state parts the
+ranks and leaves them waiting in different collectives: the wall clock of
+`[run.limits]`, control files (rank 0 reads the output directory, the
+others a scratch directory), signals and the live control port. Rank 0
+decides and `OnRanks::agree` hands its bits to all ranks before the
+branch. Output that reads the solver of a rank directly (the scalar and
+energy summaries, the turbulence wall summary and floor counters, the
+remediation counts) sees only its part: read it from the gathered
+`Solution` or from the global discretisation, never from `fl`.
+
 <a id="coupling-loops"></a>
 ## Coupling loops: the solid must see the flow's response
 

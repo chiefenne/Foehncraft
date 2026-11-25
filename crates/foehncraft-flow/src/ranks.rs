@@ -1427,3 +1427,319 @@ impl crate::restart::FieldMap for Scatter<'_> {
         Ok(Some(out))
     }
 }
+
+/// The gather of the output: as [`Gather`], without the matrices (the
+/// output needs none).
+struct GatherFields<'a>(&'a Layout);
+
+impl crate::restart::FieldMap for GatherFields<'_> {
+    fn cells(&mut self, v: &[f64]) -> Result<Vec<f64>> {
+        Gather(self.0).cells(v)
+    }
+    fn faces(&mut self, v: &[f64]) -> Result<Vec<f64>> {
+        Gather(self.0).faces(v)
+    }
+    fn boundary(&mut self, v: &[f64]) -> Result<Vec<f64>> {
+        Gather(self.0).boundary(v)
+    }
+    fn matrix(&mut self, _: &[f64]) -> Result<Option<Vec<f64>>> {
+        Ok(None)
+    }
+}
+
+/// A run of a case on ranks (MPI step W7): what the run loop of a rank
+/// needs besides its flow solver. Every rank runs the loop of the case
+/// with the same decisions; rank 0 (the lead) writes the log, the run
+/// record and the output. What the output reads (monitors, probes, wall
+/// values, balances, field files, restart files) is computed on the
+/// fields gathered into the global order, with the discretisation and the
+/// boundary arrays of the whole mesh, by the code of one rank: so it is
+/// bitwise the output of one rank.
+pub(crate) struct OnRanks {
+    /// The communicator.
+    pub comm: SharedComm,
+    /// The rank of every cell of the whole mesh.
+    pub part: Vec<u32>,
+    /// This rank's part with its halo.
+    pub local: foehncraft_mesh::decompose::LocalMesh,
+    /// Its geometry (halo from the owners).
+    pub geo: Geometry,
+    layout: Layout,
+    /// The discretisation of the whole mesh, for the output.
+    pub disc: foehncraft_fv::disc::Discretisation,
+    /// The boundary arrays of the whole mesh, for the output.
+    pub arrays: crate::bc::BoundaryArrays,
+}
+
+impl OnRanks {
+    /// The part of this rank of `mesh` (recursive coordinate bisection;
+    /// the cuts change no result, D93) and the global discretisation of
+    /// the output. Collective.
+    pub fn new(
+        comm: SharedComm,
+        mesh: &Mesh,
+        geo: &Geometry,
+        arrays: crate::bc::BoundaryArrays,
+    ) -> Result<Self> {
+        use foehncraft_mesh::partition::{Method, partition};
+        let n = comm.size();
+        let part = partition(mesh, geo, n, Method::Rcb).map_err(anyhow::Error::msg)?;
+        let local = extract(mesh, &part, comm.rank(), 1).map_err(anyhow::Error::msg)?;
+        local.mesh.validate().map_err(anyhow::Error::msg)?;
+        let lg = local.geometry(&*comm);
+        let layout = Layout::new(comm.clone(), mesh, &local)?;
+        let (disc, _) = crate::simplec::discretisation(mesh, geo, &arrays)?;
+        Ok(Self {
+            comm,
+            part,
+            local,
+            geo: lg,
+            layout,
+            disc,
+            arrays,
+        })
+    }
+
+    /// This rank writes the output (rank 0).
+    pub fn lead(&self) -> bool {
+        self.comm.rank() == 0
+    }
+
+    /// The target of the flow solver of this rank.
+    pub fn target(&self, base: &Target) -> Target {
+        Target {
+            ranks: Some(Ranks::new(self.comm.clone(), &self.local, &self.part)),
+            ..base.clone()
+        }
+    }
+
+    /// The own cells of `v`, an array of the whole mesh.
+    pub fn own(&self, v: &[f64]) -> Vec<f64> {
+        self.local.cell_position[..self.local.mesh.n_cells]
+            .iter()
+            .map(|&g| v[g as usize])
+            .collect()
+    }
+
+    /// The fields of all ranks in the global order, with the global
+    /// discretisation and the physics of all ranks: what the output of one
+    /// rank reads. Collective.
+    pub fn solution(&self, fl: &mut Flow) -> Result<crate::simplec::Solution<'_>> {
+        let state = fl.state()?;
+        let mut m = GatherFields(&self.layout);
+        let state = crate::restart::map_state(&state, &mut m, true)?;
+        let mut phys = fl.physics();
+        use crate::restart::FieldMap as _;
+        if let Some(mu) = &phys.mu_face {
+            phys.mu_face = Some(std::sync::Arc::new(m.faces(mu)?));
+        }
+        if let Some(s) = &phys.source {
+            phys.source = Some(std::sync::Arc::new([
+                m.cells(&s[0])?,
+                m.cells(&s[1])?,
+                m.cells(&s[2])?,
+            ]));
+        }
+        if let Some(b) = &phys.buoyancy {
+            phys.buoyancy = Some(std::sync::Arc::new([
+                m.cells(&b[0])?,
+                m.cells(&b[1])?,
+                m.cells(&b[2])?,
+            ]));
+        }
+        if let Some(r) = &phys.rho_var {
+            phys.rho_var = Some(std::sync::Arc::new((m.cells(&r.0)?, m.faces(&r.1)?)));
+        }
+        Ok(crate::simplec::Solution {
+            state,
+            disc: &self.disc,
+            phys,
+        })
+    }
+
+    /// The restart of the whole run from this rank's part `r` (the bytes
+    /// of the one-rank file, W6). Collective.
+    pub fn restart(&self, r: crate::restart::Restart) -> Result<crate::restart::Restart> {
+        self.layout.gather(r)
+    }
+
+    /// This rank's part of `r`, a restart of the whole mesh.
+    pub fn scatter(&self, r: crate::restart::Restart) -> Result<crate::restart::Restart> {
+        self.layout.scatter(r)
+    }
+
+    /// `ranks.vtkhdf`: the whole mesh with the rank of every cell (cell
+    /// field `rank`), written by rank 0 next to the output of a run on
+    /// ranks. Nothing without HDF5.
+    pub fn write_partition(&self, out: &std::path::Path, mesh: &Mesh) -> Result<()> {
+        #[cfg(feature = "hdf5")]
+        if self.lead() {
+            use foehncraft_mesh::vtkhdf::{CellField, write_all};
+            let rank: Vec<f64> = self.part.iter().map(|&r| f64::from(r)).collect();
+            let fields = [CellField {
+                name: "rank",
+                values: &rank,
+            }];
+            write_all(out.join("ranks.vtkhdf"), mesh, &fields, &[], &[])?;
+        }
+        #[cfg(not(feature = "hdf5"))]
+        let _ = (out, mesh);
+        Ok(())
+    }
+
+    /// The decision of the lead (`flags`, one bit each) on every rank: the
+    /// requests of the control files, signals and limits are read by rank
+    /// 0 only, so that all ranks take the same branch. Collective.
+    pub fn agree(&self, flags: u32) -> u32 {
+        let mine = if self.lead() { f64::from(flags) } else { 0.0 };
+        self.comm.max(mine) as u32
+    }
+}
+
+/// Fails unless a case can run on ranks (`[run] rank_count`, `foehn run
+/// --ranks N`): what [`supported`] allows, steady, without porous regions,
+/// a rotating frame or a cell-quality remedy that differs per rank.
+pub fn supported_run(case: &FlowCase) -> Result<()> {
+    let n = case.run.rank_count;
+    anyhow::ensure!(
+        (1..=256).contains(&n),
+        "[run] rank_count must lie in 1..=256"
+    );
+    supported(case).map_err(|e| {
+        anyhow::anyhow!(
+            "{}",
+            e.to_string().replace(
+                "[run] ranks does not solve",
+                "this case does not run on ranks"
+            )
+        )
+    })?;
+    let missing: Vec<&str> = [
+        (
+            case.time.is_some(),
+            "a [time] table (transient runs on ranks are MPI step W7 part 2)",
+        ),
+        (case.flow.frame_rotation != [0.0; 3], "a rotating frame"),
+        (
+            !case.scalars.is_empty() || case.energy.is_some(),
+            "passive scalars or the energy equation (their summaries on ranks follow in W7 part 2)",
+        ),
+        (
+            !case.turbulence.is_laminar(),
+            "a turbulence model (its wall summary on ranks follows in W7 part 2)",
+        ),
+        (
+            !case.run.ranks.is_empty(),
+            "the check of [run] ranks (a run on ranks is not checked against itself)",
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(on, what)| on.then_some(what))
+    .collect();
+    anyhow::ensure!(
+        missing.is_empty(),
+        "this case does not run on ranks yet (MPI step W7): it has {}",
+        missing.join(", ")
+    );
+    Ok(())
+}
+
+/// The stop of rank 0 on every rank (`None` without ranks: `stop` as it
+/// is). Collective on ranks.
+pub(crate) fn agree_stop(
+    on: Option<&OnRanks>,
+    stop: Option<crate::engine::Stop>,
+) -> Option<crate::engine::Stop> {
+    let Some(o) = on else {
+        return stop;
+    };
+    if o.agree(u32::from(stop.is_some())) == 0 {
+        return None;
+    }
+    Some(stop.unwrap_or_else(|| crate::engine::Stop {
+        code: crate::diag::RUN_STOP_FILE,
+        kind: "rank-0",
+        signal: None,
+        message: "stopped with rank 0".into(),
+    }))
+}
+
+/// A rank other than 0 of a run on ranks: the loop of the case with the
+/// same decisions as rank 0, its files in a scratch directory that is
+/// removed at the end (rank 0 writes the output). Returns the report.
+pub(crate) fn follow(
+    case: &FlowCase,
+    name: &str,
+    comm: SharedComm,
+) -> Result<crate::case::FlowReport> {
+    let scratch = std::env::temp_dir().join(format!(
+        "foehncraft-rank-{}-{}-{}",
+        std::process::id(),
+        comm.rank(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_nanos())
+    ));
+    std::fs::create_dir_all(&scratch)?;
+    let mut steer = crate::engine::Steer::quiet(&scratch);
+    steer.ranks = Some(comm);
+    let r = crate::case::run_steered(case, name, &scratch, &mut steer, |_| {});
+    let _ = std::fs::remove_dir_all(&scratch);
+    r
+}
+
+/// The run of `case` (its loop, MPI step W7): on the ranks of `comm` (MPI
+/// processes, this one among them), on `case.run.rank_count` ranks as
+/// threads of this process (rank 0 on this thread, with the log and the
+/// run record of `steer`), or on one rank.
+pub(crate) fn run_steered(
+    case: &FlowCase,
+    name: &str,
+    out: &std::path::Path,
+    steer: &mut crate::engine::Steer,
+    log: &mut dyn FnMut(&str),
+    comm: Option<SharedComm>,
+) -> Result<crate::case::FlowReport> {
+    if let Some(c) = comm {
+        steer.ranks = Some(c);
+        let r = crate::case::run_steered(case, name, out, steer, &mut *log);
+        steer.ranks = None;
+        return r;
+    }
+    let n = case.run.rank_count;
+    if n <= 1 {
+        return crate::case::run_steered(case, name, out, steer, &mut *log);
+    }
+    // the cores shared by the ranks
+    let cores = case
+        .run
+        .threads
+        .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |c| c.get()));
+    let mut case = case.clone();
+    case.run.threads = Some((cores / n).max(1));
+    let case = &case;
+    foehncraft_parallel::ThreadComm::run_lead(
+        n,
+        |c| {
+            let c: SharedComm = c;
+            steer.ranks = Some(c);
+            let r = crate::case::run_steered(case, name, out, steer, &mut *log);
+            steer.ranks = None;
+            r
+        },
+        |c| {
+            let _ = follow(case, name, c);
+        },
+    )
+}
+
+/// The communicator of the MPI processes of a run (MPI step W7), for
+/// [`crate::engine::RunOptions`].
+#[derive(Clone)]
+pub struct RunComm(pub SharedComm);
+
+impl std::fmt::Debug for RunComm {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "RunComm({} of {})", self.0.rank(), self.0.size())
+    }
+}
