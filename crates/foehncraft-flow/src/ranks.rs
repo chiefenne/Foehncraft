@@ -1585,6 +1585,46 @@ pub(crate) struct OnRanks {
     pub arrays: crate::bc::BoundaryArrays,
 }
 
+/// The geometry of the local mesh `local` taken from `geo`, the geometry
+/// of the whole mesh `global` (`faces`: the global position of every local
+/// face); a face stored the other way round gets the opposite area vector.
+fn restricted(
+    global: &Mesh,
+    geo: &Geometry,
+    local: &foehncraft_mesh::decompose::LocalMesh,
+    faces: &[usize],
+) -> Geometry {
+    let lm = &local.mesh;
+    let face_area = faces
+        .iter()
+        .enumerate()
+        .map(|(f, &g)| {
+            let a = geo.face_area[g];
+            let owner = local.cell_position[lm.owner[f] as usize] as usize;
+            if owner == global.owner[g] as usize {
+                a
+            } else {
+                [-a[0], -a[1], -a[2]]
+            }
+        })
+        .collect();
+    let at = |c: &u32| *c as usize;
+    Geometry {
+        face_area,
+        face_centroid: faces.iter().map(|&g| geo.face_centroid[g]).collect(),
+        cell_volume: local
+            .cell_position
+            .iter()
+            .map(|c| geo.cell_volume[at(c)])
+            .collect(),
+        cell_centroid: local
+            .cell_position
+            .iter()
+            .map(|c| geo.cell_centroid[at(c)])
+            .collect(),
+    }
+}
+
 impl OnRanks {
     /// The part of this rank of `mesh` (recursive coordinate bisection;
     /// the cuts change no result, D93) and the global discretisation of
@@ -1598,10 +1638,56 @@ impl OnRanks {
         use foehncraft_mesh::partition::{Method, partition};
         let n = comm.size();
         let part = partition(mesh, geo, n, Method::Rcb).map_err(anyhow::Error::msg)?;
+        Self::build(comm, mesh, geo, arrays, part, false)
+    }
+
+    /// The part of this rank of `mesh` by the partition `part` of a mesh
+    /// with the same cells, with the geometry of `geo` (not computed again
+    /// from the points): the mesh of a rotor angle of the sliding mesh by
+    /// imprinting (D182 variant B), whose cells keep their numbers and
+    /// whose geometry is the rigid turn of the base mesh. Collective.
+    pub fn imprinted(
+        comm: SharedComm,
+        mesh: &Mesh,
+        geo: &Geometry,
+        arrays: crate::bc::BoundaryArrays,
+        part: Option<Vec<u32>>,
+    ) -> Result<Self> {
+        let part = match part {
+            Some(p) => p,
+            None => {
+                use foehncraft_mesh::partition::{Method, partition};
+                partition(mesh, geo, comm.size(), Method::Rcb).map_err(anyhow::Error::msg)?
+            }
+        };
+        Self::build(comm, mesh, geo, arrays, part, true)
+    }
+
+    fn build(
+        comm: SharedComm,
+        mesh: &Mesh,
+        geo: &Geometry,
+        arrays: crate::bc::BoundaryArrays,
+        part: Vec<u32>,
+        restrict: bool,
+    ) -> Result<Self> {
+        anyhow::ensure!(
+            part.len() == mesh.n_cells,
+            "the partition is not of this mesh"
+        );
         let local = extract(mesh, &part, comm.rank(), 1).map_err(anyhow::Error::msg)?;
-        local.mesh.validate().map_err(anyhow::Error::msg)?;
-        let lg = local.geometry(&*comm);
+        // (the cells of an imprinted interface have points on the edges of
+        // one side only: not a closed mesh by edges, closed by the face area
+        // vectors of the imprint)
+        if !restrict {
+            local.mesh.validate().map_err(anyhow::Error::msg)?;
+        }
         let layout = Layout::new(comm.clone(), mesh, &local)?;
+        let lg = if restrict {
+            restricted(mesh, geo, &local, &layout.faces)
+        } else {
+            local.geometry(&*comm)
+        };
         let (disc, _) = crate::simplec::discretisation(mesh, geo, &arrays)?;
         Ok(Self {
             comm,
@@ -1753,12 +1839,6 @@ pub fn supported_run(case: &FlowCase) -> Result<()> {
     })?;
     let missing: Vec<&str> = [
         (case.species.is_some(), "species transport"),
-        (
-            case.sliding
-                .iter()
-                .any(crate::sliding::SlidingSection::imprinted),
-            "a sliding mesh by imprinting (`rotor_interface`; conformal stepping runs on ranks)",
-        ),
         (
             case.energy.as_ref().is_some_and(|e| {
                 e.acceleration.is_some() || e.cycle.is_some() || e.frozen_flow.is_some()

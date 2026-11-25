@@ -538,22 +538,58 @@ fn turbulent_sliding_mesh_on_ranks_writes_the_files_of_one_rank() {
     same_as_one_rank("sliding-sst", &text, SLIDING_FILES, &[3]);
 }
 
-#[test]
-fn a_sliding_mesh_by_imprinting_is_refused_on_ranks() {
-    let text = sliding_case("")
+/// The sliding mesh by imprinting (D182 variant B): a rotor of 32 sectors
+/// and a stator of 48, the mesh built again at the rotor angle of every
+/// step.
+fn imprint_case(extra: &str) -> String {
+    sliding_case(extra)
+        .replace("n_theta = 32\n", "n_theta = 32\nn_theta_stator = 48\n")
         .replace(
             "[[sliding]]\nzone = \"rotor\"\n",
-            "[[sliding]]\nzone = \"rotor\"\nrotor_interface = \"a\"\nstator_interface = \"b\"\n",
+            "[[sliding]]\nzone = \"rotor\"\nrotor_interface = \"rotor_interface\"\n\
+             stator_interface = \"stator_interface\"\n",
         )
         .replace(
             "[solver]\n",
             "[solver]\nextrapolation = false\nouter_iterations = 3\n",
-        );
+        )
+}
+
+/// (a moving mesh writes no restart file yet)
+const IMPRINT_FILES: &[&str] = &[
+    "history.csv",
+    "balance.csv",
+    "probes.csv",
+    "boundaries.csv",
+    "forces.csv",
+    "wall_inner.csv",
+    #[cfg(feature = "hdf5")]
+    "fields.vtkhdf",
+    #[cfg(feature = "hdf5")]
+    "fields_000004.vtkhdf",
+];
+
+#[test]
+fn sliding_mesh_by_imprinting_on_ranks_writes_the_files_of_one_rank() {
+    same_as_one_rank("imprint", &imprint_case(""), IMPRINT_FILES, &[2, 3]);
+}
+
+#[test]
+fn turbulent_sliding_mesh_by_imprinting_on_ranks_writes_the_files_of_one_rank() {
+    let text = imprint_case("[turbulence]\nmodel = \"k-omega-sst\"\n").replace(
+        "[flow]\n",
+        "[initial]\nturbulence_intensity = 0.05\nviscosity_ratio = 10.0\n[flow]\n",
+    );
+    same_as_one_rank("imprint-sst", &text, IMPRINT_FILES, &[4]);
+}
+
+#[test]
+fn the_check_of_ranks_refuses_a_sliding_mesh() {
     let mut case =
-        foehncraft_flow::case::FlowCase::from_toml(&text, &std::env::temp_dir()).unwrap();
+        foehncraft_flow::case::FlowCase::from_toml(&imprint_case(""), &std::env::temp_dir())
+            .unwrap();
     case.run.rank_count = 2;
-    let err = foehncraft_flow::ranks::supported_run(&case).unwrap_err();
-    assert!(err.to_string().contains("imprinting"), "{err}");
+    foehncraft_flow::ranks::supported_run(&case).unwrap();
     case.run.rank_count = 1;
     case.run.ranks = vec![2];
     let err = foehncraft_flow::ranks::supported(&case).unwrap_err();
