@@ -95,8 +95,9 @@ detail are in [CONTRIBUTING.md](CONTRIBUTING.md).
   **MUST NOT** publish images with four-fold or otherwise symbol-like
   patterns: rotors in published images have 3 or 5 blades (CONTRIBUTING.md,
   "Images must not resemble symbols").
-- **MUST** leave the README ("What works today", status line, commands,
-  crate table) and the docs describing main as it is after the merge.
+- **MUST** leave the README (status line, the short "What works today",
+  commands, crate table), the full feature list `docs/features.md` and the
+  docs describing main as it is after the merge.
 - **MUST** update the "Implemented" note of the decision or stage row in
   `docs/requirements.md`.
 - **MUST** add a new feature to `docs/verification/features.toml` with its

@@ -29,6 +29,8 @@ mod multizone;
 mod openfoam;
 mod ray;
 mod su2;
+mod surface;
+mod surface_cut;
 mod vtk;
 mod vtkhdf;
 mod vtkhdf_read;

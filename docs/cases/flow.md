@@ -312,6 +312,19 @@ on the [key page](../keys.md) and in [recipe
 | `flow/vd_closed_box_side_heated.toml` | generated hex 2D, 32 × 32 cells | check V7c.3: a closed box of air heated through one wall at 400 K for 2 s: p₀ rises to 117 630 Pa, the gas far from the wall is compressed to 321 K, the mass stays to round-off (10⁻¹⁵) | [gallery 195](../gallery/energy.md#variable-density), [recipe 195](../recipes/energy.md#variable-density) |
 | `flow/vd_mms_steady.toml` | generated hex 2D, 16² to 64² cells (3 levels) | check V7c.4: manufactured solution with ρ = 1/T, a divergence-free mass flux, the full stress and a closed volume (`tools/verification/vd_mms.py`); observed orders 2.22 and 1.92 (velocity), 1.86 and 1.90 (temperature), 1.8–2.2 required | [recipe 195](../recipes/energy.md#variable-density) |
 
+## Water and steam (IAPWS-IF97)
+
+The database materials `steam` and `water-if97` and the property form
+`if97` (stage SF7a): density, c_p, μ and k of IAPWS-IF97, IAPWS R12-08
+and R15-11 at the operating pressure, following the temperature. The
+states themselves come from `foehn steam` (tool `materials.steam`).
+
+| Case file | Mesh | Shows | Where |
+|---|---|---|---|
+| `flow/steam_heated_duct.toml` | generated hex 2D, 100 × 4 cells | superheated steam at 4 MPa heated from 600 K in a duct with slip walls: the outlet 750.002 K against the exact 750 K of the IF97 enthalpy balance, the inlet pressure 20.55465 Pa against G²(1/ρ_out − 1/ρ_in) = 20.55466 Pa | [gallery 277](../gallery/properties.md#steam-if97), [recipe 277](../recipes/properties.md#steam-if97) |
+| `flow/steam_superheater_channel.toml` | generated hex 2D, 240 × 40 cells | steam at 4 MPa and 540 K between plates at 760 K with the IF97 variable density: the boundary layers meet after a third of the length, ρ falls from 18.8 to 11.8 kg/m³, outlet mixed mean 681 K; converged in 416 iterations | [gallery 277](../gallery/properties.md#steam-if97), [recipe 277](../recipes/properties.md#steam-if97) |
+| `flow/ranks_water_if97_channel.toml` | generated hex 2D, 120 × 24 cells | water of `water-if97` at 10 MPa heated from 450 K by walls at 560 K, c_p, μ, k from IF97 in every iteration, solved on 2, 3 and 4 ranks and bitwise the one-rank solution | [gallery 277](../gallery/properties.md#steam-if97) |
+
 ## Lagrangian sprays
 
 `[spray]` with an included injector file (L12, SP1, D246): droplets as
@@ -388,8 +401,12 @@ Mixtures of ideal gases (steam furnace stage SF1): `[species]` with the
 GRI-Mech 3.0 species, N − 1 mass fractions transported and the closure
 species by 1 − Σ; with the variable density ρ = p₀ M/(R T) of the mixture
 and its c_p, λ and μ. The keys are on the [key page](flow-keys.md#species).
+With `[chemistry]` (stage SF2b) the species react in the cells and release
+heat (key page: [chemistry](flow-keys.md#chemistry)).
 
 | Case file | Mesh | Shows | Where |
 |---|---|---|---|
 | `flow/species_binary_diffusion.toml` | generated hex 2D, 100 × 2 cells | CH₄ diffusing in N₂ at rest: the exact decay of a cosine mode, BDF2 to t = 50 s; L2 error 9.5·10⁻⁶, species and element accounts closed to round-off | [gallery 278](../gallery/species.md#species-transport), [recipe 278](../recipes/species.md#species-transport) |
+| `flow/flame_methane_air_gri30.toml` | generated hex 2D, 200 × 1 cells (50 µm) | a laminar premixed stoichiometric methane–air flame in a tube with GRI-Mech 3.0 (53 species, 325 reactions) and species Lewis numbers, 1200 steps of 5 µs: burning velocity 0.348 m/s from the fuel consumption, measured 0.360 ± 0.017 m/s; band [0.33, 0.39] m/s; about 10 minutes (CI set `long`) | [gallery 298](../gallery/species.md#reacting-flow-cells), [recipe 298](../recipes/species.md#reacting-flow-cells) |
+| `flow/flame_methane_air_jl4.toml` | generated hex 2D, 200 × 1 cells (50 µm) | the same flame with the 4-step global mechanism of Jones & Lindstedt, Lewis number 1, 2 ms: 0.430 m/s, peak 2250 K; band [0.38, 0.48] m/s; 18 s | [gallery 298](../gallery/species.md#reacting-flow-cells), [recipe 298](../recipes/species.md#reacting-flow-cells) |
 | `flow/species_coaxial_jet.toml` | generated hex 2D wedge, 90 × 40 cells | a laminar methane jet (r = 5 mm, 1 m/s) in a coflow of air at 0.2 m/s, isothermal, density from the mixture's molar mass (0.65 to 1.17 kg/m³), mixture properties from kinetic theory; 154 iterations, element accounts closed to 6.4·10⁻⁹ | [gallery 278](../gallery/species.md#species-transport), [recipe 278](../recipes/species.md#species-transport) |

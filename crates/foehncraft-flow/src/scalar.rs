@@ -685,6 +685,11 @@ struct Field {
     /// The energy equation (stage 7a1): the temperature with its property
     /// refresh.
     energy: Option<Box<EnergyField>>,
+    /// The reaction source per cell of a species of a reacting flow
+    /// (SF2b, [φ]/s), added to `source`.
+    reaction: Option<Vec<f64>>,
+    /// The values of `source` per cell of the last upload (empty: none).
+    source_cells: Vec<f64>,
 }
 
 /// A thermal condition per boundary face of the energy equation.
@@ -795,6 +800,8 @@ struct EnergyField {
     /// The heat of a two-way coupled spray (SP2b, D250), per spray cell
     /// (cell, Q + G T*, G): S = Q − G (T − T*) in W, G on the diagonal.
     spray_heat: Option<Vec<(u32, f64, f64)>>,
+    /// The heat release of a reacting flow per cell (SF2b, W/m³).
+    reaction_heat: Option<Vec<f64>>,
 }
 
 /// The variable density of the fluid in the energy equation (stage 7c):
@@ -1334,6 +1341,8 @@ impl Scalars {
                 time_dependent,
                 settings: settings.clone(),
                 energy: None,
+                reaction: None,
+                source_cells: Vec::new(),
             });
         }
         let mut s = Self {
@@ -1416,7 +1425,14 @@ impl Scalars {
             let mut src_v = Vec::new();
             if let (Some(src), Some(su)) = (&f.source, f.su) {
                 src_v = cells.iter().map(|&x| src.at(x, t)).collect();
-                dev.upload(su, &src_v)?;
+                match &f.reaction {
+                    Some(r) => {
+                        let v: Vec<f64> = src_v.iter().zip(r).map(|(a, b)| a + b).collect();
+                        dev.upload(su, &v)?;
+                    }
+                    None => dev.upload(su, &src_v)?,
+                }
+                f.source_cells.clone_from(&src_v);
             }
             if let Some(hf) = f.heat_flux.as_mut() {
                 // Q/ρ... times ρ: the flux faces and the source, in face
@@ -2519,6 +2535,71 @@ impl Scalars {
         Ok(())
     }
 
+    /// Sets the reaction sources of a reacting flow (SF2b): per transported
+    /// species of the mixture (in the order of [`crate::species::Link`])
+    /// the source dY/dt per cell (1/s), and the heat release per cell
+    /// (W/m³) of the energy equation. Both stay until the next call.
+    pub(crate) fn set_reaction(
+        &mut self,
+        dev: &mut dyn FlowDevice,
+        species: Vec<Vec<f64>>,
+        heat: Vec<f64>,
+    ) -> Result<()> {
+        let nc = self.nc;
+        let idx: Vec<usize> = self
+            .species
+            .as_deref()
+            .map(|s| s.fields.clone())
+            .unwrap_or_default();
+        anyhow::ensure!(
+            idx.len() == species.len(),
+            "reaction sources for {} species, the mixture has {}",
+            species.len(),
+            idx.len()
+        );
+        for (&i, r) in idx.iter().zip(species) {
+            let f = &mut self.fields[i];
+            let su = match f.su {
+                Some(b) => b,
+                None => {
+                    let b = dev.alloc(nc)?;
+                    f.su = Some(b);
+                    b
+                }
+            };
+            if f.source_cells.len() == r.len() {
+                let v: Vec<f64> = f.source_cells.iter().zip(&r).map(|(a, b)| a + b).collect();
+                dev.upload(su, &v)?;
+            } else {
+                dev.upload(su, &r)?;
+            }
+            f.reaction = Some(r);
+        }
+        if let Some(e) = self.fields.iter_mut().find_map(|f| f.energy.as_deref_mut()) {
+            e.reaction_heat = Some(heat);
+        }
+        Ok(())
+    }
+
+    /// The reaction sources dY/dt per cell (1/s) of the transported species
+    /// of a reacting flow (SF2b), in the order of the mixture; `None`
+    /// before the first reaction step.
+    pub fn species_reaction(&self) -> Option<Vec<&[f64]>> {
+        let sp = self.species.as_deref()?;
+        sp.fields
+            .iter()
+            .map(|&i| self.fields[i].reaction.as_deref())
+            .collect()
+    }
+
+    /// The temperature per cell of the energy equation, if there is one.
+    pub(crate) fn temperature(&self, dev: &mut dyn FlowDevice) -> Result<Option<Vec<f64>>> {
+        match self.fields.iter().find(|f| f.energy.is_some()) {
+            Some(f) => Ok(Some(dev.download(f.phi)?)),
+            None => Ok(None),
+        }
+    }
+
     /// Sets or clears the vapour and mass sources of an evaporating spray in
     /// the species equations (SP4, SP5).
     pub(crate) fn set_spray_species(
@@ -3137,6 +3218,7 @@ impl Scalars {
             || sec.cycle.is_some()
             || crate::density::wanted(case)
             || case.spray.coupling.two_way()
+            || case.chemistry.is_some()
         {
             Some(put(&vec![0.0; nc])?)
         } else {
@@ -3303,6 +3385,7 @@ impl Scalars {
             robin_sp: None,
             extra_heat: None,
             spray_heat: None,
+            reaction_heat: None,
             var_rho: None,
             porous,
             mats,
@@ -3338,6 +3421,8 @@ impl Scalars {
             time_dependent: false,
             settings,
             energy: Some(Box::new(energy)),
+            reaction: None,
+            source_cells: Vec::new(),
         });
         Ok(())
     }
@@ -3670,6 +3755,12 @@ fn refresh_energy(
                 }
             }
         }
+        // the heat release of a reacting flow (SF2b)
+        if let Some(r) = &e.reaction_heat {
+            for (h, q) in heat.iter_mut().zip(r) {
+                *h += q;
+            }
+        }
         // the pressure work dp₀/dt of a closed volume (stage 7c)
         if let Some(v) = e.var_rho.as_ref().filter(|v| v.pressure_work != 0.0) {
             for (h, r) in heat.iter_mut().zip(&v.rho) {
@@ -3713,8 +3804,11 @@ fn refresh_energy(
         // is that of h_s (zero for a constant c_p)
         let mut corr = vec![0.0; nc];
         if e.h.iter().any(|h| !h.is_constant()) {
-            let hc = |c: usize, x: f64| e.h[e.mat_cell[c] as usize].at(x);
-            let hv: Vec<f64> = (0..nc).map(|c| hc(c, tv[c])).collect();
+            // on ranks `tv` holds the halo cells too (their material is
+            // the fluid's, `mc`); the correction of a halo cell belongs to
+            // its own rank
+            let hc = |c: usize, x: f64| e.h[mc(c) as usize].at(x);
+            let hv: Vec<f64> = (0..tv.len()).map(|c| hc(c, tv[c])).collect();
             for f in 0..nf {
                 let o = e.owner[f] as usize;
                 let mf = m[f];
@@ -3730,10 +3824,14 @@ fn refresh_energy(
                 } else {
                     (tf[f], hc(o, tf[f]))
                 };
-                corr[o] += cf[f] * (tu - tv[o]) - mf * (hu - hv[o]);
+                if o < nc {
+                    corr[o] += cf[f] * (tu - tv[o]) - mf * (hu - hv[o]);
+                }
                 if f < ni {
                     let n = e.neighbour[f] as usize;
-                    corr[n] += -cf[f] * (tu - tv[n]) + mf * (hu - hv[n]);
+                    if n < nc {
+                        corr[n] += -cf[f] * (tu - tv[n]) + mf * (hu - hv[n]);
+                    }
                 }
             }
             if let Some((st, o1, o2)) = step {
@@ -4665,8 +4763,11 @@ fn exact_of<'a>(case: &'a crate::case::FlowCase, name: &str) -> Option<(&'a Scal
     if let Some(e) = case.scalars.get(name).and_then(|s| s.exact.as_ref()) {
         return Some((e, format!("scalars.{name}.exact")));
     }
-    if let (Some(sp), Some(n)) = (&case.species, name.strip_prefix(crate::species::PREFIX))
-        && let Some(e) = sp.exact.get(n)
+    if let Some(sp) = &case.species
+        && let Some((n, e)) = sp
+            .exact
+            .iter()
+            .find(|(n, _)| crate::species::field_name(n) == name)
     {
         return Some((e, format!("species.exact.{n}")));
     }

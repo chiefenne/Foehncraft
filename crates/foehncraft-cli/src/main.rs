@@ -122,6 +122,11 @@ enum Command {
     /// viscosity of each material at a temperature, or show one material
     /// with its property forms, data range and sources.
     Materials(MaterialsArgs),
+    /// A water or steam state of IAPWS-IF97 (stage SF7a): give --pressure
+    /// with one of --temperature, --enthalpy, --entropy, --quality, or
+    /// --temperature with --quality; --pressure or --temperature alone
+    /// gives the saturation line.
+    Steam(SteamArgs),
     /// Case files: bring a file of an older case format to the current
     /// one (`foehn case upgrade`).
     Case {
@@ -370,6 +375,25 @@ struct MaterialsArgs {
 }
 
 #[derive(clap::Args)]
+struct SteamArgs {
+    /// Pressure (Pa, absolute).
+    #[arg(long)]
+    pressure: Option<f64>,
+    /// Temperature (K).
+    #[arg(long)]
+    temperature: Option<f64>,
+    /// Specific enthalpy (J/kg).
+    #[arg(long)]
+    enthalpy: Option<f64>,
+    /// Specific entropy (J/(kg K)).
+    #[arg(long)]
+    entropy: Option<f64>,
+    /// Quality (0 to 1).
+    #[arg(long)]
+    quality: Option<f64>,
+}
+
+#[derive(clap::Args)]
 struct SchemaArgs {
     /// The key reference as Markdown (docs/keys.md) instead of JSON.
     #[arg(long)]
@@ -581,6 +605,7 @@ fn main() {
         Command::Bench { .. } => "bench",
         Command::Schema(_) => "schema",
         Command::Materials(_) => "materials",
+        Command::Steam(_) => "steam",
         Command::Case { .. } => "case",
         Command::Post { .. } => "post",
         Command::Chemistry { .. } => "chemistry",
@@ -599,6 +624,16 @@ fn main() {
         Command::Flow(a) => flow(a, out),
         Command::Schema(a) => schema(a, out),
         Command::Materials(a) => materials(a, out),
+        Command::Steam(a) => typed::<tools::materials::Steam>(
+            tools::materials::SteamInput {
+                pressure: a.pressure,
+                temperature: a.temperature,
+                enthalpy: a.enthalpy,
+                entropy: a.entropy,
+                quality: a.quality,
+            },
+            out,
+        ),
         Command::Case {
             case: CaseCmd::Upgrade(a),
         } => upgrade(a, out),

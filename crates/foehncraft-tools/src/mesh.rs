@@ -130,3 +130,76 @@ impl Tool for Process {
         if o.valid { 0 } else { 2 }
     }
 }
+
+/// Input of `mesh.surface`.
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SurfaceInput {
+    /// Triangle surface (STL, ASCII or binary).
+    pub input: PathBuf,
+    /// Factor from the file's length unit to metres (1e-3 for a file in
+    /// millimetres).
+    #[serde(default = "one")]
+    pub scale: f64,
+}
+
+fn one() -> f64 {
+    1.0
+}
+
+/// Output of `mesh.surface`.
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+pub struct SurfaceOutput {
+    /// Closed, outward, no self-intersections, no degenerate or duplicate
+    /// triangles: usable as a solid body as it is.
+    pub clean: bool,
+    /// The report (counts, first defects, findings IMM001 to IMM009).
+    pub report: foehncraft_mesh::surface::SurfaceReport,
+}
+
+/// `mesh.surface`: the surface check of L13 stage 0 (D225).
+pub struct SurfaceCheck;
+
+impl Tool for SurfaceCheck {
+    const ID: &'static str = "mesh.surface";
+    const VERSION: u32 = 1;
+    const SUMMARY: &'static str = "Check a triangle surface (STL) before it becomes an immersed body: closed, orientation, holes, non-manifold edges, self-intersections, degenerate and duplicate triangles, units (exact predicates, no repair).";
+    const CATEGORY: Category = Category::Mesh;
+    const ACTION: Action = Action::Read;
+    type Input = SurfaceInput;
+    type Output = SurfaceOutput;
+
+    fn call(a: SurfaceInput, ctx: &mut Ctx<'_>) -> Result<SurfaceOutput> {
+        ctx.roots.check_read(&a.input, "the surface")?;
+        if !(a.scale.is_finite() && a.scale > 0.0) {
+            return Err(bad("scale: a positive number"));
+        }
+        let s =
+            foehncraft_mesh::surface::Surface::read_stl(&a.input, a.scale).map_err(|e| bad(&e))?;
+        let report = foehncraft_mesh::surface::check(&s);
+        ctx.line(&format!(
+            "{} triangles, {} corners, {} pieces, area {:.6e} m², volume {:.6e} m³, {}",
+            report.triangles,
+            report.vertices,
+            report.components,
+            report.area,
+            report.volume,
+            if report.closed { "closed" } else { "open" }
+        ));
+        for f in &report.findings {
+            ctx.line(&format!("{} {}", f.code, f.message));
+        }
+        Ok(SurfaceOutput {
+            clean: report.clean(),
+            report,
+        })
+    }
+
+    fn exit_code(o: &SurfaceOutput) -> i32 {
+        if o.report.findings.iter().any(|f| f.code == "IMM001") {
+            2
+        } else {
+            0
+        }
+    }
+}

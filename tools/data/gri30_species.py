@@ -19,8 +19,25 @@ import yaml
 WEIGHTS = {"H": 1.00794, "C": 12.0107, "O": 15.9994, "N": 14.0067, "Ar": 39.948}
 
 
+class Yaml12Loader(yaml.SafeLoader):
+    """YAML 1.2 booleans only: PyYAML follows YAML 1.1, which reads the
+    species name NO (and yes, on, off) as a boolean."""
+
+
+Yaml12Loader.yaml_implicit_resolvers = {
+    k: [(tag, rx) for tag, rx in v if tag != "tag:yaml.org,2002:bool"]
+    for k, v in yaml.SafeLoader.yaml_implicit_resolvers.items()
+}
+Yaml12Loader.add_implicit_resolver(
+    "tag:yaml.org,2002:bool",
+    __import__("re").compile(r"^(?:true|True|TRUE|false|False|FALSE)$"),
+    list("tTfF"),
+)
+
+
 def main(path):
-    d = yaml.safe_load(open(path))
+    with open(path) as f:
+        d = yaml.load(f, Loader=Yaml12Loader)
     out = [
         "# Species of GRI-Mech 3.0 (Smith et al. 1999, http://combustion.berkeley.edu/gri-mech/):",
         "# NASA 7-coefficient polynomials of c_p/R, h/(RT), s/R (two ranges) and the",
@@ -40,7 +57,9 @@ def main(path):
         out.append(f"composition = {{ {comp} }}")
         out.append(f"molar_mass = {round(m, 12)!r}")
         out.append(f"temperature = {th['temperature-ranges']!r}")
-        rows = ",\n  ".join("[" + ", ".join(repr(float(x)) for x in r) + "]" for r in th["data"])
+        rows = ",\n  ".join(
+            "[" + ", ".join(repr(float(x)) for x in r) + "]" for r in th["data"]
+        )
         out.append(f"coefficients = [\n  {rows},\n]")
         out.append(f'geometry = "{tr["geometry"]}"')
         out.append(f"well_depth = {float(tr['well-depth'])!r}")

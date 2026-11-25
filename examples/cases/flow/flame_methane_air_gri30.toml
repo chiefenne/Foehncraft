@@ -1,0 +1,105 @@
+# A laminar premixed methane-air flame in one dimension: chemistry in the
+# cells of a transient flow (stage SF2b), with GRI-Mech 3.0 (53 species,
+# 325 reactions). About 10 minutes on 4 cores (CI set `long`).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/flame_methane_air_gri30.toml
+#
+# A tube 0 < x < 10 mm of one row of 50 um cells: stoichiometric methane
+# and air at 300 K and 1 atm flow in at x = 0 with 0.3 m/s, the far end is
+# open. The start fields are a flame front at x = 5 mm: fresh mixture
+# upstream, the products of complete reaction (CO2, H2O, N2) at 2200 K
+# downstream, blended over 0.25 mm. The flame burns into the fresh gas; its
+# speed is the fuel consumption, S_L = -(dm_CH4/dt)/(A rho_u Y_CH4,u), in
+# `chemistry.csv`, averaged over 3 to 6 ms. c_p, lambda and mu are those of
+# the local mixture; the species diffuse with the constant Lewis numbers of
+# methane-air flames of Smooke & Giovangigli (1991), the light H and H2
+# about five and three times faster than heat (Lewis 1 for all species
+# gives 0.29 m/s instead of 0.35). Measured: 0.360 +- 0.017 m/s (the
+# experimental target of FFCM-1, Smith, Tao and Wang 2016).
+
+case_format = "0.7"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [0.01, 1.0e-4, 1.0e-4]
+cells = [200, 1, 1]
+
+[materials.gas]
+kind = "gas"
+description = "the start values of an ideal gas with the molar mass of air; the mixture replaces c_p, k and mu"
+molar_mass = 0.0289647
+density = { form = "ideal-gas", source = "ideal gas, rho = p M / (R T)" }
+specific_heat = 1005.0
+conductivity = 0.0263
+viscosity = 1.85e-5
+
+[fluid]
+material = "gas"
+temperature = 300.0
+operating_pressure = 101325.0
+pressure_values = "gauge"
+
+[energy]
+initial = "300 + 1900*0.5*(1 + tanh((x - 0.005)/0.00025))"
+density = "variable"
+
+[species]
+names = ["H2", "H", "O", "O2", "OH", "H2O", "HO2", "H2O2", "C", "CH", "CH2", "CH2(S)", "CH3", "CH4", "CO", "CO2", "HCO", "CH2O", "CH2OH", "CH3O", "CH3OH", "C2H", "C2H2", "C2H3", "C2H4", "C2H5", "C2H6", "HCCO", "CH2CO", "HCCOH", "N", "NH", "NH2", "NH3", "NNH", "NO", "NO2", "N2O", "HNO", "CN", "HCN", "H2CN", "HCNN", "HCNO", "HOCN", "HNCO", "NCO", "AR", "C3H7", "C3H8", "CH2CHO", "CH3CHO", "N2"]
+initial = { mass_fractions = { CH4 = "0.05519*0.5*(1 - tanh((x - 0.005)/0.00025))", O2 = "0.2200*0.5*(1 - tanh((x - 0.005)/0.00025))", CO2 = "0.1514*0.5*(1 + tanh((x - 0.005)/0.00025))", H2O = "0.1240*0.5*(1 + tanh((x - 0.005)/0.00025))" } }
+diffusion = "lewis"
+lewis = { CH4 = 0.97, O2 = 1.11, H2O = 0.83, CO2 = 1.39, H = 0.18, O = 0.70, OH = 0.73, HO2 = 1.10, H2 = 0.30, CO = 1.10, H2O2 = 1.12, HCO = 1.27, CH2O = 1.28, CH3 = 1.00, CH3O = 1.30 }
+
+[chemistry]
+mechanism = "gri30"
+min_temperature = 400.0
+
+[chemistry.flame_speed]
+fuel = "CH4"
+inlet = "xmin"
+average_from = 0.5
+range = [0.33, 0.39]
+
+[initial]
+velocity = [0.3, 0.0, 0.0]
+
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [0.3, 0.0, 0.0]
+[boundary.xmin.energy]
+temperature = 300.0
+[boundary.xmin.species]
+mass_fractions = { CH4 = 0.05519, O2 = 0.2200 }
+
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+
+[boundary.ymin]
+type = "slip-wall"
+[boundary.ymin.energy]
+heat_flux = 0.0
+[boundary.ymax]
+type = "slip-wall"
+[boundary.ymax.energy]
+heat_flux = 0.0
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[time]
+scheme = "bdf2"
+time_step = 5.0e-6
+steps = 1200
+
+[solver]
+outer_iterations = 20
+outer_tolerance = 1e-8
+
+[solver.scalar]
+limiter = "mlp"
+
+[output]
+wall_csv = false
+
