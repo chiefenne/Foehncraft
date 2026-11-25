@@ -8,6 +8,7 @@ pub mod contact;
 pub mod dynamics;
 pub mod eigen;
 pub mod ldlt;
+pub mod mapping;
 pub mod model;
 pub mod shell;
 pub mod solid;

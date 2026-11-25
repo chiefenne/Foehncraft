@@ -79,6 +79,7 @@
 
 use foehncraft_core::math;
 
+use crate::entry::Raw;
 use crate::species::{R, Species};
 
 /// The standard pressure p° of the thermodynamic data (Pa).
@@ -855,6 +856,97 @@ pub fn integrate(
     }
 }
 
+/// The reactor of one cell over a time step of a flow (SF2b): the state
+/// `z` = (Y, T) in, the state at the end of `dt` out. A cell colder than
+/// `min_temperature` is left as it is (no steps); the mass fractions are
+/// clipped at zero before the integration. The CPU threads and the PTX
+/// entry `chemistry_react` call this one body, so the GPU gives the bits
+/// of the CPU (D31).
+pub fn react_cell(
+    prog: &Program,
+    p: f64,
+    z: &mut [f64],
+    dt: f64,
+    set: &Settings,
+    min_temperature: f64,
+    work: &mut [f64],
+) -> Stats {
+    let n = prog.n();
+    let t = z[n];
+    if !(t >= min_temperature) || !(t > 0.0) {
+        return Stats::default();
+    }
+    for y in z[..n].iter_mut() {
+        *y = y.max(0.0);
+    }
+    let s = Settings { h0: 0.0, ..*set };
+    integrate(prog, p, z, dt, &s, work)
+}
+
+/// The argument block of the PTX entry `chemistry_react` (one GPU thread
+/// per cell of a batch): the mechanism, the settings, and the states of
+/// the cells `first .. first + n_cells` of the batch.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct ReactArgs {
+    /// The species of the mechanism.
+    pub species: Raw<Species>,
+    /// Its reactions.
+    pub reactions: Raw<Reaction>,
+    /// Their species terms.
+    pub terms: Raw<Term>,
+    /// Their third-body efficiencies.
+    pub efficiencies: Raw<Efficiency>,
+    /// The integrator settings.
+    pub settings: Settings,
+    /// The pressure (Pa).
+    pub pressure: f64,
+    /// The time step (s).
+    pub dt: f64,
+    /// Cells colder than this (K) do not react.
+    pub min_temperature: f64,
+    /// Cells of this launch.
+    pub n_cells: u64,
+    /// The states (Y, T), `n_cells` × (species + 1), read and written.
+    pub state: Raw<f64>,
+    /// Work space, `n_cells` × [`work_len`].
+    pub work: Raw<f64>,
+    /// The statistics of each cell.
+    pub stats: Raw<Stats>,
+}
+
+/// The body of the PTX entry `chemistry_react` for cell `i` of the
+/// launch.
+///
+/// # Safety
+/// The arrays of `a` hold their stated sizes, `i < n_cells`, and no other
+/// thread touches row `i` of `state`, `work` and `stats`.
+pub unsafe fn react_entry(i: usize, a: &ReactArgs) {
+    // SAFETY: guaranteed by the caller; each index writes its own rows.
+    unsafe {
+        let prog = Program {
+            species: a.species.get(),
+            reactions: a.reactions.get(),
+            terms: a.terms.get(),
+            efficiencies: a.efficiencies.get(),
+        };
+        let nz = prog.n() + 1;
+        let wl = work_len(prog.n());
+        let z = core::slice::from_raw_parts_mut(a.state.out().add(i * nz), nz);
+        let w = core::slice::from_raw_parts_mut(a.work.out().add(i * wl), wl);
+        let st = react_cell(
+            &prog,
+            a.pressure,
+            z,
+            a.dt,
+            &a.settings,
+            a.min_temperature,
+            w,
+        );
+        *a.stats.out().add(i) = st;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -984,5 +1076,106 @@ mod tests {
         );
         assert_eq!(st.status, 0);
         assert!((z[0] / math::exp(-5.0) - 1.0).abs() < 1e-6, "{}", z[0]);
+    }
+
+    /// The argument block and the rows of the PTX entry give the bits of
+    /// the per-cell body (the data path of the GPU, run on the CPU).
+    #[test]
+    fn the_entry_gives_the_bits_of_the_cell_body() {
+        let sp = |h: f64| Species {
+            molar_mass: 0.028,
+            t_range: [200.0, 1000.0, 3500.0],
+            low: [3.5, 0.0, 0.0, 0.0, 0.0, h, 3.0],
+            high: [3.5, 0.0, 0.0, 0.0, 0.0, h, 3.0],
+            well_depth: 100.0,
+            diameter: 3.6,
+            dipole: 0.0,
+            geometry: 1,
+        };
+        // A -> B, exothermic, with an activation temperature
+        let species = [sp(0.0), sp(-20_000.0)];
+        let reactions = [Reaction {
+            kind: ELEMENTARY,
+            reversible: 0,
+            terms: [0, 2],
+            efficiencies: [0, 0],
+            default_efficiency: 0.0,
+            rate: [1e6, 0.0, 8000.0],
+            low: [0.0; 3],
+            troe: [0.0; 4],
+            has_t2: 0,
+        }];
+        let terms = [
+            Term {
+                species: 0,
+                reactant: 1.0,
+                product: 0.0,
+                order: 1.0,
+            },
+            Term {
+                species: 1,
+                reactant: 0.0,
+                product: 1.0,
+                order: 0.0,
+            },
+        ];
+        let prog = Program {
+            species: &species,
+            reactions: &reactions,
+            terms: &terms,
+            efficiencies: &[],
+        };
+        let (nc, nz, wl) = (6, 3, work_len(2));
+        let mut start = [0.0; 18];
+        for c in 0..nc {
+            start[c * nz..(c + 1) * nz].copy_from_slice(&[1.0, 0.0, 700.0 + 100.0 * c as f64]);
+        }
+        let set = Settings::default();
+        let (p, dt, tmin) = (1e5, 1e-3, 850.0);
+        let mut body = start;
+        let mut work = [0.0; work_len(2)];
+        let st_body: [Stats; 6] = core::array::from_fn(|c| {
+            react_cell(
+                &prog,
+                p,
+                &mut body[c * nz..(c + 1) * nz],
+                dt,
+                &set,
+                tmin,
+                &mut work,
+            )
+        });
+        let mut rows = start;
+        let mut works = [0.0; 6 * work_len(2)];
+        let mut st_rows = [Stats::default(); 6];
+        let raw = |v: &mut [f64]| Raw::new(v.as_mut_ptr() as u64, v.len());
+        let a = ReactArgs {
+            species: Raw::new(species.as_ptr() as u64, 2),
+            reactions: Raw::new(reactions.as_ptr() as u64, 1),
+            terms: Raw::new(terms.as_ptr() as u64, 2),
+            efficiencies: Raw::EMPTY,
+            settings: set,
+            pressure: p,
+            dt,
+            min_temperature: tmin,
+            n_cells: nc as u64,
+            state: raw(&mut rows),
+            work: raw(&mut works[..nc * wl]),
+            stats: Raw::new(st_rows.as_mut_ptr() as u64, nc),
+        };
+        for i in (0..nc).rev() {
+            // SAFETY: the arrays have nc rows; one index at a time.
+            unsafe { react_entry(i, &a) };
+        }
+        assert!(
+            body.iter()
+                .zip(&rows)
+                .all(|(x, y)| x.to_bits() == y.to_bits())
+        );
+        assert_eq!(st_body, st_rows);
+        // the cells below min_temperature are left alone, the others react
+        assert_eq!(st_body[1].steps, 0);
+        assert_eq!(rows[nz..2 * nz], start[nz..2 * nz]);
+        assert!(st_body[5].steps > 0 && rows[5 * nz + 2] > 1200.0);
     }
 }

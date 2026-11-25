@@ -1,0 +1,100 @@
+# A laminar premixed methane-air flame in one dimension: chemistry in the
+# cells of a transient flow (stage SF2b), with the 4-step mechanism of
+# Jones & Lindstedt (1988). About a minute on 4 cores.
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/flame_methane_air_jl4.toml
+#
+# The tube of flame_methane_air_gri30.toml: 0 < x < 10 mm of one row of
+# 50 um cells, stoichiometric methane and air at 300 K and 1 atm in at
+# x = 0 with 0.3 m/s, the far end open, a flame front at x = 5 mm to start.
+# The flame speed is the fuel consumption, S_L = -(dm_CH4/dt)/(A rho_u
+# Y_CH4,u), in `chemistry.csv`, averaged over 1 to 2 ms. Every species has
+# the Lewis number 1; c_p, lambda and mu are those of the local mixture. A
+# global mechanism is calibrated for heat release and flame speed; this one
+# burns faster than the measured 0.36 m/s.
+
+case_format = "0.7"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [0.01, 1.0e-4, 1.0e-4]
+cells = [200, 1, 1]
+
+[materials.gas]
+kind = "gas"
+description = "the start values of an ideal gas with the molar mass of air; the mixture replaces c_p, k and mu"
+molar_mass = 0.0289647
+density = { form = "ideal-gas", source = "ideal gas, rho = p M / (R T)" }
+specific_heat = 1005.0
+conductivity = 0.0263
+viscosity = 1.85e-5
+
+[fluid]
+material = "gas"
+temperature = 300.0
+operating_pressure = 101325.0
+pressure_values = "gauge"
+
+[energy]
+initial = "300 + 1900*0.5*(1 + tanh((x - 0.005)/0.00025))"
+density = "variable"
+
+[species]
+names = ["CH4", "O2", "CO", "CO2", "H2O", "H2", "AR", "N2"]
+initial = { mass_fractions = { CH4 = "0.05519*0.5*(1 - tanh((x - 0.005)/0.00025))", O2 = "0.2200*0.5*(1 - tanh((x - 0.005)/0.00025))", CO2 = "0.1514*0.5*(1 + tanh((x - 0.005)/0.00025))", H2O = "0.1240*0.5*(1 + tanh((x - 0.005)/0.00025))" } }
+diffusion = "lewis"
+lewis = 1.0
+
+[chemistry]
+mechanism = "jones-lindstedt-4"
+min_temperature = 400.0
+
+[chemistry.flame_speed]
+fuel = "CH4"
+inlet = "xmin"
+average_from = 0.5
+range = [0.38, 0.48]
+
+[initial]
+velocity = [0.3, 0.0, 0.0]
+
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [0.3, 0.0, 0.0]
+[boundary.xmin.energy]
+temperature = 300.0
+[boundary.xmin.species]
+mass_fractions = { CH4 = 0.05519, O2 = 0.2200 }
+
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+
+[boundary.ymin]
+type = "slip-wall"
+[boundary.ymin.energy]
+heat_flux = 0.0
+[boundary.ymax]
+type = "slip-wall"
+[boundary.ymax.energy]
+heat_flux = 0.0
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[time]
+scheme = "bdf2"
+time_step = 5.0e-6
+steps = 400
+
+[solver]
+outer_iterations = 20
+outer_tolerance = 1e-8
+
+[solver.scalar]
+limiter = "mlp"
+
+[output]
+wall_csv = false

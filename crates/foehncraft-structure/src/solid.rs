@@ -384,21 +384,22 @@ fn b_node(g: [f64; 3]) -> [[f64; 3]; 6] {
 }
 
 /// Stiffness, consistent mass and thermal load of an element with the
-/// thermal strain `strain` = α ΔT (row-major, 3 unknowns per node in node
-/// order).
+/// thermal strain α ΔT at its nodes, `strain` (one per node, interpolated
+/// by the shape functions; empty: none), row-major, 3 unknowns per node
+/// in node order.
 pub fn matrices(
     kind: Kind,
     x: &[[f64; 3]],
     p: &SolidProps,
-    strain: f64,
+    strain: &[f64],
 ) -> Result<ElementMatrices, String> {
     let nn = kind.nodes();
     let nd = 3 * nn;
     let d = elasticity(p);
-    // D ε_th: the thermal stress of a held element
-    let mut sth = [0.0; 6];
+    // D ε_th per unit strain: the thermal stress of a held element
+    let mut sth1 = [0.0; 6];
     for i in 0..6 {
-        sth[i] = (0..3).map(|j| d[i][j] * strain).sum();
+        sth1[i] = (0..3).map(|j| d[i][j]).sum();
     }
     let mut k = vec![0.0; nd * nd];
     let mut m = vec![0.0; nd * nd];
@@ -406,6 +407,8 @@ pub fn matrices(
     for (pt, w) in rule(kind) {
         let (n, g, det) = gradients(kind, x, pt)?;
         let wd = w * det;
+        let eth: f64 = strain.iter().zip(&n[..nn]).map(|(a, b)| a * b).sum();
+        let sth = sth1.map(|v| v * eth);
         let bs: Vec<[[f64; 3]; 6]> = (0..nn).map(|a| b_node(g[a])).collect();
         // D B per node
         let dbs: Vec<[[f64; 3]; 6]> = bs
@@ -448,19 +451,21 @@ pub fn volume(kind: Kind, x: &[[f64; 3]]) -> Result<f64, String> {
 }
 
 /// The stresses (Voigt order) at the nodes of an element with the nodal
-/// displacements `u` (3 per node) and the thermal strain `strain`.
+/// displacements `u` (3 per node) and the thermal strain at the nodes
+/// `strain` (one per node; empty: none).
 pub fn nodal_stresses(
     kind: Kind,
     x: &[[f64; 3]],
     p: &SolidProps,
     u: &[f64],
-    strain: f64,
+    strain: &[f64],
 ) -> Result<Vec<[f64; 6]>, String> {
     let nn = kind.nodes();
     let d = elasticity(p);
     let mut out = Vec::with_capacity(nn);
-    for pt in kind.natural_nodes() {
+    for (node, pt) in kind.natural_nodes().into_iter().enumerate() {
         let (_, g, _) = gradients(kind, x, pt)?;
+        let eth = strain.get(node).copied().unwrap_or(0.0);
         let mut eps = [0.0; 6];
         for a in 0..nn {
             let b = b_node(g[a]);
@@ -471,7 +476,7 @@ pub fn nodal_stresses(
             }
         }
         for i in 0..3 {
-            eps[i] -= strain;
+            eps[i] -= eth;
         }
         let mut s = [0.0; 6];
         for i in 0..6 {

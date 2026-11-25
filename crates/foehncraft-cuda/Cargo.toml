@@ -34,3 +34,7 @@ rayon.workspace = true
 [[example]]
 name = "radiation_gpu"
 required-features = ["cuda"]
+
+[[example]]
+name = "chemistry_gpu"
+required-features = ["cuda"]
