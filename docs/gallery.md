@@ -31,7 +31,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | [Python](gallery/python.md) | cases built, run and studied from Python: expressions with Python operators, callbacks, study tables | 24 |
 | [Verification](gallery/verification.md) | the discretisation uncertainty of mesh sweeps (grid convergence index) and the generated verification manual | 25, 170, 271 |
 | [Post-processing](gallery/post-processing.md) | derived fields: vorticity, Q, λ₂, wall shear stress, y⁺, from the run or a restart file | 22, 108, 110 |
-| [Run control, health and adjoint readiness](gallery/runs.md) | adjoint-ready kernels, runs that a program drives, balances and the divergence report, the log, the table columns, scheduled changes, iteration budgets, the tool registry and journal, the MCP server, the control port and an assistant's study | 17, 18, 19, 27, 28, 29, 166, 171, 172, 175, 177, 181 |
+| [Run control, health and adjoint readiness](gallery/runs.md) | adjoint-ready kernels, runs that a program drives, balances and the divergence report, the log, the table columns, scheduled changes, iteration budgets, the tool registry and journal, the MCP server, the control port and an assistant's study | 17, 18, 19, 27, 28, 29, 166, 171, 172, 175, 177, 181, 316 |
 
 ## All examples by number
 
@@ -173,6 +173,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | <a id="spray-saturation"></a>306b | [More water than the air can take, steady](gallery/sprays.md#spray-saturation) | [Lagrangian sprays](gallery/sprays.md) |
 | <a id="heat-sink-hot"></a>308 | [A heat sink warmed by its chip: the flow case's temperatures as the load](gallery/structure.md#heat-sink-hot) | [Structures](gallery/structure.md) |
 | <a id="dirty-stl-winding"></a>310 | [A dirty STL body: surface check, winding number and signed distance](gallery/immersed.md#dirty-stl-winding) | [Immersed bodies](gallery/immersed.md) |
+| <a id="spray-cooler-chat"></a>316 | [An assistant sizes a spray cooler from one question](gallery/runs.md#spray-cooler-chat) | [Run control, health and adjoint readiness](gallery/runs.md) |
 
 ## Adding a feature
 

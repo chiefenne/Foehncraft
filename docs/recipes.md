@@ -31,7 +31,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | [Verification](recipes/verification.md) | the discretisation uncertainty of a sweep (GCI), the generated verification manual | 34, 35, 165, 170, 271 |
 | [Post-processing](recipes/post-processing.md) | derived fields with the output and from restart files (`foehn post derive`) | 30, 108, 110 |
 | [Engineering gallery](recipes/applications.md) | run an application of the Engineering Gallery and compare it with published data | 161, 203 |
-| [Run control and health](recipes/runs.md) | restart, stop and steer runs, drive runs from a script or an agent, balances and divergence reports, the log, scheduled changes and case upgrades, iteration budgets, the tool registry, journals, the MCP server and the control port | 22, 26, 27, 37, 38, 39, 166, 171, 172, 175, 177, 181 |
+| [Run control and health](recipes/runs.md) | restart, stop and steer runs, drive runs from a script or an agent, balances and divergence reports, the log, scheduled changes and case upgrades, iteration budgets, the tool registry, journals, the MCP server and the control port | 22, 26, 27, 37, 38, 39, 166, 171, 172, 175, 177, 181, 316 |
 
 ## All recipes by number
 
@@ -185,6 +185,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="spray-evaporation"></a>306 | [Let the droplets evaporate](recipes/sprays.md#spray-evaporation) | [Lagrangian sprays](recipes/sprays.md) |
 | <a id="structure-temperature-field"></a>308 | [Load a structure with the temperatures of a flow case](recipes/structure.md#structure-temperature-field) | [Structures](recipes/structure.md) |
 | <a id="surface-check"></a>310 | [Check an STL surface before it becomes a body](recipes/immersed.md#surface-check) | [Immersed bodies](recipes/immersed.md) |
+| <a id="spray-cooler-chat"></a>316 | [Ask an assistant an engineering question: size a spray cooler](recipes/runs.md#spray-cooler-chat) | [Run control and health](recipes/runs.md) |
 
 ## Adding a feature
 
