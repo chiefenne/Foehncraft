@@ -7,6 +7,7 @@ Part of the [Recipes](../recipes.md): droplets that move with and through the ga
 | 242 | [Spray droplets into a flow](#spray-duct) |
 | 265 | [Measure the liquid and the droplet sizes at datums](#spray-datums) |
 | 280 | [Let the spray push the gas (two-way coupling)](#spray-two-way) |
+| 283 | [Cool a gas with droplets (two-way heat)](#spray-cooling) |
 
 ---
 
@@ -148,7 +149,7 @@ max_passes = 3               # at most this many passes in one time step
 max_reynolds_change = 0.2    # a sub-step is halved while the particle Reynolds number changes more
 ```
 
-Two-way coupling needs a transient case with PISO and no energy equation in this version (SPR003). Each pass tracks all parcels against one frozen gas state; the gas takes the summed sources implicitly (value plus slope, like a porous sink), so even a dense spray at a time step of many droplet response times stays bounded. With `"converged"` the passes run inside the outer iterations of the time step until the coupling lag, the change of the gas velocity in the cells with parcels against the largest slip or gas change, is below `tolerance`. A step that stops at `max_passes` above it warns once with SPR006 and is counted in `spray.csv`. `passes = 1` is the linearised implicit coupling: cheaper, still conservative and bounded.
+Two-way coupling needs a transient case with PISO and no solid regions in this version (SPR003); with `[energy]` the heat is coupled too ([recipe 283](#spray-cooling)). Each pass tracks all parcels against one frozen gas state; the gas takes the summed sources implicitly (value plus slope, like a porous sink), so even a dense spray at a time step of many droplet response times stays bounded. With `"converged"` the passes run inside the outer iterations of the time step until the coupling lag, the change of the gas velocity in the cells with parcels against the largest slip or gas change, is below `tolerance`. A step that stops at `max_passes` above it warns once with SPR006 and is counted in `spray.csv`. `passes = 1` is the linearised implicit coupling: cheaper, still conservative and bounded.
 
 **Run and look.**
 
@@ -158,3 +159,41 @@ python3 -m tools.plot.spray_two_way OUT_DIR output/spray_two_way   # the picture
 ```
 
 `spray.csv` gets the columns `passes`, `coupling_lag`, `unconverged`, `gas_force_x/y/z` (N, what the parcels hand to the gas), `gas_power_w` and the health numbers of D254: `coupling_max` (the largest β Δt / (ρ V), how strongly the spray holds the gas of one cell), `coupling_share`, `liquid_fraction_max` and `parcels_per_cell_max`. The ledger in `result.json` books the exchange as a pair (`spray drag` on the gas momentum, `from the gas` on the parcel momentum, pairs 2801 to 2803) that cancels to the bit, and the parcel momentum account closes with the weight, the injection, the walls and what left the flow. See the [gallery entry](../gallery/sprays.md#spray-two-way) for what is checked and what is not there yet.
+
+<a id="spray-cooling"></a>
+## 283. Cool a gas with droplets (two-way heat)
+
+**Give the liquid and the injector a temperature.** With `[energy]` in the case, a two-way spray exchanges sensible heat with the gas (SP2b): every parcel carries a temperature that relaxes exactly towards the gas of its cell, with the Nusselt number of Ranz and Marshall, and the heat is a source of the gas energy in value-plus-slope form. In the injector file:
+
+```toml
+[liquid]
+name = "water"
+density = 998.0
+specific_heat = 4181.0       # J/(kg K), default 4181 (water)
+temperature = 293.15         # K, default 293.15; the temperature of the injected liquid
+
+[[injector]]
+name = "nozzle"
+# ...
+temperature = 293.15         # optional: this injector's liquid temperature, else [liquid] temperature
+```
+
+The fluid needs `specific_heat` and `conductivity` (MAT007 otherwise), and the case `[energy]` with an inlet temperature. Then switch the coupling on as in [recipe 280](#spray-two-way):
+
+```toml
+[spray.coupling]
+mode = "two-way"
+tolerance = 1e-3
+max_passes = 4               # heat converges more slowly per pass than momentum
+```
+
+The passes stop when both lags are below `tolerance`: the velocity lag of recipe 280 and the temperature lag (the change of the gas temperature of a spray cell against the frozen state of the pass, over the largest temperature difference between gas and droplets). The temperature lag falls by a factor of about 7 per pass; when `spray.csv` shows many `unconverged` steps (SPR006), raise `max_passes` to 4 or shorten the step. A one-way spray in a case with `[energy]` heats or cools its droplets too, without acting on the gas.
+
+**Run and look.**
+
+```bash
+foehn flow examples/cases/flow/spray_cooling.toml --out output/spray_cooling
+python3 -m tools.plot.spray_cooling OUT_DIR output/spray_cooling   # the picture of gallery 283
+```
+
+`spray.csv` gets `t_mean_k` (the mass mean droplet temperature) and, two-way, `gas_heat_w` (W, the heat the parcels hand to the gas; negative when they cool it) and `coupling_heat_max` (the largest G Δt / (ρ c_p V) of a cell). The ledger books the exchange as the pair 2804: `spray heat` on the thermal energy account of the energy equation and `from the gas` on the account `parcel enthalpy`, which closes with the injected liquid and what left the flow. The parcel files have a `temperature` field. See the [gallery entry](../gallery/sprays.md#spray-cooling) for what is checked and what is not there yet (no evaporation before SP5).
