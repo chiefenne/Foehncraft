@@ -1571,9 +1571,25 @@
     "gaps written"
    ],
    "gaps": [
-    "refused on ranks: species transport, [output.statistics], the thermal acceleration, cycle loop and frozen-flow march, sweeps over time steps, several fluids with a turbulence model, and what [run] ranks refuses",
-    "the scalar summary stops with an error on ranks for orthotropic solids, porous matrices, heat-flux periodic pairs, sprays and a variable density (all refused before the run by the rules above)",
+    "species, the variable density and statistics: parallel.run-ranks-species",
+    "refused on ranks: the thermal acceleration, cycle loop and frozen-flow march, sweeps over time steps, several fluids with a turbulence model, and what [run] ranks refuses",
+    "the scalar summary stops with an error on ranks for orthotropic solids, porous matrices, heat-flux periodic pairs and sprays (all refused before the run by the rules above)",
     "Crank-Nicolson and PISO without outer iterations are not tested on ranks in this step (the solver on ranks is, W5)",
+    "MPI processes are run in CI with the steady laminar case only; the threads tests cover the same code"
+   ],
+   "range": {}
+  },
+  {
+   "id": "parallel.run-ranks-species",
+   "title": "Species, the variable density and statistics on ranks with the output of one rank (MPI step W7)",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "refused on ranks: a closed volume (p0 from the mass), gravity (so buoyant variable-density flows), chemistry (SF2b, its own step), and what parallel.run-ranks-physics lists",
+    "a transient run on a variable density in an open domain reports RUN007 on one rank and on ranks (the mass check of the verification books no storage, a stage 7c gap); the files agree byte for byte",
+    "a vertex bound of the MLP limiter that is -0 on one rank and +0 on another may take either sign (f64 min of equal zeros); not seen in the tests",
     "MPI processes are run in CI with the steady laminar case only; the threads tests cover the same code"
    ],
    "range": {}

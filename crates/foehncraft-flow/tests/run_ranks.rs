@@ -465,3 +465,33 @@ fn transient_species_on_a_variable_density_on_ranks_write_the_files_of_one_rank(
         &[2, 3],
     );
 }
+
+/// A parabolic inlet profile split between ranks: the channel of [`CASE`]
+/// turned tall, so that the cuts of the partition run across the inlet;
+/// the profile spans the whole inlet on every rank, as on one rank (before
+/// the fix each rank spread a parabola over its own part of the inlet).
+#[test]
+fn parabolic_inlet_split_between_ranks_writes_the_files_of_one_rank() {
+    let text = CASE
+        .replace("upper = [3.0, 1.0, 0.1]", "upper = [1.0, 3.0, 0.1]")
+        .replace("cells = [30, 10, 1]", "cells = [10, 30, 1]")
+        .replace(
+            "type = \"velocity-inlet\"\nvelocity = [1.0, 0.0, 0.0]",
+            "type = \"velocity-inlet\"\nprofile = \"parabolic\"\nmax_velocity = 1.5\n\
+             profile_axes = [\"y\"]",
+        )
+        .replace("point = [2.5, 0.8, 0.05]", "point = [0.8, 2.5, 0.05]");
+    assert!(text.contains("parabolic"));
+    same_as_one_rank(
+        "parabolic",
+        &text,
+        &[
+            "residuals.csv",
+            "balance.csv",
+            "boundaries.csv",
+            #[cfg(feature = "hdf5")]
+            "fields.vtkhdf",
+        ],
+        &[2, 4],
+    );
+}

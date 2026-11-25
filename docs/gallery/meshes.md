@@ -23,6 +23,7 @@ Part of the [Example gallery](../gallery.md): the built-in test mesher in 2D and
 | 262 | [Written on five ranks, read on any: restart files on ranks](#restart-ranks) | 8 | the restart gathered from the ranks has the bytes of the one-rank file; read on any rank count by global identity, the continuation bitwise one rank (MPI step W6, D84, D93) |
 | 279 | [Solved on five ranks, written by one: a run on ranks](#run-ranks) | 8 | `foehn flow --ranks N`: every rank runs the loop, rank 0 writes; monitors, ledger, fields and restart from the gathered fields, every output file byte for byte one rank (MPI step W7, D84, D93) |
 | 290 | [Five ranks, one turbulent heated transient: the physics of a run on ranks](#run-ranks-physics) | 8 | k-ω SST, energy, a passive dye and BDF2 time steps solved on ranks as the run itself; heat balance of every step, history, probes, forces, fields and restart byte for byte one rank (MPI step W7 part 2, D84, D93) |
+| 303 | [Four ranks, one vortex street with methane: species and statistics on ranks](#run-ranks-species) | 8 | species transport, the variable density and `[output.statistics]` (field moments, phase averages) on ranks, the MLP vertex limiter across ranks, the inlet profile of the whole boundary; every output file byte for byte one rank (MPI step W7, D71, D84, D93, D237) |
 
 ---
 
@@ -836,6 +837,83 @@ python3 -m tools.mesh.render_mesh output/ranks_run_transient_sst/fields.vtkhdf t
 python3 -m tools.mesh.render_mesh output/ranks_run_transient_sst/fields.vtkhdf dye.png \
     --field dye --top --size 1200x460 --zoom 1.9 \
     --title "passive dye of the upper inflow, t = 4.5 s, solved on 5 ranks"
+```
+
+[↑ back to top](#meshes)
+
+<a id="run-ranks-species"></a>
+## 303. Four ranks, one vortex street with methane: species and statistics on ranks
+
+<img src="../figures/gallery/ranks_species_ch4.png" alt="Methane mass fraction in the vortex street behind the cylinder, solved on four ranks" width="1200" height="280">
+
+<img src="../figures/gallery/ranks_species_mean.png" alt="Time mean of the methane mass fraction from t = 5 to 8 s" width="1200" height="280">
+
+<img src="../figures/gallery/ranks_species_rms.png" alt="RMS of the methane mass fraction from t = 5 to 8 s" width="1200" height="280">
+
+<img src="../figures/gallery/ranks_species_rank.png" alt="The four ranks of the run" width="1200" height="280">
+
+The cylinder at Re = 100 of the 2D-2 benchmark channel (gallery 15, and the
+statistics of gallery 110) with a mixture of CH4, O2
+and N2: air at the inlet and in the channel, the surface of the cylinder
+held at pure methane (mole fraction 1, a wet surface that evaporates). The
+mixture takes the constant density and viscosity of the fluid
+(`properties = "fluid"`, a dilute tracer, ρD = μ/Sc with Sc = 0.7), so the
+methane is carried by the vortices without changing them. From t = 5 s,
+when the street is periodic, the run averages the fields (mean, RMS and
+the covariances of the velocity and the mass fractions), the probes and
+the force coefficients, with phase averages over the shedding period
+(24 bins of 0.3384 s). It runs on four ranks as the run itself
+(`[run] rank_count = 4`): species transport with the MLP vertex limiter,
+the species summary and element accounts, the statistics and every field
+file are computed on ranks, and every output file is byte for byte that
+of `--ranks 1`.
+
+The images show the methane at t = 8 s (the scale is cut at
+Y = 0.1 to show the wake; the layer at the surface is near 1), its time
+mean, which spreads into two bands where the vortices of each side carry
+it, and its RMS, largest where the shear layers roll up behind the
+cylinder. The four ranks (recursive coordinate bisection) split the inlet
+between two ranks: the parabolic inlet profile took the extent of each
+rank's own part of the boundary before this step, which gave C_D = 1.87
+instead of 3.2 on four ranks; it now takes the extent of the whole
+boundary (gallery 279 and 290 had their inlets on one rank). The benchmark
+values are those of one rank: C_D,max = 3.232 (reference 3.22 to 3.24),
+St = 0.2955 (0.295 to 0.305), Δp = 2.482 Pa (2.46 to 2.50), C_L,max =
+0.971 (0.99 to 1.01, 1.9 % below on this coarse mesh, within the 2.5 %
+tolerance of the case). The surface of the cylinder gives off
+2.2 × 10⁻⁴ kg/s of carbon over the 0.01 m layer, and the carbon account
+closes to 4 × 10⁻⁵ of that inflow. The statistics flag one of 14 series as too short
+(STAT001: the wake probe's u, whose batch means are correlated over
+6 batches of 0.5 s). Every output file of the four ranks has the bytes of `--ranks 1`
+(fields, statistics, phase averages, probes, forces, history, balance,
+restart); only the log, the resolved case and the provenance of
+`result.json` name the rank count. The run takes 13 min on four thread
+ranks against 14.5 min on one: on 6 144 cells the gathers for the output
+of every step take most of the gain (strong scaling is W9).
+
+| | |
+|---|---|
+| Mesh | cylinder channel, 6 144 hexahedra, one layer |
+| Ranks | 4 (recursive coordinate bisection), threads of one process; or MPI processes under `mpirun` |
+| Model | laminar, CH4, O2, N2 (N2 the closure species), Sc = 0.7, MLP limiter |
+| Solver | BDF2, adaptive Δt (CFL 0.8), 8 488 steps to t = 8 s; statistics from t = 5 s |
+| Output | every file byte for byte the run on one rank |
+| Case file | `flow/ranks_cylinder_species_statistics.toml` |
+
+```
+target/release/foehn flow examples/cases/flow/ranks_cylinder_species_statistics.toml
+python3 -m tools.mesh.render_mesh output/ranks_cylinder_species_statistics/fields.vtkhdf ch4.png \
+    --field Y_CH4 --top --no-edges --size 1800x420 --zoom 2.9 --range 0 0.1 \
+    --title "CH4 mass fraction, t = 8 s, Re = 100, solved on 4 ranks"
+python3 -m tools.mesh.render_mesh output/ranks_cylinder_species_statistics/statistics.vtkhdf mean.png \
+    --field mean_Y_CH4 --top --no-edges --size 1800x420 --zoom 2.9 --range 0 0.1 \
+    --title "time mean of the CH4 mass fraction, t = 5 to 8 s, solved on 4 ranks"
+python3 -m tools.mesh.render_mesh output/ranks_cylinder_species_statistics/statistics.vtkhdf rms.png \
+    --field rms_Y_CH4 --top --no-edges --size 1800x420 --zoom 2.9 --range 0 0.1 \
+    --title "RMS of the CH4 mass fraction, t = 5 to 8 s, solved on 4 ranks"
+python3 -m tools.mesh.render_mesh output/ranks_cylinder_species_statistics/ranks.vtkhdf ranks.png \
+    --field rank --categorical --top --no-edges --size 1800x420 --zoom 2.9 \
+    --title "the 4 ranks that solved it (recursive coordinate bisection)"
 ```
 
 [↑ back to top](#meshes)

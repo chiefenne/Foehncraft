@@ -107,8 +107,9 @@ validated range, one mesh only, …) in its report and its JSON result.
   gathered from the ranks is byte for byte the one-rank file and continues
   on any rank count (W6); `foehn flow case.toml --ranks N` (or `mpirun -n N
   foehn flow`) solves a run on ranks, steady or transient, laminar or with
-  k-ω SST and k-ε, with passive scalars, the energy equation and a rotating
-  frame, and writes every output file byte for byte as one rank does (W7).
+  k-ω SST and k-ε, with passive scalars, species, the energy equation on a
+  constant or variable density, statistics and a rotating frame, and writes
+  every output file byte for byte as one rank does (W7).
 - **Pressure–velocity coupling.** SIMPLEC and SIMPLE for steady flow, PISO
   with outer correctors for transient flow (SIMPLEC-type correctors with
   outer iterations, stable on thin wedge cells at an axis), a time step from the

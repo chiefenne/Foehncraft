@@ -2029,9 +2029,33 @@ evidence = [
   { kind = "contract", property = "bitwise", case = "ranks_run_transient_sst", what = "the heated transient SST channel with a dye on 5 ranks, 180 steps; every output file compared with --ranks 1 when the case was made" },
 ]
 gaps = [
-  "refused on ranks: species transport, [output.statistics], the thermal acceleration, cycle loop and frozen-flow march, sweeps over time steps, several fluids with a turbulence model, and what [run] ranks refuses",
-  "the scalar summary stops with an error on ranks for orthotropic solids, porous matrices, heat-flux periodic pairs, sprays and a variable density (all refused before the run by the rules above)",
+  "species, the variable density and statistics: parallel.run-ranks-species",
+  "refused on ranks: the thermal acceleration, cycle loop and frozen-flow march, sweeps over time steps, several fluids with a turbulence model, and what [run] ranks refuses",
+  "the scalar summary stops with an error on ranks for orthotropic solids, porous matrices, heat-flux periodic pairs and sprays (all refused before the run by the rules above)",
   "Crank-Nicolson and PISO without outer iterations are not tested on ranks in this step (the solver on ranks is, W5)",
+  "MPI processes are run in CI with the steady laminar case only; the threads tests cover the same code",
+]
+
+[[feature]]
+id = "parallel.run-ranks-species"
+area = "Backends and interfaces"
+title = "Species, the variable density and statistics on ranks with the output of one rank (MPI step W7)"
+switch = "[run] rank_count, foehn flow --ranks N, mpirun -n N foehn flow; with [species], [energy] density = \"variable\", [output.statistics], limiter = \"mlp\""
+decisions = ["D71", "D84", "D93", "D237"]
+infrastructure = true
+contracts = ["bitwise"]
+evidence = [
+  { kind = "contract", property = "bitwise", test = "crates/foehncraft-flow/tests/run_ranks.rs::steady_species_on_ranks_write_the_files_of_one_rank", what = "steady channel with CH4, O2, N2 (constant density, MLP limiter) on 2 and 3 ranks: residuals, ledger, boundaries, fields.vtkhdf, restart.h5 byte for byte one rank; result.json solves (species extremes and element accounts) equal" },
+  { kind = "contract", property = "bitwise", test = "crates/foehncraft-flow/tests/run_ranks.rs::steady_species_on_a_variable_density_on_ranks_write_the_files_of_one_rank", what = "the same mixture as an ideal gas with mixture properties, the energy equation and a heated wall on 2 and 4 ranks: the same files and the density summary (mass, extremes, Mach number)" },
+  { kind = "contract", property = "bitwise", test = "crates/foehncraft-flow/tests/run_ranks.rs::transient_species_with_statistics_on_ranks_write_the_files_of_one_rank", what = "transient BDF2 species with [output.statistics] fields = true on 2 and 3 ranks: history, ledger, probes, statistics.csv, statistics.vtkhdf, the field and restart files byte for byte one rank" },
+  { kind = "contract", property = "bitwise", test = "crates/foehncraft-flow/tests/run_ranks.rs::transient_species_on_a_variable_density_on_ranks_write_the_files_of_one_rank", what = "transient species on the variable density with a heated wall on 2 and 3 ranks: history.csv with p0, mass, rho_min, rho_max, the field and restart files byte for byte one rank" },
+  { kind = "contract", property = "bitwise", test = "crates/foehncraft-flow/tests/run_ranks.rs::parabolic_inlet_split_between_ranks_writes_the_files_of_one_rank", what = "a parabolic inlet cut by the partition on 2 and 4 ranks (10 x 30 cells, tall channel): the profile takes the extent of the whole boundary, every file byte for byte one rank; fails without the fix" },
+  { kind = "contract", property = "bitwise", case = "ranks_cylinder_species_statistics", what = "the vortex street at Re 100 with methane from the cylinder surface on 4 ranks, statistics from t = 5 s with phase averages; every output file compared with --ranks 1 when the case was made" },
+]
+gaps = [
+  "refused on ranks: a closed volume (p0 from the mass), gravity (so buoyant variable-density flows), chemistry (SF2b, its own step), and what parallel.run-ranks-physics lists",
+  "a transient run on a variable density in an open domain reports RUN007 on one rank and on ranks (the mass check of the verification books no storage, a stage 7c gap); the files agree byte for byte",
+  "a vertex bound of the MLP limiter that is -0 on one rank and +0 on another may take either sign (f64 min of equal zeros); not seen in the tests",
   "MPI processes are run in CI with the steady laminar case only; the threads tests cover the same code",
 ]
 

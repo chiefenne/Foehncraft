@@ -290,8 +290,9 @@ pub struct RunSection {
     /// that of one rank. Under an MPI launcher (`mpirun -n N foehn run`,
     /// a build with the `mpi` feature) the ranks are its processes;
     /// otherwise threads of this process. 1: no ranks. Steady and transient
-    /// runs with scalars, energy, k-ω SST and k-ε (refused: species,
-    /// statistics, what `[run] ranks` refuses).
+    /// runs with scalars, species, energy (constant or variable density),
+    /// k-ω SST and k-ε and statistics (refused: a closed volume, the time-saving loops of
+    /// conjugate runs, what `[run] ranks` refuses).
     #[serde(skip_serializing_if = "is_one")]
     pub rank_count: usize,
 }
@@ -2972,6 +2973,7 @@ pub fn run_steered(
         let on = match steer.ranks.clone() {
             Some(c) => {
                 crate::ranks::supported_mesh(&case, &mesh)?;
+                bc::global_profile_extents(&mut case.boundary, &mesh);
                 Some(crate::ranks::OnRanks::new(c, &mesh, &geo, arrays.clone())?)
             }
             None => None,

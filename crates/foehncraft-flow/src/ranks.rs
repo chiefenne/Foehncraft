@@ -333,7 +333,10 @@ pub fn solve_part(
         ranks: Some(Ranks::new(comm, &local, part)),
         ..Target::default()
     };
-    let mut sv = Solver::new(case, &local.mesh, &geo, &target, d)?;
+    // a parabolic inlet spans the whole boundary, not this rank's part
+    let mut case = case.clone();
+    crate::bc::global_profile_extents(&mut case.boundary, global);
+    let mut sv = Solver::new(&case, &local.mesh, &geo, &target, d)?;
     run(&mut sv, &geo, n, &local.mesh.cell_id, steps)
 }
 
@@ -800,6 +803,10 @@ pub fn verify(
     use foehncraft_mesh::partition::{Method, partition};
     use foehncraft_parallel::ThreadComm;
     supported(case)?;
+    // a parabolic inlet spans the whole boundary on every rank
+    let mut fixed = case.clone();
+    crate::bc::global_profile_extents(&mut fixed.boundary, mesh);
+    let case = &fixed;
     let cores = case
         .run
         .threads

@@ -1067,6 +1067,7 @@ fn run_one<F: FnMut(&str)>(
     let on = match steer.ranks.clone() {
         Some(c) => {
             crate::ranks::supported_mesh(&case, mesh)?;
+            bc::global_profile_extents(&mut case.boundary, mesh);
             Some(crate::ranks::OnRanks::new(c, mesh, geo, arrays.clone())?)
         }
         None => None,
