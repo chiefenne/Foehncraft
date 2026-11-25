@@ -604,6 +604,17 @@ pub fn create(
             species: rec.kernel(),
         }));
     }
+    // the Peng-Robinson surface at the run's p₀ (D311): the operating
+    // pressure, as `GasVapour` gives it (a closed volume is refused above)
+    if let Some(link) = VapourLink::of(case) {
+        sp.set_surface_pressure(link.p_op).map_err(|e| {
+            err(
+                diag::SPRAY_CONFIG,
+                "spray.evaporation.peng_robinson",
+                format!("{e:#}"),
+            )
+        })?;
+    }
     Ok(Some(sp))
 }
 

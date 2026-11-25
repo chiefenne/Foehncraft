@@ -33,6 +33,9 @@
 //!   integer tallies;
 //! - [`chemistry`]: gas-phase reaction rates, their analytic Jacobian and
 //!   the stiff RODAS3 integrator of the reactor of a cell (stage SF2);
+//! - [`realfluid`]: the Peng-Robinson equation of state of a mixture, its
+//!   fugacities and departure enthalpies and the phase equilibrium at a
+//!   droplet surface at high pressure (ECN Spray A, SA1);
 //! - [`species`]: the properties of an ideal-gas mixture (stage SF1):
 //!   NASA-7 specific heat, Chapman–Enskog viscosity, Wilke and Mathur rules.
 //!
@@ -72,6 +75,7 @@ pub mod flow;
 pub mod fv;
 pub mod particle;
 pub mod radiation;
+pub mod realfluid;
 pub mod reverse;
 pub mod scalar;
 pub mod species;

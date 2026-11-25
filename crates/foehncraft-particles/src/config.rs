@@ -131,8 +131,75 @@ pub enum EvaporationModel {
     AbramzonSirignano,
 }
 
+/// The phase equilibrium at the droplet surface (D311).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum Equilibrium {
+    /// Raoult's law with the saturation pressure of the liquid (default):
+    /// right at low pressure.
+    #[default]
+    Raoult,
+    /// The Peng-Robinson equation of state: the fugacities of the fuel and
+    /// of the ambient gases equal in the surface liquid and the vapour,
+    /// the latent heat from the same equation (Spray A, D311, D312, D314).
+    PengRobinson,
+}
+
+/// `[spray.evaporation.peng_robinson]`: the data of the high-pressure
+/// surface equilibrium (D311).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct PengRobinson {
+    /// The fuel of the built-in high-pressure data (`"n-dodecane"`);
+    /// default: the name of `[spray.liquid]`. Not needed when
+    /// `critical_temperature`, `critical_pressure`, `acentric_factor` and
+    /// `molar_mass` are given.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fuel: Option<String>,
+    /// Critical temperature of the liquid (K), with the three keys below
+    /// instead of `fuel` (then with the κ(ω) of Peng and Robinson).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub critical_temperature: Option<f64>,
+    /// Critical pressure of the liquid (Pa).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub critical_pressure: Option<f64>,
+    /// Acentric factor of the liquid.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub acentric_factor: Option<f64>,
+    /// Molar mass of the liquid (kg/mol).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub molar_mass: Option<f64>,
+    /// Mole fractions of the ambient gases far from the droplets, by species
+    /// name (N2, O2, CO2, H2O, AR), normalised; their ratios hold in the
+    /// vapour at the surface (default `{ N2 = 1.0 }`).
+    pub ambient: BTreeMap<String, f64>,
+    /// Binary interaction parameters k_ij of the fuel with the gases, by
+    /// species name; a gas not listed takes the built-in value of the fuel
+    /// (n-dodecane + N2: 0.205, fitted to measured bubble points) or 0.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub k_ij: BTreeMap<String, f64>,
+    /// Spacing of the surface table over the droplet temperature (K,
+    /// default 1).
+    pub table_step: f64,
+}
+
+impl Default for PengRobinson {
+    fn default() -> Self {
+        Self {
+            fuel: None,
+            critical_temperature: None,
+            critical_pressure: None,
+            acentric_factor: None,
+            molar_mass: None,
+            ambient: BTreeMap::from([("N2".to_string(), 1.0)]),
+            k_ij: BTreeMap::new(),
+            table_step: 1.0,
+        }
+    }
+}
+
 /// `[spray.evaporation]` (SP5, D251).
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct Evaporation {
     /// `none` (default), `ranz-marshall` or `abramzon-sirignano`.
@@ -146,6 +213,11 @@ pub struct Evaporation {
     /// A droplet smaller than this evaporates in one sub-step when its life
     /// ends inside it (m, default 1e-6).
     pub min_diameter: f64,
+    /// The surface equilibrium: `raoult` (default) or `peng-robinson`
+    /// (D311: high ambient pressure, ECN Spray A).
+    pub equilibrium: Equilibrium,
+    /// The data of `equilibrium = "peng-robinson"`.
+    pub peng_robinson: PengRobinson,
 }
 
 impl Default for Evaporation {
@@ -155,6 +227,8 @@ impl Default for Evaporation {
             max_mass_change: 0.1,
             max_temperature_change: 2.0,
             min_diameter: 1e-6,
+            equilibrium: Equilibrium::Raoult,
+            peng_robinson: PengRobinson::default(),
         }
     }
 }

@@ -13,6 +13,7 @@ Part of the [Example gallery](../gallery.md): droplets as Lagrangian parcels in 
 | 306 | [Water droplets evaporating in hot air](#spray-evaporation) | SP4, SP5 | `[spray.evaporation]` (Ranz-Marshall, Abramzon-Sirignano), `[spray.liquid] vapour`, vapour, mass and enthalpy sources in value-plus-slope form with the closing step (D250), vapour ledger pair, saturation limiter (D253) |
 | 306b | [More water than the air can take, steady](#spray-saturation) | SP5, SP2s | evaporation in the steady spray mode, adiabatic saturation against the exact end state (V28.11, partly met) |
 | 318 | [A fuel spray breaks up in dense nitrogen](#spray-breakup) | SP6 | `[spray.breakup]` KH-ACT and KH-RT, blob injection from `hole_diameter`, `area_contraction` and a `rate` table, child parcels, Rayleigh-Taylor beyond the breakup length, TAB distortion and dynamic drag, mirrored eddies |
+| 314 | [A fuel droplet's surface at diesel pressure](#spray-a-surface) | SA1 | `[spray.evaporation] equilibrium = "peng-robinson"`, `[spray.evaporation.peng_robinson]`: Peng-Robinson phase equilibrium of the fuel and the ambient gas at the droplet surface, latent heat from the same equation, the critical mixing state (D311, D312, D314) |
 
 ---
 
@@ -639,3 +640,68 @@ Files: `spray.csv` (with `child_parcels`, `rt_breakups`, `act_children`,
 `hole.penetration_m`), `spray/parcels_<step>.vtkhdf` (with `distortion`),
 `fields.vtkhdf`. [Recipe 318](../recipes/sprays.md#spray-breakup),
 [case row](../cases/flow.md#lagrangian-sprays).
+<a id="spray-a-surface"></a>
+## 314. A fuel droplet's surface at diesel pressure
+
+<img src="../figures/gallery/spray_a_surface.png" alt="Three charts for n-dodecane droplets in nitrogen. Left: the fuel vapour fraction at the droplet surface over Raoult's law against the droplet temperature from 300 to 670 K at 1, 3, 6 and 8 MPa; at 1 MPa it stays between 1.0 and 1.3 and ends at the boiling point 614.1 K, at 6 MPa it falls from above 3 at 300 K to 1.5 near 520 K and rises to 2.3 at the critical mixing temperature 651.3 K, with 656.6 K at 3 MPa and 647.8 K at 8 MPa. Middle: the latent heat over its value at saturation, near 0.97 at 1 MPa and 0.8 to 0.9 at 6 and 8 MPa, dropping steeply to zero within a few kelvin of the critical end, and the dissolved nitrogen in the surface liquid rising from 2 to 40 mol percent. Right: bubble pressure up to 20 MPa against dissolved nitrogen mole fraction on seven isotherms from 344 to 594 K, Peng-Robinson lines through 21 measured points, the lines a little below the hottest points." width="1500" height="490">
+
+ECN Spray A injects n-dodecane at 363 K into nitrogen at 900 K and about
+6 MPa. At that pressure Raoult's law (the fuel's vapour pressure over the
+ambient pressure) no longer gives the fuel at the droplet surface: the
+dense nitrogen dissolves in the liquid and pulls more fuel into the vapour.
+`[spray.evaporation] equilibrium = "peng-robinson"` solves the phase
+equilibrium of the fuel and the ambient gases at the surface with the
+Peng-Robinson equation of state (D311) and takes the latent heat from the
+same equation (D312), so it goes to zero where liquid and vapour become
+one, the critical mixing state (D314).
+
+The image comes from `cargo run --release -p foehncraft-particles --example
+spray_a_surface` and `tools/plot/spray_a_surface.py`. **Left:** the fuel
+vapour fraction at the surface over Raoult's value. At 1 MPa it stays close
+to Raoult and ends at the boiling point; at 6 MPa it is 1.5 to 1.9 times
+Raoult from 450 to 600 K and the two-phase surface ends at the critical
+mixing temperature 651.3 K, which falls as the pressure rises. **Middle:**
+the latent heat over its value at saturation (solid) falls by 11 to 15 %
+at 6 MPa and to zero at the critical end; 8 to 20 mol % nitrogen is
+dissolved in the surface liquid (dashed). **Right:** the bubble pressure
+of nitrogen in n-dodecane against the measured points of García-Córdova et
+al. (2011, doi 10.1021/je1012372).
+
+```toml
+[spray.liquid]
+name = "n-dodecane"       # built-in high-pressure data (Ambrose and Walton 1989)
+
+[spray.evaporation]
+model = "abramzon-sirignano"
+equilibrium = "peng-robinson"
+
+[spray.evaporation.peng_robinson]
+ambient = { N2 = 1.0 }    # mole fractions of the gas far from the droplets
+# k_ij = { N2 = 0.205 }   # the built-in value, fitted to measured bubble points
+```
+
+**What is checked.** The n-dodecane vapour pressure with the fitted
+Mathias-Copeman α is within 1 % of the measured Wagner equation of Ambrose
+and Walton (1989) from 300 K to 655 K (VA.1); the plain κ(ω) of 1978 is
+16 % off at 300 K, near the 363 K of the injected fuel. k_ij = 0.205 for
+nitrogen is our fit to the 75 measured bubble points up to 20 MPa (mean
+deviation 2.7 %, at most 9.1 %; VA.2). As the pressure goes to zero the
+surface tends to Raoult's law (VA.3). The spray takes the table's surface
+fraction and latent heat bit for bit, the gas receives the vapour at the
+enthalpy the parcel gives up, so the books close, and parcels above the
+critical mixing temperature are counted (`critical_parcels`,
+`critical_mass`).
+
+**What this version does not do.** Above 550 K one k_ij leaves the
+bubble pressure 3 to 9 % low; the surface fuel fraction moves by 2 to 6 %
+between the k_ij of the whole data set and of the hot isotherms. The
+dissolved gas is not booked (the liquid stays pure fuel), and the gas
+solver stays an ideal gas, so the departure enthalpy of the dense vapour
+enters the gas as a small heat deficit (D317). Built-in high-pressure data
+for n-dodecane only; any other liquid can give its critical point,
+acentric factor and molar mass. The Spray A flow case comes with the
+breakup model and the n-dodecane vapour species (stages SA2 to SA6 of
+[the Spray A plan](../requirements/step28-spray-a.md)).
+
+[Recipe 314](../recipes/sprays.md#spray-a-surface),
+[plan](../requirements/step28-spray-a.md).
