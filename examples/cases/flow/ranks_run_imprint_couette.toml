@@ -20,8 +20,8 @@
 #   cargo build --release -p foehncraft-cli --features mpi
 #   mpirun -n 5 target/release/foehn flow examples/cases/flow/ranks_run_imprint_couette.toml
 #
-# Re = w r1 (r2 - r1) / nu = 50; a third of a turn (21 steps of 0.01 s),
-# 1 280 cells.
+# Re = w r1 (r2 - r1) / nu = 50; a third of a turn (21 steps of 0.01 s);
+# 640 cells, 256 in the rotor and 384 in the stator.
 
 case_format = "0.7"
 

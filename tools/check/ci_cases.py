@@ -45,6 +45,7 @@ FLOW = {
         "ranks_heated_channel_sst", "ranks_restart_channel", "ranks_run_channel",
         "ranks_run_transient_sst", "ranks_run_mrf_couette",
         "ranks_run_sliding_couette",
+        "ranks_run_imprint_couette",
         "immersed_cylinder_re20", "immersed_topology_bend", "immersed_mms",
     ],
     "linux-3": [
