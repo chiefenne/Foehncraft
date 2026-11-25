@@ -502,6 +502,10 @@ A code keeps its meaning; a retired code stays in the table.
 | `MCP004` | error | A call that the person declined when the server asked for approval. |
 | `MCP005` | error | A call that needs the person's approval (`ask`), from a host that cannot ask (no MCP elicitation); the person allows it in `foehn-mcp.toml` or uses a host that asks. |
 | `MCP006` | error | The action table `foehn-mcp.toml` cannot be read or written: not TOML, an unknown action kind or setting. |
+| `STR001` | error | A structural case or model that is not valid: an unknown key or a wrong value, a point that is not a node, a beam without length, a missing material or section, non-positive properties. |
+| `STR002` | error | The stiffness of a structural case is singular: the structure can move freely (a missing support or clamp, or a mechanism); the message names the first free unknown. For the modes of a free structure give a negative `shift`. |
+| `STR003` | warning | A modal analysis may have missed modes: the Sturm count (the inertia of K − σM) finds more eigenvalues in the range than Lanczos returned, or Lanczos stopped above its tolerance. |
+| `STR004` | error | The clamp fit (D290) cannot reach the measured frequency: it lies at or above the frequency of the rigidly clamped model (the model is too soft), or the mode does not depend on the spring. |
 | `GEN001` | error | An error without a more specific code. |
 
 ## Engine API (D86)

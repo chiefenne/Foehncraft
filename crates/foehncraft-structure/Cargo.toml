@@ -1,0 +1,19 @@
+[package]
+name = "foehncraft-structure"
+description = "Foehncraft structure: a small linear structural finite element solver (beams first; shells, solids, dynamics and contact follow), for reed valves and other parts moved by the flow (L53, MS5)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+foehncraft-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+schemars.workspace = true
+
+[lints]
+workspace = true

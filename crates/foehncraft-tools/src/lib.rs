@@ -34,6 +34,7 @@ pub mod materials;
 pub mod mesh;
 pub mod mpi;
 pub mod post;
+pub mod structure;
 pub mod study;
 pub mod system;
 
@@ -70,6 +71,8 @@ pub enum Category {
     Post,
     /// Verification and solver studies.
     Study,
+    /// The structural solver (L53).
+    Structure,
     /// Journals of tool calls and their replay (D197).
     Journal,
 }
@@ -89,6 +92,7 @@ impl Category {
             Self::Result => "result",
             Self::Post => "post",
             Self::Study => "study",
+            Self::Structure => "structure",
             Self::Journal => "journal",
         }
     }
@@ -397,6 +401,8 @@ pub fn registry() -> Vec<Entry> {
         entry::<post::DatumReport>(),
         entry::<post::SprayStatistics>(),
         entry::<post::SprayPenetration>(),
+        entry::<structure::Run>(),
+        entry::<structure::FitClamp>(),
         entry::<study::Scalar>(),
         entry::<study::Poisson>(),
         entry::<study::G1>(),
