@@ -251,7 +251,7 @@ validated range, one mesh only, …) in its report and its JSON result.
   clamp springs per length of the clamp line (D290) and their fit to a
   measured natural frequency, static deflection and modes by shift-invert
   Lanczos with a Sturm check that no mode was missed, run as the tools
-  `structure.run` and `structure.fit_clamp`. Checked against cantilever
+  `structure.run` and `structure.fitclamp`. Checked against cantilever
   deflections and frequencies, the pinned Timoshenko beam and the
   frequency equation of a beam on a rotational clamp spring
   ([gallery 295](docs/gallery/structure.md#reed-beam)). Shells, solids,

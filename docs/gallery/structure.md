@@ -4,7 +4,7 @@ Part of the [Example gallery](../gallery.md): the linear structural solver of th
 
 | # | Example | Stage | Feature |
 |---|---|---|---|
-| 295 | [A reed valve as a beam: modes, and the clamp spring against the frequency equation](#reed-beam) | MS5 | `structure.run`, `structure.fit_clamp`, `[[beams]]`, `[[clamps]]` |
+| 295 | [A reed valve as a beam: modes, and the clamp spring against the frequency equation](#reed-beam) | MS5 | `structure.run`, `structure.fitclamp`, `[[beams]]`, `[[clamps]]` |
 
 ---
 
@@ -60,13 +60,13 @@ below. `reed_beam_clamp_springs.toml` mounts the reed on
 k_rotation = 40 N·m/rad per m and k_translation = 2·10⁷ N/m per m: the
 first mode falls from 184 Hz to 152 Hz.
 
-**The fit.** `structure.fit_clamp` finds the spring that gives a measured
+**The fit.** `structure.fitclamp` finds the spring that gives a measured
 frequency. A stiffer spring raises every natural frequency, so the root is
 unique; the fit brackets it by factors of ten and refines it by the
 Illinois method on ln k:
 
 ```sh
-target/release/foehn call structure.fit_clamp --input examples/cases/tools/structure_fit_clamp.json
+target/release/foehn call structure.fitclamp --input examples/cases/tools/structure_fit_clamp.json
 ```
 
 ```text

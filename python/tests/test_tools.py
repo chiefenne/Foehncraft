@@ -81,6 +81,14 @@ def test_every_tool_through_call(tmp_path):
             "case": ROOT / "examples/cases/bench/g1_ci_small.toml",
             "out": tmp_path / "g1",
         },
+        "structure.run": {
+            "case": ROOT / "examples/cases/structure/reed_beam.toml",
+            "out": tmp_path / "structure",
+        },
+        "structure.fitclamp": {
+            "case": ROOT / "examples/cases/structure/reed_beam_clamp_springs.toml",
+            "frequency": 150.0,
+        },
         # the call of flow.run in its run record, run again
         "journal.replay": {"script": out / "run.jsonl"},
     }
@@ -107,6 +115,8 @@ def test_every_tool_through_call(tmp_path):
     assert results["case.estimate"]["cells"] == results["case.check"]["estimate"]["cells"]
     assert {d["name"] for d in results["post.datums"]["datums"]} == {"x06", "outlet"}
     assert results["post.penetration"]["injectors"][0]["name"] == "nozzle"
+    assert results["structure.run"]["modal"]["sturm"]["ok"]
+    assert abs(results["structure.fitclamp"]["frequency"] - 150.0) < 1e-3
 
 
 @needs_native

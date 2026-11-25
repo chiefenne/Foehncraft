@@ -72,7 +72,7 @@ Part of the [Recipes](../recipes.md): the linear structural solver `foehncraft-s
 
    ```sh
    echo '{"case": "examples/cases/structure/reed_beam_clamp_springs.toml", "spring": "rotation", "mode": 1, "frequency": 150.0}' > fit.json
-   target/release/foehn call structure.fit_clamp --input fit.json
+   target/release/foehn call structure.fitclamp --input fit.json
    ```
 
    The answer gives `k_per_length` to put into `k_rotation`, and

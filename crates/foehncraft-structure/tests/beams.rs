@@ -368,6 +368,9 @@ fn clamp_springs_static_is_exact() {
     let exact = p * L.powi(3) / (3.0 * ei()) + p * L * L / (kr * B) + p / (kt * B);
     assert!(rel(w, exact) < 1e-10, "{w} {exact}");
     let j = out.to_json("t");
+    // the clamp springs carry the load: their forces are the reaction
+    let rz = j["static"]["reaction_force"][2].as_f64().unwrap();
+    assert!(rel(rz, -p) < 1e-10, "{rz} {p}");
     assert_eq!(j["clamps"][0]["rotation"]["rigid"], false);
     assert!(
         rel(

@@ -26,7 +26,8 @@ fn dof_name(model: &Model, d: usize) -> String {
 pub struct Static {
     /// Displacements and rotations of every unknown.
     pub u: Vec<f64>,
-    /// Reactions (K u − f) at every unknown; zero at free ones to rounding.
+    /// Reactions at every unknown: K u − f of the supports plus the forces
+    /// of the springs to ground; zero elsewhere to rounding.
     pub reactions: Vec<f64>,
     /// Strain energy ½ uᵀ K u.
     pub energy: f64,
@@ -50,7 +51,12 @@ pub fn solve_static(model: &Model) -> Result<Static, Error> {
     let uf = f.solve(&sys.f);
     let u = sys.expand(&uf);
     let ku = sys.k_all.apply(&u);
-    let reactions: Vec<f64> = ku.iter().zip(&sys.f_all).map(|(a, b)| a - b).collect();
+    let mut reactions: Vec<f64> = ku.iter().zip(&sys.f_all).map(|(a, b)| a - b).collect();
+    // springs to ground (clamp springs among them) hold the structure too:
+    // their forces on it count as reactions
+    for &(d, k) in &model.springs {
+        reactions[d] -= k * u[d];
+    }
     let energy = 0.5 * dot(&uf, &sys.k.apply(&uf));
     Ok(Static {
         u,

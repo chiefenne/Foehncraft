@@ -1,4 +1,4 @@
-//! `structure.run` and `structure.fit_clamp`: the linear structural solver
+//! `structure.run` and `structure.fitclamp`: the linear structural solver
 //! (L53, MS5; crate `foehncraft-structure`).
 
 use crate::{Action, Category, Ctx, Effects, Tool};
@@ -113,7 +113,7 @@ impl Tool for Run {
     }
 }
 
-/// Input of `structure.fit_clamp`.
+/// Input of `structure.fitclamp`.
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct FitInput {
@@ -140,11 +140,11 @@ fn one() -> usize {
     1
 }
 
-/// `structure.fit_clamp`.
+/// `structure.fitclamp`.
 pub struct FitClamp;
 
 impl Tool for FitClamp {
-    const ID: &'static str = "structure.fit_clamp";
+    const ID: &'static str = "structure.fitclamp";
     const VERSION: u32 = 1;
     const SUMMARY: &'static str = "Fit the clamp spring per length (D290) so that a mode of the structural case has a measured natural frequency.";
     const CATEGORY: Category = Category::Structure;
@@ -214,7 +214,7 @@ mod tests {
         // the fit of examples/cases/tools/structure_fit_clamp.json
         let case = root().join("examples/cases/structure/reed_beam_clamp_springs.toml");
         let r = call(
-            "structure.fit_clamp",
+            "structure.fitclamp",
             json!({"case": case, "frequency": 150.0}),
             &mut ctx,
         );
@@ -223,7 +223,7 @@ mod tests {
         assert!((f - 150.0).abs() < 1e-6, "{f}");
         // above the rigid clamp: STR004
         let r = call(
-            "structure.fit_clamp",
+            "structure.fitclamp",
             json!({"case": case, "frequency": 400.0}),
             &mut ctx,
         );
