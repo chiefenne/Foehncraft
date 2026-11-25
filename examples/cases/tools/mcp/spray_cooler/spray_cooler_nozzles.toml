@@ -1,0 +1,37 @@
+# Three nozzles across the duct of spray_cooler.toml, 0.1 m behind the inlet,
+# spraying downstream. Each carries a third of the water flow (here 3 g/s in
+# all, the first guess from the heat balance).
+
+[liquid]
+name = "water"
+density = 998.0
+specific_heat = 4181.0
+temperature = 293.15
+vapour = "H2O"
+
+[[injector]]
+name = "low"
+position = [0.1, 0.05, 0.05]
+direction = [1.0, 0.0, 0.0]
+speed = 10.0
+half_angle = 15.0
+mass_flow = 1.0e-3
+size = { distribution = "rosin-rammler", mean = 20e-6, spread = 3.0, min = 5e-6, max = 60e-6 }
+
+[[injector]]
+name = "middle"
+position = [0.1, 0.10, 0.05]
+direction = [1.0, 0.0, 0.0]
+speed = 10.0
+half_angle = 15.0
+mass_flow = 1.0e-3
+size = { distribution = "rosin-rammler", mean = 20e-6, spread = 3.0, min = 5e-6, max = 60e-6 }
+
+[[injector]]
+name = "high"
+position = [0.1, 0.15, 0.05]
+direction = [1.0, 0.0, 0.0]
+speed = 10.0
+half_angle = 15.0
+mass_flow = 1.0e-3
+size = { distribution = "rosin-rammler", mean = 20e-6, spread = 3.0, min = 5e-6, max = 60e-6 }
