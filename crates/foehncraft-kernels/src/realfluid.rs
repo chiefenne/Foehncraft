@@ -497,13 +497,7 @@ type Residual = ([f64; MAX], Phase, Phase, [f64; MAX], [f64; MAX]);
 
 /// The residual F(ln K) = ln K − (ln φ^l(x) − ln φ^v(y)) and the phases.
 #[inline]
-fn residual(
-    mix: &Mixture,
-    t: f64,
-    p: f64,
-    lnk: &[f64; MAX],
-    r: &[f64; MAX],
-) -> Option<Residual> {
+fn residual(mix: &Mixture, t: f64, p: f64, lnk: &[f64; MAX], r: &[f64; MAX]) -> Option<Residual> {
     let (x, y) = split(mix.n, lnk, r)?;
     let l = mix.phase(&x, t, p, Root::Liquid);
     let v = mix.phase(&y, t, p, Root::Vapour);

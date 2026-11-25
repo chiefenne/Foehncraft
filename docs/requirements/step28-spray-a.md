@@ -141,7 +141,7 @@ numbers are.
 | Stage | Content | Depends on |
 |---|---|---|
 | SA0 | This page | – |
-| SA1 | Real-fluid kernel (Peng-Robinson, mixtures, fugacity, departure functions, surface equilibrium, stability test, mixing line), `equilibrium = "peng-robinson"`, D312 latent heat, D314 critical state; checks VA.1 to VA.4, VA.6, VA.7; gallery example with the equilibrium and mixing-line images | the liquid library (critical constants, n-dodecane) |
+| SA1 | Real-fluid kernel (Peng-Robinson, mixtures, fugacity, departure functions, surface equilibrium, stability test, mixing line), `equilibrium = "peng-robinson"`, D312 latent heat, D314 critical state; checks VA.1 to VA.4, VA.6, VA.7; gallery example with the equilibrium and mixing-line images. **Part 1 (#314):** kernel, surface table, `[spray.evaporation] equilibrium` and `[spray.evaporation.peng_robinson]` (`fuel`, or `critical_temperature`, `critical_pressure`, `acentric_factor`, `molar_mass`; `ambient`, `k_ij`, `table_step`), critical-state counts; VA.1 to VA.3, VA.6 (closed box, water in nitrogen); gallery 314. Still open: the stability test, the mixing line (VA.4), VA.7 with a fuel vapour species | the liquid library (n-dodecane vapour species) |
 | SA2 | High-pressure film properties (D313), VA.5 | SA1, sources read |
 | SA3 | ECN diagnostics (D315) | – |
 | SA4 | Dense-spray effects (D316) | card |

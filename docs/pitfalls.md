@@ -24,6 +24,7 @@ instead.
 - [Limiters on tetrahedra and polyhedra](#limiters)
 - [Porous resistances and the Rhie–Chow factor](#porous-rhie-chow)
 - [Deforming meshes: the grid flux and the old levels](#deforming-mesh)
+- [High-pressure phase equilibrium](#high-pressure-equilibrium)
 
 <a id="steady-runs"></a>
 ## Steady runs: budget and stopping
@@ -561,3 +562,29 @@ Found with the deforming mesh of stage MS0 (#296):
   every step; refreshing the density with the new volumes before the step
   starts overwrote level n. The density keeps (ρⁿ, p₀ⁿ) aside and the step
   starts from them.
+
+<a id="high-pressure-equilibrium"></a>
+## High-pressure phase equilibrium
+
+- **A bias of a mixture fit is not always the pure-fluid vapour pressure.**
+  Peng-Robinson with one k_ij was 5 to 7 % low on the measured N₂ +
+  n-dodecane bubble points at 562 and 594 K; the pure n-dodecane vapour
+  pressure of the plain κ(ω) is within 1.3 % of the measured equation
+  there, so the bias is the mixture term (the measured Henry constant falls
+  faster with T). Check the pure-fluid vapour pressure against a measured
+  equation that is valid to T_c (Ambrose and Walton 1989) before blaming
+  it, and check the sensitivity of the quantity you use (the surface fuel
+  fraction moves by only 2 to 6 % between the two k_ij).
+- **The plain κ(ω) is far off at low reduced temperature.** For n-dodecane
+  it is 16 % off at 300 K, for water 11 % at 320 K; a liquid injected cold
+  needs a Mathias-Copeman α fitted to its measured vapour pressure.
+- **Raoult's limit is reached only as p → 0.** At 0.1 MPa the
+  Peng-Robinson surface fraction is 2 to 3 % above Raoult's law (Poynting
+  factor and second virial terms, linear in p), so a low-pressure check
+  needs a band that grows with p, not 1 % at 0.1 MPa.
+- **`python3 -m tools.release.changelog` without `--print` moves every
+  fragment into `CHANGELOG.md`.** It is the release step; `--help` is not an
+  option and runs it too. Use `--print` (as CI does), and if it ran by
+  mistake, `git checkout -- CHANGELOG.md changelog.d/` and recreate any
+  untracked fragment of the branch.
+

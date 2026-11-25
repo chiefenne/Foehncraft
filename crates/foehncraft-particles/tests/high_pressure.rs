@@ -274,3 +274,204 @@ fn the_liquid_is_denser_than_the_vapour_at_the_surface() {
     let v = mix.phase(&s.y, 550.0, 6e6, Root::Vapour);
     assert!(l.z < 0.5 * v.z, "{} {}", l.z, v.z);
 }
+
+// ---- the surface in the spray (`[spray.evaporation] equilibrium`) ----
+
+mod in_the_spray {
+    use foehncraft_mesh::Geometry;
+    use foehncraft_mesh::generate::{BoxSpec, Kind};
+    use foehncraft_mesh::locate::Locator;
+    use foehncraft_particles::{
+        BoundaryMode, BoundaryRule, Env, Equilibrium, EvaporationModel, Gas, GasState, Injector,
+        Spray, SpraySection, Vapour,
+    };
+
+    struct Cell {
+        t: f64,
+        p0: f64,
+    }
+
+    impl Gas for Cell {
+        fn at(&self, _: usize, _: [f64; 3]) -> GasState {
+            GasState {
+                u: [0.0; 3],
+                rho: self.p0 * 0.028 / (8.314_462_618 * self.t),
+                mu: 1.85e-5,
+                t: self.t,
+                cp: 1040.0,
+                k: 0.03,
+                tke: 0.0,
+                eps: 0.0,
+                y_v: 0.0,
+                p0: self.p0,
+                m_gas: 0.028_013_4,
+                diff: 2.5e-5,
+            }
+        }
+    }
+
+    fn one_cell() -> (foehncraft_mesh::Mesh, Geometry) {
+        let mut s = BoxSpec::new(Kind::Hex, 3, [1, 1, 1]);
+        s.lower = [0.0; 3];
+        s.upper = [0.01; 3];
+        let m = s.generate().unwrap();
+        let g = Geometry::compute(&m);
+        (m, g)
+    }
+
+    fn section(name: &str, temp: f64) -> SpraySection {
+        let mut cfg = SpraySection {
+            injectors: vec![Injector {
+                name: "n".into(),
+                position: [0.005; 3],
+                direction: [1.0, 0.0, 0.0],
+                speed: 1e-4,
+                half_angle: 0.0,
+                mass_flow: 1e-6,
+                diameter: 20e-6,
+                size: None,
+                parcels_per_second: 1e4,
+                start: 0.0,
+                end: Some(1e-3),
+                temperature: Some(temp),
+            }],
+            ..SpraySection::default()
+        };
+        cfg.liquid.name = name.into();
+        cfg.liquid.vapour = Some(if name == "water" { "H2O" } else { "NC12H26" }.into());
+        cfg.evaporation.model = EvaporationModel::RanzMarshall;
+        cfg.evaporation.equilibrium = Equilibrium::PengRobinson;
+        cfg
+    }
+
+    fn rules(env: &Env) -> Vec<BoundaryRule> {
+        vec![
+            BoundaryRule {
+                mode: BoundaryMode::Rebound,
+                e_normal: 0.5,
+                e_tangential: 0.5,
+            };
+            env.mesh.boundaries.len()
+        ]
+    }
+
+    #[test]
+    fn the_spray_takes_the_surface_of_the_table_and_closes_its_books() {
+        let (m, geo) = one_cell();
+        let loc = Locator::new(&m, &geo);
+        let env = Env {
+            mesh: &m,
+            geo: &geo,
+            loc: &loc,
+        };
+        // water with its critical point (Wagner and Pruss 2002) and the
+        // acentric factor of DATA_SOURCES 3e, in nitrogen at 0.1 MPa
+        let mut cfg = section("water", 300.0);
+        let pr = &mut cfg.evaporation.peng_robinson;
+        pr.critical_temperature = Some(647.096);
+        pr.critical_pressure = Some(22.064e6);
+        pr.acentric_factor = Some(0.3443);
+        pr.molar_mass = Some(0.018_015_28);
+        let mut sp = Spray::new(&cfg, &env, rules(&env), [0.0; 3]).unwrap();
+        sp.set_vapour(Some(Vapour::water()));
+        // without the table it is Raoult's law and the library latent heat
+        let raoult = sp.saturation_pressure(320.0);
+        let low = sp.latent_heat(320.0);
+        sp.set_surface_pressure(101_325.0).unwrap();
+        let tab = sp.surface_table().expect("table");
+        for t in [290.0, 320.0, 350.0] {
+            let s = sp.surface_state(t).unwrap();
+            assert!(s.two_phase);
+            assert_eq!(
+                sp.saturation_pressure(t).to_bits(),
+                (s.y_fuel * tab.p0).to_bits()
+            );
+            // the gas receives the vapour at c_l T + L: the books close by
+            // construction (the same function on both sides)
+            let c_l = sp.config().liquid.specific_heat;
+            assert_eq!(
+                sp.vapour_enthalpy(t).to_bits(),
+                (c_l * t + sp.latent_heat(t)).to_bits()
+            );
+            // at 0.1 MPa the latent heat stays within 2 % of the library's
+            assert!(
+                s.latent_ratio > 0.98 && s.latent_ratio <= 1.0,
+                "{t} K: {}",
+                s.latent_ratio
+            );
+        }
+        assert!((sp.latent_heat(320.0) / low - 1.0).abs() < 0.02);
+        // the Peng-Robinson vapour pressure of water with the plain κ(ω)
+        // (no fitted α for this polar liquid) is 11 % below the IAPWS
+        // equation at 320 K: why the built-in fuels carry a fitted α (VA.1)
+        let e = sp.saturation_pressure(320.0) / raoult - 1.0;
+        assert!(e < -0.05 && e > -0.15, "{e}");
+        // a droplet evaporates with it
+        let gas = Cell {
+            t: 400.0,
+            p0: 101_325.0,
+        };
+        sp.advance(&env, &gas, 0.0, 1e-3).unwrap();
+        let m0 = sp.tally.injected_mass;
+        sp.advance(&env, &gas, 1e-3, 1e-3).unwrap();
+        assert!(sp.tally.evaporated_mass > 0.0 && sp.tally.evaporated_mass < m0);
+        assert_eq!(sp.tally.critical_parcels, 0);
+    }
+
+    #[test]
+    fn parcels_above_the_critical_mixing_temperature_are_counted() {
+        let (m, geo) = one_cell();
+        let loc = Locator::new(&m, &geo);
+        let env = Env {
+            mesh: &m,
+            geo: &geo,
+            loc: &loc,
+        };
+        // n-dodecane injected at 655 K into nitrogen at 6 MPa: above the
+        // critical mixing temperature 651.3 K of its surface (D314); no
+        // vapour species, so the droplets keep their mass and temperature
+        let cfg = section("n-dodecane", 655.0);
+        let mut sp = Spray::new(&cfg, &env, rules(&env), [0.0; 3]).unwrap();
+        sp.set_surface_pressure(6e6).unwrap();
+        assert!(sp.surface_table().unwrap().t_end < 655.0);
+        let gas = Cell { t: 655.0, p0: 6e6 };
+        sp.advance(&env, &gas, 0.0, 1e-3).unwrap();
+        let n = sp.parcels.len() as u64;
+        assert!(n > 0);
+        assert_eq!(sp.tally.critical_parcels, n);
+        assert!((sp.tally.critical_mass / sp.mass_in_flow() - 1.0).abs() < 1e-12);
+        assert_eq!(sp.latent_heat(655.0), 0.0);
+    }
+
+    #[test]
+    fn the_keys_are_checked() {
+        let (m, geo) = one_cell();
+        let loc = Locator::new(&m, &geo);
+        let env = Env {
+            mesh: &m,
+            geo: &geo,
+            loc: &loc,
+        };
+        let fails = |cfg: SpraySection, what: &str| {
+            let mut sp = Spray::new(&cfg, &env, rules(&env), [0.0; 3]).unwrap();
+            let e = format!("{:#}", sp.set_surface_pressure(6e6).unwrap_err());
+            assert!(e.contains(what), "{e}");
+        };
+        fails(section("kerosene", 363.0), "no high-pressure data");
+        let mut c = section("water", 300.0);
+        c.evaporation.peng_robinson.critical_temperature = Some(647.0);
+        fails(c, "all four");
+        let mut c = section("n-dodecane", 363.0);
+        c.evaporation.peng_robinson.ambient = [("HE".to_string(), 1.0)].into();
+        fails(c, "unknown");
+        let mut c = section("n-dodecane", 363.0);
+        c.evaporation.peng_robinson.k_ij = [("O2".to_string(), 0.1)].into();
+        fails(c, "names no gas");
+        // Raoult: no table
+        let mut c = section("n-dodecane", 363.0);
+        c.evaporation.equilibrium = Equilibrium::Raoult;
+        let mut sp = Spray::new(&c, &env, rules(&env), [0.0; 3]).unwrap();
+        sp.set_surface_pressure(6e6).unwrap();
+        assert!(sp.surface_table().is_none());
+    }
+}
