@@ -17,6 +17,7 @@ On this page:
 - [Lagrangian sprays](#lagrangian-sprays)
 - [Porous regions](#porous-regions)
 - [Immersed bodies](#immersed-bodies)
+- [Deforming meshes](#deforming-meshes)
 - [Species](#species)
 
 Stage 4: steady incompressible laminar flow, SIMPLEC with the Rhie–Chow
@@ -352,6 +353,21 @@ writes χ.
 | Case file | Mesh | Shows | Where |
 |---|---|---|---|
 | `flow/immersed_cylinder_re20.toml` | generated hex 2D, 440 × 82 cells (h = D/20), no cylinder in the mesh | Schäfer & Turek 2D-1 with the cylinder as a penalised body: C_D 5.581 (in range), Δp 0.9 % above, C_L 35 % above the range (smeared wall); fails beyond 40 % of the range midpoint | [gallery 270](../gallery/immersed.md#penalised-cylinder), [recipe 270](../recipes/immersed.md#penalised-body) |
+
+## Deforming meshes
+
+`[mesh_motion] displacement`: the nodes of the mesh move by an expression of
+their place in the mesh file and of time (D91, L22, stage MS0); every face
+gets its swept volume, walls move with their nodes, other boundaries may only
+slide in their plane. The keys are on the [key page](../keys.md)
+(`mesh_motion.*`); `history.csv` gets a column `volume`, `result.json` the
+block `transient.mesh_motion`.
+
+| Case file | Mesh | Shows | Where |
+|---|---|---|---|
+| `flow/motion_free_stream.toml` | generated hex 2D, 20 × 10 cells perturbed by 20 %, inner nodes swinging by up to 3 cm | check MS0.1: a uniform flow of 1 m/s stays uniform on the moving mesh to 1.3·10⁻¹⁵ m/s, the space conservation law closes to 10⁻¹⁵ (tests/mesh_motion.rs: also tet and poly meshes, BDF1 and Crank–Nicolson) | [gallery 296](../gallery/moving-solids.md#deforming-mesh), [recipe 296](../recipes/moving-solids.md#deforming-mesh) |
+| `flow/motion_piston_adiabatic.toml` | generated hex 2D, 10 × 20 cells, compressed evenly to a quarter | check MS0.2: a piston compresses a closed gas volume with adiabatic walls by a crank (ratio 4, 1 s): p₀ = 705.03 kPa at the top dead centre (isentrope 705.50 kPa), 101.323 kPa after the period; error second order in Δt, mass to 10⁻¹⁵ | [gallery 296](../gallery/moving-solids.md#deforming-mesh), [recipe 296](../recipes/moving-solids.md#deforming-mesh) |
+| `flow/motion_piston_cooled_walls.toml` | generated hex 2D, 40 × 80 cells | the same piston with all walls at 300 K: thermal boundary layers, p₀ = 572 kPa at the top dead centre and 90.4 kPa after the period (an open p–V loop), heat book closed every step; 30 s | [gallery 296](../gallery/moving-solids.md#deforming-mesh) |
 
 ## Species
 

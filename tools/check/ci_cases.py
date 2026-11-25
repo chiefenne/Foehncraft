@@ -69,6 +69,7 @@ FLOW = {
         "mixed_convection_channel",
         "spray_duct", "spray_datums", "spray_two_way", "spray_cooling", "spray_dispersion",
         "porous_darcy_block", "porous_honeycomb_channel", "porous_schumann", "porous_storage_charge",
+        "motion_free_stream", "motion_piston_adiabatic",
     ],
     "long": [
         "cylinder_re100", "cylinder_re100_short", "cylinder_re100_statistics", "cylinder_re100_convective", "cylinder_re20_gci",
@@ -76,6 +77,7 @@ FLOW = {
         "cht_heat_sink_turbulent", "cylinder_steady_diagnosis", "vd_cavity_large_dt",
         "cht_pulsating_channel_skin", "cht_heated_wall_frozen", "cht_pulsating_channel_warmup",
         "natural_convection_cavity_ra1e5", "natural_convection_plate",
+        "motion_piston_cooled_walls",
     ],
     "quick": [
         "cavity_re100_budget", "couette_hex", "couette_mixed", "couette_poly", "couette_tet",

@@ -23,6 +23,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | [Lagrangian sprays](recipes/sprays.md) | spray droplets into a flow with an injector file, wall behaviour, the mass book | 242, 265, 280, 283, 285 |
 | [Porous regions](recipes/porous.md) | porous blocks and honeycombs in a flow: resistances, axes, the honeycomb shorthand | 273, 275 |
 | [Immersed bodies](recipes/immersed.md) | put a body in the flow without meshing it: `[immersed]`, the permeability, forces | 270 |
+| [Moving meshes and solids](recipes/moving-solids.md) | move the mesh with a prescribed displacement: `[mesh_motion]`, moving walls, a piston on a closed volume | |
 | [Species and reacting flows](recipes/species.md) | species of an ideal-gas mixture: names, compositions in mole or mass fractions, diffusion by Schmidt or Lewis numbers, mixture properties, the element ledger | 278 |
 | [Expressions and materials](recipes/properties.md) | values as expressions of x, y, z and t, constants and tables, wall mass flux, the material database, regions | 31, 32 |
 | [Python](recipes/python.md) | the `foehncraft` package: cases, expressions, runs with callbacks, results, materials, studies | 33 |

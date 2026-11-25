@@ -17,9 +17,10 @@
 # V dp₀/dt only. A slow compression is isentropic, p₀ V^γ = const with
 # γ = c_p/(c_p − R/M) = 1.39983: at the top dead centre (t = 0.5 s,
 # V = V₀/4) p₀ = 4^γ p₀(0) = 705.5 kPa and T = 4^(γ−1) T₀ = 522.0 K, and after
-# the whole period the gas is back at 101 325 Pa and 300 K. The discrete
-# entropy change over the period falls with the second power of the time
-# step (BDF2): 100 steps give |Δs|/c_p of about 1e-6 (the test checks it).
+# the whole period the gas is back at 101 325 Pa and 300 K. The error of p₀
+# falls with the second power of the time step (BDF2): the 100 steps of this
+# file give 6.6e-4 at the top dead centre and 1.8e-5 after the period
+# (gallery 296; the test checks the order).
 
 case_format = "0.6"
 

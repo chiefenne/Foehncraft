@@ -24,6 +24,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | [Lagrangian sprays](gallery/sprays.md) | droplets as Lagrangian parcels in the gas flow: injectors, drag, gravity, wall behaviour, the mass book | 242, 265, 280, 283, 285 |
 | [Porous regions](gallery/porous.md) | flow through porous matrices with a direction-dependent Darcy–Forchheimer resistance: a ceramic honeycomb, the exact pressure drop of a block | 273, 275 |
 | [Immersed bodies](gallery/immersed.md) | bodies in the flow without a body-fitted mesh: Brinkman penalisation of primitive bodies (L13 stage 1) | 270 |
+| [Moving meshes and solids](gallery/moving-solids.md) | meshes whose nodes move in time: the deforming mesh with swept volumes, a piston compressing a closed gas volume, free-stream preservation (stage MS0, L22) | |
 | [Species and reacting flows](gallery/species.md) | species transport of ideal-gas mixtures on the variable density: mixture properties from kinetic theory, the closure species, the element ledger (steam furnace path, SF1) | 278 |
 | [Expressions and materials](gallery/properties.md) | boundary values, body forces and viscosities as expressions, the material database, regions, walls with a mass flux | 23 |
 | [Python](gallery/python.md) | cases built, run and studied from Python: expressions with Python operators, callbacks, study tables | 24 |

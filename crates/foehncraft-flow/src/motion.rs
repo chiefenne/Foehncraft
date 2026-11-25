@@ -239,6 +239,9 @@ pub struct Deforming {
     /// Faces of the walls, and of the other boundaries with their names.
     walls: Vec<usize>,
     fixed: Vec<(usize, String)>,
+    /// A domain without a pressure boundary and with a constant density: its
+    /// volume must not change (MOV004).
+    closed_constant: bool,
     /// The time of the current level.
     pub time: f64,
     /// The smallest ratio of a cell volume to its volume in the mesh file
@@ -325,6 +328,12 @@ impl Deforming {
                 }
             }
         }
+        let open = mesh.boundaries.iter().any(|p| {
+            case.boundary
+                .get(&p.name)
+                .is_some_and(crate::bc::BoundaryCondition::is_pressure)
+        });
+        let closed_constant = !open && !crate::density::wanted(case);
         let geo = Geometry::compute(mesh);
         let mut d = Self {
             displacement,
@@ -336,6 +345,7 @@ impl Deforming {
             swept_prev: Vec::new(),
             walls,
             fixed,
+            closed_constant,
             time: t0,
             volume_ratio: (1.0, 1.0),
         };
@@ -365,15 +375,16 @@ impl Deforming {
         let n = self.mesh.n_cells;
         let base = &self.base_vol;
         let mut worst = (f64::INFINITY, 0);
-        for c in 0..n {
-            let r = self.geo.cell_volume[c] / base[c];
+        for (c, (v, b)) in self.geo.cell_volume[..n].iter().zip(base).enumerate() {
+            let r = v / b;
             if r < worst.0 {
                 worst = (r, c);
             }
             self.volume_ratio.0 = self.volume_ratio.0.min(r);
             self.volume_ratio.1 = self.volume_ratio.1.max(r);
         }
-        if !(worst.0 > 0.0) || !worst.0.is_finite() {
+        // (a NaN ratio never becomes the worst, so `worst` stays infinite)
+        if worst.0 <= 0.0 || !worst.0.is_finite() {
             let x = self.geo.cell_centroid[worst.1];
             return Err(diag::err(
                 Diagnostic::new(
@@ -421,6 +432,23 @@ impl Deforming {
                         ),
                     )
                     .boundary(name),
+                ));
+            }
+        }
+        if self.closed_constant {
+            let v0: f64 = vol_now.iter().copied().exact_sum();
+            let v1 = self.volume();
+            if (v1 - v0).abs() > 1e-9 * v0 {
+                return Err(diag::err(
+                    Diagnostic::new(
+                        diag::MOTION_CLOSED,
+                        format!(
+                            "the deforming mesh changes the volume of a closed domain by {:.3e}                              between t = {:.6e} s and {t1:.6e} s, and the density is constant:                              an incompressible fluid cannot be compressed. Give the domain a                              pressure boundary, or let the density follow the pressure ([energy]                              density = \"variable\" with a closed volume)",
+                            (v1 - v0) / v0,
+                            self.time
+                        ),
+                    )
+                    .key("mesh_motion.displacement"),
                 ));
             }
         }
