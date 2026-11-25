@@ -40,6 +40,7 @@ pub mod budget;
 pub mod buoyancy;
 pub mod case;
 pub mod checkpoint;
+pub mod chemistry;
 pub mod cht;
 pub mod conduction;
 pub mod console;

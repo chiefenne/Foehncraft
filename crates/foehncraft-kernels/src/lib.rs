@@ -25,6 +25,8 @@
 //! - [`radiation`]: Monte Carlo radiation (step 29): Owen-scrambled Sobol
 //!   points, the sampling of the bundles and their transport with exact
 //!   integer tallies;
+//! - [`chemistry`]: gas-phase reaction rates, their analytic Jacobian and
+//!   the stiff RODAS3 integrator of the reactor of a cell (stage SF2);
 //! - [`species`]: the properties of an ideal-gas mixture (stage SF1):
 //!   NASA-7 specific heat, Chapman–Enskog viscosity, Wilke and Mathur rules.
 //!
@@ -54,6 +56,7 @@
 pub mod adjoint;
 pub mod amg;
 pub mod blas;
+pub mod chemistry;
 pub mod entry;
 pub mod expr;
 pub mod face;
