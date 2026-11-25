@@ -1,0 +1,19 @@
+# The injector of spray_datums.toml (D246): water droplets with a
+# Rosin-Rammler distribution of the mass over the diameter (D242). Every
+# parcel carries the same mass; its diameter is drawn with the counter-based
+# generator keyed by the parcel identity, so the spray is the same on every
+# run and thread count.
+
+[liquid]
+name = "water"
+density = 998.0
+
+[[injector]]
+name = "nozzle"
+position = [0.1, 0.395, 0.05]
+direction = [0.3, -1.0, 0.0]
+speed = 10.0
+half_angle = 15.0
+mass_flow = 0.01
+parcels_per_second = 4000.0
+size = { distribution = "rosin-rammler", mean = 120e-6, spread = 2.5, min = 10e-6, max = 400e-6 }

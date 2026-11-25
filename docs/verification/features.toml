@@ -1670,8 +1670,37 @@ gaps = [
   "no reference-data case (terminal velocity in the Schiller-Naumann range, a prescribed vortex, grid turbulence)",
   "the gas does not feel the droplets (two-way coupling is SP2); no turbulent dispersion, evaporation or breakup",
   "the gas state is sampled at the start of each sub-step (first order in the gas); the time of a wall hit is a chord fraction",
-  "one process, constant droplet size; no rotating zones or periodic boundaries (SPR003)",
+  "one process; no rotating zones or periodic boundaries (SPR003)",
   "the CPU = GPU check of the parcel kernel runs in the PTX job of CI only",
+]
+
+[[feature]]
+id = "sprays.datums-statistics"
+area = "Sprays"
+title = "Datums, liquid flow through them and droplet statistics (SP1b)"
+switch = "[[datum]], [[injector]] size = { distribution = ... }"
+decisions = ["D242", "D262", "D263", "D264", "D265", "D267", "D268"]
+model = true
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-particles/tests/datums.rs::liquid_through_datums_closes", what = "V28.13: the liquid through a plane, a face layer, an STL surface, the outlet and a box on hexahedral, tetrahedral and polyhedral meshes equals the liquid of the parcels on the far side to round-off; the boundary datum equals the mass book" },
+  { kind = "exact", test = "crates/foehncraft-particles/tests/datums.rs::statistics_follow_the_distribution_and_the_parcels", what = "V28.14, V28.15: D32 of the drawn Rosin-Rammler and log-normal sizes within four standard errors of the distribution's value, Dv50 within one bin, the datum statistics equal to a direct calculation over the parcels" },
+  { kind = "exact", test = "crates/foehncraft-particles/tests/datums.rs::datum_sums_are_bitwise_on_threads_and_restart", what = "V28.15: datum sums bitwise equal on 1, 2 and 4 threads and after a restart" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/datums.rs::datums_close_with_the_boundaries", what = "V28.13 in a flow run: the boundary datum equals the boundary mass flow bit for bit, the plane on the faces the inlet flow to the solver tolerance, the cut plane within its quoted cut error (below 1e-3), an STL surface within 1 %, the outlet liquid equals the escaped liquid" },
+  { kind = "exact", test = "crates/foehncraft-flow/src/datum.rs::cuts_add_up_to_the_section", what = "the cell cuts of a plane add up to the section area on hexahedral, tetrahedral, polyhedral and mixed meshes" },
+  { kind = "exact", test = "crates/foehncraft-particles/src/sizes.rs::quantiles_of_rosin_rammler_follow_the_formula", what = "the inverse of the truncated Rosin-Rammler distribution against its closed form" },
+  { kind = "exact", test = "crates/foehncraft-particles/src/datum.rs::rosin_rammler_fit_recovers_its_parameters", what = "the Rosin-Rammler fit of a histogram of the exact distribution returns X and n" },
+  { kind = "contract", property = "diagnostics", test = "crates/foehncraft-flow/tests/datums.rs::bad_datums_are_refused_with_their_code", what = "unknown types, unknown boundaries and planes outside the mesh end in DAT001 or DAT002" },
+  { kind = "contract", property = "schema", test = "python/tests/test_datums.py::test_datum_columns_by_name", what = "datums.csv read by datum name in Python; an unknown datum names the datums of the file" },
+  { kind = "contract", property = "diagnostics", case = "spray_datums", what = "Rosin-Rammler spray through seven datums in the duct: outlet datum = escaped liquid to the bit, floor = deposited liquid; Dv50 91 µm at the outlet, 170 µm on the floor; cut plane within 6e-8 of the face layer", doc = "docs/gallery/sprays.md#spray-datums" },
+  { kind = "contract", property = "schema", case = "spray_datums_injectors", what = "the included injector file of spray_datums with a Rosin-Rammler size distribution", doc = "docs/cases/flow.md#lagrangian-sprays" },
+]
+gaps = [
+  "V28.12 not done: no measured anchor (terminal velocity of water drops against Gunn and Kinzer 1949)",
+  "no enthalpy flow through datums (comes with the energy equation of the sprays, SP5)",
+  "steady runs write no datums.csv (the gas through the datums of a steady result through `foehn call post.datums`)",
+  "no size classes, no time-averaged spray fields (D266, SP2), no evaporation numbers (SP5)",
+  "a cut plane takes cell values and gradients (its cut_error is reported); a disc or rectangle snapped to the faces is a staircase of whole faces",
+  "not with a sliding mesh (DAT001); one process",
 ]
 
 [[feature]]

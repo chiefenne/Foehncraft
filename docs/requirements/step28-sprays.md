@@ -278,3 +278,18 @@ SPR005), parcel output and restart, the parcel kernel in `foehncraft-kernels`
 with a PTX entry (the PTX job of CI checks it; it cannot be built without
 the nightly toolchain). SP1 is one way: parcel passes as pure functions
 (D247) and the sub-step rules of D251 are the first change of SP2.
+
+SP1b is implemented (PR #265): `[[datum]]` with the types plane (cut or
+`snap = "faces"`, disc and rectangle bounds), surface (STL), boundary,
+interface, box, cylinder and zone; crossing records sorted and summed per
+datum (D263), the same bits on 1 to 4 threads and after a restart;
+gas reports (mass, volume and momentum flow, area and mass-flow averages,
+`cut_error`); moment sums, D10 to D43, Dv10/50/90, histograms and a
+Rosin-Rammler fit (D264); penetration, centre of mass and D32 in the flow per
+step (D265); `datums.csv`, `spray_hist_<datum>.csv`, `result.json`, the tools
+`post.datums`, `post.droplets`, `post.penetration`, the Python reader
+and `series.json` (D267, D268). The Rosin-Rammler and log-normal size
+distributions of D242 came with SP1b instead of SP2, as the statistics need
+them. Not yet: the enthalpy flow (with the energy equation and SP5), size
+classes, averaged fields (D266, SP2), `datums.csv` in steady runs, V28.12
+(terminal velocity against Gunn and Kinzer).

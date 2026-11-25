@@ -72,7 +72,7 @@ it pass (the rule of the verification grades, D199).
 
 | Stage | Content | Starts when |
 |---|---|---|
-| SP1b | Datum object for gas and spray (D262): planes, boundaries, face zones, surface files, regions; gas reports (mass flow, area and mass-flow averages, enthalpy flow); liquid crossings and cumulative flows (D263); moment sums, diameters and histograms (D264); spray-wide numbers that need no coupling (D265); `datums.csv`, histograms, `result.json`, run record, tools and Python reader (D267); `series.json` manifest (D268); checks V28.12 to V28.15; gallery example, case, recipe with images | go, after SP1 (#242) is merged |
+| SP1b | Datum object for gas and spray (D262): planes, boundaries, face zones, surface files, regions; gas reports (mass flow, area and mass-flow averages, enthalpy flow); liquid crossings and cumulative flows (D263); moment sums, diameters and histograms (D264); spray-wide numbers that need no coupling (D265); `datums.csv`, histograms, `result.json`, run record, tools and Python reader (D267); `series.json` manifest (D268); checks V28.12 to V28.15; gallery example, case, recipe with images | **Implemented 2026-11-24 (#265)** except the enthalpy flow (SP5) and V28.12; V28.13 to V28.15 pass ([gallery 265](../gallery/sprays.md#spray-datums)) |
 | SP2, SP5, SP2s | Averaged fields (D266) with SP2; evaporation rate, evaporation length, vapour penetration with SP5; the checks of the table above at their stage | their own go |
 | MurmelCraft M1 | Parcel viewer and time player (D268), in the MurmelCraft repository; can start as soon as the parcel file layout of SP1 is merged | go |
 | MurmelCraft M2 | Charts, tables and statistics panel | go, after M1 |

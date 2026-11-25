@@ -144,6 +144,9 @@ codes! {
     SPRAY_UNSUPPORTED = "SPR003", Error, "A `[spray]` in a case with MRF zones, sliding interfaces or a periodic boundary (not in this version).";
     SPRAY_LOST = "SPR004", Warning, "Parcels lost: the walk through the mesh failed or a parcel needed more than `[spray] max_substeps` sub-steps in a time step (counted in `spray.csv`).";
     SPRAY_BOOK = "SPR005", Error, "The mass book of the sprays does not close: released liquid differs from the liquid in the flow, stuck, left and lost by more than round-off.";
+    // datums and their reports (SP1b, D262 to D267)
+    DATUM_CONFIG = "DAT001", Error, "A `[[datum]]` table that cannot be used: a name used twice or with other characters than letters, digits, `_` and `-`, an unknown type, a missing or invalid key of its type (plane point and normal, bound, boundary, zones, STL file, box corners, cylinder, zone), or bad histogram bins.";
+    DATUM_EMPTY = "DAT002", Error, "A `[[datum]]` that meets no face or cell of the mesh (a plane outside the domain, an interface between zones that do not touch, an empty volume).";
     ENE_UNSUPPORTED = "ENE006", Error, "An energy setting this version does not have: a passive scalar named `temperature` beside `[energy]`, solid regions with a sliding mesh, a restart with `[energy.acceleration]`, passive scalars or a periodic mesh, or with the variable density (stage 7c) passive scalars, a restart, a periodic mesh, a convective outlet, a wall mass flux or a rotating zone.";
     ENE_SOURCE = "ENE008", Error, "An `[[energy.sources]]` entry for a region the case does not have, or without exactly one of `power` and `power_density`.";
     CHT_INTERFACE = "CHT004", Error, "An `[interfaces.<name>]` table that is not on a region interface (regions unknown, the same, two fluids, or not touching), or without exactly one of `contact_resistance` (≥ 0) and `thin_wall` (thickness > 0 with `conductivity` or `material`).";
@@ -535,7 +538,7 @@ mod tests {
                 [
                     "CASE", "SCHED", "BC", "SCAL", "RUN", "GEN", "DIV", "BAL", "EXPR", "MAT",
                     "REG", "MESH", "TURB", "MRF", "SLD", "ROT", "STAT", "ENE", "THM", "CHT",
-                    "TOOL", "LIM", "MCP", "ACC", "CYC", "BUO", "FRZ", "PRS", "SPR", "POR"
+                    "TOOL", "LIM", "MCP", "ACC", "CYC", "BUO", "FRZ", "PRS", "SPR", "DAT", "POR"
                 ]
                 .contains(&p),
                 "{}",

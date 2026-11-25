@@ -143,3 +143,195 @@ impl Tool for Derive {
         Ok(serde_json::to_value(&rep)?)
     }
 }
+
+/// Input of `post.datums`.
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DatumReportInput {
+    /// Flow case file (TOML) with the `[[datum]]` tables.
+    pub case: PathBuf,
+    /// Restart file, or `latest` for the newest one of the output directory.
+    #[serde(default = "latest")]
+    pub restart: PathBuf,
+    /// Only these datums (default: all of the case).
+    #[serde(default)]
+    pub datums: Vec<String>,
+    /// Case keys to override, `key=value` (D62); datums can be added this
+    /// way only in the case file.
+    #[serde(default)]
+    pub set: Vec<String>,
+    /// Output directory of the run (overrides `output.directory`), where
+    /// `latest` looks.
+    #[serde(default)]
+    pub out: Option<PathBuf>,
+}
+
+/// `post.datums`.
+pub struct DatumReport;
+
+impl Tool for DatumReport {
+    const ID: &'static str = "post.datums";
+    const VERSION: u32 = 1;
+    const SUMMARY: &'static str = "Gas flow through the datums of a case (mass, volume and momentum flow, area and mass-flow averages, cut error) from a restart file, without a rerun (D262, D267).";
+    const CATEGORY: Category = Category::Post;
+    const ACTION: Action = Action::Read;
+    type Input = DatumReportInput;
+    type Output = serde_json::Value;
+
+    fn call(a: DatumReportInput, ctx: &mut Ctx<'_>) -> Result<serde_json::Value> {
+        let roots = ctx.roots.clone();
+        let case = engine::load(&a.case, &a.set, &roots)?;
+        case.validate()?;
+        let restart = restart_of(&case, &a.case, &a.restart, a.out.clone())?;
+        roots.check_read(&restart, "the restart file")?;
+        let rep = foehncraft_flow::derived::datum_report(&case, &restart, &a.datums)?;
+        for d in &rep.datums {
+            ctx.line(&format!(
+                "{} ({}{}):",
+                d.name,
+                d.kind,
+                if d.exact { ", exact" } else { "" }
+            ));
+            for (k, v) in &d.values {
+                ctx.line(&format!("  {k:<24} {v:.6e}"));
+            }
+        }
+        Ok(serde_json::to_value(&rep)?)
+    }
+}
+
+fn restart_of(
+    case: &foehncraft_flow::case::FlowCase,
+    file: &Path,
+    restart: &Path,
+    out: Option<PathBuf>,
+) -> Result<PathBuf> {
+    let (_, dir) = foehncraft_flow::case::output_dir(case, file, out);
+    if restart == Path::new("latest") {
+        engine::latest_restart(&dir)?.ok_or_else(|| {
+            diag::err(diag::Diagnostic::new(
+                diag::RUN_NO_RESTART,
+                format!(
+                    "--restart latest: no restart file (restart.h5, restart_<N>.h5) in {}",
+                    dir.display()
+                ),
+            ))
+        })
+    } else {
+        Ok(restart.to_path_buf())
+    }
+}
+
+/// Input of `post.droplets` and `post.penetration`.
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SprayFileInput {
+    /// Flow case file (TOML) of the run: the liquid, the injectors and the
+    /// penetration settings.
+    pub case: PathBuf,
+    /// Parcel file (`spray/parcels_<step>.vtkhdf`).
+    pub file: PathBuf,
+    /// Histogram bins (default 40).
+    #[serde(default)]
+    pub bins: Option<usize>,
+    /// Smallest diameter of the histogram (m, default 1e-6).
+    #[serde(default)]
+    pub min: Option<f64>,
+    /// Largest diameter of the histogram (m, default 1e-3).
+    #[serde(default)]
+    pub max: Option<f64>,
+    /// Linear bins instead of logarithmic ones.
+    #[serde(default)]
+    pub linear: bool,
+    /// Only the parcels inside this box or cylinder datum of the case.
+    #[serde(default)]
+    pub datum: Option<String>,
+    /// Case keys to override, `key=value` (D62).
+    #[serde(default)]
+    pub set: Vec<String>,
+}
+
+fn spray_file(
+    a: &SprayFileInput,
+    ctx: &mut Ctx<'_>,
+) -> Result<foehncraft_flow::spray::FileStatistics> {
+    let roots = ctx.roots.clone();
+    let case = engine::load(&a.case, &a.set, &roots)?;
+    roots.check_read(&a.file, "the parcel file")?;
+    let mut spec = foehncraft_flow::spray::HistSpec::default();
+    if let Some(b) = a.bins {
+        spec.bins = b;
+    }
+    if let Some(x) = a.min {
+        spec.min = x;
+    }
+    if let Some(x) = a.max {
+        spec.max = x;
+    }
+    spec.log = !a.linear;
+    anyhow::ensure!(
+        spec.bins > 0 && spec.max > spec.min && (!spec.log || spec.min > 0.0),
+        "histogram: bins > 0 and 0 < min < max"
+    );
+    foehncraft_flow::spray::file_statistics(&case, &a.file, spec, a.datum.as_deref())
+}
+
+/// `post.droplets`.
+pub struct SprayStatistics;
+
+impl Tool for SprayStatistics {
+    const ID: &'static str = "post.droplets";
+    const VERSION: u32 = 1;
+    const SUMMARY: &'static str = "Droplet statistics of a parcel file: D10, D20, D30, D32, D43, Dv10, Dv50, Dv90, span, velocities, histogram and Rosin-Rammler fit, from the same moment sums as the run (D264, D267).";
+    const CATEGORY: Category = Category::Post;
+    const ACTION: Action = Action::Read;
+    type Input = SprayFileInput;
+    type Output = serde_json::Value;
+
+    fn call(a: SprayFileInput, ctx: &mut Ctx<'_>) -> Result<serde_json::Value> {
+        let r = spray_file(&a, ctx)?;
+        let s = &r.statistics;
+        ctx.line(&format!(
+            "{}: {} parcels, {:.4e} droplets, {:.4e} kg",
+            r.file.display(),
+            s.parcels,
+            s.droplets,
+            s.mass
+        ));
+        ctx.line(&format!(
+            "  D10 {:.4e}  D32 {:.4e}  D43 {:.4e}  Dv10 {:.4e}  Dv50 {:.4e}  Dv90 {:.4e} m  span {:.3}",
+            s.d10, s.d32, s.d43, s.dv10, s.dv50, s.dv90, s.span
+        ));
+        Ok(serde_json::to_value(&r)?)
+    }
+}
+
+/// `post.penetration`.
+pub struct SprayPenetration;
+
+impl Tool for SprayPenetration {
+    const ID: &'static str = "post.penetration";
+    const VERSION: u32 = 1;
+    const SUMMARY: &'static str = "Liquid penetration per injector of a parcel file: the distance within which the share `penetration_fraction` of the liquid lies, and the farthest parcel (D265, D267).";
+    const CATEGORY: Category = Category::Post;
+    const ACTION: Action = Action::Read;
+    type Input = SprayFileInput;
+    type Output = serde_json::Value;
+
+    fn call(a: SprayFileInput, ctx: &mut Ctx<'_>) -> Result<serde_json::Value> {
+        let r = spray_file(&a, ctx)?;
+        for i in &r.injectors {
+            ctx.line(&format!(
+                "{}: {} parcels, {:.4e} kg, penetration {:.4e} m, farthest {:.4e} m",
+                i.name, i.parcels, i.mass, i.penetration, i.farthest
+            ));
+        }
+        Ok(serde_json::json!({
+            "file": r.file,
+            "time": r.time,
+            "step": r.step,
+            "injectors": r.injectors,
+            "definitions": r.definitions,
+        }))
+    }
+}

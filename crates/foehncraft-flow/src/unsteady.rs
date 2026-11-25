@@ -1041,6 +1041,11 @@ fn run_one<F: FnMut(&str)>(
     // point inside a sliding rotor is a limit of variant B)
     let loc = Locator::new(mesh0, geo0);
     let mut spray = crate::spray::create(&case, mesh0, geo0, &loc)?;
+    // the datums of the reports (SP1b, D262): the parcels see the same ones
+    let datum_built = crate::datum::build(&case, mesh0, geo0)?;
+    if let Some(sp) = spray.as_mut() {
+        sp.set_datums(datum_built.iter().map(|b| b.parcels.clone()).collect());
+    }
     let reference_cell = if arrays.has_pressure() {
         None
     } else {
@@ -1516,13 +1521,16 @@ fn run_one<F: FnMut(&str)>(
             out,
             &suffix_name("spray", desc, last),
             &crate::case::csv_preamble("spray", name, None, crate::spray::CSV_UNITS),
-            crate::spray::CSV_HEAD,
+            &crate::spray::csv_head(spray.as_ref().context("spray")?),
             cont,
         )?)
     } else {
         None
     };
     let mut spray_lost_warned = false;
+    let mut reports = (last && !datum_built.is_empty())
+        .then(|| crate::datum::Reports::new(datum_built, out, name, cont));
+    let mut series = last.then(|| crate::series::Series::new(out, name, cont));
     // the statistics of D71 (the final solve of a sweep only)
     let stat_cfg = case.output.statistics.clone().filter(|_| last);
     let stat_start = stat_cfg
@@ -2052,9 +2060,12 @@ fn run_one<F: FnMut(&str)>(
                 disc: &fl.disc,
                 phys: fl.physics(),
             };
-            let lost = crate::spray::step(
+            let (lost, file) = crate::spray::step(
                 &case, sp, &sol, mesh, geo, &loc, n, rp.time, h, out, name, csv,
             )?;
+            if let (Some(f), Some(se)) = (file, series.as_mut()) {
+                se.add(n, rp.time, "parcels", &f)?;
+            }
             if lost > 0 && !spray_lost_warned {
                 spray_lost_warned = true;
                 lg.warn(&format!(
@@ -2275,6 +2286,9 @@ fn run_one<F: FnMut(&str)>(
             if let Some(f) = probe_csv.as_mut() {
                 f.flush()?;
             }
+            if let Some(r) = reports.as_mut() {
+                r.flush()?;
+            }
         }
         last_balance = Some(bal);
         let req = control.check(n, case.run.reread_every);
@@ -2286,6 +2300,20 @@ fn run_one<F: FnMut(&str)>(
             } else {
                 n.is_multiple_of(case.output.monitor_every)
             };
+        // the datum reports on the schedule of the monitors (D262)
+        let datum_now = if sm.interval.is_some() {
+            sm.fired(t0, rp.time, tol)
+        } else {
+            n.is_multiple_of(case.output.monitor_every)
+        };
+        if datum_now && let Some(r) = reports.as_mut() {
+            let sol = Solution {
+                state: fl.state()?,
+                disc: &fl.disc,
+                phys: fl.physics(),
+            };
+            r.row(n, rp.time, &case, &sol, mesh, geo, spray.as_mut())?;
+        }
         let o = &case.output;
         let fields_now = last
             && ((o.fields_every > 0 && n.is_multiple_of(o.fields_every))
@@ -2427,6 +2455,9 @@ fn run_one<F: FnMut(&str)>(
                 lg.note(&format!(
                     "fields of step {n} written (fields_{n:06}.vtkhdf)"
                 ));
+                if let Some(se) = series.as_mut() {
+                    se.add(n, rp.time, "fields", &path)?;
+                }
             }
         }
         // next time step, from the step just taken (h, which is shorter
@@ -2521,9 +2552,21 @@ fn run_one<F: FnMut(&str)>(
         f.flush()?;
     }
     if let Some(sp) = spray.as_ref() {
-        crate::spray::write_parcels(sp, out, name, tr.clock.step)?;
+        let f = crate::spray::write_parcels(sp, out, name, tr.clock.step)?;
+        if let (Some(f), Some(se)) = (f, series.as_mut()) {
+            se.add(tr.clock.step, tr.clock.time, "parcels", &f)?;
+        }
         crate::spray::finish(sp)?;
     }
+    if let Some(r) = reports.as_mut() {
+        r.flush()?;
+    }
+    let datum_summary = reports
+        .as_ref()
+        .map(|r| r.summary(spray.as_ref(), &mesh.cell_zone));
+    let spray_summary = spray
+        .as_ref()
+        .map(|sp| crate::spray::summary(sp, &mesh.cell_zone));
     if let Some(f) = heat_csv.as_mut() {
         f.flush()?;
     }
@@ -2907,6 +2950,12 @@ fn run_one<F: FnMut(&str)>(
                 Some((tr.clock.step, Some(tr.clock.time))),
             )?,
         }
+        let ff = out.join("fields.vtkhdf");
+        if let Some(se) = series.as_mut()
+            && ff.exists()
+        {
+            se.add(tr.clock.step, tr.clock.time, "fields", &ff)?;
+        }
         if !bt.is_empty() {
             let window = |c: &[f64]| -> Vec<(f64, f64)> {
                 bt.iter()
@@ -3027,6 +3076,8 @@ fn run_one<F: FnMut(&str)>(
             cycle_coupling: cycle_summary,
             frozen_flow: frozen_summary,
         }),
+        datums: datum_summary,
+        spray: spray_summary,
         benchmark,
     };
     let volume = geo.cell_volume.clone();

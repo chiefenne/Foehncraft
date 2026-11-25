@@ -1,6 +1,7 @@
 //! The parcels and their tracking through the mesh.
 
-use crate::config::{BoundaryMode, Injector, SpraySection};
+use crate::config::{BoundaryMode, Injector, Penetration, SpraySection};
+use crate::datum::{Crossing, Datum, DatumTally, Moments, Shape, Surface, plane_crossing};
 use anyhow::{Result, bail};
 use foehncraft_core::rng::{self, stream};
 use foehncraft_kernels::particle::{ParcelInput, parcel_step};
@@ -135,6 +136,7 @@ struct Outcome {
     fate: Fate,
     rebounds: u64,
     substeps: u64,
+    cross: Vec<Crossing>,
 }
 
 /// Mass and parcel counts, per boundary and in total (kg, parcels).
@@ -179,6 +181,11 @@ pub struct Spray {
     pub tally: Tally,
     /// Time of the last advance (s).
     pub time: f64,
+    /// The datums the parcels report to (D262).
+    datums: Vec<Datum>,
+    /// Running sums of each datum (aligned with the datums; volumes keep
+    /// empty ones).
+    pub datum_tally: Vec<DatumTally>,
 }
 
 /// What `state()` writes and `restore()` reads (restart, D42).
@@ -190,6 +197,9 @@ struct Saved {
     injectors: Vec<InjectorState>,
     parcels: Parcels,
     tally: Tally,
+    /// The sums of the datums (SP1b); absent in files of SP1.
+    #[serde(default)]
+    datums: Vec<DatumTally>,
 }
 
 const FORMAT: &str = "foehncraft.spray-state";
@@ -240,6 +250,8 @@ impl Spray {
                 })
                 .collect(),
             parcels: Parcels::default(),
+            datums: Vec::new(),
+            datum_tally: Vec::new(),
             tally: Tally {
                 deposited_mass: vec![0.0; nb],
                 escaped_mass: vec![0.0; nb],
@@ -248,6 +260,100 @@ impl Spray {
             },
             time: 0.0,
         })
+    }
+
+    /// Sets the datums the parcels report to; their sums start at the
+    /// spray's time.
+    pub fn set_datums(&mut self, datums: Vec<Datum>) {
+        self.datum_tally = datums
+            .iter()
+            .map(|d| DatumTally::new(&d.name, &d.hist, self.time))
+            .collect();
+        self.datums = datums;
+    }
+
+    /// The datums.
+    pub fn datums(&self) -> &[Datum] {
+        &self.datums
+    }
+
+    /// The liquid mass of a parcel.
+    pub fn parcel_mass(&self, i: usize) -> f64 {
+        mass_of(
+            self.parcels.d[i],
+            self.parcels.count[i],
+            self.cfg.liquid.density,
+        )
+    }
+
+    /// The moment sums of the parcels in the flow, of all (`None`) or of
+    /// those inside volume datum `datum`; summed in the order of the parcel
+    /// identities, so the bits do not depend on the storage order.
+    /// `zone` is the cell zone of each cell.
+    pub fn moments(&self, datum: Option<usize>, zone: &[u32]) -> Moments {
+        let spec = datum.map_or_else(crate::datum::HistSpec::default, |i| self.datums[i].hist);
+        let mut m = Moments::new(&spec);
+        for i in self.by_id() {
+            if let Some(di) = datum {
+                let Shape::Volume(v) = &self.datums[di].shape else {
+                    continue;
+                };
+                if !v.contains(self.parcels.x[i], self.parcels.cell[i] as usize, zone) {
+                    continue;
+                }
+            }
+            m.add(
+                &spec,
+                self.parcels.d[i],
+                self.parcels.count[i],
+                self.parcel_mass(i),
+                self.parcels.v[i],
+            );
+        }
+        m
+    }
+
+    /// Parcel indices in the order of their identities.
+    fn by_id(&self) -> Vec<usize> {
+        let mut ix: Vec<usize> = (0..self.parcels.len()).collect();
+        ix.sort_by_key(|&i| self.parcels.id[i]);
+        ix
+    }
+
+    /// Per injector: parcels and liquid in the flow, the liquid
+    /// penetration and the farthest parcel (D265), with the definitions of
+    /// `[spray] penetration` and `penetration_fraction`.
+    pub fn injector_stats(&self) -> Vec<InjectorStats> {
+        let masses: Vec<f64> = (0..self.parcels.len())
+            .map(|i| self.parcel_mass(i))
+            .collect();
+        let released: Vec<u64> = self.injectors.iter().map(|i| i.released).collect();
+        injector_stats(
+            &self.cfg,
+            &self.parcels.id,
+            &self.parcels.x,
+            &masses,
+            Some(&released),
+        )
+    }
+
+    /// Centre of mass of the liquid in the flow (m); zero without parcels.
+    pub fn centre_of_mass(&self) -> [f64; 3] {
+        let mut c = [0.0; 3];
+        let mut m = 0.0;
+        for i in self.by_id() {
+            let mi = self.parcel_mass(i);
+            m += mi;
+            for (k, ck) in c.iter_mut().enumerate() {
+                *ck += mi * self.parcels.x[i][k];
+            }
+        }
+        if m > 0.0 {
+            for ck in &mut c {
+                *ck /= m;
+            }
+        }
+        c
     }
 
     /// The case's section.
@@ -289,10 +395,22 @@ impl Spray {
             .map(|i| {
                 let p = this.parcels.get(i);
                 let time = if i < n_old { dt } else { t1 - p.born };
-                this.track(env, gas, p, time.max(0.0))
+                this.track(env, gas, p, time.max(0.0), t1)
             })
             .collect();
         let mut kept = Parcels::default();
+        let mut cross: Vec<Crossing> = Vec::new();
+        for o in &results {
+            cross.extend_from_slice(&o.cross);
+        }
+        // D263: sorted by (datum, parcel, sub-step, order), summed in turn
+        cross.sort_by_key(|c| c.key());
+        for c in &cross {
+            let di = c.datum as usize;
+            let m = mass_of(c.d, c.count, rho_p);
+            let spec = self.datums[di].hist;
+            self.datum_tally[di].book(&spec, c, m);
+        }
         for o in results {
             self.tally.rebounds += o.rebounds;
             self.tally.substeps += o.substeps;
@@ -333,8 +451,6 @@ impl Spray {
             let (e1, e2) = frame(axis);
             let cos_a = inj.half_angle.to_radians().cos();
             let m_parcel = inj.mass_flow / rate;
-            let d = inj.diameter;
-            let count = m_parcel / (rho_p * std::f64::consts::PI / 6.0 * d * d * d);
             loop {
                 let k = self.injectors[ii].released;
                 let born = inj.start + (k as f64 + 0.5) / rate;
@@ -344,6 +460,13 @@ impl Spray {
                 self.injectors[ii].released += 1;
                 let id = ((ii as u64) << 48) | k;
                 let dir = direction(id, axis, e1, e2, cos_a);
+                let d = match &inj.size {
+                    Some(sz) => {
+                        sz.quantile(rng::uniform_keyed([stream::SPRAY_INJECTION, id, 1, 0]))
+                    }
+                    None => inj.diameter,
+                };
+                let count = m_parcel / (rho_p * std::f64::consts::PI / 6.0 * d * d * d);
                 let Some(cell) = env.loc.locate_search(inj.position) else {
                     bail!(
                         "[[spray.injector]] {}: the position lies outside the mesh",
@@ -377,9 +500,132 @@ impl Spray {
         }
     }
 
-    /// Tracks one parcel for `time` seconds.
-    fn track(&self, env: &Env, gas: &dyn Gas, mut p: One, time: f64) -> Outcome {
+    /// The crossings of the datum surfaces by the chord from `x0` (cell
+    /// `c0`) to `x1` (cell `c1`) of sub-step `sub` of parcel `p`, which
+    /// starts at time `t0` and lasts `dt`; `vel(τ)` is the velocity τ after
+    /// the start.
+    #[allow(clippy::too_many_arguments)]
+    fn crossings(
+        &self,
+        out: &mut Vec<Crossing>,
+        p: &One,
+        sub: u64,
+        (x0, c0): ([f64; 3], usize),
+        (x1, c1): ([f64; 3], usize),
+        t0: f64,
+        dt: f64,
+        vel: &dyn Fn(f64) -> [f64; 3],
+    ) {
+        let lerp = |f: f64| {
+            [
+                x0[0] + f * (x1[0] - x0[0]),
+                x0[1] + f * (x1[1] - x0[1]),
+                x0[2] + f * (x1[2] - x0[2]),
+            ]
+        };
+        let mut push = |datum: usize, f: f64, dir: i8| {
+            let k = out.len() as u32;
+            out.push(Crossing {
+                datum: datum as u32,
+                id: p.id,
+                sub,
+                k,
+                dir,
+                t: t0 + f * dt,
+                x: lerp(f),
+                v: vel(f * dt),
+                d: p.d,
+                count: p.count,
+            });
+        };
+        for (di, d) in self.datums.iter().enumerate() {
+            let Shape::Surface(s) = &d.shape else {
+                continue;
+            };
+            match s {
+                Surface::Plane {
+                    point,
+                    normal,
+                    bound,
+                } => {
+                    if let Some((f, dir)) = plane_crossing(*point, *normal, bound, x0, x1) {
+                        push(di, f, dir);
+                    }
+                }
+                Surface::Cells { side, plane, faces } => {
+                    let (a, b) = (side[c0], side[c1]);
+                    if a == 0 || b == 0 || a == b {
+                        continue;
+                    }
+                    let f = match (plane, faces) {
+                        (Some((pt, n, bound)), _) => {
+                            let s0 = crate::datum::dot(crate::datum::sub(x0, *pt), *n);
+                            let s1 = crate::datum::dot(crate::datum::sub(x1, *pt), *n);
+                            let f = if s0 != s1 {
+                                (s0 / (s0 - s1)).clamp(0.0, 1.0)
+                            } else {
+                                0.5
+                            };
+                            let x = lerp(f);
+                            let h = crate::datum::dot(crate::datum::sub(x, *pt), *n);
+                            let xp = [x[0] - h * n[0], x[1] - h * n[1], x[2] - h * n[2]];
+                            if !bound.contains(*pt, xp) {
+                                continue;
+                            }
+                            f
+                        }
+                        (None, Some(bvh)) => bvh.first_hit(x0, x1).map_or(0.5, |h| h.t),
+                        (None, None) => 0.5,
+                    };
+                    push(di, f, b);
+                }
+                Surface::Boundary { .. } => {}
+                Surface::Triangles { bvh } => {
+                    for h in bvh.all_hits(x0, x1) {
+                        push(di, h.t, if h.entering { -1 } else { 1 });
+                    }
+                }
+            }
+        }
+    }
+
+    /// Books the arrival of parcel `p` at boundary `b` (`dir` +1 into the
+    /// boundary, −1 back from it) at time `t`.
+    fn boundary_crossing(
+        &self,
+        out: &mut Vec<Crossing>,
+        p: &One,
+        sub: u64,
+        b: usize,
+        dir: i8,
+        t: f64,
+    ) {
+        for (di, d) in self.datums.iter().enumerate() {
+            if let Shape::Surface(Surface::Boundary { boundary }) = &d.shape
+                && *boundary == b
+            {
+                let k = out.len() as u32;
+                out.push(Crossing {
+                    datum: di as u32,
+                    id: p.id,
+                    sub,
+                    k,
+                    dir,
+                    t,
+                    x: p.x,
+                    v: p.v,
+                    d: p.d,
+                    count: p.count,
+                });
+            }
+        }
+    }
+
+    /// Tracks one parcel for `time` seconds, to the end `t1` of the step.
+    fn track(&self, env: &Env, gas: &dyn Gas, mut p: One, time: f64, t1: f64) -> Outcome {
         let rho_p = self.cfg.liquid.density;
+        let mut cross = Vec::new();
+        let any_datum = !self.datums.is_empty();
         let mut left = time;
         let mut rebounds = 0u64;
         let mut substeps = 0u64;
@@ -421,8 +667,22 @@ impl Spray {
                 break;
             };
             let tr = env.loc.track(start, target);
+            let t_sub = t1 - left;
+            let vel = |tau: f64| parcel_step(&input(tau)).v;
             match tr.end {
                 TrackEnd::Reached => {
+                    if any_datum {
+                        self.crossings(
+                            &mut cross,
+                            &p,
+                            substeps,
+                            (p.x, p.cell),
+                            (target, tr.position.cell),
+                            t_sub,
+                            sub,
+                            &vel,
+                        );
+                    }
                     p.x = target;
                     p.v = s.v;
                     p.cell = tr.position.cell;
@@ -433,11 +693,27 @@ impl Spray {
                     // sub-step (the sub-step is a fraction of a cell)
                     let thit = tr.fraction * sub;
                     let sh = parcel_step(&input(thit));
+                    if any_datum {
+                        self.crossings(
+                            &mut cross,
+                            &p,
+                            substeps,
+                            (p.x, p.cell),
+                            (tr.position.x, tr.position.cell),
+                            t_sub,
+                            thit,
+                            &vel,
+                        );
+                    }
                     p.x = tr.position.x;
                     p.v = sh.v;
                     p.cell = tr.position.cell;
                     left -= thit;
                     let rule = self.rule_of(env, face);
+                    let bnd = env.mesh.boundary_of(face);
+                    if any_datum && let Some(b) = bnd {
+                        self.boundary_crossing(&mut cross, &p, substeps, b, 1, t1 - left);
+                    }
                     match rule.mode {
                         BoundaryMode::Stick => {
                             fate = Fate::Stuck(face);
@@ -467,6 +743,9 @@ impl Spray {
                                 *xk -= eps * nk;
                             }
                             rebounds += 1;
+                            if any_datum && let Some(b) = bnd {
+                                self.boundary_crossing(&mut cross, &p, substeps, b, -1, t1 - left);
+                            }
                         }
                     }
                 }
@@ -474,6 +753,18 @@ impl Spray {
                     // the walk failed: one search for the target
                     match env.loc.locate_search(target) {
                         Some(c) => {
+                            if any_datum {
+                                self.crossings(
+                                    &mut cross,
+                                    &p,
+                                    substeps,
+                                    (p.x, p.cell),
+                                    (target, c),
+                                    t_sub,
+                                    sub,
+                                    &vel,
+                                );
+                            }
                             p.x = target;
                             p.v = s.v;
                             p.cell = c;
@@ -492,6 +783,7 @@ impl Spray {
             fate,
             rebounds,
             substeps,
+            cross,
         }
     }
 
@@ -505,6 +797,7 @@ impl Spray {
             injectors: self.injectors.clone(),
             parcels: self.parcels.clone(),
             tally: self.tally.clone(),
+            datums: self.datum_tally.clone(),
         })?)
     }
 
@@ -540,6 +833,16 @@ impl Spray {
         self.parcels = parcels;
         self.tally = s.tally;
         self.time = s.time;
+        // the sums of the datums of the same name continue; a new datum
+        // starts at the restart time
+        for (d, t) in self.datums.iter().zip(self.datum_tally.iter_mut()) {
+            *t = s
+                .datums
+                .iter()
+                .find(|x| x.name == d.name && x.total.all.hist_n.len() == d.hist.bins)
+                .cloned()
+                .unwrap_or_else(|| DatumTally::new(&d.name, &d.hist, s.time));
+        }
         Ok(())
     }
 
@@ -551,6 +854,7 @@ impl Spray {
         let vel: Vec<f64> = self.parcels.v.iter().flatten().copied().collect();
         let id: Vec<f64> = self.parcels.id.iter().map(|&i| i as f64).collect();
         let age: Vec<f64> = self.parcels.born.iter().map(|b| self.time - b).collect();
+        let injector: Vec<f64> = self.parcels.id.iter().map(|&i| (i >> 48) as f64).collect();
         let fields = [
             PointField {
                 name: "velocity",
@@ -577,6 +881,11 @@ impl Spray {
                 values: &id,
                 components: 1,
             },
+            PointField {
+                name: "injector",
+                values: &injector,
+                components: 1,
+            },
         ];
         let attrs = [
             ("format", Attr::Str("foehncraft.parcels")),
@@ -585,11 +894,104 @@ impl Spray {
             ("step", Attr::U64(step)),
             ("time", Attr::F64(self.time)),
             ("liquid", Attr::Str(&self.cfg.liquid.name)),
+            ("liquid_density", Attr::F64(self.cfg.liquid.density)),
             ("units", Attr::Str("m, m/s, s, droplets")),
             ("parcels", Attr::U64(n as u64)),
         ];
         write_points(path, &self.parcels.x, &fields, &attrs)
     }
+}
+
+/// Per injector of `cfg`: parcels and liquid in the flow, the liquid
+/// penetration and the farthest parcel (D265), from the identities,
+/// positions and masses of parcels (in the flow, or of a parcel file);
+/// `released` the counters of the injectors when known.
+pub fn injector_stats(
+    cfg: &SpraySection,
+    id: &[u64],
+    x: &[[f64; 3]],
+    mass: &[f64],
+    released: Option<&[u64]>,
+) -> Vec<InjectorStats> {
+    let frac = cfg.penetration_fraction;
+    cfg.injectors
+        .iter()
+        .enumerate()
+        .map(|(ii, inj)| {
+            let axis = unit(inj.direction);
+            let mut pts: Vec<(f64, u64, f64)> = (0..id.len())
+                .filter(|&i| (id[i] >> 48) as usize == ii)
+                .map(|i| {
+                    let r = [
+                        x[i][0] - inj.position[0],
+                        x[i][1] - inj.position[1],
+                        x[i][2] - inj.position[2],
+                    ];
+                    let dist = match cfg.penetration {
+                        Penetration::Axial => r[0] * axis[0] + r[1] * axis[1] + r[2] * axis[2],
+                        Penetration::Radial => norm(r),
+                    };
+                    (dist, id[i], mass[i])
+                })
+                .collect();
+            pts.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+            let total: f64 = pts.iter().map(|p| p.2).sum();
+            let mut cum = 0.0;
+            let mut pen = 0.0;
+            for p in &pts {
+                cum += p.2;
+                pen = p.0;
+                if cum >= frac * total {
+                    break;
+                }
+            }
+            InjectorStats {
+                name: inj.name.clone(),
+                released: released.and_then(|r| r.get(ii).copied()).unwrap_or(0),
+                parcels: pts.len() as u64,
+                mass: total,
+                penetration: if pts.is_empty() { 0.0 } else { pen },
+                farthest: pts.last().map_or(0.0, |p| p.0),
+            }
+        })
+        .collect()
+}
+
+/// The moment sums of parcels given as arrays (a parcel file), summed in
+/// the order of the identities, as the run sums them.
+pub fn moments_of(
+    spec: &crate::datum::HistSpec,
+    id: &[u64],
+    d: &[f64],
+    count: &[f64],
+    v: &[[f64; 3]],
+    rho_p: f64,
+) -> Moments {
+    let mut ix: Vec<usize> = (0..id.len()).collect();
+    ix.sort_by_key(|&i| id[i]);
+    let mut m = Moments::new(spec);
+    for i in ix {
+        m.add(spec, d[i], count[i], mass_of(d[i], count[i], rho_p), v[i]);
+    }
+    m
+}
+
+/// The numbers of one injector (D265).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct InjectorStats {
+    /// Name.
+    pub name: String,
+    /// Parcels released so far.
+    pub released: u64,
+    /// Parcels in the flow.
+    pub parcels: u64,
+    /// Liquid in the flow (kg).
+    pub mass: f64,
+    /// Liquid penetration (m): the distance within which the share
+    /// `penetration_fraction` of the injector's liquid in the flow lies.
+    pub penetration: f64,
+    /// Distance of the farthest parcel (m); outlier-sensitive.
+    pub farthest: f64,
 }
 
 fn unit(a: [f64; 3]) -> [f64; 3] {

@@ -1,0 +1,129 @@
+# Liquid and gas through datums of a sprayed duct (sprays SP1b, D262 to
+# D267).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/spray_datums.toml
+#
+# The duct of spray_duct.toml: air at 4 m/s, a nozzle in the upper wall
+# sprays water with a Rosin-Rammler size distribution (X = 120 µm, n = 2.5,
+# from 10 to 400 µm; spray_datums_injectors.toml). Small droplets follow the
+# air to the outlet, large ones fall onto the lower wall and stick.
+#
+# Datums (`[[datum]]`), each a column group `<name>.<quantity>` of
+# `datums.csv` every `monitor_every` steps:
+#   - `x06`: a plane cut through the cells at x = 0.6 m (cut_error compares
+#     its mass flow with the exact one through the nearest face layer);
+#   - `x12`: the plane x = 1.2 m moved to the mesh faces (exact);
+#   - `disc`: a disc of radius 0.1 m at x = 0.9 m, around the duct centre;
+#   - `x16`: a surface file (STL) across the duct at x = 1.6 m;
+#   - `outlet` and `floor`: the outlet and the lower wall (boundaries);
+#   - `nozzle_box`: a box below the nozzle, the parcels inside it.
+# The liquid columns hold the cumulative mass through each surface per
+# direction, the net rate over each interval, the crossings, D10, D32 and
+# Dv50; `spray_hist_<datum>.csv` the size histogram of every interval;
+# `result.json` the same with D20, D30, D43, Dv10, Dv90, span, velocity
+# statistics and the Rosin-Rammler fit; `spray.csv` the penetration of the
+# nozzle and the Sauter diameter in the flow; `series.json` the list of
+# field and parcel files for a viewer.
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [2.0, 0.4, 0.1]
+cells = [80, 20, 1]
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.2
+viscosity = 1.8e-5
+
+[gravity]
+vector = [0.0, -9.81, 0.0]
+
+[turbulence]
+model = "k-omega-sst"
+wall_treatment = "automatic"
+
+[initial]
+velocity = [4.0, 0.0, 0.0]
+turbulence_intensity = 0.05
+viscosity_ratio = 10.0
+
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [4.0, 0.0, 0.0]
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymin]
+type = "wall"
+[boundary.ymax]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[time]
+scheme = "bdf2"
+time_step = 0.005
+end_time = 1.5
+
+[spray]
+include = "spray_datums_injectors.toml"
+wall_mode = "stick"
+write_every = 50
+
+[[datum]]
+name = "x06"
+type = "plane"
+point = [0.6, 0.2, 0.05]
+normal = [1.0, 0.0, 0.0]
+
+[[datum]]
+name = "x12"
+type = "plane"
+point = [1.2, 0.2, 0.05]
+normal = [1.0, 0.0, 0.0]
+snap = "faces"
+
+[[datum]]
+name = "disc"
+type = "plane"
+point = [0.9, 0.2, 0.05]
+normal = [1.0, 0.0, 0.0]
+radius = 0.1
+
+[[datum]]
+name = "x16"
+type = "surface"
+file = "spray_datums_section.stl"
+
+[[datum]]
+name = "outlet"
+type = "boundary"
+boundary = "xmax"
+
+[[datum]]
+name = "floor"
+type = "boundary"
+boundary = "ymin"
+
+[[datum]]
+name = "nozzle_box"
+type = "box"
+lower = [0.0, 0.2, 0.0]
+upper = [0.3, 0.4, 0.1]
+
+[output]
+monitor_every = 10
+
+[solver]
+tolerance = 1e-6
+max_iterations = 300
+
+[verification]
+require_convergence = false

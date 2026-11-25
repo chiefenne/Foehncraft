@@ -27,6 +27,18 @@ def test_every_tool_through_call(tmp_path):
     case = tmp_path / "couette.toml"
     shutil.copy(CASES / "couette_hex.toml", case)
     out = tmp_path / "run"
+    # a short spray run with datums for the post.* tools of SP1b
+    flow = ROOT / "examples/cases/flow"
+    for f in ("spray_datums.toml", "spray_datums_injectors.toml", "spray_datums_section.stl"):
+        shutil.copy(flow / f, tmp_path / f)
+    spray = tmp_path / "spray_datums.toml"
+    spray_out = tmp_path / "spray"
+    r = fc.call("flow.run", case=spray, out=spray_out, end_time=0.05)
+    assert r["status"] == "finished", r["diagnostics"]
+    parcels = (
+        spray_out
+        / json.loads((spray_out / "series.json").read_text())["entries"][-1]["files"]["parcels"]
+    )
     inputs = {
         "system.info": {},
         "system.backends": {},
@@ -52,6 +64,9 @@ def test_every_tool_through_call(tmp_path):
         "run.stop": {"dir": out},
         "run.set": {"dir": out, "set": {"time.time_step": 0.01}},
         "post.derive": {"case": case, "out": out, "fields": ["vorticity"]},
+        "post.datums": {"case": spray, "out": spray_out, "datums": ["x06", "outlet"]},
+        "post.droplets": {"case": spray, "file": parcels, "datum": "nozzle_box"},
+        "post.penetration": {"case": spray, "file": parcels},
         "study.scalar": {
             "case": ROOT / "examples/cases/scalar/mms_poly_2d.toml",
             "out": tmp_path / "scalar",
@@ -90,6 +105,8 @@ def test_every_tool_through_call(tmp_path):
     for k in ("format", "status", "exit_code", "case", "files"):
         assert results["result.read"][k] == results["flow.run"][k], k
     assert results["case.estimate"]["cells"] == results["case.check"]["estimate"]["cells"]
+    assert {d["name"] for d in results["post.datums"]["datums"]} == {"x06", "outlet"}
+    assert results["post.penetration"]["injectors"][0]["name"] == "nozzle"
 
 
 @needs_native

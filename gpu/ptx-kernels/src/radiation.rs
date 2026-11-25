@@ -20,6 +20,11 @@ struct Atomics<'a> {
 
 #[inline(always)]
 fn add(r: Raw<u64>, i: usize, q: i64) {
+    // nothing to add (an open boundary absorbs nothing); LLVM would turn an
+    // atomic add of zero into an atomic or, which R10 does not allow
+    if q == 0 {
+        return;
+    }
     // SAFETY: the host allocates every tally array with the size of the
     // argument block (batches × cells or faces, three ledger entries) and
     // the transport passes indices inside it; AtomicU64 has the layout of u64.
