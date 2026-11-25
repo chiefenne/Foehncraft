@@ -59,6 +59,9 @@ schemars = "1.2"
 # 2026-11-24): CC0-1.0 OR Apache-2.0, with rayon (already a dependency).
 blake3 = { version = "1.8", features = ["rayon"] }
 sha2 = "0.11"
+# The YAML mechanism files of D103 (Cantera format): MIT OR Apache-2.0,
+# pure Rust.
+yaml-rust2 = { version = "0.13", default-features = false }
 signal-hook = "0.4"
 
 [workspace.lints.rust]

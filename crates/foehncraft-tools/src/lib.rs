@@ -25,6 +25,7 @@ use serde_json::{Value, json};
 
 pub mod approval;
 pub mod case;
+pub mod chemistry;
 pub mod control;
 pub mod expression;
 pub mod flow;
@@ -73,6 +74,8 @@ pub enum Category {
     Study,
     /// The structural solver (L53).
     Structure,
+    /// Gas-phase chemistry: reactors and equilibrium (SF2).
+    Chemistry,
     /// Journals of tool calls and their replay (D197).
     Journal,
 }
@@ -93,6 +96,7 @@ impl Category {
             Self::Post => "post",
             Self::Study => "study",
             Self::Structure => "structure",
+            Self::Chemistry => "chemistry",
             Self::Journal => "journal",
         }
     }
@@ -407,6 +411,8 @@ pub fn registry() -> Vec<Entry> {
         entry::<study::Poisson>(),
         entry::<study::G1>(),
         entry::<journal::Replay>(),
+        entry::<chemistry::Reactor>(),
+        entry::<chemistry::Equilibrium>(),
     ]
 }
 

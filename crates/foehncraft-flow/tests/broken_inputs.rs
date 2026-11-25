@@ -1,7 +1,8 @@
 //! Broken-input corpus of the case readers (D202): the flow, mesh, scalar,
-//! Poisson and benchmark case files of `examples/cases`, damaged in many
-//! ways, must end in an error with a diagnostic code other than `GEN001`
-//! (the code of "no more specific code"), never in a panic or a hang. A
+//! Poisson, benchmark and reactor case files of `examples/cases` and the
+//! YAML reaction mechanisms, damaged in many ways, must end in an error
+//! with a diagnostic code other than `GEN001` (the code of "no more
+//! specific code"), never in a panic or a hang. A
 //! broken mesh file named by a flow case ends in `MESH003`.
 //!
 //! The mesh readers have their own corpus (foehncraft-mesh,
@@ -266,6 +267,95 @@ fn bench_case_reader_survives_the_corpus() {
             .map(|_| ())
             .map_err(diag::case_error)
     });
+}
+
+/// The reactor cases of the chemistry (SF2): read and checked up to the
+/// start of the integration (mechanism and start mixture).
+#[test]
+fn reactor_case_reader_survives_the_corpus() {
+    corpus("chemistry", 3, |p| {
+        let (c, base) = foehncraft_flow::chemistry::reactor::read(p)?;
+        foehncraft_flow::chemistry::reactor::prepare(&c, base.as_deref()).map(|_| ())
+    });
+}
+
+/// The YAML mechanism reader (D103, SF2): the built-in global mechanisms
+/// and the head of GRI-Mech 3.0 (its units, phase, first species and, cut
+/// at a reaction, the first reactions), damaged as the case files and with
+/// the YAML values replaced.
+#[test]
+fn mechanism_reader_survives_the_corpus() {
+    use foehncraft_flow::chemistry::Mechanism;
+    let dir = root().join("crates/foehncraft-flow/data/mechanisms");
+    let gri = std::fs::read_to_string(dir.join("gri30.yaml")).unwrap();
+    let head: Vec<&str> = gri.lines().collect();
+    let cut = head
+        .iter()
+        .position(|l| l.starts_with("reactions:"))
+        .unwrap()
+        + 60;
+    let texts = [
+        (
+            "westbrook-dryer-2",
+            std::fs::read_to_string(dir.join("westbrook-dryer-2.yaml")).unwrap(),
+        ),
+        (
+            "jones-lindstedt-4",
+            std::fs::read_to_string(dir.join("jones-lindstedt-4.yaml")).unwrap(),
+        ),
+        ("gri30 head", head[..cut].join("\n")),
+    ];
+    let tmp = scratch("mechanism");
+    let mut errors = 0;
+    for (name, text) in &texts {
+        let lines: Vec<&str> = text.lines().collect();
+        let mut damaged = mutations(text);
+        damaged.push(("anchors".into(), b"a: &x [*x, *x]\nb: *y\n".to_vec()));
+        damaged.push(("deep YAML nesting".into(), "[".repeat(20_000).into_bytes()));
+        let valued: Vec<usize> = lines
+            .iter()
+            .enumerate()
+            .filter(|(_, l)| l.contains(": ") && !l.trim_start().starts_with('#'))
+            .map(|(i, _)| i)
+            .collect();
+        for &i in &spread(valued.len(), 24)
+            .iter()
+            .map(|&k| valued[k])
+            .collect::<Vec<_>>()
+        {
+            let (key, _) = lines[i].split_once(": ").unwrap();
+            for bad in [
+                "-1",
+                "0",
+                "1e999",
+                ".nan",
+                "x",
+                "[]",
+                "{}",
+                "[1, a]",
+                "{A: x}",
+                "~",
+                "\"unclosed",
+            ] {
+                let mut v = lines.clone();
+                let line = format!("{key}: {bad}");
+                v[i] = &line;
+                damaged.push((
+                    format!("line {i}: {} = {bad}", key.trim()),
+                    v.join("\n").into_bytes(),
+                ));
+            }
+        }
+        for (what, m) in damaged {
+            let label = format!("mechanism {name}, {what}");
+            let p = tmp.join("m.yaml");
+            std::fs::write(&p, &m).unwrap();
+            let spec = p.to_string_lossy().into_owned();
+            errors += guarded(&label, move || Mechanism::load(&spec, None).map(|_| ())).is_some()
+                as usize;
+        }
+    }
+    assert!(errors > 300, "only {errors} errors: is the damage seen?");
 }
 
 /// A flow case whose mesh file is broken (the hand-written inputs of the

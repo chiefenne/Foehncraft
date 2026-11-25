@@ -24,7 +24,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | [Porous regions](recipes/porous.md) | porous blocks and honeycombs in a flow: resistances, axes, the honeycomb shorthand | 273, 275 |
 | [Structures](recipes/structure.md) | a structural case of beams and clamp springs: static and modal analyses, the clamp spring fitted to a measured frequency, the results | 295 |
 | [Immersed bodies](recipes/immersed.md) | put a body in the flow without meshing it: `[immersed]`, the permeability, forces | 270 |
-| [Species and reacting flows](recipes/species.md) | species of an ideal-gas mixture: names, compositions in mole or mass fractions, diffusion by Schmidt or Lewis numbers, mixture properties, the element ledger | 278 |
+| [Species and reacting flows](recipes/species.md) | species of an ideal-gas mixture: names, compositions in mole or mass fractions, diffusion by Schmidt or Lewis numbers, mixture properties, the element ledger | 278, 289 |
 | [Expressions and materials](recipes/properties.md) | values as expressions of x, y, z and t, constants and tables, wall mass flux, the material database, regions | 31, 32 |
 | [Python](recipes/python.md) | the `foehncraft` package: cases, expressions, runs with callbacks, results, materials, studies | 33 |
 | [Verification](recipes/verification.md) | the discretisation uncertainty of a sweep (GCI), the generated verification manual | 34, 35, 165, 170, 271 |
@@ -166,6 +166,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="radiation-paths"></a>281 | [Follow chosen bundles of a radiation call](recipes/radiation.md#radiation-paths) | [Thermal radiation](recipes/radiation.md) |
 | <a id="spray-cooling"></a>283 | [Cool a gas with droplets (two-way heat)](recipes/sprays.md#spray-cooling) | [Lagrangian sprays](recipes/sprays.md) |
 | <a id="spray-dispersion"></a>285 | [Let the turbulence spread the droplets](recipes/sprays.md#spray-dispersion) | [Lagrangian sprays](recipes/sprays.md) |
+| <a id="gas-chemistry"></a>289 | [Run a mechanism in a constant-pressure reactor and find the equilibrium](recipes/species.md#gas-chemistry) | [Species and reacting flows](recipes/species.md) |
 | <a id="run-ranks-physics"></a>290 | [Run a turbulent, heated or transient case on ranks](recipes/meshes.md#run-ranks-physics) | [Meshes](recipes/meshes.md) |
 | <a id="spray-steady"></a>292 | [Solve a spray in a steady flow (steady spray mode)](recipes/sprays.md#spray-steady) | [Lagrangian sprays](recipes/sprays.md) |
 

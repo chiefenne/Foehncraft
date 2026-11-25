@@ -21,6 +21,7 @@ The catalogue is split by physics; each page has its own table of contents.
 | [Meshes (`examples/cases/mesh/`)](cases/meshes.md) | build or read a mesh, check, renumber and partition it; mesh keys |
 | [Scalar cases (`examples/cases/scalar/`)](cases/scalar.md) | steady convection–diffusion of a scalar: manufactured solutions, convection schemes; scalar keys |
 | [Poisson studies (`examples/cases/poisson/`)](cases/poisson.md) | the pressure solver on the Poisson equation, with hypre as the reference; Poisson keys |
+| [Chemistry cases (`examples/cases/chemistry/`)](cases/chemistry.md) | the 0D reactor and the chemical equilibrium of a mechanism (SF2); reactor keys |
 | [Flow cases (`examples/cases/flow/`)](cases/flow.md) | incompressible flow, laminar and with the RANS turbulence models, steady and transient, grouped by physics; what a flow run writes |
 | [Flow case-file keys](cases/flow-keys.md) | every key of a flow case, the derived fields (D72), the boundary conditions (D29) and their sensible combinations (D30), expressions, materials and regions (D53, D102, D112), passive scalars, turbulence models (D129–D139) |
 | [Python scripts (`examples/python/`, `examples/studies/`)](cases/python.md) | cases built, run and studied with the Python package |
