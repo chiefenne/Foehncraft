@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**124 features: 50 verified, 71 partial, 3 unverified.**
+**125 features: 50 verified, 72 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -146,6 +146,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Sprays | [Datums, liquid flow through them and droplet statistics (SP1b)](#sprays-datums-statistics) | partial |
 | Sprays | [Two-way momentum coupling of the sprays (SP2a, D247 to D252)](#sprays-two-way-momentum) | partial |
 | Sprays | [Two-way sensible heat coupling of the sprays (SP2b, D247 to D252)](#sprays-two-way-heat) | partial |
+| Sprays | [Turbulent dispersion of the sprays, eddy lifetime (SP2c, D243)](#sprays-dispersion-eddy-lifetime) | partial |
 | Flow models | [Porous regions with a direction-dependent Darcy-Forchheimer resistance (D270, PM1)](#porous-darcy-forchheimer) | partial |
 | Flow models | [Gas and matrix temperatures in porous regions, monolithic (D271, D272, PM2)](#porous-two-temperatures) | partial |
 | Immersed bodies | [Immersed bodies by Brinkman penalisation, primitive shapes (L13 stage 1)](#immersed-penalisation) | partial |
@@ -1895,7 +1896,7 @@ Gaps:
 Gaps:
 
 - heat exchange is the row sprays.two-way-heat (SP2b)
-- no turbulent dispersion (SP2c) and no turbulence modulation by the droplets (in no decision yet)
+- turbulent dispersion is the row sprays.dispersion-eddy-lifetime (SP2c); no turbulence modulation by the droplets (in no decision yet)
 - first order in time (V28.4); second order (an exponentially fitted weight per cell) is an open point of section 5.7
 - V28.6 (two neighbour cells) is covered only through the shuffled-storage test; no reference-data case of a dense spray against measurements
 - the time-step study as a registered tool (D254 (4)) is not built
@@ -1928,6 +1929,29 @@ Gaps:
 - with the default max_passes = 3 most steps of the cooling case end above the tolerance (the temperature lag falls by about 7 per pass); the case asks for 4
 - not with solid regions (CHT) or an algorithm other than PISO (SPR003); not checked with a density that varies with temperature (stage 7c); one process
 - `spray_cooling_injectors` has no run in the verification manual or in CI
+
+<a id="sprays-dispersion-eddy-lifetime"></a>
+
+### Turbulent dispersion of the sprays, eddy lifetime (SP2c, D243)
+
+**partial** (a model without reference data; gaps written) · id `sprays.dispersion-eddy-lifetime` · switch `[spray] dispersion = "eddy-lifetime"` · decisions D243, D121, D251
+
+- exact: [`tracers_spread_as_the_random_walk_of_the_eddies`](../../crates/foehncraft-particles/tests/dispersion.rs): 20 000 tracers in turbulence at rest with uniform k and eps: the mean square displacement per component equals (2k/3)(n tau_e^2 + r^2) within four standard errors (found within 1.3 %, band 4 %); the mean displacement is zero within four standard errors; no parcel lost
+- consistency: [`falling_droplets_cross_the_eddies_and_spread_less`](../../crates/foehncraft-particles/tests/dispersion.rs): crossing trajectories: 300 um droplets falling at 1.1 m/s through eddies of 5 cm change eddies more than 1.5 times as often as tracers (found 16 against 5) and spread less than 0.7 times as far sideways (found 0.3)
+- exact: [`eddy_times_follow_gosman_and_ioannides`](../../crates/foehncraft-kernels/src/particle.rs): eddy length, lifetime and interaction time of Gosman and Ioannides (1983), the crossing time and its limit l_e/|w|
+- exact: [`sources_do_not_depend_on_parcel_order_or_threads`](../../crates/foehncraft-particles/tests/coupling.rs): V28.1 with eddies: sources, closing step and parcel states (with their eddies) bitwise equal with the storage reversed and on one thread, hex, tet and poly; momentum books close to round-off; no parcel lost
+- exact: [`dispersion_gives_the_same_bits_on_any_number_of_threads`](../../crates/foehncraft-flow/tests/spray_coupling.rs): a two-way run with dispersion: spray.csv bitwise equal on 1 and 4 threads
+- contract (diagnostics): [`spray_dispersion`](../../examples/cases/flow/spray_dispersion.toml): droplets of 20 to 300 um shot along the axis of a turbulent duct spread by the eddies alone; small droplets spread faster than large ones; no parcel lost (passes in CI (set linux-3), not yet in the manual) ([results](../gallery/sprays.md#spray-dispersion))
+- contract (schema): [`spray_dispersion_injectors`](../../examples/cases/flow/spray_dispersion_injectors.toml): the included injector file of spray_dispersion ([results](../cases/flow.md#lagrangian-sprays)) **missing**
+
+Gaps:
+
+- V28.17 not run: no comparison with the grid-turbulence measurements (Snyder and Lumley 1971; Wells and Stock 1983)
+- isotropic eddies: the wall-normal fluctuation near walls is overestimated (a known flaw of the model), so wall deposition rates are not reliable
+- the continuous random walk (second value of the key, D243) is not built
+- no turbulence modulation by the droplets
+- one process
+- `spray_dispersion_injectors` has no run in the verification manual or in CI
 
 ## Flow models
 

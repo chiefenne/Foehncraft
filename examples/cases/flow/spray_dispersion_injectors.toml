@@ -1,0 +1,16 @@
+# The needle nozzle of spray_dispersion.toml (D246: the spray lives in its
+# own file).
+
+[liquid]
+name = "water"
+density = 998.0
+
+[[injector]]
+name = "needle"
+position = [0.2, 0.15, 0.05]
+direction = [1.0, 0.0, 0.0]
+speed = 10.0
+half_angle = 0.0
+mass_flow = 0.002
+size = { distribution = "rosin-rammler", mean = 120e-6, spread = 2.5, min = 20e-6, max = 300e-6 }
+parcels_per_second = 8000.0

@@ -311,7 +311,9 @@ on the [key page](../keys.md) and in [recipe
 `[spray]` with an included injector file (L12, SP1, D246): droplets as
 parcels in a transient flow, one way or, with `[spray.coupling] mode =
 "two-way"` (SP2, D247 to D252), with the drag as a momentum source of the
-gas and, with `[energy]`, the heat as a source of the gas energy. The keys are on the [key page](flow-keys.md); the run writes `spray.csv` and
+gas and, with `[energy]`, the heat as a source of the gas energy;
+`[spray] dispersion = "eddy-lifetime"` (SP2c, D243) lets the turbulence
+spread the parcels. The keys are on the [key page](flow-keys.md); the run writes `spray.csv` and
 `spray/parcels_<step>.vtkhdf`. `[[datum]]` tables (SP1b, D262) report the
 liquid and the gas through planes, surfaces and boundaries and the droplets
 in volumes, in `datums.csv` and `spray_hist_<datum>.csv`.
@@ -322,6 +324,7 @@ in volumes, in `datums.csv` and `spray_hist_<datum>.csv`.
 | `flow/spray_datums.toml` | generated hex 2D, 80 × 20 cells | the duct of `spray_duct` with Rosin-Rammler sizes (X = 120 µm, n = 2.5; `flow/spray_datums_injectors.toml`) and seven datums: a cut plane, a plane on the faces, a disc, an STL surface (`flow/spray_datums_section.stl`), the outlet, the floor and a box; the outlet datum equals the escaped liquid to the bit, Dv50 91 µm at the outlet and 170 µm on the floor | [gallery 265](../gallery/sprays.md#spray-datums), [recipe 265](../recipes/sprays.md#spray-datums) |
 | `flow/spray_two_way.toml` | generated hex 2D, 60 × 75 cells | two-way coupling: 50 g/s of water (50 to 400 µm, `flow/spray_two_way_injectors.toml`) sprayed down from the ceiling of a room of still air pulls the air into a jet of up to 6 m/s; the spray hands the air 0.77 N, 2.96 passes per step on average, the momentum pair cancels to the bit | [gallery 280](../gallery/sprays.md#spray-two-way), [recipe 280](../recipes/sprays.md#spray-two-way) |
 | `flow/spray_cooling.toml` | generated hex 2D, 100 × 20 cells | two-way heat: 10 g/s of water at 20 °C (20 to 200 µm, `flow/spray_cooling_injectors.toml`) sprayed into air at 300 °C and 5 m/s; the droplets take about 6.6 kW from the air, which leaves about 50 K cooler; the enthalpy pair cancels to the bit, 3.7 passes per step with `max_passes = 4` | [gallery 283](../gallery/sprays.md#spray-cooling), [recipe 283](../recipes/sprays.md#spray-cooling) |
+| `flow/spray_dispersion.toml` | generated hex 2D, 150 × 30 cells | eddy-lifetime dispersion: water droplets of 20 to 300 µm (`flow/spray_dispersion_injectors.toml`) shot along the axis of a duct with 10 % turbulence spread by the eddies alone (no gravity, no cone); after 1 m the small droplets spread 5.4 cm, the large ones 2.9 cm; no parcel lost | [gallery 285](../gallery/sprays.md#spray-dispersion), [recipe 285](../recipes/sprays.md#spray-dispersion) |
 
 ## Porous regions
 

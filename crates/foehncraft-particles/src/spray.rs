@@ -1,12 +1,12 @@
 //! The parcels and their tracking through the mesh.
 
-use crate::config::{BoundaryMode, Injector, Penetration, SpraySection};
+use crate::config::{BoundaryMode, Dispersion, Injector, Penetration, SpraySection};
 use crate::coupling::{CellSources, Record, StepBooks};
 use crate::datum::{Crossing, Datum, DatumTally, Moments, Shape, Surface, plane_crossing};
 use anyhow::{Result, bail};
 use foehncraft_core::Real;
 use foehncraft_core::rng::{self, stream};
-use foehncraft_kernels::particle::{HeatInput, ParcelInput, heat_step, parcel_step};
+use foehncraft_kernels::particle::{HeatInput, ParcelInput, eddy_times, heat_step, parcel_step};
 use foehncraft_mesh::geometry::Geometry;
 use foehncraft_mesh::locate::{Locator, Position, TrackEnd, WalkEnd, step_limit};
 use foehncraft_mesh::mesh::Mesh;
@@ -28,6 +28,10 @@ pub struct GasState {
     pub cp: f64,
     /// Thermal conductivity (W/(m K)); zero: no heat exchange.
     pub k: f64,
+    /// Turbulent kinetic energy (m²/s²); zero: no turbulent dispersion.
+    pub tke: f64,
+    /// Its dissipation rate ε (m²/s³).
+    pub eps: f64,
 }
 
 impl GasState {
@@ -41,6 +45,8 @@ impl GasState {
             t: f64::NAN,
             cp: 1006.0,
             k: 0.0,
+            tke: 0.0,
+            eps: 0.0,
         }
     }
 
@@ -48,6 +54,21 @@ impl GasState {
     pub fn has_heat(&self) -> bool {
         self.t.is_finite() && self.k > 0.0 && self.cp > 0.0
     }
+}
+
+/// The eddy a parcel is in (eddy-lifetime dispersion, D243): the
+/// fluctuation of the gas velocity it sees, the time left until it enters
+/// the next eddy, and the number of eddies it has entered (the event word
+/// of its random numbers, stream `SPRAY_DISPERSION`, D121).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+pub struct Eddy {
+    /// Fluctuation of the gas velocity (m/s).
+    pub u: [f64; 3],
+    /// Time left in the eddy (s); zero or less: a new eddy at the next
+    /// sub-step.
+    pub left: f64,
+    /// Eddies entered so far.
+    pub n: u64,
 }
 
 /// The gas field seen by the parcels (one-way coupling in SP1).
@@ -100,6 +121,10 @@ pub struct Parcels {
     /// SP2b (filled with the injection temperature on restore).
     #[serde(default)]
     pub temp: Vec<f64>,
+    /// The eddy each parcel is in (turbulent dispersion, D243); empty in
+    /// restart files written before SP2c (every parcel starts a new eddy).
+    #[serde(default)]
+    pub eddy: Vec<Eddy>,
     /// Cell that holds the parcel (rebuilt from the position on a restart).
     #[serde(skip)]
     pub cell: Vec<u32>,
@@ -124,6 +149,7 @@ impl Parcels {
         self.count.push(p.count);
         self.born.push(p.born);
         self.temp.push(p.temp);
+        self.eddy.push(p.eddy);
         self.cell.push(p.cell as u32);
     }
 
@@ -136,6 +162,7 @@ impl Parcels {
             count: self.count[i],
             born: self.born[i],
             temp: self.temp[i],
+            eddy: self.eddy[i],
             cell: self.cell[i] as usize,
             face: None,
         }
@@ -151,6 +178,7 @@ struct One {
     count: f64,
     born: f64,
     temp: f64,
+    eddy: Eddy,
     cell: usize,
     /// Where the walk stands when the parcel was stopped on an interior
     /// face (two-way tracking): the tetrahedron of the next cell.
@@ -265,6 +293,9 @@ pub struct Spray {
     /// Running sums of each datum (aligned with the datums; volumes keep
     /// empty ones).
     pub datum_tally: Vec<DatumTally>,
+    /// A two-dimensional case in the x-y plane: the eddies have no z
+    /// component (D243).
+    planar: bool,
 }
 
 /// What `state()` writes and `restore()` reads (restart, D42).
@@ -291,7 +322,21 @@ fn mass_of(d: f64, count: f64, rho_p: f64) -> f64 {
     count * rho_p * std::f64::consts::PI / 6.0 * d * d * d
 }
 
+/// A standard normal number from two keyed uniforms (Box and Muller 1958).
+fn normal(key: [u64; 4]) -> f64 {
+    let u1 = rng::uniform_keyed(key);
+    let u2 = rng::uniform_keyed([key[0], key[1], key[2], key[3] + 1]);
+    // 1 − u1 lies in (0, 1]
+    (-2.0 * (1.0 - u1).ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
+}
+
 impl Spray {
+    /// Marks a two-dimensional case in the x-y plane: the eddies of the
+    /// dispersion get no z component.
+    pub fn set_planar(&mut self, planar: bool) {
+        self.planar = planar;
+    }
+
     /// Prepares the sprays: `rules` has one entry per boundary of the mesh
     /// (`mesh.boundaries`), `gravity` is the vector of `[gravity]` (zero
     /// without it). Each injector must lie inside the mesh.
@@ -329,6 +374,7 @@ impl Spray {
                 })
                 .collect(),
             parcels: Parcels::default(),
+            planar: false,
             datums: Vec::new(),
             datum_tally: Vec::new(),
             tally: Tally {
@@ -744,6 +790,7 @@ impl Spray {
                     count,
                     born,
                     temp: inj.temperature.unwrap_or(self.cfg.liquid.temperature),
+                    eddy: Eddy::default(),
                     cell,
                     face: None,
                 });
@@ -893,6 +940,35 @@ impl Spray {
     /// sees that cell's frozen gas, and when the particle Reynolds number
     /// would change by more than `max_reynolds_change`; every sub-step
     /// writes its exchange record (D249).
+    /// Puts the parcel into a new eddy (eddy-lifetime model, D243): a
+    /// Gaussian fluctuation of variance 2k/3 per component, drawn from the
+    /// stream `SPRAY_DISPERSION` keyed by the parcel and its eddy count, so
+    /// every pass of a step draws the same numbers; the eddy lasts the
+    /// interaction time of Gosman and Ioannides (1983).
+    fn new_eddy(&self, p: &mut One, gs: &GasState, rho_p: f64) {
+        p.eddy.n += 1;
+        let sigma = (2.0 / 3.0 * gs.tke).sqrt();
+        let mut u = [0.0; 3];
+        let comps = if self.planar { 2 } else { 3 };
+        for (k, uk) in u.iter_mut().enumerate().take(comps) {
+            *uk = sigma * normal([stream::SPRAY_DISPERSION, p.id, p.eddy.n, 2 * k as u64]);
+        }
+        let ug = [gs.u[0] + u[0], gs.u[1] + u[1], gs.u[2] + u[2]];
+        let s = parcel_step(&ParcelInput {
+            v: p.v,
+            u: ug,
+            rho_g: gs.rho,
+            mu_g: gs.mu,
+            d: p.d,
+            rho_p,
+            g: self.gravity,
+            dt: 0.0,
+        });
+        let slip = norm([ug[0] - p.v[0], ug[1] - p.v[1], ug[2] - p.v[2]]);
+        p.eddy.u = u;
+        p.eddy.left = eddy_times(gs.tke, gs.eps, s.tau, slip).interaction;
+    }
+
     fn track(&self, env: &Env, gas: &dyn Gas, mut p: One, time: f64, t1: f64) -> Outcome {
         let rho_p = self.cfg.liquid.density;
         let two_way = self.cfg.coupling.two_way();
@@ -910,14 +986,34 @@ impl Spray {
         let mut substeps = 0u64;
         let mut fate = Fate::Active;
         let tiny = 1e-14 * time.max(1e-300);
+        let dispersion = self.cfg.dispersion == Dispersion::EddyLifetime;
+        // the time of the eddy is spent with the sub-steps (D251: a
+        // sub-step ends at the end of an eddy)
+        let mut last_left = left;
         while left > tiny {
+            p.eddy.left -= last_left - left;
+            last_left = left;
             substeps += 1;
             if substeps as usize > self.cfg.max_substeps {
                 fate = Fate::Lost;
                 break;
             }
-            let gs = gas.at(p.cell, p.x);
+            let mut gs = gas.at(p.cell, p.x);
             let h = env.geo.cell_volume[p.cell].cbrt();
+            if dispersion && gs.tke > 0.0 && gs.eps > 0.0 {
+                // an eddy whose rest is below what the step time can
+                // resolve is over (else its sub-steps would not advance)
+                if p.eddy.left <= tiny {
+                    self.new_eddy(&mut p, &gs, rho_p);
+                }
+                for k in 0..3 {
+                    gs.u[k] += p.eddy.u[k];
+                }
+            } else {
+                // no turbulence here: the parcel sees the mean gas
+                p.eddy.u = [0.0; 3];
+                p.eddy.left = 0.0;
+            }
             let input = |dt: f64| ParcelInput {
                 v: p.v,
                 u: gs.u,
@@ -929,10 +1025,13 @@ impl Spray {
                 dt,
             };
             let mut sub = left;
+            if dispersion && p.eddy.left > 0.0 && p.eddy.left < sub {
+                sub = p.eddy.left;
+            }
             let mut s = parcel_step(&input(sub));
             let len = norm(s.dx);
             if len > self.cfg.max_courant * h {
-                sub = left * self.cfg.max_courant * h / len;
+                sub = sub * self.cfg.max_courant * h / len;
                 s = parcel_step(&input(sub));
             }
             if two_way {
@@ -1217,6 +1316,7 @@ impl Spray {
                 }
             }
         }
+        p.eddy.left -= last_left - left;
         p.face = None;
         crate::coupling::set_slopes(&mut records, mass, mass * cp_p);
         Outcome {
@@ -1331,6 +1431,10 @@ impl Spray {
                     inj.temperature.unwrap_or(self.cfg.liquid.temperature)
                 })
                 .collect();
+        }
+        if parcels.eddy.len() != parcels.len() {
+            // a restart written before SP2c: every parcel starts a new eddy
+            parcels.eddy = vec![Eddy::default(); parcels.len()];
         }
         parcels.cell = Vec::with_capacity(parcels.len());
         for x in &parcels.x {

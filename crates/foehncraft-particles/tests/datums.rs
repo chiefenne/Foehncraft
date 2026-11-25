@@ -25,6 +25,8 @@ impl Gas for Uniform {
             t: f64::NAN,
             cp: 1006.0,
             k: 0.0,
+            tke: 0.0,
+            eps: 0.0,
         }
     }
 }

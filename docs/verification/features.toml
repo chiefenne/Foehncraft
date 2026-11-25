@@ -1722,7 +1722,7 @@ evidence = [
 ]
 gaps = [
   "heat exchange is the row sprays.two-way-heat (SP2b)",
-  "no turbulent dispersion (SP2c) and no turbulence modulation by the droplets (in no decision yet)",
+  "turbulent dispersion is the row sprays.dispersion-eddy-lifetime (SP2c); no turbulence modulation by the droplets (in no decision yet)",
   "first order in time (V28.4); second order (an exponentially fitted weight per cell) is an open point of section 5.7",
   "V28.6 (two neighbour cells) is covered only through the shuffled-storage test; no reference-data case of a dense spray against measurements",
   "the time-step study as a registered tool (D254 (4)) is not built",
@@ -1755,6 +1755,30 @@ gaps = [
   "the spray-cooling case is checked against its own energy balance only; V28.16 (one-dimensional dusty-gas duct) and V28.21 (plug-flow reference, SP5) are not run",
   "with the default max_passes = 3 most steps of the cooling case end above the tolerance (the temperature lag falls by about 7 per pass); the case asks for 4",
   "not with solid regions (CHT) or an algorithm other than PISO (SPR003); not checked with a density that varies with temperature (stage 7c); one process",
+]
+
+[[feature]]
+id = "sprays.dispersion-eddy-lifetime"
+area = "Sprays"
+title = "Turbulent dispersion of the sprays, eddy lifetime (SP2c, D243)"
+switch = "[spray] dispersion = \"eddy-lifetime\""
+decisions = ["D243", "D121", "D251"]
+model = true
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-particles/tests/dispersion.rs::tracers_spread_as_the_random_walk_of_the_eddies", what = "20 000 tracers in turbulence at rest with uniform k and eps: the mean square displacement per component equals (2k/3)(n tau_e^2 + r^2) within four standard errors (found within 1.3 %, band 4 %); the mean displacement is zero within four standard errors; no parcel lost" },
+  { kind = "consistency", test = "crates/foehncraft-particles/tests/dispersion.rs::falling_droplets_cross_the_eddies_and_spread_less", what = "crossing trajectories: 300 um droplets falling at 1.1 m/s through eddies of 5 cm change eddies more than 1.5 times as often as tracers (found 16 against 5) and spread less than 0.7 times as far sideways (found 0.3)" },
+  { kind = "exact", test = "crates/foehncraft-kernels/src/particle.rs::eddy_times_follow_gosman_and_ioannides", what = "eddy length, lifetime and interaction time of Gosman and Ioannides (1983), the crossing time and its limit l_e/|w|" },
+  { kind = "exact", test = "crates/foehncraft-particles/tests/coupling.rs::sources_do_not_depend_on_parcel_order_or_threads", what = "V28.1 with eddies: sources, closing step and parcel states (with their eddies) bitwise equal with the storage reversed and on one thread, hex, tet and poly; momentum books close to round-off; no parcel lost" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/spray_coupling.rs::dispersion_gives_the_same_bits_on_any_number_of_threads", what = "a two-way run with dispersion: spray.csv bitwise equal on 1 and 4 threads" },
+  { kind = "contract", property = "diagnostics", case = "spray_dispersion", what = "droplets of 20 to 300 um shot along the axis of a turbulent duct spread by the eddies alone; small droplets spread faster than large ones; no parcel lost", doc = "docs/gallery/sprays.md#spray-dispersion" },
+  { kind = "contract", property = "schema", case = "spray_dispersion_injectors", what = "the included injector file of spray_dispersion", doc = "docs/cases/flow.md#lagrangian-sprays" },
+]
+gaps = [
+  "V28.17 not run: no comparison with the grid-turbulence measurements (Snyder and Lumley 1971; Wells and Stock 1983)",
+  "isotropic eddies: the wall-normal fluctuation near walls is overestimated (a known flaw of the model), so wall deposition rates are not reliable",
+  "the continuous random walk (second value of the key, D243) is not built",
+  "no turbulence modulation by the droplets",
+  "one process",
 ]
 
 [[feature]]

@@ -499,3 +499,66 @@ fn the_heat_coupling_converges_at_first_order_in_the_step() {
     assert!(p1 > 0.9 && p2 > 0.9, "orders {p1} {p2}, errors {err:?}");
     assert!(err[2] < 0.05 * (T_GAS - t_ref), "error at 1 ms {}", err[2]);
 }
+
+// Turbulent dispersion (SP2c, D243): the eddies of the parcels are keyed
+// by the parcel and its eddy count, so a run with dispersion gives the same
+// bits on any number of threads; a laminar case is refused.
+
+fn dispersion_case() -> (String, PathBuf) {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/cases/flow");
+    let text = std::fs::read_to_string(dir.join("spray_dispersion.toml"))
+        .unwrap()
+        .replace("end_time = 0.6", "end_time = 0.04")
+        .replace("write_every = 25", "write_every = 0");
+    (text, dir)
+}
+
+#[test]
+fn dispersion_gives_the_same_bits_on_any_number_of_threads() {
+    let (text, dir) = dispersion_case();
+    let case = FlowCase::from_toml(&text, &dir).unwrap();
+    let runs: Vec<String> = [1, 4]
+        .iter()
+        .map(|&n| {
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(n)
+                .build()
+                .unwrap()
+                .install(|| {
+                    let name = format!("dispersion{n}");
+                    let d = out(&name);
+                    run(&case, &name, &d, |_| {}).unwrap();
+                    // the rows, without the first line (it names the run)
+                    let csv = std::fs::read_to_string(d.join("spray.csv")).unwrap();
+                    csv.lines().skip(1).collect::<Vec<_>>().join("\n")
+                })
+        })
+        .collect();
+    assert_eq!(runs[0], runs[1]);
+    // the parcels did leave the axis: the centre of mass moved off y = 0.15
+    // by less than the spread, and the run lost no parcel
+    let rows: Vec<&str> = runs[0].lines().filter(|l| !l.starts_with('#')).collect();
+    let head: Vec<&str> = rows[0].split(',').collect();
+    let last: Vec<&str> = rows.last().unwrap().split(',').collect();
+    let col = |n: &str| {
+        last[head.iter().position(|h| *h == n).unwrap()]
+            .parse::<f64>()
+            .unwrap()
+    };
+    assert_eq!(col("lost_parcels"), 0.0);
+    assert!(col("parcels") > 100.0);
+}
+
+#[test]
+fn dispersion_needs_a_turbulence_model() {
+    let (text, dir) = dispersion_case();
+    let text = text.replace("model = \"k-omega-sst\"", "model = \"laminar\"");
+    let e = match FlowCase::from_toml(&text, &dir) {
+        Err(e) => format!("{e:#}"),
+        Ok(case) => format!(
+            "{:#}",
+            run(&case, "laminar", &out("laminar"), |_| {}).unwrap_err()
+        ),
+    };
+    assert!(e.contains("dispersion needs a turbulence model"), "{e}");
+}

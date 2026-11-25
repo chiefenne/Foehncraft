@@ -8,6 +8,7 @@ Part of the [Recipes](../recipes.md): droplets that move with and through the ga
 | 265 | [Measure the liquid and the droplet sizes at datums](#spray-datums) |
 | 280 | [Let the spray push the gas (two-way coupling)](#spray-two-way) |
 | 283 | [Cool a gas with droplets (two-way heat)](#spray-cooling) |
+| 285 | [Let the turbulence spread the droplets](#spray-dispersion) |
 
 ---
 
@@ -197,3 +198,25 @@ python3 -m tools.plot.spray_cooling OUT_DIR output/spray_cooling   # the picture
 ```
 
 `spray.csv` gets `t_mean_k` (the mass mean droplet temperature) and, two-way, `gas_heat_w` (W, the heat the parcels hand to the gas; negative when they cool it) and `coupling_heat_max` (the largest G Δt / (ρ c_p V) of a cell). The ledger books the exchange as the pair 2804: `spray heat` on the thermal energy account of the energy equation and `from the gas` on the account `parcel enthalpy`, which closes with the injected liquid and what left the flow. The parcel files have a `temperature` field. See the [gallery entry](../gallery/sprays.md#spray-cooling) for what is checked and what is not there yet (no evaporation before SP5).
+
+<a id="spray-dispersion"></a>
+## 285. Let the turbulence spread the droplets
+
+**Switch the dispersion on.** By default a parcel sees the mean gas velocity. In a case with a turbulence model, the eddy-lifetime model (D243; Gosman and Ioannides 1983) adds the eddies:
+
+```toml
+[spray]
+include = "my_injectors.toml"
+dispersion = "eddy-lifetime"   # default "none"; "random-walk" follows behind the same key
+```
+
+Each parcel then sees a Gaussian fluctuation of variance 2k/3 per component, kept for the eddy interaction time (the eddy lifetime, or the time a heavy droplet needs to cross the eddy). It works one way and two way, with any turbulence model of the code (ε directly from the k-ε family, β* k ω from SST); a laminar case is refused (SPR001). The random numbers are keyed by the parcel and its eddy count, so the run gives the same bits on any number of threads and the two-way passes see the same eddies. In a 2D case the eddies stay in the x-y plane.
+
+**Run and look.**
+
+```bash
+foehn flow examples/cases/flow/spray_dispersion.toml --out output/spray_dispersion
+python3 -m tools.plot.spray_dispersion OUT_DIR output/spray_dispersion   # the picture of gallery 285
+```
+
+The parcel files carry the positions to measure the spread; with `[[datum]]` planes across the duct (recipe 265) `datums.csv` and the histograms give the distribution of the liquid without post-processing. The dispersion depends on the k and ε the turbulence model gives at the nozzle: check that the inlet turbulence does not decay before the spray reaches it (the gallery case uses a viscosity ratio of 2000 for that). Near walls the isotropic eddies overestimate the wall-normal fluctuation, so wall deposition is not reliable with this model. See the [gallery entry](../gallery/sprays.md#spray-dispersion) for what is checked.
