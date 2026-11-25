@@ -1,0 +1,56 @@
+# The heat sink of the turbulent conjugate heat transfer case, warmed by
+# its chip, as a structure (MS6): the temperatures of the flow case's solid
+# region mapped onto the structural nodes as the thermal load.
+#
+#   foehn flow examples/cases/flow/cht_heat_sink_turbulent.toml --out output/cht_heat_sink_turbulent
+#   foehn call structure.run --input examples/cases/tools/structure_heat_sink_hot.json
+#
+# The flow case (k-ω SST, air at 5 m/s over an aluminium base with three
+# fins, 2000 W/m² from a chip under the base) writes the temperature of
+# every cell to fields.vtkhdf, the aluminium's cells in the zones `base`,
+# `fin_1`, `fin_2` and `fin_3`. `[[temperature_fields]]` reads them and fits
+# a linear field to the 20 nearest cell centres at every node of the
+# twenty-node hexahedra of heat_sink.msh (python3 -m tools.mesh.heat_sink_msh),
+# so the structure has its own, finer mesh. The flow case is 2D (one layer
+# of cells 10 mm deep): the field is constant through the depth.
+#
+# The base is bonded to a board that stays at 300 K, the temperature at
+# which it was bonded: the underside is held. The warm aluminium wants to
+# grow by α ΔT; the bond holds the underside, so the base bends up at its
+# ends and the stress gathers at the corners of the bond line.
+
+[structure]
+name = "heat_sink_hot"
+
+[analysis]
+static = true
+
+[materials.aluminium-6061]
+# 6061-T6 at room temperature (ASM Handbook vol. 2, 1990)
+young = 68.9e9
+poisson = 0.33
+density = 2700.0
+expansion = 23.6e-6
+
+[[solids]]
+name = "sink"
+mesh = "heat_sink.msh"      # relative to this file
+volumes = ["sink"]
+material = "aluminium-6061"
+
+# bonded to the board: the underside held
+[[supports]]
+part = "sink"
+surface = "bottom"
+fix = ["ux", "uy", "uz"]
+
+[[temperature_fields]]
+parts = ["sink"]
+file = "../../../output/cht_heat_sink_turbulent/fields.vtkhdf"
+zones = ["base", "fin_1", "fin_2", "fin_3"]
+reference = 300.0           # the bonding temperature (K)
+
+[points]
+fin_1_tip = [0.0895, 0.025, 0.005]
+fin_3_tip = [0.1695, 0.025, 0.005]
+base_end = [0.18, 0.005, 0.005]
