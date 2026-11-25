@@ -149,6 +149,9 @@ codes! {
     IMM_UNSUPPORTED = "IMM102", Error, "An `[immersed]` body in a case it does not fit (L13 stage 1, D226): a turbulence model (penalised walls are laminar and low-Re only; a wall function on a penalised wall is refused), the energy equation (no penalised conjugate heat transfer, Q9), passive scalars, gravity, regions or several fluids, rotating zones, or sprays.";
     IMM_RESOLUTION = "IMM103", Warning, "An immersed body that the mesh does not resolve: no cell lies more than half inside it, or its solid volume on the mesh differs from its exact volume inside the mesh by more than 5 %.";
     IMM_BODIES = "IMM104", Note, "The immersed bodies of the case: their solid volume on the mesh against the exact volume, the cells they touch and the sink coefficient μ/K.";
+    // datums and their reports (SP1b, D262 to D267)
+    DATUM_CONFIG = "DAT001", Error, "A `[[datum]]` table that cannot be used: a name used twice or with other characters than letters, digits, `_` and `-`, an unknown type, a missing or invalid key of its type (plane point and normal, bound, boundary, zones, STL file, box corners, cylinder, zone), or bad histogram bins.";
+    DATUM_EMPTY = "DAT002", Error, "A `[[datum]]` that meets no face or cell of the mesh (a plane outside the domain, an interface between zones that do not touch, an empty volume).";
     ENE_UNSUPPORTED = "ENE006", Error, "An energy setting this version does not have: a passive scalar named `temperature` beside `[energy]`, solid regions with a sliding mesh, a restart with `[energy.acceleration]`, passive scalars or a periodic mesh, or with the variable density (stage 7c) passive scalars, a restart, a periodic mesh, a convective outlet, a wall mass flux or a rotating zone.";
     ENE_SOURCE = "ENE008", Error, "An `[[energy.sources]]` entry for a region the case does not have, or without exactly one of `power` and `power_density`.";
     CHT_INTERFACE = "CHT004", Error, "An `[interfaces.<name>]` table that is not on a region interface (regions unknown, the same, two fluids, or not touching), or without exactly one of `contact_resistance` (≥ 0) and `thin_wall` (thickness > 0 with `conductivity` or `material`).";
@@ -540,7 +543,8 @@ mod tests {
                 [
                     "CASE", "SCHED", "BC", "SCAL", "RUN", "GEN", "DIV", "BAL", "EXPR", "MAT",
                     "REG", "MESH", "TURB", "MRF", "SLD", "ROT", "STAT", "ENE", "THM", "CHT",
-                    "TOOL", "LIM", "MCP", "ACC", "CYC", "BUO", "FRZ", "PRS", "SPR", "POR", "IMM"
+                    "TOOL", "LIM", "MCP", "ACC", "CYC", "BUO", "FRZ", "PRS", "SPR", "DAT", "POR",
+                    "IMM"
                 ]
                 .contains(&p),
                 "{}",

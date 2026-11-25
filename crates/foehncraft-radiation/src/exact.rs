@@ -10,7 +10,13 @@
 //!   2021, the one-dimensional slab);
 //! - the configuration factor between two directly opposed parallel
 //!   rectangles (Howell, Mengüç, Daun & Siegel, *Thermal Radiation Heat
-//!   Transfer*, 7th ed., 2021, catalogue of configuration factors).
+//!   Transfer*, 7th ed., 2021, catalogue of configuration factors);
+//! - the flux into a cold black wall of a cube filled with an isothermal
+//!   grey gas (case 5): the integral of the gas emission over the other
+//!   five walls, `q(p) = σT⁴ Σ ∫ (1 − e^{−κr}) cos θ_p cos θ_q / (π r²) dA`,
+//!   by adaptive Gauss–Legendre quadrature to about 1e-10, and its mean
+//!   over a part of the wall. The exact reference of the cube case, so no
+//!   published numbers are needed.
 
 use std::f64::consts::PI;
 
@@ -93,6 +99,116 @@ pub fn parallel_rectangles(a: f64, b: f64, c: f64) -> f64 {
     2.0 / (PI * x * y) * (s1 + s2 + s3 - s4)
 }
 
+/// Nodes and weights of the 6-point Gauss–Legendre rule on [0, 1].
+const GL6: [(f64, f64); 6] = [
+    (0.033_765_242_898_423_975, 0.085_662_246_189_585_17),
+    (0.169_395_306_766_867_74, 0.180_380_786_524_069_3),
+    (0.380_690_406_958_401_5, 0.233_956_967_286_345_53),
+    (0.619_309_593_041_598_5, 0.233_956_967_286_345_53),
+    (0.830_604_693_233_132_3, 0.180_380_786_524_069_3),
+    (0.966_234_757_101_576, 0.085_662_246_189_585_17),
+];
+
+/// The 6 × 6 Gauss rule of `f` on the rectangle [a0, a1] × [b0, b1].
+fn gauss2(f: &impl Fn(f64, f64) -> f64, a0: f64, a1: f64, b0: f64, b1: f64) -> f64 {
+    let (da, db) = (a1 - a0, b1 - b0);
+    let mut s = 0.0;
+    for &(u, wu) in &GL6 {
+        for &(v, wv) in &GL6 {
+            s += wu * wv * f(a0 + u * da, b0 + v * db);
+        }
+    }
+    s * da * db
+}
+
+/// Adaptive 2D quadrature: splits a rectangle into four until the rule
+/// on the four parts agrees with the rule on the whole to `tol`.
+fn adapt(f: &impl Fn(f64, f64) -> f64, r: [f64; 4], whole: f64, tol: f64, depth: u32) -> f64 {
+    let [a0, a1, b0, b1] = r;
+    let (am, bm) = (0.5 * (a0 + a1), 0.5 * (b0 + b1));
+    let parts = [
+        [a0, am, b0, bm],
+        [am, a1, b0, bm],
+        [a0, am, bm, b1],
+        [am, a1, bm, b1],
+    ];
+    let q: Vec<f64> = parts
+        .iter()
+        .map(|p| gauss2(f, p[0], p[1], p[2], p[3]))
+        .collect();
+    let sum: f64 = q.iter().sum();
+    if (sum - whole).abs() <= tol || depth >= 12 {
+        return sum;
+    }
+    parts
+        .iter()
+        .zip(&q)
+        .map(|(p, &w)| adapt(f, *p, w, 0.25 * tol, depth + 1))
+        .sum()
+}
+
+fn integrate(f: impl Fn(f64, f64) -> f64, tol: f64) -> f64 {
+    let whole = gauss2(&f, 0.0, 1.0, 0.0, 1.0);
+    adapt(&f, [0.0, 1.0, 0.0, 1.0], whole, tol, 0)
+}
+
+/// Flux into a cold black wall of the unit cube at the point `(x, y)` of
+/// the wall (0 < x, y < 1), with the cube filled with an isothermal grey
+/// gas of optical side `kl` (κ times the side), divided by σT⁴. For a cube
+/// of side `L`, take `kl = κ L`; the flux does not depend on L otherwise.
+pub fn cube_wall_flux(kl: f64, x: f64, y: f64) -> f64 {
+    let emit = |r: f64| -> f64 {
+        let t = kl * r;
+        if t < 1e-5 {
+            t * (1.0 - t * (0.5 - t / 6.0))
+        } else {
+            1.0 - (-t).exp()
+        }
+    };
+    let tol = 1e-12;
+    // opposite wall z = 1: cos θ_p = cos θ_q = 1/r
+    let top = integrate(
+        |u, v| {
+            let r2 = (u - x).powi(2) + (v - y).powi(2) + 1.0;
+            emit(r2.sqrt()) / (PI * r2 * r2)
+        },
+        tol,
+    );
+    // a side wall at distance h from the point, coordinates (s, w): s
+    // along the wall, w the height; cos θ_p = w / r, cos θ_q = h / r
+    let side = |h: f64, c: f64| {
+        integrate(
+            |s, w| {
+                let r2 = h * h + (s - c).powi(2) + w * w;
+                emit(r2.sqrt()) * h * w / (PI * r2 * r2)
+            },
+            tol,
+        )
+    };
+    top + side(x, y) + side(1.0 - x, y) + side(y, x) + side(1.0 - y, x)
+}
+
+/// Mean of [`cube_wall_flux`] over the rectangle `x0 < x < x1`,
+/// `y0 < y < y1` of the wall: the 6 × 6 Gauss rule on `n × n` parts. At the
+/// edges of the cube the flux goes as `x ln x`, so the error of a part that
+/// touches an edge falls as the square of its size: on the whole wall of
+/// `kl = 1`, about 1e-5 with n = 8.
+pub fn cube_wall_flux_mean(kl: f64, x: [f64; 2], y: [f64; 2], n: usize) -> f64 {
+    let (dx, dy) = ((x[1] - x[0]) / n as f64, (y[1] - y[0]) / n as f64);
+    let mut s = 0.0;
+    for i in 0..n {
+        for j in 0..n {
+            let (a, b) = (x[0] + i as f64 * dx, y[0] + j as f64 * dy);
+            for &(u, wu) in &GL6 {
+                for &(v, wv) in &GL6 {
+                    s += wu * wv * cube_wall_flux(kl, a + u * dx, b + v * dy);
+                }
+            }
+        }
+    }
+    s / (n * n) as f64
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -134,6 +250,32 @@ mod tests {
             (total + 2.0 * slab_wall_flux(k * l)).abs() < 1e-12,
             "{total}"
         );
+    }
+
+    #[test]
+    fn cube_flux_limits() {
+        // optically thick: the wall sees black gas everywhere
+        assert!((cube_wall_flux(200.0, 0.5, 0.5) - 1.0).abs() < 1e-6);
+        assert!((cube_wall_flux(200.0, 0.1, 0.3) - 1.0).abs() < 1e-4);
+        // transparent walls: the view factors of the five walls sum to 1
+        // (the gas emission → 0, so q/κ ≈ mean chord · cos weight finite)
+        let thin = cube_wall_flux(1e-6, 0.5, 0.5) / 1e-6;
+        assert!(thin > 0.5 && thin < 2.0, "{thin}");
+        // symmetry of the wall
+        let a = cube_wall_flux(1.0, 0.2, 0.7);
+        for (x, y) in [(0.8, 0.7), (0.2, 0.3), (0.7, 0.2), (0.3, 0.8)] {
+            assert!((cube_wall_flux(1.0, x, y) - a).abs() < 1e-11);
+        }
+        // the flux falls towards the edges
+        assert!(cube_wall_flux(1.0, 0.5, 0.5) > cube_wall_flux(1.0, 0.1, 0.5));
+        // the mean over the wall converges as the square of the part size
+        // (the flux goes as x ln x at the edges)
+        let m: Vec<f64> = [2, 4, 8]
+            .map(|n| cube_wall_flux_mean(1.0, [0.0, 1.0], [0.0, 1.0], n))
+            .to_vec();
+        let ratio = (m[0] - m[1]) / (m[1] - m[2]);
+        assert!((ratio - 4.0).abs() < 0.2, "{m:?}");
+        assert!((m[2] - 0.446_027_5).abs() < 1e-5, "{m:?}");
     }
 
     #[test]

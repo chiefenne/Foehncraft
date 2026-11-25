@@ -32,8 +32,8 @@ specification of step 28 (the particle layer that radiation shares, D107 (1)).
 | Stage | Content | Starts when |
 |---|---|---|
 | R1a | **Kernel and verification.** Grey absorbing-emitting medium (no scattering) on prescribed T and absorption coefficient per cell; black or grey diffuse walls with a wall temperature, symmetry planes as specular mirrors, open boundaries where bundles escape. Emission: stratified inverse-CDF selection of the emitter (cell or wall face) by emitted power, Owen-scrambled Sobol points (Burley 2020) for position and direction, keyed by (emitter, bundle, call, event) (D107 (2)). Transport: `Locator::walk` with exact path length per cell; absorption weighting with the track-length estimator (each cell takes `w (1 − exp(−κ ℓ))`), the remainder followed to a wall or out; a bundle ends below a weight threshold by Russian roulette. Tallies in 64-bit fixed point (D107 (3)); emitted = absorbed + escaped per call to the fixed-point resolution (D107 (4)). On ranks (D258): hand-over of bundles at halo cells, rounds to a global zero count, bitwise the same tallies on 1 to 4 ranks. On the GPU (D259): single-source walk and kernel, CPU = GPU check. Output: source per cell (W/m³), incident and net flux per wall face, statistical error per cell. Benchmarks (threads, ranks and GPU) and the first gallery images | Q1 to Q5 answered, go |
-| R1b | **Coupling to the energy equation.** Source with the emission linearised in T (Fleck & Cummings 1971, D107 (5)), call every N outer iterations with a running average over calls, statistical error as a health number (D69), net wall flux into CHT walls (D160 interface), `[radiation]` case keys, ledger rows of the radiation module (needs 7.0a, D119), on ranks with the energy equation and on the GPU. Gallery case, case file, recipe | R1a, 7.0a, MPI W5 (energy equation on ranks) |
-| R1c | Scattering (isotropic, Henyey–Greenstein) and diffuse reflection at grey walls; next-event estimation towards walls with ratio tracking (Novák et al. 2014) | R1b |
+| R1b | **Coupling to the energy equation.** Source with the emission linearised in T (Fleck & Cummings 1971, D107 (5)), call every N outer iterations with a running average over calls, statistical error as a health number (D69), net wall flux into CHT walls (D160 interface), `[radiation]` case keys, ledger rows of the radiation module (needs 7.0a, D119), on ranks with the energy equation and on the GPU. Gallery case, case file, recipe. **Gallery and validation case (maintainer decision 2026-11-24):** the quarter channel of a ceramic honeycomb thermal store (Solarstone), the full 150 mm length with symmetry planes on the sides, transient conduction in the ceramic coupled to the gas (CHT). The diffuse reflection at grey walls that the honeycomb needs is already in R1a (#255) | R1a, 7.0a, MPI W5 (energy equation on ranks) |
+| R1c | Scattering (isotropic, Henyey–Greenstein); next-event estimation towards walls with ratio tracking (Novák et al. 2014). The diffuse reflection at grey walls, first planned here, came with R1a (#255) and is verified by case 2 (isothermal enclosure with grey walls) | R1b |
 | R1d | Reciprocal estimator of the net exchange (Tessé et al. 2002); spike: multiple importance sampling between the forward and the reciprocal estimator (Veach & Guibas 1995) | R1c |
 | R1e | Null-collision tracking on a majorant grid (Woodcock et al. 1965; Galtier et al. 2013) as an option; **benchmark against the walk** on the furnace and the heat exchanger (same noise, time per radiation call); the faster one becomes the default | R1a (independent of R1b to R1d) |
 | R1f | Weighted sum of grey gases for H₂O/CO₂ mixtures, one grey gas sampled per bundle | R1b |
@@ -124,7 +124,24 @@ Status of R1a (coding started on the maintainer's go, 2026-11-24):
    on the CPU in the tests and gives bitwise the CPU result. The CPU = GPU
    check on a GPU: `python3 -m tools.bench.radiation_cloud` or
    `tools/notebooks/radiation_colab.ipynb`.
-4. Output, cube case and gallery. R1b to R1g: not sized yet.
+4. **Output, cube case and gallery: #259.** `output::write_vtkhdf`
+   (source and its error per cell, incident and net flux per wall face,
+   the energy account as attributes) and CSV tables. Case 5: the exact
+   flux into a cold black wall of a cube of grey gas, the gas emission
+   integrated over the five other walls by adaptive Gauss–Legendre
+   quadrature (`exact::cube_wall_flux`), so no published numbers and no
+   D201 entry are needed; 600 wall faces of 10³ hexahedra at κL = 1 give a
+   mean z² of 0.74, and every wall mean is within 0.08 % (0.17 % on
+   perturbed polyhedra). Case 6: `Settings::points` switches to keyed
+   pseudo-random emission; over 16 calls per point the error falls as N^-0.70 (slab) and N^-0.63 (plates) with the Sobol points against N^-0.52 and N^-0.50 with pseudo-random ones, 13 and 8 times smaller at 512 000 bundles (`examples/sobol_study.rs`). The wall emission is one
+   stratified point of four dimensions (the rest of the triangle pick is
+   the first coordinate in the triangle). The gallery case is the box
+   furnace with seven cooled tubes of D255 on a prescribed flame
+   (`examples/meshes/furnace.py`, example `furnace`, gallery and recipe
+   259). One million bundles in the furnace take 84 s on one thread and
+   20 s on four; on MPI ranks with one thread each the case of
+   `mpi_radiation` speeds up 1.9 times on two and 3.6 times on four ranks.
+   The GPU time waits for the Colab run. R1b to R1g: not sized yet.
 
 ## 6. References
 

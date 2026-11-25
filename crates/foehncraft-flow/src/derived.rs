@@ -1283,6 +1283,79 @@ pub fn wall_exchange_from_restart(
     })
 }
 
+/// The gas reports of the datums of `case` (`[[datum]]`, D262) for the
+/// solution in `restart` (the tool `post.datums`, D267): per datum its
+/// name, type, whether it is exact, and the quantities of
+/// [`crate::datum::gas_report`]. `only` limits it to the datums named.
+pub fn datum_report(
+    case: &FlowCase,
+    restart: &std::path::Path,
+    only: &[String],
+) -> Result<DatumReport> {
+    let all: Vec<&str> = case.datums.iter().map(|d| d.name.as_str()).collect();
+    for n in only {
+        anyhow::ensure!(
+            all.contains(&n.as_str()),
+            "the case has no datum `{n}`; it has {}",
+            if all.is_empty() {
+                "none".to_string()
+            } else {
+                all.join(", ")
+            }
+        );
+    }
+    with_restart(case, restart, |l| {
+        let built = crate::datum::build(case, l.mesh, l.geo)?;
+        let datums = built
+            .iter()
+            .filter(|b| only.is_empty() || only.contains(&b.section.name))
+            .map(|b| DatumValues {
+                name: b.section.name.clone(),
+                kind: b.section.kind.clone(),
+                exact: matches!(b.facets, crate::datum::Facets::Faces(_)),
+                values: crate::datum::gas_report(b, case, l.sol, l.mesh, l.geo)
+                    .into_iter()
+                    .collect(),
+            })
+            .collect();
+        Ok(DatumReport {
+            restart: restart.to_path_buf(),
+            iteration: l.iteration,
+            step: l.clock.map(|k| k.step),
+            time: l.clock.map(|k| k.time),
+            datums,
+        })
+    })
+}
+
+/// What [`datum_report`] returns.
+#[derive(Debug, Clone, Serialize)]
+pub struct DatumReport {
+    /// The restart file.
+    pub restart: std::path::PathBuf,
+    /// Outer iteration of the restart.
+    pub iteration: usize,
+    /// Time step (transient).
+    pub step: Option<usize>,
+    /// Time (transient).
+    pub time: Option<f64>,
+    /// The datums.
+    pub datums: Vec<DatumValues>,
+}
+
+/// The gas values of one datum.
+#[derive(Debug, Clone, Serialize)]
+pub struct DatumValues {
+    /// Name.
+    pub name: String,
+    /// Type.
+    pub kind: String,
+    /// Exact (sums of mesh faces) rather than a cut.
+    pub exact: bool,
+    /// Quantity → value.
+    pub values: std::collections::BTreeMap<String, f64>,
+}
+
 /// A solution read back from a restart file.
 struct Loaded<'a> {
     mesh: &'a Mesh,

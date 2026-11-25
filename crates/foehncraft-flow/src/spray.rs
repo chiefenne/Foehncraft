@@ -135,11 +135,69 @@ impl Gas for FlowGas<'_> {
 
 /// Units of `spray.csv`.
 pub const CSV_UNITS: &str = "step -; time s; parcels -; injected_kg kg; in_flow_kg kg; \
-     deposited_kg kg; escaped_kg kg; lost_kg kg; lost_parcels -; rebounds -; substeps -";
+     deposited_kg kg; escaped_kg kg; lost_kg kg; lost_parcels -; rebounds -; substeps -; \
+     com_x com_y com_z m (centre of mass of the liquid in the flow); d32_m m (Sauter mean \
+     diameter of the droplets in the flow); per injector <name>.parcels -, <name>.in_flow_kg kg, \
+     <name>.penetration_m m (distance from the injector, along its axis or straight as [spray] \
+     penetration says, within which the share [spray] penetration_fraction of the injector's \
+     liquid in the flow lies), <name>.farthest_m m (the farthest parcel, outlier-sensitive)";
 
 /// The header of `spray.csv`.
-pub const CSV_HEAD: &str = "step,time,parcels,injected_kg,in_flow_kg,deposited_kg,escaped_kg,\
-     lost_kg,lost_parcels,rebounds,substeps";
+pub fn csv_head(sp: &foehncraft_particles::Spray) -> String {
+    let mut h = String::from(
+        "step,time,parcels,injected_kg,in_flow_kg,deposited_kg,escaped_kg,\
+         lost_kg,lost_parcels,rebounds,substeps,com_x,com_y,com_z,d32_m",
+    );
+    for i in &sp.config().injectors {
+        let n = &i.name;
+        h.push_str(&format!(
+            ",{n}.parcels,{n}.in_flow_kg,{n}.penetration_m,{n}.farthest_m"
+        ));
+    }
+    h
+}
+
+/// The sprays in `result.json` (D265, D267).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SpraySummary {
+    /// The mass book.
+    pub tally: foehncraft_particles::Tally,
+    /// Liquid in the flow at the end (kg).
+    pub in_flow_kg: f64,
+    /// Centre of mass of the liquid in the flow (m).
+    pub centre_of_mass: [f64; 3],
+    /// Per injector: parcels, liquid, penetration, farthest parcel.
+    pub injectors: Vec<foehncraft_particles::InjectorStats>,
+    /// Droplet statistics of the parcels in the flow at the end.
+    pub in_flow: foehncraft_particles::Stats,
+    /// How the numbers are defined.
+    pub definitions: &'static str,
+}
+
+/// The definitions written with the statistics (D265).
+pub const DEFINITIONS: &str = "Dpq = (sum N d^p / sum N d^q)^(1/(p-q)) over the droplets N of the \
+     parcels; Dv10, Dv50, Dv90: diameters below which 10, 50, 90 % of the liquid mass lies, \
+     interpolated in the mass histogram of the datum (log bins in ln d); span = (Dv90 - Dv10) / \
+     Dv50; velocities weighted by droplet number (mean, standard deviation) and by mass; at a \
+     surface datum every crossing counts (both directions, flux-weighted), in a volume the \
+     parcels inside; penetration: distance from the injector within which the share \
+     penetration_fraction of the injector's liquid in the flow lies (axial: along the injector \
+     axis; radial: straight distance); rates are net (along minus against the datum's \
+     direction) over the report interval, the mean rate over the run with the relative \
+     standard error of ten batch means of the interval rates";
+
+/// The spray summary at the end of a run.
+pub fn summary(sp: &foehncraft_particles::Spray, zone: &[u32]) -> SpraySummary {
+    let spec = foehncraft_particles::HistSpec::default();
+    SpraySummary {
+        tally: sp.tally.clone(),
+        in_flow_kg: sp.mass_in_flow(),
+        centre_of_mass: sp.centre_of_mass(),
+        injectors: sp.injector_stats(),
+        in_flow: sp.moments(None, zone).stats(&spec),
+        definitions: DEFINITIONS,
+    }
+}
 
 /// The sprays of a run, or `None` without `[spray]`.
 pub fn create(
@@ -163,10 +221,22 @@ pub fn state(spray: Option<&foehncraft_particles::Spray>) -> Result<Option<Vec<u
 }
 
 /// One row of `spray.csv`.
-pub fn csv_row(step: usize, sp: &foehncraft_particles::Spray) -> String {
+pub fn csv_row(step: usize, sp: &foehncraft_particles::Spray, zone: &[u32]) -> String {
     let t = &sp.tally;
+    let com = sp.centre_of_mass();
+    let d32 = sp
+        .moments(None, zone)
+        .stats(&foehncraft_particles::HistSpec::default())
+        .d32;
+    let mut extra = format!(",{:e},{:e},{:e},{d32:e}", com[0], com[1], com[2]);
+    for i in sp.injector_stats() {
+        extra.push_str(&format!(
+            ",{},{:e},{:e},{:e}",
+            i.parcels, i.mass, i.penetration, i.farthest
+        ));
+    }
     format!(
-        "{step},{:e},{},{:e},{:e},{:e},{:e},{:e},{},{},{}",
+        "{step},{:e},{},{:e},{:e},{:e},{:e},{:e},{},{},{}{extra}",
         sp.time,
         sp.parcels.len(),
         t.injected_mass,
@@ -182,7 +252,8 @@ pub fn csv_row(step: usize, sp: &foehncraft_particles::Spray) -> String {
 
 /// Advances the parcels over the step that ended at `t_end` (size `h`) in
 /// the gas of the solution, books the row of `spray.csv` and writes the
-/// parcel file when it is due. Returns the parcels lost in this step.
+/// parcel file when it is due. Returns the parcels lost in this step and
+/// the parcel file written.
 #[allow(clippy::too_many_arguments)]
 pub fn step(
     case: &FlowCase,
@@ -197,37 +268,41 @@ pub fn step(
     out: &std::path::Path,
     name: &str,
     csv: &mut crate::monitor::History,
-) -> Result<u64> {
+) -> Result<(u64, Option<std::path::PathBuf>)> {
     let env = foehncraft_particles::Env { mesh, geo, loc };
     let lost0 = sp.tally.lost_parcels;
     let gas = FlowGas { sol, geo };
     sp.advance(&env, &gas, t_end - h, h)?;
-    csv.row(&csv_row(n, sp));
+    csv.row(&csv_row(n, sp, &mesh.cell_zone));
     let every = case.spray.write_every;
+    let mut file = None;
     if every > 0 && n.is_multiple_of(every) {
-        write_parcels(sp, out, name, n)?;
+        file = write_parcels(sp, out, name, n)?;
     }
-    Ok(sp.tally.lost_parcels - lost0)
+    Ok((sp.tally.lost_parcels - lost0, file))
 }
 
-/// Writes `spray/parcels_<step>.vtkhdf`.
+/// Writes `spray/parcels_<step>.vtkhdf`; returns its path (`None` in a
+/// build without HDF5).
 pub fn write_parcels(
     sp: &foehncraft_particles::Spray,
     out: &std::path::Path,
     name: &str,
     n: usize,
-) -> Result<()> {
+) -> Result<Option<std::path::PathBuf>> {
     #[cfg(feature = "hdf5")]
     {
         let dir = out.join("spray");
         std::fs::create_dir_all(&dir)?;
-        sp.write(&dir.join(format!("parcels_{n:06}.vtkhdf")), name, n as u64)?;
+        let path = dir.join(format!("parcels_{n:06}.vtkhdf"));
+        sp.write(&path, name, n as u64)?;
+        Ok(Some(path))
     }
     #[cfg(not(feature = "hdf5"))]
     {
         let _ = (sp, out, name, n);
+        Ok(None)
     }
-    Ok(())
 }
 
 /// The mass book at the end of the run: released = in the flow + stuck +
@@ -250,3 +325,177 @@ pub fn finish(sp: &foehncraft_particles::Spray) -> Result<()> {
     }
     Ok(())
 }
+
+/// The statistics of a parcel file (the tools `post.droplets` and
+/// `post.penetration`, D267): the same sums as the run.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct FileStatistics {
+    /// The parcel file.
+    pub file: std::path::PathBuf,
+    /// Time of the file (s).
+    pub time: Option<f64>,
+    /// Step of the file.
+    pub step: Option<u64>,
+    /// Droplet statistics of all parcels of the file (or of those in the
+    /// volume datum asked for).
+    pub statistics: foehncraft_particles::Stats,
+    /// The histogram: lower bin edges (m), droplets and mass (kg) per bin.
+    pub histogram: Histogram,
+    /// Per injector of the case: parcels, liquid, penetration.
+    pub injectors: Vec<foehncraft_particles::InjectorStats>,
+    /// How the numbers are defined.
+    pub definitions: &'static str,
+}
+
+/// A droplet size histogram.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct Histogram {
+    /// Bin edges (m), bins + 1.
+    pub edges: Vec<f64>,
+    /// Droplets per bin.
+    pub droplets: Vec<f64>,
+    /// Mass per bin (kg).
+    pub mass: Vec<f64>,
+    /// Droplets and mass below the first edge.
+    pub under: [f64; 2],
+    /// Droplets and mass above the last edge.
+    pub over: [f64; 2],
+}
+
+/// The statistics of the parcel file `file` of a run of `case` (its
+/// liquid, injectors and penetration settings), with the bins `spec`;
+/// with `datum` only the parcels inside that volume datum of the case.
+/// A field the file lacks is reported with the fields it has.
+#[cfg(feature = "hdf5")]
+pub fn file_statistics(
+    case: &FlowCase,
+    file: &std::path::Path,
+    spec: foehncraft_particles::HistSpec,
+    datum: Option<&str>,
+) -> Result<FileStatistics> {
+    let pf = foehncraft_mesh::vtkhdf::read_points(file)?;
+    let field = |name: &str, comps: usize| -> Result<&Vec<f64>> {
+        match pf.fields.get(name) {
+            Some((v, c)) if *c == comps => Ok(v),
+            _ => {
+                let have: Vec<String> = pf
+                    .fields
+                    .iter()
+                    .map(|(k, (_, c))| format!("{k} ({c})"))
+                    .collect();
+                Err(err(
+                    diag::SPRAY_CONFIG,
+                    "spray",
+                    format!(
+                        "{}: no point field `{name}` with {comps} component(s); the file has {}",
+                        file.display(),
+                        have.join(", ")
+                    ),
+                ))
+            }
+        }
+    };
+    let d = field("diameter", 1)?;
+    let count = field("droplets", 1)?;
+    let vel = field("velocity", 3)?;
+    let id: Vec<u64> = field("parcel_id", 1)?.iter().map(|&x| x as u64).collect();
+    let v: Vec<[f64; 3]> = vel.as_chunks::<3>().0.to_vec();
+    let rho = pf
+        .numbers
+        .get("liquid_density")
+        .copied()
+        .unwrap_or(case.spray.liquid.density);
+    let mut keep: Vec<bool> = vec![true; id.len()];
+    if let Some(name) = datum {
+        let names: Vec<&str> = case
+            .datums
+            .iter()
+            .filter(|x| matches!(x.kind.as_str(), "box" | "cylinder"))
+            .map(|x| x.name.as_str())
+            .collect();
+        let sec = case
+            .datums
+            .iter()
+            .find(|x| x.name == name && matches!(x.kind.as_str(), "box" | "cylinder"))
+            .ok_or_else(|| {
+                err(
+                    diag::DATUM_CONFIG,
+                    "datum",
+                    format!(
+                        "the case has no box or cylinder datum `{name}`; it has {}",
+                        if names.is_empty() {
+                            "none".into()
+                        } else {
+                            names.join(", ")
+                        }
+                    ),
+                )
+            })?;
+        let vol = match sec.kind.as_str() {
+            "box" => foehncraft_particles::Volume::Box {
+                lower: sec.lower.unwrap_or_default(),
+                upper: sec.upper.unwrap_or_default(),
+            },
+            _ => foehncraft_particles::Volume::Cylinder {
+                start: sec.start.unwrap_or_default(),
+                end: sec.end.unwrap_or_default(),
+                radius: sec.radius.unwrap_or_default(),
+            },
+        };
+        for (i, k) in keep.iter_mut().enumerate() {
+            *k = vol.contains(pf.points[i], 0, &[]);
+        }
+    }
+    let pick =
+        |a: &[f64]| -> Vec<f64> { a.iter().zip(&keep).filter(|x| *x.1).map(|x| *x.0).collect() };
+    let ids: Vec<u64> = id
+        .iter()
+        .zip(&keep)
+        .filter(|x| *x.1)
+        .map(|x| *x.0)
+        .collect();
+    let vs: Vec<[f64; 3]> = v.iter().zip(&keep).filter(|x| *x.1).map(|x| *x.0).collect();
+    let xs: Vec<[f64; 3]> = pf
+        .points
+        .iter()
+        .zip(&keep)
+        .filter(|x| *x.1)
+        .map(|x| *x.0)
+        .collect();
+    let (ds, cs) = (pick(d), pick(count));
+    let m = foehncraft_particles::moments_of(&spec, &ids, &ds, &cs, &vs, rho);
+    let masses: Vec<f64> = ds
+        .iter()
+        .zip(&cs)
+        .map(|(d, c)| c * rho * std::f64::consts::PI / 6.0 * d * d * d)
+        .collect();
+    Ok(FileStatistics {
+        file: file.to_path_buf(),
+        time: pf.numbers.get("time").copied(),
+        step: pf.numbers.get("step").map(|&s| s as u64),
+        statistics: m.stats(&spec),
+        histogram: Histogram {
+            edges: spec.edges(),
+            droplets: m.hist_n.clone(),
+            mass: m.hist_m.clone(),
+            under: m.under,
+            over: m.over,
+        },
+        injectors: foehncraft_particles::injector_stats(&case.spray, &ids, &xs, &masses, None),
+        definitions: DEFINITIONS,
+    })
+}
+
+/// Without HDF5 there are no parcel files to read.
+#[cfg(not(feature = "hdf5"))]
+pub fn file_statistics(
+    _case: &FlowCase,
+    _file: &std::path::Path,
+    _spec: foehncraft_particles::HistSpec,
+    _datum: Option<&str>,
+) -> Result<FileStatistics> {
+    anyhow::bail!("parcel files are VTKHDF: this build has no HDF5 (feature `hdf5`)")
+}
+
+/// The bins of a droplet size histogram.
+pub use foehncraft_particles::HistSpec;

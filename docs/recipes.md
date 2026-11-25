@@ -17,9 +17,10 @@ The recipes are split by topic; each page has its own table of contents. The num
 | [Incompressible flow](recipes/flow.md) | Couette, Poiseuille, cavity and cylinder runs, boundary conditions, transient runs, time-step control, the coupled algorithm, heat transfer in turbulent flow, rotating machinery, the T-junction mixing study | 18, 19, 20, 21, 23, 28, 78, 80, 81, 83, 85, 86, 87, 94, 95, 96, 98, 99, 100, 101, 102, 225, 103, 196 |
 | [Passive scalars and the wall distance](recipes/scalars.md) | passive scalars with their boundary conditions, bounds, exact solutions, the Nusselt number of a heated channel, the wall distance | 63, 211 |
 | [Energy equation and heat transfer](recipes/energy.md) | the temperature of a flow: properties of T, thermal wall conditions, viscous heating, the heat balance, solid regions and conjugate heat transfer, laminar, turbulent and transient, thermal acceleration, the cycle loop and the frozen-flow march, several fluids, start values per region, buoyancy and variable density | 154, 156, 158, 159, 160, 180, 190, 202, 208, 206, 186, 195, 272, 221, 238 |
+| [Thermal radiation](recipes/radiation.md) | the radiation of a prescribed temperature field by Monte Carlo bundles: walls, noise, threads, ranks and the GPU, the checks against exact solutions | 259 |
 | [Turbulence models](recipes/turbulence.md) | RANS turbulence models: the model, the wall treatment by the mesh, inlet turbulence, roughness, the near-wall checks, curvature correction and QCR on any mesh, the internal flows of D45 (pipe, diffuser, U-bend) | 68, 71, 73, 74, 88, 89, 90, 113, 115, 141, 140, 194, 193, 199, 197, 204 |
 | [Boundary conditions](recipes/boundary-conditions.md) | slip walls, wedges for axisymmetric flow, inlet profiles from tables, backflow at pressure outlets, convective outlets, periodic modules, absolute or gauge pressure values (D239) | 29, 67, 220 |
-| [Lagrangian sprays](recipes/sprays.md) | spray droplets into a flow with an injector file, wall behaviour, the mass book | 242 |
+| [Lagrangian sprays](recipes/sprays.md) | spray droplets into a flow with an injector file, wall behaviour, the mass book | 242, 265 |
 | [Porous regions](recipes/porous.md) | porous blocks and honeycombs in a flow: resistances, axes, the honeycomb shorthand | 273, 275 |
 | [Immersed bodies](recipes/immersed.md) | put a body in the flow without meshing it: `[immersed]`, the permeability, forces | |
 | [Expressions and materials](recipes/properties.md) | values as expressions of x, y, z and t, constants and tables, wall mass flux, the material database, regions | 31, 32 |
@@ -149,7 +150,9 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="ledger"></a>238 | [Read the conservation ledger of a run as data, and book a module's rows on it](recipes/energy.md#ledger) | [Energy equation and heat transfer](recipes/energy.md) |
 | <a id="spray-duct"></a>242 | [Spray droplets into a flow](recipes/sprays.md#spray-duct) | [Lagrangian sprays](recipes/sprays.md) |
 | <a id="flow-models-ranks"></a>244 | [Check a turbulent, heated or transient flow on ranks](recipes/meshes.md#flow-models-ranks) | [Meshes](recipes/meshes.md) |
+| <a id="radiation-call"></a>259 | [Compute the radiation of a prescribed temperature field, and check it](recipes/radiation.md#radiation-call) | [Thermal radiation](recipes/radiation.md) |
 | <a id="restart-ranks"></a>262 | [Write a restart on ranks and continue on another rank count](recipes/meshes.md#restart-ranks) | [Meshes](recipes/meshes.md) |
+| <a id="spray-datums"></a>265 | [Measure the liquid and the droplet sizes at datums](recipes/sprays.md#spray-datums) | [Lagrangian sprays](recipes/sprays.md) |
 | <a id="natural-convection"></a>272 | [Set up a natural convection case and check it: a closed cavity, an open plate, a channel with a net flow](recipes/energy.md#natural-convection) | [Energy equation and heat transfer](recipes/energy.md) |
 | <a id="porous-flow"></a>273 | [Put a porous block or a honeycomb into a flow](recipes/porous.md#porous-flow) | [Porous regions](recipes/porous.md) |
 | <a id="porous-two-temperatures"></a>275 | [Give the matrix a temperature of its own: a packed bed or a heat store](recipes/porous.md#porous-two-temperatures) | [Porous regions](recipes/porous.md) |

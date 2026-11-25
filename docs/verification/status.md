@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**119 features: 50 verified, 66 partial, 3 unverified.**
+**120 features: 50 verified, 67 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -141,6 +141,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Backends and interfaces | [Turbulence, energy, scalars, transient runs and the coupled solver on several ranks, bitwise one rank (MPI step W5 part 2)](#parallel-flow-models-ranks) | partial |
 | Backends and interfaces | [Restart files on ranks: gathered byte for byte the one-rank file, read on any rank count (MPI step W6)](#parallel-restart-ranks) | partial |
 | Sprays | [Lagrangian spray parcels, one way (L12, SP1)](#sprays-one-way) | partial |
+| Sprays | [Datums, liquid flow through them and droplet statistics (SP1b)](#sprays-datums-statistics) | partial |
 | Flow models | [Porous regions with a direction-dependent Darcy-Forchheimer resistance (D270, PM1)](#porous-darcy-forchheimer) | partial |
 | Flow models | [Gas and matrix temperatures in porous regions, monolithic (D271, D272, PM2)](#porous-two-temperatures) | partial |
 | Immersed bodies | [Immersed bodies by Brinkman penalisation, primitive shapes (L13 stage 1)](#immersed-penalisation) | partial |
@@ -1800,9 +1801,37 @@ Gaps:
 - no reference-data case (terminal velocity in the Schiller-Naumann range, a prescribed vortex, grid turbulence)
 - the gas does not feel the droplets (two-way coupling is SP2); no turbulent dispersion, evaporation or breakup
 - the gas state is sampled at the start of each sub-step (first order in the gas); the time of a wall hit is a chord fraction
-- one process, constant droplet size; no rotating zones or periodic boundaries (SPR003)
+- one process; no rotating zones or periodic boundaries (SPR003)
 - the CPU = GPU check of the parcel kernel runs in the PTX job of CI only
 - `spray_duct_injectors` has no run in the verification manual or in CI
+
+<a id="sprays-datums-statistics"></a>
+
+### Datums, liquid flow through them and droplet statistics (SP1b)
+
+**partial** (a model without reference data; gaps written) · id `sprays.datums-statistics` · switch `[[datum]], [[injector]] size = { distribution = ... }` · decisions D242, D262, D263, D264, D265, D267, D268
+
+- exact: [`liquid_through_datums_closes`](../../crates/foehncraft-particles/tests/datums.rs): V28.13: the liquid through a plane, a face layer, an STL surface, the outlet and a box on hexahedral, tetrahedral and polyhedral meshes equals the liquid of the parcels on the far side to round-off; the boundary datum equals the mass book
+- exact: [`statistics_follow_the_distribution_and_the_parcels`](../../crates/foehncraft-particles/tests/datums.rs): V28.14, V28.15: D32 of the drawn Rosin-Rammler and log-normal sizes within four standard errors of the distribution's value, Dv50 within one bin, the datum statistics equal to a direct calculation over the parcels
+- exact: [`datum_sums_are_bitwise_on_threads_and_restart`](../../crates/foehncraft-particles/tests/datums.rs): V28.15: datum sums bitwise equal on 1, 2 and 4 threads and after a restart
+- exact: [`datums_close_with_the_boundaries`](../../crates/foehncraft-flow/tests/datums.rs): V28.13 in a flow run: the boundary datum equals the boundary mass flow bit for bit, the plane on the faces the inlet flow to the solver tolerance, the cut plane within its quoted cut error (below 1e-3), an STL surface within 1 %, the outlet liquid equals the escaped liquid
+- exact: [`cuts_add_up_to_the_section`](../../crates/foehncraft-flow/src/datum.rs): the cell cuts of a plane add up to the section area on hexahedral, tetrahedral, polyhedral and mixed meshes
+- exact: [`quantiles_of_rosin_rammler_follow_the_formula`](../../crates/foehncraft-particles/src/sizes.rs): the inverse of the truncated Rosin-Rammler distribution against its closed form
+- exact: [`rosin_rammler_fit_recovers_its_parameters`](../../crates/foehncraft-particles/src/datum.rs): the Rosin-Rammler fit of a histogram of the exact distribution returns X and n
+- contract (diagnostics): [`bad_datums_are_refused_with_their_code`](../../crates/foehncraft-flow/tests/datums.rs): unknown types, unknown boundaries and planes outside the mesh end in DAT001 or DAT002
+- contract (schema): [`test_datum_columns_by_name`](../../python/tests/test_datums.py): datums.csv read by datum name in Python; an unknown datum names the datums of the file
+- contract (diagnostics): [`spray_datums`](../../examples/cases/flow/spray_datums.toml): Rosin-Rammler spray through seven datums in the duct: outlet datum = escaped liquid to the bit, floor = deposited liquid; Dv50 91 µm at the outlet, 170 µm on the floor; cut plane within 6e-8 of the face layer (passes in CI (set linux-3), not yet in the manual) ([results](../gallery/sprays.md#spray-datums))
+- contract (schema): [`spray_datums_injectors`](../../examples/cases/flow/spray_datums_injectors.toml): the included injector file of spray_datums with a Rosin-Rammler size distribution ([results](../cases/flow.md#lagrangian-sprays)) **missing**
+
+Gaps:
+
+- V28.12 not done: no measured anchor (terminal velocity of water drops against Gunn and Kinzer 1949)
+- no enthalpy flow through datums (comes with the energy equation of the sprays, SP5)
+- steady runs write no datums.csv (the gas through the datums of a steady result through `foehn call post.datums`)
+- no size classes, no time-averaged spray fields (D266, SP2), no evaporation numbers (SP5)
+- a cut plane takes cell values and gradients (its cut_error is reported); a disc or rectangle snapped to the faces is a staircase of whole faces
+- not with a sliding mesh (DAT001); one process
+- `spray_datums_injectors` has no run in the verification manual or in CI
 
 ## Flow models
 

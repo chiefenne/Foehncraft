@@ -274,6 +274,78 @@ pub fn write_points(
     Ok(())
 }
 
+/// A points file of [`write_points`] read back: the points, the point
+/// fields by name (values, components) and the scalar attributes of the
+/// file (numbers as text and numbers).
+#[derive(Debug, Clone, Default)]
+pub struct PointFile {
+    /// The points.
+    pub points: Vec<[f64; 3]>,
+    /// Point fields: name → (values, components).
+    pub fields: std::collections::BTreeMap<String, (Vec<f64>, usize)>,
+    /// Text attributes of the file (`format`, `case`, `liquid`, …).
+    pub text: std::collections::BTreeMap<String, String>,
+    /// Number attributes of the file (`time`, `step`, …).
+    pub numbers: std::collections::BTreeMap<String, f64>,
+}
+
+/// Reads a points file of [`write_points`] (the parcels of the sprays).
+/// Every broken file ends in an error, never a panic: the sizes of the
+/// datasets are checked against the number of points (D202).
+pub fn read_points(path: impl AsRef<Path>) -> Result<PointFile> {
+    let path = path.as_ref();
+    let file = h5::File::open(path).with_context(|| format!("opening {}", path.display()))?;
+    let mut out = PointFile::default();
+    for name in file.attr_names().unwrap_or_default() {
+        let Ok(a) = file.attr(&name) else { continue };
+        if let Ok(v) = a.read_scalar::<h5::types::VarLenUnicode>() {
+            out.text.insert(name, v.as_str().to_string());
+        } else if let Ok(v) = a.read_scalar::<f64>() {
+            out.numbers.insert(name, v);
+        } else if let Ok(v) = a.read_scalar::<u64>() {
+            out.numbers.insert(name, v as f64);
+        }
+    }
+    let g = file
+        .group("VTKHDF")
+        .with_context(|| format!("{}: no VTKHDF group", path.display()))?;
+    let pts = g
+        .dataset("Points")
+        .with_context(|| format!("{}: no Points", path.display()))?;
+    let shape = pts.shape();
+    anyhow::ensure!(
+        shape.len() == 2 && shape[1] == 3,
+        "{}: Points has the shape {shape:?}, not [n, 3]",
+        path.display()
+    );
+    let n = shape[0];
+    let flat: Vec<f64> = pts.read_raw()?;
+    anyhow::ensure!(flat.len() == 3 * n, "{}: Points is cut off", path.display());
+    out.points = flat.as_chunks::<3>().0.to_vec();
+    if let Ok(pd) = g.group("PointData") {
+        for name in pd.member_names().unwrap_or_default() {
+            let Ok(d) = pd.dataset(&name) else { continue };
+            let sh = d.shape();
+            let comps = match sh.as_slice() {
+                [m] if *m == n => 1,
+                [m, c] if *m == n && (*c == 1 || *c == 3) => *c,
+                _ => anyhow::bail!(
+                    "{}: point field {name} has the shape {sh:?} for {n} points",
+                    path.display()
+                ),
+            };
+            let v: Vec<f64> = d.read_raw()?;
+            anyhow::ensure!(
+                v.len() == n * comps,
+                "{}: {name} is cut off",
+                path.display()
+            );
+            out.fields.insert(name, (v, comps));
+        }
+    }
+    Ok(out)
+}
+
 /// The size of the file that [`write()`] writes for `mesh` with `n_fields`
 /// cell fields, from the arrays it stores (an estimate within a few per
 /// cent: HDF5 adds headers of some kilobytes). The blocks and their ghosts

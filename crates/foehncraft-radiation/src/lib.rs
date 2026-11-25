@@ -29,12 +29,14 @@
 //! the GPU on the CPU threads.
 //!
 //! [`exact`] has the exact solutions of the verification cases (section 3
-//! of `docs/requirements/step29-radiation.md`).
+//! of `docs/requirements/step29-radiation.md`); [`output`] writes the fields
+//! of a call as VTKHDF and CSV.
 
 pub mod device;
 pub mod exact;
+pub mod output;
 mod solve;
 
 pub use device::{CpuDevicePath, DeviceTallies, GpuFactory, Transport, gpu_backend, register_gpu};
 pub use foehncraft_kernels::radiation::WallKind;
-pub use solve::{Domain, Ledger, SIGMA, Settings, Solution, Wall};
+pub use solve::{Domain, Ledger, Points, SIGMA, Settings, Solution, Wall};

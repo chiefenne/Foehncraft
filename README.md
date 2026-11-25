@@ -214,7 +214,8 @@ validated range, one mesh only, …) in its report and its JSON result.
   p₀(t), a manufactured solution with ρ = 1/T converges at second order,
   and air between walls at 960 K and 240 K has a heat flow with GCI
   0.02 % (gallery 195).
-- **Lagrangian sprays (L12, SP1).** Droplets as parcels in a transient flow run (`[spray]` with an included injector file): exact exponential integration of drag (Schiller and Naumann) and gravity, tracking on the mesh locator, stick, rebound, escape or mirror at boundaries, a mass book that stops the run when it does not close, parcel files and restart, results bitwise equal on 1 to 4 threads, one source for CPU and GPU kernels. One way, one process, constant droplet size; coupling to the gas follows in SP2 ([gallery 242](docs/gallery/sprays.md#spray-duct)).
+- **Lagrangian sprays (L12, SP1).** Droplets as parcels in a transient flow run (`[spray]` with an included injector file): exact exponential integration of drag (Schiller and Naumann) and gravity, tracking on the mesh locator, stick, rebound, escape or mirror at boundaries, a mass book that stops the run when it does not close, parcel files and restart, results bitwise equal on 1 to 4 threads, one source for CPU and GPU kernels. One way, one process; coupling to the gas follows in SP2 ([gallery 242](docs/gallery/sprays.md#spray-duct)).
+- **Datums and spray statistics (SP1b).** Rosin-Rammler and log-normal droplet sizes; `[[datum]]` planes (cut through the cells or moved to the faces, discs, rectangles), STL surfaces, boundaries, zone interfaces, boxes, cylinders and zones; the liquid through each datum bitwise equal on any thread count, the gas mass, volume and momentum flow and area averages; D10 to D43, Dv10/50/90, histograms, a Rosin-Rammler fit and the penetration, in `datums.csv`, `spray_hist_<datum>.csv` and `result.json`, also as the tools `post.datums`, `post.droplets` and `post.penetration`; `series.json` lists the files of a run for a viewer ([gallery 265](docs/gallery/sprays.md#spray-datums)).
 - **Porous regions (D270, PM1).** `kind = "porous"` with a Darcy–Forchheimer resistance in the superficial velocity: one value or three principal values along the axes of the region, or the `honeycomb` shorthand for square ceramic channels (Shah & London). A duct filled with the matrix gives the exact pressure drop, a block in a duct reaches it with second order. Axes along the mesh axes, laminar flow, one process, CPU only; with `[energy]` and a `solid`, gas and matrix carry temperatures of their own, coupled by h·a in one energy matrix (D271, PM2; Schumann's bed exact to second order, a honeycomb store charged) ([gallery 273](docs/gallery/porous.md#porous-flow), [275](docs/gallery/porous.md#porous-two-temperatures)).
 - **Immersed bodies by penalisation (L13 stage 1).** Cylinders, spheres and boxes put into any mesh without meshing them (`[immersed]`): solid fraction per cell, an implicit Brinkman sink inside the momentum rows (CPU and GPU, SIMPLEC and coupled), the force on every body. Laminar and isothermal only, the wall smeared over a cell: the Re 20 cylinder on a plain box mesh gets drag and Δp within 1 % of the benchmark, lift 35 % high ([gallery 270](docs/gallery/immersed.md#penalised-cylinder)). Sharp cut-cell walls are stage 2.
 - **Internal flows (D45).** Turbulent pipe flow against DNS, the
@@ -224,6 +225,16 @@ validated range, one mesh only, …) in its report and its JSON result.
   the U-bend, also with sharp edges (gallery
   [193](docs/gallery/turbulence.md#pipe-turbulent), [196](docs/gallery/flow.md#tjunction-mixing),
   [199](docs/gallery/turbulence.md#diffuser), [204](docs/gallery/turbulence.md#ubend)).
+- **Thermal radiation (R1a).** Monte Carlo transport of energy bundles
+  through grey absorbing-emitting gas on a prescribed temperature field,
+  with grey diffuse walls, symmetry planes and openings: emission from
+  scrambled Sobol points, the exact path length in every cell, integer
+  tallies with an energy account that closes exactly, bitwise the same on
+  any number of threads and ranks; the bundle transport also runs on
+  NVIDIA GPUs. Checked against six exact cases (slab, enclosure, parallel
+  plates, cube of grey gas) and shown on a box furnace with cooled tubes
+  ([gallery 259](docs/gallery/radiation.md#furnace)). The coupling to the
+  energy equation follows (R1b).
 - **Rotating machinery.** The moving reference frame (steady and transient
   frozen rotor), the sliding mesh by conformal stepping and by imprinting
   the interface in every step, several rotors at their own speeds,
