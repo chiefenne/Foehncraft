@@ -380,6 +380,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "foehncraft-circuits"
+version = "1.0.1"
+dependencies = [
+ "foehncraft-kernels",
+ "schemars",
+ "serde",
+ "serde_json",
+ "toml",
+]
+
+[[package]]
 name = "foehncraft-cli"
 version = "1.0.1"
 dependencies = [
@@ -534,6 +545,7 @@ version = "1.0.1"
 dependencies = [
  "anyhow",
  "foehncraft-bench",
+ "foehncraft-circuits",
  "foehncraft-core",
  "foehncraft-flow",
  "foehncraft-fv",

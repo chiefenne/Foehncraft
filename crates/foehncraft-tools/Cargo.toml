@@ -32,6 +32,7 @@ foehncraft-mesh.workspace = true
 foehncraft-fv.workspace = true
 foehncraft-parallel.workspace = true
 foehncraft-structure.workspace = true
+foehncraft-circuits.workspace = true
 rayon.workspace = true
 serde.workspace = true
 serde_json.workspace = true

@@ -1,0 +1,34 @@
+# Two unheated horizontal tubes in parallel between an inlet header and a
+# pressure outlet, cold water in laminar flow (SF7b exact check). With
+# Hagen-Poiseuille, dp = 128 mu L m / (pi rho D^4), the flows split in the
+# inverse ratio of L/D^4: here 2:1 (tube `short` takes 2/3 of the flow).
+
+[circuit]
+name = "parallel_tubes_laminar"
+segments = 20
+
+[[nodes]]
+name = "inlet"
+kind = "junction"
+mass_flow = 1.5e-4      # kg/s into the header
+temperature = 300.0
+
+[[nodes]]
+name = "outlet"
+kind = "pressure"
+pressure = 1.0e6
+temperature = 300.0
+
+[[tubes]]
+name = "short"
+from = "inlet"
+to = "outlet"
+length = 2.0
+diameter = 5e-3
+
+[[tubes]]
+name = "long"
+from = "inlet"
+to = "outlet"
+length = 4.0
+diameter = 5e-3

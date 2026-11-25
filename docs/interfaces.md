@@ -516,6 +516,10 @@ A code keeps its meaning; a retired code stays in the table.
 | `STR002` | error | The stiffness of a structural case is singular: the structure can move freely (a missing support or clamp, or a mechanism); the message names the first free unknown. For the modes of a free structure give a negative `shift`. |
 | `STR003` | warning | A modal analysis may have missed modes: the Sturm count (the inertia of K − σM) finds more eigenvalues in the range than Lanczos returned, or Lanczos stopped above its tolerance. |
 | `STR004` | error | The clamp fit (D290) cannot reach the measured frequency: it lies at or above the frequency of the rigidly clamped model (the model is too soft), or the mode does not depend on the spring. |
+| `CIR001` | error | A circuit case (SF7b) that is not valid: an unknown key or a wrong value, a tube to a node that does not exist, a circuit without a pressure or drum node, a drum above the critical pressure, a CHF table that is not complete. |
+| `CIR002` | error | The Newton solve of a circuit did not converge or stalled: give start flows (`start_flow`) near the expected ones, check that every part of the circuit reaches a pressure or drum node, and that the flow can carry the heat. |
+| `CIR003` | warning | A state of a circuit left the range of the IAPWS-IF97 properties (the pressure fell below 1 kPa, or the enthalpy of a tube reached 4.1 MJ/kg): too much flow for the pressure level, or too little flow for the heat. |
+| `CIR004` | warning | The critical heat flux ratio q_CHF/q of a tube segment is below the margin of the case (`chf_margin`, default 1.3); below 1 the wall is beyond the CHF and its temperature is that of vapour convection (Dougall-Rohsenow). |
 | `GEN001` | error | An error without a more specific code. |
 
 ## Engine API (D86)
