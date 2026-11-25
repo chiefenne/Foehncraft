@@ -166,7 +166,7 @@ fn distorted(kind: Kind) -> Vec<[f64; 3]> {
 fn rigid_motions_are_free_and_the_mass_is_exact() {
     for kind in [Kind::Tet10, Kind::Hex20] {
         let x = distorted(kind);
-        let (k, m, _) = solid::matrices(kind, &x, &STEEL, 0.0).unwrap();
+        let (k, m, _) = solid::matrices(kind, &x, &STEEL, &[]).unwrap();
         let nd = 3 * kind.nodes();
         let kmax = k.iter().fold(0.0f64, |a, v| a.max(v.abs()));
         // three translations and three small rotations
@@ -200,7 +200,7 @@ fn rigid_motions_are_free_and_the_mass_is_exact() {
         for p in &mut bad {
             p[2] = -p[2];
         }
-        assert!(solid::matrices(kind, &bad, &STEEL, 0.0).is_err());
+        assert!(solid::matrices(kind, &bad, &STEEL, &[]).is_err());
     }
 }
 

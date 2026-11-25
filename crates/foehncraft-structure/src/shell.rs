@@ -50,13 +50,33 @@ const G2: f64 = 0.577_350_269_189_625_8; // 1/√3
 
 /// A thermal strain on a shell: `strain` = α ΔT of the mid-surface and
 /// `curvature` = α (T_top − T_bottom) / thickness, top along the director.
-/// In-plane and free across the thickness (plane stress).
+/// In-plane and free across the thickness (plane stress). The values at
+/// the nodes (`node_strain`, `node_curvature`, the first three for a
+/// triangle) add a part that varies over the element, interpolated by the
+/// shape functions of the mid-surface (a mapped temperature field, MS6).
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Thermal {
     /// α ΔT at the mid-surface.
     pub strain: f64,
     /// α ΔT across the thickness divided by the thickness (1/m).
     pub curvature: f64,
+    /// α ΔT at the mid-surface at each node.
+    pub node_strain: [f64; 4],
+    /// α ∂T/∂n across the thickness at each node (1/m).
+    pub node_curvature: [f64; 4],
+}
+
+impl Thermal {
+    /// Strain and curvature at a point with the shape function values `n`.
+    fn at(&self, n: &[f64]) -> (f64, f64) {
+        let mut e = self.strain;
+        let mut k = self.curvature;
+        for (i, w) in n.iter().enumerate() {
+            e += w * self.node_strain[i];
+            k += w * self.node_curvature[i];
+        }
+        (e, k)
+    }
 }
 /// Natural coordinates of the four nodes.
 const NODES: [(f64, f64); 4] = [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)];
@@ -249,7 +269,8 @@ pub fn mitc4_thermal(
                 }
                 let wdet = det.abs(); // weights are 1
                 // σ = D ε_th of the in-plane thermal strain at this t
-                let sth = c * (1.0 + nu) * (th.strain + 0.5 * t * p.thickness * th.curvature);
+                let (te, tk) = th.at(&shape(r, s).0);
+                let sth = c * (1.0 + nu) * (te + 0.5 * t * p.thickness * tk);
                 if sth != 0.0 {
                     for q in 0..24 {
                         fth[q] += wdet * sth * (eps[0][q] + eps[1][q]);
@@ -601,7 +622,8 @@ pub fn mitc3plus_thermal(
                 }
             }
             let wdet = w * det.abs();
-            let sth = c * (1.0 + nu) * (th.strain + 0.5 * t * p.thickness * th.curvature);
+            let (te, tk) = th.at(&[1.0 - r - s, r, s]);
+            let sth = c * (1.0 + nu) * (te + 0.5 * t * p.thickness * tk);
             if sth != 0.0 {
                 for q in 0..NT {
                     fth[q] += wdet * sth * (eps[0][q] + eps[1][q]);

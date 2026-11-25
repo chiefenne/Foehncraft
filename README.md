@@ -260,7 +260,8 @@ validated range, one mesh only, …) in its report and its JSON result.
   generated block, with the von Mises stress), unilateral contact with
   rigid seats and stops, responses in time (generalised-α,
   mode superposition, Rayleigh damping, Craig–Bampton reduction), thermal
-  strain loads from temperatures, supports, springs, point masses,
+  strain loads from temperatures, given or mapped from the solid region
+  of a flow case, supports, springs, point masses,
   clamp springs per length of the clamp line (D290) and their fit to a
   measured natural frequency, static deflection and modes by shift-invert
   Lanczos with a Sturm check that no mode was missed, run as the tools
@@ -276,8 +277,10 @@ validated range, one mesh only, …) in its report and its JSON result.
   the patch test, a cantilever against beam theory and Lamé's thick
   cylinder ([gallery 300](docs/gallery/structure.md#reed-stop)), the
   contact by the propped cantilever and a mass bouncing on a stop
-  ([gallery 302](docs/gallery/structure.md#reed-valve-contact)). The
-  coupling to the flow is MS6.
+  ([gallery 302](docs/gallery/structure.md#reed-valve-contact)), the
+  temperature mapping by linear fields mapped exactly and a free body
+  that stays stress-free ([gallery 308](docs/gallery/structure.md#heat-sink-hot)).
+  The two-way coupling with the flow (FSI) is the rest of MS6.
 - **Rotating machinery.** The moving reference frame (steady and transient
   frozen rotor), the sliding mesh by conformal stepping and by imprinting
   the interface in every step, several rotors at their own speeds,
@@ -424,7 +427,7 @@ The [changelog](CHANGELOG.md) lists every release.
 | `foehncraft-parallel` | communicator (serial, MPI) with exact all-reduce, exact threaded reductions |
 | `foehncraft-mesh` | polyhedral mesh, geometry, quality report, mesh-format layer with the Gmsh, SU2, CGNS, OpenFOAM, Fluent .msh, VTK and VTKHDF readers, test mesher (also the cylinder benchmark mesh and annuli for rotors), partitioning and halo, VTKHDF output, point location and ray casting, the hand-over of walks between ranks, wall distance, the imprint of sliding interfaces |
 | `foehncraft-radiation` | thermal radiation by Monte Carlo energy bundles on the cell walk: emission from Owen-scrambled Sobol points, exact path lengths per cell, grey diffuse walls, symmetry planes and open boundaries, integer tallies with an exact energy account, bitwise the same on any number of threads and ranks; exact solutions of the verification cases |
-| `foehncraft-structure` | linear structural finite elements (L53): beams, shells, quadratic solids, dynamics, thermal loads, clamp springs, contact with rigid planes, the sparse LDLᵀ solver with its Sturm count, shift-invert Lanczos, the structural case file and the clamp fit |
+| `foehncraft-structure` | linear structural finite elements (L53): beams, shells, quadratic solids, dynamics, thermal loads (given or mapped from a flow result), clamp springs, contact with rigid planes, the sparse LDLᵀ solver with its Sturm count, shift-invert Lanczos, the structural case file and the clamp fit |
 | `foehncraft-fv` | finite-volume operators on a scalar (gradients, limiters, convection, diffusion, assembly), BiCGStab, and the pressure solver: CG with smoothed-aggregation multigrid in mixed precision, optional hypre reference; CPU backend (the GPU backend is in `foehncraft-cuda`) |
 | `foehncraft-flow` | incompressible flow: SIMPLEC and SIMPLE (steady), PISO with BDF2 and Crank–Nicolson (transient), the coupled algorithm, the Rhie–Chow interpolation, boundary conditions and their check, turbulence models and wall treatments, passive scalars and thermal wall functions, the moving reference frame and sliding meshes, torque and machine performance, restart and control files, probes and force coefficients, the flow device written once over a CPU or GPU executor, the `foehn flow` case, exact solutions, reference and benchmark data |
 | `foehncraft-bench` | gate G1: kernel benchmark, CPU backends |

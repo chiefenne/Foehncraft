@@ -353,6 +353,69 @@ pub struct Temperature {
     pub history: Option<String>,
 }
 
+/// `[[temperature_fields]]`: the temperature of a solid region of a flow
+/// case (MS6), read from its result file and mapped onto the nodes of
+/// beam lines, plates and solids. The thermal strain is α (T − reference);
+/// beams and plates also take the slope of T across their section.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TemperatureField {
+    /// The beam lines, plates and solids it applies to.
+    pub parts: Vec<String>,
+    /// The flow result (`.vtkhdf`), relative to the case file.
+    pub file: String,
+    /// The cell field (`temperature`).
+    #[serde(default = "default_temperature_field")]
+    pub field: String,
+    /// The zones of the flow mesh it comes from (the solid region's
+    /// zones); empty: every cell of the file.
+    #[serde(default)]
+    pub zones: Vec<String>,
+    /// The stress-free temperature (K).
+    pub reference: f64,
+    /// Added to the structural coordinates to reach the flow mesh (m).
+    #[serde(default)]
+    pub offset: [f64; 3],
+    /// Nearest cell centres in each linear fit (20).
+    #[serde(default)]
+    pub neighbours: Option<usize>,
+    /// Largest distance from a node to the nearest cell centre (m);
+    /// default the size of that cell.
+    #[serde(default)]
+    pub max_distance: Option<f64>,
+    /// Time history that scales T − reference.
+    #[serde(default)]
+    pub history: Option<String>,
+}
+
+fn default_temperature_field() -> String {
+    "temperature".into()
+}
+
+/// What a `[[temperature_fields]]` entry mapped, for the report.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct MappedField {
+    /// The parts.
+    pub parts: Vec<String>,
+    /// The file as given.
+    pub file: String,
+    /// The cell field.
+    pub field: String,
+    /// Cells of the file and cells of the chosen zones.
+    pub cells: usize,
+    /// Cells used (the chosen zones).
+    pub source_cells: usize,
+    /// Structural nodes that took a temperature.
+    pub nodes: usize,
+    /// Smallest and largest cell temperature of the zones (K).
+    pub source_range: [f64; 2],
+    /// Smallest and largest temperature at the nodes (K).
+    pub node_range: [f64; 2],
+    /// The largest distance from a node to its nearest cell centre (m),
+    /// and that distance over the cell's size.
+    pub largest_distance: [f64; 2],
+}
+
 /// `[histories.<name>]`: a factor in time, a table (linear between its
 /// points, held after the last) or a sine.
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -682,6 +745,9 @@ pub struct Case {
     /// `[[temperatures]]`.
     #[serde(default)]
     pub temperatures: Vec<Temperature>,
+    /// `[[temperature_fields]]`: temperatures mapped from a flow result.
+    #[serde(default)]
+    pub temperature_fields: Vec<TemperatureField>,
     /// `[histories]`.
     #[serde(default)]
     pub histories: BTreeMap<String, History>,
@@ -754,6 +820,18 @@ impl Case {
             })
             .collect()
     }
+
+    /// The flow result files of the `[[temperature_fields]]`, relative to
+    /// the case folder.
+    pub fn field_paths(&self) -> Vec<std::path::PathBuf> {
+        self.temperature_fields
+            .iter()
+            .map(|t| match &self.base {
+                Some(b) => b.join(&t.file),
+                None => std::path::PathBuf::from(&t.file),
+            })
+            .collect()
+    }
 }
 
 /// How a clamp was taken (D290: the result says when it was rigid).
@@ -797,6 +875,10 @@ pub struct Built {
     pub clamps: Vec<ClampInfo>,
     /// Named points and their nodes.
     pub points: BTreeMap<String, usize>,
+    /// The mapped temperature fields.
+    pub mapped: Vec<MappedField>,
+    /// The mapped temperature of each node (K; NaN where none).
+    pub node_temperature: Vec<f64>,
 }
 
 fn positive(v: Option<f64>, what: &str) -> Result<f64, Error> {
@@ -922,7 +1004,6 @@ pub fn build(case: &Case) -> Result<Built, Error> {
         };
     let mut seen = std::collections::BTreeSet::new();
     // per beam line: α and the section's heights along local y and z
-    type LineThermal = (Option<f64>, Option<(f64, f64)>);
     let mut line_thermal: BTreeMap<String, LineThermal> = BTreeMap::new();
     let mut plate_thermal: BTreeMap<String, (Option<f64>, f64)> = BTreeMap::new();
     for b in &case.beams {
@@ -1456,6 +1537,8 @@ pub fn build(case: &Case) -> Result<Built, Error> {
                     shell: false,
                     strain: alpha * t.change,
                     curvature,
+                    node_strain: [0.0; 4],
+                    node_curvature: [0.0; 4],
                 });
             }
         } else if let Some(r) = plates.get(&t.part) {
@@ -1472,6 +1555,8 @@ pub fn build(case: &Case) -> Result<Built, Error> {
                     shell: true,
                     strain: alpha * t.change,
                     curvature: [alpha * t.difference / h, 0.0],
+                    node_strain: [0.0; 4],
+                    node_curvature: [0.0; 4],
                 });
             }
         } else if let Some(sp) = solids.get(&t.part) {
@@ -1482,7 +1567,8 @@ pub fn build(case: &Case) -> Result<Built, Error> {
                 )));
             }
             for e in sp.elements.clone() {
-                model.solid_thermal.push((e, alpha * t.change));
+                let nn = model.solids[e].kind.nodes();
+                model.solid_thermal.push((e, vec![alpha * t.change; nn]));
             }
         } else {
             return Err(bad(format!(
@@ -1490,6 +1576,16 @@ pub fn build(case: &Case) -> Result<Built, Error> {
             )));
         }
     }
+    let (mapped, node_temperature) = map_temperature_fields(
+        case,
+        &mut model,
+        &lines,
+        &plates,
+        &solids,
+        &line_thermal,
+        &plate_thermal,
+        &solid_alpha,
+    )?;
     let mut contacts = Vec::new();
     for ck in &case.contacts {
         let what = format!("[[contacts]] `{}`", ck.name);
@@ -1553,7 +1649,186 @@ pub fn build(case: &Case) -> Result<Built, Error> {
         contacts,
         clamps,
         points,
+        mapped,
+        node_temperature,
     })
+}
+
+/// Expansion and (width, height) of a beam line's section.
+type LineThermal = (Option<f64>, Option<(f64, f64)>);
+
+/// The thermal strains of the `[[temperature_fields]]` (MS6): each field
+/// read once, fitted at the nodes of its parts ([`crate::mapping`]).
+#[allow(clippy::too_many_arguments)]
+fn map_temperature_fields(
+    case: &Case,
+    model: &mut Model,
+    lines: &BTreeMap<String, std::ops::Range<usize>>,
+    plates: &BTreeMap<String, std::ops::Range<usize>>,
+    solids: &BTreeMap<String, SolidPart>,
+    line_thermal: &BTreeMap<String, LineThermal>,
+    plate_thermal: &BTreeMap<String, (Option<f64>, f64)>,
+    solid_alpha: &BTreeMap<String, Option<f64>>,
+) -> Result<(Vec<MappedField>, Vec<f64>), Error> {
+    use crate::mapping::{Fit, Mapper, Source};
+    let mut node_t = vec![f64::NAN; model.nodes.len()];
+    let mut out = Vec::new();
+    if case.temperature_fields.is_empty() {
+        return Ok((out, node_t));
+    }
+    let dirs = if model.shells.is_empty() {
+        Vec::new()
+    } else {
+        model.directors()
+    };
+    for (i, tf) in case.temperature_fields.iter().enumerate() {
+        let what = format!("[[temperature_fields]] {} (`{}`)", i + 1, tf.file);
+        if tf.parts.is_empty() {
+            return Err(bad(format!("{what}: `parts` names no part")));
+        }
+        if !tf.reference.is_finite() || tf.offset.iter().any(|v| !v.is_finite()) {
+            return Err(bad(format!(
+                "{what}: `reference` and `offset` must be finite"
+            )));
+        }
+        if let Some(d) = tf.max_distance
+            && !(d > 0.0 && d.is_finite())
+        {
+            return Err(bad(format!("{what}: `max_distance` must be positive")));
+        }
+        let k = tf.neighbours.unwrap_or(20);
+        if !(4..=1000).contains(&k) {
+            return Err(bad(format!("{what}: `neighbours` must be 4 to 1000")));
+        }
+        let path = case.field_paths().swap_remove(i);
+        let (src, info) = Source::from_vtkhdf(&path, &tf.field, &tf.zones)
+            .map_err(|e| bad(format!("{what}: {e}")))?;
+        let source_cells = src.values.len();
+        let source_range = src
+            .values
+            .iter()
+            .fold([f64::INFINITY, f64::NEG_INFINITY], |r, &v| {
+                [r[0].min(v), r[1].max(v)]
+            });
+        let mapper = Mapper::new(src, k);
+        let mut fits: BTreeMap<usize, Fit> = BTreeMap::new();
+        let mut fit = |n: usize, nodes: &[[f64; 3]]| -> Result<Fit, Error> {
+            if let Some(f) = fits.get(&n) {
+                return Ok(*f);
+            }
+            let x = nodes[n];
+            let y = [
+                x[0] + tf.offset[0],
+                x[1] + tf.offset[1],
+                x[2] + tf.offset[2],
+            ];
+            let f = mapper.fit(y);
+            let limit = tf.max_distance.unwrap_or(f.size);
+            if f.distance.is_nan() || f.distance > limit || !f.value.is_finite() {
+                return Err(bad(format!(
+                    "{what}: the node at {x:?} is {:.3e} m from the nearest cell centre of the \
+                     zones (limit {limit:.3e} m): the structure does not lie in the solid region \
+                     (check the units, `offset` and `zones`)",
+                    f.distance
+                )));
+            }
+            fits.insert(n, f);
+            Ok(f)
+        };
+        let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+        let need = |a: Option<f64>, part: &str| {
+            a.filter(|a| a.is_finite()).ok_or_else(|| {
+                bad(format!(
+                    "{what}: the material of `{part}` needs `expansion` (1/K)"
+                ))
+            })
+        };
+        let t0 = tf.reference;
+        for part in &tf.parts {
+            if let Some(r) = lines.get(part) {
+                let alpha = need(line_thermal[part].0, part)?;
+                for e in r.clone() {
+                    let b = model.beams[e];
+                    let f0 = fit(b.nodes[0], &model.nodes)?;
+                    let f1 = fit(b.nodes[1], &model.nodes)?;
+                    let mean = |f: &dyn Fn(&Fit) -> f64| 0.5 * (f(&f0) + f(&f1));
+                    model.thermal.push(crate::model::ThermalLoad {
+                        element: e,
+                        shell: false,
+                        strain: alpha * (mean(&|f| f.value) - t0),
+                        curvature: [
+                            alpha * mean(&|f| dot(f.gradient, b.frame[1])),
+                            alpha * mean(&|f| dot(f.gradient, b.frame[2])),
+                        ],
+                        node_strain: [0.0; 4],
+                        node_curvature: [0.0; 4],
+                    });
+                }
+            } else if let Some(r) = plates.get(part) {
+                let alpha = need(plate_thermal[part].0, part)?;
+                for e in r.clone() {
+                    let used = model.shells[e].used().to_vec();
+                    let mut ns = [0.0; 4];
+                    let mut nc = [0.0; 4];
+                    for (j, &n) in used.iter().enumerate() {
+                        let f = fit(n, &model.nodes)?;
+                        ns[j] = alpha * (f.value - t0);
+                        nc[j] = alpha * dot(f.gradient, dirs[n]);
+                    }
+                    model.thermal.push(crate::model::ThermalLoad {
+                        element: e,
+                        shell: true,
+                        strain: 0.0,
+                        curvature: [0.0; 2],
+                        node_strain: ns,
+                        node_curvature: nc,
+                    });
+                }
+            } else if let Some(sp) = solids.get(part) {
+                let alpha = need(solid_alpha[part], part)?;
+                for e in sp.elements.clone() {
+                    let used = model.solids[e].used().to_vec();
+                    let mut st = Vec::with_capacity(used.len());
+                    for &n in &used {
+                        st.push(alpha * (fit(n, &model.nodes)?.value - t0));
+                    }
+                    model.solid_thermal.push((e, st));
+                }
+            } else {
+                return Err(bad(format!(
+                    "{what}: no beam line, plate or solid `{part}`"
+                )));
+            }
+        }
+        let mut node_range = [f64::INFINITY, f64::NEG_INFINITY];
+        let mut far = [0.0f64, 0.0f64];
+        for (&n, f) in &fits {
+            node_t[n] = f.value;
+            node_range = [node_range[0].min(f.value), node_range[1].max(f.value)];
+            if f.distance > far[0] {
+                far = [
+                    f.distance,
+                    if f.size > 0.0 {
+                        f.distance / f.size
+                    } else {
+                        0.0
+                    },
+                ];
+            }
+        }
+        out.push(MappedField {
+            parts: tf.parts.clone(),
+            file: tf.file.clone(),
+            field: tf.field.clone(),
+            cells: info.cells,
+            source_cells,
+            nodes: fits.len(),
+            source_range,
+            node_range,
+            largest_distance: far,
+        });
+    }
+    Ok((out, node_t))
 }
 
 /// What a run computed.
@@ -1631,7 +1906,8 @@ fn load_groups(case: &Case) -> Result<Vec<LoadGroup>, Error> {
         .map(|l| &l.history)
         .chain(case.line_loads.iter().map(|l| &l.history))
         .chain(case.pressures.iter().map(|l| &l.history))
-        .chain(case.temperatures.iter().map(|l| &l.history));
+        .chain(case.temperatures.iter().map(|l| &l.history))
+        .chain(case.temperature_fields.iter().map(|l| &l.history));
     for h in used.flatten() {
         if !case.histories.contains_key(h) {
             return Err(bad(format!(
@@ -1649,6 +1925,7 @@ fn load_groups(case: &Case) -> Result<Vec<LoadGroup>, Error> {
         c.line_loads.retain(|l| l.history == key);
         c.pressures.retain(|l| l.history == key);
         c.temperatures.retain(|l| l.history == key);
+        c.temperature_fields.retain(|l| l.history == key);
         let f = build(&c)?.model.assemble().f;
         out.push((key, f));
     }
@@ -1910,10 +2187,7 @@ impl Outcome {
         let m = &self.built.model;
         let mut sum = vec![0.0; m.nodes.len()];
         let mut count = vec![0usize; m.nodes.len()];
-        let mut strain = vec![0.0; m.solids.len()];
-        for &(e, a) in &m.solid_thermal {
-            strain[e] += a;
-        }
+        let strain = m.solid_strains();
         for (e, el) in m.solids.iter().enumerate() {
             let ue: Vec<f64> = el
                 .used()
@@ -1925,7 +2199,7 @@ impl Outcome {
                 &m.solid_coords(e),
                 &m.solid_props[el.props],
                 &ue,
-                strain[e],
+                &strain[e],
             ) else {
                 continue;
             };
@@ -1965,6 +2239,9 @@ impl Outcome {
                 "rotation": match c.k_rotation { Some(k) => json!({"rigid": false, "stiffness": k}), None => json!({"rigid": true}) },
             })).collect::<Vec<_>>(),
         });
+        if !self.built.mapped.is_empty() {
+            out["temperature_fields"] = json!(self.built.mapped);
+        }
         if !self.built.solids.is_empty() {
             out["solids"] = Value::Array(
                 self.built
@@ -2214,6 +2491,13 @@ impl Outcome {
             }
         }
         let _ = writeln!(s, "POINT_DATA {}", m.nodes.len());
+        if !self.built.mapped.is_empty() {
+            // the mapped temperature (K), NaN off the mapped parts
+            let _ = writeln!(s, "SCALARS temperature double 1\nLOOKUP_TABLE default");
+            for v in &self.built.node_temperature {
+                let _ = writeln!(s, "{v:.9e}");
+            }
+        }
         let vector = |s: &mut String, label: &str, u: &[f64], off: usize, scale: f64| {
             let _ = writeln!(s, "VECTORS {label} double");
             for n in 0..m.nodes.len() {
