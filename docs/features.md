@@ -281,7 +281,10 @@ validated range, one mesh only, …) in its report and its JSON result.
   [gallery 177](gallery/runs.md#control-port). A recorded study of an
   assistant (four fin pitches of the heat sink under run limits and a study
   budget, with the refused calls) replays without a window:
-  [gallery 181](gallery/runs.md#heat-sink-study).
+  [gallery 181](gallery/runs.md#heat-sink-study). A recorded chat sizes a
+  spray cooler from one question: the assistant writes the case, runs it
+  three times and answers with the water flow, the outlet temperature
+  across the duct and the limitations ([gallery 316](gallery/runs.md#spray-cooler-chat)).
 - **GPU and Python.** The flow loop on NVIDIA GPUs; its results agree
   with the CPU to rounding (bitwise until the exact CPU sums of W2; the
   GPU keeps block sums until v1.1); the Python package `foehncraft` that builds, runs and

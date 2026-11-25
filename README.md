@@ -77,6 +77,30 @@ second chat ([gallery 225](docs/gallery/flow.md#curved-blades));
 [MP4](assets/readme/three_rotors.mp4). Connect your own assistant:
 [docs/agents.md](docs/agents.md).</sub>
 
+## From one question to a design number
+
+> *"How much water do I need to spray to cool 300 °C air to 150 °C before
+> the filter?"*
+
+The same kind of chat, with an engineering question instead of a picture.
+The assistant wrote the duct and the nozzles, guessed the water flow from
+the heat balance, ran it, read the outlet temperature, interpolated and
+checked the result with a third run and on a finer mesh: **about 3.55 g/s
+of water per 0.1 m of duct depth (5.9 % of the air mass flow), all of it
+evaporated**. Then it
+added what nobody asked for: 150 °C is only the mean, the air along the
+walls leaves at up to 225 °C. Every run stated its limitations, and the
+session is journaled so anyone can replay it.
+
+<p align="center">
+  <a href="docs/gallery/runs.md#spray-cooler-chat"><img src="docs/figures/gallery/spray_cooler_chat.png" alt="Air at 300 °C cooled by three water sprays in a duct: the temperature with the droplet streams, the vapour, the hot layers along the walls at the outlet, and the outlet temperature the assistant read for 3, 3.5 and 3.55 g/s of water against the 150 °C target" width="800" height="572"></a>
+</p>
+
+<sub>Steady evaporating sprays with k-ω SST on 3000 cells, three runs of about
+seven minutes each on four CPU cores, and a mesh check on 12 000 cells. The transcript, with the assistant's
+slips and the refusals of the action table:
+[docs/agents.md](docs/agents.md#a-recorded-chat-sizing-a-spray-cooler).</sub>
+
 ## What works today
 
 - **Meshes.** Polyhedral cells in 2D and 3D, read from Gmsh, SU2, CGNS, OpenFOAM, Fluent `.msh`, VTK and VTKHDF.

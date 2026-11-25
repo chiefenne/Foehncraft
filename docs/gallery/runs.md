@@ -16,6 +16,7 @@ Part of the [Example gallery](../gallery.md): adjoint-ready kernels, runs that a
 | 175 | [An assistant at the controls: the MCP server](#mcp) | 7 | `foehn mcp`: every registry tool to an assistant over MCP, inside required roots, with an action table that allows, asks or refuses each kind of action, mandatory run limits, progress and cancellation, summaries first, histories paged by cursor, the session journaled for replay (L18, D198) |
 | 177 | [An assistant steers a running case: the control port](#control-port) | 7 | a run listens on `127.0.0.1` with a token in a file only its user reads; `run.status` gives the live residuals, `run.set` changes run-time settings (never limits), `run.stop` stops with restart file and results; applied after an iteration or step, reported with the equivalent `[[schedule]]` entry (L19, D198 f) |
 | 181 | [An assistant runs a study: the fin pitch of a heat sink](#heat-sink-study) | 7 | four fin pitches of the heat sink of gallery 158 run through `foehn mcp` by an assistant, under run limits and a study budget, with the refusals (no limits, a folder outside the write root, a mesh over the cell cap), live status, histories read in pages, a closing report with its limitations, and the journal a person replays (L18, L19, D197, D198) |
+| 316 | [An assistant sizes a spray cooler from one question](#spray-cooler-chat) | 7 | one engineering question, answered through `foehn mcp`: the assistant writes the case and the nozzles, runs it, reads the outlet with `post.datums`, interpolates the water flow for 150 °C, checks it with a run, reports the hot layers at the walls and the limitations; the journal of the session (L18, D197, D198) |
 
 ---
 
@@ -848,6 +849,103 @@ target/release/foehn run --script examples/cases/tools/mcp/heat_sink_study/journ
     --read-root examples/cases --read-root output/agent/study --write-root output/agent/study
 python3 -m tools.plot.heat_sink_study docs/figures/gallery/heat_sink_study.png output/agent/study
 python3 -m tools.plot.heat_sink_agent figures examples/cases/tools/mcp/heat_sink_study/session.csv output/agent/study docs/figures/gallery
+```
+
+[↑ back to top](#run-control-health-and-adjoint-readiness)
+
+<a id="spray-cooler-chat"></a>
+## 316. An assistant sizes a spray cooler from one question
+
+<img src="../figures/gallery/spray_cooler_chat.png" alt="Top: the air temperature in a duct 3 m long and 0.2 m high, air entering at 300 °C from the left at 5 m/s, three water nozzles at x = 0.1 m; white droplet streams run from each nozzle up to about 2.7 m, the core between the nozzles cools to about 150 °C within half a metre while the layers along both walls stay hot and cool only slowly. Middle: the water vapour mass fraction, highest behind the nozzles and spreading towards the walls downstream. Bottom left: the temperature across the outlet, about 104 °C in the middle and up to 225 °C at the walls. Bottom right: the mass-flow mean outlet temperature the assistant read from each run, 171.1 °C at 3.00 g/s, 151.3 °C at 3.50 g/s and 149.4 °C at 3.55 g/s, against the target of 150 °C" width="800" height="572">
+
+One question, put to an assistant connected to `foehn mcp`:
+
+> *"How much water do I need to spray to cool 300 °C air to 150 °C before
+> the filter?"*
+
+The assistant (Claude) drove `foehn mcp` through
+[`tools/agent/stdio_host.py`](../../tools/agent/stdio_host.py), as in
+[gallery 181](#heat-sink-study). The person prepared only the action table
+(runs allowed, everything else that needs a rule refused, at most 40 000
+cells). The assistant wrote the case and the nozzle file itself: a duct
+3 m long and 0.2 m high (2D, 0.1 m deep), air at 300 °C and 5 m/s
+(0.06 kg/s), k-ω SST, three nozzles 0.1 m behind the inlet spraying water
+at 20 °C as droplets of 5 to 60 µm, evaporation into a vapour species
+(Ranz–Marshall), the spray as steady streams ([gallery 292](sprays.md#spray-steady),
+[306](sprays.md#spray-evaporation)). [agents.md](../agents.md#a-recorded-chat-sizing-a-spray-cooler)
+holds the transcript.
+
+What happened, in the order of the calls:
+
+- `case.check` **refused** the case (`CASE007`): its output folder lay
+  outside the write root. With `out` in the write root it passed: 3000
+  cells, 30 MB.
+- A first guess from the heat balance, 3 g/s, ran 2000 iterations
+  (`flow.run`), with `run.status` looking in while it ran.
+- The run has no outlet temperature in its tables: `[[datum]]` reports are
+  written by transient runs only. The assistant added an outlet datum to
+  the case and read it from the restart file with `post.datums`: 171.1 °C
+  (mass-flow mean). A continuation of 1000 more iterations moved it by
+  0.003 K, so 2000 iterations are enough for this number although the
+  residuals stay at about 10⁻⁵ (`LIM003`). (Its first try at the
+  continuation asked for 1000 iterations in all, below the 2000 of the
+  restart file, so it ran none.)
+- From 3 g/s it took 2.69 MJ per kg of water and ran 3.5 g/s: 151.3 °C.
+  It interpolated 3.55 g/s and checked it with a run: 149.4 °C.
+- Every run evaporates all its water (the last droplets at 2.7 m); none
+  reaches a wall or the outlet.
+- As a mesh check it ran 3.55 g/s on the mesh refined once (300 × 40,
+  12 000 cells, under the cap of 40 000). The run stopped at its own
+  wall-time limit of 900 s after 1977 iterations (`RUN003`), with its
+  restart file: 150.3 °C at the outlet, 0.9 K above the coarse mesh, and
+  104 to 228 °C across it.
+
+| Water (g/s) | Iterations | Outlet, mass-flow mean (°C) | Vapour at the outlet, Y_H2O | Evaporated |
+|---|---|---|---|---|
+| 3.00 | 2000 | 171.1 | 0.052 | all |
+| 3.50 | 2000 | 151.3 | 0.060 | all |
+| 3.55 | 2000 | 149.4 | 0.061 | all |
+| 3.55, mesh refined once | 1977 (wall-time limit) | 150.3 | 0.061 | 99.9 % |
+
+And its answer, in its own words:
+
+> **About 3.54 g/s of water per 0.1 m of duct depth, 5.9 % of the air mass
+> flow**, interpolated between 3.50 g/s (151.3 °C) and 3.55 g/s (149.4 °C);
+> all of it evaporates within 2.7 m. The heat balance is plausible: the
+> air gives 2.66 MJ per kg of water, close to heating water from 20 °C,
+> evaporating it at the wet-bulb temperature and heating the vapour.
+> **But 150 °C is only the mean:** across the outlet the core is at about
+> 104 °C and the layers at the walls at up to 225 °C, because three nozzles
+> in the middle do not reach the wall layers within 3 m. If the filter
+> needs 150 °C everywhere, spread the nozzles towards the walls or give the
+> spray more length. On the mesh refined once the outlet is 0.9 K warmer,
+> which asks for about 0.02 g/s more: **3.54 to 3.56 g/s**; two meshes
+> give no GCI. Limitations: the steady solve
+> stops at 2000 iterations with residuals near 10⁻⁵ (`LIM003`, the outlet
+> moved 0.003 K in 1000 more iterations) and the spray source residual
+> stalls at 0.006 to 0.009 against its tolerance of 0.001; first-cell y⁺ of
+> 15 to 29, outside the validated range of the wall treatment (`LIM002`); SST,
+> its automatic wall treatment and the energy equation with turbulence are
+> graded partial (`LIM001`); the density is constant (0.6 kg/m³), so the
+> cooled air does not slow down. A sizing estimate, not a design.
+
+| | |
+|---|---|
+| Code | `tools/agent/stdio_host.py` (the host), `tools/plot/spray_cooler.py` (the figure); no engine change |
+| Case files | `tools/mcp/spray_cooler/`: `foehn-mcp.toml` (the action table), `spray_cooler.toml` and the nozzle files the assistant wrote, `journal.jsonl` (the session), `results.csv` (what it read) |
+| Guides | [A recorded chat](../agents.md#a-recorded-chat-sizing-a-spray-cooler), [Connect an assistant](../agents.md) |
+
+The journal replays the session without a window; it runs the six flow
+runs again, about 45 minutes on 4 threads. This entry's journal has not
+been replayed yet.
+
+```
+cargo build --release -p foehncraft-cli
+mkdir -p output/agent/spray_cooler
+target/release/foehn run --script examples/cases/tools/mcp/spray_cooler/journal.jsonl \
+    --read-root examples/cases/tools/mcp/spray_cooler --read-root output/agent/spray_cooler \
+    --write-root output/agent/spray_cooler
+python3 tools/plot/spray_cooler.py output/agent/spray_cooler docs/figures/gallery/spray_cooler_chat.png
 ```
 
 [↑ back to top](#run-control-health-and-adjoint-readiness)
