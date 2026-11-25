@@ -106,6 +106,9 @@ pub struct Variable {
     pub old: Option<[Vec<f64>; 2]>,
     /// The levels before the last `start_step` (taking a step back).
     saved: Option<([Vec<f64>; 2], [f64; 2])>,
+    /// ρ and p₀ of the current level before the mesh moved (a deforming
+    /// mesh, stage MS0): level n of the next step.
+    moved: Option<(Vec<f64>, f64)>,
     owner: Vec<u32>,
     neighbour: Vec<u32>,
     weight: Vec<f64>,
@@ -203,17 +206,21 @@ impl Variable {
     pub fn start_step(&mut self) {
         let prev = self.old.take();
         self.saved = prev.clone().map(|o| (o, self.p0_old));
+        let (rho_n, p_n) = self
+            .moved
+            .take()
+            .unwrap_or_else(|| (self.rho.clone(), self.p0));
         let n1 = match prev {
             Some([n, _]) => n,
-            None => self.rho.clone(),
+            None => rho_n.clone(),
         };
         let p1 = if self.saved.is_some() {
             self.p0_old[0]
         } else {
-            self.p0
+            p_n
         };
-        self.old = Some([self.rho.clone(), n1]);
-        self.p0_old = [self.p0, p1];
+        self.old = Some([rho_n, n1]);
+        self.p0_old = [p_n, p1];
     }
 
     /// Takes the last `start_step` back (a rejected step).
@@ -259,6 +266,18 @@ impl Variable {
             d -= a[2] * self.p0_old[1];
         }
         d / dt
+    }
+
+    /// Takes the cell volumes and face weights of a moved mesh (a
+    /// deforming mesh, stage MS0: same cells and faces) and recomputes the
+    /// densities from the temperatures `t` and `tb`; the mass of a closed
+    /// volume stays, so p₀ follows the new volume.
+    pub fn set_geometry(&mut self, d: &foehncraft_fv::disc::Discretisation, t: &[f64], tb: &[f64]) {
+        // level n of the next step is the density before the move
+        self.moved = Some((self.rho.clone(), self.p0));
+        self.weight = d.weight.clone();
+        self.volume = d.cell_volume[..d.n_cells].to_vec();
+        self.refresh(t, tb);
     }
 
     /// The mass in the domain, Σ ρ V (kg).
@@ -468,6 +487,7 @@ pub fn setup(
         rho_face: Vec::new(),
         old: None,
         saved: None,
+        moved: None,
         owner: d.owner.clone(),
         neighbour: d.neighbour[..ni].to_vec(),
         weight: d.weight.clone(),

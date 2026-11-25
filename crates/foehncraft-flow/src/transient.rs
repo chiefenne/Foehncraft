@@ -656,6 +656,10 @@ impl Transient {
         let alpha_p = s.alpha_p(true);
         let extrapolate = second && s.extrapolation && self.clock.levels >= 2;
         let t = Instant::now();
+        // a deforming mesh (D91, stage MS0): the volume rates of the faces,
+        // the walls moving with the mesh and the grid flux of this step,
+        // before any flux convects
+        fl.grid_step_start([a0, -a1, -a2], dt)?;
 
         // 0. error estimate (D65): the state of the start for a rejection,
         // and the predictor P = L₀uⁿ⁻² + L₁uⁿ⁻¹ + L₂uⁿ, the quadratic

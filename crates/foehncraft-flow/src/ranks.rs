@@ -709,6 +709,10 @@ pub fn supported(case: &FlowCase) -> Result<()> {
         (!case.spray.is_empty(), "sprays"),
         (!case.sliding.is_empty(), "a sliding mesh ([[sliding]])"),
         (!case.schedule.is_empty(), "a [[schedule]]"),
+        (
+            case.mesh_motion.is_some(),
+            "a deforming mesh ([mesh_motion])",
+        ),
         (case.verification.levels.len() > 1, "a sweep over levels"),
         (
             !case.regions.is_empty(),

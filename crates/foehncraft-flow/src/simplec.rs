@@ -772,6 +772,10 @@ pub struct Physics {
     /// coupled solver takes the pseudo-time term and the scale of the
     /// continuity row per cell (false: `rho`, as before).
     pub zones: bool,
+    /// The grid mass flux ρ_f Ḟ_f per face of a deforming mesh in the
+    /// current step (D91, stage MS0), as last set: the flow through a face
+    /// is the relative flux ṁ_f − ρ_f Ḟ_f (`None`: a fixed mesh).
+    pub grid_flux: Option<std::sync::Arc<Vec<f64>>>,
 }
 
 impl Physics {
@@ -789,7 +793,14 @@ impl Physics {
             immersed_fields: None,
             rho_var: None,
             zones: false,
+            grid_flux: None,
         }
+    }
+
+    /// The grid mass flux of face `f` (0 on a fixed mesh).
+    #[inline]
+    pub fn grid_flux_at(&self, f: usize) -> f64 {
+        self.grid_flux.as_ref().map_or(0.0, |g| g[f])
     }
 
     /// The density of cell `c`.
@@ -1127,6 +1138,8 @@ pub struct Flow {
     /// The mass source V ∂ρ/∂t per cell on the device (the continuity
     /// residual adds it).
     density_source: Option<Buf>,
+    /// The grid of a deforming mesh in the current step (D91, stage MS0).
+    pub(crate) grid: Option<Box<crate::motion::Grid>>,
 }
 
 /// The driving of one periodic pair: a uniform body force β t̂ along the
@@ -1645,6 +1658,7 @@ impl Flow {
             buoyancy_source: None,
             density: None,
             density_time: None,
+            grid: None,
             density_source: None,
         })
     }
@@ -2199,6 +2213,14 @@ impl Flow {
             own.copy_from_slice(new);
         }
         self.pseudo_speed = None;
+        // the walls of a deforming mesh move with it (stage MS0): the normal
+        // part of their velocity is the grid velocity of the step (the host
+        // copy keeps the given values)
+        let moved = self
+            .grid
+            .as_deref()
+            .map(|g| g.wall_velocities(self.disc.n_interior, ub));
+        let ub = moved.as_ref().unwrap_or(ub);
         let s = self.f.ub_set;
         self.dev.upload(s.x, &ub[0])?;
         self.dev.upload(s.y, &ub[1])?;
@@ -2881,7 +2903,7 @@ impl Flow {
         d.refresh(&t, &tb);
         self.dev.set_density(&d.rho, &d.rho_face)?;
         self.phys.rho_var = Some(std::sync::Arc::new((d.rho.clone(), d.rho_face.clone())));
-        let (src, dp) = match self.density_time {
+        let (mut src, dp) = match self.density_time {
             Some((a, dt)) => (
                 d.mass_source(a, dt),
                 if d.pressure_work {
@@ -2893,11 +2915,33 @@ impl Flow {
             None => (None, 0.0),
         };
         let old = d.old.as_ref().filter(|_| self.density_time.is_some());
-        self.dev.set_variable_density(
-            src.as_deref(),
-            old.map(|o| o[0].as_slice()),
-            old.map(|o| o[1].as_slice()),
-        )?;
+        // a deforming mesh (stage MS0): the old levels with their volumes,
+        // the mass source d(ρV)/dt − Σ ±ρ_f Ḟ_f and the grid mass flux of
+        // the new face densities; ∂ρ/∂t of the energy ledger is d(ρV)/dt / V
+        let mut ledger_rate = None;
+        let grid_old = match (self.grid.as_deref(), old, self.density_time) {
+            (Some(g), Some(o), Some((a, dt))) if !g.rate.is_empty() => {
+                let nc = self.disc.n_cells;
+                let vol = &self.disc.cell_volume[..nc];
+                let rate = g.mass_rate(vol, &d.rho, [&o[0], &o[1]], a, dt);
+                let m = g.mass_flux(&d.rho_face);
+                let net = crate::motion::Grid::cell_sum(&self.disc, &m);
+                src = Some(rate.iter().zip(&net).map(|(r, n)| r - n).collect());
+                ledger_rate = Some(rate);
+                if let Some((flux, _)) = g.flux {
+                    self.dev.upload(flux, &m)?;
+                }
+                self.phys.grid_flux = Some(std::sync::Arc::new(m));
+                Some(g.old_densities(vol, [&o[0], &o[1]]))
+            }
+            _ => None,
+        };
+        let old: Option<[&[f64]; 2]> = match &grid_old {
+            Some(g) => Some([&g[0], &g[1]]),
+            None => old.map(|o| [o[0].as_slice(), o[1].as_slice()]),
+        };
+        self.dev
+            .set_variable_density(src.as_deref(), old.map(|o| o[0]), old.map(|o| o[1]))?;
         if let Some(s) = &src {
             let b = match self.density_source {
                 Some(b) => b,
@@ -2910,7 +2954,8 @@ impl Flow {
             self.dev.upload(b, s)?;
         }
         let vol = &self.disc.cell_volume;
-        let drho_dt: Vec<f64> = src
+        let drho_dt: Vec<f64> = ledger_rate
+            .or(src)
             .map(|s| s.iter().zip(vol).map(|(m, v)| m / v).collect())
             .unwrap_or_default();
         let rho = d.rho.clone();

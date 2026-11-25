@@ -4167,6 +4167,12 @@ pub(crate) fn summaries_on(
     // the heat-flux pairs: Δ and the bulk values of the level fix
     let deltas = sc.periodic_bulk(fl.dev.as_mut(), fl.f.mass_flux)?;
     let mut m = fl.dev.download(fl.f.mass_flux)?;
+    // the flow relative to a deforming mesh (stage MS0; one rank only)
+    if let Some(gf) = &fl.phys.grid_flux {
+        for (mf, g) in m.iter_mut().zip(gf.iter()) {
+            *mf -= g;
+        }
+    }
     let mut heat = sc.energy_host();
     let mut outflow = if heat.is_some() {
         sc.energy_outflow(fl.dev.as_mut())?

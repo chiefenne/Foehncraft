@@ -1,0 +1,90 @@
+# The piston of motion_piston_adiabatic.toml with walls held at 300 K: the
+# compressed gas loses heat to the walls (L22, stage MS0, gallery 296).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/motion_piston_cooled_walls.toml
+#
+# The same gas column, mesh motion and crank (compression ratio 4 in one
+# period of 1 s), on 40 × 80 cells, with all walls and the piston at 300 K.
+# Near the top dead centre (written at t = 0.5 s) the core is near 500 K
+# and thermal boundary layers a few millimetres thick lie along the walls;
+# the gas that flows towards the piston face carries heat with it. p₀ stays
+# below the isentrope: on the way down the walls take heat out, and the
+# expansion ends below the start pressure (an open p–V loop, the heat lost
+# per cycle). The mass stays to round-off and heat.csv closes the energy of
+# every step.
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [0.02, 0.04, 0.002]
+cells = [40, 80, 1]
+
+[constants]
+h0 = 0.04
+compression = 4.0     # V₀/V at the top dead centre
+period = 1.0
+
+[mesh_motion]
+# y → y h(t)/h₀ with h(t)/h₀ = 1 − (1 − 1/r)(1 − cos 2πt/T)/2
+displacement = [
+  0.0,
+  "-y * (1 - 1 / compression) * (1 - cos(2 * pi * t / period)) / 2",
+  0.0,
+]
+
+[materials.gas]
+kind = "gas"
+description = "an ideal gas with the molar mass of dry air and constant properties"
+molar_mass = 0.0289647
+density = { form = "ideal-gas", source = "ideal gas, rho = p M / (R T)" }
+specific_heat = 1005.0
+conductivity = 0.0263
+viscosity = 1.8e-5
+
+[fluid]
+material = "gas"
+temperature = 300.0
+
+[energy]
+initial = 300.0
+density = "variable"
+thermodynamic_pressure = "closed-volume"   # pressure_work is "thermodynamic" by default here
+
+[boundary.xmin]
+type = "wall"
+[boundary.xmin.energy]
+temperature = 300.0
+[boundary.xmax]
+type = "wall"
+[boundary.xmax.energy]
+temperature = 300.0
+[boundary.ymin]
+type = "wall"
+[boundary.ymin.energy]
+temperature = 300.0
+[boundary.ymax]
+type = "wall"           # the piston
+[boundary.ymax.energy]
+temperature = 300.0
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[time]
+scheme = "bdf2"
+time_step = 0.01
+end_time = 1.0
+
+[solver]
+outer_iterations = 20
+outer_tolerance = 1e-10
+
+[verification]
+require_convergence = false
+
+[output]
+wall_csv = false
+fields_times = [0.5]

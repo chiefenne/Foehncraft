@@ -2104,3 +2104,24 @@ gaps = [
   "clamp parts as solids in frictionless contact (the second way of D290) are not built",
   "no measured reed with a known clamp to calibrate against yet (MS6)",
 ]
+
+[[feature]]
+id = "mesh.deforming"
+area = "Moving meshes and solids"
+title = "Deforming meshes with a prescribed node displacement, and the piston (stage MS0)"
+switch = "[mesh_motion] displacement"
+decisions = ["D91"]
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-mesh/src/geometry.rs::swept_volumes_close_every_cell", what = "the swept volumes of the faces of every cell sum to the change of its volume to 1e-12 (relative) on hex, tet, poly and mixed meshes perturbed by 20 % under a smooth nonlinear motion; a translation sweeps d·S exactly" },
+  { kind = "exact", case = "motion_free_stream", test = "crates/foehncraft-flow/tests/mesh_motion.rs::uniform_flow_on_a_deforming_mesh_stays_uniform", what = "check MS0.1: a uniform flow on a swinging mesh stays uniform to round-off (velocity 1e-15, residuals below 1e-12, closure below 1e-13) on hex, tet and poly meshes with BDF1, BDF2 and Crank–Nicolson", doc = "docs/gallery/moving-solids.md#deforming-mesh" },
+  { kind = "exact", case = "motion_piston_adiabatic", test = "crates/foehncraft-flow/tests/mesh_motion.rs::piston_compression_keeps_p_v_gamma", what = "check MS0.2: a closed gas volume compressed by four with adiabatic walls follows p₀V^γ: error 6.6e-4 at the top dead centre with Δt = 0.01 s, observed order 1.8 to 2.2 in Δt, back to p₀(0) within 1e-4 after the period; mass to 1e-13, T uniform, heat book to 1e-8", doc = "docs/gallery/moving-solids.md#deforming-mesh" },
+  { kind = "consistency", case = "motion_piston_cooled_walls", what = "walls at 300 K: p₀ below the isentrope (572 kPa at the top dead centre), the expansion ends at 90.4 kPa, mass and heat book closed every step", doc = "docs/gallery/moving-solids.md#deforming-mesh" },
+  { kind = "contract", property = "diagnostics", test = "crates/foehncraft-flow/tests/mesh_motion.rs::deforming_mesh_settings_are_checked", what = "MOV001 for a steady case, MOV002 for a folding displacement, MOV003 for an inlet moved out of its plane, MOV004 for a closed volume of constant density that is compressed" },
+]
+gaps = [
+  "the motion is prescribed by an expression only: no mesh-motion solver, no cell layering, no bodies moved by the fluid (MS1, MS2)",
+  "the geometry and the solver setup (an AMG setup) are rebuilt every step",
+  "refused with MOV001: restarts (the restart datasets of D91 are not written yet), several ranks, turning zones, regions, sprays, immersed bodies, periodic boundaries, an error-controlled time step, level sweeps",
+  "turbulence models and passive scalars run on the moving mesh but are not checked against a reference; the GPU backend is not tested on a moving mesh",
+  "the cooled piston has no reference data (no heat-transfer correlation compared yet)",
+]
