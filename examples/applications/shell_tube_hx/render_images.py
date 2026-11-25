@@ -306,16 +306,26 @@ def save(v, name, size, dark, crop=True):
 
 
 # ---------------------------------------------------------------- streamlines
-def air_streamlines(n_seeds, radius=13.0, x0=-85.0):
-    """Streamlines from a disc of seeds just inside the air inlet nozzle."""
-    seeds = PointSource(Center=[x0, 28.0, 23.0], Radius=radius, NumberOfPoints=n_seeds)
-    st = StreamTracerWithCustomSource(Input=air, SeedSource=seeds)
-    st.Vectors = ["POINTS", "U"]
-    st.IntegrationDirection = "FORWARD"
-    st.MaximumStreamlineLength = 3000.0
-    st.IntegratorType = "Runge-Kutta 4-5"
-    st.MaximumSteps = 20000
-    return st
+def air_streamlines(n_seeds, radius=13.0, x0=85.0):
+    """Streamlines through the shell side: half the seeds on a disc just
+    inside the air inlet nozzle (x = -100 mm), integrated forward, half just
+    inside the outlet nozzle (x = +100 mm), integrated backward. Seeded at the
+    inlet alone, only a few lines find their way around all the baffles to
+    the outlet; the backward lines fill the path from the outlet end, so the
+    picture covers the whole way from inlet to outlet."""
+    from paraview.simple import AppendGeometry
+    lines = []
+    for centre, direction in (([-x0, 28.0, 23.0], "FORWARD"),     # shell_nozzle_front
+                              ([x0, 266.0, -23.0], "BACKWARD")):  # shell_nozzle_rear
+        seeds = PointSource(Center=centre, Radius=radius, NumberOfPoints=n_seeds // 2)
+        st = StreamTracerWithCustomSource(Input=air, SeedSource=seeds)
+        st.Vectors = ["POINTS", "U"]
+        st.IntegrationDirection = direction
+        st.MaximumStreamlineLength = 3000.0
+        st.IntegratorType = "Runge-Kutta 4-5"
+        st.MaximumSteps = 20000
+        lines.append(st)
+    return AppendGeometry(Input=lines)
 
 
 # the hero and the air path share one camera and one size, so that the
@@ -423,7 +433,7 @@ d.DiffuseColor = [0.85, 0.9, 1.0]
 d.Opacity = 0.13
 d = Show(surface(steel_bundle), v)
 steel(d, rough=0.25, aniso=0.3)
-st3 = air_streamlines(1400, radius=14.0, x0=-97.0)
+st3 = air_streamlines(1400, radius=14.0, x0=97.0)
 tb3 = Tube(Input=st3, Radius=0.45, NumberofSides=8)
 sp3 = sp_rng  # the range of the hero: the bars of the two must match in the teaser
 d = Show(tb3, v)
