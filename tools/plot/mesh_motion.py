@@ -28,7 +28,6 @@ with the output directories of
 import csv
 import glob
 import json
-import math
 import os
 import sys
 
