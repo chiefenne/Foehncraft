@@ -798,6 +798,105 @@ impl FieldMap for Reorder {
     }
 }
 
+/// The fields of `s` mapped by `m`; with `wall` the boundary coefficients
+/// of the scalars too (the output of a run on ranks needs them, a restart
+/// file does not keep them).
+pub(crate) fn map_state(s: &State, m: &mut dyn FieldMap, wall: bool) -> Result<State> {
+    let opt = |m: &mut dyn FieldMap,
+               v: &Option<Vec<f64>>,
+               f: fn(&mut dyn FieldMap, &[f64]) -> Result<Vec<f64>>|
+     -> Result<Option<Vec<f64>>> { v.as_ref().map(|v| f(m, v)).transpose() };
+    let c3 = |m: &mut dyn FieldMap, v: &Soa3| -> Result<Soa3> {
+        Ok(Soa3 {
+            x: m.cells(&v.x)?,
+            y: m.cells(&v.y)?,
+            z: m.cells(&v.z)?,
+        })
+    };
+    let cells: fn(&mut dyn FieldMap, &[f64]) -> Result<Vec<f64>> = |m, v| m.cells(v);
+    let bnd: fn(&mut dyn FieldMap, &[f64]) -> Result<Vec<f64>> = |m, v| m.boundary(v);
+    Ok(State {
+        u: c3(m, &s.u)?,
+        p: m.cells(&s.p)?,
+        mass_flux: m.faces(&s.mass_flux)?,
+        ub: Soa3 {
+            x: m.boundary(&s.ub.x)?,
+            y: m.boundary(&s.ub.y)?,
+            z: m.boundary(&s.ub.z)?,
+        },
+        pb: m.boundary(&s.pb)?,
+        grad_u: [
+            c3(m, &s.grad_u[0])?,
+            c3(m, &s.grad_u[1])?,
+            c3(m, &s.grad_u[2])?,
+        ],
+        grad_p: c3(m, &s.grad_p)?,
+        psi: c3(m, &s.psi)?,
+        scalars: s
+            .scalars
+            .iter()
+            .map(|x| {
+                Ok(crate::scalar::ScalarState {
+                    name: x.name.clone(),
+                    phi: m.cells(&x.phi)?,
+                    old: opt(m, &x.old, cells)?,
+                    psi: opt(m, &x.psi, cells)?,
+                    wall: match (&x.wall, wall) {
+                        (Some(w), true) => Some(crate::scalar::ScalarWall {
+                            a: m.boundary(&w.a)?,
+                            b: m.boundary(&w.b)?,
+                            gamma: m.boundary(&w.gamma)?,
+                        }),
+                        _ => None,
+                    },
+                })
+            })
+            .collect::<Result<_>>()?,
+        periodic_force: s.periodic_force.clone(),
+        turbulence: match &s.turbulence {
+            None => None,
+            Some(t) => Some(crate::turbulence::TurbState {
+                epsilon: t.epsilon,
+                k: m.cells(&t.k)?,
+                omega: m.cells(&t.omega)?,
+                nu_t: m.cells(&t.nu_t)?,
+                k_old: opt(m, &t.k_old, cells)?,
+                omega_old: opt(m, &t.omega_old, cells)?,
+                mu_eff: m.faces(&t.mu_eff)?,
+                k_b: m.boundary(&t.k_b)?,
+                omega_b: m.boundary(&t.omega_b)?,
+                u_tau: m.boundary(&t.u_tau)?,
+                y_plus: m.boundary(&t.y_plus)?,
+                wall_blending: opt(m, &t.wall_blending, bnd)?,
+                p_modified: m.cells(&t.p_modified)?,
+                pb_modified: m.boundary(&t.pb_modified)?,
+                wall_distance: m.cells(&t.wall_distance)?,
+                zeta: match &t.zeta {
+                    None => None,
+                    Some(z) => Some(crate::turbulence::ZetaState {
+                        zeta: m.cells(&z.zeta)?,
+                        f: m.cells(&z.f)?,
+                        zeta_old: opt(m, &z.zeta_old, cells)?,
+                        zeta_b: m.boundary(&z.zeta_b)?,
+                        f_b: m.boundary(&z.f_b)?,
+                        t: m.cells(&z.t)?,
+                    }),
+                },
+                amg: {
+                    let mut kept = Vec::new();
+                    for (slot, a) in &t.amg {
+                        if let Some(a) = m.matrix(a)? {
+                            kept.push((*slot, a));
+                        }
+                    }
+                    kept
+                },
+                fr1: opt(m, &t.fr1, cells)?,
+            }),
+        },
+    })
+}
+
 impl Restart {
     /// The content in the local order of a mesh with the identities
     /// `cell_id`, `face_id` (n_interior interior faces); false in the second
@@ -838,93 +937,7 @@ impl Restart {
         cell_id: &[u64],
         face_id: &[u64],
     ) -> Result<Self> {
-        let opt = |m: &mut dyn FieldMap,
-                   v: &Option<Vec<f64>>,
-                   f: fn(&mut dyn FieldMap, &[f64]) -> Result<Vec<f64>>|
-         -> Result<Option<Vec<f64>>> { v.as_ref().map(|v| f(m, v)).transpose() };
-        let c3 = |m: &mut dyn FieldMap, v: &Soa3| -> Result<Soa3> {
-            Ok(Soa3 {
-                x: m.cells(&v.x)?,
-                y: m.cells(&v.y)?,
-                z: m.cells(&v.z)?,
-            })
-        };
-        let cells: fn(&mut dyn FieldMap, &[f64]) -> Result<Vec<f64>> = |m, v| m.cells(v);
-        let bnd: fn(&mut dyn FieldMap, &[f64]) -> Result<Vec<f64>> = |m, v| m.boundary(v);
-        let s = &self.state;
-        let state = State {
-            u: c3(m, &s.u)?,
-            p: m.cells(&s.p)?,
-            mass_flux: m.faces(&s.mass_flux)?,
-            ub: Soa3 {
-                x: m.boundary(&s.ub.x)?,
-                y: m.boundary(&s.ub.y)?,
-                z: m.boundary(&s.ub.z)?,
-            },
-            pb: m.boundary(&s.pb)?,
-            grad_u: [
-                c3(m, &s.grad_u[0])?,
-                c3(m, &s.grad_u[1])?,
-                c3(m, &s.grad_u[2])?,
-            ],
-            grad_p: c3(m, &s.grad_p)?,
-            psi: c3(m, &s.psi)?,
-            scalars: s
-                .scalars
-                .iter()
-                .map(|x| {
-                    Ok(crate::scalar::ScalarState {
-                        name: x.name.clone(),
-                        phi: m.cells(&x.phi)?,
-                        old: opt(m, &x.old, cells)?,
-                        psi: opt(m, &x.psi, cells)?,
-                        wall: None,
-                    })
-                })
-                .collect::<Result<_>>()?,
-            periodic_force: s.periodic_force.clone(),
-            turbulence: match &s.turbulence {
-                None => None,
-                Some(t) => Some(crate::turbulence::TurbState {
-                    epsilon: t.epsilon,
-                    k: m.cells(&t.k)?,
-                    omega: m.cells(&t.omega)?,
-                    nu_t: m.cells(&t.nu_t)?,
-                    k_old: opt(m, &t.k_old, cells)?,
-                    omega_old: opt(m, &t.omega_old, cells)?,
-                    mu_eff: m.faces(&t.mu_eff)?,
-                    k_b: m.boundary(&t.k_b)?,
-                    omega_b: m.boundary(&t.omega_b)?,
-                    u_tau: m.boundary(&t.u_tau)?,
-                    y_plus: m.boundary(&t.y_plus)?,
-                    wall_blending: opt(m, &t.wall_blending, bnd)?,
-                    p_modified: m.cells(&t.p_modified)?,
-                    pb_modified: m.boundary(&t.pb_modified)?,
-                    wall_distance: m.cells(&t.wall_distance)?,
-                    zeta: match &t.zeta {
-                        None => None,
-                        Some(z) => Some(crate::turbulence::ZetaState {
-                            zeta: m.cells(&z.zeta)?,
-                            f: m.cells(&z.f)?,
-                            zeta_old: opt(m, &z.zeta_old, cells)?,
-                            zeta_b: m.boundary(&z.zeta_b)?,
-                            f_b: m.boundary(&z.f_b)?,
-                            t: m.cells(&z.t)?,
-                        }),
-                    },
-                    amg: {
-                        let mut kept = Vec::new();
-                        for (slot, a) in &t.amg {
-                            if let Some(a) = m.matrix(a)? {
-                                kept.push((*slot, a));
-                            }
-                        }
-                        kept
-                    },
-                    fr1: opt(m, &t.fr1, cells)?,
-                }),
-            },
-        };
+        let state = map_state(&self.state, m, false)?;
         self.state = state;
         if let Some((o, ..)) = &mut self.transient {
             let c3a = |m: &mut dyn FieldMap, u: &[Vec<f64>; 3]| -> Result<[Vec<f64>; 3]> {

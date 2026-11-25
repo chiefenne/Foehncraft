@@ -34,6 +34,69 @@ impl ThreadComm {
     /// Runs `f` on `size` ranks, one thread each, and returns the results
     /// in rank order. A panic on any rank is passed on.
     pub fn run<R: Send>(size: usize, f: impl Fn(Arc<ThreadComm>) -> R + Sync) -> Vec<R> {
+        let f = &f;
+        let comms = Self::comms(size);
+        std::thread::scope(|s| {
+            let handles: Vec<_> = comms
+                .into_iter()
+                .map(|c| {
+                    std::thread::Builder::new()
+                        .name(format!("rank {}", c.rank))
+                        .spawn_scoped(s, move || f(Arc::new(c)))
+                        .expect("spawn rank thread")
+                })
+                .collect();
+            handles
+                .into_iter()
+                .map(|h| match h.join() {
+                    Ok(r) => r,
+                    Err(e) => std::panic::resume_unwind(e),
+                })
+                .collect()
+        })
+    }
+
+    /// Runs `lead` as rank 0 on the calling thread (it need not be `Send`:
+    /// it may hold the log and the run record of the caller) and `follow`
+    /// on ranks 1 to `size - 1`, one thread each (MPI step W7). Returns the
+    /// result of rank 0. When rank 0 ends early (an error), the other
+    /// ranks end at their next message to it, and the other way round;
+    /// the panics of ranks 1 and up are dropped, a panic of rank 0 is
+    /// passed on.
+    pub fn run_lead<R>(
+        size: usize,
+        lead: impl FnOnce(Arc<ThreadComm>) -> R,
+        follow: impl Fn(Arc<ThreadComm>) + Sync,
+    ) -> R {
+        let follow = &follow;
+        let mut comms = Self::comms(size).into_iter();
+        let first = comms.next().expect("at least one rank");
+        std::thread::scope(|s| {
+            let handles: Vec<_> = comms
+                .map(|c| {
+                    std::thread::Builder::new()
+                        .name(format!("rank {}", c.rank))
+                        .spawn_scoped(s, move || follow(Arc::new(c)))
+                        .expect("spawn rank thread")
+                })
+                .collect();
+            let r =
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| lead(Arc::new(first))));
+            // a rank that fails ends at its next message to rank 0, and
+            // rank 0 at its next message to it: the run ends with the
+            // result of rank 0, the panics of the others are dropped
+            for h in handles {
+                let _ = h.join();
+            }
+            match r {
+                Ok(r) => r,
+                Err(e) => std::panic::resume_unwind(e),
+            }
+        })
+    }
+
+    /// The communicators of `size` ranks, connected.
+    fn comms(size: usize) -> Vec<ThreadComm> {
         assert!(size > 0, "at least one rank");
         // senders[s][d], receivers[d][s]
         let mut senders: Vec<Vec<Sender<Msg>>> = (0..size).map(|_| Vec::new()).collect();
@@ -63,25 +126,7 @@ impl ThreadComm {
                 barrier: barrier.clone(),
             })
             .collect();
-        let f = &f;
-        std::thread::scope(|s| {
-            let handles: Vec<_> = comms
-                .into_iter()
-                .map(|c| {
-                    std::thread::Builder::new()
-                        .name(format!("rank {}", c.rank))
-                        .spawn_scoped(s, move || f(Arc::new(c)))
-                        .expect("spawn rank thread")
-                })
-                .collect();
-            handles
-                .into_iter()
-                .map(|h| match h.join() {
-                    Ok(r) => r,
-                    Err(e) => std::panic::resume_unwind(e),
-                })
-                .collect()
-        })
+        comms
     }
 
     fn send(&self, dest: usize, m: Msg) {
@@ -167,6 +212,36 @@ impl Communicator for ThreadComm {
 mod tests {
     use super::*;
     use foehncraft_core::exact::ExactSum;
+
+    #[test]
+    fn lead_on_the_calling_thread() {
+        // the lead may hold what is not Send (a log on the caller's stack)
+        let log = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let l = log.clone();
+        let sum = ThreadComm::run_lead(
+            3,
+            move |c| {
+                let s = c.max(0.0) + c.all_gather_f64(1.0).iter().sum::<f64>();
+                l.borrow_mut().push(s);
+                s
+            },
+            |c| {
+                c.max(c.rank() as f64);
+                c.all_gather_f64(1.0);
+            },
+        );
+        assert_eq!(sum, 5.0);
+        assert_eq!(log.borrow().as_slice(), &[5.0]);
+        // rank 0 ends early: the others end too
+        let r = ThreadComm::run_lead(
+            3,
+            |_| 7,
+            |c| {
+                c.max(1.0);
+            },
+        );
+        assert_eq!(r, 7);
+    }
 
     #[test]
     fn ranks_exchange_and_reduce() {

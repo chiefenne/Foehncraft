@@ -26,7 +26,9 @@ fn outcome(a: &FlowInput, ctx: &mut Ctx<'_>) -> Result<Outcome> {
         roots: ctx.roots.clone(),
         observer: ctx.observer.clone(),
         call: ctx.call.clone(),
-        control: ctx.control,
+        // only rank 0 of the MPI processes opens the control port
+        control: ctx.control && crate::mpi::rank() == 0,
+        comm: crate::mpi::world(),
     };
     engine::run(&case, &name, &dir, &opts, |l| ctx.line(l))
 }

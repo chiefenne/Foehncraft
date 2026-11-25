@@ -1383,7 +1383,7 @@
    ],
    "gaps": [
     "not on ranks yet (refused with an error): zeta-f and elliptic blending, curvature correction and QCR, the MLP limiter and quadratic gradients, gravity, turning zones, solid regions, schedules and level sweeps (restarts: parallel.restart-ranks)",
-    "monitors, probes and balances are not computed on ranks: they come with the run on ranks (W7)",
+    "monitors, probes and balances of a run on ranks: parallel.run-ranks (W7 part 1, steady laminar)",
     "transient runs are checked with the fixed time step, not the adaptive one",
     "1M cells on 4 cores split into 1, 2, 4 ranks (example ranks_scaling): +2, +10, +28 % time per iteration against threads only, bitwise; strong scaling over more cores is W9"
    ],
@@ -1400,6 +1400,21 @@
     "the file is gathered on every rank and written by rank 0 (no parallel HDF5): memory of the whole state on each rank, as for the replicated multigrid setup",
     "restarts of conjugate cases (full-mesh temperature) and moving meshes are refused on ranks",
     "the VTKHDF field output of a run on ranks comes with the run on ranks (W7); [run] ranks writes ranks.vtkhdf gathered in global order"
+   ],
+   "range": {}
+  },
+  {
+   "id": "parallel.run-ranks",
+   "title": "Steady runs on ranks: rank 0 writes the output of one rank (MPI step W7 part 1)",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "steady laminar cases only: passive scalars, energy, turbulence models and transient runs are refused on ranks (W7 part 2)",
+    "settings through the control port (run.set) are refused on ranks",
+    "MPI processes are not run in CI yet with foehn flow (the threads test covers the same code; the MPI CI job runs the flow kernels across processes, mpi_flow)",
+    "the fields are gathered on every rank for the output (memory of the whole state per rank), as the replicated multigrid setup"
    ],
    "range": {}
   }

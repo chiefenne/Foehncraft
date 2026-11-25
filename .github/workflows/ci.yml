@@ -421,6 +421,19 @@ jobs:
       - run: cargo build --release -p foehncraft-flow --features mpi --example mpi_flow --locked
       - name: Steady flow on ranks bitwise equal to one rank (W5, 1 to 4 ranks)
         run: for n in 1 2 3 4; do mpirun --oversubscribe -n $n target/release/examples/mpi_flow; done
+      - run: cargo build --release -p foehncraft-cli --no-default-features --features mpi --locked
+      - name: foehn flow on MPI processes writes the files of one rank (W7)
+        run: |
+          set -e
+          case=examples/cases/flow/ranks_run_channel.toml
+          target/release/foehn flow $case --ranks 1 --set solver.max_iterations=60 --set verification.require_convergence=false --out out_w7/one > /dev/null
+          for n in 2 3; do
+            mpirun --oversubscribe -n $n target/release/foehn flow $case --set solver.max_iterations=60 --set verification.require_convergence=false --out out_w7/mpi$n > out_w7_$n.log
+            grep -q "solved on $n ranks (mpi communicator" out_w7/mpi$n/flow.log
+            for f in residuals.csv balance.csv boundaries.csv wall_ymin.csv wall_ymax.csv; do
+              cmp out_w7/one/$f out_w7/mpi$n/$f
+            done
+          done
 
   ptx:
     name: Single-source GPU kernels compile to PTX (G1, stages 2, 3 and 5)

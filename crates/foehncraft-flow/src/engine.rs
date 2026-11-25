@@ -189,6 +189,9 @@ pub struct Steer {
     /// The changes made during the run, for the Events block of the log
     /// (D214).
     pub(crate) events: Vec<EventLine>,
+    /// The ranks of a run on ranks (MPI step W7): every rank runs the loop,
+    /// rank 0 writes the output.
+    pub(crate) ranks: Option<foehncraft_mesh::decompose::SharedComm>,
 }
 
 /// One line of the Events block (D214): a change made during the run.
@@ -279,6 +282,7 @@ impl Steer {
             notes: Vec::new(),
             live: None,
             events: Vec::new(),
+            ranks: None,
         })
     }
 
@@ -296,6 +300,7 @@ impl Steer {
             notes: Vec::new(),
             live: None,
             events: Vec::new(),
+            ranks: None,
         }
     }
 
@@ -704,7 +709,7 @@ fn provenance(case: &FlowCase, build: &BuildInfo, gpu: Option<String>) -> Proven
         cpu: build.cpu.clone(),
         gpus: usize::from(gpu.is_some()),
         gpu,
-        ranks: 1,
+        ranks: case.run.rank_count.max(1),
         reproducible_mode: false,
         case_hash: case_hash(case),
         properties_hash: properties_hash(case),
@@ -1799,6 +1804,10 @@ pub struct RunOptions {
     /// `run.stop` and `run.set` reach the run through `control.json` and
     /// `control.token` in its output directory.
     pub control: bool,
+    /// The communicator of the MPI processes when the run started under an
+    /// MPI launcher with more than one (MPI step W7): every process runs
+    /// the case, rank 0 writes the output.
+    pub comm: Option<crate::ranks::RunComm>,
 }
 
 /// The result summary (`result.json`, D62): what a study or an agent needs
@@ -1934,6 +1943,23 @@ pub fn run(
         ))
     })?;
     let mut case = case.clone();
+    // under an MPI launcher (W7): the ranks are its processes; the others
+    // than rank 0 follow it and write nothing
+    if let Some(crate::ranks::RunComm(c)) = &opts.comm {
+        case.run.rank_count = c.size();
+        if c.rank() != 0 {
+            resolve_latest(&mut case, dir)?;
+            let res = crate::ranks::follow(&case, name, c.clone());
+            let summary = match &res {
+                Ok(rep) => summary_of(&case, rep, dir, &opts.build)?,
+                Err(e) => error_summary(Some(&case), name, e, &opts.build),
+            };
+            return Ok(Outcome {
+                report: res.ok(),
+                summary,
+            });
+        }
+    }
     let mut steer = Steer::new(opts.interrupts.clone(), dir, true)?;
     // box lines need a UTF-8 terminal; the asterisks are plain ASCII (D214)
     if case.log.style == crate::console::Style::Box && !crate::console::utf8_locale() {
@@ -1978,7 +2004,14 @@ pub fn run(
             }
             start_budgets(&case, dir, &opts.build, &opts.roots, &mut steer)?;
             steer.record.flush();
-            crate::case::run_steered(&case, name, dir, &mut steer, &mut log)
+            crate::ranks::run_steered(
+                &case,
+                name,
+                dir,
+                &mut steer,
+                &mut log,
+                opts.comm.as_ref().map(|c| c.0.clone()),
+            )
         });
     // the spend of this run into the study ledger (D198 (c))
     if case.run.limits.has_study_budget() && steer.spend.before.is_some() {

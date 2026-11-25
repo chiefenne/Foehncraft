@@ -5,6 +5,7 @@ Part of the [Example gallery](../gallery.md): thermal radiation by Monte Carlo t
 | # | Example | Stage | Feature |
 |---|---|---|---|
 | 259 | [A box furnace with cooled tubes, and the cases with exact solutions](#furnace) | R1a | `foehncraft_radiation::Domain::solve`, `Settings::points`, `output::write_vtkhdf` |
+| 281 | [Paths of energy bundles in the box furnace, and the net flux into every wall](#furnace-paths) | R1a | `foehncraft_radiation::Domain::trace` |
 
 ---
 
@@ -107,5 +108,78 @@ cargo test --release -p foehncraft-radiation --test cases -- --nocapture
 `output/furnace/furnace.vtkhdf` opens in ParaView with the source, its
 error, the temperature and the absorption coefficient in the cells, and
 the incident and net flux with its error on every boundary.
+
+[↑ back to top](#thermal-radiation)
+
+---
+
+<a id="furnace-paths"></a>
+## 281. Paths of energy bundles in the box furnace, and the net flux into every wall
+
+<img src="../figures/gallery/radiation_paths_3d.png" alt="The box furnace in 3D, seen from above the near side wall, with the seven cooled tubes under the roof. The floor, the far side wall and the front wall with the burner are coloured by the net radiative flux into the wall, brightest on the floor and the side wall opposite the flame and on the burner disc, dark on the side wall around the tube ends. Sixty bundle paths cross the chamber as straight lines between wall reflections, cyan for bundles from the gas and green for bundles from the walls, each fading as its energy is absorbed" width="800" height="512">
+
+**Paths from the call itself.** The furnace of [gallery 259](#furnace)
+with the same mesh, flame and walls and the same call of 16 million
+bundles. `Domain::trace` takes the arguments of `Domain::solve` and the
+bundles to follow (`pick`: how many of each emitter, counted from its
+first). It emits these bundles as the call does, with the same emitters,
+weights and Sobol points, and moves them with the same kernel, whose
+tracing hook does nothing in a call and on the GPU. A traced path is
+therefore the path that bundle takes in the call, and the energy it
+leaves in the cells and on the walls is its share of the call's result:
+the test `tests/trace.rs` traces every bundle of a call of 20 000 and
+finds the absorbed power of every cell, the net flux of every wall face
+and the energy account of the call again, to the quantum.
+
+The example `furnace` with `PATHS = 60` draws the emitters in proportion
+to their power (systematic sampling over the cells, then the wall faces),
+so the 60 paths are a fair sample of the call: 40 start in the gas and 20
+on the walls. Eleven of the 40 gas bundles start where the gas is hotter
+than 1 600 K, which is 5 % of the volume but 23 % of the emission of the
+gas (4κσT⁴ per unit volume). Every point of a path is where the bundle
+leaves a cell (155 cells per path on average), is reflected at a grey
+wall, or ends.
+
+**A path fades with the energy it still carries.** In every cell the gas
+takes the share 1 − exp(−κℓ) of it; a grey wall absorbs ε of what
+arrives (0.75 for the refractory, 0.85 for the tubes) and sends the rest
+back diffusely. The median bundle reaches its first wall with about half
+of its energy and leaves it with an eighth, crosses the chamber three or
+four more times and ends after 6.4 m, when Russian roulette takes it at a
+thousandth of its energy. One of the 60 leaves through the opening; in
+the whole call 0.8 % of the emitted power does.
+
+<img src="../figures/gallery/radiation_paths_plane.png" alt="Side view of the furnace, x from 0 to 4 m and z from 0 to 2.5 m, with the gas temperature on the mid-depth plane in Rainbow Desaturated: the flame leaves the burner on the left, peaks at 1950 K and leans up towards the outlet on the right. The 60 bundle paths are drawn over it as white lines from their start points, bright while they carry most of their energy and faint after the first wall" width="800" height="533">
+
+<img src="../figures/gallery/radiation_paths_walls.png" alt="The net radiative flux into the six walls of the furnace on one Inferno scale, in two rows: floor, roof and front wall with the burner disc; the side wall y = 0, the side wall y = 2 m and the back wall with the opening. The floor and both side walls are brightest opposite the flame core, the roof is dark behind the tubes, the side walls have dark rings around the tube ends, and the burner disc is bright" width="800" height="387">
+
+**The net flux into every wall** from the same call: the floor takes
+36 kW/m² on average, the side walls 34, the back wall 36, the front wall
+with the burner 27 and the roof 10. The floor and the side walls see the
+flame core and take up to about 65 kW/m² opposite it. The roof lies
+behind the cold tubes (620 K), which take 102 kW/m² themselves and send
+little back; next to them the side walls emit more than they receive
+(down to −20 kW/m² in the dark rings around the tube ends). The two side
+walls agree within the noise, as the furnace is symmetric about its
+mid-depth plane.
+
+The paths do not depend on the number of bundles of the call: bundle k
+of an emitter takes the same Sobol point, so a call of 200 000 bundles
+traces the same 60 paths, in the same points, in a few seconds. The
+call of 16 million bundles takes about 6 minutes on 4 threads, tracing
+the 60 bundles 0.01 s.
+
+```
+pip install gmsh matplotlib numpy
+python3 examples/meshes/furnace.py --size 0.15 --out output/furnace.msh
+cargo run --release -p foehncraft-radiation --example furnace -- \
+    output/furnace.msh output/furnace 16000000 60
+python3 -m tools.plot.radiation_paths docs/figures/gallery output/furnace
+cargo test --release -p foehncraft-radiation --test trace
+```
+
+`output/furnace/paths.csv` has one row per point of a path (path,
+emitter kind, point, what happens there, position, the fraction of the
+energy left), for ParaView or any plotting tool.
 
 [↑ back to top](#thermal-radiation)
