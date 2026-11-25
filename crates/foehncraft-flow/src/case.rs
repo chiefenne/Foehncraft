@@ -960,6 +960,10 @@ pub struct FlowCase {
     /// run (the sliding mesh, D56, D182): the `[[sliding]]` table.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub sliding: Vec<crate::sliding::SlidingSection>,
+    /// The prescribed motion of the mesh nodes in a transient run (the
+    /// deforming mesh, D91, stage MS0): the `[mesh_motion]` table.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mesh_motion: Option<crate::motion::MeshMotionSection>,
     /// The case file (for re-reading it during a run).
     #[serde(skip)]
     pub source: Option<PathBuf>,
@@ -1514,6 +1518,7 @@ impl FlowCase {
         crate::frame::validate(self)?;
         crate::start::validate(self)?;
         crate::sliding::validate(self)?;
+        crate::motion::validate(self)?;
         crate::rotor::validate(self)?;
         crate::spray::validate(self)?;
         crate::immersed::check_case(self)?;
@@ -4541,7 +4546,8 @@ pub(crate) fn boundary_summaries(
                 let s = geo.face_area[f];
                 let a = norm(s);
                 area += a;
-                q += fl.mass_flux[f];
+                // (relative to a deforming mesh, stage MS0)
+                q += fl.mass_flux[f] - fl.phys.grid_flux_at(f);
                 let (pf, fv) = if wall {
                     let (pf, fv, _) = wall_face_values(fl, geo, f, ni);
                     (pf, fv)

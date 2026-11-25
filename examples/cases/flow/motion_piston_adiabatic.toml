@@ -1,0 +1,97 @@
+# An evenly compressed cylinder: a piston compresses a closed volume of
+# gas slowly and adiabatically and lets it expand again (L22, stage MS0,
+# check MS0.2).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/motion_piston_adiabatic.toml
+#
+# A gas column 2 cm wide and 4 cm high (an ideal gas with the molar mass of
+# air and constant c_p = 1005 J/(kg K), at rest, 300 K and 101 325 Pa)
+# between adiabatic walls. The top wall is the piston: it moves down to a
+# quarter of the height and back up in one period of 1 s, with the motion
+# of a crank, h(t) = h₀ (1 − ¾ (1 − cos 2πt)/2). The mesh is compressed
+# evenly: every node moves by y (h(t)/h₀ − 1). The walls move with their
+# nodes, so the piston pushes the gas and the side walls let the nodes slide.
+#
+# The gas keeps its mass (the closed volume of stage 7c: p₀ from the mass
+# with the volumes of the moved mesh) and is heated by the pressure work
+# V dp₀/dt only. A slow compression is isentropic, p₀ V^γ = const with
+# γ = c_p/(c_p − R/M) = 1.39983: at the top dead centre (t = 0.5 s,
+# V = V₀/4) p₀ = 4^γ p₀(0) = 705.5 kPa and T = 4^(γ−1) T₀ = 522.0 K, and after
+# the whole period the gas is back at 101 325 Pa and 300 K. The discrete
+# entropy change over the period falls with the second power of the time
+# step (BDF2): 100 steps give |Δs|/c_p of about 1e-6 (the test checks it).
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [0.02, 0.04, 0.002]
+cells = [10, 20, 1]
+
+[constants]
+h0 = 0.04
+compression = 4.0     # V₀/V at the top dead centre
+period = 1.0
+
+[mesh_motion]
+# y → y h(t)/h₀ with h(t)/h₀ = 1 − (1 − 1/r)(1 − cos 2πt/T)/2
+displacement = [
+  0.0,
+  "-y * (1 - 1 / compression) * (1 - cos(2 * pi * t / period)) / 2",
+  0.0,
+]
+
+[materials.gas]
+kind = "gas"
+description = "an ideal gas with the molar mass of dry air and constant properties"
+molar_mass = 0.0289647
+density = { form = "ideal-gas", source = "ideal gas, rho = p M / (R T)" }
+specific_heat = 1005.0
+conductivity = 0.0263
+viscosity = 1.8e-5
+
+[fluid]
+material = "gas"
+temperature = 300.0
+
+[energy]
+initial = 300.0
+density = "variable"
+thermodynamic_pressure = "closed-volume"   # pressure_work is "thermodynamic" by default here
+
+[boundary.xmin]
+type = "wall"
+[boundary.xmin.energy]
+heat_flux = 0.0
+[boundary.xmax]
+type = "wall"
+[boundary.xmax.energy]
+heat_flux = 0.0
+[boundary.ymin]
+type = "wall"
+[boundary.ymin.energy]
+heat_flux = 0.0
+[boundary.ymax]
+type = "wall"           # the piston
+[boundary.ymax.energy]
+heat_flux = 0.0
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[time]
+scheme = "bdf2"
+time_step = 0.01
+end_time = 1.0
+
+[solver]
+outer_iterations = 20
+outer_tolerance = 1e-10
+
+[verification]
+require_convergence = false
+
+[output]
+wall_csv = false

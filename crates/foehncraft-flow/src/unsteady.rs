@@ -156,6 +156,9 @@ pub struct TransientSummary {
     /// The frozen-flow march of a transient conjugate case (D118).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub frozen_flow: Option<crate::frozen::FrozenSummary>,
+    /// The deforming mesh (D91, stage MS0).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mesh_motion: Option<crate::motion::MotionSummary>,
 }
 
 /// The heat balance of one time step (stage 7d6): the balance of the
@@ -885,12 +888,14 @@ fn restart_of(
 /// rotor angle with a sliding mesh by imprinting, the base mesh otherwise.
 fn current<'a>(
     work: &'a Option<crate::sliding::Working>,
+    deform: &'a Option<crate::motion::Deforming>,
     mesh: &'a foehncraft_mesh::Mesh,
     geo: &'a foehncraft_mesh::Geometry,
 ) -> (&'a foehncraft_mesh::Mesh, &'a foehncraft_mesh::Geometry) {
-    match work {
-        Some(w) => (&w.mesh, &w.geo),
-        None => (mesh, geo),
+    match (work, deform) {
+        (Some(w), _) => (&w.mesh, &w.geo),
+        (None, Some(d)) => (&d.mesh, &d.geo),
+        (None, None) => (mesh, geo),
     }
 }
 
@@ -900,20 +905,22 @@ fn current<'a>(
 /// faces that stay taken over from `fl` and `tr` (the faces that the
 /// imprint made new start from the interpolated flux). `t` is the time of
 /// the end of the step.
+///
+/// A deforming mesh (stage MS0) passes no `map`: the faces are the same,
+/// and the variable density goes along with its mass and old levels.
 #[allow(clippy::too_many_arguments)]
 fn rebuild_flow(
     case: &FlowCase,
     tv: &TimeValues,
     target: &Target,
     reference_cell: Option<usize>,
-    next: &crate::sliding::Working,
-    map: &crate::sliding::FaceMap,
+    (mesh, geo): (&foehncraft_mesh::Mesh, &foehncraft_mesh::Geometry),
+    map: Option<&crate::sliding::FaceMap>,
     t: f64,
     fl: &mut Flow,
     tr: &Transient,
     wall_distance: Option<Vec<f64>>,
 ) -> Result<(Flow, Transient)> {
-    let (mesh, geo) = (&next.mesh, &next.geo);
     let phys = crate::case::physics(case)?;
     let phys = crate::case::physics_on(case, &phys, mesh, geo)?;
     let rho = phys.rho;
@@ -953,8 +960,20 @@ fn rebuild_flow(
     let mut ntr = Transient::new(&mut nfl, scheme, tr.clock.time)?;
     let state = fl.state()?;
     let old = tr.old_levels(fl)?;
-    let (state, old) = crate::sliding::carry(state, old, map, &nfl.disc, rho, nfl.phys.mu);
+    let (state, old) = match map {
+        Some(map) => crate::sliding::carry(state, old, map, &nfl.disc, rho, nfl.phys.mu),
+        None => (state, old),
+    };
     nfl.load(&state)?;
+    if map.is_none()
+        && let Some(mut d) = fl.density.take()
+    {
+        let tc = nfl.fluid_temperature()?.context("the temperature")?;
+        let tb = nfl.fluid_boundary_temperature(&tc)?;
+        d.set_geometry(&nfl.disc, &tc, &tb);
+        nfl.density = Some(d);
+        nfl.refresh_density()?;
+    }
     // (the floor and cap counts of the turbulence model go on, D69)
     if let (Some(a), Some(b)) = (fl.turbulence.as_ref(), nfl.turbulence.as_mut()) {
         b.health = a.health.clone();
@@ -1016,7 +1035,19 @@ fn run_one<F: FnMut(&str)>(
         }
         None => None,
     };
-    let (mesh, geo) = current(&work, mesh0, geo0);
+    // the deforming mesh (D91, stage MS0): the nodes at the start time; the
+    // mesh of the end of each step replaces it before the step
+    let mut deform = crate::motion::Deforming::new(&case, mesh0, time0.start_time)?;
+    let moving = imprint.is_some() || deform.is_some();
+    if let Some(d) = &deform {
+        lg.line(&format!(
+            "deforming mesh (D91, stage MS0): the nodes move by [mesh_motion] displacement; volume \
+             {:.6e} m³ at t = {:.6e} s; the solver is built again on the moved mesh in every step",
+            d.volume(),
+            time0.start_time
+        ));
+    }
+    let (mesh, geo) = current(&work, &deform, mesh0, geo0);
     let phys = crate::case::physics(&case)?;
     let phys = crate::case::physics_on(&case, &phys, mesh, geo)?;
     let analytic0 = case.analytic_at(time0.start_time);
@@ -1361,6 +1392,10 @@ fn run_one<F: FnMut(&str)>(
         );
         hhead.push_str(",p0,mass,rho_min,rho_max");
     }
+    if deform.is_some() {
+        hunits.push_str(", volume m³ (of the deforming mesh, stage MS0)");
+        hhead.push_str(",volume");
+    }
     let mut history = History::new(
         hist_dir,
         &suffix_name("history", desc, last),
@@ -1636,6 +1671,8 @@ fn run_one<F: FnMut(&str)>(
     let (mut dt_min, mut dt_max, mut cfl_max) = (f64::INFINITY, 0.0f64, 0.0f64);
     let (mut outer_sum, mut cg_sum, mut nsteps) = (0usize, 0usize, 0usize);
     let mut rejected = 0usize;
+    // the largest closure of the space conservation law of a step (MS0)
+    let mut gcl_worst = 0.0_f64;
     let mut last_rep = StepReport::default();
     let mut sched = crate::schedule::Runner::default();
     // the thermal acceleration of the solids (D213)
@@ -1778,8 +1815,8 @@ fn run_one<F: FnMut(&str)>(
                 &tv,
                 &target,
                 reference_cell,
-                &next,
-                &map,
+                (&next.mesh, &next.geo),
+                Some(&map),
                 t0 + h,
                 &mut fl,
                 &tr,
@@ -1791,7 +1828,30 @@ fn run_one<F: FnMut(&str)>(
             tr = ntr;
             work = Some(next);
         }
-        let (mesh, geo) = current(&work, mesh0, geo0);
+        // D91 (stage MS0): the deforming mesh at the end of the step, the
+        // solver built on it, the grid of the step attached
+        if let Some(d) = deform.as_mut() {
+            let grid = d.advance(t0 + h)?;
+            let (nfl, ntr) = rebuild_flow(
+                &case,
+                &tv,
+                &target,
+                reference_cell,
+                (&d.mesh, &d.geo),
+                None,
+                t0 + h,
+                &mut fl,
+                &tr,
+                None,
+            )?;
+            setups_past.0 += fl.amg_setups;
+            setups_past.1 += fl.sweep_setups;
+            fl = nfl;
+            tr = ntr;
+            gcl_worst = gcl_worst.max(d.closure(&grid));
+            fl.attach_grid(grid)?;
+        }
+        let (mesh, geo) = current(&work, &deform, mesh0, geo0);
         // D65: the error estimate, with the tolerances of now (re-read)
         tr.error_control = t
             .error_tolerance
@@ -1901,7 +1961,7 @@ fn run_one<F: FnMut(&str)>(
                         }
                         files.push("fields_last_valid.vtkhdf");
                     }
-                    if last && restart::AVAILABLE && imprint.is_none() {
+                    if last && restart::AVAILABLE && !moving {
                         let mut rs = restart_of(
                             &mut fl,
                             &tr,
@@ -2049,6 +2109,9 @@ fn run_one<F: FnMut(&str)>(
                         (a.min(r), b.max(r))
                     });
                 let _ = write!(sc, ",{:e},{:e},{lo:e},{hi:e}", d.p0, d.total_mass());
+            }
+            if let Some(d) = &deform {
+                let _ = write!(sc, ",{:e}", d.volume());
             }
             history.row(&format!(
                 "{n},{:e},{:e},{:e},{:e},{:e},{:e},{:e},{},{}{sc}",
@@ -2201,7 +2264,7 @@ fn run_one<F: FnMut(&str)>(
                 m.add(h, &x);
             }
             if let Some(ser) = stat_series.as_mut() {
-                let here = imprint.is_some().then(|| probes.relocated(mesh, geo));
+                let here = moving.then(|| probes.relocated(mesh, geo));
                 let pr = here.as_ref().unwrap_or(&probes);
                 let mut row = Vec::with_capacity(ser.names.len());
                 for (u, p) in pr.values(&sol, geo) {
@@ -2493,7 +2556,7 @@ fn run_one<F: FnMut(&str)>(
                 if let Some(fh) = forces.as_mut() {
                     fh.row(&row);
                 }
-                let here = imprint.is_some().then(|| probes.relocated(mesh, geo));
+                let here = moving.then(|| probes.relocated(mesh, geo));
                 let pr = here.as_ref().unwrap_or(&probes);
                 let (vals, temps) = match (&full_probes, &full_fields) {
                     (Some((fp, v)), Some(st)) => (fp.values(st, &v.geo), fp.temperatures(st)),
@@ -2576,7 +2639,7 @@ fn run_one<F: FnMut(&str)>(
                 dt = dt.min(m);
             }
         }
-        if restart_now && restart::AVAILABLE && imprint.is_none() {
+        if restart_now && restart::AVAILABLE && !moving {
             let mut rs = restart_of(
                 &mut fl,
                 &tr,
@@ -2633,7 +2696,7 @@ fn run_one<F: FnMut(&str)>(
         }
     }
     // the mesh of the last rotor angle (D182 variant B)
-    let (mesh, geo) = current(&work, mesh0, geo0);
+    let (mesh, geo) = current(&work, &deform, mesh0, geo0);
     history.flush()?;
     balance_csv.flush()?;
     if let Some(f) = spray_csv.as_mut() {
@@ -2700,7 +2763,7 @@ fn run_one<F: FnMut(&str)>(
         }
         lg.frame(&f);
     }
-    if last && (case.run.restart_final || stopped) && restart::AVAILABLE && imprint.is_none() {
+    if last && (case.run.restart_final || stopped) && restart::AVAILABLE && !moving {
         let mut rs = restart_of(
             &mut fl,
             &tr,
@@ -2889,7 +2952,7 @@ fn run_one<F: FnMut(&str)>(
     }
     // the imprinted sliding mesh (D182): the cells of the rotor have moved,
     // points are found on the mesh of the end of the run
-    let loc_end = imprint.is_some().then(|| Locator::new(mesh, geo));
+    let loc_end = moving.then(|| Locator::new(mesh, geo));
     let loc_end = loc_end.as_ref().unwrap_or(&loc);
     let reference = case
         .verification
@@ -2928,7 +2991,7 @@ fn run_one<F: FnMut(&str)>(
     let benchmark = match bench {
         Some(b @ Benchmark::SchaferTurek2d1) => {
             benchmark_coefficients(&case, &boundaries, &[], mesh).map(|[cd, cl]| {
-                let vals = if imprint.is_some() {
+                let vals = if moving {
                     probes.relocated(mesh, geo).values(&sol, geo)
                 } else {
                     probes.values(&sol, geo)
@@ -3187,6 +3250,12 @@ fn run_one<F: FnMut(&str)>(
             acceleration: accel_summary,
             cycle_coupling: cycle_summary,
             frozen_flow: frozen_summary,
+            mesh_motion: deform.as_ref().map(|d| crate::motion::MotionSummary {
+                volume: d.volume(),
+                volume_ratio_min: d.volume_ratio.0,
+                volume_ratio_max: d.volume_ratio.1,
+                closure_max: gcl_worst,
+            }),
         }),
         datums: datum_summary,
         spray: spray_summary,

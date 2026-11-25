@@ -4093,7 +4093,13 @@ pub fn summaries(
     let data = sc.host_data(fl.dev.as_mut())?;
     // the heat-flux pairs: Δ and the bulk values of the level fix
     let deltas = sc.periodic_bulk(fl.dev.as_mut(), fl.f.mass_flux)?;
-    let m = fl.dev.download(fl.f.mass_flux)?;
+    let mut m = fl.dev.download(fl.f.mass_flux)?;
+    // the flow relative to a deforming mesh (stage MS0)
+    if let Some(g) = &fl.phys.grid_flux {
+        for (mf, gf) in m.iter_mut().zip(g.iter()) {
+            *mf -= gf;
+        }
+    }
     let env = case.env()?;
     let transient = case.time.is_some();
     let time = if transient { Vars::T } else { Vars::NONE };
