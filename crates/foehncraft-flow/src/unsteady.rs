@@ -927,28 +927,21 @@ fn current<'a>(
     }
 }
 
-/// The flow solver on the mesh of the next rotor angle (sliding mesh by
-/// imprinting, D182 variant B): built again on `next` as at the start of
-/// the run, with the cell fields, the old time levels and the fluxes of the
-/// faces that stay taken over from `fl` and `tr` (the faces that the
-/// imprint made new start from the interpolated flux). `t` is the time of
-/// the end of the step.
-///
-/// A deforming mesh (stage MS0) passes no `map`: the faces are the same,
-/// and the variable density goes along with its mass and old levels.
+/// A new flow solver on `mesh` built as at the start of the run, with the
+/// settings of `fl` (its fields not yet loaded) and the density of the
+/// fluid.
 #[allow(clippy::too_many_arguments)]
-fn rebuild_flow(
+fn new_flow(
     case: &FlowCase,
     tv: &TimeValues,
     target: &Target,
     reference_cell: Option<usize>,
     (mesh, geo): (&foehncraft_mesh::Mesh, &foehncraft_mesh::Geometry),
-    map: Option<&crate::sliding::FaceMap>,
     t: f64,
-    fl: &mut Flow,
+    fl: &Flow,
     tr: &Transient,
     wall_distance: Option<Vec<f64>>,
-) -> Result<(Flow, Transient)> {
+) -> Result<(Flow, Transient, f64)> {
     let phys = crate::case::physics(case)?;
     let phys = crate::case::physics_on(case, &phys, mesh, geo)?;
     let rho = phys.rho;
@@ -985,17 +978,130 @@ fn rebuild_flow(
     crate::turbulence::attach_with(&mut nfl, case, mesh, geo, wall_distance)?;
     crate::frame::attach(&mut nfl, case, mesh, geo)?;
     let scheme = case.time.context("[time]")?.scheme;
-    let mut ntr = Transient::new(&mut nfl, scheme, tr.clock.time)?;
+    let ntr = Transient::new(&mut nfl, scheme, tr.clock.time)?;
+    Ok((nfl, ntr, rho))
+}
+
+/// The flow solver on the mesh of the next rotor angle (sliding mesh by
+/// imprinting, D182 variant B), or on the deformed mesh (no `map`): built
+/// again on `next` as at the start of the run, with the cell fields, the
+/// old time levels and the fluxes of the faces that stay taken over from
+/// `fl` and `tr` (the faces that the imprint made new start from the
+/// interpolated flux). `t` is the time of the end of the step.
+///
+/// A deforming mesh (stage MS0) passes no `map`: the faces are the same,
+/// and the variable density goes along with its mass and old levels.
+#[allow(clippy::too_many_arguments)]
+fn rebuild_flow(
+    case: &FlowCase,
+    tv: &TimeValues,
+    target: &Target,
+    reference_cell: Option<usize>,
+    (mesh, geo): (&foehncraft_mesh::Mesh, &foehncraft_mesh::Geometry),
+    map: Option<&crate::sliding::FaceMap>,
+    t: f64,
+    fl: &mut Flow,
+    tr: &Transient,
+    wall_distance: Option<Vec<f64>>,
+) -> Result<(Flow, Transient)> {
+    let (mut nfl, mut ntr, rho) = new_flow(
+        case,
+        tv,
+        target,
+        reference_cell,
+        (mesh, geo),
+        t,
+        fl,
+        tr,
+        wall_distance,
+    )?;
     let state = fl.state()?;
     let old = tr.old_levels(fl)?;
     let (state, old) = match map {
         Some(map) => crate::sliding::carry(state, old, map, &nfl.disc, rho, nfl.phys.mu),
         None => (state, old),
     };
-    nfl.load(&state)?;
-    if map.is_none()
-        && let Some(mut d) = fl.density.take()
-    {
+    take_over(fl, tr, &mut nfl, &mut ntr, &state, &old, map.is_none())?;
+    Ok((nfl, ntr))
+}
+
+/// The sliding mesh by imprinting on ranks (MPI step W7): the solver of
+/// this rank on its part of `next`, the mesh of the next rotor angle, and
+/// the part itself. The partition stays that of the start (the cells keep
+/// their numbers); the state and the old levels are gathered into the
+/// global order, carried onto the faces of `next` there by the code of
+/// one rank (bitwise its result) and handed back to the ranks. Collective.
+#[allow(clippy::too_many_arguments)]
+fn rebuild_on_ranks(
+    case: &FlowCase,
+    tv: &TimeValues,
+    target: &Target,
+    reference_cell: Option<usize>,
+    next: &crate::sliding::Working,
+    map: &crate::sliding::FaceMap,
+    t: f64,
+    fl: &mut Flow,
+    tr: &Transient,
+    wall_distance: Option<Vec<f64>>,
+    o: &crate::ranks::OnRanks,
+) -> Result<(crate::ranks::OnRanks, Flow, Transient)> {
+    let (mesh, geo) = (&next.mesh, &next.geo);
+    // the boundary arrays of the whole mesh, for the output and the carry
+    let phys = crate::case::physics(case)?;
+    let gphys = crate::case::physics_on(case, &phys, mesh, geo)?;
+    let analytic = case.analytic_at(t);
+    let at = bc::At {
+        analytic: analytic.as_ref(),
+        values: &tv.values,
+        t,
+        turning: &case.turning(),
+        hydrostatic: crate::buoyancy::hydrostatic(case),
+    };
+    let garrays = bc::arrays(mesh, geo, &case.boundary, &gphys, at)?;
+    let no =
+        crate::ranks::OnRanks::imprinted(o.comm.clone(), mesh, geo, garrays, Some(o.part.clone()))?;
+    let (mut nfl, mut ntr, rho) = new_flow(
+        case,
+        tv,
+        &no.target(target),
+        reference_cell,
+        (&no.local.mesh, &no.geo),
+        t,
+        fl,
+        tr,
+        wall_distance.map(|d| no.own(&d)),
+    )?;
+    // the state and the old levels of the whole mesh (collective)
+    let mut r = restart_part(fl, tr, &o.local.mesh, "", 0.0, None, None)?;
+    r.amg_matrix = None;
+    let mut r = o.restart(r)?;
+    let (old, clock, dt_next, scheme) = r.transient.take().context("the old levels")?;
+    let (state, old) = crate::sliding::carry(r.state.clone(), old, map, &no.disc, rho, nfl.phys.mu);
+    r.state = state;
+    r.transient = Some((old, clock, dt_next, scheme));
+    r.cell_id = mesh.cell_id[..mesh.n_cells].to_vec();
+    r.face_id = mesh.face_id.clone();
+    // this rank's part of them
+    let mut r = no.scatter(r)?;
+    let (old, ..) = r.transient.take().context("the old levels")?;
+    take_over(fl, tr, &mut nfl, &mut ntr, &r.state, &old, false)?;
+    Ok((no, nfl, ntr))
+}
+
+/// Loads the carried `state` and old levels `old` into the new solver and
+/// takes over what goes on from the old one (`density`: the variable
+/// density goes along, a deforming mesh).
+fn take_over(
+    fl: &mut Flow,
+    tr: &Transient,
+    nfl: &mut Flow,
+    ntr: &mut Transient,
+    state: &crate::simplec::State,
+    old: &crate::transient::OldLevels,
+    density: bool,
+) -> Result<()> {
+    nfl.load(state)?;
+    if density && let Some(mut d) = fl.density.take() {
         let tc = nfl.fluid_temperature()?.context("the temperature")?;
         let tb = nfl.fluid_boundary_temperature(&tc)?;
         d.set_geometry(&nfl.disc, &tc, &tb);
@@ -1006,12 +1112,12 @@ fn rebuild_flow(
     if let (Some(a), Some(b)) = (fl.turbulence.as_ref(), nfl.turbulence.as_mut()) {
         b.health = a.health.clone();
     }
-    ntr.restore(&mut nfl, &old, tr.clock)?;
+    ntr.restore(nfl, old, tr.clock)?;
     nfl.iteration = fl.iteration;
     // (the multigrid setups restart with the new matrix: run_one adds up the
     // setups of the solvers it replaces)
     nfl.timings = fl.timings.clone();
-    Ok((nfl, ntr))
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1095,10 +1201,16 @@ fn run_one<F: FnMut(&str)>(
     )?;
     // a run on ranks (MPI step W7): this rank's part, its own arrays and
     // physics; the global ones stay for the output
-    let on = match steer.ranks.clone() {
+    let mut on = match steer.ranks.clone() {
         Some(c) => {
             crate::ranks::supported_mesh(&case, mesh)?;
-            Some(crate::ranks::OnRanks::new(c, mesh, geo, arrays.clone())?)
+            Some(if work.is_some() {
+                // the geometry of the rotor angle (rigid turn of the base
+                // mesh), the partition kept for the whole run
+                crate::ranks::OnRanks::imprinted(c, mesh, geo, arrays.clone(), None)?
+            } else {
+                crate::ranks::OnRanks::new(c, mesh, geo, arrays.clone())?
+            })
         }
         None => None,
     };
@@ -1239,7 +1351,10 @@ fn run_one<F: FnMut(&str)>(
     match &on {
         // the wall distance of the whole mesh, each rank its cells (W5)
         Some(o) if !case.turbulence.is_laminar() => {
-            let d = crate::derived::wall_distance(&case, mesh, geo)?;
+            let d = match turning_distance.as_mut() {
+                Some((_, d)) => std::mem::take(d),
+                None => crate::derived::wall_distance(&case, mesh, geo)?,
+            };
             crate::turbulence::attach_with(&mut fl, &case, smesh, sgeo, Some(o.own(&d)))?;
         }
         _ => crate::turbulence::attach_with(
@@ -1936,18 +2051,37 @@ fn run_one<F: FnMut(&str)>(
             let d = turning_distance.as_mut().map(|(twd, _)| {
                 twd.at_angles(&next.angles, &next.geo.cell_centroid[..next.mesh.n_cells])
             });
-            let (nfl, ntr) = rebuild_flow(
-                &case,
-                &tv,
-                &target,
-                reference_cell,
-                (&next.mesh, &next.geo),
-                Some(&map),
-                t0 + h,
-                &mut fl,
-                &tr,
-                d,
-            )?;
+            let (nfl, ntr) = match on.as_ref() {
+                None => rebuild_flow(
+                    &case,
+                    &tv,
+                    &target,
+                    reference_cell,
+                    (&next.mesh, &next.geo),
+                    Some(&map),
+                    t0 + h,
+                    &mut fl,
+                    &tr,
+                    d,
+                )?,
+                Some(o) => {
+                    let (no, nfl, ntr) = rebuild_on_ranks(
+                        &case,
+                        &tv,
+                        &target,
+                        reference_cell,
+                        &next,
+                        &map,
+                        t0 + h,
+                        &mut fl,
+                        &tr,
+                        d,
+                        o,
+                    )?;
+                    on = Some(no);
+                    (nfl, ntr)
+                }
+            };
             setups_past.0 += fl.amg_setups;
             setups_past.1 += fl.sweep_setups;
             fl = nfl;

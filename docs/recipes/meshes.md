@@ -25,6 +25,7 @@ Part of the [Recipes](../recipes.md): generate, read (Gmsh, SU2, CGNS, OpenFOAM,
 | 290 | [Run a turbulent, heated or transient case on ranks](#run-ranks-physics) |
 | 301 | [Run a case with rotating zones (MRF) or a closed domain on ranks](#run-ranks-mrf) |
 | 304 | [Run a sliding rotor in conformal stepping on ranks](#run-ranks-sliding) |
+| 305 | [Run a sliding rotor by imprinting on ranks](#run-ranks-imprint) |
 
 ---
 
@@ -892,9 +893,43 @@ done
 
 Each step gathers the old levels of all ranks into the order of the whole
 mesh, which costs time on small meshes (gallery 304: 10 s on five thread
-ranks against 3 s on one). Refused on ranks with an error: the sliding mesh
-by imprinting (`rotor_interface`, `stator_interface`; it follows), and the
-`[run] ranks` check of `foehn flow` with any sliding mesh (use
-`--ranks N` and compare with `--ranks 1` as above).
+ranks against 3 s on one). The `[run] ranks` check of `foehn flow` refuses
+any sliding mesh (use `--ranks N` and compare with `--ranks 1` as above).
+The sliding mesh by imprinting: recipe 305.
+
+[↑ back to top](#meshes)
+
+---
+
+<a id="run-ranks-imprint"></a>
+## 305. Run a sliding rotor by imprinting on ranks
+
+A `[[sliding]]` rotor whose mesh meets the stator mesh at a non-matching
+interface (`rotor_interface`, `stator_interface`, D182 variant B,
+[recipe 96](flow.md#sliding-mesh-imprint)) runs on ranks like any transient
+case:
+
+```
+target/release/foehn flow examples/cases/flow/ranks_run_imprint_couette.toml --ranks 5
+mpirun -n 5 target/release/foehn flow examples/cases/flow/ranks_run_imprint_couette.toml   # mpi feature
+```
+
+Every output file is byte for byte that of one rank. Check it:
+
+```
+target/release/foehn flow examples/cases/flow/ranks_run_imprint_couette.toml --ranks 1 --out output/one
+for f in history.csv probes.csv forces.csv balance.csv boundaries.csv fields.vtkhdf; do
+  cmp output/one/$f output/ranks_run_imprint_couette/$f
+done
+```
+
+In every step every rank imprints the interface at the rotor angle on the
+whole mesh and builds its part again; the partition of the first step
+stays, so `ranks.vtkhdf` shows the parts for the whole run. The state is
+gathered and handed back every step, which costs time and the memory of the
+whole mesh on every rank. A moving mesh writes no restart file yet (on one
+rank as on ranks). The five-blade stirred vessel of gallery 305 is
+`examples/studies/mixer/sliding_ranks.toml` (mesh from
+`python3 examples/meshes/mixer.py --blades 5 --baffles 3`).
 
 [↑ back to top](#meshes)

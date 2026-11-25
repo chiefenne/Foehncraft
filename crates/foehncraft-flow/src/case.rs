@@ -294,9 +294,9 @@ pub struct RunSection {
     /// a build with the `mpi` feature) the ranks are its processes;
     /// otherwise threads of this process. 1: no ranks. Steady and transient
     /// runs with scalars, energy, k-ω SST and k-ε, the rotating zones of
-    /// `[[mrf]]` and the sliding mesh in conformal stepping (refused:
-    /// species, statistics, the sliding mesh by imprinting, what
-    /// `[run] ranks` refuses).
+    /// `[[mrf]]` and the sliding mesh, in conformal stepping and by
+    /// imprinting (refused: species, statistics, what `[run] ranks`
+    /// refuses).
     #[serde(skip_serializing_if = "is_one")]
     pub rank_count: usize,
 }
