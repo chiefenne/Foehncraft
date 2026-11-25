@@ -148,10 +148,10 @@ codes! {
     SPRAY_UNFINISHED = "SPR007", Warning, "Steady spray mode (D260): streams still in the flow after `[spray.steady] max_time` (caught in a recirculation, or a domain the droplets need longer to cross); their mass flow is counted as unfinished in `spray.csv` and `result.json` (fix: a larger `max_time`).";
     SPRAY_SOURCES = "SPR008", Warning, "Steady spray mode (D260 (4)): the source residual of the final stream pass is above `[spray.steady] tolerance`, so the run is not reported as converged (fix: more outer iterations, or a smaller `[spray.steady] relaxation` if the residual swings).";
     // immersed bodies, Brinkman penalisation (L13 stage 1, D226)
-    IMM_CONFIG = "IMM101", Error, "An `[immersed]` value that does not fit: a permeability that is not > 0, a body without the keys of its shape (`centre` and `radius`, `lower` and `upper`), a radius or length that is not > 0, a zero cylinder axis, two bodies with the same name, or no body at all.";
-    IMM_UNSUPPORTED = "IMM102", Error, "An `[immersed]` body in a case it does not fit (L13 stage 1, D226): a turbulence model (penalised walls are laminar and low-Re only; a wall function on a penalised wall is refused), the energy equation (no penalised conjugate heat transfer, Q9), passive scalars, gravity, regions or several fluids, rotating zones, or sprays.";
+    IMM_CONFIG = "IMM101", Error, "An `[immersed]` value that does not fit: a permeability that is not > 0, a body without the keys of its shape (`centre` and `radius`, `lower` and `upper`), a radius or length that is not > 0, a zero cylinder axis, two bodies with the same name, a `field` body without `fraction`, no body at all, or an `[immersed.topology]` value out of range (an empty design region, a fluid fraction not in (0, 1], a negative filter radius).";
+    IMM_UNSUPPORTED = "IMM102", Error, "An `[immersed]` body in a case it does not fit (L13 stage 1, D226): a turbulence model (penalised walls are laminar and low-Re only; a wall function on a penalised wall is refused), the energy equation (no penalised conjugate heat transfer, Q9), passive scalars, gravity, regions or several fluids, rotating zones, or sprays; a topology search in a transient run.";
     IMM_RESOLUTION = "IMM103", Warning, "An immersed body that the mesh does not resolve: no cell lies more than half inside it, or its solid volume on the mesh differs from its exact volume inside the mesh by more than 5 %.";
-    IMM_BODIES = "IMM104", Note, "The immersed bodies of the case: their solid volume on the mesh against the exact volume, the cells they touch and the sink coefficient μ/K.";
+    IMM_BODIES = "IMM104", Note, "The immersed bodies of the case: their solid volume on the mesh against the exact volume, the cells they touch and the sink coefficient μ/K; the design cells of a topology search.";
     // datums and their reports (SP1b, D262 to D267)
     DATUM_CONFIG = "DAT001", Error, "A `[[datum]]` table that cannot be used: a name used twice or with other characters than letters, digits, `_` and `-`, an unknown type, a missing or invalid key of its type (plane point and normal, bound, boundary, zones, STL file, box corners, cylinder, zone), or bad histogram bins.";
     DATUM_EMPTY = "DAT002", Error, "A `[[datum]]` that meets no face or cell of the mesh (a plane outside the domain, an interface between zones that do not touch, an empty volume).";
@@ -303,6 +303,11 @@ codes! {
     TOOL_CONTROL = "TOOL007", Error, "A request to the live control port of a run (`run.status`, `run.stop`, `run.set`) that cannot be made or is refused: no run listens in the directory, the token is wrong, or the setting cannot be changed during a run (L19).";
     MCP_CANNOT_ASK = "MCP005", Error, "A call that needs the person's approval (`ask`), from a host that cannot ask (no MCP elicitation); the person allows it in `foehn-mcp.toml` or uses a host that asks.";
     MCP_POLICY = "MCP006", Error, "The action table `foehn-mcp.toml` cannot be read or written: not TOML, an unknown action kind or setting.";
+    // the structural solver (L53, crate foehncraft-structure)
+    STR_CASE = "STR001", Error, "A structural case or model that is not valid: an unknown key or a wrong value, a point that is not a node, a beam without length, a missing material or section, non-positive properties.";
+    STR_SINGULAR = "STR002", Error, "The stiffness of a structural case is singular: the structure can move freely (a missing support or clamp, or a mechanism); the message names the first free unknown. For the modes of a free structure give a negative `shift`.";
+    STR_MODES = "STR003", Warning, "A modal analysis may have missed modes: the Sturm count (the inertia of K − σM) finds more eigenvalues in the range than Lanczos returned, or Lanczos stopped above its tolerance.";
+    STR_FIT = "STR004", Error, "The clamp fit (D290) cannot reach the measured frequency: it lies at or above the frequency of the rigidly clamped model (the model is too soft), or the mode does not depend on the spring.";
     // anything else
     GENERAL = "GEN001", Error, "An error without a more specific code.";
 }
@@ -557,7 +562,7 @@ mod tests {
                     "CASE", "SCHED", "BC", "SCAL", "RUN", "GEN", "DIV", "BAL", "EXPR", "MAT",
                     "REG", "MESH", "TURB", "MRF", "SLD", "ROT", "STAT", "ENE", "THM", "CHT",
                     "TOOL", "LIM", "MCP", "ACC", "CYC", "BUO", "FRZ", "PRS", "SPR", "DAT", "POR",
-                    "IMM", "SPE", "CHM", "MOV"
+                    "IMM", "SPE", "CHM", "STR", "MOV"
                 ]
                 .contains(&p),
                 "{}",

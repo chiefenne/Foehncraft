@@ -1206,7 +1206,7 @@ fn run_one<F: FnMut(&str)>(
     crate::density::attach(&mut fl, &case)?;
     crate::buoyancy::attach(&mut fl, &case)?;
     crate::porous::attach(&mut fl, &case, smesh)?;
-    for d in crate::immersed::attach(&mut fl, &case, smesh, sgeo)? {
+    for d in crate::immersed::attach(&mut fl, &case, smesh, sgeo)?.0 {
         if d.severity == crate::diag::Severity::Warning {
             lg.warn(&format!("{}: {}", d.code, d.message));
             warnings.push(d);
@@ -3346,9 +3346,10 @@ fn run_one<F: FnMut(&str)>(
                 geo.cell_volume.clone(),
             ),
         };
-    let immersed = crate::immersed::forces(&case, mesh, geo, &sol.u)?;
+    let immersed = crate::immersed::forces(&case, mesh, geo, &sol.u, &sol.phys)?;
     let solve = Solve {
         immersed,
+        topology: None,
         density,
         scalars,
         periodic,

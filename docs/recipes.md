@@ -22,7 +22,8 @@ The recipes are split by topic; each page has its own table of contents. The num
 | [Boundary conditions](recipes/boundary-conditions.md) | slip walls, wedges for axisymmetric flow, inlet profiles from tables, backflow at pressure outlets, convective outlets, periodic modules, absolute or gauge pressure values (D239) | 29, 67, 220 |
 | [Lagrangian sprays](recipes/sprays.md) | spray droplets into a flow with an injector file, wall behaviour, the mass book | 242, 265, 280, 283, 285, 292 |
 | [Porous regions](recipes/porous.md) | porous blocks and honeycombs in a flow: resistances, axes, the honeycomb shorthand | 273, 275 |
-| [Immersed bodies](recipes/immersed.md) | put a body in the flow without meshing it: `[immersed]`, the permeability, forces | 270 |
+| [Structures](recipes/structure.md) | a structural case of beams and clamp springs: static and modal analyses, the clamp spring fitted to a measured frequency, the results | 295 |
+| [Immersed bodies](recipes/immersed.md) | put a body in the flow without meshing it: `[immersed]`, the permeability, forces | 270, 291 |
 | [Moving meshes and solids](recipes/moving-solids.md) | move the mesh with a prescribed displacement: `[mesh_motion]`, moving walls, a piston on a closed volume | |
 | [Species and reacting flows](recipes/species.md) | species of an ideal-gas mixture: names, compositions in mole or mass fractions, diffusion by Schmidt or Lewis numbers, mixture properties, the element ledger | 278, 289 |
 | [Expressions and materials](recipes/properties.md) | values as expressions of x, y, z and t, constants and tables, wall mass flux, the material database, regions | 31, 32 |
@@ -168,7 +169,9 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="spray-dispersion"></a>285 | [Let the turbulence spread the droplets](recipes/sprays.md#spray-dispersion) | [Lagrangian sprays](recipes/sprays.md) |
 | <a id="gas-chemistry"></a>289 | [Run a mechanism in a constant-pressure reactor and find the equilibrium](recipes/species.md#gas-chemistry) | [Species and reacting flows](recipes/species.md) |
 | <a id="run-ranks-physics"></a>290 | [Run a turbulent, heated or transient case on ranks](recipes/meshes.md#run-ranks-physics) | [Meshes](recipes/meshes.md) |
+| <a id="topology-search"></a>291 | [Search the shape of a duct with a density field](recipes/immersed.md#topology-search) | [Immersed bodies](recipes/immersed.md) |
 | <a id="spray-steady"></a>292 | [Solve a spray in a steady flow (steady spray mode)](recipes/sprays.md#spray-steady) | [Lagrangian sprays](recipes/sprays.md) |
+| <a id="structure-case"></a>295 | [Run a structural case of beams and clamp springs, and fit the clamp to a measured frequency](recipes/structure.md#structure-case) | [Structures](recipes/structure.md) |
 
 ## Adding a feature
 
