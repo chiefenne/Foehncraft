@@ -217,14 +217,14 @@ impl<'a> GenAlpha<'a> {
         Ok(State { t: t0, u, v, a })
     }
 
-    /// The predictors of a step: ũ, ṽ, the α-point displacement at a = 0
-    /// and the right-hand side of (cm M + ck K) a = rhs.
+    /// The predictors of a step, ũ and ṽ, and the right-hand side of
+    /// (cm M + ck K) a = rhs.
     fn predict(
         &self,
         s: &State,
         f_n: &[f64],
         f_next: &[f64],
-    ) -> (Vec<f64>, Vec<f64>, Vec<f64>, Vec<f64>) {
+    ) -> (Vec<f64>, Vec<f64>, Vec<f64>) {
         let sys = self.sys;
         let (dt, am, af, g, b) = (self.dt, self.am, self.af, self.gamma, self.beta);
         let n = s.u.len();
@@ -240,11 +240,12 @@ impl<'a> GenAlpha<'a> {
         let rhs: Vec<f64> = (0..n)
             .map(|i| (1.0 - af) * f_next[i] + af * f_n[i] - am * ma[i] - cv[i] - ku[i])
             .collect();
-        (ut, vt, ua, rhs)
+        (ut, vt, rhs)
     }
 
-    /// One step with unilateral contact (penalty at the α-point, an active
-    /// set loop in the step; see [`crate::contact`]).
+    /// One step with unilateral contact (the penalty at the end of the
+    /// step, α-averaged in the balance; an active set loop in the step; see
+    /// [`crate::contact`]).
     pub fn step_contact(
         &self,
         model: &crate::model::Model,
@@ -255,25 +256,25 @@ impl<'a> GenAlpha<'a> {
         f_next: &[f64],
     ) -> Result<(State, crate::contact::State), Error> {
         let (dt, af, g, b) = (self.dt, self.af, self.gamma, self.beta);
-        let (ut, vt, ua, rhs) = self.predict(s, f_n, f_next);
-        let cu = (1.0 - af) * b * dt * dt;
-        let (a, mut cs) = crate::contact::step(
+        let (ut, vt, rhs) = self.predict(s, f_n, f_next);
+        let at = crate::contact::StepEnd {
+            u0: &ut,
+            cu: b * dt * dt,
+            af,
+        };
+        let (a, cs) = crate::contact::step(
             model,
             self.sys,
             c,
             &self.base,
             self.s_scale,
-            cu,
-            &ua,
+            &at,
             &rhs,
             cache,
         )?;
         let n = a.len();
         let u: Vec<f64> = (0..n).map(|i| ut[i] + b * dt * dt * a[i]).collect();
         let v = (0..n).map(|i| vt[i] + g * dt * a[i]).collect();
-        // the force acts at the α-point; the gap reported is the one at the
-        // end of the step, where the displacement is written out
-        cs.gap = (0..c.pairs.len()).map(|p| c.gap(p, &u)).collect();
         Ok((
             State {
                 t: s.t + dt,

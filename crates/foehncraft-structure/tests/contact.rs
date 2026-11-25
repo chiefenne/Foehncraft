@@ -307,8 +307,8 @@ fn impact_on_a_stop_converges_to_the_elastic_bounce() {
     // a stiffer penalty approaches the rigid stop: the penetration falls
     // as 1/√penalty
     let mut pens = Vec::new();
-    for penalty in [1e2, 1e4, 1e6] {
-        let (_, pen, deep) = run(penalty, 1600);
+    for (penalty, steps) in [(1e2, 1600), (1e4, 1600), (1e6, 16000)] {
+        let (_, pen, deep) = run(penalty, steps);
         assert!(rel(pen, deep) < 0.05, "{pen} {deep}");
         pens.push(pen / g);
     }

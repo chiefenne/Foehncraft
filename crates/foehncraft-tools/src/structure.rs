@@ -216,6 +216,7 @@ mod tests {
             "reed_plate_pulse",
             "reed_plate_hot",
             "reed_stop",
+            "reed_valve_stop",
         ] {
             let case = root().join(format!("examples/cases/structure/{name}.toml"));
             let out = tmp.join(name);
@@ -228,8 +229,17 @@ mod tests {
             assert!(out.join("structure.vtk").is_file());
             assert_eq!(
                 out.join("transient.csv").is_file(),
-                name == "reed_plate_pulse"
+                name == "reed_plate_pulse" || name == "reed_valve_stop"
             );
+            if name == "reed_valve_stop" {
+                // the reed reaches its stop and lands on its seat
+                let c = &res["transient"]["contact"];
+                assert!(c["penetration"].as_f64().unwrap() < 1e-8);
+                for p in 0..2 {
+                    let f = c["planes"][p]["force"].as_array().unwrap();
+                    assert!(f.iter().any(|v| v.as_f64().unwrap() > 1.0), "{p}");
+                }
+            }
             if name == "reed_stop" {
                 // the curved stop read from its Gmsh file next to the case
                 assert_eq!(res["solid_elements"], 160);

@@ -16,10 +16,18 @@
 //!   repeats until the largest penetration is below the tolerance: the
 //!   answer is the exact one, not the penalty's.
 //! - **In time** (generalised-α): the penalty force k max(0, −g) at the
-//!   α-point of the step, with an active set loop in each step (the factor
-//!   is kept while the set does not change). The penetration is about the
-//!   contact force over k; the result reports the largest one at the end
-//!   of a step (where the displacements are written out).
+//!   end of the step, its α-average (1 − α_f) λ_{n+1} + α_f λ_n entering
+//!   the balance like the other forces (the form of generalised-α with
+//!   interpolated forces; Erlicher, Bonaventura & Bursi 2002,
+//!   *Computational Mechanics* 28). Holding the α-point on the plane
+//!   instead would place the end of the step α_f/(1 − α_f) of a step's
+//!   travel inside it and feed energy into the next impact. An active set
+//!   loop runs in each step (the factor is kept while the set does not
+//!   change). The penetration is about the contact force over k; the
+//!   result reports the largest one at the end of a step. The impact is
+//!   elastic: at the stiffness of a penalty on a node of a shell it lasts
+//!   far less than a step, and the numerical damping of generalised-α
+//!   (ρ∞ < 1) takes the energy of the high frequencies it excites.
 //!
 //! The penalty k is `penalty` times the largest stiffness of a contact
 //! node along its plane's normal (nᵀ diag(K) n), so that a stiff
@@ -172,8 +180,8 @@ impl Contacts {
                 .sum::<f64>()
     }
 
-    /// `scale · k Σ_active Bᵀ B` on the free unknowns.
-    fn penalty_matrix(&self, nf: usize, active: &[bool], scale: f64) -> SymCsc {
+    /// `Σ_active w_p Bᵀ B` on the free unknowns.
+    fn penalty_matrix(&self, nf: usize, active: &[bool], w: impl Fn(usize) -> f64) -> SymCsc {
         let mut a = Assembly::new(nf);
         for (p, pr) in self.pairs.iter().enumerate() {
             if !active[p] {
@@ -181,9 +189,10 @@ impl Contacts {
             }
             let dofs: Vec<Option<usize>> = pr.terms.iter().map(|t| t.0).collect();
             let mut b = [0.0; 9];
+            let wp = w(p);
             for r in 0..3 {
                 for c in 0..3 {
-                    b[3 * r + c] = scale * self.k * pr.terms[r].1 * pr.terms[c].1;
+                    b[3 * r + c] = wp * pr.terms[r].1 * pr.terms[c].1;
                 }
             }
             a.add_block(&dofs, &b);
@@ -246,7 +255,7 @@ pub fn solve_static(
         let mut settled = false;
         for _inner in 0..100 {
             if cached.as_ref().is_none_or(|(a, _)| *a != active) {
-                let k = sys.k.plus_scaled(1.0, &c.penalty_matrix(nf, &active, 1.0));
+                let k = sys.k.plus_scaled(1.0, &c.penalty_matrix(nf, &active, |_| c.k));
                 cached = Some((active.clone(), factor(model, sys, &k)?));
             }
             let mut f = sys.f.clone();
@@ -288,20 +297,32 @@ pub fn solve_static(
     ))
 }
 
-/// The active set and its factor for one step of generalised-α.
+/// The active set and its factor for one step of generalised-α, and the
+/// contact forces of the last step.
 #[derive(Default)]
 pub struct StepCache {
     active: Vec<bool>,
     factor: Option<Ldlt>,
+    last: Vec<f64>,
     /// Factorisations so far.
     pub factorisations: usize,
 }
 
+/// The end of a generalised-α step: the displacement at a = 0 (the
+/// predictor), its coefficient of the acceleration, and α_f.
+pub struct StepEnd<'a> {
+    /// Displacement at a = 0.
+    pub u0: &'a [f64],
+    /// ∂u_{n+1}/∂a (β Δt²).
+    pub cu: f64,
+    /// α_f.
+    pub af: f64,
+}
+
 /// One generalised-α step with contact: `base` is S/ck (K + cm/ck M),
-/// `cu_ck` the coefficient of the acceleration in the α-point displacement
-/// over ck, `u_alpha0` the α-point displacement at a = 0 and `rhs` the
-/// right-hand side without contact (divided by nothing: the same as the
-/// step without contact). Returns the acceleration and the contact state.
+/// `ck` its scale, `at` the end of the step and `rhs` the right-hand side
+/// without contact (the same as the step without contact). Returns the
+/// acceleration and the contact state at the end of the step.
 #[allow(clippy::too_many_arguments)]
 pub fn step(
     model: &Model,
@@ -309,31 +330,40 @@ pub fn step(
     c: &Contacts,
     base: &SymCsc,
     ck: f64,
-    cu: f64,
-    u_alpha0: &[f64],
+    at: &StepEnd<'_>,
     rhs: &[f64],
     cache: &mut StepCache,
 ) -> Result<(Vec<f64>, State), Error> {
+    let (u0, cu, af) = (at.u0, at.cu, at.af);
     let nf = sys.free.len();
     let np = c.pairs.len();
     if cache.active.len() != np {
         cache.active = vec![false; np];
         cache.factor = None;
+        cache.last = vec![0.0; np];
     }
-    // start from the pairs that are closed at the predicted α-point
-    let mut active: Vec<bool> = (0..np).map(|p| c.gap(p, u_alpha0) < 0.0).collect();
+    // start from the pairs that are closed at the predicted end
+    let mut active: Vec<bool> = (0..np).map(|p| c.gap(p, u0) < 0.0).collect();
     for _ in 0..50 {
         if cache.factor.is_none() || cache.active != active {
-            let a = base.plus_scaled(1.0, &c.penalty_matrix(nf, &active, cu / ck));
+            let a = base.plus_scaled(
+                1.0,
+                &c.penalty_matrix(nf, &active, |_| (1.0 - af) * cu * c.k / ck),
+            );
             cache.factor = Some(factor(model, sys, &a)?);
             cache.active = active.clone();
             cache.factorisations += 1;
         }
         let mut r = rhs.to_vec();
         for p in 0..np {
+            // α_f λ_n, and (1 − α_f)(−k g) at a = 0 on the active pairs;
+            // the part in a is in the matrix
+            let mut f0 = af * cache.last[p];
             if active[p] {
-                // −k g(u_α0) on the active pairs; the part in a is in the matrix
-                c.add_force(p, -c.k * c.gap(p, u_alpha0), &mut r);
+                f0 -= (1.0 - af) * c.k * c.gap(p, u0);
+            }
+            if f0 != 0.0 {
+                c.add_force(p, f0, &mut r);
             }
         }
         let a: Vec<f64> = cache
@@ -344,11 +374,12 @@ pub fn step(
             .into_iter()
             .map(|x| x / ck)
             .collect();
-        let ua: Vec<f64> = (0..nf).map(|i| u_alpha0[i] + cu * a[i]).collect();
-        let gaps: Vec<f64> = (0..np).map(|p| c.gap(p, &ua)).collect();
+        let u: Vec<f64> = (0..nf).map(|i| u0[i] + cu * a[i]).collect();
+        let gaps: Vec<f64> = (0..np).map(|p| c.gap(p, &u)).collect();
         let next: Vec<bool> = gaps.iter().map(|&g| g < 0.0).collect();
         if next == active {
-            let force = gaps.iter().map(|&g| (-c.k * g).max(0.0)).collect();
+            let force: Vec<f64> = gaps.iter().map(|&g| (-c.k * g).max(0.0)).collect();
+            cache.last.clone_from(&force);
             return Ok((a, State { force, gap: gaps }));
         }
         active = next;
