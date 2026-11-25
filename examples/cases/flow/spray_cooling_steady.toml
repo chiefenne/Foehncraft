@@ -1,0 +1,90 @@
+# Hot air cooled by a water spray, in the steady spray mode (D260, SP2s):
+# the duct of spray_cooling.toml solved as a steady state.
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/spray_cooling_steady.toml
+#
+# Air at 573 K flows at 5 m/s through a duct of 2 m by 0.4 m (2D). A nozzle
+# near the inlet sprays 10 g/s of water at 293 K, as droplets of 20 to
+# 200 µm. The case has no [time] table, so the spray runs as *streams*: each
+# stands for the droplets per second of 10 g/s / 400 of liquid and is
+# followed from the nozzle through the frozen steady gas until it leaves
+# the duct or sticks on a wall. Every 10 outer iterations a stream pass
+# gives the gas new momentum and heat sources, which the gas takes relaxed
+# (S <- S + 0.5 (S_new - S)). The run counts as converged when the gas
+# residuals are below the tolerance AND the sources the gas holds differ
+# from those of the last pass by less than [spray.steady] tolerance.
+#
+# Compare with the transient run of spray_cooling.toml marched to its
+# steady state (V28.9 without evaporation): same heat taken from the air,
+# same outlet temperature.
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [2.0, 0.4, 0.1]
+cells = [100, 20, 1]
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 0.6
+viscosity = 2.9e-5
+specific_heat = 1045.0
+conductivity = 0.045
+
+[gravity]
+vector = [0.0, -9.81, 0.0]
+
+[turbulence]
+model = "k-omega-sst"
+wall_treatment = "automatic"
+
+[initial]
+velocity = [5.0, 0.0, 0.0]
+turbulence_intensity = 0.05
+viscosity_ratio = 10.0
+
+[energy]
+initial = 573.15
+
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [5.0, 0.0, 0.0]
+[boundary.xmin.energy]
+temperature = 573.15
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymin]
+type = "wall"
+[boundary.ymin.energy]
+heat_flux = 0.0
+[boundary.ymax]
+type = "wall"
+[boundary.ymax.energy]
+heat_flux = 0.0
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[spray]
+include = "spray_cooling_injectors.toml"
+wall_mode = "stick"
+
+[spray.coupling]
+mode = "two-way"
+
+[spray.steady]
+streams = 400
+every = 10
+relaxation = 0.5
+tolerance = 1e-3
+max_time = 5.0
+
+[solver]
+tolerance = 1e-6
+max_iterations = 2000

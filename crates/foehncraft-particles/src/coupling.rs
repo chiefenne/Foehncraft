@@ -88,6 +88,32 @@ pub(crate) fn set_slopes(records: &mut [Record], m: f64, mc: f64) {
     }
 }
 
+/// The slopes of the records of one steady stream (D260), in sub-step
+/// order: the local derivative of the exchange of each visit of a cell
+/// with respect to that cell's gas, the inflow to the visit held fixed.
+/// slope_r = m (1 − e_r) Π e_l over the later sub-steps l of the same
+/// visit, so the slopes of a visit add up to m (1 − Π e) ≤ m. A stream
+/// has no closing step (no state carried from pass to pass), so the decay
+/// of later cells does not belong to the slope of this one; the transient
+/// form of [`set_slopes`] would make the source of the first cells of a
+/// long path nearly explicit.
+pub(crate) fn set_slopes_local(records: &mut [Record], m: f64, mc: f64) {
+    let mut later = 1.0;
+    let mut later_h = 1.0;
+    let mut next: Option<u32> = None;
+    for r in records.iter_mut().rev() {
+        if next != Some(r.cell) {
+            later = 1.0;
+            later_h = 1.0;
+        }
+        next = Some(r.cell);
+        r.slope = m * (1.0 - r.decay) * later;
+        later *= r.decay;
+        r.heat_slope = mc * (1.0 - r.heat_decay) * later_h;
+        later_h *= r.heat_decay;
+    }
+}
+
 /// The per-cell sums of a pass: sorted by cell, each summed over its
 /// records in the order (parcel, sub-step) (D249).
 #[derive(Debug, Clone, Default, PartialEq)]
