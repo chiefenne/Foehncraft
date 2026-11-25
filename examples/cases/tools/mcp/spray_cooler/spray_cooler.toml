@@ -1,0 +1,121 @@
+# Spray cooler: hot air at 300 °C cooled by evaporating water before a bag
+# filter. Written by the assistant for the question
+# "How much water do I need to spray to cool 300 °C air to 150 °C before
+# the filter?"
+#
+# Duct 3 m long, 0.2 m high (2D, 0.1 m deep), air at 5 m/s (0.06 kg/s),
+# k-omega SST. Three nozzles 0.1 m behind the inlet spray water at 20 °C
+# downstream as droplets of 5 to 60 µm (spray_cooler_nozzles.toml). The
+# spray runs as steady streams; the water flow is the design variable.
+
+case_format = "0.7"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [3.0, 0.2, 0.1]
+cells = [150, 20, 1]
+
+[fluid]
+density = 0.6
+viscosity = 2.9e-5
+specific_heat = 1045.0
+conductivity = 0.045
+operating_pressure = 101325.0
+pressure_values = "gauge"
+
+[turbulence]
+model = "k-omega-sst"
+wall_treatment = "automatic"
+
+[initial]
+velocity = [5.0, 0.0, 0.0]
+turbulence_intensity = 0.05
+viscosity_ratio = 10.0
+
+[energy]
+initial = 573.15
+
+[species]
+names = ["H2O", "O2", "N2"]
+initial = { mass_fractions = { H2O = 0.005, O2 = 0.2318, N2 = 0.7632 } }
+diffusion = "schmidt"
+schmidt = 0.7
+properties = "fluid"
+
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [5.0, 0.0, 0.0]
+[boundary.xmin.energy]
+temperature = 573.15
+[boundary.xmin.species]
+mass_fractions = { H2O = 0.005, O2 = 0.2318, N2 = 0.7632 }
+
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+
+[boundary.ymin]
+type = "wall"
+[boundary.ymin.energy]
+heat_flux = 0.0
+
+[boundary.ymax]
+type = "wall"
+[boundary.ymax.energy]
+heat_flux = 0.0
+
+[boundary.zmin]
+type = "symmetry"
+
+[boundary.zmax]
+type = "symmetry"
+
+[spray]
+include = "spray_cooler_nozzles.toml"
+wall_mode = "stick"
+
+[spray.evaporation]
+model = "ranz-marshall"
+
+[spray.coupling]
+mode = "two-way"
+
+[spray.steady]
+streams = 200
+every = 10
+relaxation = 0.5
+tolerance = 1e-3
+max_time = 2.0
+
+# Reports: mass-flow weighted temperature and vapour at the outlet (the
+# filter inlet) and halfway down the duct.
+[[datum]]
+name = "outlet"
+type = "boundary"
+boundary = "xmax"
+
+[[datum]]
+name = "x15"
+type = "plane"
+point = [1.5, 0.1, 0.05]
+normal = [1.0, 0.0, 0.0]
+snap = "faces"
+
+[output]
+monitor_every = 50
+
+[solver]
+tolerance = 1e-6
+max_iterations = 2000
+log_every = 50
+
+[solver.scalar]
+limiter = "mlp"
+
+[verification]
+require_convergence = false
+
+[run.limits]
+max_wall_time = 900
+max_output = 3e7
