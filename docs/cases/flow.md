@@ -16,6 +16,7 @@ On this page:
 - [Gravity and buoyancy](#gravity-and-buoyancy)
 - [Lagrangian sprays](#lagrangian-sprays)
 - [Porous regions](#porous-regions)
+- [Immersed bodies](#immersed-bodies)
 
 Stage 4: steady incompressible laminar flow, SIMPLEC with the Rhie–Chow
 interpolation ([explanation](../verification/stage4.md)). Stage 5: transient
@@ -332,3 +333,15 @@ temperatures of their own (D271, PM2). The keys are on the [key page](flow-keys.
 | `flow/porous_honeycomb_channel.toml` | generated hex 2D, 240 × 80 cells | a ceramic honeycomb block (6.9 mm channels, ε = 0.256) in an air channel at 10 cm/s, channels along the flow; with `blocking = 1` the same resistance in every direction | [gallery 273](../gallery/porous.md#porous-flow), [recipe 273](../recipes/porous.md#porous-flow) |
 | `flow/porous_schumann.toml` | generated hex 2D, 100 × 1 cells | check V4: air at 400 K into a ceramic bed at 300 K, gas and matrix against the exact solution of Schumann (1929) at 1000, 2000 and 3000 s; L1 error 5.2·10⁻⁵ of the step, second order in the cell size; heat balance to 10⁻¹³ | [gallery 275](../gallery/porous.md#porous-two-temperatures), [recipe 275](../recipes/porous.md#porous-two-temperatures) |
 | `flow/porous_storage_charge.toml` | generated hex 2D, 40 × 100 cells | charging a honeycomb store: air at 573 K from the top right through a stack of ceramic bricks (6.9 mm channels, ε = 0.256) at 293 K; the thermocline half way after 6000 s, 200 steps in about 70 s | [gallery 275](../gallery/porous.md#porous-two-temperatures), [recipe 275](../recipes/porous.md#porous-two-temperatures) |
+
+## Immersed bodies
+
+`[immersed]` with `[[immersed.body]]` tables (L13 stage 1, D226): cylinders,
+spheres and boxes put into any mesh by Brinkman penalisation, laminar and
+isothermal only. The keys are on the [key page](../keys.md) (`immersed.*`);
+`result.json` has the force on every body, `derived = ["solid-fraction"]`
+writes χ.
+
+| Case file | Mesh | Shows | Where |
+|---|---|---|---|
+| `flow/immersed_cylinder_re20.toml` | generated hex 2D, 440 × 82 cells (h = D/20), no cylinder in the mesh | Schäfer & Turek 2D-1 with the cylinder as a penalised body: C_D 5.581 (in range), Δp 0.9 % above, C_L 35 % above the range (smeared wall); fails beyond 40 % of the range midpoint | [gallery 270](../gallery/immersed.md#penalised-cylinder), [recipe 270](../recipes/immersed.md#penalised-body) |

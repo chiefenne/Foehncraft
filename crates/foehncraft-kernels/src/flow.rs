@@ -458,6 +458,13 @@ pub struct MomentumRowInputs<'a, T> {
     /// The spatial operator Σ_f ±F_f(uⁿ) of the old level per component
     /// ([`momentum_operator`]).
     pub explicit: Vec3<'a, T>,
+    /// Implicit sink coefficient s_P (kg/s) per cell of the Brinkman
+    /// penalisation of immersed bodies (L13 stage 1, D226): the term
+    /// −s_P u_P on the left, s_P added to a_P before the relaxation, so
+    /// that D_P, D^s_P and D^C_P see it and the Rhie–Chow flux stays
+    /// consistent in the solid. Empty: none (bit for bit the row without
+    /// it).
+    pub sink: &'a [T],
 }
 
 /// Momentum row of cell `c`: Σ_f ±F_f = (−∇p_P + f_b) V_P per component,
@@ -534,6 +541,10 @@ pub unsafe fn momentum_row<T: Real>(c: usize, inp: &MomentumRowInputs<T>, out: &
                 }
             }
             k += 1;
+        }
+        if !inp.sink.is_empty() {
+            // the Brinkman sink, fully implicit (not weighted with θ)
+            diag += ld(inp.sink, c);
         }
         let u = inp.u.at(c);
         // the face terms of the diagonal carry θ; D^s is that of the full

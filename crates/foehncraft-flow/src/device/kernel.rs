@@ -1075,6 +1075,9 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             ins.extend(t.u_old2.all());
             ins.extend(t.explicit.1.all());
         }
+        if let Some(s) = a.sink {
+            ins.push(s);
+        }
         check(&outs, &ins)?;
         let empty = Raw3::default();
         let (transient, time_a, dt, u_old, u_old2, ew, ex) = match &a.time {
@@ -1106,6 +1109,7 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             u_old2,
             explicit_weight: ew,
             explicit: ex,
+            sink: a.sink.map(|s| self.r(s)).unwrap_or_default(),
             val: self.r(a.val),
             rhs: self.r3(a.rhs),
             d: self.r(a.d),

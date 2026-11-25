@@ -257,6 +257,11 @@ pub fn rates(
             Some(src) => dot([src[0][c], src[1][c], src[2][c]], u) * v,
             None => dot(f, u) * v,
         };
+        // the work of the Brinkman drag of immersed bodies, −s_P u_P·u_P
+        // (L13 stage 1; s_P carries V_P)
+        if let Some(s) = &sol.phys.sink {
+            body[c] -= s[c] * uu;
+        }
         // the work of the buoyancy force of the momentum rows (stage 7b1)
         if let Some(bf) = &sol.phys.buoyancy {
             body[c] += dot([bf[0][c], bf[1][c], bf[2][c]], u) * v;

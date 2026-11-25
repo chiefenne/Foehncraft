@@ -42,6 +42,7 @@ FLOW = {
         "poiseuille_hex", "poiseuille_poly", "tmr_plate_sst", "tmr_plate_keps",
         "tmr_plate_zeta_f0", "diffuser_sst_sharp", "ubend_sst_sharp", "ranks_channel_poly",
         "ranks_heated_channel_sst", "ranks_restart_channel", "ranks_run_channel",
+        "immersed_cylinder_re20",
     ],
     "linux-3": [
         "taylor_green_error", "adjoint_residual_cavity", "cylinder_potential", "cavity_re100_budget", "taylor_green_bdf2",
