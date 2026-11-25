@@ -3877,7 +3877,7 @@ impl Scalars {
 }
 
 /// The outflow face values of the energy equation's convection scheme
-/// ([`Scalars::energy_outflow`]).
+/// (`Scalars::energy_outflow`).
 pub struct Outflow {
     grad: [Vec<f64>; 3],
     psi: Vec<f64>,
