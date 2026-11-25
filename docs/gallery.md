@@ -26,7 +26,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | [Immersed bodies](gallery/immersed.md) | bodies in the flow without a body-fitted mesh: Brinkman penalisation of primitive bodies (L13 stage 1) | 270 |
 | [Expressions and materials](gallery/properties.md) | boundary values, body forces and viscosities as expressions, the material database, regions, walls with a mass flux | 23 |
 | [Python](gallery/python.md) | cases built, run and studied from Python: expressions with Python operators, callbacks, study tables | 24 |
-| [Verification](gallery/verification.md) | the discretisation uncertainty of mesh sweeps (grid convergence index) and the generated verification manual | 25, 170 |
+| [Verification](gallery/verification.md) | the discretisation uncertainty of mesh sweeps (grid convergence index) and the generated verification manual | 25, 170, 271 |
 | [Post-processing](gallery/post-processing.md) | derived fields: vorticity, Q, λ₂, wall shear stress, y⁺, from the run or a restart file | 22, 108, 110 |
 | [Run control, health and adjoint readiness](gallery/runs.md) | adjoint-ready kernels, runs that a program drives, balances and the divergence report, the log, the table columns, scheduled changes, iteration budgets, the tool registry and journal, the MCP server, the control port and an assistant's study | 17, 18, 19, 27, 28, 29, 166, 171, 172, 175, 177, 181 |
 
@@ -141,6 +141,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | <a id="restart-ranks"></a>262 | [Written on five ranks, read on any: restart files on ranks](gallery/meshes.md#restart-ranks) | [Meshes](gallery/meshes.md) |
 | <a id="spray-datums"></a>265 | [Where the liquid goes: datums and droplet statistics](gallery/sprays.md#spray-datums) | [Lagrangian sprays](gallery/sprays.md) |
 | <a id="penalised-cylinder"></a>270 | [A cylinder put into a box mesh by Brinkman penalisation](gallery/immersed.md#penalised-cylinder) | [Immersed bodies](gallery/immersed.md) |
+| <a id="adjoint-a0"></a>271 | [Adjoint stage A0: one steady residual for SIMPLEC and the coupled solver](gallery/verification.md#adjoint-a0) | [Verification](gallery/verification.md) |
 | <a id="natural-convection"></a>272 | [Natural convection benchmarks: a heated square cavity at Ra 10³ to 10⁶, a vertical plate and mixed convection with flow reversal](gallery/energy.md#natural-convection) | [Energy equation and heat transfer](gallery/energy.md) |
 | <a id="porous-flow"></a>273 | [A ceramic honeycomb in an air channel, and a porous block against the exact pressure drop](gallery/porous.md#porous-flow) | [Porous regions](gallery/porous.md) |
 | <a id="porous-two-temperatures"></a>275 | [Charging a honeycomb heat store, and Schumann's bed against the exact solution](gallery/porous.md#porous-two-temperatures) | [Porous regions](gallery/porous.md) |

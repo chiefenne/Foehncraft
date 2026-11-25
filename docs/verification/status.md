@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**122 features: 50 verified, 69 partial, 3 unverified.**
+**123 features: 50 verified, 70 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -49,6 +49,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Pressure–velocity coupling | [Coupled pressure–velocity algorithm with pseudo-time steps](#coupling-coupled) | partial |
 | Pressure–velocity coupling | [PISO with outer correctors, transient](#coupling-piso) | verified |
 | Pressure–velocity coupling | [SIMPLEC-type correctors on thin wedge cells at an axis](#coupling-wedge-corrector) | verified |
+| Adjoint | [Adjoint stage A0: steady residual R(q) of both algorithms, reverse sweep of the momentum face](#adjoint-a0) | partial |
 | Time stepping | [BDF1 (backward Euler)](#time-bdf1) | verified |
 | Time stepping | [BDF2](#time-bdf2) | verified |
 | Time stepping | [Crank–Nicolson](#time-crank-nicolson) | verified |
@@ -498,6 +499,28 @@ Gaps:
 
 - exact: [`pot_solid_body_viscous`](../../examples/cases/flow/pot_solid_body_viscous.toml): solid-body rotation at high viscosity through the axis wedges (manual: velocity error L2 (largest of the levels) ≤ 0.01) ([results](stage6.md#the-piso-corrector-on-thin-wedge-cells-at-an-axis-pr-106))
 - exact: [`solid_body_rotation_is_kept_at_high_viscosity_on_the_axis_wedges`](../../crates/foehncraft-flow/tests/sliding.rs): solid-body rotation kept
+
+## Adjoint
+
+<a id="adjoint-a0"></a>
+
+### Adjoint stage A0: steady residual R(q) of both algorithms, reverse sweep of the momentum face
+
+**partial** (gaps written) · id `adjoint.a0` · switch `Flow::steady_residual, foehncraft_kernels::reverse (no case key yet)` · decisions D220, D221, D222
+
+- consistency: [`adjoint_residual_cavity`](../../examples/cases/flow/adjoint_residual_cavity.toml): the cavity at Re 100 on perturbed polygons converges with SIMPLEC (the example adjoint_a0 runs it with both algorithms) (passes in CI (set linux-3), not yet in the manual) ([results](adjoint-a0.md))
+- consistency: [`steady_residual_vanishes_for_both_algorithms`](../../crates/foehncraft-flow/src/adjoint_tests.rs): SIMPLEC and the coupled solver drive the one residual to 1e-16 and 1e-9 from 5e-2
+- consistency: [`steady_residual_is_independent_of_the_relaxation`](../../crates/foehncraft-flow/src/adjoint_tests.rs): R of one state for alpha 0.8 and 0.5 equal to 2e-13
+- consistency: [`steady_residual_does_not_change_the_run`](../../crates/foehncraft-flow/src/adjoint_tests.rs): a call between iterations leaves the run bitwise unchanged
+- exact: [`reverse_dot_product_test`](../../crates/foehncraft-flow/tests/adjoint.rs): dot-product test of the reverse sweep of the momentum face over a mixed mesh, 6e-17
+- consistency: [`reverse_gradient_against_finite_differences`](../../crates/foehncraft-flow/tests/adjoint.rs): central differences of a face functional, 1e-12
+- consistency: [`reverse_sweep_is_bitwise_reproducible`](../../crates/foehncraft-flow/tests/adjoint.rs): bitwise equal on 1 and 4 threads
+
+Gaps:
+
+- only the momentum face kernel has a reverse sweep; the gradient, limiter, boundary-value, Rhie-Chow and row kernels follow in A1, and with them the dot-product test on the whole R
+- periodic faces are not supported by the reverse sweep
+- no adjoint solve, objective or parameter yet (A1); laminar steady constant-density flow on one rank only
 
 ## Time stepping
 

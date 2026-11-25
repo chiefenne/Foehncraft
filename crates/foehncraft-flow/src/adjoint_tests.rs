@@ -444,3 +444,116 @@ type = "symmetry"
         assert_eq!(fl.amg_setups, 1);
     }
 }
+
+// ---------------------------------------------------------------------
+// L17 stage A0: the steady residual R(q) as one callable (residual.rs).
+// ---------------------------------------------------------------------
+
+/// The perturbed-polygon cavity of `cavity_case` with `extra` settings,
+/// iterated `n` outer iterations.
+fn cavity_run(extra: &str, n: usize) -> Flow {
+    let (case, mesh, geo) = cavity_case(extra);
+    let phys = physics(&case);
+    let arrays = bc::arrays(&mesh, &geo, &case.boundary, phys.rho, bc::At::numbers(None)).unwrap();
+    let disc = simplec::discretisation(&mesh, &geo, &arrays).unwrap();
+    let mut fl = Flow::new(
+        disc,
+        arrays,
+        phys,
+        case.solver.clone(),
+        [0.0; 3],
+        0.0,
+        Some(0),
+        &Target {
+            device: "cpu".into(),
+            threads: Some(1),
+            ptx: Default::default(),
+            ranks: None,
+        },
+    )
+    .unwrap();
+    for _ in 0..n {
+        fl.iterate().unwrap();
+    }
+    fl
+}
+
+const SIMPLEC: &str = "[solver.momentum]\nrelaxation = 0.8\n[solver.pressure]\ntolerance = 1e-10\n";
+const COUPLED: &str = "[solver]\nalgorithm = \"coupled\"\n[solver.pressure]\ntolerance = 1e-10\n";
+
+/// SIMPLEC and the coupled solver converge to states where the one
+/// residual R(q) vanishes (to the convergence of the run), and R of an
+/// early iterate is far from zero: the callable is the residual both
+/// algorithms solve.
+#[test]
+fn steady_residual_vanishes_for_both_algorithms() {
+    let early = cavity_run(SIMPLEC, 5).steady_residual().unwrap().norms();
+    println!(
+        "SIMPLEC after 5 iterations: |R_u| {:.2e}, |R_c| {:.2e}, |R_m| {:.2e}",
+        early[0], early[1], early[2]
+    );
+    assert!(early[0] > 1e-3 && early[2] > 1e-3);
+    for (name, extra, n) in [("SIMPLEC", SIMPLEC, 600), ("coupled", COUPLED, 150)] {
+        let mut fl = cavity_run(extra, n);
+        let r = fl.steady_residual().unwrap().norms();
+        println!(
+            "{name} after {n} iterations: |R_u| {:.2e}, |R_c| {:.2e}, |R_m| {:.2e}",
+            r[0], r[1], r[2]
+        );
+        for (a, b) in r.iter().zip(&early) {
+            assert!(
+                *a < 1e-6 && *a < 1e-4 * b,
+                "{name}: {r:?} against {early:?}"
+            );
+        }
+    }
+}
+
+/// R_ṁ = (ṁ − ṁ*)/α_u does not depend on the relaxation: the same state
+/// gives the same residual for α_u = 0.8 and 0.5 (to round-off).
+#[test]
+fn steady_residual_is_independent_of_the_relaxation() {
+    let mut fl = cavity_run(SIMPLEC, 20);
+    let a = fl.steady_residual().unwrap();
+    fl.settings.momentum.relaxation = Some(0.5);
+    let b = fl.steady_residual().unwrap();
+    let rel = |x: &[f64], y: &[f64]| {
+        let d: f64 = x
+            .iter()
+            .zip(y)
+            .map(|(p, q)| (p - q).powi(2))
+            .sum::<f64>()
+            .sqrt();
+        d / x.iter().map(|p| p * p).sum::<f64>().sqrt()
+    };
+    let e = (
+        rel(&a.mass_flux, &b.mass_flux),
+        rel(&a.momentum[0], &b.momentum[0]),
+    );
+    println!("relative change of R_m {:.1e}, of R_u,x {:.1e}", e.0, e.1);
+    assert!(e.0 < 1e-10 && e.1 < 1e-10, "{e:?}");
+}
+
+/// A residual call between two outer iterations leaves the run unchanged,
+/// bit for bit (the output-schedule rule of AGENTS.md).
+#[test]
+fn steady_residual_does_not_change_the_run() {
+    for extra in [SIMPLEC, COUPLED] {
+        let mut a = cavity_run(extra, 8);
+        let mut b = cavity_run(extra, 8);
+        b.steady_residual().unwrap();
+        for _ in 0..4 {
+            a.iterate().unwrap();
+            b.iterate().unwrap();
+        }
+        let (ua, ub) = (
+            a.dev.download(a.f.u.x).unwrap(),
+            b.dev.download(b.f.u.x).unwrap(),
+        );
+        let (pa, pb) = (
+            a.dev.download(a.f.p).unwrap(),
+            b.dev.download(b.f.p).unwrap(),
+        );
+        assert!(ua == ub && pa == pb, "a residual call changed the run");
+    }
+}

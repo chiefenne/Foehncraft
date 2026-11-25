@@ -25,7 +25,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | [Immersed bodies](recipes/immersed.md) | put a body in the flow without meshing it: `[immersed]`, the permeability, forces | 270 |
 | [Expressions and materials](recipes/properties.md) | values as expressions of x, y, z and t, constants and tables, wall mass flux, the material database, regions | 31, 32 |
 | [Python](recipes/python.md) | the `foehncraft` package: cases, expressions, runs with callbacks, results, materials, studies | 33 |
-| [Verification](recipes/verification.md) | the discretisation uncertainty of a sweep (GCI), the generated verification manual | 34, 35, 165, 170 |
+| [Verification](recipes/verification.md) | the discretisation uncertainty of a sweep (GCI), the generated verification manual | 34, 35, 165, 170, 271 |
 | [Post-processing](recipes/post-processing.md) | derived fields with the output and from restart files (`foehn post derive`) | 30, 108, 110 |
 | [Engineering gallery](recipes/applications.md) | run an application of the Engineering Gallery and compare it with published data | 161, 203 |
 | [Run control and health](recipes/runs.md) | restart, stop and steer runs, drive runs from a script or an agent, balances and divergence reports, the log, scheduled changes and case upgrades, iteration budgets, the tool registry, journals, the MCP server and the control port | 22, 26, 27, 37, 38, 39, 166, 171, 172, 175, 177, 181 |
@@ -154,6 +154,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="restart-ranks"></a>262 | [Write a restart on ranks and continue on another rank count](recipes/meshes.md#restart-ranks) | [Meshes](recipes/meshes.md) |
 | <a id="spray-datums"></a>265 | [Measure the liquid and the droplet sizes at datums](recipes/sprays.md#spray-datums) | [Lagrangian sprays](recipes/sprays.md) |
 | <a id="penalised-body"></a>270 | [Put a body in the flow without meshing it](recipes/immersed.md#penalised-body) | [Immersed bodies](recipes/immersed.md) |
+| <a id="adjoint-a0"></a>271 | [Evaluate the steady residual and check the reverse sweep of the adjoint](recipes/verification.md#adjoint-a0) | [Verification](recipes/verification.md) |
 | <a id="natural-convection"></a>272 | [Set up a natural convection case and check it: a closed cavity, an open plate, a channel with a net flow](recipes/energy.md#natural-convection) | [Energy equation and heat transfer](recipes/energy.md) |
 | <a id="porous-flow"></a>273 | [Put a porous block or a honeycomb into a flow](recipes/porous.md#porous-flow) | [Porous regions](recipes/porous.md) |
 | <a id="porous-two-temperatures"></a>275 | [Give the matrix a temperature of its own: a packed bed or a heat store](recipes/porous.md#porous-two-temperatures) | [Porous regions](recipes/porous.md) |

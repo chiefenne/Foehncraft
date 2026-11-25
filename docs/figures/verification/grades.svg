@@ -1,10 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 652" width="800" height="652" font-family="Helvetica, Arial, sans-serif" font-size="12">
-<rect width="800" height="652" fill="white"/>
-<text x="400.0" y="22" text-anchor="middle" font-size="15" font-weight="bold">Verification grades of 122 features (D199)</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 680" width="800" height="680" font-family="Helvetica, Arial, sans-serif" font-size="12">
+<rect width="800" height="680" fill="white"/>
+<text x="400.0" y="22" text-anchor="middle" font-size="15" font-weight="bold">Verification grades of 123 features (D199)</text>
 <rect x="230" y="36" width="14" height="14" fill="#2e9d5b"/>
 <text x="250" y="48">verified (50)</text>
 <rect x="380" y="36" width="14" height="14" fill="#e9a23b"/>
-<text x="400" y="48">partial (69)</text>
+<text x="400" y="48">partial (70)</text>
 <rect x="530" y="36" width="14" height="14" fill="#d64541"/>
 <text x="550" y="48">unverified (3)</text>
 <text x="220" y="84.0" text-anchor="end">Meshes</text>
@@ -27,76 +27,79 @@
 <text x="291.2" y="168.0" text-anchor="middle" fill="white" font-weight="bold">3</text>
 <rect x="352.3" y="154" width="40.8" height="20" fill="#e9a23b"/>
 <text x="372.7" y="168.0" text-anchor="middle" fill="white" font-weight="bold">1</text>
-<text x="220" y="196.0" text-anchor="end">Time stepping</text>
-<rect x="230.0" y="182" width="122.3" height="20" fill="#2e9d5b"/>
-<text x="291.2" y="196.0" text-anchor="middle" fill="white" font-weight="bold">3</text>
-<rect x="352.3" y="182" width="81.5" height="20" fill="#e9a23b"/>
-<text x="393.1" y="196.0" text-anchor="middle" fill="white" font-weight="bold">2</text>
-<text x="220" y="224.0" text-anchor="end">Boundary conditions</text>
-<rect x="230.0" y="210" width="326.2" height="20" fill="#2e9d5b"/>
-<text x="393.1" y="224.0" text-anchor="middle" fill="white" font-weight="bold">8</text>
-<rect x="556.2" y="210" width="81.5" height="20" fill="#e9a23b"/>
-<text x="596.9" y="224.0" text-anchor="middle" fill="white" font-weight="bold">2</text>
-<rect x="637.7" y="210" width="122.3" height="20" fill="#d64541"/>
-<text x="698.8" y="224.0" text-anchor="middle" fill="white" font-weight="bold">3</text>
-<text x="220" y="252.0" text-anchor="end">Turbulence models</text>
-<rect x="230.0" y="238" width="81.5" height="20" fill="#2e9d5b"/>
-<text x="270.8" y="252.0" text-anchor="middle" fill="white" font-weight="bold">2</text>
-<rect x="311.5" y="238" width="366.9" height="20" fill="#e9a23b"/>
-<text x="495.0" y="252.0" text-anchor="middle" fill="white" font-weight="bold">9</text>
-<text x="220" y="280.0" text-anchor="end">Wall treatments</text>
+<text x="220" y="196.0" text-anchor="end">Adjoint</text>
+<rect x="230.0" y="182" width="40.8" height="20" fill="#e9a23b"/>
+<text x="250.4" y="196.0" text-anchor="middle" fill="white" font-weight="bold">1</text>
+<text x="220" y="224.0" text-anchor="end">Time stepping</text>
+<rect x="230.0" y="210" width="122.3" height="20" fill="#2e9d5b"/>
+<text x="291.2" y="224.0" text-anchor="middle" fill="white" font-weight="bold">3</text>
+<rect x="352.3" y="210" width="81.5" height="20" fill="#e9a23b"/>
+<text x="393.1" y="224.0" text-anchor="middle" fill="white" font-weight="bold">2</text>
+<text x="220" y="252.0" text-anchor="end">Boundary conditions</text>
+<rect x="230.0" y="238" width="326.2" height="20" fill="#2e9d5b"/>
+<text x="393.1" y="252.0" text-anchor="middle" fill="white" font-weight="bold">8</text>
+<rect x="556.2" y="238" width="81.5" height="20" fill="#e9a23b"/>
+<text x="596.9" y="252.0" text-anchor="middle" fill="white" font-weight="bold">2</text>
+<rect x="637.7" y="238" width="122.3" height="20" fill="#d64541"/>
+<text x="698.8" y="252.0" text-anchor="middle" fill="white" font-weight="bold">3</text>
+<text x="220" y="280.0" text-anchor="end">Turbulence models</text>
 <rect x="230.0" y="266" width="81.5" height="20" fill="#2e9d5b"/>
 <text x="270.8" y="280.0" text-anchor="middle" fill="white" font-weight="bold">2</text>
-<rect x="311.5" y="266" width="203.8" height="20" fill="#e9a23b"/>
-<text x="413.5" y="280.0" text-anchor="middle" fill="white" font-weight="bold">5</text>
-<text x="220" y="308.0" text-anchor="end">Heat and passive scalars</text>
-<rect x="230.0" y="294" width="40.8" height="20" fill="#2e9d5b"/>
-<text x="250.4" y="308.0" text-anchor="middle" fill="white" font-weight="bold">1</text>
-<rect x="270.8" y="294" width="81.5" height="20" fill="#e9a23b"/>
-<text x="311.5" y="308.0" text-anchor="middle" fill="white" font-weight="bold">2</text>
-<text x="220" y="336.0" text-anchor="end">Energy</text>
-<rect x="230.0" y="322" width="122.3" height="20" fill="#2e9d5b"/>
-<text x="291.2" y="336.0" text-anchor="middle" fill="white" font-weight="bold">3</text>
-<rect x="352.3" y="322" width="40.8" height="20" fill="#e9a23b"/>
-<text x="372.7" y="336.0" text-anchor="middle" fill="white" font-weight="bold">1</text>
-<text x="220" y="364.0" text-anchor="end">Conjugate heat transfer</text>
-<rect x="230.0" y="350" width="163.1" height="20" fill="#2e9d5b"/>
-<text x="311.5" y="364.0" text-anchor="middle" fill="white" font-weight="bold">4</text>
-<rect x="393.1" y="350" width="244.6" height="20" fill="#e9a23b"/>
-<text x="515.4" y="364.0" text-anchor="middle" fill="white" font-weight="bold">6</text>
-<text x="220" y="392.0" text-anchor="end">Buoyancy</text>
-<rect x="230.0" y="378" width="81.5" height="20" fill="#2e9d5b"/>
-<text x="270.8" y="392.0" text-anchor="middle" fill="white" font-weight="bold">2</text>
-<rect x="311.5" y="378" width="81.5" height="20" fill="#e9a23b"/>
-<text x="352.3" y="392.0" text-anchor="middle" fill="white" font-weight="bold">2</text>
-<text x="220" y="420.0" text-anchor="end">Rotating machinery</text>
-<rect x="230.0" y="406" width="163.1" height="20" fill="#2e9d5b"/>
-<text x="311.5" y="420.0" text-anchor="middle" fill="white" font-weight="bold">4</text>
-<rect x="393.1" y="406" width="163.1" height="20" fill="#e9a23b"/>
-<text x="474.6" y="420.0" text-anchor="middle" fill="white" font-weight="bold">4</text>
-<text x="220" y="448.0" text-anchor="end">Cases and properties</text>
-<rect x="230.0" y="434" width="40.8" height="20" fill="#2e9d5b"/>
-<text x="250.4" y="448.0" text-anchor="middle" fill="white" font-weight="bold">1</text>
-<rect x="270.8" y="434" width="122.3" height="20" fill="#e9a23b"/>
-<text x="331.9" y="448.0" text-anchor="middle" fill="white" font-weight="bold">3</text>
-<text x="220" y="476.0" text-anchor="end">Runs and results</text>
-<rect x="230.0" y="462" width="244.6" height="20" fill="#2e9d5b"/>
-<text x="352.3" y="476.0" text-anchor="middle" fill="white" font-weight="bold">6</text>
-<rect x="474.6" y="462" width="163.1" height="20" fill="#e9a23b"/>
-<text x="556.2" y="476.0" text-anchor="middle" fill="white" font-weight="bold">4</text>
-<text x="220" y="504.0" text-anchor="end">Backends and interfaces</text>
+<rect x="311.5" y="266" width="366.9" height="20" fill="#e9a23b"/>
+<text x="495.0" y="280.0" text-anchor="middle" fill="white" font-weight="bold">9</text>
+<text x="220" y="308.0" text-anchor="end">Wall treatments</text>
+<rect x="230.0" y="294" width="81.5" height="20" fill="#2e9d5b"/>
+<text x="270.8" y="308.0" text-anchor="middle" fill="white" font-weight="bold">2</text>
+<rect x="311.5" y="294" width="203.8" height="20" fill="#e9a23b"/>
+<text x="413.5" y="308.0" text-anchor="middle" fill="white" font-weight="bold">5</text>
+<text x="220" y="336.0" text-anchor="end">Heat and passive scalars</text>
+<rect x="230.0" y="322" width="40.8" height="20" fill="#2e9d5b"/>
+<text x="250.4" y="336.0" text-anchor="middle" fill="white" font-weight="bold">1</text>
+<rect x="270.8" y="322" width="81.5" height="20" fill="#e9a23b"/>
+<text x="311.5" y="336.0" text-anchor="middle" fill="white" font-weight="bold">2</text>
+<text x="220" y="364.0" text-anchor="end">Energy</text>
+<rect x="230.0" y="350" width="122.3" height="20" fill="#2e9d5b"/>
+<text x="291.2" y="364.0" text-anchor="middle" fill="white" font-weight="bold">3</text>
+<rect x="352.3" y="350" width="40.8" height="20" fill="#e9a23b"/>
+<text x="372.7" y="364.0" text-anchor="middle" fill="white" font-weight="bold">1</text>
+<text x="220" y="392.0" text-anchor="end">Conjugate heat transfer</text>
+<rect x="230.0" y="378" width="163.1" height="20" fill="#2e9d5b"/>
+<text x="311.5" y="392.0" text-anchor="middle" fill="white" font-weight="bold">4</text>
+<rect x="393.1" y="378" width="244.6" height="20" fill="#e9a23b"/>
+<text x="515.4" y="392.0" text-anchor="middle" fill="white" font-weight="bold">6</text>
+<text x="220" y="420.0" text-anchor="end">Buoyancy</text>
+<rect x="230.0" y="406" width="81.5" height="20" fill="#2e9d5b"/>
+<text x="270.8" y="420.0" text-anchor="middle" fill="white" font-weight="bold">2</text>
+<rect x="311.5" y="406" width="81.5" height="20" fill="#e9a23b"/>
+<text x="352.3" y="420.0" text-anchor="middle" fill="white" font-weight="bold">2</text>
+<text x="220" y="448.0" text-anchor="end">Rotating machinery</text>
+<rect x="230.0" y="434" width="163.1" height="20" fill="#2e9d5b"/>
+<text x="311.5" y="448.0" text-anchor="middle" fill="white" font-weight="bold">4</text>
+<rect x="393.1" y="434" width="163.1" height="20" fill="#e9a23b"/>
+<text x="474.6" y="448.0" text-anchor="middle" fill="white" font-weight="bold">4</text>
+<text x="220" y="476.0" text-anchor="end">Cases and properties</text>
+<rect x="230.0" y="462" width="40.8" height="20" fill="#2e9d5b"/>
+<text x="250.4" y="476.0" text-anchor="middle" fill="white" font-weight="bold">1</text>
+<rect x="270.8" y="462" width="122.3" height="20" fill="#e9a23b"/>
+<text x="331.9" y="476.0" text-anchor="middle" fill="white" font-weight="bold">3</text>
+<text x="220" y="504.0" text-anchor="end">Runs and results</text>
 <rect x="230.0" y="490" width="244.6" height="20" fill="#2e9d5b"/>
 <text x="352.3" y="504.0" text-anchor="middle" fill="white" font-weight="bold">6</text>
-<rect x="474.6" y="490" width="285.4" height="20" fill="#e9a23b"/>
-<text x="617.3" y="504.0" text-anchor="middle" fill="white" font-weight="bold">7</text>
-<text x="220" y="532.0" text-anchor="end">Sprays</text>
-<rect x="230.0" y="518" width="122.3" height="20" fill="#e9a23b"/>
-<text x="291.2" y="532.0" text-anchor="middle" fill="white" font-weight="bold">3</text>
-<text x="220" y="560.0" text-anchor="end">Flow models</text>
-<rect x="230.0" y="546" width="81.5" height="20" fill="#e9a23b"/>
-<text x="270.8" y="560.0" text-anchor="middle" fill="white" font-weight="bold">2</text>
-<text x="220" y="588.0" text-anchor="end">Immersed bodies</text>
-<rect x="230.0" y="574" width="40.8" height="20" fill="#e9a23b"/>
-<text x="250.4" y="588.0" text-anchor="middle" fill="white" font-weight="bold">1</text>
-<text x="495.0" y="636" text-anchor="middle" fill="#555">features per area, grades computed from docs/verification/features.toml</text>
+<rect x="474.6" y="490" width="163.1" height="20" fill="#e9a23b"/>
+<text x="556.2" y="504.0" text-anchor="middle" fill="white" font-weight="bold">4</text>
+<text x="220" y="532.0" text-anchor="end">Backends and interfaces</text>
+<rect x="230.0" y="518" width="244.6" height="20" fill="#2e9d5b"/>
+<text x="352.3" y="532.0" text-anchor="middle" fill="white" font-weight="bold">6</text>
+<rect x="474.6" y="518" width="285.4" height="20" fill="#e9a23b"/>
+<text x="617.3" y="532.0" text-anchor="middle" fill="white" font-weight="bold">7</text>
+<text x="220" y="560.0" text-anchor="end">Sprays</text>
+<rect x="230.0" y="546" width="122.3" height="20" fill="#e9a23b"/>
+<text x="291.2" y="560.0" text-anchor="middle" fill="white" font-weight="bold">3</text>
+<text x="220" y="588.0" text-anchor="end">Flow models</text>
+<rect x="230.0" y="574" width="81.5" height="20" fill="#e9a23b"/>
+<text x="270.8" y="588.0" text-anchor="middle" fill="white" font-weight="bold">2</text>
+<text x="220" y="616.0" text-anchor="end">Immersed bodies</text>
+<rect x="230.0" y="602" width="40.8" height="20" fill="#e9a23b"/>
+<text x="250.4" y="616.0" text-anchor="middle" fill="white" font-weight="bold">1</text>
+<text x="495.0" y="664" text-anchor="middle" fill="#555">features per area, grades computed from docs/verification/features.toml</text>
 </svg>
