@@ -2068,6 +2068,27 @@ impl Scalars {
         dev: &mut dyn FlowDevice,
         only: Option<&[bool]>,
     ) -> Result<Option<Vec<RegionHeat>>> {
+        self.energy_storage_of_on(dev, only, None)
+    }
+
+    /// q''' V per cell of the energy equation (W; empty without it).
+    fn energy_source_cells(&self) -> Vec<f64> {
+        self.fields
+            .iter()
+            .find_map(|f| f.energy.as_deref())
+            .map(|e| e.heat.iter().zip(&e.volume).map(|(h, v)| h * v).collect())
+            .unwrap_or_default()
+    }
+
+    /// [`Scalars::energy_storage_of`] with the cell arrays gathered by `g`
+    /// into the order of the whole mesh (a run on ranks, MPI step W7;
+    /// collective), so that the sums run in the order of one rank.
+    pub(crate) fn energy_storage_of_on(
+        &self,
+        dev: &mut dyn FlowDevice,
+        only: Option<&[bool]>,
+        g: Option<&mut crate::ranks::Fields<'_>>,
+    ) -> Result<Option<Vec<RegionHeat>>> {
         let Some(st) = self.last_step else {
             return Ok(None);
         };
@@ -2077,20 +2098,33 @@ impl Scalars {
         let (Some(e), Some((o1, o2, _))) = (f.energy.as_deref(), f.old) else {
             return Ok(None);
         };
-        let t = dev.download(f.phi)?;
-        let t1 = dev.download(o1)?;
-        let t2 = if st.a[2] != 0.0 {
+        let mut t = dev.download(f.phi)?;
+        let mut t1 = dev.download(o1)?;
+        let mut t2 = if st.a[2] != 0.0 {
             dev.download(o2)?
         } else {
             vec![0.0; t.len()]
         };
+        let (mut mat_cell, mut volume) = (
+            std::borrow::Cow::Borrowed(&e.mat_cell[..]),
+            std::borrow::Cow::Borrowed(&e.volume[..]),
+        );
+        if let Some(g) = g {
+            use crate::restart::FieldMap as _;
+            t = g.cells(&t)?;
+            t1 = g.cells(&t1)?;
+            t2 = g.cells(&t2)?;
+            let mc: Vec<f64> = e.mat_cell.iter().map(|&x| f64::from(x)).collect();
+            mat_cell = g.cells(&mc)?.into_iter().map(|x| x as u32).collect();
+            volume = std::borrow::Cow::Owned(g.cells(&e.volume)?);
+        }
         let [a0, a1, a2] = st.a;
         let mut per = vec![0.0; e.regions.len()];
-        for c in 0..e.mat_cell.len() {
+        for c in 0..mat_cell.len() {
             if only.is_some_and(|o| !o[c]) {
                 continue;
             }
-            let m = e.mat_cell[c] as usize;
+            let m = mat_cell[c] as usize;
             let h = &e.h[m];
             let mut l = a0 * h.at(t[c]) + a1 * h.at(t1[c]);
             if a2 != 0.0 {
@@ -2102,9 +2136,9 @@ impl Scalars {
                 // ledger is ∂(ρ h)/∂t (stage 7c)
                 Some(v) => {
                     let d = v.drho_dt.get(c).copied().unwrap_or(0.0);
-                    per[m] += e.volume[c] * (v.rho[c] * l / st.dt + h.at(t[c]) * d);
+                    per[m] += volume[c] * (v.rho[c] * l / st.dt + h.at(t[c]) * d);
                 }
-                None => per[m] += e.mats[m].rho * e.volume[c] * l / st.dt,
+                None => per[m] += e.mats[m].rho * volume[c] * l / st.dt,
             }
         }
         // with a thermal acceleration (D213) the equation stores f times
@@ -4084,16 +4118,91 @@ pub fn summaries(
     dim: u8,
     t: f64,
 ) -> Result<Vec<ScalarSummary>> {
+    summaries_on(fl, case, mesh, geo, dim, t, None)
+}
+
+/// [`summaries`] of a run on ranks (MPI step W7): `mesh` and `geo` are
+/// those of the whole mesh, every array of this rank's part is gathered
+/// into the order of the whole mesh and summed there by the code of one
+/// rank, so the summary is bitwise that of one rank. Collective on ranks.
+pub(crate) fn summaries_on(
+    fl: &mut crate::simplec::Flow,
+    case: &crate::case::FlowCase,
+    mesh: &Mesh,
+    geo: &Geometry,
+    dim: u8,
+    t: f64,
+    on: Option<&crate::ranks::OnRanks>,
+) -> Result<Vec<ScalarSummary>> {
     if fl.cht.is_some() {
         return crate::cht::summaries(fl, dim, t);
     }
     let Some(sc) = fl.scalars.as_ref() else {
         return Ok(Vec::new());
     };
-    let data = sc.host_data(fl.dev.as_mut())?;
+    // on ranks: the arrays in the order of the whole mesh, its
+    // discretisation
+    let mut g = on.map(crate::ranks::OnRanks::fields);
+    let disc = on.map_or(&fl.disc, |o| &o.disc);
+    if on.is_some() {
+        let held = sc.energy_held().is_some();
+        let unsupported = sc.energy_boundary_cross().is_some()
+            || held
+            || sc.energy_extra_total().is_some()
+            || sc.porous_matrix().is_some()
+            || sc.fields.iter().any(|f| f.heat_flux.is_some())
+            || sc
+                .fields
+                .iter()
+                .find_map(|f| f.energy.as_deref())
+                .is_some_and(|e| e.spray_heat.is_some() || e.var_rho.is_some());
+        // the same answer on every rank: the case decides it
+        anyhow::ensure!(
+            !unsupported,
+            "the scalar summary of orthotropic solids, held cells, porous matrices, heat-flux \
+             pairs, sprays or a variable density does not run on ranks yet (MPI step W7)"
+        );
+    }
+    let mut data = sc.host_data(fl.dev.as_mut())?;
     // the heat-flux pairs: Δ and the bulk values of the level fix
     let deltas = sc.periodic_bulk(fl.dev.as_mut(), fl.f.mass_flux)?;
-    let m = fl.dev.download(fl.f.mass_flux)?;
+    let mut m = fl.dev.download(fl.f.mass_flux)?;
+    let mut heat = sc.energy_host();
+    let mut outflow = if heat.is_some() {
+        sc.energy_outflow(fl.dev.as_mut())?
+    } else {
+        None
+    };
+    let mut stored = match heat {
+        Some(_) if g.is_none() => sc.energy_storage(fl.dev.as_mut())?,
+        _ => None,
+    };
+    if let Some(g) = g.as_mut() {
+        use crate::restart::FieldMap as _;
+        for (_, phi, a, b, gamma) in &mut data {
+            *phi = g.cells(phi)?;
+            *a = g.boundary(a)?;
+            *b = g.boundary(b)?;
+            *gamma = g.faces(gamma)?;
+        }
+        m = g.faces(&m)?;
+        if let Some(((_, mat), src)) = heat.as_mut() {
+            let mc: Vec<f64> = mat.iter().map(|&x| f64::from(x)).collect();
+            *mat = g.cells(&mc)?.into_iter().map(|x| x as u32).collect();
+            // Σ q''' V in the order of the whole mesh (an exact sum: the
+            // same value in any order)
+            *src = g.cells(&sc.energy_source_cells())?.iter().exact_sum();
+        }
+        if let Some(w) = outflow.as_mut() {
+            for d in 0..3 {
+                w.grad[d] = g.cells(&w.grad[d])?;
+            }
+            w.psi = g.cells(&w.psi)?;
+        }
+        if heat.is_some() {
+            stored = sc.energy_storage_of_on(fl.dev.as_mut(), None, Some(g))?;
+        }
+    }
     let env = case.env()?;
     let transient = case.time.is_some();
     let time = if transient { Vars::T } else { Vars::NONE };
@@ -4134,14 +4243,10 @@ pub fn summaries(
         // the energy equation: the flux in W/m² (k, not ρΓ), the heat
         // flows and the balance
         let heat = (name == crate::energy::FIELD)
-            .then(|| sc.energy_host())
+            .then(|| heat.clone())
             .flatten();
         let div = if heat.is_some() { 1.0 } else { rho };
-        let outflow = if heat.is_some() {
-            sc.energy_outflow(fl.dev.as_mut())?
-        } else {
-            None
-        };
+        let outflow = if heat.is_some() { outflow.take() } else { None };
         let cross = if heat.is_some() {
             sc.energy_boundary_cross()
         } else {
@@ -4168,14 +4273,14 @@ pub fn summaries(
                 sum += ar * pf;
                 // the diffusive flux into the domain, orthogonal part (the
                 // whole flux at a flux face): ρΓ |S|²/(d·S) (φ_f − φ_P)
-                let dgeo = fl.disc.dgeo[f];
+                let dgeo = disc.dgeo[f];
                 flux += gamma[f] / div * dgeo * (pf - phi[o]);
                 if let (Some(w), true) = (&outflow, heat.is_some()) {
                     // the energy equation: the whole flux of the assembly,
                     // with its non-orthogonal part (1 − a) k ∇T_P·k_f and the
                     // cross term of an orthotropic solid (stage 7d2), so that
                     // the balance closes on skewed meshes too
-                    let kv = [fl.disc.k.x[f], fl.disc.k.y[f], fl.disc.k.z[f]];
+                    let kv = [disc.k.x[f], disc.k.y[f], disc.k.z[f]];
                     let g: f64 = (0..3).map(|d| w.grad[d][o] * kv[d]).sum();
                     flux += (1.0 - a[fb]) * gamma[f] * g;
                     if let Some(x) = cross {
@@ -4219,7 +4324,7 @@ pub fn summaries(
             }
         }
         let stored = match heat {
-            Some(_) => sc.energy_storage(fl.dev.as_mut())?,
+            Some(_) => stored.take(),
             None => None,
         };
         let held_stored = match held {
@@ -4298,11 +4403,11 @@ pub fn summaries(
                         let n = mesh.neighbour[f] as usize;
                         let (_, ar) = geo.normal_area(f);
                         let pn = phi[n] + sd * dk;
-                        let w = fl.disc.weight[f];
+                        let w = disc.weight[f];
                         let pf = w * phi[o] + (1.0 - w) * pn;
                         area += ar;
                         sum += ar * pf;
-                        flux += gamma[f] / div * fl.disc.dgeo[f] * (pn - phi[o]);
+                        flux += gamma[f] / div * disc.dgeo[f] * (pn - phi[o]);
                         mf += m[f].abs();
                         msum += m[f].abs() * pf;
                     }

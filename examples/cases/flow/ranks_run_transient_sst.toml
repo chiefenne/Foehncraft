@@ -1,0 +1,116 @@
+# A transient, turbulent, heated channel flow solved on ranks (MPI step W7
+# part 2): k-ω SST, the energy equation and a passive dye marched with
+# BDF2 on five ranks. Every rank solves its part; rank 0 writes the log,
+# the run record and every output file, and what the output reads (the
+# history, the heat balance of every step, the probes, the wall forces,
+# the ledger, the field and restart files, the scalar, heat and turbulence
+# summaries) is computed on the fields gathered into the order of the
+# whole mesh, so every file is byte for byte that of one rank (D93, D84).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/ranks_run_transient_sst.toml
+#
+# runs it on the five ranks of `[run] rank_count` (threads of this process;
+# `--ranks N` overrides the count, `--ranks 1` gives the reference). With a
+# build that has the `mpi` feature the ranks may be MPI processes:
+#
+#   cargo build --release -p foehncraft-cli --features mpi
+#   mpirun -n 5 target/release/foehn flow examples/cases/flow/ranks_run_transient_sst.toml
+#
+# The channel of ranks_heated_channel_sst.toml (Re = 10 000 on the height,
+# lower wall 30 K above the inflow, upper wall adiabatic) with the upper
+# wall moving against the inflow at half the inflow speed, so that a
+# recirculation forms under it. The flow starts from potential flow and
+# marches 1.5 flow-through times; the heated layer grows along the lower
+# wall and the dye of the upper half of the inflow is carried into the
+# recirculation.
+
+case_format = "0.7"
+
+[mesh.generate]
+type = "poly"
+dimension = 2
+upper = [3.0, 1.0, 0.1]
+cells = [90, 30, 1]
+perturb = 0.1
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 1e-4
+specific_heat = 1000.0
+conductivity = 0.14            # Pr = 0.71
+
+[turbulence]
+model = "k-omega-sst"
+
+[initial]
+potential_flow = true
+turbulence_intensity = 0.05
+viscosity_ratio = 10.0
+
+[energy]
+initial = 300.0
+
+[scalars.dye]
+diffusivity = 1e-4
+initial = 0.0
+
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [1.0, 0.0, 0.0]
+[boundary.xmin.energy]
+temperature = 300.0
+[boundary.xmin.scalar.dye]
+value = "step(y, 0.5)"
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 101325.0
+[boundary.ymin]
+type = "wall"
+[boundary.ymin.energy]
+temperature = 330.0
+[boundary.ymin.scalar.dye]
+flux = 0.0
+[boundary.ymax]
+type = "wall"
+velocity = [-0.5, 0.0, 0.0]
+[boundary.ymax.energy]
+heat_flux = 0.0                # adiabatic
+[boundary.ymax.scalar.dye]
+flux = 0.0
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[time]
+scheme = "bdf2"
+time_step = 0.025
+end_time = 4.5
+
+[solver]
+log_every = 20
+
+[solver.momentum]
+limiter = "venkatakrishnan"
+
+[output]
+fields_every = 60
+
+[[output.probes]]
+name = "eddy"
+point = [2.5, 0.8, 0.05]
+
+[log]
+columns = [
+  "residual.momentum",
+  "residual.scalars",
+  "probe.eddy.velocity_x",
+  "max.velocity_magnitude",
+  "boundary.xmax.mass_flow",
+]
+
+[run]
+rank_count = 5

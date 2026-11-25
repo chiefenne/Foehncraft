@@ -1484,7 +1484,11 @@ impl crate::restart::FieldMap for Scatter<'_> {
 
 /// The gather of the output: as [`Gather`], without the matrices (the
 /// output needs none).
-struct GatherFields<'a>(&'a Layout);
+pub(crate) struct GatherFields<'a>(&'a Layout);
+
+/// The gather of the arrays of a rank's part into the order of the whole
+/// mesh, for the output of a run on ranks ([`OnRanks::fields`]).
+pub(crate) type Fields<'a> = GatherFields<'a>;
 
 impl crate::restart::FieldMap for GatherFields<'_> {
     fn cells(&mut self, v: &[f64]) -> Result<Vec<f64>> {
@@ -1611,6 +1615,12 @@ impl OnRanks {
         })
     }
 
+    /// The gather of this rank's arrays into the order of the whole mesh
+    /// (each call collective).
+    pub fn fields(&self) -> Fields<'_> {
+        GatherFields(&self.layout)
+    }
+
     /// The restart of the whole run from this rank's part `r` (the bytes
     /// of the one-rank file, W6). Collective.
     pub fn restart(&self, r: crate::restart::Restart) -> Result<crate::restart::Restart> {
@@ -1651,8 +1661,10 @@ impl OnRanks {
 }
 
 /// Fails unless a case can run on ranks (`[run] rank_count`, `foehn run
-/// --ranks N`): what [`supported`] allows, steady, without porous regions,
-/// a rotating frame or a cell-quality remedy that differs per rank.
+/// --ranks N`): what [`supported`] allows (laminar or k-ω SST and k-ε,
+/// passive scalars and the energy equation of one fluid, steady or
+/// transient, in a rotating frame of the whole domain), without species,
+/// statistics or the time-saving loops of conjugate runs.
 pub fn supported_run(case: &FlowCase) -> Result<()> {
     let n = case.run.rank_count;
     anyhow::ensure!(
@@ -1669,18 +1681,16 @@ pub fn supported_run(case: &FlowCase) -> Result<()> {
         )
     })?;
     let missing: Vec<&str> = [
+        (case.species.is_some(), "species transport"),
         (
-            case.time.is_some(),
-            "a [time] table (transient runs on ranks are MPI step W7 part 2)",
-        ),
-        (case.flow.frame_rotation != [0.0; 3], "a rotating frame"),
-        (
-            !case.scalars.is_empty() || case.energy.is_some(),
-            "passive scalars or the energy equation (their summaries on ranks follow in W7 part 2)",
+            case.energy.as_ref().is_some_and(|e| {
+                e.acceleration.is_some() || e.cycle.is_some() || e.frozen_flow.is_some()
+            }),
+            "the thermal acceleration, the cycle loop or the frozen-flow march of [energy]",
         ),
         (
-            !case.turbulence.is_laminar(),
-            "a turbulence model (its wall summary on ranks follows in W7 part 2)",
+            case.output.statistics.is_some(),
+            "[output.statistics] (their moments on ranks follow)",
         ),
         (
             !case.run.ranks.is_empty(),

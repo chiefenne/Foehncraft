@@ -2135,10 +2135,12 @@ pub(crate) fn wall_crossings(
 pub(crate) fn turbulence_summary<F: FnMut(&str)>(
     fl: &mut Flow,
     mesh: &Mesh,
+    on: Option<(&crate::ranks::OnRanks, &Geometry, &FlowCase)>,
     lg: &mut Log<F>,
     warnings: &mut Vec<diag::Diagnostic>,
 ) -> Result<Option<crate::turbulence::TurbulenceSummary>> {
-    let Some((sm, finds)) = crate::turbulence::summary(fl, mesh)? else {
+    let on = on.map(|(o, g, c)| (o, g, &c.boundary));
+    let Some((sm, finds)) = crate::turbulence::summary_on(fl, mesh, on)? else {
         return Ok(None);
     };
     lg.line(&format!(
@@ -3795,7 +3797,15 @@ pub fn run_steered(
             }
         }
         drop(fl_host);
-        let scalars = crate::scalar::summaries(&mut fl, &case, &mesh, &geo, dimension(&case), 0.0)?;
+        let scalars = crate::scalar::summaries_on(
+            &mut fl,
+            &case,
+            &mesh,
+            &geo,
+            dimension(&case),
+            0.0,
+            on.as_ref(),
+        )?;
         for sm in &scalars {
             lg.line(&crate::scalar::summary_line(sm));
             if let Some(d) = converged
@@ -3834,7 +3844,13 @@ pub fn run_steered(
             }
         }
         let periodic = periodic_summaries(&mut fl, &mesh, &mut lg)?;
-        let turbulence = turbulence_summary(&mut fl, &mesh, &mut lg, &mut rep.warnings)?;
+        let turbulence = turbulence_summary(
+            &mut fl,
+            &mesh,
+            on.as_ref().map(|o| (o, &geo, &case)),
+            &mut lg,
+            &mut rep.warnings,
+        )?;
         let density = crate::density::summary(&mut fl, &mut rep.warnings)?;
         if single && (case.run.restart_final || stopped) && restart::AVAILABLE {
             let rs = restart_of(&mut fl, smesh, name, on.as_ref())?;

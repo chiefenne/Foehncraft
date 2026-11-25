@@ -368,6 +368,13 @@ pub fn run(
     if !case.run.ranks.is_empty() {
         crate::ranks::supported(case)?;
     }
+    if steer.ranks.is_some() {
+        crate::ranks::supported_run(case)?;
+        anyhow::ensure!(
+            specs.len() == 1,
+            "a sweep over time steps does not run on ranks yet (MPI step W7)"
+        );
+    }
     let mut outs: Vec<RunOut> = Vec::new();
     let last = specs.len() - 1;
     for (ri, spec) in specs.iter().enumerate() {
@@ -848,7 +855,28 @@ fn files_frame(
 }
 
 /// The restart content of the current state.
+#[allow(clippy::too_many_arguments)]
 fn restart_of(
+    fl: &mut Flow,
+    tr: &Transient,
+    mesh: &foehncraft_mesh::Mesh,
+    name: &str,
+    dt_next: f64,
+    cycle: Option<&crate::cycle::Controller>,
+    frozen: Option<&crate::frozen::Controller>,
+    on: Option<&crate::ranks::OnRanks>,
+) -> Result<Restart> {
+    let r = restart_part(fl, tr, mesh, name, dt_next, cycle, frozen)?;
+    match on {
+        // on ranks gathered into the global order (the bytes of the
+        // one-rank file, W6; collective)
+        Some(o) => o.restart(r),
+        None => Ok(r),
+    }
+}
+
+/// The restart of this rank's part (`mesh`: the mesh of its solver).
+fn restart_part(
     fl: &mut Flow,
     tr: &Transient,
     mesh: &foehncraft_mesh::Mesh,
@@ -1034,9 +1062,67 @@ fn run_one<F: FnMut(&str)>(
             hydrostatic: crate::buoyancy::hydrostatic(&case),
         },
     )?;
+    // a run on ranks (MPI step W7): this rank's part, its own arrays and
+    // physics; the global ones stay for the output
+    let on = match steer.ranks.clone() {
+        Some(c) => Some(crate::ranks::OnRanks::new(c, mesh, geo, arrays.clone())?),
+        None => None,
+    };
+    let lead = on.as_ref().is_none_or(crate::ranks::OnRanks::lead);
+    if let Some(o) = &on {
+        o.write_partition(out, mesh)?;
+        let own = o.local.mesh.n_cells;
+        let fewest = o.comm.min(own as f64) as usize;
+        let most = o.comm.max(own as f64) as usize;
+        lg.note(&format!(
+            "solved on {} ranks ({} communicator), {fewest} to {most} cells each; rank 0 \
+             writes the output, computed on the fields of all ranks in the order of the \
+             whole mesh (MPI step W7)",
+            o.comm.size(),
+            o.comm.name()
+        ));
+    }
+    let (arrays, phys) = match &on {
+        Some(o) => {
+            let lp = crate::case::physics(&case)?;
+            let lp = crate::case::physics_on(&case, &lp, &o.local.mesh, &o.geo)?;
+            let la = bc::arrays(
+                &o.local.mesh,
+                &o.geo,
+                &case.boundary,
+                &lp,
+                bc::At {
+                    analytic: analytic0.as_ref(),
+                    values: &tv.values,
+                    t: time0.start_time,
+                    turning: &case.turning(),
+                    hydrostatic: crate::buoyancy::hydrostatic(&case),
+                },
+            )?;
+            (la, lp)
+        }
+        None => (arrays, phys),
+    };
+    // the mesh and geometry of this rank's solver
+    let (smesh, sgeo) = match &on {
+        Some(o) => (&o.local.mesh, &o.geo),
+        None => (mesh, geo),
+    };
+    // the boundary kinds of the whole mesh, for the ledger
+    let mom_kind = on
+        .as_ref()
+        .map_or_else(|| arrays.mom_kind.clone(), |o| o.arrays.mom_kind.clone());
     let ub0 = arrays.ub.clone();
-    let disc = simplec::discretisation(mesh, geo, &arrays)?;
-    let operators = crate::operators::report(&case, mesh, geo, &arrays.u_points, out, lg, warnings);
+    let disc = simplec::discretisation(smesh, sgeo, &arrays)?;
+    let operators = crate::operators::report(
+        &case,
+        mesh,
+        geo,
+        on.as_ref().map_or(&arrays.u_points, |o| &o.arrays.u_points),
+        out,
+        lg,
+        warnings,
+    );
     // (on the base mesh: a probe or the reference cell is found there, a
     // point inside a sliding rotor is a limit of variant B)
     let loc = Locator::new(mesh0, geo0);
@@ -1059,7 +1145,7 @@ fn run_one<F: FnMut(&str)>(
         device: case.run.backend.clone(),
         threads: case.run.threads,
         ptx: case.run.ptx.clone(),
-        ranks: None,
+        ranks: on.as_ref().and_then(|o| o.target(&Target::default()).ranks),
     };
     let mut fl = Flow::on(
         disc,
@@ -1070,16 +1156,23 @@ fn run_one<F: FnMut(&str)>(
         reference_cell,
         &target,
     )?;
+    if let Some(o) = &on {
+        // the numbers of the whole mesh, not of this rank's part
+        let skew = simplec::face_skewness(&o.disc);
+        let lim = fl.remediation.skewness_limit;
+        (fl.remediation.skewed_faces, fl.remediation.poor_cells) =
+            simplec::skew_counts(&o.disc, &skew, lim);
+    }
     let remediation = crate::case::report_remediation(&fl, lg, warnings);
     let nc = mesh.n_cells;
-    if let Some(src) = crate::case::momentum_source(&case, geo, nc, time0.start_time)? {
+    if let Some(src) = crate::case::momentum_source(&case, sgeo, smesh.n_cells, time0.start_time)? {
         fl.set_momentum_source(src)?;
     }
-    crate::scalar::attach(&mut fl, &case, mesh, geo)?;
+    crate::scalar::attach(&mut fl, &case, smesh, sgeo)?;
     crate::density::attach(&mut fl, &case)?;
     crate::buoyancy::attach(&mut fl, &case)?;
-    crate::porous::attach(&mut fl, &case, mesh)?;
-    for d in crate::immersed::attach(&mut fl, &case, mesh, geo)? {
+    crate::porous::attach(&mut fl, &case, smesh)?;
+    for d in crate::immersed::attach(&mut fl, &case, smesh, sgeo)? {
         if d.severity == crate::diag::Severity::Warning {
             lg.warn(&format!("{}: {}", d.code, d.message));
             warnings.push(d);
@@ -1106,13 +1199,20 @@ fn run_one<F: FnMut(&str)>(
         },
         _ => None,
     };
-    crate::turbulence::attach_with(
-        &mut fl,
-        &case,
-        mesh,
-        geo,
-        turning_distance.as_mut().map(|(_, d)| std::mem::take(d)),
-    )?;
+    match &on {
+        // the wall distance of the whole mesh, each rank its cells (W5)
+        Some(o) if !case.turbulence.is_laminar() => {
+            let d = crate::derived::wall_distance(&case, mesh, geo)?;
+            crate::turbulence::attach_with(&mut fl, &case, smesh, sgeo, Some(o.own(&d)))?;
+        }
+        _ => crate::turbulence::attach_with(
+            &mut fl,
+            &case,
+            smesh,
+            sgeo,
+            turning_distance.as_mut().map(|(_, d)| std::mem::take(d)),
+        )?,
+    }
     // the sliding mesh (D182): the rotating zone and the shift of its data
     let slide = crate::sliding::attach(&case, mesh, &fl.disc, dt0)?;
     // the rotating zones: the frames of `[[mrf]]` (a transient frozen rotor,
@@ -1135,7 +1235,7 @@ fn run_one<F: FnMut(&str)>(
     if let Some(sl) = &slide {
         sl.install(&mut fl, &mut tr)?;
     }
-    let mut af = AnalyticFaces::new(&case, mesh, &ub0);
+    let mut af = AnalyticFaces::new(&case, smesh, &ub0);
     let mut dt = dt0;
     let mut restart_from = None;
     let mut start_values = Vec::new();
@@ -1148,7 +1248,11 @@ fn run_one<F: FnMut(&str)>(
     };
     if let Some(path) = &restart_file {
         let r = restart::read(path)?;
-        let (r, same) = r.to_local(&mesh.cell_id[..nc], &mesh.face_id, mesh.n_interior_faces())?;
+        let (r, same) = match &on {
+            // every rank its part, by global identity (W6)
+            Some(o) => (o.scatter(r)?, true),
+            None => r.to_local(&mesh.cell_id[..nc], &mesh.face_id, mesh.n_interior_faces())?,
+        };
         if let Some(sp) = spray.as_mut() {
             match &r.spray {
                 Some(b) => {
@@ -1229,8 +1333,8 @@ fn run_one<F: FnMut(&str)>(
             // with no older time levels, as after an initial condition
             fl.load(&r.state)?;
             crate::cht::load_restart(&mut fl, r.cht.as_ref(), path)?;
-            af.update(&case, mesh, geo, &mut fl, time0.start_time)?;
-            tv.update(&case, mesh, geo, &mut fl, time0.start_time)?;
+            af.update(&case, smesh, sgeo, &mut fl, time0.start_time)?;
+            tv.update(&case, smesh, sgeo, &mut fl, time0.start_time)?;
             tr.start(&mut fl)?;
             lg.note(&format!(
                 "start from the steady solution of {} (iteration {}) at t = {:.6e} s",
@@ -1301,11 +1405,22 @@ fn run_one<F: FnMut(&str)>(
                 lg.note(n.as_str());
             }
         }
-        af.update(&case, mesh, geo, &mut fl, time0.start_time)?;
-        tv.update(&case, mesh, geo, &mut fl, time0.start_time)?;
-        fl.initialise(&u, &p)?;
+        af.update(&case, smesh, sgeo, &mut fl, time0.start_time)?;
+        tv.update(&case, smesh, sgeo, &mut fl, time0.start_time)?;
+        match &on {
+            // computed on the whole mesh, each rank its cells (W5)
+            Some(o) => {
+                let u = Soa3 {
+                    x: o.own(&u.x),
+                    y: o.own(&u.y),
+                    z: o.own(&u.z),
+                };
+                fl.initialise(&u, &o.own(&p))?;
+            }
+            None => fl.initialise(&u, &p)?,
+        }
         if case.initial.potential_flow {
-            let it = fl.potential_flow(mesh, geo)?;
+            let it = fl.potential_flow(smesh, sgeo)?;
             lg.note(&format!(
                 "start from potential flow (D52): {it} CG iterations"
             ));
@@ -1313,6 +1428,20 @@ fn run_one<F: FnMut(&str)>(
         tr.start(&mut fl)?;
     }
     let setup = t_setup.elapsed().as_secs_f64();
+    // the fields of the output: on ranks gathered into the global order
+    // (collective), with the global discretisation
+    macro_rules! out_sol {
+        () => {
+            match &on {
+                Some(o) => o.solution(&mut fl)?,
+                None => Solution {
+                    state: fl.state()?,
+                    disc: &fl.disc,
+                    phys: fl.physics(),
+                },
+            }
+        };
+    }
     let first_step = tr.clock.step;
 
     // monitors
@@ -1592,20 +1721,8 @@ fn run_one<F: FnMut(&str)>(
         crate::statistics::FieldMoments::new(names, pairs, mesh.n_cells)
     });
     let mut ledger = {
-        let sol = Solution {
-            state: fl.state()?,
-            disc: &fl.disc,
-            phys: fl.physics(),
-        };
-        let mut r = balance::rates(
-            &sol,
-            mesh,
-            geo,
-            &case,
-            &fl.bc.mom_kind,
-            &geo.cell_volume,
-            nonorth,
-        );
+        let sol = out_sol!();
+        let mut r = balance::rates(&sol, mesh, geo, &case, &mom_kind, &geo.cell_volume, nonorth);
         if let Some(sp) = spray.as_ref().filter(|s| s.config().coupling.two_way()) {
             let gm = crate::spray::gas_momentum(&sol, &geo.cell_volume);
             crate::spray::book(&mut r, sp, None, dt, gm, case.energy.is_some());
@@ -1792,6 +1909,10 @@ fn run_one<F: FnMut(&str)>(
             work = Some(next);
         }
         let (mesh, geo) = current(&work, mesh0, geo0);
+        let (smesh, sgeo) = match &on {
+            Some(o) => (&o.local.mesh, &o.geo),
+            None => (mesh, geo),
+        };
         // D65: the error estimate, with the tolerances of now (re-read)
         tr.error_control = t
             .error_tolerance
@@ -1804,8 +1925,8 @@ fn run_one<F: FnMut(&str)>(
         let mut tries = 0;
         let mut spray_passes = None;
         let stepped = loop {
-            af.update(&case, mesh, geo, &mut fl, t0 + h)?;
-            tv.update(&case, mesh, geo, &mut fl, t0 + h)?;
+            af.update(&case, smesh, sgeo, &mut fl, t0 + h)?;
+            tv.update(&case, smesh, sgeo, &mut fl, t0 + h)?;
             fl.keep_valid()?;
             let two_way = spray.as_ref().filter(|s| s.config().coupling.two_way());
             let r = match &frozen {
@@ -1848,8 +1969,8 @@ fn run_one<F: FnMut(&str)>(
                      repeated with Δt {hn:.3e} s",
                     rp.step
                 ));
-                af.update(&case, mesh, geo, &mut fl, t0)?;
-                tv.update(&case, mesh, geo, &mut fl, t0)?;
+                af.update(&case, smesh, sgeo, &mut fl, t0)?;
+                tv.update(&case, smesh, sgeo, &mut fl, t0)?;
                 tr.reject(&mut fl)?;
                 h = hn;
                 continue;
@@ -1873,7 +1994,7 @@ fn run_one<F: FnMut(&str)>(
                     first_courant: first_cfl,
                 };
                 let prepared = (|| -> Result<(crate::simplec::State, Vec<&'static str>)> {
-                    let failed = fl.state()?;
+                    let failed = out_sol!().state;
                     anyhow::ensure!(tr.rewind(&mut fl)?, "no valid state was kept");
                     let mut files = Vec::new();
                     if last && cfg!(feature = "hdf5") && case.output.vtkhdf {
@@ -1884,20 +2005,18 @@ fn run_one<F: FnMut(&str)>(
                             let full = crate::cht::full_state(&mut fl, &st)?;
                             write_full_fields(&fl, &full, &path, at)?;
                         } else {
-                            let sol = Solution {
-                                state: fl.state()?,
-                                disc: &fl.disc,
-                                phys: fl.physics(),
-                            };
-                            write_fields(
-                                &case,
-                                &path,
-                                mesh,
-                                geo,
-                                &sol,
-                                case.analytic_at(tr.clock.time).as_ref(),
-                                at,
-                            )?;
+                            let sol = out_sol!();
+                            if lead {
+                                write_fields(
+                                    &case,
+                                    &path,
+                                    mesh,
+                                    geo,
+                                    &sol,
+                                    case.analytic_at(tr.clock.time).as_ref(),
+                                    at,
+                                )?;
+                            }
                         }
                         files.push("fields_last_valid.vtkhdf");
                     }
@@ -1905,28 +2024,51 @@ fn run_one<F: FnMut(&str)>(
                         let mut rs = restart_of(
                             &mut fl,
                             &tr,
-                            mesh,
+                            smesh,
                             name,
                             h,
                             cycle.as_ref(),
                             frozen.as_ref(),
+                            on.as_ref(),
                         )?;
                         rs.spray = crate::spray::state(spray.as_ref())?;
-                        restart::write(&out.join("restart.h5"), &rs)?;
+                        if lead {
+                            restart::write(&out.join("restart.h5"), &rs)?;
+                        }
                         files.push("restart.h5");
                     }
                     Ok((failed, files))
                 })();
-                let e = crate::divergence::finish(
-                    &mut fl,
-                    &ctx,
-                    mesh,
-                    geo,
-                    out,
-                    prepared,
-                    case.log.style,
-                    &mut |l| lg.line(l),
-                );
+                let e = match &on {
+                    None => crate::divergence::finish(
+                        &mut fl,
+                        &ctx,
+                        mesh,
+                        geo,
+                        out,
+                        prepared,
+                        case.log.style,
+                        &mut |l| lg.line(l),
+                    ),
+                    // on ranks the last valid state gathered (W7)
+                    Some(o) => {
+                        let valid = match &prepared {
+                            Ok(_) => o.solution(&mut fl).ok(),
+                            Err(_) => None,
+                        };
+                        crate::divergence::finish_from(
+                            valid.as_ref(),
+                            &mom_kind,
+                            &ctx,
+                            mesh,
+                            geo,
+                            out,
+                            prepared,
+                            case.log.style,
+                            &mut |l| lg.line(l),
+                        )
+                    }
+                };
                 history.flush()?;
                 balance_csv.flush()?;
                 if let Some(f) = heat_csv.as_mut() {
@@ -1954,13 +2096,14 @@ fn run_one<F: FnMut(&str)>(
         // the heat balance of the step (stage 7d6)
         let heat = match heat_csv.as_mut() {
             Some(hc) if n.is_multiple_of(case.output.history_every) => {
-                let s = crate::scalar::summaries(
+                let s = crate::scalar::summaries_on(
                     &mut fl,
                     &case,
                     mesh,
                     geo,
                     crate::case::dimension(&case),
                     rp.time,
+                    on.as_ref(),
                 )?;
                 let t = s.into_iter().find(|s| s.name == crate::energy::FIELD);
                 let hb = t.as_ref().and_then(|t| t.energy.clone()).map(|e| StepHeat {
@@ -2087,11 +2230,7 @@ fn run_one<F: FnMut(&str)>(
             }
         }
         if let (Some(sp), Some(csv)) = (spray.as_mut(), spray_csv.as_mut()) {
-            let sol = Solution {
-                state: fl.state()?,
-                disc: &fl.disc,
-                phys: fl.physics(),
-            };
+            let sol = out_sol!();
             let (lost, file) = match spray_passes.take() {
                 Some(done) => {
                     drop(sol);
@@ -2152,20 +2291,8 @@ fn run_one<F: FnMut(&str)>(
             }
         }
         let bal = {
-            let sol = Solution {
-                state: fl.state()?,
-                disc: &fl.disc,
-                phys: fl.physics(),
-            };
-            let r = balance::rates(
-                &sol,
-                mesh,
-                geo,
-                &case,
-                &fl.bc.mom_kind,
-                &geo.cell_volume,
-                nonorth,
-            );
+            let sol = out_sol!();
+            let r = balance::rates(&sol, mesh, geo, &case, &mom_kind, &geo.cell_volume, nonorth);
             let mut r = r;
             if let Some(sp) = spray.as_ref().filter(|s| s.config().coupling.two_way()) {
                 let gm = crate::spray::gas_momentum(&sol, &geo.cell_volume);
@@ -2185,11 +2312,7 @@ fn run_one<F: FnMut(&str)>(
         if let Some(s0) = stat_start
             && rp.time - 0.5 * h >= s0
         {
-            let sol = Solution {
-                state: fl.state()?,
-                disc: &fl.disc,
-                phys: fl.physics(),
-            };
+            let sol = out_sol!();
             if let Some(m) = stat_fields.as_mut() {
                 let mut x: Vec<&[f64]> = vec![&sol.u.x, &sol.u.y, &sol.u.z, &sol.p];
                 if let Some(t) = &sol.state.turbulence {
@@ -2256,11 +2379,7 @@ fn run_one<F: FnMut(&str)>(
                 steer,
             );
             let sol = if cols.needs_state() {
-                Some(Solution {
-                    state: fl.state()?,
-                    disc: &fl.disc,
-                    phys: fl.physics(),
-                })
+                Some(out_sol!())
             } else {
                 None
             };
@@ -2379,7 +2498,23 @@ fn run_one<F: FnMut(&str)>(
             }
         }
         last_balance = Some(bal);
-        let req = control.check(n, case.run.reread_every);
+        let mut req = control.check(n, case.run.reread_every);
+        // on ranks rank 0 reads the requests and decides for all
+        let asked = steer.restart_requested();
+        let asked = if let Some(o) = &on {
+            let flags = o.agree(
+                u32::from(req.result)
+                    | u32::from(req.reread) << 1
+                    | u32::from(req.stop) << 2
+                    | u32::from(asked) << 3,
+            );
+            req.result = flags & 1 != 0;
+            req.reread = flags & 2 != 0;
+            req.stop = flags & 4 != 0;
+            flags & 8 != 0
+        } else {
+            asked
+        };
         let [sf, sm, sr] = schedules(&case);
         let tol = 1e-6 * h;
         let at_monitor = monitors
@@ -2395,11 +2530,7 @@ fn run_one<F: FnMut(&str)>(
             n.is_multiple_of(case.output.monitor_every)
         };
         if datum_now && let Some(r) = reports.as_mut() {
-            let sol = Solution {
-                state: fl.state()?,
-                disc: &fl.disc,
-                phys: fl.physics(),
-            };
+            let sol = out_sol!();
             r.row(n, rp.time, &case, &sol, mesh, geo, spray.as_mut())?;
         }
         let o = &case.output;
@@ -2409,7 +2540,6 @@ fn run_one<F: FnMut(&str)>(
                 || sf.fired(t0, rp.time, tol)
                 || req.result);
         let r = &case.run;
-        let asked = steer.restart_requested();
         let restart_numbered = r.restart_at.contains(&n)
             || Schedule {
                 interval: None,
@@ -2431,11 +2561,7 @@ fn run_one<F: FnMut(&str)>(
             _ => None,
         };
         if at_monitor || fields_now {
-            let sol = Solution {
-                state: fl.state()?,
-                disc: &fl.disc,
-                phys: fl.physics(),
-            };
+            let sol = out_sol!();
             if at_monitor {
                 let boundaries = boundary_summaries(&sol, mesh, geo, &case);
                 let mut row = format!("{n},{:e}", rp.time);
@@ -2530,6 +2656,7 @@ fn run_one<F: FnMut(&str)>(
                 let path = out.join(format!("fields_{n:06}.vtkhdf"));
                 match &full_fields {
                     Some(st) => write_full_fields(&fl, st, &path, Some((n, Some(rp.time))))?,
+                    None if !lead => {}
                     None => write_fields(
                         &case,
                         &path,
@@ -2580,15 +2707,18 @@ fn run_one<F: FnMut(&str)>(
             let mut rs = restart_of(
                 &mut fl,
                 &tr,
-                mesh,
+                smesh,
                 name,
                 dt,
                 cycle.as_ref(),
                 frozen.as_ref(),
+                on.as_ref(),
             )?;
             rs.spray = crate::spray::state(spray.as_ref())?;
-            restart::write(&out.join("restart.h5"), &rs)?;
-            if restart_numbered {
+            if lead {
+                restart::write(&out.join("restart.h5"), &rs)?;
+            }
+            if lead && restart_numbered {
                 restart::write(&out.join(format!("restart_{n:06}.h5")), &rs)?;
             }
             if asked {
@@ -2620,7 +2750,8 @@ fn run_one<F: FnMut(&str)>(
         {
             dt = b.time_step;
         }
-        if let Some(s) = steer.poll(&case.run.limits, nsteps, true, req.stop) {
+        let stop_now = steer.poll(&case.run.limits, nsteps, true, req.stop);
+        if let Some(s) = crate::ranks::agree_stop(on.as_ref(), stop_now) {
             lg.note(&format!("step {n}: {}", s.message));
             stopped = true;
             break;
@@ -2701,28 +2832,42 @@ fn run_one<F: FnMut(&str)>(
         lg.frame(&f);
     }
     if last && (case.run.restart_final || stopped) && restart::AVAILABLE && imprint.is_none() {
+        let (smesh, _) = match &on {
+            Some(o) => (&o.local.mesh, &o.geo),
+            None => (mesh, geo),
+        };
         let mut rs = restart_of(
             &mut fl,
             &tr,
-            mesh,
+            smesh,
             name,
             dt,
             cycle.as_ref(),
             frozen.as_ref(),
+            on.as_ref(),
         )?;
         rs.spray = crate::spray::state(spray.as_ref())?;
-        restart::write(&out.join("restart.h5"), &rs)?;
+        if lead {
+            restart::write(&out.join("restart.h5"), &rs)?;
+        }
     }
-    let scalars = crate::scalar::summaries(
+    let scalars = crate::scalar::summaries_on(
         &mut fl,
         &case,
         mesh,
         geo,
         crate::case::dimension(&case),
         tr.clock.time,
+        on.as_ref(),
     )?;
     let periodic = crate::case::periodic_summaries(&mut fl, mesh, lg)?;
-    let turbulence = crate::case::turbulence_summary(&mut fl, mesh, lg, warnings)?;
+    let turbulence = crate::case::turbulence_summary(
+        &mut fl,
+        mesh,
+        on.as_ref().map(|o| (o, geo, &case)),
+        lg,
+        warnings,
+    )?;
     // the thermal acceleration (D213): not restored (ACC002), a skin
     // through the wall while accelerated (ACC003)
     let accel_summary = match accel.as_mut() {
@@ -2868,11 +3013,7 @@ fn run_one<F: FnMut(&str)>(
         .scalars()
         .and_then(|s| s.species())
         .map(|l| l.res.clone());
-    let sol = Solution {
-        state: fl.state()?,
-        disc: &fl.disc,
-        phys: fl.physics(),
-    };
+    let sol = out_sol!();
     let analytic_end = case.analytic_at(tr.clock.time);
     let errors = analytic_end.map(|a| error_norms(&sol, mesh, geo, &a, dimension(&case)));
     let mut verification = crate::console::Frame::new("Verification").summary();
@@ -3048,6 +3189,7 @@ fn run_one<F: FnMut(&str)>(
                     Some((tr.clock.step, Some(tr.clock.time))),
                 )?;
             }
+            _ if !lead => {}
             _ => write_outputs(
                 &case,
                 out,
