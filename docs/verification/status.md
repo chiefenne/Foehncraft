@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**137 features: 50 verified, 84 partial, 3 unverified.**
+**138 features: 50 verified, 85 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -161,6 +161,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Structures | [MITC4 and MITC3+ Reissner–Mindlin shells, plates clamped along an edge (L53, MS5 part 2)](#structure-shells) | partial |
 | Structures | [Structural dynamics: generalised-α, mode superposition, Rayleigh and modal damping, Craig–Bampton reduction (L53, MS5 part 3)](#structure-dynamics) | partial |
 | Structures | [Thermal strain loads on beams and shells from a temperature change and a difference across the thickness (L53, MS5 part 3)](#structure-thermal) | partial |
+| Structures | [Quadratic solids: ten-node tetrahedra and twenty-node hexahedra from a second-order Gmsh file or a block (L53, MS5 part 3b)](#structure-solids) | partial |
 | Moving meshes and solids | [Deforming meshes with a prescribed node displacement, and the piston (stage MS0)](#mesh-deforming) | partial |
 
 ## Meshes
@@ -2277,7 +2278,32 @@ Gaps:
 
 - temperatures are given per part (uniform change and a linear difference across the thickness); the mapping of the temperature field of a solid region of the flow case is MS6
 - the moduli do not depend on temperature: give E at the operating temperature
-- no thermal stresses in the output (no stresses at all yet)
+- no thermal stresses of beams and shells in the output (the solids give the von Mises stress)
+
+<a id="structure-solids"></a>
+
+### Quadratic solids: ten-node tetrahedra and twenty-node hexahedra from a second-order Gmsh file or a block (L53, MS5 part 3b)
+
+**partial** (a model without reference data; gaps written) · id `structure.solids` · switch `structure.run with [[solids]]` · decisions D289
+
+- exact: [`quadrature_and_shape_functions`](../../crates/foehncraft-structure/tests/solids.rs): 14-point rule exact for every monomial of degree ≤ 5 on the tetrahedron; shape functions interpolate, sum to one, derivatives match differences; element faces point outward
+- exact: [`face_loads_are_the_textbook_values`](../../crates/foehncraft-structure/tests/solids.rs): uniform load on a six-node triangle (0, A/3) and an eight-node quadrilateral (−A/12, A/3) to rounding
+- exact: [`rigid_motions_are_free_and_the_mass_is_exact`](../../crates/foehncraft-structure/tests/solids.rs): curved elements: six rigid motions free of force (1e-11 of the largest entry), mass ρV (1e-13); an inverted element is refused
+- exact: [`patch_test_on_distorted_meshes`](../../crates/foehncraft-structure/tests/solids.rs): uniform tension on blocks with moved inner nodes, both elements: the linear displacement to rounding (Irons & Razzaque 1972)
+- exact: [`cantilever_against_beam_theory`](../../crates/foehncraft-structure/tests/solids.rs): cantilever 100 × 10 × 10 mm, ν = 0: tip within 0.3 % of Timoshenko beam theory (hex20 −0.12 %, tet10 −0.01 %); first frequency within 0.3 % of the Timoshenko beam; reaction equals the load
+- exact: [`thick_cylinder_against_lame`](../../crates/foehncraft-structure/tests/solids.rs): thick-walled cylinder under internal pressure, plane strain: u_r against Lamé, ν = 0.3 hex20 7e-5 and tet10 1.5e-3, ν = 0.49 (MacNeal & Harder 1985) 1.0e-3 and 7.8e-3
+- exact: [`thermal_expansion_free_and_held`](../../crates/foehncraft-structure/tests/solids.rs): free block: α ΔT x without stress to rounding; fully held block: reaction E α ΔT A/(1 − 2ν) within 1e-10
+- consistency: [`gmsh_file_gives_the_same_answer_as_the_block`](../../crates/foehncraft-structure/tests/solids.rs): a block written as a second-order Gmsh file (Gmsh node order, faces reversed) gives the generated block's tip deflection to 1e-12; linear meshes, unknown volumes and surfaces refused with STR001
+- contract (diagnostics): [`broken_second_order_gmsh_files_end_in_errors`](../../crates/foehncraft-structure/tests/solids.rs): second-order Gmsh files truncated, with damaged numbers, dropped and repeated lines and flipped bytes end in an error message or a valid mesh, never a panic (D202)
+- contract (diagnostics): [`solid_case_errors`](../../crates/foehncraft-structure/tests/solids.rs): STR001 for a temperature difference on a solid, a support with part but no surface, a pressure with plate and surface, zero divisions, both mesh and block
+
+Gaps:
+
+- a solid shares no nodes with beams and shells: no solid–shell or solid–beam connection yet
+- the von Mises stress at the nodes (averaged over the elements around each) only; no stress components or principal stresses in the output
+- Gmsh's complete second-order elements (27-node hexahedra, 9-node quadrilaterals), prisms and pyramids are refused
+- a uniform temperature change per part; a temperature field per node (from the flow case) is MS6
+- nearly incompressible materials (ν → 0.5) lock with full integration: ν = 0.49 is 1e-3 to 8e-3 off on the Lamé cylinder; no mixed or reduced-integration formulation
 
 ## Moving meshes and solids
 
