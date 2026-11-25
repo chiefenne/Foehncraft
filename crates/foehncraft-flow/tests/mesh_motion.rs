@@ -190,3 +190,62 @@ fn deforming_mesh_settings_are_checked() {
     let (code, msg) = refused(&incompressible, "closed");
     assert_eq!(code, "MOV004", "{msg}");
 }
+
+/// MS0 part 2: the restart file of a deforming mesh holds the nodes, the
+/// volumes of the level before and the swept volumes of the last step; a
+/// run continued from it (BDF2, so the sweep of the step before enters)
+/// ends bitwise as the run without the interruption (D42), and a restart
+/// whose nodes the displacement does not put there is refused (MOV001).
+#[cfg(feature = "hdf5")]
+#[test]
+fn deforming_mesh_restart_continues_bit_identically() {
+    use foehncraft_flow::restart;
+    let base = text("motion_free_stream.toml")
+        .replace("end_time = 0.5", "end_time = 0.2")
+        .replace(
+            "[initial]\nvelocity = [1.0, 0.0, 0.0]",
+            "[initial]\nvelocity = [0.0, 0.0, 0.0]",
+        )
+        + "\n[run]\nrestart_at = [8]\n";
+    let dir = |n: &str| {
+        std::env::temp_dir().join(format!("foehncraft_motion_{n}_{}", std::process::id()))
+    };
+    let (da, db) = (dir("restart_full"), dir("restart_cont"));
+    run(&parse(&base), "full", &da, |_| {}).unwrap();
+    let from = da.join("restart_000008.h5");
+    let g = restart::read(&from)
+        .unwrap()
+        .geometry
+        .expect("the nodes in the file");
+    assert_eq!(g.volumes.len(), 2, "Vⁿ and Vⁿ⁻¹");
+    assert_eq!(g.swept.len(), 1, "δVⁿ");
+    let cont = base.replace(
+        "restart_at = [8]",
+        &format!("restart = '{}'", from.display()),
+    );
+    let rep = run(&parse(&cont), "cont", &db, |_| {}).unwrap();
+    for f in ["restart.h5", "fields.vtkhdf"] {
+        assert!(
+            std::fs::read(da.join(f)).unwrap() == std::fs::read(db.join(f)).unwrap(),
+            "{f} of the continued run differs"
+        );
+    }
+    let m = rep.solves[0]
+        .transient
+        .as_ref()
+        .unwrap()
+        .mesh_motion
+        .as_ref()
+        .unwrap();
+    assert!(
+        m.volume_ratio_min < 0.9,
+        "the range of the whole run ({m:?})"
+    );
+    // another displacement than the one the file was written with
+    let other = cont.replace("amp = 0.03", "amp = 0.02");
+    let (code, msg) = refused(&other, "restart_other");
+    assert_eq!(code, "MOV001", "{msg}");
+    assert!(msg.contains("displacement changed"), "{msg}");
+    let _ = std::fs::remove_dir_all(&da);
+    let _ = std::fs::remove_dir_all(&db);
+}
