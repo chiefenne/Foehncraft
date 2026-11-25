@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**131 features: 50 verified, 78 partial, 3 unverified.**
+**132 features: 50 verified, 79 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -154,6 +154,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Flow models | [Species transport of an ideal-gas mixture with mixture properties (L2, steam furnace SF1)](#species-transport) | partial |
 | Flow models | [Gas-phase chemistry: mechanisms, stiff 0D reactor and chemical equilibrium (L2, steam furnace SF2a)](#chemistry-reactor) | partial |
 | Immersed bodies | [Immersed bodies by Brinkman penalisation, primitive shapes (L13 stage 1)](#immersed-penalisation) | partial |
+| Immersed bodies | [Density-field topology search with the Brinkman penalisation, iso-surface by marching tetrahedra (L13 stage 1)](#immersed-topology) | partial |
 | Structures | [Linear structural solver: Euler–Bernoulli and Timoshenko beams, static and modal analyses (L53, MS5 part 1)](#structure-beams) | partial |
 | Structures | [Clamp springs per length of the clamp line and their fit to a measured frequency (D290)](#structure-clamp) | partial |
 
@@ -2114,15 +2115,37 @@ Gaps:
 - consistency: [`coupled_and_simplec_give_the_same_penalised_flow`](../../crates/foehncraft-flow/tests/immersed.rs): SIMPLEC and the coupled solver give the same mass flow to 1e-5
 - exact: [`solid_volume_of_a_cylinder_converges`](../../crates/foehncraft-flow/src/immersed.rs): the solid volume of a cylinder on a box mesh converges to π r² d with the number of sample points
 - contract (diagnostics): [`unsupported_settings_are_refused`](../../crates/foehncraft-flow/tests/immersed.rs): IMM101 for a missing permeability or a bad body, IMM102 for a turbulence model
+- manufactured: [`immersed_mms`](../../examples/cases/flow/immersed_mms.toml), [`manufactured_penalised_solution_converges_at_second_order`](../../crates/foehncraft-flow/tests/immersed.rs): manufactured solution of the penalised equations with a smooth `field` body (sink 100 times the viscous term): velocity order 2.00 on hexahedra, 2.05 on polygons (16² to 64²) ([results](../gallery/immersed.md#topology-bend))
+- reference-data: [`immersed_stokes_sphere`](../../examples/cases/flow/immersed_stokes_sphere.toml), [`stokes_sphere_array_drag_approaches_the_series`](../../crates/foehncraft-flow/tests/immersed.rs): Stokes flow through a simple cubic array of penalised spheres (c = 0.0335): drag coefficient against the Hasimoto (1959) / Sangani & Acrivos (1982) series 2.152, 6.2 % and 5.5 % high on 16³ and 24³ with K = 0.01 h², the body carries G L³ to 1e-5 ([results](../gallery/immersed.md#topology-bend))
 
 Gaps:
 
 - the wall is smeared over about one cell: first order in h, lift 27 % above the benchmark range at h = D/40, wall shear stress and heat flux not accurate (by design of the pre-stage)
 - laminar and isothermal only: turbulence, energy, scalars, gravity, regions, rotating zones and sprays are refused (IMM102)
-- primitive bodies only (cylinder, sphere, box); STL bodies need the geometry kernel of stage 0
+- primitive bodies (cylinder, sphere, box) and `field` expressions only; STL bodies need the geometry kernel of stage 0
 - the coupled solver breaks down from rest when the sink exceeds about 1e5 times the viscous diagonal (K below about 1e-5 h²); SIMPLEC takes any K
-- not yet: density-field topology search, iso-surface extraction, the sweep in K (η) and h of the plan, MMS of the penalised equation, Stokes sphere, the drag gradient check with dual numbers
+- the drag error depends on K/h²: with K = 0.01 h² the Stokes sphere array is 6.2, 5.5, 3.9, 2.6 % high on 16³ to 48³ (about first order); smaller K smears the body outward (up to +18 % at 1e-3 h² on 16³); in the Poiseuille channel the effective wall stays within half a cell (16 to 256 cells), its sign set by where the wall cuts its cell (sweeps run by tools/verification/immersed_sweeps.py, not in CI)
+- manufactured solution on 2D triangular prisms and the mixed 2D mesh: the velocity error stalls at about 2 % (6 % without the sink, so a gap of the flow discretisation on these meshes, not of the penalisation)
 - one rank only: `foehn run --ranks N` refuses immersed bodies
+
+<a id="immersed-topology"></a>
+
+### Density-field topology search with the Brinkman penalisation, iso-surface by marching tetrahedra (L13 stage 1)
+
+**partial** (a model without reference data; gaps written) · id `immersed.topology` · switch `[immersed.topology]` · decisions D226, D206
+
+- exact: [`topology_gradient_matches_central_differences`](../../crates/foehncraft-flow/tests/immersed.rs): the self-adjoint gradient of the dissipation against central differences of converged Stokes runs: 8e-5 relative on 40 × 20 cells (3e-6 on 80 × 40); with convection at Re 20 within 2 % (measured 0.5 %)
+- consistency: [`immersed_topology_bend`](../../examples/cases/flow/immersed_topology_bend.toml), [`topology_search_of_a_pipe_bend`](../../crates/foehncraft-flow/tests/immersed.rs): the Borrvall & Petersson pipe bend: converged search, fluid fraction held to 1e-3, grey level below 0.12, Φ below 15 % of the grey start, topology.stl written ([results](../gallery/immersed.md#topology-bend))
+- exact: [`sphere_from_a_distance_field_is_closed_and_converges`](../../crates/foehncraft-mesh/src/isosurface.rs): the zero surface of a sphere's distance on hexahedra, tetrahedra and polyhedra: closed, manifold, consistently oriented, area and volume at second order, points within h² of the sphere
+- consistency: [`sphere_from_a_cell_fraction_lies_within_a_cell`](../../crates/foehncraft-mesh/src/isosurface.rs): the surface ½ of a smeared cell fraction: closed and manifold, within a cell of the sphere, bitwise reproducible
+- consistency: [`filter_keeps_constants_and_its_transpose_is_exact`](../../crates/foehncraft-flow/src/topology.rs): the density filter keeps a constant and its transpose is exact (⟨W a, b⟩ = ⟨a, Wᵀ b⟩)
+
+Gaps:
+
+- the gradient is exact for Stokes flow only; with convection it is the self-adjoint approximation (0.5 % at Re 20), exact gradients need the adjoint solver L17
+- objective is the dissipated power only, the design region a box, one rank, steady and laminar
+- the dual numbers of D59 are not used for the total derivative (no tangent or adjoint solve yet); the check is against central differences
+- marching tetrahedra rounds sharp edges and leaves slivers (smallest angles below 1°); dual contouring is more accurate on the benchmark but not guaranteed manifold, subgrid marching tetrahedra needs an exact field along each edge (tools/bench/isosurface.py)
 
 ## Structures
 
