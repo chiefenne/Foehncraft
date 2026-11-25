@@ -805,7 +805,7 @@ mpirun -n 5 target/release/foehn flow examples/cases/flow/ranks_run_transient_ss
 
 Every output file is byte for byte that of one rank: `history.csv`,
 `heat.csv` (the heat balance of every step), `probes.csv`, `forces.csv`,
-`balance.csv`, `boundaries.csv`, the wall files, `fields_NNNNNN.vtkhdf`,
+`balance.csv`, `boundaries.csv`, the wall files, `fields_297297.vtkhdf`,
 `fields.vtkhdf`, `restart.h5`, and in `result.json` the scalar summaries
 with the heat balance and the turbulence summary. Check it:
 

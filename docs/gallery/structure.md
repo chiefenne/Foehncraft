@@ -5,7 +5,7 @@ Part of the [Example gallery](../gallery.md): the linear structural solver of th
 | # | Example | Stage | Feature |
 |---|---|---|---|
 | 295 | [A reed valve as a beam: modes, and the clamp spring against the frequency equation](#reed-beam) | MS5 | `structure.run`, `structure.fitclamp`, `[[beams]]`, `[[clamps]]` |
-| NNN | [A reed petal as a shell: bending and twist on clamp springs](#reed-plate) | MS5 | `structure.run`, `[[plates]]`, `[[pressures]]`, `[[clamps]] along` |
+| 297 | [A reed petal as a shell: bending and twist on clamp springs](#reed-plate) | MS5 | `structure.run`, `[[plates]]`, `[[pressures]]`, `[[clamps]] along` |
 
 ---
 
@@ -101,7 +101,7 @@ Euler–Bernoulli element to rounding. The pictures are made with
 ---
 
 <a id="reed-plate"></a>
-## NNN. A reed petal as a shell: bending and twist on clamp springs
+## 297. A reed petal as a shell: bending and twist on clamp springs
 
 <img src="../figures/gallery/structure_plate_modes.png" alt="The first four modes of a reed petal 30 mm long, 12 mm wide and 0.2 mm thick on clamp springs, drawn as the moved shell surface over the flat reed and coloured by the displacement: mode 1 at 154 Hz bends the petal once, mode 2 at 927 Hz twists it, mode 3 at 1002 Hz bends it with one node line across, mode 4 at 2865 Hz with two" width="1100" height="770">
 

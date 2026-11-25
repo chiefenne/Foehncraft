@@ -5,7 +5,7 @@ Part of the [Recipes](../recipes.md): the linear structural solver `foehncraft-s
 | # | Recipe |
 |---|---|
 | 295 | [Run a structural case of beams and clamp springs, and fit the clamp to a measured frequency](#structure-case) |
-| NNN | [Model a flat reed as a shell clamped along an edge](#structure-plate) |
+| 297 | [Model a flat reed as a shell clamped along an edge](#structure-plate) |
 
 ---
 
@@ -88,7 +88,7 @@ Part of the [Recipes](../recipes.md): the linear structural solver `foehncraft-s
 ---
 
 <a id="structure-plate"></a>
-## NNN. Model a flat reed as a shell clamped along an edge
+## 297. Model a flat reed as a shell clamped along an edge
 
 1. Give the plate as a parallelogram: a corner, two edges and the
    divisions along them. The normal is `edge_a × edge_b`; a positive

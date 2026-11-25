@@ -5,7 +5,7 @@ Part of the [Case catalogue](../cases.md): structural cases of the linear finite
 | Case | What it is | Mesh | Discussed in |
 |---|---|---|---|
 | `reed_beam.toml` | a reed valve of spring steel, 30 × 6 × 0.2 mm, as 40 Timoshenko beams on a rigid clamp: deflection under 2 kPa, eight modes | built from `[[beams]]` | [gallery 295](../gallery/structure.md#reed-beam), [recipe 295](../recipes/structure.md#structure-case) |
-| `reed_plate.toml` | a reed petal of spring steel, 30 × 12 × 0.2 mm, as 40 × 16 MITC4 shells clamped along an edge on clamp springs: lift under 2 kPa, six modes | built from `[[plates]]` | [gallery NNN](../gallery/structure.md#reed-plate), [recipe NNN](../recipes/structure.md#structure-plate) |
+| `reed_plate.toml` | a reed petal of spring steel, 30 × 12 × 0.2 mm, as 40 × 16 MITC4 shells clamped along an edge on clamp springs: lift under 2 kPa, six modes | built from `[[plates]]` | [gallery 297](../gallery/structure.md#reed-plate), [recipe 297](../recipes/structure.md#structure-plate) |
 | `reed_beam_clamp_springs.toml` | the same reed on rotational and translational clamp springs per length of the clamp line (D290); the input of the clamp fit | built from `[[beams]]` | [gallery 295](../gallery/structure.md#reed-beam), [recipe 295](../recipes/structure.md#structure-case) |
 
 <a id="structural-case-file-keys"></a>

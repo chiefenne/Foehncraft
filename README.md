@@ -260,7 +260,7 @@ validated range, one mesh only, …) in its report and its JSON result.
   frequency equation of a beam on a rotational clamp spring
   ([gallery 295](docs/gallery/structure.md#reed-beam)), the shells by the
   MacNeal–Harder patch tests, the Navier plate, Leissa's plate modes and
-  the Scordelis–Lo roof ([gallery NNN](docs/gallery/structure.md#reed-plate)).
+  the Scordelis–Lo roof ([gallery 297](docs/gallery/structure.md#reed-plate)).
   Solids, dynamics and contact follow; the coupling to the flow is MS6.
 - **Rotating machinery.** The moving reference frame (steady and transient
   frozen rotor), the sliding mesh by conformal stepping and by imprinting
