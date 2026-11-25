@@ -1,0 +1,102 @@
+# More water than the air can take, in the steady spray mode (V28.11 of
+# docs/requirements/step28-sprays.md; SP5 with D260).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/spray_saturation_steady.toml
+#
+# Dry air at 400 K (Y_H2O = 0.001) flows at 2 m/s through a duct of 1 m by
+# 0.1 m (2D, laminar, slip walls). Six nozzles 0.05 m behind the inlet,
+# spread across the height, spray 2 g/s of water at 310 K as droplets of 4
+# to 25 µm: three times what the 17.6 g/s of air can take. The air cools
+# as the droplets evaporate until it is saturated; then the evaporation
+# stops and the rest of the water leaves as liquid. The exact end state is
+# the adiabatic saturation of the inlet air, from its enthalpy balance:
+# 310.1 K and Y_H2O = 0.0395.
+#
+# The case runs the spray as streams (no [time]): a stream pass every 10
+# outer iterations, the sources relaxed with 0.5. What it shows today (a
+# gap, see the gallery entry): the core saturates within 5 cm of the
+# nozzles and stays flat to the outlet, but the source residual falls from
+# 1 to about 0.1 and stalls there, so the run ends with SPR008 (not
+# converged) and the outlet sits 0.8 K and 5 % in vapour below the exact
+# state. The saturation limiter of D253 still acts in the final pass
+# (SPR009).
+
+case_format = "0.7"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [1.0, 0.1, 0.1]
+cells = [60, 12, 1]
+
+[fluid]
+density = 0.88
+viscosity = 2.3e-5
+specific_heat = 1010.0
+conductivity = 0.033
+operating_pressure = 101325.0
+pressure_values = "gauge"
+
+[energy]
+initial = 400.0
+
+[species]
+names = ["H2O", "O2", "N2"]
+initial = { mass_fractions = { H2O = 0.001, O2 = 0.2328, N2 = 0.7662 } }
+diffusion = "schmidt"
+schmidt = 0.7
+properties = "fluid"
+
+[initial]
+velocity = [2.0, 0.0, 0.0]
+
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [2.0, 0.0, 0.0]
+[boundary.xmin.energy]
+temperature = 400.0
+[boundary.xmin.species]
+mass_fractions = { H2O = 0.001, O2 = 0.2328, N2 = 0.7662 }
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymin]
+type = "slip-wall"
+[boundary.ymin.energy]
+heat_flux = 0.0
+[boundary.ymax]
+type = "slip-wall"
+[boundary.ymax.energy]
+heat_flux = 0.0
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[spray]
+include = "spray_saturation_injectors.toml"
+wall_mode = "rebound"
+
+[spray.evaporation]
+model = "ranz-marshall"
+
+[spray.coupling]
+mode = "two-way"
+
+[spray.steady]
+streams = 100
+every = 10
+relaxation = 0.5
+tolerance = 1e-3
+max_time = 2.0
+
+[solver]
+tolerance = 1e-6
+max_iterations = 600
+log_every = 20
+
+[solver.scalar]
+limiter = "mlp"
+
+[verification]
+require_convergence = false

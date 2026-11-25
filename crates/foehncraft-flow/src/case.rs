@@ -3654,12 +3654,17 @@ pub fn run_steered(
             fl.update_boundaries()?;
             fl.gradients()?;
             let heat = crate::spray::GasHeat::of(&mut fl)?;
+            ss.settle(&mut fl)?;
+            let vapour = match ss.vapour() {
+                Some(l) => crate::spray::GasVapour::of(&mut fl, l, heat.as_ref())?,
+                None => None,
+            };
             let sol = Solution {
                 state: fl.state()?,
                 disc: &fl.disc,
                 phys: fl.physics(),
             };
-            let (sm, pass) = ss.finish(&sol, &spray_env, heat.as_ref(), iters)?;
+            let (sm, pass) = ss.finish(&sol, &spray_env, heat.as_ref(), vapour.as_ref(), iters)?;
             drop(sol);
             if !sm.converged {
                 let d = diag::Diagnostic::new(
@@ -3674,6 +3679,18 @@ pub fn run_steered(
                 lg.warn(&format!("{}: {}", d.code, d.message));
                 rep.warnings.push(d);
                 converged = false;
+            }
+            if sm.pass.limiter_cells > 0 {
+                let d = diag::Diagnostic::new(
+                    diag::SPRAY_LIMITER,
+                    format!(
+                        "the saturation limiter (D253) held back {:.3e} kg/s of vapour in {} \
+                         spray cells of the final stream pass",
+                        sm.pass.limiter_mass, sm.pass.limiter_cells
+                    ),
+                );
+                lg.warn(&format!("{}: {}", d.code, d.message));
+                rep.warnings.push(d);
             }
             if sm.books.unfinished_streams > 0 {
                 let d = diag::Diagnostic::new(
@@ -3813,7 +3830,12 @@ pub fn run_steered(
         for (w, c) in wall_crossing_values.iter().zip(&case.output.wall_crossings) {
             lg.line(&wall_crossing_line(w, c));
         }
-        let total: f64 = boundaries.iter().map(|p| p.mass_flow).exact_sum();
+        let total: f64 = boundaries.iter().map(|p| p.mass_flow).exact_sum()
+            // less the mass an evaporating spray gives the gas (SP4)
+            - fl
+                .spray_mass
+                .as_ref()
+                .map_or(0.0, |r| r.iter().map(|x| x.1).exact_sum());
         // scale: the largest boundary mass flow, or in a closed domain the
         // flow ρ |u|max A through the largest boundary
         let umax = (0..nc).map(|c| norm(sol.u.get(c))).fold(0.0f64, f64::max);

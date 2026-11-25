@@ -1,0 +1,70 @@
+# The six nozzles of spray_saturation_steady.toml across the duct (D246: the
+# spray lives in its own file): 2 g/s of water at 310 K in all, droplets of
+# 4 to 25 µm, so that every streamline of the air meets water.
+
+[liquid]
+name = "water"
+density = 998.0
+specific_heat = 4181.0
+temperature = 310.0
+vapour = "H2O"
+
+[[injector]]
+name = "row1"
+position = [0.05, 0.00833, 0.05]
+direction = [1.0, 0.0, 0.0]
+speed = 2.0
+half_angle = 10.0
+mass_flow = 3.333333e-04
+size = { distribution = "rosin-rammler", mean = 10e-6, spread = 3.0, min = 4e-6, max = 25e-6 }
+parcels_per_second = 4000.0
+
+[[injector]]
+name = "row2"
+position = [0.05, 0.02500, 0.05]
+direction = [1.0, 0.0, 0.0]
+speed = 2.0
+half_angle = 10.0
+mass_flow = 3.333333e-04
+size = { distribution = "rosin-rammler", mean = 10e-6, spread = 3.0, min = 4e-6, max = 25e-6 }
+parcels_per_second = 4000.0
+
+[[injector]]
+name = "row3"
+position = [0.05, 0.04167, 0.05]
+direction = [1.0, 0.0, 0.0]
+speed = 2.0
+half_angle = 10.0
+mass_flow = 3.333333e-04
+size = { distribution = "rosin-rammler", mean = 10e-6, spread = 3.0, min = 4e-6, max = 25e-6 }
+parcels_per_second = 4000.0
+
+[[injector]]
+name = "row4"
+position = [0.05, 0.05833, 0.05]
+direction = [1.0, 0.0, 0.0]
+speed = 2.0
+half_angle = 10.0
+mass_flow = 3.333333e-04
+size = { distribution = "rosin-rammler", mean = 10e-6, spread = 3.0, min = 4e-6, max = 25e-6 }
+parcels_per_second = 4000.0
+
+[[injector]]
+name = "row5"
+position = [0.05, 0.07500, 0.05]
+direction = [1.0, 0.0, 0.0]
+speed = 2.0
+half_angle = 10.0
+mass_flow = 3.333333e-04
+size = { distribution = "rosin-rammler", mean = 10e-6, spread = 3.0, min = 4e-6, max = 25e-6 }
+parcels_per_second = 4000.0
+
+[[injector]]
+name = "row6"
+position = [0.05, 0.09167, 0.05]
+direction = [1.0, 0.0, 0.0]
+speed = 2.0
+half_angle = 10.0
+mass_flow = 3.333333e-04
+size = { distribution = "rosin-rammler", mean = 10e-6, spread = 3.0, min = 4e-6, max = 25e-6 }
+parcels_per_second = 4000.0

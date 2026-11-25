@@ -12,6 +12,9 @@
 //! - [`particle`]: the parcel step of the Lagrangian sprays (L12): exact
 //!   relaxation of the parcel velocity to the gas velocity with the drag of
 //!   Schiller and Naumann, gravity and buoyancy;
+//! - [`evaporation`]: droplet evaporation of the sprays (SP5): the d² law
+//!   and the exact temperature relaxation with frozen coefficients, Ranz and
+//!   Marshall and Abramzon and Sirignano, the vapour pressure of water;
 //! - [`blas`]: vector operations and reproducible block dot products of the
 //!   Krylov solvers;
 //! - [`expr`]: the stack machine of the compiled case-file expressions (D53);
@@ -58,6 +61,7 @@ pub mod amg;
 pub mod blas;
 pub mod chemistry;
 pub mod entry;
+pub mod evaporation;
 pub mod expr;
 pub mod face;
 pub mod flow;

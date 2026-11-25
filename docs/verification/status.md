@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**139 features: 50 verified, 86 partial, 3 unverified.**
+**140 features: 50 verified, 87 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -150,6 +150,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Sprays | [Two-way sensible heat coupling of the sprays (SP2b, D247 to D252)](#sprays-two-way-heat) | partial |
 | Sprays | [Turbulent dispersion of the sprays, eddy lifetime (SP2c, D243)](#sprays-dispersion-eddy-lifetime) | partial |
 | Sprays | [Steady spray mode: streams through the steady gas with relaxed sources (SP2s, D260)](#sprays-steady-mode) | partial |
+| Sprays | [Evaporating sprays: vapour, mass and enthalpy to the gas (SP4, SP5, D250 to D253)](#sprays-evaporation) | partial |
 | Flow models | [Porous regions with a direction-dependent Darcy-Forchheimer resistance (D270, PM1)](#porous-darcy-forchheimer) | partial |
 | Flow models | [Gas and matrix temperatures in porous regions, monolithic (D271, D272, PM2)](#porous-two-temperatures) | partial |
 | Flow models | [Species transport of an ideal-gas mixture with mixture properties (L2, steam furnace SF1)](#species-transport) | partial |
@@ -2031,11 +2032,43 @@ Gaps:
 Gaps:
 
 - V28.9 not met strictly: the steady duct takes 2.9 % less heat from the air than the time mean of the transient run, more than the sampling and step errors of the transient run; the transient flow does not come to rest behind the nozzle
-- no evaporation (SP5); V28.11 (duct with more water than the gas can take) waits for it
+- evaporation in the steady mode is the row sprays.evaporation (V28.11 there)
 - the statistical error of the streams is estimated by hand with other seeds, not by a study tool (D196)
-- the health numbers of D254 are reported only; no limiter acts in the steady mode
+- the health numbers of D254 are reported only; the saturation limiter of D253 acts only with evaporation
 - datums report no liquid in the steady mode
 - not with solid regions (CHT) or two-way with the coupled algorithm (SPR003); one process
+
+<a id="sprays-evaporation"></a>
+
+### Evaporating sprays: vapour, mass and enthalpy to the gas (SP4, SP5, D250 to D253)
+
+**partial** (a model without reference data; gaps written) · id `sprays.evaporation` · switch `[spray.evaporation] model = "ranz-marshall" or "abramzon-sirignano", [spray.liquid] vapour` · decisions D247, D249, D250, D251, D252, D253, D254, D260
+
+- exact: [`saturation_pressure_of_water_at_its_anchor_points`](../../crates/foehncraft-kernels/src/evaporation.rs): the IAPWS-95 auxiliary vapour-pressure equation (Wagner and Pruss 1993) at the triple point and at 373.124 K / 101.325 kPa
+- exact: [`the_temperature_relaxes_to_the_wet_bulb_state_without_overshoot`](../../crates/foehncraft-kernels/src/evaporation.rs): the droplet temperature of the frozen-coefficient step relaxes to the wet-bulb balance and never passes it
+- exact: [`saturated_gas_neither_evaporates_nor_condenses_at_the_droplet_temperature`](../../crates/foehncraft-kernels/src/evaporation.rs): a droplet at the saturation state of the gas keeps its mass
+- exact: [`a_single_droplet_follows_the_d2_law_at_the_wet_bulb`](../../crates/foehncraft-particles/tests/evaporation.rs): a 100 um water droplet at 300 K in still dry air at 500 K: d^2 falls linearly (local K within 1 %), at the wet-bulb temperature within 0.05 K, life within 20 % of d0^2/K plus the heat-up (Godsave 1953, Spalding 1953)
+- exact: [`a_closed_box_ends_at_the_adiabatic_saturation`](../../crates/foehncraft-particles/tests/evaporation.rs): V28.2 with evaporation: 1e-7 kg of water in a closed cell of air at 400 K, 3000 steps: water and energy of gas plus parcels kept to 1e-12; gas at the exact adiabatic saturation within 0.01 K (found 0.003 K), liquid mean within 0.1 K, vapour within 1e-3 of saturation
+- exact: [`many_parcels_in_one_cell_near_saturation`](../../crates/foehncraft-particles/tests/evaporation.rs): 4000 parcels evaporating in one cell at 95 % saturation (D247 to D250): the vapour never passes the droplet saturation and never falls below zero, the water book closes to 1e-13, sources and parcels bitwise equal on 1 and 4 threads with the storage reversed
+- consistency: [`the_evaporating_duct_closes_its_books`](../../crates/foehncraft-flow/tests/spray_evaporation.rs): a transient evaporating duct: ledger pairs 2801 to 2805 zero to the bit, parcel mass, momentum and enthalpy accounts close to 1e-12, the gas mass account to 1e-9, vapour to the gas = liquid lost by the parcels
+- exact: [`evaporation_gives_the_same_bits_on_any_number_of_threads`](../../crates/foehncraft-flow/tests/spray_evaporation.rs): V28.1 with evaporation in a flow run: spray.csv bitwise equal on 1 and 4 threads
+- contract (diagnostics): [`evaporation_needs_a_vapour_species_of_the_case`](../../crates/foehncraft-flow/tests/spray_evaporation.rs): a liquid whose vapour is not a species of the case is refused
+- contract (diagnostics): [`spray_evaporation`](../../examples/cases/flow/spray_evaporation.toml): 2 g/s of water droplets of 10 to 80 um in air at 300 C: about 1.3 g/s evaporate within the duct, the air leaves about 55 K cooler and 2 % wetter; ledger pairs zero to the bit (passes in CI (set linux-3), not yet in the manual) ([results](../gallery/sprays.md#spray-evaporation))
+- contract (schema): [`spray_evaporation_injectors`](../../examples/cases/flow/spray_evaporation_injectors.toml): the included injector file of spray_evaporation, with the vapour species ([results](../cases/flow.md#lagrangian-sprays)) **missing**
+- consistency: [`spray_saturation_steady`](../../examples/cases/flow/spray_saturation_steady.toml): V28.11 (partly met, see gaps): 2 g/s of water in 17.6 g/s of air at 400 K, steady mode: the air saturates within 5 cm and stays flat to the outlet; outlet 309.3 K and Y = 0.0375 against the exact adiabatic saturation 310.1 K and 0.0395; the source residual falls from 1 to 0.12 (passes in CI (set long), not yet in the manual) ([results](../gallery/sprays.md#spray-saturation))
+- contract (schema): [`spray_saturation_injectors`](../../examples/cases/flow/spray_saturation_injectors.toml): the six nozzles of spray_saturation_steady ([results](../cases/flow.md#lagrangian-sprays)) **missing**
+
+Gaps:
+
+- V28.11 partly met: in the steady mode the source residual falls from 1 to about 0.1 and stalls (also with relaxation 0.1 and 0.03), so the run ends with SPR008; the outlet is 0.8 K and 5 % in vapour below the exact adiabatic saturation, and the limiter of D253 still acts in the final pass (SPR009)
+- the heat balance closes to round-off only with [species] properties = "fluid"; with the mixture properties the energy account keeps a few parts in a thousand (the T-form of the energy equation against the material enthalpy of the balance)
+- the transient domain mass check fails for heated cases with variable density even without evaporation; the examples use constant density
+- the momentum equation does not book the momentum the vapour brings separately (it comes with the parcel impulse) nor the dilution term u S_c
+- water only (saturation law and latent heat); no boiling, no multicomponent liquids
+- no GPU (PTX) entry for the evaporation kernel; one process
+- V28.5 to V28.8 of section 5 not all run as named checks (the closed box and the crowded cell cover the bounds)
+- `spray_evaporation_injectors` has no run in the verification manual or in CI
+- `spray_saturation_injectors` has no run in the verification manual or in CI
 
 ## Flow models
 

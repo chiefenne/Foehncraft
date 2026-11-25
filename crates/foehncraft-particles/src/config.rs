@@ -39,9 +39,9 @@ pub struct SprayBoundary {
     pub restitution_tangential: Option<f64>,
 }
 
-/// The liquid of the parcels. SP1 takes a constant density; the property
-/// set of the liquids (vapour pressure, latent heat, …) comes with the
-/// evaporation (SP4).
+/// The liquid of the parcels: a constant density and specific heat, and
+/// for the evaporation (SP4, SP5) the species it evaporates into, its
+/// vapour pressure law and its latent heat at one temperature.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct Liquid {
@@ -54,6 +54,31 @@ pub struct Liquid {
     /// Temperature of the injected liquid (K), unless an injector gives
     /// its own.
     pub temperature: f64,
+    /// The species of `[species]` the liquid evaporates into (SP4), for
+    /// example `"H2O"`; needed with `[spray.evaporation]`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vapour: Option<String>,
+    /// The vapour pressure law: `water` (the auxiliary equation of the
+    /// IAPWS-95 formulation, Wagner and Pruss 1993; the only one in this
+    /// version).
+    pub saturation: Saturation,
+    /// Latent heat of vaporisation (J/kg) at `latent_heat_temperature`
+    /// (default 2.4417e6 J/kg, water at 298.15 K, IAPWS-95 tables). At
+    /// other temperatures L(T) = h_v(T) − h_l(T) with the vapour enthalpy of
+    /// the species data (NASA-7) and h_l = c_l T (Kirchhoff's law), so the
+    /// energy of the gas and of the parcels close with one property set.
+    pub latent_heat: f64,
+    /// The temperature of `latent_heat` (K, default 298.15).
+    pub latent_heat_temperature: f64,
+}
+
+/// The vapour pressure law of a liquid.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum Saturation {
+    /// Water: Wagner and Pruss (1993), eq. 2.5 of Wagner and Pruss (2002).
+    #[default]
+    Water,
 }
 
 impl Default for Liquid {
@@ -63,6 +88,70 @@ impl Default for Liquid {
             density: 998.0,
             specific_heat: 4181.0,
             temperature: 293.15,
+            vapour: None,
+            saturation: Saturation::Water,
+            latent_heat: 2.4417e6,
+            latent_heat_temperature: 298.15,
+        }
+    }
+}
+
+/// The evaporation model of the droplets (SP5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum EvaporationModel {
+    /// No evaporation (default).
+    #[default]
+    None,
+    /// Classical film theory with the Ranz-Marshall correlations (Spalding
+    /// 1953; Ranz and Marshall 1952).
+    RanzMarshall,
+    /// Abramzon and Sirignano (1989): film thickening by the outflow of
+    /// the vapour.
+    AbramzonSirignano,
+}
+
+/// `[spray.evaporation]` (SP5, D251).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct Evaporation {
+    /// `none` (default), `ranz-marshall` or `abramzon-sirignano`.
+    pub model: EvaporationModel,
+    /// A sub-step ends when d² would fall by more than this fraction of its
+    /// value at the start (default 0.1, D251).
+    pub max_mass_change: f64,
+    /// A sub-step ends when the droplet temperature would change by more
+    /// than this (K, default 2).
+    pub max_temperature_change: f64,
+    /// A droplet smaller than this evaporates in one sub-step when its life
+    /// ends inside it (m, default 1e-6).
+    pub min_diameter: f64,
+}
+
+impl Default for Evaporation {
+    fn default() -> Self {
+        Self {
+            model: EvaporationModel::None,
+            max_mass_change: 0.1,
+            max_temperature_change: 2.0,
+            min_diameter: 1e-6,
+        }
+    }
+}
+
+impl Evaporation {
+    /// True when the droplets evaporate.
+    pub fn on(&self) -> bool {
+        self.model != EvaporationModel::None
+    }
+
+    /// The kernel code of the model.
+    pub fn code(&self) -> u32 {
+        match self.model {
+            EvaporationModel::AbramzonSirignano => {
+                foehncraft_kernels::evaporation::model::ABRAMZON_SIRIGNANO
+            }
+            _ => foehncraft_kernels::evaporation::model::RANZ_MARSHALL,
         }
     }
 }
@@ -164,6 +253,8 @@ pub struct SpraySection {
     /// transient case.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub steady: Option<Steady>,
+    /// The evaporation of the droplets (SP5).
+    pub evaporation: Evaporation,
 }
 
 /// `[spray.steady]`: the steady spray mode (D260, SP2s). A parcel is a
@@ -356,6 +447,7 @@ impl Default for SpraySection {
             coupling: Coupling::default(),
             dispersion: Dispersion::None,
             steady: None,
+            evaporation: Evaporation::default(),
         }
     }
 }
@@ -416,6 +508,28 @@ impl SpraySection {
         }
         if !pos(self.liquid.temperature) {
             bail!("[spray.liquid] temperature must be positive and finite (K)");
+        }
+        if !pos(self.liquid.latent_heat) {
+            bail!("[spray.liquid] latent_heat must be positive and finite (J/kg)");
+        }
+        if !pos(self.liquid.latent_heat_temperature) {
+            bail!("[spray.liquid] latent_heat_temperature must be positive and finite (K)");
+        }
+        let ev = &self.evaporation;
+        if !(ev.max_mass_change > 0.0 && ev.max_mass_change < 1.0) {
+            bail!("[spray.evaporation] max_mass_change must be in (0, 1)");
+        }
+        if !pos(ev.max_temperature_change) {
+            bail!("[spray.evaporation] max_temperature_change must be positive (K)");
+        }
+        if !(ev.min_diameter.is_finite() && ev.min_diameter >= 0.0) {
+            bail!("[spray.evaporation] min_diameter must be zero or positive (m)");
+        }
+        if ev.on() && self.liquid.vapour.is_none() {
+            bail!(
+                "[spray.evaporation] needs the species the liquid evaporates into: \
+                 [spray.liquid] vapour = \"H2O\" (a species of [species])"
+            );
         }
         for inj in &self.injectors {
             if let Some(t) = inj.temperature

@@ -1405,11 +1405,32 @@
    ],
    "gaps": [
     "V28.9 not met strictly: the steady duct takes 2.9 % less heat from the air than the time mean of the transient run, more than the sampling and step errors of the transient run; the transient flow does not come to rest behind the nozzle",
-    "no evaporation (SP5); V28.11 (duct with more water than the gas can take) waits for it",
+    "evaporation in the steady mode is the row sprays.evaporation (V28.11 there)",
     "the statistical error of the streams is estimated by hand with other seeds, not by a study tool (D196)",
-    "the health numbers of D254 are reported only; no limiter acts in the steady mode",
+    "the health numbers of D254 are reported only; the saturation limiter of D253 acts only with evaporation",
     "datums report no liquid in the steady mode",
     "not with solid regions (CHT) or two-way with the coupled algorithm (SPR003); one process"
+   ],
+   "range": {}
+  },
+  {
+   "id": "sprays.evaporation",
+   "title": "Evaporating sprays: vapour, mass and enthalpy to the gas (SP4, SP5, D250 to D253)",
+   "grade": "partial",
+   "why": [
+    "a model without reference data",
+    "gaps written"
+   ],
+   "gaps": [
+    "V28.11 partly met: in the steady mode the source residual falls from 1 to about 0.1 and stalls (also with relaxation 0.1 and 0.03), so the run ends with SPR008; the outlet is 0.8 K and 5 % in vapour below the exact adiabatic saturation, and the limiter of D253 still acts in the final pass (SPR009)",
+    "the heat balance closes to round-off only with [species] properties = \"fluid\"; with the mixture properties the energy account keeps a few parts in a thousand (the T-form of the energy equation against the material enthalpy of the balance)",
+    "the transient domain mass check fails for heated cases with variable density even without evaporation; the examples use constant density",
+    "the momentum equation does not book the momentum the vapour brings separately (it comes with the parcel impulse) nor the dilution term u S_c",
+    "water only (saturation law and latent heat); no boiling, no multicomponent liquids",
+    "no GPU (PTX) entry for the evaporation kernel; one process",
+    "V28.5 to V28.8 of section 5 not all run as named checks (the closed box and the crowded cell cover the bounds)",
+    "`spray_evaporation_injectors` has no run in the verification manual or in CI",
+    "`spray_saturation_injectors` has no run in the verification manual or in CI"
    ],
    "range": {}
   },
@@ -1497,7 +1518,7 @@
     "the energy balance books the convected enthalpy with the fluid's c_p, not the mixture's: its imbalance shows about 26 % in a flame although the temperature equation uses the mixture c_p",
     "transient only (CHM003 for steady runs), laminar only (turbulence-chemistry interaction is SF3), no sprays with chemistry",
     "not on ranks: the variable density it needs (stage 7c) is not on ranks yet",
-    "the GPU path (PTX entry chemistry_react, CUDA host side, CPU=GPU program chemistry_gpu) is compiled in CI but not yet run on a GPU",
+    "GPU checked on one device only, the Tesla T4 (sm_75); one thread per cell with a dense Jacobian makes GRI-Mech 3.0 only 1.7x faster than 2 CPU cores (register spill; a block per cell or a sparse Jacobian would be needed); the flame cases themselves have not run with backend = \"cuda\"",
     "the burning velocity oscillates by a few per cent as the flame crosses cells (period dx/(S_L - u_inlet)); the case averages over the second half of the run"
    ],
    "range": {}

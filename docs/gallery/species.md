@@ -231,9 +231,11 @@ PTX entry `chemistry_react`, one thread per cell, with the same
 operations in the same order, so the GPU gives the bits of the CPU; the
 data path of the entry is tested on the CPU, and
 `cargo run --release -p foehncraft-cuda --features cuda --example chemistry_gpu`
-compares the two on a GPU
-(or `tools/notebooks/sf2_chemistry_colab.ipynb` on Colab). The ledger books the net production of each
-species, and the summary gives the heat release and the flame speed.
+compares the two on a GPU (or `tools/notebooks/sf2_chemistry_colab.ipynb`
+on Colab). On a Tesla T4 both mechanisms gave the bits of the CPU for
+4096 cells, at 14.5 ms (GRI-Mech 3.0) and 0.30 ms (Jones & Lindstedt)
+per cell against 24.4 and 2.5 ms on the two Colab CPU cores. The ledger
+books the net production of each species, and the summary gives the heat release and the flame speed.
 
 **What this version does not do.** Transient laminar flows only: steady
 runs, turbulence models (SF3) and sprays are refused (CHM003). No ranks
@@ -243,7 +245,9 @@ multicomponent diffusion and no thermal diffusion. First-order splitting,
 no Strang splitting. The energy balance books the convected enthalpy with
 the fluid's c_p, not the mixture's, so its imbalance reads about 26 % in a
 flame although the temperature equation itself uses the mixture. The GPU
-path compiles in CI but has not yet run on a GPU. The first steps after
+is checked on one device, a Tesla T4: CPU and GPU give the same bits, but
+with one thread per cell and a dense Jacobian GRI-Mech 3.0 is only 1.7×
+faster than two CPU cores (Jones & Lindstedt 8.5×). The first steps after
 the start fields are out of mass balance by up to 6·10⁻⁴ (BAL001 warning)
 while the flow adjusts to the expansion, 10⁻⁷ later.
 
