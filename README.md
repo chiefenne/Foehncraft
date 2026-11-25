@@ -250,12 +250,13 @@ validated range, one mesh only, …) in its report and its JSON result.
   of the call are traced and drawn over the net flux into the walls
   ([gallery 281](docs/gallery/radiation.md#furnace-paths)). The coupling
   to the energy equation follows (R1b).
-- **Structures (MS5, parts 1 to 3b).** A small linear structural finite element
+- **Structures (MS5, parts 1 to 4).** A small linear structural finite element
   solver for reed valves and other parts the flow moves (L53):
   Euler–Bernoulli and Timoshenko beams, MITC4 and MITC3+ shells (plates
   clamped along an edge, pressures), quadratic solids (ten-node
   tetrahedra and twenty-node hexahedra from a second-order Gmsh file or a
-  generated block, with the von Mises stress), responses in time (generalised-α,
+  generated block, with the von Mises stress), unilateral contact with
+  rigid seats and stops, responses in time (generalised-α,
   mode superposition, Rayleigh damping, Craig–Bampton reduction), thermal
   strain loads from temperatures, supports, springs, point masses,
   clamp springs per length of the clamp line (D290) and their fit to a
@@ -271,8 +272,10 @@ validated range, one mesh only, …) in its report and its JSON result.
   loads against free thermal expansion and bending
   ([gallery 299](docs/gallery/structure.md#reed-dynamics)), the solids by
   the patch test, a cantilever against beam theory and Lamé's thick
-  cylinder ([gallery 300](docs/gallery/structure.md#reed-stop)). Contact
-  follows; the coupling to the flow is MS6.
+  cylinder ([gallery 300](docs/gallery/structure.md#reed-stop)), the
+  contact by the propped cantilever and a mass bouncing on a stop
+  ([gallery 302](docs/gallery/structure.md#reed-valve-contact)). The
+  coupling to the flow is MS6.
 - **Rotating machinery.** The moving reference frame (steady and transient
   frozen rotor), the sliding mesh by conformal stepping and by imprinting
   the interface in every step, several rotors at their own speeds,
@@ -419,7 +422,7 @@ The [changelog](CHANGELOG.md) lists every release.
 | `foehncraft-parallel` | communicator (serial, MPI) with exact all-reduce, exact threaded reductions |
 | `foehncraft-mesh` | polyhedral mesh, geometry, quality report, mesh-format layer with the Gmsh, SU2, CGNS, OpenFOAM, Fluent .msh, VTK and VTKHDF readers, test mesher (also the cylinder benchmark mesh and annuli for rotors), partitioning and halo, VTKHDF output, point location and ray casting, the hand-over of walks between ranks, wall distance, the imprint of sliding interfaces |
 | `foehncraft-radiation` | thermal radiation by Monte Carlo energy bundles on the cell walk: emission from Owen-scrambled Sobol points, exact path lengths per cell, grey diffuse walls, symmetry planes and open boundaries, integer tallies with an exact energy account, bitwise the same on any number of threads and ranks; exact solutions of the verification cases |
-| `foehncraft-structure` | linear structural finite elements (L53): beams, shells, quadratic solids, dynamics, thermal loads, clamp springs, the sparse LDLᵀ solver with its Sturm count, shift-invert Lanczos, the structural case file and the clamp fit |
+| `foehncraft-structure` | linear structural finite elements (L53): beams, shells, quadratic solids, dynamics, thermal loads, clamp springs, contact with rigid planes, the sparse LDLᵀ solver with its Sturm count, shift-invert Lanczos, the structural case file and the clamp fit |
 | `foehncraft-fv` | finite-volume operators on a scalar (gradients, limiters, convection, diffusion, assembly), BiCGStab, and the pressure solver: CG with smoothed-aggregation multigrid in mixed precision, optional hypre reference; CPU backend (the GPU backend is in `foehncraft-cuda`) |
 | `foehncraft-flow` | incompressible flow: SIMPLEC and SIMPLE (steady), PISO with BDF2 and Crank–Nicolson (transient), the coupled algorithm, the Rhie–Chow interpolation, boundary conditions and their check, turbulence models and wall treatments, passive scalars and thermal wall functions, the moving reference frame and sliding meshes, torque and machine performance, restart and control files, probes and force coefficients, the flow device written once over a CPU or GPU executor, the `foehn flow` case, exact solutions, reference and benchmark data |
 | `foehncraft-bench` | gate G1: kernel benchmark, CPU backends |

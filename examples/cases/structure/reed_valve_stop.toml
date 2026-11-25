@@ -1,0 +1,74 @@
+# A reed valve opening against its stop and slamming back onto its seat
+# (MS5 part 4): the reed petal of reed_plate_pulse.toml on its clamp
+# springs, lifted off its seat by a 3 kPa pressure pulse of 3 ms. The
+# stop (the valve guard) is a plane rising 1 mm over the 30 mm of the
+# reed; the seat is the plane under the reed. Both keep half the plate
+# thickness from the mid-surface (`offset`). The contact force is a
+# penalty at the generalised-α point of each step, with an active set
+# loop. The impacts are elastic; generalised-α with ρ∞ = 0.8 damps the
+# high frequencies they excite. The penetration stays below 0.01 µm.
+#
+#   foehn call structure.run --input examples/cases/tools/structure_reed_valve_stop.json
+
+[structure]
+name = "reed_valve_stop"
+
+[transient]
+end_time = 0.012
+time_step = 5.0e-6
+output_every = 1
+method = "direct"
+rho_infinity = 0.8
+snapshots = [0.00119, 0.0024, 0.0034, 0.00451]
+
+[damping]
+ratios = [[154.0, 0.02], [1002.0, 0.02]]
+
+[histories.pulse]
+table = [[0.0, 0.0], [0.0005, 1.0], [0.003, 1.0], [0.0035, 0.0]]
+
+[materials.spring_steel]
+young = 206e9
+poisson = 0.3
+density = 7850.0
+
+[[plates]]
+name = "reed"
+origin = [0.0, -6e-3, 0.0]
+edge_a = [0.03, 0.0, 0.0]
+edge_b = [0.0, 12e-3, 0.0]
+divisions = [30, 12]
+thickness = 0.2e-3
+material = "spring_steel"
+
+[[clamps]]
+along = [[0.0, -6e-3, 0.0], [0.0, 6e-3, 0.0]]
+normal = "z"
+line = "y"
+k_rotation = 40.0
+k_translation = 2.0e7
+
+[[pressures]]
+plate = "reed"
+value = 3000.0
+history = "pulse"
+
+# the seat: the plane z = 0 under the reed's lower face
+[[contacts]]
+name = "seat"
+part = "reed"
+point = [0.0, 0.0, -0.1e-3]
+normal = [0.0, 0.0, 1.0]
+offset = 0.1e-3
+
+# the stop: z = 0.3 mm + x/30, its normal pointing down to the reed
+[[contacts]]
+name = "stop"
+part = "reed"
+point = [0.0, 0.0, 0.3e-3]
+normal = [0.03331483, 0.0, -0.99944491]
+offset = 0.1e-3
+
+[points]
+tip = [0.03, 0.0, 0.0]
+middle = [0.015, 0.0, 0.0]

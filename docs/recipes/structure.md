@@ -272,3 +272,53 @@ Part of the [Recipes](../recipes.md): the linear structural solver `foehncraft-s
    averaged over the elements around each); `structure.vtk` is an
    unstructured grid of quadratic cells with `displacement`, `von_mises`
    and the mode shapes.
+
+
+---
+
+<a id="structure-contact"></a>
+## 302. Let a reed touch its seat and its stop
+
+1. Give every seat and stop a `[[contacts]]` plane: a `point`, the
+   `normal` pointing to the side the reed stays on, the `part` whose
+   nodes may touch it, and `offset` = half the thickness of a plate or a
+   beam, so that its face touches, not its mid-surface:
+
+   ```toml
+   [[contacts]]
+   name = "seat"
+   part = "reed"
+   point = [0.0, 0.0, -0.1e-3]
+   normal = [0.0, 0.0, 1.0]
+   offset = 0.1e-3
+
+   [[contacts]]
+   name = "stop"
+   part = "reed"
+   point = [0.0, 0.0, 0.3e-3]
+   normal = [0.03331483, 0.0, -0.99944491]   # rises 1 mm over 30 mm
+   offset = 0.1e-3
+   ```
+
+   For a solid, `surface` limits the plane to the nodes of a named
+   surface. A node that starts inside a plane is an error.
+
+2. A static case with contacts is solved exactly (to `[contact]
+   tolerance`, 10⁻⁹ of the model size). A transient needs `method =
+   "direct"`; take a step that resolves the motion between impacts (here
+   5 µs, 1/1300 of the first period) and `output_every = 1` to see every
+   impact, and leave `rho_infinity` below 1 so that the high frequencies
+   an impact excites die out.
+
+3. Run it and read the results: `result.json` gives per plane the force
+   along its normal (static: also the nodes in contact), and the largest
+   penetration; `transient.csv` has a column `contact_<name>` per plane:
+
+   ```sh
+   target/release/foehn call structure.run --input examples/cases/tools/structure_reed_valve_stop.json
+   python3 -m tools.plot.structure_contact output/reed_valve_stop reed_valve.png
+   ```
+
+   `[contact] penalty` (default 1000) scales the penalty stiffness of a
+   transient; a larger one gives less penetration and more active-set
+   changes.

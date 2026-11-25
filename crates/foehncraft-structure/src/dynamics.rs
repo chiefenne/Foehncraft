@@ -120,7 +120,8 @@ pub struct GenAlpha<'a> {
     af: f64,
     gamma: f64,
     beta: f64,
-    /// S / (1 − αf) β Δt², factorised.
+    /// S / ck = K + (cm/ck) M, and its factor.
+    base: SymCsc,
     s: Ldlt,
     s_scale: f64,
 }
@@ -148,8 +149,8 @@ impl<'a> GenAlpha<'a> {
         // S = cm M + ck K
         let cm = (1.0 - am) + (1.0 - af) * gamma * dt * damping.alpha;
         let ck = (1.0 - af) * gamma * dt * damping.beta + (1.0 - af) * beta * dt * dt;
-        let s = sys.k.plus_scaled(cm / ck, &sys.m);
-        let f = Ldlt::factor(&s, PIVOT_TOL).map_err(|z| {
+        let base = sys.k.plus_scaled(cm / ck, &sys.m);
+        let f = Ldlt::factor(&base, PIVOT_TOL).map_err(|z| {
             Error::new(
                 codes::SINGULAR,
                 format!(
@@ -169,6 +170,7 @@ impl<'a> GenAlpha<'a> {
             af,
             gamma,
             beta,
+            base,
             s: f,
             s_scale: ck,
         })
@@ -213,6 +215,70 @@ impl<'a> GenAlpha<'a> {
             fm.solve(&r)
         };
         Ok(State { t: t0, u, v, a })
+    }
+
+    /// The predictors of a step, ũ and ṽ, and the right-hand side of
+    /// (cm M + ck K) a = rhs.
+    fn predict(&self, s: &State, f_n: &[f64], f_next: &[f64]) -> (Vec<f64>, Vec<f64>, Vec<f64>) {
+        let sys = self.sys;
+        let (dt, am, af, g, b) = (self.dt, self.am, self.af, self.gamma, self.beta);
+        let n = s.u.len();
+        let ut: Vec<f64> = (0..n)
+            .map(|i| s.u[i] + dt * s.v[i] + dt * dt * (0.5 - b) * s.a[i])
+            .collect();
+        let vt: Vec<f64> = (0..n).map(|i| s.v[i] + dt * (1.0 - g) * s.a[i]).collect();
+        let ua: Vec<f64> = (0..n).map(|i| (1.0 - af) * ut[i] + af * s.u[i]).collect();
+        let va: Vec<f64> = (0..n).map(|i| (1.0 - af) * vt[i] + af * s.v[i]).collect();
+        let ma = sys.m.apply(&s.a);
+        let ku = sys.k.apply(&ua);
+        let cv = self.damping.apply(&sys.k, &sys.m, &va);
+        let rhs: Vec<f64> = (0..n)
+            .map(|i| (1.0 - af) * f_next[i] + af * f_n[i] - am * ma[i] - cv[i] - ku[i])
+            .collect();
+        (ut, vt, rhs)
+    }
+
+    /// One step with unilateral contact (the penalty at the end of the
+    /// step, α-averaged in the balance; an active set loop in the step; see
+    /// [`crate::contact`]).
+    pub fn step_contact(
+        &self,
+        model: &crate::model::Model,
+        c: &crate::contact::Contacts,
+        cache: &mut crate::contact::StepCache,
+        s: &State,
+        f_n: &[f64],
+        f_next: &[f64],
+    ) -> Result<(State, crate::contact::State), Error> {
+        let (dt, af, g, b) = (self.dt, self.af, self.gamma, self.beta);
+        let (ut, vt, rhs) = self.predict(s, f_n, f_next);
+        let at = crate::contact::StepEnd {
+            u0: &ut,
+            cu: b * dt * dt,
+            af,
+        };
+        let (a, cs) = crate::contact::step(
+            model,
+            self.sys,
+            c,
+            &self.base,
+            self.s_scale,
+            &at,
+            &rhs,
+            cache,
+        )?;
+        let n = a.len();
+        let u: Vec<f64> = (0..n).map(|i| ut[i] + b * dt * dt * a[i]).collect();
+        let v = (0..n).map(|i| vt[i] + g * dt * a[i]).collect();
+        Ok((
+            State {
+                t: s.t + dt,
+                u,
+                v,
+                a,
+            },
+            cs,
+        ))
     }
 
     /// One step from `s` (load `f_n`) to `s.t + dt` (load `f_next`).

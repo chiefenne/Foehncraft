@@ -4,6 +4,7 @@ pub mod analysis;
 pub mod beam;
 pub mod case;
 pub mod clamp;
+pub mod contact;
 pub mod dynamics;
 pub mod eigen;
 pub mod ldlt;
