@@ -43,7 +43,7 @@ FLOW = {
         "poiseuille_hex", "poiseuille_poly", "tmr_plate_sst", "tmr_plate_keps",
         "tmr_plate_zeta_f0", "diffuser_sst_sharp", "ubend_sst_sharp", "ranks_channel_poly",
         "ranks_heated_channel_sst", "ranks_restart_channel", "ranks_run_channel",
-        "ranks_run_transient_sst",
+        "ranks_run_transient_sst", "ranks_run_mrf_couette",
         "immersed_cylinder_re20", "immersed_topology_bend", "immersed_mms",
     ],
     "linux-3": [

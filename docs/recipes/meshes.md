@@ -23,6 +23,7 @@ Part of the [Recipes](../recipes.md): generate, read (Gmsh, SU2, CGNS, OpenFOAM,
 | 262 | [Write a restart on ranks and continue on another rank count](#restart-ranks) |
 | 279 | [Run a case on ranks](#run-ranks) |
 | 290 | [Run a turbulent, heated or transient case on ranks](#run-ranks-physics) |
+| 301 | [Run a case with rotating zones (MRF) or a closed domain on ranks](#run-ranks-mrf) |
 
 ---
 
@@ -827,5 +828,41 @@ correction and the QCR, sprays, immersed bodies, a `[[schedule]]`). A
 summary that would read the part of one rank (orthotropic solids, porous
 matrices, heat-flux periodic pairs) stops the run with an error rather
 than write a wrong number.
+
+[↑ back to top](#meshes)
+
+---
+
+<a id="run-ranks-mrf"></a>
+## 301. Run a case with rotating zones (MRF) or a closed domain on ranks
+
+The rotating zones of `[[mrf]]`, steady or as the transient frozen rotor
+(D185), run on ranks like any other case (recipe 279):
+
+```
+target/release/foehn flow examples/cases/flow/ranks_run_mrf_couette.toml --ranks 5
+mpirun -n 5 target/release/foehn flow examples/cases/flow/ranks_run_mrf_couette.toml   # mpi feature
+```
+
+Every output file is byte for byte that of one rank, the log columns
+`rotor.<zone>.torque` and `rotor.<zone>.power`, the wall files and the
+ledger with the shaft power included. Check it:
+
+```
+target/release/foehn flow examples/cases/flow/ranks_run_mrf_couette.toml --ranks 1 --out output/one
+for f in residuals.csv balance.csv boundaries.csv wall_inner.csv fields.vtkhdf restart.h5; do
+  cmp output/one/$f output/ranks_run_mrf_couette/$f
+done
+```
+
+A domain without a pressure boundary (a closed vessel, a cavity) runs on
+ranks too: the reference cell of the pressure (`[pressure]
+reference_point`, or the corner of the bounding box) lies on one rank,
+which fixes the level there and hands its value to the others. The
+five-blade stirred vessel of gallery 301 is
+`examples/studies/mixer/mrf_turbulent_ranks.toml` (mesh from
+`python3 examples/meshes/mixer.py --blades 5 --baffles 3`). Not on ranks
+yet: the sliding mesh (`[[sliding]]`, refused with an error), and the
+`[run] ranks` check of `foehn flow` with a sliding mesh.
 
 [↑ back to top](#meshes)

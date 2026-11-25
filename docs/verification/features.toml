@@ -1923,7 +1923,7 @@ evidence = [
   { kind = "contract", property = "bitwise", case = "ranks_heated_channel_sst", what = "a turbulent channel (k-omega SST, Re 10 000) with a heated wall and the energy equation, 70 outer iterations on 2, 3 and 5 ranks, every field of every rank bitwise the one-rank run (the run fails otherwise)" },
 ]
 gaps = [
-  "not on ranks yet (refused with an error): zeta-f and elliptic blending, curvature correction and QCR, the MLP limiter and quadratic gradients, gravity, turning zones, solid regions, schedules and level sweeps (restarts: parallel.restart-ranks)",
+  "not on ranks yet (refused with an error): zeta-f and elliptic blending, curvature correction and QCR, the MLP limiter and quadratic gradients, gravity, the sliding mesh, solid regions, schedules and level sweeps (restarts: parallel.restart-ranks; MRF zones: parallel.run-ranks-turning)",
   "monitors, probes and balances of a run on ranks: parallel.run-ranks (W7 part 1, steady laminar)",
   "transient runs are checked with the fixed time step, not the adaptive one",
   "1M cells on 4 cores split into 1, 2, 4 ranks (example ranks_scaling): +2, +10, +28 % time per iteration against threads only, bitwise; strong scaling over more cores is W9",
@@ -2033,6 +2033,26 @@ gaps = [
   "the scalar summary stops with an error on ranks for orthotropic solids, porous matrices, heat-flux periodic pairs, sprays and a variable density (all refused before the run by the rules above)",
   "Crank-Nicolson and PISO without outer iterations are not tested on ranks in this step (the solver on ranks is, W5)",
   "MPI processes are run in CI with the steady laminar case only; the threads tests cover the same code",
+]
+
+[[feature]]
+id = "parallel.run-ranks-turning"
+area = "Backends and interfaces"
+title = "Rotating zones (MRF) and closed domains on ranks with the output of one rank (MPI step W7, turning zones)"
+switch = "[run] rank_count, foehn flow --ranks N, mpirun -n N foehn flow; with [[mrf]] (steady or with [time]) or without a pressure boundary"
+decisions = ["D55", "D84", "D93", "D185"]
+infrastructure = true
+contracts = ["bitwise"]
+evidence = [
+  { kind = "contract", property = "bitwise", test = "crates/foehncraft-flow/tests/run_ranks.rs::steady_mrf_zone_on_ranks_writes_the_files_of_one_rank", what = "steady laminar Taylor-Couette gap with energy, the inner half a moving reference frame, a closed domain (reference cell), on 2, 3 and 4 ranks: residuals, ledger, boundaries, wall files, fields.vtkhdf, restart.h5 byte for byte one rank, the rotor torque and power log rows of run.jsonl equal" },
+  { kind = "contract", property = "bitwise", test = "crates/foehncraft-flow/tests/run_ranks.rs::transient_frozen_rotor_with_sst_on_ranks_writes_the_files_of_one_rank", what = "the transient frozen rotor (MRF with BDF2, D185) with k-omega SST and energy on 2 and 3 ranks: history, ledger, probes, boundaries, field files and restart byte for byte one rank" },
+  { kind = "contract", property = "bitwise", test = "crates/foehncraft-flow/tests/ranks.rs::flow_on_ranks_is_bitwise_one_rank", what = "an annulus with an outlet and a rotating zone among the check cases of the solver on 1 to 4 ranks" },
+  { kind = "contract", property = "bitwise", case = "ranks_run_mrf_couette", what = "the Taylor-Couette gap with a rotating zone on 5 ranks to convergence (366 iterations); every output file compared with --ranks 1 when the case was made" },
+]
+gaps = [
+  "the sliding mesh ([[sliding]]) is refused on ranks in this step (it follows)",
+  "the five-blade stirred vessel of gallery 301 (16 848 cells, SST, coupled solver) was compared with --ranks 1 by hand, not in CI (its mesh needs Gmsh)",
+  "the reference cell's value is handed to all ranks with one all-gather per pressure solve",
 ]
 
 # ---------------------------------------------------------------- planned
