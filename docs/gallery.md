@@ -21,7 +21,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | [Thermal radiation](gallery/radiation.md) | Monte Carlo radiation of grey gas and grey walls on a prescribed temperature field: the box furnace with cooled tubes, the cases with exact solutions, scrambled Sobol against pseudo-random emission | 259, 281 |
 | [Turbulence models](gallery/turbulence.md) | the RANS turbulence models with their wall treatments (k-ω SST, the k-ε family, k-ε-ζ-f, k-ε-ζ-f₀, elliptic-blending k-ε) on the flat plate, the channel, the backward-facing step and the impinging jet; curvature correction and QCR; manufactured solutions; the internal flows of D45 (pipe, plane diffuser, U-bend) with GCI | 68, 71, 73, 74, 88, 89, 90, 113, 115, 141, 140, 184, 194, 197, 193, 199, 204 |
 | [Boundary conditions](gallery/boundary-conditions.md) | slip walls, axisymmetric wedges, inlet profiles from tables, backflow at pressure outlets, convective outlets, periodic modules, absolute pressure values (D239) | 21, 67, 220 |
-| [Lagrangian sprays](gallery/sprays.md) | droplets as Lagrangian parcels in the gas flow: injectors, drag, gravity, wall behaviour, the mass book | 242, 265, 280, 283, 285 |
+| [Lagrangian sprays](gallery/sprays.md) | droplets as Lagrangian parcels in the gas flow: injectors, drag, gravity, wall behaviour, the mass book | 242, 265, 280, 283, 285, 292 |
 | [Porous regions](gallery/porous.md) | flow through porous matrices with a direction-dependent Darcy–Forchheimer resistance: a ceramic honeycomb, the exact pressure drop of a block | 273, 275 |
 | [Immersed bodies](gallery/immersed.md) | bodies in the flow without a body-fitted mesh: Brinkman penalisation of primitive bodies (L13 stage 1) | 270 |
 | [Species and reacting flows](gallery/species.md) | species transport of ideal-gas mixtures on the variable density: mixture properties from kinetic theory, the closure species, the element ledger (steam furnace path, SF1) | 278 |
@@ -153,6 +153,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | <a id="spray-cooling"></a>283 | [Water droplets cool a hot air stream](gallery/sprays.md#spray-cooling) | [Lagrangian sprays](gallery/sprays.md) |
 | <a id="spray-dispersion"></a>285 | [Droplets spread by the turbulence of a duct](gallery/sprays.md#spray-dispersion) | [Lagrangian sprays](gallery/sprays.md) |
 | <a id="run-ranks-physics"></a>290 | [Five ranks, one turbulent heated transient: the physics of a run on ranks](gallery/meshes.md#run-ranks-physics) | [Meshes](gallery/meshes.md) |
+| <a id="spray-steady"></a>292 | [The spray-cooled duct as a steady state](gallery/sprays.md#spray-steady) | [Lagrangian sprays](gallery/sprays.md) |
 
 ## Adding a feature
 

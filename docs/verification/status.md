@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**127 features: 50 verified, 74 partial, 3 unverified.**
+**128 features: 50 verified, 75 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -148,6 +148,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Sprays | [Two-way momentum coupling of the sprays (SP2a, D247 to D252)](#sprays-two-way-momentum) | partial |
 | Sprays | [Two-way sensible heat coupling of the sprays (SP2b, D247 to D252)](#sprays-two-way-heat) | partial |
 | Sprays | [Turbulent dispersion of the sprays, eddy lifetime (SP2c, D243)](#sprays-dispersion-eddy-lifetime) | partial |
+| Sprays | [Steady spray mode: streams through the steady gas with relaxed sources (SP2s, D260)](#sprays-steady-mode) | partial |
 | Flow models | [Porous regions with a direction-dependent Darcy-Forchheimer resistance (D270, PM1)](#porous-darcy-forchheimer) | partial |
 | Flow models | [Gas and matrix temperatures in porous regions, monolithic (D271, D272, PM2)](#porous-two-temperatures) | partial |
 | Flow models | [Species transport of an ideal-gas mixture with mixture properties (L2, steam furnace SF1)](#species-transport) | partial |
@@ -1975,6 +1976,28 @@ Gaps:
 - no turbulence modulation by the droplets
 - one process
 - `spray_dispersion_injectors` has no run in the verification manual or in CI
+
+<a id="sprays-steady-mode"></a>
+
+### Steady spray mode: streams through the steady gas with relaxed sources (SP2s, D260)
+
+**partial** (a model without reference data; gaps written) · id `sprays.steady-mode` · switch `[spray.steady] in a steady case` · decisions D260, D247, D249, D250, D251, D254
+
+- exact: [`a_stream_crosses_a_uniform_gas_on_its_exact_path`](../../crates/foehncraft-flow/tests/spray_steady.rs): one stream of 50 um released at rest in a uniform gas at 2 m/s: its residence time to the outlet equals a fourth-order integration of the equation of motion within 1e-3 (found 7e-5); all of its mass flow leaves through the outlet; the momentum flow it takes from the gas is its mass flow times the exit speed
+- exact: [`the_steady_mode_gives_the_same_bits_on_any_number_of_threads`](../../crates/foehncraft-flow/tests/spray_steady.rs): V28.10: spray.csv and residuals.csv of a two-way steady duct bitwise equal on 1 and 4 threads, with and without eddy-lifetime dispersion
+- consistency: [`the_steady_duct_converges_with_closed_books`](../../crates/foehncraft-flow/tests/spray_steady.rs): the steady spray-cooling duct with 60 streams converges with the source residual below its tolerance; every stream leaves, the liquid books close to 1e-15 kg/s; the ledger pairs 2801 to 2804 are zero to the bit, the parcel accounts close to 1e-12, the thermal account of the gas to 1e-4; one spray.csv row per pass
+- consistency: [`another_seed_draws_other_streams`](../../crates/foehncraft-flow/tests/spray_steady.rs): D260 (3): another seed draws other streams (other heat, within 10 %)
+- contract (diagnostics): [`the_steady_mode_refuses_what_has_no_steady_state`](../../crates/foehncraft-flow/tests/spray_steady.rs): D260 (6): [spray.steady] with [time] and injectors with start or end are refused (SPR002); two-way with the coupled algorithm is refused (SPR003)
+- consistency: [`spray_cooling_steady`](../../examples/cases/flow/spray_cooling_steady.toml): V28.9 without evaporation: 6.39 kW from the air against the transient time mean of 6.58 +- 0.03 kW (2.9 % apart, see gaps); 526 iterations, 58 passes, source residual 1e-4; seeds 1 and 2 and 1600 streams within 0.4 % (passes in CI (set linux-3), not yet in the manual) ([results](../gallery/sprays.md#spray-steady))
+
+Gaps:
+
+- V28.9 not met strictly: the steady duct takes 2.9 % less heat from the air than the time mean of the transient run, more than the sampling and step errors of the transient run; the transient flow does not come to rest behind the nozzle
+- no evaporation (SP5); V28.11 (duct with more water than the gas can take) waits for it
+- the statistical error of the streams is estimated by hand with other seeds, not by a study tool (D196)
+- the health numbers of D254 are reported only; no limiter acts in the steady mode
+- datums report no liquid in the steady mode
+- not with solid regions (CHT) or two-way with the coupled algorithm (SPR003); one process
 
 ## Flow models
 
