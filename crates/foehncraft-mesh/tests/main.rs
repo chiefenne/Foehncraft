@@ -16,6 +16,7 @@
 mod broken_inputs;
 mod canonical_local_mesh;
 mod cgns;
+mod cut;
 mod decompose;
 mod exact_reductions;
 mod fluent_msh;

@@ -106,10 +106,69 @@ pub struct BodySection {
     pub fraction: Option<crate::expr::Scalar>,
 }
 
-/// `[immersed]`: bodies in the flow by Brinkman penalisation.
+/// How the bodies enter the flow.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "kebab-case")]
+pub enum Method {
+    /// Brinkman penalisation on the uncut mesh (stage 1, D226).
+    #[default]
+    Penalisation,
+    /// Conservative cut cells: the bodies are cut out of the mesh and their
+    /// surfaces become wall boundaries named after them (stage 2, D227).
+    Cut,
+}
+
+/// How a cut puts the crossing point on a mesh edge.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "kebab-case")]
+pub enum EdgeRoot {
+    /// The root of the body's own function on the edge: the point lies on
+    /// the true surface.
+    #[default]
+    Exact,
+    /// The zero of the linear interpolant of the node values (marching
+    /// cubes).
+    Linear,
+}
+
+/// `[immersed.cut]`: the settings of the cut cells.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CutSection {
+    /// Cut cells below this fraction of their uncut volume are merged into
+    /// a neighbour (0 to 0.9, default 0.3).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_volume_fraction: Option<f64>,
+    /// The crossing point on a mesh edge (default `exact`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub edge_root: Option<EdgeRoot>,
+    /// Fan every wall face around a point on the surface, so that it
+    /// follows a curved body inside the cell (default true).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wall_point: Option<bool>,
+}
+
+impl CutSection {
+    /// The merge threshold.
+    pub fn min_volume_fraction(&self) -> f64 {
+        self.min_volume_fraction.unwrap_or(0.3)
+    }
+}
+
+/// `[immersed]`: bodies in the flow by Brinkman penalisation or cut cells.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ImmersedSection {
+    /// `penalisation` (default) or `cut`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub method: Option<Method>,
+    /// The settings of the cut cells, `[immersed.cut]`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cut: Option<CutSection>,
     /// Permeability K (m²) of the Brinkman term μ χ / K; smaller is closer
     /// to a no-slip wall and stiffer. No default: the error depends on it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -130,6 +189,11 @@ impl ImmersedSection {
     /// True without an `[immersed]` table.
     pub fn is_empty(&self) -> bool {
         self == &Self::default()
+    }
+
+    /// True with `method = "cut"`.
+    pub fn is_cut(&self) -> bool {
+        self.method == Some(Method::Cut)
     }
 
     /// Samples per direction.
@@ -202,6 +266,78 @@ impl Body {
                     0.0
                 }
             }
+        }
+    }
+
+    /// The signed distance to the surface, negative inside (exact for the
+    /// primitive shapes); for a `field` body the level ½ − χ.
+    pub fn distance(&self, x: [f64; 3]) -> f64 {
+        match &self.kind {
+            Kind::Cylinder { c, a, r2, half } => {
+                let d = sub(x, *c);
+                let t = dot(d, *a);
+                let p = [d[0] - t * a[0], d[1] - t * a[1], d[2] - t * a[2]];
+                let dr = dot(p, p).sqrt() - r2.sqrt();
+                if half.is_infinite() {
+                    return dr;
+                }
+                let dz = t.abs() - half;
+                let (er, ez) = (dr.max(0.0), dz.max(0.0));
+                (er * er + ez * ez).sqrt() + dr.max(dz).min(0.0)
+            }
+            Kind::Sphere { c, r2 } => {
+                let d = sub(x, *c);
+                dot(d, d).sqrt() - r2.sqrt()
+            }
+            Kind::Box { lo, hi } => {
+                let mut q = [0.0; 3];
+                for i in 0..3 {
+                    let m = 0.5 * (lo[i] + hi[i]);
+                    q[i] = (x[i] - m).abs() - 0.5 * (hi[i] - lo[i]);
+                }
+                let o = [q[0].max(0.0), q[1].max(0.0), q[2].max(0.0)];
+                dot(o, o).sqrt() + q[0].max(q[1]).max(q[2]).min(0.0)
+            }
+            Kind::Field(v) => {
+                let f = v.at(x, 0.0);
+                if f.is_nan() {
+                    0.5
+                } else {
+                    0.5 - f.clamp(0.0, 1.0)
+                }
+            }
+        }
+    }
+
+    /// The area of the body's surface inside the box `lo`–`hi`, where
+    /// simple (as [`Self::exact_volume`]; a cylinder that spans the box:
+    /// its mantle only).
+    pub fn exact_area(&self, lo: [f64; 3], hi: [f64; 3]) -> Option<f64> {
+        let inside = |p: [f64; 3]| (0..3).all(|i| p[i] >= lo[i] && p[i] <= hi[i]);
+        match &self.kind {
+            Kind::Sphere { c, r2 } => {
+                let r = r2.sqrt();
+                (inside(sub(*c, [r; 3])) && inside([c[0] + r, c[1] + r, c[2] + r]))
+                    .then(|| 4.0 * std::f64::consts::PI * r2)
+            }
+            Kind::Box { lo: a, hi: b } => (inside(*a) && inside(*b)).then(|| {
+                let e = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+                2.0 * (e[0] * e[1] + e[1] * e[2] + e[2] * e[0])
+            }),
+            Kind::Cylinder { c, a, r2, half } => {
+                let i = (0..3).find(|&i| a[i].abs() == 1.0)?;
+                let r = r2.sqrt();
+                for j in (0..3).filter(|&j| j != i) {
+                    if c[j] - r < lo[j] || c[j] + r > hi[j] {
+                        return None;
+                    }
+                }
+                if c[i] - half > lo[i] || c[i] + half < hi[i] {
+                    return None;
+                }
+                Some(2.0 * std::f64::consts::PI * r * (hi[i] - lo[i]))
+            }
+            Kind::Field(_) => None,
         }
     }
 
@@ -283,6 +419,7 @@ pub fn bodies_with(s: &ImmersedSection, env: &crate::expr::Env) -> Result<Vec<Bo
     }
     match s.permeability {
         Some(k) if k > 0.0 && k.is_finite() => {}
+        None if s.is_cut() => {}
         _ => {
             return Err(bad(
                 "immersed.permeability".into(),
@@ -291,6 +428,23 @@ pub fn bodies_with(s: &ImmersedSection, env: &crate::expr::Env) -> Result<Vec<Bo
                     .into(),
             ));
         }
+    }
+    if s.is_cut() {
+        let f = s.cut.clone().unwrap_or_default().min_volume_fraction();
+        if !(0.0..=0.9).contains(&f) {
+            return Err(diag::err(
+                Diagnostic::new(
+                    diag::IMM_CUT,
+                    format!("[immersed.cut] min_volume_fraction = {f}: give 0 to 0.9"),
+                )
+                .key("immersed.cut.min_volume_fraction"),
+            ));
+        }
+    } else if s.cut.is_some() {
+        return Err(bad(
+            "immersed.cut".into(),
+            "[immersed.cut] needs [immersed] method = \"cut\"".into(),
+        ));
     }
     if let Some(n) = s.samples
         && !(1..=16).contains(&n)
@@ -398,6 +552,27 @@ pub fn check_case(case: &crate::case::FlowCase) -> Result<()> {
         return Ok(());
     }
     bodies_of(case)?;
+    if case.immersed.is_cut() {
+        let what = if !case.regions.is_empty() {
+            Some("regions (conjugate heat transfer on cut cells is stage 2d)")
+        } else if case.immersed.topology.is_some() {
+            Some("a topology search (it runs on the penalised density field)")
+        } else if !case.mrf.is_empty() || !case.sliding.is_empty() {
+            Some("rotating zones")
+        } else {
+            None
+        };
+        return match what {
+            Some(w) => Err(diag::err(
+                Diagnostic::new(
+                    diag::IMM_CUT_UNSUPPORTED,
+                    format!("[immersed] method = \"cut\" with {w} is not available yet"),
+                )
+                .key("immersed.method"),
+            )),
+            None => Ok(()),
+        };
+    }
     if let Some(t) = &case.immersed.topology {
         t.check()?;
     }
@@ -567,6 +742,10 @@ pub fn attach(
         return Ok((Vec::new(), None));
     }
     check_case(case)?;
+    if case.immersed.is_cut() {
+        // the bodies are walls of the cut mesh (`cut_mesh`)
+        return Ok((Vec::new(), None));
+    }
     let bs = bodies_of(case)?;
     let k = case.immersed.permeability.unwrap_or(f64::INFINITY);
     let mu = case.mu();
@@ -665,7 +844,8 @@ pub fn forces(
     u: &foehncraft_fv::disc::Soa3,
     phys: &crate::simplec::Physics,
 ) -> Result<Vec<BodyForce>> {
-    if case.immersed.is_empty() {
+    if case.immersed.is_empty() || case.immersed.is_cut() {
+        // cut bodies are wall boundaries: their forces are in the boundaries
         return Ok(Vec::new());
     }
     let bs = bodies_of(case)?;
@@ -791,4 +971,119 @@ mod tests {
         assert!(errs[2] < 5e-3, "{errs:?}");
         assert!(errs[2] < errs[0], "{errs:?}");
     }
+}
+
+/// The bodies of a cut as one implicit function: φ is the smallest signed
+/// distance, the crossing points are the exact roots on the edges (or
+/// linear), the wall point is the Newton projection onto the nearest body.
+struct CutBodies<'a> {
+    bodies: &'a [Body],
+    exact: bool,
+    /// Step of the gradient of the projection (m).
+    h: f64,
+}
+
+impl CutBodies<'_> {
+    fn nearest(&self, x: [f64; 3]) -> usize {
+        let mut best = (f64::INFINITY, 0);
+        for (i, b) in self.bodies.iter().enumerate() {
+            let d = b.distance(x).abs();
+            if d < best.0 {
+                best = (d, i);
+            }
+        }
+        best.1
+    }
+}
+
+impl foehncraft_mesh::cut::ImplicitBody for CutBodies<'_> {
+    fn value(&self, x: [f64; 3]) -> f64 {
+        self.bodies
+            .iter()
+            .map(|b| b.distance(x))
+            .fold(f64::INFINITY, f64::min)
+    }
+    fn edge_point(&self, a: [f64; 3], b: [f64; 3], fa: f64, fb: f64) -> [f64; 3] {
+        if self.exact {
+            foehncraft_mesh::cut::edge_root(|x| self.value(x), a, b, fa, fb)
+        } else {
+            let t = fa / (fa - fb);
+            [
+                a[0] + t * (b[0] - a[0]),
+                a[1] + t * (b[1] - a[1]),
+                a[2] + t * (b[2] - a[2]),
+            ]
+        }
+    }
+    fn project(&self, x: [f64; 3]) -> Option<[f64; 3]> {
+        let b = &self.bodies[self.nearest(x)];
+        foehncraft_mesh::cut::project_newton(|y| b.distance(y), x, self.h)
+    }
+    fn patch(&self, x: [f64; 3]) -> usize {
+        self.nearest(x)
+    }
+}
+
+/// The cut of `[immersed] method = "cut"` (L13 stage 2, D227): the mesh
+/// with the bodies cut out, their surfaces as wall boundaries named after
+/// the bodies, and the notes for the log (IMM203, IMM204).
+pub fn cut_mesh(case: &crate::case::FlowCase, mesh: &Mesh) -> Result<(Mesh, Vec<Diagnostic>)> {
+    let bs = bodies_of(case)?;
+    let sec = case.immersed.cut.clone().unwrap_or_default();
+    let (lo, hi) = mesh.bounding_box();
+    let diag_len = norm(sub(hi, lo));
+    let body = CutBodies {
+        bodies: &bs,
+        exact: sec.edge_root.unwrap_or_default() == EdgeRoot::Exact,
+        h: 1e-7 * diag_len.max(f64::MIN_POSITIVE),
+    };
+    let names: Vec<String> = bs.iter().map(|b| b.name.clone()).collect();
+    let opt = foehncraft_mesh::cut::CutOptions {
+        min_fraction: sec.min_volume_fraction(),
+        wall_point: sec.wall_point.unwrap_or(true),
+    };
+    let c = foehncraft_mesh::cut::cut(mesh, &body, &names, &opt)
+        .map_err(|e| diag::err(Diagnostic::new(diag::IMM_CUT, format!("cut cells: {e}"))))?;
+    let r = &c.report;
+    let mut notes = vec![Diagnostic::new(
+        diag::IMM_CUT_REPORT,
+        format!(
+            "cut cells: {} of {} cells cut, {} removed, {} extra from split cells, {} merged \
+             (min_volume_fraction {}), smallest kept fraction {:.3}, closure {:.1e}; {} cells",
+            r.cells_cut,
+            r.cells_in,
+            r.cells_removed,
+            r.cells_split,
+            r.cells_merged,
+            opt.min_fraction,
+            r.min_fraction,
+            r.max_closure,
+            r.cells_out
+        ),
+    )];
+    for (b, a) in bs.iter().zip(&r.wall_area) {
+        let mut line = format!("cut body {}: wall area {a:.6e} m²", b.name);
+        if let Some(e) = b.exact_area(lo, hi) {
+            line.push_str(&format!(
+                ", exact {e:.6e} m² ({:+.3} %)",
+                100.0 * (a - e) / e
+            ));
+        }
+        notes.push(Diagnostic::new(diag::IMM_CUT_REPORT, line));
+    }
+    if r.merge_failed > 0 || r.bad_faces > 0 {
+        notes.push(Diagnostic::new(
+            diag::IMM_CUT_QUALITY,
+            format!(
+                "cut cells: {} small cells could not be merged, {} faces with the normal \
+                 against the centroid distance; refine the mesh near the body",
+                r.merge_failed, r.bad_faces
+            ),
+        ));
+    }
+    Ok((c.mesh, notes))
+}
+
+fn norm(a: [f64; 3]) -> f64 {
+    dot(a, a).sqrt()
 }

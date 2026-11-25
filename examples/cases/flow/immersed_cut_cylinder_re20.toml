@@ -1,0 +1,79 @@
+# Flow around a cylinder at Re = 20 on a cut-cell mesh: the benchmark 2D-1
+# of Schäfer & Turek (1996) on a plain box mesh with the cylinder cut out
+# of it (L13 stage 2, D227).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/immersed_cut_cylinder_re20.toml
+#
+# Same channel, inflow and mesh as immersed_cylinder_re20.toml (440 x 82
+# hexahedra, h = D/20), but the cylinder is cut out of the mesh instead of
+# penalised: every cell the surface crosses keeps its fluid part, closed by
+# a wall face that is fanned around a point on the cylinder, and cut cells
+# below 30 % of their volume are merged into a neighbour. The cylinder
+# surface becomes the wall boundary `cylinder`: the drag and lift are the
+# ordinary wall forces, and the wall is sharp.
+#
+# RESULTS_PLACEHOLDER
+
+case_format = "0.7"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [2.2, 0.41, 0.01]
+cells = [440, 82, 1]
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 1e-3
+pressure_values = "gauge"
+
+[flow]
+convection = true
+
+[immersed]
+method = "cut"
+
+[immersed.cut]
+min_volume_fraction = 0.3
+
+[[immersed.body]]
+name = "cylinder"
+shape = "cylinder"
+centre = [0.2, 0.2, 0.0]
+radius = 0.05
+
+[boundary.xmin]
+type = "velocity-inlet"
+profile = "parabolic"
+max_velocity = 0.3
+profile_axes = ["y"]
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymin]
+type = "wall"
+[boundary.ymax]
+type = "wall"
+[boundary.cylinder]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+max_iterations = 3000
+tolerance = 1e-8
+log_every = 200
+
+[verification]
+benchmark = "schafer-turek-2d1"
+benchmark_tolerance = 0.05
+require_convergence = true
+
+[output]
+derived = ["vorticity"]
+wall_csv = false

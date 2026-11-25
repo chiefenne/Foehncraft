@@ -11,6 +11,8 @@
 //! - [`annulus`]: the built-in annulus (Taylor–Couette, rotor–stator);
 //! - [`revolved`]: the built-in mesh of revolution (rotor and stator with an
 //!   interface of cylinders, discs and cones, D186);
+//! - [`cut`]: conservative cut cells, a body cut out of any mesh (L13
+//!   stage 2, D227–D229);
 //! - [`imprint`]: the sliding interface of a rotor and a stator with different
 //!   pitch, imprinted at the current rotor angle (D58, D182);
 //! - [`wedge`]: axisymmetric wedge meshes revolved from a 2D mesh;
@@ -30,6 +32,7 @@ pub mod annulus;
 pub mod builder;
 pub mod case;
 pub mod case_format;
+pub mod cut;
 pub mod cylinder;
 pub mod decompose;
 pub mod format;
