@@ -1,4 +1,4 @@
-"""Draws the picture of the spray-cooler chat (docs/agents.md, gallery 312).
+"""Draws the picture of the spray-cooler chat (docs/agents.md, gallery 316).
 
 Top: the air temperature in the duct with the droplet streams of the last
 pass, coloured by diameter. Bottom left: the vapour mass fraction. Bottom
@@ -53,7 +53,6 @@ def main(runs, out):
     x, y, d = cells(run / "fields.vtkhdf")
     with h5py.File(run / "spray" / "streams.vtkhdf", "r") as f:
         sp = f["VTKHDF/Points"][:]
-        dia = f["VTKHDF/PointData/diameter"][:]
     pick = np.arange(0, len(sp), 7)
 
     fig = plt.figure(figsize=(12, 8.2), dpi=150)
