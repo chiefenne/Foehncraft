@@ -13,8 +13,8 @@
 use super::{
     BoundaryArgs, Buf, Buf3, CurvatureOps, Eps2, FlowDevice, FluxArgs, KepsCellOps, Lsq, Mask,
     MlpOps, MomentumFaceArgs, MomentumRowArgs, ScalarFaceArgs, ScalarRowArgs, ScalarTurbOps,
-    ScalarWallOps, Setup, SstCellOps, TurbFaceOps, VertexStencil, WallCellOps, WallFaceOps,
-    VofBufs, VofOp, WallStatic, ZetaFCellOps,
+    ScalarWallOps, Setup, SstCellOps, TurbFaceOps, VertexStencil, VofBufs, VofOp, WallCellOps,
+    WallFaceOps, WallStatic, ZetaFCellOps,
 };
 use anyhow::{Result, ensure};
 use foehncraft_core::repro::{BLOCK, combine_block_sums};
@@ -1237,7 +1237,11 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
         let bufs = match self.body {
             Some(x) => x,
             None => {
-                let x = [self.x.alloc(self.nc)?, self.x.alloc(self.nc)?, self.x.alloc(self.nc)?];
+                let x = [
+                    self.x.alloc(self.nc)?,
+                    self.x.alloc(self.nc)?,
+                    self.x.alloc(self.nc)?,
+                ];
                 self.body = Some(x);
                 x
             }
@@ -1301,18 +1305,28 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             out3: b.out3.map_or(Raw3::default(), |g| self.r3(g)),
         };
         let need = |x: bool, what: &str| -> Result<()> {
-            ensure!(x, "flow device: the volume-of-fluid operation {op:?} needs {what}");
+            ensure!(
+                x,
+                "flow device: the volume-of-fluid operation {op:?} needs {what}"
+            );
             Ok(())
         };
         match op {
             VofOp::Faces => {
-                need(b.flux.is_some() && b.alpha.is_some() && b.grad.is_some() && b.out.is_some(), "flux, alpha, grad, out")?;
+                need(
+                    b.flux.is_some() && b.alpha.is_some() && b.grad.is_some() && b.out.is_some(),
+                    "flux, alpha, grad, out",
+                )?;
                 need(b.alpha_b.is_some() || self.nb == 0, "alpha_b")?;
                 self.go::<e::VofFaces>(self.nf, &args)
             }
             VofOp::Update => {
                 need(
-                    b.flux.is_some() && b.alpha_f.is_some() && b.alpha.is_some() && b.out.is_some() && b.out2.is_some(),
+                    b.flux.is_some()
+                        && b.alpha_f.is_some()
+                        && b.alpha.is_some()
+                        && b.out.is_some()
+                        && b.out2.is_some(),
                     "flux, alpha_f, alpha, out, out2",
                 )?;
                 self.go::<e::VofUpdate>(self.nc, &args)
@@ -1326,7 +1340,10 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
                 self.go::<e::VofSmooth>(self.nc, &args)
             }
             VofOp::Gradient => {
-                need(b.alpha.is_some() && b.out.is_some() && b.out3.is_some(), "alpha, out, out3")?;
+                need(
+                    b.alpha.is_some() && b.out.is_some() && b.out3.is_some(),
+                    "alpha, out, out3",
+                )?;
                 self.go::<e::VofGradient>(self.nc, &args)
             }
             VofOp::Curvature => {
@@ -1344,7 +1361,10 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
                 self.x.exchange(&b.out3.expect("out3").all())
             }
             VofOp::Tension => {
-                need(b.alpha.is_some() && b.kappa.is_some() && b.gnorm.is_some() && b.out.is_some(), "alpha, kappa, gnorm, out")?;
+                need(
+                    b.alpha.is_some() && b.kappa.is_some() && b.gnorm.is_some() && b.out.is_some(),
+                    "alpha, kappa, gnorm, out",
+                )?;
                 self.go::<e::VofTension>(self.nf, &args)
             }
         }

@@ -3304,7 +3304,8 @@ impl Entry for VofGradient {
             *a.out3.x.out().add(c) = g[0];
             *a.out3.y.out().add(c) = g[1];
             *a.out3.z.out().add(c) = g[2];
-            *a.out.out().add(c) = foehncraft_core::Real::sqrt_of(g[0] * g[0] + g[1] * g[1] + g[2] * g[2]);
+            *a.out.out().add(c) =
+                foehncraft_core::Real::sqrt_of(g[0] * g[0] + g[1] * g[1] + g[2] * g[2]);
         }
     }
 }
@@ -3580,6 +3581,8 @@ mod tests {
                 + 48
                 + 2 * 16
                 + 3 * 16
+                // body (VOF, D-weighted Rhie–Chow)
+                + 48
         );
     }
 

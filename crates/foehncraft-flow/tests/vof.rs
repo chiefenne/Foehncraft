@@ -88,7 +88,11 @@ fn revolve(scheme: &str, n: usize, kind: &str) -> (f64, f64, [f64; 2]) {
     // sides; α there is all but zero)
     let dv = (t.volume - t.volume_start + t.clipped_volume + t.volume_out) / t.volume_start;
     assert!(dv.abs() < 1e-12, "{scheme}: volume not conserved: {dv:e}");
-    (e / v0, (t.volume - t.volume_start) / t.volume_start, t.alpha_range)
+    (
+        e / v0,
+        (t.volume - t.volume_start) / t.volume_start,
+        t.alpha_range,
+    )
 }
 
 #[test]
@@ -180,7 +184,10 @@ type = "symmetry"
     );
     // an inflow on a boundary the case does not have
     assert_eq!(
-        refused(&tr.replace("[boundary.xmin]", "[vof.inflow]\ninlet = 1.0\n[boundary.xmin]")),
+        refused(&tr.replace(
+            "[boundary.xmin]",
+            "[vof.inflow]\ninlet = 1.0\n[boundary.xmin]"
+        )),
         "VOF001"
     );
 }
@@ -203,7 +210,8 @@ fn level_set_disk(n: usize) -> f64 {
         disk.max(-slot)
     };
     let mut phi: Vec<f64> = (0..n * n).map(|c| sd(x(c % n), x(c / n))).collect();
-    let alpha = |p: &[f64]| -> Vec<f64> { p.iter().map(|v| (0.5 - v / h).clamp(0.0, 1.0)).collect() };
+    let alpha =
+        |p: &[f64]| -> Vec<f64> { p.iter().map(|v| (0.5 - v / h).clamp(0.0, 1.0)).collect() };
     let a0 = alpha(&phi);
     let cr = |p: [f64; 4], t: f64| {
         let v = 0.5
@@ -286,7 +294,11 @@ fn dam_break_martin_moyce() {
     let col = |n: &str| head.iter().position(|h| *h == n).unwrap();
     let (ct, cx, cv, cc) = (col("time"), col("x_max"), col("volume"), col("clipped"));
     let rows: Vec<Vec<f64>> = lines
-        .map(|l| l.split(',').map(|v| v.parse::<f64>().unwrap_or(f64::NAN)).collect())
+        .map(|l| {
+            l.split(',')
+                .map(|v| v.parse::<f64>().unwrap_or(f64::NAN))
+                .collect()
+        })
         .collect();
     let a: f64 = 0.05715;
     let h = 0.6 / 84.0;
@@ -300,12 +312,18 @@ fn dam_break_martin_moyce() {
         let (p, q) = (tz[k - 1], tz[k]);
         let zs = p.1 + (q.1 - p.1) * (t - p.0) / (q.0 - p.0);
         let d = (zs - z) / z;
-        eprintln!("dam break: T {t:.2}: Z measured {z:.2}, computed {zs:.2} ({:+.1} %)", 100.0 * d);
+        eprintln!(
+            "dam break: T {t:.2}: Z measured {z:.2}, computed {zs:.2} ({:+.1} %)",
+            100.0 * d
+        );
         worst = worst.max(d.abs());
     }
     // the front runs ahead of the measurements by 5 to 17 % on h = a/16
     // (the gate of the experiment took time to lift); a/8 alike
-    assert!(worst < 0.2, "surge front off the measurements by {worst:.3}");
+    assert!(
+        worst < 0.2,
+        "surge front off the measurements by {worst:.3}"
+    );
     let (first, last) = (&rows[0], rows.last().unwrap());
     let dv = (last[cv] - first[cv] + last[cc]) / first[cv];
     assert!(dv.abs() < 1e-9, "water volume not conserved: {dv:e}");

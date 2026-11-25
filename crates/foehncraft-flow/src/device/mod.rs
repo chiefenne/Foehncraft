@@ -788,7 +788,6 @@ pub struct VofBufs {
     pub out3: Option<Buf3>,
 }
 
-
 /// The operations of the flow algorithms. Buffers are created by
 /// [`alloc`](FlowDevice::alloc); an output buffer is never one of the
 /// inputs of the same operation unless the operation says so.

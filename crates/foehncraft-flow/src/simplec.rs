@@ -3161,10 +3161,16 @@ impl Flow {
         let v = self.vof.as_deref_mut().expect("vof");
         v.upload_faces(self.dev.as_mut(), rescale.then_some(m))?;
         self.dev.set_density(&v.rho_cell, &v.rho_face)?;
-        self.phys.rho_var = Some(std::sync::Arc::new((v.rho_cell.clone(), v.rho_face.clone())));
+        self.phys.rho_var = Some(std::sync::Arc::new((
+            v.rho_cell.clone(),
+            v.rho_face.clone(),
+        )));
         let old = v.old_levels().filter(|_| in_step);
-        self.dev
-            .set_variable_density(None, old.map(|o| o[0].as_slice()), old.map(|o| o[1].as_slice()))?;
+        self.dev.set_variable_density(
+            None,
+            old.map(|o| o[0].as_slice()),
+            old.map(|o| o[1].as_slice()),
+        )?;
         let af = v.face_alpha();
         let mu = v.mu_face(&af);
         self.phys.vof_alpha = Some(std::sync::Arc::new(v.alpha_host.clone()));

@@ -238,42 +238,71 @@ pub fn validate(case: &crate::case::FlowCase) -> Result<()> {
     if v.phase.len() != 2 {
         return Err(bad(
             "vof.phase",
-            format!("[vof] needs exactly two [[vof.phase]] tables, not {}", v.phase.len()),
+            format!(
+                "[vof] needs exactly two [[vof.phase]] tables, not {}",
+                v.phase.len()
+            ),
         ));
     }
     for (i, p) in v.phase.iter().enumerate() {
-        if !(p.density > 0.0 && p.density.is_finite() && p.viscosity > 0.0 && p.viscosity.is_finite())
+        if !(p.density > 0.0
+            && p.density.is_finite()
+            && p.viscosity > 0.0
+            && p.viscosity.is_finite())
         {
             return Err(bad(
                 "vof.phase",
-                format!("[[vof.phase]] {} (`{}`): density and viscosity must be > 0", i + 1, p.name),
+                format!(
+                    "[[vof.phase]] {} (`{}`): density and viscosity must be > 0",
+                    i + 1,
+                    p.name
+                ),
             ));
         }
     }
     let s = v.sigma();
     if !(s >= 0.0 && s.is_finite()) {
-        return Err(bad("vof.surface_tension", format!("[vof] surface_tension {s} must be >= 0")));
+        return Err(bad(
+            "vof.surface_tension",
+            format!("[vof] surface_tension {s} must be >= 0"),
+        ));
     }
     let b = v.beta();
     if !(b > 0.0 && b <= 20.0) {
-        return Err(bad("vof.thinc_beta", format!("[vof] thinc_beta {b} must be in (0, 20]")));
+        return Err(bad(
+            "vof.thinc_beta",
+            format!("[vof] thinc_beta {b} must be in (0, 20]"),
+        ));
     }
     let c = v.courant();
     if !(c > 0.0 && c <= 1.0) {
-        return Err(bad("vof.max_courant", format!("[vof] max_courant {c} must be in (0, 1]")));
+        return Err(bad(
+            "vof.max_courant",
+            format!("[vof] max_courant {c} must be in (0, 1]"),
+        ));
     }
     if v.passes() > 10 {
-        return Err(bad("vof.smoothing", "[vof] smoothing must be at most 10".into()));
+        return Err(bad(
+            "vof.smoothing",
+            "[vof] smoothing must be at most 10".into(),
+        ));
     }
     let a0 = v.initial.unwrap_or(0.0);
     if !(0.0..=1.0).contains(&a0) {
-        return Err(bad("vof.initial", format!("[vof] initial {a0} must be in [0, 1]")));
+        return Err(bad(
+            "vof.initial",
+            format!("[vof] initial {a0} must be in [0, 1]"),
+        ));
     }
     for (i, r) in v.region.iter().enumerate() {
         if !(0.0..=1.0).contains(&r.alpha) {
             return Err(bad(
                 "vof.region",
-                format!("[[vof.region]] {}: alpha {} must be in [0, 1]", i + 1, r.alpha),
+                format!(
+                    "[[vof.region]] {}: alpha {} must be in [0, 1]",
+                    i + 1,
+                    r.alpha
+                ),
             ));
         }
     }
@@ -392,9 +421,6 @@ pub struct Vof {
     /// The totals of the run.
     pub totals: Totals,
     volume: Vec<f64>,
-    owner: Vec<u32>,
-    neighbour: Vec<u32>,
-    weight: Vec<f64>,
 }
 
 /// What [`Vof::step_back`] restores.
@@ -533,9 +559,6 @@ impl Vof {
             tension_offset: vec![0.0; nf],
             totals: Totals::default(),
             volume: disc.cell_volume[..nc].to_vec(),
-            owner: disc.owner.clone(),
-            neighbour: disc.neighbour.clone(),
-            weight: disc.weight.clone(),
             section,
         };
         // the start face values: linear between the cells
@@ -937,7 +960,14 @@ pub fn advect(
     )?;
     let alpha = start_alpha(case, mesh, geo)?;
     let (open, ab) = boundary_arrays(case, mesh, fl.disc.n_interior, fl.disc.n_faces);
-    let mut v = Vof::new(case.vof.clone(), fl.dev.as_mut(), &fl.disc, &alpha, &open, &ab)?;
+    let mut v = Vof::new(
+        case.vof.clone(),
+        fl.dev.as_mut(),
+        &fl.disc,
+        &alpha,
+        &open,
+        &ab,
+    )?;
     let nf = fl.disc.n_faces;
     let ni = fl.disc.n_interior;
     let mut t = 0.0;

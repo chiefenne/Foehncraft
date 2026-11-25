@@ -78,7 +78,8 @@ pub fn thinc_normalised<T: Real>(c: T, co: T, beta: T) -> T {
         return half * (T::ONE + (beta - a).tanh_of());
     }
     // ½ + (1/(2βCo)) ln(cosh(β − a)/cosh(β(1 − Co) − a))
-    let v = half + (ln_cosh(beta - a) - ln_cosh(beta * (T::ONE - co) - a)) / (beta * co + beta * co);
+    let v =
+        half + (ln_cosh(beta - a) - ln_cosh(beta * (T::ONE - co) - a)) / (beta * co + beta * co);
     clamp01(v)
 }
 
@@ -88,8 +89,8 @@ pub fn cicsam_normalised<T: Real>(c: T, co: T, cos_theta: T) -> T {
     let co = co.max_of(T::from_f64(1e-12));
     let hc = (c / co).min_of(T::ONE);
     let e = T::from_f64(8.0);
-    let uq = ((e * co * c + (T::ONE - co) * (T::from_f64(6.0) * c + T::from_f64(3.0))) / e)
-        .min_of(hc);
+    let uq =
+        ((e * co * c + (T::ONE - co) * (T::from_f64(6.0) * c + T::from_f64(3.0))) / e).min_of(hc);
     let g = (T::from_f64(0.5) * (cos_theta.abs() + T::ONE)).min_of(T::ONE);
     g * hc + (T::ONE - g) * uq
 }
@@ -417,11 +418,116 @@ pub unsafe fn tension<T: Real>(
         let n = ld(topo.neighbour, f) as usize;
         let (wp, wn) = (ld(gnorm, p), ld(gnorm, n));
         let w = wp + wn;
-        if !(w > T::ZERO) {
+        // also NaN
+        if w.partial_cmp(&T::ZERO) != Some(core::cmp::Ordering::Greater) {
             return T::ZERO;
         }
         let kf = (wp * ld(kappa, p) + wn * ld(kappa, n)) / w;
         sigma * kf * (ld(alpha, n) - ld(alpha, p))
+    }
+}
+
+/// The balanced reconstruction of a pressure force for two fluids:
+/// ρ_P R_P[g_f/ρ_f] + add_P, with g_f = (φ_N − φ_P − o_f)/(d·n̂) the normal
+/// gradient of face f less its offset (o_f: gravity and surface tension;
+/// empty: none) and R_P the least-squares vector of the face normal values,
+/// (Σ n̂n̂ᵀ|S|)⁻¹ Σ n̂ (g_f/ρ_f)|S| (the reconstruction of Weller's
+/// two-fluid solvers). A light cell beside a heavy one then takes the
+/// pressure force of its own faces divided by their own density, not the
+/// cell gradient of the heavy side. Boundary faces with `open` set take
+/// g = (value_b − φ_P − o_f)/(r·n̂) (value_b empty: 0); the others (walls,
+/// symmetry) g = 0: no normal force beyond the offset.
+///
+/// # Safety
+/// The arrays have the lengths of the mesh (`open`, `value_b` one entry
+/// per boundary face; `offset`, `value_b`, `add` may be empty).
+#[inline(always)]
+#[allow(clippy::too_many_arguments)]
+pub unsafe fn reconstruct<T: Real>(
+    c: usize,
+    topo: &Topology<'_>,
+    area: &Vec3<'_, T>,
+    face_centroid: &Vec3<'_, T>,
+    cell_centroid: &Vec3<'_, T>,
+    phi: &[T],
+    offset: &[T],
+    rho_f: &[T],
+    rho: &[T],
+    open: &[u32],
+    value_b: &[T],
+    add: &Vec3<'_, T>,
+) -> [T; 3] {
+    // SAFETY: guaranteed by the caller.
+    unsafe {
+        let lo = ld(topo.cell_ptr, c) as usize;
+        let hi = ld(topo.cell_ptr, c + 1) as usize;
+        let mut m = [T::ZERO; 6]; // xx yy zz xy xz yz
+        let mut b = [T::ZERO; 3];
+        let xc = cell_centroid.at(c);
+        let mut k = lo;
+        while k < hi {
+            let (f, _) = unpack_face(ld(topo.cell_faces, k));
+            let s = area.at(f);
+            let a = dot(s, s).sqrt_of();
+            let n = [s[0] / a, s[1] / a, s[2] / a];
+            let o = if offset.is_empty() {
+                T::ZERO
+            } else {
+                ld(offset, f)
+            };
+            // the owner's view; the neighbour's flips n̂ and g alike
+            let g = if f < topo.n_interior {
+                let p = ld(topo.owner, f) as usize;
+                let q = ld(topo.neighbour, f) as usize;
+                let (xp, xq) = (cell_centroid.at(p), cell_centroid.at(q));
+                let dn = (xq[0] - xp[0]) * n[0] + (xq[1] - xp[1]) * n[1] + (xq[2] - xp[2]) * n[2];
+                (ld(phi, q) - ld(phi, p) - o) / dn
+            } else if ld(open, f - topo.n_interior) != 0 {
+                let xf = face_centroid.at(f);
+                let rn = (xf[0] - xc[0]) * n[0] + (xf[1] - xc[1]) * n[1] + (xf[2] - xc[2]) * n[2];
+                let vb = if value_b.is_empty() {
+                    T::ZERO
+                } else {
+                    ld(value_b, f - topo.n_interior)
+                };
+                (vb - ld(phi, c) - o) / rn
+            } else {
+                T::ZERO
+            };
+            let w = g / ld(rho_f, f) * a;
+            b[0] += n[0] * w;
+            b[1] += n[1] * w;
+            b[2] += n[2] * w;
+            m[0] += n[0] * n[0] * a;
+            m[1] += n[1] * n[1] * a;
+            m[2] += n[2] * n[2] * a;
+            m[3] += n[0] * n[1] * a;
+            m[4] += n[0] * n[2] * a;
+            m[5] += n[1] * n[2] * a;
+            k += 1;
+        }
+        // the symmetric 3 × 3 solve by the adjugate
+        let (xx, yy, zz, xy, xz, yz) = (m[0], m[1], m[2], m[3], m[4], m[5]);
+        let c00 = yy * zz - yz * yz;
+        let c01 = xz * yz - xy * zz;
+        let c02 = xy * yz - xz * yy;
+        let c11 = xx * zz - xz * xz;
+        let c12 = xy * xz - xx * yz;
+        let c22 = xx * yy - xy * xy;
+        let det = xx * c00 + xy * c01 + xz * c02;
+        let r = ld(rho, c) / det;
+        let mut v = [
+            r * (c00 * b[0] + c01 * b[1] + c02 * b[2]),
+            r * (c01 * b[0] + c11 * b[1] + c12 * b[2]),
+            r * (c02 * b[0] + c12 * b[1] + c22 * b[2]),
+        ];
+        if !add.x.is_empty() {
+            let a = add.at(c);
+            v[0] += a[0];
+            v[1] += a[1];
+            v[2] += a[2];
+        }
+        v
     }
 }
 
@@ -498,110 +604,26 @@ mod tests {
         // a donor outside the monotone range
         let a: f64 = face_value(SCHEME_THINC, 1.0, 1.0, [0.0; 3], [1.0, 0.0, 0.0], 0.2, 3.5);
         assert_eq!(a, 1.0);
-        let b: f64 = face_value(SCHEME_UPWIND, 0.4, 1.0, [0.6, 0.0, 0.0], [1.0, 0.0, 0.0], 0.2, 3.5);
+        let b: f64 = face_value(
+            SCHEME_UPWIND,
+            0.4,
+            1.0,
+            [0.6, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            0.2,
+            3.5,
+        );
         assert_eq!(b, 0.4);
         // a sharpening face value for a jump at the face
-        let c: f64 = face_value(SCHEME_THINC, 0.5, 1.0, [0.5, 0.0, 0.0], [1.0, 0.0, 0.0], 0.2, 3.5);
+        let c: f64 = face_value(
+            SCHEME_THINC,
+            0.5,
+            1.0,
+            [0.5, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            0.2,
+            3.5,
+        );
         assert!(c > 0.5 && c <= 1.0, "{c}");
-    }
-}
-
-/// The balanced reconstruction of a pressure force for two fluids:
-/// ρ_P R_P[g_f/ρ_f] + add_P, with g_f = (φ_N − φ_P − o_f)/(d·n̂) the normal
-/// gradient of face f less its offset (o_f: gravity and surface tension;
-/// empty: none) and R_P the least-squares vector of the face normal values,
-/// (Σ n̂n̂ᵀ|S|)⁻¹ Σ n̂ (g_f/ρ_f)|S| (the reconstruction of Weller's
-/// two-fluid solvers). A light cell beside a heavy one then takes the
-/// pressure force of its own faces divided by their own density, not the
-/// cell gradient of the heavy side. Boundary faces with `open` set take
-/// g = (value_b − φ_P − o_f)/(r·n̂) (value_b empty: 0); the others (walls,
-/// symmetry) g = 0: no normal force beyond the offset.
-///
-/// # Safety
-/// The arrays have the lengths of the mesh (`open`, `value_b` one entry
-/// per boundary face; `offset`, `value_b`, `add` may be empty).
-#[inline(always)]
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn reconstruct<T: Real>(
-    c: usize,
-    topo: &Topology<'_>,
-    area: &Vec3<'_, T>,
-    face_centroid: &Vec3<'_, T>,
-    cell_centroid: &Vec3<'_, T>,
-    phi: &[T],
-    offset: &[T],
-    rho_f: &[T],
-    rho: &[T],
-    open: &[u32],
-    value_b: &[T],
-    add: &Vec3<'_, T>,
-) -> [T; 3] {
-    // SAFETY: guaranteed by the caller.
-    unsafe {
-        let lo = ld(topo.cell_ptr, c) as usize;
-        let hi = ld(topo.cell_ptr, c + 1) as usize;
-        let mut m = [T::ZERO; 6]; // xx yy zz xy xz yz
-        let mut b = [T::ZERO; 3];
-        let xc = cell_centroid.at(c);
-        let mut k = lo;
-        while k < hi {
-            let (f, _) = unpack_face(ld(topo.cell_faces, k));
-            let s = area.at(f);
-            let a = dot(s, s).sqrt_of();
-            let n = [s[0] / a, s[1] / a, s[2] / a];
-            let o = if offset.is_empty() { T::ZERO } else { ld(offset, f) };
-            // the owner's view; the neighbour's flips n̂ and g alike
-            let g = if f < topo.n_interior {
-                let p = ld(topo.owner, f) as usize;
-                let q = ld(topo.neighbour, f) as usize;
-                let (xp, xq) = (cell_centroid.at(p), cell_centroid.at(q));
-                let dn = (xq[0] - xp[0]) * n[0] + (xq[1] - xp[1]) * n[1] + (xq[2] - xp[2]) * n[2];
-                (ld(phi, q) - ld(phi, p) - o) / dn
-            } else if ld(open, f - topo.n_interior) != 0 {
-                let xf = face_centroid.at(f);
-                let rn = (xf[0] - xc[0]) * n[0] + (xf[1] - xc[1]) * n[1] + (xf[2] - xc[2]) * n[2];
-                let vb = if value_b.is_empty() {
-                    T::ZERO
-                } else {
-                    ld(value_b, f - topo.n_interior)
-                };
-                (vb - ld(phi, c) - o) / rn
-            } else {
-                T::ZERO
-            };
-            let w = g / ld(rho_f, f) * a;
-            b[0] += n[0] * w;
-            b[1] += n[1] * w;
-            b[2] += n[2] * w;
-            m[0] += n[0] * n[0] * a;
-            m[1] += n[1] * n[1] * a;
-            m[2] += n[2] * n[2] * a;
-            m[3] += n[0] * n[1] * a;
-            m[4] += n[0] * n[2] * a;
-            m[5] += n[1] * n[2] * a;
-            k += 1;
-        }
-        // the symmetric 3 × 3 solve by the adjugate
-        let (xx, yy, zz, xy, xz, yz) = (m[0], m[1], m[2], m[3], m[4], m[5]);
-        let c00 = yy * zz - yz * yz;
-        let c01 = xz * yz - xy * zz;
-        let c02 = xy * yz - xz * yy;
-        let c11 = xx * zz - xz * xz;
-        let c12 = xy * xz - xx * yz;
-        let c22 = xx * yy - xy * xy;
-        let det = xx * c00 + xy * c01 + xz * c02;
-        let r = ld(rho, c) / det;
-        let mut v = [
-            r * (c00 * b[0] + c01 * b[1] + c02 * b[2]),
-            r * (c01 * b[0] + c11 * b[1] + c12 * b[2]),
-            r * (c02 * b[0] + c12 * b[1] + c22 * b[2]),
-        ];
-        if !add.x.is_empty() {
-            let a = add.at(c);
-            v[0] += a[0];
-            v[1] += a[1];
-            v[2] += a[2];
-        }
-        v
     }
 }
