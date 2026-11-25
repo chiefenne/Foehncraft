@@ -195,12 +195,15 @@ the water has its own temperature range.
 <img src="../figures/applications/hx_render_hero.jpg" alt="The exchanger with a quarter of the steel housing cut away on a dark background: the tube bundle coloured by the steel temperature from 21 to 25 °C, the tubes cool, the baffles and the tubesheet rims warmest; air streamlines coloured by speed from 5 to 20 m/s wind through the baffle windows" width="800" height="500">
 
 *The steel housing with a quarter cut away; the bundle coloured by the
-steel temperature, the air streamlines from the inlet nozzle by speed.*
+steel temperature, the air streamlines by speed (seeded in the inlet
+nozzle and, traced backwards, in the outlet nozzle).*
 
-<img src="../figures/applications/hx_render_airpath.jpg" alt="The housing as faint glass, the tubes, tubesheets and baffles in steel, and 1 400 streamlines from the inlet nozzle coloured by speed: the jet spreads over the first compartment, passes the baffle windows at up to 20 m/s alternately above and below and leaves through the outlet nozzle" width="800" height="500">
+<img src="../figures/applications/hx_render_airpath.jpg" alt="The housing as faint glass, the tubes, tubesheets and baffles in steel, and 1 400 streamlines coloured by speed, half traced forwards from the inlet nozzle and half backwards from the outlet nozzle: the jet spreads over the first compartment, passes the baffle windows at up to 20 m/s alternately above and below and leaves through the outlet nozzle" width="800" height="500">
 
-*The air path: 1 400 streamlines seeded across the inlet nozzle wind
-around the three baffles to the outlet.*
+*The air path: 1 400 streamlines wind around the three baffles from inlet
+to outlet. Half are seeded in the inlet nozzle and traced forwards, half
+in the outlet nozzle and traced backwards, so the whole path is covered:
+seeded at the inlet alone, only a few lines reach the outlet.*
 
 <img src="../figures/applications/hx_render_cut.jpg" alt="Lengthwise section at x = 0 on a white background: air temperature from 80 to 270 °C hot in the first compartment and coolest in the last, the water in the end chambers and the centre tube on its own range of 19.7 to 20.5 °C, the steel from 21 to 26 °C, thin outlines on the borders of the zones" width="800" height="352">
 
