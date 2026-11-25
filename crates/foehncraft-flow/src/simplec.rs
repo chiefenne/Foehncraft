@@ -39,7 +39,7 @@ use crate::device::{
     self, BoundaryArgs, Buf, Buf3, Eps2, FlowDevice, FluxArgs, Lsq, Mask, MomentumFaceArgs,
     MomentumRowArgs, Setup, TimeTerms,
 };
-use anyhow::Result;
+use anyhow::{Context as _, Result};
 use foehncraft_fv::amg::AmgSettings;
 use foehncraft_fv::disc::{Discretisation, Soa3};
 use foehncraft_fv::problem::{Boundary, BoundaryKind, Problem};
@@ -1033,8 +1033,12 @@ pub struct Flow {
     pub phys: Physics,
     /// Settings.
     pub settings: Settings,
-    /// Reference cell of the pressure (no pressure boundary).
+    /// Reference cell of the pressure (no pressure boundary): its local
+    /// index on the rank that owns it (on ranks, `None` on the others).
     pub reference_cell: Option<usize>,
+    /// On ranks: the rank that owns the reference cell (every rank knows
+    /// it; its value there is handed to all, MPI).
+    pub reference_rank: Option<usize>,
     /// Phase timings.
     pub timings: Timings,
     /// Multigrid setups done.
@@ -1453,12 +1457,27 @@ impl Flow {
         } else {
             Some(reference_cell.unwrap_or(0))
         };
+        // on ranks `reference_cell` is a cell of the whole mesh: the rank
+        // that owns it keeps its local index, the others only the rank
+        let (reference_cell, reference_rank) = match (&target.ranks, reference_cell) {
+            (Some(r), Some(g)) => {
+                let owner = *r
+                    .owner
+                    .get(g)
+                    .context("the reference cell is not in the mesh")?
+                    as usize;
+                let local = (owner == r.comm.rank())
+                    .then(|| {
+                        r.position[..disc.n_cells]
+                            .iter()
+                            .position(|&p| p as usize == g)
+                    })
+                    .flatten();
+                (local, Some(owner))
+            }
+            (_, c) => (c, None),
+        };
         if target.ranks.is_some() {
-            anyhow::ensure!(
-                has_pressure,
-                "on ranks a flow needs a pressure boundary (a reference cell does not run \
-                 on ranks yet, MPI step W5)"
-            );
             anyhow::ensure!(
                 !any(bc.ub_rule.contains(&k::UB_CONVECTIVE)) && bc.drives.is_empty(),
                 "convective outlets and periodic driving do not run on ranks yet (MPI step W5)"
@@ -1589,6 +1608,7 @@ impl Flow {
             phys,
             settings,
             reference_cell,
+            reference_rank,
             timings: Timings::default(),
             amg_setups: 0,
             amg_matrix: None,
@@ -2498,13 +2518,32 @@ impl Flow {
             s.pressure_tol(self.transient),
             s.pressure.max_iter,
         )?;
-        if let Some(r) = self.reference_cell {
-            let shift = self.dev.value(w.pc, r)?;
+        if let Some(shift) = self.reference_value(w.pc)? {
             self.dev.subtract(w.pc, shift)?;
         }
         self.dev.sync()?;
         self.timings.pressure_solve += t.elapsed().as_secs_f64();
         Ok(it)
+    }
+
+    /// The value of the cell field `b` in the reference cell of the
+    /// pressure, on every rank (`None` without a reference cell).
+    pub(crate) fn reference_value(&mut self, b: Buf) -> Result<Option<f64>> {
+        let Some(owner) = self.reference_rank else {
+            return self
+                .reference_cell
+                .map(|r| self.dev.value(b, r))
+                .transpose();
+        };
+        let mine = match self.reference_cell {
+            Some(r) => self.dev.value(b, r)?,
+            None => 0.0,
+        };
+        let comm = self
+            .dev
+            .comm()
+            .context("a reference rank without a communicator")?;
+        Ok(Some(comm.all_gather_f64(mine)[owner]))
     }
 
     /// Step 7: corrected fluxes `m` → `w.mc`, u −= D^C ∇p', p += α_p p'.

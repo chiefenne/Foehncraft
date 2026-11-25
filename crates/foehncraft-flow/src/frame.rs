@@ -316,8 +316,10 @@ pub fn frame_fluxes(
     };
     let nf = disc.n_faces;
     let mut flux = vec![0.0; nf];
-    let mut sum = vec![0.0; disc.n_cells];
-    let mut abs = vec![0.0; disc.n_cells];
+    // (on ranks the halo cells take the sums of the faces they share with
+    // own cells; only the own cells are judged)
+    let mut sum = vec![0.0; cell_zone.len().max(disc.n_cells)];
+    let mut abs = vec![0.0; cell_zone.len().max(disc.n_cells)];
     for (f, out) in flux.iter_mut().enumerate() {
         let x = [
             disc.face_centroid.x[f],
@@ -405,7 +407,7 @@ pub fn attach(
         return Ok(None);
     }
     validate(case)?;
-    let cell_zone = assign_cells_in(
+    let mut cell_zone = assign_cells_in(
         &entries,
         mesh,
         if case.sliding.is_empty() {
@@ -414,8 +416,22 @@ pub fn attach(
             "[[sliding]]"
         },
     )?;
+    let comm = fl.dev.comm();
+    if comm.is_some() {
+        // on ranks (MPI): the zones of the halo cells from their owners, so
+        // that a face between an own and a halo cell gets the frame flux of
+        // the one-rank run
+        cell_zone = halo_zones(fl, &cell_zone)?;
+    }
     let rho = fl.phys.rho;
-    let ff = frame_fluxes(&entries, &cell_zone, &fl.disc, rho)?;
+    let mut ff = frame_fluxes(&entries, &cell_zone, &fl.disc, rho)?;
+    if let Some(c) = &comm {
+        // the closure of the cells of all ranks
+        ff.worst_imbalance = c.max(ff.worst_imbalance);
+        let mut n = [ff.unbalanced_cells as i64];
+        c.all_sum_i64(&mut n);
+        ff.unbalanced_cells = n[0] as usize;
+    }
     let nf = fl.disc.n_faces;
     let nc = fl.disc.n_cells;
     let flux = fl.dev.alloc(nf)?;
@@ -434,7 +450,11 @@ pub fn attach(
                 }
             })
             .collect();
-        let cells = w.iter().filter(|&&x| x > 0.0).count();
+        let mut cells = [w.iter().filter(|&&x| x > 0.0).count() as i64];
+        if let Some(c) = &comm {
+            c.all_sum_i64(&mut cells);
+        }
+        let cells = cells[0];
         let weight = fl.dev.alloc(nc)?;
         fl.dev.upload(weight, &w)?;
         zones.push(FrameZone {
@@ -525,6 +545,20 @@ pub fn attach(
         notes.diagnostics.push(d);
     }
     Ok(Some(notes))
+}
+
+/// The zone entries of the own cells `own` (local order) and of the halo
+/// cells of a rank (MPI), these from their owners through the halo
+/// exchange of the device.
+fn halo_zones(fl: &mut Flow, own: &[Option<usize>]) -> Result<Vec<Option<usize>>> {
+    let code: Vec<f64> = own.iter().map(|z| z.map_or(-1.0, |i| i as f64)).collect();
+    let b = fl.dev.alloc(own.len())?;
+    fl.dev.upload(b, &code)?;
+    let all = fl.dev.download_with_halo(b)?;
+    Ok(all
+        .iter()
+        .map(|&v| (v >= 0.0).then_some(v as usize))
+        .collect())
 }
 
 /// The whole domain in a frame that turns at `spin` (`flow.frame_rotation`):

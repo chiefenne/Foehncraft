@@ -3017,7 +3017,10 @@ pub fn run_steered(
         );
         let phys = phys_on;
         let loc = Locator::new(&mesh, &geo);
-        let reference_cell = if arrays.has_pressure() {
+        let reference_cell = if on
+            .as_ref()
+            .map_or(arrays.has_pressure(), |o| o.arrays.has_pressure())
+        {
             None
         } else {
             let x = case.pressure.reference_point.unwrap_or_else(|| {
