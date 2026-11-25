@@ -50,7 +50,7 @@ FLOW = {
         "ranks_water_if97_channel",
     ],
     "linux-3": [
-        "species_binary_diffusion", "species_coaxial_jet",
+        "species_binary_diffusion", "species_coaxial_jet", "flame_methane_air_jl4",
         "taylor_green_error", "adjoint_residual_cavity", "cylinder_potential", "cavity_re100_budget", "taylor_green_bdf2",
         "taylor_green_cn", "poiseuille_mixed", "cavity_re100_transient", "taylor_green_space",
         "cavity_re100_poly3d", "cavity_re100_tet3d", "pipe_wedge", "poiseuille_expression",
@@ -84,6 +84,7 @@ FLOW = {
         "cht_heat_sink_turbulent", "cylinder_steady_diagnosis", "vd_cavity_large_dt",
         "cht_pulsating_channel_skin", "cht_heated_wall_frozen", "cht_pulsating_channel_warmup",
         "natural_convection_cavity_ra1e5", "natural_convection_plate",
+        "flame_methane_air_gri30",
         "immersed_stokes_sphere", "spray_saturation_steady",
         "motion_piston_cooled_walls",
     ],

@@ -90,7 +90,7 @@ impl IntegratorSection {
         }
     }
 
-    fn check(&self) -> Result<()> {
+    pub(crate) fn check(&self) -> Result<()> {
         let finite = self.atol.is_finite() && self.atol_temperature.is_finite();
         if !(finite
             && self.rtol > 0.0

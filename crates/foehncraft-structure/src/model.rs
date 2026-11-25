@@ -73,6 +73,11 @@ pub struct ThermalLoad {
     /// α ΔT / h across the section: beams [along local y, along local z],
     /// shells [across the thickness, top along the normal; unused].
     pub curvature: [f64; 2],
+    /// Shells: α ΔT at each node, added to `strain` and interpolated over
+    /// the element (a mapped temperature field).
+    pub node_strain: [f64; 4],
+    /// Shells: α ∂T/∂n at each node, added to the curvature.
+    pub node_curvature: [f64; 4],
 }
 
 /// A quadratic solid element (ten-node tetrahedron or twenty-node
@@ -151,8 +156,9 @@ pub struct Model {
     pub solids: Vec<Solid>,
     /// Loads on solid faces.
     pub face_loads: Vec<FaceLoad>,
-    /// Thermal strains α ΔT of solid elements (element, strain).
-    pub solid_thermal: Vec<(usize, f64)>,
+    /// Thermal strains α ΔT of solid elements: element and the strain at
+    /// each of its nodes.
+    pub solid_thermal: Vec<(usize, Vec<f64>)>,
 }
 
 /// The assembled system on the free unknowns.
@@ -428,6 +434,8 @@ impl Model {
                 .fold(shell::Thermal::default(), |a, t| shell::Thermal {
                     strain: a.strain + t.strain,
                     curvature: a.curvature + t.curvature[0],
+                    node_strain: [0, 1, 2, 3].map(|i| a.node_strain[i] + t.node_strain[i]),
+                    node_curvature: [0, 1, 2, 3].map(|i| a.node_curvature[i] + t.node_curvature[i]),
                 });
             let (kg, mg, fth) = if sh.tri {
                 let geo = shell::TriGeometry {
@@ -478,17 +486,12 @@ impl Model {
                 }
             }
         }
-        let mut strain = vec![0.0; self.solids.len()];
-        for &(e, a) in &self.solid_thermal {
-            if let Some(s) = strain.get_mut(e) {
-                *s += a;
-            }
-        }
+        let strain = self.solid_strains();
         for (e, el) in self.solids.iter().enumerate() {
             let x = self.solid_coords(e);
             // a distorted element is reported by `check_solids`
             let Ok((kg, mg, fth)) =
-                solid::matrices(el.kind, &x, &self.solid_props[el.props], strain[e])
+                solid::matrices(el.kind, &x, &self.solid_props[el.props], &strain[e])
             else {
                 continue;
             };
@@ -578,6 +581,24 @@ impl Model {
             props,
         });
         self.solids.len() - 1
+    }
+
+    /// The thermal strain α ΔT at the nodes of each solid element (the sum
+    /// of [`Self::solid_thermal`]; empty where there is none).
+    pub fn solid_strains(&self) -> Vec<Vec<f64>> {
+        let mut strain = vec![Vec::new(); self.solids.len()];
+        for (e, a) in &self.solid_thermal {
+            let Some(s) = strain.get_mut(*e) else {
+                continue;
+            };
+            if s.len() < a.len() {
+                s.resize(a.len(), 0.0);
+            }
+            for (x, y) in s.iter_mut().zip(a) {
+                *x += y;
+            }
+        }
+        strain
     }
 
     /// The unit directors of the shell nodes: the mean of the normals of

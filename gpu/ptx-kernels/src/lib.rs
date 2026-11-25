@@ -5,6 +5,8 @@
 //! entries in [`amg`] the multigrid V-cycle of stage 3; `radiation_transport`
 //! in [`radiation`] moves the energy bundles of the radiation (step 29);
 //! `steam_state` in [`steam`] evaluates water and steam states (SF7a).
+//! `chemistry_react` in [`chemistry`] integrates the chemistry of the cells
+//! (SF2b).
 //!
 //! The wrappers only compute the thread index, build slices from the raw
 //! device pointers and their sizes, and call the body that the CPU backends
@@ -19,6 +21,7 @@
 #![allow(clippy::missing_safety_doc, clippy::too_many_arguments)]
 
 mod amg;
+mod chemistry;
 mod flow;
 mod fv;
 mod particle;

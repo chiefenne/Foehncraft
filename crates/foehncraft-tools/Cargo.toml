@@ -14,7 +14,7 @@ default = ["hdf5", "blake3"]
 # in its build); without it they are SHA-256.
 blake3 = ["foehncraft-flow/blake3"]
 # VTKHDF output and restart files (HDF5 built from source).
-hdf5 = ["foehncraft-flow/hdf5", "foehncraft-mesh/hdf5", "foehncraft-fv/hdf5"]
+hdf5 = ["foehncraft-flow/hdf5", "foehncraft-mesh/hdf5", "foehncraft-fv/hdf5", "foehncraft-structure/hdf5"]
 # METIS partitioning in `mesh.process` (built from source).
 metis = ["foehncraft-mesh/metis"]
 # hypre as the reference solver of `study.poisson` (needs HYPRE_DIR).
