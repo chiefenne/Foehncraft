@@ -1,10 +1,12 @@
 # Structures
 
-Part of the [Example gallery](../gallery.md): the linear structural solver of the crate `foehncraft-structure` (L53, stage MS5 of the [moving solids plan](../assessments/moving-solids-reed-valves-plan.md)), made for reed valves and other parts that the flow moves. Part 1 has Euler–Bernoulli and Timoshenko beams, clamp springs per length of the clamp line (D290) with the fit to a measured frequency, static analysis and modes by shift-invert Lanczos with a Sturm check. Shells, solid elements, dynamics and contact follow in the next parts of MS5; the coupling to the flow is MS6.
+Part of the [Example gallery](../gallery.md): the linear structural solver of the crate `foehncraft-structure` (L53, stage MS5 of the [moving solids plan](../assessments/moving-solids-reed-valves-plan.md)), made for reed valves and other parts that the flow moves. Part 1 has Euler–Bernoulli and Timoshenko beams, clamp springs per length of the clamp line (D290) with the fit to a measured frequency, static analysis and modes by shift-invert Lanczos with a Sturm check; part 2 adds MITC4 and MITC3+ shells for plates and reed petals; part 3 adds the response in time (generalised-α, mode superposition, Rayleigh and modal damping, Craig–Bampton reduction) and thermal strain loads from a temperature field. Solid elements and contact follow in the next parts of MS5; the coupling to the flow is MS6.
 
 | # | Example | Stage | Feature |
 |---|---|---|---|
 | 295 | [A reed valve as a beam: modes, and the clamp spring against the frequency equation](#reed-beam) | MS5 | `structure.run`, `structure.fitclamp`, `[[beams]]`, `[[clamps]]` |
+| 297 | [A reed petal as a shell: bending and twist on clamp springs](#reed-plate) | MS5 | `structure.run`, `[[plates]]`, `[[pressures]]`, `[[clamps]] along` |
+| 299 | [A reed struck by a pressure pulse, and a hot reed](#reed-dynamics) | MS5 | `[transient]`, `[damping]`, `[histories]`, `[[temperatures]]` |
 
 ---
 
@@ -96,3 +98,125 @@ The Timoshenko element (interdependent interpolation, Friedman & Kosmatka
 at second order in the frequency of a thick beam; on a thin reed it is the
 Euler–Bernoulli element to rounding. The pictures are made with
 `python3 -m tools.plot.structure_reed` (the commands are in its header).
+
+---
+
+<a id="reed-plate"></a>
+## 297. A reed petal as a shell: bending and twist on clamp springs
+
+<img src="../figures/gallery/structure_plate_modes.png" alt="The first four modes of a reed petal 30 mm long, 12 mm wide and 0.2 mm thick on clamp springs, drawn as the moved shell surface over the flat reed and coloured by the displacement: mode 1 at 154 Hz bends the petal once, mode 2 at 927 Hz twists it, mode 3 at 1002 Hz bends it with one node line across, mode 4 at 2865 Hz with two" width="1100" height="770">
+
+**The petal.** `examples/cases/structure/reed_plate.toml` is a reed petal
+of spring steel, 30 mm free length, 12 mm wide and 0.2 mm thick, as a
+`[[plates]]` of 40 × 16 MITC4 shell elements (Dvorkin & Bathe 1984). The
+clamp runs `along` the edge x = 0: its rotational spring
+(40 N·m/rad per m) and translational spring (2·10⁷ N/m per m) are spread
+over the 17 nodes of the edge by the length each node stands for (D290).
+A `[[pressures]]` of 2 kPa pushes the petal off its seat:
+
+```sh
+target/release/foehn call structure.run --input examples/cases/tools/structure_reed_plate.json
+```
+
+```text
+reed_plate: 6 modes, Sturm check passed
+  mode   1      153.998466 Hz
+  mode   2      926.558218 Hz
+  mode   3     1001.871055 Hz
+  mode   4     2865.342344 Hz
+  ...
+reed_plate: static, largest displacement 2.098715e-3 m
+```
+
+The clamp springs carry the whole load: the reaction force is the 0.72 N
+of 2 kPa on 30 × 12 mm. The beam of entry 295 on the same springs per
+metre flaps at 152.0 Hz; the plate flaps at 154.0 Hz because a wide plate
+bends stiffer than a beam, by up to 1/(1 − ν²) (anticlastic bending held
+back). What the beam cannot show is mode 2: the petal twists at 927 Hz,
+below its second bending mode, the motion that makes a wide reed leak
+at one corner first. The picture is made with
+`python3 -m tools.plot.structure_plate` (commands in its header).
+
+**Two elements.** `element = "mitc4"` (default) is the four-node shell
+with assumed transverse shear strains on the edge midpoints (Dvorkin &
+Bathe 1984); `element = "mitc3+"` is the three-node shell with a cubic
+bubble on the rotations and the assumed shear of Lee, Lee & Bathe (2014)
+on a grid of triangles with alternating diagonals. Both pass the patch
+tests, neither locks in shear at thickness ratios down to 10⁻⁴, and both
+carry six unknowns per node (a small drilling spring holds the rotation
+about the normal), so beams and shells use the same nodes.
+
+**Verification** (`crates/foehncraft-structure/tests/shells.rs`):
+
+| Check | Reference | MITC4 | MITC3+ |
+|---|---|---|---|
+| Membrane and bending patch tests, distorted five-element mesh | MacNeal & Harder (1985): a constant strain or curvature field exactly | to rounding | to rounding |
+| Simply supported square plate under uniform load, a/t = 100 and 10⁴ | Navier series with the Mindlin shear term (Timoshenko & Woinowsky-Krieger 1959) | within 4·10⁻⁴ at 32 × 32, second order | within 4·10⁻³, second order |
+| Square plate clamped on one edge, first five modes | Leissa (1969), NASA SP-160, table 4.30 | within 1 % on 24 × 24 | within 1 % |
+| Scordelis–Lo roof, vertical lift at the free edge | 0.3024 (MacNeal & Harder 1985) | within 2 % on 16 × 16 | 0.961 and 0.987 of it on 16 and 32 per side, as Ko, Lee, Lee & Bathe (2017, table 10): 0.955 and 0.985 |
+| Plate on clamp springs, ν = 0 | the beam: qL⁴/(8D) + qL²/(2κGt) + qL³/(2k_r) + qL/k_t | within 10⁻³ | – |
+| Case errors | – | `STR001` for a clamp `along` an edge with a `width`, a pressure on a missing plate, a segment off the mesh | |
+
+MITC3+ converges from below more slowly than MITC4 on the curved roof, as
+published; MITC4 is the default. Stresses, a Gmsh reader for shell
+meshes and beams joined to plates come later.
+
+---
+
+<a id="reed-dynamics"></a>
+## 299. A reed struck by a pressure pulse, and a hot reed
+
+<img src="../figures/gallery/structure_reed_pulse.png" alt="Four snapshots of a reed petal on clamp springs after a 1 ms pressure pulse, coloured by the lift from blue (down 1.4 mm) through yellow (zero) to red (up 1.5 mm): rising at 1.0 ms, at its highest at 2.2 ms, flat at 3.8 ms, at its lowest at 5.4 ms; below, the tip lift against time over 20 ms ringing at 154 Hz and slowly decaying" width="1210" height="814">
+
+**The pulse.** `examples/cases/structure/reed_plate_pulse.toml` is the reed
+petal of entry 297 (30 × 12 × 0.2 mm, MITC4, clamp springs) under a
+pressure that rises to 3 kPa in 0.5 ms and falls back to zero at 1 ms
+(`[histories.pulse]`, a table). `[transient]` integrates 20 ms in 25 µs
+steps with generalised-α (Chung & Hulbert 1993, ρ∞ = 0.9), from rest:
+
+```sh
+target/release/foehn call structure.run --input examples/cases/tools/structure_reed_plate_pulse.json
+```
+
+The reed lifts to 1.50 mm at 2.2 ms, after the pulse has ended, and then
+rings at its first frequency, 154 Hz, with a ripple of the second bending
+mode (1 kHz) on top. `[damping] ratios` sets the Rayleigh factors so that
+both modes are damped by 2 %; the ripple dies out within a few periods,
+the main swing slowly. `transient.csv` holds the tip lift and the kinetic
+and strain energy at every kept step, and `structure.vtk` the whole field
+at the four `snapshots` times.
+
+<img src="../figures/gallery/structure_reed_hot.png" alt="A reed petal clamped at x = 0, 80 K warmer than when it was clamped and 6 K hotter on its upper side, bent downwards towards its seat; the colour runs from red at the clamp (no lift) to blue at the tip (0.18 mm down)" width="946" height="572">
+
+**The hot reed.** A discharge reed runs hot, and its two sides are not
+at the same temperature. `examples/cases/structure/reed_plate_hot.toml`
+warms the reed by 80 K over its stress-free state and makes the side the
+gas comes from 6 K hotter than the seat side (`[[temperatures]]`, with the
+material's `expansion` α = 1.2·10⁻⁵ 1/K). The thermal strain α ΔT
+lengthens the reed by 29 µm and bends it away from the hot side: the tip
+moves 0.17 mm towards its seat, a preload the valve did not have cold.
+The temperatures are given here; in a coupled run they come from the
+energy equation of a solid region of the flow case (MS6).
+
+**Verification** (`crates/foehncraft-structure/tests/dynamics.rs`,
+`tests/thermal.rs`):
+
+| Check | Exact solution | Result |
+|---|---|---|
+| Damped oscillator, step force, ρ∞ = 1, 0.8, 0.5, 0 | u = F/k [1 − e^(−ζωt)(cos ω_d t + ζω/ω_d sin ω_d t)] | second order (2.00 to 2.02) |
+| High-frequency damping, Δt = 10⁴ periods | the amplification matrix of Chung & Hulbert has the triple eigenvalue −ρ∞ | its characteristic polynomial (λ + ρ∞)³ within 10⁻³ |
+| Energy, ρ∞ = 1, undamped cantilever under a constant force | ½vᵀMv + ½uᵀKu − fᵀu = 0 | within 10⁻¹⁰ of the largest strain energy over 2000 steps |
+| Mode superposition, the oscillator and a ramp | exact per mode for a load linear in each step (Nigam & Jennings 1969) | 10⁻¹² for any step; one step and 1000 steps agree to 10⁻¹⁰ |
+| Mode superposition with every mode against generalised-α, Rayleigh-damped cantilever | the same discrete system | the direct method converges to it at second order, 5·10⁻⁶ at the finest step |
+| Rayleigh factors from two ratios | ζ = α/(2ω) + βω/2 at both frequencies | to rounding; the oscillator's logarithmic decrement gives ζ within 0.2 % |
+| Craig–Bampton, cantilever reduced to its tip | the full model | every interior mode: eigenvalues within 10⁻⁸; 2, 4, 8 modes: above the full ones, converging; static tip deflection exact (10⁻¹⁰) |
+| Beam, uniform ΔT and a difference across the thickness, both theories | free expansion α ΔT L, tip lift −(α ΔT/h) L²/2 | within 10⁻⁹, no reaction |
+| Bar held at both ends | force E A α ΔT | within 10⁻⁹ |
+| Free plate, MITC4 and MITC3+ | expansion α ΔT x; a sphere w = −(α ΔT/h)(x² + y²)/2 | within 10⁻⁸ and 10⁻⁶ |
+| Transient case, direct and modal (8 modes) on a ramped tip force | each other | within 0.2 % at 20 ms |
+
+The pictures are made with `python3 -m tools.plot.structure_dynamics`
+(commands in its header). Not yet: temperature-dependent moduli (give E
+at the operating temperature), a start from a static state, base motion,
+and the temperature mapping from the flow case (MS6).
+

@@ -2082,7 +2082,7 @@ evidence = [
   { kind = "contract", property = "diagnostics", test = "crates/foehncraft-structure/tests/beams.rs::unsupported_static_case_is_refused_with_its_code", what = "STR002 names the free unknown of an unsupported structure; STR001 for a support off the mesh" },
 ]
 gaps = [
-  "beams only: MITC4/MITC3+ shells, quadratic solids, generalised-α, mode superposition, Craig–Bampton, damping and contact come in MS5 parts 2 to 4",
+  "beams and shells (structure.shells) only: quadratic solids, generalised-α, mode superposition, Craig–Bampton, damping and contact come in MS5 parts 3 and 4",
   "the Timoshenko element's consistent mass converges at second order in the frequency of thick beams (7e-6 on 120 elements at L/d = 10)",
   "no comparison with measured reed frequencies yet (MS6: Gasche et al. via González et al. 2017, Lemke et al. 2016)",
   "the ordering is reverse Cuthill–McKee: the fill is an envelope, fine for slender reeds, large for compact 3D parts (no minimum-degree ordering yet)",
@@ -2101,10 +2101,10 @@ evidence = [
   { kind = "exact", test = "crates/foehncraft-structure/tests/beams.rs::clamp_springs_static_is_exact", what = "tip deflection on rotational and translational clamp springs PL³/(3EI) + PL²/k_r + P/k_t within 1e-10; a clamp without springs is reported rigid" },
   { kind = "exact", test = "crates/foehncraft-structure/tests/beams.rs::clamp_spring_frequency_against_the_frequency_equation", what = "first frequency on a rotational root spring, kL/EI = 0.3 to 300, against the frequency equation: within 1e-8" },
   { kind = "exact", test = "crates/foehncraft-structure/tests/beams.rs::clamp_fit_recovers_the_spring", what = "the fit recovers the spring of the frequency equation within 1e-5 in fewer than 40 modal solves; STR004 above the rigid clamp" },
-  { kind = "consistency", test = "crates/foehncraft-tools/src/structure.rs::catalogue_cases_run_and_the_fit_matches", what = "the catalogue cases run through the registry, the fit of the tool input hits 150 Hz" },
+  { kind = "consistency", test = "crates/foehncraft-tools/src/structure.rs::catalogue_cases_run_and_the_fit_matches", what = "the catalogue cases (beams and the plate) run through the registry; the fit hits 150 Hz on the beam clamp and on the clamp along the plate edge" },
+  { kind = "exact", test = "crates/foehncraft-structure/tests/shells.rs::plate_on_clamp_springs_against_beam_theory", what = "a plate (ν = 0) clamped along an edge on springs per length shared over its nodes: tip lift against beam theory within 1e-3; the spring forces balance the load within 1e-9" },
 ]
 gaps = [
-  "springs on a single node of a beam model: shells with the springs spread along the clamp edge come with MS5 part 2",
   "clamp parts as solids in frictionless contact (the second way of D290) are not built",
   "no measured reed with a known clamp to calibrate against yet (MS6)",
 ]
@@ -2128,4 +2128,71 @@ gaps = [
   "refused with MOV001: restarts (the restart datasets of D91 are not written yet), several ranks, turning zones, regions, sprays, immersed bodies, periodic boundaries, an error-controlled time step, level sweeps",
   "turbulence models and passive scalars run on the moving mesh but are not checked against a reference; the GPU backend is not tested on a moving mesh",
   "the cooled piston has no reference data (no heat-transfer correlation compared yet)",
+]
+
+[[feature]]
+id = "structure.shells"
+area = "Structures"
+title = "MITC4 and MITC3+ Reissner–Mindlin shells, plates clamped along an edge (L53, MS5 part 2)"
+switch = "structure.run with [[plates]] (element = \"mitc4\" or \"mitc3+\"), [[pressures]], along"
+decisions = ["D289", "D290"]
+model = true
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-structure/tests/shells.rs::membrane_patch_test", what = "MacNeal–Harder membrane patch test on the distorted mesh, both elements: the constant strain field to rounding" },
+  { kind = "exact", test = "crates/foehncraft-structure/tests/shells.rs::bending_patch_test", what = "MacNeal–Harder bending patch test, both elements: the constant curvature field to rounding" },
+  { kind = "exact", test = "crates/foehncraft-structure/tests/shells.rs::simply_supported_plate_converges_to_navier", what = "simply supported square plate, a/t = 100 and 1e4, against the Navier series with the Mindlin shear term: MITC4 within 4e-4, MITC3+ within 4e-3, second order, no shear locking" },
+  { kind = "exact", test = "crates/foehncraft-structure/tests/shells.rs::cantilever_square_plate_modes_against_leissa", what = "square plate clamped on one edge, first five modes within 1 % of Leissa (1969) table 4.30 on 24 × 24, both elements" },
+  { kind = "reference-data", test = "crates/foehncraft-structure/tests/shells.rs::scordelis_lo_roof_converges", what = "Scordelis–Lo roof: MITC4 within 2 % of 0.3024 on 16 × 16; MITC3+ within 3 % of the published MITC3+ values (Ko, Lee, Lee & Bathe 2017, table 10), monotone" },
+  { kind = "consistency", test = "crates/foehncraft-structure/tests/shells.rs::reed_plate_catalogue_case", what = "the reed petal case: Sturm check, the clamp springs carry the whole pressure, first mode between the beam's and the beam's times sqrt(1/(1 − ν²)), VTK polygons" },
+  { kind = "contract", property = "diagnostics", test = "crates/foehncraft-structure/tests/shells.rs::plate_case_errors_carry_the_case_code", what = "STR001 for a clamp along an edge with a width, a pressure on a missing plate, a segment off the mesh, both at and along" },
+]
+gaps = [
+  "flat parallelogram plates from the case file only: no Gmsh reader for curved shell meshes yet (the roof test builds its mesh in code)",
+  "no stresses or strains in the output yet (displacements, rotations and modes only)",
+  "MITC3+ converges more slowly than MITC4 on curved shells (0.96 of the roof's lift on 16 × 16), as published",
+  "beams and plates in one case share nodes but no eccentric (offset) connection",
+  "linear (small rotations): large deflections need the corotational formulation of MS9",
+]
+
+[[feature]]
+id = "structure.dynamics"
+area = "Structures"
+title = "Structural dynamics: generalised-α, mode superposition, Rayleigh and modal damping, Craig–Bampton reduction (L53, MS5 part 3)"
+switch = "structure.run with [transient], [damping], [histories]; dynamics::craig_bampton (library)"
+decisions = ["D289"]
+model = true
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-structure/tests/dynamics.rs::generalised_alpha_converges_at_second_order_to_the_damped_step_response", what = "damped oscillator under a step force against the closed form, ρ∞ = 1, 0.8, 0.5, 0: observed order 2.00 to 2.02" },
+  { kind = "exact", test = "crates/foehncraft-structure/tests/dynamics.rs::generalised_alpha_damps_high_frequencies_to_rho_infinity", what = "amplification matrix at Δt = 10⁴ periods: characteristic polynomial (λ + ρ∞)³ within 1e-3 (Chung & Hulbert 1993)" },
+  { kind = "exact", test = "crates/foehncraft-structure/tests/dynamics.rs::trapezoidal_rule_conserves_the_energy", what = "ρ∞ = 1, undamped cantilever, constant force: ½vᵀMv + ½uᵀKu − fᵀu within 1e-10 of the largest strain energy over 2000 steps" },
+  { kind = "exact", test = "crates/foehncraft-structure/tests/dynamics.rs::mode_superposition_is_exact_per_mode_and_meets_the_direct_method", what = "modal step exact for the oscillator (1e-12) and for a ramp (1 vs 1000 steps 1e-10); with every mode the direct method converges to it at second order" },
+  { kind = "exact", test = "crates/foehncraft-structure/tests/dynamics.rs::rayleigh_factors_from_two_ratios", what = "Rayleigh factors give both ratios to rounding; logarithmic decrement of the damped oscillator within 0.2 %; STR001 for ratios no αM + βK can give" },
+  { kind = "exact", test = "crates/foehncraft-structure/tests/dynamics.rs::craig_bampton_is_exact_with_every_mode_and_a_ritz_bound_with_few", what = "with every interior mode the eigenvalues of the full model within 1e-8; with 2, 4, 8 modes Ritz upper bounds converging; static boundary response exact (1e-10)" },
+  { kind = "consistency", test = "crates/foehncraft-structure/tests/thermal.rs::transient_case_direct_and_modal_agree_on_a_ramped_load", what = "the case keys: a ramped tip force with Rayleigh damping, direct and modal (8 modes) within 0.2 %; CSV and kept times" },
+]
+gaps = [
+  "starts from rest only: no start from a static state or from given displacements and velocities in the case file",
+  "no prescribed motion in time (base excitation) yet: it comes with the coupling of MS6",
+  "Craig–Bampton is a library function: no case keys or tool for reduced models yet",
+  "mode superposition without a static (mode-acceleration) correction for the modes left out",
+  "linear: no geometric nonlinearity (MS9) and no contact (MS5 part 4)",
+]
+
+[[feature]]
+id = "structure.thermal"
+area = "Structures"
+title = "Thermal strain loads on beams and shells from a temperature change and a difference across the thickness (L53, MS5 part 3)"
+switch = "structure.run with [[temperatures]] and the material's expansion"
+decisions = ["D289"]
+model = true
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-structure/tests/thermal.rs::free_beam_expands_and_bends_without_stress", what = "cantilever, both theories: tip α ΔT L and −(α ΔT/h) L²/2 with slope (α ΔT/h) L within 1e-9; no reaction" },
+  { kind = "exact", test = "crates/foehncraft-structure/tests/thermal.rs::held_bar_carries_the_thermal_force", what = "bar held at both ends: reaction E A α ΔT within 1e-9" },
+  { kind = "exact", test = "crates/foehncraft-structure/tests/thermal.rs::free_plate_expands_and_bends_into_a_sphere", what = "free plate, MITC4 and MITC3+: in-plane α ΔT x within 1e-8, the sphere −(α ΔT/h)(x² + y²)/2 within 1e-6" },
+  { kind = "contract", property = "diagnostics", test = "crates/foehncraft-structure/tests/thermal.rs::thermal_case_errors", what = "STR001 for a material without expansion, an unknown part or history, a bad table, modal without modes, both Rayleigh inputs" },
+]
+gaps = [
+  "temperatures are given per part (uniform change and a linear difference across the thickness); the mapping of the temperature field of a solid region of the flow case is MS6",
+  "the moduli do not depend on temperature: give E at the operating temperature",
+  "no thermal stresses in the output (no stresses at all yet)",
 ]

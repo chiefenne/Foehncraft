@@ -1,111 +1,111 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 736" width="800" height="736" font-family="Helvetica, Arial, sans-serif" font-size="12">
 <rect width="800" height="736" fill="white"/>
-<text x="400.0" y="22" text-anchor="middle" font-size="15" font-weight="bold">Verification grades of 133 features (D199)</text>
+<text x="400.0" y="22" text-anchor="middle" font-size="15" font-weight="bold">Verification grades of 137 features (D199)</text>
 <rect x="230" y="36" width="14" height="14" fill="#2e9d5b"/>
 <text x="250" y="48">verified (50)</text>
 <rect x="380" y="36" width="14" height="14" fill="#e9a23b"/>
-<text x="400" y="48">partial (80)</text>
+<text x="400" y="48">partial (84)</text>
 <rect x="530" y="36" width="14" height="14" fill="#d64541"/>
 <text x="550" y="48">unverified (3)</text>
 <text x="220" y="84.0" text-anchor="end">Meshes</text>
-<rect x="230.0" y="70" width="75.7" height="20" fill="#2e9d5b"/>
-<text x="267.9" y="84.0" text-anchor="middle" fill="white" font-weight="bold">2</text>
-<rect x="305.7" y="70" width="378.6" height="20" fill="#e9a23b"/>
-<text x="495.0" y="84.0" text-anchor="middle" fill="white" font-weight="bold">10</text>
+<rect x="230.0" y="70" width="70.7" height="20" fill="#2e9d5b"/>
+<text x="265.3" y="84.0" text-anchor="middle" fill="white" font-weight="bold">2</text>
+<rect x="300.7" y="70" width="353.3" height="20" fill="#e9a23b"/>
+<text x="477.3" y="84.0" text-anchor="middle" fill="white" font-weight="bold">10</text>
 <text x="220" y="112.0" text-anchor="end">Numerics</text>
-<rect x="230.0" y="98" width="75.7" height="20" fill="#2e9d5b"/>
-<text x="267.9" y="112.0" text-anchor="middle" fill="white" font-weight="bold">2</text>
-<rect x="305.7" y="98" width="113.6" height="20" fill="#e9a23b"/>
-<text x="362.5" y="112.0" text-anchor="middle" fill="white" font-weight="bold">3</text>
+<rect x="230.0" y="98" width="70.7" height="20" fill="#2e9d5b"/>
+<text x="265.3" y="112.0" text-anchor="middle" fill="white" font-weight="bold">2</text>
+<rect x="300.7" y="98" width="106.0" height="20" fill="#e9a23b"/>
+<text x="353.7" y="112.0" text-anchor="middle" fill="white" font-weight="bold">3</text>
 <text x="220" y="140.0" text-anchor="end">Linear solvers</text>
-<rect x="230.0" y="126" width="37.9" height="20" fill="#2e9d5b"/>
-<text x="248.9" y="140.0" text-anchor="middle" fill="white" font-weight="bold">1</text>
-<rect x="267.9" y="126" width="75.7" height="20" fill="#e9a23b"/>
-<text x="305.7" y="140.0" text-anchor="middle" fill="white" font-weight="bold">2</text>
+<rect x="230.0" y="126" width="35.3" height="20" fill="#2e9d5b"/>
+<text x="247.7" y="140.0" text-anchor="middle" fill="white" font-weight="bold">1</text>
+<rect x="265.3" y="126" width="70.7" height="20" fill="#e9a23b"/>
+<text x="300.7" y="140.0" text-anchor="middle" fill="white" font-weight="bold">2</text>
 <text x="220" y="168.0" text-anchor="end">Pressure–velocity coupling</text>
-<rect x="230.0" y="154" width="113.6" height="20" fill="#2e9d5b"/>
-<text x="286.8" y="168.0" text-anchor="middle" fill="white" font-weight="bold">3</text>
-<rect x="343.6" y="154" width="37.9" height="20" fill="#e9a23b"/>
-<text x="362.5" y="168.0" text-anchor="middle" fill="white" font-weight="bold">1</text>
+<rect x="230.0" y="154" width="106.0" height="20" fill="#2e9d5b"/>
+<text x="283.0" y="168.0" text-anchor="middle" fill="white" font-weight="bold">3</text>
+<rect x="336.0" y="154" width="35.3" height="20" fill="#e9a23b"/>
+<text x="353.7" y="168.0" text-anchor="middle" fill="white" font-weight="bold">1</text>
 <text x="220" y="196.0" text-anchor="end">Adjoint</text>
-<rect x="230.0" y="182" width="37.9" height="20" fill="#e9a23b"/>
-<text x="248.9" y="196.0" text-anchor="middle" fill="white" font-weight="bold">1</text>
+<rect x="230.0" y="182" width="35.3" height="20" fill="#e9a23b"/>
+<text x="247.7" y="196.0" text-anchor="middle" fill="white" font-weight="bold">1</text>
 <text x="220" y="224.0" text-anchor="end">Time stepping</text>
-<rect x="230.0" y="210" width="113.6" height="20" fill="#2e9d5b"/>
-<text x="286.8" y="224.0" text-anchor="middle" fill="white" font-weight="bold">3</text>
-<rect x="343.6" y="210" width="75.7" height="20" fill="#e9a23b"/>
-<text x="381.4" y="224.0" text-anchor="middle" fill="white" font-weight="bold">2</text>
+<rect x="230.0" y="210" width="106.0" height="20" fill="#2e9d5b"/>
+<text x="283.0" y="224.0" text-anchor="middle" fill="white" font-weight="bold">3</text>
+<rect x="336.0" y="210" width="70.7" height="20" fill="#e9a23b"/>
+<text x="371.3" y="224.0" text-anchor="middle" fill="white" font-weight="bold">2</text>
 <text x="220" y="252.0" text-anchor="end">Boundary conditions</text>
-<rect x="230.0" y="238" width="302.9" height="20" fill="#2e9d5b"/>
-<text x="381.4" y="252.0" text-anchor="middle" fill="white" font-weight="bold">8</text>
-<rect x="532.9" y="238" width="75.7" height="20" fill="#e9a23b"/>
-<text x="570.7" y="252.0" text-anchor="middle" fill="white" font-weight="bold">2</text>
-<rect x="608.6" y="238" width="113.6" height="20" fill="#d64541"/>
-<text x="665.4" y="252.0" text-anchor="middle" fill="white" font-weight="bold">3</text>
+<rect x="230.0" y="238" width="282.7" height="20" fill="#2e9d5b"/>
+<text x="371.3" y="252.0" text-anchor="middle" fill="white" font-weight="bold">8</text>
+<rect x="512.7" y="238" width="70.7" height="20" fill="#e9a23b"/>
+<text x="548.0" y="252.0" text-anchor="middle" fill="white" font-weight="bold">2</text>
+<rect x="583.3" y="238" width="106.0" height="20" fill="#d64541"/>
+<text x="636.3" y="252.0" text-anchor="middle" fill="white" font-weight="bold">3</text>
 <text x="220" y="280.0" text-anchor="end">Turbulence models</text>
-<rect x="230.0" y="266" width="75.7" height="20" fill="#2e9d5b"/>
-<text x="267.9" y="280.0" text-anchor="middle" fill="white" font-weight="bold">2</text>
-<rect x="305.7" y="266" width="340.7" height="20" fill="#e9a23b"/>
-<text x="476.1" y="280.0" text-anchor="middle" fill="white" font-weight="bold">9</text>
+<rect x="230.0" y="266" width="70.7" height="20" fill="#2e9d5b"/>
+<text x="265.3" y="280.0" text-anchor="middle" fill="white" font-weight="bold">2</text>
+<rect x="300.7" y="266" width="318.0" height="20" fill="#e9a23b"/>
+<text x="459.7" y="280.0" text-anchor="middle" fill="white" font-weight="bold">9</text>
 <text x="220" y="308.0" text-anchor="end">Wall treatments</text>
-<rect x="230.0" y="294" width="75.7" height="20" fill="#2e9d5b"/>
-<text x="267.9" y="308.0" text-anchor="middle" fill="white" font-weight="bold">2</text>
-<rect x="305.7" y="294" width="189.3" height="20" fill="#e9a23b"/>
-<text x="400.4" y="308.0" text-anchor="middle" fill="white" font-weight="bold">5</text>
+<rect x="230.0" y="294" width="70.7" height="20" fill="#2e9d5b"/>
+<text x="265.3" y="308.0" text-anchor="middle" fill="white" font-weight="bold">2</text>
+<rect x="300.7" y="294" width="176.7" height="20" fill="#e9a23b"/>
+<text x="389.0" y="308.0" text-anchor="middle" fill="white" font-weight="bold">5</text>
 <text x="220" y="336.0" text-anchor="end">Heat and passive scalars</text>
-<rect x="230.0" y="322" width="37.9" height="20" fill="#2e9d5b"/>
-<text x="248.9" y="336.0" text-anchor="middle" fill="white" font-weight="bold">1</text>
-<rect x="267.9" y="322" width="75.7" height="20" fill="#e9a23b"/>
-<text x="305.7" y="336.0" text-anchor="middle" fill="white" font-weight="bold">2</text>
+<rect x="230.0" y="322" width="35.3" height="20" fill="#2e9d5b"/>
+<text x="247.7" y="336.0" text-anchor="middle" fill="white" font-weight="bold">1</text>
+<rect x="265.3" y="322" width="70.7" height="20" fill="#e9a23b"/>
+<text x="300.7" y="336.0" text-anchor="middle" fill="white" font-weight="bold">2</text>
 <text x="220" y="364.0" text-anchor="end">Energy</text>
-<rect x="230.0" y="350" width="113.6" height="20" fill="#2e9d5b"/>
-<text x="286.8" y="364.0" text-anchor="middle" fill="white" font-weight="bold">3</text>
-<rect x="343.6" y="350" width="37.9" height="20" fill="#e9a23b"/>
-<text x="362.5" y="364.0" text-anchor="middle" fill="white" font-weight="bold">1</text>
+<rect x="230.0" y="350" width="106.0" height="20" fill="#2e9d5b"/>
+<text x="283.0" y="364.0" text-anchor="middle" fill="white" font-weight="bold">3</text>
+<rect x="336.0" y="350" width="35.3" height="20" fill="#e9a23b"/>
+<text x="353.7" y="364.0" text-anchor="middle" fill="white" font-weight="bold">1</text>
 <text x="220" y="392.0" text-anchor="end">Conjugate heat transfer</text>
-<rect x="230.0" y="378" width="151.4" height="20" fill="#2e9d5b"/>
-<text x="305.7" y="392.0" text-anchor="middle" fill="white" font-weight="bold">4</text>
-<rect x="381.4" y="378" width="227.1" height="20" fill="#e9a23b"/>
-<text x="495.0" y="392.0" text-anchor="middle" fill="white" font-weight="bold">6</text>
+<rect x="230.0" y="378" width="141.3" height="20" fill="#2e9d5b"/>
+<text x="300.7" y="392.0" text-anchor="middle" fill="white" font-weight="bold">4</text>
+<rect x="371.3" y="378" width="212.0" height="20" fill="#e9a23b"/>
+<text x="477.3" y="392.0" text-anchor="middle" fill="white" font-weight="bold">6</text>
 <text x="220" y="420.0" text-anchor="end">Buoyancy</text>
-<rect x="230.0" y="406" width="75.7" height="20" fill="#2e9d5b"/>
-<text x="267.9" y="420.0" text-anchor="middle" fill="white" font-weight="bold">2</text>
-<rect x="305.7" y="406" width="75.7" height="20" fill="#e9a23b"/>
-<text x="343.6" y="420.0" text-anchor="middle" fill="white" font-weight="bold">2</text>
+<rect x="230.0" y="406" width="70.7" height="20" fill="#2e9d5b"/>
+<text x="265.3" y="420.0" text-anchor="middle" fill="white" font-weight="bold">2</text>
+<rect x="300.7" y="406" width="70.7" height="20" fill="#e9a23b"/>
+<text x="336.0" y="420.0" text-anchor="middle" fill="white" font-weight="bold">2</text>
 <text x="220" y="448.0" text-anchor="end">Rotating machinery</text>
-<rect x="230.0" y="434" width="151.4" height="20" fill="#2e9d5b"/>
-<text x="305.7" y="448.0" text-anchor="middle" fill="white" font-weight="bold">4</text>
-<rect x="381.4" y="434" width="151.4" height="20" fill="#e9a23b"/>
-<text x="457.1" y="448.0" text-anchor="middle" fill="white" font-weight="bold">4</text>
+<rect x="230.0" y="434" width="141.3" height="20" fill="#2e9d5b"/>
+<text x="300.7" y="448.0" text-anchor="middle" fill="white" font-weight="bold">4</text>
+<rect x="371.3" y="434" width="141.3" height="20" fill="#e9a23b"/>
+<text x="442.0" y="448.0" text-anchor="middle" fill="white" font-weight="bold">4</text>
 <text x="220" y="476.0" text-anchor="end">Cases and properties</text>
-<rect x="230.0" y="462" width="37.9" height="20" fill="#2e9d5b"/>
-<text x="248.9" y="476.0" text-anchor="middle" fill="white" font-weight="bold">1</text>
-<rect x="267.9" y="462" width="113.6" height="20" fill="#e9a23b"/>
-<text x="324.6" y="476.0" text-anchor="middle" fill="white" font-weight="bold">3</text>
+<rect x="230.0" y="462" width="35.3" height="20" fill="#2e9d5b"/>
+<text x="247.7" y="476.0" text-anchor="middle" fill="white" font-weight="bold">1</text>
+<rect x="265.3" y="462" width="106.0" height="20" fill="#e9a23b"/>
+<text x="318.3" y="476.0" text-anchor="middle" fill="white" font-weight="bold">3</text>
 <text x="220" y="504.0" text-anchor="end">Runs and results</text>
-<rect x="230.0" y="490" width="227.1" height="20" fill="#2e9d5b"/>
-<text x="343.6" y="504.0" text-anchor="middle" fill="white" font-weight="bold">6</text>
-<rect x="457.1" y="490" width="151.4" height="20" fill="#e9a23b"/>
-<text x="532.9" y="504.0" text-anchor="middle" fill="white" font-weight="bold">4</text>
+<rect x="230.0" y="490" width="212.0" height="20" fill="#2e9d5b"/>
+<text x="336.0" y="504.0" text-anchor="middle" fill="white" font-weight="bold">6</text>
+<rect x="442.0" y="490" width="141.3" height="20" fill="#e9a23b"/>
+<text x="512.7" y="504.0" text-anchor="middle" fill="white" font-weight="bold">4</text>
 <text x="220" y="532.0" text-anchor="end">Backends and interfaces</text>
-<rect x="230.0" y="518" width="227.1" height="20" fill="#2e9d5b"/>
-<text x="343.6" y="532.0" text-anchor="middle" fill="white" font-weight="bold">6</text>
-<rect x="457.1" y="518" width="302.9" height="20" fill="#e9a23b"/>
-<text x="608.6" y="532.0" text-anchor="middle" fill="white" font-weight="bold">8</text>
+<rect x="230.0" y="518" width="212.0" height="20" fill="#2e9d5b"/>
+<text x="336.0" y="532.0" text-anchor="middle" fill="white" font-weight="bold">6</text>
+<rect x="442.0" y="518" width="318.0" height="20" fill="#e9a23b"/>
+<text x="601.0" y="532.0" text-anchor="middle" fill="white" font-weight="bold">9</text>
 <text x="220" y="560.0" text-anchor="end">Sprays</text>
-<rect x="230.0" y="546" width="227.1" height="20" fill="#e9a23b"/>
-<text x="343.6" y="560.0" text-anchor="middle" fill="white" font-weight="bold">6</text>
+<rect x="230.0" y="546" width="212.0" height="20" fill="#e9a23b"/>
+<text x="336.0" y="560.0" text-anchor="middle" fill="white" font-weight="bold">6</text>
 <text x="220" y="588.0" text-anchor="end">Flow models</text>
-<rect x="230.0" y="574" width="151.4" height="20" fill="#e9a23b"/>
-<text x="305.7" y="588.0" text-anchor="middle" fill="white" font-weight="bold">4</text>
+<rect x="230.0" y="574" width="141.3" height="20" fill="#e9a23b"/>
+<text x="300.7" y="588.0" text-anchor="middle" fill="white" font-weight="bold">4</text>
 <text x="220" y="616.0" text-anchor="end">Immersed bodies</text>
-<rect x="230.0" y="602" width="75.7" height="20" fill="#e9a23b"/>
-<text x="267.9" y="616.0" text-anchor="middle" fill="white" font-weight="bold">2</text>
+<rect x="230.0" y="602" width="70.7" height="20" fill="#e9a23b"/>
+<text x="265.3" y="616.0" text-anchor="middle" fill="white" font-weight="bold">2</text>
 <text x="220" y="644.0" text-anchor="end">Structures</text>
-<rect x="230.0" y="630" width="75.7" height="20" fill="#e9a23b"/>
-<text x="267.9" y="644.0" text-anchor="middle" fill="white" font-weight="bold">2</text>
+<rect x="230.0" y="630" width="176.7" height="20" fill="#e9a23b"/>
+<text x="318.3" y="644.0" text-anchor="middle" fill="white" font-weight="bold">5</text>
 <text x="220" y="672.0" text-anchor="end">Moving meshes and solids</text>
-<rect x="230.0" y="658" width="37.9" height="20" fill="#e9a23b"/>
-<text x="248.9" y="672.0" text-anchor="middle" fill="white" font-weight="bold">1</text>
+<rect x="230.0" y="658" width="35.3" height="20" fill="#e9a23b"/>
+<text x="247.7" y="672.0" text-anchor="middle" fill="white" font-weight="bold">1</text>
 <text x="495.0" y="720" text-anchor="middle" fill="#555">features per area, grades computed from docs/verification/features.toml</text>
 </svg>

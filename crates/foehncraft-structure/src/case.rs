@@ -34,6 +34,7 @@
 
 use crate::analysis::{self, Modal, Static};
 use crate::beam::{BeamProps, Theory};
+use crate::dynamics::{GenAlpha, ModalBasis, Rayleigh};
 use crate::model::{DOFS, LineLoad, Model};
 use crate::{Error, codes};
 use serde::Deserialize;
@@ -84,6 +85,9 @@ pub struct Material {
     pub poisson: f64,
     /// Density (kg/m³).
     pub density: f64,
+    /// Linear thermal expansion coefficient α (1/K), for `[[temperatures]]`.
+    #[serde(default)]
+    pub expansion: Option<f64>,
 }
 
 /// Shape of a section.
@@ -159,6 +163,215 @@ pub struct BeamLine {
     pub y_axis: Option<[f64; 3]>,
 }
 
+/// Element of a plate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
+pub enum ShellElement {
+    /// Four-node MITC4 (Dvorkin & Bathe 1984).
+    #[default]
+    #[serde(rename = "mitc4")]
+    Mitc4,
+    /// Three-node MITC3+ (Lee, Lee & Bathe 2014), two per cell.
+    #[serde(rename = "mitc3+")]
+    Mitc3Plus,
+}
+
+/// `[[plates]]`: a flat parallelogram `origin + a·edge_a + b·edge_b`
+/// (a, b ∈ [0, 1]) of shell elements; the normal is edge_a × edge_b.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Plate {
+    /// Name (for loads and results).
+    pub name: String,
+    /// A corner.
+    pub origin: [f64; 3],
+    /// First edge from the corner.
+    pub edge_a: [f64; 3],
+    /// Second edge from the corner.
+    pub edge_b: [f64; 3],
+    /// Cells along each edge.
+    pub divisions: [usize; 2],
+    /// Thickness (m).
+    pub thickness: f64,
+    /// Material name.
+    pub material: String,
+    /// Element (`mitc4`, default, or `mitc3+`).
+    #[serde(default)]
+    pub element: ShellElement,
+}
+
+/// `[[pressures]]`: a uniform load per area on a plate.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Pressure {
+    /// Name of the plate.
+    pub plate: String,
+    /// Pressure along the plate's normal (Pa); positive pushes along it.
+    #[serde(default)]
+    pub value: f64,
+    /// Force per area, global axes (N/m²), added to the pressure.
+    #[serde(default)]
+    pub force_per_area: [f64; 3],
+    /// Time history that scales the load.
+    #[serde(default)]
+    pub history: Option<String>,
+}
+
+/// `[[temperatures]]`: a temperature change of a beam line or a plate
+/// from its stress-free state, read as a thermal strain α ΔT (the
+/// material's `expansion`).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Temperature {
+    /// Name of the beam line or plate.
+    pub part: String,
+    /// Temperature change of the axis or mid-surface (K).
+    #[serde(default)]
+    pub change: f64,
+    /// Difference across the thickness (K): plates, top (along the
+    /// normal) minus bottom; beams, +z minus −z of the section.
+    #[serde(default)]
+    pub difference: f64,
+    /// Beams: difference across the width, +y minus −y (K).
+    #[serde(default)]
+    pub difference_y: f64,
+    /// Time history that scales it.
+    #[serde(default)]
+    pub history: Option<String>,
+}
+
+/// `[histories.<name>]`: a factor in time, a table (linear between its
+/// points, held after the last) or a sine.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct History {
+    /// Points [time (s), factor].
+    #[serde(default)]
+    pub table: Option<Vec<[f64; 2]>>,
+    /// Sine: amplitude.
+    #[serde(default)]
+    pub amplitude: Option<f64>,
+    /// Sine: frequency (Hz).
+    #[serde(default)]
+    pub frequency: Option<f64>,
+    /// Sine: phase (degrees).
+    #[serde(default)]
+    pub phase: f64,
+    /// Sine: offset added.
+    #[serde(default)]
+    pub offset: f64,
+}
+
+impl History {
+    /// The factor at time `t`.
+    pub fn at(&self, t: f64) -> f64 {
+        if let Some(tab) = &self.table {
+            if t <= tab[0][0] {
+                return tab[0][1];
+            }
+            for w in tab.windows(2) {
+                if t <= w[1][0] {
+                    let f = (t - w[0][0]) / (w[1][0] - w[0][0]);
+                    return w[0][1] + f * (w[1][1] - w[0][1]);
+                }
+            }
+            return tab[tab.len() - 1][1];
+        }
+        let a = self.amplitude.unwrap_or(0.0);
+        let f = self.frequency.unwrap_or(0.0);
+        self.offset + a * (2.0 * std::f64::consts::PI * f * t + self.phase.to_radians()).sin()
+    }
+
+    fn check(&self, name: &str) -> Result<(), Error> {
+        match (&self.table, self.amplitude, self.frequency) {
+            (Some(tab), None, None) => {
+                if tab.is_empty() || tab.windows(2).any(|w| w[1][0] <= w[0][0]) {
+                    return Err(bad(format!(
+                        "[histories.{name}] table: give points with increasing times"
+                    )));
+                }
+                Ok(())
+            }
+            (None, Some(_), Some(f)) if f >= 0.0 => Ok(()),
+            _ => Err(bad(format!(
+                "[histories.{name}]: give either `table` or `amplitude` and `frequency`"
+            ))),
+        }
+    }
+}
+
+/// Integration of a transient analysis.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Method {
+    /// Generalised-α on the whole model.
+    #[default]
+    Direct,
+    /// Mode superposition of the lowest `modes`.
+    Modal,
+}
+
+fn default_rho() -> f64 {
+    0.9
+}
+
+/// `[transient]`: a response in time from rest.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TransientKeys {
+    /// End time (s).
+    pub end_time: f64,
+    /// Time step (s).
+    pub time_step: f64,
+    /// `direct` (generalised-α, default) or `modal`.
+    #[serde(default)]
+    pub method: Method,
+    /// Spectral radius at infinite frequency of generalised-α (0 to 1,
+    /// default 0.9; 1 adds no numerical damping).
+    #[serde(default = "default_rho")]
+    pub rho_infinity: f64,
+    /// Modes kept by the modal method.
+    #[serde(default)]
+    pub modes: usize,
+    /// Keep every n-th step in the results (default: at most 1000 kept).
+    #[serde(default)]
+    pub output_every: Option<usize>,
+    /// Times (s) whose whole displacement field goes into `structure.vtk`
+    /// (`transient_<i>`, the step nearest each).
+    #[serde(default)]
+    pub snapshots: Vec<f64>,
+}
+
+/// `[damping]`.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DampingKeys {
+    /// Rayleigh factors [α (1/s), β (s)]: C = αM + βK.
+    #[serde(default)]
+    pub rayleigh: Option<[f64; 2]>,
+    /// Two [frequency (Hz), ratio] pairs that set the Rayleigh factors.
+    #[serde(default)]
+    pub ratios: Option<[[f64; 2]; 2]>,
+    /// Modal method: the same ratio for every mode (added to Rayleigh's).
+    #[serde(default)]
+    pub modal_ratio: f64,
+}
+
+impl DampingKeys {
+    fn rayleigh(&self) -> Result<Rayleigh, Error> {
+        match (self.rayleigh, self.ratios) {
+            (Some(_), Some(_)) => Err(bad("[damping]: give `rayleigh` or `ratios`, not both")),
+            (Some([a, b]), None) => {
+                if a < 0.0 || b < 0.0 || a.is_nan() || b.is_nan() {
+                    return Err(bad("[damping] rayleigh: factors must be ≥ 0"));
+                }
+                Ok(Rayleigh { alpha: a, beta: b })
+            }
+            (None, Some([[f1, z1], [f2, z2]])) => Rayleigh::from_ratios(f1, z1, f2, z2),
+            (None, None) => Ok(Rayleigh::default()),
+        }
+    }
+}
+
 /// An unknown of a node by name.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -179,12 +392,16 @@ pub enum DofName {
     Rz,
 }
 
-/// `[[supports]]`: fixed unknowns at a node.
+/// `[[supports]]`: fixed unknowns at a node or along a line of nodes.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Support {
     /// The node (a point of the mesh).
-    pub at: [f64; 3],
+    #[serde(default)]
+    pub at: Option<[f64; 3]>,
+    /// Every node on the segment between two points (a shell edge).
+    #[serde(default)]
+    pub along: Option<[[f64; 3]; 2]>,
     /// Fixed unknowns.
     pub fix: Vec<DofName>,
 }
@@ -214,14 +431,20 @@ impl Axis {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Clamp {
-    /// The clamped node.
-    pub at: [f64; 3],
+    /// The clamped node (a beam).
+    #[serde(default)]
+    pub at: Option<[f64; 3]>,
+    /// The clamp line (a shell edge): every node on the segment, the
+    /// springs per length shared by the lengths each node stands for.
+    #[serde(default)]
+    pub along: Option<[[f64; 3]; 2]>,
     /// Direction of the reed's lift.
     pub normal: Axis,
     /// Direction of the clamp line (across the reed).
     pub line: Axis,
-    /// Length of the clamp line (m); default the width of the beam's
-    /// rectangular section.
+    /// Length of the clamp line (m) of a beam clamp; default the width of
+    /// the beam's rectangular section. A clamp `along` an edge has the
+    /// length of its segment.
     #[serde(default)]
     pub width: Option<f64>,
     /// Translational stiffness along `normal` per metre of clamp line
@@ -270,6 +493,10 @@ pub struct Load {
     /// Moment (N·m).
     #[serde(default)]
     pub moment: [f64; 3],
+    /// Time history that scales the load (`[histories.<name>]`); none:
+    /// constant.
+    #[serde(default)]
+    pub history: Option<String>,
 }
 
 /// `[[line_loads]]`: a uniform force per length on a beam line.
@@ -280,6 +507,9 @@ pub struct LineLoadKeys {
     pub beam: String,
     /// Force per length, global axes (N/m).
     pub force_per_length: [f64; 3],
+    /// Time history that scales the load.
+    #[serde(default)]
+    pub history: Option<String>,
 }
 
 /// A structural case file.
@@ -301,6 +531,12 @@ pub struct Case {
     /// `[[beams]]`.
     #[serde(default)]
     pub beams: Vec<BeamLine>,
+    /// `[[plates]]`.
+    #[serde(default)]
+    pub plates: Vec<Plate>,
+    /// `[[pressures]]`.
+    #[serde(default)]
+    pub pressures: Vec<Pressure>,
     /// `[[supports]]`.
     #[serde(default)]
     pub supports: Vec<Support>,
@@ -319,6 +555,18 @@ pub struct Case {
     /// `[[line_loads]]`.
     #[serde(default)]
     pub line_loads: Vec<LineLoadKeys>,
+    /// `[[temperatures]]`.
+    #[serde(default)]
+    pub temperatures: Vec<Temperature>,
+    /// `[histories]`.
+    #[serde(default)]
+    pub histories: BTreeMap<String, History>,
+    /// `[transient]`.
+    #[serde(default)]
+    pub transient: Option<TransientKeys>,
+    /// `[damping]`.
+    #[serde(default)]
+    pub damping: DampingKeys,
     /// `[points]`: named points whose results are reported.
     #[serde(default)]
     pub points: BTreeMap<String, [f64; 3]>,
@@ -356,8 +604,8 @@ impl Case {
 /// How a clamp was taken (D290: the result says when it was rigid).
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ClampInfo {
-    /// The clamped node.
-    pub node: usize,
+    /// The clamped nodes.
+    pub nodes: Vec<usize>,
     /// Length of the clamp line (m).
     pub width: f64,
     /// Translation along the normal: total stiffness (N/m), `None` rigid.
@@ -373,6 +621,8 @@ pub struct Built {
     pub model: Model,
     /// Elements of each beam line, by name.
     pub lines: BTreeMap<String, std::ops::Range<usize>>,
+    /// Shell elements of each plate, by name.
+    pub plates: BTreeMap<String, std::ops::Range<usize>>,
     /// The clamps.
     pub clamps: Vec<ClampInfo>,
     /// Named points and their nodes.
@@ -469,8 +719,8 @@ pub fn build(case: &Case) -> Result<Built, Error> {
     let mut model = Model::default();
     let mut lines = BTreeMap::new();
     let mut widths: Vec<Option<f64>> = Vec::new(); // rectangle width per node
-    if case.beams.is_empty() {
-        return Err(bad("the case has no `[[beams]]`"));
+    if case.beams.is_empty() && case.plates.is_empty() {
+        return Err(bad("the case has no `[[beams]]` and no `[[plates]]`"));
     }
     // merge tolerance: end points closer than this are one node
     let mut lo = [f64::INFINITY; 3];
@@ -499,6 +749,10 @@ pub fn build(case: &Case) -> Result<Built, Error> {
             n
         };
     let mut seen = std::collections::BTreeSet::new();
+    // per beam line: α and the section's heights along local y and z
+    type LineThermal = (Option<f64>, Option<(f64, f64)>);
+    let mut line_thermal: BTreeMap<String, LineThermal> = BTreeMap::new();
+    let mut plate_thermal: BTreeMap<String, (Option<f64>, f64)> = BTreeMap::new();
     for b in &case.beams {
         if !seen.insert(b.name.clone()) {
             return Err(bad(format!("two `[[beams]]` are named `{}`", b.name)));
@@ -561,6 +815,75 @@ pub fn build(case: &Case) -> Result<Built, Error> {
             prev = next;
         }
         lines.insert(b.name.clone(), first..model.beams.len());
+        let heights = match sec.shape {
+            Shape::Rectangle => sec.width.zip(sec.thickness),
+            Shape::Circle => sec.diameter.map(|d| (d, d)),
+            Shape::General => None,
+        };
+        line_thermal.insert(b.name.clone(), (mat.expansion, heights));
+    }
+    let mut plates = BTreeMap::new();
+    for p in &case.plates {
+        if lines.contains_key(&p.name) || !seen.insert(p.name.clone()) {
+            return Err(bad(format!("two parts are named `{}`", p.name)));
+        }
+        let mat = case.materials.get(&p.material).ok_or_else(|| {
+            bad(format!(
+                "plate `{}`: no material `{}` in [materials]",
+                p.name, p.material
+            ))
+        })?;
+        if !(mat.young > 0.0 && mat.density > 0.0 && mat.poisson > -1.0 && mat.poisson < 0.5) {
+            return Err(bad(format!(
+                "plate `{}`: the material needs young > 0, density > 0 and −1 < poisson < 0.5",
+                p.name
+            )));
+        }
+        if p.thickness.is_nan() || p.thickness <= 0.0 {
+            return Err(bad(format!(
+                "plate `{}`: thickness must be positive",
+                p.name
+            )));
+        }
+        let [na, nb] = p.divisions;
+        if na == 0 || nb == 0 {
+            return Err(bad(format!(
+                "plate `{}`: `divisions` must be at least 1",
+                p.name
+            )));
+        }
+        let n = crate::beam::cross(p.edge_a, p.edge_b);
+        if crate::beam::norm(n) <= 1e-12 * crate::beam::norm(p.edge_a) * crate::beam::norm(p.edge_b)
+        {
+            return Err(bad(format!(
+                "plate `{}`: edge_a and edge_b are parallel or zero",
+                p.name
+            )));
+        }
+        model.shell_props.push(crate::shell::ShellProps {
+            young: mat.young,
+            poisson: mat.poisson,
+            density: mat.density,
+            thickness: p.thickness,
+            kappa: 5.0 / 6.0,
+        });
+        let pi = model.shell_props.len() - 1;
+        let first = model.shells.len();
+        let at = |a: f64, b: f64| {
+            [
+                p.origin[0] + a * p.edge_a[0] + b * p.edge_b[0],
+                p.origin[1] + a * p.edge_a[1] + b * p.edge_b[1],
+                p.origin[2] + a * p.edge_a[2] + b * p.edge_b[2],
+            ]
+        };
+        let before = model.nodes.len();
+        match p.element {
+            ShellElement::Mitc4 => model.add_shell_grid(at, na, nb, pi),
+            ShellElement::Mitc3Plus => model.add_tri_grid(at, na, nb, pi),
+        };
+        widths.extend(std::iter::repeat_n(None, model.nodes.len() - before));
+        plates.insert(p.name.clone(), first..model.shells.len());
+        plate_thermal.insert(p.name.clone(), (mat.expansion, p.thickness));
     }
     let size = model.size();
     let find = |model: &Model, x: [f64; 3], what: &str| -> Result<usize, Error> {
@@ -575,56 +898,132 @@ pub fn build(case: &Case) -> Result<Built, Error> {
             )))
         }
     };
+    // the nodes on a segment, with the length each one stands for
+    let along =
+        |model: &Model, seg: [[f64; 3]; 2], what: &str| -> Result<Vec<(usize, f64)>, Error> {
+            let d = crate::beam::sub(seg[1], seg[0]);
+            let len = crate::beam::norm(d);
+            if len.is_nan() || len <= 0.0 {
+                return Err(bad(format!("{what}: `along` needs two different points")));
+            }
+            let tol = 1e-6 * size.max(f64::MIN_POSITIVE);
+            let mut hits: Vec<(f64, usize)> = Vec::new();
+            for (i, x) in model.nodes.iter().enumerate() {
+                let r = crate::beam::sub(*x, seg[0]);
+                let t = crate::beam::dot3(r, d) / (len * len);
+                if !(-1e-9..=1.0 + 1e-9).contains(&t) {
+                    continue;
+                }
+                let off = crate::beam::sub(r, crate::beam::scale(d, t));
+                if crate::beam::norm(off) <= tol {
+                    hits.push((t, i));
+                }
+            }
+            if hits.len() < 2 {
+                return Err(bad(format!(
+                    "{what}: fewer than two nodes lie on the segment from {:?} to {:?}",
+                    seg[0], seg[1]
+                )));
+            }
+            hits.sort_by(|a, b| a.0.total_cmp(&b.0));
+            let m = hits.len();
+            Ok((0..m)
+                .map(|k| {
+                    let lo = if k == 0 {
+                        hits[0].0
+                    } else {
+                        0.5 * (hits[k - 1].0 + hits[k].0)
+                    };
+                    let hi = if k + 1 == m {
+                        hits[m - 1].0
+                    } else {
+                        0.5 * (hits[k].0 + hits[k + 1].0)
+                    };
+                    (hits[k].1, (hi - lo) * len)
+                })
+                .collect())
+        };
+    let place = |model: &Model,
+                 at: Option<[f64; 3]>,
+                 seg: Option<[[f64; 3]; 2]>,
+                 what: &str|
+     -> Result<Vec<(usize, f64)>, Error> {
+        match (at, seg) {
+            (Some(x), None) => Ok(vec![(find(model, x, what)?, 0.0)]),
+            (None, Some(s)) => along(model, s, what),
+            _ => Err(bad(format!(
+                "{what}: give `at` (a node) or `along` (a segment), not both"
+            ))),
+        }
+    };
     for s in &case.supports {
-        let n = find(&model, s.at, "[[supports]]")?;
-        for d in dofs_of(&s.fix) {
-            model.fixed[DOFS * n + d] = true;
+        for (n, _) in place(&model, s.at, s.along, "[[supports]]")? {
+            for d in dofs_of(&s.fix) {
+                model.fixed[DOFS * n + d] = true;
+            }
         }
     }
     let mut clamps = Vec::new();
     for c in &case.clamps {
-        let n = find(&model, c.at, "[[clamps]]")?;
+        let nodes = place(&model, c.at, c.along, "[[clamps]]")?;
         if c.normal == c.line {
             return Err(bad(
                 "[[clamps]]: `normal` and `line` must be different axes",
             ));
         }
-        let width = match c.width.or(widths[n]) {
-            Some(w) if w > 0.0 => w,
-            _ => {
+        let (width, share): (f64, Vec<f64>) = if c.along.is_some() {
+            if c.width.is_some() {
                 return Err(bad(
-                    "[[clamps]]: `width` (the length of the clamp line) is needed when the beam has no rectangular section",
+                    "[[clamps]]: a clamp `along` an edge takes its length from the segment; leave out `width`",
                 ));
+            }
+            (
+                nodes.iter().map(|x| x.1).sum(),
+                nodes.iter().map(|x| x.1).collect(),
+            )
+        } else {
+            let n = nodes[0].0;
+            match c.width.or(widths[n]) {
+                Some(w) if w > 0.0 => (w, vec![w]),
+                _ => {
+                    return Err(bad(
+                        "[[clamps]]: `width` (the length of the clamp line) is needed when the beam has no rectangular section",
+                    ));
+                }
             }
         };
         let tn = c.normal.index();
         let rl = 3 + c.line.index();
-        for d in 0..DOFS {
-            if d != tn && d != rl {
-                model.fixed[DOFS * n + d] = true;
+        for k in [c.k_translation, c.k_rotation].into_iter().flatten() {
+            if k.is_nan() || k < 0.0 || !k.is_finite() {
+                return Err(bad(format!(
+                    "[[clamps]]: spring stiffness must be ≥ 0 (is {k})"
+                )));
             }
         }
-        let mut spring = |d: usize, k: Option<f64>, what: &str| -> Result<Option<f64>, Error> {
-            match k {
-                None => {
-                    model.fixed[DOFS * n + d] = true;
-                    Ok(None)
+        for (&(n, _), &l) in nodes.iter().zip(&share) {
+            for d in 0..DOFS {
+                let spring = if d == tn {
+                    c.k_translation
+                } else if d == rl {
+                    c.k_rotation
+                } else {
+                    None
+                };
+                match spring {
+                    Some(k) => {
+                        model.fixed[DOFS * n + d] = false;
+                        model.springs.push((DOFS * n + d, k * l));
+                    }
+                    None => model.fixed[DOFS * n + d] = true,
                 }
-                Some(k) if k >= 0.0 && k.is_finite() => {
-                    model.fixed[DOFS * n + d] = false;
-                    model.springs.push((DOFS * n + d, k * width));
-                    Ok(Some(k * width))
-                }
-                Some(k) => Err(bad(format!("[[clamps]] {what} must be ≥ 0 (is {k})"))),
             }
-        };
-        let kt = spring(tn, c.k_translation, "k_translation")?;
-        let kr = spring(rl, c.k_rotation, "k_rotation")?;
+        }
         clamps.push(ClampInfo {
-            node: n,
+            nodes: nodes.iter().map(|x| x.0).collect(),
             width,
-            k_translation: kt,
-            k_rotation: kr,
+            k_translation: c.k_translation.map(|k| k * width),
+            k_rotation: c.k_rotation.map(|k| k * width),
         });
     }
     for s in &case.springs {
@@ -654,6 +1053,18 @@ pub fn build(case: &Case) -> Result<Built, Error> {
             model.forces[DOFS * n + 3 + d] += l.moment[d];
         }
     }
+    for pr in &case.pressures {
+        let r = plates
+            .get(&pr.plate)
+            .ok_or_else(|| bad(format!("[[pressures]]: no plate `{}`", pr.plate)))?;
+        for e in r.clone() {
+            model.area_loads.push(crate::model::AreaLoad {
+                element: e,
+                q: pr.force_per_area,
+                pressure: pr.value,
+            });
+        }
+    }
     for l in &case.line_loads {
         let r = lines
             .get(&l.beam)
@@ -665,6 +1076,57 @@ pub fn build(case: &Case) -> Result<Built, Error> {
             });
         }
     }
+    for t in &case.temperatures {
+        let what = format!("[[temperatures]] `{}`", t.part);
+        if [t.change, t.difference, t.difference_y]
+            .iter()
+            .any(|v| !v.is_finite())
+        {
+            return Err(bad(format!("{what}: temperatures must be finite")));
+        }
+        let need = |a: Option<f64>| {
+            a.filter(|a| a.is_finite())
+                .ok_or_else(|| bad(format!("{what}: its material needs `expansion` (1/K)")))
+        };
+        if let Some(r) = lines.get(&t.part) {
+            let (alpha, h) = line_thermal[&t.part];
+            let alpha = need(alpha)?;
+            let curvature = if t.difference != 0.0 || t.difference_y != 0.0 {
+                let (hy, hz) = h.ok_or_else(|| {
+                    bad(format!("{what}: a difference across a `general` section needs its size; use a rectangle or a circle"))
+                })?;
+                [alpha * t.difference_y / hy, alpha * t.difference / hz]
+            } else {
+                [0.0, 0.0]
+            };
+            for e in r.clone() {
+                model.thermal.push(crate::model::ThermalLoad {
+                    element: e,
+                    shell: false,
+                    strain: alpha * t.change,
+                    curvature,
+                });
+            }
+        } else if let Some(r) = plates.get(&t.part) {
+            let (alpha, h) = plate_thermal[&t.part];
+            let alpha = need(alpha)?;
+            if t.difference_y != 0.0 {
+                return Err(bad(format!(
+                    "{what}: `difference_y` is for beams; a plate takes `difference`"
+                )));
+            }
+            for e in r.clone() {
+                model.thermal.push(crate::model::ThermalLoad {
+                    element: e,
+                    shell: true,
+                    strain: alpha * t.change,
+                    curvature: [alpha * t.difference / h, 0.0],
+                });
+            }
+        } else {
+            return Err(bad(format!("{what}: no beam line or plate of that name")));
+        }
+    }
     let mut points = BTreeMap::new();
     for (name, x) in &case.points {
         points.insert(name.clone(), find(&model, *x, &format!("[points] {name}"))?);
@@ -672,6 +1134,7 @@ pub fn build(case: &Case) -> Result<Built, Error> {
     Ok(Built {
         model,
         lines,
+        plates,
         clamps,
         points,
     })
@@ -686,14 +1149,211 @@ pub struct Outcome {
     pub statics: Option<Static>,
     /// The modal result.
     pub modal: Option<Modal>,
+    /// The transient result.
+    pub transient: Option<Transient>,
+}
+
+/// The response in time.
+#[derive(Debug, Clone)]
+pub struct Transient {
+    /// Method.
+    pub method: Method,
+    /// Spectral radius of generalised-α (direct method).
+    pub rho_infinity: f64,
+    /// Rayleigh damping.
+    pub damping: Rayleigh,
+    /// Modal method: frequencies (Hz) and damping ratios of the modes kept.
+    pub modes: Vec<(f64, f64)>,
+    /// Time step (s).
+    pub time_step: f64,
+    /// Steps taken.
+    pub steps: usize,
+    /// Times kept (s).
+    pub times: Vec<f64>,
+    /// Displacements of the named points at the kept times.
+    pub points: BTreeMap<String, Vec<[f64; 3]>>,
+    /// Kinetic energy ½ vᵀMv at the kept times (J).
+    pub kinetic: Vec<f64>,
+    /// Strain energy ½ uᵀKu at the kept times (J).
+    pub strain: Vec<f64>,
+    /// Largest displacement of a node over every step: value, node, time.
+    pub max_displacement: (f64, usize, f64),
+    /// Displacements of every unknown at the end.
+    pub last: Vec<f64>,
+    /// The fields at the requested snapshot times: (time, every unknown).
+    pub snapshots: Vec<(f64, Vec<f64>)>,
+}
+
+/// The load vectors (free unknowns) of each history: `None` constant.
+/// A load vector and the history that scales it (`None`: constant).
+type LoadGroup = (Option<String>, Vec<f64>);
+
+fn load_groups(case: &Case) -> Result<Vec<LoadGroup>, Error> {
+    let mut keys: Vec<Option<String>> = vec![None];
+    let used = case
+        .loads
+        .iter()
+        .map(|l| &l.history)
+        .chain(case.line_loads.iter().map(|l| &l.history))
+        .chain(case.pressures.iter().map(|l| &l.history))
+        .chain(case.temperatures.iter().map(|l| &l.history));
+    for h in used.flatten() {
+        if !case.histories.contains_key(h) {
+            return Err(bad(format!(
+                "no `[histories.{h}]` for a load that names it"
+            )));
+        }
+        if !keys.contains(&Some(h.clone())) {
+            keys.push(Some(h.clone()));
+        }
+    }
+    let mut out = Vec::new();
+    for key in keys {
+        let mut c = case.clone();
+        c.loads.retain(|l| l.history == key);
+        c.line_loads.retain(|l| l.history == key);
+        c.pressures.retain(|l| l.history == key);
+        c.temperatures.retain(|l| l.history == key);
+        let f = build(&c)?.model.assemble().f;
+        out.push((key, f));
+    }
+    Ok(out)
+}
+
+fn transient(case: &Case, tk: &TransientKeys, built: &Built) -> Result<Transient, Error> {
+    for (name, h) in &case.histories {
+        h.check(name)?;
+    }
+    if !(tk.end_time > 0.0 && tk.time_step > 0.0 && tk.end_time.is_finite()) {
+        return Err(bad(
+            "[transient]: `end_time` and `time_step` must be positive",
+        ));
+    }
+    let steps = (tk.end_time / tk.time_step - 1e-9).ceil().max(1.0) as usize;
+    if steps > 1_000_000 {
+        return Err(bad(format!(
+            "[transient]: {steps} steps; at most 10⁶ (raise `time_step`)"
+        )));
+    }
+    let every = tk.output_every.unwrap_or(steps.div_ceil(1000)).max(1);
+    let damping = case.damping.rayleigh()?;
+    let model = &built.model;
+    let sys = model.assemble();
+    let groups = load_groups(case)?;
+    let nf = sys.free.len();
+    let load = |t: f64| -> Vec<f64> {
+        let mut f = vec![0.0; nf];
+        for (key, g) in &groups {
+            let s = key.as_ref().map_or(1.0, |k| case.histories[k].at(t));
+            for (a, b) in f.iter_mut().zip(g) {
+                *a += s * b;
+            }
+        }
+        f
+    };
+    let dt = tk.time_step;
+    let mut out = Transient {
+        method: tk.method,
+        rho_infinity: tk.rho_infinity,
+        damping,
+        modes: Vec::new(),
+        time_step: dt,
+        steps,
+        times: Vec::new(),
+        points: built
+            .points
+            .keys()
+            .map(|k| (k.clone(), Vec::new()))
+            .collect(),
+        kinetic: Vec::new(),
+        strain: Vec::new(),
+        max_displacement: (0.0, 0, 0.0),
+        last: Vec::new(),
+        snapshots: Vec::new(),
+    };
+    let snap_steps: Vec<usize> = tk
+        .snapshots
+        .iter()
+        .map(|&t| ((t / dt).round().max(0.0) as usize).min(steps))
+        .collect();
+    let record = |out: &mut Transient, k: usize, t: f64, u: &[f64], v: &[f64]| {
+        let full = sys.expand_zero(u);
+        for n in 0..model.nodes.len() {
+            let d = crate::beam::norm(node_vec(&full, n, 0));
+            if d > out.max_displacement.0 {
+                out.max_displacement = (d, n, t);
+            }
+        }
+        if k.is_multiple_of(every) || k == steps {
+            out.times.push(t);
+            for (name, &n) in &built.points {
+                if let Some(h) = out.points.get_mut(name) {
+                    h.push(node_vec(&full, n, 0));
+                }
+            }
+            out.kinetic.push(0.5 * sys.m.form(v, v));
+            out.strain.push(0.5 * sys.k.form(u, u));
+        }
+        for &ks in &snap_steps {
+            if ks == k {
+                out.snapshots.push((t, full.clone()));
+            }
+        }
+        if k == steps {
+            out.last = full;
+        }
+    };
+    match tk.method {
+        Method::Direct => {
+            let ga = GenAlpha::new(&sys, damping, dt, tk.rho_infinity)?;
+            let mut f0 = load(0.0);
+            let mut st = ga.initial(0.0, vec![0.0; nf], vec![0.0; nf], &f0)?;
+            record(&mut out, 0, 0.0, &st.u, &st.v);
+            for k in 1..=steps {
+                let f1 = load(k as f64 * dt);
+                st = ga.step(&st, &f0, &f1);
+                record(&mut out, k, k as f64 * dt, &st.u, &st.v);
+                f0 = f1;
+            }
+        }
+        Method::Modal => {
+            if tk.modes == 0 {
+                return Err(bad("[transient] method = \"modal\" needs `modes`"));
+            }
+            let basis = ModalBasis::lowest(model, tk.modes, case.damping.modal_ratio, damping)?;
+            out.modes = basis
+                .omega
+                .iter()
+                .zip(&basis.zeta)
+                .map(|(w, z)| (w / (2.0 * std::f64::consts::PI), *z))
+                .collect();
+            let nm = basis.omega.len();
+            let (mut q, mut qd) = (vec![0.0; nm], vec![0.0; nm]);
+            let mut p0 = basis.project(&load(0.0));
+            record(&mut out, 0, 0.0, &vec![0.0; nf], &vec![0.0; nf]);
+            for k in 1..=steps {
+                let p1 = basis.project(&load(k as f64 * dt));
+                basis.step(&mut q, &mut qd, &p0, &p1, dt);
+                record(
+                    &mut out,
+                    k,
+                    k as f64 * dt,
+                    &basis.expand(&q),
+                    &basis.expand(&qd),
+                );
+                p0 = p1;
+            }
+        }
+    }
+    Ok(out)
 }
 
 /// Runs the analyses of a case.
 pub fn run(case: &Case) -> Result<Outcome, Error> {
     let built = build(case)?;
-    if !case.analysis.statics && case.analysis.modes == 0 {
+    if !case.analysis.statics && case.analysis.modes == 0 && case.transient.is_none() {
         return Err(bad(
-            "[analysis] asks for nothing: set `static = true` or `modes`",
+            "[analysis] asks for nothing: set `static = true` or `modes`, or add `[transient]`",
         ));
     }
     let statics = if case.analysis.statics {
@@ -710,10 +1370,15 @@ pub fn run(case: &Case) -> Result<Outcome, Error> {
     } else {
         None
     };
+    let transient = match &case.transient {
+        Some(tk) => Some(transient(case, tk, &built)?),
+        None => None,
+    };
     Ok(Outcome {
         built,
         statics,
         modal,
+        transient,
     })
 }
 
@@ -736,13 +1401,15 @@ impl Outcome {
             "format_version": RESULT_VERSION,
             "name": name,
             "nodes": m.nodes.len(),
-            "elements": m.beams.len(),
+            "elements": m.beams.len() + m.shells.len(),
+            "beam_elements": m.beams.len(),
+            "shell_elements": m.shells.len(),
             "unknowns": m.dofs(),
             "free_unknowns": free,
             "mass": m.total_mass(),
             "clamps": self.built.clamps.iter().map(|c| json!({
-                "node": c.node,
-                "at": m.nodes[c.node],
+                "nodes": c.nodes.len(),
+                "at": m.nodes[c.nodes[0]],
                 "width": c.width,
                 "translation": match c.k_translation { Some(k) => json!({"rigid": false, "stiffness": k}), None => json!({"rigid": true}) },
                 "rotation": match c.k_rotation { Some(k) => json!({"rigid": false, "stiffness": k}), None => json!({"rigid": true}) },
@@ -816,8 +1483,66 @@ impl Outcome {
                 "points_mass_normalised": points,
             });
         }
+        if let Some(tr) = &self.transient {
+            let (v, n, t) = tr.max_displacement;
+            let points: serde_json::Map<String, Value> = tr
+                .points
+                .iter()
+                .map(|(k, h)| {
+                    (
+                        k.clone(),
+                        json!({"node": self.built.points[k], "displacement": h}),
+                    )
+                })
+                .collect();
+            let mut j = json!({
+                "method": match tr.method { Method::Direct => "direct", Method::Modal => "modal" },
+                "time_step": tr.time_step,
+                "steps": tr.steps,
+                "damping": tr.damping,
+                "times": tr.times,
+                "kinetic_energy": tr.kinetic,
+                "strain_energy": tr.strain,
+                "max_displacement": {"value": v, "node": n, "at": m.nodes[n], "time": t},
+                "points": points,
+                "snapshots": tr.snapshots.iter().map(|(t, _)| *t).collect::<Vec<_>>(),
+            });
+            match tr.method {
+                Method::Direct => j["rho_infinity"] = json!(tr.rho_infinity),
+                Method::Modal => {
+                    j["modes"] = Value::Array(
+                        tr.modes
+                            .iter()
+                            .map(|(f, z)| json!({"frequency": f, "damping_ratio": z}))
+                            .collect(),
+                    )
+                }
+            }
+            out["transient"] = j;
+        }
         out["warnings"] = Value::Array(warnings);
         out
+    }
+
+    /// The transient history as CSV: time, kinetic and strain energy, and
+    /// the displacement of each named point. `None` without `[transient]`.
+    pub fn to_csv(&self) -> Option<String> {
+        use std::fmt::Write;
+        let tr = self.transient.as_ref()?;
+        let mut s = String::from("time,kinetic_energy,strain_energy");
+        for k in tr.points.keys() {
+            let _ = write!(s, ",{k}_ux,{k}_uy,{k}_uz");
+        }
+        s.push('\n');
+        for (i, t) in tr.times.iter().enumerate() {
+            let _ = write!(s, "{t:.9e},{:.9e},{:.9e}", tr.kinetic[i], tr.strain[i]);
+            for h in tr.points.values() {
+                let u = h[i];
+                let _ = write!(s, ",{:.9e},{:.9e},{:.9e}", u[0], u[1], u[2]);
+            }
+            s.push('\n');
+        }
+        Some(s)
     }
 
     /// The mesh with the static displacement and the mode shapes, as a
@@ -836,9 +1561,20 @@ impl Outcome {
         for p in &m.nodes {
             let _ = writeln!(s, "{:.9e} {:.9e} {:.9e}", p[0], p[1], p[2]);
         }
-        let _ = writeln!(s, "LINES {} {}", m.beams.len(), 3 * m.beams.len());
-        for b in &m.beams {
-            let _ = writeln!(s, "2 {} {}", b.nodes[0], b.nodes[1]);
+        if !m.beams.is_empty() {
+            let _ = writeln!(s, "LINES {} {}", m.beams.len(), 3 * m.beams.len());
+            for b in &m.beams {
+                let _ = writeln!(s, "2 {} {}", b.nodes[0], b.nodes[1]);
+            }
+        }
+        if !m.shells.is_empty() {
+            let size: usize = m.shells.iter().map(|e| e.used().len() + 1).sum();
+            let _ = writeln!(s, "POLYGONS {} {size}", m.shells.len());
+            for e in &m.shells {
+                let nodes = e.used();
+                let ids: Vec<String> = nodes.iter().map(|n| n.to_string()).collect();
+                let _ = writeln!(s, "{} {}", nodes.len(), ids.join(" "));
+            }
         }
         let _ = writeln!(s, "POINT_DATA {}", m.nodes.len());
         let vector = |s: &mut String, label: &str, u: &[f64], off: usize, scale: f64| {
@@ -872,6 +1608,12 @@ impl Outcome {
                     3,
                     sc,
                 );
+            }
+        }
+        if let Some(tr) = &self.transient {
+            vector(&mut s, "transient_end", &tr.last, 0, 1.0);
+            for (i, (_, u)) in tr.snapshots.iter().enumerate() {
+                vector(&mut s, &format!("transient_{}", i + 1), u, 0, 1.0);
             }
         }
         s

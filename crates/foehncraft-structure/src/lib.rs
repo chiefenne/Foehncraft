@@ -4,9 +4,11 @@ pub mod analysis;
 pub mod beam;
 pub mod case;
 pub mod clamp;
+pub mod dynamics;
 pub mod eigen;
 pub mod ldlt;
 pub mod model;
+pub mod shell;
 pub mod sparse;
 
 /// The diagnostic codes of the structural solver (registered with the
