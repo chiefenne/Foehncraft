@@ -44,6 +44,7 @@ FLOW = {
         "tmr_plate_zeta_f0", "diffuser_sst_sharp", "ubend_sst_sharp", "ranks_channel_poly",
         "ranks_heated_channel_sst", "ranks_restart_channel", "ranks_run_channel",
         "ranks_run_transient_sst", "ranks_run_mrf_couette",
+        "ranks_run_sliding_couette",
         "immersed_cylinder_re20", "immersed_topology_bend", "immersed_mms",
     ],
     "linux-3": [

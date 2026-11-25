@@ -24,6 +24,7 @@ Part of the [Example gallery](../gallery.md): the built-in test mesher in 2D and
 | 279 | [Solved on five ranks, written by one: a run on ranks](#run-ranks) | 8 | `foehn flow --ranks N`: every rank runs the loop, rank 0 writes; monitors, ledger, fields and restart from the gathered fields, every output file byte for byte one rank (MPI step W7, D84, D93) |
 | 290 | [Five ranks, one turbulent heated transient: the physics of a run on ranks](#run-ranks-physics) | 8 | k-ω SST, energy, a passive dye and BDF2 time steps solved on ranks as the run itself; heat balance of every step, history, probes, forces, fields and restart byte for byte one rank (MPI step W7 part 2, D84, D93) |
 | 301 | [A stirred vessel on five ranks: rotating zones of MRF on ranks](#run-ranks-mrf) | 8 | the frame flux of a face between ranks from the zone of the halo cell, the pressure level of a closed vessel fixed in one rank's reference cell; torque, shaft power, fields and restart byte for byte one rank (MPI step W7, turning zones, D55, D93) |
+| 304 | [A sliding rotor on five ranks: conformal stepping on ranks](#run-ranks-sliding) | 8 | the old levels of the rotor cells that land on other ranks gathered from all ranks; history, probes, torque, fields and restart byte for byte one rank (MPI step W7, turning zones, D182, D93) |
 
 ---
 
@@ -895,6 +896,61 @@ python3 -m tools.mesh.render_mesh output/mixer_ranks/fields.vtkhdf speed.png \
 python3 -m tools.mesh.render_mesh output/mixer_ranks/ranks.vtkhdf rank.png \
     --field rank --top --categorical --size 1000x1000 \
     --title "the five ranks (recursive coordinate bisection)"
+```
+
+[↑ back to top](#meshes)
+
+---
+
+<a id="run-ranks-sliding"></a>
+## 304. A sliding rotor on five ranks: conformal stepping on ranks
+
+<img src="../figures/gallery/ranks_sliding_couette_dye.png" alt="Dye in the Taylor-Couette gap after one turn of the sliding rotor, solved on five ranks" width="1000" height="1000">
+
+<img src="../figures/gallery/ranks_sliding_couette_rank.png" alt="The five ranks of the sliding rotor case" width="1000" height="1000">
+
+Taylor–Couette flow spun up from rest (the inner cylinder at 10 rad/s,
+Re = 50) with the inner half of the gap a sliding rotor of 128 identical
+sectors that turns by one sector per time step (conformal stepping, D182),
+and a blob of dye placed in the rotor at the start, marched one turn of
+the rotor on five ranks (`[run] rank_count = 5`). In conformal stepping the
+mesh stays where it is and only the time terms see the motion: the old
+level of a rotor cell is what the cell held one step (and two steps) ago,
+the value of the cell one sector back. With the rotor cut into five ranks
+(second image) the cells at the cuts take their old levels from cells of
+another rank, so every step gathers the old levels of the own cells of all
+ranks into the order of the whole mesh and each rank picks the moved
+values of its cells (`sliding::Shift`): copies, so each rank solves its
+cells bitwise as one rank does. The velocity, the passive scalars and the
+turbulence variables are shifted that way. The first image shows the dye
+after one turn, drawn out by the shear of the gap into a band that winds
+around the inner cylinder. `history.csv`, `probes.csv`, `forces.csv`,
+`balance.csv`, the wall files, `fields_000064.vtkhdf`, `fields.vtkhdf` and
+`restart.h5` are byte for byte those of `--ranks 1`, the rotor angle and
+torque columns included. 10 s on five thread ranks against 3 s on one on
+4 096 cells: the gather of the old levels every step and the output, not a
+speed-up (strong scaling is W9; only the rotor cells at the cuts would
+need to move between ranks). The tests run the laminar case with a dye on
+2, 3 and 4 ranks and with k-ω SST on 3. The sliding mesh by imprinting
+(rotor and stator with their own meshes) follows.
+
+| | |
+|---|---|
+| Mesh | generated annulus (`[mesh.annulus]`, refine 2), 4 096 hexahedra in one layer, rotor of 128 sectors |
+| Ranks | 5 (recursive coordinate bisection), threads of one process; or MPI processes under `mpirun` |
+| Model | laminar, passive dye (diffusivity 2e-5 m²/s) |
+| Solver | BDF2, Δt = 2π/1280 s (one sector per step), 128 steps |
+| Output | every file byte for byte the run on one rank |
+| Case file | `flow/ranks_run_sliding_couette.toml` |
+
+```
+target/release/foehn flow examples/cases/flow/ranks_run_sliding_couette.toml
+python3 -m tools.mesh.render_mesh output/ranks_run_sliding_couette/fields.vtkhdf dye.png \
+    --field dye --top --no-edges --size 1000x1000 \
+    --title "dye after one turn of the sliding rotor (128 sectors), solved on 5 ranks"
+python3 -m tools.mesh.render_mesh output/ranks_run_sliding_couette/ranks.vtkhdf rank.png \
+    --field rank --top --categorical --no-edges --size 1000x1000 \
+    --title "the five ranks of the sliding rotor case"
 ```
 
 [↑ back to top](#meshes)

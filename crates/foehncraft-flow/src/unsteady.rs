@@ -1251,7 +1251,9 @@ fn run_one<F: FnMut(&str)>(
         )?,
     }
     // the sliding mesh (D182): the rotating zone and the shift of its data
-    let slide = crate::sliding::attach(&case, mesh, &fl.disc, dt0)?;
+    // (on ranks the plan of the whole mesh)
+    let slide =
+        crate::sliding::attach(&case, mesh, on.as_ref().map_or(&fl.disc, |o| &o.disc), dt0)?;
     // the rotating zones: the frames of `[[mrf]]` (a transient frozen rotor,
     // D185), the grid flux of the sliding rotors (D182) and the rotating
     // frame of the whole domain (`flow.frame_rotation`)
@@ -1271,7 +1273,7 @@ fn run_one<F: FnMut(&str)>(
     });
     let mut tr = Transient::new(&mut fl, time0.scheme, time0.start_time)?;
     if let Some(sl) = &slide {
-        sl.install(&mut fl, &mut tr)?;
+        sl.install(&mut fl, &mut tr, on.as_ref())?;
     }
     let mut af = AnalyticFaces::new(&case, smesh, &ub0);
     let mut dt = dt0;

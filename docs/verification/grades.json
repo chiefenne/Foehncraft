@@ -1580,13 +1580,14 @@
   },
   {
    "id": "parallel.run-ranks-turning",
-   "title": "Rotating zones (MRF) and closed domains on ranks with the output of one rank (MPI step W7, turning zones)",
+   "title": "Rotating zones (MRF), the sliding mesh in conformal stepping and closed domains on ranks with the output of one rank (MPI step W7, turning zones)",
    "grade": "partial",
    "why": [
     "gaps written"
    ],
    "gaps": [
-    "the sliding mesh ([[sliding]]) is refused on ranks in this step (it follows)",
+    "the sliding mesh by imprinting is refused on ranks in this step (it follows); the [run] ranks check refuses any sliding mesh",
+    "conformal stepping gathers the whole old levels on every rank every step (memory and time of the whole field per rank); only the rotor cells at the cuts would need to move",
     "the five-blade stirred vessel of gallery 301 (16 848 cells, SST, coupled solver) was compared with --ranks 1 by hand, not in CI (its mesh needs Gmsh)",
     "the reference cell's value is handed to all ranks with one all-gather per pressure solve"
    ],

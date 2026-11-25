@@ -24,6 +24,7 @@ Part of the [Recipes](../recipes.md): generate, read (Gmsh, SU2, CGNS, OpenFOAM,
 | 279 | [Run a case on ranks](#run-ranks) |
 | 290 | [Run a turbulent, heated or transient case on ranks](#run-ranks-physics) |
 | 301 | [Run a case with rotating zones (MRF) or a closed domain on ranks](#run-ranks-mrf) |
+| 304 | [Run a sliding rotor in conformal stepping on ranks](#run-ranks-sliding) |
 
 ---
 
@@ -861,8 +862,39 @@ reference_point`, or the corner of the bounding box) lies on one rank,
 which fixes the level there and hands its value to the others. The
 five-blade stirred vessel of gallery 301 is
 `examples/studies/mixer/mrf_turbulent_ranks.toml` (mesh from
-`python3 examples/meshes/mixer.py --blades 5 --baffles 3`). Not on ranks
-yet: the sliding mesh (`[[sliding]]`, refused with an error), and the
-`[run] ranks` check of `foehn flow` with a sliding mesh.
+`python3 examples/meshes/mixer.py --blades 5 --baffles 3`). The sliding
+mesh in conformal stepping: recipe 304.
+
+[↑ back to top](#meshes)
+
+---
+
+<a id="run-ranks-sliding"></a>
+## 304. Run a sliding rotor in conformal stepping on ranks
+
+A `[[sliding]]` rotor whose mesh is a ring of identical sectors and that
+turns by whole sectors per time step (D182, conformal stepping) runs on
+ranks like any transient case (recipe 290):
+
+```
+target/release/foehn flow examples/cases/flow/ranks_run_sliding_couette.toml --ranks 5
+mpirun -n 5 target/release/foehn flow examples/cases/flow/ranks_run_sliding_couette.toml   # mpi feature
+```
+
+Every output file is byte for byte that of one rank. Check it:
+
+```
+target/release/foehn flow examples/cases/flow/ranks_run_sliding_couette.toml --ranks 1 --out output/one
+for f in history.csv probes.csv forces.csv balance.csv fields.vtkhdf restart.h5; do
+  cmp output/one/$f output/ranks_run_sliding_couette/$f
+done
+```
+
+Each step gathers the old levels of all ranks into the order of the whole
+mesh, which costs time on small meshes (gallery 304: 10 s on five thread
+ranks against 3 s on one). Refused on ranks with an error: the sliding mesh
+by imprinting (`rotor_interface`, `stator_interface`; it follows), and the
+`[run] ranks` check of `foehn flow` with any sliding mesh (use
+`--ranks N` and compare with `--ranks 1` as above).
 
 [↑ back to top](#meshes)
