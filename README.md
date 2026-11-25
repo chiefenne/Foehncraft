@@ -266,7 +266,7 @@ validated range, one mesh only, …) in its report and its JSON result.
   the Scordelis–Lo roof ([gallery 297](docs/gallery/structure.md#reed-plate)).
   The dynamics are checked against the damped oscillator and the thermal
   loads against free thermal expansion and bending
-  ([gallery MMM](docs/gallery/structure.md#reed-dynamics)). Solids and
+  ([gallery 299](docs/gallery/structure.md#reed-dynamics)). Solids and
   contact follow; the coupling to the flow is MS6.
 - **Rotating machinery.** The moving reference frame (steady and transient
   frozen rotor), the sliding mesh by conformal stepping and by imprinting

@@ -6,8 +6,8 @@ Part of the [Case catalogue](../cases.md): structural cases of the linear finite
 |---|---|---|---|
 | `reed_beam.toml` | a reed valve of spring steel, 30 × 6 × 0.2 mm, as 40 Timoshenko beams on a rigid clamp: deflection under 2 kPa, eight modes | built from `[[beams]]` | [gallery 295](../gallery/structure.md#reed-beam), [recipe 295](../recipes/structure.md#structure-case) |
 | `reed_plate.toml` | a reed petal of spring steel, 30 × 12 × 0.2 mm, as 40 × 16 MITC4 shells clamped along an edge on clamp springs: lift under 2 kPa, six modes | built from `[[plates]]` | [gallery 297](../gallery/structure.md#reed-plate), [recipe 297](../recipes/structure.md#structure-plate) |
-| `reed_plate_pulse.toml` | the reed petal struck by a 1 ms pressure pulse, 20 ms in time with Rayleigh damping, four snapshots | built from `[[plates]]` | [gallery MMM](../gallery/structure.md#reed-dynamics), [recipe MMM](../recipes/structure.md#structure-transient) |
-| `reed_plate_hot.toml` | the reed petal 80 K warmer and 6 K hotter on top: thermal bending towards the seat | built from `[[plates]]` | [gallery MMM](../gallery/structure.md#reed-dynamics) |
+| `reed_plate_pulse.toml` | the reed petal struck by a 1 ms pressure pulse, 20 ms in time with Rayleigh damping, four snapshots | built from `[[plates]]` | [gallery 299](../gallery/structure.md#reed-dynamics), [recipe 299](../recipes/structure.md#structure-transient) |
+| `reed_plate_hot.toml` | the reed petal 80 K warmer and 6 K hotter on top: thermal bending towards the seat | built from `[[plates]]` | [gallery 299](../gallery/structure.md#reed-dynamics) |
 | `reed_beam_clamp_springs.toml` | the same reed on rotational and translational clamp springs per length of the clamp line (D290); the input of the clamp fit | built from `[[beams]]` | [gallery 295](../gallery/structure.md#reed-beam), [recipe 295](../recipes/structure.md#structure-case) |
 
 <a id="structural-case-file-keys"></a>

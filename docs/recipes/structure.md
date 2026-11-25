@@ -6,7 +6,7 @@ Part of the [Recipes](../recipes.md): the linear structural solver `foehncraft-s
 |---|---|
 | 295 | [Run a structural case of beams and clamp springs, and fit the clamp to a measured frequency](#structure-case) |
 | 297 | [Model a flat reed as a shell clamped along an edge](#structure-plate) |
-| MMM | [Run a structure in time, with damping, load histories and temperatures](#structure-transient) |
+| 299 | [Run a structure in time, with damping, load histories and temperatures](#structure-transient) |
 
 ---
 
@@ -142,7 +142,7 @@ Part of the [Recipes](../recipes.md): the linear structural solver `foehncraft-s
 ---
 
 <a id="structure-transient"></a>
-## MMM. Run a structure in time, with damping, load histories and temperatures
+## 299. Run a structure in time, with damping, load histories and temperatures
 
 1. Add `[transient]` to a structural case. The run starts from rest at
    t = 0; `time_step` sets the accuracy (20 to 50 steps per period of the

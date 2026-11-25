@@ -6,7 +6,7 @@ Part of the [Example gallery](../gallery.md): the linear structural solver of th
 |---|---|---|---|
 | 295 | [A reed valve as a beam: modes, and the clamp spring against the frequency equation](#reed-beam) | MS5 | `structure.run`, `structure.fitclamp`, `[[beams]]`, `[[clamps]]` |
 | 297 | [A reed petal as a shell: bending and twist on clamp springs](#reed-plate) | MS5 | `structure.run`, `[[plates]]`, `[[pressures]]`, `[[clamps]] along` |
-| MMM | [A reed struck by a pressure pulse, and a hot reed](#reed-dynamics) | MS5 | `[transient]`, `[damping]`, `[histories]`, `[[temperatures]]` |
+| 299 | [A reed struck by a pressure pulse, and a hot reed](#reed-dynamics) | MS5 | `[transient]`, `[damping]`, `[histories]`, `[[temperatures]]` |
 
 ---
 
@@ -164,7 +164,7 @@ meshes and beams joined to plates come later.
 ---
 
 <a id="reed-dynamics"></a>
-## MMM. A reed struck by a pressure pulse, and a hot reed
+## 299. A reed struck by a pressure pulse, and a hot reed
 
 <img src="../figures/gallery/structure_reed_pulse.png" alt="Four snapshots of a reed petal on clamp springs after a 1 ms pressure pulse, coloured by the lift from blue (down 1.4 mm) through yellow (zero) to red (up 1.5 mm): rising at 1.0 ms, at its highest at 2.2 ms, flat at 3.8 ms, at its lowest at 5.4 ms; below, the tip lift against time over 20 ms ringing at 154 Hz and slowly decaying" width="1210" height="814">
 
