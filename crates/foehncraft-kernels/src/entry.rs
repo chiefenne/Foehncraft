@@ -1081,6 +1081,8 @@ pub struct MomentumRowArgs {
     pub explicit_weight: f64,
     /// Explicit operator.
     pub explicit: Raw3,
+    /// Brinkman sink s_P per cell (empty: none).
+    pub sink: Raw<f64>,
     /// Output: matrix values.
     pub val: Raw<f64>,
     /// Output: right-hand sides.
@@ -1128,6 +1130,7 @@ impl Entry for MomentumRows {
                 u_old2: a.u_old2.v(),
                 explicit_weight: a.explicit_weight,
                 explicit: a.explicit.v(),
+                sink: a.sink.get(),
             };
             let out = k::MomentumRowOut {
                 val: a.val.out(),

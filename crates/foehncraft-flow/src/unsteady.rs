@@ -1079,6 +1079,14 @@ fn run_one<F: FnMut(&str)>(
     crate::density::attach(&mut fl, &case)?;
     crate::buoyancy::attach(&mut fl, &case)?;
     crate::porous::attach(&mut fl, &case, mesh)?;
+    for d in crate::immersed::attach(&mut fl, &case, mesh, geo)? {
+        if d.severity == crate::diag::Severity::Warning {
+            lg.warn(&format!("{}: {}", d.code, d.message));
+            warnings.push(d);
+        } else {
+            lg.note(&d.message);
+        }
+    }
     // the wall distance of the sliding mesh by imprinting: kept per part and
     // updated for the rotor angle of every step (D182, D48)
     let mut turning_distance = match (&imprint, &work) {
@@ -2479,7 +2487,7 @@ fn run_one<F: FnMut(&str)>(
                     pc.row(&row);
                 }
                 if let (Some(_), Some([cd, cl])) =
-                    (bench, benchmark_coefficients(&case, &boundaries, mesh))
+                    (bench, benchmark_coefficients(&case, &boundaries, &[], mesh))
                 {
                     let (i, j) = (
                         probes.index("benchmark_front").unwrap_or(0),
@@ -2886,8 +2894,8 @@ fn run_one<F: FnMut(&str)>(
     // benchmark (the impulsive start is orders of magnitude larger)
     let mut chart_start = f64::NEG_INFINITY;
     let benchmark = match bench {
-        Some(b @ Benchmark::SchaferTurek2d1) => benchmark_coefficients(&case, &boundaries, mesh)
-            .map(|[cd, cl]| {
+        Some(b @ Benchmark::SchaferTurek2d1) => {
+            benchmark_coefficients(&case, &boundaries, &[], mesh).map(|[cd, cl]| {
                 let vals = if imprint.is_some() {
                     probes.relocated(mesh, geo).values(&sol, geo)
                 } else {
@@ -2898,7 +2906,8 @@ fn run_one<F: FnMut(&str)>(
                     probes.index("benchmark_back").unwrap_or(0),
                 );
                 monitor::steady_benchmark(b, cd, cl, vals[i].1 - vals[j].1)
-            }),
+            })
+        }
         Some(b @ Benchmark::SchaferTurek2d2) => {
             let start = case
                 .verification
@@ -3082,7 +3091,9 @@ fn run_one<F: FnMut(&str)>(
                 geo.cell_volume.clone(),
             ),
         };
+    let immersed = crate::immersed::forces(&case, mesh, geo, &sol.u)?;
     let solve = Solve {
+        immersed,
         density,
         scalars,
         periodic,
@@ -3200,9 +3211,10 @@ pub(crate) fn steady_benchmark_of(
     geo: &foehncraft_mesh::Geometry,
     loc: &Locator,
     boundaries: &[crate::case::BoundarySummary],
+    immersed: &[crate::immersed::BodyForce],
 ) -> Option<monitor::BenchmarkResult> {
     let b = case.verification.benchmark?;
-    let [cd, cl] = benchmark_coefficients(case, boundaries, mesh)?;
+    let [cd, cl] = benchmark_coefficients(case, boundaries, immersed, mesh)?;
     let probes = Probes::new(case, &benchmark_points(case, mesh), loc, geo);
     let vals = probes.values(sol, geo);
     let (i, j) = (
@@ -3223,9 +3235,13 @@ pub(crate) fn log_benchmark(b: &monitor::BenchmarkResult, mut line: impl FnMut(&
     }
 }
 
+/// The drag and lift coefficients of the benchmark body: the boundary
+/// `benchmark_boundary` (default `cylinder`), or else the immersed body of
+/// that name (L13 stage 1).
 fn benchmark_coefficients(
     case: &FlowCase,
     boundaries: &[crate::case::BoundarySummary],
+    immersed: &[crate::immersed::BodyForce],
     mesh: &foehncraft_mesh::Mesh,
 ) -> Option<[f64; 2]> {
     let b = case.verification.benchmark?;
@@ -3234,12 +3250,15 @@ fn benchmark_coefficients(
         .benchmark_boundary
         .clone()
         .unwrap_or_else(|| "cylinder".into());
-    let p = boundaries.iter().find(|p| p.name == name)?;
+    let force = match boundaries.iter().find(|p| p.name == name) {
+        Some(p) => p.force,
+        None => immersed.iter().find(|b| b.name == name)?.force,
+    };
     let (lo, hi) = mesh.bounding_box();
     let depth = hi[2] - lo[2];
     let u = b.mean_velocity();
     let q = 0.5 * case.rho() * u * u * Benchmark::DIAMETER * depth;
-    Some([p.force[0] / q, p.force[1] / q])
+    Some([force[0] / q, force[1] / q])
 }
 
 fn suffix_name(base: &str, _desc: &str, last: bool) -> String {

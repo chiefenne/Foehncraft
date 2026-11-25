@@ -1411,6 +1411,23 @@
    "range": {}
   },
   {
+   "id": "immersed.penalisation",
+   "title": "Immersed bodies by Brinkman penalisation, primitive shapes (L13 stage 1)",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "the wall is smeared over about one cell: first order in h, lift 27 % above the benchmark range at h = D/40, wall shear stress and heat flux not accurate (by design of the pre-stage)",
+    "laminar and isothermal only: turbulence, energy, scalars, gravity, regions, rotating zones and sprays are refused (IMM102)",
+    "primitive bodies only (cylinder, sphere, box); STL bodies need the geometry kernel of stage 0",
+    "the coupled solver breaks down from rest when the sink exceeds about 1e5 times the viscous diagonal (K below about 1e-5 h²); SIMPLEC takes any K",
+    "not yet: density-field topology search, iso-surface extraction, the sweep in K (η) and h of the plan, MMS of the penalised equation, Stokes sphere, the drag gradient check with dual numbers",
+    "one rank only: `foehn run --ranks N` refuses immersed bodies"
+   ],
+   "range": {}
+  },
+  {
    "id": "parallel.run-ranks",
    "title": "Steady runs on ranks: rank 0 writes the output of one rank (MPI step W7 part 1)",
    "grade": "partial",

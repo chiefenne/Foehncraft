@@ -757,6 +757,10 @@ pub struct Physics {
     /// The balanced buoyancy force B_P per unit volume (N/m³) per cell of
     /// the momentum rows (stage 7b1, D154), as last refreshed.
     pub buoyancy: Option<std::sync::Arc<[Vec<f64>; 3]>>,
+    /// The Brinkman sink s_P = μ χ_P V_P / K (kg/s) per cell of immersed
+    /// bodies (L13 stage 1, D226); its force −s_P u_P is in the momentum
+    /// rows.
+    pub sink: Option<std::sync::Arc<Vec<f64>>>,
     /// The variable density per cell and per face (stage 7c), as last
     /// refreshed (`None`: `rho` everywhere).
     pub rho_var: Option<std::sync::Arc<(Vec<f64>, Vec<f64>)>>,
@@ -777,6 +781,7 @@ impl Physics {
             mu_face: None,
             source: None,
             buoyancy: None,
+            sink: None,
             rho_var: None,
             zones: false,
         }
@@ -1100,6 +1105,8 @@ pub struct Flow {
     pub(crate) lsq_p: foehncraft_fv::disc::Soa3,
     /// The balanced-force arrays of the Boussinesq buoyancy (stage 7b1).
     pub buoyancy: Option<Box<crate::buoyancy::Balanced>>,
+    /// The Brinkman penalisation of immersed bodies (L13 stage 1, D226).
+    pub immersed: Option<crate::immersed::Attached>,
     /// The device buffer of the buoyancy source B_P V of the momentum rows.
     buoyancy_source: Option<Buf3>,
     /// The variable density ρ(T, p₀) of stage 7c.
@@ -1609,6 +1616,7 @@ impl Flow {
             spray_momentum: None,
             lsq_p,
             buoyancy: None,
+            immersed: None,
             buoyancy_source: None,
             density: None,
             density_time: None,
@@ -1712,6 +1720,28 @@ impl Flow {
             self.dev.upload(bi, &sv)?;
         }
         self.phys.source = Some(std::sync::Arc::new(s));
+        Ok(())
+    }
+
+    /// Sets the Brinkman sink s_P (kg/s) per local cell of immersed bodies
+    /// (L13 stage 1, D226; [`crate::immersed`]).
+    pub fn set_immersed(&mut self, sink: &[f64]) -> Result<()> {
+        let nc = self.disc.n_cells;
+        anyhow::ensure!(
+            sink.len() == nc,
+            "immersed sink: {} values for {nc} cells",
+            sink.len()
+        );
+        let b = match &self.immersed {
+            Some(a) => a.sink,
+            None => {
+                let b = self.dev.alloc(nc)?;
+                self.immersed = Some(crate::immersed::Attached { sink: b });
+                b
+            }
+        };
+        self.dev.upload(b, sink)?;
+        self.phys.sink = Some(std::sync::Arc::new(sink.to_vec()));
         Ok(())
     }
 
@@ -2274,6 +2304,7 @@ impl Flow {
             alpha,
             theta,
             time,
+            sink: self.immersed.as_ref().map(|i| i.sink),
             val: w.val,
             rhs: w.rhs,
             d: w.d,
