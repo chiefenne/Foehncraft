@@ -27,13 +27,13 @@ pub mod sizes;
 pub mod spray;
 
 pub use config::{
-    BoundaryMode, Coupling, CouplingMode, Dispersion, Injector, Liquid, Passes, PassesName,
-    Penetration, SprayBoundary, SpraySection, Steady,
+    BoundaryMode, Coupling, CouplingMode, Dispersion, Evaporation, EvaporationModel, Injector,
+    Liquid, Passes, PassesName, Penetration, Saturation, SprayBoundary, SpraySection, Steady,
 };
-pub use coupling::{CellSources, Record, StepBooks};
+pub use coupling::{CellSources, Delta, Record, StepBooks, limiter_factor};
 pub use datum::{Bound, Datum, DatumTally, HistSpec, Moments, Shape, Stats, Surface, Volume};
 pub use sizes::SizeDistribution;
 pub use spray::{
     BoundaryRule, Eddy, Env, Gas, GasState, InjectorStats, MomentumFlows, Parcels, Pass, Spray,
-    StreamBooks, StreamPass, Streams, Tally, injector_stats, moments_of,
+    StreamBooks, StreamPass, Streams, Tally, Vapour, injector_stats, moments_of,
 };

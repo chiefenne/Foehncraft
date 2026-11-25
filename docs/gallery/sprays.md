@@ -10,6 +10,8 @@ Part of the [Example gallery](../gallery.md): droplets as Lagrangian parcels in 
 | 283 | [Water droplets cool a hot air stream](#spray-cooling) | SP2 | two-way sensible heat: droplet temperature, Ranz-Marshall heat transfer, energy sources in value-plus-slope form, temperature lag, enthalpy ledger pair |
 | 285 | [Droplets spread by the turbulence of a duct](#spray-dispersion) | SP2 | `[spray] dispersion = "eddy-lifetime"` (Gosman and Ioannides), Gaussian eddies of variance 2k/3 keyed per parcel and eddy, eddy interaction time, crossing trajectories, spread by droplet size |
 | 292 | [The spray-cooled duct as a steady state](#spray-steady) | SP2s | `[spray.steady]` (D260): parcel streams through the frozen steady gas, sources relaxed between passes, source residual in the convergence test, keyed streams, `spray/streams.vtkhdf` |
+| 306 | [Water droplets evaporating in hot air](#spray-evaporation) | SP4, SP5 | `[spray.evaporation]` (Ranz-Marshall, Abramzon-Sirignano), `[spray.liquid] vapour`, vapour, mass and enthalpy sources in value-plus-slope form with the closing step (D250), vapour ledger pair, saturation limiter (D253) |
+| 306b | [More water than the air can take, steady](#spray-saturation) | SP5, SP2s | evaporation in the steady spray mode, adiabatic saturation against the exact end state (V28.11, partly met) |
 
 ---
 
@@ -413,3 +415,132 @@ Picture:
 `python3 -m tools.plot.spray_cooling_steady OUT_DIR output/spray_cooling_steady [output/spray_cooling]`.
 [Recipe 292](../recipes/sprays.md#spray-steady),
 [case row](../cases/flow.md#lagrangian-sprays).
+
+---
+
+<a id="spray-evaporation"></a>
+## 306. Water droplets evaporating in hot air
+
+<img src="../figures/gallery/spray_evaporation.png" alt="Top: water vapour mass fraction in a duct of 1 m by 0.2 m with a nozzle at x = 0.1 m on the axis; a narrow red plume of 8 % vapour runs along the axis from the nozzle to the outlet, widening into green and blue (2 to 4 %) downstream, the rest of the duct blue at the inlet value of 0.5 %; the droplets are dots on the axis, white for the small and grey for the large ones. Bottom left: the mass-flow mean air temperature falls from 300 °C at the nozzle to 244 °C at the outlet while the mean vapour mass fraction rises from 0.5 % to 2.5 %. Bottom right: over 0.4 s the vapour the spray gives the air rises to about 1.3 g/s against the 2 g/s sprayed, and the Sauter mean diameter of the droplets in the flow settles near 24 µm." width="1200" height="740">
+
+`spray_evaporation.toml` blows air at 300 °C with a little water vapour
+(Y_H2O = 0.005) at 5 m/s through a duct of 1 m by 0.2 m (2D, 100 × 20
+cells, SST k-ω, transient). A nozzle 0.1 m behind the inlet sprays 2 g/s of
+water at 20 °C as droplets of 10 to 80 µm (Rosin-Rammler). The liquid file
+names the species it evaporates into, `vapour = "H2O"`, and
+`[spray.evaporation] model = "ranz-marshall"` switches the evaporation on
+(SP4, SP5).
+
+**How the droplet evaporates.** Inside each sub-step the gas is frozen and
+the droplet follows the classical film model: the surface holds the
+saturation state of its temperature (vapour pressure of the IAPWS-95
+auxiliary equation), the vapour leaves at the rate π d ρ D Sh ln(1 + B_M),
+so d² falls linearly over the sub-step (Godsave 1953, Spalding 1953), and
+the temperature relaxes exactly towards the wet-bulb balance of the
+frozen coefficients (D251). `abramzon-sirignano` adds the film thickening
+by the blowing (Abramzon and Sirignano 1989). A droplet whose life ends
+inside a sub-step evaporates there completely.
+
+**How the gas takes the vapour.** Each sub-step writes a record with the
+vapour it gives the cell, the slope of that vapour with respect to the
+vapour fraction of the cell (the chord to the saturation state at the
+surface, D250), the heat and the momentum. The records are sorted and summed
+per cell, so the sources do not depend on the parcel order or the thread
+count (D247 to D249). The gas takes the vapour as S_v(Y) = E − β (Y − Y*):
+into the species H2O (the other species are diluted), into the continuity
+equation as mass, and with the enthalpy it carries into the energy
+equation. After the passes of a step the closing step gives every droplet
+back what the slope took or gave, as liquid at its temperature plus the
+share of the latent heat the droplet's heat relaxation passes on in the
+step. So the heat the droplet draws follows its evaporation, and a cell
+that saturates ends at the adiabatic saturation, not below it.
+
+**The safety net of D253.** When the evaporation of a cell is above what
+brings the gas the cell holds and the gas that flows in during the step to
+adiabatic saturation, every evaporating record of the cell is scaled by
+one factor; the held-back vapour stays liquid in its parcel. The limiter
+never acts silently: `spray.csv` counts the cells and the mass, and the run
+warns with SPR009. In this run it acts in 50 cell-steps of the 200 steps,
+holding back at most 5 × 10⁻⁷ kg/s.
+
+In this run about 1.25 g/s of the 2 g/s evaporate in the duct; the air
+leaves at a mass-flow mean of 244 °C and with 2.5 % vapour. **Finding:**
+the coupling lag falls more slowly with evaporation than with heat alone,
+by a factor of about 1.6 per pass: with `max_passes = 4` most steps ended
+at 1.5 to 7 × 10⁻³, so the case asks for 8 (6.6 passes per step on average,
+24 of 200 steps end at 8 with a lag of about 1.2 × 10⁻³, SPR006).
+
+**What is checked.** A single droplet of 100 µm at 300 K in still dry air
+at 500 K follows the d² law at the wet-bulb temperature (local K within 1 %,
+temperature within 0.05 K). A closed cell of air at 400 K with more water
+than it can take ends at the exact adiabatic saturation within 0.003 K for
+the gas and 0.1 K for the liquid, with water and energy of gas plus
+parcels kept to 10⁻¹². 4000 parcels evaporating in one cell at 95 %
+saturation never push the vapour past the droplet saturation or below
+zero, and give the same bits on 1 and 4 threads with the storage reversed.
+In the flow the ledger pairs 2801 to 2805 (momentum, heat, vapour) are zero
+to the bit, the parcel accounts close to 10⁻¹², and `spray.csv` is bitwise
+equal on 1 and 4 threads.
+
+**What this version does not do.** Water only (its vapour-pressure law and
+latent heat); no boiling, no multicomponent liquids. The heat balance closes
+to round-off with `[species] properties = "fluid"`; with the mixture
+properties of the species the energy account keeps a few parts in a
+thousand. Constant density in this example: the transient domain mass check
+does not yet hold for heated variable-density cases. No GPU entry for the
+evaporation kernel; one process.
+
+Files: `spray.csv` (with `evaporated_kg`, `gas_vapour_kg_s`,
+`vapour_lag_kg_s`, `coupling_vapour_max`, `limiter_cells`, `limiter_kg_s`),
+`spray/parcels_<step>.vtkhdf`, `fields.vtkhdf` with `Y_H2O`.
+[Recipe 306](../recipes/sprays.md#spray-evaporation),
+[case row](../cases/flow.md#lagrangian-sprays).
+
+---
+
+<a id="spray-saturation"></a>
+## 306b. More water than the air can take, steady
+
+<img src="../figures/gallery/spray_saturation_steady.png" alt="Top: water vapour mass fraction in a duct of 1 m by 0.1 m, blue (0.1 %) between the inlet and six nozzles at x = 0.05 m and red (3.75 %) everywhere behind them, with thin grey stream paths running straight to the outlet. Bottom left: the mass-flow mean air temperature falls from 400 K to 309.3 K within 5 cm of the nozzles and stays flat to the outlet, just below the dashed exact adiabatic saturation of 310.1 K; the mean vapour mass fraction rises to 3.75 % and stays flat, below the dashed exact 3.95 %. Bottom right: over 61 stream passes the source residual falls from 1 to about 0.12 and then levels off between 0.12 and 0.2, while the vapour the air receives swings between 0.6 and 1.3 g/s early on and settles near 0.69 g/s, against the exact 0.706 g/s." width="1200" height="740">
+
+`spray_saturation_steady.toml` is check V28.11 of the spray plan: dry air
+at 400 K (Y_H2O = 0.001) flows at 2 m/s through a duct of 1 m by 0.1 m
+(2D, laminar, slip walls), and six nozzles across the height spray 2 g/s of
+water at 310 K as droplets of 4 to 25 µm, three times what the 17.6 g/s of
+air can take. The case has no `[time]`, so the spray runs as streams in the
+steady mode of [292](#spray-steady), now with evaporation: the stream
+passes hand the gas vapour, mass and enthalpy in the relaxed form
+V − W Y, and the saturation limiter of D253 uses the mass flow through a
+cell in place of the time step.
+
+The exact end state is the adiabatic saturation of the inlet air from its
+enthalpy balance, c_p dT = −L(T) dY/(1 − Y) up to Y = Y_s(T): 310.1 K and
+Y = 0.0395, with 0.706 g/s evaporated.
+
+**What the run shows.** The fine droplets evaporate within one or two
+cells of the nozzles; behind them the air is saturated and stays flat to
+the outlet (the mean vapour fraction varies by 3 × 10⁻⁴ of itself), and the
+rest of the water leaves as liquid. The outlet is at 309.3 K and
+Y = 0.0375, saturated at its own temperature, 0.8 K and 5 % in vapour below
+the exact state. The source residual falls from 1 to about 0.12 in 20
+passes and then stalls; it stalls at the same level with the relaxation
+lowered to 0.1 and 0.03 (300 and 500 passes). The run therefore ends with
+SPR008 (not converged), and the limiter still holds back about 0.14 g/s in
+the final pass (SPR009). **V28.11 is partly met**: the outlet saturates
+and the vapour fraction does not fall along the duct by more than
+3 × 10⁻⁴ of itself, but the source residual does not keep falling and the end state is
+below the exact one. Written down as a gap of the feature row.
+
+Before this work the steady mode with evaporation failed in a different
+way: the gas overcooled to below 200 K and the run diverged. Two changes
+fixed that and apply to the transient mode as well: the heat the droplet
+draws now follows a change of its evaporation (above), and the limiter
+counts the gas that flows into a cell.
+
+**What this version does not do.** The stall of the source residual is
+not understood yet; candidates are the limiter acting in every pass and the
+sub-step boundaries moving with the gas. Water only; one process.
+
+[Recipe 306](../recipes/sprays.md#spray-evaporation),
+[case row](../cases/flow.md#lagrangian-sprays).
+

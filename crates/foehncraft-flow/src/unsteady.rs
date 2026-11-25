@@ -1828,6 +1828,7 @@ fn run_one<F: FnMut(&str)>(
     let mut spray_coupling: Option<crate::spray::CouplingSummary> = None;
     let mut spray_step: Option<crate::spray::StepCoupling> = None;
     let mut coupling_warned = false;
+    let mut limiter_warned = false;
     let mut reports = (last && !datum_built.is_empty())
         .then(|| crate::datum::Reports::new(datum_built, out, name, cont));
     let mut series = last.then(|| crate::series::Series::new(out, name, cont));
@@ -2144,7 +2145,14 @@ fn run_one<F: FnMut(&str)>(
                         geo,
                         loc: &loc,
                     };
-                    let mut hk = crate::spray::TwoWay::new(sp, env, geo, t0, h);
+                    let mut hk = crate::spray::TwoWay::new(
+                        sp,
+                        env,
+                        geo,
+                        t0,
+                        h,
+                        crate::spray::VapourLink::of(&case),
+                    );
                     let r = tr.step_with(&mut fl, h, Some(&mut hk));
                     fl.spray_momentum = None;
                     spray_passes = Some(hk.finish());
@@ -2457,6 +2465,17 @@ fn run_one<F: FnMut(&str)>(
                         lg.warn(&format!("{}: {m}", crate::diag::SPRAY_COUPLING));
                         steer.event(crate::diag::SPRAY_COUPLING, n, &m);
                     }
+                    if c.limiter_cells > 0 && !limiter_warned {
+                        limiter_warned = true;
+                        let m = format!(
+                            "step {n}: the saturation limiter (D253) held back {:.3e} kg/s of \
+                             vapour in {} spray cells (more passes or a smaller step; \
+                             `spray.csv` counts every step)",
+                            c.limiter_mass, c.limiter_cells
+                        );
+                        lg.warn(&format!("{}: {m}", crate::diag::SPRAY_LIMITER));
+                        steer.event(crate::diag::SPRAY_LIMITER, n, &m);
+                    }
                     spray_step = Some(c);
                     (lost, file)
                 }
@@ -2466,6 +2485,18 @@ fn run_one<F: FnMut(&str)>(
                             .energy_gas(fl.dev.as_mut())?
                             .map(|(t, cp, k)| crate::spray::GasHeat { t, cp, k }),
                         None => None,
+                    };
+                    // the vapour the parcels evaporate into (SP4)
+                    let vapour = match (crate::spray::VapourLink::of(&case), fl.scalars.as_ref()) {
+                        (Some(l), Some(sc)) => crate::spray::GasVapour::from_parts(
+                            sc,
+                            fl.dev.as_mut(),
+                            &sol.phys,
+                            fl.density.as_deref(),
+                            &l,
+                            heat.as_ref(),
+                        )?,
+                        _ => None,
                     };
                     crate::spray::step(
                         &case,
@@ -2481,6 +2512,7 @@ fn run_one<F: FnMut(&str)>(
                         name,
                         csv,
                         heat.as_ref(),
+                        vapour.as_ref(),
                     )?
                 }
             };
@@ -3258,7 +3290,12 @@ fn run_one<F: FnMut(&str)>(
     let rotor_values = crate::case::rotor_report(&sol, mesh, geo, &case, lg, warnings);
     let wall_probe_values = crate::case::wall_probes(&case, mesh, geo, &sol);
     let wall_crossing_values = crate::case::wall_crossings(&case, mesh, geo, &sol);
-    let total: f64 = boundaries.iter().map(|p| p.mass_flow).exact_sum();
+    let total: f64 = boundaries.iter().map(|p| p.mass_flow).exact_sum()
+        // less the mass an evaporating spray gives the gas (SP4)
+        - fl
+            .spray_mass
+            .as_ref()
+            .map_or(0.0, |r| r.iter().map(|x| x.1).exact_sum());
     let umax = (0..nc).map(|c| norm(sol.u.get(c))).fold(0.0f64, f64::max);
     let big = boundaries
         .iter()

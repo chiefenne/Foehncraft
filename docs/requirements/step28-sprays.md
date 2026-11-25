@@ -468,3 +468,73 @@ PR #292). What the code does:
 - Not yet: evaporation in the steady mode (SP5), liquid at datums, solid
   regions, the coupled algorithm, the seed study as a tool (D196), several
   processes.
+
+**SP4 and SP5 (evaporation) are implemented** (`[spray.evaporation]`,
+`[liquid] vapour`, PR #306). What the code does, against section 5:
+
+- SP4: the liquid names the species it evaporates into (`vapour`, which
+  must be a species of `[species]`; refused otherwise). Water only: the
+  saturation pressure is the IAPWS-95 auxiliary equation (Wagner and Pruss
+  1993), the latent heat and the vapour enthalpy follow from it and the
+  specific heats. The gas density stays the low-Mach density of the case;
+  the examples use constant density (see the gaps).
+- Models: `ranz-marshall` (Sh = 2 + 0.6 Re^½ Sc^⅓, the Spalding number
+  B_M) and `abramzon-sirignano` (film corrections of the Nusselt and
+  Sherwood numbers, B_T from B_M). In each sub-step the diameter and the
+  temperature advance with frozen coefficients; the temperature relaxes
+  exactly towards the wet-bulb balance of the sub-step and never passes it.
+  D251: a sub-step also ends when d² would fall by more than
+  `max_mass_change` or T_p change by more than `max_temperature_change`; a
+  droplet below `min_diameter` whose life ends in the sub-step is gone.
+- D249, D250: the record of a sub-step carries the vapour mass, its slope
+  (the decay share of the vapour against Y − Y*), the momentum and the heat;
+  the vapour enters the continuity equation, the species `vapour` and the
+  energy equation (with the vapour enthalpy) as S = E − β (Y − Y*), β on
+  the diagonal of the species row. A negative explicit part (condensation)
+  goes on the diagonal too (Patankar), so Y stays non-negative. **Finding
+  (own derivation):** the enthalpy that goes with the slope and with the
+  closing step must be the enthalpy the droplet loses with that vapour,
+  h_l + e_h (h_v − h_l) with e_h the thermal decay of the record (c_l T_p in
+  the steady mode). With the vapour enthalpy h_v the gas of a saturating
+  cell ended about 2 K below the adiabatic saturation; with the pure liquid
+  enthalpy the droplet temperature oscillated by ±0.7 K from step to step.
+- D253 limiter: the vapour a cell can take in a step is its own capacity to
+  the droplet saturation (ρ V (Y_sat − Y)) plus that of the gas flowing in
+  over the step (inflow mass times its capacity); in the steady mode only
+  the inflow per second. Where the records ask for more, every record of
+  the cell is scaled by one factor; the held-back mass stays liquid at the
+  enthalpy of the record, so the books close. The transient mode revives
+  droplets that would have vanished; the steady mode books the held-back
+  flow as `held back (D253)` on the parcel mass account. SPR009 warns.
+- D252: the coupling lag includes the vapour lag. **Finding:** with
+  evaporation the lag falls by a factor of only about 1.6 per pass, so the
+  evaporating duct asks for `max_passes = 8` (24 of 200 steps still end
+  above 10⁻³).
+- D254 (1): the vapour pair 2805 (`spray vapour` on the gas mass account,
+  `to the gas` on `parcel mass`) is zero to the bit, as 2801 to 2804.
+- Steady mode (SP2s): the stream pass carries the evaporation; vapour and
+  its enthalpy are held in value-plus-slope form and relaxed as momentum and
+  heat.
+- Checks:
+  - V28.1 with evaporation (spray.csv bitwise on 1 and 4 threads) and a
+    crowded cell: 4000 parcels evaporating in one cell at 95 % saturation
+    never push the vapour past the droplet saturation nor below zero, and
+    sources and parcels are bitwise equal on 1 and 4 threads with the
+    storage reversed (the records are sorted by cell and parcel before they
+    are summed, D249; each parcel sees only the frozen gas, D247).
+  - V28.2/V28.5 in the form of a closed box: water and energy kept to
+    10⁻¹², the gas at the exact adiabatic saturation within 0.003 K.
+  - V28.7: a 100 µm droplet in dry air at 500 K follows the d² law (local K
+    within 1 %) at the wet-bulb temperature.
+  - V28.11 (steady saturation duct, case `spray_saturation_steady`)
+    **partly met**: the air saturates within about 5 cm and the vapour
+    stays flat to the outlet (no overshoot); the outlet is 309.3 K and
+    Y = 0.0375 against the exact adiabatic saturation 310.1 K and 0.0395
+    (own ODE c_p dT = −L(T) dY/(1 − Y)). The source residual falls from 1
+    to about 0.1 and stalls, also with relaxation 0.1 and 0.03 (SPR008),
+    and the limiter still acts in the final pass (SPR009).
+  - V28.3, V28.4, V28.6 and V28.8 are not run as named checks with
+    evaporation.
+- Not yet: other liquids, boiling, the GPU entry of the evaporation kernel,
+  several processes; the heat balance closes to round-off only with
+  `[species] properties = "fluid"`.

@@ -194,7 +194,8 @@ pub enum PerSpecies {
 }
 
 impl PerSpecies {
-    fn of(&self, s: &str, default: f64) -> f64 {
+    /// The value of species `s` (`default` where a table leaves it out).
+    pub fn of(&self, s: &str, default: f64) -> f64 {
         match self {
             Self::All(v) => *v,
             Self::Each(m) => m.get(s).copied().unwrap_or(default),
@@ -868,6 +869,15 @@ pub struct SpeciesFlow {
     pub defect: f64,
     /// The storage Σ ρ V ∂Y/∂t of a time step (kg/s), 0 steady.
     pub storage: f64,
+    /// The mass an evaporating spray gives the species (kg/s, SP5): the
+    /// vapour S_v, the mixture the continuity source S_c; the continuity
+    /// defect is then taken against S_c.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub spray: f64,
+}
+
+fn is_zero(x: &f64) -> bool {
+    *x == 0.0
 }
 
 /// The ledger accounts of the species and of the elements (D119): one
@@ -900,6 +910,15 @@ pub fn accounts(flows: &[SpeciesFlow], res: &Resolved) -> Vec<crate::balance::Ac
             .exact_sum();
         a.terms
             .push(Term::volume("continuity defect", TermKind::Source, defect));
+        if flows.iter().any(|s| s.spray != 0.0) {
+            let spray: f64 = flows
+                .iter()
+                .enumerate()
+                .map(|(i, s)| weights(i) * s.spray)
+                .exact_sum();
+            a.terms
+                .push(Term::volume("spray vapour", TermKind::Source, spray));
+        }
         a.storage = Some(
             flows
                 .iter()
@@ -995,6 +1014,18 @@ pub fn summary(
             }
         }
     }
+    // an evaporating spray (SP5): per spray cell (cell, a, b, S_c); the
+    // vapour receives a − b Y, the mixture S_c
+    let spray: Vec<(usize, f64, f64, f64)> = sc
+        .spray_species()
+        .map(|s| {
+            s.rows
+                .iter()
+                .map(|&(c, a, b, m, _)| (c as usize, a, b, m))
+                .collect()
+        })
+        .unwrap_or_default();
+    let vapour_field = sc.spray_species().map(|s| s.vapour.clone());
     let rho = |c: usize| fl.phys.rho_at(c);
     let n = res.len();
     let mut flows: Vec<SpeciesFlow> = Vec::with_capacity(n);
@@ -1009,6 +1040,10 @@ pub fn summary(
         total.boundaries.push((p.name.clone(), conv, 0.0));
     }
     total.defect = div.iter().exact_sum();
+    if !spray.is_empty() {
+        total.defect -= spray.iter().map(|r| r.3).exact_sum();
+        total.spray = spray.iter().map(|r| r.3).exact_sum();
+    }
     for (k, (phi, a, b, gamma, out)) in data.iter().enumerate() {
         let mut s = SpeciesFlow {
             species: res.names[k].clone(),
@@ -1035,6 +1070,12 @@ pub fn summary(
             ));
         }
         s.defect = (0..nc).map(|c| phi[c] * div[c]).exact_sum();
+        if !spray.is_empty() {
+            s.defect -= spray.iter().map(|r| phi[r.0] * r.3).exact_sum();
+            if vapour_field.as_deref() == Some(field_name(&res.names[k]).as_str()) {
+                s.spray = spray.iter().map(|r| r.1 - r.2 * phi[r.0]).exact_sum();
+            }
+        }
         if let Some((st, levels)) = &old {
             let (o1, o2) = &levels[k];
             s.storage = (0..nc)
@@ -1060,6 +1101,7 @@ pub fn summary(
     }
     cl.defect -= flows.iter().map(|s| s.defect).exact_sum();
     cl.storage = -flows.iter().map(|s| s.storage).exact_sum();
+    cl.spray -= flows.iter().map(|s| s.spray).exact_sum();
     let (lo, hi) = link.y_cell[n - 1][..nc]
         .iter()
         .fold((f64::INFINITY, f64::NEG_INFINITY), |(l, h), &v| {

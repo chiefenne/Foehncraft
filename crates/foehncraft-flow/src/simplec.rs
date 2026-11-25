@@ -1120,6 +1120,9 @@ pub struct Flow {
     /// The momentum sources of a two-way coupled spray in the current
     /// outer iteration (SP2, D250), if any.
     pub(crate) spray_momentum: Option<crate::spray::MomentumSource>,
+    /// The mass an evaporating spray gives the gas (SP4, SP5): per spray
+    /// cell (cell, kg/s), a source of the continuity.
+    pub(crate) spray_mass: Option<Vec<(u32, f64)>>,
     /// The host copy of the least-squares weights of the pressure (the
     /// balanced force of gravity applies the same operator, D154).
     pub(crate) lsq_p: foehncraft_fv::disc::Soa3,
@@ -1652,6 +1655,7 @@ impl Flow {
             frames: None,
             porous: None,
             spray_momentum: None,
+            spray_mass: None,
             lsq_p,
             buoyancy: None,
             immersed: None,
@@ -2471,7 +2475,10 @@ impl Flow {
     pub(crate) fn continuity(&mut self, m: Buf) -> Result<f64> {
         let w = self.w;
         self.dev.net_outflow(m, w.defect)?;
-        if let (Some(src), Some(_)) = (self.density_source, self.density_time) {
+        if let (Some(src), true) = (
+            self.density_source,
+            self.density_time.is_some() || self.spray_mass.is_some(),
+        ) {
             // the mass source V ∂ρ/∂t of a variable density (stage 7c)
             self.dev.lincomb(w.defect, 1.0, w.defect, 1.0, src)?;
         }
@@ -2888,7 +2895,7 @@ impl Flow {
     /// constant density).
     pub fn refresh_density(&mut self) -> Result<()> {
         if self.density.is_none() {
-            return Ok(());
+            return self.upload_spray_mass();
         }
         let Some(t) = self.fluid_temperature()? else {
             return Ok(());
@@ -2940,6 +2947,14 @@ impl Flow {
             Some(g) => Some([&g[0], &g[1]]),
             None => old.map(|o| [o[0].as_slice(), o[1].as_slice()]),
         };
+        // the vapour of an evaporating spray (SP4): the continuity rows
+        // hold V ∂ρ/∂t − S_m
+        if let Some(rows) = &self.spray_mass {
+            let v = src.get_or_insert_with(|| vec![0.0; d.rho.len()]);
+            for &(c, m) in rows {
+                v[c as usize] -= m;
+            }
+        }
         self.dev
             .set_variable_density(src.as_deref(), old.map(|o| o[0]), old.map(|o| o[1]))?;
         if let Some(s) = &src {
@@ -2955,7 +2970,16 @@ impl Flow {
         }
         let vol = &self.disc.cell_volume;
         let drho_dt: Vec<f64> = ledger_rate
-            .or(src)
+            .or_else(|| {
+                src.filter(|_| self.density_time.is_some()).map(|mut s| {
+                    if let Some(rows) = &self.spray_mass {
+                        for &(c, m) in rows {
+                            s[c as usize] += m;
+                        }
+                    }
+                    s
+                })
+            })
             .map(|s| s.iter().zip(vol).map(|(m, v)| m / v).collect())
             .unwrap_or_default();
         let rho = d.rho.clone();
@@ -2987,6 +3011,46 @@ impl Flow {
                 pressure_work: dp,
             }));
         }
+        Ok(())
+    }
+
+    /// Sets or clears the mass an evaporating spray gives the gas (SP4):
+    /// per spray cell (cell, kg/s), and uploads the continuity source.
+    pub(crate) fn set_spray_mass(&mut self, rows: Option<Vec<(u32, f64)>>) -> Result<()> {
+        let had = self.spray_mass.is_some();
+        self.spray_mass = rows;
+        if self.density.is_some() {
+            self.refresh_density()
+        } else if self.spray_mass.is_some() || had {
+            self.upload_spray_mass()
+        } else {
+            Ok(())
+        }
+    }
+
+    /// The continuity source −S_m of a spray with a constant density.
+    fn upload_spray_mass(&mut self) -> Result<()> {
+        let Some(rows) = &self.spray_mass else {
+            if self.density_source.is_some() && self.density.is_none() {
+                self.dev.set_variable_density(None, None, None)?;
+                self.density_source = None;
+            }
+            return Ok(());
+        };
+        let mut v = vec![0.0; self.disc.n_cells];
+        for &(c, m) in rows {
+            v[c as usize] -= m;
+        }
+        self.dev.set_variable_density(Some(&v), None, None)?;
+        let b = match self.density_source {
+            Some(b) => b,
+            None => {
+                let b = self.dev.alloc(self.disc.n_cells)?;
+                self.density_source = Some(b);
+                b
+            }
+        };
+        self.dev.upload(b, &v)?;
         Ok(())
     }
 

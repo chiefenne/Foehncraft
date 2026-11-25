@@ -27,6 +27,7 @@ impl Gas for Uniform {
             k: 0.0,
             tke: 0.0,
             eps: 0.0,
+            ..GasState::isothermal([0.0; 3], 1.0, 1.0)
         }
     }
 }
