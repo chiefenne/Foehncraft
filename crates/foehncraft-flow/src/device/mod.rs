@@ -103,6 +103,12 @@ pub struct VertexStencil {
     pub cell_verts: Vec<u32>,
     /// Vertex coordinates x, y, z.
     pub points: [Vec<f64>; 3],
+    /// On ranks (MPI step W7): the vertices on the processor faces, whose
+    /// bounds the ranks that share them combine, and their global ids.
+    /// Empty on one rank.
+    pub shared: Vec<u32>,
+    /// See `shared`.
+    pub shared_id: Vec<u64>,
 }
 
 /// Inputs and output of [`FlowDevice::mlp_limiter`].

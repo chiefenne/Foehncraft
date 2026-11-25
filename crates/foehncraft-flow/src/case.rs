@@ -3970,7 +3970,7 @@ pub fn run_steered(
                 .book(balance::thermal_account(e, &sm.boundaries));
         }
         // the species and element accounts (SF1, D119)
-        if let Some(sp) = crate::species::summary(&mut fl, &mesh, &geo, false)? {
+        if let Some(sp) = crate::species::summary_on(&mut fl, &mesh, &geo, false, on.as_ref())? {
             for l in crate::species::summary_lines(&sp) {
                 lg.line(&l);
             }
@@ -3996,7 +3996,7 @@ pub fn run_steered(
             &mut lg,
             &mut rep.warnings,
         )?;
-        let density = crate::density::summary(&mut fl, &mut rep.warnings)?;
+        let density = crate::density::summary_on(&mut fl, &mut rep.warnings, on.as_ref())?;
         if single && (case.run.restart_final || stopped) && restart::AVAILABLE {
             let rs = restart_of(&mut fl, smesh, name, on.as_ref())?;
             if lead {

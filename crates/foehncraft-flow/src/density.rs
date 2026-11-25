@@ -94,6 +94,9 @@ pub struct Variable {
     closed: bool,
     /// The mass of the closed volume (kg).
     pub mass: f64,
+    /// The exact sum of the start mass of the own cells (a run on ranks
+    /// adds those of all ranks, MPI step W7).
+    mass_start: foehncraft_core::exact::ExactSum,
     /// The pressure work dp₀/dt enters the energy equation.
     pub pressure_work: bool,
     /// The specific heat c_p(T) of the fluid (the speed of sound).
@@ -235,8 +238,9 @@ impl Variable {
     /// coefficients `a` (a₀, −a₁, −a₂ as the momentum time terms) and Δt.
     pub fn mass_source(&self, a: [f64; 3], dt: f64) -> Option<Vec<f64>> {
         let [n, n1] = self.old.as_ref()?;
+        // the own cells (on ranks `rho` has the halo too)
         Some(
-            (0..self.rho.len())
+            (0..self.volume.len())
                 .map(|c| {
                     let mut d = a[0] * self.rho[c] - a[1] * n[c];
                     if a[2] != 0.0 {
@@ -263,11 +267,37 @@ impl Variable {
 
     /// The mass in the domain, Σ ρ V (kg).
     pub fn total_mass(&self) -> f64 {
-        self.rho
+        self.mass_sum().value()
+    }
+
+    /// p₀, the mass in the domain and the smallest and the largest cell
+    /// density, for the history: on ranks (`on`) over the own cells of all
+    /// ranks, the values of one rank (MPI step W7). Collective on ranks.
+    pub(crate) fn history_values(&self, on: Option<&crate::ranks::OnRanks>) -> [f64; 4] {
+        let n = self.volume.len();
+        let (lo, hi) = self.rho[..n]
             .iter()
-            .zip(&self.volume)
-            .map(|(r, v)| r * v)
-            .exact_sum()
+            .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), &r| {
+                (a.min(r), b.max(r))
+            });
+        match on {
+            Some(o) => [
+                self.p0,
+                o.comm.sum_exact(&self.mass_sum()),
+                o.comm.min(lo),
+                o.comm.max(hi),
+            ],
+            None => [self.p0, self.total_mass(), lo, hi],
+        }
+    }
+
+    /// The exact sum Σ ρ V of the own cells.
+    fn mass_sum(&self) -> foehncraft_core::exact::ExactSum {
+        let mut s = foehncraft_core::exact::ExactSum::new();
+        for (r, v) in self.rho.iter().zip(&self.volume) {
+            s.add(r * v);
+        }
+        s
     }
 }
 
@@ -462,6 +492,7 @@ pub fn setup(
         p0_old: [cond.pressure; 2],
         closed,
         mass: 0.0,
+        mass_start: foehncraft_core::exact::ExactSum::new(),
         pressure_work,
         cp: fl.cp,
         rho: Vec::new(),
@@ -479,7 +510,8 @@ pub fn setup(
     v.closed = false;
     v.refresh(t, tb);
     v.closed = closed;
-    v.mass = v.total_mass();
+    v.mass_start = v.mass_sum();
+    v.mass = v.mass_start.value();
     Ok(Some(v))
 }
 
@@ -490,7 +522,8 @@ pub fn attach(fl: &mut crate::simplec::Flow, case: &crate::case::FlowCase) -> Re
     if !wanted(case) {
         return Ok(());
     }
-    let Some(t) = fl.fluid_temperature()? else {
+    // on ranks with the halo cells (MPI step W7)
+    let Some(t) = fl.fluid_temperature_with_halo()? else {
         anyhow::bail!("the variable density needs the temperature of the energy equation");
     };
     let tb = fl.fluid_boundary_temperature(&t)?;
@@ -528,6 +561,17 @@ pub fn summary(
     fl: &mut crate::simplec::Flow,
     warnings: &mut Vec<Diagnostic>,
 ) -> Result<Option<Summary>> {
+    summary_on(fl, warnings, None)
+}
+
+/// [`summary`] of a run on ranks (MPI step W7): the masses are exact sums
+/// over the own cells of all ranks, the extremes the extremes of all
+/// ranks, so the summary is bitwise that of one rank. Collective on ranks.
+pub(crate) fn summary_on(
+    fl: &mut crate::simplec::Flow,
+    warnings: &mut Vec<Diagnostic>,
+    on: Option<&crate::ranks::OnRanks>,
+) -> Result<Option<Summary>> {
     if fl.density.is_none() {
         return Ok(None);
     }
@@ -537,15 +581,16 @@ pub fn summary(
     let uy = fl.dev.download(u.y)?;
     let uz = fl.dev.download(u.z)?;
     let d = fl.density.as_deref().expect("density");
-    let (lo, hi) = d
-        .rho
+    // the own cells (on ranks without the halo)
+    let n = d.volume.len();
+    let (lo, hi) = d.rho[..n]
         .iter()
         .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), &r| {
             (a.min(r), b.max(r))
         });
     let mach_max = match (&t, d.is_ideal_gas()) {
         (Some(t), true) => Some(
-            (0..t.len())
+            (0..t.len().min(n))
                 .filter_map(|c| {
                     let s = (ux[c] * ux[c] + uy[c] * uy[c] + uz[c] * uz[c]).sqrt();
                     d.speed_of_sound(t[c]).map(|a| s / a)
@@ -554,6 +599,15 @@ pub fn summary(
         ),
         _ => None,
     };
+    let (mut mass, mut mass_start) = (d.total_mass(), d.mass_start.value());
+    let (mut lo, mut hi, mut mach_max) = (lo, hi, mach_max);
+    if let Some(o) = on {
+        mass = o.comm.sum_exact(&d.mass_sum());
+        mass_start = o.comm.sum_exact(&d.mass_start);
+        lo = o.comm.min(lo);
+        hi = o.comm.max(hi);
+        mach_max = mach_max.map(|m| o.comm.max(m));
+    }
     if let Some(m) = mach_max.filter(|&m| m > 0.3) {
         warnings.push(Diagnostic::new(
             diag::VD_MACH,
@@ -567,8 +621,8 @@ pub fn summary(
     Ok(Some(Summary {
         p0: d.p0,
         closed_volume: d.is_closed(),
-        mass: d.total_mass(),
-        mass_start: d.mass,
+        mass,
+        mass_start,
         rho_min: lo,
         rho_max: hi,
         mach_max,
