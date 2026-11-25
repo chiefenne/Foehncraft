@@ -1,0 +1,47 @@
+# A reed petal as a shell (MS5): spring steel, 30 mm free length, 12 mm
+# wide, 0.2 mm thick, MITC4 elements, clamped along the edge x = 0 on clamp
+# springs per metre (D290) and loaded by a pressure difference of 2 kPa.
+# The plate shows what a beam cannot: the twist and the bending across the
+# width of a wide reed.
+#
+#   foehn call structure.run --input examples/cases/tools/structure_reed_plate.json
+
+[structure]
+name = "reed_plate"
+
+[analysis]
+static = true
+modes = 6
+
+[materials.spring_steel]
+young = 206e9
+poisson = 0.3
+density = 7850.0
+
+[[plates]]
+name = "reed"
+origin = [0.0, -6e-3, 0.0]
+edge_a = [0.03, 0.0, 0.0]
+edge_b = [0.0, 12e-3, 0.0]
+divisions = [40, 16]
+thickness = 0.2e-3
+material = "spring_steel"
+element = "mitc4"
+
+# the clamp line along y at x = 0: springs per metre of clamp line, the
+# rotational one about y, the translational one along z
+[[clamps]]
+along = [[0.0, -6e-3, 0.0], [0.0, 6e-3, 0.0]]
+normal = "z"
+line = "y"
+k_rotation = 40.0        # N·m/rad per m
+k_translation = 2.0e7    # N/m per m
+
+# 2 kPa pushing the reed off its seat (along +z, the plate's normal)
+[[pressures]]
+plate = "reed"
+value = 2000.0
+
+[points]
+tip = [0.03, 0.0, 0.0]
+tip_corner = [0.03, 6e-3, 0.0]

@@ -200,7 +200,7 @@ mod tests {
     fn catalogue_cases_run_and_the_fit_matches() {
         let tmp = std::env::temp_dir().join(format!("foehn-structure-{}", std::process::id()));
         let mut ctx = Ctx::new(BuildInfo::default());
-        for name in ["reed_beam", "reed_beam_clamp_springs"] {
+        for name in ["reed_beam", "reed_beam_clamp_springs", "reed_plate"] {
             let case = root().join(format!("examples/cases/structure/{name}.toml"));
             let out = tmp.join(name);
             let r = call("structure.run", json!({"case": case, "out": out}), &mut ctx);
@@ -216,6 +216,16 @@ mod tests {
         let r = call(
             "structure.fitclamp",
             json!({"case": case, "frequency": 150.0}),
+            &mut ctx,
+        );
+        assert_eq!(r.status, "finished", "{:?}", r.diagnostics);
+        let f = r.result["frequency"].as_f64().unwrap();
+        assert!((f - 150.0).abs() < 1e-6, "{f}");
+        // a clamp along a shell edge fits the same way
+        let plate = root().join("examples/cases/structure/reed_plate.toml");
+        let r = call(
+            "structure.fitclamp",
+            json!({"case": plate, "frequency": 150.0}),
             &mut ctx,
         );
         assert_eq!(r.status, "finished", "{:?}", r.diagnostics);

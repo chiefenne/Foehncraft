@@ -23,6 +23,7 @@ envelope is on standard output ([gallery 171](../gallery/runs.md#tool-registry),
 | `page_cavity.json` | `result.page` | the first 100 rows of the residual history of that run; the answer's `next_cursor` gives the next page |
 | `structure_reed_beam.json` | `structure.run` | the reed valve beam with a rigid clamp: static deflection and eight modes into `output/reed_beam` ([gallery 295](../gallery/structure.md#reed-beam)) |
 | `structure_reed_beam_clamp_springs.json` | `structure.run` | the same reed on clamp springs (D290) into `output/reed_beam_clamp_springs` |
+| `structure_reed_plate.json` | `structure.run` | the reed petal as MITC4 shells on clamp springs along its edge into `output/reed_plate` ([gallery 297](../gallery/structure.md#reed-plate)) |
 | `structure_fit_clamp.json` | `structure.fitclamp` | the rotational clamp spring that puts the reed's first mode at a measured 150 Hz |
 
 The folder `mcp/` holds what an assistant session through `foehn mcp`

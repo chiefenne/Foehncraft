@@ -1601,7 +1601,7 @@
     "gaps written"
    ],
    "gaps": [
-    "beams only: MITC4/MITC3+ shells, quadratic solids, generalised-α, mode superposition, Craig–Bampton, damping and contact come in MS5 parts 2 to 4",
+    "beams and shells (structure.shells) only: quadratic solids, generalised-α, mode superposition, Craig–Bampton, damping and contact come in MS5 parts 3 and 4",
     "the Timoshenko element's consistent mass converges at second order in the frequency of thick beams (7e-6 on 120 elements at L/d = 10)",
     "no comparison with measured reed frequencies yet (MS6: Gasche et al. via González et al. 2017, Lemke et al. 2016)",
     "the ordering is reverse Cuthill–McKee: the fill is an envelope, fine for slender reeds, large for compact 3D parts (no minimum-degree ordering yet)",
@@ -1619,7 +1619,6 @@
     "gaps written"
    ],
    "gaps": [
-    "springs on a single node of a beam model: shells with the springs spread along the clamp edge come with MS5 part 2",
     "clamp parts as solids in frictionless contact (the second way of D290) are not built",
     "no measured reed with a known clamp to calibrate against yet (MS6)"
    ],
@@ -1638,6 +1637,22 @@
     "refused with MOV001: restarts (the restart datasets of D91 are not written yet), several ranks, turning zones, regions, sprays, immersed bodies, periodic boundaries, an error-controlled time step, level sweeps",
     "turbulence models and passive scalars run on the moving mesh but are not checked against a reference; the GPU backend is not tested on a moving mesh",
     "the cooled piston has no reference data (no heat-transfer correlation compared yet)"
+   ],
+   "range": {}
+  },
+  {
+   "id": "structure.shells",
+   "title": "MITC4 and MITC3+ Reissner–Mindlin shells, plates clamped along an edge (L53, MS5 part 2)",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "flat parallelogram plates from the case file only: no Gmsh reader for curved shell meshes yet (the roof test builds its mesh in code)",
+    "no stresses or strains in the output yet (displacements, rotations and modes only)",
+    "MITC3+ converges more slowly than MITC4 on curved shells (0.96 of the roof's lift on 16 × 16), as published",
+    "beams and plates in one case share nodes but no eccentric (offset) connection",
+    "linear (small rotations): large deflections need the corotational formulation of MS9"
    ],
    "range": {}
   }

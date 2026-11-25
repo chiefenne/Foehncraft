@@ -25,7 +25,7 @@ The catalogue is split by physics; each page has its own table of contents.
 | [Flow cases (`examples/cases/flow/`)](cases/flow.md) | incompressible flow, laminar and with the RANS turbulence models, steady and transient, grouped by physics; what a flow run writes |
 | [Flow case-file keys](cases/flow-keys.md) | every key of a flow case, the derived fields (D72), the boundary conditions (D29) and their sensible combinations (D30), expressions, materials and regions (D53, D102, D112), passive scalars, turbulence models (D129–D139) |
 | [Python scripts (`examples/python/`, `examples/studies/`)](cases/python.md) | cases built, run and studied with the Python package |
-| [Structural cases (`examples/cases/structure/`)](cases/structure.md) | the linear structural solver (L53, MS5): beams, clamp springs, static and modal analyses; structural keys |
+| [Structural cases (`examples/cases/structure/`)](cases/structure.md) | the linear structural solver (L53, MS5): beams, shells, clamp springs, static and modal analyses; structural keys |
 | [Tool inputs (`examples/cases/tools/`)](cases/tools.md) | JSON inputs of `foehn call`, one per tool of the registry (D196) |
 | [Engineering gallery (`examples/applications/`)](cases/applications.md) | the industrial and laboratory application cases: stirred tanks, the shell and tube heat exchanger |
 | [Benchmarks (`examples/cases/bench/`)](cases/benchmarks.md) | gate G1, the kernel benchmark; benchmark keys |
