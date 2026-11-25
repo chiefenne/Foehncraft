@@ -34,6 +34,7 @@
 
 use crate::analysis::{self, Modal, Static};
 use crate::beam::{BeamProps, Theory};
+use crate::dynamics::{GenAlpha, ModalBasis, Rayleigh};
 use crate::model::{DOFS, LineLoad, Model};
 use crate::{Error, codes};
 use serde::Deserialize;
@@ -84,6 +85,9 @@ pub struct Material {
     pub poisson: f64,
     /// Density (kg/m³).
     pub density: f64,
+    /// Linear thermal expansion coefficient α (1/K), for `[[temperatures]]`.
+    #[serde(default)]
+    pub expansion: Option<f64>,
 }
 
 /// Shape of a section.
@@ -207,6 +211,165 @@ pub struct Pressure {
     /// Force per area, global axes (N/m²), added to the pressure.
     #[serde(default)]
     pub force_per_area: [f64; 3],
+    /// Time history that scales the load.
+    #[serde(default)]
+    pub history: Option<String>,
+}
+
+/// `[[temperatures]]`: a temperature change of a beam line or a plate
+/// from its stress-free state, read as a thermal strain α ΔT (the
+/// material's `expansion`).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Temperature {
+    /// Name of the beam line or plate.
+    pub part: String,
+    /// Temperature change of the axis or mid-surface (K).
+    #[serde(default)]
+    pub change: f64,
+    /// Difference across the thickness (K): plates, top (along the
+    /// normal) minus bottom; beams, +z minus −z of the section.
+    #[serde(default)]
+    pub difference: f64,
+    /// Beams: difference across the width, +y minus −y (K).
+    #[serde(default)]
+    pub difference_y: f64,
+    /// Time history that scales it.
+    #[serde(default)]
+    pub history: Option<String>,
+}
+
+/// `[histories.<name>]`: a factor in time, a table (linear between its
+/// points, held after the last) or a sine.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct History {
+    /// Points [time (s), factor].
+    #[serde(default)]
+    pub table: Option<Vec<[f64; 2]>>,
+    /// Sine: amplitude.
+    #[serde(default)]
+    pub amplitude: Option<f64>,
+    /// Sine: frequency (Hz).
+    #[serde(default)]
+    pub frequency: Option<f64>,
+    /// Sine: phase (degrees).
+    #[serde(default)]
+    pub phase: f64,
+    /// Sine: offset added.
+    #[serde(default)]
+    pub offset: f64,
+}
+
+impl History {
+    /// The factor at time `t`.
+    pub fn at(&self, t: f64) -> f64 {
+        if let Some(tab) = &self.table {
+            if t <= tab[0][0] {
+                return tab[0][1];
+            }
+            for w in tab.windows(2) {
+                if t <= w[1][0] {
+                    let f = (t - w[0][0]) / (w[1][0] - w[0][0]);
+                    return w[0][1] + f * (w[1][1] - w[0][1]);
+                }
+            }
+            return tab[tab.len() - 1][1];
+        }
+        let a = self.amplitude.unwrap_or(0.0);
+        let f = self.frequency.unwrap_or(0.0);
+        self.offset + a * (2.0 * std::f64::consts::PI * f * t + self.phase.to_radians()).sin()
+    }
+
+    fn check(&self, name: &str) -> Result<(), Error> {
+        match (&self.table, self.amplitude, self.frequency) {
+            (Some(tab), None, None) => {
+                if tab.is_empty() || tab.windows(2).any(|w| w[1][0] <= w[0][0]) {
+                    return Err(bad(format!(
+                        "[histories.{name}] table: give points with increasing times"
+                    )));
+                }
+                Ok(())
+            }
+            (None, Some(_), Some(f)) if f >= 0.0 => Ok(()),
+            _ => Err(bad(format!(
+                "[histories.{name}]: give either `table` or `amplitude` and `frequency`"
+            ))),
+        }
+    }
+}
+
+/// Integration of a transient analysis.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Method {
+    /// Generalised-α on the whole model.
+    #[default]
+    Direct,
+    /// Mode superposition of the lowest `modes`.
+    Modal,
+}
+
+fn default_rho() -> f64 {
+    0.9
+}
+
+/// `[transient]`: a response in time from rest.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TransientKeys {
+    /// End time (s).
+    pub end_time: f64,
+    /// Time step (s).
+    pub time_step: f64,
+    /// `direct` (generalised-α, default) or `modal`.
+    #[serde(default)]
+    pub method: Method,
+    /// Spectral radius at infinite frequency of generalised-α (0 to 1,
+    /// default 0.9; 1 adds no numerical damping).
+    #[serde(default = "default_rho")]
+    pub rho_infinity: f64,
+    /// Modes kept by the modal method.
+    #[serde(default)]
+    pub modes: usize,
+    /// Keep every n-th step in the results (default: at most 1000 kept).
+    #[serde(default)]
+    pub output_every: Option<usize>,
+    /// Times (s) whose whole displacement field goes into `structure.vtk`
+    /// (`transient_<i>`, the step nearest each).
+    #[serde(default)]
+    pub snapshots: Vec<f64>,
+}
+
+/// `[damping]`.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DampingKeys {
+    /// Rayleigh factors [α (1/s), β (s)]: C = αM + βK.
+    #[serde(default)]
+    pub rayleigh: Option<[f64; 2]>,
+    /// Two [frequency (Hz), ratio] pairs that set the Rayleigh factors.
+    #[serde(default)]
+    pub ratios: Option<[[f64; 2]; 2]>,
+    /// Modal method: the same ratio for every mode (added to Rayleigh's).
+    #[serde(default)]
+    pub modal_ratio: f64,
+}
+
+impl DampingKeys {
+    fn rayleigh(&self) -> Result<Rayleigh, Error> {
+        match (self.rayleigh, self.ratios) {
+            (Some(_), Some(_)) => Err(bad("[damping]: give `rayleigh` or `ratios`, not both")),
+            (Some([a, b]), None) => {
+                if a < 0.0 || b < 0.0 || a.is_nan() || b.is_nan() {
+                    return Err(bad("[damping] rayleigh: factors must be ≥ 0"));
+                }
+                Ok(Rayleigh { alpha: a, beta: b })
+            }
+            (None, Some([[f1, z1], [f2, z2]])) => Rayleigh::from_ratios(f1, z1, f2, z2),
+            (None, None) => Ok(Rayleigh::default()),
+        }
+    }
 }
 
 /// An unknown of a node by name.
@@ -330,6 +493,10 @@ pub struct Load {
     /// Moment (N·m).
     #[serde(default)]
     pub moment: [f64; 3],
+    /// Time history that scales the load (`[histories.<name>]`); none:
+    /// constant.
+    #[serde(default)]
+    pub history: Option<String>,
 }
 
 /// `[[line_loads]]`: a uniform force per length on a beam line.
@@ -340,6 +507,9 @@ pub struct LineLoadKeys {
     pub beam: String,
     /// Force per length, global axes (N/m).
     pub force_per_length: [f64; 3],
+    /// Time history that scales the load.
+    #[serde(default)]
+    pub history: Option<String>,
 }
 
 /// A structural case file.
@@ -385,6 +555,18 @@ pub struct Case {
     /// `[[line_loads]]`.
     #[serde(default)]
     pub line_loads: Vec<LineLoadKeys>,
+    /// `[[temperatures]]`.
+    #[serde(default)]
+    pub temperatures: Vec<Temperature>,
+    /// `[histories]`.
+    #[serde(default)]
+    pub histories: BTreeMap<String, History>,
+    /// `[transient]`.
+    #[serde(default)]
+    pub transient: Option<TransientKeys>,
+    /// `[damping]`.
+    #[serde(default)]
+    pub damping: DampingKeys,
     /// `[points]`: named points whose results are reported.
     #[serde(default)]
     pub points: BTreeMap<String, [f64; 3]>,
@@ -567,6 +749,10 @@ pub fn build(case: &Case) -> Result<Built, Error> {
             n
         };
     let mut seen = std::collections::BTreeSet::new();
+    // per beam line: α and the section's heights along local y and z
+    type LineThermal = (Option<f64>, Option<(f64, f64)>);
+    let mut line_thermal: BTreeMap<String, LineThermal> = BTreeMap::new();
+    let mut plate_thermal: BTreeMap<String, (Option<f64>, f64)> = BTreeMap::new();
     for b in &case.beams {
         if !seen.insert(b.name.clone()) {
             return Err(bad(format!("two `[[beams]]` are named `{}`", b.name)));
@@ -629,6 +815,12 @@ pub fn build(case: &Case) -> Result<Built, Error> {
             prev = next;
         }
         lines.insert(b.name.clone(), first..model.beams.len());
+        let heights = match sec.shape {
+            Shape::Rectangle => sec.width.zip(sec.thickness),
+            Shape::Circle => sec.diameter.map(|d| (d, d)),
+            Shape::General => None,
+        };
+        line_thermal.insert(b.name.clone(), (mat.expansion, heights));
     }
     let mut plates = BTreeMap::new();
     for p in &case.plates {
@@ -691,6 +883,7 @@ pub fn build(case: &Case) -> Result<Built, Error> {
         };
         widths.extend(std::iter::repeat_n(None, model.nodes.len() - before));
         plates.insert(p.name.clone(), first..model.shells.len());
+        plate_thermal.insert(p.name.clone(), (mat.expansion, p.thickness));
     }
     let size = model.size();
     let find = |model: &Model, x: [f64; 3], what: &str| -> Result<usize, Error> {
@@ -883,6 +1076,57 @@ pub fn build(case: &Case) -> Result<Built, Error> {
             });
         }
     }
+    for t in &case.temperatures {
+        let what = format!("[[temperatures]] `{}`", t.part);
+        if [t.change, t.difference, t.difference_y]
+            .iter()
+            .any(|v| !v.is_finite())
+        {
+            return Err(bad(format!("{what}: temperatures must be finite")));
+        }
+        let need = |a: Option<f64>| {
+            a.filter(|a| a.is_finite())
+                .ok_or_else(|| bad(format!("{what}: its material needs `expansion` (1/K)")))
+        };
+        if let Some(r) = lines.get(&t.part) {
+            let (alpha, h) = line_thermal[&t.part];
+            let alpha = need(alpha)?;
+            let curvature = if t.difference != 0.0 || t.difference_y != 0.0 {
+                let (hy, hz) = h.ok_or_else(|| {
+                    bad(format!("{what}: a difference across a `general` section needs its size; use a rectangle or a circle"))
+                })?;
+                [alpha * t.difference_y / hy, alpha * t.difference / hz]
+            } else {
+                [0.0, 0.0]
+            };
+            for e in r.clone() {
+                model.thermal.push(crate::model::ThermalLoad {
+                    element: e,
+                    shell: false,
+                    strain: alpha * t.change,
+                    curvature,
+                });
+            }
+        } else if let Some(r) = plates.get(&t.part) {
+            let (alpha, h) = plate_thermal[&t.part];
+            let alpha = need(alpha)?;
+            if t.difference_y != 0.0 {
+                return Err(bad(format!(
+                    "{what}: `difference_y` is for beams; a plate takes `difference`"
+                )));
+            }
+            for e in r.clone() {
+                model.thermal.push(crate::model::ThermalLoad {
+                    element: e,
+                    shell: true,
+                    strain: alpha * t.change,
+                    curvature: [alpha * t.difference / h, 0.0],
+                });
+            }
+        } else {
+            return Err(bad(format!("{what}: no beam line or plate of that name")));
+        }
+    }
     let mut points = BTreeMap::new();
     for (name, x) in &case.points {
         points.insert(name.clone(), find(&model, *x, &format!("[points] {name}"))?);
@@ -905,14 +1149,211 @@ pub struct Outcome {
     pub statics: Option<Static>,
     /// The modal result.
     pub modal: Option<Modal>,
+    /// The transient result.
+    pub transient: Option<Transient>,
+}
+
+/// The response in time.
+#[derive(Debug, Clone)]
+pub struct Transient {
+    /// Method.
+    pub method: Method,
+    /// Spectral radius of generalised-α (direct method).
+    pub rho_infinity: f64,
+    /// Rayleigh damping.
+    pub damping: Rayleigh,
+    /// Modal method: frequencies (Hz) and damping ratios of the modes kept.
+    pub modes: Vec<(f64, f64)>,
+    /// Time step (s).
+    pub time_step: f64,
+    /// Steps taken.
+    pub steps: usize,
+    /// Times kept (s).
+    pub times: Vec<f64>,
+    /// Displacements of the named points at the kept times.
+    pub points: BTreeMap<String, Vec<[f64; 3]>>,
+    /// Kinetic energy ½ vᵀMv at the kept times (J).
+    pub kinetic: Vec<f64>,
+    /// Strain energy ½ uᵀKu at the kept times (J).
+    pub strain: Vec<f64>,
+    /// Largest displacement of a node over every step: value, node, time.
+    pub max_displacement: (f64, usize, f64),
+    /// Displacements of every unknown at the end.
+    pub last: Vec<f64>,
+    /// The fields at the requested snapshot times: (time, every unknown).
+    pub snapshots: Vec<(f64, Vec<f64>)>,
+}
+
+/// The load vectors (free unknowns) of each history: `None` constant.
+/// A load vector and the history that scales it (`None`: constant).
+type LoadGroup = (Option<String>, Vec<f64>);
+
+fn load_groups(case: &Case) -> Result<Vec<LoadGroup>, Error> {
+    let mut keys: Vec<Option<String>> = vec![None];
+    let used = case
+        .loads
+        .iter()
+        .map(|l| &l.history)
+        .chain(case.line_loads.iter().map(|l| &l.history))
+        .chain(case.pressures.iter().map(|l| &l.history))
+        .chain(case.temperatures.iter().map(|l| &l.history));
+    for h in used.flatten() {
+        if !case.histories.contains_key(h) {
+            return Err(bad(format!(
+                "no `[histories.{h}]` for a load that names it"
+            )));
+        }
+        if !keys.contains(&Some(h.clone())) {
+            keys.push(Some(h.clone()));
+        }
+    }
+    let mut out = Vec::new();
+    for key in keys {
+        let mut c = case.clone();
+        c.loads.retain(|l| l.history == key);
+        c.line_loads.retain(|l| l.history == key);
+        c.pressures.retain(|l| l.history == key);
+        c.temperatures.retain(|l| l.history == key);
+        let f = build(&c)?.model.assemble().f;
+        out.push((key, f));
+    }
+    Ok(out)
+}
+
+fn transient(case: &Case, tk: &TransientKeys, built: &Built) -> Result<Transient, Error> {
+    for (name, h) in &case.histories {
+        h.check(name)?;
+    }
+    if !(tk.end_time > 0.0 && tk.time_step > 0.0 && tk.end_time.is_finite()) {
+        return Err(bad(
+            "[transient]: `end_time` and `time_step` must be positive",
+        ));
+    }
+    let steps = (tk.end_time / tk.time_step - 1e-9).ceil().max(1.0) as usize;
+    if steps > 1_000_000 {
+        return Err(bad(format!(
+            "[transient]: {steps} steps; at most 10⁶ (raise `time_step`)"
+        )));
+    }
+    let every = tk.output_every.unwrap_or(steps.div_ceil(1000)).max(1);
+    let damping = case.damping.rayleigh()?;
+    let model = &built.model;
+    let sys = model.assemble();
+    let groups = load_groups(case)?;
+    let nf = sys.free.len();
+    let load = |t: f64| -> Vec<f64> {
+        let mut f = vec![0.0; nf];
+        for (key, g) in &groups {
+            let s = key.as_ref().map_or(1.0, |k| case.histories[k].at(t));
+            for (a, b) in f.iter_mut().zip(g) {
+                *a += s * b;
+            }
+        }
+        f
+    };
+    let dt = tk.time_step;
+    let mut out = Transient {
+        method: tk.method,
+        rho_infinity: tk.rho_infinity,
+        damping,
+        modes: Vec::new(),
+        time_step: dt,
+        steps,
+        times: Vec::new(),
+        points: built
+            .points
+            .keys()
+            .map(|k| (k.clone(), Vec::new()))
+            .collect(),
+        kinetic: Vec::new(),
+        strain: Vec::new(),
+        max_displacement: (0.0, 0, 0.0),
+        last: Vec::new(),
+        snapshots: Vec::new(),
+    };
+    let snap_steps: Vec<usize> = tk
+        .snapshots
+        .iter()
+        .map(|&t| ((t / dt).round().max(0.0) as usize).min(steps))
+        .collect();
+    let record = |out: &mut Transient, k: usize, t: f64, u: &[f64], v: &[f64]| {
+        let full = sys.expand_zero(u);
+        for n in 0..model.nodes.len() {
+            let d = crate::beam::norm(node_vec(&full, n, 0));
+            if d > out.max_displacement.0 {
+                out.max_displacement = (d, n, t);
+            }
+        }
+        if k.is_multiple_of(every) || k == steps {
+            out.times.push(t);
+            for (name, &n) in &built.points {
+                if let Some(h) = out.points.get_mut(name) {
+                    h.push(node_vec(&full, n, 0));
+                }
+            }
+            out.kinetic.push(0.5 * sys.m.form(v, v));
+            out.strain.push(0.5 * sys.k.form(u, u));
+        }
+        for &ks in &snap_steps {
+            if ks == k {
+                out.snapshots.push((t, full.clone()));
+            }
+        }
+        if k == steps {
+            out.last = full;
+        }
+    };
+    match tk.method {
+        Method::Direct => {
+            let ga = GenAlpha::new(&sys, damping, dt, tk.rho_infinity)?;
+            let mut f0 = load(0.0);
+            let mut st = ga.initial(0.0, vec![0.0; nf], vec![0.0; nf], &f0)?;
+            record(&mut out, 0, 0.0, &st.u, &st.v);
+            for k in 1..=steps {
+                let f1 = load(k as f64 * dt);
+                st = ga.step(&st, &f0, &f1);
+                record(&mut out, k, k as f64 * dt, &st.u, &st.v);
+                f0 = f1;
+            }
+        }
+        Method::Modal => {
+            if tk.modes == 0 {
+                return Err(bad("[transient] method = \"modal\" needs `modes`"));
+            }
+            let basis = ModalBasis::lowest(model, tk.modes, case.damping.modal_ratio, damping)?;
+            out.modes = basis
+                .omega
+                .iter()
+                .zip(&basis.zeta)
+                .map(|(w, z)| (w / (2.0 * std::f64::consts::PI), *z))
+                .collect();
+            let nm = basis.omega.len();
+            let (mut q, mut qd) = (vec![0.0; nm], vec![0.0; nm]);
+            let mut p0 = basis.project(&load(0.0));
+            record(&mut out, 0, 0.0, &vec![0.0; nf], &vec![0.0; nf]);
+            for k in 1..=steps {
+                let p1 = basis.project(&load(k as f64 * dt));
+                basis.step(&mut q, &mut qd, &p0, &p1, dt);
+                record(
+                    &mut out,
+                    k,
+                    k as f64 * dt,
+                    &basis.expand(&q),
+                    &basis.expand(&qd),
+                );
+                p0 = p1;
+            }
+        }
+    }
+    Ok(out)
 }
 
 /// Runs the analyses of a case.
 pub fn run(case: &Case) -> Result<Outcome, Error> {
     let built = build(case)?;
-    if !case.analysis.statics && case.analysis.modes == 0 {
+    if !case.analysis.statics && case.analysis.modes == 0 && case.transient.is_none() {
         return Err(bad(
-            "[analysis] asks for nothing: set `static = true` or `modes`",
+            "[analysis] asks for nothing: set `static = true` or `modes`, or add `[transient]`",
         ));
     }
     let statics = if case.analysis.statics {
@@ -929,10 +1370,15 @@ pub fn run(case: &Case) -> Result<Outcome, Error> {
     } else {
         None
     };
+    let transient = match &case.transient {
+        Some(tk) => Some(transient(case, tk, &built)?),
+        None => None,
+    };
     Ok(Outcome {
         built,
         statics,
         modal,
+        transient,
     })
 }
 
@@ -1037,8 +1483,66 @@ impl Outcome {
                 "points_mass_normalised": points,
             });
         }
+        if let Some(tr) = &self.transient {
+            let (v, n, t) = tr.max_displacement;
+            let points: serde_json::Map<String, Value> = tr
+                .points
+                .iter()
+                .map(|(k, h)| {
+                    (
+                        k.clone(),
+                        json!({"node": self.built.points[k], "displacement": h}),
+                    )
+                })
+                .collect();
+            let mut j = json!({
+                "method": match tr.method { Method::Direct => "direct", Method::Modal => "modal" },
+                "time_step": tr.time_step,
+                "steps": tr.steps,
+                "damping": tr.damping,
+                "times": tr.times,
+                "kinetic_energy": tr.kinetic,
+                "strain_energy": tr.strain,
+                "max_displacement": {"value": v, "node": n, "at": m.nodes[n], "time": t},
+                "points": points,
+                "snapshots": tr.snapshots.iter().map(|(t, _)| *t).collect::<Vec<_>>(),
+            });
+            match tr.method {
+                Method::Direct => j["rho_infinity"] = json!(tr.rho_infinity),
+                Method::Modal => {
+                    j["modes"] = Value::Array(
+                        tr.modes
+                            .iter()
+                            .map(|(f, z)| json!({"frequency": f, "damping_ratio": z}))
+                            .collect(),
+                    )
+                }
+            }
+            out["transient"] = j;
+        }
         out["warnings"] = Value::Array(warnings);
         out
+    }
+
+    /// The transient history as CSV: time, kinetic and strain energy, and
+    /// the displacement of each named point. `None` without `[transient]`.
+    pub fn to_csv(&self) -> Option<String> {
+        use std::fmt::Write;
+        let tr = self.transient.as_ref()?;
+        let mut s = String::from("time,kinetic_energy,strain_energy");
+        for k in tr.points.keys() {
+            let _ = write!(s, ",{k}_ux,{k}_uy,{k}_uz");
+        }
+        s.push('\n');
+        for (i, t) in tr.times.iter().enumerate() {
+            let _ = write!(s, "{t:.9e},{:.9e},{:.9e}", tr.kinetic[i], tr.strain[i]);
+            for h in tr.points.values() {
+                let u = h[i];
+                let _ = write!(s, ",{:.9e},{:.9e},{:.9e}", u[0], u[1], u[2]);
+            }
+            s.push('\n');
+        }
+        Some(s)
     }
 
     /// The mesh with the static displacement and the mode shapes, as a
@@ -1104,6 +1608,12 @@ impl Outcome {
                     3,
                     sc,
                 );
+            }
+        }
+        if let Some(tr) = &self.transient {
+            vector(&mut s, "transient_end", &tr.last, 0, 1.0);
+            for (i, (_, u)) in tr.snapshots.iter().enumerate() {
+                vector(&mut s, &format!("transient_{}", i + 1), u, 0, 1.0);
             }
         }
         s

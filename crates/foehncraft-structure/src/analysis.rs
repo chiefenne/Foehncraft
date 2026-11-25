@@ -7,9 +7,9 @@ use crate::sparse::dot;
 use crate::{Error, codes};
 
 /// Relative pivot tolerance of the factorisations.
-const PIVOT_TOL: f64 = 1e-12;
+pub(crate) const PIVOT_TOL: f64 = 1e-12;
 
-fn dof_name(model: &Model, d: usize) -> String {
+pub(crate) fn dof_name(model: &Model, d: usize) -> String {
     let n = d / DOFS;
     let x = model.nodes.get(n).copied().unwrap_or_default();
     format!(

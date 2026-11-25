@@ -61,7 +61,7 @@ pub struct Run;
 impl Tool for Run {
     const ID: &'static str = "structure.run";
     const VERSION: u32 = 1;
-    const SUMMARY: &'static str = "Run a structural case (beams, clamp springs; static and modal analyses) and write `result.json` and `structure.vtk`; returns the result.";
+    const SUMMARY: &'static str = "Run a structural case (beams, shells, clamp springs, temperatures; static, modal and transient analyses) and write `result.json`, `structure.vtk` and, for a transient, `transient.csv`; returns the result.";
     const CATEGORY: Category = Category::Structure;
     const ACTION: Action = Action::StartRun;
     type Input = RunInput;
@@ -79,6 +79,9 @@ impl Tool for Run {
             dir.join("result.json"),
             serde_json::to_string_pretty(&json)? + "\n",
         )?;
+        if let Some(csv) = out.to_csv() {
+            std::fs::write(dir.join("transient.csv"), csv)?;
+        }
         if c.output.vtk {
             std::fs::write(dir.join("structure.vtk"), out.to_vtk(&name))?;
         }
@@ -200,16 +203,28 @@ mod tests {
     fn catalogue_cases_run_and_the_fit_matches() {
         let tmp = std::env::temp_dir().join(format!("foehn-structure-{}", std::process::id()));
         let mut ctx = Ctx::new(BuildInfo::default());
-        for name in ["reed_beam", "reed_beam_clamp_springs", "reed_plate"] {
+        for name in [
+            "reed_beam",
+            "reed_beam_clamp_springs",
+            "reed_plate",
+            "reed_plate_pulse",
+            "reed_plate_hot",
+        ] {
             let case = root().join(format!("examples/cases/structure/{name}.toml"));
             let out = tmp.join(name);
             let r = call("structure.run", json!({"case": case, "out": out}), &mut ctx);
             assert_eq!(r.status, "finished", "{name}: {:?}", r.diagnostics);
             let res = &r.result;
-            assert_eq!(res["modal"]["sturm"]["ok"], true, "{name}");
+            if !res["modal"].is_null() {
+                assert_eq!(res["modal"]["sturm"]["ok"], true, "{name}");
+            }
             assert!(out.join("structure.vtk").is_file());
+            assert_eq!(
+                out.join("transient.csv").is_file(),
+                name == "reed_plate_pulse"
+            );
             let rigid = res["clamps"][0]["rotation"]["rigid"].as_bool().unwrap();
-            assert_eq!(rigid, name == "reed_beam");
+            assert_eq!(rigid, name == "reed_beam" || name == "reed_plate_hot");
         }
         // the fit of examples/cases/tools/structure_fit_clamp.json
         let case = root().join("examples/cases/structure/reed_beam_clamp_springs.toml");

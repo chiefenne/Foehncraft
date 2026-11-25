@@ -1,0 +1,54 @@
+# The reed petal of reed_plate.toml struck by a pressure pulse (MS5 part 3):
+# 3 kPa for 1 ms (a triangle in time), then free ringing on its clamp
+# springs with 2 % damping at its first two bending frequencies (Rayleigh).
+# Generalised-α with ρ∞ = 0.9, 25 µs steps over 20 ms.
+#
+#   foehn call structure.run --input examples/cases/tools/structure_reed_plate_pulse.json
+
+[structure]
+name = "reed_plate_pulse"
+
+[analysis]
+modes = 4
+
+[transient]
+end_time = 0.02
+time_step = 2.5e-5
+method = "direct"
+rho_infinity = 0.9
+snapshots = [0.0010, 0.0022, 0.0038, 0.0054]
+
+[damping]
+ratios = [[154.0, 0.02], [1002.0, 0.02]]
+
+[histories.pulse]
+table = [[0.0, 0.0], [0.0005, 1.0], [0.001, 0.0]]
+
+[materials.spring_steel]
+young = 206e9
+poisson = 0.3
+density = 7850.0
+
+[[plates]]
+name = "reed"
+origin = [0.0, -6e-3, 0.0]
+edge_a = [0.03, 0.0, 0.0]
+edge_b = [0.0, 12e-3, 0.0]
+divisions = [30, 12]
+thickness = 0.2e-3
+material = "spring_steel"
+
+[[clamps]]
+along = [[0.0, -6e-3, 0.0], [0.0, 6e-3, 0.0]]
+normal = "z"
+line = "y"
+k_rotation = 40.0
+k_translation = 2.0e7
+
+[[pressures]]
+plate = "reed"
+value = 3000.0
+history = "pulse"
+
+[points]
+tip = [0.03, 0.0, 0.0]
