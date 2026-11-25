@@ -103,8 +103,9 @@ validated range, one mesh only, …) in its report and its JSON result.
   and number of ranks (MPI step W2); the steady scalar solver, multigrid
   included, and the flow solver (SIMPLEC, PISO and the coupled solver,
   k-ω SST and k-ε, passive scalars and the energy equation) run on several
-  ranks with bitwise the result of one (MPI steps W3 to W5; `foehn run
-  --ranks N` follows in 1.1).
+  ranks with bitwise the result of one (MPI steps W3 to W5); a restart
+  gathered from the ranks is byte for byte the one-rank file and continues
+  on any rank count (W6; `foehn run --ranks N` follows in 1.1).
 - **Pressure–velocity coupling.** SIMPLEC and SIMPLE for steady flow, PISO
   with outer correctors for transient flow (SIMPLEC-type correctors with
   outer iterations, stable on thin wedge cells at an axis), a time step from the

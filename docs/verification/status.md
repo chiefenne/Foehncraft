@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**118 features: 50 verified, 65 partial, 3 unverified.**
+**119 features: 50 verified, 66 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -140,6 +140,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Backends and interfaces | [Multigrid on several ranks with the replicated setup, bitwise one rank (MPI step W4)](#parallel-multigrid-ranks) | partial |
 | Backends and interfaces | [Steady SIMPLEC on several ranks, bitwise one rank (MPI step W5 part 1)](#parallel-flow-ranks) | partial |
 | Backends and interfaces | [Turbulence, energy, scalars, transient runs and the coupled solver on several ranks, bitwise one rank (MPI step W5 part 2)](#parallel-flow-models-ranks) | partial |
+| Backends and interfaces | [Restart files on ranks: gathered byte for byte the one-rank file, read on any rank count (MPI step W6)](#parallel-restart-ranks) | partial |
 | Sprays | [Lagrangian spray parcels, one way (L12, SP1)](#sprays-one-way) | partial |
 | Flow models | [Porous regions with a direction-dependent Darcy-Forchheimer resistance (D270, PM1)](#porous-darcy-forchheimer) | partial |
 | Flow models | [Gas and matrix temperatures in porous regions, monolithic (D271, D272, PM2)](#porous-two-temperatures) | partial |
@@ -1776,10 +1777,27 @@ Contracts: `bitwise`.
 
 Gaps:
 
-- not on ranks yet (refused with an error): zeta-f and elliptic blending, curvature correction and QCR, the MLP limiter and quadratic gradients, gravity, turning zones, solid regions, schedules, level sweeps and restarts
+- not on ranks yet (refused with an error): zeta-f and elliptic blending, curvature correction and QCR, the MLP limiter and quadratic gradients, gravity, turning zones, solid regions, schedules and level sweeps (restarts: parallel.restart-ranks)
 - monitors, probes and balances are not computed on ranks: they come with the run on ranks (W7)
 - transient runs are checked with the fixed time step, not the adaptive one
 - 1M cells on 4 cores split into 1, 2, 4 ranks (example ranks_scaling): +2, +10, +28 % time per iteration against threads only, bitwise; strong scaling over more cores is W9
+
+Contracts: `bitwise`.
+
+<a id="parallel-restart-ranks"></a>
+
+### Restart files on ranks: gathered byte for byte the one-rank file, read on any rank count (MPI step W6)
+
+**partial** (gaps written) · id `parallel.restart-ranks` · switch `[run] ranks and [run] restart of foehn flow` · decisions D42, D84, D93
+
+- contract (bitwise): [`restart_written_on_four_ranks_continues_on_two`](../../crates/foehncraft-flow/tests/ranks.rs): nine cases (steady SIMPLEC on polyhedra, mixed cells and tetrahedra, PISO with BDF2, a passive scalar, energy, k-omega SST, k-epsilon, the coupled solver with its momentum multigrid): the restart written on 4 ranks (and on 2) gathered into one file with the bytes of the one-rank file at the same point; continued on 2 (and on 3) ranks, every field and the residual history bitwise the uninterrupted one-rank run
+- contract (bitwise): [`ranks_restart_channel`](../../examples/cases/flow/ranks_restart_channel.toml): a transient channel (BDF2, 40 steps) on 2, 3 and 5 ranks; the restart gathered from 5 ranks has the bytes of the one-rank restart (the run fails otherwise) (passes in CI (set linux-2), not yet in the manual)
+
+Gaps:
+
+- the file is gathered on every rank and written by rank 0 (no parallel HDF5): memory of the whole state on each rank, as for the replicated multigrid setup
+- restarts of conjugate cases (full-mesh temperature) and moving meshes are refused on ranks
+- the VTKHDF field output of a run on ranks comes with the run on ranks (W7); [run] ranks writes ranks.vtkhdf gathered in global order
 
 Contracts: `bitwise`.
 

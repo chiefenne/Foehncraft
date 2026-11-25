@@ -1,10 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 652" width="800" height="652" font-family="Helvetica, Arial, sans-serif" font-size="12">
 <rect width="800" height="652" fill="white"/>
-<text x="400.0" y="22" text-anchor="middle" font-size="15" font-weight="bold">Verification grades of 118 features (D199)</text>
+<text x="400.0" y="22" text-anchor="middle" font-size="15" font-weight="bold">Verification grades of 119 features (D199)</text>
 <rect x="230" y="36" width="14" height="14" fill="#2e9d5b"/>
 <text x="250" y="48">verified (50)</text>
 <rect x="380" y="36" width="14" height="14" fill="#e9a23b"/>
-<text x="400" y="48">partial (65)</text>
+<text x="400" y="48">partial (66)</text>
 <rect x="530" y="36" width="14" height="14" fill="#d64541"/>
 <text x="550" y="48">unverified (3)</text>
 <text x="220" y="84.0" text-anchor="end">Meshes</text>
@@ -90,8 +90,8 @@
 <text x="220" y="532.0" text-anchor="end">Backends and interfaces</text>
 <rect x="230.0" y="518" width="244.6" height="20" fill="#2e9d5b"/>
 <text x="352.3" y="532.0" text-anchor="middle" fill="white" font-weight="bold">6</text>
-<rect x="474.6" y="518" width="203.8" height="20" fill="#e9a23b"/>
-<text x="576.5" y="532.0" text-anchor="middle" fill="white" font-weight="bold">5</text>
+<rect x="474.6" y="518" width="244.6" height="20" fill="#e9a23b"/>
+<text x="596.9" y="532.0" text-anchor="middle" fill="white" font-weight="bold">6</text>
 <text x="220" y="560.0" text-anchor="end">Sprays</text>
 <rect x="230.0" y="546" width="40.8" height="20" fill="#e9a23b"/>
 <text x="250.4" y="560.0" text-anchor="middle" fill="white" font-weight="bold">1</text>
