@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**141 features: 50 verified, 88 partial, 3 unverified.**
+**142 features: 50 verified, 89 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -165,6 +165,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Structures | [Thermal strain loads on beams and shells from a temperature change and a difference across the thickness (L53, MS5 part 3)](#structure-thermal) | partial |
 | Structures | [Quadratic solids: ten-node tetrahedra and twenty-node hexahedra from a second-order Gmsh file or a block (L53, MS5 part 3b)](#structure-solids) | partial |
 | Structures | [Unilateral contact with rigid seats and stops: exact in statics, penalty at the end of each generalised-α step (L53, MS5 part 4)](#structure-contact) | partial |
+| Structures | [Temperatures of a solid region of a flow case as the thermal load of beams, shells and solids: VTKHDF cell field, linear least-squares fit at the nodes (L53, MS6 part 1)](#structure-temperature-field) | partial |
 | Moving meshes and solids | [Deforming meshes with a prescribed node displacement, and the piston (stage MS0)](#mesh-deforming) | partial |
 
 ## Meshes
@@ -2336,7 +2337,7 @@ Gaps:
 
 Gaps:
 
-- temperatures are given per part (uniform change and a linear difference across the thickness); the mapping of the temperature field of a solid region of the flow case is MS6
+- temperatures given per part are uniform with a linear difference across the thickness; a field from a flow case is `structure.temperature-field` (MS6)
 - the moduli do not depend on temperature: give E at the operating temperature
 - no thermal stresses of beams and shells in the output (the solids give the von Mises stress)
 
@@ -2362,7 +2363,7 @@ Gaps:
 - a solid shares no nodes with beams and shells: no solid–shell or solid–beam connection yet
 - the von Mises stress at the nodes (averaged over the elements around each) only; no stress components or principal stresses in the output
 - Gmsh's complete second-order elements (27-node hexahedra, 9-node quadrilaterals), prisms and pyramids are refused
-- a uniform temperature change per part; a temperature field per node (from the flow case) is MS6
+- `[[temperatures]]` gives a uniform change per part; a field per node from a flow case is `structure.temperature-field`
 - nearly incompressible materials (ν → 0.5) lock with full integration: ν = 0.49 is 1e-3 to 8e-3 off on the Lamé cylinder; no mixed or reduced-integration formulation
 
 <a id="structure-contact"></a>
@@ -2385,6 +2386,26 @@ Gaps:
 - impacts are elastic: no coefficient of restitution; generalised-α with ρ∞ < 1 damps the high frequencies an impact excites, and the penalty contact of a shell node lasts far less than a step
 - an impact is not resolved in time: no step cut at contact changes (plan 5.4) and no energy-conserving contact scheme; the energy of the reed example decays but is not checked against a balance
 - the active-set loop refactors the matrix whenever the set changes (1990 factorisations in 2400 steps of the example)
+
+<a id="structure-temperature-field"></a>
+
+### Temperatures of a solid region of a flow case as the thermal load of beams, shells and solids: VTKHDF cell field, linear least-squares fit at the nodes (L53, MS6 part 1)
+
+**partial** (a model without reference data; gaps written) · id `structure.temperature-field` · switch `structure.run with [[temperature_fields]]` · decisions D289
+
+- exact: [`linear_field_is_mapped_exactly_and_a_free_solid_expands_without_stress`](../../crates/foehncraft-structure/tests/mapping.rs): linear field on hexahedral, tetrahedral and polyhedral flow cells, hex20 and tet10 blocks: node values within 1e-9; displacement minus α[(T − T₀) x − ½ g |x|²] rigid within 1e-9 of α ΔT; von Mises below 1e-8 E α ΔT (Timoshenko & Goodier 1970)
+- exact: [`plates_and_beams_take_the_value_and_the_slope_across_the_section`](../../crates/foehncraft-structure/tests/mapping.rs): T₀ + 40 + 3000 z on MITC4, MITC3+ plates and a beam: every unknown within 1e-9 of [[temperatures]] change 40, difference 3000 h
+- exact: [`smooth_field_converges_at_second_order`](../../crates/foehncraft-structure/tests/mapping.rs): 400 + 50 sin πx cos πy eᶻ on 8, 16, 32 hexahedra: largest node error falls at order 1.9 and 2.2 (above 1.8), 0.28 K at 32 cells (below 0.4 K)
+- exact: [`a_two_dimensional_case_maps_a_field_linear_in_x_and_y`](../../crates/foehncraft-structure/tests/mapping.rs): one layer of hexahedra or prisms: a field linear in x and y within 1e-9, constant across the layer
+- contract (diagnostics): [`temperature_field_errors`](../../crates/foehncraft-structure/tests/mapping.rs): STR001 for a missing zone, field or file, an unknown part, no expansion, a structure outside the zones, bad neighbours or max_distance; offset moves the structure into the zone
+
+Gaps:
+
+- one result file per field, constant in time (a history scales T − reference): no series of results in a transient
+- VTKHDF results only (no .vtu or other formats)
+- the mapping is one way: the structure's motion and the fluid forces (the two-way FSI of MS6) are not coupled yet
+- the moduli do not depend on temperature
+- no check against a measured thermal deformation of a part in a flow
 
 ## Moving meshes and solids
 

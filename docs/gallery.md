@@ -170,6 +170,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | <a id="run-ranks-imprint"></a>305 | [A five-blade mixer on five ranks: the sliding mesh by imprinting on ranks](gallery/meshes.md#run-ranks-imprint) | [Meshes](gallery/meshes.md) |
 | <a id="spray-evaporation"></a>306 | [Water droplets evaporating in hot air](gallery/sprays.md#spray-evaporation) | [Lagrangian sprays](gallery/sprays.md) |
 | <a id="spray-saturation"></a>306b | [More water than the air can take, steady](gallery/sprays.md#spray-saturation) | [Lagrangian sprays](gallery/sprays.md) |
+| <a id="heat-sink-hot"></a>308 | [A heat sink warmed by its chip: the flow case's temperatures as the load](gallery/structure.md#heat-sink-hot) | [Structures](gallery/structure.md) |
 
 ## Adding a feature
 
