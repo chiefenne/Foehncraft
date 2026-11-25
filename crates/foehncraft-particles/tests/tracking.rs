@@ -29,6 +29,7 @@ impl<F: Fn(usize, [f64; 3]) -> [f64; 3] + Sync> Gas for Field<F> {
             k: 0.0,
             tke: 0.0,
             eps: 0.0,
+            ..GasState::isothermal([0.0; 3], 1.0, 1.0)
         }
     }
 }

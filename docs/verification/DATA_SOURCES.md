@@ -135,6 +135,41 @@ data (D201, rule 5 below). The numbering of 1.3 is kept.
   Wall & Afacan 2002, Chem. Eng. Res. Des. 80): **to verify** before a test
   quotes it.
 
+## 3d. Spray evaporation (SP4, SP5)
+
+Published correlations, property formulations and analytic solutions; no
+measured data set is stored. Each is quoted by the code or a test next to
+its use.
+
+- Saturation pressure of water: the auxiliary equation of the IAPWS-95
+  formulation, Wagner, W., Pruss, A. (1993), International equations for
+  the saturation properties of ordinary water substance, J. Phys. Chem. Ref.
+  Data 22, 783-787, doi:10.1063/1.555926; the same equation as eq. (2.5) of
+  Wagner, W., Pruss, A. (2002), The IAPWS formulation 1995 for the
+  thermodynamic properties of ordinary water substance, J. Phys. Chem. Ref.
+  Data 31, 387-535, doi:10.1063/1.1461829. The kernel test checks it at the
+  triple point, 373.124 K and 101.325 kPa (values of the IAPWS-95 tables).
+- Latent heat of water at 298.15 K, 2.4417 MJ/kg (IAPWS-95 tables, Wagner
+  and Pruss 2002); at other temperatures from Kirchhoff's law with the
+  vapour enthalpy of the NASA-7 data of GRI-Mech 3.0 (`H2O`, the species
+  data the flow already uses) and h_l = c_l T.
+- Droplet heat and mass transfer: Ranz, W. E., Marshall, W. R. (1952),
+  Evaporation from drops, Chem. Eng. Prog. 48, 141-146 and 173-180
+  (Nu = 2 + 0.6 Re^1/2 Pr^1/3, Sh = 2 + 0.6 Re^1/2 Sc^1/3); Abramzon, B.,
+  Sirignano, W. A. (1989), Droplet vaporization model for spray combustion
+  calculations, Int. J. Heat Mass Transfer 32, 1605-1618,
+  doi:10.1016/0017-9310(89)90043-4 (film model with Spalding numbers B_M and
+  B_T).
+- d-squared law: Godsave, G. A. E. (1953), Studies of the combustion of
+  drops in a fuel spray: the burning of single drops of fuel, Proc. 4th
+  Symp. (Int.) on Combustion, 818-830, doi:10.1016/S0082-0784(53)80107-4;
+  Spalding, D. B. (1953), The combustion of liquid fuels, Proc. 4th Symp.
+  (Int.) on Combustion, 847-864, doi:10.1016/S0082-0784(53)80110-4. Used as
+  the analytic solution of the single-droplet test (K = 8 ρ_g D ln(1 + B_M)
+  / ρ_l at rest) and of the wet-bulb balance.
+- Adiabatic saturation (closed box and V28.11): an exact energy and mass
+  balance of the case itself, no external number.
+
 ## 4. Rules for adding an entry
 
 1. A value goes into the repository only when a test or a validation page

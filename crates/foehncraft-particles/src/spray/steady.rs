@@ -83,6 +83,18 @@ pub struct StreamBooks {
     /// Sensible enthalpy flows Σ ṁ c_p T (W): [injected, removed (with the
     /// sign of a loss), from the gas (one way: what the other two leave)].
     pub enthalpy: [f64; 3],
+    /// Liquid mass flow that evaporated (kg/s, the streams' own loss, net
+    /// of condensation; SP5).
+    #[serde(default)]
+    pub evaporated_mass: f64,
+    /// Streams that evaporated completely.
+    #[serde(default)]
+    pub evaporated_streams: u64,
+    /// Liquid mass flow the saturation limiter of D253 held back in streams
+    /// that the frozen gas evaporated completely (kg/s): it ends the pass
+    /// as liquid where the stream ended (SP5).
+    #[serde(default)]
+    pub limited_mass: f64,
 }
 
 impl StreamBooks {
@@ -125,6 +137,9 @@ pub struct StreamPass {
     pub loading: Vec<(u32, u32, f64)>,
     /// The paths, when asked for.
     pub paths: Option<Streams>,
+    /// The streams as tracked, in the order of their identities (for the
+    /// limiter, [`Spray::limit_streams`]).
+    outcomes: Vec<(One, super::Outcome)>,
 }
 
 impl Spray {
@@ -184,8 +199,6 @@ impl Spray {
         st: &Steady,
         paths: bool,
     ) -> Result<StreamPass> {
-        let rho_p = self.cfg.liquid.density;
-        let cp_p = self.cfg.liquid.specific_heat;
         let fresh = self.stream_release(env, st)?;
         let opts = TrackOpts {
             paths,
@@ -197,6 +210,19 @@ impl Spray {
             .collect();
         // the books in the order of the stream identities (D93)
         outcomes.sort_by_key(|(p, _)| p.id);
+        Ok(self.stream_pass(env, outcomes, paths))
+    }
+
+    /// The books, the sources and the paths of the tracked streams
+    /// `outcomes` (sorted by identity).
+    fn stream_pass(
+        &self,
+        env: &Env,
+        outcomes: Vec<(One, super::Outcome)>,
+        paths: bool,
+    ) -> StreamPass {
+        let rho_p = self.cfg.liquid.density;
+        let cp_p = self.cfg.liquid.specific_heat;
         let nb = env.mesh.boundaries.len();
         let mut b = StreamBooks {
             streams: outcomes.len() as u64,
@@ -212,6 +238,7 @@ impl Spray {
             b.substeps += o.substeps;
             residence += m * o.used;
             b.residence_max = b.residence_max.max(o.used);
+            b.evaporated_mass += o.vapour;
             let me = mass_of(o.p.d, o.p.count, rho_p);
             let mf = &mut b.momentum;
             for k in 0..3 {
@@ -241,6 +268,8 @@ impl Spray {
                     b.lost_mass += me;
                     b.lost_streams += 1;
                 }
+                Fate::Evaporated if me > 0.0 => b.limited_mass += me,
+                Fate::Evaporated => b.evaporated_streams += 1,
             }
         }
         if b.injected_mass > 0.0 {
@@ -309,12 +338,44 @@ impl Spray {
             }
             s
         });
-        Ok(StreamPass {
+        StreamPass {
             sources,
             books: b,
             loading,
             paths,
-        })
+            outcomes,
+        }
+    }
+
+    /// The saturation limiter of D253 on a stream pass (D260 (5)): the
+    /// evaporating records of each cell with a factor `factor(cell)` below
+    /// 1 keep that share of their vapour; the rest stays liquid in its
+    /// stream, at the temperature of the record, with the momentum it
+    /// carried, and the books and the sources are made again. Returns the
+    /// cells limited and the mass flow held back (kg/s).
+    pub fn limit_streams(
+        &self,
+        env: &Env,
+        pass: &mut StreamPass,
+        factor: &dyn Fn(u32) -> f64,
+    ) -> (u32, f64) {
+        let cells = pass
+            .sources
+            .cells
+            .iter()
+            .filter(|&&c| factor(c) < 1.0)
+            .count() as u32;
+        if cells == 0 {
+            return (0, 0.0);
+        }
+        let mut outcomes = std::mem::take(&mut pass.outcomes);
+        let mut back = 0.0;
+        for (_, o) in &mut outcomes {
+            back += self.hold_back(o, factor, false);
+        }
+        let paths = pass.paths.is_some();
+        *pass = self.stream_pass(env, outcomes, paths);
+        (cells, back)
     }
 
     /// Writes the stream paths to a VTKHDF `PolyData` file of points

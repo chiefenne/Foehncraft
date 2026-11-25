@@ -29,6 +29,7 @@ impl Gas for Swirl {
             // dispersion take part too (SP2c)
             tke: 0.02 + 0.03 * x[1],
             eps: 0.1 + 0.2 * x[0],
+            ..GasState::isothermal([0.0; 3], 1.0, 1.0)
         }
     }
 }
@@ -138,7 +139,11 @@ fn sources_do_not_depend_on_parcel_order_or_threads() {
         assert_eq!(a.sources, b.sources, "{kind:?} {dispersion:?}");
         // and the committed parcels carry the same momentum after the
         // closing step
-        let du = |c: u32| ([1e-3 * c as f64, -2e-3, 0.5e-3], 0.2 - 0.01 * c as f64);
+        let du = |c: u32| foehncraft_particles::Delta {
+            u: [1e-3 * c as f64, -2e-3, 0.5e-3],
+            t: 0.2 - 0.01 * c as f64,
+            y: 0.0,
+        };
         let ba = sp.commit(&env, a, Some(&du));
         let bb = other.commit(&env, b, Some(&du));
         assert_eq!(ba, bb, "{kind:?} {dispersion:?}");
