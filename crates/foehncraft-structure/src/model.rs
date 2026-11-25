@@ -58,6 +58,20 @@ pub struct AreaLoad {
     pub pressure: f64,
 }
 
+/// A thermal strain on one element (α ΔT from the temperature field).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ThermalLoad {
+    /// The element: a shell if `shell`, else a beam.
+    pub element: usize,
+    /// A shell element.
+    pub shell: bool,
+    /// α ΔT of the axis or mid-surface.
+    pub strain: f64,
+    /// α ΔT / h across the section: beams [along local y, along local z],
+    /// shells [across the thickness, top along the normal; unused].
+    pub curvature: [f64; 2],
+}
+
 /// The model.
 #[derive(Debug, Clone, Default)]
 pub struct Model {
@@ -86,6 +100,8 @@ pub struct Model {
     /// Prescribed values of fixed unknowns (unknown, value); a fixed
     /// unknown not listed is zero.
     pub prescribed: Vec<(usize, f64)>,
+    /// Thermal strains of elements.
+    pub thermal: Vec<ThermalLoad>,
 }
 
 /// The assembled system on the free unknowns.
@@ -329,6 +345,13 @@ impl Model {
                     f_all[d] += fg[i];
                 }
             }
+            for t in self.thermal.iter().filter(|t| !t.shell && t.element == e) {
+                let fl = beam::local_thermal_load(p, t.strain, t.curvature);
+                let fg = beam::vec_to_global(&b.frame, &fl);
+                for (i, &d) in all.iter().enumerate() {
+                    f_all[d] += fg[i];
+                }
+            }
         }
         let dirs = if self.shells.is_empty() {
             Vec::new()
@@ -340,7 +363,15 @@ impl Model {
             let p = &self.shell_props[sh.props];
             let normal = self.shell_normal(e);
             let used = sh.used();
-            let (kg, mg) = if sh.tri {
+            let th = self
+                .thermal
+                .iter()
+                .filter(|t| t.shell && t.element == e)
+                .fold(shell::Thermal::default(), |a, t| shell::Thermal {
+                    strain: a.strain + t.strain,
+                    curvature: a.curvature + t.curvature[0],
+                });
+            let (kg, mg, fth) = if sh.tri {
                 let geo = shell::TriGeometry {
                     x: [
                         self.nodes[used[0]],
@@ -350,9 +381,9 @@ impl Model {
                     v: [dirs[used[0]], dirs[used[1]], dirs[used[2]]],
                     h: 0.5 * p.thickness,
                 };
-                shell::mitc3plus(&geo, p)
+                shell::mitc3plus_thermal(&geo, p, th)
             } else {
-                shell::mitc4(&self.shell_geometry(e, &dirs), p)
+                shell::mitc4_thermal(&self.shell_geometry(e, &dirs), p, th)
             };
             let all: Vec<usize> = used
                 .iter()
@@ -363,6 +394,9 @@ impl Model {
             k.add_block(&fr, &kg);
             m.add_block(&fr, &mg);
             ka.add_block(&al, &kg);
+            for (i, &d) in all.iter().enumerate() {
+                f_all[d] += fth[i];
+            }
             for l in self.area_loads.iter().filter(|l| l.element == e) {
                 let q = [
                     l.q[0] + l.pressure * normal[0],

@@ -47,6 +47,17 @@ pub struct ShellProps {
 }
 
 const G2: f64 = 0.577_350_269_189_625_8; // 1/√3
+
+/// A thermal strain on a shell: `strain` = α ΔT of the mid-surface and
+/// `curvature` = α (T_top − T_bottom) / thickness, top along the director.
+/// In-plane and free across the thickness (plane stress).
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct Thermal {
+    /// α ΔT at the mid-surface.
+    pub strain: f64,
+    /// α ΔT across the thickness divided by the thickness (1/m).
+    pub curvature: f64,
+}
 /// Natural coordinates of the four nodes.
 const NODES: [(f64, f64); 4] = [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)];
 
@@ -163,6 +174,16 @@ fn inverse(m: [[f64; 3]; 3]) -> ([[f64; 3]; 3], f64) {
 
 /// Stiffness and consistent mass (24 × 24, row major) of an MITC4 element.
 pub fn mitc4(geo: &Geometry, p: &ShellProps) -> (Vec<f64>, Vec<f64>) {
+    let (k, m, _) = mitc4_thermal(geo, p, Thermal::default());
+    (k, m)
+}
+
+/// [`mitc4`] and the work-equivalent nodal forces (24) of a thermal strain.
+pub fn mitc4_thermal(
+    geo: &Geometry,
+    p: &ShellProps,
+    th: Thermal,
+) -> (Vec<f64>, Vec<f64>, Vec<f64>) {
     let e = p.young;
     let nu = p.poisson;
     let c = e / (1.0 - nu * nu);
@@ -170,6 +191,7 @@ pub fn mitc4(geo: &Geometry, p: &ShellProps) -> (Vec<f64>, Vec<f64>) {
     let gm = e / (2.0 * (1.0 + nu));
     let mut k = vec![0.0; 576];
     let mut m = vec![0.0; 576];
+    let mut fth = vec![0.0; 24];
     let pts = [-G2, G2];
     for &t in &pts {
         // the shear strains at the tying points, at this t
@@ -226,6 +248,13 @@ pub fn mitc4(geo: &Geometry, p: &ShellProps) -> (Vec<f64>, Vec<f64>) {
                     }
                 }
                 let wdet = det.abs(); // weights are 1
+                // σ = D ε_th of the in-plane thermal strain at this t
+                let sth = c * (1.0 + nu) * (th.strain + 0.5 * t * p.thickness * th.curvature);
+                if sth != 0.0 {
+                    for q in 0..24 {
+                        fth[q] += wdet * sth * (eps[0][q] + eps[1][q]);
+                    }
+                }
                 // D: plane stress in-plane, κG transverse shear
                 let dmat = |o1: usize, o2: usize| -> f64 {
                     match (o1, o2) {
@@ -283,7 +312,7 @@ pub fn mitc4(geo: &Geometry, p: &ShellProps) -> (Vec<f64>, Vec<f64>) {
             }
         }
     }
-    (k, m)
+    (k, m, fth)
 }
 
 /// Work-equivalent nodal forces (24) of a load per area `q` (global axes)
@@ -488,6 +517,17 @@ impl TriGeometry {
 /// A = (1/6, 2/3), B = (2/3, 1/6), C = (1/6, 1/6), D = (1/3 + d, 1/3 − 2d),
 /// E = (1/3 − 2d, 1/3 + d), F = (1/3 + d, 1/3 + d), d = 10⁻⁴.
 pub fn mitc3plus(geo: &TriGeometry, p: &ShellProps) -> (Vec<f64>, Vec<f64>) {
+    let (k, m, _) = mitc3plus_thermal(geo, p, Thermal::default());
+    (k, m)
+}
+
+/// [`mitc3plus`] and the work-equivalent nodal forces (18) of a thermal
+/// strain, the bubble condensed.
+pub fn mitc3plus_thermal(
+    geo: &TriGeometry,
+    p: &ShellProps,
+    th: Thermal,
+) -> (Vec<f64>, Vec<f64>, Vec<f64>) {
     let e = p.young;
     let nu = p.poisson;
     let c = e / (1.0 - nu * nu);
@@ -495,6 +535,7 @@ pub fn mitc3plus(geo: &TriGeometry, p: &ShellProps) -> (Vec<f64>, Vec<f64>) {
     let gm = e / (2.0 * (1.0 + nu));
     let mut k = vec![0.0; NT * NT];
     let mut m = vec![0.0; NT * NT];
+    let mut fth = [0.0; NT];
     let dd = 1e-4;
     let tying = [
         (1.0 / 6.0, 2.0 / 3.0),
@@ -560,6 +601,12 @@ pub fn mitc3plus(geo: &TriGeometry, p: &ShellProps) -> (Vec<f64>, Vec<f64>) {
                 }
             }
             let wdet = w * det.abs();
+            let sth = c * (1.0 + nu) * (th.strain + 0.5 * t * p.thickness * th.curvature);
+            if sth != 0.0 {
+                for q in 0..NT {
+                    fth[q] += wdet * sth * (eps[0][q] + eps[1][q]);
+                }
+            }
             let dmat = [
                 [c, c * nu, 0.0, 0.0, 0.0],
                 [c * nu, c, 0.0, 0.0, 0.0],
@@ -621,6 +668,9 @@ pub fn mitc3plus(geo: &TriGeometry, p: &ShellProps) -> (Vec<f64>, Vec<f64>) {
     };
     let mut kr = reduce(&k);
     let mr = reduce(&m);
+    let fr: Vec<f64> = (0..18)
+        .map(|j| (0..NT).map(|l| tmat[l * 18 + j] * fth[l]).sum())
+        .collect();
     for n in 0..3 {
         let mut big: f64 = 0.0;
         for d in 3..6 {
@@ -634,7 +684,7 @@ pub fn mitc3plus(geo: &TriGeometry, p: &ShellProps) -> (Vec<f64>, Vec<f64>) {
             }
         }
     }
-    (kr, mr)
+    (kr, mr, fr)
 }
 
 /// Work-equivalent nodal forces (18) of a load per area `q` on a

@@ -61,7 +61,7 @@ pub struct Run;
 impl Tool for Run {
     const ID: &'static str = "structure.run";
     const VERSION: u32 = 1;
-    const SUMMARY: &'static str = "Run a structural case (beams, clamp springs; static and modal analyses) and write `result.json` and `structure.vtk`; returns the result.";
+    const SUMMARY: &'static str = "Run a structural case (beams, shells, clamp springs, temperatures; static, modal and transient analyses) and write `result.json`, `structure.vtk` and, for a transient, `transient.csv`; returns the result.";
     const CATEGORY: Category = Category::Structure;
     const ACTION: Action = Action::StartRun;
     type Input = RunInput;
@@ -79,6 +79,9 @@ impl Tool for Run {
             dir.join("result.json"),
             serde_json::to_string_pretty(&json)? + "\n",
         )?;
+        if let Some(csv) = out.to_csv() {
+            std::fs::write(dir.join("transient.csv"), csv)?;
+        }
         if c.output.vtk {
             std::fs::write(dir.join("structure.vtk"), out.to_vtk(&name))?;
         }
