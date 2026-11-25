@@ -1869,6 +1869,30 @@ gaps = [
 ]
 
 [[feature]]
+id = "sprays.ecn-diagnostics"
+area = "Sprays"
+title = "ECN liquid length (projected liquid volume) and vapour penetration (Spray A, SA3, D315)"
+switch = "[spray.ecn]"
+decisions = ["D315"]
+model = false
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-particles/tests/ecn.rs::the_liquid_length_of_a_linear_plv_profile_is_exact", what = "parcels with a linearly falling liquid volume: the PLV of every bin to 1e-12 and both liquid lengths (0.95 and 0.5 of the line) to 1e-12 m" },
+  { kind = "exact", test = "crates/foehncraft-particles/tests/ecn.rs::the_volume_along_the_line_of_sight_is_summed_and_across_it_is_not", what = "two parcels along the line of sight add in one bin, two across it fall in two; the threshold is reached at the summed bin" },
+  { kind = "exact", test = "crates/foehncraft-particles/tests/ecn.rs::the_default_line_of_sight_is_across_the_axis", what = "the default and a given line of sight are unit vectors across the axis (to 1e-15)" },
+  { kind = "exact", test = "crates/foehncraft-particles/tests/ecn.rs::the_vapour_penetration_is_the_farthest_cell_at_the_threshold", what = "the vapour penetration is the farthest axial distance of a cell at or above 0.1 % on a slanted axis (to 1e-15), behind the nozzle and off threshold ignored" },
+  { kind = "contract", property = "bitwise", test = "crates/foehncraft-particles/tests/ecn.rs::the_liquid_length_does_not_depend_on_the_parcel_order", what = "the parcels in reverse order give the same bits; without [spray.ecn] no length is written" },
+  { kind = "contract", property = "diagnostics", test = "crates/foehncraft-particles/tests/ecn.rs::the_ecn_table_is_checked", what = "negative thresholds, a line of sight along an injector, a vapour fraction outside (0, 1) and the steady spray mode are refused with the key named" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/spray_evaporation.rs::the_ecn_diagnostics_are_written_per_step", what = "the evaporating duct writes both liquid lengths and the vapour penetration per step; the smaller threshold lies farther out, within the farthest parcel, and the vapour inside the duct" },
+  { kind = "consistency", case = "spray_chamber_ecn", what = "water sprayed into still air at 300 C: the liquid lengths settle while the vapour penetration keeps growing", doc = "docs/gallery/sprays.md#spray-ecn" },
+  { kind = "contract", property = "schema", case = "spray_chamber_ecn_injectors", what = "the included injector file of spray_chamber_ecn", doc = "docs/cases/flow.md#lagrangian-sprays" },
+]
+gaps = [
+  "the PLV definition of the modelling standard only: the ECN5 path-averaged liquid volume fraction (0.15 % on 0.5 x 0.5 mm paths) and the time- and Favre-averaged fields on the ECN output grid are not built",
+  "instantaneous values per step: an average over the quasi-steady period is the user's (the CSV has every step)",
+  "no Spray A comparison yet (VA.8, stage SA6)",
+]
+
+[[feature]]
 id = "porous.darcy-forchheimer"
 area = "Flow models"
 title = "Porous regions with a direction-dependent Darcy-Forchheimer resistance (D270, PM1)"

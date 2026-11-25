@@ -3,8 +3,13 @@
 //! the spray) and vapour penetration, on parcels and cells built by hand so
 //! that the exact answer is known.
 
+use foehncraft_mesh::Geometry;
+use foehncraft_mesh::generate::{BoxSpec, Kind};
+use foehncraft_mesh::locate::Locator;
 use foehncraft_particles::spray::{line_of_sight, plv_lengths, plv_profile};
-use foehncraft_particles::{Ecn, Injector, SpraySection, injector_stats};
+use foehncraft_particles::{
+    BoundaryMode, BoundaryRule, Ecn, Env, Injector, Spray, SpraySection, injector_stats,
+};
 
 const RHO: f64 = 700.0;
 
@@ -162,4 +167,88 @@ fn the_liquid_length_does_not_depend_on_the_parcel_order() {
             .liquid_length
             .is_empty()
     );
+}
+
+#[test]
+fn the_vapour_penetration_is_the_farthest_cell_at_the_threshold() {
+    let mut b = BoxSpec::new(Kind::Hex, 3, [1, 1, 1]);
+    // around the nozzle at (0.01, 0.02, 0.03)
+    b.lower = [0.0; 3];
+    b.upper = [0.05; 3];
+    let m = b.generate().unwrap();
+    let geo = Geometry::compute(&m);
+    let loc = Locator::new(&m, &geo);
+    let env = Env {
+        mesh: &m,
+        geo: &geo,
+        loc: &loc,
+    };
+    // a slanted axis: the distance is the part along it
+    let s = 0.5f64.sqrt();
+    let inj = injector([s, s, 0.0]);
+    let cfg = SpraySection {
+        injectors: vec![inj.clone()],
+        ecn: Some(Ecn::default()),
+        ..SpraySection::default()
+    };
+    let rules = vec![
+        BoundaryRule {
+            mode: BoundaryMode::Rebound,
+            e_normal: 0.5,
+            e_tangential: 0.5,
+        };
+        m.boundaries.len()
+    ];
+    let mut sp = Spray::new(&cfg, &env, rules, [0.0; 3]).unwrap();
+    let p = inj.position;
+    let along = |d: f64, off: f64| [p[0] + d * s - off * s, p[1] + d * s + off * s, p[2]];
+    let centre = vec![
+        along(1e-3, 0.0),
+        along(2e-3, 0.0),
+        along(3e-3, 0.0),    // below the threshold
+        along(2.5e-3, 4e-3), // off the axis, at the threshold
+        along(-6e-3, 0.0),   // behind the nozzle
+    ];
+    let y = vec![0.01, 0.002, 0.000_9, 1e-3, 0.05];
+    sp.set_vapour_penetration(&y, &centre);
+    let v = sp.injector_stats()[0].vapour_penetration.unwrap();
+    assert!((v - 2.5e-3).abs() < 1e-15, "{v}");
+    // no cell at the threshold: zero
+    sp.set_vapour_penetration(&[0.0; 5], &centre);
+    assert_eq!(sp.injector_stats()[0].vapour_penetration, Some(0.0));
+}
+
+#[test]
+fn the_ecn_table_is_checked() {
+    let inj = injector([1.0, 0.0, 0.0]);
+    let base = SpraySection {
+        injectors: vec![inj],
+        ecn: Some(Ecn::default()),
+        ..SpraySection::default()
+    };
+    assert!(base.validate().is_ok());
+    let bad = |e: Ecn| {
+        let mut c = base.clone();
+        c.ecn = Some(e);
+        c.validate().unwrap_err().to_string()
+    };
+    let e = bad(Ecn {
+        plv: vec![2e-7, -1.0],
+        ..Ecn::default()
+    });
+    assert!(e.contains("plv"), "{e}");
+    let e = bad(Ecn {
+        line_of_sight: Some([2.0, 0.0, 0.0]),
+        ..Ecn::default()
+    });
+    assert!(e.contains("line_of_sight") && e.contains("`a`"), "{e}");
+    let e = bad(Ecn {
+        vapour_fraction: 1.0,
+        ..Ecn::default()
+    });
+    assert!(e.contains("vapour_fraction"), "{e}");
+    let mut c = base.clone();
+    c.steady = Some(Default::default());
+    let e = c.validate().unwrap_err().to_string();
+    assert!(e.contains("transient"), "{e}");
 }

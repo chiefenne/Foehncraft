@@ -2392,8 +2392,9 @@ pub fn plv_profile(
 /// The liquid length per PLV threshold of `e` (m, D315): the farthest
 /// axial position where the PLV profile of [`plv_profile`] falls to the
 /// threshold, linear between the bin centres of the last bin at or above
-/// it and the next one (beyond the last bin the profile is zero); 0 when
-/// no bin reaches it.
+/// it and the next one (beyond the last bin the profile is zero, so the
+/// length lies at most 1.5 bins past the farthest parcel); 0 when no bin
+/// reaches it.
 pub fn plv_lengths(
     e: &crate::config::Ecn,
     inj: &Injector,

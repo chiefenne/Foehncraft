@@ -158,9 +158,9 @@ fn the_ecn_diagnostics_are_written_per_step() {
     // [spray.ecn] (D315) on the duct: the 2D duct is seen along z; the
     // vapour threshold lies above the 0.005 of the incoming air
     let text = duct(0.04).replace(
-        "[spray.evaporation]",
-        "[spray.ecn]\nplv = [1e-8, 1e-7]\nbin = 5e-3\nline_of_sight = [0.0, 0.0, 1.0]\n\
-         vapour_fraction = 0.0052\n\n[spray.evaporation]",
+        "\n[spray.evaporation]\n",
+        "\n[spray.ecn]\nplv = [1e-8, 1e-7]\nbin = 5e-3\nline_of_sight = [0.0, 0.0, 1.0]\n\
+         vapour_fraction = 0.0052\n\n[spray.evaporation]\n",
     );
     let b = go("ecn", &text);
     let mut lines = b.csv.lines();
@@ -184,10 +184,17 @@ fn the_ecn_diagnostics_are_written_per_step() {
         .split(',')
         .map(|x| x.parse().unwrap_or(f64::NAN))
         .collect();
-    // the smaller threshold is reached farther out, both within the liquid
+    // the smaller threshold is reached farther out, both within the liquid:
+    // the interpolation towards the empty bin after the tip reaches at most
+    // the centre of that bin, 1.5 bins (of 5 mm) past the farthest parcel
     assert!(last[l2] > 0.0, "{}", b.csv);
     assert!(last[l1] >= last[l2], "{} < {}", last[l1], last[l2]);
-    assert!(last[l1] <= last[far] + 5e-3, "{} beyond {}", last[l1], last[far]);
+    assert!(
+        last[l1] <= last[far] + 7.5e-3,
+        "{} beyond {}",
+        last[l1],
+        last[far]
+    );
     // the vapour reaches past the nozzle and stays in the duct (0.9 m to
     // the outlet)
     assert!(last[v] > 0.0 && last[v] < 0.9, "{}", last[v]);
