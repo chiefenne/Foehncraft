@@ -552,7 +552,11 @@ impl Model {
 
     /// The node coordinates of solid element `e`.
     pub fn solid_coords(&self, e: usize) -> Vec<[f64; 3]> {
-        self.solids[e].used().iter().map(|&n| self.nodes[n]).collect()
+        self.solids[e]
+            .used()
+            .iter()
+            .map(|&n| self.nodes[n])
+            .collect()
     }
 
     /// Checks that every solid element has a positive Jacobian at its

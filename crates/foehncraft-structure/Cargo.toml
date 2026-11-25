@@ -7,6 +7,8 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
+# The integration tests are one program (tests/main.rs): see its header.
+autotests = false
 
 [dependencies]
 foehncraft-core.workspace = true
@@ -15,6 +17,10 @@ serde.workspace = true
 serde_json.workspace = true
 toml.workspace = true
 schemars.workspace = true
+
+[[test]]
+name = "structure"
+path = "tests/main.rs"
 
 [lints]
 workspace = true

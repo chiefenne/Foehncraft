@@ -39,7 +39,9 @@ fn quadrature_and_shape_functions() {
             for c in 0..=(5 - a - b) {
                 let sum: f64 = solid::rule(Kind::Tet10)
                     .iter()
-                    .map(|(p, w)| w * p[0].powi(a as i32) * p[1].powi(b as i32) * p[2].powi(c as i32))
+                    .map(|(p, w)| {
+                        w * p[0].powi(a as i32) * p[1].powi(b as i32) * p[2].powi(c as i32)
+                    })
                     .sum();
                 let exact = fact(a) * fact(b) * fact(c) / fact(a + b + c + 3);
                 assert!(rel(sum, exact) < 1e-13, "x^{a} y^{b} z^{c}: {sum} {exact}");
@@ -131,7 +133,11 @@ fn face_loads_are_the_textbook_values() {
     assert!((a - 6.0).abs() < 1e-13);
     for i in 0..8 {
         let want = if i < 4 { -6.0 / 12.0 } else { 6.0 / 3.0 };
-        assert!((f[3 * i + 2] + 2.0 * want).abs() < 1e-13, "{i}: {}", f[3 * i + 2]);
+        assert!(
+            (f[3 * i + 2] + 2.0 * want).abs() < 1e-13,
+            "{i}: {}",
+            f[3 * i + 2]
+        );
     }
 }
 
@@ -345,7 +351,9 @@ tip = [{l}, {}, 0.0]
         );
         assert!(rel(w, timoshenko) < tol, "{element}: {w} {timoshenko}");
         // the reaction carries the force
-        let rf = out.to_json("c")["static"]["reaction_force"][2].as_f64().unwrap();
+        let rf = out.to_json("c")["static"]["reaction_force"][2]
+            .as_f64()
+            .unwrap();
         assert!(rel(-rf, force) < 1e-9, "{rf}");
         // the first two modes (bending in y and z, equal by symmetry)
         // below Euler–Bernoulli's 1.875104² / (2π L²) √(EI/ρA) by the
@@ -603,11 +611,11 @@ tip = [0.03, 0.01, 0.004]
 #[test]
 fn solid_case_errors() {
     for (extra, want) in [
-        ("[[temperatures]]\npart = \"b\"\ndifference = 3.0\n", "uniform"),
         (
-            "[[supports]]\npart = \"b\"\nfix = [\"all\"]\n",
-            "together",
+            "[[temperatures]]\npart = \"b\"\ndifference = 3.0\n",
+            "uniform",
         ),
+        ("[[supports]]\npart = \"b\"\nfix = [\"all\"]\n", "together"),
         (
             "[[pressures]]\npart = \"b\"\nsurface = \"xmin\"\nplate = \"p\"\n",
             "plate",

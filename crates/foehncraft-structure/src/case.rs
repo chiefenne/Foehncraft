@@ -675,8 +675,8 @@ impl Case {
 
     /// Reads a case file; relative mesh paths start at its folder.
     pub fn from_file(path: &std::path::Path) -> Result<Self, Error> {
-        let text = std::fs::read_to_string(path)
-            .map_err(|e| bad(format!("{}: {e}", path.display())))?;
+        let text =
+            std::fs::read_to_string(path).map_err(|e| bad(format!("{}: {e}", path.display())))?;
         let mut c = Self::from_toml(&text)?;
         c.base = path.parent().map(|p| p.to_path_buf());
         Ok(c)
@@ -998,12 +998,17 @@ pub fn build(case: &Case) -> Result<Built, Error> {
     let mut solid_alpha: BTreeMap<String, Option<f64>> = BTreeMap::new();
     for sk in &case.solids {
         let what = format!("solid `{}`", sk.name);
-        if lines.contains_key(&sk.name) || plates.contains_key(&sk.name) || !seen.insert(sk.name.clone())
+        if lines.contains_key(&sk.name)
+            || plates.contains_key(&sk.name)
+            || !seen.insert(sk.name.clone())
         {
             return Err(bad(format!("two parts are named `{}`", sk.name)));
         }
         let mat = case.materials.get(&sk.material).ok_or_else(|| {
-            bad(format!("{what}: no material `{}` in [materials]", sk.material))
+            bad(format!(
+                "{what}: no material `{}` in [materials]",
+                sk.material
+            ))
         })?;
         if !(mat.young > 0.0 && mat.density > 0.0 && mat.poisson > -1.0 && mat.poisson < 0.5) {
             return Err(bad(format!(
@@ -1213,9 +1218,7 @@ pub fn build(case: &Case) -> Result<Built, Error> {
                 v
             }
             _ => {
-                return Err(bad(
-                    "[[supports]]: `part` and `surface` go together",
-                ));
+                return Err(bad("[[supports]]: `part` and `surface` go together"));
             }
         };
         for n in nodes {
@@ -1926,7 +1929,11 @@ impl Outcome {
         let _ = writeln!(
             s,
             "# vtk DataFile Version 3.0\nFoehncraft structure {name}\nASCII\nDATASET {}",
-            if grid { "UNSTRUCTURED_GRID" } else { "POLYDATA" }
+            if grid {
+                "UNSTRUCTURED_GRID"
+            } else {
+                "POLYDATA"
+            }
         );
         let _ = writeln!(s, "POINTS {} double", m.nodes.len());
         for p in &m.nodes {

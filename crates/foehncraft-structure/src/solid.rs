@@ -132,7 +132,12 @@ impl Kind {
     pub fn natural_nodes(self) -> Vec<[f64; 3]> {
         match self {
             Kind::Tet10 => {
-                let c = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+                let c = [
+                    [0.0, 0.0, 0.0],
+                    [1.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0],
+                    [0.0, 0.0, 1.0],
+                ];
                 let mut v = c.to_vec();
                 for [a, b] in TET_EDGES {
                     v.push(mid(c[a], c[b]));
@@ -592,7 +597,11 @@ pub fn face_load(x: &[[f64; 3]], q: [f64; 3], p: f64) -> (Vec<f64>, f64) {
 /// The outward normal (not unit) of a face at its centre.
 pub fn face_normal(x: &[[f64; 3]]) -> [f64; 3] {
     let quad = x.len() == 8;
-    let (r, s) = if quad { (0.0, 0.0) } else { (1.0 / 3.0, 1.0 / 3.0) };
+    let (r, s) = if quad {
+        (0.0, 0.0)
+    } else {
+        (1.0 / 3.0, 1.0 / 3.0)
+    };
     let (_, d) = face_shape(quad, r, s);
     let mut tr = [0.0; 3];
     let mut ts = [0.0; 3];

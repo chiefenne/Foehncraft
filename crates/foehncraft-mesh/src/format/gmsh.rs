@@ -282,7 +282,11 @@ impl RawGmsh {
     /// The name of an entity: its first physical group, or
     /// `surface_<tag>` / `volume_<tag>`.
     pub fn entity_name(&self, dim: u8, entity: i64) -> String {
-        match self.entity_physicals.get(&(dim, entity)).and_then(|v| v.first()) {
+        match self
+            .entity_physicals
+            .get(&(dim, entity))
+            .and_then(|v| v.first())
+        {
             Some(&p) => self.physical_name(dim as i64, p),
             None if dim == 2 => format!("surface_{entity}"),
             None => format!("volume_{entity}"),

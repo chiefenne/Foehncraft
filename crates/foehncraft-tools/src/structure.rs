@@ -25,7 +25,13 @@ fn read_case(path: &Path, ctx: &mut Ctx<'_>) -> Result<Case> {
             format!("{}: {e}", path.display()),
         ))
     })?;
-    Case::from_toml(&text).map_err(diagnostic)
+    let mut case = Case::from_toml(&text).map_err(diagnostic)?;
+    // mesh files of solids are read relative to the case file
+    case.base = Some(path.parent().map_or_else(PathBuf::new, Path::to_path_buf));
+    for mesh in case.mesh_paths() {
+        ctx.roots.check_read(&mesh, "the mesh of a solid")?;
+    }
+    Ok(case)
 }
 
 /// Input of `structure.run`.
@@ -61,7 +67,7 @@ pub struct Run;
 impl Tool for Run {
     const ID: &'static str = "structure.run";
     const VERSION: u32 = 1;
-    const SUMMARY: &'static str = "Run a structural case (beams, shells, clamp springs, temperatures; static, modal and transient analyses) and write `result.json`, `structure.vtk` and, for a transient, `transient.csv`; returns the result.";
+    const SUMMARY: &'static str = "Run a structural case (beams, shells, quadratic solids from Gmsh or a block, clamp springs, temperatures; static, modal and transient analyses) and write `result.json`, `structure.vtk` and, for a transient, `transient.csv`; returns the result.";
     const CATEGORY: Category = Category::Structure;
     const ACTION: Action = Action::StartRun;
     type Input = RunInput;

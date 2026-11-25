@@ -300,7 +300,9 @@ pub fn block(origin: [f64; 3], size: [f64; 3], divisions: [usize; 3], kind: Kind
                             }
                             let mut v: Vec<usize> = c
                                 .iter()
-                                .map(|p| node(&mut m, [base[0] + p[0], base[1] + p[1], base[2] + p[2]]))
+                                .map(|p| {
+                                    node(&mut m, [base[0] + p[0], base[1] + p[1], base[2] + p[2]])
+                                })
                                 .collect();
                             for [a, b] in solid::TET_EDGES {
                                 let p = [
