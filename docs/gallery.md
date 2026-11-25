@@ -156,6 +156,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | <a id="gas-chemistry"></a>289 | [Methane ignites in a constant-pressure reactor and ends at its chemical equilibrium](gallery/species.md#gas-chemistry) | [Species and reacting flows](gallery/species.md) |
 | <a id="run-ranks-physics"></a>290 | [Five ranks, one turbulent heated transient: the physics of a run on ranks](gallery/meshes.md#run-ranks-physics) | [Meshes](gallery/meshes.md) |
 | <a id="spray-steady"></a>292 | [The spray-cooled duct as a steady state](gallery/sprays.md#spray-steady) | [Lagrangian sprays](gallery/sprays.md) |
+| <a id="reed-beam"></a>295 | [A reed valve as a beam: modes, and the clamp spring against the frequency equation](gallery/structure.md#reed-beam) | [Structures](gallery/structure.md) |
 
 ## Adding a feature
 

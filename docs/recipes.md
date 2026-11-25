@@ -169,6 +169,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="gas-chemistry"></a>289 | [Run a mechanism in a constant-pressure reactor and find the equilibrium](recipes/species.md#gas-chemistry) | [Species and reacting flows](recipes/species.md) |
 | <a id="run-ranks-physics"></a>290 | [Run a turbulent, heated or transient case on ranks](recipes/meshes.md#run-ranks-physics) | [Meshes](recipes/meshes.md) |
 | <a id="spray-steady"></a>292 | [Solve a spray in a steady flow (steady spray mode)](recipes/sprays.md#spray-steady) | [Lagrangian sprays](recipes/sprays.md) |
+| <a id="structure-case"></a>295 | [Run a structural case of beams and clamp springs, and fit the clamp to a measured frequency](recipes/structure.md#structure-case) | [Structures](recipes/structure.md) |
 
 ## Adding a feature
 

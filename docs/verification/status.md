@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**129 features: 50 verified, 76 partial, 3 unverified.**
+**131 features: 50 verified, 78 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -154,6 +154,8 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Flow models | [Species transport of an ideal-gas mixture with mixture properties (L2, steam furnace SF1)](#species-transport) | partial |
 | Flow models | [Gas-phase chemistry: mechanisms, stiff 0D reactor and chemical equilibrium (L2, steam furnace SF2a)](#chemistry-reactor) | partial |
 | Immersed bodies | [Immersed bodies by Brinkman penalisation, primitive shapes (L13 stage 1)](#immersed-penalisation) | partial |
+| Structures | [Linear structural solver: Euler–Bernoulli and Timoshenko beams, static and modal analyses (L53, MS5 part 1)](#structure-beams) | partial |
+| Structures | [Clamp springs per length of the clamp line and their fit to a measured frequency (D290)](#structure-clamp) | partial |
 
 ## Meshes
 
@@ -2121,3 +2123,46 @@ Gaps:
 - the coupled solver breaks down from rest when the sink exceeds about 1e5 times the viscous diagonal (K below about 1e-5 h²); SIMPLEC takes any K
 - not yet: density-field topology search, iso-surface extraction, the sweep in K (η) and h of the plan, MMS of the penalised equation, Stokes sphere, the drag gradient check with dual numbers
 - one rank only: `foehn run --ranks N` refuses immersed bodies
+
+## Structures
+
+<a id="structure-beams"></a>
+
+### Linear structural solver: Euler–Bernoulli and Timoshenko beams, static and modal analyses (L53, MS5 part 1)
+
+**partial** (a model without reference data; gaps written) · id `structure.beams` · switch `structure.run with [[beams]]` · decisions D289
+
+- exact: [`cantilever_tip_load_is_exact`](../../crates/foehncraft-structure/tests/beams.rs): tip deflection and slope of a cantilever under a tip load, both theories, 1 to 40 elements: within 1e-8
+- exact: [`cantilever_distributed_load_is_exact_at_the_nodes`](../../crates/foehncraft-structure/tests/beams.rs): deflection under a uniform load at every node: within 1e-10 of the tip value
+- exact: [`cantilever_frequencies_converge_at_fourth_order`](../../crates/foehncraft-structure/tests/beams.rs): first five cantilever frequencies (Blevins 1979) within 2e-5 on 40 Euler–Bernoulli elements, observed order 3.8 to 4.2; Sturm check passes; first mode 61.3 % effective mass
+- exact: [`thick_pinned_timoshenko_beam`](../../crates/foehncraft-structure/tests/beams.rs): pinned round bar L/d = 10 against the Timoshenko frequency equation: within 1e-5 on 120 elements, second order, degenerate pairs found
+- exact: [`free_free_beam_with_a_negative_shift`](../../crates/foehncraft-structure/tests/beams.rs): free–free beam: six rigid modes at 0 with the whole mass, β₁L = 4.730 within 1e-6
+- exact: [`lanczos_finds_the_lowest_of_a_chain`](../../crates/foehncraft-structure/src/eigen.rs): shift-invert Lanczos on a spring–mass chain of 200 masses: the lowest eight within 1e-9
+- exact: [`solves_and_counts_inertia`](../../crates/foehncraft-structure/src/ldlt.rs): the sparse LDLᵀ solves to 1e-10 and its negative pivots equal the eigenvalues below the shift (Sylvester)
+- contract (diagnostics): [`unsupported_static_case_is_refused_with_its_code`](../../crates/foehncraft-structure/tests/beams.rs): STR002 names the free unknown of an unsupported structure; STR001 for a support off the mesh
+
+Gaps:
+
+- beams only: MITC4/MITC3+ shells, quadratic solids, generalised-α, mode superposition, Craig–Bampton, damping and contact come in MS5 parts 2 to 4
+- the Timoshenko element's consistent mass converges at second order in the frequency of thick beams (7e-6 on 120 elements at L/d = 10)
+- no comparison with measured reed frequencies yet (MS6: Gasche et al. via González et al. 2017, Lemke et al. 2016)
+- the ordering is reverse Cuthill–McKee: the fill is an envelope, fine for slender reeds, large for compact 3D parts (no minimum-degree ordering yet)
+- the LDLᵀ factorisation does not pivot: a shift inside the spectrum can meet a zero pivot (STR002); shifts below the first mode are safe
+- linear (small rotations): large deflections need the corotational formulation of MS9
+
+<a id="structure-clamp"></a>
+
+### Clamp springs per length of the clamp line and their fit to a measured frequency (D290)
+
+**partial** (a model without reference data; gaps written) · id `structure.clamp` · switch `structure.run with [[clamps]]; structure.fitclamp` · decisions D290
+
+- exact: [`clamp_springs_static_is_exact`](../../crates/foehncraft-structure/tests/beams.rs): tip deflection on rotational and translational clamp springs PL³/(3EI) + PL²/k_r + P/k_t within 1e-10; a clamp without springs is reported rigid
+- exact: [`clamp_spring_frequency_against_the_frequency_equation`](../../crates/foehncraft-structure/tests/beams.rs): first frequency on a rotational root spring, kL/EI = 0.3 to 300, against the frequency equation: within 1e-8
+- exact: [`clamp_fit_recovers_the_spring`](../../crates/foehncraft-structure/tests/beams.rs): the fit recovers the spring of the frequency equation within 1e-5 in fewer than 40 modal solves; STR004 above the rigid clamp
+- consistency: [`catalogue_cases_run_and_the_fit_matches`](../../crates/foehncraft-tools/src/structure.rs): the catalogue cases run through the registry, the fit of the tool input hits 150 Hz
+
+Gaps:
+
+- springs on a single node of a beam model: shells with the springs spread along the clamp edge come with MS5 part 2
+- clamp parts as solids in frictionless contact (the second way of D290) are not built
+- no measured reed with a known clamp to calibrate against yet (MS6)
