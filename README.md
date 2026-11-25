@@ -232,8 +232,10 @@ validated range, one mesh only, …) in its report and its JSON result.
   any number of threads and ranks; the bundle transport also runs on
   NVIDIA GPUs. Checked against six exact cases (slab, enclosure, parallel
   plates, cube of grey gas) and shown on a box furnace with cooled tubes
-  ([gallery 259](docs/gallery/radiation.md#furnace)). The coupling to the
-  energy equation follows (R1b).
+  ([gallery 259](docs/gallery/radiation.md#furnace)), where chosen bundles
+  of the call are traced and drawn over the net flux into the walls
+  ([gallery 281](docs/gallery/radiation.md#furnace-paths)). The coupling
+  to the energy equation follows (R1b).
 - **Rotating machinery.** The moving reference frame (steady and transient
   frozen rotor), the sliding mesh by conformal stepping and by imprinting
   the interface in every step, several rotors at their own speeds,

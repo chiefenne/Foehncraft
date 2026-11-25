@@ -141,7 +141,19 @@ Status of R1a (coding started on the maintainer's go, 2026-11-24):
    259). One million bundles in the furnace take 84 s on one thread and
    20 s on four; on MPI ranks with one thread each the case of
    `mpi_radiation` speeds up 1.9 times on two and 3.6 times on four ranks.
-   The GPU time waits for the Colab run. R1b to R1g: not sized yet.
+   The GPU time waits for the Colab run.
+5. **Paths of chosen bundles (the furnace showcase, maintainer's choice
+   2026-11-24): #281.** `Domain::trace` emits chosen bundles as the call
+   does (same emitters, weights and Sobol points) and moves them with the
+   same kernel, whose tracing hook (`Tally::trace`) does nothing in a call
+   and on the GPU; every cell exit, wall reflection and end is recorded
+   with the quanta the bundle still carries. Test: tracing every bundle of
+   a call gives the call's tallies per cell and face and its ledger to the
+   quantum. The example `furnace` draws the traced emitters in proportion
+   to their power; gallery and recipe 281 show 60 bundles of the call of
+   16 million over the net flux into the walls and over the flame.
+
+R1b to R1g: not sized yet.
 
 ## 6. References
 
