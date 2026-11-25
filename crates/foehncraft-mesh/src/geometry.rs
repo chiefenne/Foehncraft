@@ -440,9 +440,9 @@ mod tests {
             // a pure translation sweeps d·S on every face
             let d = [0.01, -0.02, 0.03];
             let shifted: Vec<[f64; 3]> = old.iter().map(|p| add(*p, d)).collect();
-            for f in 0..mesh.n_faces() {
+            for (f, &area) in g0.face_area[..mesh.n_faces()].iter().enumerate() {
                 let v = swept_volume(&mesh, &old, &shifted, f);
-                let e = dot(d, g0.face_area[f]);
+                let e = dot(d, area);
                 assert!(
                     (v - e).abs() <= 1e-15 + 1e-12 * e.abs(),
                     "face {f}: {v:e} vs {e:e}"
