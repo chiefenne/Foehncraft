@@ -17,6 +17,7 @@ On this page:
 - [Lagrangian sprays](#lagrangian-sprays)
 - [Porous regions](#porous-regions)
 - [Immersed bodies](#immersed-bodies)
+- [Deforming meshes](#deforming-meshes)
 - [Species](#species)
 
 Stage 4: steady incompressible laminar flow, SIMPLEC with the Rhie–Chow
@@ -102,6 +103,9 @@ Couette and Poiseuille flow, the lid-driven cavity and the steady cylinder.
 | `flow/ranks_restart_channel.toml` | generated poly 2D, 2 821 cells, perturbed by 10 % | the channel of `ranks_channel_poly` marched 40 time steps with BDF2, solved again on 2, 3 and 5 ranks; the restart gathered from five ranks must have the bytes of the one-rank restart, and a run continued from it with `--restart` reads it on any rank count (MPI step W6) | [gallery 262](../gallery/meshes.md#restart-ranks), [recipe 262](../recipes/meshes.md#restart-ranks) |
 | `flow/ranks_run_channel.toml` | generated poly 2D, 2 821 cells, perturbed by 10 % | the channel of `ranks_channel_poly` solved on 5 ranks as the run itself (`[run] rank_count`, `--ranks N`); rank 0 writes every output file byte for byte as one rank does, plus `ranks.vtkhdf` with the rank of every cell (MPI step W7) | [gallery 279](../gallery/meshes.md#run-ranks), [recipe 279](../recipes/meshes.md#run-ranks) |
 | `flow/ranks_run_transient_sst.toml` | generated poly 2D, 2 821 cells, perturbed by 10 % | a heated turbulent channel (k-ω SST, energy, a passive dye) with the upper wall moving against the inflow, marched 180 BDF2 steps on 5 ranks as the run itself; every output file, the heat balance of every step and the turbulence summary byte for byte one rank (MPI step W7 part 2) | [gallery 290](../gallery/meshes.md#run-ranks-physics), [recipe 290](../recipes/meshes.md#run-ranks-physics) |
+| `flow/ranks_run_mrf_couette.toml` | generated annulus, 1 024 cells, rotor zone in the inner half of the gap | laminar Taylor–Couette flow (Re = 50) with the inner half of the gap a moving reference frame, a closed domain with a pressure reference cell, solved on 5 ranks as the run itself; every output file byte for byte one rank, rotor torque and shaft power as log columns, L2 error of the velocity below 1 % (MPI step W7, turning zones) | [gallery 301](../gallery/meshes.md#run-ranks-mrf), [recipe 301](../recipes/meshes.md#run-ranks-mrf) |
+| `flow/ranks_run_sliding_couette.toml` | generated annulus, 4 096 cells, rotor of 128 identical sectors in the inner half of the gap | Taylor–Couette spin-up from rest with the inner half of the gap a sliding rotor in conformal stepping (one sector per step) and a blob of dye in the rotor, one turn on 5 ranks as the run itself; the old levels of the moved rotor cells come from other ranks, every output file byte for byte one rank (MPI step W7, turning zones) | [gallery 304](../gallery/meshes.md#run-ranks-sliding), [recipe 304](../recipes/meshes.md#run-ranks-sliding) |
+| `flow/ranks_run_imprint_couette.toml` | generated annulus, 640 cells, rotor ring of 32 sectors and stator ring of 48 meeting at a non-matching interface | Taylor–Couette spin-up from rest with the inner half of the gap a sliding rotor by imprinting (the interface imprinted at the rotor angle every step, D182 variant B) and a blob of dye in the rotor, a third of a turn on 5 ranks as the run itself; every rank imprints the whole mesh and takes its part, the state carried onto the new faces in the global order, every output file byte for byte one rank (MPI step W7, turning zones) | [gallery 305](../gallery/meshes.md#run-ranks-imprint), [recipe 305](../recipes/meshes.md#run-ranks-imprint) |
 
 ## Transient flow
 
@@ -360,6 +364,21 @@ writes χ.
 | `flow/immersed_topology_bend.toml` | generated hex 2D, 60 × 60 cells, split inlet and outlet | topology search of the Borrvall & Petersson pipe bend (Stokes, quarter fluid): 28 design updates, Φ 4.69 → 0.369 W, grey 0.04, `topology.stl` | [gallery 291](../gallery/immersed.md#topology-bend), [recipe 291](../recipes/immersed.md#topology-search) |
 | `flow/immersed_stokes_sphere.toml` | generated hex 3D, 32³ cells, periodic in x, y, z | Stokes flow through a simple cubic array of penalised spheres (c = 0.0335): drag coefficient 3.9 % above the Hasimoto / Sangani & Acrivos series with K = 0.01 h² | [gallery 291](../gallery/immersed.md#topology-bend) |
 | `flow/immersed_mms.toml` | generated hex 2D, 16² to 64² | manufactured solution of the penalised equations (smooth `field` body): velocity order 2.00 (hex), 2.05 (poly); fails outside 1.8 to 2.3 | [gallery 291](../gallery/immersed.md#topology-bend) |
+
+## Deforming meshes
+
+`[mesh_motion] displacement`: the nodes of the mesh move by an expression of
+their place in the mesh file and of time (D91, L22, stage MS0); every face
+gets its swept volume, walls move with their nodes, other boundaries may only
+slide in their plane. The keys are on the [key page](../keys.md)
+(`mesh_motion.*`); `history.csv` gets a column `volume`, `result.json` the
+block `transient.mesh_motion`.
+
+| Case file | Mesh | Shows | Where |
+|---|---|---|---|
+| `flow/motion_free_stream.toml` | generated hex 2D, 20 × 10 cells perturbed by 20 %, inner nodes swinging by up to 3 cm | check MS0.1: a uniform flow of 1 m/s stays uniform on the moving mesh to 1.3·10⁻¹⁵ m/s, the space conservation law closes to 10⁻¹⁵ (tests/mesh_motion.rs: also tet and poly meshes, BDF1 and Crank–Nicolson) | [gallery 296](../gallery/moving-solids.md#deforming-mesh), [recipe 296](../recipes/moving-solids.md#deforming-mesh) |
+| `flow/motion_piston_adiabatic.toml` | generated hex 2D, 10 × 20 cells, compressed evenly to a quarter | check MS0.2: a piston compresses a closed gas volume with adiabatic walls by a crank (ratio 4, 1 s): p₀ = 705.03 kPa at the top dead centre (isentrope 705.50 kPa), 101.323 kPa after the period; error second order in Δt, mass to 10⁻¹⁵ | [gallery 296](../gallery/moving-solids.md#deforming-mesh), [recipe 296](../recipes/moving-solids.md#deforming-mesh) |
+| `flow/motion_piston_cooled_walls.toml` | generated hex 2D, 40 × 80 cells | the same piston with all walls at 300 K: thermal boundary layers, p₀ = 572 kPa at the top dead centre and 90.4 kPa after the period (an open p–V loop), heat book closed every step; 30 s | [gallery 296](../gallery/moving-solids.md#deforming-mesh) |
 
 ## Species
 

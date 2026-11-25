@@ -222,6 +222,11 @@ codes! {
     SLIDING_ZONE = "SLD004", Error, "The rotor cannot be moved by whole sectors: its cells have no image when it is turned by one sector (it is not a ring of identical sectors about the axis), or a boundary of the rotor is not a wall, slip wall, symmetry plane or wedge.";
     SLIDING_INTERFACE = "SLD005", Error, "The interface of a sliding mesh by imprinting cannot be imprinted: a boundary or cell zone of `[[sliding]]` is missing or wrong, the two interface boundaries are not on one circular cylinder about the axis or do not cover the same surface, rotor and stator cells share a face or a node, a `[boundary]` table names an interface boundary, or a restart is asked for (not yet available).";
     SLIDING_CLOSURE = "SLD006", Warning, "The cells next to the imprinted interface of a sliding mesh do not close (|Σ S|/Σ |S| above 1e-8): the faces of the interface are not those of a mesh extruded along the axis, and the mesh flux of the rigid turn leaves a small mass source.";
+    // the deforming mesh (D91, stage MS0)
+    MOTION_CONFIG = "MOV001", Error, "A `[mesh_motion]` table that cannot be used: a steady case (the mesh moves in time), a displacement expression that does not compile, or a case with what the deforming mesh of stage MS0 does not work with yet (turning zones, regions, sprays, immersed bodies, periodic boundaries, a restart, several ranks, an error-controlled time step, a sweep over levels).";
+    MOTION_INVERTED = "MOV002", Error, "The prescribed displacement of `[mesh_motion]` turns a cell inside out (its volume is no longer positive); the message gives the time, the cell and its place.";
+    MOTION_BOUNDARY = "MOV003", Error, "The deforming mesh moves a boundary that is not a wall out of its own plane (a face sweeps a volume): only walls move with the mesh; the nodes of symmetry planes, wedges, inlets and outlets may only slide along them.";
+    MOTION_CLOSED = "MOV004", Error, "The deforming mesh changes the volume of a closed domain (no pressure boundary) of constant density: an incompressible fluid cannot be compressed; give it a pressure boundary or the variable density of a closed volume.";
     // torque, shaft power and machine performance (D184)
     ROT_SLIP = "ROT001", Warning, "A wall of a rotor does not turn with its zone (a stationary shroud in a rotating zone): its torque is in that of the rotor, but the shaft power −Ω·T is not its work on the fluid; give the walls of the rotor in `walls` of the `[[mrf]]` or `[[sliding]]` table.";
     ROT_ENTRY = "ROT002", Error, "A `walls` entry of `[[mrf]]` or `[[sliding]]` that is not a wall of the case, or an `[[output.machines]]` table without a turning zone, with a `rotor` that is no turning zone (or none where there are several), without an inlet or an outlet, with a boundary the case does not have, or with a name used twice.";
@@ -558,7 +563,7 @@ mod tests {
                     "CASE", "SCHED", "BC", "SCAL", "RUN", "GEN", "DIV", "BAL", "EXPR", "MAT",
                     "REG", "MESH", "TURB", "MRF", "SLD", "ROT", "STAT", "ENE", "THM", "CHT",
                     "TOOL", "LIM", "MCP", "ACC", "CYC", "BUO", "FRZ", "PRS", "SPR", "DAT", "POR",
-                    "IMM", "SPE", "CHM", "STR"
+                    "IMM", "SPE", "CHM", "STR", "MOV"
                 ]
                 .contains(&p),
                 "{}",

@@ -132,6 +132,9 @@ impl Solver {
         crate::scalar::attach(&mut fl, case, mesh, geo)?;
         crate::density::attach(&mut fl, case)?;
         crate::turbulence::attach_with(&mut fl, case, mesh, geo, wall_distance)?;
+        // the rotating zones of [[mrf]] (steady, or the transient frozen
+        // rotor)
+        crate::frame::attach(&mut fl, case, mesh, geo)?;
         let (tr, dt) = match case.time {
             Some(t) => (
                 Some(crate::transient::Transient::new(
@@ -379,7 +382,7 @@ pub fn check(rank: usize, mine: &FlowSolve, reference: &FlowSolve) -> RankCheck 
 /// limiter and bounded central, CG with Jacobi and with multigrid for the
 /// pressure; transient PISO with BDF2; a passive scalar; the energy
 /// equation (transient); the k-ω SST and the k-ε model with scalable wall
-/// functions; the coupled solver.
+/// functions; the coupled solver; a rotating zone of `[[mrf]]`.
 pub fn check_cases() -> Result<Vec<CheckCase>> {
     let with = |mesh: &str, solver: &str, fluid: &str, extra: &str| -> Result<FlowCase> {
         let text = format!(
@@ -607,6 +610,47 @@ pub fn check_cases() -> Result<Vec<CheckCase>> {
             )?,
             iterations: 6,
         },
+        CheckCase {
+            name: "annulus with an outlet, rotating zone of [[mrf]]",
+            case: FlowCase::from_toml(
+                r#"
+                case_format = "0.6"
+                [mesh.annulus]
+                r_inner = 0.05
+                r_outer = 0.10
+                depth = 0.01
+                n_theta = 24
+                n_r = 6
+                rotor_layers = 3
+                [fluid]
+                density = 1.0
+                viscosity = 5e-4
+                [[mrf]]
+                zone = "rotor"
+                axis = [0.0, 0.0, 1.0]
+                omega = 10.0
+                [boundary.inner]
+                type = "wall"
+                velocity = ["-10.0 * y", "10.0 * x", 0.0]
+                [boundary.outer]
+                type = "static-pressure-outlet"
+                pressure = 0.0
+                [boundary.zmin]
+                type = "symmetry"
+                [boundary.zmax]
+                type = "symmetry"
+                [solver]
+                max_iterations = 100
+                [solver.momentum]
+                limiter = "venkatakrishnan"
+                [solver.pressure]
+                preconditioner = "jacobi"
+                max_iter = 400
+                "#,
+                std::path::Path::new("."),
+            )?,
+            iterations: 10,
+        },
     ])
 }
 
@@ -636,11 +680,23 @@ impl RanksRun {
 
 /// Fails unless `[run] ranks` can solve `case`: steady or transient
 /// SIMPLEC, PISO or the coupled solver, laminar or with the k-ω SST or a
-/// k-ε model, with passive scalars and the energy equation of one fluid;
-/// from the start fields or a restart file (W6); without gravity, turning
-/// zones, a schedule, levels, regions, the variable density or the model
+/// k-ε model, with passive scalars and the energy equation of one fluid,
+/// in a rotating frame of the whole domain or with the rotating zones of
+/// `[[mrf]]`; from the start fields or a restart file (W6); without
+/// gravity, a sliding mesh (it runs on ranks in a run, not in this check), a schedule, levels, regions, the variable density or the model
 /// options that are not on ranks yet.
 pub fn supported(case: &FlowCase) -> Result<()> {
+    anyhow::ensure!(
+        case.sliding.is_empty(),
+        "[run] ranks does not solve this case yet: it has a sliding mesh ([[sliding]]); \
+         run it on ranks with [run] rank_count (foehn flow --ranks N)"
+    );
+    supported_solver(case)
+}
+
+/// What the flow solver on ranks refuses (see [`supported`]); a sliding
+/// mesh runs in a run on ranks ([`supported_run`]).
+fn supported_solver(case: &FlowCase) -> Result<()> {
     use crate::turbulence::{QcrMode, TurbulenceModel as Model};
     let n = &case.run.ranks;
     anyhow::ensure!(
@@ -662,11 +718,11 @@ pub fn supported(case: &FlowCase) -> Result<()> {
         ),
         (case.gravity.is_some(), "gravity"),
         (!case.spray.is_empty(), "sprays"),
-        (
-            !case.mrf.is_empty() || !case.sliding.is_empty(),
-            "turning zones",
-        ),
         (!case.schedule.is_empty(), "a [[schedule]]"),
+        (
+            case.mesh_motion.is_some(),
+            "a deforming mesh ([mesh_motion])",
+        ),
         (case.verification.levels.len() > 1, "a sweep over levels"),
         (
             !case.regions.is_empty(),
@@ -1529,6 +1585,46 @@ pub(crate) struct OnRanks {
     pub arrays: crate::bc::BoundaryArrays,
 }
 
+/// The geometry of the local mesh `local` taken from `geo`, the geometry
+/// of the whole mesh `global` (`faces`: the global position of every local
+/// face); a face stored the other way round gets the opposite area vector.
+fn restricted(
+    global: &Mesh,
+    geo: &Geometry,
+    local: &foehncraft_mesh::decompose::LocalMesh,
+    faces: &[usize],
+) -> Geometry {
+    let lm = &local.mesh;
+    let face_area = faces
+        .iter()
+        .enumerate()
+        .map(|(f, &g)| {
+            let a = geo.face_area[g];
+            let owner = local.cell_position[lm.owner[f] as usize] as usize;
+            if owner == global.owner[g] as usize {
+                a
+            } else {
+                [-a[0], -a[1], -a[2]]
+            }
+        })
+        .collect();
+    let at = |c: &u32| *c as usize;
+    Geometry {
+        face_area,
+        face_centroid: faces.iter().map(|&g| geo.face_centroid[g]).collect(),
+        cell_volume: local
+            .cell_position
+            .iter()
+            .map(|c| geo.cell_volume[at(c)])
+            .collect(),
+        cell_centroid: local
+            .cell_position
+            .iter()
+            .map(|c| geo.cell_centroid[at(c)])
+            .collect(),
+    }
+}
+
 impl OnRanks {
     /// The part of this rank of `mesh` (recursive coordinate bisection;
     /// the cuts change no result, D93) and the global discretisation of
@@ -1542,10 +1638,56 @@ impl OnRanks {
         use foehncraft_mesh::partition::{Method, partition};
         let n = comm.size();
         let part = partition(mesh, geo, n, Method::Rcb).map_err(anyhow::Error::msg)?;
+        Self::build(comm, mesh, geo, arrays, part, false)
+    }
+
+    /// The part of this rank of `mesh` by the partition `part` of a mesh
+    /// with the same cells, with the geometry of `geo` (not computed again
+    /// from the points): the mesh of a rotor angle of the sliding mesh by
+    /// imprinting (D182 variant B), whose cells keep their numbers and
+    /// whose geometry is the rigid turn of the base mesh. Collective.
+    pub fn imprinted(
+        comm: SharedComm,
+        mesh: &Mesh,
+        geo: &Geometry,
+        arrays: crate::bc::BoundaryArrays,
+        part: Option<Vec<u32>>,
+    ) -> Result<Self> {
+        let part = match part {
+            Some(p) => p,
+            None => {
+                use foehncraft_mesh::partition::{Method, partition};
+                partition(mesh, geo, comm.size(), Method::Rcb).map_err(anyhow::Error::msg)?
+            }
+        };
+        Self::build(comm, mesh, geo, arrays, part, true)
+    }
+
+    fn build(
+        comm: SharedComm,
+        mesh: &Mesh,
+        geo: &Geometry,
+        arrays: crate::bc::BoundaryArrays,
+        part: Vec<u32>,
+        restrict: bool,
+    ) -> Result<Self> {
+        anyhow::ensure!(
+            part.len() == mesh.n_cells,
+            "the partition is not of this mesh"
+        );
         let local = extract(mesh, &part, comm.rank(), 1).map_err(anyhow::Error::msg)?;
-        local.mesh.validate().map_err(anyhow::Error::msg)?;
-        let lg = local.geometry(&*comm);
+        // (the cells of an imprinted interface have points on the edges of
+        // one side only: not a closed mesh by edges, closed by the face area
+        // vectors of the imprint)
+        if !restrict {
+            local.mesh.validate().map_err(anyhow::Error::msg)?;
+        }
         let layout = Layout::new(comm.clone(), mesh, &local)?;
+        let lg = if restrict {
+            restricted(mesh, geo, &local, &layout.faces)
+        } else {
+            local.geometry(&*comm)
+        };
         let (disc, _) = crate::simplec::discretisation(mesh, geo, &arrays)?;
         Ok(Self {
             comm,
@@ -1632,6 +1774,21 @@ impl OnRanks {
         self.layout.scatter(r)
     }
 
+    /// The shift `perm` of the cells of the whole mesh by a sliding rotor
+    /// (D182) on this rank.
+    pub fn shift(&self, perm: Vec<usize>) -> crate::sliding::Shift {
+        let n = self.local.mesh.n_cells;
+        crate::sliding::Shift::on_ranks(
+            perm,
+            self.comm.clone(),
+            self.layout.all_cells.clone(),
+            self.local.cell_position[..n]
+                .iter()
+                .map(|&g| g as usize)
+                .collect(),
+        )
+    }
+
     /// `ranks.vtkhdf`: the whole mesh with the rank of every cell (cell
     /// field `rank`), written by rank 0 next to the output of a run on
     /// ranks. Nothing without HDF5.
@@ -1671,7 +1828,7 @@ pub fn supported_run(case: &FlowCase) -> Result<()> {
         (1..=256).contains(&n),
         "[run] rank_count must lie in 1..=256"
     );
-    supported(case).map_err(|e| {
+    supported_solver(case).map_err(|e| {
         anyhow::anyhow!(
             "{}",
             e.to_string().replace(

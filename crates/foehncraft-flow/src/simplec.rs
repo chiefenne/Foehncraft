@@ -39,7 +39,7 @@ use crate::device::{
     self, BoundaryArgs, Buf, Buf3, Eps2, FlowDevice, FluxArgs, Lsq, Mask, MomentumFaceArgs,
     MomentumRowArgs, Setup, TimeTerms,
 };
-use anyhow::Result;
+use anyhow::{Context as _, Result};
 use foehncraft_fv::amg::AmgSettings;
 use foehncraft_fv::disc::{Discretisation, Soa3};
 use foehncraft_fv::problem::{Boundary, BoundaryKind, Problem};
@@ -772,6 +772,10 @@ pub struct Physics {
     /// coupled solver takes the pseudo-time term and the scale of the
     /// continuity row per cell (false: `rho`, as before).
     pub zones: bool,
+    /// The grid mass flux ρ_f Ḟ_f per face of a deforming mesh in the
+    /// current step (D91, stage MS0), as last set: the flow through a face
+    /// is the relative flux ṁ_f − ρ_f Ḟ_f (`None`: a fixed mesh).
+    pub grid_flux: Option<std::sync::Arc<Vec<f64>>>,
 }
 
 impl Physics {
@@ -789,7 +793,14 @@ impl Physics {
             immersed_fields: None,
             rho_var: None,
             zones: false,
+            grid_flux: None,
         }
+    }
+
+    /// The grid mass flux of face `f` (0 on a fixed mesh).
+    #[inline]
+    pub fn grid_flux_at(&self, f: usize) -> f64 {
+        self.grid_flux.as_ref().map_or(0.0, |g| g[f])
     }
 
     /// The density of cell `c`.
@@ -1033,8 +1044,12 @@ pub struct Flow {
     pub phys: Physics,
     /// Settings.
     pub settings: Settings,
-    /// Reference cell of the pressure (no pressure boundary).
+    /// Reference cell of the pressure (no pressure boundary): its local
+    /// index on the rank that owns it (on ranks, `None` on the others).
     pub reference_cell: Option<usize>,
+    /// On ranks: the rank that owns the reference cell (every rank knows
+    /// it; its value there is handed to all, MPI).
+    pub reference_rank: Option<usize>,
     /// Phase timings.
     pub timings: Timings,
     /// Multigrid setups done.
@@ -1126,6 +1141,8 @@ pub struct Flow {
     /// The mass source V ∂ρ/∂t per cell on the device (the continuity
     /// residual adds it).
     density_source: Option<Buf>,
+    /// The grid of a deforming mesh in the current step (D91, stage MS0).
+    pub(crate) grid: Option<Box<crate::motion::Grid>>,
 }
 
 /// The driving of one periodic pair: a uniform body force β t̂ along the
@@ -1456,12 +1473,27 @@ impl Flow {
         } else {
             Some(reference_cell.unwrap_or(0))
         };
+        // on ranks `reference_cell` is a cell of the whole mesh: the rank
+        // that owns it keeps its local index, the others only the rank
+        let (reference_cell, reference_rank) = match (&target.ranks, reference_cell) {
+            (Some(r), Some(g)) => {
+                let owner = *r
+                    .owner
+                    .get(g)
+                    .context("the reference cell is not in the mesh")?
+                    as usize;
+                let local = (owner == r.comm.rank())
+                    .then(|| {
+                        r.position[..disc.n_cells]
+                            .iter()
+                            .position(|&p| p as usize == g)
+                    })
+                    .flatten();
+                (local, Some(owner))
+            }
+            (_, c) => (c, None),
+        };
         if target.ranks.is_some() {
-            anyhow::ensure!(
-                has_pressure,
-                "on ranks a flow needs a pressure boundary (a reference cell does not run \
-                 on ranks yet, MPI step W5)"
-            );
             anyhow::ensure!(
                 !any(bc.ub_rule.contains(&k::UB_CONVECTIVE)) && bc.drives.is_empty(),
                 "convective outlets and periodic driving do not run on ranks yet (MPI step W5)"
@@ -1592,6 +1624,7 @@ impl Flow {
             phys,
             settings,
             reference_cell,
+            reference_rank,
             timings: Timings::default(),
             amg_setups: 0,
             amg_matrix: None,
@@ -1629,6 +1662,7 @@ impl Flow {
             buoyancy_source: None,
             density: None,
             density_time: None,
+            grid: None,
             density_source: None,
         })
     }
@@ -2183,6 +2217,14 @@ impl Flow {
             own.copy_from_slice(new);
         }
         self.pseudo_speed = None;
+        // the walls of a deforming mesh move with it (stage MS0): the normal
+        // part of their velocity is the grid velocity of the step (the host
+        // copy keeps the given values)
+        let moved = self
+            .grid
+            .as_deref()
+            .map(|g| g.wall_velocities(self.disc.n_interior, ub));
+        let ub = moved.as_ref().unwrap_or(ub);
         let s = self.f.ub_set;
         self.dev.upload(s.x, &ub[0])?;
         self.dev.upload(s.y, &ub[1])?;
@@ -2505,13 +2547,32 @@ impl Flow {
             s.pressure_tol(self.transient),
             s.pressure.max_iter,
         )?;
-        if let Some(r) = self.reference_cell {
-            let shift = self.dev.value(w.pc, r)?;
+        if let Some(shift) = self.reference_value(w.pc)? {
             self.dev.subtract(w.pc, shift)?;
         }
         self.dev.sync()?;
         self.timings.pressure_solve += t.elapsed().as_secs_f64();
         Ok(it)
+    }
+
+    /// The value of the cell field `b` in the reference cell of the
+    /// pressure, on every rank (`None` without a reference cell).
+    pub(crate) fn reference_value(&mut self, b: Buf) -> Result<Option<f64>> {
+        let Some(owner) = self.reference_rank else {
+            return self
+                .reference_cell
+                .map(|r| self.dev.value(b, r))
+                .transpose();
+        };
+        let mine = match self.reference_cell {
+            Some(r) => self.dev.value(b, r)?,
+            None => 0.0,
+        };
+        let comm = self
+            .dev
+            .comm()
+            .context("a reference rank without a communicator")?;
+        Ok(Some(comm.all_gather_f64(mine)[owner]))
     }
 
     /// Step 7: corrected fluxes `m` → `w.mc`, u −= D^C ∇p', p += α_p p'.
@@ -2849,7 +2910,7 @@ impl Flow {
         d.refresh(&t, &tb);
         self.dev.set_density(&d.rho, &d.rho_face)?;
         self.phys.rho_var = Some(std::sync::Arc::new((d.rho.clone(), d.rho_face.clone())));
-        let (src, dp) = match self.density_time {
+        let (mut src, dp) = match self.density_time {
             Some((a, dt)) => (
                 d.mass_source(a, dt),
                 if d.pressure_work {
@@ -2861,23 +2922,41 @@ impl Flow {
             None => (None, 0.0),
         };
         let old = d.old.as_ref().filter(|_| self.density_time.is_some());
+        // a deforming mesh (stage MS0): the old levels with their volumes,
+        // the mass source d(ρV)/dt − Σ ±ρ_f Ḟ_f and the grid mass flux of
+        // the new face densities; ∂ρ/∂t of the energy ledger is d(ρV)/dt / V
+        let mut ledger_rate = None;
+        let grid_old = match (self.grid.as_deref(), old, self.density_time) {
+            (Some(g), Some(o), Some((a, dt))) if !g.rate.is_empty() => {
+                let nc = self.disc.n_cells;
+                let vol = &self.disc.cell_volume[..nc];
+                let rate = g.mass_rate(vol, &d.rho, [&o[0], &o[1]], a, dt);
+                let m = g.mass_flux(&d.rho_face);
+                let net = crate::motion::Grid::cell_sum(&self.disc, &m);
+                src = Some(rate.iter().zip(&net).map(|(r, n)| r - n).collect());
+                ledger_rate = Some(rate);
+                if let Some((flux, _)) = g.flux {
+                    self.dev.upload(flux, &m)?;
+                }
+                self.phys.grid_flux = Some(std::sync::Arc::new(m));
+                Some(g.old_densities(vol, [&o[0], &o[1]]))
+            }
+            _ => None,
+        };
+        let old: Option<[&[f64]; 2]> = match &grid_old {
+            Some(g) => Some([&g[0], &g[1]]),
+            None => old.map(|o| [o[0].as_slice(), o[1].as_slice()]),
+        };
         // the vapour of an evaporating spray (SP4): the continuity rows
         // hold V ∂ρ/∂t − S_m
-        let src = match (&self.spray_mass, src) {
-            (Some(rows), s) => {
-                let mut v = s.unwrap_or_else(|| vec![0.0; d.rho.len()]);
-                for &(c, m) in rows {
-                    v[c as usize] -= m;
-                }
-                Some(v)
+        if let Some(rows) = &self.spray_mass {
+            let v = src.get_or_insert_with(|| vec![0.0; d.rho.len()]);
+            for &(c, m) in rows {
+                v[c as usize] -= m;
             }
-            (None, s) => s,
-        };
-        self.dev.set_variable_density(
-            src.as_deref(),
-            old.map(|o| o[0].as_slice()),
-            old.map(|o| o[1].as_slice()),
-        )?;
+        }
+        self.dev
+            .set_variable_density(src.as_deref(), old.map(|o| o[0]), old.map(|o| o[1]))?;
         if let Some(s) = &src {
             let b = match self.density_source {
                 Some(b) => b,
@@ -2890,16 +2969,18 @@ impl Flow {
             self.dev.upload(b, s)?;
         }
         let vol = &self.disc.cell_volume;
-        let drho_dt: Vec<f64> = src
-            .filter(|_| self.density_time.is_some())
-            .map(|mut s| {
-                if let Some(rows) = &self.spray_mass {
-                    for &(c, m) in rows {
-                        s[c as usize] += m;
+        let drho_dt: Vec<f64> = ledger_rate
+            .or_else(|| {
+                src.filter(|_| self.density_time.is_some()).map(|mut s| {
+                    if let Some(rows) = &self.spray_mass {
+                        for &(c, m) in rows {
+                            s[c as usize] += m;
+                        }
                     }
-                }
-                s.iter().zip(vol).map(|(m, v)| m / v).collect()
+                    s
+                })
             })
+            .map(|s| s.iter().zip(vol).map(|(m, v)| m / v).collect())
             .unwrap_or_default();
         let rho = d.rho.clone();
         if let Some(c) = self.cht.as_deref_mut() {

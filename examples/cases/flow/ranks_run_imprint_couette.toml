@@ -1,0 +1,95 @@
+# A sliding rotor by imprinting solved on ranks (MPI step W7, turning
+# zones): the gap between a cylinder turning at 10 rad/s and a fixed outer
+# cylinder, the inner half of the gap a rotor ring of 32 sectors that turns
+# through a stator ring of 48 (D182 variant B: the interface does not
+# match, the time step is free), spun up from rest with a blob of dye in
+# the rotor, on five ranks. In every step every rank imprints the interface
+# at the rotor angle on the whole mesh; the partition of the start stays
+# (the cells keep their numbers), the state and the old time levels are
+# carried onto the faces of the new mesh in the order of the whole mesh by
+# the code of one rank, and each rank takes its part back. So every rank
+# solves bitwise the cells of the one-rank run, and rank 0 writes every
+# output file byte for byte as one rank does (D93, D84).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/ranks_run_imprint_couette.toml
+#
+# runs it on the five ranks of `[run] rank_count` (threads of this process;
+# `--ranks 1` gives the reference). With a build that has the `mpi`
+# feature the ranks may be MPI processes:
+#
+#   cargo build --release -p foehncraft-cli --features mpi
+#   mpirun -n 5 target/release/foehn flow examples/cases/flow/ranks_run_imprint_couette.toml
+#
+# Re = w r1 (r2 - r1) / nu = 50; a third of a turn (21 steps of 0.01 s);
+# 640 cells, 256 in the rotor and 384 in the stator.
+
+case_format = "0.7"
+
+[mesh.annulus]
+r_inner = 0.05
+r_outer = 0.10
+depth = 0.01
+n_theta = 16
+n_theta_stator = 24
+n_r = 8
+rotor_layers = 4
+refine = 1
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 5e-4
+
+[constants]
+spin = 10.0
+
+[flow]
+convection = true
+
+[time]
+scheme = "bdf2"
+time_step = 0.01
+steps = 21
+start_time = 0.0
+
+[[sliding]]
+zone = "rotor"
+axis = [0.0, 0.0, 1.0]
+omega = 10.0
+rotor_interface = "rotor_interface"
+stator_interface = "stator_interface"
+
+[boundary.inner]
+type = "wall"
+velocity = ["-spin * y", "spin * x", 0.0]
+[boundary.outer]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[scalars.dye]
+diffusivity = 2e-5
+initial = "if((x - 0.06)^2 + y^2 < 0.012^2, 1.0, 0.0)"
+
+[solver]
+tolerance = 1e-10
+max_iterations = 3000
+extrapolation = false
+outer_iterations = 4
+
+[[output.probes]]
+name = "gap"
+point = [0.0, 0.07, 0.005]
+
+[log]
+columns = ["probe.gap.velocity_y", "rotor.rotor.angle", "rotor.rotor.torque"]
+
+[output]
+fields_every = 7
+
+[run]
+rank_count = 5
