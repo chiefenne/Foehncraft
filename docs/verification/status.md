@@ -143,7 +143,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Backends and interfaces | [Restart files on ranks: gathered byte for byte the one-rank file, read on any rank count (MPI step W6)](#parallel-restart-ranks) | partial |
 | Backends and interfaces | [Steady runs on ranks: rank 0 writes the output of one rank (MPI step W7 part 1)](#parallel-run-ranks) | partial |
 | Backends and interfaces | [Turbulent, heated and transient runs on ranks with the output of one rank (MPI step W7 part 2)](#parallel-run-ranks-physics) | partial |
-| Backends and interfaces | [Rotating zones (MRF), the sliding mesh in conformal stepping and closed domains on ranks with the output of one rank (MPI step W7, turning zones)](#parallel-run-ranks-turning) | partial |
+| Backends and interfaces | [Rotating zones (MRF), the sliding mesh (conformal stepping and imprinting) and closed domains on ranks with the output of one rank (MPI step W7, turning zones)](#parallel-run-ranks-turning) | partial |
 | Sprays | [Lagrangian spray parcels, one way (L12, SP1)](#sprays-one-way) | partial |
 | Sprays | [Datums, liquid flow through them and droplet statistics (SP1b)](#sprays-datums-statistics) | partial |
 | Sprays | [Two-way momentum coupling of the sprays (SP2a, D247 to D252)](#sprays-two-way-momentum) | partial |
@@ -1797,7 +1797,7 @@ Contracts: `bitwise`.
 
 Gaps:
 
-- not on ranks yet (refused with an error): zeta-f and elliptic blending, curvature correction and QCR, the MLP limiter and quadratic gradients, gravity, the sliding mesh, solid regions, schedules and level sweeps (restarts: parallel.restart-ranks; MRF zones: parallel.run-ranks-turning)
+- not on ranks yet (refused with an error): zeta-f and elliptic blending, curvature correction and QCR, the MLP limiter and quadratic gradients, gravity, solid regions, schedules and level sweeps (restarts: parallel.restart-ranks; MRF zones and sliding meshes: parallel.run-ranks-turning)
 - monitors, probes and balances of a run on ranks: parallel.run-ranks (W7 part 1, steady laminar)
 - transient runs are checked with the fixed time step, not the adaptive one
 - 1M cells on 4 cores split into 1, 2, 4 ranks (example ranks_scaling): +2, +10, +28 % time per iteration against threads only, bitwise; strong scaling over more cores is W9
@@ -1862,9 +1862,9 @@ Contracts: `bitwise`.
 
 <a id="parallel-run-ranks-turning"></a>
 
-### Rotating zones (MRF), the sliding mesh in conformal stepping and closed domains on ranks with the output of one rank (MPI step W7, turning zones)
+### Rotating zones (MRF), the sliding mesh (conformal stepping and imprinting) and closed domains on ranks with the output of one rank (MPI step W7, turning zones)
 
-**partial** (gaps written) · id `parallel.run-ranks-turning` · switch `[run] rank_count, foehn flow --ranks N, mpirun -n N foehn flow; with [[mrf]] (steady or with [time]), [[sliding]] in conformal stepping, or without a pressure boundary` · decisions D55, D84, D93, D182, D185
+**partial** (gaps written) · id `parallel.run-ranks-turning` · switch `[run] rank_count, foehn flow --ranks N, mpirun -n N foehn flow; with [[mrf]] (steady or with [time]), [[sliding]] in conformal stepping or by imprinting, or without a pressure boundary` · decisions D55, D84, D93, D182, D185
 
 - contract (bitwise): [`steady_mrf_zone_on_ranks_writes_the_files_of_one_rank`](../../crates/foehncraft-flow/tests/run_ranks.rs): steady laminar Taylor-Couette gap with energy, the inner half a moving reference frame, a closed domain (reference cell), on 2, 3 and 4 ranks: residuals, ledger, boundaries, wall files, fields.vtkhdf, restart.h5 byte for byte one rank, the rotor torque and power log rows of run.jsonl equal
 - contract (bitwise): [`transient_frozen_rotor_with_sst_on_ranks_writes_the_files_of_one_rank`](../../crates/foehncraft-flow/tests/run_ranks.rs): the transient frozen rotor (MRF with BDF2, D185) with k-omega SST and energy on 2 and 3 ranks: history, ledger, probes, boundaries, field files and restart byte for byte one rank
@@ -1873,10 +1873,14 @@ Contracts: `bitwise`.
 - contract (bitwise): [`sliding_mesh_in_conformal_stepping_on_ranks_writes_the_files_of_one_rank`](../../crates/foehncraft-flow/tests/run_ranks.rs): a sliding rotor in conformal stepping (32 sectors, one per step) with a passive scalar on 2, 3 and 4 ranks: history, ledger, probes, boundaries, field files and restart byte for byte one rank
 - contract (bitwise): [`turbulent_sliding_mesh_on_ranks_writes_the_files_of_one_rank`](../../crates/foehncraft-flow/tests/run_ranks.rs): the same with k-omega SST (the shifted old levels of k and omega) on 3 ranks
 - contract (bitwise): [`ranks_run_sliding_couette`](../../examples/cases/flow/ranks_run_sliding_couette.toml): spin-up with a dye blob, rotor of 128 sectors, one turn on 5 ranks; every output file compared with --ranks 1 when the case was made (passes in CI (set linux-2), not yet in the manual)
+- contract (bitwise): [`sliding_mesh_by_imprinting_on_ranks_writes_the_files_of_one_rank`](../../crates/foehncraft-flow/tests/run_ranks.rs): a sliding rotor by imprinting (rotor of 32 sectors, stator of 48, the mesh built again every step) with a passive scalar on 2 and 3 ranks: history, ledger, probes, boundaries, forces, wall and field files byte for byte one rank
+- contract (bitwise): [`turbulent_sliding_mesh_by_imprinting_on_ranks_writes_the_files_of_one_rank`](../../crates/foehncraft-flow/tests/run_ranks.rs): the same with k-omega SST (the carried k, omega and wall distance of the turning rotor) on 4 ranks
+- contract (bitwise): [`ranks_run_imprint_couette`](../../examples/cases/flow/ranks_run_imprint_couette.toml): spin-up with a dye blob through a non-matching interface (32 against 48 sectors) on 5 ranks; every output file compared with --ranks 1 when the case was made (passes in CI (set linux-2), not yet in the manual)
 
 Gaps:
 
-- the sliding mesh by imprinting is refused on ranks in this step (it follows); the [run] ranks check refuses any sliding mesh
+- the [run] ranks check refuses any sliding mesh (compare --ranks N with --ranks 1 instead)
+- imprinting on ranks: every rank imprints the whole mesh and builds its part again every step, and the state is gathered and handed back every step (memory and time of the whole mesh per rank); a moving mesh writes no restart file yet, on one rank or on ranks
 - conformal stepping gathers the whole old levels on every rank every step (memory and time of the whole field per rank); only the rotor cells at the cuts would need to move
 - the five-blade stirred vessel of gallery 301 (16 848 cells, SST, coupled solver) was compared with --ranks 1 by hand, not in CI (its mesh needs Gmsh)
 - the reference cell's value is handed to all ranks with one all-gather per pressure solve
