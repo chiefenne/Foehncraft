@@ -72,6 +72,7 @@ pub mod porous;
 pub mod porous_energy;
 pub mod pressure_values;
 pub mod ranks;
+pub mod residual;
 pub mod restart;
 pub mod rotor;
 pub mod scalar;

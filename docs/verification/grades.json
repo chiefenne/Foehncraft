@@ -255,6 +255,20 @@
    "range": {}
   },
   {
+   "id": "adjoint.a0",
+   "title": "Adjoint stage A0: steady residual R(q) of both algorithms, reverse sweep of the momentum face",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "only the momentum face kernel has a reverse sweep; the gradient, limiter, boundary-value, Rhie-Chow and row kernels follow in A1, and with them the dot-product test on the whole R",
+    "periodic faces are not supported by the reverse sweep",
+    "no adjoint solve, objective or parameter yet (A1); laminar steady constant-density flow on one rank only"
+   ],
+   "range": {}
+  },
+  {
    "id": "coupling.piso",
    "title": "PISO with outer correctors, transient",
    "grade": "verified",

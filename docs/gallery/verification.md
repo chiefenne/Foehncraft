@@ -1,11 +1,12 @@
 # Verification
 
-Part of the [Example gallery](../gallery.md): the discretisation uncertainty of mesh and time-step sweeps (D67) and the verification manual generated from the cases (D68), and the grades of every feature with the limitations they give a run (D199).
+Part of the [Example gallery](../gallery.md): the discretisation uncertainty of mesh and time-step sweeps (D67) and the verification manual generated from the cases (D68), and the grades of every feature with the limitations they give a run (D199), and the first stage of the adjoint (L17).
 
 | # | Example | Stage | Feature |
 |---|---|---|---|
 | 25 | [Grid convergence index: Couette flow and the cylinder at Re = 20](#gci) | 5 | `[verification] levels` with three or more meshes, `uncertainty` in `result.json`, `tools/release/verification_manual.py` |
 | 170 | [Verification grades and the limitations of a run: the raw Gmsh pipe](#limitations) | 7 | `docs/verification/status.md`, `features.toml`, `limitations` in `result.json`, LIM001 to LIM006 |
+| 271 | [Adjoint stage A0: one steady residual for SIMPLEC and the coupled solver](#adjoint-a0) | L17 | `Flow::steady_residual`, `foehncraft_kernels::reverse`, example `adjoint_a0` |
 
 ---
 
@@ -123,3 +124,40 @@ k-ε channel refined to a first-cell y⁺ of 3.9
 LIM002 for its scalable wall functions, validated from y⁺ 11.06 to 300,
 and LIM003 when the solve stops at its iteration limit.
 
+<a id="adjoint-a0"></a>
+## 271. Adjoint stage A0: one steady residual for SIMPLEC and the coupled solver
+
+<img src="../figures/gallery/adjoint_a0_residual.png" alt="Left: the speed of the lid-driven cavity at Re 100 on 576 perturbed polygons with white streamlines. Middle: the logarithm of the momentum residual per cell after one outer iteration, largest under the lid and in its corners. Right: the three norms of the one steady residual (momentum, continuity, face flux) along the SIMPLEC run and the coupled run of the same case, R_u and R_ṁ falling to 1e-11 with both, R_c at round-off throughout" width="1485" height="484">
+
+**What it is.** The first stage of the adjoint solver (L17, plan
+[step 27](../requirements/step27-adjoint-solver.md), stage A0). The
+discrete adjoint (D220) differentiates the equations a converged steady
+run satisfies, not the iterations that got there. `Flow::steady_residual`
+evaluates them at the current fields as one callable:
+R_u = b − A u per cell and component, R_c = Σ ±ṁ per cell, and
+R_ṁ = (ṁ − ṁ*)/α_u per face, with ṁ* the Rhie–Chow flux. The face fluxes
+are part of the state: the flux reads the momentum diagonal, which holds
+the convection of the fluxes, so ṁ is defined only implicitly. Divided by
+α_u, R does not depend on the relaxation.
+
+**The picture.** `examples/cases/flow/adjoint_residual_cavity.toml` runs
+twice, with SIMPLEC and with the coupled solver, and R is evaluated after
+every outer iteration (right). Both algorithms drive the same R_u and R_ṁ
+down to the stop at 10⁻¹¹ (SIMPLEC with α_u = 0.8 in 302 outer
+iterations, the coupled solver in 479); R_c stays near round-off from the
+start, since the pressure correction makes the fluxes conservative in
+every iteration. What the adjoint will linearise is the same for either
+solver. The middle panel shows where R is large after one iteration:
+under the lid and in its two upper corners. A call leaves the run bitwise
+unchanged.
+
+**The reverse sweep.** `foehncraft_kernels::reverse` computes the
+transposed Jacobian product of the momentum face kernel from local dual
+Jacobians (D221, option A): the same kernel body on `Dual<26>` per face,
+then a gather over the faces of each cell in stored order, with no atomics.
+Dot-product test 6 × 10⁻¹⁷, central differences 1 × 10⁻¹², bitwise equal on 1
+and 4 threads, 4.6 times a primal face evaluation with stored blocks and
+38 times without. The compiler reverse mode (option B, nightly only) gives
+the same numbers at 3.5 times. The measurements are in
+[docs/verification/adjoint-a0.md](../verification/adjoint-a0.md); how to
+repeat them is [recipe 271](../recipes/verification.md#adjoint-a0).
