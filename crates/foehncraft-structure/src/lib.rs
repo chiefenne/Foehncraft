@@ -7,6 +7,7 @@ pub mod clamp;
 pub mod eigen;
 pub mod ldlt;
 pub mod model;
+pub mod shell;
 pub mod sparse;
 
 /// The diagnostic codes of the structural solver (registered with the

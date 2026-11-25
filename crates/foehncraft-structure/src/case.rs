@@ -159,6 +159,56 @@ pub struct BeamLine {
     pub y_axis: Option<[f64; 3]>,
 }
 
+/// Element of a plate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
+pub enum ShellElement {
+    /// Four-node MITC4 (Dvorkin & Bathe 1984).
+    #[default]
+    #[serde(rename = "mitc4")]
+    Mitc4,
+    /// Three-node MITC3+ (Lee, Lee & Bathe 2014), two per cell.
+    #[serde(rename = "mitc3+")]
+    Mitc3Plus,
+}
+
+/// `[[plates]]`: a flat parallelogram `origin + a·edge_a + b·edge_b`
+/// (a, b ∈ [0, 1]) of shell elements; the normal is edge_a × edge_b.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Plate {
+    /// Name (for loads and results).
+    pub name: String,
+    /// A corner.
+    pub origin: [f64; 3],
+    /// First edge from the corner.
+    pub edge_a: [f64; 3],
+    /// Second edge from the corner.
+    pub edge_b: [f64; 3],
+    /// Cells along each edge.
+    pub divisions: [usize; 2],
+    /// Thickness (m).
+    pub thickness: f64,
+    /// Material name.
+    pub material: String,
+    /// Element (`mitc4`, default, or `mitc3+`).
+    #[serde(default)]
+    pub element: ShellElement,
+}
+
+/// `[[pressures]]`: a uniform load per area on a plate.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Pressure {
+    /// Name of the plate.
+    pub plate: String,
+    /// Pressure along the plate's normal (Pa); positive pushes along it.
+    #[serde(default)]
+    pub value: f64,
+    /// Force per area, global axes (N/m²), added to the pressure.
+    #[serde(default)]
+    pub force_per_area: [f64; 3],
+}
+
 /// An unknown of a node by name.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -179,12 +229,16 @@ pub enum DofName {
     Rz,
 }
 
-/// `[[supports]]`: fixed unknowns at a node.
+/// `[[supports]]`: fixed unknowns at a node or along a line of nodes.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Support {
     /// The node (a point of the mesh).
-    pub at: [f64; 3],
+    #[serde(default)]
+    pub at: Option<[f64; 3]>,
+    /// Every node on the segment between two points (a shell edge).
+    #[serde(default)]
+    pub along: Option<[[f64; 3]; 2]>,
     /// Fixed unknowns.
     pub fix: Vec<DofName>,
 }
@@ -214,14 +268,20 @@ impl Axis {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Clamp {
-    /// The clamped node.
-    pub at: [f64; 3],
+    /// The clamped node (a beam).
+    #[serde(default)]
+    pub at: Option<[f64; 3]>,
+    /// The clamp line (a shell edge): every node on the segment, the
+    /// springs per length shared by the lengths each node stands for.
+    #[serde(default)]
+    pub along: Option<[[f64; 3]; 2]>,
     /// Direction of the reed's lift.
     pub normal: Axis,
     /// Direction of the clamp line (across the reed).
     pub line: Axis,
-    /// Length of the clamp line (m); default the width of the beam's
-    /// rectangular section.
+    /// Length of the clamp line (m) of a beam clamp; default the width of
+    /// the beam's rectangular section. A clamp `along` an edge has the
+    /// length of its segment.
     #[serde(default)]
     pub width: Option<f64>,
     /// Translational stiffness along `normal` per metre of clamp line
@@ -301,6 +361,12 @@ pub struct Case {
     /// `[[beams]]`.
     #[serde(default)]
     pub beams: Vec<BeamLine>,
+    /// `[[plates]]`.
+    #[serde(default)]
+    pub plates: Vec<Plate>,
+    /// `[[pressures]]`.
+    #[serde(default)]
+    pub pressures: Vec<Pressure>,
     /// `[[supports]]`.
     #[serde(default)]
     pub supports: Vec<Support>,
@@ -356,8 +422,8 @@ impl Case {
 /// How a clamp was taken (D290: the result says when it was rigid).
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ClampInfo {
-    /// The clamped node.
-    pub node: usize,
+    /// The clamped nodes.
+    pub nodes: Vec<usize>,
     /// Length of the clamp line (m).
     pub width: f64,
     /// Translation along the normal: total stiffness (N/m), `None` rigid.
@@ -373,6 +439,8 @@ pub struct Built {
     pub model: Model,
     /// Elements of each beam line, by name.
     pub lines: BTreeMap<String, std::ops::Range<usize>>,
+    /// Shell elements of each plate, by name.
+    pub plates: BTreeMap<String, std::ops::Range<usize>>,
     /// The clamps.
     pub clamps: Vec<ClampInfo>,
     /// Named points and their nodes.
@@ -469,8 +537,8 @@ pub fn build(case: &Case) -> Result<Built, Error> {
     let mut model = Model::default();
     let mut lines = BTreeMap::new();
     let mut widths: Vec<Option<f64>> = Vec::new(); // rectangle width per node
-    if case.beams.is_empty() {
-        return Err(bad("the case has no `[[beams]]`"));
+    if case.beams.is_empty() && case.plates.is_empty() {
+        return Err(bad("the case has no `[[beams]]` and no `[[plates]]`"));
     }
     // merge tolerance: end points closer than this are one node
     let mut lo = [f64::INFINITY; 3];
@@ -562,6 +630,55 @@ pub fn build(case: &Case) -> Result<Built, Error> {
         }
         lines.insert(b.name.clone(), first..model.beams.len());
     }
+    let mut plates = BTreeMap::new();
+    for p in &case.plates {
+        if lines.contains_key(&p.name) || !seen.insert(p.name.clone()) {
+            return Err(bad(format!("two parts are named `{}`", p.name)));
+        }
+        let mat = case.materials.get(&p.material).ok_or_else(|| {
+            bad(format!("plate `{}`: no material `{}` in [materials]", p.name, p.material))
+        })?;
+        if !(mat.young > 0.0 && mat.density > 0.0 && mat.poisson > -1.0 && mat.poisson < 0.5) {
+            return Err(bad(format!(
+                "plate `{}`: the material needs young > 0, density > 0 and −1 < poisson < 0.5",
+                p.name
+            )));
+        }
+        if p.thickness.is_nan() || p.thickness <= 0.0 {
+            return Err(bad(format!("plate `{}`: thickness must be positive", p.name)));
+        }
+        let [na, nb] = p.divisions;
+        if na == 0 || nb == 0 {
+            return Err(bad(format!("plate `{}`: `divisions` must be at least 1", p.name)));
+        }
+        let n = crate::beam::cross(p.edge_a, p.edge_b);
+        if crate::beam::norm(n) <= 1e-12 * crate::beam::norm(p.edge_a) * crate::beam::norm(p.edge_b) {
+            return Err(bad(format!("plate `{}`: edge_a and edge_b are parallel or zero", p.name)));
+        }
+        model.shell_props.push(crate::shell::ShellProps {
+            young: mat.young,
+            poisson: mat.poisson,
+            density: mat.density,
+            thickness: p.thickness,
+            kappa: 5.0 / 6.0,
+        });
+        let pi = model.shell_props.len() - 1;
+        let first = model.shells.len();
+        let at = |a: f64, b: f64| {
+            [
+                p.origin[0] + a * p.edge_a[0] + b * p.edge_b[0],
+                p.origin[1] + a * p.edge_a[1] + b * p.edge_b[1],
+                p.origin[2] + a * p.edge_a[2] + b * p.edge_b[2],
+            ]
+        };
+        let before = model.nodes.len();
+        match p.element {
+            ShellElement::Mitc4 => model.add_shell_grid(at, na, nb, pi),
+            ShellElement::Mitc3Plus => model.add_tri_grid(at, na, nb, pi),
+        };
+        widths.extend(std::iter::repeat_n(None, model.nodes.len() - before));
+        plates.insert(p.name.clone(), first..model.shells.len());
+    }
     let size = model.size();
     let find = |model: &Model, x: [f64; 3], what: &str| -> Result<usize, Error> {
         let (n, d) = model.nearest(x).ok_or_else(|| bad("no nodes"))?;
@@ -575,56 +692,108 @@ pub fn build(case: &Case) -> Result<Built, Error> {
             )))
         }
     };
+    // the nodes on a segment, with the length each one stands for
+    let along = |model: &Model, seg: [[f64; 3]; 2], what: &str| -> Result<Vec<(usize, f64)>, Error> {
+        let d = crate::beam::sub(seg[1], seg[0]);
+        let len = crate::beam::norm(d);
+        if len.is_nan() || len <= 0.0 {
+            return Err(bad(format!("{what}: `along` needs two different points")));
+        }
+        let tol = 1e-6 * size.max(f64::MIN_POSITIVE);
+        let mut hits: Vec<(f64, usize)> = Vec::new();
+        for (i, x) in model.nodes.iter().enumerate() {
+            let r = crate::beam::sub(*x, seg[0]);
+            let t = crate::beam::dot3(r, d) / (len * len);
+            if !(-1e-9..=1.0 + 1e-9).contains(&t) {
+                continue;
+            }
+            let off = crate::beam::sub(r, crate::beam::scale(d, t));
+            if crate::beam::norm(off) <= tol {
+                hits.push((t, i));
+            }
+        }
+        if hits.len() < 2 {
+            return Err(bad(format!(
+                "{what}: fewer than two nodes lie on the segment from {:?} to {:?}",
+                seg[0], seg[1]
+            )));
+        }
+        hits.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let m = hits.len();
+        Ok((0..m)
+            .map(|k| {
+                let lo = if k == 0 { hits[0].0 } else { 0.5 * (hits[k - 1].0 + hits[k].0) };
+                let hi = if k + 1 == m { hits[m - 1].0 } else { 0.5 * (hits[k].0 + hits[k + 1].0) };
+                (hits[k].1, (hi - lo) * len)
+            })
+            .collect())
+    };
+    let place = |model: &Model, at: Option<[f64; 3]>, seg: Option<[[f64; 3]; 2]>, what: &str| -> Result<Vec<(usize, f64)>, Error> {
+        match (at, seg) {
+            (Some(x), None) => Ok(vec![(find(model, x, what)?, 0.0)]),
+            (None, Some(s)) => along(model, s, what),
+            _ => Err(bad(format!("{what}: give `at` (a node) or `along` (a segment), not both"))),
+        }
+    };
     for s in &case.supports {
-        let n = find(&model, s.at, "[[supports]]")?;
-        for d in dofs_of(&s.fix) {
-            model.fixed[DOFS * n + d] = true;
+        for (n, _) in place(&model, s.at, s.along, "[[supports]]")? {
+            for d in dofs_of(&s.fix) {
+                model.fixed[DOFS * n + d] = true;
+            }
         }
     }
     let mut clamps = Vec::new();
     for c in &case.clamps {
-        let n = find(&model, c.at, "[[clamps]]")?;
+        let nodes = place(&model, c.at, c.along, "[[clamps]]")?;
         if c.normal == c.line {
-            return Err(bad(
-                "[[clamps]]: `normal` and `line` must be different axes",
-            ));
+            return Err(bad("[[clamps]]: `normal` and `line` must be different axes"));
         }
-        let width = match c.width.or(widths[n]) {
-            Some(w) if w > 0.0 => w,
-            _ => {
-                return Err(bad(
-                    "[[clamps]]: `width` (the length of the clamp line) is needed when the beam has no rectangular section",
-                ));
+        let (width, share): (f64, Vec<f64>) = if c.along.is_some() {
+            if c.width.is_some() {
+                return Err(bad("[[clamps]]: a clamp `along` an edge takes its length from the segment; leave out `width`"));
+            }
+            (nodes.iter().map(|x| x.1).sum(), nodes.iter().map(|x| x.1).collect())
+        } else {
+            let n = nodes[0].0;
+            match c.width.or(widths[n]) {
+                Some(w) if w > 0.0 => (w, vec![w]),
+                _ => {
+                    return Err(bad(
+                        "[[clamps]]: `width` (the length of the clamp line) is needed when the beam has no rectangular section",
+                    ));
+                }
             }
         };
         let tn = c.normal.index();
         let rl = 3 + c.line.index();
-        for d in 0..DOFS {
-            if d != tn && d != rl {
-                model.fixed[DOFS * n + d] = true;
+        for k in [c.k_translation, c.k_rotation].into_iter().flatten() {
+            if k.is_nan() || k < 0.0 || !k.is_finite() {
+                return Err(bad(format!("[[clamps]]: spring stiffness must be ≥ 0 (is {k})")));
             }
         }
-        let mut spring = |d: usize, k: Option<f64>, what: &str| -> Result<Option<f64>, Error> {
-            match k {
-                None => {
-                    model.fixed[DOFS * n + d] = true;
-                    Ok(None)
+        for (&(n, _), &l) in nodes.iter().zip(&share) {
+            for d in 0..DOFS {
+                let spring = if d == tn {
+                    c.k_translation
+                } else if d == rl {
+                    c.k_rotation
+                } else {
+                    None
+                };
+                match spring {
+                    Some(k) => {
+                        model.fixed[DOFS * n + d] = false;
+                        model.springs.push((DOFS * n + d, k * l));
+                    }
+                    None => model.fixed[DOFS * n + d] = true,
                 }
-                Some(k) if k >= 0.0 && k.is_finite() => {
-                    model.fixed[DOFS * n + d] = false;
-                    model.springs.push((DOFS * n + d, k * width));
-                    Ok(Some(k * width))
-                }
-                Some(k) => Err(bad(format!("[[clamps]] {what} must be ≥ 0 (is {k})"))),
             }
-        };
-        let kt = spring(tn, c.k_translation, "k_translation")?;
-        let kr = spring(rl, c.k_rotation, "k_rotation")?;
+        }
         clamps.push(ClampInfo {
-            node: n,
+            nodes: nodes.iter().map(|x| x.0).collect(),
             width,
-            k_translation: kt,
-            k_rotation: kr,
+            k_translation: c.k_translation.map(|k| k * width),
+            k_rotation: c.k_rotation.map(|k| k * width),
         });
     }
     for s in &case.springs {
@@ -654,6 +823,18 @@ pub fn build(case: &Case) -> Result<Built, Error> {
             model.forces[DOFS * n + 3 + d] += l.moment[d];
         }
     }
+    for pr in &case.pressures {
+        let r = plates
+            .get(&pr.plate)
+            .ok_or_else(|| bad(format!("[[pressures]]: no plate `{}`", pr.plate)))?;
+        for e in r.clone() {
+            model.area_loads.push(crate::model::AreaLoad {
+                element: e,
+                q: pr.force_per_area,
+                pressure: pr.value,
+            });
+        }
+    }
     for l in &case.line_loads {
         let r = lines
             .get(&l.beam)
@@ -672,6 +853,7 @@ pub fn build(case: &Case) -> Result<Built, Error> {
     Ok(Built {
         model,
         lines,
+        plates,
         clamps,
         points,
     })
@@ -741,8 +923,8 @@ impl Outcome {
             "free_unknowns": free,
             "mass": m.total_mass(),
             "clamps": self.built.clamps.iter().map(|c| json!({
-                "node": c.node,
-                "at": m.nodes[c.node],
+                "nodes": c.nodes.len(),
+                "at": m.nodes[c.nodes[0]],
                 "width": c.width,
                 "translation": match c.k_translation { Some(k) => json!({"rigid": false, "stiffness": k}), None => json!({"rigid": true}) },
                 "rotation": match c.k_rotation { Some(k) => json!({"rigid": false, "stiffness": k}), None => json!({"rigid": true}) },
