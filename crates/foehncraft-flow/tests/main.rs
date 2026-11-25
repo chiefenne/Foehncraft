@@ -35,6 +35,7 @@ mod impinging_jet;
 mod inlet_table;
 mod keps;
 mod log_detail;
+mod mesh_motion;
 mod mrf;
 mod periodic;
 mod porous;

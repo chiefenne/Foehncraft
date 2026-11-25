@@ -836,8 +836,7 @@ impl Flow {
             s.pressure_max_iter,
         )?;
         n.pressure += it;
-        if let Some(rc) = self.reference_cell {
-            let shift = self.dev.value(z.p, rc)?;
+        if let Some(shift) = self.reference_value(z.p)? {
             self.dev.subtract(z.p, shift)?;
         }
         self.dev.gradient(
@@ -1189,8 +1188,7 @@ impl Flow {
 
         // the increments
         let tm = Instant::now();
-        if let Some(rc) = self.reference_cell {
-            let shift = self.dev.value(x.p, rc)?;
+        if let Some(shift) = self.reference_value(x.p)? {
             self.dev.subtract(x.p, shift)?;
         }
         for (u, d) in f.u.all().into_iter().zip(x.u.all()) {
@@ -1217,8 +1215,7 @@ impl Flow {
             s.pressure.max_iter,
         )?;
         res.pressure_iterations += it;
-        if let Some(rc) = self.reference_cell {
-            let shift = self.dev.value(w.pc, rc)?;
+        if let Some(shift) = self.reference_value(w.pc)? {
             self.dev.subtract(w.pc, shift)?;
         }
         self.dev.correct_fluxes(w.cf, w.mc, w.pc, w.m)?;

@@ -23,6 +23,9 @@ Part of the [Example gallery](../gallery.md): the built-in test mesher in 2D and
 | 262 | [Written on five ranks, read on any: restart files on ranks](#restart-ranks) | 8 | the restart gathered from the ranks has the bytes of the one-rank file; read on any rank count by global identity, the continuation bitwise one rank (MPI step W6, D84, D93) |
 | 279 | [Solved on five ranks, written by one: a run on ranks](#run-ranks) | 8 | `foehn flow --ranks N`: every rank runs the loop, rank 0 writes; monitors, ledger, fields and restart from the gathered fields, every output file byte for byte one rank (MPI step W7, D84, D93) |
 | 290 | [Five ranks, one turbulent heated transient: the physics of a run on ranks](#run-ranks-physics) | 8 | k-ω SST, energy, a passive dye and BDF2 time steps solved on ranks as the run itself; heat balance of every step, history, probes, forces, fields and restart byte for byte one rank (MPI step W7 part 2, D84, D93) |
+| 301 | [A stirred vessel on five ranks: rotating zones of MRF on ranks](#run-ranks-mrf) | 8 | the frame flux of a face between ranks from the zone of the halo cell, the pressure level of a closed vessel fixed in one rank's reference cell; torque, shaft power, fields and restart byte for byte one rank (MPI step W7, turning zones, D55, D93) |
+| 304 | [A sliding rotor on five ranks: conformal stepping on ranks](#run-ranks-sliding) | 8 | the old levels of the rotor cells that land on other ranks gathered from all ranks; history, probes, torque, fields and restart byte for byte one rank (MPI step W7, turning zones, D182, D93) |
+| 305 | [A five-blade mixer on five ranks: the sliding mesh by imprinting on ranks](#run-ranks-imprint) | 8 | every rank imprints the interface on the whole mesh each step and takes its part; history, torque, ledger, boundaries and fields byte for byte one rank (MPI step W7, turning zones, D182, D93) |
 
 ---
 
@@ -836,6 +839,178 @@ python3 -m tools.mesh.render_mesh output/ranks_run_transient_sst/fields.vtkhdf t
 python3 -m tools.mesh.render_mesh output/ranks_run_transient_sst/fields.vtkhdf dye.png \
     --field dye --top --size 1200x460 --zoom 1.9 \
     --title "passive dye of the upper inflow, t = 4.5 s, solved on 5 ranks"
+```
+
+[↑ back to top](#meshes)
+
+---
+
+<a id="run-ranks-mrf"></a>
+## 301. A stirred vessel on five ranks: rotating zones of MRF on ranks
+
+<img src="../figures/gallery/ranks_mrf_mixer_speed.png" alt="Speed in the five-blade stirred vessel solved with a moving reference frame on five ranks" width="1000" height="1000">
+
+<img src="../figures/gallery/ranks_mrf_mixer_rank.png" alt="The five ranks of the stirred vessel" width="1000" height="1000">
+
+The turbulent baffled vessel of gallery 100 with five blades and three
+baffles (water, the rotor at 10 rad/s, Re = ΩR²/ν = 20 000, k-ω SST, the
+coupled solver), the rotor a moving reference frame (`[[mrf]]`, D55),
+solved on five ranks as the run itself (`[run] rank_count = 5`). The
+recursive coordinate bisection cuts through the rotor, the stator and the
+circle between them (second image), so faces between two ranks join rotor
+and stator cells. The frame flux ρ **S**·**V** of such a face is the mean of
+the frame velocities of its two cells; the rank of one of them knows only
+its own cells, so the zone of every halo cell now comes from its owner
+through the halo exchange, and the closure check of the frame flux and the
+cell counts of the log are sums over all ranks. The vessel is closed, so
+the pressure level is fixed in one reference cell: the rank that owns it
+pins the row and hands the value of the cell to all ranks after every
+pressure solve (SIMPLEC, PISO and the coupled solver), which is what a
+closed domain needed to run on ranks at all. The run converges in 456
+iterations to 1e-5 on five ranks as on one, and `residuals.csv`,
+`balance.csv`, `boundaries.csv`, `fields.vtkhdf` and `restart.h5` are
+byte for byte those of `--ranks 1`, with the torque of the fluid on the
+rotor (−5.43e-5 N m on the 5 mm slab) and the shaft power −Ω·T in the log
+columns and the ledger. 57 s on five thread ranks against 45 s on one on
+this 16 800-cell mesh: the gathers of the output and the exact sums over
+ranks, not a speed-up (strong scaling is W9). The transient frozen rotor
+(MRF in a `[time]` run, D185) runs on ranks the same way; the tests check
+a steady laminar Taylor–Couette gap with energy on 2, 3 and 4 ranks and the
+transient frozen rotor with SST on 2 and 3. The sliding mesh follows.
+
+| | |
+|---|---|
+| Mesh | Gmsh, 16 848 cells (quadrilaterals and triangles extruded by one layer), rotor and stator conformal on the interface circle |
+| Ranks | 5 (recursive coordinate bisection), threads of one process; or MPI processes under `mpirun` |
+| Model | k-ω SST, automatic wall treatment, rotor zone as a moving reference frame |
+| Solver | coupled, 456 iterations to 1e-5 |
+| Output | every file byte for byte the run on one rank |
+| Case file | `examples/studies/mixer/mrf_turbulent_ranks.toml`; the CI case `flow/ranks_run_mrf_couette.toml` |
+
+```
+pip install gmsh
+python3 examples/meshes/mixer.py --blades 5 --baffles 3
+target/release/foehn flow examples/studies/mixer/mrf_turbulent_ranks.toml --out output/mixer_ranks
+python3 -m tools.mesh.render_mesh output/mixer_ranks/fields.vtkhdf speed.png \
+    --field speed --top --no-edges --size 1000x1000 \
+    --title "speed (m/s), 5-blade mixer, MRF + SST, solved on 5 ranks"
+python3 -m tools.mesh.render_mesh output/mixer_ranks/ranks.vtkhdf rank.png \
+    --field rank --top --categorical --size 1000x1000 \
+    --title "the five ranks (recursive coordinate bisection)"
+```
+
+[↑ back to top](#meshes)
+
+---
+
+<a id="run-ranks-sliding"></a>
+## 304. A sliding rotor on five ranks: conformal stepping on ranks
+
+<img src="../figures/gallery/ranks_sliding_couette_dye.png" alt="Dye in the Taylor-Couette gap after one turn of the sliding rotor, solved on five ranks" width="1000" height="1000">
+
+<img src="../figures/gallery/ranks_sliding_couette_rank.png" alt="The five ranks of the sliding rotor case" width="1000" height="1000">
+
+Taylor–Couette flow spun up from rest (the inner cylinder at 10 rad/s,
+Re = 50) with the inner half of the gap a sliding rotor of 128 identical
+sectors that turns by one sector per time step (conformal stepping, D182),
+and a blob of dye placed in the rotor at the start, marched one turn of
+the rotor on five ranks (`[run] rank_count = 5`). In conformal stepping the
+mesh stays where it is and only the time terms see the motion: the old
+level of a rotor cell is what the cell held one step (and two steps) ago,
+the value of the cell one sector back. With the rotor cut into five ranks
+(second image) the cells at the cuts take their old levels from cells of
+another rank, so every step gathers the old levels of the own cells of all
+ranks into the order of the whole mesh and each rank picks the moved
+values of its cells (`sliding::Shift`): copies, so each rank solves its
+cells bitwise as one rank does. The velocity, the passive scalars and the
+turbulence variables are shifted that way. The first image shows the dye
+after one turn, drawn out by the shear of the gap into a band that winds
+around the inner cylinder. `history.csv`, `probes.csv`, `forces.csv`,
+`balance.csv`, the wall files, `fields_000064.vtkhdf`, `fields.vtkhdf` and
+`restart.h5` are byte for byte those of `--ranks 1`, the rotor angle and
+torque columns included. 10 s on five thread ranks against 3 s on one on
+4 096 cells: the gather of the old levels every step and the output, not a
+speed-up (strong scaling is W9; only the rotor cells at the cuts would
+need to move between ranks). The tests run the laminar case with a dye on
+2, 3 and 4 ranks and with k-ω SST on 3. The sliding mesh by imprinting
+(rotor and stator with their own meshes) follows.
+
+| | |
+|---|---|
+| Mesh | generated annulus (`[mesh.annulus]`, refine 2), 4 096 hexahedra in one layer, rotor of 128 sectors |
+| Ranks | 5 (recursive coordinate bisection), threads of one process; or MPI processes under `mpirun` |
+| Model | laminar, passive dye (diffusivity 2e-5 m²/s) |
+| Solver | BDF2, Δt = 2π/1280 s (one sector per step), 128 steps |
+| Output | every file byte for byte the run on one rank |
+| Case file | `flow/ranks_run_sliding_couette.toml` |
+
+```
+target/release/foehn flow examples/cases/flow/ranks_run_sliding_couette.toml
+python3 -m tools.mesh.render_mesh output/ranks_run_sliding_couette/fields.vtkhdf dye.png \
+    --field dye --top --no-edges --size 1000x1000 \
+    --title "dye after one turn of the sliding rotor (128 sectors), solved on 5 ranks"
+python3 -m tools.mesh.render_mesh output/ranks_run_sliding_couette/ranks.vtkhdf rank.png \
+    --field rank --top --categorical --no-edges --size 1000x1000 \
+    --title "the five ranks of the sliding rotor case"
+```
+
+[↑ back to top](#meshes)
+
+---
+
+<a id="run-ranks-imprint"></a>
+## 305. A five-blade mixer on five ranks: the sliding mesh by imprinting on ranks
+
+<img src="../figures/gallery/ranks_imprint_mixer_speed.png" alt="Speed in the five-blade stirred vessel after one turn of the rotor, sliding mesh by imprinting, solved on five ranks" width="1000" height="1000">
+
+<img src="../figures/gallery/ranks_imprint_mixer_rank.png" alt="The five ranks of the imprinted five-blade mixer" width="1000" height="1000">
+
+The baffled stirred vessel with five blades and three baffles, started from
+rest, the rotor turning at 10 rad/s through the stator by the sliding mesh
+by imprinting (D182 variant B): the rotor mesh has 64 intervals on the
+interface circle, the stator 96, and in every step the interface is
+imprinted at the rotor angle and the solver is built again on that mesh.
+One turn (503 steps of 1.25 ms) on five ranks (`[run] rank_count = 5`).
+On ranks every rank imprints the interface on the whole mesh, which keeps
+its cell numbers; the partition of the first step stays for the whole run
+(second image: the rotor parts of the ranks turn with the rotor), each rank
+takes its part with the geometry of the rigid turn of the whole mesh, and
+the state and the old time levels are gathered into the order of the whole
+mesh, carried onto the faces of the new mesh there by the code of one rank
+and handed back to the ranks. So every rank solves its cells bitwise as one
+rank does. The first image shows the speed after one turn: the jets off the
+blade tips and the start-up vortices behind the blades, the fluid beyond
+the interface still nearly at rest at this Reynolds number (400).
+`history.csv` (rotor angle, torque, power), `forces.csv`, `balance.csv`,
+`boundaries.csv`, `fields_000240.vtkhdf` and `fields.vtkhdf` are byte for
+byte those of `--ranks 1`. 5 min 45 s on five thread ranks against 3 min
+18 s on one on 16 897 cells: every rank imprints the whole mesh and the
+state goes through the global order every step (replicated, like the
+multigrid setup; strong scaling is W9). The tests run a Taylor–Couette
+rotor of 32 sectors through a stator of 48 with a dye on 2 and 3 ranks and
+with k-ω SST on 4; the CI case is `flow/ranks_run_imprint_couette.toml`.
+A moving mesh writes no restart file yet.
+
+| | |
+|---|---|
+| Mesh | `examples/meshes/mixer5_split.msh` (Gmsh, `mixer.py --blades 5 --baffles 3`), 16 897 cells in one layer, rotor and stator meshes meeting at the interface circle (64 against 96 intervals) |
+| Ranks | 5 (recursive coordinate bisection of the first step), threads of one process; or MPI processes under `mpirun` |
+| Model | laminar, ν = 5e-5 m²/s, Re = ω R_tip² / ν = 400 |
+| Solver | BDF2, Δt = 1.25 ms, 503 steps (one turn), no extrapolation, 4 outer iterations |
+| Output | every file byte for byte the run on one rank |
+| Case files | `examples/studies/mixer/sliding_ranks.toml`; CI: `flow/ranks_run_imprint_couette.toml` |
+
+```
+python3 examples/meshes/mixer.py --blades 5 --baffles 3
+target/release/foehn flow examples/studies/mixer/sliding_ranks.toml --out output/mixer_imprint
+target/release/foehn flow examples/studies/mixer/sliding_ranks.toml --ranks 1 --out output/one
+cmp output/one/history.csv output/mixer_imprint/history.csv
+python3 -m tools.mesh.render_mesh output/mixer_imprint/fields.vtkhdf speed.png \
+    --field speed --top --no-edges --size 1000x1000 \
+    --title "speed (m/s) after one turn, 5-blade rotor by imprinting, solved on 5 ranks"
+python3 -m tools.mesh.render_mesh output/mixer_imprint/ranks.vtkhdf rank.png \
+    --field rank --top --categorical --size 1000x1000 \
+    --title "the five ranks of the imprinted mixer (partition of the first step)"
 ```
 
 [↑ back to top](#meshes)

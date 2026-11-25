@@ -4,7 +4,8 @@
 //! record, the fields and the restart file; the result summary differs
 //! only in the rank count of its provenance. Part 1: steady laminar runs;
 //! part 2: passive scalars, the energy equation, k-ω SST and k-ε, the
-//! rotating frame and transient runs.
+//! rotating frame and transient runs; then the rotating zones of `[[mrf]]`
+//! (steady and the transient frozen rotor).
 
 use foehncraft_flow::engine::{self, RunOptions};
 use std::path::Path;
@@ -323,4 +324,274 @@ fn refuses_what_does_not_run_on_ranks_yet() {
     case.run.rank_count = 2;
     let err = foehncraft_flow::ranks::supported_run(&case).unwrap_err();
     assert!(err.to_string().contains("statistics"), "{err}");
+}
+
+/// Laminar Taylor–Couette flow with the inner half of the gap a rotating
+/// zone (`[[mrf]]`, D55): the frame flux on the faces between ranks needs
+/// the zone of the halo cells, the torque and the shaft power of the rotor
+/// are log columns. `extra` is appended (a `[time]` table, a turbulence
+/// model).
+fn mrf_case(extra: &str) -> String {
+    format!(
+        r#"
+case_format = "0.7"
+[mesh.annulus]
+r_inner = 0.05
+r_outer = 0.10
+depth = 0.01
+n_theta = 30
+n_r = 8
+rotor_layers = 4
+[mesh]
+renumber = "rcm"
+[fluid]
+density = 1.0
+viscosity = 5e-4
+specific_heat = 1000.0
+conductivity = 0.05
+[constants]
+spin = 10.0
+[flow]
+convection = true
+[initial]
+pressure = 101325.0
+[[mrf]]
+zone = "rotor"
+axis = [0.0, 0.0, 1.0]
+omega = 10.0
+[boundary.inner]
+type = "wall"
+velocity = ["-spin * y", "spin * x", 0.0]
+[boundary.inner.energy]
+temperature = 320.0
+[boundary.outer]
+type = "wall"
+[boundary.outer.energy]
+temperature = 300.0
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+[energy]
+initial = 300.0
+[solver]
+tolerance = 1e-30
+max_iterations = 30
+log_every = 5
+[verification]
+require_convergence = false
+[balance]
+every = 10
+[[output.probes]]
+name = "gap"
+point = [0.0, 0.07, 0.005]
+[log]
+columns = ["residual.momentum", "probe.gap.velocity_y", "rotor.rotor.torque", "rotor.rotor.power"]
+[run]
+restart_every = 10
+{extra}
+"#
+    )
+}
+
+#[test]
+fn steady_mrf_zone_on_ranks_writes_the_files_of_one_rank() {
+    same_as_one_rank(
+        "mrf",
+        &mrf_case(""),
+        &[
+            "residuals.csv",
+            "balance.csv",
+            "boundaries.csv",
+            "wall_inner.csv",
+            "wall_outer.csv",
+            #[cfg(feature = "hdf5")]
+            "fields.vtkhdf",
+            #[cfg(feature = "hdf5")]
+            "restart.h5",
+        ],
+        &[2, 3, 4],
+    );
+}
+
+#[test]
+fn transient_frozen_rotor_with_sst_on_ranks_writes_the_files_of_one_rank() {
+    let text = mrf_case(
+        "[time]\nscheme = \"bdf2\"\ntime_step = 0.02\nsteps = 6\n\
+         [turbulence]\nmodel = \"k-omega-sst\"\n[output]\nfields_every = 3\n",
+    )
+    .replace(
+        "pressure = 101325.0\n",
+        "pressure = 101325.0\nturbulence_intensity = 0.05\nviscosity_ratio = 10.0\n",
+    )
+    .replace("restart_every = 10", "restart_every = 3");
+    same_as_one_rank(
+        "mrf-transient",
+        &text,
+        &[
+            "history.csv",
+            "balance.csv",
+            "probes.csv",
+            "boundaries.csv",
+            #[cfg(feature = "hdf5")]
+            "fields.vtkhdf",
+            #[cfg(feature = "hdf5")]
+            "fields_000003.vtkhdf",
+            #[cfg(feature = "hdf5")]
+            "restart.h5",
+        ],
+        &[2, 3],
+    );
+}
+
+/// The Taylor–Couette gap with the inner half a sliding rotor in conformal
+/// stepping (D182): 32 sectors, one sector per step, so a rotor cell lands
+/// on a cell of another rank and the old levels of its time terms come
+/// from there. A passive scalar is carried by the rotor; `extra` adds a
+/// turbulence model.
+fn sliding_case(extra: &str) -> String {
+    format!(
+        r#"
+case_format = "0.7"
+[mesh.annulus]
+r_inner = 0.05
+r_outer = 0.10
+depth = 0.01
+n_theta = 32
+n_r = 8
+rotor_layers = 4
+[mesh]
+renumber = "rcm"
+[fluid]
+density = 1.0
+viscosity = 5e-4
+[constants]
+spin = 10.0
+[flow]
+convection = true
+[time]
+scheme = "bdf2"
+time_step = 0.019634954084936207
+steps = 8
+start_time = 0.0
+[[sliding]]
+zone = "rotor"
+axis = [0.0, 0.0, 1.0]
+omega = 10.0
+[boundary.inner]
+type = "wall"
+velocity = ["-spin * y", "spin * x", 0.0]
+[boundary.inner.scalar.dye]
+value = 1.0
+[boundary.outer]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+[scalars.dye]
+diffusivity = 1e-4
+initial = 0.0
+[solver]
+tolerance = 1e-10
+max_iterations = 3000
+[balance]
+every = 4
+[[output.probes]]
+name = "gap"
+point = [0.0, 0.07, 0.005]
+[log]
+columns = ["probe.gap.velocity_y", "rotor.rotor.angle", "rotor.rotor.torque"]
+[output]
+fields_every = 4
+[run]
+restart_every = 4
+{extra}
+"#
+    )
+}
+
+const SLIDING_FILES: &[&str] = &[
+    "history.csv",
+    "balance.csv",
+    "probes.csv",
+    "boundaries.csv",
+    #[cfg(feature = "hdf5")]
+    "fields.vtkhdf",
+    #[cfg(feature = "hdf5")]
+    "fields_000004.vtkhdf",
+    #[cfg(feature = "hdf5")]
+    "restart.h5",
+];
+
+#[test]
+fn sliding_mesh_in_conformal_stepping_on_ranks_writes_the_files_of_one_rank() {
+    same_as_one_rank("sliding", &sliding_case(""), SLIDING_FILES, &[2, 3, 4]);
+}
+
+#[test]
+fn turbulent_sliding_mesh_on_ranks_writes_the_files_of_one_rank() {
+    let text = sliding_case("[turbulence]\nmodel = \"k-omega-sst\"\n").replace(
+        "[flow]\n",
+        "[initial]\nturbulence_intensity = 0.05\nviscosity_ratio = 10.0\n[flow]\n",
+    );
+    same_as_one_rank("sliding-sst", &text, SLIDING_FILES, &[3]);
+}
+
+/// The sliding mesh by imprinting (D182 variant B): a rotor of 32 sectors
+/// and a stator of 48, the mesh built again at the rotor angle of every
+/// step.
+fn imprint_case(extra: &str) -> String {
+    sliding_case(extra)
+        .replace("n_theta = 32\n", "n_theta = 32\nn_theta_stator = 48\n")
+        .replace(
+            "[[sliding]]\nzone = \"rotor\"\n",
+            "[[sliding]]\nzone = \"rotor\"\nrotor_interface = \"rotor_interface\"\n\
+             stator_interface = \"stator_interface\"\n",
+        )
+        .replace(
+            "[solver]\n",
+            "[solver]\nextrapolation = false\nouter_iterations = 3\n",
+        )
+}
+
+/// (a moving mesh writes no restart file yet)
+const IMPRINT_FILES: &[&str] = &[
+    "history.csv",
+    "balance.csv",
+    "probes.csv",
+    "boundaries.csv",
+    "forces.csv",
+    "wall_inner.csv",
+    #[cfg(feature = "hdf5")]
+    "fields.vtkhdf",
+    #[cfg(feature = "hdf5")]
+    "fields_000004.vtkhdf",
+];
+
+#[test]
+fn sliding_mesh_by_imprinting_on_ranks_writes_the_files_of_one_rank() {
+    same_as_one_rank("imprint", &imprint_case(""), IMPRINT_FILES, &[2, 3]);
+}
+
+#[test]
+fn turbulent_sliding_mesh_by_imprinting_on_ranks_writes_the_files_of_one_rank() {
+    let text = imprint_case("[turbulence]\nmodel = \"k-omega-sst\"\n").replace(
+        "[flow]\n",
+        "[initial]\nturbulence_intensity = 0.05\nviscosity_ratio = 10.0\n[flow]\n",
+    );
+    same_as_one_rank("imprint-sst", &text, IMPRINT_FILES, &[4]);
+}
+
+#[test]
+fn the_check_of_ranks_refuses_a_sliding_mesh() {
+    let mut case =
+        foehncraft_flow::case::FlowCase::from_toml(&imprint_case(""), &std::env::temp_dir())
+            .unwrap();
+    case.run.rank_count = 2;
+    foehncraft_flow::ranks::supported_run(&case).unwrap();
+    case.run.rank_count = 1;
+    case.run.ranks = vec![2];
+    let err = foehncraft_flow::ranks::supported(&case).unwrap_err();
+    assert!(err.to_string().contains("sliding"), "{err}");
 }

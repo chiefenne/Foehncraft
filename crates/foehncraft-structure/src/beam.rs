@@ -188,6 +188,32 @@ pub fn local_line_load(p: &BeamProps, len: f64, q: [f64; 3]) -> [f64; 12] {
     f
 }
 
+/// Work-equivalent local nodal forces (12) of a thermal strain: `strain`
+/// = α ΔT of the axis, `curvature` = [α ΔT_y / h_y, α ΔT_z / h_z] with
+/// ΔT_y = T(+y) − T(−y) across the section's height h_y along local y
+/// (and the same along z). The forces are exact for both theories: a
+/// thermal strain constant along the beam is the same as end forces
+/// ±EAε and end moments ±EIκ.
+pub fn local_thermal_load(p: &BeamProps, strain: f64, curvature: [f64; 2]) -> [f64; 12] {
+    let mut f = [0.0; 12];
+    let n = p.young * p.area * strain;
+    f[0] = -n;
+    f[6] = n;
+    // a hotter +y (+z) side bends the axis away from it: χ = −κ with the
+    // strain −y χ (−z χ) of the plane's own sign convention
+    for ((idx, sg), inertia, kap) in [
+        (PLANE_XY, p.iz, curvature[0]),
+        (PLANE_XZ, p.iy, curvature[1]),
+    ] {
+        let m = -p.young * inertia * kap;
+        let fb = [0.0, -m, 0.0, m];
+        for a in 0..4 {
+            f[idx[a]] += sg[a] * fb[a];
+        }
+    }
+    f
+}
+
 /// The rotation from global to local axes (rows: local x, y, z) of a beam
 /// from `a` to `b`; `y_hint` is a direction in the local x–y plane
 /// (the local y axis after orthogonalisation). Returns the length too.

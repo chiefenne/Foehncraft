@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**132 features: 50 verified, 79 partial, 3 unverified.**
+**139 features: 50 verified, 86 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -143,6 +143,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Backends and interfaces | [Restart files on ranks: gathered byte for byte the one-rank file, read on any rank count (MPI step W6)](#parallel-restart-ranks) | partial |
 | Backends and interfaces | [Steady runs on ranks: rank 0 writes the output of one rank (MPI step W7 part 1)](#parallel-run-ranks) | partial |
 | Backends and interfaces | [Turbulent, heated and transient runs on ranks with the output of one rank (MPI step W7 part 2)](#parallel-run-ranks-physics) | partial |
+| Backends and interfaces | [Rotating zones (MRF), the sliding mesh (conformal stepping and imprinting) and closed domains on ranks with the output of one rank (MPI step W7, turning zones)](#parallel-run-ranks-turning) | partial |
 | Sprays | [Lagrangian spray parcels, one way (L12, SP1)](#sprays-one-way) | partial |
 | Sprays | [Datums, liquid flow through them and droplet statistics (SP1b)](#sprays-datums-statistics) | partial |
 | Sprays | [Two-way momentum coupling of the sprays (SP2a, D247 to D252)](#sprays-two-way-momentum) | partial |
@@ -157,6 +158,12 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Immersed bodies | [Density-field topology search with the Brinkman penalisation, iso-surface by marching tetrahedra (L13 stage 1)](#immersed-topology) | partial |
 | Structures | [Linear structural solver: Euler–Bernoulli and Timoshenko beams, static and modal analyses (L53, MS5 part 1)](#structure-beams) | partial |
 | Structures | [Clamp springs per length of the clamp line and their fit to a measured frequency (D290)](#structure-clamp) | partial |
+| Structures | [MITC4 and MITC3+ Reissner–Mindlin shells, plates clamped along an edge (L53, MS5 part 2)](#structure-shells) | partial |
+| Structures | [Structural dynamics: generalised-α, mode superposition, Rayleigh and modal damping, Craig–Bampton reduction (L53, MS5 part 3)](#structure-dynamics) | partial |
+| Structures | [Thermal strain loads on beams and shells from a temperature change and a difference across the thickness (L53, MS5 part 3)](#structure-thermal) | partial |
+| Structures | [Quadratic solids: ten-node tetrahedra and twenty-node hexahedra from a second-order Gmsh file or a block (L53, MS5 part 3b)](#structure-solids) | partial |
+| Structures | [Unilateral contact with rigid seats and stops: exact in statics, penalty at the end of each generalised-α step (L53, MS5 part 4)](#structure-contact) | partial |
+| Moving meshes and solids | [Deforming meshes with a prescribed node displacement, and the piston (stage MS0)](#mesh-deforming) | partial |
 
 ## Meshes
 
@@ -1790,7 +1797,7 @@ Contracts: `bitwise`.
 
 Gaps:
 
-- not on ranks yet (refused with an error): zeta-f and elliptic blending, curvature correction and QCR, the MLP limiter and quadratic gradients, gravity, turning zones, solid regions, schedules and level sweeps (restarts: parallel.restart-ranks)
+- not on ranks yet (refused with an error): zeta-f and elliptic blending, curvature correction and QCR, the MLP limiter and quadratic gradients, gravity, solid regions, schedules and level sweeps (restarts: parallel.restart-ranks; MRF zones and sliding meshes: parallel.run-ranks-turning)
 - monitors, probes and balances of a run on ranks: parallel.run-ranks (W7 part 1, steady laminar)
 - transient runs are checked with the fixed time step, not the adaptive one
 - 1M cells on 4 cores split into 1, 2, 4 ranks (example ranks_scaling): +2, +10, +28 % time per iteration against threads only, bitwise; strong scaling over more cores is W9
@@ -1850,6 +1857,33 @@ Gaps:
 - the scalar summary stops with an error on ranks for orthotropic solids, porous matrices, heat-flux periodic pairs, sprays and a variable density (all refused before the run by the rules above)
 - Crank-Nicolson and PISO without outer iterations are not tested on ranks in this step (the solver on ranks is, W5)
 - MPI processes are run in CI with the steady laminar case only; the threads tests cover the same code
+
+Contracts: `bitwise`.
+
+<a id="parallel-run-ranks-turning"></a>
+
+### Rotating zones (MRF), the sliding mesh (conformal stepping and imprinting) and closed domains on ranks with the output of one rank (MPI step W7, turning zones)
+
+**partial** (gaps written) · id `parallel.run-ranks-turning` · switch `[run] rank_count, foehn flow --ranks N, mpirun -n N foehn flow; with [[mrf]] (steady or with [time]), [[sliding]] in conformal stepping or by imprinting, or without a pressure boundary` · decisions D55, D84, D93, D182, D185
+
+- contract (bitwise): [`steady_mrf_zone_on_ranks_writes_the_files_of_one_rank`](../../crates/foehncraft-flow/tests/run_ranks.rs): steady laminar Taylor-Couette gap with energy, the inner half a moving reference frame, a closed domain (reference cell), on 2, 3 and 4 ranks: residuals, ledger, boundaries, wall files, fields.vtkhdf, restart.h5 byte for byte one rank, the rotor torque and power log rows of run.jsonl equal
+- contract (bitwise): [`transient_frozen_rotor_with_sst_on_ranks_writes_the_files_of_one_rank`](../../crates/foehncraft-flow/tests/run_ranks.rs): the transient frozen rotor (MRF with BDF2, D185) with k-omega SST and energy on 2 and 3 ranks: history, ledger, probes, boundaries, field files and restart byte for byte one rank
+- contract (bitwise): [`flow_on_ranks_is_bitwise_one_rank`](../../crates/foehncraft-flow/tests/ranks.rs): an annulus with an outlet and a rotating zone among the check cases of the solver on 1 to 4 ranks
+- contract (bitwise): [`ranks_run_mrf_couette`](../../examples/cases/flow/ranks_run_mrf_couette.toml): the Taylor-Couette gap with a rotating zone on 5 ranks to convergence (366 iterations); every output file compared with --ranks 1 when the case was made (passes in CI (set linux-2), not yet in the manual)
+- contract (bitwise): [`sliding_mesh_in_conformal_stepping_on_ranks_writes_the_files_of_one_rank`](../../crates/foehncraft-flow/tests/run_ranks.rs): a sliding rotor in conformal stepping (32 sectors, one per step) with a passive scalar on 2, 3 and 4 ranks: history, ledger, probes, boundaries, field files and restart byte for byte one rank
+- contract (bitwise): [`turbulent_sliding_mesh_on_ranks_writes_the_files_of_one_rank`](../../crates/foehncraft-flow/tests/run_ranks.rs): the same with k-omega SST (the shifted old levels of k and omega) on 3 ranks
+- contract (bitwise): [`ranks_run_sliding_couette`](../../examples/cases/flow/ranks_run_sliding_couette.toml): spin-up with a dye blob, rotor of 128 sectors, one turn on 5 ranks; every output file compared with --ranks 1 when the case was made (passes in CI (set linux-2), not yet in the manual)
+- contract (bitwise): [`sliding_mesh_by_imprinting_on_ranks_writes_the_files_of_one_rank`](../../crates/foehncraft-flow/tests/run_ranks.rs): a sliding rotor by imprinting (rotor of 32 sectors, stator of 48, the mesh built again every step) with a passive scalar on 2 and 3 ranks: history, ledger, probes, boundaries, forces, wall and field files byte for byte one rank
+- contract (bitwise): [`turbulent_sliding_mesh_by_imprinting_on_ranks_writes_the_files_of_one_rank`](../../crates/foehncraft-flow/tests/run_ranks.rs): the same with k-omega SST (the carried k, omega and wall distance of the turning rotor) on 4 ranks
+- contract (bitwise): [`ranks_run_imprint_couette`](../../examples/cases/flow/ranks_run_imprint_couette.toml): spin-up with a dye blob through a non-matching interface (32 against 48 sectors) on 5 ranks; every output file compared with --ranks 1 when the case was made (passes in CI (set linux-2), not yet in the manual)
+
+Gaps:
+
+- the [run] ranks check refuses any sliding mesh (compare --ranks N with --ranks 1 instead)
+- imprinting on ranks: every rank imprints the whole mesh and builds its part again every step, and the state is gathered and handed back every step (memory and time of the whole mesh per rank); a moving mesh writes no restart file yet, on one rank or on ranks
+- conformal stepping gathers the whole old levels on every rank every step (memory and time of the whole field per rank); only the rotor cells at the cuts would need to move
+- the five-blade stirred vessel of gallery 301 (16 848 cells, SST, coupled solver) was compared with --ranks 1 by hand, not in CI (its mesh needs Gmsh)
+- the reference cell's value is handed to all ranks with one all-gather per pressure solve
 
 Contracts: `bitwise`.
 
@@ -2166,7 +2200,7 @@ Gaps:
 
 Gaps:
 
-- beams only: MITC4/MITC3+ shells, quadratic solids, generalised-α, mode superposition, Craig–Bampton, damping and contact come in MS5 parts 2 to 4
+- beams and shells (structure.shells) only: quadratic solids, generalised-α, mode superposition, Craig–Bampton, damping and contact come in MS5 parts 3 and 4
 - the Timoshenko element's consistent mass converges at second order in the frequency of thick beams (7e-6 on 120 elements at L/d = 10)
 - no comparison with measured reed frequencies yet (MS6: Gasche et al. via González et al. 2017, Lemke et al. 2016)
 - the ordering is reverse Cuthill–McKee: the fill is an envelope, fine for slender reeds, large for compact 3D parts (no minimum-degree ordering yet)
@@ -2182,10 +2216,139 @@ Gaps:
 - exact: [`clamp_springs_static_is_exact`](../../crates/foehncraft-structure/tests/beams.rs): tip deflection on rotational and translational clamp springs PL³/(3EI) + PL²/k_r + P/k_t within 1e-10; a clamp without springs is reported rigid
 - exact: [`clamp_spring_frequency_against_the_frequency_equation`](../../crates/foehncraft-structure/tests/beams.rs): first frequency on a rotational root spring, kL/EI = 0.3 to 300, against the frequency equation: within 1e-8
 - exact: [`clamp_fit_recovers_the_spring`](../../crates/foehncraft-structure/tests/beams.rs): the fit recovers the spring of the frequency equation within 1e-5 in fewer than 40 modal solves; STR004 above the rigid clamp
-- consistency: [`catalogue_cases_run_and_the_fit_matches`](../../crates/foehncraft-tools/src/structure.rs): the catalogue cases run through the registry, the fit of the tool input hits 150 Hz
+- consistency: [`catalogue_cases_run_and_the_fit_matches`](../../crates/foehncraft-tools/src/structure.rs): the catalogue cases (beams and the plate) run through the registry; the fit hits 150 Hz on the beam clamp and on the clamp along the plate edge
+- exact: [`plate_on_clamp_springs_against_beam_theory`](../../crates/foehncraft-structure/tests/shells.rs): a plate (ν = 0) clamped along an edge on springs per length shared over its nodes: tip lift against beam theory within 1e-3; the spring forces balance the load within 1e-9
 
 Gaps:
 
-- springs on a single node of a beam model: shells with the springs spread along the clamp edge come with MS5 part 2
 - clamp parts as solids in frictionless contact (the second way of D290) are not built
 - no measured reed with a known clamp to calibrate against yet (MS6)
+
+<a id="structure-shells"></a>
+
+### MITC4 and MITC3+ Reissner–Mindlin shells, plates clamped along an edge (L53, MS5 part 2)
+
+**partial** (gaps written) · id `structure.shells` · switch `structure.run with [[plates]] (element = "mitc4" or "mitc3+"), [[pressures]], along` · decisions D289, D290
+
+- exact: [`membrane_patch_test`](../../crates/foehncraft-structure/tests/shells.rs): MacNeal–Harder membrane patch test on the distorted mesh, both elements: the constant strain field to rounding
+- exact: [`bending_patch_test`](../../crates/foehncraft-structure/tests/shells.rs): MacNeal–Harder bending patch test, both elements: the constant curvature field to rounding
+- exact: [`simply_supported_plate_converges_to_navier`](../../crates/foehncraft-structure/tests/shells.rs): simply supported square plate, a/t = 100 and 1e4, against the Navier series with the Mindlin shear term: MITC4 within 4e-4, MITC3+ within 4e-3, second order, no shear locking
+- exact: [`cantilever_square_plate_modes_against_leissa`](../../crates/foehncraft-structure/tests/shells.rs): square plate clamped on one edge, first five modes within 1 % of Leissa (1969) table 4.30 on 24 × 24, both elements
+- reference-data: [`scordelis_lo_roof_converges`](../../crates/foehncraft-structure/tests/shells.rs): Scordelis–Lo roof: MITC4 within 2 % of 0.3024 on 16 × 16; MITC3+ within 3 % of the published MITC3+ values (Ko, Lee, Lee & Bathe 2017, table 10), monotone
+- consistency: [`reed_plate_catalogue_case`](../../crates/foehncraft-structure/tests/shells.rs): the reed petal case: Sturm check, the clamp springs carry the whole pressure, first mode between the beam's and the beam's times sqrt(1/(1 − ν²)), VTK polygons
+- contract (diagnostics): [`plate_case_errors_carry_the_case_code`](../../crates/foehncraft-structure/tests/shells.rs): STR001 for a clamp along an edge with a width, a pressure on a missing plate, a segment off the mesh, both at and along
+
+Gaps:
+
+- flat parallelogram plates from the case file only: no Gmsh reader for curved shell meshes yet (the roof test builds its mesh in code)
+- no stresses or strains in the output yet (displacements, rotations and modes only)
+- MITC3+ converges more slowly than MITC4 on curved shells (0.96 of the roof's lift on 16 × 16), as published
+- beams and plates in one case share nodes but no eccentric (offset) connection
+- linear (small rotations): large deflections need the corotational formulation of MS9
+
+<a id="structure-dynamics"></a>
+
+### Structural dynamics: generalised-α, mode superposition, Rayleigh and modal damping, Craig–Bampton reduction (L53, MS5 part 3)
+
+**partial** (a model without reference data; gaps written) · id `structure.dynamics` · switch `structure.run with [transient], [damping], [histories]; dynamics::craig_bampton (library)` · decisions D289
+
+- exact: [`generalised_alpha_converges_at_second_order_to_the_damped_step_response`](../../crates/foehncraft-structure/tests/dynamics.rs): damped oscillator under a step force against the closed form, ρ∞ = 1, 0.8, 0.5, 0: observed order 2.00 to 2.02
+- exact: [`generalised_alpha_damps_high_frequencies_to_rho_infinity`](../../crates/foehncraft-structure/tests/dynamics.rs): amplification matrix at Δt = 10⁴ periods: characteristic polynomial (λ + ρ∞)³ within 1e-3 (Chung & Hulbert 1993)
+- exact: [`trapezoidal_rule_conserves_the_energy`](../../crates/foehncraft-structure/tests/dynamics.rs): ρ∞ = 1, undamped cantilever, constant force: ½vᵀMv + ½uᵀKu − fᵀu within 1e-10 of the largest strain energy over 2000 steps
+- exact: [`mode_superposition_is_exact_per_mode_and_meets_the_direct_method`](../../crates/foehncraft-structure/tests/dynamics.rs): modal step exact for the oscillator (1e-12) and for a ramp (1 vs 1000 steps 1e-10); with every mode the direct method converges to it at second order
+- exact: [`rayleigh_factors_from_two_ratios`](../../crates/foehncraft-structure/tests/dynamics.rs): Rayleigh factors give both ratios to rounding; logarithmic decrement of the damped oscillator within 0.2 %; STR001 for ratios no αM + βK can give
+- exact: [`craig_bampton_is_exact_with_every_mode_and_a_ritz_bound_with_few`](../../crates/foehncraft-structure/tests/dynamics.rs): with every interior mode the eigenvalues of the full model within 1e-8; with 2, 4, 8 modes Ritz upper bounds converging; static boundary response exact (1e-10)
+- consistency: [`transient_case_direct_and_modal_agree_on_a_ramped_load`](../../crates/foehncraft-structure/tests/thermal.rs): the case keys: a ramped tip force with Rayleigh damping, direct and modal (8 modes) within 0.2 %; CSV and kept times
+
+Gaps:
+
+- starts from rest only: no start from a static state or from given displacements and velocities in the case file
+- no prescribed motion in time (base excitation) yet: it comes with the coupling of MS6
+- Craig–Bampton is a library function: no case keys or tool for reduced models yet
+- mode superposition without a static (mode-acceleration) correction for the modes left out
+- linear: no geometric nonlinearity (MS9) and no contact (MS5 part 4)
+
+<a id="structure-thermal"></a>
+
+### Thermal strain loads on beams and shells from a temperature change and a difference across the thickness (L53, MS5 part 3)
+
+**partial** (a model without reference data; gaps written) · id `structure.thermal` · switch `structure.run with [[temperatures]] and the material's expansion` · decisions D289
+
+- exact: [`free_beam_expands_and_bends_without_stress`](../../crates/foehncraft-structure/tests/thermal.rs): cantilever, both theories: tip α ΔT L and −(α ΔT/h) L²/2 with slope (α ΔT/h) L within 1e-9; no reaction
+- exact: [`held_bar_carries_the_thermal_force`](../../crates/foehncraft-structure/tests/thermal.rs): bar held at both ends: reaction E A α ΔT within 1e-9
+- exact: [`free_plate_expands_and_bends_into_a_sphere`](../../crates/foehncraft-structure/tests/thermal.rs): free plate, MITC4 and MITC3+: in-plane α ΔT x within 1e-8, the sphere −(α ΔT/h)(x² + y²)/2 within 1e-6
+- contract (diagnostics): [`thermal_case_errors`](../../crates/foehncraft-structure/tests/thermal.rs): STR001 for a material without expansion, an unknown part or history, a bad table, modal without modes, both Rayleigh inputs
+
+Gaps:
+
+- temperatures are given per part (uniform change and a linear difference across the thickness); the mapping of the temperature field of a solid region of the flow case is MS6
+- the moduli do not depend on temperature: give E at the operating temperature
+- no thermal stresses of beams and shells in the output (the solids give the von Mises stress)
+
+<a id="structure-solids"></a>
+
+### Quadratic solids: ten-node tetrahedra and twenty-node hexahedra from a second-order Gmsh file or a block (L53, MS5 part 3b)
+
+**partial** (a model without reference data; gaps written) · id `structure.solids` · switch `structure.run with [[solids]]` · decisions D289
+
+- exact: [`quadrature_and_shape_functions`](../../crates/foehncraft-structure/tests/solids.rs): 14-point rule exact for every monomial of degree ≤ 5 on the tetrahedron; shape functions interpolate, sum to one, derivatives match differences; element faces point outward
+- exact: [`face_loads_are_the_textbook_values`](../../crates/foehncraft-structure/tests/solids.rs): uniform load on a six-node triangle (0, A/3) and an eight-node quadrilateral (−A/12, A/3) to rounding
+- exact: [`rigid_motions_are_free_and_the_mass_is_exact`](../../crates/foehncraft-structure/tests/solids.rs): curved elements: six rigid motions free of force (1e-11 of the largest entry), mass ρV (1e-13); an inverted element is refused
+- exact: [`patch_test_on_distorted_meshes`](../../crates/foehncraft-structure/tests/solids.rs): uniform tension on blocks with moved inner nodes, both elements: the linear displacement to rounding (Irons & Razzaque 1972)
+- exact: [`cantilever_against_beam_theory`](../../crates/foehncraft-structure/tests/solids.rs): cantilever 100 × 10 × 10 mm, ν = 0: tip within 0.3 % of Timoshenko beam theory (hex20 −0.12 %, tet10 −0.01 %); first frequency within 0.3 % of the Timoshenko beam; reaction equals the load
+- exact: [`thick_cylinder_against_lame`](../../crates/foehncraft-structure/tests/solids.rs): thick-walled cylinder under internal pressure, plane strain: u_r against Lamé, ν = 0.3 hex20 7e-5 and tet10 1.5e-3, ν = 0.49 (MacNeal & Harder 1985) 1.0e-3 and 7.8e-3
+- exact: [`thermal_expansion_free_and_held`](../../crates/foehncraft-structure/tests/solids.rs): free block: α ΔT x without stress to rounding; fully held block: reaction E α ΔT A/(1 − 2ν) within 1e-10
+- consistency: [`gmsh_file_gives_the_same_answer_as_the_block`](../../crates/foehncraft-structure/tests/solids.rs): a block written as a second-order Gmsh file (Gmsh node order, faces reversed) gives the generated block's tip deflection to 1e-12; linear meshes, unknown volumes and surfaces refused with STR001
+- contract (diagnostics): [`broken_second_order_gmsh_files_end_in_errors`](../../crates/foehncraft-structure/tests/solids.rs): second-order Gmsh files truncated, with damaged numbers, dropped and repeated lines and flipped bytes end in an error message or a valid mesh, never a panic (D202)
+- contract (diagnostics): [`solid_case_errors`](../../crates/foehncraft-structure/tests/solids.rs): STR001 for a temperature difference on a solid, a support with part but no surface, a pressure with plate and surface, zero divisions, both mesh and block
+
+Gaps:
+
+- a solid shares no nodes with beams and shells: no solid–shell or solid–beam connection yet
+- the von Mises stress at the nodes (averaged over the elements around each) only; no stress components or principal stresses in the output
+- Gmsh's complete second-order elements (27-node hexahedra, 9-node quadrilaterals), prisms and pyramids are refused
+- a uniform temperature change per part; a temperature field per node (from the flow case) is MS6
+- nearly incompressible materials (ν → 0.5) lock with full integration: ν = 0.49 is 1e-3 to 8e-3 off on the Lamé cylinder; no mixed or reduced-integration formulation
+
+<a id="structure-contact"></a>
+
+### Unilateral contact with rigid seats and stops: exact in statics, penalty at the end of each generalised-α step (L53, MS5 part 4)
+
+**partial** (a model without reference data; gaps written) · id `structure.contact` · switch `structure.run with [[contacts]]` · decisions D289
+
+- exact: [`cantilever_pressed_onto_a_seat_is_the_propped_cantilever`](../../crates/foehncraft-structure/tests/contact.rs): cantilever pressed onto a seat 1 mm below its tip: the propped cantilever with a settled support, R = P − 3EIg/L³ (Timoshenko & Gere) within 1e-6, the tip on the seat to 1e-9 L, the clamp reaction P − R; short of the seat and pulled away, the free answer
+- exact: [`block_on_a_seat_is_the_block_held_where_it_touches`](../../crates/foehncraft-structure/tests/contact.rs): hex20 block on a seat under a uniform pressure: the block on rollers at the 22 mid-side nodes that touch (the corners of the quad8 faces lift off) to 1e-6 of the largest displacement, every roller pushing; total force equals the load to 1e-9; a node starting inside is refused
+- exact: [`impact_on_a_stop_converges_to_the_elastic_bounce`](../../crates/foehncraft-structure/tests/contact.rs): mass on a spring driven against a stop, trapezoidal: back at rest at the start after 2t₁ + τ of the penalty model in continuous time, 5.9e-3 to 5.5e-5 of the gap over 200 to 1600 steps (monotone); penetration within 5 % of the penalty model's for penalties 1e2 to 1e6, falling as 1/√penalty
+- consistency: [`reed_hits_its_stop_and_falls_back_on_its_seat`](../../crates/foehncraft-structure/tests/contact.rs): plate reed lifted by a pressure pulse against a stop, falling back on its seat: tip between the planes within the penetration (< 2e-5 m), both planes carry force, CSV columns contact_seat and contact_stop; the modal method with contact refused
+- consistency: [`catalogue_cases_run_and_the_fit_matches`](../../crates/foehncraft-tools/src/structure.rs): the reed valve example through the registry: both planes carry force, penetration below 1e-8 m
+
+Gaps:
+
+- frictionless only; no stick or slip
+- rigid planes only: no curved seats or stops and no contact between deformable parts (the clamp parts of section 6.3 of the plan)
+- node to plane: the corners of quadratic serendipity faces take a pulling share of a uniform pressure and lift off a flat seat; no mortar or face-based contact
+- impacts are elastic: no coefficient of restitution; generalised-α with ρ∞ < 1 damps the high frequencies an impact excites, and the penalty contact of a shell node lasts far less than a step
+- an impact is not resolved in time: no step cut at contact changes (plan 5.4) and no energy-conserving contact scheme; the energy of the reed example decays but is not checked against a balance
+- the active-set loop refactors the matrix whenever the set changes (1990 factorisations in 2400 steps of the example)
+
+## Moving meshes and solids
+
+<a id="mesh-deforming"></a>
+
+### Deforming meshes with a prescribed node displacement, and the piston (stage MS0)
+
+**partial** (gaps written) · id `mesh.deforming` · switch `[mesh_motion] displacement` · decisions D91
+
+- exact: [`swept_volumes_close_every_cell`](../../crates/foehncraft-mesh/src/geometry.rs): the swept volumes of the faces of every cell sum to the change of its volume to 1e-12 (relative) on hex, tet, poly and mixed meshes perturbed by 20 % under a smooth nonlinear motion; a translation sweeps d·S exactly
+- exact: [`motion_free_stream`](../../examples/cases/flow/motion_free_stream.toml), [`uniform_flow_on_a_deforming_mesh_stays_uniform`](../../crates/foehncraft-flow/tests/mesh_motion.rs): check MS0.1: a uniform flow on a swinging mesh stays uniform to round-off (velocity 1e-15, residuals below 1e-12, closure below 1e-13) on hex, tet and poly meshes with BDF1, BDF2 and Crank–Nicolson ([results](../gallery/moving-solids.md#deforming-mesh))
+- exact: [`motion_piston_adiabatic`](../../examples/cases/flow/motion_piston_adiabatic.toml), [`piston_compression_keeps_p_v_gamma`](../../crates/foehncraft-flow/tests/mesh_motion.rs): check MS0.2: a closed gas volume compressed by four with adiabatic walls follows p₀V^γ: error 6.6e-4 at the top dead centre with Δt = 0.01 s, observed order 1.8 to 2.2 in Δt, back to p₀(0) within 1e-4 after the period; mass to 1e-13, T uniform, heat book to 1e-8 ([results](../gallery/moving-solids.md#deforming-mesh))
+- consistency: [`motion_piston_cooled_walls`](../../examples/cases/flow/motion_piston_cooled_walls.toml): walls at 300 K: p₀ below the isentrope (572 kPa at the top dead centre), the expansion ends at 90.4 kPa, mass and heat book closed every step (passes in CI (set long), not yet in the manual) ([results](../gallery/moving-solids.md#deforming-mesh))
+- contract (diagnostics): [`deforming_mesh_settings_are_checked`](../../crates/foehncraft-flow/tests/mesh_motion.rs): MOV001 for a steady case, MOV002 for a folding displacement, MOV003 for an inlet moved out of its plane, MOV004 for a closed volume of constant density that is compressed
+
+Gaps:
+
+- the motion is prescribed by an expression only: no mesh-motion solver, no cell layering, no bodies moved by the fluid (MS1, MS2)
+- the geometry and the solver setup (an AMG setup) are rebuilt every step
+- refused with MOV001: restarts (the restart datasets of D91 are not written yet), several ranks, turning zones, regions, sprays, immersed bodies, periodic boundaries, an error-controlled time step, level sweeps
+- turbulence models and passive scalars run on the moving mesh but are not checked against a reference; the GPU backend is not tested on a moving mesh
+- the cooled piston has no reference data (no heat-transfer correlation compared yet)

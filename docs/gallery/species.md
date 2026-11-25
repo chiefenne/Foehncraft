@@ -231,7 +231,8 @@ PTX entry `chemistry_react`, one thread per cell, with the same
 operations in the same order, so the GPU gives the bits of the CPU; the
 data path of the entry is tested on the CPU, and
 `cargo run --release -p foehncraft-cuda --features cuda --example chemistry_gpu`
-compares the two on a GPU. The ledger books the net production of each
+compares the two on a GPU
+(or `tools/notebooks/sf2_chemistry_colab.ipynb` on Colab). The ledger books the net production of each
 species, and the summary gives the heat release and the flame speed.
 
 **What this version does not do.** Transient laminar flows only: steady

@@ -1783,15 +1783,13 @@ impl Scalars {
     }
 
     /// The sliding mesh (D182): the time terms see the old levels with the
-    /// data of the cells that move shifted along (entry i of a shifted
-    /// array is entry `perm1[i]` of the Eulerian one for the level n and
-    /// `perm2[i]` for the level n−1); call after
+    /// data of the cells that move shifted along (`shift`: by one step for
+    /// the level n, by two for the level n−1); call after
     /// [`step_start`](Self::step_start).
     pub fn shift_old(
         &mut self,
         dev: &mut dyn FlowDevice,
-        perm1: &[usize],
-        perm2: &[usize],
+        shift: &crate::sliding::Shift,
     ) -> Result<()> {
         for f in &mut self.fields {
             let Some((o1, o2, _)) = f.old else {
@@ -1805,10 +1803,8 @@ impl Scalars {
                     c
                 }
             };
-            for (src, dst, perm) in [(o1, c1, perm1), (o2, c2, perm2)] {
-                let v = dev.download(src)?;
-                let m: Vec<f64> = perm.iter().map(|&i| v[i]).collect();
-                dev.upload(dst, &m)?;
+            for (src, dst, steps) in [(o1, c1, 1), (o2, c2, 2)] {
+                shift.moved(dev, src, dst, steps)?;
             }
         }
         Ok(())
@@ -4258,6 +4254,12 @@ pub(crate) fn summaries_on(
     // the heat-flux pairs: Δ and the bulk values of the level fix
     let deltas = sc.periodic_bulk(fl.dev.as_mut(), fl.f.mass_flux)?;
     let mut m = fl.dev.download(fl.f.mass_flux)?;
+    // the flow relative to a deforming mesh (stage MS0; one rank only)
+    if let Some(gf) = &fl.phys.grid_flux {
+        for (mf, g) in m.iter_mut().zip(gf.iter()) {
+            *mf -= g;
+        }
+    }
     let mut heat = sc.energy_host();
     let mut outflow = if heat.is_some() {
         sc.energy_outflow(fl.dev.as_mut())?

@@ -226,7 +226,9 @@ with
     cargo run --release -p foehncraft-cuda --features cuda --example chemistry_gpu
 
 which integrates 4096 cells of methane and air on the CPU threads and on
-the GPU and fails if a single bit differs.
+the GPU and fails if a single bit differs. Without a GPU of your own,
+`tools/notebooks/sf2_chemistry_colab.ipynb` runs the same check on a free
+Colab T4 (`python3 -m tools.bench.chemistry_cloud` on any GPU machine).
 
 **If it stops.** CHM002: a cell did not reach the end of the time step;
 raise `[chemistry.integrator] max_steps`, loosen `rtol` or shorten the

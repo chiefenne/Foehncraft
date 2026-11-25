@@ -279,7 +279,10 @@ pub struct RunSection {
     /// `run.restart` file (read on every rank count by global identity,
     /// MPI step W6); the restart of the largest count is gathered into
     /// `ranks.restart.h5` and must have the bytes of the one-rank restart.
-    /// Not yet with gravity, turning zones, regions or a schedule.
+    /// With the rotating zones of `[[mrf]]` and in closed domains (a
+    /// reference cell of the pressure). Not yet with gravity, a sliding
+    /// mesh (it runs on ranks with `run.rank_count`), regions or a
+    /// schedule.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub ranks: Vec<usize>,
     /// Solve the run on this number of ranks (MPI step W7; `foehn run
@@ -290,8 +293,10 @@ pub struct RunSection {
     /// that of one rank. Under an MPI launcher (`mpirun -n N foehn run`,
     /// a build with the `mpi` feature) the ranks are its processes;
     /// otherwise threads of this process. 1: no ranks. Steady and transient
-    /// runs with scalars, energy, k-ω SST and k-ε (refused: species,
-    /// statistics, what `[run] ranks` refuses).
+    /// runs with scalars, energy, k-ω SST and k-ε, the rotating zones of
+    /// `[[mrf]]` and the sliding mesh, in conformal stepping and by
+    /// imprinting (refused: species, statistics, what `[run] ranks`
+    /// refuses).
     #[serde(skip_serializing_if = "is_one")]
     pub rank_count: usize,
 }
@@ -965,6 +970,10 @@ pub struct FlowCase {
     /// run (the sliding mesh, D56, D182): the `[[sliding]]` table.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub sliding: Vec<crate::sliding::SlidingSection>,
+    /// The prescribed motion of the mesh nodes in a transient run (the
+    /// deforming mesh, D91, stage MS0): the `[mesh_motion]` table.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mesh_motion: Option<crate::motion::MeshMotionSection>,
     /// The case file (for re-reading it during a run).
     #[serde(skip)]
     pub source: Option<PathBuf>,
@@ -1523,6 +1532,7 @@ impl FlowCase {
         crate::frame::validate(self)?;
         crate::start::validate(self)?;
         crate::sliding::validate(self)?;
+        crate::motion::validate(self)?;
         crate::rotor::validate(self)?;
         crate::spray::validate(self)?;
         crate::immersed::check_case(self)?;
@@ -3028,7 +3038,10 @@ pub fn run_steered(
         );
         let phys = phys_on;
         let loc = Locator::new(&mesh, &geo);
-        let reference_cell = if arrays.has_pressure() {
+        let reference_cell = if on
+            .as_ref()
+            .map_or(arrays.has_pressure(), |o| o.arrays.has_pressure())
+        {
             None
         } else {
             let x = case.pressure.reference_point.unwrap_or_else(|| {
@@ -4716,7 +4729,8 @@ pub(crate) fn boundary_summaries(
                 let s = geo.face_area[f];
                 let a = norm(s);
                 area += a;
-                q += fl.mass_flux[f];
+                // (relative to a deforming mesh, stage MS0)
+                q += fl.mass_flux[f] - fl.phys.grid_flux_at(f);
                 let (pf, fv) = if wall {
                     let (pf, fv, _) = wall_face_values(fl, geo, f, ni);
                     (pf, fv)

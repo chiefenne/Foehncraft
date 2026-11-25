@@ -345,9 +345,111 @@ pub fn cell_volume_centroid_of<T: Coord>(
     (vol, scale(cen, T::ONE / vol))
 }
 
+/// The volume that face `f` sweeps when the nodes move on straight lines
+/// from `old` to `new` (m³; positive when the face moves out of its local
+/// owner), for the space conservation law of a deforming mesh (D91, stage
+/// MS0; Demirdžić & Perić 1988).
+///
+/// The face is the fan of triangles about its node average that the area
+/// vector and the cell volumes use. A triangle whose corners move linearly
+/// in τ ∈ [0, 1] sweeps ∫ **d̄**·**S**(τ) dτ, with **d̄** the mean of the three
+/// corner displacements (the velocity is linear over the triangle) and
+/// **S**(τ) its area vector, which is quadratic in τ, so Simpson's rule is
+/// exact. Since the fan point is a node average it moves on a straight line
+/// too, and the swept volumes of the faces of a cell add up to the change
+/// of its volume to round-off: Σ_f ±δV_f = V(new) − V(old), for any motion
+/// of the nodes and any face shape.
+pub fn swept_volume(mesh: &Mesh, old: &[[f64; 3]], new: &[[f64; 3]], f: usize) -> f64 {
+    let (nodes, flipped) = mesh.face_global_order(f);
+    let nodes = &nodes[..];
+    let k = nodes.len();
+    let half = |n: u32| scale(add(old[n as usize], new[n as usize]), 0.5);
+    let (m0, m1) = (node_average(old, nodes), node_average(new, nodes));
+    let mh = scale(add(m0, m1), 0.5);
+    let dm = sub(m1, m0);
+    let mut v = 0.0;
+    for i in 0..k {
+        let (a, b) = (nodes[i], nodes[(i + 1) % k]);
+        let s0 = cross(sub(old[a as usize], m0), sub(old[b as usize], m0));
+        let s1 = cross(sub(new[a as usize], m1), sub(new[b as usize], m1));
+        let sh = cross(sub(half(a), mh), sub(half(b), mh));
+        // ∫ S dτ = ½ (S₀ + 4 S½ + S₁)/6 with S = ½ (p − m) × (q − m)
+        let s = scale(add(add(s0, scale(sh, 4.0)), s1), 1.0 / 12.0);
+        let d = scale(
+            add(
+                add(dm, sub(new[a as usize], old[a as usize])),
+                sub(new[b as usize], old[b as usize]),
+            ),
+            1.0 / 3.0,
+        );
+        v += dot(d, s);
+    }
+    if flipped { -v } else { v }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn swept_volumes_close_every_cell() {
+        // a perturbed hex mesh and a prism mesh, moved by a smooth motion
+        // with shear, stretch and turn: Σ ±δV_f = ΔV per cell to round-off
+        for kind in [
+            crate::generate::Kind::Hex,
+            crate::generate::Kind::Tet,
+            crate::generate::Kind::Poly,
+            crate::generate::Kind::Mixed,
+        ] {
+            let spec = crate::generate::BoxSpec {
+                kind,
+                cells: [4, 3, 3],
+                perturb: 0.2,
+                ..Default::default()
+            };
+            let mesh = spec.generate().expect("mesh");
+            let old = mesh.points.clone();
+            let new: Vec<[f64; 3]> = old
+                .iter()
+                .map(|p| {
+                    [
+                        p[0] + 0.1 * (3.0 * p[1]).sin() * p[2],
+                        p[1] * 0.8 + 0.05 * p[0] * p[0],
+                        p[2] + 0.1 * p[0] * p[1],
+                    ]
+                })
+                .collect();
+            let g0 = Geometry::compute(&mesh);
+            let mut moved = mesh.clone();
+            moved.points = new.clone();
+            let g1 = Geometry::compute(&moved);
+            let swept: Vec<f64> = (0..mesh.n_faces())
+                .map(|f| swept_volume(&mesh, &old, &new, f))
+                .collect();
+            for c in 0..mesh.n_cells {
+                let mut s = 0.0;
+                for (f, is_nb) in mesh.cell_face_iter(c) {
+                    s += if is_nb { -swept[f] } else { swept[f] };
+                }
+                let dv = g1.cell_volume[c] - g0.cell_volume[c];
+                assert!(
+                    (s - dv).abs() <= 1e-14 * g0.cell_volume[c].max(1e-30) * 100.0,
+                    "{kind:?} cell {c}: Σ δV = {s:e}, ΔV = {dv:e}"
+                );
+            }
+            // a pure translation sweeps d·S on every face
+            let d = [0.01, -0.02, 0.03];
+            let shifted: Vec<[f64; 3]> = old.iter().map(|p| add(*p, d)).collect();
+            for (f, &area) in g0.face_area[..mesh.n_faces()].iter().enumerate() {
+                let v = swept_volume(&mesh, &old, &shifted, f);
+                let e = dot(d, area);
+                assert!(
+                    (v - e).abs() <= 1e-15 + 1e-12 * e.abs(),
+                    "face {f}: {v:e} vs {e:e}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn unit_square_and_warped_quad() {

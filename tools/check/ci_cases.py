@@ -43,7 +43,9 @@ FLOW = {
         "poiseuille_hex", "poiseuille_poly", "tmr_plate_sst", "tmr_plate_keps",
         "tmr_plate_zeta_f0", "diffuser_sst_sharp", "ubend_sst_sharp", "ranks_channel_poly",
         "ranks_heated_channel_sst", "ranks_restart_channel", "ranks_run_channel",
-        "ranks_run_transient_sst",
+        "ranks_run_transient_sst", "ranks_run_mrf_couette",
+        "ranks_run_sliding_couette",
+        "ranks_run_imprint_couette",
         "immersed_cylinder_re20", "immersed_topology_bend", "immersed_mms",
     ],
     "linux-3": [
@@ -72,6 +74,7 @@ FLOW = {
         "spray_duct", "spray_datums", "spray_two_way", "spray_cooling", "spray_dispersion",
         "spray_cooling_steady",
         "porous_darcy_block", "porous_honeycomb_channel", "porous_schumann", "porous_storage_charge",
+        "motion_free_stream", "motion_piston_adiabatic",
     ],
     "long": [
         "cylinder_re100", "cylinder_re100_short", "cylinder_re100_statistics", "cylinder_re100_convective", "cylinder_re20_gci",
@@ -81,6 +84,7 @@ FLOW = {
         "natural_convection_cavity_ra1e5", "natural_convection_plate",
         "flame_methane_air_gri30",
         "immersed_stokes_sphere",
+        "motion_piston_cooled_walls",
     ],
     "quick": [
         "cavity_re100_budget", "couette_hex", "couette_mixed", "couette_poly", "couette_tet",

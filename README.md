@@ -107,8 +107,10 @@ validated range, one mesh only, …) in its report and its JSON result.
   gathered from the ranks is byte for byte the one-rank file and continues
   on any rank count (W6); `foehn flow case.toml --ranks N` (or `mpirun -n N
   foehn flow`) solves a run on ranks, steady or transient, laminar or with
-  k-ω SST and k-ε, with passive scalars, the energy equation and a rotating
-  frame, and writes every output file byte for byte as one rank does (W7).
+  k-ω SST and k-ε, with passive scalars, the energy equation, a rotating
+  frame, the rotating zones of `[[mrf]]` and the sliding mesh (conformal
+  stepping and imprinting), also in closed vessels, and writes every output
+  file byte for byte as one rank does (W7).
 - **Pressure–velocity coupling.** SIMPLEC and SIMPLE for steady flow, PISO
   with outer correctors for transient flow (SIMPLEC-type correctors with
   outer iterations, stable on thin wedge cells at an axis), a time step from the
@@ -226,6 +228,7 @@ validated range, one mesh only, …) in its report and its JSON result.
 - **Adjoint, first stage (L17 A0).** The steady residual R(q) of SIMPLEC and the coupled solver as one callable (`Flow::steady_residual`, steady laminar flow), and the scatter-free reverse sweep of the momentum face kernel from local dual-number Jacobians, checked by a dot-product test and finite differences; the adjoint solve itself follows in A1 ([gallery 271](docs/gallery/verification.md#adjoint-a0)).
 - **Porous regions (D270, PM1).** `kind = "porous"` with a Darcy–Forchheimer resistance in the superficial velocity: one value or three principal values along the axes of the region, or the `honeycomb` shorthand for square ceramic channels (Shah & London). A duct filled with the matrix gives the exact pressure drop, a block in a duct reaches it with second order. Axes along the mesh axes, laminar flow, one process, CPU only; with `[energy]` and a `solid`, gas and matrix carry temperatures of their own, coupled by h·a in one energy matrix (D271, PM2; Schumann's bed exact to second order, a honeycomb store charged) ([gallery 273](docs/gallery/porous.md#porous-flow), [275](docs/gallery/porous.md#porous-two-temperatures)).
 - **Immersed bodies by penalisation (L13 stage 1).** Cylinders, spheres and boxes put into any mesh without meshing them (`[immersed]`): solid fraction per cell, an implicit Brinkman sink inside the momentum rows (CPU and GPU, SIMPLEC and coupled), the force on every body. Laminar and isothermal only, the wall smeared over a cell: the Re 20 cylinder on a plain box mesh gets drag and Δp within 1 % of the benchmark, lift 35 % high ([gallery 270](docs/gallery/immersed.md#penalised-cylinder)). A density-field topology search (`[immersed.topology]`) designs a duct bend in a few seconds and writes the result as a watertight STL; the penalised equations converge at second order, and a sweep sets the permeability at about 0.01 h² ([gallery 291](docs/gallery/immersed.md#topology-bend)). Sharp cut-cell walls are stage 2.
+- **Deforming meshes and the piston (stage MS0, L22).** `[mesh_motion]` moves the nodes of a transient case by an expression of place and time: swept volumes per face that close the space conservation law to round-off on any cell type, the flux relative to the moving faces, the volume of each time level, walls that move with their nodes. A uniform flow on a swinging mesh stays uniform to 10⁻¹⁵, and a piston compressing a closed gas volume by four follows p₀V^γ with an error that falls as Δt² ([gallery 296](docs/gallery/moving-solids.md#deforming-mesh)). Prescribed motion, one process, CPU; mesh-motion solver and valves moved by the fluid follow (MS1, MS2).
 - **Species of gas mixtures (L2, steam furnace stage SF1).** `[species]` with the 53 species of GRI-Mech 3.0: N − 1 mass fractions carried by the flow, the closure species as 1 − Σ, Schmidt or Lewis diffusion, compositions in mole or mass fractions; the density follows the mixture's molar mass on the low-Mach variable density, and c_p, λ, μ are those of the mixture (NASA-7, kinetic theory). Species and element accounts in the ledger. Binary diffusion meets its exact decay, a methane jet in air closes its element accounts to the solver tolerance (gallery [278](docs/gallery/species.md#species-transport)). The species react in the cells with SF2b (below).
 - **Gas-phase chemistry (L2, D120, steam furnace stage SF2a).** Reaction mechanisms read from the YAML format of D103 (built in: GRI-Mech 3.0 with 325 reactions, the global methane schemes of Westbrook & Dryer and Jones & Lindstedt): Arrhenius, three-body and Lindemann/Troe fall-off rates, reverse rates from the equilibrium constants, an analytic Jacobian, and the stiff Rosenbrock integrator RODAS3 as a cell-local kernel for CPU and GPU. Chemical equilibrium by Gibbs minimisation; `foehn chemistry reactor` and `foehn chemistry equilibrium`. Methane–air ignites at 3.4 ms from 1400 K and ends 4·10⁻⁵ K from its equilibrium; the adiabatic flame temperature is 2224.9 K (gallery [289](docs/gallery/species.md#gas-chemistry)).
 - **Reacting flows in the cells (L2, D120, steam furnace stage SF2b).** `[chemistry]` integrates every cell of a transient laminar flow over each time step with the stiff kernel and feeds the species changes and the heat release back into the flow on the variable density; the same cell body runs on the CPU threads and as a GPU entry (`[run] backend = "cuda"`). A laminar methane–air flame with GRI-Mech 3.0 burns at 0.348 m/s against the measured 0.360 ± 0.017 m/s (gallery [298](docs/gallery/species.md#reacting-flow-cells)). Turbulent and steady reacting flows follow with SF3.
@@ -248,17 +251,32 @@ validated range, one mesh only, …) in its report and its JSON result.
   of the call are traced and drawn over the net flux into the walls
   ([gallery 281](docs/gallery/radiation.md#furnace-paths)). The coupling
   to the energy equation follows (R1b).
-- **Structures (MS5, part 1).** A small linear structural finite element
+- **Structures (MS5, parts 1 to 4).** A small linear structural finite element
   solver for reed valves and other parts the flow moves (L53):
-  Euler–Bernoulli and Timoshenko beams, supports, springs, point masses,
+  Euler–Bernoulli and Timoshenko beams, MITC4 and MITC3+ shells (plates
+  clamped along an edge, pressures), quadratic solids (ten-node
+  tetrahedra and twenty-node hexahedra from a second-order Gmsh file or a
+  generated block, with the von Mises stress), unilateral contact with
+  rigid seats and stops, responses in time (generalised-α,
+  mode superposition, Rayleigh damping, Craig–Bampton reduction), thermal
+  strain loads from temperatures, supports, springs, point masses,
   clamp springs per length of the clamp line (D290) and their fit to a
   measured natural frequency, static deflection and modes by shift-invert
   Lanczos with a Sturm check that no mode was missed, run as the tools
   `structure.run` and `structure.fitclamp`. Checked against cantilever
   deflections and frequencies, the pinned Timoshenko beam and the
   frequency equation of a beam on a rotational clamp spring
-  ([gallery 295](docs/gallery/structure.md#reed-beam)). Shells, solids,
-  dynamics and contact follow; the coupling to the flow is MS6.
+  ([gallery 295](docs/gallery/structure.md#reed-beam)), the shells by the
+  MacNeal–Harder patch tests, the Navier plate, Leissa's plate modes and
+  the Scordelis–Lo roof ([gallery 297](docs/gallery/structure.md#reed-plate)).
+  The dynamics are checked against the damped oscillator and the thermal
+  loads against free thermal expansion and bending
+  ([gallery 299](docs/gallery/structure.md#reed-dynamics)), the solids by
+  the patch test, a cantilever against beam theory and Lamé's thick
+  cylinder ([gallery 300](docs/gallery/structure.md#reed-stop)), the
+  contact by the propped cantilever and a mass bouncing on a stop
+  ([gallery 302](docs/gallery/structure.md#reed-valve-contact)). The
+  coupling to the flow is MS6.
 - **Rotating machinery.** The moving reference frame (steady and transient
   frozen rotor), the sliding mesh by conformal stepping and by imprinting
   the interface in every step, several rotors at their own speeds,
@@ -405,7 +423,7 @@ The [changelog](CHANGELOG.md) lists every release.
 | `foehncraft-parallel` | communicator (serial, MPI) with exact all-reduce, exact threaded reductions |
 | `foehncraft-mesh` | polyhedral mesh, geometry, quality report, mesh-format layer with the Gmsh, SU2, CGNS, OpenFOAM, Fluent .msh, VTK and VTKHDF readers, test mesher (also the cylinder benchmark mesh and annuli for rotors), partitioning and halo, VTKHDF output, point location and ray casting, the hand-over of walks between ranks, wall distance, the imprint of sliding interfaces |
 | `foehncraft-radiation` | thermal radiation by Monte Carlo energy bundles on the cell walk: emission from Owen-scrambled Sobol points, exact path lengths per cell, grey diffuse walls, symmetry planes and open boundaries, integer tallies with an exact energy account, bitwise the same on any number of threads and ranks; exact solutions of the verification cases |
-| `foehncraft-structure` | linear structural finite elements (L53): beams, clamp springs, the sparse LDLᵀ solver with its Sturm count, shift-invert Lanczos, the structural case file and the clamp fit |
+| `foehncraft-structure` | linear structural finite elements (L53): beams, shells, quadratic solids, dynamics, thermal loads, clamp springs, contact with rigid planes, the sparse LDLᵀ solver with its Sturm count, shift-invert Lanczos, the structural case file and the clamp fit |
 | `foehncraft-fv` | finite-volume operators on a scalar (gradients, limiters, convection, diffusion, assembly), BiCGStab, and the pressure solver: CG with smoothed-aggregation multigrid in mixed precision, optional hypre reference; CPU backend (the GPU backend is in `foehncraft-cuda`) |
 | `foehncraft-flow` | incompressible flow: SIMPLEC and SIMPLE (steady), PISO with BDF2 and Crank–Nicolson (transient), the coupled algorithm, the Rhie–Chow interpolation, boundary conditions and their check, turbulence models and wall treatments, passive scalars and thermal wall functions, the moving reference frame and sliding meshes, torque and machine performance, restart and control files, probes and force coefficients, the flow device written once over a CPU or GPU executor, the `foehn flow` case, exact solutions, reference and benchmark data |
 | `foehncraft-bench` | gate G1: kernel benchmark, CPU backends |

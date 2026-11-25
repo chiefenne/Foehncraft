@@ -1,0 +1,74 @@
+# The baffled stirred vessel of sliding.toml with five blades and three
+# baffles, the sliding mesh by imprinting (D182 variant B) solved on five
+# ranks (MPI step W7, turning zones). In every step every rank imprints the
+# interface at the rotor angle on the whole mesh, the partition of the start
+# stays (the cells keep their numbers), the state and the old time levels
+# are carried onto the new faces in the order of the whole mesh, and each
+# rank takes its part back. Rank 0 writes every output file byte for byte
+# as one rank does (D93, D84). Gallery image of the imprinted rotor on ranks.
+#
+#   pip install gmsh
+#   python3 examples/meshes/mixer.py --blades 5 --baffles 3
+#   cargo run --release -p foehncraft-cli -- flow examples/studies/mixer/sliding_ranks.toml
+#   cargo run --release -p foehncraft-cli -- flow examples/studies/mixer/sliding_ranks.toml --ranks 1 --out output/one
+#
+# One revolution in 503 steps. `--ranks N` overrides the five ranks of
+# [run] rank_count; under mpirun (a build with the `mpi` feature) the ranks
+# are processes.
+
+case_format = "0.6"
+
+[mesh]
+file = "../../meshes/mixer5_split.msh"
+renumber = "rcm"
+
+[fluid]
+density = 1000.0
+viscosity = 0.05          # Pa s: nu = 5e-5 m^2/s
+
+[constants]
+spin = 10.0
+
+[flow]
+convection = true
+
+[time]
+scheme = "bdf2"
+time_step = 0.00125
+steps = 503               # one revolution (2 pi / 10 rad/s)
+start_time = 0.0
+
+[[sliding]]
+zone = "rotor"
+axis = [0.0, 0.0, 1.0]
+omega = 10.0
+rotor_interface = "rotor_interface"
+stator_interface = "stator_interface"
+
+[boundary.blades]
+type = "wall"
+velocity = ["-spin * y", "spin * x", 0.0]
+[boundary.vessel]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-8
+max_iterations = 3000
+extrapolation = false
+outer_iterations = 4
+
+[log]
+columns = ["rotor.rotor.angle", "rotor.rotor.torque", "rotor.rotor.power"]
+
+[output]
+vtkhdf = true
+wall_csv = false
+derived = ["vorticity"]
+fields_times = [0.3]
+
+[run]
+rank_count = 5

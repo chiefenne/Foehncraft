@@ -23,6 +23,7 @@ instead.
 - [Coupling loops: the solid must see the flow's response](#coupling-loops)
 - [Limiters on tetrahedra and polyhedra](#limiters)
 - [Porous resistances and the Rhie–Chow factor](#porous-rhie-chow)
+- [Deforming meshes: the grid flux and the old levels](#deforming-mesh)
 
 <a id="steady-runs"></a>
 ## Steady runs: budget and stopping
@@ -531,3 +532,32 @@ Found with the porous regions of D270 (#273):
   per cell and face: 10 s per time step for 53 species on 200 cells. The pair
   factors that depend only on the molar masses are computed once
   (`wilke_pairs`) and the per-species √μ once per cell: 0.3 s per step.
+
+**A rank does not know the cell zone of its halo cells (turning zones on
+ranks, #301).** `extract` gives the local mesh the zones of the own cells
+only (`cell_zone` has `n_cells` entries), so anything that reads the zone
+of the cell across a face, such as the frame flux of a rotating zone on a
+face between two ranks, must get the zone of the halo cell from its owner:
+upload the own values of a cell array and read it back with
+`download_with_halo`. A per-rank decision like "this part has a pressure
+boundary" must be taken on the global arrays (`OnRanks::arrays`), or ranks
+start from different pressures.
+
+<a id="deforming-mesh"></a>
+## Deforming meshes: the grid flux and the old levels
+
+Found with the deforming mesh of stage MS0 (#296):
+- **Set the grid flux before the first convecting flux of the step.** The
+  transient step computes the convecting flux (ṁ − ρ Ḟ) at its start; with
+  the grid flux of the step uploaded later (in the density step) a uniform
+  flow on a moving mesh lost its uniformity (pressure 4 % of the dynamic
+  pressure, momentum residual 7·10⁻³). `grid_step_start` is the first call
+  of `step_with`; free-stream preservation is the test that catches it.
+- **Mass flows at a moving wall are relative.** The boundary summaries, the
+  balances and the scalar books must subtract the grid flux too; with the
+  absolute flux a piston wall showed a mass flow and the heat book of the
+  closed volume failed (BAL001).
+- **Keep ρⁿ through the rebuild.** The flow is rebuilt on the moved mesh
+  every step; refreshing the density with the new volumes before the step
+  starts overwrote level n. The density keeps (ρⁿ, p₀ⁿ) aside and the step
+  starts from them.

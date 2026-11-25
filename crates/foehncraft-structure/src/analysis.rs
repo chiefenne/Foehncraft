@@ -7,9 +7,9 @@ use crate::sparse::dot;
 use crate::{Error, codes};
 
 /// Relative pivot tolerance of the factorisations.
-const PIVOT_TOL: f64 = 1e-12;
+pub(crate) const PIVOT_TOL: f64 = 1e-12;
 
-fn dof_name(model: &Model, d: usize) -> String {
+pub(crate) fn dof_name(model: &Model, d: usize) -> String {
     let n = d / DOFS;
     let x = model.nodes.get(n).copied().unwrap_or_default();
     format!(
@@ -57,7 +57,7 @@ pub fn solve_static(model: &Model) -> Result<Static, Error> {
     for &(d, k) in &model.springs {
         reactions[d] -= k * u[d];
     }
-    let energy = 0.5 * dot(&uf, &sys.k.apply(&uf));
+    let energy = 0.5 * dot(&u, &ku);
     Ok(Static {
         u,
         reactions,
@@ -242,7 +242,7 @@ pub fn solve_modal(model: &Model, count: usize, shift: f64) -> Result<Modal, Err
             }
             Mode {
                 lambda,
-                shape: sys.expand(v),
+                shape: sys.expand_zero(v),
                 effective_mass: em,
                 residual,
             }

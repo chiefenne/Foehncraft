@@ -67,6 +67,7 @@ pub mod logblocks;
 pub mod logcols;
 pub mod materials;
 pub mod monitor;
+pub mod motion;
 pub mod operators;
 pub mod plot;
 pub mod porous;
