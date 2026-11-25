@@ -51,6 +51,7 @@ def test_every_tool_through_call(tmp_path):
         "diag.codes": {},
         "materials.list": {"temperature": 320.0},
         "materials.show": {"name": "water"},
+        "materials.steam": {"pressure": 4e6, "temperature": 700.0},
         "expression.eval": {"source": "2*x + t", "points": [[1.0, 0.0, 0.0, 0.5]]},
         "mesh.process": {
             "input": ROOT / "examples/cases/mesh/hex_2d.toml",

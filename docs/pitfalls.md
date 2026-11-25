@@ -24,6 +24,7 @@ instead.
 - [Limiters on tetrahedra and polyhedra](#limiters)
 - [Porous resistances and the Rhie–Chow factor](#porous-rhie-chow)
 - [Deforming meshes: the grid flux and the old levels](#deforming-mesh)
+- [Property solves and new kernels on ranks](#property-solves)
 
 <a id="steady-runs"></a>
 ## Steady runs: budget and stopping
@@ -544,3 +545,21 @@ Found with the deforming mesh of stage MS0 (#296):
   every step; refreshing the density with the new volumes before the step
   starts overwrote level n. The density keeps (ρⁿ, p₀ⁿ) aside and the step
   starts from them.
+
+<a id="property-solves"></a>
+## Property solves and new kernels on ranks
+
+Found with the IAPWS-IF97 states of SF7a (#277):
+- **Plain Newton inside a bracket can cycle.** T(p, h) just above the
+  critical pressure (h(T) rises steeply at the pseudo-critical
+  temperature) bounced between 611 K and 780 K for 200 iterations while
+  every step stayed inside the bracket, and returned a wrong state. Take a
+  Newton step only when it is at most half the step before the last one,
+  else bisect (the rtsafe rule), and test a fine (p, h) grid around the
+  critical point, not only the verification points.
+- **Run a new model once with `[run] ranks` before claiming it.** A
+  temperature-dependent c_p (any table, not only IF97) crashed on ranks
+  in the h-form correction of the energy equation (halo cells indexed in
+  own-cell arrays), and the variable density of stage 7c crashed as well;
+  W5 had checked only constant properties. The c_p path is fixed; the
+  variable density is refused on ranks until it is ported.

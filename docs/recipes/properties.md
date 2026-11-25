@@ -6,6 +6,7 @@ Part of the [Recipes](../recipes.md): boundary values, body forces and viscositi
 |---|---|
 | 31 | [Write boundary values, body forces and the viscosity as expressions](#expressions) |
 | 32 | [Take the fluid properties from the material database](#materials) |
+| 277 | [Use water and steam of IAPWS-IF97: states, saturation lines and the `if97` material form](#steam-if97) |
 
 ---
 
@@ -146,3 +147,78 @@ grep -A12 "resolved property program" output/poiseuille_water/case.resolved.toml
 temperature and source; `properties_hash` and `materials_database` in the
 provenance of every output file identify the property program and the
 database it came from.
+
+---
+
+<a id="steam-if97"></a>
+## 277. Use water and steam of IAPWS-IF97: states, saturation lines and the `if97` material form
+
+**One state.** Give the pressure with one other quantity, in SI units
+(Pa absolute, K, J/kg, J/(kg K)):
+
+```
+foehn steam --pressure 4e6 --temperature 700        # superheated steam
+foehn steam --pressure 4e6 --enthalpy 3.2e6         # T from (p, h)
+foehn steam --pressure 7e6 --quality 0.25           # wet steam
+foehn steam --temperature 373.15 --quality 0        # saturated liquid
+foehn steam --pressure 101325                       # the saturation line
+foehn --json steam --pressure 4e6 --entropy 6.5e3   # JSON for programs
+```
+
+The state lists the region, phase, ρ, h, u, s, c_p, c_v, the speed of
+sound, the equilibrium quality (below 0 for a subcooled liquid, above 1
+for superheated steam), the void fraction, μ, k, Pr and the surface
+tension; a two-phase state adds the saturated phases and the mixture
+viscosities of McAdams, Cicchitti and Dukler. From Python or an agent
+the same call is the tool `materials.steam`:
+
+```python
+import foehncraft as fc
+s = fc.call("materials.steam", pressure=4e6, temperature=700.0)["result"]["state"]
+```
+
+A state outside IF97 (above 100 MPa, below 273.15 K, above 1073.15 K
+beyond 50 MPa or above 2273.15 K) is refused with MAT010.
+
+**Steam or water as the fluid of a case.** The database has `steam`
+(the vapour branch) and `water-if97` (the liquid branch); both evaluate
+IF97 at the operating pressure of the case, which with absolute pressure
+values comes from the outlet:
+
+```toml
+case_format = "0.7"
+
+[fluid]
+material = "steam"
+temperature = 600.0          # the case temperature (K)
+
+[energy]
+density = "variable"         # ρ(T) from IF97; c_p, μ, k follow T anyway
+
+[boundary.outlet]
+type = "static-pressure-outlet"
+pressure = 4.0e6             # absolute: IF97 is evaluated at 4 MPa
+```
+
+Any material can take the form for any of its four properties, and
+`phase` picks the branch below the critical pressure (default: the
+phase of the case temperature):
+
+```toml
+[materials.feedwater]
+kind = "liquid"
+density = { form = "if97", phase = "liquid" }
+specific_heat = { form = "if97", phase = "liquid" }
+viscosity = { form = "if97", phase = "liquid" }
+conductivity = { form = "if97", phase = "liquid" }
+```
+
+The liquid branch ends at T_s(p) and the vapour branch starts there; a
+temperature beyond the end of its branch takes the saturated state and
+warns with MAT003. Boiling itself (a fluid crossing T_s) is not a
+single-phase property: the 1D tube circuits of SF7b and the two-fluid
+model of SF10 bring it. The cases are
+[`steam_heated_duct.toml`](../../examples/cases/flow/steam_heated_duct.toml),
+[`steam_superheater_channel.toml`](../../examples/cases/flow/steam_superheater_channel.toml)
+and [`ranks_water_if97_channel.toml`](../../examples/cases/flow/ranks_water_if97_channel.toml)
+([gallery 277](../gallery/properties.md#steam-if97)).

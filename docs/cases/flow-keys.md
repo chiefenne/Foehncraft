@@ -495,7 +495,7 @@ entry. Each property is a number, an expression or a table:
 | `materials.<name>.kind` | `gas`, `liquid` or `solid` |
 | `materials.<name>.temperature_range` | `[T_min, T_max]` (K): outside it the properties are clamped, with warning MAT003 |
 | `materials.<name>.molar_mass` | kg/mol (the ideal-gas density) |
-| `materials.<name>.density`, `.viscosity` | a number, an expression, or a table with `form` = `constant` (`value`), `polynomial` (`coefficients` a₀, a₁, … in T), `sutherland` (`mu_ref`, `t_ref`, `s`), `power-law` (`value_ref`, `t_ref`, `exponent`), `table` (`temperature` and `values`, or `file`; `interpolation` = `linear` or `monotone-cubic`), `ideal-gas` (density p M / (R T)), each with `source` and optionally `range`; the complete list is in [keys.md](../keys.md) |
+| `materials.<name>.density`, `.viscosity` | a number, an expression, or a table with `form` = `constant` (`value`), `polynomial` (`coefficients` a₀, a₁, … in T), `sutherland` (`mu_ref`, `t_ref`, `s`), `power-law` (`value_ref`, `t_ref`, `exponent`), `table` (`temperature` and `values`, or `file`; `interpolation` = `linear` or `monotone-cubic`), `ideal-gas` (density p M / (R T)), `if97` (water and steam of IAPWS-IF97 at the operating pressure: density, viscosity, specific heat or conductivity; `phase` = `liquid` or `vapour`, SF7a), each with `source` and optionally `range`; the complete list is in [keys.md](../keys.md) |
 
 The density must be constant in the domain (a density that varies comes
 with the energy equation, MAT002). The run writes the resolved property

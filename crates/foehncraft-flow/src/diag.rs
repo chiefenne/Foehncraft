@@ -138,6 +138,7 @@ codes! {
     MAT_THERMAL = "MAT007", Error, "A fluid without specific heat or thermal conductivity in a run with the energy equation.";
     MAT_AXES = "MAT008", Error, "An orthotropic thermal conductivity without both axes, or with parallel axes.";
     MAT_FILE = "MAT009", Error, "A user material database file (`[materials] include`, `FOEHN_MATERIALS`) or a property data file (NASA-7 record, table file) that cannot be read or has the wrong format.";
+    MAT_STEAM = "MAT010", Error, "A water or steam state (`materials.steam`, `foehn steam`) outside IAPWS-IF97, or asked with a set of inputs other than (p, T), (p, h), (p, s), (p, x), (T, x), p or T alone.";
     // sprays (L12, D240 to D246)
     SPRAY_CONFIG = "SPR001", Error, "A `[spray]` value that is out of range, an injector outside the mesh, a spray file (`[spray] include`) that cannot be read or defines `injector` or `liquid` twice, or a `[spray.boundary.<name>]` for a boundary the mesh does not have.";
     SPRAY_STEADY = "SPR002", Error, "The steady spray mode (D260): `[spray.steady]` in a case with `[time]`, or an injector with `start` or `end` in a steady case (its mass flow must not change in time).";
