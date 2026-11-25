@@ -386,8 +386,12 @@ Mixtures of ideal gases (steam furnace stage SF1): `[species]` with the
 GRI-Mech 3.0 species, N − 1 mass fractions transported and the closure
 species by 1 − Σ; with the variable density ρ = p₀ M/(R T) of the mixture
 and its c_p, λ and μ. The keys are on the [key page](flow-keys.md#species).
+With `[chemistry]` (stage SF2b) the species react in the cells and release
+heat (key page: [chemistry](flow-keys.md#chemistry)).
 
 | Case file | Mesh | Shows | Where |
 |---|---|---|---|
 | `flow/species_binary_diffusion.toml` | generated hex 2D, 100 × 2 cells | CH₄ diffusing in N₂ at rest: the exact decay of a cosine mode, BDF2 to t = 50 s; L2 error 9.5·10⁻⁶, species and element accounts closed to round-off | [gallery 278](../gallery/species.md#species-transport), [recipe 278](../recipes/species.md#species-transport) |
+| `flow/flame_methane_air_gri30.toml` | generated hex 2D, 200 × 1 cells (50 µm) | a laminar premixed stoichiometric methane–air flame in a tube with GRI-Mech 3.0 (53 species, 325 reactions) and species Lewis numbers, 1200 steps of 5 µs: burning velocity 0.348 m/s from the fuel consumption, measured 0.360 ± 0.017 m/s; band [0.33, 0.39] m/s; about 10 minutes (CI set `long`) | [gallery 298](../gallery/species.md#reacting-flow-cells), [recipe 298](../recipes/species.md#reacting-flow-cells) |
+| `flow/flame_methane_air_jl4.toml` | generated hex 2D, 200 × 1 cells (50 µm) | the same flame with the 4-step global mechanism of Jones & Lindstedt, Lewis number 1, 2 ms: 0.430 m/s, peak 2250 K; band [0.38, 0.48] m/s; 18 s | [gallery 298](../gallery/species.md#reacting-flow-cells), [recipe 298](../recipes/species.md#reacting-flow-cells) |
 | `flow/species_coaxial_jet.toml` | generated hex 2D wedge, 90 × 40 cells | a laminar methane jet (r = 5 mm, 1 m/s) in a coflow of air at 0.2 m/s, isothermal, density from the mixture's molar mass (0.65 to 1.17 kg/m³), mixture properties from kinetic theory; 154 iterations, element accounts closed to 6.4·10⁻⁹ | [gallery 278](../gallery/species.md#species-transport), [recipe 278](../recipes/species.md#species-transport) |

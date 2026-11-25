@@ -460,7 +460,7 @@ well_depth = 71.4
 diameter = 3.798
 rotational_relaxation = 1.0
 
-[species."False"]
+[species."NO"]
 composition = { N = 1.0, O = 1.0 }
 molar_mass = 0.0300061
 temperature = [200.0, 1000.0, 6000.0]
