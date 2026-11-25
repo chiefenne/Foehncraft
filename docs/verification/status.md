@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**132 features: 50 verified, 79 partial, 3 unverified.**
+**133 features: 50 verified, 80 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -157,6 +157,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Immersed bodies | [Density-field topology search with the Brinkman penalisation, iso-surface by marching tetrahedra (L13 stage 1)](#immersed-topology) | partial |
 | Structures | [Linear structural solver: Euler–Bernoulli and Timoshenko beams, static and modal analyses (L53, MS5 part 1)](#structure-beams) | partial |
 | Structures | [Clamp springs per length of the clamp line and their fit to a measured frequency (D290)](#structure-clamp) | partial |
+| Moving meshes and solids | [Deforming meshes with a prescribed node displacement, and the piston (stage MS0)](#mesh-deforming) | partial |
 
 ## Meshes
 
@@ -2189,3 +2190,25 @@ Gaps:
 - springs on a single node of a beam model: shells with the springs spread along the clamp edge come with MS5 part 2
 - clamp parts as solids in frictionless contact (the second way of D290) are not built
 - no measured reed with a known clamp to calibrate against yet (MS6)
+
+## Moving meshes and solids
+
+<a id="mesh-deforming"></a>
+
+### Deforming meshes with a prescribed node displacement, and the piston (stage MS0)
+
+**partial** (gaps written) · id `mesh.deforming` · switch `[mesh_motion] displacement` · decisions D91
+
+- exact: [`swept_volumes_close_every_cell`](../../crates/foehncraft-mesh/src/geometry.rs): the swept volumes of the faces of every cell sum to the change of its volume to 1e-12 (relative) on hex, tet, poly and mixed meshes perturbed by 20 % under a smooth nonlinear motion; a translation sweeps d·S exactly
+- exact: [`motion_free_stream`](../../examples/cases/flow/motion_free_stream.toml), [`uniform_flow_on_a_deforming_mesh_stays_uniform`](../../crates/foehncraft-flow/tests/mesh_motion.rs): check MS0.1: a uniform flow on a swinging mesh stays uniform to round-off (velocity 1e-15, residuals below 1e-12, closure below 1e-13) on hex, tet and poly meshes with BDF1, BDF2 and Crank–Nicolson ([results](../gallery/moving-solids.md#deforming-mesh))
+- exact: [`motion_piston_adiabatic`](../../examples/cases/flow/motion_piston_adiabatic.toml), [`piston_compression_keeps_p_v_gamma`](../../crates/foehncraft-flow/tests/mesh_motion.rs): check MS0.2: a closed gas volume compressed by four with adiabatic walls follows p₀V^γ: error 6.6e-4 at the top dead centre with Δt = 0.01 s, observed order 1.8 to 2.2 in Δt, back to p₀(0) within 1e-4 after the period; mass to 1e-13, T uniform, heat book to 1e-8 ([results](../gallery/moving-solids.md#deforming-mesh))
+- consistency: [`motion_piston_cooled_walls`](../../examples/cases/flow/motion_piston_cooled_walls.toml): walls at 300 K: p₀ below the isentrope (572 kPa at the top dead centre), the expansion ends at 90.4 kPa, mass and heat book closed every step (passes in CI (set long), not yet in the manual) ([results](../gallery/moving-solids.md#deforming-mesh))
+- contract (diagnostics): [`deforming_mesh_settings_are_checked`](../../crates/foehncraft-flow/tests/mesh_motion.rs): MOV001 for a steady case, MOV002 for a folding displacement, MOV003 for an inlet moved out of its plane, MOV004 for a closed volume of constant density that is compressed
+
+Gaps:
+
+- the motion is prescribed by an expression only: no mesh-motion solver, no cell layering, no bodies moved by the fluid (MS1, MS2)
+- the geometry and the solver setup (an AMG setup) are rebuilt every step
+- refused with MOV001: restarts (the restart datasets of D91 are not written yet), several ranks, turning zones, regions, sprays, immersed bodies, periodic boundaries, an error-controlled time step, level sweeps
+- turbulence models and passive scalars run on the moving mesh but are not checked against a reference; the GPU backend is not tested on a moving mesh
+- the cooled piston has no reference data (no heat-transfer correlation compared yet)
