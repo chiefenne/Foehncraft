@@ -119,7 +119,7 @@ pub fn cube() -> Vec<Triangle> {
 }
 
 /// Deterministic points in a box (a simple linear congruential sequence).
-fn points(n: usize, lo: f64, hi: f64) -> Vec<[f64; 3]> {
+pub fn points(n: usize, lo: f64, hi: f64) -> Vec<[f64; 3]> {
     let mut s: u64 = 0x9e37_79b9_7f4a_7c15;
     let mut next = || {
         s = s

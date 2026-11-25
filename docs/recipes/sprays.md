@@ -11,6 +11,7 @@ Part of the [Recipes](../recipes.md): droplets that move with and through the ga
 | 285 | [Let the turbulence spread the droplets](#spray-dispersion) |
 | 292 | [Solve a spray in a steady flow (steady spray mode)](#spray-steady) |
 | 306 | [Let the droplets evaporate](#spray-evaporation) |
+| 314 | [Evaporate fuel droplets at high ambient pressure](#spray-a-surface) |
 
 ---
 
@@ -351,3 +352,43 @@ step (transient) or of a steady run that is not converged. A liquid whose
 [gallery entry](../gallery/sprays.md#spray-evaporation) for what is
 checked and what is not.
 
+---
+
+<a id="spray-a-surface"></a>
+## 314. Evaporate fuel droplets at high ambient pressure
+
+**Above about 1 MPa, take the Peng-Robinson surface.** Raoult's law gives
+too little fuel vapour at the droplet surface at diesel pressures (1.5 to
+1.9 times less for n-dodecane in nitrogen at 6 MPa). Add to the
+evaporation:
+
+```toml
+[spray.evaporation]
+model = "abramzon-sirignano"
+equilibrium = "peng-robinson"   # default "raoult"
+
+[spray.evaporation.peng_robinson]
+# fuel = "n-dodecane"           # default: [spray.liquid] name
+ambient = { N2 = 1.0 }          # far-field mole fractions of N2, O2, CO2, H2O, AR
+# k_ij = { N2 = 0.205 }         # per gas; built-in for n-dodecane + N2, else 0
+# table_step = 1.0              # K between the nodes of the surface table
+```
+
+For a liquid without built-in data give its critical point, acentric
+factor and molar mass (all four, then with the κ(ω) of Peng and Robinson,
+which can be 10 to 20 % off on the vapour pressure at low temperature):
+
+```toml
+[spray.evaporation.peng_robinson]
+critical_temperature = 647.096  # K
+critical_pressure = 22.064e6    # Pa
+acentric_factor = 0.3443
+molar_mass = 0.018015           # kg/mol
+```
+
+The surface is tabulated once per run at p₀ (open domains; a closed volume
+is refused with evaporation). Droplets hotter than the end of the table
+(the critical mixing temperature above the fuel's critical pressure) take
+no latent heat and are counted in the tally (`critical_parcels`,
+`critical_mass`). See the [gallery entry](../gallery/sprays.md#spray-a-surface)
+for what is checked and what is not.

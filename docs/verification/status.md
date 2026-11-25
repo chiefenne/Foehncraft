@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**143 features: 50 verified, 90 partial, 3 unverified.**
+**144 features: 50 verified, 91 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -152,6 +152,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Sprays | [Turbulent dispersion of the sprays, eddy lifetime (SP2c, D243)](#sprays-dispersion-eddy-lifetime) | partial |
 | Sprays | [Steady spray mode: streams through the steady gas with relaxed sources (SP2s, D260)](#sprays-steady-mode) | partial |
 | Sprays | [Evaporating sprays: vapour, mass and enthalpy to the gas (SP4, SP5, D250 to D253)](#sprays-evaporation) | partial |
+| Sprays | [High-pressure droplet surface: Peng-Robinson phase equilibrium and latent heat (Spray A, SA1, D311, D312, D314)](#sprays-high-pressure-surface) | partial |
 | Flow models | [Porous regions with a direction-dependent Darcy-Forchheimer resistance (D270, PM1)](#porous-darcy-forchheimer) | partial |
 | Flow models | [Gas and matrix temperatures in porous regions, monolithic (D271, D272, PM2)](#porous-two-temperatures) | partial |
 | Flow models | [Species transport of an ideal-gas mixture with mixture properties (L2, steam furnace SF1)](#species-transport) | partial |
@@ -2105,6 +2106,35 @@ Gaps:
 - V28.5 to V28.8 of section 5 not all run as named checks (the closed box and the crowded cell cover the bounds)
 - `spray_evaporation_injectors` has no run in the verification manual or in CI
 - `spray_saturation_injectors` has no run in the verification manual or in CI
+
+<a id="sprays-high-pressure-surface"></a>
+
+### High-pressure droplet surface: Peng-Robinson phase equilibrium and latent heat (Spray A, SA1, D311, D312, D314)
+
+**partial** (gaps written) · id `sprays.high-pressure-surface` · switch `[spray.evaporation] equilibrium = "peng-robinson", [spray.evaporation.peng_robinson]` · decisions D310, D311, D312, D314
+
+- exact: [`the_omegas_are_the_roots_of_the_critical_conditions`](../../crates/foehncraft-kernels/src/realfluid.rs): Omega_a, Omega_b and Z_c give the triple root of the cubic at the critical point (to 1e-15)
+- reference-data: [`va1_the_peng_robinson_vapour_pressure_follows_the_measured_equation`](../../crates/foehncraft-particles/tests/high_pressure.rs): VA.1: n-dodecane vapour pressure with the fitted Mathias-Copeman alpha within 1 % of the Wagner equation of Ambrose and Walton (1989) from 300 to 655 K (the plain 1978 kappa is 16 % off at 300 K)
+- reference-data: [`va2_bubble_pressures_of_nitrogen_in_dodecane`](../../crates/foehncraft-particles/tests/high_pressure.rs): VA.2: 21 measured bubble points of N2 + n-dodecane (Garcia-Cordova et al. 2011, 344 to 594 K, 1.4 to 13 MPa): mean deviation below 4 %, at most 10 %; k_ij = 0.205 fitted by us to the 75 points up to 20 MPa (mean 2.7 %, at most 9.1 %)
+- exact: [`the_wagner_equation_gives_the_normal_boiling_point`](../../crates/foehncraft-particles/tests/high_pressure.rs): the transcribed Ambrose and Walton coefficients give 101.325 kPa at the normal boiling point 489.439 K of Lemmon and Goodwin (2000) within 0.2 %
+- exact: [`fit_mathias_copeman_reproduces_the_dodecane_coefficients`](../../crates/foehncraft-particles/tests/high_pressure.rs): the built-in alpha coefficients are reproduced by the fit routine to 2e-3
+- consistency: [`va3_low_pressure_limit_is_raoult`](../../crates/foehncraft-particles/tests/high_pressure.rs): VA.3: the surface vapour fraction tends to Raoult's law as p -> 0 (0.3 % above at 10 kPa, below 3 % at 0.1 MPa, growing with p)
+- consistency: [`the_surface_at_six_megapascal_is_richer_than_raoult_and_ends_critical`](../../crates/foehncraft-particles/tests/high_pressure.rs): at 6 MPa: 1.5 to 1.9 times Raoult from 450 to 600 K, 8 to 20 mol % N2 dissolved, latent heat ratio 0.8 to 0.92 falling monotonically to zero at the critical mixing temperature 651.3 K
+- consistency: [`the_critical_mixing_temperature_falls_with_pressure`](../../crates/foehncraft-particles/tests/high_pressure.rs): the critical end follows the critical locus of the binary: 656.6 K at 3 MPa down to 647.8 K at 8 MPa
+- consistency: [`below_the_critical_pressure_the_table_ends_boiling`](../../crates/foehncraft-particles/tests/high_pressure.rs): at 1 MPa the table ends at the boiling point, within 5 K of the pure fuel's
+- exact: [`the_table_is_a_pure_function_of_its_inputs`](../../crates/foehncraft-particles/tests/high_pressure.rs): two builds give the same bits (D247)
+- exact: [`a_closed_box_with_the_peng_robinson_surface_closes_its_books`](../../crates/foehncraft-particles/tests/evaporation.rs): VA.6: the closed box of V28.2 with the Peng-Robinson surface of water in nitrogen, 3000 steps: water and energy of gas plus parcels kept to 1e-12; gas within 0.01 K of the adiabatic saturation of the spray's own surface fraction and latent heat (found 0.007 K)
+- exact: [`the_spray_takes_the_surface_of_the_table_and_closes_its_books`](../../crates/foehncraft-particles/tests/high_pressure.rs): the spray takes y_f p0 and L_lib L_PR/L_PR,sat of the table bit for bit; the gas receives c_l T + L (books close by construction); a droplet evaporates
+- contract (diagnostics): [`parcels_above_the_critical_mixing_temperature_are_counted`](../../crates/foehncraft-particles/tests/high_pressure.rs): D314: parcels above the critical mixing temperature are counted with their mass and get no latent heat
+- contract (diagnostics): [`the_keys_are_checked`](../../crates/foehncraft-particles/tests/high_pressure.rs): unknown fuel, partial critical constants, unknown gas and a k_ij of a gas not in the ambient are refused with the key named
+
+Gaps:
+
+- above 550 K Peng-Robinson with one k_ij is 3 to 9 % low on the measured bubble pressures (the measured Henry constant falls faster with T); the surface vapour fraction moves by 2 to 6 % between the k_ij of the whole set and of the hot isotherms
+- the dissolved gas shifts the equilibrium but is not booked: the liquid stays pure fuel (D311)
+- the gas solver stays ideal (D317): the departure enthalpy of the dense vapour enters the gas as a sensible-heat deficit
+- no flow case yet: the n-dodecane vapour species data come with the liquid library; VA.4 to VA.9 (mixing line, Siebers liquid length, the Spray A case) are later stages
+- built-in high-pressure data for n-dodecane only; other liquids take the plain 1978 kappa (water: 11 % low on its vapour pressure at 320 K)
 
 ## Flow models
 
