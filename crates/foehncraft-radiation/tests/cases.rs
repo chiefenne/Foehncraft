@@ -7,8 +7,10 @@ use foehncraft_mesh::generate::{BoxSpec, Kind};
 use foehncraft_mesh::partition::{Method, partition};
 use foehncraft_mesh::{Geometry, Mesh};
 use foehncraft_parallel::{Communicator, ThreadComm};
-use foehncraft_radiation::exact::{parallel_rectangles, slab_source, slab_wall_flux};
-use foehncraft_radiation::{CpuDevicePath, Domain, SIGMA, Settings, Solution, Wall};
+use foehncraft_radiation::exact::{
+    cube_wall_flux_mean, parallel_rectangles, slab_source, slab_wall_flux,
+};
+use foehncraft_radiation::{CpuDevicePath, Domain, Points, SIGMA, Settings, Solution, Wall};
 
 fn mesh(kind: Kind, n: [usize; 3], upper: [f64; 3], perturb: f64) -> Mesh {
     let mut s = BoxSpec::new(kind, 3, n);
@@ -190,6 +192,194 @@ fn case3_parallel_plates() {
         let sigma = (exact * (1.0 - exact) / sol.bundles as f64).sqrt();
         eprintln!("plates {a} x {b} at {c}: F {f:.5} exact {exact:.5} (σ {sigma:.1e})");
         assert!((f - exact).abs() < 4.0 * sigma, "F {f} against {exact}");
+    }
+}
+
+/// The two coordinates in the wall of a point on a wall of the unit cube,
+/// and the wall's axis.
+fn in_wall(name: &str, x: [f64; 3]) -> (usize, [f64; 2]) {
+    match &name[..1] {
+        "x" => (0, [x[1], x[2]]),
+        "y" => (1, [x[0], x[2]]),
+        _ => (2, [x[0], x[1]]),
+    }
+}
+
+/// Case 5: unit cube of isothermal grey gas (κL = 1) between cold black
+/// walls. The flux into every wall face against the exact flux averaged
+/// over the face (`exact::cube_wall_flux`, the gas emission integrated over
+/// the five other walls), and the mean flux of every wall, on a hex mesh;
+/// the wall means on a perturbed polyhedral mesh.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn case5_cube_enclosure() {
+    let (t, kl) = (1000.0f64, 1.0);
+    let et4 = SIGMA * t.powi(4);
+    let mean = cube_wall_flux_mean(kl, [0.0, 1.0], [0.0, 1.0], 8);
+    let names = ["xmin", "xmax", "ymin", "ymax", "zmin", "zmax"];
+    // per face on 10³ hexahedra
+    let n = 10;
+    let m = mesh(Kind::Hex, [n; 3], [1.0; 3], 0.0);
+    let g = Geometry::compute(&m);
+    let w = walls(&m, |_| Wall::black(0.0));
+    // 32 batches: the error of each face is then close to normal (8 batches
+    // give Student's t with 7 degrees of freedom, with wide tails)
+    let s = Settings {
+        bundles: 1_000_000,
+        batches: 32,
+        ..Settings::default()
+    };
+    let sol = Domain::whole(&m, &g)
+        .solve(&vec![t; m.n_cells], &vec![kl; m.n_cells], &w, &s)
+        .unwrap();
+    check_ledger(&sol);
+    assert_eq!(sol.ledger.escaped, 0);
+    // the exact face means of one wall (every wall is the same)
+    let h = 1.0 / n as f64;
+    let exact: Vec<f64> = (0..n * n)
+        .map(|k| {
+            let (i, j) = ((k % n) as f64, (k / n) as f64);
+            et4 * cube_wall_flux_mean(kl, [i * h, (i + 1.0) * h], [j * h, (j + 1.0) * h], 1)
+        })
+        .collect();
+    let first = m.n_interior_faces();
+    let (mut z2, mut zmax, mut count, mut above3) = (0.0f64, 0.0f64, 0, 0);
+    for name in names {
+        for f in faces_of(&m, name) {
+            let (_, [a, b]) = in_wall(name, g.face_centroid[first + f]);
+            let k = (a / h) as usize + n * (b / h) as usize;
+            let z = (sol.wall_net[f] - exact[k]) / sol.wall_net_error[f];
+            z2 += z * z;
+            zmax = zmax.max(z.abs());
+            above3 += usize::from(z.abs() > 3.0);
+            count += 1;
+        }
+        let (q, e) = wall_mean(&m, &g, name, &sol.wall_net, &sol.wall_net_error);
+        let ex = et4 * mean;
+        eprintln!(
+            "cube hex {name}: {q:.6e} exact {ex:.6e} ({:+.2e}, σ {:.1e})",
+            (q - ex) / ex,
+            e / ex
+        );
+        assert!((q - ex).abs() < 3.0 * e, "{name}: {q} against {ex}");
+    }
+    let z2 = z2 / count as f64;
+    eprintln!(
+        "cube hex: {count} wall faces, mean z² {z2:.2}, largest |z| {zmax:.2}, {above3} beyond 3σ"
+    );
+    assert!(
+        z2 < 1.3 && zmax < 4.5 && above3 <= count / 100,
+        "mean z² {z2}, largest |z| {zmax}, {above3} beyond 3σ"
+    );
+    // the mean of every wall on a perturbed polyhedral mesh
+    let m = mesh(Kind::Poly, [6, 6, 6], [1.0; 3], 0.25);
+    let g = Geometry::compute(&m);
+    let w = walls(&m, |_| Wall::black(0.0));
+    let s = Settings {
+        bundles: 300_000,
+        ..Settings::default()
+    };
+    let sol = Domain::whole(&m, &g)
+        .solve(&vec![t; m.n_cells], &vec![kl; m.n_cells], &w, &s)
+        .unwrap();
+    check_ledger(&sol);
+    for name in names {
+        let (q, e) = wall_mean(&m, &g, name, &sol.wall_net, &sol.wall_net_error);
+        let ex = et4 * mean;
+        eprintln!(
+            "cube poly {name}: {q:.6e} exact {ex:.6e} ({:+.2e}, σ {:.1e})",
+            (q - ex) / ex,
+            e / ex
+        );
+        assert!((q - ex).abs() < 3.0 * e, "{name}: {q} against {ex}");
+    }
+}
+
+/// Case 6: Sobol against pseudo-random emission. The error of the slab
+/// wall flux (case 1, τ = 1) and of the configuration factor of the plates
+/// (case 3) against the number of bundles, as the root mean square over
+/// independent calls: the scrambled Sobol points converge faster and are
+/// several times more accurate at the largest number of bundles.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn case6_sobol_against_random() {
+    let t = 1000.0f64;
+    let et4 = SIGMA * t.powi(4);
+    let slab = mesh(Kind::Hex, [10, 2, 2], [1.0, 0.5, 0.5], 0.0);
+    let gs = Geometry::compute(&slab);
+    let ws = walls(&slab, |name| match name {
+        "xmin" | "xmax" => Wall::black(0.0),
+        _ => Wall::mirror(),
+    });
+    let plates = mesh(Kind::Hex, [2, 4, 4], [1.0; 3], 0.0);
+    let gp = Geometry::compute(&plates);
+    let wp = walls(&plates, |name| match name {
+        "xmin" => Wall::black(t),
+        "xmax" => Wall::black(0.0),
+        _ => Wall::open(),
+    });
+    let exact_slab = et4 * slab_wall_flux(1.0);
+    let exact_plates = parallel_rectangles(1.0, 1.0, 1.0);
+    let calls = 8;
+    // root-mean-square relative error over the calls
+    let rms = |points: Points, bundles: u64| -> [f64; 2] {
+        let (mut e_slab, mut e_plates) = (0.0, 0.0);
+        for call in 0..calls {
+            let s = Settings {
+                bundles,
+                call,
+                points,
+                ..Settings::default()
+            };
+            let sol = Domain::whole(&slab, &gs)
+                .solve(&vec![t; slab.n_cells], &vec![1.0; slab.n_cells], &ws, &s)
+                .unwrap();
+            let (q, _) = wall_mean(&slab, &gs, "xmin", &sol.wall_net, &sol.wall_net_error);
+            e_slab += ((q - exact_slab) / exact_slab).powi(2);
+            let sol = Domain::whole(&plates, &gp)
+                .solve(
+                    &vec![t; plates.n_cells],
+                    &vec![0.0; plates.n_cells],
+                    &wp,
+                    &s,
+                )
+                .unwrap();
+            let hot: i64 = faces_of(&plates, "xmin").map(|f| sol.wall_emitted[f]).sum();
+            let cold: i64 = faces_of(&plates, "xmax")
+                .map(|f| sol.wall_absorbed[f])
+                .sum();
+            let f = cold as f64 / hot as f64;
+            e_plates += ((f - exact_plates) / exact_plates).powi(2);
+        }
+        [e_slab, e_plates].map(|e| (e / calls as f64).sqrt())
+    };
+    let sizes = [4_000u64, 16_000, 64_000, 256_000];
+    let mut table = Vec::new();
+    for &n in &sizes {
+        let (s, r) = (rms(Points::Sobol, n), rms(Points::Random, n));
+        eprintln!(
+            "N {n:>7}: slab Sobol {:.2e} random {:.2e}; plates Sobol {:.2e} random {:.2e}",
+            s[0], r[0], s[1], r[1]
+        );
+        table.push((s, r));
+    }
+    // observed order of the error against N, from the first to the last
+    let order = |a: f64, b: f64| -(b / a).ln() / (sizes[3] as f64 / sizes[0] as f64).ln();
+    for (case, k) in [("slab", 0), ("plates", 1)] {
+        let (s0, r0) = table[0];
+        let (s3, r3) = table[3];
+        let (os, or) = (order(s0[k], s3[k]), order(r0[k], r3[k]));
+        eprintln!("{case}: order Sobol {os:.2}, random {or:.2}");
+        assert!(
+            s3[k] < 0.3 * r3[k],
+            "{case}: Sobol {} against random {}",
+            s3[k],
+            r3[k]
+        );
+        assert!(
+            os > or + 0.05,
+            "{case}: order Sobol {os} against random {or}"
+        );
     }
 }
 

@@ -2,7 +2,7 @@
 
 use crate::device::{DeviceTallies, Transport};
 use foehncraft_core::exact::ExactSum;
-use foehncraft_core::rng::{keyed, stream};
+use foehncraft_core::rng::{keyed, stream, uniform_keyed};
 use foehncraft_kernels::radiation::{
     BUNDLE_WORDS, Bundle, Fate, Medium, Tally, WallKind, cosine_about, isotropic, owen_sobol4,
     point_in_tet, point_in_triangle, sobol_seed, transport,
@@ -87,6 +87,21 @@ pub struct Settings {
     pub call: u64,
     /// Bundles per launch on a device (2²⁰: about 180 MB of records).
     pub launch: u64,
+    /// Points of the emission: scrambled Sobol (the default) or
+    /// pseudo-random, the reference of the benchmark (case 6).
+    pub points: Points,
+}
+
+/// The points that place and aim the bundles at emission.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Points {
+    /// Owen-scrambled Sobol points per emitter (Burley 2020): the bundles of
+    /// an emitter are stratified in position and direction.
+    #[default]
+    Sobol,
+    /// Independent keyed pseudo-random numbers (D121), the plain Monte
+    /// Carlo estimate.
+    Random,
 }
 
 impl Default for Settings {
@@ -96,6 +111,7 @@ impl Default for Settings {
             batches: 8,
             call: 0,
             launch: 1 << 20,
+            points: Points::Sobol,
         }
     }
 }
@@ -142,7 +158,7 @@ pub struct Solution {
     /// Emitted power per own cell (quanta).
     pub emitted: Vec<i64>,
     /// Incident flux per boundary face (W/m²), indexed from the first
-    /// boundary face.
+    /// boundary face; on an open boundary the flux that leaves through it.
     pub wall_incident: Vec<f64>,
     /// Net flux into the wall per boundary face, absorbed − emitted (W/m²).
     pub wall_net: Vec<f64>,
@@ -675,10 +691,26 @@ impl<'a> Domain<'a> {
 
 impl Shapes {
     /// Bundle `k` of emitter `e` with `w` quanta: position and direction
-    /// from two scrambled Sobol sequences of the emitter (D107 (2)).
+    /// from two scrambled Sobol sequences of the emitter (D107 (2)), or
+    /// from keyed pseudo-random numbers.
     fn emit(&self, e: &Emitter, k: u32, w: i64, s: &Settings, wm: &WalkMesh<'_>) -> Bundle {
-        let u = owen_sobol4(k, sobol_seed(e.id, s.call, 1));
-        let v = owen_sobol4(k, sobol_seed(e.id, s.call, 2));
+        let (u, v) = match s.points {
+            Points::Sobol => (
+                owen_sobol4(k, sobol_seed(e.id, s.call, 1)),
+                owen_sobol4(k, sobol_seed(e.id, s.call, 2)),
+            ),
+            Points::Random => {
+                let r = |d: u64| {
+                    uniform_keyed([
+                        stream::RADIATION,
+                        e.id,
+                        (s.call << 32) | u64::from(k),
+                        0x100 | d,
+                    ])
+                };
+                ([r(0), r(1), r(2), r(3)], [r(4), r(5), r(6), r(7)])
+            }
+        };
         let c = e.cell as usize;
         let (x, face, edge, dir) = if e.face == u32::MAX {
             let r = self.tet_ptr[c] as usize..self.tet_ptr[c + 1] as usize;
@@ -691,15 +723,21 @@ impl Shapes {
             let f = e.face as usize;
             let face = self.first + f;
             let r = self.tri_ptr[f] as usize..self.tri_ptr[f + 1] as usize;
-            let edge = pick(&self.tri_cdf[r], u[0]);
+            let cdf = &self.tri_cdf[r];
+            let edge = pick(cdf, u[0]);
+            // the rest of the first number within the chosen triangle is
+            // the first coordinate in it, so that position and direction
+            // are one stratified point of four dimensions
+            let lo = if edge == 0 { 0.0 } else { cdf[edge - 1] };
+            let a = ((u[0] - lo) / (cdf[edge] - lo)).clamp(0.0, 1.0);
             let t = wm.tet(c, face, edge);
             // the outer triangle (fan point, p, q) of the tetrahedron
-            let x = point_in_triangle(t[1], t[2], t[3], [u[1], u[2]]);
+            let x = point_in_triangle(t[1], t[2], t[3], [a, u[1]]);
             (
                 x,
                 face as u32,
                 edge as u32,
-                cosine_about(self.normal[f], [v[0], v[1]]),
+                cosine_about(self.normal[f], [u[2], u[3]]),
             )
         };
         let target = std::array::from_fn(|i| x[i] + self.reach * dir[i]);
