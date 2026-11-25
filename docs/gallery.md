@@ -23,7 +23,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | [Boundary conditions](gallery/boundary-conditions.md) | slip walls, axisymmetric wedges, inlet profiles from tables, backflow at pressure outlets, convective outlets, periodic modules, absolute pressure values (D239) | 21, 67, 220 |
 | [Lagrangian sprays](gallery/sprays.md) | droplets as Lagrangian parcels in the gas flow: injectors, drag, gravity, wall behaviour, the mass book | 242, 265 |
 | [Porous regions](gallery/porous.md) | flow through porous matrices with a direction-dependent Darcy–Forchheimer resistance: a ceramic honeycomb, the exact pressure drop of a block | 273, 275 |
-| [Immersed bodies](gallery/immersed.md) | bodies in the flow without a body-fitted mesh: Brinkman penalisation of primitive bodies (L13 stage 1) | |
+| [Immersed bodies](gallery/immersed.md) | bodies in the flow without a body-fitted mesh: Brinkman penalisation of primitive bodies (L13 stage 1) | 270 |
 | [Expressions and materials](gallery/properties.md) | boundary values, body forces and viscosities as expressions, the material database, regions, walls with a mass flux | 23 |
 | [Python](gallery/python.md) | cases built, run and studied from Python: expressions with Python operators, callbacks, study tables | 24 |
 | [Verification](gallery/verification.md) | the discretisation uncertainty of mesh sweeps (grid convergence index) and the generated verification manual | 25, 170 |
@@ -140,6 +140,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | <a id="furnace"></a>259 | [A box furnace with cooled tubes, and the cases with exact solutions](gallery/radiation.md#furnace) | [Thermal radiation](gallery/radiation.md) |
 | <a id="restart-ranks"></a>262 | [Written on five ranks, read on any: restart files on ranks](gallery/meshes.md#restart-ranks) | [Meshes](gallery/meshes.md) |
 | <a id="spray-datums"></a>265 | [Where the liquid goes: datums and droplet statistics](gallery/sprays.md#spray-datums) | [Lagrangian sprays](gallery/sprays.md) |
+| <a id="penalised-cylinder"></a>270 | [A cylinder put into a box mesh by Brinkman penalisation](gallery/immersed.md#penalised-cylinder) | [Immersed bodies](gallery/immersed.md) |
 | <a id="natural-convection"></a>272 | [Natural convection benchmarks: a heated square cavity at Ra 10³ to 10⁶, a vertical plate and mixed convection with flow reversal](gallery/energy.md#natural-convection) | [Energy equation and heat transfer](gallery/energy.md) |
 | <a id="porous-flow"></a>273 | [A ceramic honeycomb in an air channel, and a porous block against the exact pressure drop](gallery/porous.md#porous-flow) | [Porous regions](gallery/porous.md) |
 | <a id="porous-two-temperatures"></a>275 | [Charging a honeycomb heat store, and Schumann's bed against the exact solution](gallery/porous.md#porous-two-temperatures) | [Porous regions](gallery/porous.md) |
