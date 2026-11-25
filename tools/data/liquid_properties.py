@@ -33,6 +33,8 @@ FLUIDS = {
     "water": ("C7732185", 0.01801528, 273.16, 647.0),
     "n-heptane": ("C142825", 0.100202, 182.6, 540.0),
     "n-dodecane": ("C112403", 0.170335, 263.6, 658.0),
+    # not in the NIST fluid system: the table of isooctane_table.py
+    "iso-octane": (None, 0.11423, 265.0, 543.8),
 }
 
 DENSITY_EXP = [0.35, 2 / 3, 1.0, 4 / 3, 5 / 3, 16 / 3]
@@ -142,7 +144,8 @@ def rust(name, r, rep):
     zc = r["pc"] * vc / (R * r["tc"])
     f = lambda v: ", ".join(f"{x:.10e}" for x in v)
     const = name.upper().replace("-", "_")
-    out = [f"/// {name}: largest relative errors of the fits against the NIST table:"]
+    src = "the NIST table" if FLUIDS[name][0] else "the table of isooctane_table.py"
+    out = [f"/// {name}: largest relative errors of the fits against {src}:"]
     out += [f"/// {e}." for e in rep]
     out.append(f"pub const {const}: LiquidData = LiquidData {{")
     out.append(f'    name: "{name}",')
@@ -164,10 +167,14 @@ def rust(name, r, rep):
 def main(argv):
     if argv[1:] == ["--urls"]:
         for n, (i, _, lo, hi) in FLUIDS.items():
-            print(n, URL.format(id=i, lo=lo, hi=hi))
+            if i is None:
+                print(n, "python3 tools/data/isooctane_table.py DIR")
+            else:
+                print(n, URL.format(id=i, lo=lo, hi=hi))
         return
     print("// Written by tools/data/liquid_properties.py from the NIST WebBook")
-    print("// saturation tables (SRD 69); do not edit by hand.")
+    print("// saturation tables (SRD 69) and, for iso-octane, isooctane_table.py;")
+    print("// do not edit by hand.")
     for n in FLUIDS:
         r, rep = fit(n, f"{argv[1]}/{n}.txt")
         print(rust(n, r, rep))

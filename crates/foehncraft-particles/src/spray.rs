@@ -426,6 +426,10 @@ pub struct Spray {
     /// p₀ (`equilibrium = "peng-robinson"`, D311), from
     /// [`Spray::set_surface_pressure`].
     surface: Option<SurfaceTable>,
+    /// The carrier gas of the film (the species without the vapour and
+    /// their mass fractions, Σ = 1) for `film = "one-third"` (D321); empty:
+    /// the far-field properties.
+    carrier: Vec<(foehncraft_kernels::species::Species, f64)>,
 }
 
 /// What `state()` writes and `restore()` reads (restart, D42).
@@ -520,6 +524,7 @@ impl Spray {
             planar: false,
             vapour: None,
             surface: None,
+            carrier: Vec::new(),
             datums: Vec::new(),
             datum_tally: Vec::new(),
             tally: Tally {
@@ -536,6 +541,64 @@ impl Spray {
     /// `[spray.liquid] vapour`): needed for the evaporation (SP5).
     pub fn set_vapour(&mut self, v: Option<Vapour>) {
         self.vapour = v;
+    }
+
+    /// Sets the carrier gas of the film (species and mass fractions; they
+    /// are normalised): the 1/3 rule takes its mixture properties from
+    /// them (D321). Without a carrier the far-field properties are used.
+    pub fn set_carrier(&mut self, c: Vec<(foehncraft_kernels::species::Species, f64)>) {
+        let s: f64 = c.iter().map(|x| x.1.max(0.0)).sum();
+        self.carrier = if s > 0.0 && c.len() < foehncraft_kernels::species::MAX_SPECIES {
+            c.into_iter()
+                .filter(|x| x.1 > 0.0)
+                .map(|(sp, y)| (sp, y / s))
+                .collect()
+        } else {
+            Vec::new()
+        };
+    }
+
+    /// True when the evaporation takes the film properties of the 1/3
+    /// rule (D321): `film = "one-third"` and a carrier gas set.
+    pub fn film_rule(&self) -> bool {
+        self.cfg.evaporation.film == crate::config::Film::OneThird && !self.carrier.is_empty()
+    }
+
+    /// The gas properties of the film at the droplet temperature `tp` and
+    /// surface fraction `ys` in the gas `gs` by the 1/3 rule (D321): the
+    /// mixture of the vapour and the carrier at T_m, Y_m (Wilke viscosity,
+    /// Mathur conductivity, mass-weighted c_p), the density of the ideal
+    /// gas at p₀ and the diffusivity of the vapour in the carrier
+    /// (Chapman-Enskog, Blanc's law). Returns (ρ, μ, k, c_p, D, c_pv).
+    pub fn film_properties(&self, gs: &GasState, tp: f64, ys: f64) -> [f64; 6] {
+        use foehncraft_kernels::species as ks;
+        let v = self.vapour.as_ref().expect("film_properties needs the vapour");
+        let yg = gs.y_v.clamp(0.0, 1.0);
+        let tm = tp + (gs.t - tp) / 3.0;
+        let ym = (ys + (yg - ys) / 3.0).clamp(0.0, 1.0);
+        let n = self.carrier.len() + 1;
+        let mut sp = [v.species; ks::MAX_SPECIES];
+        let mut y = [0.0; ks::MAX_SPECIES];
+        y[0] = ym;
+        // the carrier's mole fractions among themselves for Blanc's law
+        let inv_mc: f64 = self.carrier.iter().map(|(s, yc)| yc / s.molar_mass).sum();
+        let mut inv_d = 0.0;
+        for (j, (s, yc)) in self.carrier.iter().enumerate() {
+            sp[j + 1] = *s;
+            y[j + 1] = (1.0 - ym) * yc;
+            let xc = yc / s.molar_mass / inv_mc;
+            inv_d += xc / ks::binary_diffusion(&v.species, s, tm, gs.p0);
+        }
+        let mix = ks::mixture(&sp[..n], &y[..n], tm);
+        let rho = gs.p0 * mix.molar_mass / (ks::R * tm);
+        [
+            rho,
+            mix.viscosity,
+            mix.conductivity,
+            mix.cp,
+            1.0 / inv_d,
+            v.species.cp(tm),
+        ]
     }
 
     /// True when the droplets evaporate (`[spray.evaporation]` and the
@@ -714,6 +777,18 @@ impl Spray {
             return None;
         }
         let l = &self.cfg.liquid;
+        let psat = self.saturation_pressure(tp);
+        // the gas properties: of the film by the 1/3 rule (D321) or of the
+        // gas at the droplet; with the film, Re takes the film viscosity
+        // and the gas density (Abramzon and Sirignano 1989)
+        let (rho, mu, k, cp, diff, cp_v, re) = if self.film_rule() {
+            let ys = evap::surface_fraction(psat, gs.p0, v.species.molar_mass, gs.m_gas);
+            let [rho, mu, k, cp, diff, cp_v] = self.film_properties(gs, tp, ys);
+            (rho, mu, k, cp, diff, cp_v, re * gs.mu / mu)
+        } else {
+            let cp_v = v.cp(0.5 * (tp + gs.t));
+            (gs.rho, gs.mu, gs.k, gs.cp, gs.diff, cp_v, re)
+        };
         Some(evap::evaporation_step(&EvapInput {
             tp,
             tg: gs.t,
@@ -721,17 +796,17 @@ impl Spray {
             p0: gs.p0,
             m_vapour: v.species.molar_mass,
             m_gas: gs.m_gas,
-            psat: self.saturation_pressure(tp),
+            psat,
             ys_surface: -1.0,
             latent: self.latent_heat(tp),
             re,
-            pr: gs.mu * gs.cp / gs.k,
-            sc: gs.mu / (gs.rho * gs.diff),
-            rho_g: gs.rho,
-            diff: gs.diff,
-            k_g: gs.k,
-            cp_g: gs.cp,
-            cp_v: v.cp(0.5 * (tp + gs.t)),
+            pr: mu * cp / k,
+            sc: mu / (rho * diff),
+            rho_g: rho,
+            diff,
+            k_g: k,
+            cp_g: cp,
+            cp_v,
             d,
             rho_l: l.density,
             cp_l: l.specific_heat,

@@ -256,12 +256,32 @@ impl Default for PengRobinson {
     }
 }
 
+/// The reference state of the gas film around a droplet at which the
+/// evaporation takes its gas properties (D321).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum Film {
+    /// The 1/3 rule (Hubbard, Denny and Mills 1975; Yuen and Chen 1976):
+    /// T_m = T_p + (T_g − T_p)/3, Y_m = Y_s + (Y_g − Y_s)/3, with the
+    /// mixture properties of the vapour and the carrier gas from the
+    /// species data (kinetic theory) at that state (default).
+    #[default]
+    OneThird,
+    /// The properties of the gas at the droplet as the flow has them (the
+    /// SP5 behaviour; the vapour c_p at the mean temperature).
+    FarField,
+}
+
 /// `[spray.evaporation]` (SP5, D251).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct Evaporation {
     /// `none` (default), `ranz-marshall` or `abramzon-sirignano`.
     pub model: EvaporationModel,
+    /// The film state of the gas properties: `one-third` (default, the
+    /// 1/3 rule with kinetic-theory mixture properties) or `far-field`
+    /// (D321).
+    pub film: Film,
     /// A sub-step ends when d² would fall by more than this fraction of its
     /// value at the start (default 0.1, D251).
     pub max_mass_change: f64,
@@ -282,6 +302,7 @@ impl Default for Evaporation {
     fn default() -> Self {
         Self {
             model: EvaporationModel::None,
+            film: Film::OneThird,
             max_mass_change: 0.1,
             max_temperature_change: 2.0,
             min_diameter: 1e-6,

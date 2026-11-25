@@ -561,6 +561,40 @@ pub fn summary(sp: &foehncraft_particles::Spray, zone: &[u32]) -> SpraySummary {
     }
 }
 
+/// The carrier gas of the evaporation film (D321): the species of the
+/// start composition without the vapour `v`, by mass. An expression in the
+/// start composition leaves the closure species alone as the carrier.
+fn carrier(case: &FlowCase, v: &str) -> Result<Vec<(foehncraft_kernels::species::Species, f64)>> {
+    let Some(sec) = case.species.as_ref() else {
+        return Ok(Vec::new());
+    };
+    let res = crate::species::Resolved::of(sec)?;
+    let ys = res.mass_fractions(&sec.initial, "species.initial")?;
+    let index = |n: &str| res.names.iter().position(|m| m == n);
+    let closure = res.names[res.names.len() - 1].clone();
+    let numbers: Option<Vec<f64>> = ys.iter().map(|y| y.number()).collect();
+    let mut out = Vec::new();
+    match numbers {
+        Some(ys) => {
+            let rest: f64 = ys.iter().sum();
+            for (n, y) in res.transported().iter().zip(&ys) {
+                if n != v && *y > 0.0 && let Some(i) = index(n) {
+                    out.push((res.data[i], *y));
+                }
+            }
+            if let Some(i) = index(&closure) && closure != v && rest < 1.0 {
+                out.push((res.data[i], 1.0 - rest));
+            }
+        }
+        None => {
+            if let Some(i) = index(&closure) {
+                out.push((res.data[i], 1.0));
+            }
+        }
+    }
+    Ok(out)
+}
+
 /// The sprays of a run, or `None` without `[spray]`.
 pub fn create(
     case: &FlowCase,
@@ -594,6 +628,7 @@ pub fn create(
         sp.set_vapour(Some(foehncraft_particles::Vapour {
             species: rec.kernel(),
         }));
+        sp.set_carrier(carrier(case, v)?);
     }
     // the Peng-Robinson surface at the run's p₀ (D311): the operating
     // pressure, as `GasVapour` gives it (a closed volume is refused above)

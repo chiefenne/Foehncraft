@@ -161,10 +161,11 @@ pub fn by_name(name: &str) -> Option<&'static LiquidData> {
 }
 
 /// Every liquid of the library.
-pub const ALL: [&LiquidData; 3] = [&WATER, &N_HEPTANE, &N_DODECANE];
+pub const ALL: [&LiquidData; 4] = [&WATER, &N_HEPTANE, &N_DODECANE, &ISO_OCTANE];
 
-// The data below is written by tools/data/liquid_properties.py from the NIST WebBook
-// saturation tables (SRD 69); do not edit by hand.
+// Written by tools/data/liquid_properties.py from the NIST WebBook
+// saturation tables (SRD 69) and, for iso-octane, isooctane_table.py;
+// do not edit by hand.
 /// water: largest relative errors of the fits against the NIST table:
 /// vapour pressure 6.9e-04 to 0.9 Tc, 6.9e-04 to 647 K.
 /// density 9.4e-04 to 0.9 Tc, 9.4e-04 to 634 K.
@@ -243,10 +244,59 @@ pub const N_DODECANE: LiquidData = LiquidData {
     sigma: [6.9395132876e-02, -1.3364163449e-01, 3.8265751460e-01, -3.4829386370e-01],
     viscosity: [3.5820097678e+02, -4.6239907431e+02, 2.9063562653e+02, -9.0073493199e+01, 1.1006906645e+01, -1.1761633174e+02],
 };
+/// iso-octane: largest relative errors of the fits against the table of isooctane_table.py:
+/// vapour pressure 7.7e-04 to 0.9 Tc, 7.7e-04 to 543 K.
+/// density 1.8e-05 to 0.9 Tc, 6.2e-05 to 532 K.
+/// specific heat (Tr < 0.95) 3.3e-03 to 0.9 Tc, 3.9e-03 to 516 K.
+/// latent heat 4.7e-05 to 0.9 Tc, 1.7e-04 to 532 K.
+/// surface tension 5.3e-03 to 0.9 Tc, 2.1e-02 to 532 K.
+/// viscosity (Tr < 0.95) 6.2e-03 to 0.9 Tc, 8.0e-03 to 516 K.
+#[allow(clippy::excessive_precision)]
+pub const ISO_OCTANE: LiquidData = LiquidData {
+    name: "iso-octane",
+    molar_mass: 0.11423,
+    tc: 543.8,
+    pc: 2556000.0,
+    rho_c: 246.000000,
+    vc: 4.643496e-04,
+    zc: 0.262502,
+    omega: 0.302069,
+    tb: 372.3411,
+    t_min: 265.0,
+    psat: [-7.4552384517e+00, 1.6041496245e+00, -2.3922398006e+00, -3.2010273284e+00],
+    density: [2.2991649102e+00, -1.7177671303e+00, 4.5092432604e+00, -3.9636297146e+00, 1.5595244431e+00, -9.4344797953e-02],
+    cp: [3.5085828583e+03, 5.3279786678e+00, -4.2849807295e+03, 2.4444756432e+03],
+    latent: [4.1850421156e+05, -4.1422925340e+03, 1.0204716580e+04, -9.3858909121e+03],
+    sigma: [5.8615669652e-02, -5.6590415465e-02, 1.4264966506e-01, -1.3174600878e-01],
+    viscosity: [2.4082341241e+02, -3.0719165470e+02, 1.8915302305e+02, -5.7679395885e+01, 7.0079251358e+00, -8.2096363620e+01],
+};
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Iso-octane against the primary data behind its table: the Antoine
+    /// law of Willingham et al. (1945, 298-373 K), the calorimetric latent
+    /// heats of Majer and Svoboda (NIST WebBook, ±0.1 kJ/mol), the surface
+    /// tension of Mulero et al. (2012) and the normal boiling point
+    /// 372.4 ± 0.2 K (NIST WebBook).
+    #[test]
+    fn iso_octane_meets_the_primary_data() {
+        let l = &ISO_OCTANE;
+        for t in [300.0, 325.0, 350.0, 370.0] {
+            let p = 1e5 * 10f64.powf(3.93679 - 1257.84 / (t - 52.415));
+            let e = l.saturation_pressure(t) / p - 1.0;
+            assert!(e.abs() < 3e-3, "psat at {t} K: {e:+.2e}");
+        }
+        for (t, h) in [(313.0, 34.4), (333.0, 33.2), (353.0, 32.0), (368.0, 31.0)] {
+            let e = l.latent_heat(t) * l.molar_mass / (1e3 * h) - 1.0;
+            assert!(e.abs() < 6e-3, "latent heat at {t} K: {e:+.2e}");
+        }
+        let s = 0.04794 * (1.0 - 298.15 / 543.87f64).powf(1.209);
+        assert!((l.surface_tension(298.15) / s - 1.0).abs() < 6e-3);
+        assert!((l.tb - 372.4).abs() < 0.5, "tb {}", l.tb);
+        assert!((l.density(298.15) - 690.3).abs() < 0.5);
+    }
 
     /// (T K, p Pa, ρ kg/m³, c_l J/(kg K), L J/kg, σ N/m, μ Pa s): points of
     /// the NIST WebBook saturation tables (SRD 69).

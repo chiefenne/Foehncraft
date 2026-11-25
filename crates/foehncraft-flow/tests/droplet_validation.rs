@@ -1,60 +1,80 @@
-//! Single-droplet evaporation against measurements (D320 validation):
-//! n-heptane droplets in still nitrogen at 0.1 MPa, Chauveau, Birouk,
-//! Halter and Gökalp (2019), the microgravity rates K0(T) of their eq. (4).
+//! Single-droplet evaporation against measurements (D320, D321): n-heptane
+//! droplets in still nitrogen at 0.1 MPa, Chauveau, Birouk, Halter and
+//! Gökalp (2019), the microgravity rates K0(T) of their eq. (4). The droplet
+//! runs through `Spray::evaporation`, the path of the spray solver, with the
+//! liquid library, the species data of the flow solver and both film states.
+//!
+//! The model over-predicts these data (a recorded gap, not a pass): with the
+//! far-field properties by 80-90 %, with the 1/3 rule by 40-60 %. The bands
+//! below hold the present numbers so that a change shows; the 1/3 rule must
+//! stay the closer one.
 
 use foehncraft_flow::species::database;
-use foehncraft_kernels::evaporation::{self as ev, EvapInput};
-use foehncraft_kernels::liquids::N_HEPTANE;
-use foehncraft_kernels::species as ks;
+use foehncraft_mesh::Geometry;
+use foehncraft_mesh::generate::{BoxSpec, Kind};
+use foehncraft_mesh::locate::Locator;
+use foehncraft_particles::{
+    BoundaryMode, BoundaryRule, Env, EvaporationModel, Film, GasState, Spray, SpraySection, Vapour,
+};
 
 const P0: f64 = 101_325.0;
-const R: f64 = 8.314_462_618;
 
-/// K (mm²/s) of a droplet of d0 at t0 in still N2 at tg, integrated with the
-/// kernel; `rule`: the film state Tp + rule (Tg − Tp) (0 = droplet, 1 = far field).
-fn rate(tg: f64, d0: f64, t0: f64, rule: f64, model: u32) -> (f64, f64) {
+/// The spray of one still droplet of n-heptane in N2 with the film `film`.
+fn spray(env: &Env, film: Film) -> Spray {
+    let mut cfg = SpraySection::default();
+    cfg.liquid.vapour = Some("NC7H16".into());
+    cfg.liquid.library = Some("n-heptane".into());
+    cfg.liquid.apply_library().unwrap();
+    cfg.evaporation.model = EvaporationModel::AbramzonSirignano;
+    cfg.evaporation.film = film;
+    let rules = vec![
+        BoundaryRule {
+            mode: BoundaryMode::Rebound,
+            e_normal: 0.5,
+            e_tangential: 0.5,
+        };
+        env.mesh.boundaries.len()
+    ];
+    let mut sp = Spray::new(&cfg, env, rules, [0.0; 3]).unwrap();
+    let db = database();
+    sp.set_vapour(Some(Vapour {
+        species: db["NC7H16"].kernel(),
+    }));
+    sp.set_carrier(vec![(db["N2"].kernel(), 1.0)]);
+    sp
+}
+
+/// K (mm²/s, the slope of d²/d0² between 0.8 and 0.3) and the wet-bulb
+/// temperature of a droplet of d0 at 300 K in still N2 at `tg`.
+fn rate(sp: &Spray, tg: f64, d0: f64) -> (f64, f64) {
     let db = database();
     let n2 = db["N2"].kernel();
-    let hep = db["NC7H16"].kernel();
-    let (mut d, mut tp) = (d0, t0);
-    let mut t = 0.0;
-    let mut hist = Vec::new();
-    let rho_l = N_HEPTANE.density(t0);
-    let cp_l = N_HEPTANE.specific_heat(t0);
-    while d > 0.05 * d0 {
-        let psat = N_HEPTANE.saturation_pressure(tp);
-        let ys = ev::surface_fraction(psat, P0, hep.molar_mass, n2.molar_mass);
-        let tf = tp + rule * (tg - tp);
-        let yf = ys * (1.0 - rule);
-        let sp = [hep, n2];
-        let mix = ks::mixture(&sp, &[yf, 1.0 - yf], tf);
-        let rho = P0 * mix.molar_mass / (R * tf);
-        let diff = ks::binary_diffusion(&hep, &n2, tf, P0);
-        let dt = 1e-4 * (d / d0).powi(2) + 1e-7;
-        let s = ev::evaporation_step(&EvapInput {
-            tp,
+    let mu = n2.viscosity(tg);
+    // the far-field gas: N2 at tg (the film = "far-field" takes these)
+    let gs = GasState {
+        u: [0.0; 3],
+        rho: P0 * n2.molar_mass / (8.314_462_618 * tg),
+        mu,
+        t: tg,
+        cp: n2.cp(tg),
+        k: n2.conductivity(tg, mu),
+        tke: 0.0,
+        eps: 0.0,
+        y_v: 0.0,
+        p0: P0,
+        m_gas: n2.molar_mass,
+        diff: foehncraft_kernels::species::binary_diffusion(
+            &db["NC7H16"].kernel(),
+            &n2,
             tg,
-            yg: 0.0,
-            p0: P0,
-            m_vapour: hep.molar_mass,
-            m_gas: n2.molar_mass,
-            psat,
-            ys_surface: -1.0,
-            latent: N_HEPTANE.latent_heat(tp),
-            re: 0.0,
-            pr: mix.viscosity * mix.cp / mix.conductivity,
-            sc: mix.viscosity / (rho * diff),
-            rho_g: rho,
-            diff,
-            k_g: mix.conductivity,
-            cp_g: mix.cp,
-            cp_v: hep.cp(tf),
-            d,
-            rho_l,
-            cp_l,
-            dt,
-            model,
-        });
+            P0,
+        ),
+    };
+    let (mut d, mut tp, mut t) = (d0, 300.0, 0.0);
+    let mut hist = Vec::new();
+    while d > 0.05 * d0 {
+        let dt = 1e-4 * (d / d0).powi(2) + 1e-7;
+        let s = sp.evaporation(&gs, d, tp, 0.0, dt).unwrap();
         d = s.d;
         tp = s.tp;
         t += dt;
@@ -63,32 +83,42 @@ fn rate(tg: f64, d0: f64, t0: f64, rule: f64, model: u32) -> (f64, f64) {
             break;
         }
     }
-    // the slope of d²/d0² between 0.8 and 0.3 (the quasi-steady part)
     let a = hist.iter().find(|h| h.1 < 0.8).unwrap();
     let b = hist.iter().find(|h| h.1 < 0.3).unwrap();
-    let k = (a.1 - b.1) / (b.0 - a.0) * d0 * d0 * 1e6;
-    (k, b.2)
+    ((a.1 - b.1) / (b.0 - a.0) * d0 * d0 * 1e6, b.2)
 }
 
 #[test]
 fn n_heptane_droplets_against_chauveau_2019() {
+    let mut s = BoxSpec::new(Kind::Hex, 3, [1, 1, 1]);
+    s.lower = [0.0; 3];
+    s.upper = [1.0; 3];
+    let mesh = s.generate().unwrap();
+    let geo = Geometry::compute(&mesh);
+    let loc = Locator::new(&mesh, &geo);
+    let env = Env {
+        mesh: &mesh,
+        geo: &geo,
+        loc: &loc,
+    };
+    let third = spray(&env, Film::OneThird);
+    let far = spray(&env, Film::FarField);
+    assert!(third.film_rule() && !far.film_rule());
     for tg in [473.0, 548.0, 623.0, 698.0, 748.0] {
-        let k0 = 3.6552e-4 * tg - 0.1078; // mm²/s, eq. (4), microgravity, 14 µm cross fibre
-        for (name, rule, m) in [
-            ("far field, RM", 1.0, ev::model::RANZ_MARSHALL),
-            ("1/3 rule, RM", 1.0 / 3.0, ev::model::RANZ_MARSHALL),
-        ] {
-            let (k, tw) = rate(tg, 370e-6, 300.0, rule, m);
-            eprintln!("T {tg} K {name}: K {k:.4} mm2/s, measured {k0:.4} ({:+.1} %), wet bulb {tw:.1} K", 100.0 * (k / k0 - 1.0));
-        }
-    }
-}
-
-#[test]
-fn print_heptane_diffusivity() {
-    let db = database();
-    let (h, n) = (db["NC7H16"].kernel(), db["N2"].kernel());
-    for t in [300.0, 500.0, 748.0] {
-        eprintln!("D {t}: {:.4e} m2/s, mu_N2 {:.3e}, k_N2 {:.4}", ks::binary_diffusion(&h, &n, t, P0), n.viscosity(t), n.conductivity(t, n.viscosity(t)));
+        // mm²/s, eq. (4): microgravity, 14 µm cross fibres, d0 ≈ 0.37 mm
+        let k0 = 3.6552e-4 * tg - 0.1078;
+        let (kt, tw) = rate(&third, tg, 370e-6);
+        let (kf, _) = rate(&far, tg, 370e-6);
+        let (et, ef) = (kt / k0 - 1.0, kf / k0 - 1.0);
+        eprintln!(
+            "T {tg} K: measured {k0:.4} mm2/s; 1/3 rule {kt:.4} ({:+.1} %), far field \
+             {kf:.4} ({:+.1} %), wet bulb {tw:.1} K",
+            100.0 * et,
+            100.0 * ef
+        );
+        assert!(et.abs() < ef.abs(), "the 1/3 rule must be closer at {tg} K");
+        assert!((0.0..0.75).contains(&et), "1/3 rule at {tg} K: {et:+.3}");
+        assert!((0.6..1.05).contains(&ef), "far field at {tg} K: {ef:+.3}");
+        assert!((320.0..350.0).contains(&tw), "wet bulb at {tg} K: {tw}");
     }
 }
