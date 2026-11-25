@@ -169,8 +169,7 @@ impl SymCsc {
     pub fn adjacency(&self) -> Vec<Vec<usize>> {
         let mut adj = vec![Vec::new(); self.n];
         for j in 0..self.n {
-            for p in self.colptr[j]..self.colptr[j + 1] {
-                let i = self.rowidx[p];
+            for &i in &self.rowidx[self.colptr[j]..self.colptr[j + 1]] {
                 if i != j {
                     adj[i].push(j);
                     adj[j].push(i);
