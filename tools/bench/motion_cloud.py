@@ -25,7 +25,6 @@ difference exceeds 1e-9. Writes output/motion_gpu/report.md (also
 printed). Takes about 15 minutes on a free Colab T4 (most of it the build).
 """
 import json
-import pathlib
 import shutil
 import sys
 
