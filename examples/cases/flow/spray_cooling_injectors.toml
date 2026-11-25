@@ -1,0 +1,18 @@
+# The water nozzle of spray_cooling.toml (D246: the spray lives in its own
+# file).
+
+[liquid]
+name = "water"
+density = 998.0
+specific_heat = 4181.0
+temperature = 293.15
+
+[[injector]]
+name = "nozzle"
+position = [0.15, 0.2, 0.05]
+direction = [1.0, 0.0, 0.0]
+speed = 15.0
+half_angle = 15.0
+mass_flow = 0.01
+size = { distribution = "rosin-rammler", mean = 60e-6, spread = 3.0, min = 20e-6, max = 200e-6 }
+parcels_per_second = 4000.0

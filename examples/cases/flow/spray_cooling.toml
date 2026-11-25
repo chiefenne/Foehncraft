@@ -1,0 +1,100 @@
+# Hot air cooled by a water spray (Lagrangian sprays, two-way coupling
+# with sensible heat, SP2b; the lead application of D240).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/spray_cooling.toml
+#
+# Air at 573 K flows at 5 m/s through a duct of 2 m by 0.4 m (2D). A nozzle
+# on the axis near the inlet sprays 10 g/s of water at 293 K downstream at
+# 15 m/s, as droplets of 20 to 200 µm (Rosin-Rammler, X = 60 µm). With
+# `[spray.coupling] mode = "two-way"` and the energy equation the droplets
+# take heat from the air (sensible heat only: no evaporation before SP5)
+# and drag it along. If the liquid took the temperature of the air
+# completely, air and water would meet at 503 K; how far the duct gets
+# towards that depends on how long the droplets stay in it.
+#
+# The heat follows the same rules as the momentum (D247 to D252): every
+# sub-step relaxes the droplet temperature exactly towards the gas
+# (Nusselt number of Ranz and Marshall), the records are sorted and summed
+# per cell, the energy equation takes the heat in value-plus-slope form,
+# the passes continue until the coupling lag of velocity and temperature
+# is below the tolerance, and the closing step gives the parcels what the
+# gas received, so the heat pair of the ledger cancels to the bit.
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [2.0, 0.4, 0.1]
+cells = [100, 20, 1]
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 0.6
+viscosity = 2.9e-5
+specific_heat = 1045.0
+conductivity = 0.045
+
+[gravity]
+vector = [0.0, -9.81, 0.0]
+
+[turbulence]
+model = "k-omega-sst"
+wall_treatment = "automatic"
+
+[initial]
+velocity = [5.0, 0.0, 0.0]
+turbulence_intensity = 0.05
+viscosity_ratio = 10.0
+
+[energy]
+initial = 573.15
+
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [5.0, 0.0, 0.0]
+[boundary.xmin.energy]
+temperature = 573.15
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymin]
+type = "wall"
+[boundary.ymin.energy]
+heat_flux = 0.0
+[boundary.ymax]
+type = "wall"
+[boundary.ymax.energy]
+heat_flux = 0.0
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[time]
+scheme = "bdf2"
+time_step = 0.002
+end_time = 1.0
+
+[spray]
+include = "spray_cooling_injectors.toml"
+wall_mode = "stick"
+write_every = 50
+
+[spray.coupling]
+mode = "two-way"
+passes = "converged"
+tolerance = 1e-3
+# the temperature lag falls by about 7 per pass here (the velocity by about
+# 10): the default of 3 passes ends most steps at 1 to 3e-3, a fourth pass
+# brings them below the tolerance
+max_passes = 4
+
+[solver]
+tolerance = 1e-6
+max_iterations = 300
+
+[verification]
+require_convergence = false
