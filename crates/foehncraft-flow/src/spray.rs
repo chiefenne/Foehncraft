@@ -485,7 +485,8 @@ pub const CSV_UNITS: &str = "step -; time s; parcels -; injected_kg kg; in_flow_
      vapour of a cell, β Δt / (ρ V)), limiter_cells - (cells where the saturation limiter of \
      D253 held vapour back in the last pass), limiter_kg_s kg/s (the vapour held back); breakup \
      (SP6): child_parcels - (child parcels the blobs shed since the start), rt_breakups - \
-     (Rayleigh-Taylor breakups of drops since the start)";
+     (Rayleigh-Taylor breakups of drops since the start); KH-ACT: act_children - (of the child \
+     parcels, those the nozzle turbulence or the cavitation stripped)";
 
 /// The header of `spray.csv`.
 pub fn csv_head(sp: &foehncraft_particles::Spray) -> String {
@@ -516,6 +517,9 @@ pub fn csv_head(sp: &foehncraft_particles::Spray) -> String {
     }
     if sp.config().breakup.on() {
         h.push_str(",child_parcels,rt_breakups");
+        if sp.config().breakup.act() {
+            h.push_str(",act_children");
+        }
     }
     h
 }
@@ -671,6 +675,9 @@ pub fn csv_row(
     }
     if sp.config().breakup.on() {
         extra.push_str(&format!(",{},{}", t.child_parcels, t.rt_breakups));
+        if sp.config().breakup.act() {
+            extra.push_str(&format!(",{}", t.act_children));
+        }
     }
     format!(
         "{step},{:e},{},{:e},{:e},{:e},{:e},{:e},{},{},{}{extra}",

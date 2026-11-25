@@ -172,6 +172,10 @@ pub struct BreakupState {
     pub blob: bool,
     /// Liquid of the parcel when it was injected or shed (kg).
     pub m0: f64,
+    /// A blob: its speed from the hole (m/s), which sets the turbulence it
+    /// brings out of the nozzle (KH-ACT, D307).
+    #[serde(default)]
+    pub u0: f64,
 }
 
 impl Default for BreakupState {
@@ -184,6 +188,7 @@ impl Default for BreakupState {
             kids: 0,
             blob: false,
             m0: 0.0,
+            u0: 0.0,
         }
     }
 }
@@ -364,6 +369,9 @@ struct Outcome {
     rt_breakups: u64,
     /// Child parcels the parcel shed in the step.
     kids_shed: u64,
+    /// Of them, those the nozzle turbulence or the cavitation stripped
+    /// (KH-ACT, D307).
+    act_kids: u64,
 }
 
 impl Outcome {
@@ -444,6 +452,10 @@ pub struct Tally {
     /// Breakup events of drops in place: Rayleigh-Taylor breakups (SP6).
     #[serde(default)]
     pub rt_breakups: u64,
+    /// Child parcels the nozzle turbulence or the cavitation stripped off
+    /// the blobs (KH-ACT, D307); the rest the Kelvin-Helmholtz waves did.
+    #[serde(default)]
+    pub act_children: u64,
 }
 
 /// The parcels released in a step, booked when the pass is committed.
@@ -1032,6 +1044,7 @@ impl Spray {
             self.tally.substeps += o.substeps;
             self.tally.rt_breakups += o.rt_breakups;
             self.tally.child_parcels += o.kids_shed;
+            self.tally.act_children += o.act_kids;
             let m = mass_of(o.p.d, o.p.count, rho_p);
             match o.fate {
                 Fate::Active => kept.push(&o.p),
@@ -1304,6 +1317,7 @@ impl Spray {
                     brk: BreakupState {
                         blob,
                         m0: m_parcel,
+                        u0: if blob { speed } else { 0.0 },
                         ..BreakupState::default()
                     },
                     cell,
@@ -1528,7 +1542,8 @@ impl Spray {
         let bcfg = self.cfg.breakup;
         let mut pending: Option<Pending> = None;
         let mut kids: Vec<(One, f64)> = Vec::new();
-        let mut rt_breakups = 0u64;
+        // Rayleigh-Taylor breakups and KH-ACT children
+        let mut counts = [0u64; 2];
         while left > tiny {
             if let Some(pre) = pending.take() {
                 self.break_up(
@@ -1538,7 +1553,7 @@ impl Spray {
                     t1 - left,
                     left,
                     &mut kids,
-                    &mut rt_breakups,
+                    &mut counts,
                 );
             }
             if p.d <= 0.0 {
@@ -1610,7 +1625,7 @@ impl Spray {
                 // a blob strips at most the share shed_fraction of its
                 // injected liquid in one sub-step, so its children carry
                 // about that share each (D302)
-                if let Some(lim) = self.shed_limit(&p, slip, gs.rho)
+                if let Some(lim) = self.shed_limit(&p, slip, gs.rho, t1 - left - p.born)
                     && sub > lim
                 {
                     sub = lim;
@@ -2038,7 +2053,7 @@ impl Spray {
                 t1 - l,
                 l,
                 &mut kids,
-                &mut rt_breakups,
+                &mut counts,
             );
         }
         p.eddy.left -= last_left - left;
@@ -2088,20 +2103,56 @@ impl Spray {
             vapour: vapour_total,
             path,
             kids,
-            rt_breakups,
+            rt_breakups: counts[0],
             kids_shed,
+            act_kids: counts[1],
         }
     }
 
     /// The longest sub-step in which blob `p` strips no more than the share
     /// `shed_fraction` of its injected liquid (D302), with the slip `u` and
     /// the gas density `rho_g`; `None` when it does not strip.
-    fn shed_limit(&self, p: &One, u: f64, rho_g: f64) -> Option<f64> {
-        let (a, rc, tau) = self.kh_of(p, u, rho_g)?;
+    fn shed_limit(&self, p: &One, u: f64, rho_g: f64, age: f64) -> Option<f64> {
         let rho_l = self.cfg.liquid.density;
-        let rate = p.count * rho_l * 4.0 * std::f64::consts::PI * a * a * (a - rc) / tau;
+        let (a, dadt) = if self.cfg.breakup.act() {
+            let a = 0.5 * p.d * p.brk.kh;
+            let s = self.strip(p, u, rho_g, age, age)?;
+            let c = match s.by {
+                brk::Mechanism::Aerodynamic => 1.0,
+                _ => self.cfg.breakup.c_tcav,
+            };
+            (a, c * s.rate)
+        } else {
+            let (a, rc, tau) = self.kh_of(p, u, rho_g)?;
+            (a, (a - rc) / tau)
+        };
+        let rate = p.count * rho_l * 4.0 * std::f64::consts::PI * a * a * dadt;
         let lim = self.cfg.breakup.shed_fraction * p.brk.m0 / rate;
         (lim.is_finite() && lim > 0.0).then_some(lim)
+    }
+
+    /// The KH-ACT stripping of blob `p` between the ages `t0` and `t1`
+    /// (D307): the strongest of the aerodynamic, turbulence and cavitation
+    /// mechanisms of its hole.
+    fn strip(&self, p: &One, u: f64, rho_g: f64, t0: f64, t1: f64) -> Option<brk::Stripping> {
+        let a = 0.5 * p.d * p.brk.kh;
+        if a.is_nan() || a <= 0.0 {
+            return None;
+        }
+        let l = &self.cfg.liquid;
+        let inj = &self.cfg.injectors[(p.id >> 48) as usize];
+        let kh = self.kh_of(p, u, rho_g).map(|(_, rc, tau)| (rc, tau));
+        let turb = inj.nozzle_turbulence(p.brk.u0);
+        let cav = inj.cavitation(l.density, l.vapour_pressure);
+        brk::act_strip(
+            a,
+            kh,
+            turb.as_ref(),
+            cav.as_ref(),
+            self.cfg.breakup.c_tcav,
+            t0.max(0.0),
+            t1.max(0.0),
+        )
     }
 
     /// The KH radius a of parcel `p` (the radius of a drop; the stripped
@@ -2147,7 +2198,7 @@ impl Spray {
         now: f64,
         left: f64,
         kids: &mut Vec<(One, f64)>,
-        rt_breakups: &mut u64,
+        counts: &mut [u64; 2],
     ) {
         if !(dt > 0.0 && p.d > 0.0) {
             return;
@@ -2201,19 +2252,29 @@ impl Spray {
                             kids: p.brk.kids,
                             ..BreakupState::default()
                         };
-                        *rt_breakups += 1;
+                        counts[0] += 1;
                         return;
                     }
                 }
                 _ => p.brk.rt = 0.0,
             }
         }
-        // Kelvin-Helmholtz (D301)
-        let Some((a, rc, tau)) = self.kh_of(p, pre.u, pre.rho_g) else {
-            return;
+        // Kelvin-Helmholtz (D301); a blob of kh-act also by the nozzle
+        // turbulence and the cavitation (D307)
+        let (an, rc, act) = if b.act() && p.brk.blob {
+            let age = now - p.born;
+            let Some(s) = self.strip(p, pre.u, pre.rho_g, age - dt, age) else {
+                return;
+            };
+            (s.a, s.rc, s.by != brk::Mechanism::Aerodynamic)
+        } else {
+            let Some((a, rc, tau)) = self.kh_of(p, pre.u, pre.rho_g) else {
+                return;
+            };
+            (brk::kh_radius(a, rc, tau, dt), rc, false)
         };
-        let an = brk::kh_radius(a, rc, tau, dt);
         if !p.brk.blob {
+            let a = 0.5 * p.d;
             // a drop strips in place: smaller drops, more of them
             let q = a / an;
             p.count *= q * q * q;
@@ -2228,6 +2289,9 @@ impl Spray {
         let shed = m * (1.0 - k3);
         if shed >= b.shed_fraction * p.brk.m0 && p.brk.kids < MAX_KIDS {
             p.brk.kids += 1;
+            if act {
+                counts[1] += 1;
+            }
             let dc = 2.0 * rc;
             kids.push((
                 One {
@@ -2301,6 +2365,16 @@ impl Spray {
                     let v1 = et * vt - en * vn * nk;
                     *wk += mass * (v1 - *vk);
                     *vk = v1;
+                }
+                if rule.mode == BoundaryMode::Mirror {
+                    // the parcel goes on in the mirror image of the flow,
+                    // and so does its eddy: without it the fluctuation
+                    // drives a small drop back into the plane at once, and
+                    // it bounces in tiny sub-steps for the eddy's life
+                    let un = p.eddy.u[0] * n[0] + p.eddy.u[1] * n[1] + p.eddy.u[2] * n[2];
+                    for (uk, nk) in p.eddy.u.iter_mut().zip(n) {
+                        *uk -= 2.0 * un * nk;
+                    }
                 }
                 // a hair inside the cell, so the next track starts in it
                 let eps = 1e-6 * h;

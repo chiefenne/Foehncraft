@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use foehncraft_kernels::breakup::{Cavitation, NozzleTurbulence};
+
 /// What a parcel does when it reaches a boundary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
@@ -21,7 +23,9 @@ pub enum BoundaryMode {
     /// The parcel leaves the domain (inlets, outlets, open boundaries).
     Escape,
     /// Mirror reflection (symmetry planes and slip walls): the normal
-    /// velocity changes sign, nothing is lost.
+    /// velocity changes sign, nothing is lost; the normal fluctuation of
+    /// the parcel's eddy changes sign with it (the parcel goes on in the
+    /// mirror image of the flow, D308).
     Mirror,
 }
 
@@ -78,6 +82,11 @@ pub struct Liquid {
     /// `[spray.breakup]` (D300).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub viscosity: Option<f64>,
+    /// Vapour pressure at the injection temperature (Pa), constant: the
+    /// collapse time of the cavities of `kh-act` (D307); without it the
+    /// cavities only burst.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vapour_pressure: Option<f64>,
 }
 
 /// The vapour pressure law of a liquid.
@@ -102,6 +111,7 @@ impl Default for Liquid {
             latent_heat_temperature: 298.15,
             surface_tension: None,
             viscosity: None,
+            vapour_pressure: None,
         }
     }
 }
@@ -239,10 +249,41 @@ pub struct Injector {
     /// the whole flow.
     #[serde(default = "one", skip_serializing_if = "is_one")]
     pub flow_share: f64,
+    /// Length of the nozzle hole (m), for the nozzle turbulence of
+    /// `kh-act` (D307): with `discharge_coefficient` the force balance of
+    /// Huh and Gosman (1991) estimates k₀ and ε₀ at the exit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hole_length: Option<f64>,
+    /// Discharge coefficient C_d = C_a C_v of the hole (0 to 1, at most
+    /// `area_contraction`): the mass flow over that of the ideal Bernoulli
+    /// jet, for the nozzle turbulence estimate (D307).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub discharge_coefficient: Option<f64>,
+    /// Loss coefficient K_c of the inlet of the hole, for the nozzle
+    /// turbulence estimate (D307; default 0.5, the textbook value of a
+    /// sharp-edged pipe entrance; a rounded inlet loses less).
+    #[serde(default = "half", skip_serializing_if = "is_half")]
+    pub inlet_loss: f64,
+    /// Turbulent kinetic energy k₀ of the liquid at the hole exit
+    /// (m²/s², with `nozzle_epsilon`), for example from a simulation of
+    /// the nozzle flow; replaces the estimate (D307).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nozzle_k: Option<f64>,
+    /// Its dissipation rate ε₀ (m²/s³, with `nozzle_k`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nozzle_epsilon: Option<f64>,
 }
 
 fn one() -> f64 {
     1.0
+}
+
+fn half() -> f64 {
+    0.5
+}
+
+fn is_half(x: &f64) -> bool {
+    *x == 0.5
 }
 
 /// The linear piece `w` of a rate table at `t`.
@@ -277,6 +318,11 @@ impl Default for Injector {
             area_contraction: 1.0,
             rate: Vec::new(),
             flow_share: 1.0,
+            hole_length: None,
+            discharge_coefficient: None,
+            inlet_loss: 0.5,
+            nozzle_k: None,
+            nozzle_epsilon: None,
         }
     }
 }
@@ -339,6 +385,28 @@ impl Injector {
     pub fn blob_diameter(&self) -> Option<f64> {
         self.hole_diameter.map(|d| self.area_contraction.sqrt() * d)
     }
+
+    /// The turbulence of the liquid at the hole exit for the jet speed `u`
+    /// (D307): `nozzle_k` and `nozzle_epsilon`, else the estimate of Huh
+    /// and Gosman from the hole length and the discharge coefficient.
+    pub fn nozzle_turbulence(&self, u: f64) -> Option<NozzleTurbulence> {
+        if let (Some(k0), Some(eps0)) = (self.nozzle_k, self.nozzle_epsilon) {
+            return Some(NozzleTurbulence { k0, eps0 });
+        }
+        NozzleTurbulence::huh_gosman(
+            u,
+            self.hole_length?,
+            self.hole_diameter?,
+            self.discharge_coefficient?,
+            self.inlet_loss,
+        )
+    }
+
+    /// The cavity of the hole (D307) for a liquid of density `rho_l` and
+    /// vapour pressure `p_v`, when the jet is contracted (C_a < 1).
+    pub fn cavitation(&self, rho_l: f64, p_v: Option<f64>) -> Option<Cavitation> {
+        Cavitation::of(0.5 * self.hole_diameter?, self.area_contraction, rho_l, p_v)
+    }
 }
 
 /// The breakup model of the drops (SP6, D300).
@@ -353,6 +421,11 @@ pub enum BreakupModel {
     /// breakup length (Reitz 1987; Patterson and Reitz 1998; Beale and
     /// Reitz 1999), D301, D302.
     KhRt,
+    /// KH-RT whose blobs are also stripped by the turbulence and the
+    /// cavitation the nozzle leaves in the liquid (Som and Aggarwal 2010,
+    /// D307): the mechanism with the largest ratio of length to time scale
+    /// strips the blob; needs the nozzle turbulence of each hole (D307).
+    KhAct,
 }
 
 /// The drag law of the drops (D303).
@@ -374,7 +447,7 @@ pub enum DragLaw {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct Breakup {
-    /// `none` (default) or `kh-rt`.
+    /// `none` (default), `kh-rt` or `kh-act`.
     pub model: BreakupModel,
     /// `sphere` (default) or `dynamic`.
     pub drag: DragLaw,
@@ -397,6 +470,9 @@ pub struct Breakup {
     /// this share of its injected liquid (default 0.03, Patterson and Reitz
     /// 1998).
     pub shed_fraction: f64,
+    /// `kh-act`: the rate constant C_T,CAV of the turbulence and cavitation
+    /// stripping, da/dt = −C_T,CAV L/τ (default 1, D307).
+    pub c_tcav: f64,
 }
 
 impl Default for Breakup {
@@ -410,6 +486,7 @@ impl Default for Breakup {
             c_tau: 1.0,
             breakup_length: None,
             shed_fraction: 0.03,
+            c_tcav: 1.0,
         }
     }
 }
@@ -418,6 +495,12 @@ impl Breakup {
     /// True when the drops break up.
     pub fn on(&self) -> bool {
         self.model != BreakupModel::None
+    }
+
+    /// True when the nozzle turbulence and cavitation strip the blobs
+    /// (KH-ACT, D307).
+    pub fn act(&self) -> bool {
+        self.model == BreakupModel::KhAct
     }
 
     /// True when the parcels carry the TAB distortion (dynamic drag).
@@ -729,6 +812,78 @@ impl SpraySection {
         self.validate()
     }
 
+    /// The nozzle keys of the KH-ACT breakup of injector `i` named `n`
+    /// (D307).
+    fn validate_nozzle(&self, i: &Injector, n: &str) -> Result<()> {
+        let pos = |x: f64| x.is_finite() && x > 0.0;
+        for (k, v) in [
+            ("hole_length", i.hole_length),
+            ("nozzle_k", i.nozzle_k),
+            ("nozzle_epsilon", i.nozzle_epsilon),
+        ] {
+            if let Some(v) = v
+                && !pos(v)
+            {
+                bail!("[[spray.injector]] {n}: {k} must be positive and finite");
+            }
+        }
+        if let Some(cd) = i.discharge_coefficient
+            && !(cd > 0.0 && cd <= i.area_contraction)
+        {
+            bail!(
+                "[[spray.injector]] {n}: discharge_coefficient must be in (0, area_contraction] \
+                 (C_d = C_a C_v with C_v at most 1; area_contraction is {})",
+                i.area_contraction
+            );
+        }
+        if !(i.inlet_loss.is_finite() && i.inlet_loss >= 0.0) {
+            bail!("[[spray.injector]] {n}: inlet_loss must be zero or positive");
+        }
+        if i.nozzle_k.is_some() != i.nozzle_epsilon.is_some() {
+            bail!("[[spray.injector]] {n}: give nozzle_k and nozzle_epsilon together");
+        }
+        let given = i.nozzle_k.is_some();
+        let estimate = i.hole_length.is_some() || i.discharge_coefficient.is_some();
+        if given && estimate {
+            bail!(
+                "[[spray.injector]] {n}: give either nozzle_k and nozzle_epsilon or \
+                 hole_length and discharge_coefficient, not both"
+            );
+        }
+        if estimate && (i.hole_length.is_none() || i.discharge_coefficient.is_none()) {
+            bail!(
+                "[[spray.injector]] {n}: the nozzle turbulence estimate needs both hole_length \
+                 and discharge_coefficient"
+            );
+        }
+        if (given || estimate) && i.hole_diameter.is_none() {
+            bail!("[[spray.injector]] {n}: the nozzle turbulence needs hole_diameter");
+        }
+        // the nozzle describes the hole, whatever the model: kh-rt leaves
+        // its turbulence unused
+        if !self.breakup.act() {
+            return Ok(());
+        }
+        if i.hole_diameter.is_some() && !given && !estimate {
+            bail!(
+                "[[spray.injector]] {n}: kh-act needs the turbulence of the liquid at the hole \
+                 exit: hole_length and discharge_coefficient (the estimate of Huh and Gosman), \
+                 or nozzle_k and nozzle_epsilon"
+            );
+        }
+        if let (Some(cd), true) = (i.discharge_coefficient, estimate)
+            && 1.0 / (cd * cd) - i.inlet_loss - 1.0 <= 0.0
+        {
+            bail!(
+                "[[spray.injector]] {n}: with discharge_coefficient {cd} and inlet_loss {} the \
+                 losses leave no wall friction for the nozzle turbulence estimate \
+                 (1/C_d² − K_c − 1 must be positive); give nozzle_k and nozzle_epsilon",
+                i.inlet_loss
+            );
+        }
+        Ok(())
+    }
+
     /// Checks the values.
     pub fn validate(&self) -> Result<()> {
         let pos = |x: f64| x.is_finite() && x > 0.0;
@@ -774,6 +929,7 @@ impl SpraySection {
             ("b1", br.b1),
             ("c_rt", br.c_rt),
             ("c_tau", br.c_tau),
+            ("c_tcav", br.c_tcav),
         ] {
             if !pos(v) {
                 bail!("[spray.breakup] {k} must be positive and finite");
@@ -815,6 +971,7 @@ impl SpraySection {
         for (k, v) in [
             ("surface_tension", self.liquid.surface_tension),
             ("viscosity", self.liquid.viscosity),
+            ("vapour_pressure", self.liquid.vapour_pressure),
         ] {
             if let Some(v) = v
                 && !pos(v)
@@ -909,6 +1066,7 @@ impl SpraySection {
             if i.area_contraction != 1.0 && i.hole_diameter.is_none() {
                 bail!("[[spray.injector]] {n}: area_contraction needs hole_diameter");
             }
+            self.validate_nozzle(i, n)?;
             if !i.rate.is_empty() {
                 if i.mass_flow != 0.0 {
                     bail!("[[spray.injector]] {n}: give either mass_flow or rate, not both");

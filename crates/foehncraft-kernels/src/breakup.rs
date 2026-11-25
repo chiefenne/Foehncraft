@@ -223,6 +223,245 @@ pub fn dynamic_drag(y: f64) -> f64 {
     1.0 + DYNAMIC_DRAG_SLOPE * y
 }
 
+/// C_μ of the standard k-ε model (Launder and Spalding 1974): the integral
+/// scales of the nozzle turbulence (KH-ACT, D307).
+pub const C_MU: f64 = 0.09;
+/// C_ε2 of the standard k-ε model: the decay of the nozzle turbulence.
+pub const C_EPS2: f64 = 1.92;
+/// The constant of the Rayleigh (1917) collapse time of an empty cavity,
+/// τ = 0.9145 R (ρ_l/p)^½.
+pub const RAYLEIGH_COLLAPSE: f64 = 0.9145;
+/// K_ε of the nozzle dissipation estimate of Huh and Gosman (1991), as given
+/// in eq. 1.23 of Magnotti's thesis (Georgia Tech 2017, OSTI 1785739).
+pub const HUH_GOSMAN_K_EPS: f64 = 0.27;
+
+/// The turbulence the liquid brings out of the nozzle hole (KH-ACT, Som and
+/// Aggarwal 2010, D307): k₀ and ε₀ at the exit. A parcel carries it without
+/// production, convection or diffusion, so it decays as in the standard k-ε
+/// model, dk/dt = −ε, dε/dt = −C_ε2 ε²/k, whose solution is exact:
+///
+/// k(t) = k₀ (1 + t/T)^(−1/(C_ε2 − 1)), ε = ε₀ (k/k₀)^C_ε2,
+/// T = k₀/((C_ε2 − 1) ε₀).
+///
+/// The integral length and time scales L_T = C_μ k^1.5/ε and
+/// τ_T = C_μ k/ε follow as L_T = L_T0 (1 + t/T)^((C_ε2 − 1.5)/(C_ε2 − 1))
+/// (exponent 0.457) and τ_T = τ_T0 + C_μ (C_ε2 − 1) t (slope 0.0828), and
+/// their ratio, the speed at which the turbulence strips a blob, is √k.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NozzleTurbulence {
+    /// k₀ (m²/s²).
+    pub k0: f64,
+    /// ε₀ (m²/s³).
+    pub eps0: f64,
+}
+
+impl NozzleTurbulence {
+    /// The force-balance estimate of Huh and Gosman (1991): the turbulent
+    /// stress at the wall of the hole carries the pressure lost to friction,
+    /// k₀ = U²/(8 L/d) B and ε₀ = K_ε U³/(2 L) B with
+    /// B = 1/C_d² − K_c − (1 − s²), for the jet speed `u`, the hole length
+    /// `l` and diameter `d`, the discharge coefficient `cd`, the inlet loss
+    /// `kc` and the area ratio s → 0 of a hole fed from a much larger sac.
+    /// `None` when the losses leave no friction (B ≤ 0).
+    pub fn huh_gosman(u: f64, l: f64, d: f64, cd: f64, kc: f64) -> Option<Self> {
+        let b = 1.0 / (cd * cd) - kc - 1.0;
+        if !(b > 0.0 && l > 0.0 && d > 0.0 && u > 0.0) {
+            return None;
+        }
+        Some(Self {
+            k0: u * u / (8.0 * l / d) * b,
+            eps0: HUH_GOSMAN_K_EPS * u * u * u / (2.0 * l) * b,
+        })
+    }
+
+    /// The decay time T = k₀/((C_ε2 − 1) ε₀) (s).
+    pub fn decay_time(&self) -> f64 {
+        self.k0 / ((C_EPS2 - 1.0) * self.eps0)
+    }
+
+    /// k at the age `t` (m²/s²).
+    pub fn k(&self, t: f64) -> f64 {
+        self.k0 * math::pow(1.0 + t / self.decay_time(), -1.0 / (C_EPS2 - 1.0))
+    }
+
+    /// ε at the age `t` (m²/s³).
+    pub fn eps(&self, t: f64) -> f64 {
+        self.eps0 * math::pow(self.k(t) / self.k0, C_EPS2)
+    }
+
+    /// The integral length scale L_T = C_μ k^1.5/ε at the age `t` (m).
+    pub fn length(&self, t: f64) -> f64 {
+        let l0 = C_MU * self.k0 * math::sqrt(self.k0) / self.eps0;
+        l0 * math::pow(1.0 + t / self.decay_time(), (C_EPS2 - 1.5) / (C_EPS2 - 1.0))
+    }
+
+    /// The integral time scale τ_T = C_μ k/ε at the age `t` (s).
+    pub fn time(&self, t: f64) -> f64 {
+        C_MU * self.k0 / self.eps0 + C_MU * (C_EPS2 - 1.0) * t
+    }
+
+    /// ∫ √k dt from the age `t0` to `t1` (m), exact: the radius the
+    /// turbulence strips off a blob at the rate L_T/τ_T = √k.
+    pub fn sqrt_k_integral(&self, t0: f64, t1: f64) -> f64 {
+        let tt = self.decay_time();
+        // √k = √k₀ (1 + t/T)^(−p), p = 1/(2 (C_ε2 − 1))
+        let q = 1.0 - 0.5 / (C_EPS2 - 1.0);
+        math::sqrt(self.k0) * tt / q * (math::pow(1.0 + t1 / tt, q) - math::pow(1.0 + t0 / tt, q))
+    }
+}
+
+/// The cavitation scales of a hole (KH-ACT, Som and Aggarwal 2010, D307):
+/// the vapour in the hole is a cavity of radius R_CAV = r_hole (1 − C_a)^½
+/// that leaves the nozzle and either collapses, in the Rayleigh time
+/// 0.9145 R_CAV (ρ_l/p_v)^½, or bursts at the jet surface, after travelling
+/// r_hole − R_CAV at the turbulent speed (2k/3)^½; the faster of the two
+/// sets τ_CAV, and L_CAV = R_CAV.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Cavitation {
+    /// R_CAV (m).
+    pub radius: f64,
+    /// The collapse time (s; infinite without a vapour pressure).
+    pub collapse: f64,
+    /// r_hole − R_CAV (m).
+    pub gap: f64,
+}
+
+impl Cavitation {
+    /// The cavity of a hole of radius `r_hole` and area contraction `ca`
+    /// with the vapour pressure `p_v` (Pa; `None`: no collapse) of the
+    /// liquid of density `rho_l`; `None` without contraction.
+    pub fn of(r_hole: f64, ca: f64, rho_l: f64, p_v: Option<f64>) -> Option<Self> {
+        if !(ca < 1.0 && ca > 0.0 && r_hole > 0.0) {
+            return None;
+        }
+        let radius = r_hole * math::sqrt(1.0 - ca);
+        let collapse = match p_v {
+            Some(p) if p > 0.0 => RAYLEIGH_COLLAPSE * radius * math::sqrt(rho_l / p),
+            _ => f64::INFINITY,
+        };
+        Some(Self {
+            radius,
+            collapse,
+            gap: r_hole - radius,
+        })
+    }
+
+    /// The burst time with the turbulence `k` (m²/s²) of the liquid (s).
+    pub fn burst(&self, k: f64) -> f64 {
+        self.gap / math::sqrt(2.0 * k / 3.0)
+    }
+
+    /// τ_CAV = min(collapse, burst) (s).
+    pub fn time(&self, k: f64) -> f64 {
+        let b = self.burst(k);
+        if b < self.collapse { b } else { self.collapse }
+    }
+}
+
+/// The mechanism that strips a blob over a sub-step (KH-ACT, D307).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Mechanism {
+    /// Kelvin-Helmholtz waves (aerodynamic).
+    Aerodynamic,
+    /// Nozzle turbulence.
+    Turbulence,
+    /// Cavitation, the cavity collapsing.
+    Collapse,
+    /// Cavitation, the cavity bursting at the surface.
+    Burst,
+}
+
+/// The stripping of a blob of radius `a` over the ages `t0` to `t1` by
+/// the mechanism whose ratio L/τ is the largest at `t0` (Som and Aggarwal
+/// 2010, eq. 18): the aerodynamic one (`kh`: its child radius r_c and time
+/// τ_KH, the ratio (a − r_c)/τ_KH), the turbulence (L_T/τ_T = √k) or the
+/// cavitation (R_CAV/τ_CAV). The turbulence and the cavitation take the
+/// radius down at C_T,CAV L/τ (eq. 19), exactly over the sub-step with
+/// the decaying k, to no less than their child radius L_T or R_CAV; a
+/// mechanism whose child radius is not below `a` does not act.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Stripping {
+    /// The mechanism.
+    pub by: Mechanism,
+    /// The radius at the end (m).
+    pub a: f64,
+    /// The radius of the child drops (m).
+    pub rc: f64,
+    /// The rate L/τ that selected it (m/s).
+    pub rate: f64,
+}
+
+/// One sub-step of KH-ACT stripping of a blob of radius `a` (module
+/// documentation of [`Stripping`]); `None` when no mechanism acts.
+pub fn act_strip(
+    a: f64,
+    kh: Option<(f64, f64)>,
+    turb: Option<&NozzleTurbulence>,
+    cav: Option<&Cavitation>,
+    c_tcav: f64,
+    t0: f64,
+    t1: f64,
+) -> Option<Stripping> {
+    let mut best: Option<Stripping> = None;
+    let mut take = |s: Stripping| {
+        if best.is_none_or(|b| s.rate > b.rate) {
+            best = Some(s);
+        }
+    };
+    if let Some((rc, tau)) = kh
+        && rc < a
+        && tau > 0.0
+    {
+        take(Stripping {
+            by: Mechanism::Aerodynamic,
+            a: kh_radius(a, rc, tau, t1 - t0),
+            rc,
+            rate: (a - rc) / tau,
+        });
+    }
+    let k = turb.map_or(0.0, |t| t.k(t0));
+    if let Some(t) = turb {
+        let lt = t.length(t0);
+        if lt < a && k > 0.0 {
+            let da = c_tcav * t.sqrt_k_integral(t0, t1);
+            take(Stripping {
+                by: Mechanism::Turbulence,
+                a: if a - da > lt { a - da } else { lt },
+                rc: lt,
+                rate: math::sqrt(k),
+            });
+        }
+    }
+    if let Some(c) = cav
+        && c.radius < a
+    {
+        let burst = if k > 0.0 { c.burst(k) } else { f64::INFINITY };
+        let strip = match turb {
+            // R_CAV/τ_burst ∝ √k: exact with the decay
+            Some(t) if burst < c.collapse => Some((
+                Mechanism::Burst,
+                c_tcav * c.radius * math::sqrt(2.0 / 3.0) / c.gap * t.sqrt_k_integral(t0, t1),
+                burst,
+            )),
+            _ if c.collapse.is_finite() => Some((
+                Mechanism::Collapse,
+                c_tcav * c.radius / c.collapse * (t1 - t0),
+                c.collapse,
+            )),
+            _ => None,
+        };
+        if let Some((by, da, tau)) = strip {
+            take(Stripping {
+                by,
+                a: if a - da > c.radius { a - da } else { c.radius },
+                rc: c.radius,
+                rate: c.radius / tau,
+            });
+        }
+    }
+    best
+}
+
 #[cfg(test)]
 mod tests {
     extern crate std;
@@ -491,5 +730,133 @@ mod tests {
         assert_eq!(dynamic_drag(0.0), 1.0);
         assert!((dynamic_drag(0.5) - 2.316).abs() < 1e-12);
         assert!((dynamic_drag(7.0) - 3.632).abs() < 1e-12);
+    }
+
+    /// The decay of the nozzle turbulence (D307) is the exact solution of
+    /// the k-ε equations without production: RK4 of dk/dt = −ε,
+    /// dε/dt = −C_ε2 ε²/k agrees, and so do the scales and the integral
+    /// of √k (Simpson's rule on a fine grid).
+    #[test]
+    fn nozzle_turbulence_decays_as_the_k_eps_equations() {
+        let t = NozzleTurbulence {
+            k0: 400.0,
+            eps0: 8e8,
+        };
+        let (mut k, mut e) = (t.k0, t.eps0);
+        let f = |k: f64, e: f64| (-e, -C_EPS2 * e * e / k);
+        let end = 40.0 * t.decay_time();
+        let n = 200_000;
+        let h = end / n as f64;
+        for _ in 0..n {
+            let (a1, b1) = f(k, e);
+            let (a2, b2) = f(k + 0.5 * h * a1, e + 0.5 * h * b1);
+            let (a3, b3) = f(k + 0.5 * h * a2, e + 0.5 * h * b2);
+            let (a4, b4) = f(k + h * a3, e + h * b3);
+            k += h / 6.0 * (a1 + 2.0 * a2 + 2.0 * a3 + a4);
+            e += h / 6.0 * (b1 + 2.0 * b2 + 2.0 * b3 + b4);
+        }
+        assert!((t.k(end) - k).abs() < 1e-9 * k, "k {} vs {k}", t.k(end));
+        assert!(
+            (t.eps(end) - e).abs() < 1e-9 * e,
+            "eps {} vs {e}",
+            t.eps(end)
+        );
+        let lt = C_MU * k.powf(1.5) / e;
+        assert!((t.length(end) - lt).abs() < 1e-9 * lt);
+        let tt = C_MU * k / e;
+        assert!((t.time(end) - tt).abs() < 1e-9 * tt);
+        // the slope of τ_T and the exponent of L_T of the papers
+        assert!((C_MU * (C_EPS2 - 1.0) - 0.0828).abs() < 1e-12);
+        assert!(((C_EPS2 - 1.5) / (C_EPS2 - 1.0) - 0.457).abs() < 5e-4);
+        // ∫√k dt by Simpson on [0.3 T, 30 T]
+        let (t0, t1) = (0.3 * t.decay_time(), 30.0 * t.decay_time());
+        let m = 20_000;
+        let w = (t1 - t0) / m as f64;
+        let mut q = t.k(t0).sqrt() + t.k(t1).sqrt();
+        for j in 1..m {
+            q += if j % 2 == 1 { 4.0 } else { 2.0 } * t.k(t0 + j as f64 * w).sqrt();
+        }
+        q *= w / 3.0;
+        let exact = t.sqrt_k_integral(t0, t1);
+        assert!((exact - q).abs() < 1e-9 * q, "{exact} vs {q}");
+        // L_T/τ_T = √k
+        let s = 3.0 * t.decay_time();
+        assert!((t.length(s) / t.time(s) - t.k(s).sqrt()).abs() < 1e-12 * t.k(s).sqrt());
+    }
+
+    /// The force balance of Huh and Gosman by hand: U = 350 m/s, L/d = 4,
+    /// d = 0.15 mm, C_d = 0.7, K_c = 0.5.
+    #[test]
+    fn huh_gosman_estimate() {
+        let b = 1.0 / 0.49 - 0.5 - 1.0;
+        let t = NozzleTurbulence::huh_gosman(350.0, 0.6e-3, 0.15e-3, 0.7, 0.5).unwrap();
+        assert!((t.k0 - 350.0 * 350.0 / 32.0 * b).abs() < 1e-9 * t.k0);
+        assert!((t.eps0 - 0.27 * 350f64.powi(3) / 1.2e-3 * b).abs() < 1e-9 * t.eps0);
+        // the losses must leave friction
+        assert!(NozzleTurbulence::huh_gosman(350.0, 0.6e-3, 0.15e-3, 0.9, 0.5).is_none());
+    }
+
+    #[test]
+    fn cavitation_scales() {
+        let c = Cavitation::of(75e-6, 0.84, 700.0, Some(7e4)).unwrap();
+        assert!((c.radius - 75e-6 * 0.4).abs() < 1e-18);
+        assert!((c.collapse - 0.9145 * 30e-6 * 0.1).abs() < 1e-15);
+        assert!((c.burst(600.0) - 45e-6 / 20.0).abs() < 1e-15);
+        assert_eq!(c.time(600.0), c.burst(600.0));
+        assert_eq!(c.time(1.0), c.collapse);
+        assert!(Cavitation::of(75e-6, 1.0, 700.0, None).is_none());
+        assert!(
+            Cavitation::of(75e-6, 0.84, 700.0, None)
+                .unwrap()
+                .collapse
+                .is_infinite()
+        );
+    }
+
+    /// The largest ratio L/τ wins, the radius never falls below the child
+    /// radius, and a mechanism whose children would not be smaller than
+    /// the blob does not act.
+    #[test]
+    fn act_strip_picks_the_strongest() {
+        let t = NozzleTurbulence {
+            k0: 400.0,
+            eps0: 8e8,
+        };
+        let c = Cavitation::of(75e-6, 0.84, 700.0, None).unwrap();
+        let a = 60e-6;
+        // young: the turbulence (√k = 20 m/s) beats KH (1 m/s) and the
+        // burst (R/τ = 30e-6 √(2k/3)/45e-6 = 10.9 m/s)
+        let s = act_strip(a, Some((1e-6, 59e-6)), Some(&t), Some(&c), 1.0, 0.0, 1e-8).unwrap();
+        assert_eq!(s.by, Mechanism::Turbulence);
+        assert!((s.rate - 20.0).abs() < 1e-12);
+        assert!((a - s.a - t.sqrt_k_integral(0.0, 1e-8)).abs() < 1e-15);
+        assert_eq!(s.rc, t.length(0.0));
+        // old: the decayed turbulence loses to KH
+        let old = 1e3 * t.decay_time();
+        let s = act_strip(
+            a,
+            Some((1e-6, 59e-6)),
+            Some(&t),
+            Some(&c),
+            1.0,
+            old,
+            old + 1e-8,
+        )
+        .unwrap();
+        assert_eq!(s.by, Mechanism::Aerodynamic);
+        // without turbulence the cavity can only collapse, and without a
+        // vapour pressure it does not
+        let s = act_strip(a, Some((1e-6, 1e-3)), None, Some(&c), 1.0, 0.0, 1e-6).unwrap();
+        assert_eq!(s.by, Mechanism::Aerodynamic);
+        let cp = Cavitation::of(75e-6, 0.84, 700.0, Some(7e4)).unwrap();
+        let s = act_strip(a, Some((1e-6, 1e-3)), None, Some(&cp), 1.0, 0.0, 1e-4).unwrap();
+        assert_eq!(s.by, Mechanism::Collapse);
+        assert_eq!(s.a, cp.radius, "a long step stops at the child radius");
+        // a blob no larger than the cavity is not stripped by it
+        assert!(act_strip(25e-6, None, None, Some(&cp), 1.0, 0.0, 1e-6).is_none());
+        // C_T,CAV scales the rate of the turbulence
+        let s1 = act_strip(a, None, Some(&t), None, 1.0, 0.0, 1e-9).unwrap();
+        let s2 = act_strip(a, None, Some(&t), None, 0.5, 0.0, 1e-9).unwrap();
+        assert!(((a - s2.a) - 0.5 * (a - s1.a)).abs() < 1e-18);
     }
 }

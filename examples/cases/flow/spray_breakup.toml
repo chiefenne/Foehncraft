@@ -1,5 +1,5 @@
 # A fuel spray that breaks up in dense still gas (Lagrangian sprays, SP6,
-# D300 to D306): KH-RT breakup of injected blobs, TAB distortion with the
+# D300 to D308): KH-ACT breakup of injected blobs, TAB distortion with the
 # dynamic drag, two-way coupling, against the penetration correlation of
 # Hiroyasu and Arai (1990).
 #
@@ -8,12 +8,18 @@
 # Nitrogen at rest at 15 kg/m³ (about 13 bar, 300 K), a quarter of the
 # chamber about the spray axis (symmetry planes y = 0 and z = 0). One hole
 # of 0.15 mm injects a diesel-like fuel at 60 MPa for 1.5 ms as blobs of
-# √C_a d_hole (Reitz and Diwakar 1987). The Kelvin-Helmholtz waves strip
-# child parcels of small drops off the blobs (Reitz 1987), the
-# Rayleigh-Taylor waves break the drops beyond the breakup length (Beale and
-# Reitz 1999), and every parcel carries the TAB distortion that raises its
-# drag towards that of a disc (Liu, Mather and Reitz 1993). The drag of the
-# drops drives the gas (two-way coupling), which carries the spray tip.
+# √C_a d_hole (Reitz and Diwakar 1987). Near the nozzle the turbulence the
+# liquid brings out of the hole strips the blobs into child parcels, later
+# the Kelvin-Helmholtz waves do, whichever is faster (KH-ACT, Som and
+# Aggarwal 2010; the hole's turbulence from the force balance of Huh and
+# Gosman 1991). The Rayleigh-Taylor waves break the drops beyond the
+# breakup length (Beale and Reitz 1999), and every parcel carries the TAB
+# distortion that raises its drag towards that of a disc (Liu, Mather and
+# Reitz 1993). The drag of the drops drives the gas (two-way coupling),
+# whose k-ε turbulence spreads the jet and disperses the drops.
+#
+# `--set spray.breakup.model=kh-rt` runs the same spray without the nozzle
+# turbulence and cavitation, for comparison.
 
 case_format = "0.7"
 
@@ -33,9 +39,12 @@ viscosity = 1.8e-5
 pressure_values = "gauge"
 operating_pressure = 1.3e6
 
+# k-ε: in the still chamber the SST model does not build up turbulence in
+# the thin gas jet within the injection (k stays near its start value), so
+# the jet would not spread
 [turbulence]
-model = "k-omega-sst"
-wall_treatment = "automatic"
+model = "k-epsilon"
+wall_treatment = "scalable"
 
 [initial]
 velocity = [0.0, 0.0, 0.0]
@@ -61,7 +70,7 @@ total_pressure = 0.0
 [time]
 scheme = "bdf2"
 time_step = 2e-6
-end_time = 2e-3
+end_time = 1e-3
 
 [spray]
 include = "spray_breakup_injectors.toml"
@@ -77,7 +86,7 @@ tolerance = 1e-3
 max_passes = 3
 
 [spray.breakup]
-model = "kh-rt"
+model = "kh-act"
 drag = "dynamic"
 b0 = 0.61
 b1 = 10.0

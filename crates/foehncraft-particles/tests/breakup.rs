@@ -1,4 +1,4 @@
-//! Breakup of the drops (SP6, D300 to D306) in a gas at rest that the test
+//! Breakup of the drops (SP6, D300 to D307) in a gas at rest that the test
 //! holds:
 //!
 //! - blobs shed child parcels whose drops have the KH child size, and the
@@ -11,7 +11,10 @@
 //! - Rayleigh-Taylor breakup acts beyond the breakup length only;
 //! - the dynamic drag of distorted drops slows the spray down;
 //! - a rate table gives each parcel its exact share of the liquid and the
-//!   speed ṁ/(ρ_l C_a A_hole) (D306).
+//!   speed ṁ/(ρ_l C_a A_hole) (D306);
+//! - KH-ACT (D307): the nozzle turbulence strips a young blob at
+//!   C_T,CAV √k exactly, the liquid and the bits are kept, and the
+//!   nozzle keys are checked.
 
 use foehncraft_kernels::breakup as brk;
 use foehncraft_mesh::Geometry;
@@ -394,4 +397,156 @@ fn breakup_needs_the_liquid_properties() {
     c.injectors[0].rate = vec![[0.0, 1e-3], [1e-4, 1e-3]];
     let e = c.validate().unwrap_err().to_string();
     assert!(e.contains("either mass_flow or rate"), "{e}");
+}
+
+/// The configuration of `cfg` with KH-ACT (D307) and the nozzle
+/// turbulence estimated from the hole (Huh and Gosman), with cavities.
+fn act_cfg() -> SpraySection {
+    let mut c = cfg(RHO_L);
+    c.breakup.model = BreakupModel::KhAct;
+    c.liquid.vapour_pressure = Some(5e4);
+    let inj = &mut c.injectors[0];
+    inj.hole_length = Some(4e-4);
+    inj.discharge_coefficient = Some(0.7);
+    c
+}
+
+/// KH-ACT (D307): a young blob is stripped by the nozzle turbulence at
+/// C_T,CAV √k = C_T,CAV L_T/τ_T, and the sum of the exact sub-step
+/// integrals is the exact integral, whatever the sub-steps: the stripped
+/// radius is a₀ − C_T,CAV ∫₀^age √k dt to round-off (Kelvin-Helmholtz made
+/// slow by a large B₁, no cavity at C_a = 1, no Rayleigh-Taylor).
+#[test]
+fn kh_act_turbulence_strips_at_the_root_of_k() {
+    let mut c = cfg(RHO_L);
+    c.breakup.model = BreakupModel::KhAct;
+    c.breakup.b1 = 1e6;
+    c.breakup.c_tcav = 0.7;
+    c.breakup.breakup_length = Some(1e6);
+    let inj = &mut c.injectors[0];
+    inj.speed = 150.0;
+    inj.half_angle = 0.0;
+    inj.parcels_per_second = 1e6;
+    inj.end = Some(1e-6); // one parcel
+    inj.area_contraction = 1.0;
+    inj.nozzle_k = Some(25.0);
+    inj.nozzle_epsilon = Some(1e7);
+    c.validate().unwrap();
+    let turb = brk::NozzleTurbulence {
+        k0: 25.0,
+        eps0: 1e7,
+    };
+    let (m, geo) = channel();
+    let loc = Locator::new(&m, &geo);
+    let env = Env {
+        mesh: &m,
+        geo: &geo,
+        loc: &loc,
+    };
+    let mut sp = spray(&env, &c);
+    let dt = 1e-6;
+    let a0 = 0.5e-4;
+    let mut checked = 0;
+    for n in 0..40 {
+        sp.advance(&env, &Still(RHO_G), n as f64 * dt, dt).unwrap();
+        let t = (n + 1) as f64 * dt;
+        let p = &sp.parcels;
+        let Some(i) = (0..p.len()).find(|&i| p.id[i] & (1 << 47) == 0 && p.brk[i].blob) else {
+            break;
+        };
+        let a = 0.5 * p.d[i] * p.brk[i].kh;
+        let age = t - p.born[i];
+        if a <= 1.01 * turb.length(age) {
+            break;
+        }
+        let exact = a0 - 0.7 * turb.sqrt_k_integral(0.0, age);
+        assert!(
+            (a - exact).abs() < 1e-12 * a0,
+            "age {age}: radius {a} vs {exact}"
+        );
+        checked += 1;
+    }
+    assert!(checked > 5, "only {checked} steps checked");
+    assert!(sp.tally.act_children > 0);
+    assert_eq!(sp.tally.act_children, sp.tally.child_parcels);
+    // every child has the integral length scale of the turbulence at the
+    // age of its blob when it was shed: at least L_T0, at most the blob
+    let p = &sp.parcels;
+    for i in (0..p.len()).filter(|&i| p.id[i] & (1 << 47) != 0) {
+        assert!(p.d[i] >= 2.0 * turb.length(0.0) * (1.0 - 1e-12));
+        assert!(p.d[i] < 2.0 * a0);
+    }
+}
+
+/// KH-ACT keeps the liquid to round-off and gives the same bits on any
+/// number of threads and parcel order (D247), with the turbulence of the
+/// Huh-Gosman estimate and the cavities.
+#[test]
+fn kh_act_keeps_the_liquid_and_the_bits() {
+    let c = act_cfg();
+    c.validate().unwrap();
+    let (a, ra) = run(1, false, 30, &c);
+    let (b, rb) = run(4, true, 30, &c);
+    assert!(a.tally.act_children > 0);
+    assert!(a.tally.child_parcels >= a.tally.act_children);
+    assert_eq!(a.tally.act_children, b.tally.act_children);
+    assert_eq!(ra.len(), rb.len());
+    for (x, y) in ra.iter().zip(&rb) {
+        assert_eq!(x.0, y.0);
+        for k in 0..3 {
+            assert_eq!(x.1[k].to_bits(), y.1[k].to_bits());
+            assert_eq!(x.2[k].to_bits(), y.2[k].to_bits());
+        }
+        assert_eq!(x.3.to_bits(), y.3.to_bits());
+        assert_eq!(x.4.to_bits(), y.4.to_bits());
+    }
+    let p = &a.parcels;
+    let out: f64 = a.tally.escaped_mass.iter().sum::<f64>() + a.tally.lost_mass;
+    let rel = (mass(p, RHO_L) + out - a.tally.injected_mass).abs() / a.tally.injected_mass;
+    assert!(rel < 1e-13, "liquid off by {rel}");
+    // the turbulence atomises the blobs faster than the KH waves alone
+    let (r, _) = run(1, false, 30, &cfg(RHO_L));
+    let blob_liquid = |s: &Spray| -> f64 {
+        let p = &s.parcels;
+        (0..p.len())
+            .filter(|&i| p.brk[i].blob)
+            .map(|i| p.count[i] * RHO_L * std::f64::consts::PI / 6.0 * p.d[i].powi(3))
+            .sum()
+    };
+    assert!(
+        blob_liquid(&a) < 0.8 * blob_liquid(&r),
+        "blobs keep {} with KH-ACT, {} with KH-RT",
+        blob_liquid(&a),
+        blob_liquid(&r)
+    );
+}
+
+#[test]
+fn kh_act_needs_the_nozzle_turbulence() {
+    let mut c = act_cfg();
+    c.injectors[0].hole_length = None;
+    c.injectors[0].discharge_coefficient = None;
+    let e = c.validate().unwrap_err().to_string();
+    assert!(e.contains("turbulence of the liquid at the hole"), "{e}");
+    let mut c = act_cfg();
+    c.injectors[0].discharge_coefficient = None;
+    let e = c.validate().unwrap_err().to_string();
+    assert!(e.contains("needs both hole_length"), "{e}");
+    let mut c = act_cfg();
+    c.injectors[0].discharge_coefficient = Some(0.85);
+    let e = c.validate().unwrap_err().to_string();
+    assert!(e.contains("area_contraction"), "{e}");
+    let mut c = act_cfg();
+    c.injectors[0].area_contraction = 0.95;
+    c.injectors[0].discharge_coefficient = Some(0.9);
+    let e = c.validate().unwrap_err().to_string();
+    assert!(e.contains("no wall friction"), "{e}");
+    let mut c = act_cfg();
+    c.injectors[0].nozzle_k = Some(100.0);
+    let e = c.validate().unwrap_err().to_string();
+    assert!(e.contains("together"), "{e}");
+    // kh-rt leaves the nozzle turbulence unused
+    let mut c = act_cfg();
+    c.breakup.model = BreakupModel::KhRt;
+    c.validate().unwrap();
 }
