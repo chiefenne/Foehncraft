@@ -1396,6 +1396,24 @@
    "range": {}
   },
   {
+   "id": "sprays.steady-mode",
+   "title": "Steady spray mode: streams through the steady gas with relaxed sources (SP2s, D260)",
+   "grade": "partial",
+   "why": [
+    "a model without reference data",
+    "gaps written"
+   ],
+   "gaps": [
+    "V28.9 not met strictly: the steady duct takes 2.9 % less heat from the air than the time mean of the transient run, more than the sampling and step errors of the transient run; the transient flow does not come to rest behind the nozzle",
+    "no evaporation (SP5); V28.11 (duct with more water than the gas can take) waits for it",
+    "the statistical error of the streams is estimated by hand with other seeds, not by a study tool (D196)",
+    "the health numbers of D254 are reported only; no limiter acts in the steady mode",
+    "datums report no liquid in the steady mode",
+    "not with solid regions (CHT) or two-way with the coupled algorithm (SPR003); one process"
+   ],
+   "range": {}
+  },
+  {
    "id": "porous.darcy-forchheimer",
    "title": "Porous regions with a direction-dependent Darcy-Forchheimer resistance (D270, PM1)",
    "grade": "partial",

@@ -14,9 +14,10 @@
 # residuals are below the tolerance AND the sources the gas holds differ
 # from those of the last pass by less than [spray.steady] tolerance.
 #
-# Compare with the transient run of spray_cooling.toml marched to its
-# steady state (V28.9 without evaporation): same heat taken from the air,
-# same outlet temperature.
+# Compare with the transient run of spray_cooling.toml marched in time
+# (V28.9 without evaporation): the steady mode takes 6.39 kW from the air,
+# the time mean of the transient run after 0.3 s is 6.58 kW, 2.9 % more;
+# the transient flow behind the nozzle does not come to rest (gallery 292).
 
 case_format = "0.6"
 
