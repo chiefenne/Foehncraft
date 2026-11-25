@@ -9,7 +9,9 @@ repository.workspace = true
 authors.workspace = true
 
 [features]
-default = ["metis"]
+default = ["metis", "hdf5"]
+# VTKHDF output of the fields (D41).
+hdf5 = ["foehncraft-mesh/hdf5"]
 # METIS partitions in the tests on ranks (D32).
 metis = ["foehncraft-mesh/metis"]
 # MPI example (system MPI library and libclang at build time).
