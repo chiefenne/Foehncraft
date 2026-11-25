@@ -7,6 +7,9 @@ Part of the [Recipes](../recipes.md): the linear structural solver `foehncraft-s
 | 295 | [Run a structural case of beams and clamp springs, and fit the clamp to a measured frequency](#structure-case) |
 | 297 | [Model a flat reed as a shell clamped along an edge](#structure-plate) |
 | 299 | [Run a structure in time, with damping, load histories and temperatures](#structure-transient) |
+| 300 | [Model a thick part as a solid, from Gmsh or as a block](#structure-solid) |
+| 302 | [Let a reed touch its seat and its stop](#structure-contact) |
+| 308 | [Load a structure with the temperatures of a flow case](#structure-temperature-field) |
 
 ---
 
@@ -322,3 +325,51 @@ Part of the [Recipes](../recipes.md): the linear structural solver `foehncraft-s
    `[contact] penalty` (default 1000) scales the penalty stiffness of a
    transient; a larger one gives less penetration and more active-set
    changes.
+
+
+---
+
+<a id="structure-temperature-field"></a>
+## 308. Load a structure with the temperatures of a flow case
+
+1. Run the conjugate heat transfer case with VTKHDF output (the default);
+   its `fields.vtkhdf` holds `temperature` in every cell and the zones of
+   the mesh:
+
+   ```sh
+   target/release/foehn flow examples/cases/flow/cht_heat_sink_turbulent.toml --out output/cht_heat_sink_turbulent
+   ```
+
+2. Give the material its `expansion` and add a `[[temperature_fields]]`
+   per result: the `parts` it loads (beam lines, plates, solids), the
+   `file` (relative to the case file), the `zones` of the solid region
+   (those of its `[regions.<name>] zones`; empty: every cell) and the
+   stress-free `reference` temperature:
+
+   ```toml
+   [[temperature_fields]]
+   parts = ["sink"]
+   file = "../../../output/cht_heat_sink_turbulent/fields.vtkhdf"
+   zones = ["base", "fin_1", "fin_2", "fin_3"]
+   reference = 300.0
+   ```
+
+   The structure's mesh is its own and must lie in the solid region, in
+   the flow case's units; `offset` moves it there when its origin is
+   elsewhere. `neighbours` (20) sets the cell centres in each fit,
+   `max_distance` (default the size of the nearest cell) how far a node
+   may be from them, `field` another cell field, `history` a factor in
+   time.
+
+3. Run it and read the result: `result.json` gives per field the cells
+   used, the nodes, the temperature range of the cells and of the nodes and
+   the largest distance of a node from its nearest centre (also over the
+   cell size); `structure.vtk` has the point field `temperature`:
+
+   ```sh
+   target/release/foehn call structure.run --input examples/cases/tools/structure_heat_sink_hot.json
+   python3 -m tools.plot.structure_heat_sink output/cht_heat_sink_turbulent output/heat_sink_hot heat_sink.png
+   ```
+
+   Compare the node range with the cell range: a node range much wider
+   than the cells' means extrapolation far outside the zones.
