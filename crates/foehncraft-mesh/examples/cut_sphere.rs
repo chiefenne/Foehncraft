@@ -207,8 +207,8 @@ fn main() {
                 let nodes = mesh.cell_nodes(c);
                 let mut lo = [f64::INFINITY; 3];
                 for &v in &nodes {
-                    for k in 0..3 {
-                        lo[k] = lo[k].min(mesh.points[v as usize][k]);
+                    for (l, x) in lo.iter_mut().zip(mesh.points[v as usize]) {
+                        *l = l.min(x);
                     }
                 }
                 // Richardson: the sub-grid error falls like (h/s)²

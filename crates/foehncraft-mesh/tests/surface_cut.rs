@@ -1,6 +1,8 @@
 //! L13 stage 0 (D225 item 5): cut-cell moments of a mesh cut by a
 //! triangle surface (`Surface::cut_moments`).
 
+#![allow(clippy::needless_range_loop)]
+
 use crate::surface::{icosphere, torus};
 use foehncraft_mesh::Geometry;
 use foehncraft_mesh::format::stl::Triangle;
