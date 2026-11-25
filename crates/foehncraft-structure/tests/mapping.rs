@@ -146,7 +146,7 @@ at = [0.2, 0.6, 0.2]
 fix = ["uz"]
 [[temperature_fields]]
 parts = ["b"]
-file = "{}"
+file = '{}'   # a literal string: Windows paths have backslashes
 zones = ["metal"]
 reference = {T0}
 "#,
@@ -223,7 +223,7 @@ fix = ["uy"]
         };
         let mapped = case::run(
             &Case::from_toml(&plate(&format!(
-                "[[temperature_fields]]\nparts = [\"p\"]\nfile = \"{}\"\nzones = [\"metal\"]\nreference = {T0}\n",
+                "[[temperature_fields]]\nparts = [\"p\"]\nfile = '{}'\nzones = [\"metal\"]\nreference = {T0}\n",
                 file.display()
             )))
             .unwrap(),
@@ -268,7 +268,7 @@ fix = ["all"]
     };
     let mapped = case::run(
         &Case::from_toml(&beam(&format!(
-            "[[temperature_fields]]\nparts = [\"r\"]\nfile = \"{}\"\nzones = [\"metal\"]\nreference = {T0}\n",
+            "[[temperature_fields]]\nparts = [\"r\"]\nfile = '{}'\nzones = [\"metal\"]\nreference = {T0}\n",
             file.display()
         )))
         .unwrap(),
@@ -320,7 +320,7 @@ surface = "zmin"
 fix = ["ux", "uy", "uz"]
 [[temperature_fields]]
 parts = ["b"]
-file = "{}"
+file = '{}'   # a literal string: Windows paths have backslashes
 reference = {T0}
 "#,
             file.display()
@@ -370,7 +370,7 @@ surface = "ymin"
 fix = ["ux", "uy", "uz"]
 [[temperature_fields]]
 parts = ["b"]
-file = "{}"
+file = '{}'   # a literal string: Windows paths have backslashes
 zones = ["metal"]
 reference = {T0}
 "#,
@@ -412,7 +412,7 @@ part = "b"
 surface = "zmin"
 fix = ["ux", "uy", "uz"]
 [[temperature_fields]]
-file = "{}"
+file = '{}'   # a literal string: Windows paths have backslashes
 reference = {T0}
 {keys}
 "#,
