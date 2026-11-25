@@ -4,6 +4,7 @@
 //! entries in [`fv`] are the scalar operators of stage 2, the `amg_*`
 //! entries in [`amg`] the multigrid V-cycle of stage 3; `radiation_transport`
 //! in [`radiation`] moves the energy bundles of the radiation (step 29);
+//! `steam_state` in [`steam`] evaluates water and steam states (SF7a).
 //! `chemistry_react` in [`chemistry`] integrates the chemistry of the cells
 //! (SF2b).
 //!
@@ -25,6 +26,7 @@ mod flow;
 mod fv;
 mod particle;
 mod radiation;
+mod steam;
 
 use foehncraft_kernels::{face, spmv};
 use core::arch::nvptx::{_block_dim_x, _block_idx_x, _thread_idx_x};

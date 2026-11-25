@@ -1,0 +1,62 @@
+# Pressurised water heated in a channel with IAPWS-IF97 properties, solved
+# on 2, 3 and 4 ranks (stage SF7a with MPI step W5): bitwise equal to one
+# rank.
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/ranks_water_if97_channel.toml
+#
+# Liquid water of the database material `water-if97` at 10 MPa (the
+# absolute outlet pressure) enters a plane channel 40 mm long and 4 mm
+# high at 450 K and 0.02 m/s; the walls are held at 560 K, 24 K below the
+# saturation temperature of 10 MPa (584.1 K). The density is the IF97
+# value at the case temperature (one number); c_p, μ and k follow the
+# temperature through IF97, IAPWS R12-08 and R15-11 in every outer
+# iteration (μ falls from 1.55e-4 to 0.92e-4 Pa s across the channel). The
+# property curves are cell-local, so the run on ranks gives bitwise the
+# fields, residuals and iteration counts of one rank.
+
+case_format = "0.7"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [0.04, 0.004, 0.0004]
+cells = [120, 24, 1]
+
+[fluid]
+material = "water-if97"
+temperature = 450.0
+
+[initial]
+velocity = [0.02, 0.0, 0.0]
+pressure = 10.0e6
+
+[energy]
+initial = 450.0
+
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [0.02, 0.0, 0.0]
+[boundary.xmin.energy]
+temperature = 450.0
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 10.0e6
+[boundary.ymin]
+type = "wall"
+[boundary.ymin.energy]
+temperature = 560.0
+[boundary.ymax]
+type = "wall"
+[boundary.ymax.energy]
+temperature = 560.0
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-8
+max_iterations = 2000
+
+[run]
+ranks = [2, 3, 4]

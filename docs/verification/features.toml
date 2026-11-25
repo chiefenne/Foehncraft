@@ -1973,6 +1973,41 @@ gaps = [
 ]
 
 [[feature]]
+id = "materials.if97-water-steam"
+area = "Energy"
+title = "Water and steam of IAPWS-IF97: states, saturation, transport properties and the if97 material form (SF7a)"
+switch = "foehn steam, materials.steam, form = \"if97\", materials steam and water-if97"
+decisions = ["D94", "D97", "D102"]
+model = true
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-kernels/tests/steam_if97.rs::region1_table5", what = "IF97 Table 5: v, h, u, s, c_p, w of region 1 at three points to 5e-9 (the rounding of the table)" },
+  { kind = "exact", test = "crates/foehncraft-kernels/tests/steam_if97.rs::region2_table15", what = "IF97 Table 15: region 2 at three points to 5e-9" },
+  { kind = "exact", test = "crates/foehncraft-kernels/tests/steam_if97.rs::region3_table33", what = "IF97 Table 33: region 3 at three (rho, T) points to 5e-9, and rho back from (p, T) to 1e-12" },
+  { kind = "exact", test = "crates/foehncraft-kernels/tests/steam_if97.rs::region5_table42", what = "IF97 Table 42 (2007 revision of region 5): three points to 5e-9" },
+  { kind = "exact", test = "crates/foehncraft-kernels/tests/steam_if97.rs::region4_tables35_36_and_b23", what = "IF97 Tables 35 and 36 (saturation pressure and temperature) and the B23 values to 5e-9" },
+  { kind = "exact", test = "crates/foehncraft-kernels/tests/steam_if97.rs::viscosity_r12_08_table4", what = "IAPWS R12-08 Table 4: eleven viscosities to the last printed digit" },
+  { kind = "exact", test = "crates/foehncraft-kernels/tests/steam_if97.rs::conductivity_r15_11_table4", what = "IAPWS R15-11 Table 4: the dilute gas at 298.15 K and 873.15 K and liquid water at 998 kg/m3 to 1e-6" },
+  { kind = "exact", test = "crates/foehncraft-kernels/tests/steam_if97.rs::surface_tension_r1_76", what = "IAPWS R1-76(2014): 0.01, 100 and 300 degC to 1e-3" },
+  { kind = "consistency", test = "crates/foehncraft-kernels/tests/steam_if97.rs::ph_ps_px_round_trips", what = "(p, h), (p, s), (p, x) states round-trip to 1e-10, including a 60 x 60 grid around the critical point" },
+  { kind = "consistency", test = "crates/foehncraft-kernels/tests/steam_if97.rs::saturation_states_and_phase_equilibrium", what = "the Gibbs energies of the saturated phases agree to the consistency of IF97 (|dg|/RT below 1e-4)" },
+  { kind = "consistency", test = "crates/foehncraft-kernels/src/steam.rs::batch_entry_is_bitwise_the_state_outputs", what = "the device path of the GPU entry steam_state run on the CPU gives bitwise the plain call" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/steam.rs::steam_duct_meets_the_if97_balances", what = "superheated steam heated in a duct: outlet T of the IF97 enthalpy balance to 0.01 K, mass flux to 1e-7, inlet pressure G^2 (1/rho_out - 1/rho_in) to 1e-4" },
+  { kind = "exact", case = "steam_heated_duct", what = "the same duct as a case: outlet 750.002 K against 750 K", doc = "docs/cases/flow.md#water-and-steam-iapws-if97" },
+  { kind = "consistency", case = "steam_superheater_channel", what = "steam superheated between plates at 760 K with the IF97 variable density, heat balance closed to 4e-8", doc = "docs/cases/flow.md#water-and-steam-iapws-if97" },
+  { kind = "consistency", case = "ranks_water_if97_channel", what = "IF97 water with c_p, mu, k following T on 2, 3 and 4 ranks, bitwise one rank", doc = "docs/cases/flow.md#water-and-steam-iapws-if97" },
+]
+gaps = [
+  "the CPU = GPU check of steam_state on a GPU has not run (no GPU in this session); the PTX entry is built in CI and the device path is checked on the CPU",
+  "the viscosity has no critical enhancement (mu2 = 1, the industrial form of R12-08); near the critical point it differs by up to 2 % from the full formulation",
+  "the conductivity near the critical point takes the IF97 derivatives: up to 2.4 % from R15-11 with IAPWS-95 within 15 K and 4 MPa of the critical point, below 0.31 % elsewhere (a one-off comparison, not in the tests)",
+  "zeta at the reference temperature of the critical enhancement is a table of IAPWS-95 (CoolProp 8.1), not the release's own fit",
+  "single-phase property curves only in the flow: a fluid that crosses the saturation temperature takes the saturated state of its branch (MAT003); boiling comes with SF7b (1D circuits) and SF10",
+  "the property curves are sampled every 0.25 K at the operating pressure: the pressure variation inside a case is not felt (low-Mach)",
+  "no metastable (subcooled vapour) states and no backward equations; a (p, h) state is a bracketed Newton solve on the forward equations",
+  "the variable density is not on ranks yet (refused): the steam duct and channel run on one rank",
+]
+
+[[feature]]
 id = "chemistry.flow"
 area = "Flow models"
 title = "Gas-phase chemistry in the cells of a transient laminar flow with heat release, the 1D premixed flame (L2, steam furnace SF2b)"

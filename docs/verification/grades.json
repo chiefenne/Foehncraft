@@ -1522,6 +1522,26 @@
    "range": {}
   },
   {
+   "id": "materials.if97-water-steam",
+   "title": "Water and steam of IAPWS-IF97: states, saturation, transport properties and the if97 material form (SF7a)",
+   "grade": "partial",
+   "why": [
+    "a model without reference data",
+    "gaps written"
+   ],
+   "gaps": [
+    "the CPU = GPU check of steam_state on a GPU has not run (no GPU in this session); the PTX entry is built in CI and the device path is checked on the CPU",
+    "the viscosity has no critical enhancement (mu2 = 1, the industrial form of R12-08); near the critical point it differs by up to 2 % from the full formulation",
+    "the conductivity near the critical point takes the IF97 derivatives: up to 2.4 % from R15-11 with IAPWS-95 within 15 K and 4 MPa of the critical point, below 0.31 % elsewhere (a one-off comparison, not in the tests)",
+    "zeta at the reference temperature of the critical enhancement is a table of IAPWS-95 (CoolProp 8.1), not the release's own fit",
+    "single-phase property curves only in the flow: a fluid that crosses the saturation temperature takes the saturated state of its branch (MAT003); boiling comes with SF7b (1D circuits) and SF10",
+    "the property curves are sampled every 0.25 K at the operating pressure: the pressure variation inside a case is not felt (low-Mach)",
+    "no metastable (subcooled vapour) states and no backward equations; a (p, h) state is a bracketed Newton solve on the forward equations",
+    "the variable density is not on ranks yet (refused): the steam duct and channel run on one rank"
+   ],
+   "range": {}
+  },
+  {
    "id": "chemistry.flow",
    "title": "Gas-phase chemistry in the cells of a transient laminar flow with heat release, the 1D premixed flame (L2, steam furnace SF2b)",
    "grade": "partial",

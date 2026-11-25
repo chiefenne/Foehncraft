@@ -74,6 +74,48 @@ temperature = [273.16, 283.15, 293.15, 303.15, 313.15, 323.15, 333.15, 343.15, 3
 values = [0.55568, 0.57878, 0.59801, 0.61439, 0.62849, 0.64062, 0.65100, 0.65976, 0.66699, 0.67279, 0.67721]
 source = "IAPWS 2011 thermal conductivity (Huber et al., J. Phys. Chem. Ref. Data 41 (2012) 033102) at 0.101325 MPa, evaluated with CoolProp 8.0 (MIT licence); 373.15 K saturated liquid"
 
+[materials.steam]
+description = "Steam (IAPWS-IF97) at the operating pressure; the vapour branch from the saturation temperature on"
+kind = "gas"
+temperature_range = [273.15, 2273.15]
+[materials.steam.density]
+form = "if97"
+phase = "vapour"
+source = "IAPWS-IF97 (IAPWS R7-97(2012); Wagner et al., J. Eng. Gas Turbines Power 122 (2000) 150)"
+[materials.steam.viscosity]
+form = "if97"
+phase = "vapour"
+source = "IAPWS R12-08 (Huber et al., J. Phys. Chem. Ref. Data 38 (2009) 101), industrial form, density from IAPWS-IF97"
+[materials.steam.specific_heat]
+form = "if97"
+phase = "vapour"
+source = "IAPWS-IF97 (IAPWS R7-97(2012))"
+[materials.steam.conductivity]
+form = "if97"
+phase = "vapour"
+source = "IAPWS R15-11 (Huber et al., J. Phys. Chem. Ref. Data 41 (2012) 033102), industrial form with IAPWS-IF97"
+
+[materials.water-if97]
+description = "Liquid water (IAPWS-IF97) at the operating pressure, up to the saturation temperature"
+kind = "liquid"
+temperature_range = [273.15, 647.096]
+[materials.water-if97.density]
+form = "if97"
+phase = "liquid"
+source = "IAPWS-IF97 (IAPWS R7-97(2012); Wagner et al., J. Eng. Gas Turbines Power 122 (2000) 150)"
+[materials.water-if97.viscosity]
+form = "if97"
+phase = "liquid"
+source = "IAPWS R12-08 (Huber et al., J. Phys. Chem. Ref. Data 38 (2009) 101), industrial form, density from IAPWS-IF97"
+[materials.water-if97.specific_heat]
+form = "if97"
+phase = "liquid"
+source = "IAPWS-IF97 (IAPWS R7-97(2012))"
+[materials.water-if97.conductivity]
+form = "if97"
+phase = "liquid"
+source = "IAPWS R15-11 (Huber et al., J. Phys. Chem. Ref. Data 41 (2012) 033102), industrial form with IAPWS-IF97"
+
 [materials.engine-oil]
 description = "Unused engine oil (a typical mineral oil)"
 kind = "liquid"
