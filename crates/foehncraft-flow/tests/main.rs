@@ -56,6 +56,7 @@ mod stage4;
 mod stage5;
 mod start_values;
 mod statistics;
+mod steam;
 mod symmetry_stress;
 mod thermal;
 mod transient;

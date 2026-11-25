@@ -495,7 +495,7 @@ entry. Each property is a number, an expression or a table:
 | `materials.<name>.kind` | `gas`, `liquid` or `solid` |
 | `materials.<name>.temperature_range` | `[T_min, T_max]` (K): outside it the properties are clamped, with warning MAT003 |
 | `materials.<name>.molar_mass` | kg/mol (the ideal-gas density) |
-| `materials.<name>.density`, `.viscosity` | a number, an expression, or a table with `form` = `constant` (`value`), `polynomial` (`coefficients` a₀, a₁, … in T), `sutherland` (`mu_ref`, `t_ref`, `s`), `power-law` (`value_ref`, `t_ref`, `exponent`), `table` (`temperature` and `values`, or `file`; `interpolation` = `linear` or `monotone-cubic`), `ideal-gas` (density p M / (R T)), each with `source` and optionally `range`; the complete list is in [keys.md](../keys.md) |
+| `materials.<name>.density`, `.viscosity` | a number, an expression, or a table with `form` = `constant` (`value`), `polynomial` (`coefficients` a₀, a₁, … in T), `sutherland` (`mu_ref`, `t_ref`, `s`), `power-law` (`value_ref`, `t_ref`, `exponent`), `table` (`temperature` and `values`, or `file`; `interpolation` = `linear` or `monotone-cubic`), `ideal-gas` (density p M / (R T)), `if97` (water and steam of IAPWS-IF97 at the operating pressure: density, viscosity, specific heat or conductivity; `phase` = `liquid` or `vapour`, SF7a), each with `source` and optionally `range`; the complete list is in [keys.md](../keys.md) |
 
 The density must be constant in the domain (a density that varies comes
 with the energy equation, MAT002). The run writes the resolved property
@@ -546,6 +546,30 @@ With `[energy] density = "variable"` the density is p₀ M/(R T) with the
 mixture's molar mass; the fluid must be a material with `molar_mass` and
 `density = { form = "ideal-gas" }`. Species run in one fluid region
 (SPE002). SPE003 warns when the transported fractions sum above 1 + 10⁻⁴.
+
+<a id="chemistry"></a>
+**Chemistry in the cells** (steam furnace stage SF2b, [recipe 298](../recipes/species.md#reacting-flow-cells)).
+`[chemistry]` lets the species of `[species]` react: at the first outer
+iteration of each time step every cell is integrated as a constant-pressure
+reactor over the step, and the change of its mass fractions and its heat
+release become sources of the species and energy equations (Lie
+splitting). Needs `[species]` with exactly the species of the mechanism,
+`[energy]` with `density = "variable"`, a `[time]` table and a laminar
+flow; steady runs, turbulence models and sprays are refused (CHM003).
+
+| Key | Meaning |
+|---|---|
+| `chemistry.mechanism` | a built-in mechanism (`gri30`, `westbrook-dryer-2`, `jones-lindstedt-4`) or a YAML mechanism file relative to the case file (D103) |
+| `chemistry.min_temperature` | cells colder than this (K) do not react (default 0: every cell) |
+| `chemistry.integrator.rtol`, `.atol`, `.atol_temperature`, `.max_steps` | the stiff integrator in every cell (defaults 10⁻⁶, 10⁻¹², 10⁻⁶ K, 100 000); CHM002 when a cell does not reach the end of the step |
+| `chemistry.flame_speed.fuel`, `.inlet` | report the burning velocity S_c = −ṁ_F/(ρ_u Y_F,u A) of a premixed flame from the fuel the reactions consume; ρ_u, Y_F,u and A of the inlet |
+| `chemistry.flame_speed.average_from` | average over the part of the run after this fraction of the end time (default 0.5) |
+| `chemistry.flame_speed.range` | `[low, high]` (m/s): the run fails when the mean is outside, as a `[verification]` band |
+
+With `[run] backend = "cuda"` the cells are integrated on the GPU (PTX
+entry `chemistry_react`, the same body as the CPU threads). The log has a
+line per run with the flame speed; `chemistry.csv` has per step the heat
+release, the net production of every species and the integrator steps.
 
 **Interfaces** (conjugate cases, stage 7d2, [recipe 160](../recipes/energy.md#cht-contact)).
 `[interfaces.<name>]` puts a resistance into the faces between two regions:

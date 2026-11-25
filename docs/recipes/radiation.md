@@ -63,6 +63,24 @@ cargo run --release -p foehncraft-radiation --example furnace -- \
     output/furnace.msh output/furnace 4000000
 ```
 
+The gallery figures of gallery 259 and 281 use KoflCraft's mesh of the same
+furnace, with wall layers on every wall and the side walls' layers yielding
+to the tube layers (`layers_yield`): 2.11 million cells. The example takes
+it as the `foehncraft.vtu` hand-off of `kofl generate-duct` (polyhedral mode):
+
+```
+cargo run --release -p foehncraft-radiation --example furnace -- \
+    PATH/TO/KOFLCRAFT/OUTPUT/foehncraft.vtu output/furnace_fine 16000000 60
+python3 -m tools.plot.radiation_furnace output/figures_fine output/furnace_fine
+python3 -m tools.plot.radiation_paths output/figures_fine output/furnace_fine
+```
+
+The fine call of 18 million bundles takes 2 h 15 min on 16 threads (8 cores
+with Hyper-Threading); the coarse call takes about 5 minutes. The plot
+scripts average the Monte Carlo fluxes over about 10 cm of wall and over a
+volume band of the chamber: single faces and cells carry the noise of the
+bundles they catch, so they are drawn as averages, not one by one.
+
 On MPI ranks (Open MPI or MPICH, with the `mpi` feature):
 
 ```

@@ -22,6 +22,7 @@ Contents: [Before you start](#before-you-start) ·
 [6. Replay the session](#6-replay-the-session) ·
 [7. Watch and steer a running case](#7-watch-and-steer-a-running-case) ·
 [A recorded study](#a-recorded-study-the-fin-pitch-of-a-heat-sink) ·
+[A recorded chat](#a-recorded-chat-sizing-a-spray-cooler) ·
 [Safety advice](#safety-advice) ·
 [What the server does and does not do](#what-the-server-does-and-does-not-do)
 
@@ -296,6 +297,51 @@ that way: of 27 calls 22 were replayed and 5 skipped (the three refused runs and
 live status calls), none ended otherwise than recorded, and the residual histories, the boundary
 and base-line tables, the balance, the fields and the restart files of the four runs are
 byte-identical to the originals (D84).
+
+## A recorded chat: sizing a spray cooler
+
+A second recorded session, this time an engineering question instead of a
+sweep the person laid out. The question:
+
+> *"How much water do I need to spray to cool 300 °C air to 150 °C before
+> the filter?"*
+
+The assistant (Claude) again drove `foehn mcp` through
+[`tools/agent/stdio_host.py`](../tools/agent/stdio_host.py); the person
+prepared only the action table
+([`examples/cases/tools/mcp/spray_cooler/foehn-mcp.toml`](../examples/cases/tools/mcp/spray_cooler/foehn-mcp.toml),
+the same rules as the heat sink study). The assistant wrote the case and
+the nozzle files itself, from the spray cases of the gallery: a duct 3 m
+long and 0.2 m high (2D), air at 300 °C and 5 m/s, three nozzles of water
+at 20 °C, evaporating droplets of 5 to 60 µm, the spray as steady streams.
+[Gallery 316](gallery/runs.md#spray-cooler-chat) shows the result.
+
+The session as it went, its own slips included:
+
+| # | Calls | What came back |
+|---|---|---|
+| 1–2 | `case.check` | **refused** first (`CASE007`: the output folder lay outside the write root); with `out` in the write root: 3000 cells, 30 MB |
+| 3 | `case.resolve` with `spray.injector.0.mass_flow=…` | **refused** (`CASE003`): `set` cannot reach one entry of an array of tables, so the assistant writes one nozzle file per water flow and switches them with `set spray.include=…` |
+| 4–7 | `flow.run` with 3 g/s (the guess from the heat balance) and `run.status` while it ran | one `run.status` with the wrong field (`out` instead of `dir`, `TOOL002`); the run ends after 2000 iterations, residuals near 10⁻⁵ |
+| 8–9 | `result.page` | no outlet temperature among the series: the `[[datum]]` reports are written by transient runs only |
+| 10 | `flow.run` continued from the restart file with `max_iterations = 1000` | ran no iteration (the restart file is already at 2000) and ended `failed-checks` on a mass imbalance that leaves out the evaporated water |
+| 11–14 | `flow.run` continued to 3000 iterations; `post.datums` on both restart files | after adding an outlet datum to the case: **171.1 °C** at the outlet (mass-flow mean), 0.003 K apart between 2000 and 3000 iterations |
+| 15–19 | `flow.run` with 3.5 g/s, `run.status`, `post.datums` | one `post.datums` before the run had written its restart file (`GEN001`); then **151.3 °C** |
+| 20–23 | `flow.run` with 3.55 g/s (interpolated), `post.datums` | **149.4 °C** |
+| 24–… | `case.estimate` and `flow.run` on the mesh refined once (12 000 cells), `post.datums` | the first try died with the cloud machine it ran on and was started again; the run stops at its own wall-time limit of 900 s after 1977 iterations (`RUN003`): **150.3 °C**, 0.9 K above the coarse mesh |
+
+Its answer: **about 3.54 g/s of water per 0.1 m of duct depth, 5.9 % of
+the air mass flow** (3.56 g/s on the mesh refined once), all of it evaporated within 2.7 m, with the heat
+balance as a plausibility check (2.66 MJ per kg of water). And the catch
+it reported unasked: 150 °C is the mass-flow mean, while the outlet has a
+core at about 104 °C and wall layers at up to 225 °C. The limitations it
+listed are in the gallery entry.
+
+The journal is
+[`examples/cases/tools/mcp/spray_cooler/journal.jsonl`](../examples/cases/tools/mcp/spray_cooler/journal.jsonl),
+with the cloud folder of the session replaced by the repository paths
+(`examples/cases/tools/mcp/spray_cooler/` for the case, `output/agent/spray_cooler/`
+for the runs); otherwise as recorded.
 
 ## Safety advice
 

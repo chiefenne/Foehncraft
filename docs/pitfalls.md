@@ -24,6 +24,7 @@ instead.
 - [Limiters on tetrahedra and polyhedra](#limiters)
 - [Porous resistances and the Rhie–Chow factor](#porous-rhie-chow)
 - [Deforming meshes: the grid flux and the old levels](#deforming-mesh)
+- [Property solves and new kernels on ranks](#property-solves)
 
 <a id="steady-runs"></a>
 ## Steady runs: budget and stopping
@@ -515,6 +516,23 @@ Found with the porous regions of D270 (#273):
   step.** A species at zero (AR in the global mechanisms) with a step
   relative to its value gives a step of zero or round-off size; use
   `1e-6·|z| + 1e-9`.
+- **YAML 1.1 reads the species `NO` as the boolean false.** PyYAML (YAML
+  1.1) turns the unquoted keys `NO`, `ON`, `YES`, `OFF` into booleans, so
+  a species table generated from GRI-Mech 3.0 had `[species."False"]`
+  instead of nitric oxide, and a flow with all 53 species failed to find
+  `NO`. The Rust importer (yaml-rust2) is YAML 1.2 and reads `NO` as a
+  string; `tools/data/gri30_species.py` uses a loader with the YAML 1.2
+  booleans only, and the species test checks that every species of every
+  built-in mechanism is in the data.
+- **Field names come from species names.** `CH2(S)` is not a valid scalar
+  name; the field of a species is `Y_` and the name with every character
+  that is not a letter or digit replaced by `_` (`Y_CH2_S`).
+- **The software square root dominates a mixture of many species.** The
+  in-house `sqrt` (D93) is a correctly rounded integer routine, far
+  slower than the hardware instruction; Wilke's rule called it N² times
+  per cell and face: 10 s per time step for 53 species on 200 cells. The pair
+  factors that depend only on the molar masses are computed once
+  (`wilke_pairs`) and the per-species √μ once per cell: 0.3 s per step.
 
 **A rank does not know the cell zone of its halo cells (turning zones on
 ranks, #301).** `extract` gives the local mesh the zones of the own cells
@@ -544,3 +562,21 @@ Found with the deforming mesh of stage MS0 (#296):
   every step; refreshing the density with the new volumes before the step
   starts overwrote level n. The density keeps (ρⁿ, p₀ⁿ) aside and the step
   starts from them.
+
+<a id="property-solves"></a>
+## Property solves and new kernels on ranks
+
+Found with the IAPWS-IF97 states of SF7a (#277):
+- **Plain Newton inside a bracket can cycle.** T(p, h) just above the
+  critical pressure (h(T) rises steeply at the pseudo-critical
+  temperature) bounced between 611 K and 780 K for 200 iterations while
+  every step stayed inside the bracket, and returned a wrong state. Take a
+  Newton step only when it is at most half the step before the last one,
+  else bisect (the rtsafe rule), and test a fine (p, h) grid around the
+  critical point, not only the verification points.
+- **Run a new model once with `[run] ranks` before claiming it.** A
+  temperature-dependent c_p (any table, not only IF97) crashed on ranks
+  in the h-form correction of the energy equation (halo cells indexed in
+  own-cell arrays), and the variable density of stage 7c crashed as well;
+  W5 had checked only constant properties. The c_p path is fixed; the
+  variable density is refused on ranks until it is ported.

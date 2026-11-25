@@ -701,6 +701,9 @@ pub fn run(
                 s.mesh, s.mass_imbalance
             ));
         }
+        if let Some(f) = s.chemistry.as_ref().and_then(|c| c.failure()) {
+            rep.failures.push(format!("{}: {f}", s.mesh));
+        }
         if let (Some(tol), Some(r)) = (v.reference_tolerance, &s.reference)
             && r.u_max_dev.max(r.v_max_dev) > tol
         {
@@ -1273,6 +1276,8 @@ fn run_one<F: FnMut(&str)>(
     // point inside a sliding rotor is a limit of variant B)
     let loc = Locator::new(mesh0, geo0);
     let mut spray = crate::spray::create(&case, mesh0, geo0, &loc)?;
+    // chemistry in the cells (SF2b): the reaction step of each time step
+    let mut chem = crate::chemistry::flow::Chemistry::of(&case, &geo0.cell_volume)?;
     // the datums of the reports (SP1b, D262): the parcels see the same ones
     let datum_built = crate::datum::build(&case, mesh0, geo0)?;
     if let Some(sp) = spray.as_mut() {
@@ -1836,6 +1841,24 @@ fn run_one<F: FnMut(&str)>(
             cont,
         )?)
     };
+    let mut chem_csv = match (&chem, &case.species) {
+        (Some(_), Some(sp)) => {
+            let names = crate::species::Resolved::of(sp)?.names;
+            Some(History::new(
+                out,
+                &suffix_name("chemistry", desc, last),
+                &crate::case::csv_preamble(
+                    "chemistry",
+                    name,
+                    None,
+                    crate::chemistry::flow::Chemistry::CSV_UNITS,
+                ),
+                &crate::chemistry::flow::Chemistry::csv_head(&names),
+                cont,
+            )?)
+        }
+        _ => None,
+    };
     let mut spray_lost_warned = false;
     // the two-way coupling over the run and of the last step (SP2)
     let mut spray_coupling: Option<crate::spray::CouplingSummary> = None;
@@ -2171,6 +2194,12 @@ fn run_one<F: FnMut(&str)>(
                     spray_passes = Some(hk.finish());
                     r
                 }
+                // the reaction step of the cells (SF2b)
+                _ if chem.is_some() => {
+                    let ch = chem.as_mut().context("chemistry")?;
+                    let mut hk = crate::chemistry::flow::Step::new(ch, h, t0 + h);
+                    tr.step_with(&mut fl, h, Some(&mut hk))
+                }
                 _ => tr.step(&mut fl, h),
             };
             // a step whose error exceeds the tolerance is taken back and
@@ -2458,6 +2487,11 @@ fn run_one<F: FnMut(&str)>(
         }
         if let (Some(v), Some(csv)) = (fl.vof.as_deref(), vof_csv.as_mut()) {
             csv.row(&v.csv_row(n, tr.clock.time, &geo.cell_centroid));
+        }
+        if let (Some(ch), Some(csv)) = (chem.as_ref(), chem_csv.as_mut())
+            && let Some(row) = ch.csv_row(n)
+        {
+            csv.row(&row);
         }
         if let (Some(sp), Some(csv)) = (spray.as_mut(), spray_csv.as_mut()) {
             let sol = out_sol!();
@@ -3038,6 +3072,9 @@ fn run_one<F: FnMut(&str)>(
             t.clipped_volume / t.volume_start
         ));
     }
+    if let Some(f) = chem_csv.as_mut() {
+        f.flush()?;
+    }
     if let Some(sp) = spray.as_ref() {
         let f = crate::spray::write_parcels(sp, out, name, tr.clock.step)?;
         if let (Some(f), Some(se)) = (f, series.as_mut()) {
@@ -3331,7 +3368,16 @@ fn run_one<F: FnMut(&str)>(
         .iter()
         .map(|p| p.mass_flow.abs().max(case.rho() * umax * p.area))
         .fold(0.0f64, f64::max);
-    let mass_imbalance = if big > 0.0 { total / big } else { 0.0 };
+    // in a reacting flow the mass in the domain keeps changing (a flame
+    // turns dense fresh gas into light burnt gas): the check is then the
+    // mass account of the last step, outflow plus storage (D119); other
+    // variable-density cases keep the net outflow (a closed box has no
+    // flow to scale the account by)
+    let mass_imbalance = match (&last_balance, case.chemistry.is_some()) {
+        (Some(b), true) => b.mass.relative,
+        _ if big > 0.0 => total / big,
+        _ => 0.0,
+    };
     let coefficients = monitor::coefficients(&case, &boundaries);
     if let Some([cd, cl]) = coefficients {
         verification.push_kv("Force coefficients", format!("C_D {cd:.5}, C_L {cl:.5}"));
@@ -3554,7 +3600,30 @@ fn run_one<F: FnMut(&str)>(
             ),
         };
     let immersed = crate::immersed::forces(&case, mesh, geo, &sol.u, &sol.phys)?;
+    let chemistry = match chem.as_ref() {
+        Some(ch) => {
+            let s = ch.summary(&case, &boundaries)?;
+            match s.flame_speed {
+                Some(v) => {
+                    let w = s.flame_speed_window.unwrap_or_default();
+                    lg.line(&format!(
+                        "chemistry {}: flame speed {v:.5} m/s (fuel consumption, mean over \
+                         {:.4e} … {:.4e} s), heat release {:.4e} W",
+                        s.mechanism, w[0], w[1], s.heat_release
+                    ));
+                    verification.push_kv("Flame speed", format!("{v:.5} m/s"));
+                }
+                None => lg.line(&format!(
+                    "chemistry {}: heat release {:.4e} W",
+                    s.mechanism, s.heat_release
+                )),
+            }
+            Some(s)
+        }
+        None => None,
+    };
     let solve = Solve {
+        chemistry,
         immersed,
         topology: None,
         density,
