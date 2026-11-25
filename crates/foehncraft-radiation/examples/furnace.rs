@@ -9,6 +9,11 @@
 //!     output/furnace.msh output/furnace [BUNDLES] [PATHS]
 //! ```
 //!
+//! The mesh may also be KoflCraft's furnace with wall layers (its
+//! `foehncraft.vtkhdf` or `foehncraft.vtu` hand-off of `generate-duct`):
+//! the same patches, and the side walls the tubes pass through as a patch
+//! `sides` of their own, grey like the other refractory walls.
+//!
 //! The flame leaves the burner disc in the front wall along x and rises
 //! slowly; its temperature peaks at 1 950 K about 1.2 m from the burner
 //! and falls to the 1 250 K of the flue gas, its absorption coefficient
@@ -55,7 +60,7 @@ fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().collect();
     anyhow::ensure!(
         args.len() >= 3,
-        "usage: furnace MESH.msh OUT_DIR [BUNDLES] [PATHS] (mesh from examples/meshes/furnace.py)"
+        "usage: furnace MESH OUT_DIR [BUNDLES] [PATHS] (mesh from examples/meshes/furnace.py or KoflCraft)"
     );
     let bundles: u64 = args.get(3).map_or(Ok(4_000_000), |b| b.parse())?;
     let paths: u32 = args.get(4).map_or(Ok(0), |b| b.parse())?;
@@ -72,7 +77,9 @@ fn main() -> anyhow::Result<()> {
         .iter()
         .map(|b| match b.name.as_str() {
             "burner" => Ok(Wall::grey(0.8, 1100.0)),
-            "front" | "walls" => Ok(Wall::grey(0.75, 1150.0)),
+            // `sides`: the side walls the tubes pass through, a patch of
+            // their own in the KoflCraft mesh (part of `walls` in Gmsh's)
+            "front" | "walls" | "sides" => Ok(Wall::grey(0.75, 1150.0)),
             "tubes" => Ok(Wall::grey(0.85, 620.0)),
             "outlet" => Ok(Wall::open()),
             other => Err(anyhow::anyhow!("unknown boundary {other}")),

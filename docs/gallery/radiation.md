@@ -14,8 +14,13 @@ Part of the [Example gallery](../gallery.md): thermal radiation by Monte Carlo t
 
 <img src="../figures/gallery/radiation_furnace_plane.png" alt="Mid-depth plane of a box furnace 4 m long and 2.5 m high with seven tubes under the roof. Top: the prescribed flame temperature, which rises from the burner on the left to 1950 K and leans up towards the outlet. Bottom: the net radiative source of the gas, strongly negative (the gas emits more than it absorbs) in the flame core and close to zero elsewhere" width="800" height="937">
 
-**The furnace (D255).** `examples/meshes/furnace.py` builds the chamber
-with Gmsh: 4 m long, 2 m deep and 2.5 m high, about 58 500 tetrahedra.
+**The furnace (D255).** The chamber is 4 m long, 2 m deep and 2.5 m high.
+The figures use KoflCraft's mesh of it with wall layers on every wall: 2.11
+million cells (303 000 polyhedra and 1.81 million prisms of the layers, from
+170 542 facets of the STL), where the side walls keep their layers and the
+tube layers run into them (`layers_yield`). The coarse mesh of
+`examples/meshes/furnace.py` (about 58 500 tetrahedra) gives the same totals
+within 1 %, and the example runs on either.
 Seven tubes of 0.16 m diameter cross it under the roof, the burner is a
 disc of 0.5 m in the front wall, and the flue gas leaves through an
 opening under the roof of the back wall. The example `furnace` prescribes
@@ -25,32 +30,35 @@ and falls to the 1 250 K of the flue gas, and the absorption coefficient
 (ε = 0.75) at 1 150 K, the tubes grey (ε = 0.85) at 620 K, the burner
 disc grey (ε = 0.8) at 1 100 K, and the opening is an open boundary.
 
-With 16 million bundles the call takes about 5 minutes on 4 CPU threads.
+The call of 18 million bundles takes 2 h 15 min on the fine mesh (16 threads,
+an 8-core CPU with Hyper-Threading), and about 5 minutes for 16 million on the
+coarse mesh (4 threads).
 Every bundle carries a whole number of quanta (the emitted power over
 2⁵²), so the energy account closes exactly:
 
 | Energy account | kW |
 |---|---|
-| emitted by the gas (4κσT⁴V) and the walls (εσT⁴A) | 10 243.2 |
-| absorbed by the gas | 4 712.2 |
-| absorbed by the walls, the tubes and the burner | 5 450.7 |
+| emitted by the gas (4κσT⁴V) and the walls (εσT⁴A) | 10 242.0 |
+| absorbed by the gas | 4 705.4 |
+| absorbed by the walls, the tubes and the burner | 5 448.5 |
 | escaped through the opening | 80.2 |
-| removed by Russian roulette (net) | 0.001 |
+| removed by Russian roulette (net) | 0.000 |
 
 | Boundary | Area (m²) | Incident (kW) | Net into the wall (kW) | Net (kW/m²) |
 |---|---|---|---|---|
-| tubes | 6.94 | 891.5 | 708.3 ± 0.5 | 102.0 |
-| walls | 40.25 | 5 582.5 | 1 192.8 ± 1.1 | 29.6 |
-| front wall | 4.80 | 640.9 | 123.3 ± 0.4 | 25.7 |
-| burner | 0.20 | 31.7 | 12.4 ± 0.1 | 63.5 |
+| tubes | 7.02 | 898.5 | 713.7 ± 0.5 | 101.7 |
+| walls | 20.52 | 2 735.7 | 525.5 ± 0.8 | 25.6 |
+| side walls (the tubes pass through) | 19.72 | 2 836.4 | 660.6 ± 0.8 | 33.5 |
+| front wall | 4.80 | 640.2 | 122.8 ± 0.4 | 25.6 |
+| burner | 0.20 | 31.8 | 12.5 ± 0.1 | 63.8 |
 | opening (open) | 0.48 | 80.2 | – | – |
 
-<img src="../figures/gallery/radiation_furnace_walls.png" alt="Top: the incident radiative flux on the side wall of the furnace, highest (about 190 kW per square metre) on the wall opposite the flame core, lower under the roof next to the cold tubes. Bottom: the net flux into three of the tubes against the angle around the tube, highest on the underside that faces the flame" width="800" height="780">
+<img src="../figures/gallery/radiation_furnace_walls.png" alt="Top: the incident radiative flux on the side wall of the furnace, highest (about 180 kW per square metre) on the wall opposite the flame core, lower under the roof next to the cold tubes. Bottom: the net flux into three of the tubes against the angle around the tube, highest on the underside that faces the flame" width="800" height="780">
 
-The tubes take 708 kW, about 102 kW/m² on average. The tubes
+The tubes take 714 kW, about 102 kW/m² on average. The tubes
 furthest downstream take the most (from 95 kW/m² on the second tube to 110 kW/m² on the seventh, as the flame leans up towards the outlet), and every tube takes most
 on its underside, which faces the flame. The side wall sees the flame core
-with up to 190 kW/m² and less under the tubes, which are cold and so send
+with up to about 180 kW/m² and less under the tubes, which are cold and so send
 little back.
 
 **Verification (section 3 of the specification).** Every case runs in
@@ -119,7 +127,7 @@ the incident and net flux with its error on every boundary.
 <img src="../figures/gallery/radiation_paths_3d.png" alt="The box furnace in 3D, seen from above the near side wall, with the seven cooled tubes under the roof. The floor, the far side wall and the front wall with the burner are coloured by the net radiative flux into the wall, brightest on the floor and the side wall opposite the flame and on the burner disc, dark on the side wall around the tube ends. Sixty bundle paths cross the chamber as straight lines between wall reflections, cyan for bundles from the gas and green for bundles from the walls, each fading as its energy is absorbed" width="800" height="512">
 
 **Paths from the call itself.** The furnace of [gallery 259](#furnace)
-with the same mesh, flame and walls and the same call of 16 million
+with the same mesh, flame and walls and the same call of 18 million
 bundles. `Domain::trace` takes the arguments of `Domain::solve` and the
 bundles to follow (`pick`: how many of each emitter, counted from its
 first). It emits these bundles as the call does, with the same emitters,
@@ -134,40 +142,36 @@ and the energy account of the call again, to the quantum.
 The example `furnace` with `PATHS = 60` draws the emitters in proportion
 to their power (systematic sampling over the cells, then the wall faces),
 so the 60 paths are a fair sample of the call: 40 start in the gas and 20
-on the walls. Eleven of the 40 gas bundles start where the gas is hotter
-than 1 600 K, which is 5 % of the volume but 23 % of the emission of the
-gas (4κσT⁴ per unit volume). Every point of a path is where the bundle
-leaves a cell (155 cells per path on average), is reflected at a grey
-wall, or ends.
+on the walls. Every point of a path is where the bundle leaves a cell (145
+points per path on average), is reflected at a grey wall, or ends.
 
 **A path fades with the energy it still carries.** In every cell the gas
 takes the share 1 − exp(−κℓ) of it; a grey wall absorbs ε of what
 arrives (0.75 for the refractory, 0.85 for the tubes) and sends the rest
-back diffusely. The median bundle reaches its first wall with about half
-of its energy and leaves it with an eighth, crosses the chamber three or
-four more times and ends after 6.4 m, when Russian roulette takes it at a
-thousandth of its energy. One of the 60 leaves through the opening; in
-the whole call 0.8 % of the emitted power does.
+back diffusely. Each reflection leaves the bundle with less of its energy, and a bundle
+ends when Russian roulette takes what is left. Three of the 60 leave
+through the opening; in the whole call 0.8 % of the emitted power does
+(80 kW of 10 242 kW).
 
 <img src="../figures/gallery/radiation_paths_plane.png" alt="Side view of the furnace, x from 0 to 4 m and z from 0 to 2.5 m, with the gas temperature on the mid-depth plane in Rainbow Desaturated: the flame leaves the burner on the left, peaks at 1950 K and leans up towards the outlet on the right. The 60 bundle paths are drawn over it as white lines from their start points, bright while they carry most of their energy and faint after the first wall" width="800" height="533">
 
 <img src="../figures/gallery/radiation_paths_walls.png" alt="The net radiative flux into the six walls of the furnace on one Inferno scale, in two rows: floor, roof and front wall with the burner disc; the side wall y = 0, the side wall y = 2 m and the back wall with the opening. The floor and both side walls are brightest opposite the flame core, the roof is dark behind the tubes, the side walls have dark rings around the tube ends, and the burner disc is bright" width="800" height="387">
 
 **The net flux into every wall** from the same call: the floor takes
-36 kW/m² on average, the side walls 34, the back wall 36, the front wall
-with the burner 27 and the roof 10. The floor and the side walls see the
+36 kW/m² on average, the side walls 33 and 34, the back wall 36, the front wall
+with the burner 27 and the roof 9. The floor and the side walls see the
 flame core and take up to about 65 kW/m² opposite it. The roof lies
 behind the cold tubes (620 K), which take 102 kW/m² themselves and send
 little back; next to them the side walls emit more than they receive
-(down to −20 kW/m² in the dark rings around the tube ends). The two side
+(close to zero in the dark rings around the tube ends). The two side
 walls agree within the noise, as the furnace is symmetric about its
 mid-depth plane.
 
 The paths do not depend on the number of bundles of the call: bundle k
 of an emitter takes the same Sobol point, so a call of 200 000 bundles
 traces the same 60 paths, in the same points, in a few seconds. The
-call of 16 million bundles takes about 6 minutes on 4 threads, tracing
-the 60 bundles 0.01 s.
+call of 18 million bundles takes 2 h 15 min on 16 threads, tracing the 60
+bundles in 0.15 s.
 
 ```
 pip install gmsh matplotlib numpy
