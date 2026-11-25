@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**126 features: 50 verified, 73 partial, 3 unverified.**
+**127 features: 50 verified, 74 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -142,6 +142,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Backends and interfaces | [Turbulence, energy, scalars, transient runs and the coupled solver on several ranks, bitwise one rank (MPI step W5 part 2)](#parallel-flow-models-ranks) | partial |
 | Backends and interfaces | [Restart files on ranks: gathered byte for byte the one-rank file, read on any rank count (MPI step W6)](#parallel-restart-ranks) | partial |
 | Backends and interfaces | [Steady runs on ranks: rank 0 writes the output of one rank (MPI step W7 part 1)](#parallel-run-ranks) | partial |
+| Backends and interfaces | [Turbulent, heated and transient runs on ranks with the output of one rank (MPI step W7 part 2)](#parallel-run-ranks-physics) | partial |
 | Sprays | [Lagrangian spray parcels, one way (L12, SP1)](#sprays-one-way) | partial |
 | Sprays | [Datums, liquid flow through them and droplet statistics (SP1b)](#sprays-datums-statistics) | partial |
 | Sprays | [Two-way momentum coupling of the sprays (SP2a, D247 to D252)](#sprays-two-way-momentum) | partial |
@@ -1819,10 +1820,31 @@ Contracts: `bitwise`.
 
 Gaps:
 
-- steady laminar cases only: passive scalars, energy, turbulence models and transient runs are refused on ranks (W7 part 2)
+- scalars, energy, turbulence models, the rotating frame and transient runs: parallel.run-ranks-physics (W7 part 2)
 - settings through the control port (run.set) are refused on ranks
 - MPI processes are not run in CI yet with foehn flow (the threads test covers the same code; the MPI CI job runs the flow kernels across processes, mpi_flow)
 - the fields are gathered on every rank for the output (memory of the whole state per rank), as the replicated multigrid setup
+
+Contracts: `bitwise`.
+
+<a id="parallel-run-ranks-physics"></a>
+
+### Turbulent, heated and transient runs on ranks with the output of one rank (MPI step W7 part 2)
+
+**partial** (gaps written) · id `parallel.run-ranks-physics` · switch `[run] rank_count, foehn flow --ranks N, mpirun -n N foehn flow; with [scalars], [energy], [turbulence], [flow] frame_rotation, [time]` · decisions D84, D85, D93
+
+- contract (bitwise): [`steady_scalars_energy_and_sst_on_ranks_write_the_files_of_one_rank`](../../crates/foehncraft-flow/tests/run_ranks.rs): steady k-ω SST channel with the energy equation and a passive scalar on 2 and 3 ranks: residuals, ledger, boundaries, wall files, fields.vtkhdf, restart.h5 byte for byte one rank; result.json solves (scalar and heat summaries, turbulence summary) equal
+- contract (bitwise): [`steady_k_epsilon_in_a_rotating_frame_on_ranks_writes_the_files_of_one_rank`](../../crates/foehncraft-flow/tests/run_ranks.rs): steady k-ε with energy and a scalar in a frame turning about z, 2 and 4 ranks, the same files and summaries
+- contract (bitwise): [`transient_run_on_ranks_writes_the_files_of_one_rank`](../../crates/foehncraft-flow/tests/run_ranks.rs): transient laminar BDF2 with energy and a scalar, 2 and 3 ranks: history.csv, heat.csv, balance.csv, probes.csv, forces.csv, boundaries.csv, fields_000004.vtkhdf, fields.vtkhdf, restart.h5 byte for byte one rank, the step rows of run.jsonl equal
+- contract (bitwise): [`adaptive_transient_sst_run_on_ranks_writes_the_files_of_one_rank`](../../crates/foehncraft-flow/tests/run_ranks.rs): transient SST with the adaptive time step (Courant number 2) on 2 ranks, the same files
+- contract (bitwise): [`ranks_run_transient_sst`](../../examples/cases/flow/ranks_run_transient_sst.toml): the heated transient SST channel with a dye on 5 ranks, 180 steps; every output file compared with --ranks 1 when the case was made (passes in CI (set linux-2), not yet in the manual)
+
+Gaps:
+
+- refused on ranks: species transport, [output.statistics], the thermal acceleration, cycle loop and frozen-flow march, sweeps over time steps, several fluids with a turbulence model, and what [run] ranks refuses
+- the scalar summary stops with an error on ranks for orthotropic solids, porous matrices, heat-flux periodic pairs, sprays and a variable density (all refused before the run by the rules above)
+- Crank-Nicolson and PISO without outer iterations are not tested on ranks in this step (the solver on ranks is, W5)
+- MPI processes are run in CI with the steady laminar case only; the threads tests cover the same code
 
 Contracts: `bitwise`.
 
