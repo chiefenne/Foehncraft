@@ -140,11 +140,13 @@ codes! {
     MAT_FILE = "MAT009", Error, "A user material database file (`[materials] include`, `FOEHN_MATERIALS`) or a property data file (NASA-7 record, table file) that cannot be read or has the wrong format.";
     // sprays (L12, D240 to D246)
     SPRAY_CONFIG = "SPR001", Error, "A `[spray]` value that is out of range, an injector outside the mesh, a spray file (`[spray] include`) that cannot be read or defines `injector` or `liquid` twice, or a `[spray.boundary.<name>]` for a boundary the mesh does not have.";
-    SPRAY_STEADY = "SPR002", Error, "A `[spray]` in a steady case: the parcels need a transient run.";
-    SPRAY_UNSUPPORTED = "SPR003", Error, "A `[spray]` in a case with MRF zones, sliding interfaces or a periodic boundary, or two-way coupling with a setting it does not work with yet (solid regions, the frozen-flow march, an algorithm other than PISO) (not in this version).";
+    SPRAY_STEADY = "SPR002", Error, "The steady spray mode (D260): `[spray.steady]` in a case with `[time]`, or an injector with `start` or `end` in a steady case (its mass flow must not change in time).";
+    SPRAY_UNSUPPORTED = "SPR003", Error, "A `[spray]` in a case with MRF zones, sliding interfaces or a periodic boundary, or two-way coupling with a setting it does not work with yet (solid regions, the frozen-flow march, an algorithm other than PISO), or the steady spray mode with solid regions or, two-way, with the coupled algorithm (not in this version).";
     SPRAY_LOST = "SPR004", Warning, "Parcels lost: the walk through the mesh failed or a parcel needed more than `[spray] max_substeps` sub-steps in a time step (counted in `spray.csv`).";
     SPRAY_BOOK = "SPR005", Error, "The mass book of the sprays does not close: released liquid differs from the liquid in the flow, stuck, left and lost by more than round-off.";
     SPRAY_COUPLING = "SPR006", Warning, "Two-way spray coupling (SP2, D252): the parcel passes of a time step ended at `[spray.coupling] max_passes` with the coupling lag above `tolerance` (fix: more passes or a smaller time step; `spray.csv` counts such steps).";
+    SPRAY_UNFINISHED = "SPR007", Warning, "Steady spray mode (D260): streams still in the flow after `[spray.steady] max_time` (caught in a recirculation, or a domain the droplets need longer to cross); their mass flow is counted as unfinished in `spray.csv` and `result.json` (fix: a larger `max_time`).";
+    SPRAY_SOURCES = "SPR008", Warning, "Steady spray mode (D260 (4)): the source residual of the final stream pass is above `[spray.steady] tolerance`, so the run is not reported as converged (fix: more outer iterations, or a smaller `[spray.steady] relaxation` if the residual swings).";
     // immersed bodies, Brinkman penalisation (L13 stage 1, D226)
     IMM_CONFIG = "IMM101", Error, "An `[immersed]` value that does not fit: a permeability that is not > 0, a body without the keys of its shape (`centre` and `radius`, `lower` and `upper`), a radius or length that is not > 0, a zero cylinder axis, two bodies with the same name, a `field` body without `fraction`, no body at all, or an `[immersed.topology]` value out of range (an empty design region, a fluid fraction not in (0, 1], a negative filter radius).";
     IMM_UNSUPPORTED = "IMM102", Error, "An `[immersed]` body in a case it does not fit (L13 stage 1, D226): a turbulence model (penalised walls are laminar and low-Re only; a wall function on a penalised wall is refused), the energy equation (no penalised conjugate heat transfer, Q9), passive scalars, gravity, regions or several fluids, rotating zones, or sprays; a topology search in a transient run.";
@@ -199,6 +201,8 @@ codes! {
     SPECIES = "SPE001", Error, "Invalid `[species]` settings or compositions: an unknown species (the GRI-Mech 3.0 set), a species named twice, a closure species not in `names`, fractions that do not sum to 1 or leave the closure species negative, both or neither of `mole_fractions` and `mass_fractions`, an inlet without `[boundary.<name>.species]`, `properties = \"mixture\"` or `diffusion = \"lewis\"` without `[energy]`, or a variable density without an ideal-gas fluid with its molar mass.";
     SPECIES_UNSUPPORTED = "SPE002", Error, "A setting that does not yet work with species (stage SF1): regions (solids, several fluids, porous regions); conjugate walls come with SF5.";
     SPECIES_CLOSURE = "SPE003", Warning, "The transported mass fractions summed to more than 1 somewhere by more than 1e-4, so the closure species was held at zero there: the solve is not converged, the tolerance of `[solver.scalar]` is too loose, or the limiter lets extrema pass (`limiter_epsilon`).";
+    CHEMISTRY = "CHM001", Error, "An invalid chemistry mechanism or reactor input: an unknown built-in mechanism, a mechanism file that does not parse, a reaction that does not conserve the elements, a species without thermodynamic data, an unsupported rate form (pressure-dependent Arrhenius, Chebyshev, SRI fall-off, a specific collider) or unit, or a reactor input with an invalid composition, temperature, pressure or time.";
+    CHEMISTRY_INTEGRATOR = "CHM002", Warning, "The stiff chemistry integrator of a reactor did not reach the end of its interval within `max_steps`, or its step became too small: raise `max_steps`, loosen `rtol`, or check the mechanism and the state.";
     REG_INITIAL_INLET = "REG009", Error, "`temperature = \"inlet\"` in `[regions.<name>.initial]` for a region whose fluid part has no inlet with `[boundary.<name>.energy] temperature`.";
     REG_START = "REG010", Note, "The start values of the regions and fluid parts and where they come from: given, a boundary value, a Laplace solve between the pressure boundaries of a part, or the inlets.";
     // pressure values absolute or gauge (D239)
@@ -548,7 +552,7 @@ mod tests {
                     "CASE", "SCHED", "BC", "SCAL", "RUN", "GEN", "DIV", "BAL", "EXPR", "MAT",
                     "REG", "MESH", "TURB", "MRF", "SLD", "ROT", "STAT", "ENE", "THM", "CHT",
                     "TOOL", "LIM", "MCP", "ACC", "CYC", "BUO", "FRZ", "PRS", "SPR", "DAT", "POR",
-                    "IMM", "SPE"
+                    "IMM", "SPE", "CHM"
                 ]
                 .contains(&p),
                 "{}",

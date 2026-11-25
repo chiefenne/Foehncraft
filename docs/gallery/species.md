@@ -1,10 +1,11 @@
 # Species and reacting flows
 
-Part of the [Example gallery](../gallery.md): mixtures of ideal gases whose species are carried by the flow, the first stage (SF1) of the [development path to an industrial steam furnace](../assessments/steam-furnace-development-path.md). Chemistry and heat release follow in SF2 and SF3.
+Part of the [Example gallery](../gallery.md): mixtures of ideal gases whose species are carried by the flow, the first stage (SF1) of the [development path to an industrial steam furnace](../assessments/steam-furnace-development-path.md). Gas-phase chemistry (SF2) follows; its coupling to the flow and the heat release in the cells come with SF2b and SF3.
 
 | # | Example | Stage | Feature |
 |---|---|---|---|
 | 278 | [A methane jet in a coflow of air, and binary diffusion against the exact solution](#species-transport) | SF1 | `[species]`, `names`, `closure`, `initial`, `diffusion`, `schmidt`, `lewis`, `turbulent_schmidt`, `properties`, `[boundary.<name>.species]`, fields `Y_<species>` |
+| 289 | [Methane ignites in a constant-pressure reactor and ends at its chemical equilibrium](#gas-chemistry) | SF2a | `foehn chemistry reactor`, `foehn chemistry equilibrium`, `[reactor]`, `mechanism` (`gri30`, `westbrook-dryer-2`, `jones-lindstedt-4`, YAML files), `[reactor.integrator]`, `[reactor.check]` |
 
 ---
 
@@ -81,3 +82,96 @@ Files: `fields.vtkhdf` (`Y_CH4`, `Y_O2`, `density`), `line_axis.csv`,
 `element …`). [Recipe 278](../recipes/species.md#species-transport),
 cases in the [catalogue](../cases/flow.md#species), images by
 `python3 -m tools.plot.species_fields`.
+
+---
+
+<a id="gas-chemistry"></a>
+## 289. Methane ignites in a constant-pressure reactor and ends at its chemical equilibrium
+
+<img src="../figures/gallery/chemistry_reactor_traces.png" alt="Left: temperature against time on a log axis from 0.1 µs to 100 ms for stoichiometric methane and air from 1400 K at 1 atm. The four-step mechanism of Jones and Lindstedt rises at once and levels at 2817 K, the two-step mechanism of Westbrook and Dryer jumps at 0.34 ms to 3164 K, above its dashed equilibrium line at 2887 K, and GRI-Mech 3.0 ignites at 3.4 ms and settles on its equilibrium at 2698 K. Right: mole fractions of GRI-Mech 3.0 on log axes: methane and oxygen fall at ignition, water and carbon dioxide rise to 0.15 and 0.05, the radicals OH, H and O grow by six decades before ignition, and nitric oxide forms after it." width="1200" height="480">
+
+`reactor_methane_air_gri30.toml` puts stoichiometric methane and air at
+1 atm and 1400 K into the constant-pressure adiabatic reactor, the
+chemistry of one cell without transport. With GRI-Mech 3.0 (53 species,
+325 reactions with three-body, Lindemann and Troe fall-off rates, read from
+its YAML file) the radical pool builds up for 3.4 ms, the mixture
+ignites, and the state relaxes to the chemical equilibrium: at 100 ms the
+temperature is 4·10⁻⁵ K and every mole fraction within 4·10⁻⁹ of the
+Gibbs equilibrium at the same enthalpy and pressure (2697.7 K), and the
+element masses have drifted by 2·10⁻¹³. The run takes 2 811 steps of the
+stiff integrator and 0.38 s on one core. The two global mechanisms show
+what they are for and what not: the four-step scheme of Jones & Lindstedt
+(1988) ignites after 8 µs (it has no induction chemistry) and ends at the
+equilibrium of its eight species, 120 K above that of GRI-Mech 3.0 because
+it has no radicals and no dissociation; the two-step scheme of Westbrook &
+Dryer (1981) ends at 3164 K, 277 K above the equilibrium of its own
+species, because its reverse CO step (their eq. 11) is an Arrhenius rate
+of its own and not the equilibrium constant. Global mechanisms predict
+heat release and flame speed after calibration, not ignition delays or
+end states; SF3 uses them only with that warning.
+
+<img src="../figures/gallery/chemistry_ignition_map.png" alt="Colour map of the reactor temperature over time (log axis, 1 µs to 100 ms) and start temperature (1100 to 1900 K) for GRI-Mech 3.0: blue to green before ignition, a sharp front to dark red and red after it; the white dashed ignition delay line runs from 64 µs at 1900 K to 94 ms at 1150 K. At 1100 and 1125 K there is no ignition within 100 ms." width="1000" height="560">
+
+The same reactor from 1100 to 1900 K in steps of 10 K: the ignition delay
+falls from 94 ms at 1150 K to 64 µs at 1900 K, three decades in 750 K,
+with the burnt temperature at 100 ms rising from 2610 K (1150 K, just after
+ignition) to 2870 K (1900 K). Below 1150 K the
+mixture does not ignite within 100 ms.
+
+The adiabatic flame temperature of stoichiometric methane and air from
+298.15 K is 2224.9 K by Gibbs minimisation over the 53 species (2226 K in
+Turns 2012, with the JANAF data), with CO 0.9 %, NO 0.19 % and OH 0.29 %
+by mole: `foehn chemistry equilibrium` or
+[`equilibrium_methane_air.json`](../cases/tools.md).
+
+**How it is built.** The rates are the gas-phase slice of the chemistry
+program D120: a mechanism is read once into flat arrays (reactions,
+species terms, third-body efficiencies, SI rate constants) and the kernel
+`foehncraft_kernels::chemistry` evaluates the rates of progress
+(modified Arrhenius, three-body, Lindemann and Troe fall-off, reverse
+rates from the equilibrium constants of the NASA-7 data) and their
+**analytic Jacobian** with respect to the mass fractions and the
+temperature, including the dependence of the density and the
+concentrations on them; it agrees with central differences to 10⁻¹¹ for
+GRI-Mech 3.0. The reactor is integrated by the L-stable Rosenbrock method
+RODAS3 (order 3, Sandu et al. 1997) with an embedded error estimate and
+step control; its linear systems are solved by an LU factorisation with
+partial pivoting in a fixed column order, so the result depends only on
+the bits of the state: the kernel is cell-local, allocation-free and the
+same code for a CPU core and a GPU thread. Global orders below 1
+(Westbrook & Dryer's −0.3 for methane) are regularised as
+C (max(C, 0) + ε)^(a−1) with ε = 10⁻¹² of the total concentration, so the
+rate and its derivative stay finite at C = 0. Reversible global reactions
+take the reverse orders a′ − ν′ + ν″, which makes the ratio of the
+two rates the equilibrium quotient. The equilibrium is the reduced Gibbs
+iteration of Gordon & McBride (1994) with their damping, at fixed T and p
+or, by a bracketed secant on h(T), at fixed h and p. The mechanism
+importer reads the YAML format of D103 (units, phases, NASA-7 species,
+elementary, three-body and fall-off reactions with efficiencies, orders);
+species a file does not define come from the built-in GRI-Mech 3.0 data.
+
+**What this version does not do.** No chemistry in the cells of a flow yet:
+the source terms of the species and the heat release with the GPU and
+rank paths come with SF2b, with the 1D laminar flame speed of methane and
+air against measurements; turbulence–chemistry interaction is SF3.
+Pressure-dependent Arrhenius (PLOG), Chebyshev and SRI fall-off rates and
+specific colliders `(+N2)` are refused (CHM001). Only the elements H, C,
+O, N and Ar. The ignition delay band of the GRI-Mech case is a regression
+of this code, not a comparison with shock-tube measurements (a later
+check).
+
+**What is checked.** The analytic Jacobian against central differences
+(GRI-Mech 3.0 at 900 and 1600 K, both global mechanisms); the third order
+of RODAS3 and its error control on an exact exponential decay; the
+detailed balance: every reversible reaction of GRI-Mech 3.0 has a net rate
+below 10⁻⁶ of its forward rate at the Gibbs equilibrium (1500 and 2200 K);
+the adiabatic flame temperature 2226 ± 10 K; the reactor end state at the
+equilibrium and the element drift; the rate constants of the importer in
+SI (GRI-Mech reactions 1 and 3; Jones & Lindstedt against the cm–mol table
+of Si et al. 2020); refused unbalanced and unsupported reactions (CHM001).
+
+Files: `output/<case>/reactor.csv` (time, temperature, mole fractions of
+every species). [Recipe 289](../recipes/species.md#gas-chemistry), cases
+in the [catalogue](../cases/chemistry.md), images by
+`python3 -m tools.plot.reactor_traces`.
+

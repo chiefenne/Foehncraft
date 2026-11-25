@@ -1,0 +1,35 @@
+description: |-
+  Four-step global mechanism of methane of Jones & Lindstedt (1988),
+  "Global reaction schemes for hydrocarbon combustion", Combust. Flame 73,
+  233-249: two fuel steps, the water-gas shift and the hydrogen step, the
+  last two reversible. The pre-exponential factors are in m, kmol, s as
+  in the paper (the same rates as 7.82e13, 3.00e11, 2.75e12, 1.21e18 in
+  cm, mol, s: Si, Wang, Li & Mi 2020, Energy Fuels 34, 3805-3815, table 1,
+  "JL-Ori"); activation energies in cal/mol. The
+  reverse rates follow from the equilibrium constants; the reverse orders
+  of the hydrogen step are then H2^-0.75 O2^1 H2O^1 (the forward orders
+  minus the reactant plus the product coefficients), which keeps the
+  ratio of the two rates the equilibrium quotient.
+  The species data come from the built-in species database (GRI-Mech 3.0
+  thermo and transport). Written for Foehncraft (SF2).
+
+units: {length: m, time: s, quantity: kmol, activation-energy: cal/mol}
+
+phases:
+- name: jones-lindstedt-4
+  thermo: ideal-gas
+  elements: [O, H, C, N, Ar]
+  species: [CH4, O2, CO, CO2, H2O, H2, N2, AR]
+  kinetics: gas
+
+reactions:
+- equation: CH4 + 0.5 O2 => CO + 2 H2
+  rate-constant: {A: 4.4e+11, b: 0.0, Ea: 30000.0}
+  orders: {CH4: 0.5, O2: 1.25}
+- equation: CH4 + H2O => CO + 3 H2
+  rate-constant: {A: 3.0e+08, b: 0.0, Ea: 30000.0}
+- equation: CO + H2O <=> CO2 + H2
+  rate-constant: {A: 2.75e+09, b: 0.0, Ea: 20000.0}
+- equation: H2 + 0.5 O2 <=> H2O
+  rate-constant: {A: 6.8e+15, b: -1.0, Ea: 40000.0}
+  orders: {H2: 0.25, O2: 1.5}

@@ -9,6 +9,7 @@ Part of the [Example gallery](../gallery.md): droplets as Lagrangian parcels in 
 | 280 | [A water spray that drives the air](#spray-two-way) | SP2 | `[spray.coupling] mode = "two-way"`, value-plus-slope momentum sources, passes inside the time step, coupling lag, momentum ledger pair, health numbers |
 | 283 | [Water droplets cool a hot air stream](#spray-cooling) | SP2 | two-way sensible heat: droplet temperature, Ranz-Marshall heat transfer, energy sources in value-plus-slope form, temperature lag, enthalpy ledger pair |
 | 285 | [Droplets spread by the turbulence of a duct](#spray-dispersion) | SP2 | `[spray] dispersion = "eddy-lifetime"` (Gosman and Ioannides), Gaussian eddies of variance 2k/3 keyed per parcel and eddy, eddy interaction time, crossing trajectories, spread by droplet size |
+| 292 | [The spray-cooled duct as a steady state](#spray-steady) | SP2s | `[spray.steady]` (D260): parcel streams through the frozen steady gas, sources relaxed between passes, source residual in the convergence test, keyed streams, `spray/streams.vtkhdf` |
 
 ---
 
@@ -323,4 +324,92 @@ One process.
 Files: `spray.csv`, `result.json`, parcel files every 25 steps.
 Picture: `python3 -m tools.plot.spray_dispersion OUT_DIR output/spray_dispersion`.
 [Recipe 285](../recipes/sprays.md#spray-dispersion),
+[case row](../cases/flow.md#lagrangian-sprays).
+
+<a id="spray-steady"></a>
+## 292. The spray-cooled duct as a steady state
+
+<img src="../figures/gallery/spray_cooling_steady.png" alt="Top: steady air temperature in a duct of 2 m by 0.4 m, 300 °C (red) at the inlet on the left and down to about 130 °C (blue) in the cold core of the spray behind a nozzle 0.15 m from the inlet; the paths of every fourth water stream are drawn as thin lines from white (cold droplets) to grey (hot droplets), fanning out slightly along the middle of the duct. Bottom left: the mass-flow mean air temperature along the duct, falling from 300 °C at the inlet to 249 °C at the outlet; the steady curve is smooth, the transient run at its last step wavers around it by a few kelvin. Bottom right, over 58 stream passes: the source residual falls from 1 to 1e-4 on a log axis, and the heat the air gives the spray falls from 11.5 kW to a level of 6.39 kW, with the time mean of the transient run, 6.58 kW, as a dashed line." width="1200" height="740">
+
+`spray_cooling_steady.toml` is the duct of
+[gallery 283](#spray-cooling) (2D, 100 × 20 cells, SST k-ω, air at 300 °C
+and 5 m/s, 10 g/s of water at 20 °C from a nozzle 0.15 m behind the inlet,
+20 to 200 µm) without `[time]`: the gas is solved as a steady state with
+SIMPLE and the spray runs in the steady mode of D260. A parcel is a
+*stream* here: it stands for a number of droplets per second, so its mass
+is a mass flow (kg/s), and it is followed from the nozzle through the
+frozen gas field until it leaves, sticks or reaches `max_time`. The 400
+streams of the case share the 10 g/s; sizes, directions and (with
+dispersion) the eddies are drawn from random numbers keyed by the seed and
+the stream alone, so every pass follows the same streams and the iteration
+has a fixed point.
+
+**How the steady coupling works.** Every 10 outer iterations a stream pass
+runs: the same pure parcel function, sorted per-cell sums and value-plus-slope
+records as in the transient coupling (D247 to D251), with sub-steps along
+the path in place of a time step. The gas does not take the sources of one
+pass directly but holds them in the relaxed form S(u) = A − β u for
+momentum and Q(T) = B − G T for heat, A ← A + α (A_new − A) with α = 0.5,
+and the same for β, B and G. There is no closing step, since no parcel
+state is carried from one pass to the next. The *source residual*, the
+difference between the held sources and those of the last pass over the
+sources of the last pass (summed over the spray cells, the larger of
+momentum and heat), is part of the convergence test: the run is converged
+only when the gas residuals are below the solver tolerance and the source
+residual is below `[spray.steady] tolerance`. A run that ends above it
+warns with SPR008 and is not reported as converged.
+
+In this run the gas and the spray converge together in 526 outer
+iterations and 58 passes (14 s on the 4 cores of the cloud machine); the source residual ends at
+1.0 × 10⁻⁴ (momentum; heat 2.0 × 10⁻⁵). All 10 g/s leave through the
+outlet, no stream is lost or unfinished; the droplets stay 0.26 s on
+average and 0.33 s at most in the duct. The spray takes 6.39 kW from the
+air, which leaves at a mass-flow mean of 249.1 °C. The health numbers are
+β/ṁ up to 0.27 and G/(ṁ c_p) up to 0.39, where ṁ is the gas mass flow
+through the cell, and a liquid volume fraction up to 3.4 × 10⁻⁴.
+
+**Against the transient run** (V28.9, without evaporation). The transient
+case of gallery 283 marched for 2 s takes 6.58 kW from the air as the time
+mean after 0.3 s, with a standard error of 0.03 kW over seven windows of
+0.25 s; halving its step to 1 ms adds about 1 %. The steady mode is 2.9 %
+below that, more than the sampling and step errors of the transient run
+explain, and its outlet is 1.5 K warmer. The reason is the flow: behind the
+nozzle the transient duct does not come to rest (the mixed temperature of
+its last step wavers by several kelvin around the steady curve, bottom
+left), and the time mean of an unsteady flow need not be its steady state.
+V28.9 is therefore *not met* in the strict form of section 5.9; the
+difference is written down as a gap. Other seeds give 6.38 and 6.36 kW,
+1600 streams 6.37 kW, so the sample of 400 streams is good to about 0.3 %.
+
+**What is checked.** V28.10: `spray.csv` and the residuals of whole runs
+are bitwise equal on 1 and 4 threads, with and without eddy-lifetime
+dispersion. One stream of 50 µm in a uniform gas at 2 m/s needs the
+residence time of a fourth-order integration of its equation of motion to
+7 × 10⁻⁵, and the momentum it takes from the gas equals its mass flow
+times the exit speed. Another seed draws other streams (other heat, within
+10 %). In the ledger the stream pass books the pairs 2801 to 2803
+(momentum) and 2804 (heat) on the gas and the parcel accounts with the
+sources of the final pass on both sides, so the pairs are zero to the bit;
+the gas accounts carry the difference to the held sources as the term
+`spray source residual`, the parcel accounts close to about 10⁻¹⁶, the
+thermal account of the gas to 10⁻⁶. A steady spray with `[time]` or with
+injectors that start or end is refused (SPR002), as is the steady mode
+with solid regions or two-way with the coupled algorithm (SPR003).
+
+**What this version does not do.** No evaporation (SP5; V28.11, the duct
+with more water than the gas can take, waits for it). V28.9 is 2.9 % apart
+(above). The saturation limiter of D253 comes with evaporation; the
+health numbers of D254 (with the gas mass flow through the cell in place
+of the time step) are reported, not acted on. Datums report no liquid in the steady mode. Not with solid regions
+(CHT) or the coupled algorithm; one process. The statistical error is
+estimated by hand with other seeds, not yet by a study tool (D196).
+
+Files: `spray.csv` (one row per pass: relaxation, source residuals, streams,
+liquid per boundary, residence times, force and heat on the gas, health
+numbers), `result.json` (`spray_steady` summary, ledger),
+`spray/streams.vtkhdf` (the stream paths of the final pass as points with
+velocity, diameter, temperature, droplet rate, residence time, stream id).
+Picture:
+`python3 -m tools.plot.spray_cooling_steady OUT_DIR output/spray_cooling_steady [output/spray_cooling]`.
+[Recipe 292](../recipes/sprays.md#spray-steady),
 [case row](../cases/flow.md#lagrangian-sprays).

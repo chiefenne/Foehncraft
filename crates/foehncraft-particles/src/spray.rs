@@ -13,6 +13,9 @@ use foehncraft_mesh::mesh::Mesh;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
+mod steady;
+pub use steady::{MomentumFlows, StreamBooks, StreamPass, Streams};
+
 /// The gas at a point: what the parcel step needs.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GasState {
@@ -210,6 +213,32 @@ struct Outcome {
     weight: [f64; 3],
     /// Impulse of the walls (rebounds, mirrors).
     walls: [f64; 3],
+    /// Time the parcel was followed (s).
+    used: f64,
+    /// The path (steady streams with [`TrackOpts::paths`]): the state at
+    /// the start of every sub-step and at the end.
+    path: Vec<PathPoint>,
+}
+
+/// A point of the path of a stream (steady mode, D260).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PathPoint {
+    /// Time since the start of the stream (s).
+    pub(crate) t: f64,
+    pub(crate) x: [f64; 3],
+    pub(crate) v: [f64; 3],
+    pub(crate) temp: f64,
+}
+
+/// How [`Spray::track`] follows a parcel.
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct TrackOpts {
+    /// Keep the path.
+    pub(crate) paths: bool,
+    /// A steady stream (D260): the slope of a record is the local one of
+    /// its visit of the cell, m (1 − Π e) over the sub-steps of the visit
+    /// ([`crate::coupling::set_slopes_local`]).
+    pub(crate) steady: bool,
 }
 
 /// Mass and parcel counts, per boundary and in total (kg, parcels).
@@ -531,7 +560,7 @@ impl Spray {
                     let p = fresh[i - n_old];
                     (p, t1 - p.born)
                 };
-                self.track(env, gas, p, time.max(0.0), t1)
+                self.track(env, gas, p, time.max(0.0), t1, TrackOpts::default())
             })
             .collect();
         let sources = if self.cfg.coupling.two_way() {
@@ -969,7 +998,15 @@ impl Spray {
         p.eddy.left = eddy_times(gs.tke, gs.eps, s.tau, slip).interaction;
     }
 
-    fn track(&self, env: &Env, gas: &dyn Gas, mut p: One, time: f64, t1: f64) -> Outcome {
+    fn track(
+        &self,
+        env: &Env,
+        gas: &dyn Gas,
+        mut p: One,
+        time: f64,
+        t1: f64,
+        opts: TrackOpts,
+    ) -> Outcome {
         let rho_p = self.cfg.liquid.density;
         let two_way = self.cfg.coupling.two_way();
         let re_frac = self.cfg.coupling.max_reynolds_change;
@@ -990,9 +1027,18 @@ impl Spray {
         // the time of the eddy is spent with the sub-steps (D251: a
         // sub-step ends at the end of an eddy)
         let mut last_left = left;
+        let mut path: Vec<PathPoint> = Vec::new();
         while left > tiny {
             p.eddy.left -= last_left - left;
             last_left = left;
+            if opts.paths {
+                path.push(PathPoint {
+                    t: time - left,
+                    x: p.x,
+                    v: p.v,
+                    temp: p.temp,
+                });
+            }
             substeps += 1;
             if substeps as usize > self.cfg.max_substeps {
                 fate = Fate::Lost;
@@ -1318,7 +1364,20 @@ impl Spray {
         }
         p.eddy.left -= last_left - left;
         p.face = None;
-        crate::coupling::set_slopes(&mut records, mass, mass * cp_p);
+        if opts.steady {
+            crate::coupling::set_slopes_local(&mut records, mass, mass * cp_p);
+        } else {
+            crate::coupling::set_slopes(&mut records, mass, mass * cp_p);
+        }
+        let used = time - left.max(0.0);
+        if opts.paths {
+            path.push(PathPoint {
+                t: used,
+                x: p.x,
+                v: p.v,
+                temp: p.temp,
+            });
+        }
         Outcome {
             p,
             fate,
@@ -1328,6 +1387,8 @@ impl Spray {
             records,
             weight,
             walls,
+            used,
+            path,
         }
     }
 

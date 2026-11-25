@@ -11,7 +11,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 |---|---|---|
 | [Kernel benchmark G1](recipes/benchmarks.md) | build and run gate G1 on a CPU, on Windows and on an NVIDIA GPU, and rerun it on unstructured meshes | 1, 2, 3, 10 |
 | [Development: tests, CI and releases](recipes/development.md) | MPI tests, checking a change the way CI does, releases, derivative checks of the kernels, manufactured solutions of the turbulence models | 4, 5, 6, 25, 184 |
-| [Meshes](recipes/meshes.md) | generate, read, convert and partition meshes, update the mesher's golden values, run flows on poor Gmsh meshes, the operator exactness check, the canonical local mesh and exact reductions | 7, 8, 9, 11, 36, 127, 129, 134, 138, 189, 200, 219, 230, 231, 234, 244, 262, 279 |
+| [Meshes](recipes/meshes.md) | generate, read, convert and partition meshes, update the mesher's golden values, run flows on poor Gmsh meshes, the operator exactness check, the canonical local mesh and exact reductions | 7, 8, 9, 11, 36, 127, 129, 134, 138, 189, 200, 219, 230, 231, 234, 244, 262, 279, 290 |
 | [Scalar transport and the pressure solver](recipes/scalar-pressure.md) | order of accuracy of the scalar operators, convection schemes, pressure-solver studies, hypre | 12, 13, 15, 17 |
 | [GPU runs](recipes/gpu.md) | scalar operators, pressure solver and flow cases on an NVIDIA GPU (also a free Colab T4) | 14, 16, 24 |
 | [Incompressible flow](recipes/flow.md) | Couette, Poiseuille, cavity and cylinder runs, boundary conditions, transient runs, time-step control, the coupled algorithm, heat transfer in turbulent flow, rotating machinery, the T-junction mixing study | 18, 19, 20, 21, 23, 28, 78, 80, 81, 83, 85, 86, 87, 94, 95, 96, 98, 99, 100, 101, 102, 225, 103, 196 |
@@ -20,10 +20,10 @@ The recipes are split by topic; each page has its own table of contents. The num
 | [Thermal radiation](recipes/radiation.md) | the radiation of a prescribed temperature field by Monte Carlo bundles: walls, noise, threads, ranks and the GPU, the checks against exact solutions | 259, 281 |
 | [Turbulence models](recipes/turbulence.md) | RANS turbulence models: the model, the wall treatment by the mesh, inlet turbulence, roughness, the near-wall checks, curvature correction and QCR on any mesh, the internal flows of D45 (pipe, diffuser, U-bend) | 68, 71, 73, 74, 88, 89, 90, 113, 115, 141, 140, 194, 193, 199, 197, 204 |
 | [Boundary conditions](recipes/boundary-conditions.md) | slip walls, wedges for axisymmetric flow, inlet profiles from tables, backflow at pressure outlets, convective outlets, periodic modules, absolute or gauge pressure values (D239) | 29, 67, 220 |
-| [Lagrangian sprays](recipes/sprays.md) | spray droplets into a flow with an injector file, wall behaviour, the mass book | 242, 265, 280, 283, 285 |
+| [Lagrangian sprays](recipes/sprays.md) | spray droplets into a flow with an injector file, wall behaviour, the mass book | 242, 265, 280, 283, 285, 292 |
 | [Porous regions](recipes/porous.md) | porous blocks and honeycombs in a flow: resistances, axes, the honeycomb shorthand | 273, 275 |
 | [Immersed bodies](recipes/immersed.md) | put a body in the flow without meshing it: `[immersed]`, the permeability, forces | 270 |
-| [Species and reacting flows](recipes/species.md) | species of an ideal-gas mixture: names, compositions in mole or mass fractions, diffusion by Schmidt or Lewis numbers, mixture properties, the element ledger | 278 |
+| [Species and reacting flows](recipes/species.md) | species of an ideal-gas mixture: names, compositions in mole or mass fractions, diffusion by Schmidt or Lewis numbers, mixture properties, the element ledger | 278, 289 |
 | [Expressions and materials](recipes/properties.md) | values as expressions of x, y, z and t, constants and tables, wall mass flux, the material database, regions | 31, 32 |
 | [Python](recipes/python.md) | the `foehncraft` package: cases, expressions, runs with callbacks, results, materials, studies | 33 |
 | [Verification](recipes/verification.md) | the discretisation uncertainty of a sweep (GCI), the generated verification manual | 34, 35, 165, 170, 271 |
@@ -165,6 +165,9 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="radiation-paths"></a>281 | [Follow chosen bundles of a radiation call](recipes/radiation.md#radiation-paths) | [Thermal radiation](recipes/radiation.md) |
 | <a id="spray-cooling"></a>283 | [Cool a gas with droplets (two-way heat)](recipes/sprays.md#spray-cooling) | [Lagrangian sprays](recipes/sprays.md) |
 | <a id="spray-dispersion"></a>285 | [Let the turbulence spread the droplets](recipes/sprays.md#spray-dispersion) | [Lagrangian sprays](recipes/sprays.md) |
+| <a id="gas-chemistry"></a>289 | [Run a mechanism in a constant-pressure reactor and find the equilibrium](recipes/species.md#gas-chemistry) | [Species and reacting flows](recipes/species.md) |
+| <a id="run-ranks-physics"></a>290 | [Run a turbulent, heated or transient case on ranks](recipes/meshes.md#run-ranks-physics) | [Meshes](recipes/meshes.md) |
+| <a id="spray-steady"></a>292 | [Solve a spray in a steady flow (steady spray mode)](recipes/sprays.md#spray-steady) | [Lagrangian sprays](recipes/sprays.md) |
 
 ## Adding a feature
 

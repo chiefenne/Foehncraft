@@ -1,0 +1,1 @@
+{"reactor": {"mechanism": "gri30", "pressure": 101325.0, "temperature": 298.15, "end_time": 1.0, "equivalence_ratio": 1.0, "fuel": {"CH4": 1.0}, "oxidiser": {"O2": 0.21, "N2": 0.79}}, "constant": "enthalpy"}
