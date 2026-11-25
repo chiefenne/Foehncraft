@@ -73,7 +73,7 @@ pub struct Record {
     /// gas of the cell (kg per unit mass fraction): the chord to the
     /// saturation state at the droplet surface, vapour / (Y_s − Y*) (D250),
     /// scaled so that the closing step cannot take more than the parcel
-    /// holds ([`cap_vapour_slopes`]).
+    /// holds (`cap_vapour_slopes`).
     pub vapour_slope: f64,
     /// The frozen vapour mass fraction Y* the sub-step saw.
     pub vapour_y: f64,
