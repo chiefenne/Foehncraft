@@ -1,0 +1,90 @@
+# A fuel spray that breaks up in dense still gas (Lagrangian sprays, SP6,
+# D300 to D306): KH-RT breakup of injected blobs, TAB distortion with the
+# dynamic drag, two-way coupling, against the penetration correlation of
+# Hiroyasu and Arai (1990).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/spray_breakup.toml
+#
+# Nitrogen at rest at 15 kg/m³ (about 13 bar, 300 K), a quarter of the
+# chamber about the spray axis (symmetry planes y = 0 and z = 0). One hole
+# of 0.15 mm injects a diesel-like fuel at 60 MPa for 1.5 ms as blobs of
+# √C_a d_hole (Reitz and Diwakar 1987). The Kelvin-Helmholtz waves strip
+# child parcels of small drops off the blobs (Reitz 1987), the
+# Rayleigh-Taylor waves break the drops beyond the breakup length (Beale and
+# Reitz 1999), and every parcel carries the TAB distortion that raises its
+# drag towards that of a disc (Liu, Mather and Reitz 1993). The drag of the
+# drops drives the gas (two-way coupling), which carries the spray tip.
+
+case_format = "0.7"
+
+[mesh.generate]
+type = "hex"
+dimension = 3
+upper = [0.1, 0.02, 0.02]
+cells = [100, 16, 16]
+grading = { y = { ratio = 6.0 }, z = { ratio = 6.0 } }
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 15.0
+viscosity = 1.8e-5
+pressure_values = "gauge"
+operating_pressure = 1.3e6
+
+[turbulence]
+model = "k-omega-sst"
+wall_treatment = "automatic"
+
+[initial]
+velocity = [0.0, 0.0, 0.0]
+turbulence_intensity = 0.05
+viscosity_ratio = 10.0
+
+[boundary.xmin]
+type = "wall"
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymin]
+type = "symmetry"
+[boundary.zmin]
+type = "symmetry"
+[boundary.ymax]
+type = "total-pressure-outlet"
+total_pressure = 0.0
+[boundary.zmax]
+type = "total-pressure-outlet"
+total_pressure = 0.0
+
+[time]
+scheme = "bdf2"
+time_step = 2e-6
+end_time = 2e-3
+
+[spray]
+include = "spray_breakup_injectors.toml"
+wall_mode = "stick"
+write_every = 50
+dispersion = "eddy-lifetime"
+penetration_fraction = 0.97
+
+[spray.coupling]
+mode = "two-way"
+passes = "converged"
+tolerance = 1e-3
+max_passes = 3
+
+[spray.breakup]
+model = "kh-rt"
+drag = "dynamic"
+b0 = 0.61
+b1 = 10.0
+
+[solver]
+tolerance = 1e-6
+max_iterations = 300
+
+[verification]
+require_convergence = false

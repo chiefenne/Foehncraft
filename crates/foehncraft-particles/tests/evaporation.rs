@@ -91,6 +91,7 @@ fn spray(
             start: 0.0,
             end,
             temperature: Some(temp),
+            ..Default::default()
         }],
         ..SpraySection::default()
     };

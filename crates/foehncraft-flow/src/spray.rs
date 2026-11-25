@@ -483,7 +483,9 @@ pub const CSV_UNITS: &str = "step -; time s; parcels -; injected_kg kg; in_flow_
      also gas_vapour_kg_s kg/s (vapour the gas received per second), vapour_lag_kg_s kg/s (mass \
      source of the continuity less gas_vapour_kg_s), coupling_vapour_max - (largest Δt/τ of the \
      vapour of a cell, β Δt / (ρ V)), limiter_cells - (cells where the saturation limiter of \
-     D253 held vapour back in the last pass), limiter_kg_s kg/s (the vapour held back)";
+     D253 held vapour back in the last pass), limiter_kg_s kg/s (the vapour held back); breakup \
+     (SP6): child_parcels - (child parcels the blobs shed since the start), rt_breakups - \
+     (Rayleigh-Taylor breakups of drops since the start)";
 
 /// The header of `spray.csv`.
 pub fn csv_head(sp: &foehncraft_particles::Spray) -> String {
@@ -511,6 +513,9 @@ pub fn csv_head(sp: &foehncraft_particles::Spray) -> String {
                 ",gas_vapour_kg_s,vapour_lag_kg_s,coupling_vapour_max,limiter_cells,limiter_kg_s",
             );
         }
+    }
+    if sp.config().breakup.on() {
+        h.push_str(",child_parcels,rt_breakups");
     }
     h
 }
@@ -663,6 +668,9 @@ pub fn csv_row(
                 c.limiter_mass
             ));
         }
+    }
+    if sp.config().breakup.on() {
+        extra.push_str(&format!(",{},{}", t.child_parcels, t.rt_breakups));
     }
     format!(
         "{step},{:e},{},{:e},{:e},{:e},{:e},{:e},{},{},{}{extra}",

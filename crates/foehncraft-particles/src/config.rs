@@ -70,6 +70,14 @@ pub struct Liquid {
     pub latent_heat: f64,
     /// The temperature of `latent_heat` (K, default 298.15).
     pub latent_heat_temperature: f64,
+    /// Surface tension against the gas (N/m), constant; needed with
+    /// `[spray.breakup]` (D300).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub surface_tension: Option<f64>,
+    /// Dynamic viscosity of the liquid (Pa s), constant; needed with
+    /// `[spray.breakup]` (D300).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub viscosity: Option<f64>,
 }
 
 /// The vapour pressure law of a liquid.
@@ -92,6 +100,8 @@ impl Default for Liquid {
             saturation: Saturation::Water,
             latent_heat: 2.4417e6,
             latent_heat_temperature: 298.15,
+            surface_tension: None,
+            viscosity: None,
         }
     }
 }
@@ -166,14 +176,18 @@ pub struct Injector {
     pub position: [f64; 3],
     /// Axis of the spray (any length, it is normalised).
     pub direction: [f64; 3],
-    /// Speed of the droplets at the injector (m/s).
+    /// Speed of the droplets at the injector (m/s). With `hole_diameter`
+    /// it may be left out: the speed then follows from the mass flow,
+    /// U = ṁ/(ρ_l C_a A_hole) (D306).
+    #[serde(default)]
     pub speed: f64,
     /// Half angle of the spray cone (degrees); 0 is a straight jet. The
     /// directions are uniform in the cone's solid angle (counter-based random
     /// numbers keyed by the parcel identity, D121).
     #[serde(default)]
     pub half_angle: f64,
-    /// Mass flow of the liquid (kg/s).
+    /// Mass flow of the liquid (kg/s), constant; leave it out with `rate`.
+    #[serde(default)]
     pub mass_flow: f64,
     /// Droplet diameter (m) when every droplet has the same size; leave it
     /// out with `size`.
@@ -200,6 +214,226 @@ pub struct Injector {
     /// Temperature of the injected droplets (K); default: the liquid's.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub temperature: Option<f64>,
+    /// Diameter of the nozzle hole (m), for blob injection (D306): without
+    /// `diameter` and `size` the parcels start as blobs of the diameter
+    /// √C_a d_hole (Reitz and Diwakar 1987), and without `speed` they leave
+    /// at U = ṁ/(ρ_l C_a A_hole). The breakup length of `[spray.breakup]`
+    /// is measured in hole diameters.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hole_diameter: Option<f64>,
+    /// Area contraction C_a of the jet at the hole exit (0 to 1, default 1;
+    /// the effective flow area over the geometric one).
+    #[serde(default = "one", skip_serializing_if = "is_one")]
+    pub area_contraction: f64,
+    /// The mass flow over time (D306): pairs [t, ṁ] (s from `start`,
+    /// kg/s), linear in between and zero outside; replaces `mass_flow`. A
+    /// parcel carries the exact integral of the table over its share of
+    /// the injection time, and the injection ends at the table's last time
+    /// unless `end` comes first.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rate: Vec<[f64; 2]>,
+    /// The share of the injector's liquid that enters the domain (0 to 1,
+    /// default 1): a quarter model of a round jet about its axis takes
+    /// 0.25. `mass_flow` and `rate` are the whole injector's; the parcels
+    /// carry this share of them, and the speed from the hole follows from
+    /// the whole flow.
+    #[serde(default = "one", skip_serializing_if = "is_one")]
+    pub flow_share: f64,
+}
+
+fn one() -> f64 {
+    1.0
+}
+
+/// The linear piece `w` of a rate table at `t`.
+fn piece(w: &[[f64; 2]], t: f64) -> f64 {
+    let ([t0, m0], [t1, m1]) = (w[0], w[1]);
+    if t1 <= t0 {
+        return m1;
+    }
+    m0 + (m1 - m0) * (t - t0) / (t1 - t0)
+}
+
+fn is_one(x: &f64) -> bool {
+    *x == 1.0
+}
+
+impl Default for Injector {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            position: [0.0; 3],
+            direction: [1.0, 0.0, 0.0],
+            speed: 0.0,
+            half_angle: 0.0,
+            mass_flow: 0.0,
+            diameter: 0.0,
+            size: None,
+            parcels_per_second: 0.0,
+            start: 0.0,
+            end: None,
+            temperature: None,
+            hole_diameter: None,
+            area_contraction: 1.0,
+            rate: Vec::new(),
+            flow_share: 1.0,
+        }
+    }
+}
+
+impl Injector {
+    /// The mass flow at time `t` since the start of the injection (kg/s).
+    pub fn mass_flow_at(&self, t: f64) -> f64 {
+        if self.rate.is_empty() {
+            return self.mass_flow;
+        }
+        let r = &self.rate;
+        if t < r[0][0] || t > r[r.len() - 1][0] {
+            return 0.0;
+        }
+        for w in r.windows(2) {
+            if t <= w[1][0] {
+                return piece(w, t);
+            }
+        }
+        r[r.len() - 1][1]
+    }
+
+    /// The liquid injected between `a` and `b` (s since the start of the
+    /// injection, kg): the exact integral of the rate table (trapezoids of
+    /// the linear pieces), or ṁ (b − a) at a constant mass flow.
+    pub fn mass_between(&self, a: f64, b: f64) -> f64 {
+        if self.rate.is_empty() {
+            return self.mass_flow * (b - a);
+        }
+        let mut m = 0.0;
+        for w in self.rate.windows(2) {
+            let (t0, t1) = (w[0][0], w[1][0]);
+            let lo = a.max(t0);
+            let hi = b.min(t1);
+            if hi > lo {
+                m += 0.5 * (piece(w, lo) + piece(w, hi)) * (hi - lo);
+            }
+        }
+        m
+    }
+
+    /// The end of the injection (s): `end`, else the last time of the rate
+    /// table, else never.
+    pub fn end_time(&self) -> f64 {
+        let table = self
+            .rate
+            .last()
+            .map_or(f64::INFINITY, |r| self.start + r[0]);
+        self.end.unwrap_or(f64::INFINITY).min(table)
+    }
+
+    /// The flow area of the jet at the hole exit, C_a π d²/4 (m²), with a
+    /// hole diameter.
+    pub fn flow_area(&self) -> Option<f64> {
+        self.hole_diameter
+            .map(|d| self.area_contraction * std::f64::consts::PI * 0.25 * d * d)
+    }
+
+    /// The blob diameter √C_a d_hole (m), with a hole diameter.
+    pub fn blob_diameter(&self) -> Option<f64> {
+        self.hole_diameter.map(|d| self.area_contraction.sqrt() * d)
+    }
+}
+
+/// The breakup model of the drops (SP6, D300).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum BreakupModel {
+    /// The drops keep their size (default).
+    #[default]
+    None,
+    /// Kelvin-Helmholtz stripping of the injected blobs into child parcels
+    /// and of the drops in place, Rayleigh-Taylor breakup beyond the
+    /// breakup length (Reitz 1987; Patterson and Reitz 1998; Beale and
+    /// Reitz 1999), D301, D302.
+    KhRt,
+}
+
+/// The drag law of the drops (D303).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum DragLaw {
+    /// A rigid sphere (Schiller and Naumann 1935; default).
+    #[default]
+    Sphere,
+    /// The drag of a distorted drop, C_D = C_D,sphere (1 + 2.632 y) with the
+    /// TAB distortion y of every parcel (O'Rourke and Amsden 1987; Liu,
+    /// Mather and Reitz 1993).
+    Dynamic,
+}
+
+/// `[spray.breakup]` (SP6, D300 to D305): the breakup of the drops and the
+/// drag of distorted drops. The constants are those of the model papers by
+/// default; a validation case calibrates `b1` against its measurements.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct Breakup {
+    /// `none` (default) or `kh-rt`.
+    pub model: BreakupModel,
+    /// `sphere` (default) or `dynamic`.
+    pub drag: DragLaw,
+    /// KH child size constant B₀: r_c = B₀ Λ (default 0.61, Reitz 1987).
+    pub b0: f64,
+    /// KH time constant B₁: τ = 3.726 B₁ a/(Λ Ω) (default 10, Reitz
+    /// 1987); it stands for the disturbance level the nozzle leaves on the
+    /// jet and is the constant a validation case calibrates.
+    pub b1: f64,
+    /// RT size constant C_RT: the drops break into drops of the diameter
+    /// C_RT Λ_RT (default 1).
+    pub c_rt: f64,
+    /// RT time constant C_τ: the wave grows for C_τ/Ω_RT (default 1).
+    pub c_tau: f64,
+    /// Breakup length constant C_bl: RT acts beyond L_b = C_bl (ρ_l/ρ_g)^½
+    /// d_hole from the injector (default B₁/2, Beale and Reitz 1999).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub breakup_length: Option<f64>,
+    /// A blob sheds a child parcel whenever its stripped liquid reaches
+    /// this share of its injected liquid (default 0.03, Patterson and Reitz
+    /// 1998).
+    pub shed_fraction: f64,
+}
+
+impl Default for Breakup {
+    fn default() -> Self {
+        Self {
+            model: BreakupModel::None,
+            drag: DragLaw::Sphere,
+            b0: 0.61,
+            b1: 10.0,
+            c_rt: 1.0,
+            c_tau: 1.0,
+            breakup_length: None,
+            shed_fraction: 0.03,
+        }
+    }
+}
+
+impl Breakup {
+    /// True when the drops break up.
+    pub fn on(&self) -> bool {
+        self.model != BreakupModel::None
+    }
+
+    /// True when the parcels carry the TAB distortion (dynamic drag).
+    pub fn distortion(&self) -> bool {
+        self.drag == DragLaw::Dynamic
+    }
+
+    /// True when the surface tension and viscosity are needed.
+    pub fn needs_properties(&self) -> bool {
+        self.on() || self.distortion()
+    }
+
+    /// The breakup length constant C_bl.
+    pub fn c_bl(&self) -> f64 {
+        self.breakup_length.unwrap_or(0.5 * self.b1)
+    }
 }
 
 /// `[spray]`: the Lagrangian parcels of the case.
@@ -255,6 +489,8 @@ pub struct SpraySection {
     pub steady: Option<Steady>,
     /// The evaporation of the droplets (SP5).
     pub evaporation: Evaporation,
+    /// The breakup of the drops and the drag of distorted drops (SP6).
+    pub breakup: Breakup,
 }
 
 /// `[spray.steady]`: the steady spray mode (D260, SP2s). A parcel is a
@@ -448,6 +684,7 @@ impl Default for SpraySection {
             dispersion: Dispersion::None,
             steady: None,
             evaporation: Evaporation::default(),
+            breakup: Breakup::default(),
         }
     }
 }
@@ -531,6 +768,60 @@ impl SpraySection {
                  [spray.liquid] vapour = \"H2O\" (a species of [species])"
             );
         }
+        let br = &self.breakup;
+        for (k, v) in [
+            ("b0", br.b0),
+            ("b1", br.b1),
+            ("c_rt", br.c_rt),
+            ("c_tau", br.c_tau),
+        ] {
+            if !pos(v) {
+                bail!("[spray.breakup] {k} must be positive and finite");
+            }
+        }
+        if let Some(c) = br.breakup_length
+            && !(c.is_finite() && c >= 0.0)
+        {
+            bail!("[spray.breakup] breakup_length must be zero or positive");
+        }
+        if !(br.shed_fraction >= 1e-4 && br.shed_fraction < 1.0) {
+            bail!("[spray.breakup] shed_fraction must be in [1e-4, 1)");
+        }
+        if br.needs_properties() {
+            let what = if br.on() {
+                "the breakup"
+            } else {
+                "the dynamic drag"
+            };
+            if !self.liquid.surface_tension.is_some_and(pos) {
+                bail!(
+                    "[spray.breakup] {what} needs the surface tension of the liquid: \
+                     [spray.liquid] surface_tension = 0.02 (N/m, positive)"
+                );
+            }
+            if !self.liquid.viscosity.is_some_and(pos) {
+                bail!(
+                    "[spray.breakup] {what} needs the viscosity of the liquid: \
+                     [spray.liquid] viscosity = 1e-3 (Pa s, positive)"
+                );
+            }
+            if self.steady.is_some() {
+                bail!(
+                    "[spray.breakup] is not available in the steady spray mode in this version \
+                     (a stream cannot shed child streams yet); run the case transient"
+                );
+            }
+        }
+        for (k, v) in [
+            ("surface_tension", self.liquid.surface_tension),
+            ("viscosity", self.liquid.viscosity),
+        ] {
+            if let Some(v) = v
+                && !pos(v)
+            {
+                bail!("[spray.liquid] {k} must be positive and finite");
+            }
+        }
         for inj in &self.injectors {
             if let Some(t) = inj.temperature
                 && !pos(t)
@@ -604,6 +895,51 @@ impl SpraySection {
             if !(i.speed.is_finite() && i.speed >= 0.0) {
                 bail!("[[spray.injector]] {n}: speed must be zero or positive");
             }
+            if let Some(h) = i.hole_diameter
+                && !pos(h)
+            {
+                bail!("[[spray.injector]] {n}: hole_diameter must be positive and finite (m)");
+            }
+            if !(i.area_contraction > 0.0 && i.area_contraction <= 1.0) {
+                bail!("[[spray.injector]] {n}: area_contraction must be in (0, 1]");
+            }
+            if !(i.flow_share > 0.0 && i.flow_share <= 1.0) {
+                bail!("[[spray.injector]] {n}: flow_share must be in (0, 1]");
+            }
+            if i.area_contraction != 1.0 && i.hole_diameter.is_none() {
+                bail!("[[spray.injector]] {n}: area_contraction needs hole_diameter");
+            }
+            if !i.rate.is_empty() {
+                if i.mass_flow != 0.0 {
+                    bail!("[[spray.injector]] {n}: give either mass_flow or rate, not both");
+                }
+                if i.rate.len() < 2 {
+                    bail!("[[spray.injector]] {n}: rate needs at least two points [t, kg/s]");
+                }
+                for w in i.rate.windows(2) {
+                    if w[1][0] < w[0][0] {
+                        bail!("[[spray.injector]] {n}: the times of rate must not decrease");
+                    }
+                }
+                if i.rate
+                    .iter()
+                    .any(|r| !(r[0].is_finite() && r[1].is_finite() && r[1] >= 0.0))
+                {
+                    bail!(
+                        "[[spray.injector]] {n}: rate holds finite times and mass flows of zero or more"
+                    );
+                }
+                if i.rate[0][0] < 0.0 {
+                    bail!(
+                        "[[spray.injector]] {n}: the times of rate start at zero or later (s from start)"
+                    );
+                }
+                let total = i.mass_between(i.rate[0][0], i.rate[i.rate.len() - 1][0]);
+                if total.is_nan() || total <= 0.0 {
+                    bail!("[[spray.injector]] {n}: rate injects no liquid");
+                }
+            }
+
             if !(0.0..180.0).contains(&i.half_angle) {
                 bail!("[[spray.injector]] {n}: half_angle must be in [0, 180) degrees");
             }
@@ -616,15 +952,22 @@ impl SpraySection {
                         .map_err(|e| anyhow::anyhow!("[[spray.injector]] {n}: size: {e}"))?;
                 }
                 None => {
-                    if !pos(i.diameter) {
+                    if !pos(i.diameter) && i.hole_diameter.is_none() {
                         bail!(
-                            "[[spray.injector]] {n}: diameter must be positive and finite (or give a size distribution)"
+                            "[[spray.injector]] {n}: diameter must be positive and finite (or give a size distribution, or hole_diameter for blobs)"
                         );
                     }
                 }
             }
-            if !pos(i.mass_flow) {
-                bail!("[[spray.injector]] {n}: mass_flow must be positive and finite");
+            if i.rate.is_empty() && !pos(i.mass_flow) {
+                bail!(
+                    "[[spray.injector]] {n}: mass_flow must be positive and finite (or give rate)"
+                );
+            }
+            if !i.rate.is_empty() && self.steady.is_some() {
+                bail!(
+                    "[[spray.injector]] {n}: rate is a transient injection; the steady mode takes mass_flow"
+                );
             }
             // zero: a steady case (streams instead of parcels); a
             // transient case needs it (checked with the case)
