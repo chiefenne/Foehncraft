@@ -619,27 +619,30 @@ mod tests {
     /// are refused with their codes.
     #[test]
     fn chemistry_cases_are_checked() {
-        assert_eq!(code(CASE), None);
+        // the checkout may carry CRLF line ends (Windows)
+        let case = CASE.replace("\r\n", "\n");
+        let case = case.as_str();
+        assert_eq!(code(case), None);
         // the case without its [time] table
-        let (head, rest) = CASE.split_once("[time]\n").unwrap();
+        let (head, rest) = case.split_once("[time]\n").unwrap();
         let steady = format!("{head}{}", &rest[rest.find("\n\n").unwrap()..]);
         assert_eq!(code(&steady).as_deref(), Some("CHM003"));
-        let turbulent = format!("{CASE}\n[turbulence]\nmodel = \"k-omega-sst\"\n");
+        let turbulent = format!("{case}\n[turbulence]\nmodel = \"k-omega-sst\"\n");
         assert_eq!(code(&turbulent).as_deref(), Some("CHM003"));
-        let constant = CASE.replace("density = \"variable\"", "density = \"constant\"");
-        assert_ne!(constant, CASE);
+        let constant = case.replace("density = \"variable\"", "density = \"constant\"");
+        assert_ne!(constant, case);
         assert!(code(&constant).is_some());
-        let fewer = CASE.replace("\"H2\", ", "");
-        assert_ne!(fewer, CASE);
+        let fewer = case.replace("\"H2\", ", "");
+        assert_ne!(fewer, case);
         assert_eq!(code(&fewer).as_deref(), Some("CHM001"));
-        let fuel = CASE.replace("fuel = \"CH4\"", "fuel = \"C3H8\"");
-        assert_ne!(fuel, CASE);
+        let fuel = case.replace("fuel = \"CH4\"", "fuel = \"C3H8\"");
+        assert_ne!(fuel, case);
         assert_eq!(code(&fuel).as_deref(), Some("CHM001"));
-        let range = CASE.replace("range = [0.38, 0.48]", "range = [0.48, 0.38]");
-        assert_ne!(range, CASE);
+        let range = case.replace("range = [0.38, 0.48]", "range = [0.48, 0.38]");
+        assert_ne!(range, case);
         assert_eq!(code(&range).as_deref(), Some("CHM001"));
-        let inlet = CASE.replace("inlet = \"xmin\"", "inlet = \"xmax\"");
-        assert_ne!(inlet, CASE);
+        let inlet = case.replace("inlet = \"xmin\"", "inlet = \"xmax\"");
+        assert_ne!(inlet, case);
         assert_eq!(code(&inlet).as_deref(), Some("CHM001"));
     }
 }
