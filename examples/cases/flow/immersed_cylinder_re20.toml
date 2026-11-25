@@ -1,0 +1,82 @@
+# Flow around a cylinder at Re = 20 without meshing the cylinder: the
+# benchmark 2D-1 of Schäfer & Turek (1996) on a plain box mesh, with the
+# cylinder put in by Brinkman penalisation (L13 stage 1, D226).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/immersed_cylinder_re20.toml
+#
+# Channel 2.2 x 0.41 m, cylinder D = 0.1 m at (0.2, 0.2) m, parabolic inflow
+# with U_max = 0.3 m/s (mean 0.2 m/s), ν = 1e-3 m²/s, Re = 20: the same case
+# as cylinder_re20.toml, whose mesh is fitted to the cylinder. Here the mesh
+# is a uniform box of 440 x 82 hexahedra (h = D/20) that knows nothing of the
+# cylinder; every cell gets its solid fraction χ and the momentum rows the
+# sink μ χ V / K (K the permeability). The drag and lift are the force the
+# sink takes out of the fluid, Σ s_P u_P.
+#
+# The penalised wall is smeared over about one cell: this is the topology
+# and first-look tool of L13, laminar and low-Re only (docs/limitations).
+# On this mesh C_D is 5.581 (inside the range), Δp 0.1187 (0.9 % above it)
+# and C_L 0.0147, 35 % above the range: the lift is the weak point of a
+# smeared wall. The run fails if any value lies further from its range than
+# 40 % of the range midpoint, so that a broken penalisation is caught; the
+# gallery entry (270) has the meshes D/10 to D/40 and the body-fitted run.
+# SIMPLEC, about 1 600 iterations and a minute; the coupled solver gives the
+# same values in far fewer iterations.
+
+case_format = "0.7"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [2.2, 0.41, 0.01]
+cells = [440, 82, 1]
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 1e-3
+pressure_values = "gauge"
+
+[flow]
+convection = true
+
+[immersed]
+permeability = 1e-8      # m²; μ/K = 1e5 kg/(m³ s), about 600 times the viscous diagonal
+
+[[immersed.body]]
+name = "cylinder"
+shape = "cylinder"
+centre = [0.2, 0.2, 0.0]
+radius = 0.05
+
+[boundary.xmin]
+type = "velocity-inlet"
+profile = "parabolic"
+max_velocity = 0.3
+profile_axes = ["y"]
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymin]
+type = "wall"
+[boundary.ymax]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+max_iterations = 3000
+tolerance = 1e-8
+log_every = 200
+
+[verification]
+benchmark = "schafer-turek-2d1"
+benchmark_tolerance = 0.4
+require_convergence = true
+
+[output]
+derived = ["solid-fraction", "vorticity"]
+wall_csv = false

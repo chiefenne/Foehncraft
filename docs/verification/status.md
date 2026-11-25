@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**120 features: 50 verified, 67 partial, 3 unverified.**
+**121 features: 50 verified, 68 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -145,6 +145,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Sprays | [Datums, liquid flow through them and droplet statistics (SP1b)](#sprays-datums-statistics) | partial |
 | Flow models | [Porous regions with a direction-dependent Darcy-Forchheimer resistance (D270, PM1)](#porous-darcy-forchheimer) | partial |
 | Flow models | [Gas and matrix temperatures in porous regions, monolithic (D271, D272, PM2)](#porous-two-temperatures) | partial |
+| Immersed bodies | [Immersed bodies by Brinkman penalisation, primitive shapes (L13 stage 1)](#immersed-penalisation) | partial |
 
 ## Meshes
 
@@ -1898,3 +1899,26 @@ Gaps:
 - a CHT restart does not carry the matrix temperature (a flow restart does)
 - no measured reference case (a packed bed or a honeycomb store with measured temperatures)
 - in porous_storage_charge the plenum swirl does not converge within 10 outer iterations at Courant 2400 (the stack flow is uniform within 1 %)
+
+## Immersed bodies
+
+<a id="immersed-penalisation"></a>
+
+### Immersed bodies by Brinkman penalisation, primitive shapes (L13 stage 1)
+
+**partial** (gaps written) · id `immersed.penalisation` · switch `[immersed] with [[immersed.body]]` · decisions D226
+
+- reference-data: [`immersed_cylinder_re20`](../../examples/cases/flow/immersed_cylinder_re20.toml): Schäfer & Turek 2D-1 on a plain box mesh (h = D/20) with the cylinder penalised: C_D 5.581 in range, Δp 0.9 % above, C_L 35 % above the range; the run fails beyond 40 % of the range midpoint (passes in CI (set linux-2), not yet in the manual) ([results](../gallery/immersed.md#penalised-cylinder))
+- exact: [`penalised_poiseuille_converges_to_the_exact_mass_flow`](../../crates/foehncraft-flow/tests/immersed.rs): plane Poiseuille flow between two penalised walls off the cell faces: mass flow error 20.5, 8.5, 2.3 % on 16, 32, 64 cells across (about first order); the body forces carry the driving force to 1e-4
+- consistency: [`coupled_and_simplec_give_the_same_penalised_flow`](../../crates/foehncraft-flow/tests/immersed.rs): SIMPLEC and the coupled solver give the same mass flow to 1e-5
+- exact: [`solid_volume_of_a_cylinder_converges`](../../crates/foehncraft-flow/src/immersed.rs): the solid volume of a cylinder on a box mesh converges to π r² d with the number of sample points
+- contract (diagnostics): [`unsupported_settings_are_refused`](../../crates/foehncraft-flow/tests/immersed.rs): IMM101 for a missing permeability or a bad body, IMM102 for a turbulence model
+
+Gaps:
+
+- the wall is smeared over about one cell: first order in h, lift 27 % above the benchmark range at h = D/40, wall shear stress and heat flux not accurate (by design of the pre-stage)
+- laminar and isothermal only: turbulence, energy, scalars, gravity, regions, rotating zones and sprays are refused (IMM102)
+- primitive bodies only (cylinder, sphere, box); STL bodies need the geometry kernel of stage 0
+- the coupled solver breaks down from rest when the sink exceeds about 1e5 times the viscous diagonal (K below about 1e-5 h²); SIMPLEC takes any K
+- not yet: density-field topology search, iso-surface extraction, the sweep in K (η) and h of the plan, MMS of the penalised equation, Stokes sphere, the drag gradient check with dual numbers
+- one rank only: `foehn run --ranks N` refuses immersed bodies
