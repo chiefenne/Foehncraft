@@ -1840,12 +1840,6 @@ pub fn supported_run(case: &FlowCase) -> Result<()> {
     let missing: Vec<&str> = [
         (case.species.is_some(), "species transport"),
         (
-            case.sliding
-                .iter()
-                .any(crate::sliding::SlidingSection::imprinted),
-            "a sliding mesh by imprinting (`rotor_interface`; conformal stepping runs on ranks)",
-        ),
-        (
             case.energy.as_ref().is_some_and(|e| {
                 e.acceleration.is_some() || e.cycle.is_some() || e.frozen_flow.is_some()
             }),
