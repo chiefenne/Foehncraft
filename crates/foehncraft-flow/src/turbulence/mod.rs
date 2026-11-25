@@ -3449,7 +3449,16 @@ impl Turbulence {
             dev.lincomb(self.nu_t, a, self.nu_t, 1.0 - a, prev)?;
         }
         out.capped = dev.sum_sq(self.capped)?.round() as usize;
-        let nc = self.n_cells();
+        // the floor counts are sums over all ranks, so is the share they
+        // are measured against (MPI step W7)
+        let nc = match dev.comm() {
+            Some(c) => {
+                let mut n = [self.n_cells() as i64];
+                c.all_sum_i64(&mut n);
+                n[0] as usize
+            }
+            None => self.n_cells(),
+        };
         let mut flag = 0u8;
         for (e, &n) in out.floors.iter().enumerate() {
             if n * 1000 > nc {
@@ -4135,9 +4144,50 @@ impl Turbulence {
             return Ok(Vec::new());
         };
         let yp = dev.download(wd.y_plus)?;
+        Ok(self.y_plus_rows(&self.walls, &yp, mesh))
+    }
+
+    /// [`Self::y_plus_summary`] of a run on ranks (MPI step W7): the y⁺ of
+    /// the wall faces of this rank gathered into the boundary faces of the
+    /// whole mesh `mesh` and summed over its walls in the order of one rank.
+    /// Collective.
+    fn y_plus_summary_on(
+        &self,
+        dev: &mut dyn FlowDevice,
+        mesh: &Mesh,
+        geo: &Geometry,
+        bcs: &BTreeMap<String, BoundaryCondition>,
+        g: &mut crate::ranks::Fields<'_>,
+    ) -> Result<Vec<YPlusRow>> {
+        use crate::restart::FieldMap as _;
+        let Some(wd) = self.wd else {
+            return Ok(Vec::new());
+        };
+        let yp = dev.download(wd.y_plus)?;
+        let ni = self.ni;
+        let mut b = vec![0.0; self.nb];
+        for (i, &f) in self.walls.stat.faces.iter().enumerate() {
+            b[f as usize - ni] = yp[i];
+        }
+        let b = g.boundary(&b)?;
+        let walls = Walls::new(mesh, geo, bcs, self.eps);
+        let gi = mesh.n_interior_faces();
+        let yp: Vec<f64> = walls
+            .stat
+            .faces
+            .iter()
+            .map(|&f| b[f as usize - gi])
+            .collect();
+        Ok(self.y_plus_rows(&walls, &yp, mesh))
+    }
+
+    /// Per wall boundary of `walls`: min, area mean and max of `yp` (one
+    /// value per wall face) and the share of the area outside the band of
+    /// the wall treatment.
+    fn y_plus_rows(&self, walls: &Walls, yp: &[f64], mesh: &Mesh) -> Vec<YPlusRow> {
         let mut per: BTreeMap<usize, (f64, f64, f64, f64, f64)> = BTreeMap::new();
-        for (i, &b) in self.walls.boundary.iter().enumerate() {
-            let a = self.walls.area[i];
+        for (i, &b) in walls.boundary.iter().enumerate() {
+            let a = walls.area[i];
             let e = per
                 .entry(b)
                 .or_insert((f64::INFINITY, 0.0, f64::NEG_INFINITY, 0.0, 0.0));
@@ -4163,8 +4213,7 @@ impl Turbulence {
                 e.4 += a;
             }
         }
-        Ok(per
-            .into_iter()
+        per.into_iter()
             .map(|(b, e)| {
                 (
                     mesh.boundaries[b].name.clone(),
@@ -4174,7 +4223,7 @@ impl Turbulence {
                     e.4 / e.3,
                 )
             })
-            .collect())
+            .collect()
     }
 
     /// The model's name for the log.
@@ -4234,7 +4283,26 @@ impl Turbulence {
     /// The ν_t cap that acted in the last iteration, ν_t/ν max and the
     /// cell (for the extremes block).
     pub fn ratio_max(&self, dev: &mut dyn FlowDevice) -> Result<(f64, usize)> {
-        let v = dev.download(self.nu_t)?;
+        self.ratio_max_on(dev, None)
+    }
+
+    /// [`Self::ratio_max`]; on ranks (`g`, MPI step W7) over ν_t gathered
+    /// into the cells of the whole mesh, with the cell index there.
+    /// Collective on ranks.
+    fn ratio_max_on(
+        &self,
+        dev: &mut dyn FlowDevice,
+        g: Option<&mut crate::ranks::Fields<'_>>,
+    ) -> Result<(f64, usize)> {
+        let mut v = dev.download(self.nu_t)?;
+        if let Some(g) = g {
+            use crate::restart::FieldMap as _;
+            anyhow::ensure!(
+                self.fluids.is_none(),
+                "the turbulence summary of several fluids does not run on ranks yet (MPI step W7)"
+            );
+            v = g.cells(&v)?;
+        }
         let (mut m, mut at) = (0.0, 0);
         for (c, &x) in v.iter().enumerate() {
             if x > m {
@@ -4282,12 +4350,35 @@ pub fn summary(
     fl: &mut crate::simplec::Flow,
     mesh: &Mesh,
 ) -> Result<Option<(TurbulenceSummary, Vec<Diagnostic>)>> {
+    summary_on(fl, mesh, None)
+}
+
+/// [`summary`]; on ranks (MPI step W7) `mesh` is the whole mesh and the
+/// wall and cell values are gathered into its order, with its geometry and
+/// the boundary conditions of the case. Collective on ranks.
+pub(crate) fn summary_on(
+    fl: &mut crate::simplec::Flow,
+    mesh: &Mesh,
+    on: Option<(
+        &crate::ranks::OnRanks,
+        &Geometry,
+        &BTreeMap<String, BoundaryCondition>,
+    )>,
+) -> Result<Option<(TurbulenceSummary, Vec<Diagnostic>)>> {
     let Some(t) = fl.turbulence.as_ref() else {
         return Ok(None);
     };
     let dev = fl.dev.as_mut();
-    let walls = t.y_plus_summary(dev, mesh)?;
-    let (rmax, cell) = t.ratio_max(dev)?;
+    let (walls, (rmax, cell)) = match on {
+        Some((o, geo, bcs)) => {
+            let mut g = o.fields();
+            (
+                t.y_plus_summary_on(dev, mesh, geo, bcs, &mut g)?,
+                t.ratio_max_on(dev, Some(&mut g))?,
+            )
+        }
+        None => (t.y_plus_summary(dev, mesh)?, t.ratio_max(dev)?),
+    };
     let mut finds = Vec::new();
     for (e, name) in equations(t.model).iter().enumerate() {
         let n = t.health.floor_iterations_late[e];

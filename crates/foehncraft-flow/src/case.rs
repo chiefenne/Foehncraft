@@ -289,7 +289,9 @@ pub struct RunSection {
     /// fields gathered into the global order, so the output is bitwise
     /// that of one rank. Under an MPI launcher (`mpirun -n N foehn run`,
     /// a build with the `mpi` feature) the ranks are its processes;
-    /// otherwise threads of this process. 1: no ranks. Steady cases so far.
+    /// otherwise threads of this process. 1: no ranks. Steady and transient
+    /// runs with scalars, energy, k-ω SST and k-ε (refused: species,
+    /// statistics, what `[run] ranks` refuses).
     #[serde(skip_serializing_if = "is_one")]
     pub rank_count: usize,
 }
@@ -2135,10 +2137,12 @@ pub(crate) fn wall_crossings(
 pub(crate) fn turbulence_summary<F: FnMut(&str)>(
     fl: &mut Flow,
     mesh: &Mesh,
+    on: Option<(&crate::ranks::OnRanks, &Geometry, &FlowCase)>,
     lg: &mut Log<F>,
     warnings: &mut Vec<diag::Diagnostic>,
 ) -> Result<Option<crate::turbulence::TurbulenceSummary>> {
-    let Some((sm, finds)) = crate::turbulence::summary(fl, mesh)? else {
+    let on = on.map(|(o, g, c)| (o, g, &c.boundary));
+    let Some((sm, finds)) = crate::turbulence::summary_on(fl, mesh, on)? else {
         return Ok(None);
     };
     lg.line(&format!(
@@ -2959,7 +2963,10 @@ pub fn run_steered(
         // a run on ranks (MPI step W7): this rank's part, its own arrays
         // and physics; the global ones stay for the output
         let on = match steer.ranks.clone() {
-            Some(c) => Some(crate::ranks::OnRanks::new(c, &mesh, &geo, arrays.clone())?),
+            Some(c) => {
+                crate::ranks::supported_mesh(&case, &mesh)?;
+                Some(crate::ranks::OnRanks::new(c, &mesh, &geo, arrays.clone())?)
+            }
             None => None,
         };
         let lead = on.as_ref().is_none_or(|o| o.lead());
@@ -3795,7 +3802,15 @@ pub fn run_steered(
             }
         }
         drop(fl_host);
-        let scalars = crate::scalar::summaries(&mut fl, &case, &mesh, &geo, dimension(&case), 0.0)?;
+        let scalars = crate::scalar::summaries_on(
+            &mut fl,
+            &case,
+            &mesh,
+            &geo,
+            dimension(&case),
+            0.0,
+            on.as_ref(),
+        )?;
         for sm in &scalars {
             lg.line(&crate::scalar::summary_line(sm));
             if let Some(d) = converged
@@ -3834,7 +3849,13 @@ pub fn run_steered(
             }
         }
         let periodic = periodic_summaries(&mut fl, &mesh, &mut lg)?;
-        let turbulence = turbulence_summary(&mut fl, &mesh, &mut lg, &mut rep.warnings)?;
+        let turbulence = turbulence_summary(
+            &mut fl,
+            &mesh,
+            on.as_ref().map(|o| (o, &geo, &case)),
+            &mut lg,
+            &mut rep.warnings,
+        )?;
         let density = crate::density::summary(&mut fl, &mut rep.warnings)?;
         if single && (case.run.restart_final || stopped) && restart::AVAILABLE {
             let rs = restart_of(&mut fl, smesh, name, on.as_ref())?;
