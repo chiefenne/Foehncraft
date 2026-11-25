@@ -244,11 +244,19 @@ pub struct SteamOutput {
     pub format: &'static str,
     /// Format version of the engine.
     pub format_version: &'static str,
-    /// `IAPWS-IF97`; the inputs given; `state` (region, phase, p, T, ρ, h,
-    /// u, s, c_p, c_v, w, quality, void fraction, μ, k, Pr, σ; for a
-    /// two-phase state the saturated phases and the mixture viscosities) or
-    /// `saturation` (T_s or p_s, h_fg, σ, the saturated liquid and vapour).
-    pub result: Value,
+    /// `IAPWS-IF97`.
+    pub standard: String,
+    /// The inputs given.
+    pub input: String,
+    /// The state: region, phase, p, T, ρ, h, u, s, c_p, c_v, w, quality,
+    /// void fraction, μ, k, Pr, σ; for a two-phase state the saturated
+    /// phases and the mixture viscosities.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub state: Option<Value>,
+    /// The saturation line at p or T: T_s or p_s, h_fg, σ, the saturated
+    /// liquid and vapour.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub saturation: Option<Value>,
 }
 
 /// `materials.steam`.
@@ -276,7 +284,10 @@ impl Tool for Steam {
         Ok(SteamOutput {
             format: "foehncraft.steam",
             format_version: engine::FORMAT_VERSION,
-            result: r,
+            standard: r["standard"].as_str().unwrap_or("IAPWS-IF97").to_string(),
+            input: r["input"].as_str().unwrap_or("").to_string(),
+            state: r.get("state").cloned(),
+            saturation: r.get("saturation").cloned(),
         })
     }
 }

@@ -41,7 +41,7 @@ FLOW = {
         "cylinder_re20", "cavity_re1000", "taylor_green_cfl10", "poiseuille_tet",
         "poiseuille_hex", "poiseuille_poly", "tmr_plate_sst", "tmr_plate_keps",
         "tmr_plate_zeta_f0", "diffuser_sst_sharp", "ubend_sst_sharp", "ranks_channel_poly",
-        "ranks_heated_channel_sst",
+        "ranks_heated_channel_sst", "ranks_water_if97_channel",
     ],
     "linux-3": [
         "taylor_green_error", "cylinder_potential", "cavity_re100_budget", "taylor_green_bdf2",
@@ -67,6 +67,7 @@ FLOW = {
         "mixed_convection_channel",
         "spray_duct",
         "porous_darcy_block", "porous_honeycomb_channel", "porous_schumann", "porous_storage_charge",
+        "steam_heated_duct", "steam_superheater_channel",
     ],
     "long": [
         "cylinder_re100", "cylinder_re100_short", "cylinder_re100_statistics", "cylinder_re100_convective", "cylinder_re20_gci",

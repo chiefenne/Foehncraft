@@ -301,6 +301,22 @@ fn ph_ps_px_round_trips() {
         let b = steam::state_ps(p, s.s).unwrap();
         close(&format!("T(p, s) at {p}, {t}"), b.t, t, 1e-10);
     }
+    // (p, h) on a fine grid around the critical point, where h(T) at
+    // constant p rises steeply (pseudo-critical): every state round-trips
+    for k in 0..60 {
+        let p = 20e6 + k as f64 * 0.2e6;
+        for j in 0..60 {
+            let h = 1.7e6 + j as f64 * 20e3;
+            let Some(s) = steam::state_ph(p, h) else {
+                continue;
+            };
+            if s.phase == Phase::TwoPhase {
+                continue;
+            }
+            let back = steam::props_pt(p, s.t).unwrap();
+            close(&format!("h(p, T(p, h)) at {p}, {h}"), back.h, h, 1e-9);
+        }
+    }
     // two-phase: (p, x) → h → (p, h) gives the same quality
     for p in [0.1e6, 3e6, 18e6] {
         let m = steam::state_px(p, 0.3).unwrap();

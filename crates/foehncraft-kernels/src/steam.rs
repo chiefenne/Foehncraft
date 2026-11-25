@@ -922,9 +922,14 @@ fn solve_t(
     if (target - f_hi).abs() <= scale {
         return Some(hi);
     }
-    // start by linear interpolation
+    // start by linear interpolation; a Newton step is taken only when it
+    // stays inside the bracket and is at most half the step before the last
+    // one (else bisection), so the bracket shrinks and the iteration cannot
+    // cycle across an inflection of f (the pseudo-critical rise of h)
     let mut t = lo + (target - f_lo) / (f_hi - f_lo) * (hi - lo);
-    for _ in 0..200 {
+    let mut step_old = hi - lo;
+    let mut step = step_old;
+    for _ in 0..300 {
         let (v, d) = f(t)?;
         let r = v - target;
         if r == 0.0 {
@@ -935,11 +940,16 @@ fn solve_t(
         } else {
             hi = t;
         }
-        let mut next = t - r / d;
-        if !(next > lo && next < hi) || !(d > 0.0) {
-            next = 0.5 * (lo + hi);
-        }
-        if (next - t).abs() <= 1e-12 * t || hi - lo <= 1e-12 * t {
+        let newton = t - r / d;
+        let next = if d > 0.0 && newton > lo && newton < hi && (newton - t).abs() <= 0.5 * step_old
+        {
+            newton
+        } else {
+            0.5 * (lo + hi)
+        };
+        step_old = step;
+        step = (next - t).abs();
+        if step <= 1e-12 * t || hi - lo <= 1e-12 * t {
             return Some(next);
         }
         t = next;
@@ -975,7 +985,7 @@ fn state_p_by(p: f64, target: f64, by: By) -> Option<State> {
         let t = solve_t(target, lo, hi, f)?;
         state_pt(p, t)
     };
-    if p < P_CRIT && p >= P_SAT_MIN {
+    if (P_SAT_MIN..P_CRIT).contains(&p) {
         let sat = saturation_p(p)?;
         let (fl, _) = by_value(&sat.liquid, by);
         let (fg, _) = by_value(&sat.vapour, by);
@@ -1319,7 +1329,7 @@ fn lambda2(s: &State, tb: f64, rb: f64) -> f64 {
     let zeta = s.drho_dp * P_CRIT / RHO_CRIT;
     let zeta_r = 1.0 / zeta_r_inv(rb);
     let dchi = rb * (zeta - zeta_r * TBR / tb);
-    if !(dchi > 0.0) {
+    if dchi.is_nan() || dchi <= 0.0 {
         return 0.0;
     }
     let xi = XI0 * exp(NU / GAMMA * ln(dchi / GAMMA0));

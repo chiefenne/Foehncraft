@@ -357,6 +357,7 @@ A code keeps its meaning; a retired code stays in the table.
 | `MAT007` | error | A fluid without specific heat or thermal conductivity in a run with the energy equation. |
 | `MAT008` | error | An orthotropic thermal conductivity without both axes, or with parallel axes. |
 | `MAT009` | error | A user material database file (`[materials] include`, `FOEHN_MATERIALS`) or a property data file (NASA-7 record, table file) that cannot be read or has the wrong format. |
+| `MAT010` | error | A water or steam state (`materials.steam`, `foehn steam`) outside IAPWS-IF97, or asked with a set of inputs other than (p, T), (p, h), (p, s), (p, x), (T, x), p or T alone. |
 | `SPR001` | error | A `[spray]` value that is out of range, an injector outside the mesh, a spray file (`[spray] include`) that cannot be read or defines `injector` or `liquid` twice, or a `[spray.boundary.<name>]` for a boundary the mesh does not have. |
 | `SPR002` | error | A `[spray]` in a steady case: the parcels need a transient run. |
 | `SPR003` | error | A `[spray]` in a case with MRF zones, sliding interfaces or a periodic boundary (not in this version). |

@@ -1,0 +1,65 @@
+# Steam superheated between two hot plates: a laminar channel of IAPWS-IF97
+# steam at 4 MPa with variable density (stage SF7a), the steam side of a
+# superheater in miniature.
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/steam_superheater_channel.toml
+#
+# Steam of the database material `steam` enters a plane channel 60 mm long
+# and 10 mm high at 6 mm/s and 540 K, 16.5 K above the saturation
+# temperature of 4 MPa (523.5 K). Both walls are held at 760 K (the metal
+# temperature of a superheater tube). At the inlet Re = ρ u H/μ = 62 and
+# Pr = 1.21, so the thermal boundary layers of the two walls meet after
+# about a third of the length. Density, c_p, μ and k follow the
+# temperature through IF97 (ρ falls from 18.8 to 11.8 kg/m³ and c_p from
+# 3.35 to 2.29 kJ/(kg K) between 540 K and 760 K); the expanding steam
+# accelerates along the channel. The steam leaves at a mixed mean of about
+# 681 K; the heat that enters through the walls leaves with the steam (the
+# heat balance of the run closes to 4e-8).
+
+case_format = "0.7"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [0.06, 0.01, 0.001]
+cells = [240, 40, 1]
+
+[fluid]
+material = "steam"
+temperature = 540.0
+
+[initial]
+velocity = [0.006, 0.0, 0.0]
+pressure = 4.0e6
+
+[energy]
+initial = 540.0
+density = "variable"
+
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [0.006, 0.0, 0.0]
+[boundary.xmin.energy]
+temperature = 540.0
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 4.0e6
+[boundary.ymin]
+type = "wall"
+[boundary.ymin.energy]
+temperature = 760.0
+[boundary.ymax]
+type = "wall"
+[boundary.ymax.energy]
+temperature = 760.0
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-8
+max_iterations = 2500
+
+[output]
+wall_csv = true

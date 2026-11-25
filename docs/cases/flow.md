@@ -302,6 +302,19 @@ on the [key page](../keys.md) and in [recipe
 | `flow/vd_closed_box_side_heated.toml` | generated hex 2D, 32 × 32 cells | check V7c.3: a closed box of air heated through one wall at 400 K for 2 s: p₀ rises to 117 630 Pa, the gas far from the wall is compressed to 321 K, the mass stays to round-off (10⁻¹⁵) | [gallery 195](../gallery/energy.md#variable-density), [recipe 195](../recipes/energy.md#variable-density) |
 | `flow/vd_mms_steady.toml` | generated hex 2D, 16² to 64² cells (3 levels) | check V7c.4: manufactured solution with ρ = 1/T, a divergence-free mass flux, the full stress and a closed volume (`tools/verification/vd_mms.py`); observed orders 2.22 and 1.92 (velocity), 1.86 and 1.90 (temperature), 1.8–2.2 required | [recipe 195](../recipes/energy.md#variable-density) |
 
+## Water and steam (IAPWS-IF97)
+
+The database materials `steam` and `water-if97` and the property form
+`if97` (stage SF7a): density, c_p, μ and k of IAPWS-IF97, IAPWS R12-08
+and R15-11 at the operating pressure, following the temperature. The
+states themselves come from `foehn steam` (tool `materials.steam`).
+
+| Case file | Mesh | Shows | Where |
+|---|---|---|---|
+| `flow/steam_heated_duct.toml` | generated hex 2D, 100 × 4 cells | superheated steam at 4 MPa heated from 600 K in a duct with slip walls: the outlet 750.002 K against the exact 750 K of the IF97 enthalpy balance, the inlet pressure 20.55465 Pa against G²(1/ρ_out − 1/ρ_in) = 20.55466 Pa | [gallery 277](../gallery/properties.md#steam-if97), [recipe 277](../recipes/properties.md#steam-if97) |
+| `flow/steam_superheater_channel.toml` | generated hex 2D, 240 × 40 cells | steam at 4 MPa and 540 K between plates at 760 K with the IF97 variable density: the boundary layers meet after a third of the length, ρ falls from 18.8 to 11.8 kg/m³, outlet mixed mean 681 K; converged in 416 iterations | [gallery 277](../gallery/properties.md#steam-if97), [recipe 277](../recipes/properties.md#steam-if97) |
+| `flow/ranks_water_if97_channel.toml` | generated hex 2D, 120 × 24 cells | water of `water-if97` at 10 MPa heated from 450 K by walls at 560 K, c_p, μ, k from IF97 in every iteration, solved on 2, 3 and 4 ranks and bitwise the one-rank solution | [gallery 277](../gallery/properties.md#steam-if97) |
+
 ## Lagrangian sprays
 
 `[spray]` with an included injector file (L12, SP1, D246): droplets as

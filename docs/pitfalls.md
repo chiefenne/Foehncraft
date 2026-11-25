@@ -23,6 +23,7 @@ instead.
 - [Coupling loops: the solid must see the flow's response](#coupling-loops)
 - [Limiters on tetrahedra and polyhedra](#limiters)
 - [Porous resistances and the Rhie–Chow factor](#porous-rhie-chow)
+- [Property solves and new kernels on ranks](#property-solves)
 
 <a id="steady-runs"></a>
 ## Steady runs: budget and stopping
@@ -463,3 +464,21 @@ Found with the porous regions of D270 (#273):
   the main flow (the block an obstacle) left the x-momentum residual near
   0.8 after 2 500 iterations while the pressure drop was settled; judge
   such runs by the monitored drop, not the residual.
+
+<a id="property-solves"></a>
+## Property solves and new kernels on ranks
+
+Found with the IAPWS-IF97 states of SF7a (#277):
+- **Plain Newton inside a bracket can cycle.** T(p, h) just above the
+  critical pressure (h(T) rises steeply at the pseudo-critical
+  temperature) bounced between 611 K and 780 K for 200 iterations while
+  every step stayed inside the bracket, and returned a wrong state. Take a
+  Newton step only when it is at most half the step before the last one,
+  else bisect (the rtsafe rule), and test a fine (p, h) grid around the
+  critical point, not only the verification points.
+- **Run a new model once with `[run] ranks` before claiming it.** A
+  temperature-dependent c_p (any table, not only IF97) crashed on ranks
+  in the h-form correction of the energy equation (halo cells indexed in
+  own-cell arrays), and the variable density of stage 7c crashed as well;
+  W5 had checked only constant properties. The c_p path is fixed; the
+  variable density is refused on ranks until it is ported.

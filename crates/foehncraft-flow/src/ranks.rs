@@ -528,8 +528,9 @@ impl RanksRun {
 /// Fails unless `[run] ranks` can solve `case`: steady or transient
 /// SIMPLEC, PISO or the coupled solver, laminar or with the k-ω SST or a
 /// k-ε model, with passive scalars and the energy equation of one fluid;
-/// without gravity, turning zones, a schedule, levels, a restart, regions
-/// or the model options that are not on ranks yet (MPI step W5 so far).
+/// without gravity, turning zones, a schedule, levels, a restart, regions,
+/// the variable density or the model options that are not on ranks yet
+/// (MPI step W5 so far).
 pub fn supported(case: &FlowCase) -> Result<()> {
     use crate::turbulence::{QcrMode, TurbulenceModel as Model};
     let n = &case.run.ranks;
@@ -561,6 +562,13 @@ pub fn supported(case: &FlowCase) -> Result<()> {
         (
             !case.regions.is_empty(),
             "regions (conjugate heat transfer)",
+        ),
+        (
+            case.energy
+                .as_ref()
+                .is_some_and(|e| e.density == crate::density::DensityModel::Variable)
+                || case.buoyancy.model == crate::buoyancy::Model::VariableDensity,
+            "the variable density (stage 7c)",
         ),
     ]
     .into_iter()

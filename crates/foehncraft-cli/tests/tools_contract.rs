@@ -140,6 +140,14 @@ fn call_matches_the_clap_commands() {
     let (_, b) = call("materials.show", &json!({"name": "water"}));
     assert_eq!(a, b["result"]);
 
+    let (_, a) = cli(&["steam", "--pressure", "4e6", "--enthalpy", "3.2e6"]);
+    let (_, b) = call(
+        "materials.steam",
+        &json!({"pressure": 4e6, "enthalpy": 3.2e6}),
+    );
+    assert_eq!(a, b["result"]);
+    assert_eq!(a["state"]["region"], 2);
+
     let (_, a) = cli(&["diag", "codes"]);
     let (_, b) = call("diag.codes", &json!({}));
     assert_eq!(a["codes"], b["result"]["codes"]);
