@@ -14,6 +14,7 @@ use foehncraft_mesh::locate::{Locator, Position, TrackEnd, WalkEnd, step_limit};
 use foehncraft_mesh::mesh::Mesh;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 mod steady;
 pub use steady::{MomentumFlows, StreamBooks, StreamPass, Streams};
@@ -426,6 +427,9 @@ pub struct Spray {
     /// p₀ (`equilibrium = "peng-robinson"`, D311), from
     /// [`Spray::set_surface_pressure`].
     surface: Option<SurfaceTable>,
+    /// The vapour penetration per injector of the last gas the flow gave
+    /// (`[spray.ecn]`, D315), from [`Spray::set_vapour_penetration`].
+    vapour_penetration: Vec<Option<f64>>,
 }
 
 /// What `state()` writes and `restore()` reads (restart, D42).
@@ -520,6 +524,7 @@ impl Spray {
             planar: false,
             vapour: None,
             surface: None,
+            vapour_penetration: Vec::new(),
             datums: Vec::new(),
             datum_tally: Vec::new(),
             tally: Tally {
@@ -800,13 +805,50 @@ impl Spray {
             .map(|i| self.parcel_mass(i))
             .collect();
         let released: Vec<u64> = self.injectors.iter().map(|i| i.released).collect();
-        injector_stats(
+        let mut st = injector_stats(
             &self.cfg,
             &self.parcels.id,
             &self.parcels.x,
             &masses,
             Some(&released),
-        )
+        );
+        for (s, v) in st.iter_mut().zip(&self.vapour_penetration) {
+            s.vapour_penetration = *v;
+        }
+        st
+    }
+
+    /// Sets the vapour penetration of each injector from the fuel mass
+    /// fraction `y` of the gas cells with the centroids `centre` (D315,
+    /// `[spray.ecn]`): the farthest distance along the injector's axis,
+    /// from the nozzle, of a cell centre where y ≥ `vapour_fraction`; 0
+    /// when no cell reaches it. With several injectors the vapour of all
+    /// of them counts for each. Nothing without `[spray.ecn]`.
+    pub fn set_vapour_penetration(&mut self, y: &[f64], centre: &[[f64; 3]]) {
+        let Some(e) = &self.cfg.ecn else {
+            self.vapour_penetration.clear();
+            return;
+        };
+        self.vapour_penetration = self
+            .cfg
+            .injectors
+            .iter()
+            .map(|inj| {
+                let a = unit(inj.direction);
+                let mut far = 0.0f64;
+                for (c, &yc) in y.iter().enumerate().take(centre.len()) {
+                    if yc >= e.vapour_fraction {
+                        let r = [
+                            centre[c][0] - inj.position[0],
+                            centre[c][1] - inj.position[1],
+                            centre[c][2] - inj.position[2],
+                        ];
+                        far = far.max(r[0] * a[0] + r[1] * a[1] + r[2] * a[2]);
+                    }
+                }
+                Some(far)
+            })
+            .collect();
     }
 
     /// Centre of mass of the liquid in the flow (m); zero without parcels.
@@ -2254,6 +2296,15 @@ pub fn injector_stats(
                     break;
                 }
             }
+            let liquid_length = match &cfg.ecn {
+                Some(e) => {
+                    let own: Vec<usize> = (0..id.len())
+                        .filter(|&i| (id[i] >> 48) as usize == ii)
+                        .collect();
+                    plv_lengths(e, inj, cfg.liquid.density, &own, id, x, mass)
+                }
+                None => Vec::new(),
+            };
             InjectorStats {
                 name: inj.name.clone(),
                 released: released.and_then(|r| r.get(ii).copied()).unwrap_or(0),
@@ -2261,6 +2312,107 @@ pub fn injector_stats(
                 mass: total,
                 penetration: if pts.is_empty() { 0.0 } else { pen },
                 farthest: pts.last().map_or(0.0, |p| p.0),
+                liquid_length,
+                vapour_penetration: None,
+            }
+        })
+        .collect()
+}
+
+/// The unit line of sight of `[spray.ecn]` for the unit axis `a`: the
+/// given direction, or the coordinate axis most nearly perpendicular to
+/// `a` (the first of equals), with its part along `a` removed.
+pub fn line_of_sight(e: &crate::config::Ecn, a: [f64; 3]) -> [f64; 3] {
+    let l = e.line_of_sight.unwrap_or_else(|| {
+        let mut k = 0;
+        for j in 1..3 {
+            if a[j].abs() < a[k].abs() {
+                k = j;
+            }
+        }
+        let mut v = [0.0; 3];
+        v[k] = 1.0;
+        v
+    });
+    let d = l[0] * a[0] + l[1] * a[1] + l[2] * a[2];
+    unit([l[0] - d * a[0], l[1] - d * a[1], l[2] - d * a[2]])
+}
+
+/// The projected liquid volume of the parcels `own` of injector `inj`
+/// (D315): the liquid volume m/ρ_l of each parcel in square bins of size
+/// `e.bin` in the plane of the axis and the direction across both the axis
+/// and the line of sight (the volume along the line of sight sums into
+/// one bin), over the bin area. Returns per axial bin (from the nozzle,
+/// index 0 = [0, bin)) the largest PLV across (m), summed in the order of
+/// the parcel identities.
+pub fn plv_profile(
+    e: &crate::config::Ecn,
+    inj: &Injector,
+    rho_l: f64,
+    own: &[usize],
+    id: &[u64],
+    x: &[[f64; 3]],
+    mass: &[f64],
+) -> Vec<f64> {
+    let a = unit(inj.direction);
+    let l = line_of_sight(e, a);
+    // across the axis and the line of sight
+    let b = unit([
+        a[1] * l[2] - a[2] * l[1],
+        a[2] * l[0] - a[0] * l[2],
+        a[0] * l[1] - a[1] * l[0],
+    ]);
+    let mut ix = own.to_vec();
+    ix.sort_by_key(|&i| id[i]);
+    let mut bins: BTreeMap<(i64, i64), f64> = BTreeMap::new();
+    for i in ix {
+        let r = [
+            x[i][0] - inj.position[0],
+            x[i][1] - inj.position[1],
+            x[i][2] - inj.position[2],
+        ];
+        let s = r[0] * a[0] + r[1] * a[1] + r[2] * a[2];
+        if s < 0.0 {
+            continue;
+        }
+        let t = r[0] * b[0] + r[1] * b[1] + r[2] * b[2];
+        let key = ((s / e.bin).floor() as i64, (t / e.bin).floor() as i64);
+        *bins.entry(key).or_insert(0.0) += mass[i] / rho_l;
+    }
+    let n = bins.keys().map(|k| k.0 + 1).max().unwrap_or(0).max(0) as usize;
+    let mut prof = vec![0.0f64; n];
+    let area = e.bin * e.bin;
+    for (&(i, _), &v) in &bins {
+        let p = &mut prof[i as usize];
+        *p = p.max(v / area);
+    }
+    prof
+}
+
+/// The liquid length per PLV threshold of `e` (m, D315): the farthest
+/// axial position where the PLV profile of [`plv_profile`] falls to the
+/// threshold, linear between the bin centres of the last bin at or above
+/// it and the next one (beyond the last bin the profile is zero); 0 when
+/// no bin reaches it.
+pub fn plv_lengths(
+    e: &crate::config::Ecn,
+    inj: &Injector,
+    rho_l: f64,
+    own: &[usize],
+    id: &[u64],
+    x: &[[f64; 3]],
+    mass: &[f64],
+) -> Vec<f64> {
+    let prof = plv_profile(e, inj, rho_l, own, id, x, mass);
+    e.plv
+        .iter()
+        .map(|&th| match prof.iter().rposition(|&p| p >= th) {
+            None => 0.0,
+            Some(k) => {
+                let centre = (k as f64 + 0.5) * e.bin;
+                let next = prof.get(k + 1).copied().unwrap_or(0.0);
+                let w = (prof[k] - th) / (prof[k] - next);
+                centre + w.clamp(0.0, 1.0) * e.bin
             }
         })
         .collect()
@@ -2301,6 +2453,14 @@ pub struct InjectorStats {
     pub penetration: f64,
     /// Distance of the farthest parcel (m); outlier-sensitive.
     pub farthest: f64,
+    /// Liquid length per PLV threshold of `[spray.ecn]` (m, D315); empty
+    /// without the table.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub liquid_length: Vec<f64>,
+    /// Vapour penetration of `[spray.ecn]` (m, D315): set by the flow from
+    /// the fuel mass fraction of the gas.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vapour_penetration: Option<f64>,
 }
 
 fn unit(a: [f64; 3]) -> [f64; 3] {

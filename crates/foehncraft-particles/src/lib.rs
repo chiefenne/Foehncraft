@@ -30,9 +30,9 @@ pub mod sizes;
 pub mod spray;
 
 pub use config::{
-    BoundaryMode, Coupling, CouplingMode, Dispersion, Equilibrium, Evaporation, EvaporationModel,
-    Injector, Liquid, Passes, PassesName, Penetration, PengRobinson, Saturation, SprayBoundary,
-    SpraySection, Steady,
+    BoundaryMode, Coupling, CouplingMode, Dispersion, Ecn, Equilibrium, Evaporation,
+    EvaporationModel, Injector, Liquid, Passes, PassesName, Penetration, PengRobinson, Saturation,
+    SprayBoundary, SpraySection, Steady,
 };
 pub use coupling::{CellSources, Delta, Record, StepBooks, limiter_factor};
 pub use datum::{Bound, Datum, DatumTally, HistSpec, Moments, Shape, Stats, Surface, Volume};

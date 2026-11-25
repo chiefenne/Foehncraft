@@ -152,3 +152,43 @@ fn evaporation_needs_a_vapour_species_of_the_case() {
         .expect_err("a case without the vapour species was accepted");
     assert!(e.to_string().contains("H2O"), "{e}");
 }
+
+#[test]
+fn the_ecn_diagnostics_are_written_per_step() {
+    // [spray.ecn] (D315) on the duct: the 2D duct is seen along z; the
+    // vapour threshold lies above the 0.005 of the incoming air
+    let text = duct(0.04).replace(
+        "[spray.evaporation]",
+        "[spray.ecn]\nplv = [1e-8, 1e-7]\nbin = 5e-3\nline_of_sight = [0.0, 0.0, 1.0]\n\
+         vapour_fraction = 0.0052\n\n[spray.evaporation]",
+    );
+    let b = go("ecn", &text);
+    let mut lines = b.csv.lines();
+    let head: Vec<&str> = lines.next().unwrap().split(',').collect();
+    let col = |n: &str| {
+        head.iter()
+            .position(|h| *h == n)
+            .unwrap_or_else(|| panic!("no column {n} in {head:?}"))
+    };
+    let (l1, l2, v, far) = (
+        col("nozzle.liquid_length_1_m"),
+        col("nozzle.liquid_length_2_m"),
+        col("nozzle.vapour_penetration_m"),
+        col("nozzle.farthest_m"),
+    );
+    let last: Vec<f64> = b
+        .csv
+        .lines()
+        .last()
+        .unwrap()
+        .split(',')
+        .map(|x| x.parse().unwrap_or(f64::NAN))
+        .collect();
+    // the smaller threshold is reached farther out, both within the liquid
+    assert!(last[l2] > 0.0, "{}", b.csv);
+    assert!(last[l1] >= last[l2], "{} < {}", last[l1], last[l2]);
+    assert!(last[l1] <= last[far] + 5e-3, "{} beyond {}", last[l1], last[far]);
+    // the vapour reaches past the nozzle and stays in the duct (0.9 m to
+    // the outlet)
+    assert!(last[v] > 0.0 && last[v] < 0.9, "{}", last[v]);
+}
