@@ -105,7 +105,10 @@ validated range, one mesh only, …) in its report and its JSON result.
   k-ω SST and k-ε, passive scalars and the energy equation) run on several
   ranks with bitwise the result of one (MPI steps W3 to W5); a restart
   gathered from the ranks is byte for byte the one-rank file and continues
-  on any rank count (W6; `foehn run --ranks N` follows in 1.1).
+  on any rank count (W6); `foehn flow case.toml --ranks N` (or `mpirun -n N
+  foehn flow`) solves a steady laminar run on ranks and writes every output
+  file byte for byte as one rank does (W7 part 1; scalars, energy,
+  turbulence and transient runs on ranks follow).
 - **Pressure–velocity coupling.** SIMPLEC and SIMPLE for steady flow, PISO
   with outer correctors for transient flow (SIMPLEC-type correctors with
   outer iterations, stable on thin wedge cells at an axis), a time step from the
@@ -233,8 +236,10 @@ validated range, one mesh only, …) in its report and its JSON result.
   any number of threads and ranks; the bundle transport also runs on
   NVIDIA GPUs. Checked against six exact cases (slab, enclosure, parallel
   plates, cube of grey gas) and shown on a box furnace with cooled tubes
-  ([gallery 259](docs/gallery/radiation.md#furnace)). The coupling to the
-  energy equation follows (R1b).
+  ([gallery 259](docs/gallery/radiation.md#furnace)), where chosen bundles
+  of the call are traced and drawn over the net flux into the walls
+  ([gallery 281](docs/gallery/radiation.md#furnace-paths)). The coupling
+  to the energy equation follows (R1b).
 - **Rotating machinery.** The moving reference frame (steady and transient
   frozen rotor), the sliding mesh by conformal stepping and by imprinting
   the interface in every step, several rotors at their own speeds,

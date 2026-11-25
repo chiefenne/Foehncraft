@@ -958,15 +958,48 @@ pub(crate) fn finish(
     style: crate::console::Style,
     line: &mut dyn FnMut(&str),
 ) -> anyhow::Error {
-    let r = (|| -> anyhow::Result<Report> {
-        let (failed, files) = prepared?;
-        let valid = Solution {
-            state: fl.state()?,
+    let valid = match &prepared {
+        Ok(_) => fl.state().ok().map(|state| Solution {
+            state,
             disc: &fl.disc,
             phys: fl.phys.clone(),
-        };
-        let (rep, layer) = analyse(ctx, mesh, geo, &fl.bc.mom_kind, &failed, &valid);
-        write(out, rep, mesh, &failed, &valid, &layer, &files)
+        }),
+        Err(_) => None,
+    };
+    finish_from(
+        valid.as_ref(),
+        &fl.bc.mom_kind,
+        ctx,
+        mesh,
+        geo,
+        out,
+        prepared,
+        style,
+        line,
+    )
+}
+
+/// [`finish`] with the last valid state `valid` (on ranks gathered into the
+/// global order, MPI step W7; `None` when it could not be read) and the
+/// momentum boundary kinds of `mesh`.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn finish_from(
+    valid: Option<&Solution<'_>>,
+    mom_kind: &[u32],
+    ctx: &Context,
+    mesh: &Mesh,
+    geo: &Geometry,
+    out: &Path,
+    prepared: anyhow::Result<(State, Vec<&'static str>)>,
+    style: crate::console::Style,
+    line: &mut dyn FnMut(&str),
+) -> anyhow::Error {
+    let r = (|| -> anyhow::Result<Report> {
+        let (failed, files) = prepared?;
+        let valid =
+            valid.ok_or_else(|| anyhow::anyhow!("the last valid state could not be read"))?;
+        let (rep, layer) = analyse(ctx, mesh, geo, mom_kind, &failed, valid);
+        write(out, rep, mesh, &failed, valid, &layer, &files)
     })();
     match r {
         Ok(rep) => {

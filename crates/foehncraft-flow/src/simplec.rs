@@ -247,6 +247,25 @@ pub fn face_skewness(d: &Discretisation) -> Vec<f64> {
         .collect()
 }
 
+/// The faces with a skewness above `lim` and the cells next to them (the
+/// numbers of the remediation report, D50).
+pub(crate) fn skew_counts(disc: &Discretisation, skew: &[f64], lim: f64) -> (usize, usize) {
+    let mut poor = vec![false; disc.n_cells];
+    let mut skewed_faces = 0;
+    for (f, &v) in skew.iter().enumerate() {
+        if v > lim {
+            skewed_faces += 1;
+            // (on ranks the owner of a processor face may be a halo cell)
+            for c in [disc.owner[f] as usize, disc.neighbour[f] as usize] {
+                if c < disc.n_cells {
+                    poor[c] = true;
+                }
+            }
+        }
+    }
+    (skewed_faces, poor.iter().filter(|&&p| p).count())
+}
+
 /// The weights of the Gauss gradient in the form of the least-squares
 /// weights (D24), so the same gradient body computes it:
 /// ∇φ_c = Σ_k w_k (φ_k − φ_c) with w_k = (1 − w_f) S_f / V_c for the owner
@@ -1294,24 +1313,11 @@ impl Flow {
         let (settings, changes) = settings.remedied(max_skewness);
         let remediation = {
             let lim = settings.skewness_limit;
-            let mut poor = vec![false; disc.n_cells];
-            let mut skewed_faces = 0;
-            for (f, &v) in skew.iter().enumerate() {
-                if v > lim {
-                    skewed_faces += 1;
-                    // (on ranks the owner of a processor face may be a
-                    // halo cell)
-                    for c in [disc.owner[f] as usize, disc.neighbour[f] as usize] {
-                        if c < disc.n_cells {
-                            poor[c] = true;
-                        }
-                    }
-                }
-            }
+            let (skewed_faces, poor_cells) = skew_counts(&disc, &skew, lim);
             RemediationReport {
                 skewness_limit: lim,
                 skewed_faces,
-                poor_cells: poor.iter().filter(|&&p| p).count(),
+                poor_cells,
                 max_skewness,
                 changes,
             }
