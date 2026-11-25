@@ -13,7 +13,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | Page | What it covers | Examples |
 |---|---|---|
 | [Kernel benchmarks and GPU runs](gallery/benchmarks.md) | gate G1 on CPUs and GPUs, on box, polyhedral and tetrahedral meshes, and the flow loop on a GPU | 1, 2, 7, 16 |
-| [Meshes](gallery/meshes.md) | the built-in test mesher in 2D and 3D, partitioning, the Gmsh, SU2, OpenFOAM, CGNS, Fluent `.msh` and VTK readers, flow on poor Gmsh meshes with remediation, the operator exactness check, the canonical local mesh and exact reductions over ranks | 3, 4, 5, 6, 26, 127, 129, 134, 138, 189, 200, 219, 230, 231, 234, 244 |
+| [Meshes](gallery/meshes.md) | the built-in test mesher in 2D and 3D, partitioning, the Gmsh, SU2, OpenFOAM, CGNS, Fluent `.msh` and VTK readers, flow on poor Gmsh meshes with remediation, the operator exactness check, the canonical local mesh and exact reductions over ranks | 3, 4, 5, 6, 26, 127, 129, 134, 138, 189, 200, 219, 230, 231, 234, 244, 262 |
 | [Scalar transport and the pressure solver](gallery/scalar-pressure.md) | convection–diffusion order of accuracy, convection schemes and limiters, the pressure multigrid | 8, 9, 10, 11 |
 | [Incompressible flow](gallery/flow.md) | steady and transient laminar verification and benchmarks (cavity, Poiseuille, Taylor–Green, cylinder, time-step control), the coupled algorithm and its multigrids, heat transfer in turbulent flow, rotating machinery (moving reference frame, sliding mesh, stirred vessels, several rotors) and the T-junction mixing study | 12, 13, 14, 15, 20, 78, 80, 81, 83, 85, 86, 87, 94, 95, 96, 98, 99, 100, 101, 102, 225, 103, 196 |
 | [Passive scalars and the wall distance](gallery/scalars.md) | passive scalars carried by the flow, the bounded BDF2, the exact wall distance, the MLP vertex limiter | 63, 211 |
@@ -135,6 +135,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | <a id="ledger"></a>238 | [The conservation ledger as data: a heated cavity's mass, kinetic and thermal accounts](gallery/energy.md#ledger) | [Energy equation and heat transfer](gallery/energy.md) |
 | <a id="spray-duct"></a>242 | [Water droplets sprayed into an air duct](gallery/sprays.md#spray-duct) | [Lagrangian sprays](gallery/sprays.md) |
 | <a id="flow-models-ranks"></a>244 | [Five ranks, one turbulent heated flow: models on ranks](gallery/meshes.md#flow-models-ranks) | [Meshes](gallery/meshes.md) |
+| <a id="restart-ranks"></a>262 | [Written on five ranks, read on any: restart files on ranks](gallery/meshes.md#restart-ranks) | [Meshes](gallery/meshes.md) |
 | <a id="natural-convection"></a>272 | [Natural convection benchmarks: a heated square cavity at Ra 10³ to 10⁶, a vertical plate and mixed convection with flow reversal](gallery/energy.md#natural-convection) | [Energy equation and heat transfer](gallery/energy.md) |
 | <a id="porous-flow"></a>273 | [A ceramic honeycomb in an air channel, and a porous block against the exact pressure drop](gallery/porous.md#porous-flow) | [Porous regions](gallery/porous.md) |
 | <a id="porous-two-temperatures"></a>275 | [Charging a honeycomb heat store, and Schumann's bed against the exact solution](gallery/porous.md#porous-two-temperatures) | [Porous regions](gallery/porous.md) |
