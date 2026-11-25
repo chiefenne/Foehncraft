@@ -311,13 +311,16 @@ pub fn elasticity(p: &SolidProps) -> [[f64; 6]; 6] {
     d
 }
 
+/// Shape functions, their gradients in global axes and the Jacobian
+/// determinant at a point.
+type Gradients = ([f64; MAX_NODES], [[f64; 3]; MAX_NODES], f64);
+
+/// Stiffness, mass (row-major) and thermal load of an element.
+pub type ElementMatrices = (Vec<f64>, Vec<f64>, Vec<f64>);
+
 /// Gradients of the shape functions in global axes and the Jacobian
 /// determinant at a point.
-fn gradients(
-    kind: Kind,
-    x: &[[f64; 3]],
-    p: [f64; 3],
-) -> Result<([f64; MAX_NODES], [[f64; 3]; MAX_NODES], f64), String> {
+fn gradients(kind: Kind, x: &[[f64; 3]], p: [f64; 3]) -> Result<Gradients, String> {
     let nn = kind.nodes();
     let (n, dn) = shape(kind, p);
     // J[i][k] = ∂x_k/∂ξ_i
@@ -388,7 +391,7 @@ pub fn matrices(
     x: &[[f64; 3]],
     p: &SolidProps,
     strain: f64,
-) -> Result<(Vec<f64>, Vec<f64>, Vec<f64>), String> {
+) -> Result<ElementMatrices, String> {
     let nn = kind.nodes();
     let nd = 3 * nn;
     let d = elasticity(p);

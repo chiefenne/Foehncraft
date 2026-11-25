@@ -2190,5 +2190,32 @@ evidence = [
 gaps = [
   "temperatures are given per part (uniform change and a linear difference across the thickness); the mapping of the temperature field of a solid region of the flow case is MS6",
   "the moduli do not depend on temperature: give E at the operating temperature",
-  "no thermal stresses in the output (no stresses at all yet)",
+  "no thermal stresses of beams and shells in the output (the solids give the von Mises stress)",
+]
+
+[[feature]]
+id = "structure.solids"
+area = "Structures"
+title = "Quadratic solids: ten-node tetrahedra and twenty-node hexahedra from a second-order Gmsh file or a block (L53, MS5 part 3b)"
+switch = "structure.run with [[solids]]"
+decisions = ["D289"]
+model = true
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-structure/tests/solids.rs::quadrature_and_shape_functions", what = "14-point rule exact for every monomial of degree ≤ 5 on the tetrahedron; shape functions interpolate, sum to one, derivatives match differences; element faces point outward" },
+  { kind = "exact", test = "crates/foehncraft-structure/tests/solids.rs::face_loads_are_the_textbook_values", what = "uniform load on a six-node triangle (0, A/3) and an eight-node quadrilateral (−A/12, A/3) to rounding" },
+  { kind = "exact", test = "crates/foehncraft-structure/tests/solids.rs::rigid_motions_are_free_and_the_mass_is_exact", what = "curved elements: six rigid motions free of force (1e-11 of the largest entry), mass ρV (1e-13); an inverted element is refused" },
+  { kind = "exact", test = "crates/foehncraft-structure/tests/solids.rs::patch_test_on_distorted_meshes", what = "uniform tension on blocks with moved inner nodes, both elements: the linear displacement to rounding (Irons & Razzaque 1972)" },
+  { kind = "exact", test = "crates/foehncraft-structure/tests/solids.rs::cantilever_against_beam_theory", what = "cantilever 100 × 10 × 10 mm, ν = 0: tip within 0.3 % of Timoshenko beam theory (hex20 −0.12 %, tet10 −0.01 %); first frequency within 0.3 % of the Timoshenko beam; reaction equals the load" },
+  { kind = "exact", test = "crates/foehncraft-structure/tests/solids.rs::thick_cylinder_against_lame", what = "thick-walled cylinder under internal pressure, plane strain: u_r against Lamé, ν = 0.3 hex20 7e-5 and tet10 1.5e-3, ν = 0.49 (MacNeal & Harder 1985) 1.0e-3 and 7.8e-3" },
+  { kind = "exact", test = "crates/foehncraft-structure/tests/solids.rs::thermal_expansion_free_and_held", what = "free block: α ΔT x without stress to rounding; fully held block: reaction E α ΔT A/(1 − 2ν) within 1e-10" },
+  { kind = "consistency", test = "crates/foehncraft-structure/tests/solids.rs::gmsh_file_gives_the_same_answer_as_the_block", what = "a block written as a second-order Gmsh file (Gmsh node order, faces reversed) gives the generated block's tip deflection to 1e-12; linear meshes, unknown volumes and surfaces refused with STR001" },
+  { kind = "contract", property = "diagnostics", test = "crates/foehncraft-structure/tests/solids.rs::broken_second_order_gmsh_files_end_in_errors", what = "second-order Gmsh files truncated, with damaged numbers, dropped and repeated lines and flipped bytes end in an error message or a valid mesh, never a panic (D202)" },
+  { kind = "contract", property = "diagnostics", test = "crates/foehncraft-structure/tests/solids.rs::solid_case_errors", what = "STR001 for a temperature difference on a solid, a support with part but no surface, a pressure with plate and surface, zero divisions, both mesh and block" },
+]
+gaps = [
+  "a solid shares no nodes with beams and shells: no solid–shell or solid–beam connection yet",
+  "the von Mises stress at the nodes (averaged over the elements around each) only; no stress components or principal stresses in the output",
+  "Gmsh's complete second-order elements (27-node hexahedra, 9-node quadrilaterals), prisms and pyramids are refused",
+  "a uniform temperature change per part; a temperature field per node (from the flow case) is MS6",
+  "nearly incompressible materials (ν → 0.5) lock with full integration: ν = 0.49 is 1e-3 to 8e-3 off on the Lamé cylinder; no mixed or reduced-integration formulation",
 ]

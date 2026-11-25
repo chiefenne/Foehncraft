@@ -632,3 +632,110 @@ fn solid_case_errors() {
     c.solids[0].mesh = Some("x.msh".into());
     assert!(case::run(&c).err().unwrap().message.contains("one of them"));
 }
+
+/// Damaged versions of a valid file: truncated, numbers replaced, lines
+/// dropped and repeated, bytes flipped (the corpus of D202, as in
+/// `crates/foehncraft-mesh/tests/broken_inputs.rs`).
+fn damaged(b: &[u8]) -> Vec<(String, Vec<u8>)> {
+    let mut out = vec![("empty".to_string(), Vec::new())];
+    for i in 1..24 {
+        let n = b.len() * i / 24;
+        out.push((format!("truncated at {n}"), b[..n].to_vec()));
+    }
+    // tokens: the first 40 and every 37th after
+    let mut tokens = Vec::new();
+    let mut i = 0;
+    while i < b.len() {
+        if b[i].is_ascii_whitespace() {
+            i += 1;
+            continue;
+        }
+        let s = i;
+        while i < b.len() && !b[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        tokens.push((s, i));
+    }
+    let picks: Vec<usize> = (0..tokens.len())
+        .filter(|&k| k < 40 || k % 37 == 0)
+        .collect();
+    for &k in &picks {
+        for bad in [
+            "-1",
+            "0",
+            "11",
+            "17",
+            "4294967295",
+            "999999999999",
+            "nan",
+            "x",
+        ] {
+            let (s, e) = tokens[k];
+            let mut v = b[..s].to_vec();
+            v.extend_from_slice(bad.as_bytes());
+            v.extend_from_slice(&b[e..]);
+            out.push((format!("token {k} -> {bad}"), v));
+        }
+    }
+    let lines: Vec<(usize, usize)> = {
+        let mut v = Vec::new();
+        let mut s = 0;
+        for (i, &c) in b.iter().enumerate() {
+            if c == b'\n' {
+                v.push((s, i + 1));
+                s = i + 1;
+            }
+        }
+        v
+    };
+    for (k, &(s, e)) in lines.iter().enumerate().filter(|(k, _)| k % 5 == 0) {
+        let mut v = b[..s].to_vec();
+        v.extend_from_slice(&b[e..]);
+        out.push((format!("line {k} dropped"), v));
+        let mut v = b[..e].to_vec();
+        v.extend_from_slice(&b[s..]);
+        out.push((format!("line {k} twice"), v));
+    }
+    for p in (0..b.len()).step_by((b.len() / 40).max(1)) {
+        let mut v = b.to_vec();
+        v[p] ^= 0xff;
+        out.push((format!("byte {p} flipped"), v));
+    }
+    out
+}
+
+#[test]
+fn broken_second_order_gmsh_files_end_in_errors() {
+    use foehncraft_mesh::gmsh;
+    use foehncraft_structure::solid_mesh;
+    for kind in [Kind::Hex20, Kind::Tet10] {
+        let text = to_msh(&solid_mesh::block(
+            [0.0; 3],
+            [2.0, 1.0, 1.0],
+            [2, 1, 1],
+            kind,
+        ));
+        let (mut ok, mut bad) = (0, 0);
+        for (what, bytes) in damaged(text.as_bytes()) {
+            let label = format!("{kind:?}, {what}");
+            let r = std::panic::catch_unwind(|| {
+                let raw = gmsh::parse_raw(&bytes)?;
+                let m = solid_mesh::from_gmsh(&raw)?.select(&["body".to_string()])?;
+                for (k, e) in &m.elements {
+                    let x: Vec<[f64; 3]> = e.iter().map(|&n| m.nodes[n]).collect();
+                    solid::volume(*k, &x)?;
+                }
+                Ok::<_, String>(())
+            });
+            match r {
+                Ok(Ok(())) => ok += 1,
+                Ok(Err(e)) => {
+                    assert!(!e.trim().is_empty(), "{label}: empty message");
+                    bad += 1;
+                }
+                Err(_) => panic!("{label}: panicked"),
+            }
+        }
+        assert!(bad > ok, "{kind:?}: {ok} read, {bad} refused");
+    }
+}

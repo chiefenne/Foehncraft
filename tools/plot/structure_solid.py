@@ -132,7 +132,8 @@ def main(out_dir, png):
     path = os.path.join(out_dir, "structure.vtk")
     pts, cells, types, vec, sca = read_vtk(path)
     need({**vec, **sca}, ["displacement", "von_mises", "mode_1", "mode_2"], path)
-    res = json.load(open(os.path.join(out_dir, "result.json")))
+    with open(os.path.join(out_dir, "result.json")) as f:
+        res = json.load(f)
     freqs = [m["frequency"] for m in res["modal"]["modes"]]
     faces = boundary(cells, types)
     fig = plt.figure(figsize=(11.0, 6.2), dpi=100)

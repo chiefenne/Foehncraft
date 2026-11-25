@@ -208,3 +208,67 @@ Part of the [Recipes](../recipes.md): the linear structural solver `foehncraft-s
    points' displacements, kinetic and strain energy, the largest
    displacement and when), `transient.csv` the same as columns.
 
+
+---
+
+<a id="structure-solid"></a>
+## 300. Model a thick part as a solid, from Gmsh or as a block
+
+1. Mesh it in Gmsh with second-order elements: ten-node tetrahedra, or
+   twenty-node hexahedra with `Mesh.SecondOrderIncomplete = 1` (the
+   27-node ones are refused). Give the volume a physical group, and every
+   surface that is held or loaded a physical group of its own. Save as
+   `.msh` 4.1, ASCII or binary:
+
+   ```sh
+   gmsh stop.geo -3 -order 2 -format msh41 -o reed_stop.msh
+   ```
+
+   (`python3 -m tools.mesh.reed_stop_msh` writes the stop of the gallery
+   without Gmsh.)
+
+2. Add it as a part. `mesh` is relative to the case file; `volumes`
+   picks physical volumes (default: all):
+
+   ```toml
+   [[solids]]
+   name = "stop"
+   mesh = "reed_stop.msh"
+   volumes = ["stop"]
+   material = "steel"
+   ```
+
+   Or generate a block, with the sides `xmin`, `xmax`, `ymin`, `ymax`,
+   `zmin`, `zmax` as its surfaces:
+
+   ```toml
+   [[solids]]
+   name = "seat"
+   block = { origin = [0.0, 0.0, 0.0], size = [0.03, 0.01, 0.004], divisions = [12, 4, 2], element = "hex20" }
+   material = "steel"
+   ```
+
+3. Hold and load it on its named surfaces. A pressure on a solid pushes
+   into it (a fluid's pressure); `force_per_area` is a traction in global
+   axes:
+
+   ```toml
+   [[supports]]
+   part = "stop"
+   surface = "mount"
+   fix = ["all"]
+
+   [[pressures]]
+   part = "stop"
+   surface = "underside"
+   value = 3.0e5
+   ```
+
+   `[[temperatures]]` takes a uniform `change` for a solid. Points,
+   modes and transients work as for beams and plates.
+
+4. Read the results: `result.json` lists the solid parts with their
+   surfaces and gives `static.max_von_mises` (the stress at the nodes,
+   averaged over the elements around each); `structure.vtk` is an
+   unstructured grid of quadratic cells with `displacement`, `von_mises`
+   and the mode shapes.

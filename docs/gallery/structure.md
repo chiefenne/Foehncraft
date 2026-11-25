@@ -220,3 +220,52 @@ The pictures are made with `python3 -m tools.plot.structure_dynamics`
 at the operating temperature), a start from a static state, base motion,
 and the temperature mapping from the flow case (MS6).
 
+
+---
+
+<a id="reed-stop"></a>
+## 300. A curved reed stop as a solid, read from Gmsh
+
+<img src="../figures/gallery/structure_reed_stop.png" alt="The curved reed stop bent up by 0.3 MPa on its underside, displacement drawn 15 times larger over the grey unloaded stop and coloured by the von Mises stress from blue (0) to red (225 MPa at the clamped root); on the right its first two modes, 2033 Hz and 7734 Hz, coloured by the size of the displacement" width="800" height="451">
+
+**The stop.** Above a reed sits a stop that limits its lift: a strip of
+steel bent on a circle, here 25 mm long on a 40 mm radius, 8 mm wide and
+1.5 mm thick. A strip this thick and curved is a solid, not a plate.
+`examples/cases/structure/reed_stop.toml` reads it from a Gmsh file of
+second order, `reed_stop.msh` (160 twenty-node hexahedra, physical groups
+`stop`, `mount`, `underside`, `top`, `tip`; written by
+`python3 -m tools.mesh.reed_stop_msh`, so no Gmsh is needed). The stop is
+bolted at its mounting face and loaded by the reed landing on its
+underside, here as 0.3 MPa over the whole underside:
+
+```sh
+target/release/foehn call structure.run --input examples/cases/tools/structure_reed_stop.json
+```
+
+The tip rises 0.23 mm; the von Mises stress peaks at 225 MPa at the
+clamped root, where a cantilever estimate gives 6M/(wt²) = 250 MPa. The
+first mode is at 2033 Hz, far above the reed's 154 Hz: the stop does not
+ring with the reed. The elements are the ten-node tetrahedron and the
+twenty-node hexahedron, isoparametric, so the edge nodes on the arcs make
+the curved faces; a part can also be a generated block (`block =`).
+
+**Verification** (`crates/foehncraft-structure/tests/solids.rs`):
+
+| Check | Exact solution | Result |
+|---|---|---|
+| Quadrature, shape functions, faces | ∫xᵃyᵇzᶜ over the tetrahedron for a + b + c ≤ 5; N_i(x_j) = δ_ij | to rounding; faces point outward |
+| Face loads, six-node triangle and eight-node quadrilateral | 0 and A/3 at corners and edge nodes; −A/12 and A/3 | to rounding |
+| Rigid motions and mass, curved elements | K u = 0 for 6 rigid motions; the mass ρV | 10⁻¹¹ of the largest entry; 10⁻¹³ |
+| Patch test, distorted meshes of both elements (Irons & Razzaque 1972) | uniform tension: u linear | to rounding (10⁻⁹ of the largest displacement) |
+| Cantilever 100 × 10 × 10 mm, ν = 0 | Timoshenko beam PL³/(3EI) + PL/(κGA) | hex20 −0.12 %, tet10 −0.01 % |
+| Its first frequency | the Timoshenko beam (40 elements) | hex20 +0.09 %, tet10 +0.01 %; both bending pairs equal |
+| Thick-walled cylinder under internal pressure, plane strain, quarter of it | Lamé (Timoshenko & Goodier 1970) | ν = 0.3: hex20 7·10⁻⁵, tet10 1.5·10⁻³; ν = 0.49 (MacNeal & Harder 1985): 1.0·10⁻³ and 7.8·10⁻³ |
+| Free and fully held block, ΔT = 40 K | α ΔT x without stress; σ = −E α ΔT/(1 − 2ν) | to rounding; the reaction within 10⁻¹⁰ |
+| A block written as a Gmsh file of second order (faces in reverse order) | the generated block | the same tip deflection to 10⁻¹² |
+
+The picture is made with `python3 -m tools.plot.structure_solid`
+(commands in its header). Not yet: solids joined to beams or shells (a
+solid shares no nodes with them), stresses other than the von Mises
+stress at the nodes, a temperature field per node, and Gmsh's complete
+second-order elements (27-node hexahedra; use
+`Mesh.SecondOrderIncomplete = 1`).

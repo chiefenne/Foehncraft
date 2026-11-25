@@ -215,6 +215,7 @@ mod tests {
             "reed_plate",
             "reed_plate_pulse",
             "reed_plate_hot",
+            "reed_stop",
         ] {
             let case = root().join(format!("examples/cases/structure/{name}.toml"));
             let out = tmp.join(name);
@@ -229,6 +230,13 @@ mod tests {
                 out.join("transient.csv").is_file(),
                 name == "reed_plate_pulse"
             );
+            if name == "reed_stop" {
+                // the curved stop read from its Gmsh file next to the case
+                assert_eq!(res["solid_elements"], 160);
+                let vm = res["static"]["max_von_mises"]["value"].as_f64().unwrap();
+                assert!(vm > 2.0e8 && vm < 2.5e8, "{vm}");
+                continue;
+            }
             let rigid = res["clamps"][0]["rotation"]["rigid"].as_bool().unwrap();
             assert_eq!(rigid, name == "reed_beam" || name == "reed_plate_hot");
         }
