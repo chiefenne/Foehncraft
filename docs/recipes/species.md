@@ -1,11 +1,12 @@
 # Species and reacting flows
 
-Part of the [Recipes](../recipes.md): mixtures of ideal gases carried by the flow (steam furnace stage SF1). The keys are on the [key page](../cases/flow-keys.md#species) (`species.*`, `boundary.<name>.species`).
+Part of the [Recipes](../recipes.md): mixtures of ideal gases carried by the flow (steam furnace stage SF1) and their chemistry (SF2). The keys are on the [key page](../cases/flow-keys.md#species) (`species.*`, `boundary.<name>.species`).
 
 | # | Recipe |
 |---|---|
 | 278 | [Carry the species of a gas mixture with the flow](#species-transport) |
 | 289 | [Run a mechanism in a constant-pressure reactor and find the equilibrium](#gas-chemistry) |
+| 298 | [Let the species react in the cells of a laminar flow](#reacting-flow-cells) |
 
 ---
 
@@ -163,3 +164,77 @@ temperatures. The images of the gallery:
 
 [Gallery 289](../gallery/species.md#gas-chemistry).
 
+<a id="reacting-flow-cells"></a>
+## 298. Let the species react in the cells of a laminar flow
+
+**Start from a species case.** A reacting flow is a transient laminar
+species case ([recipe 278](#species-transport)) with the energy equation
+on the variable density, whose `[species]` are exactly the species of a
+mechanism, plus one table:
+
+```toml
+[energy]
+density = "variable"
+
+[species]
+names = ["CH4", "O2", "CO", "CO2", "H2O", "H2", "AR", "N2"]   # the species of jones-lindstedt-4
+diffusion = "lewis"
+lewis = 1.0
+
+[chemistry]
+mechanism = "jones-lindstedt-4"    # or "gri30", "westbrook-dryer-2", "my_mech.yaml"
+min_temperature = 400.0            # colder cells do not react
+
+[chemistry.flame_speed]            # optional: the burning velocity of a premixed flame
+fuel = "CH4"
+inlet = "xmin"
+range = [0.38, 0.48]               # optional check, m/s
+```
+
+For GRI-Mech 3.0 list all 53 species (copy `names` from
+`flame_methane_air_gri30.toml`, N₂ last as the closure). Ignite the
+mixture with the start fields: a hot zone of burnt gas, as in the cases,
+where an expression sets `[energy] initial` and the mass fractions.
+
+**Run it.**
+
+    target/release/foehn flow examples/cases/flow/flame_methane_air_jl4.toml
+
+The log ends with the reacting-flow summary, and the flame speed is a
+verification line when `range` is given:
+
+```
+chemistry jones-lindstedt-4: flame speed 0.42969 m/s (fuel consumption, mean over 1.0000e-3 … 2.0000e-3 s), heat release 1.2833e-2 W
+```
+
+`output/<case>/chemistry.csv` has per time step the heat release, the
+net production of every species (kg/s) and the steps of the stiff
+integrator; the ledger has a `reaction` row in each species account.
+
+**Choose the step and the cells.** Transport and chemistry are split at
+each time step, to first order: the flame speed changes by several per
+cent between 10 and 5 µs. Resolve the flame with at least 10 cells over
+its thermal thickness (about 0.5 mm for methane and air at 1 atm, so
+50 µm). For a detailed mechanism give the species their own Lewis
+numbers; Lewis 1 for all slowed a methane flame by about 12 %.
+
+**On a GPU.** `[run] backend = "cuda"` (a build with the `cuda` feature)
+integrates the cells on the GPU with the same kernel body; check a GPU
+with
+
+    python3 gpu/ptx-kernels/build.py
+    cargo run --release -p foehncraft-cuda --features cuda --example chemistry_gpu
+
+which integrates 4096 cells of methane and air on the CPU threads and on
+the GPU and fails if a single bit differs.
+
+**If it stops.** CHM002: a cell did not reach the end of the time step;
+raise `[chemistry.integrator] max_steps`, loosen `rtol` or shorten the
+time step. CHM003: steady runs, turbulence models and sprays are not
+supported with chemistry yet. The images of the gallery:
+
+    target/release/foehn flow examples/cases/flow/flame_methane_air_gri30.toml --out output/gri
+    target/release/foehn flow examples/cases/flow/flame_methane_air_jl4.toml --out output/jl4
+    python3 -m tools.plot.flame_profiles output/img output/gri output/jl4
+
+[Gallery 298](../gallery/species.md#reacting-flow-cells).

@@ -1,11 +1,12 @@
 # Species and reacting flows
 
-Part of the [Example gallery](../gallery.md): mixtures of ideal gases whose species are carried by the flow, the first stage (SF1) of the [development path to an industrial steam furnace](../assessments/steam-furnace-development-path.md). Gas-phase chemistry (SF2) follows; its coupling to the flow and the heat release in the cells come with SF2b and SF3.
+Part of the [Example gallery](../gallery.md): mixtures of ideal gases whose species are carried by the flow, the first stage (SF1) of the [development path to an industrial steam furnace](../assessments/steam-furnace-development-path.md). Gas-phase chemistry (SF2) reacts in a reactor (SF2a) and in the cells of a laminar flow (SF2b); turbulent flames follow with SF3.
 
 | # | Example | Stage | Feature |
 |---|---|---|---|
 | 278 | [A methane jet in a coflow of air, and binary diffusion against the exact solution](#species-transport) | SF1 | `[species]`, `names`, `closure`, `initial`, `diffusion`, `schmidt`, `lewis`, `turbulent_schmidt`, `properties`, `[boundary.<name>.species]`, fields `Y_<species>` |
 | 289 | [Methane ignites in a constant-pressure reactor and ends at its chemical equilibrium](#gas-chemistry) | SF2a | `foehn chemistry reactor`, `foehn chemistry equilibrium`, `[reactor]`, `mechanism` (`gri30`, `westbrook-dryer-2`, `jones-lindstedt-4`, YAML files), `[reactor.integrator]`, `[reactor.check]` |
+| 298 | [A laminar methane–air flame burns at the measured speed with GRI-Mech 3.0](#reacting-flow-cells) | SF2b | `[chemistry]`, `mechanism`, `min_temperature`, `[chemistry.integrator]`, `[chemistry.flame_speed]`, `chemistry.csv`, `[run] backend = "cuda"` |
 
 ---
 
@@ -175,3 +176,85 @@ every species). [Recipe 289](../recipes/species.md#gas-chemistry), cases
 in the [catalogue](../cases/chemistry.md), images by
 `python3 -m tools.plot.reactor_traces`.
 
+<a id="reacting-flow-cells"></a>
+## 298. A laminar methane–air flame burns at the measured speed with GRI-Mech 3.0
+
+<img src="../figures/gallery/flame_methane_air_structure.png" alt="Top: two colour strips along the tube from 2 mm before to 3 mm after the flame, the temperature rising from 300 K in blue through green and yellow to 2180 K in dark red, and the OH mass fraction rising sharply at the flame to 4.6 per mille and slowly falling behind it. Bottom left: methane and oxygen fall to zero within half a millimetre while water, carbon dioxide and carbon monoxide rise; CO peaks at 4.5 % at the flame and is oxidised behind it; the dashed temperature curve climbs from 300 K to 1800 K across the flame and on to 2160 K. Bottom right, log axis: HO2 and formaldehyde peak just before the flame, CH3 and HCO at it, OH, O and H rise to their burnt-gas levels after it, and nitric oxide grows slowly behind the flame." width="1016" height="577">
+
+`flame_methane_air_gri30.toml` lets stoichiometric methane and air at
+300 K and 1 atm flow at 0.3 m/s into a tube of one row of 50 µm cells
+against a flame front placed in its middle. Each time step of 5 µs the
+chemistry of every cell is integrated with GRI-Mech 3.0 (53 species, 325
+reactions) over the step, and the changes of the mass fractions and the
+heat they release become the sources of the species and energy equations;
+the density follows the temperature and the mixture. The flame forms its
+radical pool in about a millisecond, then settles: HO₂ and formaldehyde
+peak on the cold side, CH₃ and HCO in the thin reaction zone, CO at
+4.5 % by mass right behind it, and OH, O and H fall slowly towards their
+equilibrium in the burnt gas while NO forms there by the thermal route.
+
+<img src="../figures/gallery/flame_methane_air_speed.png" alt="Burning velocity against time from 0 to 6 ms. The GRI-Mech 3.0 curve rises from zero to 0.28 m/s at 1 ms and levels at 0.35 m/s from 4 ms on, just below the grey band of the measurement at 0.360 plus or minus 0.017 m/s. The curve of the four-step mechanism of Jones and Lindstedt drops from a start transient to 0.39 m/s and levels at 0.43 m/s, above the band." width="848" height="423">
+
+The burning velocity is the fuel the reactions consume per unit area,
+S_c = −ṁ_CH₄/(ρ_u Y_CH₄,u A), independent of where the flame sits in the
+tube. Averaged over 3 to 6 ms it is **0.348 m/s**, 3 % below the measured
+0.360 ± 0.017 m/s (the experimental target of stoichiometric methane and
+air at 298 K and 1 atm compiled for FFCM-1 by Smith, Tao & Wang 2016 from
+heat-flux and counterflow measurements), inside the scatter of the
+measurements. The global four-step mechanism of Jones & Lindstedt (1988)
+in the same tube burns at 0.430 m/s and reaches 2250 K: such schemes are
+calibrated for heat release and flame speed in their own transport
+setting and miss the radicals (`flame_methane_air_jl4.toml`, 18 s).
+
+**What the flame speed depends on.** The species diffuse with constant
+Lewis numbers (Fick's law, ρ D_i = λ/(c_p Le_i)) taken from the methane
+flames of Smooke & Giovangigli (1991): H with 0.18 and H₂ with 0.3
+diffuse much faster than heat, and that carries radicals into the fresh
+gas. On a coarser set-up (100 µm cells, 10 µs steps) the Lewis number 1
+for every species gave 0.29 m/s after 8 ms, the species Lewis numbers
+0.33 m/s. The splitting of transport and chemistry is first order: on
+100 µm cells the speed at 4 ms was 0.264 m/s with 10 µs steps and
+0.285 m/s with 5 µs steps, and the coarse cells let it wobble by a few
+per cent each time the front crosses a cell; the case uses 50 µm cells
+and 5 µs steps (1200 steps, about 10 minutes on 4 cores). Every element
+is conserved to 3·10⁻¹³ of its inflow.
+
+**How it is built.** `[chemistry]` adds one step to the transient loop:
+at the first outer iteration of a time step the state (Y, T) of every cell
+is integrated as a constant-pressure adiabatic reactor over Δt with the
+RODAS3 kernel of SF2a (Lie splitting), cells below `min_temperature`
+skipped. The species sources (Y* − Y)/Δt enter the species rows with ρV,
+the heat −ρ Σ h_i(T)(Y* − Y)/Δt the energy rows, both held over the outer
+iterations of the step. The cell body is one function for the CPU threads
+and the GPU: with `[run] backend = "cuda"` the cells go in batches to the
+PTX entry `chemistry_react`, one thread per cell, with the same
+operations in the same order, so the GPU gives the bits of the CPU; the
+data path of the entry is tested on the CPU, and
+`cargo run --release -p foehncraft-cuda --features cuda --example chemistry_gpu`
+compares the two on a GPU. The ledger books the net production of each
+species, and the summary gives the heat release and the flame speed.
+
+**What this version does not do.** Transient laminar flows only: steady
+runs, turbulence models (SF3) and sprays are refused (CHM003). No ranks
+yet, because the variable density it needs is not on ranks. Fickian
+diffusion with constant Lewis or Schmidt numbers: no mixture-averaged or
+multicomponent diffusion and no thermal diffusion. First-order splitting,
+no Strang splitting. The energy balance books the convected enthalpy with
+the fluid's c_p, not the mixture's, so its imbalance reads about 26 % in a
+flame although the temperature equation itself uses the mixture. The GPU
+path compiles in CI but has not yet run on a GPU. The first steps after
+the start fields are out of mass balance by up to 6·10⁻⁴ (BAL001 warning)
+while the flow adjusts to the expansion, 10⁻⁷ later.
+
+**What is checked.** The flame speed of GRI-Mech 3.0 within [0.33,
+0.39] m/s and that of Jones & Lindstedt within [0.38, 0.48] m/s (the
+cases fail outside); the data path of the PTX entry bitwise against the
+cell body; the refusals of steady, turbulent and constant-density cases,
+of species other than the mechanism's and of a broken flame-speed table;
+damaged `[chemistry]` tables end in a coded error (broken-input corpus).
+
+Files: `output/<case>/chemistry.csv` (heat release, net production of
+each species, integrator steps per time step), `fields.vtkhdf` with every
+`Y_<species>`. [Recipe 298](../recipes/species.md#reacting-flow-cells),
+cases in the [catalogue](../cases/flow.md), images by
+`python3 -m tools.plot.flame_profiles`.

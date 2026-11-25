@@ -1477,11 +1477,28 @@
     "gaps written"
    ],
    "gaps": [
-    "0D only: no chemistry in the flow cells and no heat release in the energy equation yet (SF2b)",
-    "no ignition delay or flame speed against measurements yet (the 1D laminar flame is SF2b); the reactor cases check the equilibrium and an ignition delay band of the code itself",
-    "the kernel is single-source no_std but not yet compiled to PTX or run on a GPU; no ranks (a 0D reactor has no mesh) until SF2b",
+    "no ignition delay against shock-tube measurements; the reactor cases check the equilibrium and an ignition delay band of the code itself (chemistry in the flow cells and the flame speed: chemistry.flow)",
     "the Westbrook-Dryer 2-step mechanism overshoots its own equilibrium by 277 K from 1400 K: its CO2 dissociation is an explicit reaction, not the reverse of the CO oxidation (a flaw of the published mechanism, kept as published)",
     "PLOG, Chebyshev and SRI rates, surface and electrochemical reactions are refused"
+   ],
+   "range": {}
+  },
+  {
+   "id": "chemistry.flow",
+   "title": "Gas-phase chemistry in the cells of a transient laminar flow with heat release, the 1D premixed flame (L2, steam furnace SF2b)",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "first-order Lie splitting at the first outer iteration of each step: on 100 um cells halving the time step from 10 to 5 us raises the GRI-Mech flame speed at 4 ms from 0.264 to 0.285 m/s; no Strang splitting yet",
+    "species diffusion is Fickian with constant Lewis numbers per species (no mixture-averaged or multicomponent diffusion, no thermal diffusion); on 100 um cells Lewis 1 for every species gives 0.29 m/s for the GRI-Mech flame, the species Lewis numbers 0.33 m/s",
+    "the first steps after the start fields are out of mass balance by up to 6e-4 (BAL001 warning) while the flow adjusts to the expansion; 1e-7 later",
+    "the energy balance books the convected enthalpy with the fluid's c_p, not the mixture's: its imbalance shows about 26 % in a flame although the temperature equation uses the mixture c_p",
+    "transient only (CHM003 for steady runs), laminar only (turbulence-chemistry interaction is SF3), no sprays with chemistry",
+    "not on ranks: the variable density it needs (stage 7c) is not on ranks yet",
+    "the GPU path (PTX entry chemistry_react, CUDA host side, CPU=GPU program chemistry_gpu) is compiled in CI but not yet run on a GPU",
+    "the burning velocity oscillates by a few per cent as the flame crosses cells (period dx/(S_L - u_inlet)); the case averages over the second half of the run"
    ],
    "range": {}
   },
