@@ -48,6 +48,7 @@ fn injector(position: [f64; 3], direction: [f64; 3], speed: f64, d: f64) -> Inje
         half_angle: 0.0,
         mass_flow: 1e-3,
         diameter: d,
+        size: None,
         parcels_per_second: 50.0,
         start: 0.0,
         end: None,

@@ -65,7 +65,7 @@ FLOW = {
         "buoyancy_channel_static", "buoyancy_open_box", "buoyancy_enclosure_plume",
         "vd_heated_duct", "vd_closed_box_heating", "vd_closed_box_side_heated", "vd_mms_steady",
         "mixed_convection_channel",
-        "spray_duct",
+        "spray_duct", "spray_datums",
         "porous_darcy_block", "porous_honeycomb_channel", "porous_schumann", "porous_storage_charge",
     ],
     "long": [
