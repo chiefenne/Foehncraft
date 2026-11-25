@@ -620,23 +620,26 @@ mod tests {
     #[test]
     fn chemistry_cases_are_checked() {
         assert_eq!(code(CASE), None);
-        let steady = CASE.replace(
-            "[time]\nscheme = \"bdf2\"\ntime_step = 1.0e-5\nsteps = 200\n",
-            "",
-        );
-        assert_ne!(steady, CASE);
+        // the case without its [time] table
+        let (head, rest) = CASE.split_once("[time]\n").unwrap();
+        let steady = format!("{head}{}", &rest[rest.find("\n\n").unwrap()..]);
         assert_eq!(code(&steady).as_deref(), Some("CHM003"));
         let turbulent = format!("{CASE}\n[turbulence]\nmodel = \"k-omega-sst\"\n");
         assert_eq!(code(&turbulent).as_deref(), Some("CHM003"));
         let constant = CASE.replace("density = \"variable\"", "density = \"constant\"");
+        assert_ne!(constant, CASE);
         assert!(code(&constant).is_some());
         let fewer = CASE.replace("\"H2\", ", "");
+        assert_ne!(fewer, CASE);
         assert_eq!(code(&fewer).as_deref(), Some("CHM001"));
         let fuel = CASE.replace("fuel = \"CH4\"", "fuel = \"C3H8\"");
+        assert_ne!(fuel, CASE);
         assert_eq!(code(&fuel).as_deref(), Some("CHM001"));
-        let range = CASE.replace("range = [0.35, 0.45]", "range = [0.45, 0.35]");
+        let range = CASE.replace("range = [0.38, 0.48]", "range = [0.48, 0.38]");
+        assert_ne!(range, CASE);
         assert_eq!(code(&range).as_deref(), Some("CHM001"));
         let inlet = CASE.replace("inlet = \"xmin\"", "inlet = \"xmax\"");
+        assert_ne!(inlet, CASE);
         assert_eq!(code(&inlet).as_deref(), Some("CHM001"));
     }
 }

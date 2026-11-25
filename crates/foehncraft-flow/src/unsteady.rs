@@ -3098,10 +3098,12 @@ fn run_one<F: FnMut(&str)>(
         .iter()
         .map(|p| p.mass_flow.abs().max(case.rho() * umax * p.area))
         .fold(0.0f64, f64::max);
-    // with a variable density the mass in the domain changes (a flame, a
-    // heated duct starting up): the check is then the mass account of the
-    // last step, outflow plus storage (D119)
-    let mass_imbalance = match (&last_balance, crate::density::wanted(&case)) {
+    // in a reacting flow the mass in the domain keeps changing (a flame
+    // turns dense fresh gas into light burnt gas): the check is then the
+    // mass account of the last step, outflow plus storage (D119); other
+    // variable-density cases keep the net outflow (a closed box has no
+    // flow to scale the account by)
+    let mass_imbalance = match (&last_balance, case.chemistry.is_some()) {
         (Some(b), true) => b.mass.relative,
         _ if big > 0.0 => total / big,
         _ => 0.0,
