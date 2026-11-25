@@ -22,6 +22,7 @@ Part of the [Example gallery](../gallery.md): the built-in test mesher in 2D and
 | 244 | [Five ranks, one turbulent heated flow: models on ranks](#flow-models-ranks) | 8 | k-ω SST, k-ε, energy, passive scalars, transient PISO and the coupled solver on ranks, every field bitwise one rank (MPI step W5, D93) |
 | 262 | [Written on five ranks, read on any: restart files on ranks](#restart-ranks) | 8 | the restart gathered from the ranks has the bytes of the one-rank file; read on any rank count by global identity, the continuation bitwise one rank (MPI step W6, D84, D93) |
 | 279 | [Solved on five ranks, written by one: a run on ranks](#run-ranks) | 8 | `foehn flow --ranks N`: every rank runs the loop, rank 0 writes; monitors, ledger, fields and restart from the gathered fields, every output file byte for byte one rank (MPI step W7, D84, D93) |
+| 290 | [Five ranks, one turbulent heated transient: the physics of a run on ranks](#run-ranks-physics) | 8 | k-ω SST, energy, a passive dye and BDF2 time steps solved on ranks as the run itself; heat balance of every step, history, probes, forces, fields and restart byte for byte one rank (MPI step W7 part 2, D84, D93) |
 
 ---
 
@@ -777,6 +778,64 @@ python3 -m tools.mesh.render_mesh output/ranks_run_channel/fields.vtkhdf speed.p
 python3 -m tools.mesh.render_mesh output/ranks_run_channel/ranks.vtkhdf rank.png \
     --field rank --categorical --top --size 1200x460 --zoom 1.9 \
     --title "the 5 ranks (RCB) of the run; rank 0 wrote the output"
+```
+
+[↑ back to top](#meshes)
+
+---
+
+<a id="run-ranks-physics"></a>
+## 290. Five ranks, one turbulent heated transient: the physics of a run on ranks
+
+<img src="../figures/gallery/ranks_physics_temperature.png" alt="Temperature of the transient heated channel solved on five ranks" width="1200" height="460">
+
+<img src="../figures/gallery/ranks_physics_dye.png" alt="Passive dye of the upper half of the inflow, solved on five ranks" width="1200" height="460">
+
+<img src="../figures/gallery/ranks_run_rank.png" alt="The five ranks of the run" width="1200" height="460">
+
+The heated channel of gallery 244 (k-ω SST, Re = 10 000 on the height, the
+lower wall 30 K above the inflow, the upper wall adiabatic), now with the
+upper wall moving against the inflow at half its speed and a passive dye
+in the upper half of the inflow, marched from potential flow with BDF2 for
+1.5 flow-through times on five ranks as the run itself
+(`[run] rank_count = 5`). W7 part 1 ran steady laminar cases only; part 2
+adds what the solver of W5 already ran on ranks to the run around it: the
+scalar summaries and the heat balance of the energy equation (every time
+step in `heat.csv`, the last one in the ledger), the turbulence summary
+(first-cell y⁺ per wall, the largest ν_t/ν and its cell, the floor
+counts), the transient loop with its history, probes, wall forces,
+field files every 60 steps and the restart, the adaptive time step, and the
+rotating frame of the whole domain. Each of them gathers the arrays of all
+ranks into the order of the whole mesh and is computed there by the code of
+one rank, so every file is byte for byte that of `--ranks 1`. The images
+show the temperature (the thermal layer of the heated lower wall growing
+downstream to about a tenth of the height), the dye of the upper half of
+the inflow with its mixing layer widening downstream, and the five ranks
+(recursive coordinate bisection, the partition of gallery 279) that solved
+it. The run takes 15 s on five thread ranks against 5 s on one on this
+small mesh: the price of the gathers for the output of every step and of
+the exact sums over ranks, not a speed-up (strong scaling is W9). The tests do the same on 2, 3 and 4 ranks for a steady SST case
+with energy and a scalar, a steady k-ε case in a rotating frame, a
+transient laminar BDF2 case and an adaptive transient SST case, comparing
+the output files and the whole `result.json`.
+
+| | |
+|---|---|
+| Mesh | poly 2D, 90 × 30 base grid, 2 821 cells, nodes perturbed by 10 % |
+| Ranks | 5 (recursive coordinate bisection), threads of one process; or MPI processes under `mpirun` |
+| Model | k-ω SST, energy equation (Pr = 0.71), passive dye |
+| Solver | BDF2, Δt = 0.025 s to t = 4.5 s (180 steps) from potential flow |
+| Output | every file byte for byte the run on one rank |
+| Case file | `flow/ranks_run_transient_sst.toml` |
+
+```
+target/release/foehn flow examples/cases/flow/ranks_run_transient_sst.toml
+python3 -m tools.mesh.render_mesh output/ranks_run_transient_sst/fields.vtkhdf temperature.png \
+    --field temperature --top --size 1200x460 --zoom 1.9 \
+    --title "temperature (K), t = 4.5 s, SST + energy, solved on 5 ranks"
+python3 -m tools.mesh.render_mesh output/ranks_run_transient_sst/fields.vtkhdf dye.png \
+    --field dye --top --size 1200x460 --zoom 1.9 \
+    --title "passive dye of the upper inflow, t = 4.5 s, solved on 5 ranks"
 ```
 
 [↑ back to top](#meshes)

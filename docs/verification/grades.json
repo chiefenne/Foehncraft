@@ -1396,6 +1396,24 @@
    "range": {}
   },
   {
+   "id": "sprays.steady-mode",
+   "title": "Steady spray mode: streams through the steady gas with relaxed sources (SP2s, D260)",
+   "grade": "partial",
+   "why": [
+    "a model without reference data",
+    "gaps written"
+   ],
+   "gaps": [
+    "V28.9 not met strictly: the steady duct takes 2.9 % less heat from the air than the time mean of the transient run, more than the sampling and step errors of the transient run; the transient flow does not come to rest behind the nozzle",
+    "no evaporation (SP5); V28.11 (duct with more water than the gas can take) waits for it",
+    "the statistical error of the streams is estimated by hand with other seeds, not by a study tool (D196)",
+    "the health numbers of D254 are reported only; no limiter acts in the steady mode",
+    "datums report no liquid in the steady mode",
+    "not with solid regions (CHT) or two-way with the coupled algorithm (SPR003); one process"
+   ],
+   "range": {}
+  },
+  {
    "id": "porous.darcy-forchheimer",
    "title": "Porous regions with a direction-dependent Darcy-Forchheimer resistance (D270, PM1)",
    "grade": "partial",
@@ -1505,10 +1523,25 @@
     "gaps written"
    ],
    "gaps": [
-    "steady laminar cases only: passive scalars, energy, turbulence models and transient runs are refused on ranks (W7 part 2)",
+    "scalars, energy, turbulence models, the rotating frame and transient runs: parallel.run-ranks-physics (W7 part 2)",
     "settings through the control port (run.set) are refused on ranks",
     "MPI processes are not run in CI yet with foehn flow (the threads test covers the same code; the MPI CI job runs the flow kernels across processes, mpi_flow)",
     "the fields are gathered on every rank for the output (memory of the whole state per rank), as the replicated multigrid setup"
+   ],
+   "range": {}
+  },
+  {
+   "id": "parallel.run-ranks-physics",
+   "title": "Turbulent, heated and transient runs on ranks with the output of one rank (MPI step W7 part 2)",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "refused on ranks: species transport, [output.statistics], the thermal acceleration, cycle loop and frozen-flow march, sweeps over time steps, several fluids with a turbulence model, and what [run] ranks refuses",
+    "the scalar summary stops with an error on ranks for orthotropic solids, porous matrices, heat-flux periodic pairs, sprays and a variable density (all refused before the run by the rules above)",
+    "Crank-Nicolson and PISO without outer iterations are not tested on ranks in this step (the solver on ranks is, W5)",
+    "MPI processes are run in CI with the steady laminar case only; the threads tests cover the same code"
    ],
    "range": {}
   },

@@ -9,6 +9,7 @@ Part of the [Recipes](../recipes.md): droplets that move with and through the ga
 | 280 | [Let the spray push the gas (two-way coupling)](#spray-two-way) |
 | 283 | [Cool a gas with droplets (two-way heat)](#spray-cooling) |
 | 285 | [Let the turbulence spread the droplets](#spray-dispersion) |
+| 292 | [Solve a spray in a steady flow (steady spray mode)](#spray-steady) |
 
 ---
 
@@ -220,3 +221,62 @@ python3 -m tools.plot.spray_dispersion OUT_DIR output/spray_dispersion   # the p
 ```
 
 The parcel files carry the positions to measure the spread; with `[[datum]]` planes across the duct (recipe 265) `datums.csv` and the histograms give the distribution of the liquid without post-processing. The dispersion depends on the k and ε the turbulence model gives at the nozzle: check that the inlet turbulence does not decay before the spray reaches it (the gallery case uses a viscosity ratio of 2000 for that). Near walls the isotropic eddies overestimate the wall-normal fluctuation, so wall deposition is not reliable with this model. See the [gallery entry](../gallery/sprays.md#spray-dispersion) for what is checked.
+
+<a id="spray-steady"></a>
+## 292. Solve a spray in a steady flow (steady spray mode)
+
+**Leave out `[time]` and add `[spray.steady]`.** A spray in a steady case
+runs as *streams* (D260, SP2s): each stream stands for a share of the
+injector's mass flow, is followed through the frozen gas field, and hands
+the gas its sources every `every` outer iterations. All keys have defaults:
+
+```toml
+[spray]
+include = "spray_cooling_injectors.toml"   # the same injector file as the transient case
+wall_mode = "stick"
+
+[spray.coupling]
+mode = "two-way"             # "one-way": the streams are followed once at the end, the gas is not touched
+
+[spray.steady]
+streams = 400                # streams per injector, default 200
+every = 10                   # outer iterations between stream passes, default 10
+relaxation = 0.5             # S <- S + relaxation (S_new - S), default 0.5
+tolerance = 1e-3             # source residual for convergence, default 1e-3
+max_time = 5.0               # s, a stream still in the flow after this is "unfinished" (SPR007), default 10
+seed = 0                     # other seeds draw other streams, default 0
+```
+
+`parcels_per_second` of the injector file is not needed in the steady
+mode. The case needs SIMPLE or SIMPLEC for two-way coupling (SPR003);
+`[spray.steady]` with `[time]`, or an injector with `start` or `end`, is
+refused (SPR002).
+
+**Run and look.**
+
+```bash
+foehn flow examples/cases/flow/spray_cooling_steady.toml --out output/spray_cooling_steady
+foehn flow examples/cases/flow/spray_cooling.toml --out output/spray_cooling       # optional, the transient run to compare
+python3 -m tools.plot.spray_cooling_steady OUT_DIR output/spray_cooling_steady output/spray_cooling   # the picture of gallery 292
+```
+
+The run is converged only when the gas residuals are below `[solver]
+tolerance` and the source residual (how far the relaxed sources the gas
+holds are from those of the last pass) is below `[spray.steady]
+tolerance`; a run that stops at `max_iterations` above it warns with
+SPR008. `spray.csv` has one row per pass with the source residual
+(`source_residual`, `residual_momentum`, `residual_heat`), the liquid per
+boundary in kg/s, the residence times, the force and heat on the gas and
+the health numbers (`coupling_max` = β/ṁ, `coupling_heat_max` =
+G/(ṁ c_p), with ṁ the gas mass flow through the cell, and
+`liquid_fraction_max`). `spray/streams.vtkhdf` holds the paths of the
+final pass; in ParaView colour the points by `temperature` or `diameter`.
+The log and `result.json` (`spray_steady`) give the summary.
+
+**When it does not converge.** A source residual that stalls above the
+tolerance usually means the passes are too far apart for the gas to follow
+or the relaxation is too large: lower `relaxation` to 0.3, or `every` to 5.
+Strong coupling (health numbers above 1) needs a smaller relaxation. To see
+the statistical error of the streams, run again with another `seed` or more
+`streams`. See the [gallery entry](../gallery/sprays.md#spray-steady) for
+what is checked and how it compares with the transient run.

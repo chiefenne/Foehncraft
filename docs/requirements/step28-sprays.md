@@ -32,7 +32,7 @@ viewer (D261 to D268) are in
 | SP2 | Two-way momentum and sensible heat, size distributions, eddy-lifetime dispersion, ledger rows for the gas-parcel pair. The coupling follows section 5 (D247 to D252, D254): frozen gas state, sorted deposit, implicit relaxation form, closing step, passes inside the time step | SP1 and 7.0a |
 | SP4 | Minimal vapour species on the low-Mach density, liquid property set for water first | SP2 |
 | SP5 | Evaporation (Ranz-Marshall, Abramzon-Sirignano), closed-box mass and energy ledger test, the spray-cooling case. Vapour and enthalpy exchange in the relaxation form of D250, parcel integrators of D251, saturation limiter of D253, checks V28.1 to V28.8 | SP4 |
-| SP2s | Steady spray mode (D260): parcel streams through the steady gas field, relaxed sources, checks V28.9 to V28.11. Momentum and sensible heat first; evaporation in the steady mode when SP5 is merged | SP2 merged and V28.1 to V28.4 passed |
+| SP2s | Steady spray mode (D260): parcel streams through the steady gas field, relaxed sources, checks V28.9 to V28.11. Momentum and sensible heat first; evaporation in the steady mode when SP5 is merged. **Implemented 2026-11-25 (PR #292)** for momentum and sensible heat; see section 6 | SP2 merged and V28.1 to V28.4 passed |
 | SP6 | Breakup and collision | decision on regime |
 | SP3 | Parcel migration between ranks | MPI W3 to W5 merged |
 | SP7 | Wall film | 7t2 surface mesh |
@@ -421,3 +421,50 @@ case). What the code does, against section 5:
   droplets change eddies more often and spread less), V28.1 with eddies,
   bitwise equal flow runs on 1 and 4 threads. V28.17 (grid turbulence
   against Snyder and Lumley 1971 and Wells and Stock 1983) is not run yet.
+
+**SP2s (steady spray mode) is implemented** (`[spray.steady]`, D260,
+PR #292). What the code does:
+
+- A steady case (no `[time]`) with `[spray.steady]` runs the spray as
+  streams: `streams` per injector (default 200), each with the mass flow
+  of its injector over the number of streams as its mass (kg/s) and the
+  droplets per second as its count. Size, direction and eddies come from
+  the keyed random numbers with the key seed · streams + k, the same in
+  every pass (D260 (3)); `seed` draws another sample.
+- A stream pass is the parcel pass of D247 with `max_time` in place of the
+  time step: the stream is followed to the end of its path (escape,
+  stick, or `max_time`, SPR007 for unfinished streams). The records hold
+  mass, momentum and enthalpy flows; the slopes are the local ones of each
+  cell visit, m (1 − Π e), since there is no closing step (D260 (4)).
+- The pass runs every `every` outer iterations of SIMPLE or SIMPLEC
+  (before the iteration, so the gas solves with fresh sources). The gas
+  holds S(u) = A − β u and Q(T) = B − G T, relaxed by
+  A ← A + α (A_new − A) and the same for β, B, G; the first pass after a
+  start or a restart takes α = 1.
+- Source residual: Σ|S_held(u*) − S_new(u*)| / Σ|S_new(u*)| over the cells
+  of either, for momentum and heat; the larger is the convergence number.
+  A steady run stops only when the gas has converged and the source
+  residual is below `tolerance`; when the gas is done first the next pass
+  is forced. SPR008 marks a run that ends above it as not converged.
+- After the loop a final pass gives the books, the ledger and
+  `spray/streams.vtkhdf`. The ledger books the pairs 2801 to 2803 and 2804
+  with the sources of the final pass on both sides (zero to the bit) and
+  the difference to the held sources as the term `spray source residual`
+  on the gas accounts; the parcel accounts are in the region `parcels`.
+  The rows go into the rates before the steady balance, so the kinetic
+  energy view sees the spray power.
+- D254 health numbers in the steady form: β/ṁ and G/(ṁ c_p) with ṁ the gas
+  mass flow through the cell (half the sum of the face mass flows), and
+  the liquid fraction from the volume flow times the dwell time.
+- Checks: V28.10 (spray.csv and residuals bitwise equal on 1 and 4
+  threads, with and without dispersion), a single stream in a uniform gas
+  against a fourth-order integration (residence time to 7 × 10⁻⁵), another
+  seed draws other streams, the refusals of D260 (6). V28.9 without
+  evaporation: the steady duct takes 6.39 kW from the air against a time
+  mean of 6.58 ± 0.03 kW of the transient run after 0.3 s (2.9 % apart,
+  more than the error band of the transient run; the transient flow does
+  not come to rest behind the nozzle). Not met in the strict form; a gap of
+  the feature row. V28.11 waits for evaporation (SP5).
+- Not yet: evaporation in the steady mode (SP5), liquid at datums, solid
+  regions, the coupled algorithm, the seed study as a tool (D196), several
+  processes.

@@ -39,12 +39,68 @@ pub fn validate(case: &FlowCase) -> Result<()> {
                 .into(),
         ));
     }
-    if case.time.is_none() {
-        return Err(err(
-            diag::SPRAY_STEADY,
-            "spray",
-            "[spray] needs a transient case ([time])".into(),
-        ));
+    match (&case.time, &s.steady) {
+        (Some(_), Some(_)) => {
+            return Err(err(
+                diag::SPRAY_STEADY,
+                "spray.steady",
+                "[spray.steady] is the steady spray mode (D260): a case with [time] runs the \
+                 parcels in time; leave out one of the two"
+                    .into(),
+            ));
+        }
+        (Some(_), None) => {
+            for i in &s.injectors {
+                if !(i.parcels_per_second.is_finite() && i.parcels_per_second > 0.0) {
+                    return Err(err(
+                        diag::SPRAY_CONFIG,
+                        "spray.injector",
+                        format!(
+                            "[[spray.injector]] {}: parcels_per_second must be positive in a \
+                             transient case",
+                            i.name
+                        ),
+                    ));
+                }
+            }
+        }
+        (None, _) => {
+            // the steady mode (D260 (6)): a mass flow that changes in
+            // time has no steady state
+            for i in &s.injectors {
+                if i.start != 0.0 || i.end.is_some() {
+                    return Err(err(
+                        diag::SPRAY_STEADY,
+                        "spray.injector",
+                        format!(
+                            "[[spray.injector]] {}: start and end have no meaning in a steady \
+                             case (D260): the injector's mass flow must not change in time",
+                            i.name
+                        ),
+                    ));
+                }
+            }
+            if case.fluid_view.is_some() {
+                return Err(err(
+                    diag::SPRAY_UNSUPPORTED,
+                    "spray",
+                    "the steady spray mode does not work with solid regions (conjugate heat \
+                     transfer) in this version"
+                        .into(),
+                ));
+            }
+            if s.coupling.two_way()
+                && case.solver.algorithm(false) == crate::simplec::Algorithm::Coupled
+            {
+                return Err(err(
+                    diag::SPRAY_UNSUPPORTED,
+                    "spray.coupling",
+                    "the steady spray mode with two-way coupling needs SIMPLE or SIMPLEC \
+                     ([solver] algorithm), not the coupled algorithm, in this version"
+                        .into(),
+                ));
+            }
+        }
     }
     if !case.mrf.is_empty() || !case.sliding.is_empty() {
         return Err(err(
@@ -77,7 +133,7 @@ pub fn validate(case: &FlowCase) -> Result<()> {
         if case.fluid_view.is_some() {
             return refuse("solid regions (conjugate heat transfer)");
         }
-        if case.solver.algorithm(true) != crate::simplec::Algorithm::Piso {
+        if case.time.is_some() && case.solver.algorithm(true) != crate::simplec::Algorithm::Piso {
             return refuse("a transient algorithm other than PISO");
         }
     }

@@ -13,7 +13,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | Page | What it covers | Examples |
 |---|---|---|
 | [Kernel benchmarks and GPU runs](gallery/benchmarks.md) | gate G1 on CPUs and GPUs, on box, polyhedral and tetrahedral meshes, and the flow loop on a GPU | 1, 2, 7, 16 |
-| [Meshes](gallery/meshes.md) | the built-in test mesher in 2D and 3D, partitioning, the Gmsh, SU2, OpenFOAM, CGNS, Fluent `.msh` and VTK readers, flow on poor Gmsh meshes with remediation, the operator exactness check, the canonical local mesh and exact reductions over ranks | 3, 4, 5, 6, 26, 127, 129, 134, 138, 189, 200, 219, 230, 231, 234, 244, 262, 279 |
+| [Meshes](gallery/meshes.md) | the built-in test mesher in 2D and 3D, partitioning, the Gmsh, SU2, OpenFOAM, CGNS, Fluent `.msh` and VTK readers, flow on poor Gmsh meshes with remediation, the operator exactness check, the canonical local mesh and exact reductions over ranks | 3, 4, 5, 6, 26, 127, 129, 134, 138, 189, 200, 219, 230, 231, 234, 244, 262, 279, 290 |
 | [Scalar transport and the pressure solver](gallery/scalar-pressure.md) | convection–diffusion order of accuracy, convection schemes and limiters, the pressure multigrid | 8, 9, 10, 11 |
 | [Incompressible flow](gallery/flow.md) | steady and transient laminar verification and benchmarks (cavity, Poiseuille, Taylor–Green, cylinder, time-step control), the coupled algorithm and its multigrids, heat transfer in turbulent flow, rotating machinery (moving reference frame, sliding mesh, stirred vessels, several rotors) and the T-junction mixing study | 12, 13, 14, 15, 20, 78, 80, 81, 83, 85, 86, 87, 94, 95, 96, 98, 99, 100, 101, 102, 225, 103, 196 |
 | [Passive scalars and the wall distance](gallery/scalars.md) | passive scalars carried by the flow, the bounded BDF2, the exact wall distance, the MLP vertex limiter | 63, 211 |
@@ -21,7 +21,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | [Thermal radiation](gallery/radiation.md) | Monte Carlo radiation of grey gas and grey walls on a prescribed temperature field: the box furnace with cooled tubes, the cases with exact solutions, scrambled Sobol against pseudo-random emission | 259, 281 |
 | [Turbulence models](gallery/turbulence.md) | the RANS turbulence models with their wall treatments (k-ω SST, the k-ε family, k-ε-ζ-f, k-ε-ζ-f₀, elliptic-blending k-ε) on the flat plate, the channel, the backward-facing step and the impinging jet; curvature correction and QCR; manufactured solutions; the internal flows of D45 (pipe, plane diffuser, U-bend) with GCI | 68, 71, 73, 74, 88, 89, 90, 113, 115, 141, 140, 184, 194, 197, 193, 199, 204 |
 | [Boundary conditions](gallery/boundary-conditions.md) | slip walls, axisymmetric wedges, inlet profiles from tables, backflow at pressure outlets, convective outlets, periodic modules, absolute pressure values (D239) | 21, 67, 220 |
-| [Lagrangian sprays](gallery/sprays.md) | droplets as Lagrangian parcels in the gas flow: injectors, drag, gravity, wall behaviour, the mass book | 242, 265, 280, 283, 285 |
+| [Lagrangian sprays](gallery/sprays.md) | droplets as Lagrangian parcels in the gas flow: injectors, drag, gravity, wall behaviour, the mass book | 242, 265, 280, 283, 285, 292 |
 | [Porous regions](gallery/porous.md) | flow through porous matrices with a direction-dependent Darcy–Forchheimer resistance: a ceramic honeycomb, the exact pressure drop of a block | 273, 275 |
 | [Structures](gallery/structure.md) | the linear structural solver for reeds and other parts the flow moves: beams, clamp springs and their fit to a measured frequency, static and modal analyses (MS5) | 295 |
 | [Immersed bodies](gallery/immersed.md) | bodies in the flow without a body-fitted mesh: Brinkman penalisation of primitive bodies (L13 stage 1) | 270 |
@@ -153,6 +153,8 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | <a id="furnace-paths"></a>281 | [Paths of energy bundles in the box furnace, and the net flux into every wall](gallery/radiation.md#furnace-paths) | [Thermal radiation](gallery/radiation.md) |
 | <a id="spray-cooling"></a>283 | [Water droplets cool a hot air stream](gallery/sprays.md#spray-cooling) | [Lagrangian sprays](gallery/sprays.md) |
 | <a id="spray-dispersion"></a>285 | [Droplets spread by the turbulence of a duct](gallery/sprays.md#spray-dispersion) | [Lagrangian sprays](gallery/sprays.md) |
+| <a id="run-ranks-physics"></a>290 | [Five ranks, one turbulent heated transient: the physics of a run on ranks](gallery/meshes.md#run-ranks-physics) | [Meshes](gallery/meshes.md) |
+| <a id="spray-steady"></a>292 | [The spray-cooled duct as a steady state](gallery/sprays.md#spray-steady) | [Lagrangian sprays](gallery/sprays.md) |
 
 ## Adding a feature
 

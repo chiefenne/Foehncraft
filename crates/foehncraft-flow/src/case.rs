@@ -289,7 +289,9 @@ pub struct RunSection {
     /// fields gathered into the global order, so the output is bitwise
     /// that of one rank. Under an MPI launcher (`mpirun -n N foehn run`,
     /// a build with the `mpi` feature) the ranks are its processes;
-    /// otherwise threads of this process. 1: no ranks. Steady cases so far.
+    /// otherwise threads of this process. 1: no ranks. Steady and transient
+    /// runs with scalars, energy, k-ω SST and k-ε (refused: species,
+    /// statistics, what `[run] ranks` refuses).
     #[serde(skip_serializing_if = "is_one")]
     pub rank_count: usize,
 }
@@ -1932,6 +1934,10 @@ pub struct Solve {
     /// The sprays at the end of the run (SP1b, D265, D267).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub spray: Option<crate::spray::SpraySummary>,
+    /// The steady spray (D260, SP2s): the final stream pass of a steady
+    /// run.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub spray_steady: Option<crate::spray_steady::SteadySummary>,
     /// Benchmark comparison.
     pub benchmark: Option<crate::monitor::BenchmarkResult>,
     /// Conservation ledger (D88, D89).
@@ -2135,10 +2141,12 @@ pub(crate) fn wall_crossings(
 pub(crate) fn turbulence_summary<F: FnMut(&str)>(
     fl: &mut Flow,
     mesh: &Mesh,
+    on: Option<(&crate::ranks::OnRanks, &Geometry, &FlowCase)>,
     lg: &mut Log<F>,
     warnings: &mut Vec<diag::Diagnostic>,
 ) -> Result<Option<crate::turbulence::TurbulenceSummary>> {
-    let Some((sm, finds)) = crate::turbulence::summary(fl, mesh)? else {
+    let on = on.map(|(o, g, c)| (o, g, &c.boundary));
+    let Some((sm, finds)) = crate::turbulence::summary_on(fl, mesh, on)? else {
         return Ok(None);
     };
     lg.line(&format!(
@@ -2959,7 +2967,10 @@ pub fn run_steered(
         // a run on ranks (MPI step W7): this rank's part, its own arrays
         // and physics; the global ones stay for the output
         let on = match steer.ranks.clone() {
-            Some(c) => Some(crate::ranks::OnRanks::new(c, &mesh, &geo, arrays.clone())?),
+            Some(c) => {
+                crate::ranks::supported_mesh(&case, &mesh)?;
+                Some(crate::ranks::OnRanks::new(c, &mesh, &geo, arrays.clone())?)
+            }
             None => None,
         };
         let lead = on.as_ref().is_none_or(|o| o.lead());
@@ -3150,6 +3161,20 @@ pub fn run_steered(
             ));
         }
         let first = fl.iteration();
+        // the steady spray mode (D260, SP2s): stream passes in the outer
+        // iterations (two-way), a final pass on the converged gas
+        let mut steady_spray = crate::spray_steady::SteadySpray::create(
+            &case,
+            &mesh,
+            &geo,
+            &loc,
+            case.run.restart.is_some(),
+        )?;
+        let spray_env = foehncraft_particles::Env {
+            mesh: &mesh,
+            geo: &geo,
+            loc: &loc,
+        };
         // the boundary kinds of the whole mesh, for the ledger
         let mom_kind = on
             .as_ref()
@@ -3253,6 +3278,10 @@ pub fn run_steered(
                 break;
             }
             let previous = res;
+            if let Some(ss) = steady_spray.as_mut() {
+                let next = fl.iteration() + 1;
+                ss.before_iteration(&mut fl, &spray_env, next, first)?;
+            }
             fl.keep_valid()?;
             res = match fl.iterate() {
                 Ok(r) => r,
@@ -3343,7 +3372,12 @@ pub fn run_steered(
                 lg.warn(&m);
             }
             let it = fl.iteration();
-            let done = res.max() < case.solver.tolerance;
+            let gas_done = res.max() < case.solver.tolerance;
+            // the spray's source residual is part of the test (D260 (4))
+            let done = gas_done
+                && steady_spray
+                    .as_mut()
+                    .is_none_or(|s| s.settled(it, gas_done));
             diag_hist.push(it, &residual_values(&res));
             if diag_hist.due(it)
                 && !done
@@ -3572,6 +3606,73 @@ pub fn run_steered(
         steer.record.flush();
         let secs = ts.elapsed().as_secs_f64();
         let iters = fl.iteration();
+        // the final stream pass on the converged gas (D260): its source
+        // residual decides whether the spray counts as converged
+        let mut spray_final = None;
+        if let Some(ss) = steady_spray.as_mut() {
+            fl.update_boundaries()?;
+            fl.gradients()?;
+            let heat = crate::spray::GasHeat::of(&mut fl)?;
+            let sol = Solution {
+                state: fl.state()?,
+                disc: &fl.disc,
+                phys: fl.physics(),
+            };
+            let (sm, pass) = ss.finish(&sol, &spray_env, heat.as_ref(), iters)?;
+            drop(sol);
+            if !sm.converged {
+                let d = diag::Diagnostic::new(
+                    diag::SPRAY_SOURCES,
+                    format!(
+                        "the source residual of the final stream pass is {:.3e}, above [spray.steady] \
+                         tolerance {:.1e}: the spray is not converged",
+                        sm.source_residual.max(),
+                        sm.keys.tolerance
+                    ),
+                );
+                lg.warn(&format!("{}: {}", d.code, d.message));
+                rep.warnings.push(d);
+                converged = false;
+            }
+            if sm.books.unfinished_streams > 0 {
+                let d = diag::Diagnostic::new(
+                    diag::SPRAY_UNFINISHED,
+                    format!(
+                        "{} of {} streams ({:.3e} kg/s) are still in the flow after [spray.steady] \
+                         max_time = {} s",
+                        sm.books.unfinished_streams,
+                        sm.books.streams,
+                        sm.books.unfinished_mass,
+                        sm.keys.max_time
+                    ),
+                );
+                lg.warn(&format!("{}: {}", d.code, d.message));
+                rep.warnings.push(d);
+            }
+            if sm.books.lost_streams > 0 {
+                let d = diag::Diagnostic::new(
+                    diag::SPRAY_LOST,
+                    format!(
+                        "{} streams ({:.3e} kg/s) were lost (failed walk, or more than [spray] \
+                         max_substeps sub-steps)",
+                        sm.books.lost_streams, sm.books.lost_mass
+                    ),
+                );
+                lg.warn(&format!("{}: {}", d.code, d.message));
+                rep.warnings.push(d);
+            }
+            lg.frame(&crate::spray_steady::frame(&sm));
+            if li == last {
+                std::fs::write(out.join("spray.csv"), ss.csv(name))?;
+                if let Some(f) = ss.write_streams(&pass, out, name, iters)? {
+                    lg.note(&format!(
+                        "stream paths written ({})",
+                        f.strip_prefix(out).unwrap_or(&f).display()
+                    ));
+                }
+            }
+            spray_final = Some((sm, pass, heat));
+        }
         {
             let wall = ts.elapsed().as_secs_f64();
             let _ = secs;
@@ -3714,18 +3815,20 @@ pub fn run_steered(
         lg.frame(&crate::logblocks::results(&boundaries));
         let rotor_values = rotor_report(sol, &mesh, &geo, &case, &mut lg, &mut rep.warnings);
         // the ledger of the final state (D88, D89, D90 part 4)
-        let bal = balance::steady(
-            &balance::rates(
-                sol,
-                &mesh,
-                &geo,
-                &case,
-                &mom_kind,
-                &geo.cell_volume,
-                nonorth,
-            ),
-            iters,
+        let mut rates = balance::rates(
+            sol,
+            &mesh,
+            &geo,
+            &case,
+            &mom_kind,
+            &geo.cell_volume,
+            nonorth,
         );
+        // with the rows of the steady spray (D260 (4))
+        if let (Some(ss), Some((_, pass, heat))) = (steady_spray.as_ref(), spray_final.as_ref()) {
+            ss.book(&mut rates, pass, sol, heat.as_ref());
+        }
+        let bal = balance::steady(&rates, iters);
         lg.frame(&crate::logblocks::balance_block(
             "Balance of the final state",
             &bal,
@@ -3795,7 +3898,15 @@ pub fn run_steered(
             }
         }
         drop(fl_host);
-        let scalars = crate::scalar::summaries(&mut fl, &case, &mesh, &geo, dimension(&case), 0.0)?;
+        let scalars = crate::scalar::summaries_on(
+            &mut fl,
+            &case,
+            &mesh,
+            &geo,
+            dimension(&case),
+            0.0,
+            on.as_ref(),
+        )?;
         for sm in &scalars {
             lg.line(&crate::scalar::summary_line(sm));
             if let Some(d) = converged
@@ -3834,7 +3945,13 @@ pub fn run_steered(
             }
         }
         let periodic = periodic_summaries(&mut fl, &mesh, &mut lg)?;
-        let turbulence = turbulence_summary(&mut fl, &mesh, &mut lg, &mut rep.warnings)?;
+        let turbulence = turbulence_summary(
+            &mut fl,
+            &mesh,
+            on.as_ref().map(|o| (o, &geo, &case)),
+            &mut lg,
+            &mut rep.warnings,
+        )?;
         let density = crate::density::summary(&mut fl, &mut rep.warnings)?;
         if single && (case.run.restart_final || stopped) && restart::AVAILABLE {
             let rs = restart_of(&mut fl, smesh, name, on.as_ref())?;
@@ -3865,6 +3982,7 @@ pub fn run_steered(
             transient: None,
             datums: None,
             spray: None,
+            spray_steady: spray_final.map(|x| x.0),
             benchmark,
             balance: Some(summary),
             remediation,

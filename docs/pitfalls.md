@@ -378,6 +378,17 @@ energy summaries, the turbulence wall summary and floor counters, the
 remediation counts) sees only its part: read it from the gathered
 `Solution` or from the global discretisation, never from `fl`.
 
+**A count over all ranks needs a total over all ranks (W7 part 2, #290).**
+The device reductions on ranks are global, so a count such as the floored
+cells of the turbulence model is the count of the whole mesh; comparing it
+with `n_cells` of the solver (the rank's own cells) made the floor
+statistics (TURB001) differ from one rank. Measure a global count against
+`comm.all_sum_i64` of the own cells. The same holds for any summary that
+loops over device arrays in cell or face order (heat balance, y⁺ per
+wall, ν_t/ν max and its cell): gather the arrays with `OnRanks::fields`
+and run the one-rank loop on the whole mesh, since plain `+=` sums in
+another order give other bits even where the set of values is the same.
+
 <a id="coupling-loops"></a>
 ## Coupling loops: the solid must see the flow's response
 
