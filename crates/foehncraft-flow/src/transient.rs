@@ -863,7 +863,9 @@ impl Transient {
         let mut last = Residuals::default();
         let mut outer = 0;
         self.outer_log.clear();
-        let rebuild_step = self.clock.step.is_multiple_of(s.amg_rebuild);
+        // two fluids (L3): 1/ρ_f of the pressure rows moves with the
+        // interface each step, a hierarchy of steps before falls behind
+        let rebuild_step = fl.vof.is_some() || self.clock.step.is_multiple_of(s.amg_rebuild);
         let max_outer = s
             .outer_iterations
             .max(hook.as_ref().map_or(0, |h| h.max_outer()));

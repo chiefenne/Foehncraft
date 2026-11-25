@@ -83,9 +83,10 @@ fn revolve(scheme: &str, n: usize, kind: &str) -> (f64, f64, [f64; 2]) {
         .sum();
     let v0: f64 = (0..v.len()).map(|c| r.start[c] * v[c]).sum();
     let t = &r.totals;
-    // conservation: the change of the volume is the clipped part alone
-    // (walls: nothing leaves)
-    let dv = (t.volume - t.volume_start + t.clipped_volume) / t.volume_start;
+    // conservation: the change of the volume is the clipped part and what
+    // crossed the boundary (the rotation has a normal velocity on the box
+    // sides; α there is all but zero)
+    let dv = (t.volume - t.volume_start + t.clipped_volume + t.volume_out) / t.volume_start;
     assert!(dv.abs() < 1e-12, "{scheme}: volume not conserved: {dv:e}");
     (e / v0, (t.volume - t.volume_start) / t.volume_start, t.alpha_range)
 }
@@ -101,14 +102,14 @@ fn zalesak_disk_thinc_cicsam_upwind() {
     }
     // the sharpening schemes beat upwind by far; THINC is the sharpest
     assert!(errs[0] < errs[1] && errs[1] < errs[2], "{errs:?}");
-    assert!(errs[0] < 0.12, "THINC L1 error {}", errs[0]);
+    assert!(errs[0] < 0.06, "THINC L1 error {}", errs[0]);
 }
 
 #[test]
 fn zalesak_disk_thinc_on_polygons() {
     let (e, _, range) = revolve("thinc", 100, "poly");
     eprintln!("zalesak thinc poly: L1 {e:.4}, alpha {range:?}");
-    assert!(e < 0.25, "THINC L1 error on polygons {e}");
+    assert!(e < 0.11, "THINC L1 error on polygons {e}");
 }
 
 /// The code a case text is refused with.
@@ -246,4 +247,97 @@ fn zalesak_disk_level_set_benchmark() {
     // the graphics reference: kept as a number to compare with, not a bar
     // THINC has to pass
     assert!(e.is_finite() && e < 0.5, "level set L1 error {e}");
+}
+
+/// Martin & Moyce (1952), Phil. Trans. R. Soc. A 244, 312-324, part IV,
+/// table 2 (n² = 2, a = 2¼ in): the surge front Z = z/a at T = n t √(g/a)
+/// (docs/verification/DATA_SOURCES.md section 3e).
+const MARTIN_MOYCE: [(f64, f64); 12] = [
+    (1.19, 1.44),
+    (1.56, 1.89),
+    (1.87, 2.33),
+    (2.26, 2.78),
+    (2.57, 3.22),
+    (2.88, 3.67),
+    (3.25, 4.11),
+    (3.59, 4.56),
+    (3.89, 5.00),
+    (4.20, 5.44),
+    (4.54, 5.89),
+    (4.85, 6.33),
+];
+
+/// The collapse of a water column in air (density ratio 828) on h = a/8:
+/// the surge front against the measurements, the water volume conserved.
+#[test]
+fn dam_break_martin_moyce() {
+    let text = std::fs::read_to_string(cases().join("vof_dam_break.toml")).unwrap();
+    let text = text
+        .replace("cells = [168, 45, 1]", "cells = [84, 22, 1]")
+        .replace("time_step = 2.5e-4", "time_step = 5e-4")
+        .replace("steps = 1200", "steps = 560")
+        .replace("fields_every = 100", "fields_every = 0");
+    let case = FlowCase::from_toml(&text, &cases()).unwrap();
+    let dir = out("dam");
+    run(&case, "dam", &dir, |_| {}).unwrap();
+    let csv = std::fs::read_to_string(dir.join("vof.csv")).unwrap();
+    let mut lines = csv.lines().filter(|l| !l.starts_with('#'));
+    let head: Vec<&str> = lines.next().unwrap().split(',').collect();
+    let col = |n: &str| head.iter().position(|h| *h == n).unwrap();
+    let (ct, cx, cv, cc) = (col("time"), col("x_max"), col("volume"), col("clipped"));
+    let rows: Vec<Vec<f64>> = lines
+        .map(|l| l.split(',').map(|v| v.parse::<f64>().unwrap_or(f64::NAN)).collect())
+        .collect();
+    let a: f64 = 0.05715;
+    let h = 0.6 / 84.0;
+    let tz: Vec<(f64, f64)> = rows
+        .iter()
+        .map(|r| (r[ct] * (2.0 * 9.81 / a).sqrt(), (r[cx] + 0.5 * h) / a))
+        .collect();
+    let mut worst: f64 = 0.0;
+    for (t, z) in MARTIN_MOYCE {
+        let k = tz.iter().position(|p| p.0 >= t).unwrap();
+        let (p, q) = (tz[k - 1], tz[k]);
+        let zs = p.1 + (q.1 - p.1) * (t - p.0) / (q.0 - p.0);
+        let d = (zs - z) / z;
+        eprintln!("dam break: T {t:.2}: Z measured {z:.2}, computed {zs:.2} ({:+.1} %)", 100.0 * d);
+        worst = worst.max(d.abs());
+    }
+    // the front runs ahead of the measurements by 5 to 17 % on h = a/16
+    // (the gate of the experiment took time to lift); a/8 alike
+    assert!(worst < 0.2, "surge front off the measurements by {worst:.3}");
+    let (first, last) = (&rows[0], rows.last().unwrap());
+    let dv = (last[cv] - first[cv] + last[cc]) / first[cv];
+    assert!(dv.abs() < 1e-9, "water volume not conserved: {dv:e}");
+}
+
+/// The static drop: the Laplace jump σ/R within 15 %, the spurious
+/// currents below 0.3 m/s (balanced CSF, density ratio 828).
+#[test]
+fn static_drop_laplace_jump() {
+    let case = FlowCase::from_toml(
+        &std::fs::read_to_string(cases().join("vof_static_drop.toml")).unwrap(),
+        &cases(),
+    )
+    .unwrap();
+    let dir = out("drop");
+    run(&case, "drop", &dir, |_| {}).unwrap();
+    let f = hdf5_metno::File::open(dir.join("fields.vtkhdf")).unwrap();
+    let g = f.group("VTKHDF/internal").unwrap();
+    let read = |n: &str| {
+        g.dataset(&format!("CellData/{n}"))
+            .unwrap()
+            .read_raw::<f64>()
+            .unwrap()
+    };
+    let (a, p, s) = (read("volume_fraction"), read("pressure"), read("speed"));
+    let mean = |pick: &dyn Fn(f64) -> bool| {
+        let v: Vec<f64> = (0..a.len()).filter(|&c| pick(a[c])).map(|c| p[c]).collect();
+        v.iter().sum::<f64>() / v.len() as f64
+    };
+    let dp = mean(&|x| x > 0.99) - mean(&|x| x < 0.01);
+    let umax = s.iter().copied().fold(0.0, f64::max);
+    eprintln!("static drop: dp {dp:.2} Pa (exact 35), spurious {umax:.3} m/s");
+    assert!((dp - 35.0).abs() < 0.15 * 35.0, "Laplace jump {dp}");
+    assert!(umax < 0.3, "spurious currents {umax}");
 }

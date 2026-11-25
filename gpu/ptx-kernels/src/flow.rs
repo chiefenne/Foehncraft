@@ -89,4 +89,5 @@ entries! {
     flow_vof_gradient => e::VofGradient,
     flow_vof_curvature => e::VofCurvature,
     flow_vof_tension => e::VofTension,
+    flow_vof_reconstruct => e::VofReconstruct,
 }

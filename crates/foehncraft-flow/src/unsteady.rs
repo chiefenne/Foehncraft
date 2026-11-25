@@ -3027,6 +3027,17 @@ fn run_one<F: FnMut(&str)>(
     if let Some(f) = vof_csv.as_mut() {
         f.flush()?;
     }
+    if let Some(t) = fl.vof.as_deref().map(|v| &v.totals)
+        && t.clipped_volume.abs() > 1e-6 * t.volume_start.abs()
+    {
+        lg.warn(&format!(
+            "{}: {:.3e} m³ of phase 1 clipped over the run ({:.2e} of its volume); \
+             `vof.csv` counts it per step",
+            crate::diag::VOF_CLIPPED,
+            t.clipped_volume,
+            t.clipped_volume / t.volume_start
+        ));
+    }
     if let Some(sp) = spray.as_ref() {
         let f = crate::spray::write_parcels(sp, out, name, tr.clock.step)?;
         if let (Some(f), Some(se)) = (f, series.as_mut()) {

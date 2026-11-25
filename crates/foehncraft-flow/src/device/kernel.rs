@@ -1334,6 +1334,15 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
                 need(self.vof_open.len as usize == self.nb, "vof_open first")?;
                 self.go::<e::VofCurvature>(self.nc, &args)
             }
+            VofOp::Reconstruct => {
+                need(
+                    b.alpha.is_some() && b.flux.is_some() && b.kappa.is_some() && b.out3.is_some(),
+                    "alpha, flux (rho_f), kappa (rho), out3",
+                )?;
+                need(self.vof_open.len as usize == self.nb, "vof_open first")?;
+                self.go::<e::VofReconstruct>(self.nc, &args)?;
+                self.x.exchange(&b.out3.expect("out3").all())
+            }
             VofOp::Tension => {
                 need(b.alpha.is_some() && b.kappa.is_some() && b.gnorm.is_some() && b.out.is_some(), "alpha, kappa, gnorm, out")?;
                 self.go::<e::VofTension>(self.nf, &args)

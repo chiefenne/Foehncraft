@@ -749,6 +749,10 @@ pub enum VofOp {
     /// σ κ_f (α_N − α_P) per face from `alpha`, `kappa`, `gnorm` (σ = `s`)
     /// → `out`.
     Tension,
+    /// The balanced pressure force ρ_P R_P[g_f/ρ_f] + `grad` per cell of φ =
+    /// `alpha` with the face offsets `alpha_f`, ρ_f = `flux`, ρ = `kappa`
+    /// and the boundary values `alpha_b` → `out3`.
+    Reconstruct,
 }
 
 /// The buffers and numbers of [`FlowDevice::vof`] (unused ones `None`).

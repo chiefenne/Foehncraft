@@ -3332,6 +3332,40 @@ impl Entry for VofCurvature {
     }
 }
 
+/// The balanced pressure-force reconstruction of cell `c`
+/// ([`crate::vof::reconstruct`]): φ = `alpha`, offsets = `alpha_f`, ρ_f =
+/// `flux`, ρ = `kappa`, boundary values = `alpha_b`, added vector = `grad`,
+/// into `out3`.
+pub struct VofReconstruct;
+impl Entry for VofReconstruct {
+    type Args = VofArgs;
+    const NAME: &'static str = "vof_reconstruct";
+    #[inline(always)]
+    unsafe fn run(c: usize, a: &VofArgs) {
+        // SAFETY: guaranteed by the caller.
+        unsafe {
+            let v = crate::vof::reconstruct(
+                c,
+                &a.m.topo(),
+                &a.m.area.v(),
+                &a.m.face_centroid.v(),
+                &a.m.cell_centroid.v(),
+                a.alpha.get(),
+                a.alpha_f.get(),
+                a.flux.get(),
+                a.kappa.get(),
+                a.open.get(),
+                a.alpha_b.get(),
+                &a.grad.v(),
+            );
+            let o = &a.out3;
+            *o.x.out().add(c) = v[0];
+            *o.y.out().add(c) = v[1];
+            *o.z.out().add(c) = v[2];
+        }
+    }
+}
+
 /// Surface-tension face offset of face `f` ([`crate::vof::tension`],
 /// σ = `s`).
 pub struct VofTension;
@@ -3395,7 +3429,7 @@ send_sync!(
 );
 
 /// Names of all entries (the PTX module has `flow_<name>` for each).
-pub const NAMES: [&str; 65] = [
+pub const NAMES: [&str; 66] = [
     Lincomb::NAME,
     ScaledDifference::NAME,
     SquaresAdd::NAME,
@@ -3461,6 +3495,7 @@ pub const NAMES: [&str; 65] = [
     VofGradient::NAME,
     VofCurvature::NAME,
     VofTension::NAME,
+    VofReconstruct::NAME,
 ];
 
 #[cfg(test)]
@@ -3581,7 +3616,7 @@ mod tests {
             unsafe { Product::run(i, &a) };
         }
         assert_eq!(z, [-4.0, -16.0, -36.0]);
-        assert_eq!(NAMES.len(), 65);
+        assert_eq!(NAMES.len(), 66);
         // the elliptic-blending helpers: out += |v|², out3 = s v
         let (vx, vy, vz) = ([1.0, 0.0], [2.0, -3.0], [2.0, 4.0]);
         let s = [0.5, -2.0];

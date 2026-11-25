@@ -366,6 +366,12 @@ pub struct Vof {
     kappa: Buf,
     tension: Buf,
     alpha_b: Buf,
+    /// The raw face offsets o_f of gravity and surface tension (device).
+    pub offset: Buf,
+    /// ρ per cell (device).
+    pub rho_c: Buf,
+    /// The balanced body force B_P per unit volume (device).
+    pub body: Buf3,
     /// Scratch of the volume-based pressure rows: c_f/ρ_f.
     pub cf_vol: Buf,
     /// Scratch: ṁ_f/ρ_f.
@@ -508,6 +514,13 @@ impl Vof {
             work2: cell(dev)?,
             kappa: cell(dev)?,
             tension: face(dev)?,
+            offset: face(dev)?,
+            rho_c: cell(dev)?,
+            body: Buf3 {
+                x: cell(dev)?,
+                y: cell(dev)?,
+                z: cell(dev)?,
+            },
             alpha_b: ab,
             cf_vol: face(dev)?,
             m_vol: face(dev)?,

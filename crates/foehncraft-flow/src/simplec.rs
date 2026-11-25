@@ -2308,6 +2308,24 @@ impl Flow {
         }
         self.dev
             .gradient(Lsq::Pressure, f.p, Mask::Pressure, f.pb, f.grad_p)?;
+        if let Some(v) = self.vof.as_deref() {
+            // two fluids (L3): ∇p − B of a cell is the reconstruction of
+            // its faces' (Δp − o_f)/ρ_f, times ρ_P; ∇p of the rows is that
+            // plus B_P
+            self.dev.vof(
+                crate::device::VofOp::Reconstruct,
+                &crate::device::VofBufs {
+                    alpha: Some(f.p),
+                    alpha_f: Some(v.offset),
+                    flux: Some(v.rho_f),
+                    kappa: Some(v.rho_c),
+                    alpha_b: Some(f.pb),
+                    grad: Some(v.body),
+                    out3: Some(f.grad_p),
+                    ..Default::default()
+                },
+            )?;
+        }
         let s = &self.settings;
         let bounded = s.face_velocity == FaceVelocity::Bounded;
         if !bounded
@@ -2614,6 +2632,19 @@ impl Flow {
             w.zero_boundary,
             w.gpc,
         )?;
+        if let Some(v) = self.vof.as_deref() {
+            // two fluids (L3): the balanced reconstruction of p'
+            self.dev.vof(
+                crate::device::VofOp::Reconstruct,
+                &crate::device::VofBufs {
+                    alpha: Some(w.pc),
+                    flux: Some(v.rho_f),
+                    kappa: Some(v.rho_c),
+                    out3: Some(w.gpc),
+                    ..Default::default()
+                },
+            )?;
+        }
         self.dev.correct_velocity(w.dc, w.gpc, f.u)?;
         self.drive_mass_flow()?;
         self.dev.lincomb(f.p, 1.0, f.p, alpha_p, w.pc)
@@ -3115,15 +3146,18 @@ impl Flow {
             &self.lsq_p,
             &self.bc.p_zero_gradient,
         )));
-        self.apply_vof(true)
+        self.apply_vof(true, false)
     }
 
     /// Uploads the mixture of the last advection: ρ per cell and face, the
     /// old density levels of a time step, μ per face, the rescaled mass
-    /// flux (`rescale`), and the forces.
-    fn apply_vof(&mut self, rescale: bool) -> Result<()> {
+    /// flux (`rescale`), and the forces. `in_step`: within a time step, the
+    /// momentum rows take ρ of the levels n and n − 1 (the conservative
+    /// time term (ρⁿ⁺¹uⁿ⁺¹ − ρⁿuⁿ)/Δt that the mass fluxes of the advection
+    /// balance; without it a cell that fills with the heavy phase gains
+    /// the factor ρⁿ⁺¹/ρⁿ in its velocity each step).
+    fn apply_vof(&mut self, rescale: bool, in_step: bool) -> Result<()> {
         let m = self.f.mass_flux;
-        let in_step = self.density_time.is_some();
         let v = self.vof.as_deref_mut().expect("vof");
         v.upload_faces(self.dev.as_mut(), rescale.then_some(m))?;
         self.dev.set_density(&v.rho_cell, &v.rho_face)?;
@@ -3177,6 +3211,14 @@ impl Flow {
             std::array::from_fn(|i| a.source[i].iter().zip(vol).map(|(s, v)| s / v).collect());
         // the D-weighted Rhie–Chow flux: the plain offsets with B_P
         self.dev.set_body_force(&body)?;
+        // the balanced reconstruction of the pressure force
+        let v = self.vof.as_deref().expect("vof");
+        let (vo, vr, vb) = (v.offset, v.rho_c, v.body);
+        self.dev.upload(vo, &a.offset)?;
+        self.dev.upload(vr, &rho)?;
+        for (bi, x) in vb.all().into_iter().zip(&body) {
+            self.dev.upload(bi, x)?;
+        }
         self.phys.buoyancy = Some(std::sync::Arc::new(body));
         self.dev.set_balanced_force(&a.offset, &a.pb)
     }
@@ -3197,7 +3239,7 @@ impl Flow {
         let ratio: Vec<f64> = before.iter().zip(&v.rho_face).map(|(a, b)| a / b).collect();
         let r = v.ratio_buf();
         self.dev.upload(r, &ratio)?;
-        self.apply_vof(true)?;
+        self.apply_vof(true, true)?;
         Ok(Some(r))
     }
 
@@ -3207,7 +3249,7 @@ impl Flow {
             return Ok(());
         };
         v.step_back(self.dev.as_mut())?;
-        self.apply_vof(false)
+        self.apply_vof(false, false)
     }
 
     /// Starts a time step of a variable density (stage 7c) with the
