@@ -18,11 +18,10 @@
 #
 # The channel of ranks_heated_channel_sst.toml (Re = 10 000 on the height,
 # lower wall 30 K above the inflow, upper wall adiabatic) with the upper
-# wall moving against the inflow at half the inflow speed, so that a
-# recirculation forms under it. The flow starts from potential flow and
-# marches 1.5 flow-through times; the heated layer grows along the lower
-# wall and the dye of the upper half of the inflow is carried into the
-# recirculation.
+# wall moving against the inflow at half the inflow speed. The flow starts
+# from potential flow and marches 1.5 flow-through times; the thermal layer
+# grows along the lower wall and the dye of the upper half of the inflow
+# mixes across mid-height.
 
 case_format = "0.7"
 

@@ -1065,7 +1065,10 @@ fn run_one<F: FnMut(&str)>(
     // a run on ranks (MPI step W7): this rank's part, its own arrays and
     // physics; the global ones stay for the output
     let on = match steer.ranks.clone() {
-        Some(c) => Some(crate::ranks::OnRanks::new(c, mesh, geo, arrays.clone())?),
+        Some(c) => {
+            crate::ranks::supported_mesh(&case, mesh)?;
+            Some(crate::ranks::OnRanks::new(c, mesh, geo, arrays.clone())?)
+        }
         None => None,
     };
     let lead = on.as_ref().is_none_or(crate::ranks::OnRanks::lead);

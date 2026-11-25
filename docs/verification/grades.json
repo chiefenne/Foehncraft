@@ -1505,10 +1505,25 @@
     "gaps written"
    ],
    "gaps": [
-    "steady laminar cases only: passive scalars, energy, turbulence models and transient runs are refused on ranks (W7 part 2)",
+    "scalars, energy, turbulence models, the rotating frame and transient runs: parallel.run-ranks-physics (W7 part 2)",
     "settings through the control port (run.set) are refused on ranks",
     "MPI processes are not run in CI yet with foehn flow (the threads test covers the same code; the MPI CI job runs the flow kernels across processes, mpi_flow)",
     "the fields are gathered on every rank for the output (memory of the whole state per rank), as the replicated multigrid setup"
+   ],
+   "range": {}
+  },
+  {
+   "id": "parallel.run-ranks-physics",
+   "title": "Turbulent, heated and transient runs on ranks with the output of one rank (MPI step W7 part 2)",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "refused on ranks: species transport, [output.statistics], the thermal acceleration, cycle loop and frozen-flow march, sweeps over time steps, several fluids with a turbulence model, and what [run] ranks refuses",
+    "the scalar summary stops with an error on ranks for orthotropic solids, porous matrices, heat-flux periodic pairs, sprays and a variable density (all refused before the run by the rules above)",
+    "Crank-Nicolson and PISO without outer iterations are not tested on ranks in this step (the solver on ranks is, W5)",
+    "MPI processes are run in CI with the steady laminar case only; the threads tests cover the same code"
    ],
    "range": {}
   }

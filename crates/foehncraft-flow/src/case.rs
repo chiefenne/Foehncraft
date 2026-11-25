@@ -289,7 +289,9 @@ pub struct RunSection {
     /// fields gathered into the global order, so the output is bitwise
     /// that of one rank. Under an MPI launcher (`mpirun -n N foehn run`,
     /// a build with the `mpi` feature) the ranks are its processes;
-    /// otherwise threads of this process. 1: no ranks. Steady cases so far.
+    /// otherwise threads of this process. 1: no ranks. Steady and transient
+    /// runs with scalars, energy, k-ω SST and k-ε (refused: species,
+    /// statistics, what `[run] ranks` refuses).
     #[serde(skip_serializing_if = "is_one")]
     pub rank_count: usize,
 }
@@ -2961,7 +2963,10 @@ pub fn run_steered(
         // a run on ranks (MPI step W7): this rank's part, its own arrays
         // and physics; the global ones stay for the output
         let on = match steer.ranks.clone() {
-            Some(c) => Some(crate::ranks::OnRanks::new(c, &mesh, &geo, arrays.clone())?),
+            Some(c) => {
+                crate::ranks::supported_mesh(&case, &mesh)?;
+                Some(crate::ranks::OnRanks::new(c, &mesh, &geo, arrays.clone())?)
+            }
             None => None,
         };
         let lead = on.as_ref().is_none_or(|o| o.lead());

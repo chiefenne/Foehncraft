@@ -1934,10 +1934,32 @@ evidence = [
   { kind = "contract", property = "bitwise", case = "ranks_run_channel", what = "the channel solved on 5 ranks to convergence (372 outer iterations); every output file compared with --ranks 1 by hand when the case was made" },
 ]
 gaps = [
-  "steady laminar cases only: passive scalars, energy, turbulence models and transient runs are refused on ranks (W7 part 2)",
+  "scalars, energy, turbulence models, the rotating frame and transient runs: parallel.run-ranks-physics (W7 part 2)",
   "settings through the control port (run.set) are refused on ranks",
   "MPI processes are not run in CI yet with foehn flow (the threads test covers the same code; the MPI CI job runs the flow kernels across processes, mpi_flow)",
   "the fields are gathered on every rank for the output (memory of the whole state per rank), as the replicated multigrid setup",
+]
+
+[[feature]]
+id = "parallel.run-ranks-physics"
+area = "Backends and interfaces"
+title = "Turbulent, heated and transient runs on ranks with the output of one rank (MPI step W7 part 2)"
+switch = "[run] rank_count, foehn flow --ranks N, mpirun -n N foehn flow; with [scalars], [energy], [turbulence], [flow] frame_rotation, [time]"
+decisions = ["D84", "D85", "D93"]
+infrastructure = true
+contracts = ["bitwise"]
+evidence = [
+  { kind = "contract", property = "bitwise", test = "crates/foehncraft-flow/tests/run_ranks.rs::steady_scalars_energy_and_sst_on_ranks_write_the_files_of_one_rank", what = "steady k-ω SST channel with the energy equation and a passive scalar on 2 and 3 ranks: residuals, ledger, boundaries, wall files, fields.vtkhdf, restart.h5 byte for byte one rank; result.json solves (scalar and heat summaries, turbulence summary) equal" },
+  { kind = "contract", property = "bitwise", test = "crates/foehncraft-flow/tests/run_ranks.rs::steady_k_epsilon_in_a_rotating_frame_on_ranks_writes_the_files_of_one_rank", what = "steady k-ε with energy and a scalar in a frame turning about z, 2 and 4 ranks, the same files and summaries" },
+  { kind = "contract", property = "bitwise", test = "crates/foehncraft-flow/tests/run_ranks.rs::transient_run_on_ranks_writes_the_files_of_one_rank", what = "transient laminar BDF2 with energy and a scalar, 2 and 3 ranks: history.csv, heat.csv, balance.csv, probes.csv, forces.csv, boundaries.csv, fields_000004.vtkhdf, fields.vtkhdf, restart.h5 byte for byte one rank, the step rows of run.jsonl equal" },
+  { kind = "contract", property = "bitwise", test = "crates/foehncraft-flow/tests/run_ranks.rs::adaptive_transient_sst_run_on_ranks_writes_the_files_of_one_rank", what = "transient SST with the adaptive time step (Courant number 2) on 2 ranks, the same files" },
+  { kind = "contract", property = "bitwise", case = "ranks_run_transient_sst", what = "the heated transient SST channel with a dye on 5 ranks, 180 steps; every output file compared with --ranks 1 when the case was made" },
+]
+gaps = [
+  "refused on ranks: species transport, [output.statistics], the thermal acceleration, cycle loop and frozen-flow march, sweeps over time steps, several fluids with a turbulence model, and what [run] ranks refuses",
+  "the scalar summary stops with an error on ranks for orthotropic solids, porous matrices, heat-flux periodic pairs, sprays and a variable density (all refused before the run by the rules above)",
+  "Crank-Nicolson and PISO without outer iterations are not tested on ranks in this step (the solver on ranks is, W5)",
+  "MPI processes are run in CI with the steady laminar case only; the threads tests cover the same code",
 ]
 
 # ---------------------------------------------------------------- planned

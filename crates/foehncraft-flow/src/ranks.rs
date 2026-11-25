@@ -1708,6 +1708,18 @@ pub fn supported_run(case: &FlowCase) -> Result<()> {
     Ok(())
 }
 
+/// Fails unless the mesh `mesh` of `case` can run on ranks: what
+/// [`supported_run`] cannot see without the mesh (several fluids with a
+/// turbulence model, whose summary reads per-cell viscosities).
+pub(crate) fn supported_mesh(case: &FlowCase, mesh: &Mesh) -> Result<()> {
+    anyhow::ensure!(
+        case.turbulence.is_laminar() || crate::fluids::zone_fluids(case, mesh).1.len() <= 1,
+        "this case does not run on ranks yet (MPI step W7): it has several fluids with a \
+         turbulence model"
+    );
+    Ok(())
+}
+
 /// The stop of rank 0 on every rank (`None` without ranks: `stop` as it
 /// is). Collective on ranks.
 pub(crate) fn agree_stop(

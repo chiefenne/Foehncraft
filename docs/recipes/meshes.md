@@ -22,6 +22,7 @@ Part of the [Recipes](../recipes.md): generate, read (Gmsh, SU2, CGNS, OpenFOAM,
 | 244 | [Check a turbulent, heated or transient flow on ranks](#flow-models-ranks) |
 | 262 | [Write a restart on ranks and continue on another rank count](#restart-ranks) |
 | 279 | [Run a case on ranks](#run-ranks) |
+| 290 | [Run a turbulent, heated or transient case on ranks](#run-ranks-physics) |
 
 ---
 
@@ -781,8 +782,50 @@ cmp output/one/fields.vtkhdf output/ranks_run_channel/fields.vtkhdf
 `.stop`, `.result_N`, `.read_toml_N`, signals and `[run.limits]` act on all
 ranks at the same iteration. Settings through the control port
 (`run.set`) are refused on ranks (warning `RUN024` in the log and in the
-answer of the port). Not on ranks yet, refused with an error that names
-them: transient runs, passive scalars, the energy equation and turbulence
-models (W7 part 2), and everything `[run] ranks` refuses (recipe 234).
+answer of the port). Turbulent, heated and transient cases: recipe 290.
+Not on ranks yet, refused with an error that names them: everything
+`[run] ranks` refuses (recipe 234) and the items of recipe 290.
+
+[↑ back to top](#meshes)
+
+---
+
+<a id="run-ranks-physics"></a>
+## 290. Run a turbulent, heated or transient case on ranks
+
+Passive scalars, the energy equation of one fluid, k-ω SST and the k-ε
+models, the rotating frame of the whole domain (`flow.frame_rotation`) and
+transient runs run on ranks the same way as a steady laminar case (recipe
+279, MPI step W7 part 2):
+
+```
+target/release/foehn flow examples/cases/flow/ranks_run_transient_sst.toml --ranks 5
+mpirun -n 5 target/release/foehn flow examples/cases/flow/ranks_run_transient_sst.toml   # mpi feature
+```
+
+Every output file is byte for byte that of one rank: `history.csv`,
+`heat.csv` (the heat balance of every step), `probes.csv`, `forces.csv`,
+`balance.csv`, `boundaries.csv`, the wall files, `fields_NNNNNN.vtkhdf`,
+`fields.vtkhdf`, `restart.h5`, and in `result.json` the scalar summaries
+with the heat balance and the turbulence summary. Check it:
+
+```
+target/release/foehn flow examples/cases/flow/ranks_run_transient_sst.toml --ranks 1 --out output/one
+for f in history.csv heat.csv probes.csv forces.csv balance.csv fields.vtkhdf restart.h5; do
+  cmp output/one/$f output/ranks_run_transient_sst/$f
+done
+```
+
+A restart written on ranks continues on any rank count (recipe 262).
+Refused on ranks with an error that names them: species transport,
+`[output.statistics]`, `[energy.acceleration]`, `[energy.cycle]`,
+`[energy.frozen_flow]`, a sweep over time steps
+(`verification.time_steps`), several fluids with a turbulence model, and
+everything `[run] ranks` refuses (recipe 234: turning zones, solid regions,
+gravity, the variable density, ζ-f and elliptic blending, the curvature
+correction and the QCR, sprays, immersed bodies, a `[[schedule]]`). A
+summary that would read the part of one rank (orthotropic solids, porous
+matrices, heat-flux periodic pairs) stops the run with an error rather
+than write a wrong number.
 
 [↑ back to top](#meshes)
