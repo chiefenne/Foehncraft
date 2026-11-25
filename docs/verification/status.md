@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**138 features: 50 verified, 85 partial, 3 unverified.**
+**139 features: 50 verified, 86 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -162,6 +162,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Structures | [Structural dynamics: generalised-α, mode superposition, Rayleigh and modal damping, Craig–Bampton reduction (L53, MS5 part 3)](#structure-dynamics) | partial |
 | Structures | [Thermal strain loads on beams and shells from a temperature change and a difference across the thickness (L53, MS5 part 3)](#structure-thermal) | partial |
 | Structures | [Quadratic solids: ten-node tetrahedra and twenty-node hexahedra from a second-order Gmsh file or a block (L53, MS5 part 3b)](#structure-solids) | partial |
+| Structures | [Unilateral contact with rigid seats and stops: exact in statics, penalty at the end of each generalised-α step (L53, MS5 part 4)](#structure-contact) | partial |
 | Moving meshes and solids | [Deforming meshes with a prescribed node displacement, and the piston (stage MS0)](#mesh-deforming) | partial |
 
 ## Meshes
@@ -2304,6 +2305,27 @@ Gaps:
 - Gmsh's complete second-order elements (27-node hexahedra, 9-node quadrilaterals), prisms and pyramids are refused
 - a uniform temperature change per part; a temperature field per node (from the flow case) is MS6
 - nearly incompressible materials (ν → 0.5) lock with full integration: ν = 0.49 is 1e-3 to 8e-3 off on the Lamé cylinder; no mixed or reduced-integration formulation
+
+<a id="structure-contact"></a>
+
+### Unilateral contact with rigid seats and stops: exact in statics, penalty at the end of each generalised-α step (L53, MS5 part 4)
+
+**partial** (a model without reference data; gaps written) · id `structure.contact` · switch `structure.run with [[contacts]]` · decisions D289
+
+- exact: [`cantilever_pressed_onto_a_seat_is_the_propped_cantilever`](../../crates/foehncraft-structure/tests/contact.rs): cantilever pressed onto a seat 1 mm below its tip: the propped cantilever with a settled support, R = P − 3EIg/L³ (Timoshenko & Gere) within 1e-6, the tip on the seat to 1e-9 L, the clamp reaction P − R; short of the seat and pulled away, the free answer
+- exact: [`block_on_a_seat_is_the_block_held_where_it_touches`](../../crates/foehncraft-structure/tests/contact.rs): hex20 block on a seat under a uniform pressure: the block on rollers at the 22 mid-side nodes that touch (the corners of the quad8 faces lift off) to 1e-6 of the largest displacement, every roller pushing; total force equals the load to 1e-9; a node starting inside is refused
+- exact: [`impact_on_a_stop_converges_to_the_elastic_bounce`](../../crates/foehncraft-structure/tests/contact.rs): mass on a spring driven against a stop, trapezoidal: back at rest at the start after 2t₁ + τ of the penalty model in continuous time, 5.9e-3 to 5.5e-5 of the gap over 200 to 1600 steps (monotone); penetration within 5 % of the penalty model's for penalties 1e2 to 1e6, falling as 1/√penalty
+- consistency: [`reed_hits_its_stop_and_falls_back_on_its_seat`](../../crates/foehncraft-structure/tests/contact.rs): plate reed lifted by a pressure pulse against a stop, falling back on its seat: tip between the planes within the penetration (< 2e-5 m), both planes carry force, CSV columns contact_seat and contact_stop; the modal method with contact refused
+- consistency: [`catalogue_cases_run_and_the_fit_matches`](../../crates/foehncraft-tools/src/structure.rs): the reed valve example through the registry: both planes carry force, penetration below 1e-8 m
+
+Gaps:
+
+- frictionless only; no stick or slip
+- rigid planes only: no curved seats or stops and no contact between deformable parts (the clamp parts of section 6.3 of the plan)
+- node to plane: the corners of quadratic serendipity faces take a pulling share of a uniform pressure and lift off a flat seat; no mortar or face-based contact
+- impacts are elastic: no coefficient of restitution; generalised-α with ρ∞ < 1 damps the high frequencies an impact excites, and the penalty contact of a shell node lasts far less than a step
+- an impact is not resolved in time: no step cut at contact changes (plan 5.4) and no energy-conserving contact scheme; the energy of the reed example decays but is not checked against a balance
+- the active-set loop refactors the matrix whenever the set changes (1990 factorisations in 2400 steps of the example)
 
 ## Moving meshes and solids
 

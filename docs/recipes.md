@@ -22,7 +22,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | [Boundary conditions](recipes/boundary-conditions.md) | slip walls, wedges for axisymmetric flow, inlet profiles from tables, backflow at pressure outlets, convective outlets, periodic modules, absolute or gauge pressure values (D239) | 29, 67, 220 |
 | [Lagrangian sprays](recipes/sprays.md) | spray droplets into a flow with an injector file, wall behaviour, the mass book | 242, 265, 280, 283, 285, 292 |
 | [Porous regions](recipes/porous.md) | porous blocks and honeycombs in a flow: resistances, axes, the honeycomb shorthand | 273, 275 |
-| [Structures](recipes/structure.md) | a structural case of beams, plates, solids and clamp springs: static and modal analyses, the clamp spring fitted to a measured frequency, runs in time with damping and temperatures, contact with a seat and a stop, the results | 295, 297, 299, 300 |
+| [Structures](recipes/structure.md) | a structural case of beams, plates, solids and clamp springs: static and modal analyses, the clamp spring fitted to a measured frequency, runs in time with damping and temperatures, contact with a seat and a stop, the results | 295, 297, 299, 300, 302 |
 | [Immersed bodies](recipes/immersed.md) | put a body in the flow without meshing it: `[immersed]`, the permeability, forces | 270, 291 |
 | [Moving meshes and solids](recipes/moving-solids.md) | move the mesh with a prescribed displacement: `[mesh_motion]`, moving walls, a piston on a closed volume | 296 |
 | [Species and reacting flows](recipes/species.md) | species of an ideal-gas mixture: names, compositions in mole or mass fractions, diffusion by Schmidt or Lewis numbers, mixture properties, the element ledger | 278, 289 |
@@ -177,6 +177,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="structure-transient"></a>299 | [Run a structure in time, with damping, load histories and temperatures](recipes/structure.md#structure-transient) | [Structures](recipes/structure.md) |
 | <a id="structure-solid"></a>300 | [Model a thick part as a solid, from Gmsh or as a block](recipes/structure.md#structure-solid) | [Structures](recipes/structure.md) |
 | <a id="run-ranks-mrf"></a>301 | [Run a case with rotating zones (MRF) or a closed domain on ranks](recipes/meshes.md#run-ranks-mrf) | [Meshes](recipes/meshes.md) |
+| <a id="structure-contact"></a>302 | [Let a reed touch its seat and its stop](recipes/structure.md#structure-contact) | [Structures](recipes/structure.md) |
 | <a id="run-ranks-sliding"></a>304 | [Run a sliding rotor in conformal stepping on ranks](recipes/meshes.md#run-ranks-sliding) | [Meshes](recipes/meshes.md) |
 
 ## Adding a feature
