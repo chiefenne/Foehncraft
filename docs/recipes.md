@@ -23,7 +23,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | [Lagrangian sprays](recipes/sprays.md) | spray droplets into a flow with an injector file, wall behaviour, the mass book | 242, 265, 280, 283, 285, 292, 306 |
 | [Porous regions](recipes/porous.md) | porous blocks and honeycombs in a flow: resistances, axes, the honeycomb shorthand | 273, 275 |
 | [Structures](recipes/structure.md) | a structural case of beams, plates, solids and clamp springs: static and modal analyses, the clamp spring fitted to a measured frequency, runs in time with damping and temperatures, contact with a seat and a stop, temperatures from a flow case, the results | 295, 297, 299, 300, 302, 308 |
-| [Immersed bodies](recipes/immersed.md) | put a body in the flow without meshing it: `[immersed]`, the permeability, forces | 270, 291 |
+| [Immersed bodies](recipes/immersed.md) | put a body in the flow without meshing it: `[immersed]`, the permeability, forces | 270, 291, 310 |
 | [Moving meshes and solids](recipes/moving-solids.md) | move the mesh with a prescribed displacement: `[mesh_motion]`, moving walls, a piston on a closed volume | 296 |
 | [Species and reacting flows](recipes/species.md) | species of an ideal-gas mixture: names, compositions in mole or mass fractions, diffusion by Schmidt or Lewis numbers, mixture properties, the element ledger | 278, 289, 298 |
 | [Expressions and materials](recipes/properties.md) | values as expressions of x, y, z and t, constants and tables, wall mass flux, the material database, regions | 31, 32 |
@@ -183,6 +183,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="run-ranks-imprint"></a>305 | [Run a sliding rotor by imprinting on ranks](recipes/meshes.md#run-ranks-imprint) | [Meshes](recipes/meshes.md) |
 | <a id="spray-evaporation"></a>306 | [Let the droplets evaporate](recipes/sprays.md#spray-evaporation) | [Lagrangian sprays](recipes/sprays.md) |
 | <a id="structure-temperature-field"></a>308 | [Load a structure with the temperatures of a flow case](recipes/structure.md#structure-temperature-field) | [Structures](recipes/structure.md) |
+| <a id="surface-check"></a>310 | [Check an STL surface before it becomes a body](recipes/immersed.md#surface-check) | [Immersed bodies](recipes/immersed.md) |
 
 ## Adding a feature
 
