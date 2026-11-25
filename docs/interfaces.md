@@ -364,7 +364,7 @@ A code keeps its meaning; a retired code stays in the table.
 | `MAT009` | error | A user material database file (`[materials] include`, `FOEHN_MATERIALS`) or a property data file (NASA-7 record, table file) that cannot be read or has the wrong format. |
 | `SPR001` | error | A `[spray]` value that is out of range, an injector outside the mesh, a spray file (`[spray] include`) that cannot be read or defines `injector` or `liquid` twice, or a `[spray.boundary.<name>]` for a boundary the mesh does not have. |
 | `SPR002` | error | A `[spray]` in a steady case: the parcels need a transient run. |
-| `SPR003` | error | A `[spray]` in a case with MRF zones, sliding interfaces or a periodic boundary, or two-way coupling with a setting it does not work with yet (the energy equation until SP2b, solid regions, the frozen-flow march, an algorithm other than PISO) (not in this version). |
+| `SPR003` | error | A `[spray]` in a case with MRF zones, sliding interfaces or a periodic boundary, or two-way coupling with a setting it does not work with yet (solid regions, the frozen-flow march, an algorithm other than PISO) (not in this version). |
 | `SPR004` | warning | Parcels lost: the walk through the mesh failed or a parcel needed more than `[spray] max_substeps` sub-steps in a time step (counted in `spray.csv`). |
 | `SPR005` | error | The mass book of the sprays does not close: released liquid differs from the liquid in the flow, stuck, left and lost by more than round-off. |
 | `SPR006` | warning | Two-way spray coupling (SP2, D252): the parcel passes of a time step ended at `[spray.coupling] max_passes` with the coupling lag above `tolerance` (fix: more passes or a smaller time step; `spray.csv` counts such steps). |

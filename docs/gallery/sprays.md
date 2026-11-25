@@ -7,6 +7,7 @@ Part of the [Example gallery](../gallery.md): droplets as Lagrangian parcels in 
 | 242 | [Water droplets sprayed into an air duct](#spray-duct) | SP1 | `[spray]`, `[[injector]]`, `[liquid]`, drag of Schiller and Naumann, stick walls, mass book |
 | 265 | [Where the liquid goes: datums and droplet statistics](#spray-datums) | SP1b | `[[datum]]` (cut plane, plane on faces, disc, STL surface, boundary, box), Rosin-Rammler sizes, `datums.csv`, histograms, D32 and Dv50, penetration, `series.json` |
 | 280 | [A water spray that drives the air](#spray-two-way) | SP2 | `[spray.coupling] mode = "two-way"`, value-plus-slope momentum sources, passes inside the time step, coupling lag, momentum ledger pair, health numbers |
+| 283 | [Water droplets cool a hot air stream](#spray-cooling) | SP2 | two-way sensible heat: droplet temperature, Ranz-Marshall heat transfer, energy sources in value-plus-slope form, temperature lag, enthalpy ledger pair |
 
 ---
 
@@ -182,4 +183,77 @@ Files: `spray.csv` (passes, coupling lag, gas force, power and the health
 numbers per step), `result.json` (coupling summary and ledger).
 Picture: `python3 -m tools.plot.spray_two_way OUT_DIR output/spray_two_way`.
 [Recipe 280](../recipes/sprays.md#spray-two-way),
+[case row](../cases/flow.md#lagrangian-sprays).
+
+<a id="spray-cooling"></a>
+## 283. Water droplets cool a hot air stream
+
+<img src="../figures/gallery/spray_cooling.png" alt="Top: air temperature in a duct of 2 m by 0.4 m after 1 s, from 300 °C (red) at the inlet on the left to about 140 °C (blue) in the cold core of the spray, with the droplets as grey dots coloured by their temperature; a nozzle 0.15 m behind the inlet sprays water along the middle of the duct and the cooled core widens towards the outlet. Bottom left: the mass-flow mean of the air temperature along the duct, falling from 300 °C at the inlet to about 250 °C at the outlet. Bottom right, over time: the heat the droplets take from the air, rising to about 6.6 kW in the first 0.3 s and staying there, and the mean droplet temperature, which levels out near 150 °C." width="1200" height="700">
+
+`spray_cooling.toml` is a duct of 2 m by 0.4 m (2D, 100 × 20 cells,
+SST k-ω, Δt = 2 ms) with air at 300 °C entering at 5 m/s. Walls are
+adiabatic. A nozzle 0.15 m behind the inlet sprays 10 g/s of water at
+20 °C along the duct at 15 m/s, in a cone of 15° half angle, with
+Rosin-Rammler sizes from 20 to 200 µm (X = 60 µm, n = 3). This is the lead
+application of the sprays (D240) with sensible heat only: with `[energy]`
+and `[spray.coupling] mode = "two-way"` every parcel carries a temperature,
+and the heat it takes up is a source of the gas energy in the cells it
+passes (D247 to D252). The cold core of the spray is visible behind the
+nozzle; the air leaves the duct about 50 K cooler.
+
+**How the heat is coupled.** In each sub-step the parcel temperature
+relaxes exactly towards the gas temperature of its cell,
+T_p ← T_g + (T_p − T_g) e^(−δt/τ_h), with τ_h = ρ_p c_p d² / (6 Nu k) and
+the Nusselt number of Ranz and Marshall, Nu = 2 + 0.6 Re^½ Pr^⅓. The record
+of the sub-step holds the heat the gas gives and its slope with respect to
+the gas temperature, found as for momentum (the slopes of one parcel add up
+to at most m c_p). The records are sorted and summed per cell, and the
+energy equation takes them as value plus slope, Q = E − G (T − T*): G sits
+on the diagonal, so the gas cannot be cooled below the droplets, however
+large the step. The passes stop when both the velocity lag and the
+temperature lag (the change of the gas temperature of a spray cell against
+the frozen state, over the largest temperature difference between gas and
+droplets) are below the tolerance. The closing step gives each parcel the
+heat the gas actually lost.
+
+In this run the droplets take a steady 6.6 kW from the air after 0.3 s;
+their mean temperature levels out near 150 °C. Of the 10 g injected,
+7.4 g leave through the outlet and 2.6 g are in the duct at the end; no
+parcel is lost. The steps take 3.7 passes on average, with `max_passes =
+4`: the temperature lag falls by a factor of about 7 per pass, the
+velocity lag by about 10, so at the default of three passes most steps of
+this case end at a lag of 1 to 3 × 10⁻³ (SPR006). With four, one of the
+500 steps ends above 10⁻³ (1.04 × 10⁻³). The strongest thermal coupling of
+a cell, G Δt / (ρ c_p V), is 1.3. The run takes about 30 s.
+
+**What is checked** (V28.1 to V28.4 for heat). A cloud of water at 300 K
+in one cell of air at 400 K, at liquid loadings of 0.1 and 1 and time steps
+of 0.03 to 23 thermal response times: gas and droplets reach the mixture
+temperature to 10⁻⁹, the mixture keeps its enthalpy, the gas never gains
+heat, and the enthalpy the parcels gained equals what the gas lost to
+round-off. Against a fourth-order reference of the two-temperature
+relaxation the error falls at order 1.03 and 1.04 as the step halves. The
+heat sources are bitwise equal with the parcels stored in reverse order and
+on one thread; whole runs give the same bits on 1 and 4 threads. In the
+ledger the exchange is the pair 2804 (`spray heat` on the thermal energy
+account of the energy equation, `from the gas` on the account `parcel
+enthalpy`) whose residual is zero to the bit; the parcel enthalpy account
+closes with the injection and what left the flow to 10⁻¹⁴, and the thermal
+account of the gas, now with the spray term, to 2 × 10⁻¹² in the last
+step.
+
+**What this version does not do.** Sensible heat only: no evaporation,
+latent heat or vapour (SP4, SP5), so a droplet can get hotter than the
+boiling point; this case stops short of that. Constant liquid properties,
+one temperature per droplet (no conduction inside it), no radiation to the
+droplets. Not checked yet against the one-dimensional duct reference
+(V28.16) or the plug-flow reference of the cooling duct (V28.21, with
+evaporation). Not with conjugate heat transfer or an algorithm other than
+PISO (SPR003). One process.
+
+Files: `spray.csv` (adds `t_mean_k`, `gas_heat_w` and `coupling_heat_max`
+per step), `result.json` (coupling summary with the heat totals, ledger),
+parcel files with a `temperature` field.
+Picture: `python3 -m tools.plot.spray_cooling OUT_DIR output/spray_cooling`.
+[Recipe 283](../recipes/sprays.md#spray-cooling),
 [case row](../cases/flow.md#lagrangian-sprays).

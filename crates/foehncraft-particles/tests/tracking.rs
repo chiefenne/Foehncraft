@@ -24,6 +24,9 @@ impl<F: Fn(usize, [f64; 3]) -> [f64; 3] + Sync> Gas for Field<F> {
             u: (self.0)(cell, x),
             rho: RHO_G,
             mu: MU_G,
+            t: f64::NAN,
+            cp: 1006.0,
+            k: 0.0,
         }
     }
 }
@@ -52,6 +55,7 @@ fn injector(position: [f64; 3], direction: [f64; 3], speed: f64, d: f64) -> Inje
         parcels_per_second: 50.0,
         start: 0.0,
         end: None,
+        temperature: None,
     }
 }
 

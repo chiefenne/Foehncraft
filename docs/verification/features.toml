@@ -1721,7 +1721,7 @@ evidence = [
   { kind = "contract", property = "schema", case = "spray_two_way_injectors", what = "the included injector file of spray_two_way", doc = "docs/cases/flow.md#lagrangian-sprays" },
 ]
 gaps = [
-  "no heat exchange yet (SP2b): two-way coupling refuses the energy equation (SPR003)",
+  "heat exchange is the row sprays.two-way-heat (SP2b)",
   "no turbulent dispersion (SP2c) and no turbulence modulation by the droplets (in no decision yet)",
   "first order in time (V28.4); second order (an exponentially fitted weight per cell) is an open point of section 5.7",
   "V28.6 (two neighbour cells) is covered only through the shuffled-storage test; no reference-data case of a dense spray against measurements",
@@ -1729,6 +1729,32 @@ gaps = [
   "point-source limit: no correction of the self-disturbance and no kernel smoothing; liquid volume fraction and parcels per cell are reported only",
   "the slip-wall normal viscous stress is not booked on the gas momentum account (it is the boundary force)",
   "PISO only; not with solid regions, the frozen-flow march, rotating zones or periodic boundaries (SPR003); one process",
+]
+
+[[feature]]
+id = "sprays.two-way-heat"
+area = "Sprays"
+title = "Two-way sensible heat coupling of the sprays (SP2b, D247 to D252)"
+switch = "[spray.coupling] mode = \"two-way\" with [energy]"
+decisions = ["D240", "D247", "D248", "D249", "D250", "D251", "D252", "D254"]
+model = true
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-kernels/src/particle.rs::heat_step_relaxes_exactly_and_halves_compose", what = "the parcel temperature relaxes exactly, T_p = T_g + (T_p0 - T_g) exp(-dt/tau_h), with tau_h = rho_p c_p d^2 / (6 Nu k) and Nu of Ranz and Marshall; two half steps give one full step" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/spray_coupling.rs::a_cloud_and_its_gas_reach_one_temperature_at_any_step", what = "V28.2, V28.3 for heat: a cloud of water at 300 K in one cell of air at 400 K, loading 0.1 and 1, steps of 0.03 to 23 thermal response times: gas and parcels end at the mixture temperature to 1e-9, the mixture keeps its enthalpy to 1e-9, the parcel enthalpy books close to 1e-12, the ledger pair to the bit, the gas never gains heat" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/spray_coupling.rs::the_heat_coupling_converges_at_first_order_in_the_step", what = "V28.4 for heat: the gas temperature of the same cell with halved steps against a fourth-order reference of the two-temperature relaxation: observed order 1.03 and 1.04 (above 0.9 required)" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/spray_coupling.rs::passes_give_the_same_bits_on_any_number_of_threads", what = "V28.1 with heat: spray.csv bitwise equal on 1 and 4 threads, for the momentum case and the heat case" },
+  { kind = "exact", test = "crates/foehncraft-particles/tests/coupling.rs::sources_do_not_depend_on_parcel_order_or_threads", what = "V28.1: the heat sources and the heat closing step bitwise equal with the parcel storage reversed and on one thread; the heat slopes of a parcel at most m c_p; the enthalpy books close to round-off" },
+  { kind = "consistency", test = "crates/foehncraft-flow/src/balance.rs::a_closed_box_with_a_spray_closes_every_step_and_the_run", what = "accounts of the same quantity and region booked by two modules are one account (the spray heat on the thermal account of the energy equation)" },
+  { kind = "contract", property = "diagnostics", case = "spray_cooling", what = "10 g/s of water at 20 °C sprayed into air at 300 °C in a duct: about 6.6 kW taken from the air, the mean air temperature falls by about 50 K; gas heat and coupling numbers in spray.csv", doc = "docs/gallery/sprays.md#spray-cooling" },
+  { kind = "contract", property = "schema", case = "spray_cooling_injectors", what = "the included injector file of spray_cooling with the liquid temperature", doc = "docs/cases/flow.md#lagrangian-sprays" },
+]
+gaps = [
+  "sensible heat only: no evaporation, no latent heat, no vapour (SP4, SP5); the droplets can get hotter than boiling",
+  "constant liquid properties (density, specific heat); the gas conductivity and specific heat of the fluid at the cell",
+  "uniform droplet temperature (no internal conduction, Biot number not checked); no radiation to the droplets",
+  "the spray-cooling case is checked against its own energy balance only; V28.16 (one-dimensional dusty-gas duct) and V28.21 (plug-flow reference, SP5) are not run",
+  "with the default max_passes = 3 most steps of the cooling case end above the tolerance (the temperature lag falls by about 7 per pass); the case asks for 4",
+  "not with solid regions (CHT) or an algorithm other than PISO (SPR003); not checked with a density that varies with temperature (stage 7c); one process",
 ]
 
 [[feature]]

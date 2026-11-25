@@ -1346,7 +1346,7 @@
     "gaps written"
    ],
    "gaps": [
-    "no heat exchange yet (SP2b): two-way coupling refuses the energy equation (SPR003)",
+    "heat exchange is the row sprays.two-way-heat (SP2b)",
     "no turbulent dispersion (SP2c) and no turbulence modulation by the droplets (in no decision yet)",
     "first order in time (V28.4); second order (an exponentially fitted weight per cell) is an open point of section 5.7",
     "V28.6 (two neighbour cells) is covered only through the shuffled-storage test; no reference-data case of a dense spray against measurements",
@@ -1355,6 +1355,25 @@
     "the slip-wall normal viscous stress is not booked on the gas momentum account (it is the boundary force)",
     "PISO only; not with solid regions, the frozen-flow march, rotating zones or periodic boundaries (SPR003); one process",
     "`spray_two_way_injectors` has no run in the verification manual or in CI"
+   ],
+   "range": {}
+  },
+  {
+   "id": "sprays.two-way-heat",
+   "title": "Two-way sensible heat coupling of the sprays (SP2b, D247 to D252)",
+   "grade": "partial",
+   "why": [
+    "a model without reference data",
+    "gaps written"
+   ],
+   "gaps": [
+    "sensible heat only: no evaporation, no latent heat, no vapour (SP4, SP5); the droplets can get hotter than boiling",
+    "constant liquid properties (density, specific heat); the gas conductivity and specific heat of the fluid at the cell",
+    "uniform droplet temperature (no internal conduction, Biot number not checked); no radiation to the droplets",
+    "the spray-cooling case is checked against its own energy balance only; V28.16 (one-dimensional dusty-gas duct) and V28.21 (plug-flow reference, SP5) are not run",
+    "with the default max_passes = 3 most steps of the cooling case end above the tolerance (the temperature lag falls by about 7 per pass); the case asks for 4",
+    "not with solid regions (CHT) or an algorithm other than PISO (SPR003); not checked with a density that varies with temperature (stage 7c); one process",
+    "`spray_cooling_injectors` has no run in the verification manual or in CI"
    ],
    "range": {}
   },

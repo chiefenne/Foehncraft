@@ -65,11 +65,6 @@ pub fn validate(case: &FlowCase) -> Result<()> {
                 format!("two-way spray coupling does not work with {what} in this version"),
             ))
         };
-        if case.energy.is_some() {
-            return refuse(
-                "the energy equation (the heat exchange of the parcels follows with stage SP2b)",
-            );
-        }
         if case.fluid_view.is_some() {
             return refuse("solid regions (conjugate heat transfer)");
         }
@@ -134,6 +129,32 @@ pub struct FlowGas<'a> {
     pub sol: &'a Solution<'a>,
     /// The geometry of the mesh.
     pub geo: &'a Geometry,
+    /// The gas temperature and properties per cell, with the energy
+    /// equation (SP2b).
+    pub heat: Option<&'a GasHeat>,
+}
+
+/// The gas per cell for the heat exchange of the parcels (SP2b).
+#[derive(Debug, Clone, Default)]
+pub struct GasHeat {
+    /// Temperature (K).
+    pub t: Vec<f64>,
+    /// Specific heat (J/(kg K)).
+    pub cp: Vec<f64>,
+    /// Thermal conductivity (W/(m K)).
+    pub k: Vec<f64>,
+}
+
+impl GasHeat {
+    /// The gas of the energy equation of `fl`, if it has one.
+    pub fn of(fl: &mut crate::simplec::Flow) -> Result<Option<Self>> {
+        let Some(sc) = fl.scalars.as_ref() else {
+            return Ok(None);
+        };
+        Ok(sc
+            .energy_gas(fl.dev.as_mut())?
+            .map(|(t, cp, k)| Self { t, cp, k }))
+    }
 }
 
 impl Gas for FlowGas<'_> {
@@ -145,11 +166,13 @@ impl Gas for FlowGas<'_> {
             let g = self.sol.state.grad_u[i].get(cell);
             *ui += g[0] * d[0] + g[1] * d[1] + g[2] * d[2];
         }
-        GasState {
-            u,
-            rho: self.sol.phys.rho_at(cell),
-            mu: self.sol.phys.mu,
+        let mut g = GasState::isothermal(u, self.sol.phys.rho_at(cell), self.sol.phys.mu);
+        if let Some(h) = self.heat {
+            g.t = h.t[cell];
+            g.cp = h.cp[cell];
+            g.k = h.k[cell];
         }
+        g
     }
 }
 
@@ -157,7 +180,8 @@ impl Gas for FlowGas<'_> {
 pub const CSV_UNITS: &str = "step -; time s; parcels -; injected_kg kg; in_flow_kg kg; \
      deposited_kg kg; escaped_kg kg; lost_kg kg; lost_parcels -; rebounds -; substeps -; \
      com_x com_y com_z m (centre of mass of the liquid in the flow); d32_m m (Sauter mean \
-     diameter of the droplets in the flow); per injector <name>.parcels -, <name>.in_flow_kg kg, \
+     diameter of the droplets in the flow); t_mean_k K (mass mean temperature of the droplets \
+     in the flow); per injector <name>.parcels -, <name>.in_flow_kg kg, \
      <name>.penetration_m m (distance from the injector, along its axis or straight as [spray] \
      penetration says, within which the share [spray] penetration_fraction of the injector's \
      liquid in the flow lies), <name>.farthest_m m (the farthest parcel, outlier-sensitive); \
@@ -168,13 +192,15 @@ pub const CSV_UNITS: &str = "step -; time s; parcels -; injected_kg kg; in_flow_
      tolerance), gas_force_x/y/z N (momentum the gas received per second), gas_power_w W, \
      coupling_max - (largest Δt/τ of the gas momentum of a cell, β Δt / (ρ V)), coupling_share - \
      (share of the spray cells with Δt/τ above 1), liquid_fraction_max - (largest liquid volume \
-     fraction of a cell), parcels_per_cell_max -";
+     fraction of a cell), parcels_per_cell_max -, gas_heat_w W (heat the gas received per \
+     second, SP2b), coupling_heat_max - (largest Δt/τ of the gas temperature of a cell, \
+     G Δt / (ρ c_p V))";
 
 /// The header of `spray.csv`.
 pub fn csv_head(sp: &foehncraft_particles::Spray) -> String {
     let mut h = String::from(
         "step,time,parcels,injected_kg,in_flow_kg,deposited_kg,escaped_kg,\
-         lost_kg,lost_parcels,rebounds,substeps,com_x,com_y,com_z,d32_m",
+         lost_kg,lost_parcels,rebounds,substeps,com_x,com_y,com_z,d32_m,t_mean_k",
     );
     for i in &sp.config().injectors {
         let n = &i.name;
@@ -185,7 +211,8 @@ pub fn csv_head(sp: &foehncraft_particles::Spray) -> String {
     if sp.config().coupling.two_way() {
         h.push_str(
             ",passes,coupling_lag,unconverged,gas_force_x,gas_force_y,gas_force_z,\
-             gas_power_w,coupling_max,coupling_share,liquid_fraction_max,parcels_per_cell_max",
+             gas_power_w,coupling_max,coupling_share,liquid_fraction_max,parcels_per_cell_max,\
+             gas_heat_w,coupling_heat_max",
         );
     }
     h
@@ -272,7 +299,11 @@ pub fn csv_row(
         .moments(None, zone)
         .stats(&foehncraft_particles::HistSpec::default())
         .d32;
-    let mut extra = format!(",{:e},{:e},{:e},{d32:e}", com[0], com[1], com[2]);
+    let t_mean = match sp.mass_in_flow() {
+        m if m > 0.0 => sp.enthalpy() / (m * sp.config().liquid.specific_heat),
+        _ => f64::NAN,
+    };
+    let mut extra = format!(",{:e},{:e},{:e},{d32:e},{t_mean:e}", com[0], com[1], com[2]);
     for i in sp.injector_stats() {
         extra.push_str(&format!(
             ",{},{:e},{:e},{:e}",
@@ -281,7 +312,7 @@ pub fn csv_row(
     }
     if let Some(c) = c {
         extra.push_str(&format!(
-            ",{},{:e},{},{:e},{:e},{:e},{:e},{:e},{:e},{:e},{}",
+            ",{},{:e},{},{:e},{:e},{:e},{:e},{:e},{:e},{:e},{},{:e},{:e}",
             c.passes,
             c.lag,
             u8::from(c.unconverged),
@@ -292,7 +323,9 @@ pub fn csv_row(
             c.coupling_max,
             c.coupling_share,
             c.liquid_fraction_max,
-            c.parcels_per_cell_max
+            c.parcels_per_cell_max,
+            c.gas_heat,
+            c.coupling_heat_max
         ));
     }
     format!(
@@ -328,10 +361,11 @@ pub fn step(
     out: &std::path::Path,
     name: &str,
     csv: &mut crate::monitor::History,
+    heat: Option<&GasHeat>,
 ) -> Result<(u64, Option<std::path::PathBuf>)> {
     let env = foehncraft_particles::Env { mesh, geo, loc };
     let lost0 = sp.tally.lost_parcels;
-    let gas = FlowGas { sol, geo };
+    let gas = FlowGas { sol, geo, heat };
     sp.advance(&env, &gas, t_end - h, h)?;
     csv.row(&csv_row(n, sp, &mesh.cell_zone, None));
     let every = case.spray.write_every;
@@ -390,6 +424,10 @@ pub struct CouplingSummary {
     pub parcels_per_cell_max: u32,
     /// Momentum the gas received over the run (kg m/s).
     pub gas_impulse: [f64; 3],
+    /// Heat the gas received over the run (J, SP2b).
+    pub gas_heat: f64,
+    /// Largest Δt/τ of the gas temperature of a spray cell.
+    pub coupling_heat_max: f64,
 }
 
 impl CouplingSummary {
@@ -405,6 +443,8 @@ impl CouplingSummary {
         for k in 0..3 {
             self.gas_impulse[k] += dt * c.gas_momentum[k];
         }
+        self.gas_heat += dt * c.gas_heat;
+        self.coupling_heat_max = self.coupling_heat_max.max(c.coupling_heat_max);
     }
 }
 
@@ -740,10 +780,22 @@ pub struct TwoWay<'a> {
     pub passes: u32,
     /// The coupling lag after each pass.
     pub lags: Vec<f64>,
-    /// The last pass and its frozen cell velocities.
-    pass: Option<(foehncraft_particles::Pass, Vec<[f64; 3]>)>,
+    /// The last pass and its frozen cell velocities and temperatures.
+    pass: Option<Frozen>,
     /// The cell velocities of the start of the step (by cell).
     u_old: Vec<(u32, [f64; 3])>,
+    /// The cell temperatures of the start of the step (by cell; SP2b).
+    t_old: Vec<(u32, f64)>,
+}
+
+/// A pass with the frozen gas state of its cells.
+pub struct Frozen {
+    /// The pass.
+    pub pass: foehncraft_particles::Pass,
+    /// u* per cell of the sources.
+    pub ustar: Vec<[f64; 3]>,
+    /// T* per cell of the sources (empty without an energy equation).
+    pub tstar: Vec<f64>,
 }
 
 impl<'a> TwoWay<'a> {
@@ -770,6 +822,7 @@ impl<'a> TwoWay<'a> {
             lags: Vec::new(),
             pass: None,
             u_old: Vec::new(),
+            t_old: Vec::new(),
         }
     }
 
@@ -803,8 +856,8 @@ pub struct Passes {
     pub lag: f64,
     /// Ended at the largest number with the lag above the tolerance.
     pub unconverged: bool,
-    /// The last pass and its frozen cell velocities.
-    pub last: Option<(foehncraft_particles::Pass, Vec<[f64; 3]>)>,
+    /// The last pass and its frozen gas state.
+    pub last: Option<Frozen>,
 }
 
 /// The coupling lag of D252: the largest change of the gas velocity of a
@@ -840,8 +893,42 @@ pub fn coupling_lag(
     du / scale.max(1e-12 * (1.0 + umax))
 }
 
-fn fl_old(old: &[(u32, [f64; 3])], c: u32) -> Option<[f64; 3]> {
+/// The coupling lag of the temperature (SP2b), as [`coupling_lag`]: the
+/// largest change of the gas temperature of a spray cell against the
+/// frozen state of the pass, over the larger of the largest temperature
+/// difference of parcels and gas (|heat| / heat slope of a cell) and the
+/// largest change of the gas temperature of a spray cell over the step.
+pub fn coupling_lag_heat(
+    src: &foehncraft_particles::CellSources,
+    tstar: &[f64],
+    t_old: &[f64],
+    t: &[f64],
+) -> f64 {
+    let (mut dt, mut scale, mut tmax) = (0.0f64, 0.0f64, 0.0f64);
+    for (j, &c) in src.cells.iter().enumerate() {
+        let tn = t[c as usize];
+        dt = dt.max((tn - tstar[j]).abs());
+        scale = scale.max((tn - t_old[j]).abs());
+        if src.heat_slope[j] > 0.0 {
+            scale = scale.max(src.heat[j].abs() / src.heat_slope[j]);
+        }
+        tmax = tmax.max(tn.abs());
+    }
+    dt / scale.max(1e-12 * (1.0 + tmax))
+}
+
+fn fl_old<T: Copy>(old: &[(u32, T)], c: u32) -> Option<T> {
     old.binary_search_by_key(&c, |x| x.0).ok().map(|i| old[i].1)
+}
+
+/// Inserts the value of the cells of `cells` that `old` does not hold yet
+/// (the current iterate: the cell was not reached by an earlier pass).
+fn add_missing<T: Copy>(old: &mut Vec<(u32, T)>, cells: &[u32], now: &dyn Fn(u32) -> T) {
+    for &c in cells {
+        if let Err(k) = old.binary_search_by_key(&c, |x| x.0) {
+            old.insert(k, (c, now(c)));
+        }
+    }
 }
 
 fn cell_velocity(st: &crate::simplec::State, c: usize) -> [f64; 3] {
@@ -858,6 +945,7 @@ impl crate::transient::OuterHook for TwoWay<'_> {
             // the sources of the last pass stay (the flow iterates on)
             return Ok(());
         }
+        let heat = GasHeat::of(fl)?;
         let sol = Solution {
             state: fl.state()?,
             disc: &fl.disc,
@@ -866,51 +954,77 @@ impl crate::transient::OuterHook for TwoWay<'_> {
         let gas = FlowGas {
             sol: &sol,
             geo: self.geo,
+            heat: heat.as_ref(),
         };
         let pass = self.sp.pass(&self.env, &gas, self.t0, self.dt)?;
         let src = MomentumSource::of(&pass.sources, self.dt, &|c| cell_velocity(&sol.state, c));
         let ustar = src.ustar.clone();
+        let cells = src.cells.clone();
         if self.passes == 0 {
             // the state the step starts from (D248: the first pass sees it)
-            self.u_old = src
-                .cells
-                .iter()
-                .copied()
-                .zip(ustar.iter().copied())
-                .collect();
+            self.u_old = cells.iter().copied().zip(ustar.iter().copied()).collect();
         }
-        // the old state of cells the first pass did not reach
-        let missing: Vec<u32> = src
-            .cells
-            .iter()
-            .copied()
-            .filter(|c| self.u_old.binary_search_by_key(c, |x| x.0).is_err())
-            .collect();
-        for c in missing {
-            // (the current iterate: the cell was not reached before)
-            let v = cell_velocity(&sol.state, c as usize);
-            let k = self.u_old.partition_point(|x| x.0 < c);
-            self.u_old.insert(k, (c, v));
-        }
+        add_missing(&mut self.u_old, &cells, &|c| {
+            cell_velocity(&sol.state, c as usize)
+        });
         drop(sol);
         fl.spray_momentum = Some(src);
-        self.pass = Some((pass, ustar));
+        // the heat of the pass (SP2b): S = Q − G (T − T*), Q = heat / Δt,
+        // G = heat slope / Δt
+        let tstar: Vec<f64> = match &heat {
+            Some(h) => {
+                let ts: Vec<f64> = cells.iter().map(|&c| h.t[c as usize]).collect();
+                if self.passes == 0 {
+                    self.t_old = cells.iter().copied().zip(ts.iter().copied()).collect();
+                }
+                add_missing(&mut self.t_old, &cells, &|c| h.t[c as usize]);
+                let s = &pass.sources;
+                let rows: Vec<(u32, f64, f64)> = cells
+                    .iter()
+                    .enumerate()
+                    .map(|(j, &c)| {
+                        let g = s.heat_slope[j] / self.dt;
+                        (c, s.heat[j] / self.dt + g * ts[j], g)
+                    })
+                    .collect();
+                if let Some(sc) = fl.scalars.as_mut() {
+                    sc.set_energy_spray(fl.dev.as_mut(), Some(rows))?;
+                }
+                ts
+            }
+            None => Vec::new(),
+        };
+        self.pass = Some(Frozen { pass, ustar, tstar });
         self.passes += 1;
         Ok(())
     }
 
     fn after_solve(&mut self, fl: &mut crate::simplec::Flow, _k: usize) -> Result<bool> {
-        let Some((pass, ustar)) = self.pass.as_ref() else {
+        if self.pass.is_none() {
+            return Ok(false);
+        }
+        let heat = GasHeat::of(fl)?;
+        let st = fl.state()?;
+        let Some(fr) = self.pass.as_ref() else {
             return Ok(false);
         };
-        let st = fl.state()?;
-        let old: Vec<[f64; 3]> = pass
-            .sources
-            .cells
+        let cells = &fr.pass.sources.cells;
+        let old: Vec<[f64; 3]> = cells
             .iter()
             .map(|&c| fl_old(&self.u_old, c).unwrap_or([0.0; 3]))
             .collect();
-        let lag = coupling_lag(&pass.sources, ustar, &old, &|c| cell_velocity(&st, c));
+        let mut lag = coupling_lag(&fr.pass.sources, &fr.ustar, &old, &|c| {
+            cell_velocity(&st, c)
+        });
+        if let Some(h) = &heat
+            && fr.tstar.len() == cells.len()
+        {
+            let t_old: Vec<f64> = cells
+                .iter()
+                .map(|&c| fl_old(&self.t_old, c).unwrap_or(h.t[c as usize]))
+                .collect();
+            lag = lag.max(coupling_lag_heat(&fr.pass.sources, &fr.tstar, &t_old, &h.t));
+        }
         self.lags.push(lag);
         if self.passes >= self.limit {
             return Ok(false);
@@ -935,6 +1049,15 @@ pub struct StepCoupling {
     pub gas_momentum: [f64; 3],
     /// Power of that source on the gas, Σ u_new · S (W).
     pub gas_power: f64,
+    /// Heat the gas received per second, Σ over the spray cells of
+    /// Q − G (T_new − T*) (W), summed in cell order (SP2b).
+    pub gas_heat: f64,
+    /// Largest Δt/τ of the gas temperature in a spray cell,
+    /// G Δt / (ρ c_p V) (SP2b, D254 (3)).
+    pub coupling_heat_max: f64,
+    /// Whether the step exchanged heat (an energy equation).
+    #[serde(skip)]
+    pub heat: bool,
     /// The momentum books of the parcels (kg m/s over the step).
     #[serde(skip)]
     pub books: foehncraft_particles::StepBooks,
@@ -964,20 +1087,25 @@ pub fn close(
         unconverged,
         last,
     } = done;
-    let Some((pass, ustar)) = last else {
+    let Some(Frozen { pass, ustar, tstar }) = last else {
         return Ok(StepCoupling::default());
     };
+    let heat = GasHeat::of(fl)?.filter(|_| tstar.len() == pass.sources.cells.len());
     let st = fl.state()?;
     let phys = fl.physics();
     let dt = pass.dt;
     let src = pass.sources.clone();
-    let du = |c: u32| -> [f64; 3] {
+    let du = |c: u32| -> ([f64; 3], f64) {
         match src.find(c) {
             Some(j) => {
                 let u = st.u.get(c as usize);
-                [u[0] - ustar[j][0], u[1] - ustar[j][1], u[2] - ustar[j][2]]
+                let dtemp = heat.as_ref().map_or(0.0, |h| h.t[c as usize] - tstar[j]);
+                (
+                    [u[0] - ustar[j][0], u[1] - ustar[j][1], u[2] - ustar[j][2]],
+                    dtemp,
+                )
             }
-            None => [0.0; 3],
+            None => ([0.0; 3], 0.0),
         }
     };
     let mut out = StepCoupling {
@@ -987,9 +1115,15 @@ pub fn close(
         ..Default::default()
     };
     let (mut above, vol) = (0usize, &env.geo.cell_volume);
+    out.heat = heat.is_some();
     for (j, &c) in src.cells.iter().enumerate() {
-        let d = du(c);
+        let (d, dtemp) = du(c);
         let u = st.u.get(c as usize);
+        if let Some(h) = &heat {
+            out.gas_heat += (src.heat[j] - src.heat_slope[j] * dtemp) / dt;
+            let cap = phys.rho_at(c as usize) * h.cp[c as usize] * vol[c as usize];
+            out.coupling_heat_max = out.coupling_heat_max.max(src.heat_slope[j] / cap);
+        }
         let mut s = [0.0; 3];
         for k in 0..3 {
             s[k] = (src.impulse[j][k] - src.slope[j] * d[k]) / dt;
@@ -1016,6 +1150,9 @@ pub fn close(
 /// Pair ids of the gas-parcel momentum exchange in the ledger (D244).
 pub const PAIR_MOMENTUM: [u32; 3] = [2801, 2802, 2803];
 
+/// Pair id of the gas-parcel heat exchange in the ledger (SP2b).
+pub const PAIR_HEAT: u32 = 2804;
+
 /// The ledger rows of a two-way spray at a state (D119, D244): the gas side
 /// of the momentum exchange on the momentum accounts of the domain (which
 /// hold only this term, so their imbalance is the force of the walls and
@@ -1028,6 +1165,7 @@ pub fn book(
     c: Option<&StepCoupling>,
     dt: f64,
     gas_momentum: [f64; 3],
+    energy: bool,
 ) {
     use crate::balance::{Account, StepRule, Term, TermKind, names};
     let z = StepCoupling::default();
@@ -1067,6 +1205,32 @@ pub fn book(
     ke.terms
         .push(Term::volume("spray drag power", TermKind::Source, c.gas_power).rule(StepRule::End));
     r.book(ke);
+    if !energy {
+        return;
+    }
+    // the heat (SP2b): the gas side on the thermal account of the energy
+    // equation, the parcels' sensible enthalpy in an account of its own
+    let mut th = Account::new(names::THERMAL, "J");
+    th.terms.push(
+        Term::volume("spray heat", TermKind::Exchange, c.gas_heat)
+            .rule(StepRule::End)
+            .paired(PAIR_HEAT),
+    );
+    r.book(th);
+    let [_, _, _, injected, removed] = b.enthalpy;
+    let mut a = Account::new("parcel enthalpy", "J");
+    a.region = "parcels".into();
+    a.content = Some(sp.enthalpy());
+    for (name, v) in [("injected", per(injected)), ("left the flow", per(removed))] {
+        a.terms
+            .push(Term::volume(name, TermKind::Source, v).rule(StepRule::End));
+    }
+    a.terms.push(
+        Term::volume("from the gas", TermKind::Exchange, -c.gas_heat)
+            .rule(StepRule::End)
+            .paired(PAIR_HEAT),
+    );
+    r.book(a);
 }
 
 /// Σ ρ u V of the gas, in cell order (kg m/s).

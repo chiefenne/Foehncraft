@@ -351,5 +351,45 @@ classes, averaged fields (D266, SP2), `datums.csv` in steady runs, V28.12
   pass and converged passes), V28.4 (observed order 0.99 and 0.96 with Δt =
   2, 1, 0.5 ms against a fourth-order reference). V28.5 to V28.8 belong to
   the heat and vapour exchange (SP2b, SP5).
-- Not yet with two-way coupling (SPR003): the energy equation (SP2b),
-  solid regions, the frozen-flow march, algorithms other than PISO.
+- Not yet with two-way coupling (SPR003): solid regions, the frozen-flow
+  march, algorithms other than PISO.
+
+**SP2b (two-way sensible heat) is implemented** (with `[energy]` in the
+case). What the code does, against section 5:
+
+- Parcel temperature (`[liquid] specific_heat`, `temperature`,
+  `[[injector]] temperature`): in each sub-step T_p relaxes exactly towards
+  the gas temperature of the cell, T_p ← T_g + (T_p − T_g) e^(−δt/τ_h),
+  τ_h = ρ_p c_p d² / (6 Nu k_g), Nu = 2 + 0.6 Re^½ Pr^⅓ (Ranz and Marshall
+  1952), with the gas conductivity and specific heat of the fluid. One-way
+  sprays in a case with `[energy]` carry the temperature too.
+- D249, D250: the record of a sub-step holds the heat the gas gives,
+  m c_p (T_p − T_p,new), and its slope m c_p (1 − e_r) Π_{l>r} e_l with the
+  thermal decays (own derivation, as for momentum: the slopes of a parcel
+  add up to m c_p (1 − Π e) ≤ m c_p). The energy equation takes the per-cell
+  sums as Q = E − G (T − T*), G on the diagonal (the same path as the
+  linearised wall flux), so the gas temperature of a cell stays between its
+  old value and the droplets at any step.
+- D252: the passes stop when the larger of the velocity lag and the
+  temperature lag is below `tolerance`; the temperature lag is the largest
+  change of the gas temperature of a spray cell against the frozen state of
+  the pass, over the largest temperature difference between gas and
+  droplets of the spray cells. **Finding:** the temperature lag falls by a
+  factor of about 7 per pass, the velocity lag by about 10; in the
+  spray-cooling case most steps end at 1 to 3 × 10⁻³ with the default
+  `max_passes = 3`, so the case asks for 4 (one unconverged step in 500).
+  The default stays 3 (maintainer decision of 2026-11-24).
+- Closing step: each parcel gets Σ_r slope_r (T_new − T*) of heat; the gas
+  books the same per-cell numbers. D254 (1): the pair 2804 (`spray heat` on
+  the thermal energy account of the energy equation, `from the gas` on the
+  account `parcel enthalpy` with injected and left the flow) is zero to the
+  bit; two modules that book the same quantity and region share one account,
+  so the thermal account of the gas closes with the spray term (2 × 10⁻¹²
+  in the gallery run). D254 (3): the largest G Δt / (ρ c_p V) is
+  `coupling_heat_max`.
+- Checks: V28.1 (shuffled storage and 1 and 4 threads with heat), V28.2
+  and V28.3 for heat (a cloud of water at 300 K in one cell of air at 400 K,
+  loading 0.1 and 1, Δt/τ_h 0.03 to 23: the mixture temperature to 10⁻⁹, no
+  overshoot, enthalpy kept), V28.4 for heat (observed order 1.03 and 1.04
+  against a fourth-order reference). V28.16 (one-dimensional dusty-gas
+  duct) is not run yet.

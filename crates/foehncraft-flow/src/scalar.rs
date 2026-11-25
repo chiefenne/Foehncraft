@@ -60,6 +60,10 @@ use foehncraft_mesh::{Geometry, Mesh};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+/// Temperature, specific heat and conductivity per cell (the gas the
+/// parcels see, SP2b).
+pub(crate) type CellGas = (Vec<f64>, Vec<f64>, Vec<f64>);
+
 /// `[scalars.<name>]`: a passive scalar.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -784,6 +788,9 @@ struct EnergyField {
     /// The matrix temperatures of the porous regions (D271), solved with
     /// the energy rows in one system.
     porous: Option<Box<crate::porous_energy::Matrix>>,
+    /// The heat of a two-way coupled spray (SP2b, D250), per spray cell
+    /// (cell, Q + G T*, G): S = Q − G (T − T*) in W, G on the diagonal.
+    spray_heat: Option<Vec<(u32, f64, f64)>>,
 }
 
 /// The variable density of the fluid in the energy equation (stage 7c):
@@ -1429,7 +1436,9 @@ impl Scalars {
             let robin_sp = f
                 .energy
                 .as_deref()
-                .filter(|e| e.cond.as_ref().is_some_and(|c| c.robin.is_some()))
+                .filter(|e| {
+                    e.cond.as_ref().is_some_and(|c| c.robin.is_some()) || e.spray_heat.is_some()
+                })
                 .and_then(|e| e.robin_sp);
             let mut mus = turb.map(|tc| (tc.mu, tc.mu_eff));
             if let Some(e) = f.energy.as_deref_mut() {
@@ -2356,6 +2365,59 @@ impl Scalars {
             .map(|x| x.iter().exact_sum())
     }
 
+    /// Sets or clears the heat of a two-way coupled spray (SP2b): per spray
+    /// cell (cell, Q + G T*, G) in W and W/K.
+    pub(crate) fn set_energy_spray(
+        &mut self,
+        dev: &mut dyn FlowDevice,
+        rows: Option<Vec<(u32, f64, f64)>>,
+    ) -> Result<()> {
+        let nc = self.nc;
+        let Some(e) = self.fields.iter_mut().find_map(|f| f.energy.as_deref_mut()) else {
+            return Ok(());
+        };
+        if rows.is_some() && e.robin_sp.is_none() {
+            e.robin_sp = Some(dev.alloc(nc)?);
+        }
+        e.spray_heat = rows;
+        Ok(())
+    }
+
+    /// The heat the spray gives the gas at the temperature `t` (W),
+    /// Σ (Q + G T* − G T) in cell order, if a spray is set.
+    fn energy_spray_total(&self, t: &[f64]) -> Option<f64> {
+        let e = self.fields.iter().find_map(|f| f.energy.as_deref())?;
+        let rows = e.spray_heat.as_ref()?;
+        Some(
+            rows.iter()
+                .map(|&(c, q, g)| q - g * t[c as usize])
+                .exact_sum(),
+        )
+    }
+
+    /// The gas as the parcels see it for the heat exchange (SP2b): per
+    /// cell the temperature, c_p and the conductivity of the material at
+    /// that temperature (no turbulent part).
+    pub(crate) fn energy_gas(&self, dev: &mut dyn FlowDevice) -> Result<Option<CellGas>> {
+        let Some(f) = self.fields.iter().find(|f| f.energy.is_some()) else {
+            return Ok(None);
+        };
+        let Some(e) = f.energy.as_deref() else {
+            return Ok(None);
+        };
+        let t = dev.download(f.phi)?;
+        let mut cp = Vec::with_capacity(t.len());
+        let mut k = Vec::with_capacity(t.len());
+        for (c, &tc) in t.iter().enumerate() {
+            let mat = &e.mats[e.mat_cell[c] as usize];
+            let tm = if e.dependent { tc } else { mat.t_ref };
+            let kt = mat.tensor(tm);
+            cp.push(mat.cp.at(tm));
+            k.push((kt[0][0] + kt[1][1] + kt[2][2]) / 3.0);
+        }
+        Ok(Some((t, cp, k)))
+    }
+
     /// Sets or clears the heat added to cells (W per cell, D204).
     pub(crate) fn set_energy_extra_heat(&mut self, x: Option<Vec<f64>>) {
         if let Some(e) = self.fields.iter_mut().find_map(|f| f.energy.as_deref_mut()) {
@@ -2890,6 +2952,7 @@ impl Scalars {
             || enthalpy.iter().any(|h| !h.is_constant())
             || sec.cycle.is_some()
             || crate::density::wanted(case)
+            || case.spray.coupling.two_way()
         {
             Some(put(&vec![0.0; nc])?)
         } else {
@@ -3054,6 +3117,7 @@ impl Scalars {
             held: None,
             robin_sp: None,
             extra_heat: None,
+            spray_heat: None,
             var_rho: None,
             porous,
             mats,
@@ -3495,9 +3559,14 @@ fn refresh_energy(
                 v[c] += q / (e.volume[c] * cap[c]);
             }
         }
-        if let (Some((_, rs)), Some(spb)) = (&robin, e.robin_sp) {
+        // and the heat of a two-way coupled spray (SP2b) in the same
+        // value-plus-slope form
+        if let Some(spb) = e.robin_sp
+            && (robin.is_some() || e.spray_heat.is_some())
+        {
             let mut sp = vec![0.0; nc];
-            for &(c, q, g) in rs {
+            let rows = robin.iter().flat_map(|(_, rs)| rs.iter());
+            for &(c, q, g) in rows.chain(e.spray_heat.iter().flatten()) {
                 let c = c as usize;
                 let w = e.volume[c] * cap[c];
                 v[c] += q / w;
@@ -3704,6 +3773,11 @@ pub struct EnergyBalance {
     /// or the defect of the mean-flow model.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub robin: Option<f64>,
+    /// The heat a two-way coupled spray gives the gas (W, SP2b); the
+    /// ledger books it as the spray's exchange pair, not as a term of this
+    /// balance.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub spray: Option<f64>,
     /// conduction + convection + source − storage (W): zero in a
     /// converged steady run and in every converged time step.
     pub imbalance: f64,
@@ -3933,6 +4007,12 @@ pub fn summaries(
             // from outside the model like the Robin heat
             if let Some(x) = sc.energy_extra_total() {
                 bal.robin = Some(x);
+                largest = largest.max(x.abs());
+                out -= x;
+            }
+            // the heat of a two-way coupled spray (SP2b)
+            if let Some(x) = sc.energy_spray_total(&phi) {
+                bal.spray = Some(x);
                 largest = largest.max(x.abs());
                 out -= x;
             }
