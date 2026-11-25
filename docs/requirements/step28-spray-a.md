@@ -143,7 +143,7 @@ numbers are.
 | SA0 | This page | – |
 | SA1 | Real-fluid kernel (Peng-Robinson, mixtures, fugacity, departure functions, surface equilibrium, stability test, mixing line), `equilibrium = "peng-robinson"`, D312 latent heat, D314 critical state; checks VA.1 to VA.4, VA.6, VA.7; gallery example with the equilibrium and mixing-line images. **Part 1 (#314):** kernel, surface table, `[spray.evaporation] equilibrium` and `[spray.evaporation.peng_robinson]` (`fuel`, or `critical_temperature`, `critical_pressure`, `acentric_factor`, `molar_mass`; `ambient`, `k_ij`, `table_step`), critical-state counts; VA.1 to VA.3, VA.6 (closed box, water in nitrogen); gallery 314. Still open: the stability test, the mixing line (VA.4), VA.7 with a fuel vapour species | the liquid library (n-dodecane vapour species) |
 | SA2 | High-pressure film properties (D313), VA.5 | SA1, sources read |
-| SA3 | ECN diagnostics (D315) | – |
+| SA3 | ECN diagnostics (D315). **Part 1 (#319):** `[spray.ecn]`, liquid length from the projected liquid volume at the two thresholds of the modelling standard and vapour penetration at 0.1 % fuel, per injector and step in `spray.csv` and `result.json`, keyed for bitwise results; gallery 319 (water into still hot air). Still to come: the ECN5 path-averaged liquid volume fraction, the time- and Favre-averaged fields on the ECN output grid, the mixture-fraction profiles. | – |
 | SA4 | Dense-spray effects (D316) | card |
 | SA5 | Real gas in the gas phase if chosen (D317) | card |
 | SA6 | The Spray A case: mesh, injection, runs at 900 K and the variants, VA.8, VA.9; gallery with liquid, vapour and mixture-fraction fields | breakup model and SA1 to SA4 |

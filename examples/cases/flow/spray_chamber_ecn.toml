@@ -1,0 +1,117 @@
+# Water sprayed into a chamber of hot, dry, still air, with the liquid
+# length and the vapour penetration of the ECN modelling standard
+# (Lagrangian sprays, [spray.ecn], Spray A stage SA3, D315).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/spray_chamber_ecn.toml
+#
+# The chamber is 0.25 m long and 0.16 m high (2D, a slab 1 cm deep,
+# standard k-ε), filled with dry air at 300 °C at rest and vented at the far
+# end. A nozzle in the middle of the left wall sprays 12 mg/s of water at
+# 20 °C, 40 m/s, in a cone of 4° half angle, as droplets of 4 to 30 µm. The
+# droplets slow down within a few centimetres, drag the air into a jet and
+# evaporate (Ranz-Marshall) into the species H2O as fast as the jet brings
+# in hot air: the core of the spray is saturated, the evaporation is
+# limited by mixing.
+#
+# [spray.ecn] reports per step, in spray.csv and result.json, the two
+# numbers every ECN spray comparison starts with:
+# - the liquid length: the farthest axial position where the projected
+#   liquid volume PLV = ∫ LVF dz (the liquid volume per area seen along the
+#   line of sight z) falls to each threshold;
+# - the vapour penetration: the farthest axial position of a cell centre
+#   with the water vapour mass fraction at or above 0.1 %.
+# After about 0.1 s the liquid lengths stay put while the vapour keeps
+# going. The two PLV thresholds (a factor 10 apart, as in the standard) are
+# set for this planar slab; the defaults, 0.2e-3 and 2e-3 mm³/mm², are those
+# of the standard for the round Spray A jet. One parcel holds about 1e-8 m
+# of PLV in a 2.5 mm bin, so the smaller threshold is about three parcels.
+
+case_format = "0.7"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [0.25, 0.16, 0.01]
+cells = [100, 64, 1]
+
+[fluid]
+density = 0.6
+viscosity = 2.9e-5
+specific_heat = 1045.0
+conductivity = 0.045
+operating_pressure = 101325.0
+pressure_values = "gauge"
+
+[turbulence]
+model = "k-epsilon"
+wall_treatment = "scalable"
+
+[initial]
+velocity = [0.0, 0.0, 0.0]
+k = 1e-4
+epsilon = 2e-5
+
+[energy]
+initial = 573.15
+
+[species]
+names = ["H2O", "O2", "N2"]
+initial = { mass_fractions = { H2O = 0.0, O2 = 0.233, N2 = 0.767 } }
+diffusion = "schmidt"
+schmidt = 0.7
+properties = "fluid"
+
+[boundary.xmin]
+type = "wall"
+[boundary.xmin.energy]
+heat_flux = 0.0
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymin]
+type = "wall"
+[boundary.ymin.energy]
+heat_flux = 0.0
+[boundary.ymax]
+type = "wall"
+[boundary.ymax.energy]
+heat_flux = 0.0
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[time]
+scheme = "bdf2"
+time_step = 5e-4
+end_time = 0.2
+
+[spray]
+include = "spray_chamber_ecn_injectors.toml"
+wall_mode = "stick"
+write_every = 20
+
+[spray.ecn]
+plv = [3e-8, 3e-7]
+bin = 2.5e-3
+line_of_sight = [0.0, 0.0, 1.0]
+vapour_fraction = 1e-3
+
+[spray.evaporation]
+model = "ranz-marshall"
+
+[spray.coupling]
+mode = "two-way"
+passes = "converged"
+tolerance = 1e-3
+max_passes = 12
+
+[solver]
+tolerance = 1e-6
+max_iterations = 300
+
+[solver.scalar]
+limiter = "mlp"
+
+[verification]
+require_convergence = false
