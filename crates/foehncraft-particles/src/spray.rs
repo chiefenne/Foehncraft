@@ -6,6 +6,7 @@ use crate::datum::{Crossing, Datum, DatumTally, Moments, Shape, Surface, plane_c
 use anyhow::{Result, bail};
 use foehncraft_core::Real;
 use foehncraft_core::rng::{self, stream};
+use foehncraft_kernels::evaporation::{self as evap, EvapInput, EvapStep};
 use foehncraft_kernels::particle::{HeatInput, ParcelInput, eddy_times, heat_step, parcel_step};
 use foehncraft_mesh::geometry::Geometry;
 use foehncraft_mesh::locate::{Locator, Position, TrackEnd, WalkEnd, step_limit};
@@ -35,6 +36,15 @@ pub struct GasState {
     pub tke: f64,
     /// Its dissipation rate ε (m²/s³).
     pub eps: f64,
+    /// Mass fraction of the liquid's vapour in the gas (SP5); NaN without
+    /// the vapour species (no evaporation).
+    pub y_v: f64,
+    /// Thermodynamic pressure p₀ (Pa).
+    pub p0: f64,
+    /// Molar mass of the gas without the vapour (kg/mol).
+    pub m_gas: f64,
+    /// Diffusivity of the vapour in the gas (m²/s).
+    pub diff: f64,
 }
 
 impl GasState {
@@ -50,12 +60,77 @@ impl GasState {
             k: 0.0,
             tke: 0.0,
             eps: 0.0,
+            y_v: f64::NAN,
+            p0: 101_325.0,
+            m_gas: 0.028_965,
+            diff: 0.0,
         }
+    }
+
+    /// True when the gas carries the vapour of the liquid (evaporation).
+    pub fn has_vapour(&self) -> bool {
+        self.y_v.is_finite() && self.diff > 0.0 && self.p0 > 0.0 && self.has_heat()
     }
 
     /// True when the gas exchanges heat with the parcels.
     pub fn has_heat(&self) -> bool {
         self.t.is_finite() && self.k > 0.0 && self.cp > 0.0
+    }
+}
+
+/// The vapour of the liquid (SP4, SP5): its molar mass and the NASA-7
+/// polynomials of the species data, for the latent heat L(T) = h_v(T) −
+/// c_l T + const (Kirchhoff's law with the latent heat of the case at one
+/// temperature) and the specific heat of the vapour.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Vapour {
+    /// The species of the data file.
+    pub species: foehncraft_kernels::species::Species,
+}
+
+impl Vapour {
+    /// Water vapour with the NASA-7 data of GRI-Mech 3.0 (the `H2O` of the
+    /// species data of the flow solver), for tests and tools without the
+    /// data file.
+    pub fn water() -> Self {
+        Self {
+            species: foehncraft_kernels::species::Species {
+                molar_mass: 0.018_015_28,
+                t_range: [200.0, 1000.0, 3500.0],
+                low: [
+                    4.19864056,
+                    -0.0020364341,
+                    6.52040211e-06,
+                    -5.48797062e-09,
+                    1.77197817e-12,
+                    -30293.7267,
+                    -0.849032208,
+                ],
+                high: [
+                    3.03399249,
+                    0.00217691804,
+                    -1.64072518e-07,
+                    -9.7041987e-11,
+                    1.68200992e-14,
+                    -30004.2971,
+                    4.9667701,
+                ],
+                well_depth: 572.4,
+                diameter: 2.605,
+                dipole: 1.844,
+                geometry: 2,
+            },
+        }
+    }
+
+    /// Enthalpy of the vapour (J/kg, the reference of the species data).
+    pub fn h(&self, t: f64) -> f64 {
+        foehncraft_kernels::species::R * t * self.species.h_over_rt(t) / self.species.molar_mass
+    }
+
+    /// Specific heat of the vapour (J/(kg K)).
+    pub fn cp(&self, t: f64) -> f64 {
+        self.species.cp(t)
     }
 }
 
@@ -199,6 +274,8 @@ enum Fate {
     Escaped(usize),
     /// Not tracked any further: the walk failed or needed too many sub-steps.
     Lost,
+    /// Evaporated completely (SP5).
+    Evaporated,
 }
 
 struct Outcome {
@@ -215,6 +292,9 @@ struct Outcome {
     walls: [f64; 3],
     /// Time the parcel was followed (s).
     used: f64,
+    /// Liquid the parcel lost to vapour over the step (kg, its own change;
+    /// negative: condensation).
+    vapour: f64,
     /// The path (steady streams with [`TrackOpts::paths`]): the state at
     /// the start of every sub-step and at the end.
     path: Vec<PathPoint>,
@@ -262,6 +342,12 @@ pub struct Tally {
     pub rebounds: u64,
     /// Sub-steps of all parcels.
     pub substeps: u64,
+    /// Liquid mass that evaporated (kg; net of condensation, SP5).
+    #[serde(default)]
+    pub evaporated_mass: f64,
+    /// Parcels that evaporated completely.
+    #[serde(default)]
+    pub evaporated_parcels: u64,
 }
 
 /// The parcels released in a step, booked when the pass is committed.
@@ -325,6 +411,8 @@ pub struct Spray {
     /// A two-dimensional case in the x-y plane: the eddies have no z
     /// component (D243).
     planar: bool,
+    /// The vapour of the liquid (evaporation, SP5).
+    vapour: Option<Vapour>,
 }
 
 /// What `state()` writes and `restore()` reads (restart, D42).
@@ -349,6 +437,19 @@ fn norm(a: [f64; 3]) -> f64 {
 
 fn mass_of(d: f64, count: f64, rho_p: f64) -> f64 {
     count * rho_p * std::f64::consts::PI / 6.0 * d * d * d
+}
+
+/// ∫ m(t) dt over a sub-step of length `dt` of a droplet of mass `m0` and
+/// diameter `d0` that follows the d² law d² = d₀² − K t to `d1`:
+/// m₀ (d₀²/K) (2/5) (1 − (d₁/d₀)⁵).
+fn mass_integral(m0: f64, d0: f64, d1: f64, k: f64, dt: f64) -> f64 {
+    let s = k * dt / (d0 * d0);
+    if s.abs() < 1e-8 || d0 <= 0.0 {
+        return m0 * dt;
+    }
+    let r = d1 / d0;
+    let r5 = r * r * r * r * r;
+    m0 * d0 * d0 / k * 0.4 * (1.0 - r5)
 }
 
 /// A standard normal number from two keyed uniforms (Box and Muller 1958).
@@ -404,6 +505,7 @@ impl Spray {
                 .collect(),
             parcels: Parcels::default(),
             planar: false,
+            vapour: None,
             datums: Vec::new(),
             datum_tally: Vec::new(),
             tally: Tally {
@@ -414,6 +516,92 @@ impl Spray {
             },
             time: 0.0,
         })
+    }
+
+    /// Sets the vapour of the liquid (the species data of
+    /// `[spray.liquid] vapour`): needed for the evaporation (SP5).
+    pub fn set_vapour(&mut self, v: Option<Vapour>) {
+        self.vapour = v;
+    }
+
+    /// True when the droplets evaporate (`[spray.evaporation]` and the
+    /// vapour species set).
+    pub fn evaporates(&self) -> bool {
+        self.cfg.evaporation.on() && self.vapour.is_some()
+    }
+
+    /// Latent heat of the liquid at `t` (J/kg): L(T_ref) + h_v(T) −
+    /// h_v(T_ref) − c_l (T − T_ref) (Kirchhoff's law with the vapour
+    /// enthalpy of the species data and the constant c_l of the liquid).
+    pub fn latent_heat(&self, t: f64) -> f64 {
+        let l = &self.cfg.liquid;
+        match &self.vapour {
+            Some(v) => {
+                l.latent_heat + v.h(t)
+                    - v.h(l.latent_heat_temperature)
+                    - l.specific_heat * (t - l.latent_heat_temperature)
+            }
+            None => l.latent_heat,
+        }
+    }
+
+    /// Enthalpy of the vapour at `t` in the reference of the parcels (J/kg):
+    /// c_l T + L(T), so the liquid at 0 K has none.
+    pub fn vapour_enthalpy(&self, t: f64) -> f64 {
+        self.cfg.liquid.specific_heat * t + self.latent_heat(t)
+    }
+
+    /// Specific heat of the vapour at `t` (J/(kg K)); 0 without one.
+    pub fn vapour_cp(&self, t: f64) -> f64 {
+        self.vapour.map_or(0.0, |v| v.cp(t))
+    }
+
+    /// Saturation pressure of the liquid at `t` (Pa).
+    pub fn saturation_pressure(&self, t: f64) -> f64 {
+        match self.cfg.liquid.saturation {
+            crate::config::Saturation::Water => evap::water::saturation_pressure(t),
+        }
+    }
+
+    /// The evaporation of a droplet of diameter `d` and temperature `tp`
+    /// over `dt` in the gas `gs` at the particle Reynolds number `re`, or
+    /// `None` when it does not evaporate (no model, no vapour in the gas).
+    pub fn evaporation(
+        &self,
+        gs: &GasState,
+        d: f64,
+        tp: f64,
+        re: f64,
+        dt: f64,
+    ) -> Option<EvapStep> {
+        let v = self.vapour.as_ref()?;
+        if !self.cfg.evaporation.on() || !gs.has_vapour() || d <= 0.0 {
+            return None;
+        }
+        let l = &self.cfg.liquid;
+        Some(evap::evaporation_step(&EvapInput {
+            tp,
+            tg: gs.t,
+            yg: gs.y_v.clamp(0.0, 1.0 - 1e-12),
+            p0: gs.p0,
+            m_vapour: v.species.molar_mass,
+            m_gas: gs.m_gas,
+            psat: self.saturation_pressure(tp),
+            latent: self.latent_heat(tp),
+            re,
+            pr: gs.mu * gs.cp / gs.k,
+            sc: gs.mu / (gs.rho * gs.diff),
+            rho_g: gs.rho,
+            diff: gs.diff,
+            k_g: gs.k,
+            cp_g: gs.cp,
+            cp_v: v.cp(0.5 * (tp + gs.t)),
+            d,
+            rho_l: l.density,
+            cp_l: l.specific_heat,
+            dt,
+            model: self.cfg.evaporation.code(),
+        }))
     }
 
     /// Sets the datums the parcels report to; their sums start at the
@@ -592,7 +780,7 @@ impl Spray {
         &mut self,
         env: &Env,
         pass: Pass,
-        du: Option<&dyn Fn(u32) -> ([f64; 3], f64)>,
+        du: Option<&dyn Fn(u32) -> crate::coupling::Delta>,
     ) -> StepBooks {
         let rho_p = self.cfg.liquid.density;
         let cp_p = self.cfg.liquid.specific_heat;
@@ -601,6 +789,7 @@ impl Spray {
             ..Default::default()
         };
         books.enthalpy[0] = self.enthalpy();
+        books.mass[0] = self.mass_in_flow_by_id();
         let Pass {
             release,
             mut outcomes,
@@ -620,34 +809,67 @@ impl Spray {
                 books.injected[k] += mp * p.v[k];
             }
             books.enthalpy[3] += mp * cp_p * p.temp;
+            books.mass[3] += mp;
         }
         // the closing step: the parcel receives what the gas gave up
+        // (momentum, heat and, with evaporation, the vapour the gas did not
+        // take with the enthalpy it carries, SP5)
         if let Some(du) = du {
             for o in &mut outcomes {
                 if o.records.is_empty() {
                     continue;
                 }
                 let m = mass_of(o.p.d, o.p.count, rho_p);
+                if m <= 0.0 {
+                    // evaporated completely: no slopes (D250), nothing to
+                    // give back
+                    continue;
+                }
                 let mut dp = [0.0; 3];
                 let mut dh = 0.0;
+                let mut dm = 0.0;
                 for r in &o.records {
-                    let (d, dt) = du(r.cell);
-                    for k in 0..3 {
-                        dp[k] += r.slope * d[k];
+                    let d = du(r.cell);
+                    for (p, u) in dp.iter_mut().zip(d.u) {
+                        *p += r.slope * u;
                     }
-                    dh += r.heat_slope * dt;
+                    dh += r.heat_slope * d.t;
+                    if r.vapour_slope != 0.0 {
+                        let x = r.vapour_slope * d.y;
+                        dm += x;
+                        dh += x * r.liquid_h;
+                    }
                 }
-                for (v, d) in o.p.v.iter_mut().zip(dp) {
-                    *v += d / m;
+                if dm == 0.0 {
+                    for (v, d) in o.p.v.iter_mut().zip(dp) {
+                        *v += d / m;
+                    }
+                    o.p.temp += dh / (m * cp_p);
+                } else {
+                    // the mass changes: momentum and enthalpy are kept
+                    // exactly, the velocity, temperature and diameter follow
+                    let m1 = (m + dm).max(0.0);
+                    o.vapour -= dm;
+                    if m1 > 0.0 {
+                        for (v, d) in o.p.v.iter_mut().zip(dp) {
+                            *v = (m * *v + d) / m1;
+                        }
+                        o.p.temp = (m * cp_p * o.p.temp + dh) / (m1 * cp_p);
+                        o.p.d = (m1 / (o.p.count * rho_p * std::f64::consts::PI / 6.0)).cbrt();
+                    } else {
+                        o.p.d = 0.0;
+                        o.fate = Fate::Evaporated;
+                    }
                 }
-                o.p.temp += dh / (m * cp_p);
             }
             for (j, &c) in sources.cells.iter().enumerate() {
-                let (d, dt) = du(c);
-                for ((b, i), dk) in books.from_gas.iter_mut().zip(sources.impulse[j]).zip(d) {
+                let d = du(c);
+                for ((b, i), dk) in books.from_gas.iter_mut().zip(sources.impulse[j]).zip(d.u) {
                     *b -= i - sources.slope[j] * dk;
                 }
-                books.enthalpy[2] -= sources.heat[j] - sources.heat_slope[j] * dt;
+                books.enthalpy[2] -=
+                    sources.heat[j] - sources.heat_slope[j] * d.t - sources.vapour_slope_h[j] * d.y;
+                books.mass[2] -= sources.vapour[j] - sources.vapour_slope[j] * d.y;
             }
         } else {
             for (j, imp) in sources.impulse.iter().enumerate() {
@@ -655,6 +877,7 @@ impl Spray {
                     *b -= i;
                 }
                 books.enthalpy[2] -= sources.heat[j];
+                books.mass[2] -= sources.vapour[j];
             }
         }
         let mut kept = Parcels::default();
@@ -687,9 +910,20 @@ impl Spray {
             }
             if o.fate == Fate::Active {
                 books.enthalpy[1] += m * cp_p * o.p.temp;
+                books.mass[1] += m;
             } else {
                 books.enthalpy[4] -= m * cp_p * o.p.temp;
+                books.mass[4] -= m;
             }
+        }
+        // the liquid that evaporated, in the order of the identities
+        for &i in &order {
+            self.tally.evaporated_mass += outcomes[i].vapour;
+        }
+        if !self.cfg.coupling.two_way() {
+            // one way the gas books nothing: the vapour is what the parcels
+            // lost
+            books.mass[2] = books.mass[1] - books.mass[0] - books.mass[3] - books.mass[4];
         }
         for o in outcomes {
             self.tally.rebounds += o.rebounds;
@@ -713,11 +947,136 @@ impl Spray {
                     self.tally.lost_mass += m;
                     self.tally.lost_parcels += 1;
                 }
+                Fate::Evaporated => {
+                    self.tally.evaporated_parcels += 1;
+                }
             }
         }
         self.parcels = kept;
         self.time = t1;
         books
+    }
+
+    /// The vapour that brings a gas of mass `mass` in the state `gs` to
+    /// adiabatic saturation with this liquid (kg; 0 when the gas is
+    /// saturated or does not carry the vapour): Δ = M (Y_s − Y*)/(1 − Y_s)
+    /// at the temperature T where M c_p (T* − T) = Δ L(T) (D253).
+    pub fn saturation_capacity(&self, gs: &GasState, mass: f64) -> f64 {
+        let Some(v) = self.vapour else {
+            return 0.0;
+        };
+        if !gs.has_vapour() || mass <= 0.0 {
+            return 0.0;
+        }
+        let ys = |t: f64| {
+            foehncraft_kernels::evaporation::surface_fraction(
+                self.saturation_pressure(t),
+                gs.p0,
+                v.species.molar_mass,
+                gs.m_gas,
+            )
+        };
+        let delta = |t: f64| {
+            let s = ys(t).min(0.999);
+            (mass * (s - gs.y_v) / (1.0 - s)).max(0.0)
+        };
+        let g = |t: f64| mass * gs.cp * (gs.t - t) - delta(t) * self.latent_heat(t);
+        let (mut lo, mut hi) = (200.0f64.min(gs.t), gs.t);
+        if g(hi) >= 0.0 {
+            return 0.0;
+        }
+        for _ in 0..60 {
+            let mid = 0.5 * (lo + hi);
+            if g(mid) > 0.0 {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+        }
+        delta(0.5 * (lo + hi))
+    }
+
+    /// The saturation limiter of D253 on a pass: the evaporating records of
+    /// each cell with a factor `factor(cell)` below 1 keep that share of
+    /// their vapour; the rest goes back to its parcel as liquid at the
+    /// temperature of the record, with the momentum it carried, before the
+    /// gas sees the sources. Returns the
+    /// cells limited and the mass held back (kg).
+    pub fn limit_vapour(&self, pass: &mut Pass, factor: &dyn Fn(u32) -> f64) -> (u32, f64) {
+        let (mut cells, mut back) = (0u32, 0.0);
+        for &c in &pass.sources.cells {
+            if factor(c) < 1.0 {
+                cells += 1;
+            }
+        }
+        if cells == 0 {
+            return (0, 0.0);
+        }
+        let mut per: Vec<(u64, f64)> = Vec::new();
+        for o in &mut pass.outcomes {
+            let x = self.hold_back(o, factor, true);
+            if x > 0.0 {
+                per.push((o.p.id, x));
+            }
+        }
+        per.sort_by_key(|p| p.0);
+        for (_, x) in per {
+            back += x;
+        }
+        let all: Vec<Record> = pass.records().copied().collect();
+        pass.sources = CellSources::from_records(&all);
+        (cells, back)
+    }
+
+    /// One parcel or stream of the limiter of D253: each evaporating record
+    /// with a factor below 1 keeps that share of its vapour; the rest goes
+    /// back to the parcel as liquid at the temperature of the record (the
+    /// enthalpy c_l T_r, so the gas keeps the latent heat it would have
+    /// given) with the momentum it carried; `revive` makes a parcel that had
+    /// evaporated completely active again (transient). Returns the mass
+    /// held back.
+    fn hold_back(&self, o: &mut Outcome, factor: &dyn Fn(u32) -> f64, revive: bool) -> f64 {
+        let rho_p = self.cfg.liquid.density;
+        let cp_p = self.cfg.liquid.specific_heat;
+        let (mut x, mut xh) = (0.0, 0.0);
+        let v_end = o.p.v;
+        for r in &mut o.records {
+            let f = factor(r.cell);
+            if f >= 1.0 || r.vapour <= 0.0 {
+                continue;
+            }
+            let dx = (1.0 - f) * r.vapour;
+            r.vapour -= dx;
+            r.heat -= dx * r.liquid_h;
+            r.vapour_slope *= f;
+            for (i, v) in r.impulse.iter_mut().zip(v_end) {
+                *i -= dx * v;
+            }
+            x += dx;
+            xh += dx * r.liquid_h;
+        }
+        if x == 0.0 {
+            return 0.0;
+        }
+        let m = mass_of(o.p.d, o.p.count, rho_p);
+        let m1 = m + x;
+        o.p.temp = (m * cp_p * o.p.temp + xh) / (m1 * cp_p);
+        o.p.d = (m1 / (o.p.count * rho_p * std::f64::consts::PI / 6.0)).cbrt();
+        o.vapour -= x;
+        if revive && o.fate == Fate::Evaporated {
+            o.fate = Fate::Active;
+        }
+        x
+    }
+
+    /// Liquid mass of the parcels in the flow (kg), summed in the order of
+    /// their identities.
+    pub fn mass_in_flow_by_id(&self) -> f64 {
+        let mut m = 0.0;
+        for i in self.by_id() {
+            m += self.parcel_mass(i);
+        }
+        m
     }
 
     /// Sensible enthalpy Σ m c_p T of the parcels in the flow (J, from 0 K),
@@ -1010,7 +1369,8 @@ impl Spray {
         let rho_p = self.cfg.liquid.density;
         let two_way = self.cfg.coupling.two_way();
         let re_frac = self.cfg.coupling.max_reynolds_change;
-        let mass = mass_of(p.d, p.count, rho_p);
+        let mut mass;
+        let mut vapour_total = 0.0;
         let cp_p = self.cfg.liquid.specific_heat;
         let g_eff = |rho_g: f64| 1.0 - rho_g / rho_p;
         let mut cross = Vec::new();
@@ -1029,6 +1389,12 @@ impl Spray {
         let mut last_left = left;
         let mut path: Vec<PathPoint> = Vec::new();
         while left > tiny {
+            if p.d <= 0.0 {
+                // evaporated completely (SP5)
+                fate = Fate::Evaporated;
+                break;
+            }
+            mass = mass_of(p.d, p.count, rho_p);
             p.eddy.left -= last_left - left;
             last_left = left;
             if opts.paths {
@@ -1060,12 +1426,13 @@ impl Spray {
                 p.eddy.u = [0.0; 3];
                 p.eddy.left = 0.0;
             }
+            let d_start = p.d;
             let input = |dt: f64| ParcelInput {
                 v: p.v,
                 u: gs.u,
                 rho_g: gs.rho,
                 mu_g: gs.mu,
-                d: p.d,
+                d: d_start,
                 rho_p,
                 g: self.gravity,
                 dt,
@@ -1095,6 +1462,42 @@ impl Spray {
                     halvings += 1;
                 }
             }
+            // D251 with evaporation (SP5): a sub-step ends before d² has
+            // fallen by more than max_mass_change and before the droplet
+            // temperature moves by more than max_temperature_change; a
+            // droplet below min_diameter whose life ends inside the
+            // sub-step finishes there (the d² law is exact with frozen
+            // coefficients, so the end of the life is found exactly)
+            let evaporating = self.evaporates() && gs.has_vapour();
+            if evaporating && let Some(e) = self.evaporation(&gs, p.d, p.temp, s.re, sub) {
+                let ev = &self.cfg.evaporation;
+                let d02 = p.d * p.d;
+                let mut finishing = false;
+                let cut = if e.k > 0.0 && e.life <= sub && p.d < ev.min_diameter {
+                    finishing = true;
+                    e.life
+                } else if e.k.abs() * sub > ev.max_mass_change * d02 {
+                    ev.max_mass_change * d02 / e.k.abs()
+                } else {
+                    sub
+                };
+                if cut < sub {
+                    sub = cut;
+                    s = parcel_step(&input(sub));
+                }
+                let mut halvings = 0;
+                while !finishing && halvings < 40 {
+                    let Some(e) = self.evaporation(&gs, p.d, p.temp, s.re, sub) else {
+                        break;
+                    };
+                    if (e.tp - p.temp).abs() <= ev.max_temperature_change {
+                        break;
+                    }
+                    sub *= 0.5;
+                    s = parcel_step(&input(sub));
+                    halvings += 1;
+                }
+            }
             let target = [p.x[0] + s.dx[0], p.x[1] + s.dx[1], p.x[2] + s.dx[2]];
             // the face the previous sub-step ended on (two-way tracking)
             let on_face = p.face.map(|q| q.face);
@@ -1112,42 +1515,86 @@ impl Spray {
             let t_sub = t1 - left;
             let vel = |tau: f64| parcel_step(&input(tau)).v;
             // the exchange of a sub-step of length dt that ends with the
-            // velocity v1 (D249: the parcel's own change less its weight)
-            // the exchange of a sub-step of length dt that ends with the
-            // velocity v1; returns the parcel temperature at its end (the
-            // exact thermal relaxation, SP2b)
+            // velocity v1 (D249: the parcel's own change less its weight);
+            // returns the parcel temperature and diameter at its end and the
+            // liquid it lost to vapour (the exact relaxations of SP2b and
+            // the d² law of SP5)
             let book = |records: &mut Vec<Record>,
                         weight: &mut [f64; 3],
                         p: &One,
                         dt: f64,
                         v1: [f64; 3],
                         tau: f64|
-             -> f64 {
+             -> (f64, f64, f64) {
                 let ge = g_eff(gs.rho);
-                let mut imp = [0.0; 3];
-                for k in 0..3 {
-                    let w = mass * self.gravity[k] * ge * dt;
-                    weight[k] += w;
-                    imp[k] = -(mass * (v1[k] - p.v[k]) - w);
-                }
-                let (tp1, heat_decay) = if gs.has_heat() {
-                    let w = [gs.u[0] - p.v[0], gs.u[1] - p.v[1], gs.u[2] - p.v[2]];
-                    let h = heat_step(&HeatInput {
-                        tp: p.temp,
-                        tg: gs.t,
-                        re: gs.rho * p.d * norm(w) / gs.mu,
-                        pr: gs.mu * gs.cp / gs.k,
-                        k_g: gs.k,
-                        d: p.d,
-                        rho_p,
-                        cp_p,
-                        dt,
-                    });
-                    (h.tp, h.decay)
+                let slip = [gs.u[0] - p.v[0], gs.u[1] - p.v[1], gs.u[2] - p.v[2]];
+                let re = gs.rho * p.d * norm(slip) / gs.mu;
+                let ev = if evaporating {
+                    self.evaporation(&gs, p.d, p.temp, re, dt)
                 } else {
-                    (p.temp, 1.0)
+                    None
                 };
+                let mut imp = [0.0; 3];
+                let m1 = match &ev {
+                    None => {
+                        for k in 0..3 {
+                            let w = mass * self.gravity[k] * ge * dt;
+                            weight[k] += w;
+                            imp[k] = -(mass * (v1[k] - p.v[k]) - w);
+                        }
+                        mass
+                    }
+                    Some(e) => {
+                        // the weight of the shrinking droplet, ∫ m(t) dt
+                        let mi = mass_integral(mass, p.d, e.d, e.k, dt);
+                        let m1 = mass_of(e.d, p.count, rho_p);
+                        for k in 0..3 {
+                            let w = self.gravity[k] * ge * mi;
+                            weight[k] += w;
+                            // the vapour leaves with the droplet's velocity
+                            imp[k] = -(m1 * v1[k] - mass * p.v[k] - w);
+                        }
+                        m1
+                    }
+                };
+                let (tp1, heat_decay) = match &ev {
+                    Some(e) => (e.tp, e.decay),
+                    None if gs.has_heat() => {
+                        let h = heat_step(&HeatInput {
+                            tp: p.temp,
+                            tg: gs.t,
+                            re,
+                            pr: gs.mu * gs.cp / gs.k,
+                            k_g: gs.k,
+                            d: p.d,
+                            rho_p,
+                            cp_p,
+                            dt,
+                        });
+                        (h.tp, h.decay)
+                    }
+                    None => (p.temp, 1.0),
+                };
+                let vapour = mass - m1;
                 if two_way {
+                    // the vapour slope: the chord to the saturation state
+                    // at the droplet surface (D250), capped so that the
+                    // closing step cannot take more than the parcel holds
+                    let (vapour_slope, heat) = match &ev {
+                        Some(e) => {
+                            let gap = e.ys - gs.y_v;
+                            let mut b = if e.d > 0.0 && gap.abs() > 1e-12 {
+                                vapour / gap
+                            } else {
+                                0.0
+                            };
+                            if !(b > 0.0 && b.is_finite()) {
+                                b = 0.0;
+                            }
+                            (b, -(m1 * cp_p * tp1 - mass * cp_p * p.temp))
+                        }
+                        None => (0.0, -mass * cp_p * (tp1 - p.temp)),
+                    };
                     records.push(Record {
                         cell: p.cell as u32,
                         id: p.id,
@@ -1156,12 +1603,24 @@ impl Spray {
                         slope: 0.0,
                         dt,
                         decay: (-(dt / tau)).exp_of(),
-                        heat: -mass * cp_p * (tp1 - p.temp),
+                        heat,
                         heat_slope: 0.0,
                         heat_decay,
+                        vapour,
+                        vapour_slope,
+                        vapour_y: if evaporating { gs.y_v } else { 0.0 },
+                        liquid_h: if opts.steady || !evaporating {
+                            cp_p * tp1
+                        } else {
+                            // the droplet's heat follows a change of its
+                            // evaporation only as far as it relaxes in the
+                            // step: the latent heat with the weight e_h
+                            let hl = cp_p * tp1;
+                            hl + heat_decay * (self.vapour_enthalpy(tp1) - hl)
+                        },
                     });
                 }
-                tp1
+                (tp1, ev.map_or(p.d, |e| e.d), vapour)
             };
             // A parcel that moves along a face, with the gas of the two
             // cells pushing it towards the face from both sides, would end
@@ -1181,7 +1640,10 @@ impl Spray {
             if let Some(ff) = ff {
                 match ff {
                     FirstFace::Reached(cell) => {
-                        p.temp = book(&mut records, &mut weight, &p, sub, s.v, s.tau);
+                        let bk = book(&mut records, &mut weight, &p, sub, s.v, s.tau);
+                        p.temp = bk.0;
+                        p.d = bk.1;
+                        vapour_total += bk.2;
                         if any_datum {
                             self.crossings(
                                 &mut cross,
@@ -1204,7 +1666,10 @@ impl Spray {
                         let tf =
                             time_at_fraction(&|t| parcel_step(&input(t)).dx, s.dx, lambda, sub);
                         let sf = parcel_step(&input(tf));
-                        p.temp = book(&mut records, &mut weight, &p, tf, sf.v, sf.tau);
+                        let bk = book(&mut records, &mut weight, &p, tf, sf.v, sf.tau);
+                        p.temp = bk.0;
+                        p.d = bk.1;
+                        vapour_total += bk.2;
                         if any_datum {
                             self.crossings(
                                 &mut cross,
@@ -1228,7 +1693,10 @@ impl Spray {
                         let tf =
                             time_at_fraction(&|t| parcel_step(&input(t)).dx, s.dx, lambda, sub);
                         let sf = parcel_step(&input(tf));
-                        p.temp = book(&mut records, &mut weight, &p, tf, sf.v, sf.tau);
+                        let bk = book(&mut records, &mut weight, &p, tf, sf.v, sf.tau);
+                        p.temp = bk.0;
+                        p.d = bk.1;
+                        vapour_total += bk.2;
                         if any_datum {
                             self.crossings(
                                 &mut cross,
@@ -1244,6 +1712,7 @@ impl Spray {
                         p.x = x;
                         p.v = sf.v;
                         left -= tf;
+                        let m_now = mass_of(p.d, p.count, rho_p);
                         match self.hit_boundary(
                             env,
                             &mut p,
@@ -1253,7 +1722,7 @@ impl Spray {
                             substeps,
                             t1 - left,
                             &mut walls,
-                            mass,
+                            m_now,
                         ) {
                             Some(f) => {
                                 fate = f;
@@ -1274,7 +1743,10 @@ impl Spray {
             let tr = env.loc.track(start, target);
             match tr.end {
                 TrackEnd::Reached => {
-                    p.temp = book(&mut records, &mut weight, &p, sub, s.v, s.tau);
+                    let bk = book(&mut records, &mut weight, &p, sub, s.v, s.tau);
+                    p.temp = bk.0;
+                    p.d = bk.1;
+                    vapour_total += bk.2;
                     if any_datum {
                         self.crossings(
                             &mut cross,
@@ -1297,7 +1769,10 @@ impl Spray {
                     // sub-step (the sub-step is a fraction of a cell)
                     let thit = tr.fraction * sub;
                     let sh = parcel_step(&input(thit));
-                    p.temp = book(&mut records, &mut weight, &p, thit, sh.v, sh.tau);
+                    let bk = book(&mut records, &mut weight, &p, thit, sh.v, sh.tau);
+                    p.temp = bk.0;
+                    p.d = bk.1;
+                    vapour_total += bk.2;
                     if any_datum {
                         self.crossings(
                             &mut cross,
@@ -1314,6 +1789,7 @@ impl Spray {
                     p.v = sh.v;
                     p.cell = tr.position.cell;
                     left -= thit;
+                    let m_now = mass_of(p.d, p.count, rho_p);
                     match self.hit_boundary(
                         env,
                         &mut p,
@@ -1323,7 +1799,7 @@ impl Spray {
                         substeps,
                         t1 - left,
                         &mut walls,
-                        mass,
+                        m_now,
                     ) {
                         Some(f) => {
                             fate = f;
@@ -1336,7 +1812,10 @@ impl Spray {
                     // the walk failed: one search for the target
                     match env.loc.locate_search(target) {
                         Some(c) => {
-                            p.temp = book(&mut records, &mut weight, &p, sub, s.v, s.tau);
+                            let bk = book(&mut records, &mut weight, &p, sub, s.v, s.tau);
+                            p.temp = bk.0;
+                            p.d = bk.1;
+                            vapour_total += bk.2;
                             if any_datum {
                                 self.crossings(
                                     &mut cross,
@@ -1364,10 +1843,21 @@ impl Spray {
         }
         p.eddy.left -= last_left - left;
         p.face = None;
+        if fate == Fate::Active && p.d <= 0.0 {
+            fate = Fate::Evaporated;
+        }
+        // the slopes with the mass at the end (SP5: the parcel may have
+        // lost liquid; one that evaporated completely has none, D250)
+        let m_end = mass_of(p.d, p.count, rho_p);
+        // a stream has no closing step: its vapour slopes stay the chords
+        // to saturation, the stabilising part of the held sources (D260)
+        if !opts.steady {
+            crate::coupling::cap_vapour_slopes(&mut records, m_end);
+        }
         if opts.steady {
-            crate::coupling::set_slopes_local(&mut records, mass, mass * cp_p);
+            crate::coupling::set_slopes_local(&mut records, m_end, m_end * cp_p);
         } else {
-            crate::coupling::set_slopes(&mut records, mass, mass * cp_p);
+            crate::coupling::set_slopes(&mut records, m_end, m_end * cp_p);
         }
         let used = time - left.max(0.0);
         if opts.paths {
@@ -1388,6 +1878,7 @@ impl Spray {
             weight,
             walls,
             used,
+            vapour: vapour_total,
             path,
         }
     }

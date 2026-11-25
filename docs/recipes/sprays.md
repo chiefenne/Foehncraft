@@ -10,6 +10,7 @@ Part of the [Recipes](../recipes.md): droplets that move with and through the ga
 | 283 | [Cool a gas with droplets (two-way heat)](#spray-cooling) |
 | 285 | [Let the turbulence spread the droplets](#spray-dispersion) |
 | 292 | [Solve a spray in a steady flow (steady spray mode)](#spray-steady) |
+| 306 | [Let the droplets evaporate](#spray-evaporation) |
 
 ---
 
@@ -280,3 +281,73 @@ Strong coupling (health numbers above 1) needs a smaller relaxation. To see
 the statistical error of the streams, run again with another `seed` or more
 `streams`. See the [gallery entry](../gallery/sprays.md#spray-steady) for
 what is checked and how it compares with the transient run.
+
+---
+
+<a id="spray-evaporation"></a>
+## 306. Let the droplets evaporate
+
+**Name the vapour and pick a model.** The liquid file says which species
+of `[species]` the liquid evaporates into; `[spray.evaporation]` switches
+the evaporation on. The case needs `[energy]`, `[species]` with that
+species, and two-way coupling:
+
+```toml
+# spray_evaporation_injectors.toml
+[liquid]
+name = "water"
+density = 998.0
+specific_heat = 4181.0
+temperature = 293.15
+vapour = "H2O"            # a species of [species]
+# saturation = "water"    # IAPWS-95 vapour pressure, the only law so far
+# latent_heat = 2.4417e6  # J/kg at latent_heat_temperature = 298.15 K
+```
+
+```toml
+[species]
+names = ["H2O", "O2", "N2"]
+initial = { mass_fractions = { H2O = 0.005, O2 = 0.2318, N2 = 0.7632 } }
+properties = "fluid"      # the heat balance then closes to round-off
+
+[spray.evaporation]
+model = "ranz-marshall"   # or "abramzon-sirignano" (film thickening by the blowing)
+# max_mass_change = 0.1          # a sub-step ends when d² falls by more than this share
+# max_temperature_change = 2.0   # ... or the droplet temperature changes by more (K)
+# min_diameter = 1e-6            # smaller droplets evaporate in one sub-step at the end of their life
+
+[spray.coupling]
+mode = "two-way"
+passes = "converged"
+max_passes = 8            # evaporation couples more slowly than heat alone
+```
+
+The same keys work in the steady spray mode (`[spray.steady]`,
+[recipe 292](#spray-steady)).
+
+**Run and look.**
+
+```bash
+foehn flow examples/cases/flow/spray_evaporation.toml --out output/spray_evaporation
+python3 -m tools.plot.spray_evaporation OUT_DIR output/spray_evaporation              # the picture of gallery 306
+foehn flow examples/cases/flow/spray_saturation_steady.toml --out output/spray_saturation_steady
+python3 -m tools.plot.spray_saturation_steady OUT_DIR output/spray_saturation_steady  # the picture of gallery 306b
+```
+
+`spray.csv` adds `evaporated_kg` and `evaporated_parcels` (one way and two
+way) and, with two-way coupling, `gas_vapour_kg_s` (the vapour the gas
+receives), `vapour_lag_kg_s`, `coupling_vapour_max` (the vapour slope over
+the gas mass of the cell per step) and the limiter counts `limiter_cells`
+and `limiter_kg_s`. The ledger has the vapour pair 2805 (`spray vapour` on
+the gas mass, `to the gas` on the account `parcel mass`) and `spray
+vapour` in the species summary. `Y_H2O` is a field of `fields.vtkhdf`.
+
+**When the log warns.** SPR006: the passes of a step ended at `max_passes`
+above the tolerance; raise `max_passes` or lower the time step. SPR009: the
+saturation limiter of D253 held vapour back because a cell evaporated more
+than its gas can take; that is a sign of too few passes or too large a
+step (transient) or of a steady run that is not converged. A liquid whose
+`vapour` is not a species of the case is refused. See the
+[gallery entry](../gallery/sprays.md#spray-evaporation) for what is
+checked and what is not.
+

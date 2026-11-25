@@ -21,12 +21,12 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | [Thermal radiation](gallery/radiation.md) | Monte Carlo radiation of grey gas and grey walls on a prescribed temperature field: the box furnace with cooled tubes, the cases with exact solutions, scrambled Sobol against pseudo-random emission | 259, 281 |
 | [Turbulence models](gallery/turbulence.md) | the RANS turbulence models with their wall treatments (k-ω SST, the k-ε family, k-ε-ζ-f, k-ε-ζ-f₀, elliptic-blending k-ε) on the flat plate, the channel, the backward-facing step and the impinging jet; curvature correction and QCR; manufactured solutions; the internal flows of D45 (pipe, plane diffuser, U-bend) with GCI | 68, 71, 73, 74, 88, 89, 90, 113, 115, 141, 140, 184, 194, 197, 193, 199, 204 |
 | [Boundary conditions](gallery/boundary-conditions.md) | slip walls, axisymmetric wedges, inlet profiles from tables, backflow at pressure outlets, convective outlets, periodic modules, absolute pressure values (D239) | 21, 67, 220 |
-| [Lagrangian sprays](gallery/sprays.md) | droplets as Lagrangian parcels in the gas flow: injectors, drag, gravity, wall behaviour, the mass book | 242, 265, 280, 283, 285, 292 |
+| [Lagrangian sprays](gallery/sprays.md) | droplets as Lagrangian parcels in the gas flow: injectors, drag, gravity, wall behaviour, the mass book | 242, 265, 280, 283, 285, 292, 306, 306b |
 | [Porous regions](gallery/porous.md) | flow through porous matrices with a direction-dependent Darcy–Forchheimer resistance: a ceramic honeycomb, the exact pressure drop of a block | 273, 275 |
-| [Structures](gallery/structure.md) | the linear structural solver for reeds and other parts the flow moves: beams, MITC shells and quadratic solids, clamp springs and their fit to a measured frequency, contact with a seat and a stop, static, modal and transient analyses, thermal loads (MS5) | 295, 297, 299, 300, 302 |
+| [Structures](gallery/structure.md) | the linear structural solver for reeds and other parts the flow moves: beams, MITC shells and quadratic solids, clamp springs and their fit to a measured frequency, contact with a seat and a stop, static, modal and transient analyses, thermal loads, temperatures mapped from a flow case (MS5, MS6) | 295, 297, 299, 300, 302, 308 |
 | [Immersed bodies](gallery/immersed.md) | bodies in the flow without a body-fitted mesh: Brinkman penalisation of primitive bodies (L13 stage 1) | 270, 291 |
-| [Moving meshes and solids](gallery/moving-solids.md) | meshes whose nodes move in time: the deforming mesh with swept volumes, a piston compressing a closed gas volume, free-stream preservation (stage MS0, L22); on ranks and from restart files (MS0 part 2) | 296, 307 |
-| [Species and reacting flows](gallery/species.md) | species transport of ideal-gas mixtures on the variable density: mixture properties from kinetic theory, the closure species, the element ledger (steam furnace path, SF1) | 278, 289 |
+| [Moving meshes and solids](gallery/moving-solids.md) | meshes whose nodes move in time: the deforming mesh with swept volumes, a piston compressing a closed gas volume, free-stream preservation (stage MS0, L22) | 296, 307 |
+| [Species and reacting flows](gallery/species.md) | species transport of ideal-gas mixtures on the variable density: mixture properties from kinetic theory, the closure species, the element ledger (steam furnace path, SF1) | 278, 289, 298 |
 | [Expressions and materials](gallery/properties.md) | boundary values, body forces and viscosities as expressions, the material database, regions, walls with a mass flux | 23 |
 | [Python](gallery/python.md) | cases built, run and studied from Python: expressions with Python operators, callbacks, study tables | 24 |
 | [Verification](gallery/verification.md) | the discretisation uncertainty of mesh sweeps (grid convergence index) and the generated verification manual | 25, 170, 271 |
@@ -161,13 +161,17 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | <a id="reed-beam"></a>295 | [A reed valve as a beam: modes, and the clamp spring against the frequency equation](gallery/structure.md#reed-beam) | [Structures](gallery/structure.md) |
 | <a id="deforming-mesh"></a>296 | [A piston compresses a closed gas volume on a deforming mesh](gallery/moving-solids.md#deforming-mesh) | [Moving meshes and solids](gallery/moving-solids.md) |
 | <a id="reed-plate"></a>297 | [A reed petal as a shell: bending and twist on clamp springs](gallery/structure.md#reed-plate) | [Structures](gallery/structure.md) |
+| <a id="reacting-flow-cells"></a>298 | [A laminar methane–air flame burns at the measured speed with GRI-Mech 3.0](gallery/species.md#reacting-flow-cells) | [Species and reacting flows](gallery/species.md) |
 | <a id="reed-dynamics"></a>299 | [A reed struck by a pressure pulse, and a hot reed](gallery/structure.md#reed-dynamics) | [Structures](gallery/structure.md) |
 | <a id="reed-stop"></a>300 | [A curved reed stop as a solid, read from Gmsh](gallery/structure.md#reed-stop) | [Structures](gallery/structure.md) |
 | <a id="run-ranks-mrf"></a>301 | [A stirred vessel on five ranks: rotating zones of MRF on ranks](gallery/meshes.md#run-ranks-mrf) | [Meshes](gallery/meshes.md) |
 | <a id="reed-valve-contact"></a>302 | [A reed valve between its seat and its stop](gallery/structure.md#reed-valve-contact) | [Structures](gallery/structure.md) |
 | <a id="run-ranks-sliding"></a>304 | [A sliding rotor on five ranks: conformal stepping on ranks](gallery/meshes.md#run-ranks-sliding) | [Meshes](gallery/meshes.md) |
 | <a id="run-ranks-imprint"></a>305 | [A five-blade mixer on five ranks: the sliding mesh by imprinting on ranks](gallery/meshes.md#run-ranks-imprint) | [Meshes](gallery/meshes.md) |
+| <a id="spray-evaporation"></a>306 | [Water droplets evaporating in hot air](gallery/sprays.md#spray-evaporation) | [Lagrangian sprays](gallery/sprays.md) |
+| <a id="spray-saturation"></a>306b | [More water than the air can take, steady](gallery/sprays.md#spray-saturation) | [Lagrangian sprays](gallery/sprays.md) |
 | <a id="deforming-mesh-ranks"></a>307 | [A breathing channel on three ranks, continued from a restart file](gallery/moving-solids.md#deforming-mesh-ranks) | [Moving meshes and solids](gallery/moving-solids.md) |
+| <a id="heat-sink-hot"></a>308 | [A heat sink warmed by its chip: the flow case's temperatures as the load](gallery/structure.md#heat-sink-hot) | [Structures](gallery/structure.md) |
 
 ## Adding a feature
 

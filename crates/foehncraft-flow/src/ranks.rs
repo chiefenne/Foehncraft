@@ -730,6 +730,7 @@ fn supported_solver(case: &FlowCase) -> Result<()> {
             "regions (conjugate heat transfer)",
         ),
         (!case.immersed.is_empty(), "immersed bodies"),
+        (case.chemistry.is_some(), "chemistry in the cells (SF2b)"),
         (
             crate::density::wanted(case),
             "the variable density (stage 7c)",

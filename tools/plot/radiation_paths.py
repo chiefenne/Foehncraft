@@ -22,7 +22,6 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import matplotlib.tri as mtri
 import numpy as np
 from matplotlib import patheffects
 from matplotlib.colors import Normalize
@@ -39,9 +38,10 @@ from tools.plot.radiation_furnace import (
     TUBE_R,
     TUBE_X,
     TUBE_Z,
+    WALLS,
     column,
-    plane_triangulation,
     read,
+    smooth_grid,
 )
 
 #: Colours of the paths: bundles emitted by the gas and by a wall.
@@ -84,7 +84,7 @@ def walls_of(f):
     labels): the burner belongs to the front wall, the opening is left out."""
     name, x, y, z, _net, _area = f
     eps = 1e-6
-    w = name == "walls"
+    w = np.isin(name, WALLS)
     front = (name == "front") | (name == "burner")
     return {
         "floor": ("floor z = 0", w & (z < eps), x, y, (LENGTH, DEPTH), ("x (m)", "y (m)")),
@@ -96,28 +96,22 @@ def walls_of(f):
     }
 
 
-def on_grid(u, v, val, extent, n=81):
-    """Linear interpolation of the face values on a grid over the wall; the
-    margin outside the face centres takes the value of the nearest face."""
-    tri = mtri.Triangulation(u, v)
-    gu, gv = np.meshgrid(np.linspace(0, extent[0], n), np.linspace(0, extent[1], max(2, int(n * extent[1] / extent[0]))))
-    g = mtri.LinearTriInterpolator(tri, val)(gu, gv)
-    out = np.ma.filled(g.astype(float), np.nan)
-    miss = np.isnan(out)
-    if miss.any():
-        pu, pv = gu[miss], gv[miss]
-        near = np.argmin((pu[:, None] - u[None, :]) ** 2 + (pv[:, None] - v[None, :]) ** 2, axis=1)
-        out[miss] = val[near]
-    return gu, gv, out
+def on_grid(u, v, val, area, extent):
+    """The net flux averaged over patches of about 0.1 m of the wall
+    (area-weighted Gaussian, see radiation_furnace.smooth_grid)."""
+    return smooth_grid(u, v, val, area, extent)
 
 
 def flux_scale(f):
-    _name, _x, _y, _z, net, _area = f
-    walls = walls_of(f)
-    on = np.zeros(len(net), dtype=bool)
-    for _t, m, *_ in walls.values():
-        on |= m
-    return Normalize(vmin=min(0.0, np.percentile(net[on], 0.5)), vmax=np.percentile(net[on], 99.5))
+    """One colour scale for all walls, from the averaged flux that is drawn
+    (the single faces scatter far wider than the average)."""
+    _name, _x, _y, _z, net, area = f
+    g = np.concatenate([
+        on_grid(u[m], v[m], net[m], area[m], extent)[2].ravel()
+        for _t, m, u, v, extent, _lab in walls_of(f).values()
+    ])
+    g = g[np.isfinite(g)]
+    return Normalize(vmin=min(0.0, np.percentile(g, 0.5)), vmax=np.percentile(g, 99.9))
 
 
 def cylinder(ax, x0, z0, r, color):
@@ -143,7 +137,7 @@ def chamber(out, f, traced, bundles):
     norm = flux_scale(f)
     cmap = plt.get_cmap(SECOND)
     walls = walls_of(f)
-    _name, _x, _y, _z, net, _area = f
+    _name, _x, _y, _z, net, area = f
     fig = plt.figure(figsize=(10.0, 6.4))
     ax = fig.add_axes([-0.03, -0.05, 0.9, 0.98], projection="3d", computed_zorder=False)
     ax.set_box_aspect((LENGTH, DEPTH, HEIGHT), zoom=1.17)
@@ -152,7 +146,7 @@ def chamber(out, f, traced, bundles):
                        ("side2", lambda gu, gv: (gu, DEPTH + 0 * gu, gv)),
                        ("front", lambda gu, gv: (0 * gu, gu, gv))):
         _t, m, u, v, extent, _lab = walls[key]
-        gu, gv, g = on_grid(u[m], v[m], net[m], extent)
+        gu, gv, g = on_grid(u[m], v[m], net[m], area[m], extent)
         ax.plot_surface(*place(gu, gv), facecolors=cmap(norm(g)), rstride=1, cstride=1,
                         linewidth=0, antialiased=False, shade=False)
     for tx in TUBE_X:
@@ -190,12 +184,12 @@ def side(out, cells, traced):
     """The paths seen from the side (x, z) over the gas temperature on the
     mid-depth plane."""
     x, y, z = (column(cells, k) for k in "xyz")
-    band = np.abs(y - DEPTH / 2) < 0.12
-    tri = plane_triangulation(x[band], z[band])
-    t = column(cells, "temperature")[band]
+    thin = np.abs(y - DEPTH / 2) < 0.12
+    gx, gz, t = smooth_grid(x[thin], z[thin], column(cells, "temperature")[thin],
+                            column(cells, "volume")[thin], (LENGTH, HEIGHT), sigma=0.06)
     fig, ax = plt.subplots(figsize=(8.4, 5.6), constrained_layout=True)
     ax.set_facecolor(plt.get_cmap(RAINBOW)(0.0))
-    cs = ax.tricontourf(tri, t, levels=48, cmap=RAINBOW)
+    cs = ax.contourf(gx, gz, t, levels=64, cmap=RAINBOW)
     fig.colorbar(cs, ax=ax, label="gas temperature on the mid-depth plane (K)", shrink=0.9,
                  ticks=np.arange(1300, 2000, 100))
     seg, rgba = segments(traced, [0, 2], faintest=0.06)
@@ -238,8 +232,8 @@ def six_walls(out, f):
         for j, key in enumerate(row):
             ax = axes[i][j]
             title, m, u, v, extent, (lu, lv) = walls[key]
-            gu, gv, g = on_grid(u[m], v[m], net[m], extent, n=161)
-            ax.contourf(gu, gv, np.clip(g, norm.vmin, norm.vmax), levels=48, cmap=cmap, norm=norm)
+            gu, gv, g = on_grid(u[m], v[m], net[m], area[m], extent)
+            ax.contourf(gu, gv, np.clip(g, norm.vmin, norm.vmax), levels=64, cmap=cmap, norm=norm)
             if key in ("side0", "side2"):
                 for tx in TUBE_X:
                     ax.add_patch(Circle((tx, TUBE_Z), TUBE_R, facecolor="0.85", edgecolor="0.25", lw=0.6))

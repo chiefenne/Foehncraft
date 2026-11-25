@@ -7,7 +7,11 @@
 //! - [`equilibrium`]: chemical equilibrium by Gibbs minimisation at fixed
 //!   T and p or h and p;
 //! - [`reactor`]: the 0D constant-pressure adiabatic reactor, run by the
-//!   tool `chemistry.reactor` (`foehn chemistry reactor`).
+//!   tool `chemistry.reactor` (`foehn chemistry reactor`);
+//! - [`flow`]: chemistry in the cells of a transient laminar flow
+//!   (`[chemistry]`, SF2b);
+//! - [`device`]: the cells on the CPU threads or on a GPU (PTX entry
+//!   `chemistry_react`), the same kernel body.
 //!
 //! The rates, their analytic Jacobian and the stiff integrator are the
 //! kernels of [`foehncraft_kernels::chemistry`], the same code for the
@@ -17,7 +21,9 @@
 // and `max(..).min(..)` keeps a NaN out where clamp would pass it on.
 #![allow(clippy::neg_cmp_op_on_partial_ord, clippy::manual_clamp)]
 
+pub mod device;
 pub mod equilibrium;
+pub mod flow;
 pub mod mechanism;
 pub mod reactor;
 

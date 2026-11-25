@@ -10,6 +10,7 @@ use crate::case::FlowCase;
 use crate::diag::{self, Diagnostic};
 use crate::simplec::Solution;
 use anyhow::Result;
+use foehncraft_core::exact::ExactSumIter as _;
 use foehncraft_mesh::Mesh;
 use foehncraft_mesh::geometry::Geometry;
 use foehncraft_particles::{BoundaryMode, BoundaryRule, Gas, GasState, SpraySection};
@@ -102,6 +103,11 @@ pub fn validate(case: &FlowCase) -> Result<()> {
             }
         }
     }
+    // the vapour of the include file is known once it is read: `create`
+    // checks it again
+    if s.evaporation.on() && (s.liquid.vapour.is_some() || s.include.is_none()) {
+        check_evaporation(case)?;
+    }
     if !case.mrf.is_empty() || !case.sliding.is_empty() {
         return Err(err(
             diag::SPRAY_UNSUPPORTED,
@@ -145,6 +151,74 @@ pub fn validate(case: &FlowCase) -> Result<()> {
                 format!("[spray.boundary.{name}]: the case has no boundary of that name"),
             ));
         }
+    }
+    Ok(())
+}
+
+/// The checks of an evaporating spray (SP4, SP5) against the rest of the
+/// case.
+fn check_evaporation(case: &FlowCase) -> Result<()> {
+    let s = &case.spray;
+    let key = "spray.evaporation";
+    let Some(v) = s.liquid.vapour.as_ref() else {
+        return Err(err(
+            diag::SPRAY_CONFIG,
+            key,
+            "[spray.evaporation] needs [spray.liquid] vapour, the species the liquid \
+                 evaporates into (for water \"H2O\")"
+                .into(),
+        ));
+    };
+    if case.energy.is_none() {
+        return Err(err(
+            diag::SPRAY_CONFIG,
+            key,
+            "[spray.evaporation] needs the energy equation ([energy]): the droplets \
+                 evaporate by the heat of the gas"
+                .into(),
+        ));
+    }
+    let Some(sec) = case.species.as_ref() else {
+        return Err(err(
+            diag::SPRAY_CONFIG,
+            key,
+            format!(
+                "[spray.evaporation] needs the vapour as a species of the gas: [species] \
+                     names = [\"{v}\", \"O2\", \"N2\"] (the closure species last)"
+            ),
+        ));
+    };
+    let pos = sec.names.iter().position(|n| n == v);
+    if pos.is_none() || pos == Some(sec.names.len() - 1) {
+        return Err(err(
+            diag::SPRAY_CONFIG,
+            "spray.liquid.vapour",
+            format!(
+                "[spray.liquid] vapour = \"{v}\" must be a transported species of \
+                     [species] names, not the closure species (the last one)"
+            ),
+        ));
+    }
+    if case.energy.as_ref().is_some_and(|e| {
+        e.thermodynamic_pressure == crate::density::ThermodynamicPressure::ClosedVolume
+    }) {
+        return Err(err(
+            diag::SPRAY_UNSUPPORTED,
+            key,
+            "evaporation in a closed volume (thermodynamic_pressure = \"closed-volume\") \
+                 is not available in this version: p₀ would have to follow the mass the \
+                 vapour adds"
+                .into(),
+        ));
+    }
+    if case.fluid_view.is_some() {
+        return Err(err(
+            diag::SPRAY_UNSUPPORTED,
+            key,
+            "evaporating sprays with solid regions (conjugate heat transfer) are not \
+                 available in this version"
+                .into(),
+        ));
     }
     Ok(())
 }
@@ -197,6 +271,134 @@ pub struct FlowGas<'a> {
     /// The gas temperature and properties per cell, with the energy
     /// equation (SP2b).
     pub heat: Option<&'a GasHeat>,
+    /// The vapour of the liquid per cell (evaporation, SP4, SP5).
+    pub vapour: Option<&'a GasVapour>,
+}
+
+/// How the gas of a case carries the vapour of the liquid (SP4): the
+/// species field, the diffusivity model and the operating pressure.
+#[derive(Debug, Clone)]
+pub struct VapourLink {
+    /// The species (`H2O`).
+    pub name: String,
+    /// Its index in `[species] names`.
+    pub index: usize,
+    /// Its scalar field (`Y_H2O`).
+    pub field: String,
+    /// ρ D = λ/(c_p Le) (`diffusion = "lewis"`), else μ/Sc.
+    pub lewis: bool,
+    /// Sc or Le of the vapour.
+    pub number: f64,
+    /// The operating pressure (Pa): p₀ of a constant thermodynamic
+    /// pressure.
+    pub p_op: f64,
+}
+
+impl VapourLink {
+    /// The link of `case`, when its droplets evaporate.
+    pub fn of(case: &FlowCase) -> Option<Self> {
+        let s = &case.spray;
+        if s.is_empty() || !s.evaporation.on() {
+            return None;
+        }
+        let name = s.liquid.vapour.clone()?;
+        let sec = case.species.as_ref()?;
+        let index = sec.names.iter().position(|n| *n == name)?;
+        let lewis = sec.diffusion == crate::species::DiffusionModel::Lewis;
+        let number = if lewis {
+            sec.lewis.of(&name, 1.0)
+        } else {
+            sec.schmidt.of(&name, 0.7)
+        };
+        Some(Self {
+            field: crate::species::field_name(&name),
+            name,
+            index,
+            lewis,
+            number,
+            p_op: case.fluid.operating_pressure.unwrap_or(101_325.0),
+        })
+    }
+}
+
+/// The vapour of the gas per cell as the evaporating parcels see it (SP4).
+#[derive(Debug, Clone, Default)]
+pub struct GasVapour {
+    /// Vapour mass fraction.
+    pub y: Vec<f64>,
+    /// Molar mass of the gas without the vapour (kg/mol).
+    pub m_gas: Vec<f64>,
+    /// Diffusivity of the vapour (m²/s).
+    pub diff: Vec<f64>,
+    /// The thermodynamic pressure p₀ (Pa).
+    pub p0: f64,
+}
+
+impl GasVapour {
+    /// The vapour of the flow `fl` by `link`, with the gas properties of
+    /// `heat` (`None` without species or energy equation).
+    pub fn of(
+        fl: &mut crate::simplec::Flow,
+        link: &VapourLink,
+        heat: Option<&GasHeat>,
+    ) -> Result<Option<Self>> {
+        let phys = fl.physics();
+        let Some(sc) = fl.scalars.as_ref() else {
+            return Ok(None);
+        };
+        Self::from_parts(
+            sc,
+            fl.dev.as_mut(),
+            &phys,
+            fl.density.as_deref(),
+            link,
+            heat,
+        )
+    }
+
+    /// As [`GasVapour::of`] from the parts of a flow.
+    pub fn from_parts(
+        sc: &crate::scalar::Scalars,
+        dev: &mut dyn crate::device::FlowDevice,
+        phys: &crate::simplec::Physics,
+        density: Option<&crate::density::Variable>,
+        link: &VapourLink,
+        heat: Option<&GasHeat>,
+    ) -> Result<Option<Self>> {
+        let Some(heat) = heat else {
+            return Ok(None);
+        };
+        let Some(sp) = sc.species() else {
+            return Ok(None);
+        };
+        let Some(y) = sc.field_values(dev, &link.field)? else {
+            return Ok(None);
+        };
+        let Some(mv) = sp.res.data.get(link.index).map(|d| d.molar_mass) else {
+            return Ok(None);
+        };
+        let n = y.len().min(sp.cell.len());
+        let mut m_gas = Vec::with_capacity(n);
+        let mut diff = Vec::with_capacity(n);
+        for (c, &yc) in y.iter().enumerate().take(n) {
+            let yv = yc.clamp(0.0, 1.0 - 1e-9);
+            // 1/M = Y_v/M_v + (1 − Y_v)/M_g
+            let inv = 1.0 / sp.cell[c].molar_mass - yv / mv;
+            m_gas.push(if inv > 0.0 {
+                (1.0 - yv) / inv
+            } else {
+                sp.cell[c].molar_mass
+            });
+            let rho = phys.rho_at(c);
+            diff.push(if link.lewis {
+                heat.k[c] / (rho * heat.cp[c] * link.number)
+            } else {
+                phys.mu / (rho * link.number)
+            });
+        }
+        let p0 = density.map_or(link.p_op, |d| d.p0);
+        Ok(Some(Self { y, m_gas, diff, p0 }))
+    }
 }
 
 /// The gas per cell for the heat exchange of the parcels (SP2b).
@@ -237,6 +439,12 @@ impl Gas for FlowGas<'_> {
             g.cp = h.cp[cell];
             g.k = h.k[cell];
         }
+        if let Some(v) = self.vapour {
+            g.y_v = v.y[cell];
+            g.p0 = v.p0;
+            g.m_gas = v.m_gas[cell];
+            g.diff = v.diff[cell];
+        }
         if let Some(t) = &self.sol.state.turbulence {
             // the turbulence of the cell for the dispersion (D243): ε of the
             // k-ε family, or ε = β* k ω with β* = C_μ = 0.09 (SST)
@@ -270,7 +478,12 @@ pub const CSV_UNITS: &str = "step -; time s; parcels -; injected_kg kg; in_flow_
      (share of the spray cells with Δt/τ above 1), liquid_fraction_max - (largest liquid volume \
      fraction of a cell), parcels_per_cell_max -, gas_heat_w W (heat the gas received per \
      second, SP2b), coupling_heat_max - (largest Δt/τ of the gas temperature of a cell, \
-     G Δt / (ρ c_p V))";
+     G Δt / (ρ c_p V)); evaporation (SP5): evaporated_kg kg (liquid evaporated since the \
+     start), evaporated_parcels - (parcels that evaporated completely); with two-way coupling \
+     also gas_vapour_kg_s kg/s (vapour the gas received per second), vapour_lag_kg_s kg/s (mass \
+     source of the continuity less gas_vapour_kg_s), coupling_vapour_max - (largest Δt/τ of the \
+     vapour of a cell, β Δt / (ρ V)), limiter_cells - (cells where the saturation limiter of \
+     D253 held vapour back in the last pass), limiter_kg_s kg/s (the vapour held back)";
 
 /// The header of `spray.csv`.
 pub fn csv_head(sp: &foehncraft_particles::Spray) -> String {
@@ -290,6 +503,14 @@ pub fn csv_head(sp: &foehncraft_particles::Spray) -> String {
              gas_power_w,coupling_max,coupling_share,liquid_fraction_max,parcels_per_cell_max,\
              gas_heat_w,coupling_heat_max",
         );
+    }
+    if sp.evaporates() {
+        h.push_str(",evaporated_kg,evaporated_parcels");
+        if sp.config().coupling.two_way() {
+            h.push_str(
+                ",gas_vapour_kg_s,vapour_lag_kg_s,coupling_vapour_max,limiter_cells,limiter_kg_s",
+            );
+        }
     }
     h
 }
@@ -350,12 +571,30 @@ pub fn create(
     if case.spray.is_empty() {
         return Ok(None);
     }
+    if case.spray.evaporation.on() {
+        check_evaporation(case)?;
+    }
     let env = foehncraft_particles::Env { mesh, geo, loc };
     let mut sp =
         foehncraft_particles::Spray::new(&case.spray, &env, rules(case, mesh), gravity(case))
             .map_err(|e| err(diag::SPRAY_CONFIG, "spray", format!("{e:#}")))?;
     // a two-dimensional case lies in the x-y plane: eddies without z
     sp.set_planar(crate::case::dimension(case) == 2);
+    // the vapour of an evaporating liquid (SP4): its species data
+    if let Some(v) = case.spray.liquid.vapour.as_ref()
+        && case.spray.evaporation.on()
+    {
+        let rec = crate::species::database().get(v).ok_or_else(|| {
+            err(
+                diag::SPRAY_CONFIG,
+                "spray.liquid.vapour",
+                format!("[spray.liquid] vapour = \"{v}\" is not a species of the data file"),
+            )
+        })?;
+        sp.set_vapour(Some(foehncraft_particles::Vapour {
+            species: rec.kernel(),
+        }));
+    }
     Ok(Some(sp))
 }
 
@@ -407,6 +646,24 @@ pub fn csv_row(
             c.coupling_heat_max
         ));
     }
+    if sp.evaporates() {
+        extra.push_str(&format!(
+            ",{:e},{}",
+            sp.tally.evaporated_mass, sp.tally.evaporated_parcels
+        ));
+        if sp.config().coupling.two_way() {
+            let z = StepCoupling::default();
+            let c = c.unwrap_or(&z);
+            extra.push_str(&format!(
+                ",{:e},{:e},{:e},{},{:e}",
+                c.gas_vapour,
+                c.gas_mass - c.gas_vapour,
+                c.coupling_vapour_max,
+                c.limiter_cells,
+                c.limiter_mass
+            ));
+        }
+    }
     format!(
         "{step},{:e},{},{:e},{:e},{:e},{:e},{:e},{},{},{}{extra}",
         sp.time,
@@ -441,10 +698,16 @@ pub fn step(
     name: &str,
     csv: &mut crate::monitor::History,
     heat: Option<&GasHeat>,
+    vapour: Option<&GasVapour>,
 ) -> Result<(u64, Option<std::path::PathBuf>)> {
     let env = foehncraft_particles::Env { mesh, geo, loc };
     let lost0 = sp.tally.lost_parcels;
-    let gas = FlowGas { sol, geo, heat };
+    let gas = FlowGas {
+        sol,
+        geo,
+        heat,
+        vapour,
+    };
     sp.advance(&env, &gas, t_end - h, h)?;
     csv.row(&csv_row(n, sp, &mesh.cell_zone, None));
     let every = case.spray.write_every;
@@ -507,6 +770,23 @@ pub struct CouplingSummary {
     pub gas_heat: f64,
     /// Largest Δt/τ of the gas temperature of a spray cell.
     pub coupling_heat_max: f64,
+    /// Vapour the gas received over the run (kg, SP5).
+    #[serde(skip_serializing_if = "is_zero")]
+    pub gas_vapour: f64,
+    /// Steps in which the saturation limiter acted (D253).
+    #[serde(skip_serializing_if = "is_zero_u64")]
+    pub limiter_steps: u64,
+    /// The vapour it held back over the run (kg).
+    #[serde(skip_serializing_if = "is_zero")]
+    pub limiter_mass: f64,
+}
+
+fn is_zero(x: &f64) -> bool {
+    *x == 0.0
+}
+
+fn is_zero_u64(x: &u64) -> bool {
+    *x == 0
 }
 
 impl CouplingSummary {
@@ -524,6 +804,11 @@ impl CouplingSummary {
         }
         self.gas_heat += dt * c.gas_heat;
         self.coupling_heat_max = self.coupling_heat_max.max(c.coupling_heat_max);
+        self.gas_vapour += dt * c.gas_vapour;
+        if c.limiter_cells > 0 {
+            self.limiter_steps += 1;
+            self.limiter_mass += dt * c.limiter_mass;
+        }
     }
 }
 
@@ -551,13 +836,14 @@ pub fn write_parcels(
 }
 
 /// The mass book at the end of the run: released = in the flow + stuck +
-/// left + lost, to round-off (SPR005).
+/// left + lost + evaporated, to round-off (SPR005).
 pub fn finish(sp: &foehncraft_particles::Spray) -> Result<()> {
     let t = &sp.tally;
     let total = sp.mass_in_flow()
         + t.deposited_mass.iter().sum::<f64>()
         + t.escaped_mass.iter().sum::<f64>()
-        + t.lost_mass;
+        + t.lost_mass
+        + t.evaporated_mass;
     if (t.injected_mass - total).abs() > 1e-9 * t.injected_mass.max(1e-300) {
         return Err(err(
             diag::SPRAY_BOOK,
@@ -865,6 +1151,13 @@ pub struct TwoWay<'a> {
     u_old: Vec<(u32, [f64; 3])>,
     /// The cell temperatures of the start of the step (by cell; SP2b).
     t_old: Vec<(u32, f64)>,
+    /// The vapour of an evaporating spray (SP5).
+    vapour: Option<VapourLink>,
+    /// The vapour mass fractions of the start of the step (by cell).
+    y_old: Vec<(u32, f64)>,
+    /// The saturation limiter on the last pass (D253): cells, mass held
+    /// back per second.
+    limited: (u32, f64),
 }
 
 /// A pass with the frozen gas state of its cells.
@@ -875,6 +1168,9 @@ pub struct Frozen {
     pub ustar: Vec<[f64; 3]>,
     /// T* per cell of the sources (empty without an energy equation).
     pub tstar: Vec<f64>,
+    /// Y* of the vapour per cell of the sources (empty without
+    /// evaporation, SP5).
+    pub ystar: Vec<f64>,
 }
 
 impl<'a> TwoWay<'a> {
@@ -885,6 +1181,7 @@ impl<'a> TwoWay<'a> {
         geo: &'a Geometry,
         t0: f64,
         dt: f64,
+        vapour: Option<VapourLink>,
     ) -> Self {
         let c = sp.config().coupling;
         let (limit, converged) = c.pass_limit();
@@ -902,6 +1199,9 @@ impl<'a> TwoWay<'a> {
             pass: None,
             u_old: Vec::new(),
             t_old: Vec::new(),
+            vapour: vapour.filter(|_| sp.evaporates()),
+            y_old: Vec::new(),
+            limited: (0, 0.0),
         }
     }
 
@@ -912,6 +1212,7 @@ impl<'a> TwoWay<'a> {
             lag: self.lag(),
             unconverged: self.unconverged(),
             last: self.pass.take(),
+            limited: self.limited,
         }
     }
 
@@ -937,6 +1238,8 @@ pub struct Passes {
     pub unconverged: bool,
     /// The last pass and its frozen gas state.
     pub last: Option<Frozen>,
+    /// The saturation limiter on the last pass (D253): cells, kg/s.
+    pub limited: (u32, f64),
 }
 
 /// The coupling lag of D252: the largest change of the gas velocity of a
@@ -996,6 +1299,210 @@ pub fn coupling_lag_heat(
     dt / scale.max(1e-12 * (1.0 + tmax))
 }
 
+/// The coupling lag of the vapour (SP5), as [`coupling_lag_heat`]: the
+/// largest change of the vapour mass fraction of a spray cell against the
+/// frozen state of the pass, over the larger of the largest gap to the
+/// saturation (|vapour| / vapour slope of a cell) and the largest change of
+/// the vapour mass fraction of a spray cell over the step.
+pub fn coupling_lag_vapour(
+    src: &foehncraft_particles::CellSources,
+    ystar: &[f64],
+    y_old: &[f64],
+    y: &[f64],
+) -> f64 {
+    let (mut dy, mut scale) = (0.0f64, 0.0f64);
+    for (j, &c) in src.cells.iter().enumerate() {
+        let yn = y[c as usize];
+        dy = dy.max((yn - ystar[j]).abs());
+        scale = scale.max((yn - y_old[j]).abs());
+        if src.vapour_slope[j] > 0.0 {
+            scale = scale.max(src.vapour[j].abs() / src.vapour_slope[j]);
+        }
+    }
+    dy / scale.max(1e-12)
+}
+
+/// The vapour of a spray cell at the vapour mass fraction `y` (kg/s, SP5,
+/// D250): S_v = (E − β (Y − Y*)) / Δt.
+fn vapour_source(
+    src: &foehncraft_particles::CellSources,
+    j: usize,
+    ystar: f64,
+    y: f64,
+    dt: f64,
+) -> f64 {
+    (src.vapour[j] - src.vapour_slope[j] * (y - ystar)) / dt
+}
+
+/// The gas that flows into each cell (D253): per cell the mass flow in
+/// through its faces (kg/s) and the flow-weighted vapour mass fraction and
+/// temperature of what comes in (the upwind cell of an interior face; the
+/// cell's own state for a boundary face, which keeps the capacity on the
+/// small side next to an inlet).
+pub struct Inflow {
+    m: Vec<f64>,
+    y: Vec<f64>,
+    t: Vec<f64>,
+}
+
+impl Inflow {
+    /// The inflow of every cell of the solution `sol` with the gas states of `gas`.
+    pub fn of(sol: &Solution, gas: &dyn Gas, geo: &Geometry) -> Self {
+        let d = sol.disc;
+        let n = d.n_cells;
+        let state = |c: usize| {
+            let g = gas.at(c, geo.cell_centroid[c]);
+            (g.y_v, g.t)
+        };
+        let (mut m, mut y, mut t) = (vec![0.0; n], vec![0.0; n], vec![0.0; n]);
+        let mut add = |c: usize, q: f64, (yv, tv): (f64, f64)| {
+            m[c] += q;
+            y[c] += q * yv;
+            t[c] += q * tv;
+        };
+        for (f, &q) in sol.state.mass_flux.iter().enumerate().take(d.n_faces) {
+            let o = d.owner[f] as usize;
+            if o >= n {
+                continue;
+            }
+            if f < d.n_interior {
+                let nb = d.neighbour[f] as usize;
+                if nb >= n {
+                    continue;
+                }
+                if q > 0.0 {
+                    add(nb, q, state(o));
+                } else if q < 0.0 {
+                    add(o, -q, state(nb));
+                }
+            } else if q < 0.0 {
+                add(o, -q, state(o));
+            }
+        }
+        for c in 0..n {
+            if m[c] > 0.0 {
+                y[c] /= m[c];
+                t[c] /= m[c];
+            }
+        }
+        Inflow { m, y, t }
+    }
+}
+
+/// The factors of the saturation limiter of D253 per spray cell of
+/// `src`: the vapour that brings the gas the cell holds (`store(c)`, kg; 0
+/// in the steady mode) at its state and the gas that flows in over `tau`
+/// (the time step; 1 in the steady mode, kg/s) at its own state to
+/// adiabatic saturation is the capacity of the cell; a cell whose net
+/// vapour is above it gets the factor of its evaporating records, else 1.
+pub fn limiter_factors(
+    sp: &foehncraft_particles::Spray,
+    src: &foehncraft_particles::CellSources,
+    gas: &dyn Gas,
+    geo: &Geometry,
+    inflow: &Inflow,
+    tau: f64,
+    store: &dyn Fn(usize) -> f64,
+) -> Vec<f64> {
+    src.cells
+        .iter()
+        .enumerate()
+        .map(|(j, &c)| {
+            let c = c as usize;
+            if src.vapour[j] <= 0.0 {
+                return 1.0;
+            }
+            let gs = gas.at(c, geo.cell_centroid[c]);
+            let mut cap = sp.saturation_capacity(&gs, store(c));
+            if inflow.m[c] > 0.0 {
+                let gi = foehncraft_particles::GasState {
+                    y_v: inflow.y[c],
+                    t: inflow.t[c],
+                    ..gs
+                };
+                cap += sp.saturation_capacity(&gi, inflow.m[c] * tau);
+            }
+            foehncraft_particles::limiter_factor(src.evaporated[j], src.vapour[j], cap)
+        })
+        .collect()
+}
+
+impl TwoWay<'_> {
+    /// The sources of an evaporating spray at the current iterate (SP5):
+    /// the vapour and the dilution in the species equations, the mass in
+    /// the continuity (S_c = S_v of the iterate) and the heat of the pass
+    /// with the enthalpy the vapour brings, in the T-form of the energy
+    /// equation: q = Q − G (T − T*) − (β h)(Y − Y*)/Δt −
+    /// S_v [h_v(T*) + c_pv (T − T*)], with h_v the vapour enthalpy of the
+    /// parcels' reference (the liquid at 0 K) and S_v c_pv on the diagonal
+    /// where S_v > 0.
+    fn vapour_rows(&mut self, fl: &mut crate::simplec::Flow) -> Result<()> {
+        let (Some(link), Some(fr)) = (self.vapour.as_ref(), self.pass.as_ref()) else {
+            return Ok(());
+        };
+        if fr.ystar.len() != fr.pass.sources.cells.len() {
+            return Ok(());
+        }
+        let Some(sc) = fl.scalars.as_ref() else {
+            return Ok(());
+        };
+        let Some(y) = sc.field_values(fl.dev.as_mut(), &link.field)? else {
+            return Ok(());
+        };
+        let t = sc.energy_temperature(fl.dev.as_mut())?;
+        let phys = fl.physics();
+        let vol = &self.geo.cell_volume;
+        let src = &fr.pass.sources;
+        let dt = self.dt;
+        let mut mass = Vec::with_capacity(src.cells.len());
+        let mut species = Vec::with_capacity(src.cells.len());
+        let mut heat = Vec::with_capacity(src.cells.len());
+        for (j, &c) in src.cells.iter().enumerate() {
+            let cu = c as usize;
+            let (ys, beta) = (fr.ystar[j], src.vapour_slope[j] / dt);
+            let sv = vapour_source(src, j, ys, y[cu], dt);
+            mass.push((c, sv));
+            species.push((
+                c,
+                src.vapour[j] / dt + beta * ys,
+                beta,
+                sv,
+                phys.rho_at(cu) * vol[cu],
+            ));
+            if fr.tstar.len() == src.cells.len() {
+                let ts = fr.tstar[j];
+                let g = src.heat_slope[j] / dt;
+                let hv = self.sp.vapour_enthalpy(ts);
+                let cpv = self.sp.vapour_cp(ts);
+                let mut a = src.heat[j] / dt + g * ts
+                    - src.vapour_slope_h[j] / dt * (y[cu] - ys)
+                    - sv * (hv - cpv * ts);
+                let mut gg = g;
+                if sv > 0.0 {
+                    gg += sv * cpv;
+                } else {
+                    a -= sv * cpv * t[cu];
+                }
+                heat.push((c, a, gg));
+            }
+        }
+        fl.set_spray_mass(Some(mass))?;
+        if let Some(sc) = fl.scalars.as_mut() {
+            sc.set_spray_species(
+                fl.dev.as_mut(),
+                Some(crate::scalar::SpraySpecies {
+                    vapour: link.field.clone(),
+                    rows: species,
+                }),
+            )?;
+            if !heat.is_empty() {
+                sc.set_energy_spray(fl.dev.as_mut(), Some(heat))?;
+            }
+        }
+        Ok(())
+    }
+}
+
 fn fl_old<T: Copy>(old: &[(u32, T)], c: u32) -> Option<T> {
     old.binary_search_by_key(&c, |x| x.0).ok().map(|i| old[i].1)
 }
@@ -1021,10 +1528,15 @@ impl crate::transient::OuterHook for TwoWay<'_> {
 
     fn before_momentum(&mut self, fl: &mut crate::simplec::Flow, _k: usize) -> Result<()> {
         if self.passes >= self.limit {
-            // the sources of the last pass stay (the flow iterates on)
-            return Ok(());
+            // the sources of the last pass stay (the flow iterates on); the
+            // vapour's follow the gas (SP5)
+            return self.vapour_rows(fl);
         }
         let heat = GasHeat::of(fl)?;
+        let vap = match &self.vapour {
+            Some(l) => GasVapour::of(fl, l, heat.as_ref())?,
+            None => None,
+        };
         let sol = Solution {
             state: fl.state()?,
             disc: &fl.disc,
@@ -1034,8 +1546,29 @@ impl crate::transient::OuterHook for TwoWay<'_> {
             sol: &sol,
             geo: self.geo,
             heat: heat.as_ref(),
+            vapour: vap.as_ref(),
         };
-        let pass = self.sp.pass(&self.env, &gas, self.t0, self.dt)?;
+        let mut pass = self.sp.pass(&self.env, &gas, self.t0, self.dt)?;
+        if vap.is_some() {
+            // the saturation limiter (D253): the gas of a cell and what
+            // flows in over the step
+            let inflow = Inflow::of(&sol, &gas, self.geo);
+            let vol = &self.geo.cell_volume;
+            let f = limiter_factors(
+                self.sp,
+                &pass.sources,
+                &gas,
+                self.geo,
+                &inflow,
+                self.dt,
+                &|c| sol.phys.rho_at(c) * vol[c],
+            );
+            let cells = pass.sources.cells.clone();
+            let (n, back) = self.sp.limit_vapour(&mut pass, &|c| {
+                cells.binary_search(&c).map_or(1.0, |j| f[j])
+            });
+            self.limited = (n, back / self.dt);
+        }
         let src = MomentumSource::of(&pass.sources, self.dt, &|c| cell_velocity(&sol.state, c));
         let ustar = src.ustar.clone();
         let cells = src.cells.clone();
@@ -1073,9 +1606,25 @@ impl crate::transient::OuterHook for TwoWay<'_> {
             }
             None => Vec::new(),
         };
-        self.pass = Some(Frozen { pass, ustar, tstar });
+        let ystar: Vec<f64> = match &vap {
+            Some(v) => {
+                let ys: Vec<f64> = cells.iter().map(|&c| v.y[c as usize]).collect();
+                if self.passes == 0 {
+                    self.y_old = cells.iter().copied().zip(ys.iter().copied()).collect();
+                }
+                add_missing(&mut self.y_old, &cells, &|c| v.y[c as usize]);
+                ys
+            }
+            None => Vec::new(),
+        };
+        self.pass = Some(Frozen {
+            pass,
+            ustar,
+            tstar,
+            ystar,
+        });
         self.passes += 1;
-        Ok(())
+        self.vapour_rows(fl)
     }
 
     fn after_solve(&mut self, fl: &mut crate::simplec::Flow, _k: usize) -> Result<bool> {
@@ -1103,6 +1652,21 @@ impl crate::transient::OuterHook for TwoWay<'_> {
                 .map(|&c| fl_old(&self.t_old, c).unwrap_or(h.t[c as usize]))
                 .collect();
             lag = lag.max(coupling_lag_heat(&fr.pass.sources, &fr.tstar, &t_old, &h.t));
+        }
+        if let Some(l) = &self.vapour
+            && fr.ystar.len() == cells.len()
+            && let Some(y) = fl
+                .scalars
+                .as_ref()
+                .map(|sc| sc.field_values(fl.dev.as_mut(), &l.field))
+                .transpose()?
+                .flatten()
+        {
+            let y_old: Vec<f64> = cells
+                .iter()
+                .map(|&c| fl_old(&self.y_old, c).unwrap_or(y[c as usize]))
+                .collect();
+            lag = lag.max(coupling_lag_vapour(&fr.pass.sources, &fr.ystar, &y_old, &y));
         }
         self.lags.push(lag);
         if self.passes >= self.limit {
@@ -1148,6 +1712,37 @@ pub struct StepCoupling {
     pub liquid_fraction_max: f64,
     /// Most parcels in one cell.
     pub parcels_per_cell_max: u32,
+    /// Whether the step evaporated liquid into the gas (SP5).
+    #[serde(skip)]
+    pub vapour: bool,
+    /// Vapour the gas received per second, Σ over the spray cells of
+    /// (E − β (Y_new − Y*)) / Δt (kg/s), summed in cell order (SP5).
+    pub gas_vapour: f64,
+    /// The mass the continuity took per second (kg/s): S_v of the iterate
+    /// before the last pressure solve; less `gas_vapour` it is the lag of
+    /// the mass source (zero when the passes have converged).
+    pub gas_mass: f64,
+    /// The energy the gas received per second in the form of its own
+    /// energy equation (W): the heat and the vapour of the pass with the
+    /// enthalpy the vapour brings, as the balance of the energy equation
+    /// sees it; less `gas_heat` it is the term `spray vapour enthalpy` of
+    /// the ledger (the change from the liquid's to the gas's reference).
+    pub gas_energy: f64,
+    /// Largest Δt/τ of the vapour of a spray cell, β Δt / (ρ V) (SP5,
+    /// D254 (3)).
+    pub coupling_vapour_max: f64,
+    /// Cells where the saturation limiter acted on the last pass (D253).
+    pub limiter_cells: u32,
+    /// The vapour it held back per second (kg/s).
+    pub limiter_mass: f64,
+}
+
+/// The scalar field of the vapour of an evaporating spray, if set (SP5).
+fn vapour_field(fl: &crate::simplec::Flow) -> Option<String> {
+    fl.scalars
+        .as_ref()?
+        .spray_species()
+        .map(|s| s.vapour.clone())
 }
 
 /// The closing step of a two-way step (D250): the parcels receive what the
@@ -1165,41 +1760,77 @@ pub fn close(
         lag,
         unconverged,
         last,
+        limited,
     } = done;
-    let Some(Frozen { pass, ustar, tstar }) = last else {
+    let Some(Frozen {
+        pass,
+        ustar,
+        tstar,
+        ystar,
+    }) = last
+    else {
         return Ok(StepCoupling::default());
     };
     let heat = GasHeat::of(fl)?.filter(|_| tstar.len() == pass.sources.cells.len());
+    // the vapour of the new level (SP5)
+    let y_new: Option<Vec<f64>> = match (fl.scalars.as_ref(), vapour_field(fl)) {
+        (Some(sc), Some(name)) if ystar.len() == pass.sources.cells.len() => {
+            sc.field_values(fl.dev.as_mut(), &name)?
+        }
+        _ => None,
+    };
+    let (gas_mass, gas_energy) = match (fl.spray_mass.as_ref(), fl.scalars.as_ref()) {
+        (Some(rows), Some(sc)) if y_new.is_some() => {
+            let t = sc.energy_temperature(fl.dev.as_mut())?;
+            (
+                rows.iter().map(|r| r.1).exact_sum(),
+                sc.energy_spray_total(&t).unwrap_or(0.0),
+            )
+        }
+        _ => (0.0, 0.0),
+    };
     let st = fl.state()?;
     let phys = fl.physics();
     let dt = pass.dt;
     let src = pass.sources.clone();
-    let du = |c: u32| -> ([f64; 3], f64) {
+    let du = |c: u32| -> foehncraft_particles::Delta {
         match src.find(c) {
             Some(j) => {
                 let u = st.u.get(c as usize);
                 let dtemp = heat.as_ref().map_or(0.0, |h| h.t[c as usize] - tstar[j]);
-                (
-                    [u[0] - ustar[j][0], u[1] - ustar[j][1], u[2] - ustar[j][2]],
-                    dtemp,
-                )
+                foehncraft_particles::Delta {
+                    u: [u[0] - ustar[j][0], u[1] - ustar[j][1], u[2] - ustar[j][2]],
+                    t: dtemp,
+                    y: y_new.as_ref().map_or(0.0, |y| y[c as usize] - ystar[j]),
+                }
             }
-            None => ([0.0; 3], 0.0),
+            None => foehncraft_particles::Delta::default(),
         }
     };
     let mut out = StepCoupling {
         passes,
         lag,
         unconverged,
+        limiter_cells: limited.0,
+        limiter_mass: limited.1,
         ..Default::default()
     };
     let (mut above, vol) = (0usize, &env.geo.cell_volume);
     out.heat = heat.is_some();
+    out.vapour = y_new.is_some();
+    let mut vap = Vec::new();
     for (j, &c) in src.cells.iter().enumerate() {
-        let (d, dtemp) = du(c);
+        let dl = du(c);
+        let (d, dtemp) = (dl.u, dl.t);
         let u = st.u.get(c as usize);
+        if out.vapour {
+            vap.push(vapour_source(&src, j, 0.0, dl.y, dt));
+            let m = phys.rho_at(c as usize) * vol[c as usize];
+            out.coupling_vapour_max = out.coupling_vapour_max.max(src.vapour_slope[j] / m);
+        }
         if let Some(h) = &heat {
-            out.gas_heat += (src.heat[j] - src.heat_slope[j] * dtemp) / dt;
+            out.gas_heat +=
+                (src.heat[j] - src.heat_slope[j] * dtemp - src.vapour_slope_h[j] * dl.y) / dt;
             let cap = phys.rho_at(c as usize) * h.cp[c as usize] * vol[c as usize];
             out.coupling_heat_max = out.coupling_heat_max.max(src.heat_slope[j] / cap);
         }
@@ -1218,6 +1849,11 @@ pub fn close(
     if !src.cells.is_empty() {
         out.coupling_share = above as f64 / src.cells.len() as f64;
     }
+    if out.vapour {
+        out.gas_vapour = vap.iter().exact_sum();
+        out.gas_mass = gas_mass;
+        out.gas_energy = gas_energy;
+    }
     out.books = sp.commit(env, pass, Some(&du));
     for (c, n, v) in sp.cell_loading() {
         out.parcels_per_cell_max = out.parcels_per_cell_max.max(n);
@@ -1231,6 +1867,10 @@ pub const PAIR_MOMENTUM: [u32; 3] = [2801, 2802, 2803];
 
 /// Pair id of the gas-parcel heat exchange in the ledger (SP2b).
 pub const PAIR_HEAT: u32 = 2804;
+
+/// Pair id of the vapour, the gas-parcel mass exchange, in the ledger
+/// (SP5).
+pub const PAIR_VAPOUR: u32 = 2805;
 
 /// The ledger rows of a two-way spray at a state (D119, D244): the gas side
 /// of the momentum exchange on the momentum accounts of the domain (which
@@ -1284,6 +1924,43 @@ pub fn book(
     ke.terms
         .push(Term::volume("spray drag power", TermKind::Source, c.gas_power).rule(StepRule::End));
     r.book(ke);
+    // the vapour (SP5): the gas mass receives what the parcels lose; the
+    // continuity took the source of the iterate before the last pressure
+    // solve, the difference is the lag of the mass source
+    let evap = sp.evaporates();
+    if evap {
+        let mut m = Account::new(names::MASS, "kg");
+        m.terms.push(
+            Term::volume("spray vapour", TermKind::Exchange, c.gas_vapour)
+                .rule(StepRule::End)
+                .paired(PAIR_VAPOUR),
+        );
+        m.terms.push(
+            Term::volume(
+                "spray vapour lag",
+                TermKind::Source,
+                c.gas_mass - c.gas_vapour,
+            )
+            .rule(StepRule::End),
+        );
+        r.book(m);
+        let mut a = Account::new("parcel mass", "kg");
+        a.region = "parcels".into();
+        a.content = Some(sp.mass_in_flow_by_id());
+        for (name, v) in [
+            ("injected", per(b.mass[3])),
+            ("left the flow", per(b.mass[4])),
+        ] {
+            a.terms
+                .push(Term::volume(name, TermKind::Source, v).rule(StepRule::End));
+        }
+        a.terms.push(
+            Term::volume("to the gas", TermKind::Exchange, -c.gas_vapour)
+                .rule(StepRule::End)
+                .paired(PAIR_VAPOUR),
+        );
+        r.book(a);
+    }
     if !energy {
         return;
     }
@@ -1295,6 +1972,20 @@ pub fn book(
             .rule(StepRule::End)
             .paired(PAIR_HEAT),
     );
+    if evap {
+        // the heat and the vapour enthalpy arrive in the parcels' reference
+        // (the liquid at 0 K); the energy equation of the gas has its own:
+        // the difference, with the enthalpy the added mass carries out of
+        // the boundaries
+        th.terms.push(
+            Term::volume(
+                "spray vapour enthalpy",
+                TermKind::Source,
+                c.gas_energy - c.gas_heat,
+            )
+            .rule(StepRule::End),
+        );
+    }
     r.book(th);
     let [_, _, _, injected, removed] = b.enthalpy;
     let mut a = Account::new("parcel enthalpy", "J");

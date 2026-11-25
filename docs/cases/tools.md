@@ -28,6 +28,7 @@ envelope is on standard output ([gallery 171](../gallery/runs.md#tool-registry),
 | `structure_reed_plate_hot.json` | `structure.run` | the hot reed petal: thermal bending into `output/reed_plate_hot` |
 | `structure_reed_stop.json` | `structure.run` | the curved reed stop as twenty-node hexahedra read from Gmsh into `output/reed_stop` ([gallery 300](../gallery/structure.md#reed-stop)) |
 | `structure_reed_valve_stop.json` | `structure.run` | the reed petal between its seat and its stop, lifted by a pressure pulse, into `output/reed_valve_stop` ([gallery 302](../gallery/structure.md#reed-valve-contact)) |
+| `structure_heat_sink_hot.json` | `structure.run` | the heat sink loaded by the temperatures of the turbulent CHT case (run that first) into `output/heat_sink_hot` ([gallery 308](../gallery/structure.md#heat-sink-hot)) |
 | `structure_fit_clamp.json` | `structure.fitclamp` | the rotational clamp spring that puts the reed's first mode at a measured 150 Hz |
 
 The folder `mcp/` holds what an assistant session through `foehn mcp`

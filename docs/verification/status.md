@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**139 features: 50 verified, 86 partial, 3 unverified.**
+**142 features: 50 verified, 89 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -150,10 +150,12 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Sprays | [Two-way sensible heat coupling of the sprays (SP2b, D247 to D252)](#sprays-two-way-heat) | partial |
 | Sprays | [Turbulent dispersion of the sprays, eddy lifetime (SP2c, D243)](#sprays-dispersion-eddy-lifetime) | partial |
 | Sprays | [Steady spray mode: streams through the steady gas with relaxed sources (SP2s, D260)](#sprays-steady-mode) | partial |
+| Sprays | [Evaporating sprays: vapour, mass and enthalpy to the gas (SP4, SP5, D250 to D253)](#sprays-evaporation) | partial |
 | Flow models | [Porous regions with a direction-dependent Darcy-Forchheimer resistance (D270, PM1)](#porous-darcy-forchheimer) | partial |
 | Flow models | [Gas and matrix temperatures in porous regions, monolithic (D271, D272, PM2)](#porous-two-temperatures) | partial |
 | Flow models | [Species transport of an ideal-gas mixture with mixture properties (L2, steam furnace SF1)](#species-transport) | partial |
 | Flow models | [Gas-phase chemistry: mechanisms, stiff 0D reactor and chemical equilibrium (L2, steam furnace SF2a)](#chemistry-reactor) | partial |
+| Flow models | [Gas-phase chemistry in the cells of a transient laminar flow with heat release, the 1D premixed flame (L2, steam furnace SF2b)](#chemistry-flow) | partial |
 | Immersed bodies | [Immersed bodies by Brinkman penalisation, primitive shapes (L13 stage 1)](#immersed-penalisation) | partial |
 | Immersed bodies | [Density-field topology search with the Brinkman penalisation, iso-surface by marching tetrahedra (L13 stage 1)](#immersed-topology) | partial |
 | Structures | [Linear structural solver: Euler–Bernoulli and Timoshenko beams, static and modal analyses (L53, MS5 part 1)](#structure-beams) | partial |
@@ -163,6 +165,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Structures | [Thermal strain loads on beams and shells from a temperature change and a difference across the thickness (L53, MS5 part 3)](#structure-thermal) | partial |
 | Structures | [Quadratic solids: ten-node tetrahedra and twenty-node hexahedra from a second-order Gmsh file or a block (L53, MS5 part 3b)](#structure-solids) | partial |
 | Structures | [Unilateral contact with rigid seats and stops: exact in statics, penalty at the end of each generalised-α step (L53, MS5 part 4)](#structure-contact) | partial |
+| Structures | [Temperatures of a solid region of a flow case as the thermal load of beams, shells and solids: VTKHDF cell field, linear least-squares fit at the nodes (L53, MS6 part 1)](#structure-temperature-field) | partial |
 | Moving meshes and solids | [Deforming meshes with a prescribed node displacement, and the piston (stage MS0)](#mesh-deforming) | partial |
 
 ## Meshes
@@ -2031,11 +2034,43 @@ Gaps:
 Gaps:
 
 - V28.9 not met strictly: the steady duct takes 2.9 % less heat from the air than the time mean of the transient run, more than the sampling and step errors of the transient run; the transient flow does not come to rest behind the nozzle
-- no evaporation (SP5); V28.11 (duct with more water than the gas can take) waits for it
+- evaporation in the steady mode is the row sprays.evaporation (V28.11 there)
 - the statistical error of the streams is estimated by hand with other seeds, not by a study tool (D196)
-- the health numbers of D254 are reported only; no limiter acts in the steady mode
+- the health numbers of D254 are reported only; the saturation limiter of D253 acts only with evaporation
 - datums report no liquid in the steady mode
 - not with solid regions (CHT) or two-way with the coupled algorithm (SPR003); one process
+
+<a id="sprays-evaporation"></a>
+
+### Evaporating sprays: vapour, mass and enthalpy to the gas (SP4, SP5, D250 to D253)
+
+**partial** (a model without reference data; gaps written) · id `sprays.evaporation` · switch `[spray.evaporation] model = "ranz-marshall" or "abramzon-sirignano", [spray.liquid] vapour` · decisions D247, D249, D250, D251, D252, D253, D254, D260
+
+- exact: [`saturation_pressure_of_water_at_its_anchor_points`](../../crates/foehncraft-kernels/src/evaporation.rs): the IAPWS-95 auxiliary vapour-pressure equation (Wagner and Pruss 1993) at the triple point and at 373.124 K / 101.325 kPa
+- exact: [`the_temperature_relaxes_to_the_wet_bulb_state_without_overshoot`](../../crates/foehncraft-kernels/src/evaporation.rs): the droplet temperature of the frozen-coefficient step relaxes to the wet-bulb balance and never passes it
+- exact: [`saturated_gas_neither_evaporates_nor_condenses_at_the_droplet_temperature`](../../crates/foehncraft-kernels/src/evaporation.rs): a droplet at the saturation state of the gas keeps its mass
+- exact: [`a_single_droplet_follows_the_d2_law_at_the_wet_bulb`](../../crates/foehncraft-particles/tests/evaporation.rs): a 100 um water droplet at 300 K in still dry air at 500 K: d^2 falls linearly (local K within 1 %), at the wet-bulb temperature within 0.05 K, life within 20 % of d0^2/K plus the heat-up (Godsave 1953, Spalding 1953)
+- exact: [`a_closed_box_ends_at_the_adiabatic_saturation`](../../crates/foehncraft-particles/tests/evaporation.rs): V28.2 with evaporation: 1e-7 kg of water in a closed cell of air at 400 K, 3000 steps: water and energy of gas plus parcels kept to 1e-12; gas at the exact adiabatic saturation within 0.01 K (found 0.003 K), liquid mean within 0.1 K, vapour within 1e-3 of saturation
+- exact: [`many_parcels_in_one_cell_near_saturation`](../../crates/foehncraft-particles/tests/evaporation.rs): 4000 parcels evaporating in one cell at 95 % saturation (D247 to D250): the vapour never passes the droplet saturation and never falls below zero, the water book closes to 1e-13, sources and parcels bitwise equal on 1 and 4 threads with the storage reversed
+- consistency: [`the_evaporating_duct_closes_its_books`](../../crates/foehncraft-flow/tests/spray_evaporation.rs): a transient evaporating duct: ledger pairs 2801 to 2805 zero to the bit, parcel mass, momentum and enthalpy accounts close to 1e-12, the gas mass account to 1e-9, vapour to the gas = liquid lost by the parcels
+- exact: [`evaporation_gives_the_same_bits_on_any_number_of_threads`](../../crates/foehncraft-flow/tests/spray_evaporation.rs): V28.1 with evaporation in a flow run: spray.csv bitwise equal on 1 and 4 threads
+- contract (diagnostics): [`evaporation_needs_a_vapour_species_of_the_case`](../../crates/foehncraft-flow/tests/spray_evaporation.rs): a liquid whose vapour is not a species of the case is refused
+- contract (diagnostics): [`spray_evaporation`](../../examples/cases/flow/spray_evaporation.toml): 2 g/s of water droplets of 10 to 80 um in air at 300 C: about 1.3 g/s evaporate within the duct, the air leaves about 55 K cooler and 2 % wetter; ledger pairs zero to the bit (passes in CI (set linux-3), not yet in the manual) ([results](../gallery/sprays.md#spray-evaporation))
+- contract (schema): [`spray_evaporation_injectors`](../../examples/cases/flow/spray_evaporation_injectors.toml): the included injector file of spray_evaporation, with the vapour species ([results](../cases/flow.md#lagrangian-sprays)) **missing**
+- consistency: [`spray_saturation_steady`](../../examples/cases/flow/spray_saturation_steady.toml): V28.11 (partly met, see gaps): 2 g/s of water in 17.6 g/s of air at 400 K, steady mode: the air saturates within 5 cm and stays flat to the outlet; outlet 309.3 K and Y = 0.0375 against the exact adiabatic saturation 310.1 K and 0.0395; the source residual falls from 1 to 0.12 (passes in CI (set long), not yet in the manual) ([results](../gallery/sprays.md#spray-saturation))
+- contract (schema): [`spray_saturation_injectors`](../../examples/cases/flow/spray_saturation_injectors.toml): the six nozzles of spray_saturation_steady ([results](../cases/flow.md#lagrangian-sprays)) **missing**
+
+Gaps:
+
+- V28.11 partly met: in the steady mode the source residual falls from 1 to about 0.1 and stalls (also with relaxation 0.1 and 0.03), so the run ends with SPR008; the outlet is 0.8 K and 5 % in vapour below the exact adiabatic saturation, and the limiter of D253 still acts in the final pass (SPR009)
+- the heat balance closes to round-off only with [species] properties = "fluid"; with the mixture properties the energy account keeps a few parts in a thousand (the T-form of the energy equation against the material enthalpy of the balance)
+- the transient domain mass check fails for heated cases with variable density even without evaporation; the examples use constant density
+- the momentum equation does not book the momentum the vapour brings separately (it comes with the parcel impulse) nor the dilution term u S_c
+- water only (saturation law and latent heat); no boiling, no multicomponent liquids
+- no GPU (PTX) entry for the evaporation kernel; one process
+- V28.5 to V28.8 of section 5 not all run as named checks (the closed box and the crowded cell cover the bounds)
+- `spray_evaporation_injectors` has no run in the verification manual or in CI
+- `spray_saturation_injectors` has no run in the verification manual or in CI
 
 ## Flow models
 
@@ -2130,11 +2165,32 @@ Gaps:
 
 Gaps:
 
-- 0D only: no chemistry in the flow cells and no heat release in the energy equation yet (SF2b)
-- no ignition delay or flame speed against measurements yet (the 1D laminar flame is SF2b); the reactor cases check the equilibrium and an ignition delay band of the code itself
-- the kernel is single-source no_std but not yet compiled to PTX or run on a GPU; no ranks (a 0D reactor has no mesh) until SF2b
+- no ignition delay against shock-tube measurements; the reactor cases check the equilibrium and an ignition delay band of the code itself (chemistry in the flow cells and the flame speed: chemistry.flow)
 - the Westbrook-Dryer 2-step mechanism overshoots its own equilibrium by 277 K from 1400 K: its CO2 dissociation is an explicit reaction, not the reverse of the CO oxidation (a flaw of the published mechanism, kept as published)
 - PLOG, Chebyshev and SRI rates, surface and electrochemical reactions are refused
+
+<a id="chemistry-flow"></a>
+
+### Gas-phase chemistry in the cells of a transient laminar flow with heat release, the 1D premixed flame (L2, steam furnace SF2b)
+
+**partial** (gaps written) · id `chemistry.flow` · switch `[chemistry] mechanism, min_temperature, [chemistry.integrator], [chemistry.flame_speed]` · decisions D120, D93, D31
+
+- reference-data: [`flame_methane_air_gri30`](../../examples/cases/flow/flame_methane_air_gri30.toml): stoichiometric CH4-air at 300 K, 1 atm, GRI-Mech 3.0 with species Lewis numbers, 50 um cells: burning velocity from the fuel consumption 0.348 m/s (mean over 3 to 6 ms; elements conserved to 3e-13) against the measured 0.360 +- 0.017 m/s (experimental target compiled for FFCM-1, Smith, Tao and Wang 2016); band of the case [0.30, 0.42] m/s (passes in CI (set long), not yet in the manual)
+- consistency: [`flame_methane_air_jl4`](../../examples/cases/flow/flame_methane_air_jl4.toml): the 4-step mechanism of Jones & Lindstedt in the same tube with Lewis number 1: 0.430 m/s (the global mechanism burns faster than the measured 0.36 m/s), peak temperature 2250 K, its own adiabatic flame temperature; band [0.38, 0.48] m/s (passes in CI (set linux-3), not yet in the manual)
+- exact: [`the_entry_gives_the_bits_of_the_cell_body`](../../crates/foehncraft-kernels/src/chemistry.rs): the argument block and rows of the PTX entry chemistry_react give bitwise the states and step counts of the per-cell body that the CPU threads run; cells below min_temperature are left untouched
+- contract (diagnostics): [`flow_case_reader_survives_the_corpus`](../../crates/foehncraft-flow/tests/broken_inputs.rs): flow cases with a broken [chemistry] table end in a coded error (CHM001, CHM003), never a panic
+- consistency: recorded run (Tesla T4 (sm_75), tools/notebooks/sf2_chemistry_colab.ipynb, 2026-11-25): example chemistry_gpu: 4096 methane-air cells (900 to 2400 K, fresh, half and fully burnt) over one flow step, end states and step counts bitwise equal on CPU and GPU for GRI-Mech 3.0 and Jones-Lindstedt; GPU 1.7x (GRI) and 8.5x (Jones-Lindstedt) faster per cell than the 2 Colab CPU cores ([results](../gallery/species.md#reacting-flow-cells))
+
+Gaps:
+
+- first-order Lie splitting at the first outer iteration of each step: on 100 um cells halving the time step from 10 to 5 us raises the GRI-Mech flame speed at 4 ms from 0.264 to 0.285 m/s; no Strang splitting yet
+- species diffusion is Fickian with constant Lewis numbers per species (no mixture-averaged or multicomponent diffusion, no thermal diffusion); on 100 um cells Lewis 1 for every species gives 0.29 m/s for the GRI-Mech flame, the species Lewis numbers 0.33 m/s
+- the first steps after the start fields are out of mass balance by up to 6e-4 (BAL001 warning) while the flow adjusts to the expansion; 1e-7 later
+- the energy balance books the convected enthalpy with the fluid's c_p, not the mixture's: its imbalance shows about 26 % in a flame although the temperature equation uses the mixture c_p
+- transient only (CHM003 for steady runs), laminar only (turbulence-chemistry interaction is SF3), no sprays with chemistry
+- not on ranks: the variable density it needs (stage 7c) is not on ranks yet
+- GPU checked on one device only, the Tesla T4 (sm_75); one thread per cell with a dense Jacobian makes GRI-Mech 3.0 only 1.7x faster than 2 CPU cores (register spill; a block per cell or a sparse Jacobian would be needed); the flame cases themselves have not run with backend = "cuda"
+- the burning velocity oscillates by a few per cent as the flame crosses cells (period dx/(S_L - u_inlet)); the case averages over the second half of the run
 
 ## Immersed bodies
 
@@ -2281,7 +2337,7 @@ Gaps:
 
 Gaps:
 
-- temperatures are given per part (uniform change and a linear difference across the thickness); the mapping of the temperature field of a solid region of the flow case is MS6
+- temperatures given per part are uniform with a linear difference across the thickness; a field from a flow case is `structure.temperature-field` (MS6)
 - the moduli do not depend on temperature: give E at the operating temperature
 - no thermal stresses of beams and shells in the output (the solids give the von Mises stress)
 
@@ -2307,7 +2363,7 @@ Gaps:
 - a solid shares no nodes with beams and shells: no solid–shell or solid–beam connection yet
 - the von Mises stress at the nodes (averaged over the elements around each) only; no stress components or principal stresses in the output
 - Gmsh's complete second-order elements (27-node hexahedra, 9-node quadrilaterals), prisms and pyramids are refused
-- a uniform temperature change per part; a temperature field per node (from the flow case) is MS6
+- `[[temperatures]]` gives a uniform change per part; a field per node from a flow case is `structure.temperature-field`
 - nearly incompressible materials (ν → 0.5) lock with full integration: ν = 0.49 is 1e-3 to 8e-3 off on the Lamé cylinder; no mixed or reduced-integration formulation
 
 <a id="structure-contact"></a>
@@ -2330,6 +2386,26 @@ Gaps:
 - impacts are elastic: no coefficient of restitution; generalised-α with ρ∞ < 1 damps the high frequencies an impact excites, and the penalty contact of a shell node lasts far less than a step
 - an impact is not resolved in time: no step cut at contact changes (plan 5.4) and no energy-conserving contact scheme; the energy of the reed example decays but is not checked against a balance
 - the active-set loop refactors the matrix whenever the set changes (1990 factorisations in 2400 steps of the example)
+
+<a id="structure-temperature-field"></a>
+
+### Temperatures of a solid region of a flow case as the thermal load of beams, shells and solids: VTKHDF cell field, linear least-squares fit at the nodes (L53, MS6 part 1)
+
+**partial** (a model without reference data; gaps written) · id `structure.temperature-field` · switch `structure.run with [[temperature_fields]]` · decisions D289
+
+- exact: [`linear_field_is_mapped_exactly_and_a_free_solid_expands_without_stress`](../../crates/foehncraft-structure/tests/mapping.rs): linear field on hexahedral, tetrahedral and polyhedral flow cells, hex20 and tet10 blocks: node values within 1e-9; displacement minus α[(T − T₀) x − ½ g |x|²] rigid within 1e-9 of α ΔT; von Mises below 1e-8 E α ΔT (Timoshenko & Goodier 1970)
+- exact: [`plates_and_beams_take_the_value_and_the_slope_across_the_section`](../../crates/foehncraft-structure/tests/mapping.rs): T₀ + 40 + 3000 z on MITC4, MITC3+ plates and a beam: every unknown within 1e-9 of [[temperatures]] change 40, difference 3000 h
+- exact: [`smooth_field_converges_at_second_order`](../../crates/foehncraft-structure/tests/mapping.rs): 400 + 50 sin πx cos πy eᶻ on 8, 16, 32 hexahedra: largest node error falls at order 1.9 and 2.2 (above 1.8), 0.28 K at 32 cells (below 0.4 K)
+- exact: [`a_two_dimensional_case_maps_a_field_linear_in_x_and_y`](../../crates/foehncraft-structure/tests/mapping.rs): one layer of hexahedra or prisms: a field linear in x and y within 1e-9, constant across the layer
+- contract (diagnostics): [`temperature_field_errors`](../../crates/foehncraft-structure/tests/mapping.rs): STR001 for a missing zone, field or file, an unknown part, no expansion, a structure outside the zones, bad neighbours or max_distance; offset moves the structure into the zone
+
+Gaps:
+
+- one result file per field, constant in time (a history scales T − reference): no series of results in a transient
+- VTKHDF results only (no .vtu or other formats)
+- the mapping is one way: the structure's motion and the fluid forces (the two-way FSI of MS6) are not coupled yet
+- the moduli do not depend on temperature
+- no check against a measured thermal deformation of a part in a flow
 
 ## Moving meshes and solids
 

@@ -15,6 +15,7 @@
 mod beams;
 mod contact;
 mod dynamics;
+mod mapping;
 mod shells;
 mod solids;
 mod thermal;

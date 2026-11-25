@@ -320,7 +320,7 @@ parcels in a transient flow, one way or, with `[spray.coupling] mode =
 gas and, with `[energy]`, the heat as a source of the gas energy;
 `[spray] dispersion = "eddy-lifetime"` (SP2c, D243) lets the turbulence
 spread the parcels. In a steady case `[spray.steady]` (SP2s, D260) runs the
-spray as streams through the steady gas, with relaxed sources. The keys are on the [key page](flow-keys.md); the run writes `spray.csv` and
+spray as streams through the steady gas, with relaxed sources. `[spray.evaporation]` (SP4, SP5) lets the droplets evaporate into a species of `[species]`. The keys are on the [key page](flow-keys.md); the run writes `spray.csv` and
 `spray/parcels_<step>.vtkhdf`. `[[datum]]` tables (SP1b, D262) report the
 liquid and the gas through planes, surfaces and boundaries and the droplets
 in volumes, in `datums.csv` and `spray_hist_<datum>.csv`.
@@ -333,6 +333,8 @@ in volumes, in `datums.csv` and `spray_hist_<datum>.csv`.
 | `flow/spray_cooling.toml` | generated hex 2D, 100 × 20 cells | two-way heat: 10 g/s of water at 20 °C (20 to 200 µm, `flow/spray_cooling_injectors.toml`) sprayed into air at 300 °C and 5 m/s; the droplets take about 6.6 kW from the air, which leaves about 50 K cooler; the enthalpy pair cancels to the bit, 3.7 passes per step with `max_passes = 4` | [gallery 283](../gallery/sprays.md#spray-cooling), [recipe 283](../recipes/sprays.md#spray-cooling) |
 | `flow/spray_dispersion.toml` | generated hex 2D, 150 × 30 cells | eddy-lifetime dispersion: water droplets of 20 to 300 µm (`flow/spray_dispersion_injectors.toml`) shot along the axis of a duct with 10 % turbulence spread by the eddies alone (no gravity, no cone); after 1 m the small droplets spread 5.4 cm, the large ones 2.9 cm; no parcel lost | [gallery 285](../gallery/sprays.md#spray-dispersion), [recipe 285](../recipes/sprays.md#spray-dispersion) |
 | `flow/spray_cooling_steady.toml` | generated hex 2D, 100 × 20 cells | the duct of `spray_cooling` as a steady state in the steady spray mode (`[spray.steady]`, D260): 400 water streams through the frozen gas, sources relaxed every 10 iterations; converges in 526 iterations and 58 passes, 6.39 kW from the air (the transient run: 6.58 kW), source residual 1e-4, all liquid leaves through the outlet | [gallery 292](../gallery/sprays.md#spray-steady), [recipe 292](../recipes/sprays.md#spray-steady) |
+| `flow/spray_evaporation.toml` | generated hex 2D, 100 × 20 cells | evaporation (SP4, SP5): 2 g/s of water at 20 °C (10 to 80 µm, `flow/spray_evaporation_injectors.toml`, vapour `H2O`) sprayed into air at 300 °C and 5 m/s; about 1.25 g/s evaporate, the air leaves at 244 °C with 2.5 % vapour; ledger pairs 2801 to 2805 cancel to the bit, 6.6 passes per step with `max_passes = 8` | [gallery 306](../gallery/sprays.md#spray-evaporation), [recipe 306](../recipes/sprays.md#spray-evaporation) |
+| `flow/spray_saturation_steady.toml` | generated hex 2D, 60 × 12 cells | V28.11 in the steady spray mode: 2 g/s of water at 310 K from six nozzles (`flow/spray_saturation_injectors.toml`) in 17.6 g/s of air at 400 K, three times what the air can take; the air saturates within 5 cm, the outlet is at 309.3 K and Y = 0.0375 against the exact 310.1 K and 0.0395; the source residual stalls at about 0.12 (SPR008, SPR009; a gap) | [gallery 306b](../gallery/sprays.md#spray-saturation), [recipe 306](../recipes/sprays.md#spray-evaporation) |
 
 ## Porous regions
 
@@ -385,8 +387,12 @@ Mixtures of ideal gases (steam furnace stage SF1): `[species]` with the
 GRI-Mech 3.0 species, N − 1 mass fractions transported and the closure
 species by 1 − Σ; with the variable density ρ = p₀ M/(R T) of the mixture
 and its c_p, λ and μ. The keys are on the [key page](flow-keys.md#species).
+With `[chemistry]` (stage SF2b) the species react in the cells and release
+heat (key page: [chemistry](flow-keys.md#chemistry)).
 
 | Case file | Mesh | Shows | Where |
 |---|---|---|---|
 | `flow/species_binary_diffusion.toml` | generated hex 2D, 100 × 2 cells | CH₄ diffusing in N₂ at rest: the exact decay of a cosine mode, BDF2 to t = 50 s; L2 error 9.5·10⁻⁶, species and element accounts closed to round-off | [gallery 278](../gallery/species.md#species-transport), [recipe 278](../recipes/species.md#species-transport) |
+| `flow/flame_methane_air_gri30.toml` | generated hex 2D, 200 × 1 cells (50 µm) | a laminar premixed stoichiometric methane–air flame in a tube with GRI-Mech 3.0 (53 species, 325 reactions) and species Lewis numbers, 1200 steps of 5 µs: burning velocity 0.348 m/s from the fuel consumption, measured 0.360 ± 0.017 m/s; band [0.33, 0.39] m/s; about 10 minutes (CI set `long`) | [gallery 298](../gallery/species.md#reacting-flow-cells), [recipe 298](../recipes/species.md#reacting-flow-cells) |
+| `flow/flame_methane_air_jl4.toml` | generated hex 2D, 200 × 1 cells (50 µm) | the same flame with the 4-step global mechanism of Jones & Lindstedt, Lewis number 1, 2 ms: 0.430 m/s, peak 2250 K; band [0.38, 0.48] m/s; 18 s | [gallery 298](../gallery/species.md#reacting-flow-cells), [recipe 298](../recipes/species.md#reacting-flow-cells) |
 | `flow/species_coaxial_jet.toml` | generated hex 2D wedge, 90 × 40 cells | a laminar methane jet (r = 5 mm, 1 m/s) in a coflow of air at 0.2 m/s, isothermal, density from the mixture's molar mass (0.65 to 1.17 kg/m³), mixture properties from kinetic theory; 154 iterations, element accounts closed to 6.4·10⁻⁹ | [gallery 278](../gallery/species.md#species-transport), [recipe 278](../recipes/species.md#species-transport) |

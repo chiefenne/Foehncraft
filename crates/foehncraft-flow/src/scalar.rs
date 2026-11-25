@@ -685,6 +685,11 @@ struct Field {
     /// The energy equation (stage 7a1): the temperature with its property
     /// refresh.
     energy: Option<Box<EnergyField>>,
+    /// The reaction source per cell of a species of a reacting flow
+    /// (SF2b, [φ]/s), added to `source`.
+    reaction: Option<Vec<f64>>,
+    /// The values of `source` per cell of the last upload (empty: none).
+    source_cells: Vec<f64>,
 }
 
 /// A thermal condition per boundary face of the energy equation.
@@ -795,6 +800,8 @@ struct EnergyField {
     /// The heat of a two-way coupled spray (SP2b, D250), per spray cell
     /// (cell, Q + G T*, G): S = Q − G (T − T*) in W, G on the diagonal.
     spray_heat: Option<Vec<(u32, f64, f64)>>,
+    /// The heat release of a reacting flow per cell (SF2b, W/m³).
+    reaction_heat: Option<Vec<f64>>,
 }
 
 /// The variable density of the fluid in the energy equation (stage 7c):
@@ -1000,6 +1007,39 @@ pub struct Scalars {
     /// The species of a mixture (stage SF1): their fields among the
     /// scalars and the mixture of the last refresh.
     species: Option<Box<crate::species::Link>>,
+    /// The vapour and the mass a spray gives the gas (SP4, SP5), per
+    /// spray cell, for the species equations.
+    spray_species: Option<SpraySpecies>,
+    /// The source buffers (S_u, S_p) of the fields that take the spray.
+    spray_bufs: BTreeMap<String, (Buf, Buf)>,
+}
+
+/// The sources of an evaporating spray in the species equations (SP4,
+/// SP5, D250). Per spray cell (cell, a, b, s_c, ρV): the vapour the cell
+/// receives is S_v(Y) = a − b Y (kg/s, the value plus the chord slope of
+/// the records, a = E + β Y*), the continuity takes s_c (kg/s, S_v of the
+/// iterate before the pressure solve). In the non-conservative form of the
+/// equations (D116) the vapour field takes S_v(Y) − Y s_c and every other
+/// field −Y s_c (the dilution by the mass added), so that the conserved
+/// vapour gains exactly S_v and the other species nothing.
+#[derive(Debug, Clone, Default)]
+pub struct SpraySpecies {
+    /// The scalar field of the vapour (`Y_H2O`).
+    pub vapour: String,
+    /// (cell, a, b, s_c, ρ V).
+    pub rows: Vec<(u32, f64, f64, f64, f64)>,
+}
+
+impl SpraySpecies {
+    /// The source of field `is_vapour` at the value `y` of row `r` (kg/s).
+    pub fn source(r: &(u32, f64, f64, f64, f64), is_vapour: bool, y: f64) -> f64 {
+        let (_, a, b, sc, _) = *r;
+        if is_vapour {
+            a - b * y - sc * y
+        } else {
+            -sc * y
+        }
+    }
 }
 
 impl Scalars {
@@ -1301,6 +1341,8 @@ impl Scalars {
                 time_dependent,
                 settings: settings.clone(),
                 energy: None,
+                reaction: None,
+                source_cells: Vec::new(),
             });
         }
         let mut s = Self {
@@ -1322,6 +1364,8 @@ impl Scalars {
             vert,
             eps_cell,
             species: None,
+            spray_species: None,
+            spray_bufs: BTreeMap::new(),
         };
         let cells: Vec<[f64; 3]> = geo.cell_centroid[..nc].to_vec();
         s.set_values(dev, &cells, 0.0, true)?;
@@ -1381,7 +1425,14 @@ impl Scalars {
             let mut src_v = Vec::new();
             if let (Some(src), Some(su)) = (&f.source, f.su) {
                 src_v = cells.iter().map(|&x| src.at(x, t)).collect();
-                dev.upload(su, &src_v)?;
+                match &f.reaction {
+                    Some(r) => {
+                        let v: Vec<f64> = src_v.iter().zip(r).map(|(a, b)| a + b).collect();
+                        dev.upload(su, &v)?;
+                    }
+                    None => dev.upload(su, &src_v)?,
+                }
+                f.source_cells.clone_from(&src_v);
             }
             if let Some(hf) = f.heat_flux.as_mut() {
                 // Q/ρ... times ρ: the flux faces and the source, in face
@@ -1623,14 +1674,57 @@ impl Scalars {
                     }),
                     _ => None,
                 };
+                // the vapour and the dilution of an evaporating spray
+                // (SP4, SP5): S_u and S_p per unit ρ V, the slope implicit
+                let (su, sp) = match (
+                    self.spray_species.as_ref().filter(|_| f.energy.is_none()),
+                    self.spray_bufs.get(&f.name),
+                ) {
+                    (Some(ss), Some(&(bu, bp))) => {
+                        let y = dev.download(f.phi)?;
+                        let mut u = match f.su {
+                            Some(b) => dev.download(b)?,
+                            None => vec![0.0; y.len()],
+                        };
+                        let mut p = match robin_sp {
+                            Some(b) => dev.download(b)?,
+                            None => vec![0.0; y.len()],
+                        };
+                        let vap = f.name == ss.vapour;
+                        for &(c, a, b, sc, rv) in &ss.rows {
+                            let c = c as usize;
+                            if vap {
+                                // a net sink (a < 0) goes on the diagonal
+                                // at the iterate, a/Y_k · Y, so that Y
+                                // stays positive; the converged value is
+                                // the same
+                                if a >= 0.0 {
+                                    u[c] += a / rv;
+                                } else {
+                                    p[c] += a / (rv * y[c].max(1e-12));
+                                }
+                                p[c] -= b / rv;
+                            }
+                            if sc > 0.0 {
+                                p[c] -= sc / rv;
+                            } else {
+                                u[c] -= sc * y[c] / rv;
+                            }
+                        }
+                        dev.upload(bu, &u)?;
+                        dev.upload(bp, &p)?;
+                        (Some(bu), Some(bp))
+                    }
+                    _ => (f.su, robin_sp),
+                };
                 dev.scalar_rows(&ScalarRowArgs {
                     cp: w_cp,
                     cn: w_cn,
                     bf: w_bf,
                     mass_flux: conv,
                     phi: f.phi,
-                    su: f.su,
-                    sp: robin_sp,
+                    su,
+                    sp,
                     alpha,
                     time,
                     fix: frozen,
@@ -2441,16 +2535,129 @@ impl Scalars {
         Ok(())
     }
 
+    /// Sets the reaction sources of a reacting flow (SF2b): per transported
+    /// species of the mixture (in the order of [`crate::species::Link`])
+    /// the source dY/dt per cell (1/s), and the heat release per cell
+    /// (W/m³) of the energy equation. Both stay until the next call.
+    pub(crate) fn set_reaction(
+        &mut self,
+        dev: &mut dyn FlowDevice,
+        species: Vec<Vec<f64>>,
+        heat: Vec<f64>,
+    ) -> Result<()> {
+        let nc = self.nc;
+        let idx: Vec<usize> = self
+            .species
+            .as_deref()
+            .map(|s| s.fields.clone())
+            .unwrap_or_default();
+        anyhow::ensure!(
+            idx.len() == species.len(),
+            "reaction sources for {} species, the mixture has {}",
+            species.len(),
+            idx.len()
+        );
+        for (&i, r) in idx.iter().zip(species) {
+            let f = &mut self.fields[i];
+            let su = match f.su {
+                Some(b) => b,
+                None => {
+                    let b = dev.alloc(nc)?;
+                    f.su = Some(b);
+                    b
+                }
+            };
+            if f.source_cells.len() == r.len() {
+                let v: Vec<f64> = f.source_cells.iter().zip(&r).map(|(a, b)| a + b).collect();
+                dev.upload(su, &v)?;
+            } else {
+                dev.upload(su, &r)?;
+            }
+            f.reaction = Some(r);
+        }
+        if let Some(e) = self.fields.iter_mut().find_map(|f| f.energy.as_deref_mut()) {
+            e.reaction_heat = Some(heat);
+        }
+        Ok(())
+    }
+
+    /// The reaction sources dY/dt per cell (1/s) of the transported species
+    /// of a reacting flow (SF2b), in the order of the mixture; `None`
+    /// before the first reaction step.
+    pub fn species_reaction(&self) -> Option<Vec<&[f64]>> {
+        let sp = self.species.as_deref()?;
+        sp.fields
+            .iter()
+            .map(|&i| self.fields[i].reaction.as_deref())
+            .collect()
+    }
+
+    /// The temperature per cell of the energy equation, if there is one.
+    pub(crate) fn temperature(&self, dev: &mut dyn FlowDevice) -> Result<Option<Vec<f64>>> {
+        match self.fields.iter().find(|f| f.energy.is_some()) {
+            Some(f) => Ok(Some(dev.download(f.phi)?)),
+            None => Ok(None),
+        }
+    }
+
+    /// Sets or clears the vapour and mass sources of an evaporating spray in
+    /// the species equations (SP4, SP5).
+    pub(crate) fn set_spray_species(
+        &mut self,
+        dev: &mut dyn FlowDevice,
+        s: Option<SpraySpecies>,
+    ) -> Result<()> {
+        if s.is_some() {
+            for f in &self.fields {
+                if f.energy.is_none() && !self.spray_bufs.contains_key(&f.name) {
+                    let a = dev.alloc(self.nc)?;
+                    let b = dev.alloc(self.nc)?;
+                    self.spray_bufs.insert(f.name.clone(), (a, b));
+                }
+            }
+        }
+        self.spray_species = s;
+        Ok(())
+    }
+
     /// The heat the spray gives the gas at the temperature `t` (W),
     /// Σ (Q + G T* − G T) in cell order, if a spray is set.
-    fn energy_spray_total(&self, t: &[f64]) -> Option<f64> {
+    ///
+    /// With an evaporating spray (SP5) the enthalpy the added mass carries
+    /// in the non-conservative form, Σ h(T_P) S_c, joins: what the boundary
+    /// enthalpy flows of the balance see leave with it.
+    pub(crate) fn energy_spray_total(&self, t: &[f64]) -> Option<f64> {
         let e = self.fields.iter().find_map(|f| f.energy.as_deref())?;
         let rows = e.spray_heat.as_ref()?;
-        Some(
-            rows.iter()
-                .map(|&(c, q, g)| q - g * t[c as usize])
-                .exact_sum(),
-        )
+        let mut v: Vec<f64> = rows
+            .iter()
+            .map(|&(c, q, g)| q - g * t[c as usize])
+            .collect();
+        if let Some(sp) = &self.spray_species {
+            for &(c, _, _, sc, _) in &sp.rows {
+                let c = c as usize;
+                let h = &e.h[e.mat_cell.get(c).copied().unwrap_or(0) as usize];
+                v.push(h.at(t[c]) * sc);
+            }
+        }
+        Some(v.iter().exact_sum())
+    }
+
+    /// The cell values of the scalar field `name`, if the case has it.
+    pub(crate) fn field_values(
+        &self,
+        dev: &mut dyn FlowDevice,
+        name: &str,
+    ) -> Result<Option<Vec<f64>>> {
+        match self.fields.iter().find(|f| f.name == name) {
+            Some(f) => Ok(Some(dev.download(f.phi)?)),
+            None => Ok(None),
+        }
+    }
+
+    /// The species sources of an evaporating spray, if set (SP5).
+    pub(crate) fn spray_species(&self) -> Option<&SpraySpecies> {
+        self.spray_species.as_ref()
     }
 
     /// The gas as the parcels see it for the heat exchange (SP2b): per
@@ -3011,6 +3218,7 @@ impl Scalars {
             || sec.cycle.is_some()
             || crate::density::wanted(case)
             || case.spray.coupling.two_way()
+            || case.chemistry.is_some()
         {
             Some(put(&vec![0.0; nc])?)
         } else {
@@ -3177,6 +3385,7 @@ impl Scalars {
             robin_sp: None,
             extra_heat: None,
             spray_heat: None,
+            reaction_heat: None,
             var_rho: None,
             porous,
             mats,
@@ -3212,6 +3421,8 @@ impl Scalars {
             time_dependent: false,
             settings,
             energy: Some(Box::new(energy)),
+            reaction: None,
+            source_cells: Vec::new(),
         });
         Ok(())
     }
@@ -3542,6 +3753,12 @@ fn refresh_energy(
                         heat[c as usize] += q;
                     }
                 }
+            }
+        }
+        // the heat release of a reacting flow (SF2b)
+        if let Some(r) = &e.reaction_heat {
+            for (h, q) in heat.iter_mut().zip(r) {
+                *h += q;
             }
         }
         // the pressure work dp₀/dt of a closed volume (stage 7c)
@@ -4539,8 +4756,11 @@ fn exact_of<'a>(case: &'a crate::case::FlowCase, name: &str) -> Option<(&'a Scal
     if let Some(e) = case.scalars.get(name).and_then(|s| s.exact.as_ref()) {
         return Some((e, format!("scalars.{name}.exact")));
     }
-    if let (Some(sp), Some(n)) = (&case.species, name.strip_prefix(crate::species::PREFIX))
-        && let Some(e) = sp.exact.get(n)
+    if let Some(sp) = &case.species
+        && let Some((n, e)) = sp
+            .exact
+            .iter()
+            .find(|(n, _)| crate::species::field_name(n) == name)
     {
         return Some((e, format!("species.exact.{n}")));
     }
