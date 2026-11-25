@@ -1,9 +1,11 @@
 # Regenerates the number tables of docs/gallery.md, docs/recipes.md and
-# docs/applications.md after
-# a merge to main (tools/docs/indexes.py). Pull requests add entries only to
-# the topic pages and leave the index pages alone, so that parallel pull
-# requests do not conflict on them. Commits with the workflow token do not
-# start another CI run.
+# docs/applications.md (tools/docs/indexes.py) and the verification status
+# page and chart (docs/verification/status.md, docs/figures/verification/
+# grades.svg; tools/release/verification_status.py --all) after a merge to
+# main. Pull requests add entries only to the topic pages and the feature
+# table (with grades.json) and leave these generated pages alone, so that
+# parallel pull requests do not conflict on them. Commits with the workflow
+# token do not start another CI run.
 name: Docs indexes
 
 on:
@@ -17,6 +19,11 @@ on:
       - "docs/applications/**"
       - "docs/applications.md"
       - "tools/docs/**"
+      - "docs/verification/features.toml"
+      - "docs/verification/results.json"
+      - "docs/verification/grades.json"
+      - "tools/release/verification_status.py"
+      - "tools/check/ci_cases.py"
   workflow_dispatch:
 
 permissions:
@@ -28,24 +35,27 @@ concurrency:
 
 jobs:
   indexes:
-    name: Regenerate the gallery, recipe and application indexes
+    name: Regenerate the indexes and the verification status page
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           ref: main
-      - run: python3 -m tools.docs.indexes
+      - run: |
+          python3 -m tools.docs.indexes
+          python3 -m tools.release.verification_status --all
       - name: Commit when changed
         run: |
           if git diff --quiet; then echo "indexes current"; exit 0; fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -am "docs: regenerate the gallery, recipe and application indexes"
+          git commit -am "docs: regenerate the indexes and the verification status page"
           for i in 1 2 3 4; do
             git push origin HEAD:main && exit 0
             sleep $((i * 5))
             git pull --rebase origin main
             python3 -m tools.docs.indexes
-            git diff --quiet || git commit -am "docs: regenerate the gallery, recipe and application indexes"
+            python3 -m tools.release.verification_status --all
+            git diff --quiet || git commit -am "docs: regenerate the indexes and the verification status page"
           done
           exit 1

@@ -101,9 +101,12 @@ detail are in [CONTRIBUTING.md](CONTRIBUTING.md).
   `docs/requirements.md`.
 - **MUST** add a new feature to `docs/verification/features.toml` with its
   evidence and gaps, and write every gap found (a missing check, a band not
-  met) there; regenerate the status page with
-  `python3 -m tools.release.verification_status`. Never write a grade by
-  hand (D199).
+  met) there; regenerate `docs/verification/grades.json` with
+  `python3 -m tools.release.verification_status` and commit it. Do not
+  commit `docs/verification/status.md` or `docs/figures/verification/grades.svg`:
+  they carry totals that every parallel pull request would conflict on, and
+  the workflow `docs-index.yml` regenerates them on main after the merge.
+  Never write a grade by hand (D199).
   Infrastructure features (restart, logs, interfaces, journal, MCP) have no
   exact solution: mark the row `infrastructure = true`, list its `contracts`
   and give each a `kind = "contract"` item with a `property` and a test
@@ -181,7 +184,7 @@ Documentation, for any docs change:
 python3 -m tools.docs.indexes            # tables can be generated (no number twice)
 git checkout docs/gallery.md docs/recipes.md docs/applications.md   # do not commit them
 python3 -m tools.docs.images --check      # images carry their size
-python3 -m tools.release.verification_status --check   # status page matches features.toml
+python3 -m tools.release.verification_status --check   # grades.json matches features.toml
 python3 -m tools.release.changelog --print > /dev/null   # fragments parse
 ```
 

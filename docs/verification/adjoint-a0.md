@@ -53,7 +53,7 @@ same kernel body runs on `Dual<26>` (ṁ_f, μ_f, u_P, u_N or u_b, ∇u_P,
 of each cell in stored order (`Topology::cell_faces`): no atomics, every
 value written by one index.
 
-Verification (`cargo test --release -p foehncraft-flow --test adjoint reverse`,
+Verification (`cargo test --release -p foehncraft-flow --test flow adjoint::reverse`,
 mixed mesh of hexahedra, prisms, tetrahedra and polyhedra with every
 boundary kind):
 

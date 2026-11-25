@@ -7,6 +7,8 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
+# The integration tests are one program (tests/main.rs): see its header.
+autotests = false
 
 [features]
 default = ["hdf5", "metis"]
@@ -32,6 +34,10 @@ schemars.workspace = true
 hdf5-metno = { workspace = true, optional = true }
 ndarray = { workspace = true, optional = true }
 metis = { workspace = true, optional = true }
+
+[[test]]
+name = "mesh"
+path = "tests/main.rs"
 
 [[example]]
 name = "mpi_halo"

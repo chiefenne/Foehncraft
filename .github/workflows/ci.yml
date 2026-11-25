@@ -75,6 +75,7 @@ jobs:
       profile: ${{ steps.tier.outputs.profile }}
       gate: ${{ steps.tier.outputs.gate }}
       debug: ${{ steps.tier.outputs.debug }}
+      debug_os: ${{ steps.tier.outputs.debug_os }}
       warm: ${{ steps.tier.outputs.warm }}
       test_os: ${{ steps.tier.outputs.test_os }}
       mpi_os: ${{ steps.tier.outputs.mpi_os }}
@@ -129,6 +130,7 @@ jobs:
           quick='{"os":"macos-latest","set":"quick"},{"os":"windows-latest","set":"quick"}'
           if [ "$EVENT" = "pull_request" ] && [ "$LABEL_FULL" != "true" ]; then
             tier=pr; profile=ci; gate=true; debug=false; warm=false
+            debug_os='[]'
             if [ "$PLATFORM" = "true" ]; then
               test_os='["ubuntu-latest","macos-latest","windows-latest"]'
               mpi_os='["ubuntu-latest","macos-latest"]'
@@ -143,11 +145,13 @@ jobs:
             # the long cases and the debug build, and warms the PR cache
             # when the dependencies changed
             tier=main; profile=ci; gate=false; debug=true; warm=$DEPS
+            debug_os='["ubuntu-latest"]'
             test_os='["ubuntu-latest","macos-latest","windows-latest"]'
             mpi_os='["macos-latest"]'
             cases="[$long,$quick]"
           else
             tier=full; profile=release; gate=true; debug=true; warm=true
+            debug_os='["ubuntu-latest","macos-latest","windows-latest"]'
             test_os='["ubuntu-latest","macos-latest","windows-latest"]'
             mpi_os='["ubuntu-latest","macos-latest"]'
             cases="[$linux,$long,$quick]"
@@ -156,6 +160,7 @@ jobs:
           {
             echo "tier=$tier"; echo "full=$full"; echo "profile=$profile"
             echo "gate=$gate"; echo "debug=$debug"; echo "warm=$warm"
+            echo "debug_os=$debug_os"
             echo "test_os=$test_os"; echo "mpi_os=$mpi_os"; echo "cases=$cases"
           } | tee -a "$GITHUB_OUTPUT"
 
@@ -182,6 +187,8 @@ jobs:
       - run: cargo fmt --all --check
       - name: Every flow case is in a CI case set
         run: python3 -m tools.check.ci_cases --check
+      - name: Every integration test file is compiled (one test program per crate)
+        run: python3 -m tools.check.test_modules
       - run: cargo clippy --workspace --all-targets --locked
       # the CUDA backends compile without a CUDA toolkit (driver and NVRTC
       # are loaded at run time)
@@ -229,28 +236,68 @@ jobs:
           # build-ci is written by warm-ci-cache on main, build-release here
           shared-key: build-${{ needs.plan.outputs.profile }}
           save-if: ${{ github.ref == 'refs/heads/main' && needs.plan.outputs.profile == 'release' }}
-      # debug build: debug assertions and overflow checks (full tier on
-      # every platform, main on Linux; the PR gate relies on the optimised
-      # run below)
-      - if: needs.plan.outputs.full == 'true' || (needs.plan.outputs.debug == 'true' && runner.os == 'Linux')
-        run: cargo test --workspace --locked
+      # the debug-assertion run and the run without HDF5 and METIS are jobs
+      # of their own (below), so that they run beside this one
       - run: cargo test --workspace --locked --profile "$BUILD_PROFILE"
       - name: Slow tests (marked #[ignore]; nightly and manual runs)
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         run: cargo test --workspace --locked --profile "$BUILD_PROFILE" -- --ignored
+      # `cargo test --workspace` has already built the command line for the
+      # tests of foehncraft-cli (target/<profile>/foehn); `cargo run -p
+      # foehncraft-cli` would build it a second time with other features
       - name: G1 smoke run (CPU backends, results bitwise equal)
-        run: cargo run --locked --profile "$BUILD_PROFILE" -p foehncraft-cli -- bench g1 examples/cases/bench/g1_ci_small.toml
-      - name: Without HDF5 and METIS
-        if: runner.os == 'Linux' && needs.plan.outputs.tier != 'main'
-        run: |
-          cargo test -p foehncraft-mesh --no-default-features --locked
-          cargo test -p foehncraft-fv --no-default-features --locked
-          cargo test -p foehncraft-flow --no-default-features --locked
-          python3 -m tools.check.c_free
+        run: target/$BUILD_PROFILE/foehn bench g1 examples/cases/bench/g1_ci_small.toml
       - uses: actions/upload-artifact@v4
         with:
           name: g1-ci-small-${{ matrix.os }}
           path: output/g1_ci_small/
+
+  # ---------------------------------------------------------------------
+  # Debug assertions and overflow checks: main on Linux, the full tier on
+  # every platform. The `ci-debug` profile is the dev profile at opt-level 1
+  # without debug info: the same assertions and checks, but the solver tests
+  # run several times faster than unoptimised.
+  debug:
+    name: Test, debug assertions (${{ matrix.os }})
+    needs: plan
+    if: needs.plan.outputs.code == 'true' && needs.plan.outputs.debug == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(needs.plan.outputs.debug_os) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: build-ci-debug
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo test --workspace --locked --profile ci-debug
+
+  # ---------------------------------------------------------------------
+  # The crates build and pass their tests without HDF5 and METIS (no C
+  # libraries). PR gate and full tier, Linux; beside the test job.
+  no-c:
+    name: Without HDF5 and METIS
+    needs: plan
+    if: needs.plan.outputs.code == 'true' && needs.plan.outputs.gate == 'true'
+    runs-on: ubuntu-latest
+    env:
+      BUILD_PROFILE: ${{ needs.plan.outputs.profile }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: build-${{ needs.plan.outputs.profile }}
+          save-if: false
+      # one crate at a time: each with its own dependency features
+      - run: |
+          cargo test -p foehncraft-mesh --no-default-features --locked --profile "$BUILD_PROFILE"
+          cargo test -p foehncraft-fv --no-default-features --locked --profile "$BUILD_PROFILE"
+          cargo test -p foehncraft-flow --no-default-features --locked --profile "$BUILD_PROFILE"
+          python3 -m tools.check.c_free
 
   # ---------------------------------------------------------------------
   # The case catalogue (R5; each case checks its own results), sharded.
@@ -535,7 +582,7 @@ jobs:
   ci-ok:
     name: CI OK
     if: always()
-    needs: [plan, lint, msrv, test, cases, hypre, mpi, ptx, python, warm-ci-cache]
+    needs: [plan, lint, msrv, test, debug, no-c, cases, hypre, mpi, ptx, python, warm-ci-cache]
     runs-on: ubuntu-latest
     steps:
       - name: All jobs passed or were skipped

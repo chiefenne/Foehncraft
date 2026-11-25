@@ -57,9 +57,10 @@ The workflow is `.github/workflows/ci.yml`. It has three tiers, so that
 pull requests never wait for macOS runners (GitHub Free runs 20 jobs and
 only 5 macOS jobs at once per account):
 
-- **Pull requests** (gate, about 5 minutes): Linux only. The `ci` profile
+- **Pull requests** (gate): Linux only. The `ci` profile
   (release optimisation without LTO, results bitwise equal to `release`),
-  all tests including the bitwise-reproducibility tests, the case catalogue
+  all tests including the bitwise-reproducibility tests, the tests without
+  HDF5 and METIS (a job of its own), the case catalogue
   in three parallel jobs, hypre, MPI, PTX and the Python package. A pull
   request that touches platform-sensitive files (`Cargo.toml`, `Cargo.lock`,
   `build.rs`, the toolchain, `.github/`, the command line, MPI, VTKHDF,
@@ -68,8 +69,9 @@ only 5 macOS jobs at once per account):
   `assets/` or `LICENSE` change.
 - **Main** (every push to main whose change is not docs-only): what the
   gate did not run: tests and quick cases on macOS and Windows, MPI on
-  macOS, the long cases (cylinder at Re 100) and the debug-build tests on
-  Linux. A newer merge cancels the older main run; with squash merges the
+  macOS, the long cases (cylinder at Re 100) and the tests with debug
+  assertions on Linux (a job of its own, profile `ci-debug`: debug
+  assertions and overflow checks at opt-level 1). A newer merge cancels the older main run; with squash merges the
   newer commit contains the older one. When `Cargo.lock` or the toolchain
   changes, main also builds the dependencies in the `ci` profile, so that
   pull requests start from a warm cache. After a merge, watch this run and
@@ -81,6 +83,20 @@ only 5 macOS jobs at once per account):
   marked slow (`--ignored`).
 
 The check "CI OK" sums up all jobs.
+
+The integration tests of `foehncraft-flow` and `foehncraft-mesh` are one
+test program per crate (`tests/main.rs`, one `mod` line per file), not one
+program per file: each program compiled and linked the solver's generic
+code again, and the test build was the longest step of CI. Run one file
+with a module filter, for example
+`cargo test --release -p foehncraft-flow --test flow energy::`; a new test
+file needs its `mod` line (`python3 -m tools.check.test_modules` checks it).
+The G1 smoke run uses the `foehn` binary that the tests already built.
+
+The verification status page and its chart
+(`docs/verification/status.md`, `docs/figures/verification/grades.svg`) are
+generated on main after each merge (workflow `docs-index.yml`), like the
+index tables; pull requests commit only `features.toml` and `grades.json`.
 
 [↑ back to top](#development-tests-ci-and-releases)
 
@@ -122,7 +138,7 @@ dual numbers, matrices apply transposed, and transient runs reverse with
 binomial checkpointing. The checks are tests; from the repository root:
 
 ```
-cargo test --release -p foehncraft-flow --test adjoint -- --nocapture
+cargo test --release -p foehncraft-flow --test flow adjoint:: -- --nocapture
 cargo test --release -p foehncraft-flow --lib -- adjoint_tests checkpoint
 cargo test --release -p foehncraft-mesh shape_derivatives -- --nocapture
 ```
