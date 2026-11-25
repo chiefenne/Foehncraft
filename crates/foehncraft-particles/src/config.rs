@@ -79,8 +79,17 @@ pub struct Injector {
     pub half_angle: f64,
     /// Mass flow of the liquid (kg/s).
     pub mass_flow: f64,
-    /// Droplet diameter (m): constant in this version.
+    /// Droplet diameter (m) when every droplet has the same size; leave it
+    /// out with `size`.
+    #[serde(default)]
     pub diameter: f64,
+    /// Droplet size distribution (D242): Rosin-Rammler or log-normal, as
+    /// the distribution of the liquid mass over the diameter. Every parcel
+    /// carries the same mass; its diameter is drawn from the distribution
+    /// with the counter-based generator keyed by the parcel identity
+    /// (D121), so the spray is the same on every run and thread count.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<crate::sizes::SizeDistribution>,
     /// Parcels released per second. A parcel stands for the droplets of
     /// `mass_flow / parcels_per_second` of liquid.
     pub parcels_per_second: f64,
@@ -126,6 +135,114 @@ pub struct SpraySection {
     /// A parcel file `spray/parcels_<step>.vtkhdf` every this many time
     /// steps (default 0: only at the end of the run).
     pub write_every: usize,
+    /// Liquid penetration (D265): the share of an injector's liquid mass in
+    /// the flow that lies within the penetration length (default 0.95).
+    pub penetration_fraction: f64,
+    /// How the penetration length is measured from the injector: `axial`
+    /// (along the injector axis, default) or `radial` (straight distance).
+    pub penetration: Penetration,
+    /// The coupling of the parcels with the gas (SP2, D247 to D252).
+    pub coupling: Coupling,
+}
+
+/// Whether the gas feels the parcels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum CouplingMode {
+    /// The parcels feel the gas, the gas does not feel them (SP1).
+    #[default]
+    OneWay,
+    /// Momentum exchange in both directions (SP2): the drag on the parcels
+    /// is a source of the gas momentum, in value-plus-slope form with the
+    /// closing step (D250) and passes inside the time step (D252).
+    TwoWay,
+}
+
+/// The number of parcel passes in a time step (D252): a number, or
+/// `"converged"` (passes until the coupling lag is below `tolerance`, at
+/// most `max_passes`).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum Passes {
+    /// A fixed number of passes (at least 1).
+    Fixed(u32),
+    /// `"converged"`.
+    Named(PassesName),
+}
+
+/// The named form of [`Passes`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum PassesName {
+    /// Passes until the coupling lag is below the tolerance.
+    Converged,
+}
+
+impl Default for Passes {
+    fn default() -> Self {
+        Self::Named(PassesName::Converged)
+    }
+}
+
+/// `[spray.coupling]` (D252, decided by the maintainer 2026-11-24: passes
+/// = "converged", max_passes = 3).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct Coupling {
+    /// `one-way` (default) or `two-way`.
+    pub mode: CouplingMode,
+    /// Parcel passes per time step: a number, or `"converged"`.
+    pub passes: Passes,
+    /// The coupling lag below which the passes of a step end (largest
+    /// change of the gas velocity of a spray cell between the frozen state
+    /// of the pass and the solve, over the larger of the largest slip
+    /// velocity of the spray cells and the largest change of their gas
+    /// velocity in the step; default 1e-3).
+    pub tolerance: f64,
+    /// The largest number of passes with `"converged"` (default 3).
+    pub max_passes: u32,
+    /// A sub-step ends when the particle Reynolds number would change by
+    /// more than this fraction of max(Re, 1) (D251; default 0.2).
+    pub max_reynolds_change: f64,
+}
+
+impl Default for Coupling {
+    fn default() -> Self {
+        Self {
+            mode: CouplingMode::OneWay,
+            passes: Passes::default(),
+            tolerance: 1e-3,
+            max_passes: 3,
+            max_reynolds_change: 0.2,
+        }
+    }
+}
+
+impl Coupling {
+    /// True with two-way coupling.
+    pub fn two_way(&self) -> bool {
+        self.mode == CouplingMode::TwoWay
+    }
+
+    /// The largest number of passes of a step, and whether they end on the
+    /// coupling lag.
+    pub fn pass_limit(&self) -> (u32, bool) {
+        match self.passes {
+            Passes::Fixed(n) => (n, false),
+            Passes::Named(PassesName::Converged) => (self.max_passes, true),
+        }
+    }
+}
+
+/// How the liquid penetration is measured (D265).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum Penetration {
+    /// Distance along the injector axis.
+    #[default]
+    Axial,
+    /// Straight distance from the injector position.
+    Radial,
 }
 
 /// The file of `include`: the injectors and the liquid.
@@ -150,6 +267,9 @@ impl Default for SpraySection {
             max_courant: 0.5,
             max_substeps: 100_000,
             write_every: 0,
+            penetration_fraction: 0.95,
+            penetration: Penetration::Axial,
+            coupling: Coupling::default(),
         }
     }
 }
@@ -211,6 +331,22 @@ impl SpraySection {
         if !pos(self.max_courant) {
             bail!("[spray] max_courant must be positive");
         }
+        if !(self.penetration_fraction > 0.0 && self.penetration_fraction <= 1.0) {
+            bail!("[spray] penetration_fraction must be in (0, 1]");
+        }
+        let c = &self.coupling;
+        if let Passes::Fixed(0) = c.passes {
+            bail!("[spray.coupling] passes must be at least 1");
+        }
+        if c.max_passes == 0 {
+            bail!("[spray.coupling] max_passes must be at least 1");
+        }
+        if !pos(c.tolerance) {
+            bail!("[spray.coupling] tolerance must be positive");
+        }
+        if !pos(c.max_reynolds_change) {
+            bail!("[spray.coupling] max_reynolds_change must be positive");
+        }
         if self.max_substeps == 0 {
             bail!("[spray] max_substeps must be at least 1");
         }
@@ -233,9 +369,24 @@ impl SpraySection {
             if !(0.0..180.0).contains(&i.half_angle) {
                 bail!("[[spray.injector]] {n}: half_angle must be in [0, 180) degrees");
             }
+            match &i.size {
+                Some(sz) => {
+                    if i.diameter != 0.0 {
+                        bail!("[[spray.injector]] {n}: give either diameter or size, not both");
+                    }
+                    sz.validate()
+                        .map_err(|e| anyhow::anyhow!("[[spray.injector]] {n}: size: {e}"))?;
+                }
+                None => {
+                    if !pos(i.diameter) {
+                        bail!(
+                            "[[spray.injector]] {n}: diameter must be positive and finite (or give a size distribution)"
+                        );
+                    }
+                }
+            }
             for (k, v) in [
                 ("mass_flow", i.mass_flow),
-                ("diameter", i.diameter),
                 ("parcels_per_second", i.parcels_per_second),
             ] {
                 if !pos(v) {

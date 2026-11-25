@@ -47,6 +47,10 @@ pub struct FlowInput {
     /// PTX module of the cuda backend (overrides `run.ptx`).
     #[serde(default)]
     pub ptx: Option<PathBuf>,
+    /// Solve on this number of ranks (overrides `run.rank_count`, MPI step
+    /// W7): threads of this process, or the processes of an MPI launcher.
+    #[serde(default)]
+    pub ranks: Option<usize>,
 }
 
 impl FlowInput {
@@ -81,6 +85,9 @@ impl FlowInput {
         }
         if let Some(r) = &self.restart {
             case.run.restart = Some(r.clone());
+        }
+        if let Some(n) = self.ranks {
+            case.run.rank_count = n;
         }
         if let Some(e) = self.end_time {
             let Some(t) = case.time.as_mut() else {

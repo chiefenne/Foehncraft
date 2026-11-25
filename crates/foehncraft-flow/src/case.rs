@@ -275,10 +275,27 @@ pub struct RunSection {
     /// coordinate bisection, and the run fails unless every rank's cells
     /// are bitwise those of one rank. Steady and transient, SIMPLEC, PISO
     /// and the coupled solver, laminar, k-ω SST and k-ε, passive scalars
-    /// and the energy equation of one fluid; not yet with gravity, turning
-    /// zones, regions, a schedule or a restart.
+    /// and the energy equation of one fluid; from the start fields or a
+    /// `run.restart` file (read on every rank count by global identity,
+    /// MPI step W6); the restart of the largest count is gathered into
+    /// `ranks.restart.h5` and must have the bytes of the one-rank restart.
+    /// Not yet with gravity, turning zones, regions or a schedule.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub ranks: Vec<usize>,
+    /// Solve the run on this number of ranks (MPI step W7; `foehn run
+    /// --ranks N`): every rank solves its part of a recursive coordinate
+    /// bisection, rank 0 writes the log, the run record and the output,
+    /// and every monitor, probe, balance and field file is computed on the
+    /// fields gathered into the global order, so the output is bitwise
+    /// that of one rank. Under an MPI launcher (`mpirun -n N foehn run`,
+    /// a build with the `mpi` feature) the ranks are its processes;
+    /// otherwise threads of this process. 1: no ranks. Steady cases so far.
+    #[serde(skip_serializing_if = "is_one")]
+    pub rank_count: usize,
+}
+
+fn is_one(n: &usize) -> bool {
+    *n == 1
 }
 
 /// `[run.limits]` (D83): when one is reached the run writes a restart file
@@ -400,6 +417,7 @@ impl Default for RunSection {
             reread_every: 0,
             limits: Limits::default(),
             ranks: Vec::new(),
+            rank_count: 1,
         }
     }
 }
@@ -892,9 +910,21 @@ pub struct FlowCase {
         skip_serializing_if = "crate::buoyancy::BuoyancySection::is_default"
     )]
     pub buoyancy: crate::buoyancy::BuoyancySection,
+    /// Bodies in the flow by Brinkman penalisation (L13 stage 1, D226):
+    /// `[immersed]` with `[[immersed.body]]` tables.
+    #[serde(
+        default,
+        skip_serializing_if = "crate::immersed::ImmersedSection::is_empty"
+    )]
+    pub immersed: crate::immersed::ImmersedSection,
     /// Lagrangian parcels of the sprays (L12): `[spray]`.
     #[serde(skip_serializing_if = "foehncraft_particles::SpraySection::is_empty")]
     pub spray: foehncraft_particles::SpraySection,
+    /// Datums of the reports (SP1b, D262): `[[datum]]` tables, named planes,
+    /// boundaries, interfaces, surfaces and volumes whose gas and liquid
+    /// flows go to `datums.csv`.
+    #[serde(rename = "datum", skip_serializing_if = "Vec::is_empty")]
+    pub datums: Vec<crate::datum::DatumSection>,
     /// The fluid view of a conjugate heat transfer case (stage 7d1): set on
     /// the case of the flow, which runs on the fluid cells only, with the
     /// full case and mesh behind it ([`crate::cht`]).
@@ -1204,6 +1234,7 @@ impl FlowCase {
         crate::expr::resolve_paths(&mut c.tables, dir);
         c.materials.resolve_paths(dir);
         c.spray.resolve_paths(dir);
+        crate::datum::resolve_paths(&mut c.datums, dir);
         c.solver.reduction_defaults = crate::turbulence::reduction_defaults(&c);
         // `[energy.cycle] enabled = false` runs the case fully coupled (the
         // reference of the loop, `--set energy.cycle.enabled=false`)
@@ -1485,6 +1516,8 @@ impl FlowCase {
         crate::sliding::validate(self)?;
         crate::rotor::validate(self)?;
         crate::spray::validate(self)?;
+        crate::immersed::check_case(self)?;
+        crate::datum::validate(self)?;
         if let Some(d) = &self.fluid.density
             && let Some(v) = d.number()
         {
@@ -1892,6 +1925,13 @@ pub struct Solve {
     pub rotors: Option<crate::rotor::Values>,
     /// Transient run.
     pub transient: Option<crate::unsteady::TransientSummary>,
+    /// The datums at the end of the run (SP1b, D267): the gas report of the
+    /// last row and the liquid through each over the run.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub datums: Option<Vec<crate::datum::DatumSummary>>,
+    /// The sprays at the end of the run (SP1b, D265, D267).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub spray: Option<crate::spray::SpraySummary>,
     /// Benchmark comparison.
     pub benchmark: Option<crate::monitor::BenchmarkResult>,
     /// Conservation ledger (D88, D89).
@@ -1924,6 +1964,10 @@ pub struct Solve {
     /// and the largest Mach number.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub density: Option<crate::density::Summary>,
+    /// The immersed bodies (L13 stage 1): solid volume and the force of the
+    /// fluid on each.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub immersed: Vec<crate::immersed::BodyForce>,
 }
 
 /// The value of a wall probe at the end of a solve.
@@ -2562,6 +2606,21 @@ pub fn run(case: &FlowCase, name: &str, out: &Path, log: impl FnMut(&str)) -> Re
 }
 
 /// The steady restart file of the current state.
+/// The restart of a steady run: on ranks gathered into the global order
+/// (the bytes of the one-rank file, W6; collective).
+fn restart_of(
+    fl: &mut Flow,
+    mesh: &Mesh,
+    name: &str,
+    on: Option<&crate::ranks::OnRanks>,
+) -> Result<Restart> {
+    let r = steady_restart(fl, mesh, name)?;
+    match on {
+        Some(o) => o.restart(r),
+        None => Ok(r),
+    }
+}
+
 fn steady_restart(fl: &mut Flow, mesh: &Mesh, name: &str) -> Result<Restart> {
     Ok(Restart {
         case: name.into(),
@@ -2791,6 +2850,9 @@ pub fn run_steered(
     if !case.run.ranks.is_empty() {
         crate::ranks::supported(&case)?;
     }
+    if steer.ranks.is_some() {
+        crate::ranks::supported_run(&case)?;
+    }
     let last = levels.len() - 1;
     let single = levels.len() == 1;
     if !single && case.run.restart.is_some() {
@@ -2894,12 +2956,47 @@ pub fn run_steered(
             lg.frame(&files_frame(&case, &mesh, &desc, out));
         }
         let arrays = bc::arrays(&mesh, &geo, &case.boundary, &phys_on, at)?;
-        let disc = simplec::discretisation(&mesh, &geo, &arrays)?;
+        // a run on ranks (MPI step W7): this rank's part, its own arrays
+        // and physics; the global ones stay for the output
+        let on = match steer.ranks.clone() {
+            Some(c) => Some(crate::ranks::OnRanks::new(c, &mesh, &geo, arrays.clone())?),
+            None => None,
+        };
+        let lead = on.as_ref().is_none_or(|o| o.lead());
+        if let Some(o) = &on {
+            o.write_partition(out, &mesh)?;
+            let own = o.local.mesh.n_cells;
+            let fewest = o.comm.min(own as f64) as usize;
+            let most = o.comm.max(own as f64) as usize;
+            lg.note(&format!(
+                "solved on {} ranks ({} communicator), {fewest} to {most} cells each; rank 0 \
+                 writes the output, computed on the fields of all ranks in the order of the \
+                 whole mesh (MPI step W7)",
+                o.comm.size(),
+                o.comm.name()
+            ));
+        }
+        let (arrays, phys_on) = match &on {
+            Some(o) => {
+                let lp = physics_on(&case, &phys, &o.local.mesh, &o.geo)?;
+                (
+                    bc::arrays(&o.local.mesh, &o.geo, &case.boundary, &lp, at)?,
+                    lp,
+                )
+            }
+            None => (arrays, phys_on),
+        };
+        // the mesh and geometry of this rank's solver
+        let (smesh, sgeo) = match &on {
+            Some(o) => (&o.local.mesh, &o.geo),
+            None => (&mesh, &geo),
+        };
+        let disc = simplec::discretisation(smesh, sgeo, &arrays)?;
         let operators = crate::operators::report(
             &case,
             &mesh,
             &geo,
-            &arrays.u_points,
+            on.as_ref().map_or(&arrays.u_points, |o| &o.arrays.u_points),
             out,
             &mut lg,
             &mut rep.warnings,
@@ -2932,19 +3029,43 @@ pub fn run_steered(
                 device: case.run.backend.clone(),
                 threads: case.run.threads,
                 ptx: case.run.ptx.clone(),
-                ranks: None,
+                ranks: on
+                    .as_ref()
+                    .and_then(|o| o.target(&crate::simplec::Target::default()).ranks),
             },
         )?;
+        if let Some(o) = &on {
+            // the numbers of the whole mesh, not of this rank's part
+            let skew = simplec::face_skewness(&o.disc);
+            let lim = fl.remediation.skewness_limit;
+            (fl.remediation.skewed_faces, fl.remediation.poor_cells) =
+                simplec::skew_counts(&o.disc, &skew, lim);
+        }
         let remediation = report_remediation(&fl, &mut lg, &mut rep.warnings);
-        if let Some(src) = momentum_source(&case, &geo, nc, 0.0)? {
+        if let Some(src) = momentum_source(&case, sgeo, smesh.n_cells, 0.0)? {
             fl.set_momentum_source(src)?;
         }
-        crate::scalar::attach(&mut fl, &case, &mesh, &geo)?;
+        crate::scalar::attach(&mut fl, &case, smesh, sgeo)?;
         crate::density::attach(&mut fl, &case)?;
         crate::buoyancy::attach(&mut fl, &case)?;
-        crate::porous::attach(&mut fl, &case, &mesh)?;
-        crate::turbulence::attach(&mut fl, &case, &mesh, &geo)?;
-        if let Some(notes) = crate::frame::attach(&mut fl, &case, &mesh, &geo)? {
+        crate::porous::attach(&mut fl, &case, smesh)?;
+        for d in crate::immersed::attach(&mut fl, &case, smesh, sgeo)? {
+            if d.severity == diag::Severity::Warning {
+                lg.warn(&format!("{}: {}", d.code, d.message));
+                rep.warnings.push(d);
+            } else {
+                lg.note(&d.message);
+            }
+        }
+        match &on {
+            // the wall distance of the whole mesh, each rank its cells (W5)
+            Some(o) if !case.turbulence.is_laminar() => {
+                let d = crate::derived::wall_distance(&case, &mesh, &geo)?;
+                crate::turbulence::attach_with(&mut fl, &case, smesh, sgeo, Some(o.own(&d)))?;
+            }
+            _ => crate::turbulence::attach(&mut fl, &case, smesh, sgeo)?,
+        }
+        if let Some(notes) = crate::frame::attach(&mut fl, &case, smesh, sgeo)? {
             for l in &notes.lines {
                 lg.line(l);
             }
@@ -2952,8 +3073,11 @@ pub fn run_steered(
         }
         if let Some(path) = case.run.restart.clone() {
             let r = restart::read(&path)?;
-            let (r, same) =
-                r.to_local(&mesh.cell_id[..nc], &mesh.face_id, mesh.n_interior_faces())?;
+            let (r, same) = match &on {
+                // every rank its part, by global identity (W6)
+                Some(o) => (o.scatter(r)?, true),
+                None => r.to_local(&mesh.cell_id[..nc], &mesh.face_id, mesh.n_interior_faces())?,
+            };
             if r.transient.is_some() {
                 bail!(
                     "{} is the restart file of a transient run; this case is steady (no [time] table)",
@@ -2995,7 +3119,18 @@ pub fn run_steered(
                 p0,
                 reference_cell.is_some(),
             )? {
-                fl.initialise(&u, &p)?;
+                match &on {
+                    // computed on the whole mesh, each rank its cells (W5)
+                    Some(o) => {
+                        let u = foehncraft_fv::disc::Soa3 {
+                            x: o.own(&u.x),
+                            y: o.own(&u.y),
+                            z: o.own(&u.z),
+                        };
+                        fl.initialise(&u, &o.own(&p))?;
+                    }
+                    None => fl.initialise(&u, &p)?,
+                }
                 starts = lines;
             }
             starts.extend(crate::start::temperature_report(&case, &mesh, &geo)?);
@@ -3009,12 +3144,30 @@ pub fn run_steered(
             }
         }
         if case.run.restart.is_none() && case.initial.potential_flow {
-            let it = fl.potential_flow(&mesh, &geo)?;
+            let it = fl.potential_flow(smesh, sgeo)?;
             lg.note(&format!(
                 "start from potential flow (D52): {it} CG iterations"
             ));
         }
         let first = fl.iteration();
+        // the boundary kinds of the whole mesh, for the ledger
+        let mom_kind = on
+            .as_ref()
+            .map_or_else(|| fl.bc.mom_kind.clone(), |o| o.arrays.mom_kind.clone());
+        // the fields of the output: on ranks gathered into the global
+        // order (collective), with the global discretisation
+        macro_rules! out_sol {
+            () => {
+                match &on {
+                    Some(o) => o.solution(&mut fl)?,
+                    None => Solution {
+                        state: fl.state()?,
+                        disc: &fl.disc,
+                        phys: fl.physics(),
+                    },
+                }
+            };
+        }
         let mut units = String::from(
             "iteration -, momentum_x -, momentum_y -, momentum_z -, continuity - (scaled residuals), \
              bicgstab_x -, bicgstab_y -, bicgstab_z -, cg - (iterations)",
@@ -3119,43 +3272,63 @@ pub fn run_steered(
                         first_courant: None,
                     };
                     let prepared = (|| -> Result<(simplec::State, Vec<&'static str>)> {
-                        let failed = fl.state()?;
+                        let failed = out_sol!().state;
                         anyhow::ensure!(fl.rewind()?, "no valid state was kept");
                         let mut files = Vec::new();
                         if cfg!(feature = "hdf5") && case.output.vtkhdf {
-                            let sol = Solution {
-                                state: fl.state()?,
-                                disc: &fl.disc,
-                                phys: fl.physics(),
-                            };
-                            write_fields(
-                                &case,
-                                &out.join("fields_last_valid.vtkhdf"),
-                                &mesh,
-                                &geo,
-                                &sol,
-                                analytic.as_ref(),
-                                Some((fl.iteration(), None)),
-                            )?;
+                            let sol = out_sol!();
+                            if lead {
+                                write_fields(
+                                    &case,
+                                    &out.join("fields_last_valid.vtkhdf"),
+                                    &mesh,
+                                    &geo,
+                                    &sol,
+                                    analytic.as_ref(),
+                                    Some((fl.iteration(), None)),
+                                )?;
+                            }
                             files.push("fields_last_valid.vtkhdf");
                         }
                         if single && restart::AVAILABLE {
-                            let rs = steady_restart(&mut fl, &mesh, name)?;
-                            restart::write(&out.join("restart.h5"), &rs)?;
+                            let rs = restart_of(&mut fl, smesh, name, on.as_ref())?;
+                            if lead {
+                                restart::write(&out.join("restart.h5"), &rs)?;
+                            }
                             files.push("restart.h5");
                         }
                         Ok((failed, files))
                     })();
-                    let e = divergence::finish(
-                        &mut fl,
-                        &ctx,
-                        &mesh,
-                        &geo,
-                        out,
-                        prepared,
-                        case.log.style,
-                        &mut |l| lg.line(l),
-                    );
+                    let e = match &on {
+                        None => divergence::finish(
+                            &mut fl,
+                            &ctx,
+                            &mesh,
+                            &geo,
+                            out,
+                            prepared,
+                            case.log.style,
+                            &mut |l| lg.line(l),
+                        ),
+                        // on ranks the last valid state gathered (W7)
+                        Some(o) => {
+                            let valid = match &prepared {
+                                Ok(_) => o.solution(&mut fl).ok(),
+                                Err(_) => None,
+                            };
+                            divergence::finish_from(
+                                valid.as_ref(),
+                                &mom_kind,
+                                &ctx,
+                                &mesh,
+                                &geo,
+                                out,
+                                prepared,
+                                case.log.style,
+                                &mut |l| lg.line(l),
+                            )
+                        }
+                    };
                     lg.sync(&mut steer.record);
                     steer.record.flush();
                     std::fs::write(out.join("flow.log"), &lg.text)?;
@@ -3256,11 +3429,7 @@ pub fn run_steered(
                     steer,
                 );
                 let sol = if cols.needs_state() {
-                    Some(Solution {
-                        state: fl.state()?,
-                        disc: &fl.disc,
-                        phys: fl.physics(),
-                    })
+                    Some(out_sol!())
                 } else {
                     None
                 };
@@ -3298,17 +3467,13 @@ pub fn run_steered(
                 let lagged = fl.lagged()?;
                 fl.update_boundaries()?;
                 fl.gradients()?;
-                let sol = Solution {
-                    state: fl.state()?,
-                    disc: &fl.disc,
-                    phys: fl.physics(),
-                };
+                let sol = out_sol!();
                 let r = balance::rates(
                     &sol,
                     &mesh,
                     &geo,
                     &case,
-                    &fl.bc.mom_kind,
+                    &mom_kind,
                     &geo.cell_volume,
                     nonorth,
                 );
@@ -3328,27 +3493,42 @@ pub fn run_steered(
                 }
             }
             // control files (D40), signals and limits (D64, D83)
-            let req = control.check(it, case.run.reread_every);
+            let mut req = control.check(it, case.run.reread_every);
+            // on ranks rank 0 reads the requests and decides for all
+            let restart_asked = steer.restart_requested();
+            let restart_asked = if let Some(o) = &on {
+                let flags = o.agree(
+                    u32::from(req.result)
+                        | u32::from(req.reread) << 1
+                        | u32::from(req.stop) << 2
+                        | u32::from(restart_asked) << 3,
+                );
+                req.result = flags & 1 != 0;
+                req.reread = flags & 2 != 0;
+                req.stop = flags & 4 != 0;
+                flags & 8 != 0
+            } else {
+                restart_asked
+            };
             if req.result && li == last {
                 // as for the ledger: the run goes on from the boundary
                 // values and gradients it had (D31)
                 let lagged = fl.lagged()?;
                 fl.update_boundaries()?;
                 fl.gradients()?;
-                let sol = Solution {
-                    state: fl.state()?,
-                    disc: &fl.disc,
-                    phys: fl.physics(),
-                };
-                write_fields(
-                    &case,
-                    &out.join(format!("fields_{it:06}.vtkhdf")),
-                    &mesh,
-                    &geo,
-                    &sol,
-                    analytic.as_ref(),
-                    Some((it, None)),
-                )?;
+                let sol = out_sol!();
+                if lead {
+                    write_fields(
+                        &case,
+                        &out.join(format!("fields_{it:06}.vtkhdf")),
+                        &mesh,
+                        &geo,
+                        &sol,
+                        analytic.as_ref(),
+                        Some((it, None)),
+                    )?;
+                }
+                drop(sol);
                 fl.set_lagged(&lagged)?;
                 lg.note(&format!(
                     "fields of iteration {it} written (fields_{it:06}.vtkhdf)"
@@ -3358,11 +3538,13 @@ pub fn run_steered(
             let restart_now = single
                 && ((r.restart_every > 0 && it.is_multiple_of(r.restart_every))
                     || r.restart_at.contains(&it)
-                    || steer.restart_requested());
+                    || restart_asked);
             if restart_now && restart::AVAILABLE {
-                let rs = steady_restart(&mut fl, &mesh, name)?;
-                restart::write(&out.join("restart.h5"), &rs)?;
-                if case.run.restart_at.contains(&it) {
+                let rs = restart_of(&mut fl, smesh, name, on.as_ref())?;
+                if lead {
+                    restart::write(&out.join("restart.h5"), &rs)?;
+                }
+                if lead && case.run.restart_at.contains(&it) {
                     restart::write(&out.join(format!("restart_{it:06}.h5")), &rs)?;
                 }
                 lg.note(&format!("iteration {it}: restart.h5 written"));
@@ -3380,7 +3562,8 @@ pub fn run_steered(
                 )?;
             }
             apply_live_settings(&mut case, &mut fl, &mut lg, steer, &mut rep.warnings, it)?;
-            if let Some(s) = steer.poll(&case.run.limits, it - first, false, req.stop) {
+            let stop_now = steer.poll(&case.run.limits, it - first, false, req.stop);
+            if let Some(s) = crate::ranks::agree_stop(on.as_ref(), stop_now) {
                 lg.note(&format!("iteration {it}: {}", s.message));
                 stopped = true;
                 break;
@@ -3451,11 +3634,7 @@ pub fn run_steered(
         } else {
             None
         };
-        let fl_host = Solution {
-            state: fl.state()?,
-            disc: &fl.disc,
-            phys: fl.physics(),
-        };
+        let fl_host = out_sol!();
         let sol = &fl_host;
         let errors = analytic.map(|a| error_norms(sol, &mesh, &geo, &a, dimension(&case)));
         let mut verification = crate::console::Frame::new("Verification").summary();
@@ -3505,8 +3684,25 @@ pub fn run_steered(
         if let Some([cd, cl]) = coefficients {
             verification.push_kv("Force coefficients", format!("C_D {cd:.5}, C_L {cl:.5}"));
         }
-        let benchmark =
-            crate::unsteady::steady_benchmark_of(&case, sol, &mesh, &geo, &loc, &boundaries);
+        let immersed = crate::immersed::forces(&case, &mesh, &geo, &sol.u)?;
+        for b in &immersed {
+            verification.push_kv(
+                &format!("Immersed body {}", b.name),
+                format!(
+                    "force [{:.5e}, {:.5e}, {:.5e}] N, solid volume {:.5e} m³",
+                    b.force[0], b.force[1], b.force[2], b.solid_volume
+                ),
+            );
+        }
+        let benchmark = crate::unsteady::steady_benchmark_of(
+            &case,
+            sol,
+            &mesh,
+            &geo,
+            &loc,
+            &boundaries,
+            &immersed,
+        );
         if let Some(b) = &benchmark {
             crate::unsteady::log_benchmark(b, |l| {
                 verification.push_text(l.trim_start().to_string())
@@ -3524,7 +3720,7 @@ pub fn run_steered(
                 &mesh,
                 &geo,
                 &case,
-                &fl.bc.mom_kind,
+                &mom_kind,
                 &geo.cell_volume,
                 nonorth,
             ),
@@ -3581,7 +3777,7 @@ pub fn run_steered(
                         Some((iters, None)),
                     )?;
                 }
-                _ => write_outputs(
+                _ if lead => write_outputs(
                     &case,
                     out,
                     &mesh,
@@ -3592,6 +3788,7 @@ pub fn run_steered(
                     &loc,
                     Some((iters, None)),
                 )?,
+                _ => {}
             }
             if let Some(r) = &reference {
                 write_reference_svg(out, name, r)?;
@@ -3640,8 +3837,10 @@ pub fn run_steered(
         let turbulence = turbulence_summary(&mut fl, &mesh, &mut lg, &mut rep.warnings)?;
         let density = crate::density::summary(&mut fl, &mut rep.warnings)?;
         if single && (case.run.restart_final || stopped) && restart::AVAILABLE {
-            let rs = steady_restart(&mut fl, &mesh, name)?;
-            restart::write(&out.join("restart.h5"), &rs)?;
+            let rs = restart_of(&mut fl, smesh, name, on.as_ref())?;
+            if lead {
+                restart::write(&out.join("restart.h5"), &rs)?;
+            }
         }
         rep.solves.push(Solve {
             mesh: desc,
@@ -3664,6 +3863,8 @@ pub fn run_steered(
             coefficients,
             rotors: rotor_values,
             transient: None,
+            datums: None,
+            spray: None,
             benchmark,
             balance: Some(summary),
             remediation,
@@ -3675,6 +3876,7 @@ pub fn run_steered(
             turbulence,
             statistics: None,
             density,
+            immersed,
         });
         if stopped {
             rep.stopped = true;
@@ -3884,6 +4086,24 @@ pub(crate) fn apply_live_settings<F: FnMut(&str)>(
 ) -> Result<Option<FlowCase>> {
     let pending = steer.take_settings();
     if pending.is_empty() {
+        return Ok(None);
+    }
+    if steer.ranks.is_some() {
+        // only rank 0 hears the port: a change would part the ranks
+        for p in pending {
+            let m = format!(
+                "iteration or step {n}: control port: {} = {} not applied: settings through the \
+                 control port do not run on ranks yet (MPI step W7)",
+                p.key, p.value
+            );
+            lg.warn(&m);
+            steer.event(diag::RUN_CONTROL_REJECTED, n, &m);
+            warnings.push(diag::Diagnostic::new(diag::RUN_CONTROL_REJECTED, m));
+            steer.live_note(serde_json::json!({
+                "at": n, "key": p.key, "value": p.value.to_string(),
+                "status": "rejected", "error": "not on ranks yet (MPI step W7)",
+            }));
+        }
         return Ok(None);
     }
     let (what, at) = if case.time.is_some() {

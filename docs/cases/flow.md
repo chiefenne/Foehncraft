@@ -16,6 +16,7 @@ On this page:
 - [Gravity and buoyancy](#gravity-and-buoyancy)
 - [Lagrangian sprays](#lagrangian-sprays)
 - [Porous regions](#porous-regions)
+- [Immersed bodies](#immersed-bodies)
 - [Species](#species)
 
 Stage 4: steady incompressible laminar flow, SIMPLEC with the Rhie–Chow
@@ -70,6 +71,7 @@ Couette and Poiseuille flow, the lid-driven cavity and the steady cylinder.
 | `flow/cavity_re100.toml` | generated hex 2D, 64 × 64 | lid-driven cavity, Re = 100, against Ghia et al. (1982), deviation ≤ 2 % of the lid speed | [gallery 12](../gallery/flow.md#cavity), [recipe 19](../recipes/flow.md#flow-cavity) |
 | `flow/cavity_re1000.toml` | generated hex 2D, 128 × 128 | the same at Re = 1000 | [gallery 12](../gallery/flow.md#cavity), [recipe 19](../recipes/flow.md#flow-cavity) |
 | `flow/cavity_re1000_coupled.toml` | generated hex 2D, 128 × 128 | the cavity at Re = 1000 with the coupled algorithm and the automatic pseudo-time step: about 450 iterations instead of 1 397, same result | [gallery 78](../gallery/flow.md#coupled), [gallery 80](../gallery/flow.md#momentum-multigrid), [recipe 78](../recipes/flow.md#coupled) |
+| `flow/adjoint_residual_cavity.toml` | generated polygons 2D, 24 × 24 | the steady residual R(q) of the adjoint (L17 stage A0) along a SIMPLEC run and a coupled run: both drive it to round-off | [gallery 271](../gallery/verification.md#adjoint-a0), [recipe 271](../recipes/verification.md#adjoint-a0) |
 | `flow/cavity_re100_tet3d.toml` | generated tet 3D, 24 576 tetrahedra in a slab with symmetry planes | the cavity on fully three-dimensional tetrahedra, deviation ≤ 3 % | [recipe 19](../recipes/flow.md#flow-cavity) |
 | `flow/cavity_re100_poly3d.toml` | generated poly 3D, 5 445 polyhedra | the same on polyhedra | [recipe 19](../recipes/flow.md#flow-cavity) |
 | `flow/cavity_re1000_poly3d.toml` | generated poly 3D, 28 227 polyhedra | Re = 1000 on polyhedra, deviation ≤ 3 % | [gallery 12](../gallery/flow.md#cavity), [recipe 19](../recipes/flow.md#flow-cavity) |
@@ -97,6 +99,8 @@ Couette and Poiseuille flow, the lid-driven cavity and the steady cylinder.
 | `flow/pipe_gmsh_raw.toml` | Gmsh tetrahedra without optimisation (`examples/meshes/pipe_gmsh_raw.msh`), 1 572 cells, 28 faces with a skewness above 0.9 | developing pipe flow at Re = 100 on a poor mesh: the cell-quality remediation (D50) switches to the Gauss pressure gradient and the limiter, reports it and converges; with `--set solver.remediation=off` the run diverges with a report that names the skewed faces | [gallery 26](../gallery/meshes.md#skewed-tets), [recipe 36](../recipes/meshes.md#skewed-tets) |
 | `flow/ranks_channel_poly.toml` | generated poly 2D, 2 821 cells, perturbed by 10 % | a channel whose upper wall moves against the inflow, steady SIMPLEC from potential flow, solved again on 2, 3 and 5 ranks and bitwise the one-rank solution (MPI step W5) | [gallery 234](../gallery/meshes.md#flow-ranks), [recipe 234](../recipes/meshes.md#flow-ranks) |
 | `flow/ranks_heated_channel_sst.toml` | generated poly 2D, 2 821 cells, perturbed by 10 % | a turbulent channel (k-ω SST, Re = 10 000) with a heated lower wall and the energy equation, solved again on 2, 3 and 5 ranks and bitwise the one-rank solution in every field (MPI step W5) | [gallery 244](../gallery/meshes.md#flow-models-ranks), [recipe 244](../recipes/meshes.md#flow-models-ranks) |
+| `flow/ranks_restart_channel.toml` | generated poly 2D, 2 821 cells, perturbed by 10 % | the channel of `ranks_channel_poly` marched 40 time steps with BDF2, solved again on 2, 3 and 5 ranks; the restart gathered from five ranks must have the bytes of the one-rank restart, and a run continued from it with `--restart` reads it on any rank count (MPI step W6) | [gallery 262](../gallery/meshes.md#restart-ranks), [recipe 262](../recipes/meshes.md#restart-ranks) |
+| `flow/ranks_run_channel.toml` | generated poly 2D, 2 821 cells, perturbed by 10 % | the channel of `ranks_channel_poly` solved on 5 ranks as the run itself (`[run] rank_count`, `--ranks N`); rank 0 writes every output file byte for byte as one rank does, plus `ranks.vtkhdf` with the rank of every cell (MPI step W7) | [gallery 279](../gallery/meshes.md#run-ranks), [recipe 279](../recipes/meshes.md#run-ranks) |
 
 ## Transient flow
 
@@ -306,13 +310,18 @@ on the [key page](../keys.md) and in [recipe
 ## Lagrangian sprays
 
 `[spray]` with an included injector file (L12, SP1, D246): droplets as
-parcels in a transient flow, one way (the gas does not feel them yet). The
-keys are on the [key page](flow-keys.md); the run writes `spray.csv` and
-`spray/parcels_<step>.vtkhdf`.
+parcels in a transient flow, one way or, with `[spray.coupling] mode =
+"two-way"` (SP2, D247 to D252), with the drag as a momentum source of the
+gas. The keys are on the [key page](flow-keys.md); the run writes `spray.csv` and
+`spray/parcels_<step>.vtkhdf`. `[[datum]]` tables (SP1b, D262) report the
+liquid and the gas through planes, surfaces and boundaries and the droplets
+in volumes, in `datums.csv` and `spray_hist_<datum>.csv`.
 
 | Case file | Mesh | Shows | Where |
 |---|---|---|---|
 | `flow/spray_duct.toml` | generated hex 2D, 80 × 20 cells | 10 g/s of 150 µm water droplets sprayed from the upper wall into air at 4 m/s; about 70 % stick on the lower wall, the mass book closes; the injector is in `flow/spray_duct_injectors.toml` | [gallery 242](../gallery/sprays.md#spray-duct), [recipe 242](../recipes/sprays.md#spray-duct) |
+| `flow/spray_datums.toml` | generated hex 2D, 80 × 20 cells | the duct of `spray_duct` with Rosin-Rammler sizes (X = 120 µm, n = 2.5; `flow/spray_datums_injectors.toml`) and seven datums: a cut plane, a plane on the faces, a disc, an STL surface (`flow/spray_datums_section.stl`), the outlet, the floor and a box; the outlet datum equals the escaped liquid to the bit, Dv50 91 µm at the outlet and 170 µm on the floor | [gallery 265](../gallery/sprays.md#spray-datums), [recipe 265](../recipes/sprays.md#spray-datums) |
+| `flow/spray_two_way.toml` | generated hex 2D, 60 × 75 cells | two-way coupling: 50 g/s of water (50 to 400 µm, `flow/spray_two_way_injectors.toml`) sprayed down from the ceiling of a room of still air pulls the air into a jet of up to 6 m/s; the spray hands the air 0.77 N, 2.96 passes per step on average, the momentum pair cancels to the bit | [gallery 280](../gallery/sprays.md#spray-two-way), [recipe 280](../recipes/sprays.md#spray-two-way) |
 
 ## Porous regions
 
@@ -328,6 +337,18 @@ temperatures of their own (D271, PM2). The keys are on the [key page](flow-keys.
 | `flow/porous_schumann.toml` | generated hex 2D, 100 × 1 cells | check V4: air at 400 K into a ceramic bed at 300 K, gas and matrix against the exact solution of Schumann (1929) at 1000, 2000 and 3000 s; L1 error 5.2·10⁻⁵ of the step, second order in the cell size; heat balance to 10⁻¹³ | [gallery 275](../gallery/porous.md#porous-two-temperatures), [recipe 275](../recipes/porous.md#porous-two-temperatures) |
 | `flow/porous_storage_charge.toml` | generated hex 2D, 40 × 100 cells | charging a honeycomb store: air at 573 K from the top right through a stack of ceramic bricks (6.9 mm channels, ε = 0.256) at 293 K; the thermocline half way after 6000 s, 200 steps in about 70 s | [gallery 275](../gallery/porous.md#porous-two-temperatures), [recipe 275](../recipes/porous.md#porous-two-temperatures) |
 
+## Immersed bodies
+
+`[immersed]` with `[[immersed.body]]` tables (L13 stage 1, D226): cylinders,
+spheres and boxes put into any mesh by Brinkman penalisation, laminar and
+isothermal only. The keys are on the [key page](../keys.md) (`immersed.*`);
+`result.json` has the force on every body, `derived = ["solid-fraction"]`
+writes χ.
+
+| Case file | Mesh | Shows | Where |
+|---|---|---|---|
+| `flow/immersed_cylinder_re20.toml` | generated hex 2D, 440 × 82 cells (h = D/20), no cylinder in the mesh | Schäfer & Turek 2D-1 with the cylinder as a penalised body: C_D 5.581 (in range), Δp 0.9 % above, C_L 35 % above the range (smeared wall); fails beyond 40 % of the range midpoint | [gallery 270](../gallery/immersed.md#penalised-cylinder), [recipe 270](../recipes/immersed.md#penalised-body) |
+
 ## Species
 
 Mixtures of ideal gases (steam furnace stage SF1): `[species]` with the
@@ -338,4 +359,4 @@ and its c_p, λ and μ. The keys are on the [key page](flow-keys.md#species).
 | Case file | Mesh | Shows | Where |
 |---|---|---|---|
 | `flow/species_binary_diffusion.toml` | generated hex 2D, 100 × 2 cells | CH₄ diffusing in N₂ at rest: the exact decay of a cosine mode, BDF2 to t = 50 s; L2 error 9.5·10⁻⁶, species and element accounts closed to round-off | [gallery 278](../gallery/species.md#species-transport), [recipe 278](../recipes/species.md#species-transport) |
-| `flow/species_coaxial_jet.toml` | generated hex 2D wedge, 90 × 40 cells | a laminar methane jet (r = 5 mm, 1 m/s) in a coflow of air at 0.2 m/s, isothermal, density from the mixture's molar mass (0.65 to 1.17 kg/m³), mixture properties from kinetic theory; 154 iterations, element accounts closed to 6.5·10⁻⁹ | [gallery 278](../gallery/species.md#species-transport), [recipe 278](../recipes/species.md#species-transport) |
+| `flow/species_coaxial_jet.toml` | generated hex 2D wedge, 90 × 40 cells | a laminar methane jet (r = 5 mm, 1 m/s) in a coflow of air at 0.2 m/s, isothermal, density from the mixture's molar mass (0.65 to 1.17 kg/m³), mixture properties from kinetic theory; 154 iterations, element accounts closed to 6.4·10⁻⁹ | [gallery 278](../gallery/species.md#species-transport), [recipe 278](../recipes/species.md#species-transport) |

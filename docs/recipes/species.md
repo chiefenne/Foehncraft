@@ -69,7 +69,7 @@ every species and the closure of each element:
 
 ```
 species CH4    Y in [-5.889788e-7, 1.000003e0]
-element C  inflow 2.130009e-7 kg/s, imbalance 1.385e-15 kg/s (6.50e-9 relative)
+element C  inflow 2.130009e-7 kg/s, imbalance 1.365e-15 kg/s (6.41e-9 of the inflow)
 ```
 
 and `result.json` holds the accounts `species <name>` and `element <E>`

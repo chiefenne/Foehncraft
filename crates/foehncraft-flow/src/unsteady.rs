@@ -1041,6 +1041,11 @@ fn run_one<F: FnMut(&str)>(
     // point inside a sliding rotor is a limit of variant B)
     let loc = Locator::new(mesh0, geo0);
     let mut spray = crate::spray::create(&case, mesh0, geo0, &loc)?;
+    // the datums of the reports (SP1b, D262): the parcels see the same ones
+    let datum_built = crate::datum::build(&case, mesh0, geo0)?;
+    if let Some(sp) = spray.as_mut() {
+        sp.set_datums(datum_built.iter().map(|b| b.parcels.clone()).collect());
+    }
     let reference_cell = if arrays.has_pressure() {
         None
     } else {
@@ -1074,6 +1079,14 @@ fn run_one<F: FnMut(&str)>(
     crate::density::attach(&mut fl, &case)?;
     crate::buoyancy::attach(&mut fl, &case)?;
     crate::porous::attach(&mut fl, &case, mesh)?;
+    for d in crate::immersed::attach(&mut fl, &case, mesh, geo)? {
+        if d.severity == crate::diag::Severity::Warning {
+            lg.warn(&format!("{}: {}", d.code, d.message));
+            warnings.push(d);
+        } else {
+            lg.note(&d.message);
+        }
+    }
     // the wall distance of the sliding mesh by imprinting: kept per part and
     // updated for the rotor angle of every step (D182, D48)
     let mut turning_distance = match (&imprint, &work) {
@@ -1516,13 +1529,20 @@ fn run_one<F: FnMut(&str)>(
             out,
             &suffix_name("spray", desc, last),
             &crate::case::csv_preamble("spray", name, None, crate::spray::CSV_UNITS),
-            crate::spray::CSV_HEAD,
+            &crate::spray::csv_head(spray.as_ref().context("spray")?),
             cont,
         )?)
     } else {
         None
     };
     let mut spray_lost_warned = false;
+    // the two-way coupling over the run and of the last step (SP2)
+    let mut spray_coupling: Option<crate::spray::CouplingSummary> = None;
+    let mut spray_step: Option<crate::spray::StepCoupling> = None;
+    let mut coupling_warned = false;
+    let mut reports = (last && !datum_built.is_empty())
+        .then(|| crate::datum::Reports::new(datum_built, out, name, cont));
+    let mut series = last.then(|| crate::series::Series::new(out, name, cont));
     // the statistics of D71 (the final solve of a sweep only)
     let stat_cfg = case.output.statistics.clone().filter(|_| last);
     let stat_start = stat_cfg
@@ -1577,7 +1597,7 @@ fn run_one<F: FnMut(&str)>(
             disc: &fl.disc,
             phys: fl.physics(),
         };
-        let r = balance::rates(
+        let mut r = balance::rates(
             &sol,
             mesh,
             geo,
@@ -1586,6 +1606,10 @@ fn run_one<F: FnMut(&str)>(
             &geo.cell_volume,
             nonorth,
         );
+        if let Some(sp) = spray.as_ref().filter(|s| s.config().coupling.two_way()) {
+            let gm = crate::spray::gas_momentum(&sol, &geo.cell_volume);
+            crate::spray::book(&mut r, sp, None, dt, gm);
+        }
         Ledger::start(r, tr.clock.time, first_step, case.balance.tolerance_energy)
     };
     let mut last_balance = None;
@@ -1778,13 +1802,29 @@ fn run_one<F: FnMut(&str)>(
             });
         let min_dt = t.min_time_step;
         let mut tries = 0;
+        let mut spray_passes = None;
         let stepped = loop {
             af.update(&case, mesh, geo, &mut fl, t0 + h)?;
             tv.update(&case, mesh, geo, &mut fl, t0 + h)?;
             fl.keep_valid()?;
+            let two_way = spray.as_ref().filter(|s| s.config().coupling.two_way());
             let r = match &frozen {
                 Some(f) if frozen_step => {
                     tr.energy_step(&mut fl, h, f.restart_levels(), f.iterations())
+                }
+                // the parcel passes inside the step (SP2, D252)
+                _ if two_way.is_some() => {
+                    let sp = two_way.context("spray")?;
+                    let env = foehncraft_particles::Env {
+                        mesh,
+                        geo,
+                        loc: &loc,
+                    };
+                    let mut hk = crate::spray::TwoWay::new(sp, env, geo, t0, h);
+                    let r = tr.step_with(&mut fl, h, Some(&mut hk));
+                    fl.spray_momentum = None;
+                    spray_passes = Some(hk.finish());
+                    r
                 }
                 _ => tr.step(&mut fl, h),
             };
@@ -2052,9 +2092,36 @@ fn run_one<F: FnMut(&str)>(
                 disc: &fl.disc,
                 phys: fl.physics(),
             };
-            let lost = crate::spray::step(
-                &case, sp, &sol, mesh, geo, &loc, n, rp.time, h, out, name, csv,
-            )?;
+            let (lost, file) = match spray_passes.take() {
+                Some(done) => {
+                    drop(sol);
+                    let (lost, file, c) = crate::spray::step_coupled(
+                        &case, sp, &mut fl, done, mesh, geo, &loc, n, out, name, csv,
+                    )?;
+                    spray_coupling
+                        .get_or_insert_with(Default::default)
+                        .add(&c, h);
+                    if c.unconverged && !coupling_warned {
+                        coupling_warned = true;
+                        let m = format!(
+                            "step {n}: the spray passes ended at [spray.coupling] max_passes with \
+                             the coupling lag {:.2e} above the tolerance (more passes or a smaller \
+                             step; `spray.csv` counts such steps)",
+                            c.lag
+                        );
+                        lg.warn(&format!("{}: {m}", crate::diag::SPRAY_COUPLING));
+                        steer.event(crate::diag::SPRAY_COUPLING, n, &m);
+                    }
+                    spray_step = Some(c);
+                    (lost, file)
+                }
+                None => crate::spray::step(
+                    &case, sp, &sol, mesh, geo, &loc, n, rp.time, h, out, name, csv,
+                )?,
+            };
+            if let (Some(f), Some(se)) = (file, series.as_mut()) {
+                se.add(n, rp.time, "parcels", &f)?;
+            }
             if lost > 0 && !spray_lost_warned {
                 spray_lost_warned = true;
                 lg.warn(&format!(
@@ -2079,6 +2146,11 @@ fn run_one<F: FnMut(&str)>(
                 &geo.cell_volume,
                 nonorth,
             );
+            let mut r = r;
+            if let Some(sp) = spray.as_ref().filter(|s| s.config().coupling.two_way()) {
+                let gm = crate::spray::gas_momentum(&sol, &geo.cell_volume);
+                crate::spray::book(&mut r, sp, spray_step.as_ref(), h, gm);
+            }
             // the tolerance may change during the run (D40)
             ledger.tolerance = case.balance.tolerance_energy;
             ledger.step(r, n, rp.time)
@@ -2275,6 +2347,9 @@ fn run_one<F: FnMut(&str)>(
             if let Some(f) = probe_csv.as_mut() {
                 f.flush()?;
             }
+            if let Some(r) = reports.as_mut() {
+                r.flush()?;
+            }
         }
         last_balance = Some(bal);
         let req = control.check(n, case.run.reread_every);
@@ -2286,6 +2361,20 @@ fn run_one<F: FnMut(&str)>(
             } else {
                 n.is_multiple_of(case.output.monitor_every)
             };
+        // the datum reports on the schedule of the monitors (D262)
+        let datum_now = if sm.interval.is_some() {
+            sm.fired(t0, rp.time, tol)
+        } else {
+            n.is_multiple_of(case.output.monitor_every)
+        };
+        if datum_now && let Some(r) = reports.as_mut() {
+            let sol = Solution {
+                state: fl.state()?,
+                disc: &fl.disc,
+                phys: fl.physics(),
+            };
+            r.row(n, rp.time, &case, &sol, mesh, geo, spray.as_mut())?;
+        }
         let o = &case.output;
         let fields_now = last
             && ((o.fields_every > 0 && n.is_multiple_of(o.fields_every))
@@ -2398,7 +2487,7 @@ fn run_one<F: FnMut(&str)>(
                     pc.row(&row);
                 }
                 if let (Some(_), Some([cd, cl])) =
-                    (bench, benchmark_coefficients(&case, &boundaries, mesh))
+                    (bench, benchmark_coefficients(&case, &boundaries, &[], mesh))
                 {
                     let (i, j) = (
                         probes.index("benchmark_front").unwrap_or(0),
@@ -2427,6 +2516,9 @@ fn run_one<F: FnMut(&str)>(
                 lg.note(&format!(
                     "fields of step {n} written (fields_{n:06}.vtkhdf)"
                 ));
+                if let Some(se) = series.as_mut() {
+                    se.add(n, rp.time, "fields", &path)?;
+                }
             }
         }
         // next time step, from the step just taken (h, which is shorter
@@ -2521,9 +2613,22 @@ fn run_one<F: FnMut(&str)>(
         f.flush()?;
     }
     if let Some(sp) = spray.as_ref() {
-        crate::spray::write_parcels(sp, out, name, tr.clock.step)?;
+        let f = crate::spray::write_parcels(sp, out, name, tr.clock.step)?;
+        if let (Some(f), Some(se)) = (f, series.as_mut()) {
+            se.add(tr.clock.step, tr.clock.time, "parcels", &f)?;
+        }
         crate::spray::finish(sp)?;
     }
+    if let Some(r) = reports.as_mut() {
+        r.flush()?;
+    }
+    let datum_summary = reports
+        .as_ref()
+        .map(|r| r.summary(spray.as_ref(), &mesh.cell_zone));
+    let spray_summary = spray.as_ref().map(|sp| crate::spray::SpraySummary {
+        coupling: spray_coupling.clone(),
+        ..crate::spray::summary(sp, &mesh.cell_zone)
+    });
     if let Some(f) = heat_csv.as_mut() {
         f.flush()?;
     }
@@ -2794,8 +2899,8 @@ fn run_one<F: FnMut(&str)>(
     // benchmark (the impulsive start is orders of magnitude larger)
     let mut chart_start = f64::NEG_INFINITY;
     let benchmark = match bench {
-        Some(b @ Benchmark::SchaferTurek2d1) => benchmark_coefficients(&case, &boundaries, mesh)
-            .map(|[cd, cl]| {
+        Some(b @ Benchmark::SchaferTurek2d1) => {
+            benchmark_coefficients(&case, &boundaries, &[], mesh).map(|[cd, cl]| {
                 let vals = if imprint.is_some() {
                     probes.relocated(mesh, geo).values(&sol, geo)
                 } else {
@@ -2806,7 +2911,8 @@ fn run_one<F: FnMut(&str)>(
                     probes.index("benchmark_back").unwrap_or(0),
                 );
                 monitor::steady_benchmark(b, cd, cl, vals[i].1 - vals[j].1)
-            }),
+            })
+        }
         Some(b @ Benchmark::SchaferTurek2d2) => {
             let start = case
                 .verification
@@ -2927,6 +3033,12 @@ fn run_one<F: FnMut(&str)>(
                 Some((tr.clock.step, Some(tr.clock.time))),
             )?,
         }
+        let ff = out.join("fields.vtkhdf");
+        if let Some(se) = series.as_mut()
+            && ff.exists()
+        {
+            se.add(tr.clock.step, tr.clock.time, "fields", &ff)?;
+        }
         if !bt.is_empty() {
             let window = |c: &[f64]| -> Vec<(f64, f64)> {
                 bt.iter()
@@ -2999,7 +3111,9 @@ fn run_one<F: FnMut(&str)>(
                 geo.cell_volume.clone(),
             ),
         };
+    let immersed = crate::immersed::forces(&case, mesh, geo, &sol.u)?;
     let solve = Solve {
+        immersed,
         density,
         scalars,
         periodic,
@@ -3047,6 +3161,8 @@ fn run_one<F: FnMut(&str)>(
             cycle_coupling: cycle_summary,
             frozen_flow: frozen_summary,
         }),
+        datums: datum_summary,
+        spray: spray_summary,
         benchmark,
     };
     let volume = geo.cell_volume.clone();
@@ -3115,9 +3231,10 @@ pub(crate) fn steady_benchmark_of(
     geo: &foehncraft_mesh::Geometry,
     loc: &Locator,
     boundaries: &[crate::case::BoundarySummary],
+    immersed: &[crate::immersed::BodyForce],
 ) -> Option<monitor::BenchmarkResult> {
     let b = case.verification.benchmark?;
-    let [cd, cl] = benchmark_coefficients(case, boundaries, mesh)?;
+    let [cd, cl] = benchmark_coefficients(case, boundaries, immersed, mesh)?;
     let probes = Probes::new(case, &benchmark_points(case, mesh), loc, geo);
     let vals = probes.values(sol, geo);
     let (i, j) = (
@@ -3138,9 +3255,13 @@ pub(crate) fn log_benchmark(b: &monitor::BenchmarkResult, mut line: impl FnMut(&
     }
 }
 
+/// The drag and lift coefficients of the benchmark body: the boundary
+/// `benchmark_boundary` (default `cylinder`), or else the immersed body of
+/// that name (L13 stage 1).
 fn benchmark_coefficients(
     case: &FlowCase,
     boundaries: &[crate::case::BoundarySummary],
+    immersed: &[crate::immersed::BodyForce],
     mesh: &foehncraft_mesh::Mesh,
 ) -> Option<[f64; 2]> {
     let b = case.verification.benchmark?;
@@ -3149,12 +3270,15 @@ fn benchmark_coefficients(
         .benchmark_boundary
         .clone()
         .unwrap_or_else(|| "cylinder".into());
-    let p = boundaries.iter().find(|p| p.name == name)?;
+    let force = match boundaries.iter().find(|p| p.name == name) {
+        Some(p) => p.force,
+        None => immersed.iter().find(|b| b.name == name)?.force,
+    };
     let (lo, hi) = mesh.bounding_box();
     let depth = hi[2] - lo[2];
     let u = b.mean_velocity();
     let q = 0.5 * case.rho() * u * u * Benchmark::DIAMETER * depth;
-    Some([p.force[0] / q, p.force[1] / q])
+    Some([force[0] / q, force[1] / q])
 }
 
 fn suffix_name(base: &str, _desc: &str, last: bool) -> String {

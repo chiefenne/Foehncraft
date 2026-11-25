@@ -103,8 +103,12 @@ validated range, one mesh only, …) in its report and its JSON result.
   and number of ranks (MPI step W2); the steady scalar solver, multigrid
   included, and the flow solver (SIMPLEC, PISO and the coupled solver,
   k-ω SST and k-ε, passive scalars and the energy equation) run on several
-  ranks with bitwise the result of one (MPI steps W3 to W5; `foehn run
-  --ranks N` follows in 1.1).
+  ranks with bitwise the result of one (MPI steps W3 to W5); a restart
+  gathered from the ranks is byte for byte the one-rank file and continues
+  on any rank count (W6); `foehn flow case.toml --ranks N` (or `mpirun -n N
+  foehn flow`) solves a steady laminar run on ranks and writes every output
+  file byte for byte as one rank does (W7 part 1; scalars, energy,
+  turbulence and transient runs on ranks follow).
 - **Pressure–velocity coupling.** SIMPLEC and SIMPLE for steady flow, PISO
   with outer correctors for transient flow (SIMPLEC-type correctors with
   outer iterations, stable on thin wedge cells at an axis), a time step from the
@@ -213,8 +217,12 @@ validated range, one mesh only, …) in its report and its JSON result.
   p₀(t), a manufactured solution with ρ = 1/T converges at second order,
   and air between walls at 960 K and 240 K has a heat flow with GCI
   0.02 % (gallery 195).
-- **Lagrangian sprays (L12, SP1).** Droplets as parcels in a transient flow run (`[spray]` with an included injector file): exact exponential integration of drag (Schiller and Naumann) and gravity, tracking on the mesh locator, stick, rebound, escape or mirror at boundaries, a mass book that stops the run when it does not close, parcel files and restart, results bitwise equal on 1 to 4 threads, one source for CPU and GPU kernels. One way, one process, constant droplet size; coupling to the gas follows in SP2 ([gallery 242](docs/gallery/sprays.md#spray-duct)).
+- **Lagrangian sprays (L12, SP1).** Droplets as parcels in a transient flow run (`[spray]` with an included injector file): exact exponential integration of drag (Schiller and Naumann) and gravity, tracking on the mesh locator, stick, rebound, escape or mirror at boundaries, a mass book that stops the run when it does not close, parcel files and restart, results bitwise equal on 1 to 4 threads, one source for CPU and GPU kernels. One process ([gallery 242](docs/gallery/sprays.md#spray-duct)).
+- **Datums and spray statistics (SP1b).** Rosin-Rammler and log-normal droplet sizes; `[[datum]]` planes (cut through the cells or moved to the faces, discs, rectangles), STL surfaces, boundaries, zone interfaces, boxes, cylinders and zones; the liquid through each datum bitwise equal on any thread count, the gas mass, volume and momentum flow and area averages; D10 to D43, Dv10/50/90, histograms, a Rosin-Rammler fit and the penetration, in `datums.csv`, `spray_hist_<datum>.csv` and `result.json`, also as the tools `post.datums`, `post.droplets` and `post.penetration`; `series.json` lists the files of a run for a viewer ([gallery 265](docs/gallery/sprays.md#spray-datums)).
+- **Two-way spray coupling, momentum (SP2a).** `[spray.coupling] mode = "two-way"`: the drag on the droplets is an implicit source of the gas momentum (value plus slope), parcel passes inside the time step until the coupling lag is small (at most 3), a closing step that gives the parcels what the gas received, so the ledger pair cancels to the bit; bitwise equal for any parcel order and thread count, stable and without overshoot at steps of 100 droplet response times. Heat exchange (SP2b) and turbulent dispersion (SP2c) follow ([gallery 280](docs/gallery/sprays.md#spray-two-way)).
+- **Adjoint, first stage (L17 A0).** The steady residual R(q) of SIMPLEC and the coupled solver as one callable (`Flow::steady_residual`, steady laminar flow), and the scatter-free reverse sweep of the momentum face kernel from local dual-number Jacobians, checked by a dot-product test and finite differences; the adjoint solve itself follows in A1 ([gallery 271](docs/gallery/verification.md#adjoint-a0)).
 - **Porous regions (D270, PM1).** `kind = "porous"` with a Darcy–Forchheimer resistance in the superficial velocity: one value or three principal values along the axes of the region, or the `honeycomb` shorthand for square ceramic channels (Shah & London). A duct filled with the matrix gives the exact pressure drop, a block in a duct reaches it with second order. Axes along the mesh axes, laminar flow, one process, CPU only; with `[energy]` and a `solid`, gas and matrix carry temperatures of their own, coupled by h·a in one energy matrix (D271, PM2; Schumann's bed exact to second order, a honeycomb store charged) ([gallery 273](docs/gallery/porous.md#porous-flow), [275](docs/gallery/porous.md#porous-two-temperatures)).
+- **Immersed bodies by penalisation (L13 stage 1).** Cylinders, spheres and boxes put into any mesh without meshing them (`[immersed]`): solid fraction per cell, an implicit Brinkman sink inside the momentum rows (CPU and GPU, SIMPLEC and coupled), the force on every body. Laminar and isothermal only, the wall smeared over a cell: the Re 20 cylinder on a plain box mesh gets drag and Δp within 1 % of the benchmark, lift 35 % high ([gallery 270](docs/gallery/immersed.md#penalised-cylinder)). Sharp cut-cell walls are stage 2.
 - **Species of gas mixtures (L2, steam furnace stage SF1).** `[species]` with the 53 species of GRI-Mech 3.0: N − 1 mass fractions carried by the flow, the closure species as 1 − Σ, Schmidt or Lewis diffusion, compositions in mole or mass fractions; the density follows the mixture's molar mass on the low-Mach variable density, and c_p, λ, μ are those of the mixture (NASA-7, kinetic theory). Species and element accounts in the ledger. Binary diffusion meets its exact decay, a methane jet in air closes its element accounts to the solver tolerance (gallery [278](docs/gallery/species.md#species-transport)). Mixing only: chemistry follows (SF2, SF3).
 - **Internal flows (D45).** Turbulent pipe flow against DNS, the
   asymmetric plane diffuser of Buice & Eaton, the U-bend of Monson et al.
@@ -223,6 +231,18 @@ validated range, one mesh only, …) in its report and its JSON result.
   the U-bend, also with sharp edges (gallery
   [193](docs/gallery/turbulence.md#pipe-turbulent), [196](docs/gallery/flow.md#tjunction-mixing),
   [199](docs/gallery/turbulence.md#diffuser), [204](docs/gallery/turbulence.md#ubend)).
+- **Thermal radiation (R1a).** Monte Carlo transport of energy bundles
+  through grey absorbing-emitting gas on a prescribed temperature field,
+  with grey diffuse walls, symmetry planes and openings: emission from
+  scrambled Sobol points, the exact path length in every cell, integer
+  tallies with an energy account that closes exactly, bitwise the same on
+  any number of threads and ranks; the bundle transport also runs on
+  NVIDIA GPUs. Checked against six exact cases (slab, enclosure, parallel
+  plates, cube of grey gas) and shown on a box furnace with cooled tubes
+  ([gallery 259](docs/gallery/radiation.md#furnace)), where chosen bundles
+  of the call are traced and drawn over the net flux into the walls
+  ([gallery 281](docs/gallery/radiation.md#furnace-paths)). The coupling
+  to the energy equation follows (R1b).
 - **Rotating machinery.** The moving reference frame (steady and transient
   frozen rotor), the sliding mesh by conformal stepping and by imprinting
   the interface in every step, several rotors at their own speeds,

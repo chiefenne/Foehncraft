@@ -265,6 +265,25 @@ pub struct Bundle {
     pub batch: u32,
 }
 
+/// Where a traced bundle stands ([`Tally::trace`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum Trace {
+    /// It leaves a cell, with the weight that is left after the cell.
+    Cell = 0,
+    /// It is reflected by a grey wall, with the weight that is left.
+    Wall = 1,
+    /// It is reflected by a mirror.
+    Mirror = 2,
+    /// Its last quanta stay: in the gas at the exit of the cell where
+    /// Russian roulette ended it, or at a grey wall.
+    Absorbed = 3,
+    /// It leaves through an open boundary, with the weight it carries out.
+    Escaped = 4,
+    /// It was lost (degenerate geometry).
+    Lost = 5,
+}
+
 /// Where the tallies of a call go: integer quanta, so the order of the
 /// additions does not matter (atomics on the GPU, atomics or per-thread
 /// arrays on the CPU).
@@ -280,6 +299,10 @@ pub trait Tally {
     fn roulette(&self, q: i64);
     /// A bundle with `q` quanta was lost (degenerate geometry).
     fn lost(&self, q: i64);
+    /// The bundle stands at `x` with `w` quanta (tracing of bundle paths;
+    /// the default does nothing, so a call and the GPU code are unchanged).
+    #[inline(always)]
+    fn trace(&self, _at: Trace, _x: [f64; 3], _w: i64) {}
 }
 
 /// How [`transport`] ended for a bundle.
@@ -353,6 +376,7 @@ pub fn transport<T: Tally>(
             b.walk.target[2] - b.walk.origin[2],
         ];
         let len = sqrt(dot(d, d));
+        let o = b.walk.origin;
         let (mut w, mut event) = (b.w, b.event);
         let end = walk(m, &mut b.walk, md.max_steps, |cell, a, c| {
             let tau = md.kappa[cell as usize] * ((c - a) * len);
@@ -366,6 +390,8 @@ pub fn transport<T: Tally>(
                     w = roulette(w, w_min, u, tally);
                 }
             }
+            let at = if w > 0 { Trace::Cell } else { Trace::Absorbed };
+            tally.trace(at, add(o, scale(d, c)), w);
             w > 0
         });
         b.w = w;
@@ -376,6 +402,7 @@ pub fn transport<T: Tally>(
             WalkEnd::Lost | WalkEnd::Reached => {
                 // the segment is longer than any chord, so Reached means a
                 // broken walk as well
+                tally.trace(Trace::Lost, b.walk.x, b.w);
                 tally.lost(b.w);
                 b.w = 0;
                 return Fate::Done;
@@ -387,6 +414,9 @@ pub fn transport<T: Tally>(
                 let dir = [d[0] * s, d[1] * s, d[2] * s];
                 let new_dir = match md.wall[f] {
                     WallKind::Open => {
+                        // the flux through the open face, none of it stays
+                        tally.trace(Trace::Escaped, b.walk.x, b.w);
+                        tally.wall(batch, f, b.w, 0);
                         tally.escaped(b.w);
                         b.w = 0;
                         return Fate::Done;
@@ -394,10 +424,12 @@ pub fn transport<T: Tally>(
                     WallKind::Mirror => {
                         b.event += 1;
                         if b.event >= MAX_EVENTS {
+                            tally.trace(Trace::Lost, b.walk.x, b.w);
                             tally.lost(b.w);
                             b.w = 0;
                             return Fate::Done;
                         }
+                        tally.trace(Trace::Mirror, b.walk.x, b.w);
                         let k = 2.0 * dot(dir, n);
                         [dir[0] - k * n[0], dir[1] - k * n[1], dir[2] - k * n[2]]
                     }
@@ -406,6 +438,7 @@ pub fn transport<T: Tally>(
                         tally.wall(batch, f, b.w, q);
                         b.w -= q;
                         if b.w == 0 {
+                            tally.trace(Trace::Absorbed, b.walk.x, 0);
                             return Fate::Done;
                         }
                         let u = [
@@ -414,6 +447,7 @@ pub fn transport<T: Tally>(
                         ];
                         b.event += 1;
                         if b.event >= MAX_EVENTS {
+                            tally.trace(Trace::Lost, b.walk.x, b.w);
                             tally.lost(b.w);
                             b.w = 0;
                             return Fate::Done;
@@ -423,9 +457,11 @@ pub fn transport<T: Tally>(
                             b.event += 1;
                             b.w = roulette(b.w, w_min, u, tally);
                             if b.w == 0 {
+                                tally.trace(Trace::Absorbed, b.walk.x, 0);
                                 return Fate::Done;
                             }
                         }
+                        tally.trace(Trace::Wall, b.walk.x, b.w);
                         cosine_about(n, u)
                     }
                 };

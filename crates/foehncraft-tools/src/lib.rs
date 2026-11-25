@@ -32,6 +32,7 @@ pub mod journal;
 pub mod markdown;
 pub mod materials;
 pub mod mesh;
+pub mod mpi;
 pub mod post;
 pub mod study;
 pub mod system;
@@ -393,6 +394,9 @@ pub fn registry() -> Vec<Entry> {
         entry::<control::Stop>(),
         entry::<control::Set>(),
         entry::<post::Derive>(),
+        entry::<post::DatumReport>(),
+        entry::<post::SprayStatistics>(),
+        entry::<post::SprayPenetration>(),
         entry::<study::Scalar>(),
         entry::<study::Poisson>(),
         entry::<study::G1>(),

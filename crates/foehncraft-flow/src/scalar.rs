@@ -1440,12 +1440,11 @@ impl Scalars {
         );
         let xf = &self.xf;
         let eps_cell = self.eps_cell;
-        // the scalars and species first, then (after the mixture of the new
-        // mass fractions, SF1) the energy equation
+        // the scalars and species first, then the energy equation; the
+        // mixture (SF1) is that of the fields at the start of the solve and
+        // is renewed at its end, so that it depends on the solved fields
+        // only (a restart continues bitwise)
         for pass in 0..2 {
-            if pass == 1 && self.species.is_some() {
-                refresh_species(dev, self.species.as_deref_mut(), &mut self.fields)?;
-            }
             for f in self
                 .fields
                 .iter_mut()
@@ -1704,6 +1703,7 @@ impl Scalars {
                 }
             }
         }
+        refresh_species(dev, self.species.as_deref_mut(), &mut self.fields)?;
         Ok(out)
     }
 
@@ -1962,6 +1962,8 @@ impl Scalars {
                 None => missing.push(crate::porous_energy::FIELD.to_string()),
             }
         }
+        // the mixture of the loaded mass fractions and temperature
+        refresh_species(dev, self.species.as_deref_mut(), &mut self.fields)?;
         Ok(missing)
     }
 
@@ -3787,6 +3789,14 @@ impl Scalars {
         let link = crate::species::Link::new(res, fields, disc, t_fluid, (mu, k, cp), m_fluid);
         self.species = Some(Box::new(link));
         refresh_species(dev, self.species.as_deref_mut(), &mut self.fields)
+    }
+
+    /// The face viscosity of the last mixture of a species case with
+    /// mixture properties (SF1): what the next momentum solve takes.
+    pub fn species_viscosity(&self) -> Option<Vec<f64>> {
+        let sp = self.species.as_deref()?;
+        (sp.properties() == crate::species::PropertyModel::Mixture)
+            .then(|| sp.face.iter().map(|m| m.viscosity).collect())
     }
 
     /// The species of the case, if it has any.

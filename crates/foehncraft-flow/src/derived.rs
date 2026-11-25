@@ -153,11 +153,13 @@ pub enum Derived {
     TurbulenceWall,
     /// f_r1 of the curvature correction of SST (-, D170).
     CurvatureCorrection,
+    /// χ, the solid fraction of the immersed bodies (-, L13 stage 1).
+    SolidFraction,
 }
 
 impl Derived {
     /// Every derived field, in the order they are written.
-    pub const ALL: [Derived; 21] = [
+    pub const ALL: [Derived; 22] = [
         Derived::Vorticity,
         Derived::QCriterion,
         Derived::Lambda2,
@@ -179,6 +181,7 @@ impl Derived {
         Derived::WallNormal,
         Derived::TurbulenceWall,
         Derived::CurvatureCorrection,
+        Derived::SolidFraction,
     ];
 
     /// The name in the case file.
@@ -205,6 +208,7 @@ impl Derived {
             Derived::WallNormal => "wall-normal",
             Derived::TurbulenceWall => "turbulence-wall",
             Derived::CurvatureCorrection => "curvature-correction",
+            Derived::SolidFraction => "solid-fraction",
         }
     }
 
@@ -299,6 +303,7 @@ impl Derived {
                 ("blending", "-"),
             ],
             Derived::CurvatureCorrection => &[("rotation_function", "-")],
+            Derived::SolidFraction => &[("solid_fraction", "-")],
         }
     }
 
@@ -906,6 +911,19 @@ pub fn compute(
             Derived::WallDistance => out
                 .cells
                 .push(("wall_distance", wall_distance(case, mesh, geo)?)),
+            Derived::SolidFraction => {
+                let bs = crate::immersed::bodies(&case.immersed).map_err(|_| {
+                    crate::diag::err(crate::diag::Diagnostic::new(
+                        crate::diag::CASE_INCONSISTENT,
+                        "derived field `solid-fraction` needs `[immersed]` bodies",
+                    ))
+                })?;
+                let per = crate::immersed::fractions(&bs, case.immersed.samples(), mesh, geo);
+                out.cells.push((
+                    "solid_fraction",
+                    crate::immersed::total_fraction(&per, mesh.n_cells),
+                ));
+            }
             Derived::WallShearStress => {
                 let w = walls.as_ref().expect("computed above");
                 for (i, n) in [
@@ -1263,6 +1281,79 @@ pub fn wall_exchange_from_restart(
             wall_exchange(case, l.mesh, l.geo, l.sol),
         ))
     })
+}
+
+/// The gas reports of the datums of `case` (`[[datum]]`, D262) for the
+/// solution in `restart` (the tool `post.datums`, D267): per datum its
+/// name, type, whether it is exact, and the quantities of
+/// [`crate::datum::gas_report`]. `only` limits it to the datums named.
+pub fn datum_report(
+    case: &FlowCase,
+    restart: &std::path::Path,
+    only: &[String],
+) -> Result<DatumReport> {
+    let all: Vec<&str> = case.datums.iter().map(|d| d.name.as_str()).collect();
+    for n in only {
+        anyhow::ensure!(
+            all.contains(&n.as_str()),
+            "the case has no datum `{n}`; it has {}",
+            if all.is_empty() {
+                "none".to_string()
+            } else {
+                all.join(", ")
+            }
+        );
+    }
+    with_restart(case, restart, |l| {
+        let built = crate::datum::build(case, l.mesh, l.geo)?;
+        let datums = built
+            .iter()
+            .filter(|b| only.is_empty() || only.contains(&b.section.name))
+            .map(|b| DatumValues {
+                name: b.section.name.clone(),
+                kind: b.section.kind.clone(),
+                exact: matches!(b.facets, crate::datum::Facets::Faces(_)),
+                values: crate::datum::gas_report(b, case, l.sol, l.mesh, l.geo)
+                    .into_iter()
+                    .collect(),
+            })
+            .collect();
+        Ok(DatumReport {
+            restart: restart.to_path_buf(),
+            iteration: l.iteration,
+            step: l.clock.map(|k| k.step),
+            time: l.clock.map(|k| k.time),
+            datums,
+        })
+    })
+}
+
+/// What [`datum_report`] returns.
+#[derive(Debug, Clone, Serialize)]
+pub struct DatumReport {
+    /// The restart file.
+    pub restart: std::path::PathBuf,
+    /// Outer iteration of the restart.
+    pub iteration: usize,
+    /// Time step (transient).
+    pub step: Option<usize>,
+    /// Time (transient).
+    pub time: Option<f64>,
+    /// The datums.
+    pub datums: Vec<DatumValues>,
+}
+
+/// The gas values of one datum.
+#[derive(Debug, Clone, Serialize)]
+pub struct DatumValues {
+    /// Name.
+    pub name: String,
+    /// Type.
+    pub kind: String,
+    /// Exact (sums of mesh faces) rather than a cut.
+    pub exact: bool,
+    /// Quantity → value.
+    pub values: std::collections::BTreeMap<String, f64>,
 }
 
 /// A solution read back from a restart file.

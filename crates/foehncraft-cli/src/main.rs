@@ -462,6 +462,11 @@ struct FlowArgs {
     /// CPU threads (overrides `run.threads`).
     #[arg(long)]
     threads: Option<usize>,
+    /// Solve on N ranks (overrides `run.rank_count`, MPI step W7): threads
+    /// of this process; under `mpirun -n N` (a build with the `mpi`
+    /// feature) the MPI processes are the ranks.
+    #[arg(long, value_name = "N")]
+    ranks: Option<usize>,
     /// Refinement levels of `[mesh.generate]`, comma-separated (overrides
     /// `verification.levels`).
     #[arg(long, value_delimiter = ',')]
@@ -523,10 +528,13 @@ fn main() {
     // GPU backends (feature `cuda`; nothing without it)
     foehncraft_cuda::register();
     let cli = Cli::parse();
-    let _ = JOURNAL.set(cli.journal.clone());
+    // the MPI processes of a run (W7): only rank 0 journals and prints
+    let mpi = tools::mpi::start();
+    let lead = tools::mpi::rank() == 0;
+    let _ = JOURNAL.set(cli.journal.clone().filter(|_| lead));
     let out = Out {
-        json: cli.json,
-        quiet: cli.quiet,
+        json: cli.json && lead,
+        quiet: cli.quiet || !lead,
     };
     let name = match &cli.command {
         Command::Info => "info",
@@ -617,6 +625,7 @@ fn main() {
             1
         }
     };
+    drop(mpi);
     std::process::exit(code);
 }
 
@@ -750,6 +759,8 @@ static JOURNAL: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new(
 fn journal() -> Option<tools::journal::Journal> {
     match JOURNAL.get().cloned().flatten() {
         Some(p) => Some(tools::journal::Journal::new(p, "cli")),
+        // the other MPI processes of a run journal nothing (W7)
+        None if tools::mpi::rank() != 0 => None,
         None => tools::journal::Journal::from_env("cli"),
     }
 }
@@ -988,6 +999,7 @@ fn flow_input(a: &FlowArgs) -> tools::case::FlowInput {
         end_time: a.end_time,
         backend: a.backend.clone(),
         ptx: a.ptx.clone(),
+        ranks: a.ranks,
     }
 }
 

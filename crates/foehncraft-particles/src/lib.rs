@@ -3,19 +3,37 @@
 //! - [`batch`]: the parcel step for a batch of parcels, the CPU backends of the
 //!   kernel that also runs on the GPU (D245);
 //! - [`config`]: the `[spray]` table and its `include` file;
+//! - [`datum`]: the datums of the sprays, the crossing records and the
+//!   droplet statistics from moment sums (SP1b, D262 to D265);
+//! - [`sizes`]: the droplet size distributions of the injectors (D242);
 //! - [`spray`]: the parcels in structure-of-arrays form, the injectors,
 //!   the tracking of each parcel through the polyhedral mesh (face walk of
 //!   Macpherson, Nordin and Weller 2009, `foehncraft_mesh::locate`) with
 //!   the exact drag relaxation of `foehncraft_kernels::particle`, the
 //!   walls, the tallies, the state for a restart and the VTKHDF output.
 //!
-//! One-way coupling in this version: the parcels feel the gas, the gas does
-//! not feel them (two-way coupling is SP2). One process: parcel migration
-//! between ranks is SP3.
+//! - [`coupling`]: the records, the sorted per-cell sums and the books of
+//!   the two-way coupling (SP2, D247 to D252).
+//!
+//! One-way coupling by default; `[spray.coupling] mode = "two-way"` makes
+//! the drag a source of the gas momentum (SP2). One process: parcel
+//! migration between ranks is SP3.
 
 pub mod batch;
 pub mod config;
+pub mod coupling;
+pub mod datum;
+pub mod sizes;
 pub mod spray;
 
-pub use config::{BoundaryMode, Injector, Liquid, SprayBoundary, SpraySection};
-pub use spray::{BoundaryRule, Env, Gas, GasState, Parcels, Spray, Tally};
+pub use config::{
+    BoundaryMode, Coupling, CouplingMode, Injector, Liquid, Passes, PassesName, Penetration,
+    SprayBoundary, SpraySection,
+};
+pub use coupling::{CellSources, Record, StepBooks};
+pub use datum::{Bound, Datum, DatumTally, HistSpec, Moments, Shape, Stats, Surface, Volume};
+pub use sizes::SizeDistribution;
+pub use spray::{
+    BoundaryRule, Env, Gas, GasState, InjectorStats, Parcels, Pass, Spray, Tally, injector_stats,
+    moments_of,
+};

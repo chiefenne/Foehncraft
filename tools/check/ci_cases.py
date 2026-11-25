@@ -41,11 +41,12 @@ FLOW = {
         "cylinder_re20", "cavity_re1000", "taylor_green_cfl10", "poiseuille_tet",
         "poiseuille_hex", "poiseuille_poly", "tmr_plate_sst", "tmr_plate_keps",
         "tmr_plate_zeta_f0", "diffuser_sst_sharp", "ubend_sst_sharp", "ranks_channel_poly",
-        "ranks_heated_channel_sst",
+        "ranks_heated_channel_sst", "ranks_restart_channel", "ranks_run_channel",
+        "immersed_cylinder_re20",
     ],
     "linux-3": [
         "species_binary_diffusion", "species_coaxial_jet",
-        "taylor_green_error", "cylinder_potential", "cavity_re100_budget", "taylor_green_bdf2",
+        "taylor_green_error", "adjoint_residual_cavity", "cylinder_potential", "cavity_re100_budget", "taylor_green_bdf2",
         "taylor_green_cn", "poiseuille_mixed", "cavity_re100_transient", "taylor_green_space",
         "cavity_re100_poly3d", "cavity_re100_tet3d", "pipe_wedge", "poiseuille_expression",
         "taylor_green_expression", "channel_ramp", "scalar_front_bdf2", "scalar_oblique_step_mlp",
@@ -66,7 +67,7 @@ FLOW = {
         "buoyancy_channel_static", "buoyancy_open_box", "buoyancy_enclosure_plume",
         "vd_heated_duct", "vd_closed_box_heating", "vd_closed_box_side_heated", "vd_mms_steady",
         "mixed_convection_channel",
-        "spray_duct",
+        "spray_duct", "spray_datums", "spray_two_way",
         "porous_darcy_block", "porous_honeycomb_channel", "porous_schumann", "porous_storage_charge",
     ],
     "long": [

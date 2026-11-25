@@ -16,6 +16,8 @@
 //!   Krylov solvers;
 //! - [`expr`]: the stack machine of the compiled case-file expressions (D53);
 //! - [`adjoint`]: the transposed matrix and product for the adjoint (D59);
+//! - [`reverse`]: the reverse sweep of a face kernel from local dual
+//!   Jacobians, gathered over the inverse stencil (L17 stage A0, D221);
 //! - [`amg`]: the smoothers, transfers and coarse solve of the algebraic
 //!   multigrid V-cycle (stage 3), generic over float32 and float64;
 //! - [`walk`]: the straight walk of a particle or a radiation bundle
@@ -59,6 +61,7 @@ pub mod flow;
 pub mod fv;
 pub mod particle;
 pub mod radiation;
+pub mod reverse;
 pub mod scalar;
 pub mod species;
 pub mod spmv;

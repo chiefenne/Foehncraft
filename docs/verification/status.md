@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**118 features: 50 verified, 65 partial, 3 unverified.**
+**124 features: 50 verified, 71 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -49,6 +49,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Pressure–velocity coupling | [Coupled pressure–velocity algorithm with pseudo-time steps](#coupling-coupled) | partial |
 | Pressure–velocity coupling | [PISO with outer correctors, transient](#coupling-piso) | verified |
 | Pressure–velocity coupling | [SIMPLEC-type correctors on thin wedge cells at an axis](#coupling-wedge-corrector) | verified |
+| Adjoint | [Adjoint stage A0: steady residual R(q) of both algorithms, reverse sweep of the momentum face](#adjoint-a0) | partial |
 | Time stepping | [BDF1 (backward Euler)](#time-bdf1) | verified |
 | Time stepping | [BDF2](#time-bdf2) | verified |
 | Time stepping | [Crank–Nicolson](#time-crank-nicolson) | verified |
@@ -139,10 +140,15 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Backends and interfaces | [Multigrid on several ranks with the replicated setup, bitwise one rank (MPI step W4)](#parallel-multigrid-ranks) | partial |
 | Backends and interfaces | [Steady SIMPLEC on several ranks, bitwise one rank (MPI step W5 part 1)](#parallel-flow-ranks) | partial |
 | Backends and interfaces | [Turbulence, energy, scalars, transient runs and the coupled solver on several ranks, bitwise one rank (MPI step W5 part 2)](#parallel-flow-models-ranks) | partial |
+| Backends and interfaces | [Restart files on ranks: gathered byte for byte the one-rank file, read on any rank count (MPI step W6)](#parallel-restart-ranks) | partial |
+| Backends and interfaces | [Steady runs on ranks: rank 0 writes the output of one rank (MPI step W7 part 1)](#parallel-run-ranks) | partial |
 | Sprays | [Lagrangian spray parcels, one way (L12, SP1)](#sprays-one-way) | partial |
+| Sprays | [Datums, liquid flow through them and droplet statistics (SP1b)](#sprays-datums-statistics) | partial |
+| Sprays | [Two-way momentum coupling of the sprays (SP2a, D247 to D252)](#sprays-two-way-momentum) | partial |
 | Flow models | [Porous regions with a direction-dependent Darcy-Forchheimer resistance (D270, PM1)](#porous-darcy-forchheimer) | partial |
 | Flow models | [Gas and matrix temperatures in porous regions, monolithic (D271, D272, PM2)](#porous-two-temperatures) | partial |
 | Flow models | [Species transport of an ideal-gas mixture with mixture properties (L2, steam furnace SF1)](#species-transport) | partial |
+| Immersed bodies | [Immersed bodies by Brinkman penalisation, primitive shapes (L13 stage 1)](#immersed-penalisation) | partial |
 
 ## Meshes
 
@@ -494,6 +500,28 @@ Gaps:
 
 - exact: [`pot_solid_body_viscous`](../../examples/cases/flow/pot_solid_body_viscous.toml): solid-body rotation at high viscosity through the axis wedges (manual: velocity error L2 (largest of the levels) ≤ 0.01) ([results](stage6.md#the-piso-corrector-on-thin-wedge-cells-at-an-axis-pr-106))
 - exact: [`solid_body_rotation_is_kept_at_high_viscosity_on_the_axis_wedges`](../../crates/foehncraft-flow/tests/sliding.rs): solid-body rotation kept
+
+## Adjoint
+
+<a id="adjoint-a0"></a>
+
+### Adjoint stage A0: steady residual R(q) of both algorithms, reverse sweep of the momentum face
+
+**partial** (gaps written) · id `adjoint.a0` · switch `Flow::steady_residual, foehncraft_kernels::reverse (no case key yet)` · decisions D220, D221, D222
+
+- consistency: [`adjoint_residual_cavity`](../../examples/cases/flow/adjoint_residual_cavity.toml): the cavity at Re 100 on perturbed polygons converges with SIMPLEC (the example adjoint_a0 runs it with both algorithms) (passes in CI (set linux-3), not yet in the manual) ([results](adjoint-a0.md))
+- consistency: [`steady_residual_vanishes_for_both_algorithms`](../../crates/foehncraft-flow/src/adjoint_tests.rs): SIMPLEC and the coupled solver drive the one residual to 1e-16 and 1e-9 from 5e-2
+- consistency: [`steady_residual_is_independent_of_the_relaxation`](../../crates/foehncraft-flow/src/adjoint_tests.rs): R of one state for alpha 0.8 and 0.5 equal to 2e-13
+- consistency: [`steady_residual_does_not_change_the_run`](../../crates/foehncraft-flow/src/adjoint_tests.rs): a call between iterations leaves the run bitwise unchanged
+- exact: [`reverse_dot_product_test`](../../crates/foehncraft-flow/tests/adjoint.rs): dot-product test of the reverse sweep of the momentum face over a mixed mesh, 6e-17
+- consistency: [`reverse_gradient_against_finite_differences`](../../crates/foehncraft-flow/tests/adjoint.rs): central differences of a face functional, 1e-12
+- consistency: [`reverse_sweep_is_bitwise_reproducible`](../../crates/foehncraft-flow/tests/adjoint.rs): bitwise equal on 1 and 4 threads
+
+Gaps:
+
+- only the momentum face kernel has a reverse sweep; the gradient, limiter, boundary-value, Rhie-Chow and row kernels follow in A1, and with them the dot-product test on the whole R
+- periodic faces are not supported by the reverse sweep
+- no adjoint solve, objective or parameter yet (A1); laminar steady constant-density flow on one rank only
 
 ## Time stepping
 
@@ -1494,7 +1522,7 @@ Contracts: `diagnostics`.
 
 Gaps:
 
-- the gas momentum account of the solver itself is not booked (it comes with the first exchange rows of the sprays, SP2)
+- the gas momentum account of the solver holds only the spray exchange (SP2a); the forces of the boundaries on the gas are not booked, so its imbalance is that force
 - the viscous heating is not yet an exchange pair kinetic to thermal (the two sums are formed separately)
 - the thermal account is in the last balance only, not over a run
 
@@ -1754,10 +1782,45 @@ Contracts: `bitwise`.
 
 Gaps:
 
-- not on ranks yet (refused with an error): zeta-f and elliptic blending, curvature correction and QCR, the MLP limiter and quadratic gradients, gravity, turning zones, solid regions, schedules, level sweeps and restarts
-- monitors, probes and balances are not computed on ranks: they come with the run on ranks (W7)
+- not on ranks yet (refused with an error): zeta-f and elliptic blending, curvature correction and QCR, the MLP limiter and quadratic gradients, gravity, turning zones, solid regions, schedules and level sweeps (restarts: parallel.restart-ranks)
+- monitors, probes and balances of a run on ranks: parallel.run-ranks (W7 part 1, steady laminar)
 - transient runs are checked with the fixed time step, not the adaptive one
 - 1M cells on 4 cores split into 1, 2, 4 ranks (example ranks_scaling): +2, +10, +28 % time per iteration against threads only, bitwise; strong scaling over more cores is W9
+
+Contracts: `bitwise`.
+
+<a id="parallel-restart-ranks"></a>
+
+### Restart files on ranks: gathered byte for byte the one-rank file, read on any rank count (MPI step W6)
+
+**partial** (gaps written) · id `parallel.restart-ranks` · switch `[run] ranks and [run] restart of foehn flow` · decisions D42, D84, D93
+
+- contract (bitwise): [`restart_written_on_four_ranks_continues_on_two`](../../crates/foehncraft-flow/tests/ranks.rs): nine cases (steady SIMPLEC on polyhedra, mixed cells and tetrahedra, PISO with BDF2, a passive scalar, energy, k-omega SST, k-epsilon, the coupled solver with its momentum multigrid): the restart written on 4 ranks (and on 2) gathered into one file with the bytes of the one-rank file at the same point; continued on 2 (and on 3) ranks, every field and the residual history bitwise the uninterrupted one-rank run
+- contract (bitwise): [`ranks_restart_channel`](../../examples/cases/flow/ranks_restart_channel.toml): a transient channel (BDF2, 40 steps) on 2, 3 and 5 ranks; the restart gathered from 5 ranks has the bytes of the one-rank restart (the run fails otherwise) (passes in CI (set linux-2), not yet in the manual)
+
+Gaps:
+
+- the file is gathered on every rank and written by rank 0 (no parallel HDF5): memory of the whole state on each rank, as for the replicated multigrid setup
+- restarts of conjugate cases (full-mesh temperature) and moving meshes are refused on ranks
+- the VTKHDF field output of a run on ranks comes with the run on ranks (W7); [run] ranks writes ranks.vtkhdf gathered in global order
+
+Contracts: `bitwise`.
+
+<a id="parallel-run-ranks"></a>
+
+### Steady runs on ranks: rank 0 writes the output of one rank (MPI step W7 part 1)
+
+**partial** (gaps written) · id `parallel.run-ranks` · switch `[run] rank_count, foehn flow --ranks N, flow.run input ranks, mpirun -n N foehn flow` · decisions D84, D85, D93
+
+- contract (bitwise): [`steady_run_on_ranks_writes_the_files_of_one_rank`](../../crates/foehncraft-flow/tests/run_ranks.rs): a steady channel on polyhedra perturbed by 30 % run on 2, 3 and 4 ranks (threads): residuals.csv, balance.csv, boundaries.csv, fields.vtkhdf, restart.h5 byte for byte the run on one rank, the iteration, ledger and log-column rows of run.jsonl equal, the whole result.json equal except the provenance
+- contract (bitwise): [`ranks_run_channel`](../../examples/cases/flow/ranks_run_channel.toml): the channel solved on 5 ranks to convergence (372 outer iterations); every output file compared with --ranks 1 by hand when the case was made (passes in CI (set linux-2), not yet in the manual)
+
+Gaps:
+
+- steady laminar cases only: passive scalars, energy, turbulence models and transient runs are refused on ranks (W7 part 2)
+- settings through the control port (run.set) are refused on ranks
+- MPI processes are not run in CI yet with foehn flow (the threads test covers the same code; the MPI CI job runs the flow kernels across processes, mpi_flow)
+- the fields are gathered on every rank for the output (memory of the whole state per rank), as the replicated multigrid setup
 
 Contracts: `bitwise`.
 
@@ -1780,11 +1843,66 @@ Contracts: `bitwise`.
 Gaps:
 
 - no reference-data case (terminal velocity in the Schiller-Naumann range, a prescribed vortex, grid turbulence)
-- the gas does not feel the droplets (two-way coupling is SP2); no turbulent dispersion, evaporation or breakup
+- one way by default; two-way momentum coupling is the row sprays.two-way-momentum; no turbulent dispersion, evaporation or breakup
 - the gas state is sampled at the start of each sub-step (first order in the gas); the time of a wall hit is a chord fraction
-- one process, constant droplet size; no rotating zones or periodic boundaries (SPR003)
+- one process; no rotating zones or periodic boundaries (SPR003)
 - the CPU = GPU check of the parcel kernel runs in the PTX job of CI only
 - `spray_duct_injectors` has no run in the verification manual or in CI
+
+<a id="sprays-datums-statistics"></a>
+
+### Datums, liquid flow through them and droplet statistics (SP1b)
+
+**partial** (a model without reference data; gaps written) · id `sprays.datums-statistics` · switch `[[datum]], [[injector]] size = { distribution = ... }` · decisions D242, D262, D263, D264, D265, D267, D268
+
+- exact: [`liquid_through_datums_closes`](../../crates/foehncraft-particles/tests/datums.rs): V28.13: the liquid through a plane, a face layer, an STL surface, the outlet and a box on hexahedral, tetrahedral and polyhedral meshes equals the liquid of the parcels on the far side to round-off; the boundary datum equals the mass book
+- exact: [`statistics_follow_the_distribution_and_the_parcels`](../../crates/foehncraft-particles/tests/datums.rs): V28.14, V28.15: D32 of the drawn Rosin-Rammler and log-normal sizes within four standard errors of the distribution's value, Dv50 within one bin, the datum statistics equal to a direct calculation over the parcels
+- exact: [`datum_sums_are_bitwise_on_threads_and_restart`](../../crates/foehncraft-particles/tests/datums.rs): V28.15: datum sums bitwise equal on 1, 2 and 4 threads and after a restart
+- exact: [`datums_close_with_the_boundaries`](../../crates/foehncraft-flow/tests/datums.rs): V28.13 in a flow run: the boundary datum equals the boundary mass flow bit for bit, the plane on the faces the inlet flow to the solver tolerance, the cut plane within its quoted cut error (below 1e-3), an STL surface within 1 %, the outlet liquid equals the escaped liquid
+- exact: [`cuts_add_up_to_the_section`](../../crates/foehncraft-flow/src/datum.rs): the cell cuts of a plane add up to the section area on hexahedral, tetrahedral, polyhedral and mixed meshes
+- exact: [`quantiles_of_rosin_rammler_follow_the_formula`](../../crates/foehncraft-particles/src/sizes.rs): the inverse of the truncated Rosin-Rammler distribution against its closed form
+- exact: [`rosin_rammler_fit_recovers_its_parameters`](../../crates/foehncraft-particles/src/datum.rs): the Rosin-Rammler fit of a histogram of the exact distribution returns X and n
+- contract (diagnostics): [`bad_datums_are_refused_with_their_code`](../../crates/foehncraft-flow/tests/datums.rs): unknown types, unknown boundaries and planes outside the mesh end in DAT001 or DAT002
+- contract (schema): [`test_datum_columns_by_name`](../../python/tests/test_datums.py): datums.csv read by datum name in Python; an unknown datum names the datums of the file
+- contract (diagnostics): [`spray_datums`](../../examples/cases/flow/spray_datums.toml): Rosin-Rammler spray through seven datums in the duct: outlet datum = escaped liquid to the bit, floor = deposited liquid; Dv50 91 µm at the outlet, 170 µm on the floor; cut plane within 6e-8 of the face layer (passes in CI (set linux-3), not yet in the manual) ([results](../gallery/sprays.md#spray-datums))
+- contract (schema): [`spray_datums_injectors`](../../examples/cases/flow/spray_datums_injectors.toml): the included injector file of spray_datums with a Rosin-Rammler size distribution ([results](../cases/flow.md#lagrangian-sprays)) **missing**
+
+Gaps:
+
+- V28.12 not done: no measured anchor (terminal velocity of water drops against Gunn and Kinzer 1949)
+- no enthalpy flow through datums (comes with the energy equation of the sprays, SP5)
+- steady runs write no datums.csv (the gas through the datums of a steady result through `foehn call post.datums`)
+- no size classes, no time-averaged spray fields (D266, SP2), no evaporation numbers (SP5)
+- a cut plane takes cell values and gradients (its cut_error is reported); a disc or rectangle snapped to the faces is a staircase of whole faces
+- not with a sliding mesh (DAT001); one process
+- `spray_datums_injectors` has no run in the verification manual or in CI
+
+<a id="sprays-two-way-momentum"></a>
+
+### Two-way momentum coupling of the sprays (SP2a, D247 to D252)
+
+**partial** (a model without reference data; gaps written) · id `sprays.two-way-momentum` · switch `[spray.coupling] mode = "two-way"` · decisions D247, D248, D249, D250, D251, D252, D254
+
+- exact: [`a_cloud_and_its_gas_reach_one_velocity_at_any_step`](../../crates/foehncraft-flow/tests/spray_coupling.rs): V28.2, V28.3: a cloud shot into one cell of gas, loading 0.1 to 10, steps of 0.1 to 100 droplet response times: gas and parcels end at the mixture velocity to 1e-5, the exchange books close to 1e-12, the ledger pair to the bit, the force on the gas never changes sign
+- consistency: [`the_coupling_converges_at_first_order_in_the_step`](../../crates/foehncraft-flow/tests/spray_coupling.rs): V28.4: the gas velocity of the same cell at 10 ms with steps of 2, 1, 0.5 ms against a fourth-order reference of the two-mass relaxation: observed order 0.99 and 0.96 (above 0.9 required)
+- exact: [`one_pass_is_bounded_and_conservative_too`](../../crates/foehncraft-flow/tests/spray_coupling.rs): D252: one fixed pass at 100 response times per step is conservative to round-off and without overshoot
+- exact: [`passes_give_the_same_bits_on_any_number_of_threads`](../../crates/foehncraft-flow/tests/spray_coupling.rs): V28.1 in a flow run: spray.csv bitwise equal on 1 and 4 threads
+- exact: [`sources_do_not_depend_on_parcel_order_or_threads`](../../crates/foehncraft-particles/tests/coupling.rs): V28.1: per-cell sources and the books of the closing step bitwise equal with the parcel storage reversed and on one thread, on hexahedral, tetrahedral and polyhedral meshes; the slopes of a parcel at most its mass; the parcel books close to round-off
+- exact: [`slopes_of_one_parcel_add_up_to_its_relaxation`](../../crates/foehncraft-particles/src/coupling.rs): the slopes of a parcel add up to m (1 - product of the decays)
+- contract (diagnostics): [`spray_two_way`](../../examples/cases/flow/spray_two_way.toml): a water spray of 50 g/s falling through still air drives a downward jet; passes, coupling lag and the force on the gas in spray.csv (passes in CI (set linux-3), not yet in the manual) ([results](../gallery/sprays.md#spray-two-way))
+- contract (schema): [`spray_two_way_injectors`](../../examples/cases/flow/spray_two_way_injectors.toml): the included injector file of spray_two_way ([results](../cases/flow.md#lagrangian-sprays)) **missing**
+
+Gaps:
+
+- no heat exchange yet (SP2b): two-way coupling refuses the energy equation (SPR003)
+- no turbulent dispersion (SP2c) and no turbulence modulation by the droplets (in no decision yet)
+- first order in time (V28.4); second order (an exponentially fitted weight per cell) is an open point of section 5.7
+- V28.6 (two neighbour cells) is covered only through the shuffled-storage test; no reference-data case of a dense spray against measurements
+- the time-step study as a registered tool (D254 (4)) is not built
+- point-source limit: no correction of the self-disturbance and no kernel smoothing; liquid volume fraction and parcels per cell are reported only
+- the slip-wall normal viscous stress is not booked on the gas momentum account (it is the boundary force)
+- PISO only; not with solid regions, the frozen-flow march, rotating zones or periodic boundaries (SPR003); one process
+- `spray_two_way_injectors` has no run in the verification manual or in CI
 
 ## Flow models
 
@@ -1842,7 +1960,7 @@ Gaps:
 
 - exact: [`binary_diffusion_decays_as_the_exact_mode`](../../crates/foehncraft-flow/tests/species.rs): CH4 in N2 at rest: the exact decay of a cosine mode, BDF2 on 100 cells, L2 error 9.5e-6 (below 1e-4 required); species and element accounts of the closed slab to 1e-12
 - exact: [`species_binary_diffusion`](../../examples/cases/flow/species_binary_diffusion.toml): the same run from the command line, largest error 1.3e-5 (scalar_max_error 1e-4) (passes in CI (set linux-3), not yet in the manual) ([results](../cases/flow.md#species))
-- consistency: [`coaxial_jet_closes_the_element_accounts`](../../crates/foehncraft-flow/tests/species.rs): a methane jet in air on the variable density: C, H, O, N accounts closed below 1e-6 of the inflow (6.5e-9 measured), mass fractions in [0, 1] within the MLP allowance, jet density p0 M_CH4/(R T) to 1e-5 (3e-6 measured, the MLP allowance)
+- consistency: [`coaxial_jet_closes_the_element_accounts`](../../crates/foehncraft-flow/tests/species.rs): a methane jet in air on the variable density: C, H, O, N accounts closed below 1e-6 of the inflow (6.4e-9 measured), mass fractions in [0, 1] within the MLP allowance, jet density p0 M_CH4/(R T) to 1e-5 (3e-6 measured, the MLP allowance)
 - consistency: [`species_coaxial_jet`](../../examples/cases/flow/species_coaxial_jet.toml): the gallery jet from the command line: converged, element accounts closed (passes in CI (set linux-3), not yet in the manual) ([results](../gallery/species.md#species-transport))
 - reference-data: [`pure_gas_properties_match_measured_values`](../../crates/foehncraft-flow/src/species.rs): viscosity of N2, O2, CH4, Ar, H2, CO2 at 300 K within 3 % and conductivity within 5 % of measured values (Poling et al. 2001)
 - reference-data: [`air_as_a_mixture`](../../crates/foehncraft-flow/src/species.rs): air as O2, N2, Ar: M, c_p within 0.3 %, mu within 3 %, lambda within 4 % of Lemmon et al. (2004)
@@ -1861,3 +1979,26 @@ Gaps:
 - the ledger takes the linear-upwind reconstruction without the clip of bounded = true, and the bounded BDF2 fallback is not booked in the storage
 - no measured reference case of turbulent mixing yet (a jet with measured mass fractions)
 - on ranks without the variable density (stage 7c is refused on ranks, its cell and closed-volume sums need the halo and global sums) and without the MLP limiter (vertex setup not on ranks yet)
+
+## Immersed bodies
+
+<a id="immersed-penalisation"></a>
+
+### Immersed bodies by Brinkman penalisation, primitive shapes (L13 stage 1)
+
+**partial** (gaps written) · id `immersed.penalisation` · switch `[immersed] with [[immersed.body]]` · decisions D226
+
+- reference-data: [`immersed_cylinder_re20`](../../examples/cases/flow/immersed_cylinder_re20.toml): Schäfer & Turek 2D-1 on a plain box mesh (h = D/20) with the cylinder penalised: C_D 5.581 in range, Δp 0.9 % above, C_L 35 % above the range; the run fails beyond 40 % of the range midpoint (passes in CI (set linux-2), not yet in the manual) ([results](../gallery/immersed.md#penalised-cylinder))
+- exact: [`penalised_poiseuille_converges_to_the_exact_mass_flow`](../../crates/foehncraft-flow/tests/immersed.rs): plane Poiseuille flow between two penalised walls off the cell faces: mass flow error 20.5, 8.5, 2.3 % on 16, 32, 64 cells across (about first order); the body forces carry the driving force to 1e-4
+- consistency: [`coupled_and_simplec_give_the_same_penalised_flow`](../../crates/foehncraft-flow/tests/immersed.rs): SIMPLEC and the coupled solver give the same mass flow to 1e-5
+- exact: [`solid_volume_of_a_cylinder_converges`](../../crates/foehncraft-flow/src/immersed.rs): the solid volume of a cylinder on a box mesh converges to π r² d with the number of sample points
+- contract (diagnostics): [`unsupported_settings_are_refused`](../../crates/foehncraft-flow/tests/immersed.rs): IMM101 for a missing permeability or a bad body, IMM102 for a turbulence model
+
+Gaps:
+
+- the wall is smeared over about one cell: first order in h, lift 27 % above the benchmark range at h = D/40, wall shear stress and heat flux not accurate (by design of the pre-stage)
+- laminar and isothermal only: turbulence, energy, scalars, gravity, regions, rotating zones and sprays are refused (IMM102)
+- primitive bodies only (cylinder, sphere, box); STL bodies need the geometry kernel of stage 0
+- the coupled solver breaks down from rest when the sink exceeds about 1e5 times the viscous diagonal (K below about 1e-5 h²); SIMPLEC takes any K
+- not yet: density-field topology search, iso-surface extraction, the sweep in K (η) and h of the plan, MMS of the penalised equation, Stokes sphere, the drag gradient check with dual numbers
+- one rank only: `foehn run --ranks N` refuses immersed bodies

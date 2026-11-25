@@ -589,6 +589,7 @@ impl crate::simplec::Flow {
             .mom_kind
             .contains(&foehncraft_kernels::flow::MOM_SYMMETRY)
             || self.porous.is_some()
+            || self.spray_momentum.is_some()
     }
 
     /// Adds the Darcy–Forchheimer sink of the porous regions to the

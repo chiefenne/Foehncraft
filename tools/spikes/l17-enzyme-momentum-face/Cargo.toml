@@ -1,0 +1,11 @@
+[package]
+name = "l17-enzyme-momentum-face"
+publish = false
+version = "0.1.0"
+edition = "2024"
+[dependencies]
+foehncraft-kernels = { path = "../../../crates/foehncraft-kernels" }
+foehncraft-core = { path = "../../../crates/foehncraft-core" }
+[profile.release]
+lto = "fat"
+[workspace]

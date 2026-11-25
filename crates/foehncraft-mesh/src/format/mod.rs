@@ -28,6 +28,7 @@ pub mod fluent_msh;
 pub mod gmsh;
 mod inflate;
 pub mod openfoam;
+pub mod stl;
 pub mod su2;
 pub mod vtk;
 #[cfg(feature = "hdf5")]

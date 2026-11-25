@@ -2,7 +2,7 @@
 
 use crate::device::{DeviceTallies, Transport};
 use foehncraft_core::exact::ExactSum;
-use foehncraft_core::rng::{keyed, stream};
+use foehncraft_core::rng::{keyed, stream, uniform_keyed};
 use foehncraft_kernels::radiation::{
     BUNDLE_WORDS, Bundle, Fate, Medium, Tally, WallKind, cosine_about, isotropic, owen_sobol4,
     point_in_tet, point_in_triangle, sobol_seed, transport,
@@ -87,6 +87,21 @@ pub struct Settings {
     pub call: u64,
     /// Bundles per launch on a device (2²⁰: about 180 MB of records).
     pub launch: u64,
+    /// Points of the emission: scrambled Sobol (the default) or
+    /// pseudo-random, the reference of the benchmark (case 6).
+    pub points: Points,
+}
+
+/// The points that place and aim the bundles at emission.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Points {
+    /// Owen-scrambled Sobol points per emitter (Burley 2020): the bundles of
+    /// an emitter are stratified in position and direction.
+    #[default]
+    Sobol,
+    /// Independent keyed pseudo-random numbers (D121), the plain Monte
+    /// Carlo estimate.
+    Random,
 }
 
 impl Default for Settings {
@@ -96,6 +111,7 @@ impl Default for Settings {
             batches: 8,
             call: 0,
             launch: 1 << 20,
+            points: Points::Sobol,
         }
     }
 }
@@ -142,7 +158,7 @@ pub struct Solution {
     /// Emitted power per own cell (quanta).
     pub emitted: Vec<i64>,
     /// Incident flux per boundary face (W/m²), indexed from the first
-    /// boundary face.
+    /// boundary face; on an open boundary the flux that leaves through it.
     pub wall_incident: Vec<f64>,
     /// Net flux into the wall per boundary face, absorbed − emitted (W/m²).
     pub wall_net: Vec<f64>,
@@ -169,13 +185,34 @@ struct Link<'a> {
 /// What emits: a cell or a boundary face (local index), its global
 /// identity and power.
 #[derive(Debug, Clone, Copy)]
-struct Emitter {
-    id: u64,
-    cell: u32,
+pub(crate) struct Emitter {
+    pub(crate) id: u64,
+    pub(crate) cell: u32,
     /// Boundary face (local index) or `u32::MAX` for a cell.
-    face: u32,
-    quanta: i64,
-    bundles: u32,
+    pub(crate) face: u32,
+    pub(crate) quanta: i64,
+    pub(crate) bundles: u32,
+}
+
+impl Emitter {
+    /// Quanta of bundle `k`: the emitter's quanta shared out, the rest one
+    /// by one to the first bundles.
+    pub(crate) fn weight(&self, k: u32) -> i64 {
+        let base = self.quanta / i64::from(self.bundles);
+        base + i64::from(i64::from(k) < self.quanta % i64::from(self.bundles))
+    }
+}
+
+/// What a call emits and what its walls are: the emitters with their
+/// quanta and bundles, the emitted quanta per cell and boundary face, and
+/// the kind and emissivity of every boundary face.
+pub(crate) struct Setup {
+    pub(crate) quantum: f64,
+    pub(crate) emitters: Vec<Emitter>,
+    pub(crate) emitted: Vec<i64>,
+    pub(crate) wall_emitted: Vec<i64>,
+    pub(crate) kinds: Vec<WallKind>,
+    pub(crate) emissivity: Vec<f64>,
 }
 
 /// The mesh side of radiation calls: the whole mesh on one rank, or one
@@ -403,103 +440,24 @@ impl<'a> Domain<'a> {
         assert!(s.batches >= 2, "at least two batches");
         let comm = self.comm();
         let first = mesh.n_interior_faces();
-        let wall_of = |f: usize| walls[self.boundary[f] as usize];
-
-        // emitted powers and their exact total over the ranks
-        let t4 = |t: f64| t * t * t * t;
-        let cell_power: Vec<f64> = (0..nc)
-            .map(|c| 4.0 * kappa[c] * SIGMA * t4(temperature[c]) * self.geo.cell_volume[c])
-            .collect();
-        let face_power: Vec<f64> = (0..nb)
-            .map(|f| {
-                let w = wall_of(f);
-                if w.kind == WallKind::Grey {
-                    w.emissivity * SIGMA * t4(w.temperature) * norm(self.geo.face_area[first + f])
-                } else {
-                    0.0
-                }
-            })
-            .collect();
-        let mut total = ExactSum::new();
-        total.add_slice(&cell_power);
-        total.add_slice(&face_power);
-        let total = comm.sum_exact(&total);
-        if total <= 0.0 {
+        let Some(Setup {
+            quantum,
+            emitters,
+            emitted,
+            wall_emitted,
+            kinds,
+            emissivity,
+        }) = self.setup(temperature, kappa, walls, s)
+        else {
             return Ok(self.empty(nc, nb));
-        }
-        let quantum = total / QUANTA;
-
-        // emitters: quanta and bundles from their own power and the total,
-        // so the counts do not depend on the partition (D258)
-        let n_global = self.n_global as u64;
-        let share = |id: u64, p: f64| -> (i64, u32) {
-            let quanta = (p / quantum).round() as i64;
-            if quanta == 0 {
-                return (0, 0);
-            }
-            let x = s.bundles as f64 * (p / total);
-            let mut n = x.floor();
-            let u = (keyed([stream::RADIATION, id, (s.call << 32) | 0xffff_ffff, 0xfe]) >> 11)
-                as f64
-                * (1.0 / (1u64 << 53) as f64);
-            if u < x - n {
-                n += 1.0;
-            }
-            let n = (n as i64).clamp(1, quanta.min(u32::MAX as i64));
-            (quanta, n as u32)
         };
-        let mut emitters: Vec<Emitter> = Vec::new();
-        let mut emitted = vec![0i64; nc];
-        let mut wall_emitted = vec![0i64; nb];
-        for c in 0..nc {
-            let id = u64::from(self.position[c]);
-            let (quanta, bundles) = share(id, cell_power[c]);
-            emitted[c] = quanta;
-            if bundles > 0 {
-                emitters.push(Emitter {
-                    id,
-                    cell: c as u32,
-                    face: u32::MAX,
-                    quanta,
-                    bundles,
-                });
-            }
-        }
-        for f in 0..nb {
-            let id = n_global + mesh.face_id[first + f];
-            let (quanta, bundles) = share(id, face_power[f]);
-            wall_emitted[f] = quanta;
-            if bundles > 0 {
-                emitters.push(Emitter {
-                    id,
-                    cell: mesh.owner[first + f],
-                    face: f as u32,
-                    quanta,
-                    bundles,
-                });
-            }
-        }
 
         // transport
-        let kinds: Vec<WallKind> = (0..nb).map(|f| wall_of(f).kind).collect();
-        let emissivity: Vec<f64> = (0..nb).map(|f| wall_of(f).emissivity).collect();
-        let medium = Medium {
-            kappa,
-            wall: &kinds,
-            emissivity: &emissivity,
-            normal: &self.shapes.normal,
-            first_boundary: first,
-            reach: self.shapes.reach,
-            max_steps: self.max_steps,
-        };
+        let medium = self.medium(kappa, &kinds, &emissivity);
         let wm = self.locator.walk_mesh();
         let b = s.batches as usize;
         let tally = Tallies::new(b, nc, nb);
         let shapes = &self.shapes;
-        let weight = |e: &Emitter, k: u32| {
-            let base = e.quanta / i64::from(e.bundles);
-            base + i64::from(i64::from(k) < e.quanta % i64::from(e.bundles))
-        };
         let mut queue: Vec<Bundle> = Vec::new();
         if let Some(device) = &self.device {
             // emission on the host, transport on the device, in launches
@@ -520,7 +478,7 @@ impl<'a> Domain<'a> {
                     .par_iter()
                     .flat_map_iter(|e| {
                         (0..e.bundles)
-                            .flat_map(move |k| shapes.emit(e, k, weight(e, k), s, &wm).to_words())
+                            .flat_map(move |k| shapes.emit(e, k, e.weight(k), s, &wm).to_words())
                     })
                     .collect();
                 debug_assert_eq!(words.len() as u64, n * BUNDLE_WORDS as u64);
@@ -534,7 +492,7 @@ impl<'a> Domain<'a> {
                 .map(|e| {
                     let mut handed = Vec::new();
                     for k in 0..e.bundles {
-                        let mut bundle = shapes.emit(e, k, weight(e, k), s, &wm);
+                        let mut bundle = shapes.emit(e, k, e.weight(k), s, &wm);
                         if transport(&wm, &medium, &mut bundle, s.call, &tally) == Fate::HandOver {
                             handed.push(bundle);
                         }
@@ -654,6 +612,146 @@ impl<'a> Domain<'a> {
         })
     }
 
+    /// The emitters of a call (collective on ranks: the total power is
+    /// summed over them); `None` when nothing emits.
+    pub(crate) fn setup(
+        &self,
+        temperature: &[f64],
+        kappa: &[f64],
+        walls: &[Wall],
+        s: &Settings,
+    ) -> Option<Setup> {
+        let mesh = self.mesh;
+        let (nc, nb) = (mesh.n_cells, self.shapes.normal.len());
+        let comm = self.comm();
+        let first = mesh.n_interior_faces();
+        let wall_of = |f: usize| walls[self.boundary[f] as usize];
+
+        // emitted powers and their exact total over the ranks
+        let t4 = |t: f64| t * t * t * t;
+        let cell_power: Vec<f64> = (0..nc)
+            .map(|c| 4.0 * kappa[c] * SIGMA * t4(temperature[c]) * self.geo.cell_volume[c])
+            .collect();
+        let face_power: Vec<f64> = (0..nb)
+            .map(|f| {
+                let w = wall_of(f);
+                if w.kind == WallKind::Grey {
+                    w.emissivity * SIGMA * t4(w.temperature) * norm(self.geo.face_area[first + f])
+                } else {
+                    0.0
+                }
+            })
+            .collect();
+        let mut total = ExactSum::new();
+        total.add_slice(&cell_power);
+        total.add_slice(&face_power);
+        let total = comm.sum_exact(&total);
+        if total <= 0.0 {
+            return None;
+        }
+        let quantum = total / QUANTA;
+
+        // emitters: quanta and bundles from their own power and the total,
+        // so the counts do not depend on the partition (D258)
+        let n_global = self.n_global as u64;
+        let share = |id: u64, p: f64| -> (i64, u32) {
+            let quanta = (p / quantum).round() as i64;
+            if quanta == 0 {
+                return (0, 0);
+            }
+            let x = s.bundles as f64 * (p / total);
+            let mut n = x.floor();
+            let u = (keyed([stream::RADIATION, id, (s.call << 32) | 0xffff_ffff, 0xfe]) >> 11)
+                as f64
+                * (1.0 / (1u64 << 53) as f64);
+            if u < x - n {
+                n += 1.0;
+            }
+            let n = (n as i64).clamp(1, quanta.min(u32::MAX as i64));
+            (quanta, n as u32)
+        };
+        let mut emitters: Vec<Emitter> = Vec::new();
+        let mut emitted = vec![0i64; nc];
+        let mut wall_emitted = vec![0i64; nb];
+        for c in 0..nc {
+            let id = u64::from(self.position[c]);
+            let (quanta, bundles) = share(id, cell_power[c]);
+            emitted[c] = quanta;
+            if bundles > 0 {
+                emitters.push(Emitter {
+                    id,
+                    cell: c as u32,
+                    face: u32::MAX,
+                    quanta,
+                    bundles,
+                });
+            }
+        }
+        for f in 0..nb {
+            let id = n_global + mesh.face_id[first + f];
+            let (quanta, bundles) = share(id, face_power[f]);
+            wall_emitted[f] = quanta;
+            if bundles > 0 {
+                emitters.push(Emitter {
+                    id,
+                    cell: mesh.owner[first + f],
+                    face: f as u32,
+                    quanta,
+                    bundles,
+                });
+            }
+        }
+
+        let kinds = (0..nb).map(|f| wall_of(f).kind).collect();
+        let emissivity = (0..nb).map(|f| wall_of(f).emissivity).collect();
+        Some(Setup {
+            quantum,
+            emitters,
+            emitted,
+            wall_emitted,
+            kinds,
+            emissivity,
+        })
+    }
+
+    /// The medium of a call for the kernel.
+    pub(crate) fn medium<'m>(
+        &'m self,
+        kappa: &'m [f64],
+        kinds: &'m [WallKind],
+        emissivity: &'m [f64],
+    ) -> Medium<'m> {
+        Medium {
+            kappa,
+            wall: kinds,
+            emissivity,
+            normal: &self.shapes.normal,
+            first_boundary: self.mesh.n_interior_faces(),
+            reach: self.shapes.reach,
+            max_steps: self.max_steps,
+        }
+    }
+
+    /// Bundle `k` of emitter `e` as the call emits it.
+    pub(crate) fn emit(&self, e: &Emitter, k: u32, s: &Settings, wm: &WalkMesh<'_>) -> Bundle {
+        self.shapes.emit(e, k, e.weight(k), s, wm)
+    }
+
+    /// Whether the domain is one rank's part of a mesh.
+    pub(crate) fn on_ranks(&self) -> bool {
+        self.link.is_some()
+    }
+
+    /// The locator of the domain (the walk mesh of the kernel).
+    pub(crate) fn locator(&self) -> &Locator<'a> {
+        &self.locator
+    }
+
+    /// The mesh of the domain.
+    pub(crate) fn mesh(&self) -> &Mesh {
+        self.mesh
+    }
+
     fn empty(&self, nc: usize, nb: usize) -> Solution {
         let comm = self.comm();
         let mut sums = [0i64; 8];
@@ -675,10 +773,26 @@ impl<'a> Domain<'a> {
 
 impl Shapes {
     /// Bundle `k` of emitter `e` with `w` quanta: position and direction
-    /// from two scrambled Sobol sequences of the emitter (D107 (2)).
+    /// from two scrambled Sobol sequences of the emitter (D107 (2)), or
+    /// from keyed pseudo-random numbers.
     fn emit(&self, e: &Emitter, k: u32, w: i64, s: &Settings, wm: &WalkMesh<'_>) -> Bundle {
-        let u = owen_sobol4(k, sobol_seed(e.id, s.call, 1));
-        let v = owen_sobol4(k, sobol_seed(e.id, s.call, 2));
+        let (u, v) = match s.points {
+            Points::Sobol => (
+                owen_sobol4(k, sobol_seed(e.id, s.call, 1)),
+                owen_sobol4(k, sobol_seed(e.id, s.call, 2)),
+            ),
+            Points::Random => {
+                let r = |d: u64| {
+                    uniform_keyed([
+                        stream::RADIATION,
+                        e.id,
+                        (s.call << 32) | u64::from(k),
+                        0x100 | d,
+                    ])
+                };
+                ([r(0), r(1), r(2), r(3)], [r(4), r(5), r(6), r(7)])
+            }
+        };
         let c = e.cell as usize;
         let (x, face, edge, dir) = if e.face == u32::MAX {
             let r = self.tet_ptr[c] as usize..self.tet_ptr[c + 1] as usize;
@@ -691,15 +805,21 @@ impl Shapes {
             let f = e.face as usize;
             let face = self.first + f;
             let r = self.tri_ptr[f] as usize..self.tri_ptr[f + 1] as usize;
-            let edge = pick(&self.tri_cdf[r], u[0]);
+            let cdf = &self.tri_cdf[r];
+            let edge = pick(cdf, u[0]);
+            // the rest of the first number within the chosen triangle is
+            // the first coordinate in it, so that position and direction
+            // are one stratified point of four dimensions
+            let lo = if edge == 0 { 0.0 } else { cdf[edge - 1] };
+            let a = ((u[0] - lo) / (cdf[edge] - lo)).clamp(0.0, 1.0);
             let t = wm.tet(c, face, edge);
             // the outer triangle (fan point, p, q) of the tetrahedron
-            let x = point_in_triangle(t[1], t[2], t[3], [u[1], u[2]]);
+            let x = point_in_triangle(t[1], t[2], t[3], [a, u[1]]);
             (
                 x,
                 face as u32,
                 edge as u32,
-                cosine_about(self.normal[f], [v[0], v[1]]),
+                cosine_about(self.normal[f], [u[2], u[3]]),
             )
         };
         let target = std::array::from_fn(|i| x[i] + self.reach * dir[i]);

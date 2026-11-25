@@ -25,7 +25,7 @@ polynomials and kinetic theory (Chapman–Enskog with the collision
 integrals of Neufeld et al. 1972, the Wilke and the Mathur mixing rules),
 with the 53 species of GRI-Mech 3.0. Diffusion: ρ D_i = μ/Sc, Sc = 0.7.
 The run converges in 154 outer iterations (9 s on one core). The carbon,
-hydrogen, oxygen and nitrogen accounts of the ledger close to 6.5·10⁻⁹ of
+hydrogen, oxygen and nitrogen accounts of the ledger close to 6.4·10⁻⁹ of
 their inflow (the solver tolerance 10⁻⁸).
 
 <img src="../figures/gallery/species_binary_diffusion.png" alt="Mass fraction of methane in a slab 1 m long: the start cosine from 0.9 to 0.1 (dotted), the exact solution after 50 s (black line) from 0.74 to 0.26, the computed values on it (green circles), and nitrogen as one minus methane (grey squares)." width="800" height="440">

@@ -1,0 +1,65 @@
+# A transient channel flow on ranks with its restart file gathered from
+# five ranks: the file is byte for byte the restart of one rank, and a run
+# continued from it on 2, 3 and 5 ranks is bitwise the run of one rank
+# (MPI step W6, D93, D84).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/ranks_restart_channel.toml
+#
+# The channel of ranks_channel_poly.toml (the upper wall moves against the
+# inflow, Re = 100 on the height), started from potential flow and marched
+# 40 time steps with BDF2. After the run the case is solved again on 2, 3
+# and 5 ranks (threads of this process); the five ranks gather their
+# restart into `ranks.restart.h5` in the order of the global mesh, and the
+# run fails unless that file has the bytes of the one-rank restart at the
+# same step. Continue from it on ranks (every rank takes its cells and
+# faces by global identity, so any rank count reads it):
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/ranks_restart_channel.toml \
+#       --restart output/ranks_restart_channel/ranks.restart.h5 \
+#       --set 'output.directory="output/ranks_restart_continued"'
+
+case_format = "0.7"
+
+[mesh.generate]
+type = "poly"
+dimension = 2
+upper = [3.0, 1.0, 0.1]
+cells = [90, 30, 1]
+perturb = 0.1
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 0.01
+
+[initial]
+potential_flow = true
+
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [1.0, 0.0, 0.0]
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 101325.0
+[boundary.ymin]
+type = "wall"
+[boundary.ymax]
+type = "wall"
+velocity = [-1.0, 0.0, 0.0]
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[time]
+scheme = "bdf2"
+time_step = 0.05
+steps = 40
+
+[solver.momentum]
+limiter = "venkatakrishnan"
+
+[run]
+ranks = [2, 3, 5]
