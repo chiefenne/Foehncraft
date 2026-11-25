@@ -141,9 +141,10 @@ codes! {
     // sprays (L12, D240 to D246)
     SPRAY_CONFIG = "SPR001", Error, "A `[spray]` value that is out of range, an injector outside the mesh, a spray file (`[spray] include`) that cannot be read or defines `injector` or `liquid` twice, or a `[spray.boundary.<name>]` for a boundary the mesh does not have.";
     SPRAY_STEADY = "SPR002", Error, "A `[spray]` in a steady case: the parcels need a transient run.";
-    SPRAY_UNSUPPORTED = "SPR003", Error, "A `[spray]` in a case with MRF zones, sliding interfaces or a periodic boundary (not in this version).";
+    SPRAY_UNSUPPORTED = "SPR003", Error, "A `[spray]` in a case with MRF zones, sliding interfaces or a periodic boundary, or two-way coupling with a setting it does not work with yet (the energy equation until SP2b, solid regions, the frozen-flow march, an algorithm other than PISO) (not in this version).";
     SPRAY_LOST = "SPR004", Warning, "Parcels lost: the walk through the mesh failed or a parcel needed more than `[spray] max_substeps` sub-steps in a time step (counted in `spray.csv`).";
     SPRAY_BOOK = "SPR005", Error, "The mass book of the sprays does not close: released liquid differs from the liquid in the flow, stuck, left and lost by more than round-off.";
+    SPRAY_COUPLING = "SPR006", Warning, "Two-way spray coupling (SP2, D252): the parcel passes of a time step ended at `[spray.coupling] max_passes` with the coupling lag above `tolerance` (fix: more passes or a smaller time step; `spray.csv` counts such steps).";
     // immersed bodies, Brinkman penalisation (L13 stage 1, D226)
     IMM_CONFIG = "IMM101", Error, "An `[immersed]` value that does not fit: a permeability that is not > 0, a body without the keys of its shape (`centre` and `radius`, `lower` and `upper`), a radius or length that is not > 0, a zero cylinder axis, two bodies with the same name, or no body at all.";
     IMM_UNSUPPORTED = "IMM102", Error, "An `[immersed]` body in a case it does not fit (L13 stage 1, D226): a turbulence model (penalised walls are laminar and low-Re only; a wall function on a penalised wall is refused), the energy equation (no penalised conjugate heat transfer, Q9), passive scalars, gravity, regions or several fluids, rotating zones, or sprays.";

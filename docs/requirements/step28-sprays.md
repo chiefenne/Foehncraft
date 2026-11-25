@@ -293,3 +293,63 @@ distributions of D242 came with SP1b instead of SP2, as the statistics need
 them. Not yet: the enthalpy flow (with the energy equation and SP5), size
 classes, averaged fields (D266, SP2), `datums.csv` in steady runs, V28.12
 (terminal velocity against Gunn and Kinzer).
+
+**SP2a (two-way momentum) is implemented** (`[spray.coupling] mode =
+"two-way"`). What the code does, against section 5:
+
+- D247: `Spray::pass` is a pure function of the committed parcels, the
+  frozen gas and the keyed random numbers; it can be repeated, and the
+  release of the step is booked only at the commit. In two-way mode a
+  sub-step ends at every interior face (the walk stops at the first mesh
+  face; the time to the face is found by bisection of the displacement
+  projected on the chord) and when the particle Reynolds number would move
+  by more than `max_reynolds_change` (D251). A parcel that moves along a
+  face while the gas of the two cells pushes it back across from both
+  sides (the inflow towards the axis of a spray whose nozzle sits on a
+  face) would end every sub-step at that face after no time: a sub-step
+  that starts on a face and goes straight back through it takes its full
+  length, booked to the cell it starts in (found in the gallery run, test
+  `a_parcel_on_a_face_pushed_from_both_sides_is_not_lost`).
+- D248: the first pass sees the state the step starts from (not
+  extrapolated); every later pass the current iterate.
+- D249: one record per sub-step (cell, parcel, sub-step, impulse to the gas,
+  slope), sorted by (cell, parcel, sub-step) and summed per cell; the
+  impulse is the parcel's own change of momentum less its weight.
+- D250: S = E − β (u − u*) with β on the momentum diagonal and in D, D^s,
+  D^C of the pressure correction, as the porous sink. **Implementation
+  note (own derivation):** the slope of record r is the parcel mass times
+  (1 − e_r) Π_{l>r} e_l, e = exp(−δt/τ), so the slopes of one parcel add up
+  to m (1 − Π e) ≤ m. Summing m (1 − e_r) over the sub-steps, as the plain
+  reading of D250 gives, counts the same relaxation several times and lets
+  the closing step push a parcel past the gas when it takes many sub-steps
+  in one cell. The closing step gives every parcel Σ_r slope_r (u_new − u*)
+  of momentum, the gas books the same per-cell numbers with the opposite
+  sign, and the ledger pair is formed from one number (zero to the bit).
+- D252: passes run inside the outer iterations of PISO (they add outer
+  iterations when `solver.outer_iterations` is smaller than the passes
+  asked for); default `"converged"` with `max_passes = 3` and `tolerance =
+  1e-3`. **The coupling lag** is the largest change of the gas velocity of a
+  spray cell against the frozen state of the pass, over the larger of the
+  largest slip velocity of the spray cells and the largest change of the
+  gas velocity of a spray cell in the step. Both are velocity differences,
+  so the measure does not depend on the frame; the slip alone made the lag
+  blow up once the parcels had come to rest in the gas (every step then
+  ran to `max_passes`). Steps that end at `max_passes` above the
+  tolerance are counted (SPR006 warns once).
+- D254: (1) the ledger books the gas side on the momentum accounts of the
+  domain (which hold only this term for now, so their imbalance is the
+  force of the boundaries on the gas), the power of the source on the
+  kinetic energy, and accounts `parcel momentum x/y/z` (weight, injected,
+  left the flow, walls, from the gas) that close to round-off; (2) passes
+  and lag in `spray.csv` and `result.json`; (3) the largest Δt/τ of the gas
+  momentum of a spray cell, β Δt / (ρ V), and the share above 1; (5) the
+  largest liquid volume fraction and parcels per cell. The time-step study
+  as a registered tool (4) is not built yet.
+- Checks: V28.1 (shuffled storage, 1 and 4 threads, hex, tet, poly), V28.2
+  and V28.3 (a cloud and its gas in one cell, loading 0.1 to 10, Δt/τ_p 0.1
+  to 100: one common velocity, the mixture momentum kept, no overshoot, one
+  pass and converged passes), V28.4 (observed order 0.99 and 0.96 with Δt =
+  2, 1, 0.5 ms against a fourth-order reference). V28.5 to V28.8 belong to
+  the heat and vapour exchange (SP2b, SP5).
+- Not yet with two-way coupling (SPR003): the energy equation (SP2b),
+  solid regions, the frozen-flow march, algorithms other than PISO.

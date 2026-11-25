@@ -1,12 +1,14 @@
 //! The parcels and their tracking through the mesh.
 
 use crate::config::{BoundaryMode, Injector, Penetration, SpraySection};
+use crate::coupling::{CellSources, Record, StepBooks};
 use crate::datum::{Crossing, Datum, DatumTally, Moments, Shape, Surface, plane_crossing};
 use anyhow::{Result, bail};
+use foehncraft_core::Real;
 use foehncraft_core::rng::{self, stream};
 use foehncraft_kernels::particle::{ParcelInput, parcel_step};
 use foehncraft_mesh::geometry::Geometry;
-use foehncraft_mesh::locate::{Locator, TrackEnd};
+use foehncraft_mesh::locate::{Locator, Position, TrackEnd, WalkEnd, step_limit};
 use foehncraft_mesh::mesh::Mesh;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -103,6 +105,7 @@ impl Parcels {
             count: self.count[i],
             born: self.born[i],
             cell: self.cell[i] as usize,
+            face: None,
         }
     }
 }
@@ -116,6 +119,9 @@ struct One {
     count: f64,
     born: f64,
     cell: usize,
+    /// Where the walk stands when the parcel was stopped on an interior
+    /// face (two-way tracking): the tetrahedron of the next cell.
+    face: Option<Position>,
 }
 
 /// How the tracking of one parcel ended in one time step.
@@ -137,6 +143,12 @@ struct Outcome {
     rebounds: u64,
     substeps: u64,
     cross: Vec<Crossing>,
+    /// The exchange records (two-way coupling), in sub-step order.
+    records: Vec<Record>,
+    /// Impulse of the weight over the step (kg m/s).
+    weight: [f64; 3],
+    /// Impulse of the walls (rebounds, mirrors).
+    walls: [f64; 3],
 }
 
 /// Mass and parcel counts, per boundary and in total (kg, parcels).
@@ -160,6 +172,40 @@ pub struct Tally {
     pub rebounds: u64,
     /// Sub-steps of all parcels.
     pub substeps: u64,
+}
+
+/// The parcels released in a step, booked when the pass is committed.
+#[derive(Default)]
+struct Release {
+    fresh: Vec<One>,
+    masses: Vec<f64>,
+    released: Vec<u64>,
+}
+
+/// One parcel pass (D247): the parcels at the end of the step and their
+/// exchange records, not yet committed ([`Spray::pass`], [`Spray::commit`]).
+pub struct Pass {
+    release: Release,
+    outcomes: Vec<Outcome>,
+    /// The sorted per-cell sums of the exchange records (two-way coupling;
+    /// empty one way).
+    pub sources: CellSources,
+    /// End of the step (s).
+    pub t1: f64,
+    /// Length of the step (s).
+    pub dt: f64,
+}
+
+impl Pass {
+    /// The exchange records of the pass, parcel by parcel.
+    pub fn records(&self) -> impl Iterator<Item = &Record> {
+        self.outcomes.iter().flat_map(|o| o.records.iter())
+    }
+
+    /// Sub-steps of all parcels in the pass.
+    pub fn substeps(&self) -> u64 {
+        self.outcomes.iter().map(|o| o.substeps).sum()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -380,27 +426,123 @@ impl Spray {
     /// on nothing but itself and the gas, so any number of threads gives
     /// the same bits (D93); the tallies are summed in parcel order.
     pub fn advance(&mut self, env: &Env, gas: &dyn Gas, t0: f64, dt: f64) -> Result<()> {
+        let pass = self.pass(env, gas, t0, dt)?;
+        self.commit(env, pass, None);
+        Ok(())
+    }
+
+    /// One parcel pass from `t0` to `t0 + dt` (D247): the parcels of the
+    /// old time level and those released in the step, tracked through the
+    /// frozen gas `gas`. The spray is not changed: a pass can be repeated
+    /// (D252) and gives the same parcels for the same gas, whatever the
+    /// order of the parcels or the number of threads. With two-way coupling
+    /// the pass carries the exchange records and their sorted per-cell sums
+    /// (D249).
+    pub fn pass(&self, env: &Env, gas: &dyn Gas, t0: f64, dt: f64) -> Result<Pass> {
         let t1 = t0 + dt;
-        let mut fresh = Vec::new();
-        self.release(env, t1, &mut fresh)?;
-        // existing parcels first, in storage order, then the new ones
+        let release = self.release(env, t1)?;
         let n_old = self.parcels.len();
-        for p in &fresh {
-            self.parcels.push(p);
-        }
-        let rho_p = self.cfg.liquid.density;
-        let this: &Spray = self;
-        let results: Vec<Outcome> = (0..this.parcels.len())
+        let fresh = &release.fresh;
+        let outcomes: Vec<Outcome> = (0..n_old + fresh.len())
             .into_par_iter()
             .map(|i| {
-                let p = this.parcels.get(i);
-                let time = if i < n_old { dt } else { t1 - p.born };
-                this.track(env, gas, p, time.max(0.0), t1)
+                let (p, time) = if i < n_old {
+                    (self.parcels.get(i), dt)
+                } else {
+                    let p = fresh[i - n_old];
+                    (p, t1 - p.born)
+                };
+                self.track(env, gas, p, time.max(0.0), t1)
             })
             .collect();
+        let sources = if self.cfg.coupling.two_way() {
+            let all: Vec<Record> = outcomes
+                .iter()
+                .flat_map(|o| o.records.iter().copied())
+                .collect();
+            CellSources::from_records(&all)
+        } else {
+            CellSources::default()
+        };
+        Ok(Pass {
+            release,
+            outcomes,
+            sources,
+            t1,
+            dt,
+        })
+    }
+
+    /// Commits pass `pass` (D250, D252): the closing step, when `du` gives
+    /// per cell the change u_new − u* of the gas velocity against the
+    /// frozen state of the pass (every record r gives its parcel
+    /// slope_r (u_new − u*) of momentum, the opposite of what the gas
+    /// received), then the books, the release and the fates. Returns the
+    /// momentum books of the step.
+    pub fn commit(
+        &mut self,
+        env: &Env,
+        pass: Pass,
+        du: Option<&dyn Fn(u32) -> [f64; 3]>,
+    ) -> StepBooks {
+        let rho_p = self.cfg.liquid.density;
+        let mut books = StepBooks {
+            start: self.momentum(),
+            ..Default::default()
+        };
+        let Pass {
+            release,
+            mut outcomes,
+            sources,
+            t1,
+            ..
+        } = pass;
+        // the release of the step (counters, mass book)
+        for (ii, &r) in release.released.iter().enumerate() {
+            self.injectors[ii].released = r;
+        }
+        for (p, &m) in release.fresh.iter().zip(&release.masses) {
+            self.tally.injected_parcels += 1;
+            self.tally.injected_mass += m;
+            let mp = mass_of(p.d, p.count, rho_p);
+            for k in 0..3 {
+                books.injected[k] += mp * p.v[k];
+            }
+        }
+        // the closing step: the parcel receives what the gas gave up
+        if let Some(du) = du {
+            for o in &mut outcomes {
+                if o.records.is_empty() {
+                    continue;
+                }
+                let m = mass_of(o.p.d, o.p.count, rho_p);
+                let mut dp = [0.0; 3];
+                for r in &o.records {
+                    let d = du(r.cell);
+                    for k in 0..3 {
+                        dp[k] += r.slope * d[k];
+                    }
+                }
+                for (v, d) in o.p.v.iter_mut().zip(dp) {
+                    *v += d / m;
+                }
+            }
+            for (j, &c) in sources.cells.iter().enumerate() {
+                let d = du(c);
+                for ((b, i), dk) in books.from_gas.iter_mut().zip(sources.impulse[j]).zip(d) {
+                    *b -= i - sources.slope[j] * dk;
+                }
+            }
+        } else {
+            for imp in &sources.impulse {
+                for (b, i) in books.from_gas.iter_mut().zip(imp) {
+                    *b -= i;
+                }
+            }
+        }
         let mut kept = Parcels::default();
         let mut cross: Vec<Crossing> = Vec::new();
-        for o in &results {
+        for o in &outcomes {
             cross.extend_from_slice(&o.cross);
         }
         // D263: sorted by (datum, parcel, sub-step, order), summed in turn
@@ -411,7 +553,23 @@ impl Spray {
             let spec = self.datums[di].hist;
             self.datum_tally[di].book(&spec, c, m);
         }
-        for o in results {
+        // the books in the order of the parcel identities
+        let mut order: Vec<usize> = (0..outcomes.len()).collect();
+        order.sort_by_key(|&i| outcomes[i].p.id);
+        for &i in &order {
+            let o = &outcomes[i];
+            let m = mass_of(o.p.d, o.p.count, rho_p);
+            for k in 0..3 {
+                books.gravity[k] += o.weight[k];
+                books.walls[k] += o.walls[k];
+                if o.fate == Fate::Active {
+                    books.end[k] += m * o.p.v[k];
+                } else {
+                    books.removed[k] -= m * o.p.v[k];
+                }
+            }
+        }
+        for o in outcomes {
             self.tally.rebounds += o.rebounds;
             self.tally.substeps += o.substeps;
             let m = mass_of(o.p.d, o.p.count, rho_p);
@@ -437,13 +595,60 @@ impl Spray {
         }
         self.parcels = kept;
         self.time = t1;
-        Ok(())
+        books
+    }
+
+    /// Momentum of the parcels in the flow (kg m/s), summed in the order of
+    /// their identities.
+    pub fn momentum(&self) -> [f64; 3] {
+        let mut p = [0.0; 3];
+        for i in self.by_id() {
+            let m = self.parcel_mass(i);
+            for (k, pk) in p.iter_mut().enumerate() {
+                *pk += m * self.parcels.v[i][k];
+            }
+        }
+        p
+    }
+
+    /// Per cell with parcels: the cell, the number of parcels and the
+    /// liquid volume (m³), ascending in the cell (health numbers of D254
+    /// (5)); summed in the order of the parcel identities.
+    pub fn cell_loading(&self) -> Vec<(u32, u32, f64)> {
+        let mut v: Vec<(u32, u64, f64)> = (0..self.parcels.len())
+            .map(|i| {
+                let d = self.parcels.d[i];
+                (
+                    self.parcels.cell[i],
+                    self.parcels.id[i],
+                    self.parcels.count[i] * std::f64::consts::PI / 6.0 * d * d * d,
+                )
+            })
+            .collect();
+        v.sort_by_key(|x| (x.0, x.1));
+        let mut out: Vec<(u32, u32, f64)> = Vec::new();
+        for (c, _, vol) in v {
+            match out.last_mut() {
+                Some(l) if l.0 == c => {
+                    l.1 += 1;
+                    l.2 += vol;
+                }
+                _ => out.push((c, 1, vol)),
+            }
+        }
+        out
     }
 
     /// The parcels due before `t1`: parcel k of an injector is born at
     /// start + (k + 1/2)/rate, so the mean mass flow is the one asked for.
-    fn release(&mut self, env: &Env, t1: f64, out: &mut Vec<One>) -> Result<()> {
+    /// Nothing is booked here (the pass may be repeated); [`Spray::commit`]
+    /// books the release.
+    fn release(&self, env: &Env, t1: f64) -> Result<Release> {
         let rho_p = self.cfg.liquid.density;
+        let mut out = Release {
+            released: self.injectors.iter().map(|i| i.released).collect(),
+            ..Default::default()
+        };
         for (ii, inj) in self.cfg.injectors.iter().enumerate() {
             let rate = inj.parcels_per_second;
             let end = inj.end.unwrap_or(f64::INFINITY);
@@ -452,12 +657,12 @@ impl Spray {
             let cos_a = inj.half_angle.to_radians().cos();
             let m_parcel = inj.mass_flow / rate;
             loop {
-                let k = self.injectors[ii].released;
+                let k = out.released[ii];
                 let born = inj.start + (k as f64 + 0.5) / rate;
                 if born > t1 || born > end {
                     break;
                 }
-                self.injectors[ii].released += 1;
+                out.released[ii] += 1;
                 let id = ((ii as u64) << 48) | k;
                 let dir = direction(id, axis, e1, e2, cos_a);
                 let d = match &inj.size {
@@ -473,7 +678,7 @@ impl Spray {
                         inj.name
                     );
                 };
-                out.push(One {
+                out.fresh.push(One {
                     id,
                     x: inj.position,
                     v: [dir[0] * inj.speed, dir[1] * inj.speed, dir[2] * inj.speed],
@@ -481,12 +686,12 @@ impl Spray {
                     count,
                     born,
                     cell,
+                    face: None,
                 });
-                self.tally.injected_parcels += 1;
-                self.tally.injected_mass += m_parcel;
+                out.masses.push(m_parcel);
             }
         }
-        Ok(())
+        Ok(out)
     }
 
     fn rule_of(&self, env: &Env, face: usize) -> BoundaryRule {
@@ -622,9 +827,23 @@ impl Spray {
     }
 
     /// Tracks one parcel for `time` seconds, to the end `t1` of the step.
+    ///
+    /// One way (SP1): sub-steps end at `max_courant` cell sizes and at
+    /// boundary faces. Two way (SP2, D247 (a), D251): they end in addition
+    /// at every interior face, so that each sub-step lies in one cell and
+    /// sees that cell's frozen gas, and when the particle Reynolds number
+    /// would change by more than `max_reynolds_change`; every sub-step
+    /// writes its exchange record (D249).
     fn track(&self, env: &Env, gas: &dyn Gas, mut p: One, time: f64, t1: f64) -> Outcome {
         let rho_p = self.cfg.liquid.density;
+        let two_way = self.cfg.coupling.two_way();
+        let re_frac = self.cfg.coupling.max_reynolds_change;
+        let mass = mass_of(p.d, p.count, rho_p);
+        let g_eff = |rho_g: f64| 1.0 - rho_g / rho_p;
         let mut cross = Vec::new();
+        let mut records: Vec<Record> = Vec::new();
+        let mut weight = [0.0; 3];
+        let mut walls = [0.0; 3];
         let any_datum = !self.datums.is_empty();
         let mut left = time;
         let mut rebounds = 0u64;
@@ -656,21 +875,176 @@ impl Spray {
                 sub = left * self.cfg.max_courant * h / len;
                 s = parcel_step(&input(sub));
             }
+            if two_way {
+                // D251: the coefficients are frozen over the sub-step, so
+                // it ends before the Reynolds number moves too far
+                let re_end = |v: [f64; 3]| {
+                    let w = [gs.u[0] - v[0], gs.u[1] - v[1], gs.u[2] - v[2]];
+                    gs.rho * p.d * norm(w) / gs.mu
+                };
+                let lim = re_frac * s.re.max(1.0);
+                let mut halvings = 0;
+                while (re_end(s.v) - s.re).abs() > lim && halvings < 40 {
+                    sub *= 0.5;
+                    s = parcel_step(&input(sub));
+                    halvings += 1;
+                }
+            }
             let target = [p.x[0] + s.dx[0], p.x[1] + s.dx[1], p.x[2] + s.dx[2]];
-            let start = env.loc.position_in(p.cell, p.x).or_else(|| {
-                env.loc
-                    .locate_search(p.x)
-                    .and_then(|c| env.loc.position_in(c, p.x))
+            // the face the previous sub-step ended on (two-way tracking)
+            let on_face = p.face.map(|q| q.face);
+            let start = p.face.take().or_else(|| {
+                env.loc.position_in(p.cell, p.x).or_else(|| {
+                    env.loc
+                        .locate_search(p.x)
+                        .and_then(|c| env.loc.position_in(c, p.x))
+                })
             });
             let Some(start) = start else {
                 fate = Fate::Lost;
                 break;
             };
-            let tr = env.loc.track(start, target);
             let t_sub = t1 - left;
             let vel = |tau: f64| parcel_step(&input(tau)).v;
+            // the exchange of a sub-step of length dt that ends with the
+            // velocity v1 (D249: the parcel's own change less its weight)
+            let book = |records: &mut Vec<Record>,
+                        weight: &mut [f64; 3],
+                        p: &One,
+                        dt: f64,
+                        v1: [f64; 3],
+                        tau: f64| {
+                let ge = g_eff(gs.rho);
+                let mut imp = [0.0; 3];
+                for k in 0..3 {
+                    let w = mass * self.gravity[k] * ge * dt;
+                    weight[k] += w;
+                    imp[k] = -(mass * (v1[k] - p.v[k]) - w);
+                }
+                if two_way {
+                    records.push(Record {
+                        cell: p.cell as u32,
+                        id: p.id,
+                        sub: substeps as u32,
+                        impulse: imp,
+                        slope: 0.0,
+                        dt,
+                        decay: (-(dt / tau)).exp_of(),
+                    });
+                }
+            };
+            // A parcel that moves along a face, with the gas of the two
+            // cells pushing it towards the face from both sides, would end
+            // every sub-step at that face after no time and chatter between
+            // the cells: a sub-step that starts on a face and goes straight
+            // back through it takes its full length instead (booked to the
+            // cell it starts in, the path below).
+            let ff = if two_way {
+                Some(first_face(env, start, target))
+            } else {
+                None
+            };
+            let ff = ff.filter(|f| {
+                !matches!(f, FirstFace::Interior { lambda, next, .. }
+                    if on_face == Some(next.face) && *lambda < 1e-9)
+            });
+            if let Some(ff) = ff {
+                match ff {
+                    FirstFace::Reached(cell) => {
+                        book(&mut records, &mut weight, &p, sub, s.v, s.tau);
+                        if any_datum {
+                            self.crossings(
+                                &mut cross,
+                                &p,
+                                substeps,
+                                (p.x, p.cell),
+                                (target, cell),
+                                t_sub,
+                                sub,
+                                &vel,
+                            );
+                        }
+                        p.x = target;
+                        p.v = s.v;
+                        p.cell = cell;
+                        left -= sub;
+                        continue;
+                    }
+                    FirstFace::Interior { lambda, x, next } => {
+                        let tf =
+                            time_at_fraction(&|t| parcel_step(&input(t)).dx, s.dx, lambda, sub);
+                        let sf = parcel_step(&input(tf));
+                        book(&mut records, &mut weight, &p, tf, sf.v, sf.tau);
+                        if any_datum {
+                            self.crossings(
+                                &mut cross,
+                                &p,
+                                substeps,
+                                (p.x, p.cell),
+                                (x, next.cell),
+                                t_sub,
+                                tf,
+                                &vel,
+                            );
+                        }
+                        p.x = x;
+                        p.v = sf.v;
+                        p.cell = next.cell;
+                        p.face = Some(next);
+                        left -= tf;
+                        continue;
+                    }
+                    FirstFace::Boundary { face, lambda, x } => {
+                        let tf =
+                            time_at_fraction(&|t| parcel_step(&input(t)).dx, s.dx, lambda, sub);
+                        let sf = parcel_step(&input(tf));
+                        book(&mut records, &mut weight, &p, tf, sf.v, sf.tau);
+                        if any_datum {
+                            self.crossings(
+                                &mut cross,
+                                &p,
+                                substeps,
+                                (p.x, p.cell),
+                                (x, p.cell),
+                                t_sub,
+                                tf,
+                                &vel,
+                            );
+                        }
+                        p.x = x;
+                        p.v = sf.v;
+                        left -= tf;
+                        match self.hit_boundary(
+                            env,
+                            &mut p,
+                            face,
+                            h,
+                            &mut cross,
+                            substeps,
+                            t1 - left,
+                            &mut walls,
+                            mass,
+                        ) {
+                            Some(f) => {
+                                fate = f;
+                                break;
+                            }
+                            None => {
+                                rebounds += 1;
+                                continue;
+                            }
+                        }
+                    }
+                    FirstFace::Lost => {
+                        fate = Fate::Lost;
+                        break;
+                    }
+                }
+            }
+            let tr = env.loc.track(start, target);
             match tr.end {
                 TrackEnd::Reached => {
+                    book(&mut records, &mut weight, &p, sub, s.v, s.tau);
                     if any_datum {
                         self.crossings(
                             &mut cross,
@@ -693,6 +1067,7 @@ impl Spray {
                     // sub-step (the sub-step is a fraction of a cell)
                     let thit = tr.fraction * sub;
                     let sh = parcel_step(&input(thit));
+                    book(&mut records, &mut weight, &p, thit, sh.v, sh.tau);
                     if any_datum {
                         self.crossings(
                             &mut cross,
@@ -709,50 +1084,29 @@ impl Spray {
                     p.v = sh.v;
                     p.cell = tr.position.cell;
                     left -= thit;
-                    let rule = self.rule_of(env, face);
-                    let bnd = env.mesh.boundary_of(face);
-                    if any_datum && let Some(b) = bnd {
-                        self.boundary_crossing(&mut cross, &p, substeps, b, 1, t1 - left);
-                    }
-                    match rule.mode {
-                        BoundaryMode::Stick => {
-                            fate = Fate::Stuck(face);
+                    match self.hit_boundary(
+                        env,
+                        &mut p,
+                        face,
+                        h,
+                        &mut cross,
+                        substeps,
+                        t1 - left,
+                        &mut walls,
+                        mass,
+                    ) {
+                        Some(f) => {
+                            fate = f;
                             break;
                         }
-                        BoundaryMode::Escape => {
-                            fate = Fate::Escaped(face);
-                            break;
-                        }
-                        BoundaryMode::Rebound | BoundaryMode::Mirror => {
-                            let a = env.geo.face_area[face];
-                            let n = unit(a);
-                            let vn = p.v[0] * n[0] + p.v[1] * n[1] + p.v[2] * n[2];
-                            let (en, et) = if rule.mode == BoundaryMode::Mirror {
-                                (1.0, 1.0)
-                            } else {
-                                (rule.e_normal, rule.e_tangential)
-                            };
-                            for (vk, nk) in p.v.iter_mut().zip(n) {
-                                let vt = *vk - vn * nk;
-                                *vk = et * vt - en * vn * nk;
-                            }
-                            // a hair inside the cell, so the next track
-                            // starts in it
-                            let eps = 1e-6 * h;
-                            for (xk, nk) in p.x.iter_mut().zip(n) {
-                                *xk -= eps * nk;
-                            }
-                            rebounds += 1;
-                            if any_datum && let Some(b) = bnd {
-                                self.boundary_crossing(&mut cross, &p, substeps, b, -1, t1 - left);
-                            }
-                        }
+                        None => rebounds += 1,
                     }
                 }
                 TrackEnd::Processor { .. } | TrackEnd::Lost => {
                     // the walk failed: one search for the target
                     match env.loc.locate_search(target) {
                         Some(c) => {
+                            book(&mut records, &mut weight, &p, sub, s.v, s.tau);
                             if any_datum {
                                 self.crossings(
                                     &mut cross,
@@ -778,12 +1132,72 @@ impl Spray {
                 }
             }
         }
+        p.face = None;
+        crate::coupling::set_slopes(&mut records, mass);
         Outcome {
             p,
             fate,
             rebounds,
             substeps,
             cross,
+            records,
+            weight,
+            walls,
+        }
+    }
+
+    /// A parcel `p` at boundary face `face`: books the arrival at the
+    /// datums, then sticks, escapes, or bounces back (adding the impulse of
+    /// the wall to `walls`). Returns the fate when the parcel leaves the
+    /// flow, `None` after a bounce.
+    #[allow(clippy::too_many_arguments)]
+    fn hit_boundary(
+        &self,
+        env: &Env,
+        p: &mut One,
+        face: usize,
+        h: f64,
+        cross: &mut Vec<Crossing>,
+        substeps: u64,
+        t: f64,
+        walls: &mut [f64; 3],
+        mass: f64,
+    ) -> Option<Fate> {
+        let any_datum = !self.datums.is_empty();
+        let rule = self.rule_of(env, face);
+        let bnd = env.mesh.boundary_of(face);
+        if any_datum && let Some(b) = bnd {
+            self.boundary_crossing(cross, p, substeps, b, 1, t);
+        }
+        match rule.mode {
+            BoundaryMode::Stick => Some(Fate::Stuck(face)),
+            BoundaryMode::Escape => Some(Fate::Escaped(face)),
+            BoundaryMode::Rebound | BoundaryMode::Mirror => {
+                let a = env.geo.face_area[face];
+                let n = unit(a);
+                let vn = p.v[0] * n[0] + p.v[1] * n[1] + p.v[2] * n[2];
+                let (en, et) = if rule.mode == BoundaryMode::Mirror {
+                    (1.0, 1.0)
+                } else {
+                    (rule.e_normal, rule.e_tangential)
+                };
+                for ((vk, nk), wk) in p.v.iter_mut().zip(n).zip(walls.iter_mut()) {
+                    let vt = *vk - vn * nk;
+                    let v1 = et * vt - en * vn * nk;
+                    *wk += mass * (v1 - *vk);
+                    *vk = v1;
+                }
+                // a hair inside the cell, so the next track starts in it
+                let eps = 1e-6 * h;
+                for (xk, nk) in p.x.iter_mut().zip(n) {
+                    *xk -= eps * nk;
+                }
+                p.face = None;
+                if any_datum && let Some(b) = bnd {
+                    self.boundary_crossing(cross, p, substeps, b, -1, t);
+                }
+                None
+            }
         }
     }
 
@@ -1048,4 +1462,94 @@ impl Injector {
         let m = self.mass_flow / self.parcels_per_second;
         m / (rho_p * std::f64::consts::PI / 6.0 * self.diameter.powi(3))
     }
+}
+
+/// Where a straight segment from a position first leaves its cell.
+enum FirstFace {
+    /// The target lies in the cell (or on its far side, in that cell).
+    Reached(usize),
+    /// Through an interior face at the segment fraction `lambda`, at `x`;
+    /// `next` is the walk's tetrahedron in the cell behind it.
+    Interior {
+        lambda: f64,
+        x: [f64; 3],
+        next: Position,
+    },
+    /// Through boundary face `face` at `lambda`, at `x`.
+    Boundary {
+        face: usize,
+        lambda: f64,
+        x: [f64; 3],
+    },
+    /// The walk failed.
+    Lost,
+}
+
+/// The walk of [`Locator::walk`] stopped at the first mesh face the segment
+/// from `start` to `target` crosses (two-way tracking, D247 (a)).
+fn first_face(env: &Env, start: Position, target: [f64; 3]) -> FirstFace {
+    let mut w = env.loc.start_walk(start, target);
+    let end = env
+        .loc
+        .walk(&mut w, step_limit(env.mesh.n_cells), |_, _, l1| l1 >= 1.0);
+    match end {
+        WalkEnd::Reached => FirstFace::Reached(w.cell as usize),
+        WalkEnd::Boundary { face } => FirstFace::Boundary {
+            face: face as usize,
+            lambda: 1.0,
+            x: w.x,
+        },
+        WalkEnd::Stopped => {
+            let f = w.face as usize;
+            if env.mesh.boundary_of(f).is_some() || f >= env.mesh.neighbour.len() {
+                return FirstFace::Boundary {
+                    face: f,
+                    lambda: w.lambda,
+                    x: w.x,
+                };
+            }
+            let (a, b) = (env.mesh.owner[f], env.mesh.neighbour[f]);
+            let other = if a == w.cell { b } else { a } as usize;
+            if other >= env.mesh.n_cells {
+                return FirstFace::Lost;
+            }
+            FirstFace::Interior {
+                lambda: w.lambda,
+                x: w.x,
+                next: Position {
+                    x: w.x,
+                    cell: other,
+                    face: f,
+                    edge: w.edge as usize,
+                },
+            }
+        }
+        WalkEnd::Processor { .. } | WalkEnd::Lost => FirstFace::Lost,
+    }
+}
+
+/// The time in [0, `sub`] at which the displacement `dx(t)` projected on the
+/// chord `chord` (= dx(sub)) reaches the fraction `lambda` of its length:
+/// bisection, 50 halvings (pure, the same bits on every thread).
+fn time_at_fraction(dx: &dyn Fn(f64) -> [f64; 3], chord: [f64; 3], lambda: f64, sub: f64) -> f64 {
+    let l2 = chord[0] * chord[0] + chord[1] * chord[1] + chord[2] * chord[2];
+    if l2.is_nan() || l2 <= 0.0 || lambda <= 0.0 {
+        return 0.0;
+    }
+    if lambda >= 1.0 {
+        return sub;
+    }
+    let goal = lambda * l2;
+    let (mut lo, mut hi) = (0.0, sub);
+    for _ in 0..50 {
+        let mid = 0.5 * (lo + hi);
+        let d = dx(mid);
+        let f = d[0] * chord[0] + d[1] * chord[1] + d[2] * chord[2];
+        if f < goal {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    0.5 * (lo + hi)
 }

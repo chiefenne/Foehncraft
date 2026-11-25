@@ -6,6 +6,7 @@ Part of the [Recipes](../recipes.md): droplets that move with and through the ga
 |---|---|
 | 242 | [Spray droplets into a flow](#spray-duct) |
 | 265 | [Measure the liquid and the droplet sizes at datums](#spray-datums) |
+| 280 | [Let the spray push the gas (two-way coupling)](#spray-two-way) |
 
 ---
 
@@ -132,3 +133,28 @@ p = r.parcels(r.series()[-1]["files"]["parcels"])   # points and fields (needs h
 ```
 
 A datum with an unknown type, a missing key or a boundary the mesh does not have stops the check with DAT001, one that meets no part of the mesh with DAT002. Datums cannot be used with a sliding mesh in this version. See the [gallery entry](../gallery/sprays.md#spray-datums) for what is checked and what is not there yet.
+
+<a id="spray-two-way"></a>
+## 280. Let the spray push the gas (two-way coupling)
+
+**Switch the coupling on.** By default the gas does not feel the droplets (`mode = "one-way"`). With two-way coupling the drag on every parcel is a momentum source of the gas in the cells it passes (D247 to D252):
+
+```toml
+[spray.coupling]
+mode = "two-way"
+passes = "converged"         # or a fixed number of passes, e.g. 1
+tolerance = 1e-3             # coupling lag at which the passes stop
+max_passes = 3               # at most this many passes in one time step
+max_reynolds_change = 0.2    # a sub-step is halved while the particle Reynolds number changes more
+```
+
+Two-way coupling needs a transient case with PISO and no energy equation in this version (SPR003). Each pass tracks all parcels against one frozen gas state; the gas takes the summed sources implicitly (value plus slope, like a porous sink), so even a dense spray at a time step of many droplet response times stays bounded. With `"converged"` the passes run inside the outer iterations of the time step until the coupling lag, the change of the gas velocity in the cells with parcels against the largest slip or gas change, is below `tolerance`. A step that stops at `max_passes` above it warns once with SPR006 and is counted in `spray.csv`. `passes = 1` is the linearised implicit coupling: cheaper, still conservative and bounded.
+
+**Run and look.**
+
+```bash
+foehn flow examples/cases/flow/spray_two_way.toml --out output/spray_two_way
+python3 -m tools.plot.spray_two_way OUT_DIR output/spray_two_way   # the picture of gallery 280
+```
+
+`spray.csv` gets the columns `passes`, `coupling_lag`, `unconverged`, `gas_force_x/y/z` (N, what the parcels hand to the gas), `gas_power_w` and the health numbers of D254: `coupling_max` (the largest β Δt / (ρ V), how strongly the spray holds the gas of one cell), `coupling_share`, `liquid_fraction_max` and `parcels_per_cell_max`. The ledger in `result.json` books the exchange as a pair (`spray drag` on the gas momentum, `from the gas` on the parcel momentum, pairs 2801 to 2803) that cancels to the bit, and the parcel momentum account closes with the weight, the injection, the walls and what left the flow. See the [gallery entry](../gallery/sprays.md#spray-two-way) for what is checked and what is not there yet.
