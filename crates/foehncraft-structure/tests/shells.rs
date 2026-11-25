@@ -1,5 +1,6 @@
-//! Verification of the MITC4 shell (MS5 part 2; plan section 6.4, rows
-//! "cantilever plate" and "shell patch tests and locking tests").
+//! Verification of the MITC4 and MITC3+ shells and of plates in case files
+//! (MS5 part 2; plan section 6.4, rows "cantilever plate" and "shell patch
+//! tests and locking tests").
 //!
 //! References: MacNeal & Harder (1985), *Finite Elements in Analysis and
 //! Design* 1, the standard set (patch tests on the distorted five-element
@@ -7,11 +8,15 @@
 //! Appl. Mech. Engrg.* 51 (the roof's 0.3024); Timoshenko &
 //! Woinowsky-Krieger, *Theory of Plates and Shells* (1959), the Navier
 //! series of the simply supported plate; Leissa (1969), *Vibration of
-//! Plates*, NASA SP-160, the cantilever square plate.
+//! Plates*, NASA SP-160, the cantilever square plate; Dvorkin & Bathe
+//! (1984), *Eng. Comput.* 1 (MITC4); Lee, Lee & Bathe (2014), *Comput.
+//! Struct.* 138 and Lee, Jeon, Lee & Bathe (2015), *Comput. Struct.* 153
+//! (MITC3+); Ko, Lee, Lee & Bathe (2017), *Comput. Struct.* 193 (MITC3+
+//! on the Scordelis–Lo roof).
 
 #![allow(clippy::needless_range_loop)]
 
-use foehncraft_structure::analysis;
+use foehncraft_structure::{analysis, case, codes};
 use foehncraft_structure::model::{AreaLoad, DOFS, Model, Shell};
 use foehncraft_structure::shell::ShellProps;
 use std::f64::consts::PI;
@@ -317,5 +322,137 @@ fn scordelis_lo_roof_converges() {
         } else {
             assert!(rel(w[2], 0.3024) < 2e-2, "{w:?}");
         }
+    }
+}
+
+fn reed_plate(extra: &str, nu: f64) -> case::Case {
+    let text = format!(
+        r#"
+[analysis]
+static = true
+modes = 0
+
+[materials.steel]
+young = 206e9
+poisson = {nu}
+density = 7850.0
+
+[[plates]]
+name = "reed"
+origin = [0.0, -6e-3, 0.0]
+edge_a = [0.03, 0.0, 0.0]
+edge_b = [0.0, 12e-3, 0.0]
+divisions = [40, 4]
+thickness = 0.2e-3
+material = "steel"
+{extra}
+"#
+    );
+    case::Case::from_toml(&text).unwrap()
+}
+
+#[test]
+fn plate_on_clamp_springs_against_beam_theory() {
+    // ν = 0: the plate bends as a beam of width b; a clamp along the edge
+    // x = 0 on springs per metre (D290), a pressure q: the tip lifts by
+    // the cantilever's q L⁴/(8 E I/b) plus the shear q L²/(2 κ G t) plus
+    // the spring rotation (q L²/2)/k_r times L plus the spring lift q L/k_t.
+    let (kr, kt, q) = (40.0, 2.0e7, 2000.0);
+    let (e, t, l): (f64, f64, f64) = (206e9, 0.2e-3, 0.03);
+    let c = reed_plate(
+        &format!(
+            r#"
+[[clamps]]
+along = [[0.0, -6e-3, 0.0], [0.0, 6e-3, 0.0]]
+normal = "z"
+line = "y"
+k_rotation = {kr}
+k_translation = {kt}
+
+[[pressures]]
+plate = "reed"
+value = {q}
+
+[points]
+tip = [0.03, 0.0, 0.0]
+"#
+        ),
+        0.0,
+    );
+    let out = case::run(&c).unwrap();
+    let j = out.to_json("t");
+    let w = j["static"]["points"]["tip"]["displacement"][2].as_f64().unwrap();
+    let d = e * t.powi(3) / 12.0;
+    let g = e / 2.0;
+    let exact = q * l.powi(4) / (8.0 * d)
+        + q * l * l / (2.0 * 5.0 / 6.0 * g * t)
+        + q * l * l / 2.0 / kr * l
+        + q * l / kt;
+    assert!(rel(w, exact) < 1e-3, "{w} {exact}");
+    // the clamp springs carry the whole load
+    let rz = j["static"]["reaction_force"][2].as_f64().unwrap();
+    assert!(rel(rz, -q * l * 12e-3) < 1e-9, "{rz}");
+    assert_eq!(j["clamps"][0]["nodes"], 5);
+    assert!(rel(j["clamps"][0]["rotation"]["stiffness"].as_f64().unwrap(), kr * 12e-3) < 1e-12);
+}
+
+#[test]
+fn reed_plate_catalogue_case() {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../examples/cases/structure/reed_plate.toml");
+    let c = case::Case::from_toml(&std::fs::read_to_string(path).unwrap()).unwrap();
+    let out = case::run(&c).unwrap();
+    let j = out.to_json("reed_plate");
+    assert_eq!(j["shell_elements"], 640);
+    assert_eq!(j["clamps"][0]["nodes"], 17);
+    assert_eq!(j["modal"]["sturm"]["ok"], true);
+    let rz = j["static"]["reaction_force"][2].as_f64().unwrap();
+    assert!(rel(rz, -2000.0 * 0.03 * 12e-3) < 1e-9, "{rz}");
+    // the beam of reed_beam_clamp_springs.toml (6 mm wide, the same springs
+    // per metre) flaps at 151.96 Hz; the wide plate is stiffer by part of
+    // 1/(1 − ν²) = 1.099 (anticlastic bending)
+    let f1 = j["modal"]["modes"][0]["frequency"].as_f64().unwrap();
+    assert!(f1 > 151.96 && f1 < 151.96 * 1.099f64.sqrt(), "{f1}");
+    let vtk = out.to_vtk("reed_plate");
+    assert!(vtk.contains("POLYGONS 640 3200"));
+    assert!(!vtk.contains("LINES"));
+}
+
+#[test]
+fn plate_case_errors_carry_the_case_code() {
+    let bad = [
+        // a clamp along an edge takes the length of its segment
+        r#"
+[[clamps]]
+along = [[0.0, -6e-3, 0.0], [0.0, 6e-3, 0.0]]
+normal = "z"
+line = "y"
+width = 0.01
+"#,
+        // no plate of that name
+        r#"
+[[supports]]
+along = [[0.0, -6e-3, 0.0], [0.0, 6e-3, 0.0]]
+fix = ["all"]
+[[pressures]]
+plate = "red"
+value = 1.0
+"#,
+        // a segment off the plate
+        r#"
+[[supports]]
+along = [[0.0, -6e-3, 1.0], [0.0, 6e-3, 1.0]]
+fix = ["all"]
+"#,
+        // both a node and a segment
+        r#"
+[[supports]]
+at = [0.0, -6e-3, 0.0]
+along = [[0.0, -6e-3, 0.0], [0.0, 6e-3, 0.0]]
+fix = ["all"]
+"#,
+    ];
+    for extra in bad {
+        let e = case::run(&reed_plate(extra, 0.3)).err().expect(extra);
+        assert_eq!(e.code, codes::CASE, "{extra}: {e}");
     }
 }

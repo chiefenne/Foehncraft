@@ -918,7 +918,9 @@ impl Outcome {
             "format_version": RESULT_VERSION,
             "name": name,
             "nodes": m.nodes.len(),
-            "elements": m.beams.len(),
+            "elements": m.beams.len() + m.shells.len(),
+            "beam_elements": m.beams.len(),
+            "shell_elements": m.shells.len(),
             "unknowns": m.dofs(),
             "free_unknowns": free,
             "mass": m.total_mass(),
@@ -1018,9 +1020,20 @@ impl Outcome {
         for p in &m.nodes {
             let _ = writeln!(s, "{:.9e} {:.9e} {:.9e}", p[0], p[1], p[2]);
         }
-        let _ = writeln!(s, "LINES {} {}", m.beams.len(), 3 * m.beams.len());
-        for b in &m.beams {
-            let _ = writeln!(s, "2 {} {}", b.nodes[0], b.nodes[1]);
+        if !m.beams.is_empty() {
+            let _ = writeln!(s, "LINES {} {}", m.beams.len(), 3 * m.beams.len());
+            for b in &m.beams {
+                let _ = writeln!(s, "2 {} {}", b.nodes[0], b.nodes[1]);
+            }
+        }
+        if !m.shells.is_empty() {
+            let size: usize = m.shells.iter().map(|e| e.used().len() + 1).sum();
+            let _ = writeln!(s, "POLYGONS {} {size}", m.shells.len());
+            for e in &m.shells {
+                let nodes = e.used();
+                let ids: Vec<String> = nodes.iter().map(|n| n.to_string()).collect();
+                let _ = writeln!(s, "{} {}", nodes.len(), ids.join(" "));
+            }
         }
         let _ = writeln!(s, "POINT_DATA {}", m.nodes.len());
         let vector = |s: &mut String, label: &str, u: &[f64], off: usize, scale: f64| {
