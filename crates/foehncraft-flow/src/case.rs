@@ -924,6 +924,10 @@ pub struct FlowCase {
         skip_serializing_if = "crate::immersed::ImmersedSection::is_empty"
     )]
     pub immersed: crate::immersed::ImmersedSection,
+    /// Two immiscible fluids by the volume-of-fluid method (L3, MP1):
+    /// `[vof]` with two `[[vof.phase]]` tables.
+    #[serde(default, skip_serializing_if = "crate::vof::VofSection::is_empty")]
+    pub vof: crate::vof::VofSection,
     /// Lagrangian parcels of the sprays (L12): `[spray]`.
     #[serde(skip_serializing_if = "foehncraft_particles::SpraySection::is_empty")]
     pub spray: foehncraft_particles::SpraySection,
@@ -1528,6 +1532,7 @@ impl FlowCase {
         crate::motion::validate(self)?;
         crate::rotor::validate(self)?;
         crate::spray::validate(self)?;
+        crate::vof::validate(self)?;
         crate::immersed::check_case(self)?;
         crate::datum::validate(self)?;
         if let Some(d) = &self.fluid.density
@@ -5115,6 +5120,13 @@ pub(crate) fn write_fields(
         fields.push(CellField {
             name: "density",
             values: r,
+        });
+    }
+    // the volume fraction of phase 1 of a volume-of-fluid case (L3)
+    if let Some(a) = &fl.phys.vof_alpha {
+        fields.push(CellField {
+            name: "volume_fraction",
+            values: a,
         });
     }
     let err: Vec<f64>;

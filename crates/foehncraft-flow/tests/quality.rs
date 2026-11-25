@@ -317,6 +317,7 @@ fn plain_fluxes(
         psi: v3(&psi[0], &psi[1], &psi[2]),
         bounded,
         jump_offset: &[],
+        body: foehncraft_kernels::fv::Vec3 { x: &[], y: &[], z: &[] },
     };
     // SAFETY: every face of the mesh, every array has its entries.
     (0..ni)

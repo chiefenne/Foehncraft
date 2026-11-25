@@ -511,6 +511,7 @@ impl Transient {
         // uⁿ⁻² is gone
         self.clock.dt_prev2 = 0.0;
         fl.density_step_back()?;
+        fl.vof_step_back()?;
         self.finish_level(fl)?;
         Ok(true)
     }
@@ -569,6 +570,7 @@ impl Transient {
         self.hold_convective(fl)?;
         anyhow::ensure!(fl.rewind()?, "no valid state was kept");
         fl.density_step_back()?;
+        fl.vof_step_back()?;
         fl.dev.sync()
     }
 
@@ -609,6 +611,16 @@ impl Transient {
         // the flux that carries the quantities: the relative one in a
         // rotating zone (frames, D55, D182)
         let m = fl.convecting_flux()?;
+        // a volume-of-fluid case: the volume flux in the units of the
+        // constant density the Courant kernel divides by
+        let m = match fl.vof.as_deref() {
+            Some(v) => {
+                let (mv, rf) = (v.m_vol, v.rho_f);
+                fl.dev.quotient(mv, fl.phys.rho, m, rf)?;
+                mv
+            }
+            None => m,
+        };
         fl.dev.courant(m, dt, self.l.cfl)?;
         Ok(fl.dev.min_max(self.l.cfl)?.1)
     }
@@ -781,6 +793,14 @@ impl Transient {
         } else {
             for (&a, &b) in cur.iter().zip(&old) {
                 fl.dev.copy(a, b)?;
+            }
+        }
+        // two fluids by the volume-of-fluid method (L3): α of the new level
+        // and the mixture of the momentum rows; the old-level fluxes carry
+        // the face density, so they move to the new one (ρ_f^{n+1}/ρ_f^n)
+        if let Some(r) = fl.vof_step_start(dt)? {
+            for b in [l.x_cur, l.x_old, l.m_old, l.m_old2] {
+                fl.dev.quotient(b, 1.0, b, r)?;
             }
         }
         // Y = Σ (−a_k/a₀) X^k
