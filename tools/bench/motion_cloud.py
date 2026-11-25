@@ -13,7 +13,7 @@ GPU (`--backend cuda`), on one rank (ranks run on the CPU device):
 - motion_free_stream: a uniform flow on a deforming mesh stays uniform
   (MS0.1); the GPU run must keep it to round-off as well;
 - motion_channel_ranks: the breathing channel with a dye stripe, and its
-  continuation from restart_000025.h5 on the GPU (MS0 part 2);
+  continuation from restart_000075.h5 on the GPU (MS0 part 2);
 - motion_piston_adiabatic: the L22 piston with the variable density.
 
 Since MPI step W2 the CPU sums exactly and the GPU keeps its block sums
@@ -110,7 +110,7 @@ def main():
             d = OUT / tag / be
             cmd = [foehn, "flow", F + case + ".toml", "--backend", be, "--ranks", "1", "--out", str(d)]
             if mode:
-                cmd += ["--restart", str(OUT / case / be / "restart_000025.h5")]
+                cmd += ["--restart", str(OUT / case / be / "restart_000075.h5")]
             if sh(cmd).returncode != 0:
                 print(f"!! {tag} on {be} failed", flush=True)
                 ok = False

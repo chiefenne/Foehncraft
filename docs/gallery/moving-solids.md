@@ -5,6 +5,7 @@ Part of the [Example gallery](../gallery.md): meshes whose nodes move in time, a
 | # | Example | Stage | Feature |
 |---|---|---|---|
 | 296 | [A piston compresses a closed gas volume on a deforming mesh](#deforming-mesh) | MS0 (D91, L22) | `[mesh_motion]`, swept volumes, moving walls, closed volume |
+| 307 | [A breathing channel on three ranks, continued from a restart file](#deforming-mesh-ranks) | MS0 part 2 (D91, D93) | `[run] rank_count`, restart files of a moving mesh, GPU check |
 
 ---
 
@@ -59,8 +60,8 @@ on tetrahedral and polyhedral meshes and with BDF1, BDF2 and Crank–Nicolson.
 
 **Limits of stage MS0.** The motion is prescribed; a mesh-motion solver and
 bodies moved by the fluid are MS1 and MS2. The geometry and the solver setup
-are rebuilt every step (an AMG setup per step). A restart, several ranks,
-turning zones, regions, sprays, immersed bodies, periodic boundaries, an
+are rebuilt every step (an AMG setup per step). Restart files and ranks came
+with part 2 ([gallery 307](#deforming-mesh-ranks)); turning zones, regions, sprays, immersed bodies, periodic boundaries, an
 error-controlled time step and level sweeps are refused (MOV001); only walls
 move with the mesh, other boundaries may only slide in their plane (MOV003);
 a closed volume of constant density cannot be compressed (MOV004). Turbulence
@@ -85,3 +86,67 @@ python3 -m tools.plot.mesh_motion docs/figures/gallery output/adiabatic output/c
 ```
 
 Recipe: [296](../recipes/moving-solids.md#deforming-mesh). Case files: `examples/cases/flow/motion_piston_adiabatic.toml`, `motion_piston_cooled_walls.toml`, `motion_free_stream.toml`.
+
+---
+
+<a id="deforming-mesh-ranks"></a>
+## 307. A breathing channel on three ranks, continued from a restart file
+
+<img src="../figures/gallery/motion_channel_ranks.png" alt="Three panels of the breathing channel. Left: the speed in a channel 2 m long and 0.5 m high on a mesh whose inner nodes are swung into gentle waves, slow blue and green layers along the two walls and a fast red core near 1.4 m/s; two white wavy lines cross the channel at about x = 0.67 m and 1.33 m, the cuts between the three ranks. Middle: a yellow stripe of dye entering at the middle of the inlet and spreading slightly as it reaches the outlet. Right: the axial velocity at a probe in the middle against time, rising from 1.0 to 1.38 m/s; a thick blue line for one rank, a thin orange line for three ranks on top of it, and black dots from a dashed restart line at 0.75 s onwards, all on the same curve." width="800" height="185">
+
+Stage MS0 part 2 makes the deforming mesh of [296](#deforming-mesh) run on
+ranks and restart, with the same bitwise rules as a fixed mesh (D42, D93).
+
+`motion_channel_ranks.toml` is a channel 2 m × 0.5 m between two walls at
+Re = 100 with a plug inflow of 1 m/s and a stripe of dye. Its inner nodes
+swing back and forth by up to 3 cm in both directions (6 periods in 1.5 s,
+cell volumes between 0.80 and 1.21 of their size in the mesh file); the
+walls, the inlet and the outlet stay in place. The case runs on three
+ranks (`[run] rank_count = 3`):
+
+- **Ranks.** Every rank moves the whole mesh, as with the sliding mesh by
+  imprinting ([gallery 305](meshes.md#run-ranks-imprint)). The partition of the start stays
+  for the whole run (the cells keep their numbers, the white cuts move with
+  the nodes); the geometry and the swept volumes of each rank's part are
+  taken from those of the whole mesh. Every rank therefore solves bitwise
+  the cells of the one-rank run, and rank 0 writes every file (fields,
+  history, probes, balances, walls, restart files) byte for byte as one
+  rank does.
+- **Restart.** The restart file of a deforming mesh holds the nodes of the
+  current time level, the cell volumes Vⁿ and Vⁿ⁻¹, the volume each face
+  swept in the last step (BDF2 needs it) and the range of the volume
+  ratios, as the optional geometry datasets of D91. A run continued from
+  `restart_000075.h5` (t = 0.75 s, written on three ranks) starts on the
+  mesh of that time and ends bitwise as the run without the interruption,
+  on two ranks and on one. A restart whose nodes the displacement does not
+  put there (a changed `[mesh_motion]`) is refused (MOV001).
+- **GPU.** The grid flux, the relative flux and the volumes of the old
+  levels are operations of the flow device, which runs the same kernel
+  bodies on the CPU and the GPU (D31). CI has no GPU: the notebook
+  `tools/notebooks/motion_colab.ipynb` (`python3 -m tools.bench.motion_cloud`)
+  runs the free stream, this channel with its restart and the adiabatic
+  piston on the CPU and on a Colab GPU and compares them (to rounding,
+  since the CPU sums exactly and the GPU keeps its block sums, MPI step W2).
+
+**Limits.** Every rank moves the whole mesh and rebuilds its part every
+step: on this small mesh three ranks take about five times as long as one
+(a scalable motion of the parts comes with the mesh-motion solver, MS1).
+The variable density of stage 7c has no restart yet, so the closed-volume
+piston does not restart and does not run on ranks before that work (the
+variable density on ranks is PR #303). On the GPU the solver is built again
+every step, with its device setup.
+
+Reproduce (seconds):
+
+```sh
+cargo build --release -p foehncraft-cli
+F=examples/cases/flow/motion_channel_ranks.toml
+target/release/foehn flow $F --ranks 1 --out output/one --set 'output.fields_times=[1.0625]'
+target/release/foehn flow $F --out output/three --set 'output.fields_times=[1.0625]'
+target/release/foehn flow $F --ranks 2 --restart output/three/restart_000075.h5 --out output/cont
+cmp output/one/fields.vtkhdf output/cont/fields.vtkhdf && echo bitwise
+pip install matplotlib h5py numpy
+python3 -m tools.plot.mesh_motion_ranks docs/figures/gallery output/one output/three output/cont
+```
+
+Recipe: [307](../recipes/moving-solids.md#deforming-mesh-ranks). Case file: `examples/cases/flow/motion_channel_ranks.toml`.

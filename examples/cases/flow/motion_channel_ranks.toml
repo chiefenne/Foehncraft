@@ -14,18 +14,18 @@
 # A channel 2 m × 0.5 m between two walls; water-like flow at Re = 100
 # (U h / ν with the height h) enters with a plug profile and a stripe of
 # dye. The inner nodes swing back and forth by up to 3 cm in both
-# directions, two periods in the run; the nodes of the walls and of the
+# directions, six periods in the run; the nodes of the walls and of the
 # inlet and outlet stay (the displacement vanishes there). Every rank
 # moves the whole mesh in every step and keeps the partition of the start;
 # the geometry and the swept volumes of its part are those of the whole
 # mesh, so the files are those of one rank (D93).
 #
-# `restart_at = [25]` writes restart_000025.h5 at the half of the run;
+# `restart_at = [75]` writes restart_000075.h5 at the half of the run;
 #
 #   [run]
-#   restart = "out/motion_channel_ranks/restart_000025.h5"
+#   restart = "out/motion_channel_ranks/restart_000075.h5"
 #
-# continues from it on the mesh of t = 0.25 s (the nodes, the volumes of
+# continues from it on the mesh of t = 0.75 s (the nodes, the volumes of
 # the level before and the swept volumes of the last step are in the
 # file) and ends bitwise as the run without the interruption (D42).
 
@@ -84,7 +84,7 @@ initial = 0.0
 [time]
 scheme = "bdf2"
 time_step = 0.01
-end_time = 0.5
+end_time = 1.5
 
 [solver]
 outer_iterations = 3
@@ -100,8 +100,8 @@ point = [1.0, 0.25, 0.025]
 columns = ["probe.mid.velocity_x", "max.velocity_magnitude"]
 
 [output]
-fields_every = 25
+fields_every = 75
 
 [run]
 rank_count = 3
-restart_at = [25]
+restart_at = [75]

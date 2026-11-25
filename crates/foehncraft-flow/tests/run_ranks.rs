@@ -606,9 +606,9 @@ fn motion_case() -> String {
         .unwrap()
         .replace("\r\n", "\n")
         .replace("cells = [48, 16, 1]", "cells = [24, 8, 1]")
-        .replace("end_time = 0.5", "end_time = 0.2")
-        .replace("restart_at = [25]", "restart_at = [10]")
-        .replace("fields_every = 25", "fields_every = 10")
+        .replace("end_time = 1.5", "end_time = 0.2")
+        .replace("restart_at = [75]", "restart_at = [10]")
+        .replace("fields_every = 75", "fields_every = 10")
 }
 
 const MOTION_FILES: &[&str] = &[

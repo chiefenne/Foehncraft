@@ -5,6 +5,7 @@ Part of the [Recipes](../recipes.md): move the mesh in time, and later move soli
 | # | Recipe |
 |---|---|
 | 296 | [Move the mesh with a prescribed displacement (a piston)](#deforming-mesh) |
+| 307 | [Run a deforming mesh on ranks and continue it from a restart file](#deforming-mesh-ranks) |
 
 ---
 
@@ -83,3 +84,43 @@ cell layering and bodies moved by the fluid come with MS1 and MS2. The
 solver setup is rebuilt every step. Restarts, several ranks, turning zones,
 regions, sprays, immersed bodies, periodic boundaries, an error-controlled
 time step and level sweeps are refused (MOV001).
+
+---
+
+<a id="deforming-mesh-ranks"></a>
+## 307. Run a deforming mesh on ranks and continue it from a restart file
+
+**On ranks.** A case with `[mesh_motion]` runs on ranks like a fixed one:
+
+```toml
+[run]
+rank_count = 3        # or: foehn flow case.toml --ranks 3
+```
+
+With a build that has the `mpi` feature the ranks may be MPI processes
+(`mpirun -n 3 target/release/foehn flow case.toml`). The files are those of
+one rank byte for byte. The check mode `[run] ranks = [...]` does not take
+a deforming mesh (MOV001); compare a run with `--ranks 1` instead.
+
+**Restart files.** `restart_every`, `restart_at`, `restart_final` and
+SIGUSR1 write restart files as for a fixed mesh; they also hold the nodes,
+the old cell volumes and the swept volumes of the last step. Continue with
+
+```toml
+[run]
+restart = "out/case/restart_000075.h5"   # or: --restart latest
+```
+
+on any rank count. Keep `[mesh_motion]` as it was: a restart whose nodes the
+displacement does not put there stops with MOV001. The mesh file must be the
+same (same node, cell and face order). A transient restart file of a fixed
+mesh is accepted: the nodes go where the displacement has them at its time
+and the next step starts the motion as a first step (a note in the log).
+
+**GPU.** `--backend cuda` runs a deforming mesh on the GPU on one rank.
+Check a GPU with `tools/notebooks/motion_colab.ipynb` on Colab
+([gallery 307](../gallery/moving-solids.md#deforming-mesh-ranks)).
+
+**Not yet.** A closed volume with the variable density (the piston) neither
+restarts nor runs on ranks: the variable density of stage 7c has no restart
+yet.

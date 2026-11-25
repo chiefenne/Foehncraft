@@ -24,7 +24,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | [Porous regions](recipes/porous.md) | porous blocks and honeycombs in a flow: resistances, axes, the honeycomb shorthand | 273, 275 |
 | [Structures](recipes/structure.md) | a structural case of beams, plates, solids and clamp springs: static and modal analyses, the clamp spring fitted to a measured frequency, runs in time with damping and temperatures, contact with a seat and a stop, the results | 295, 297, 299, 300, 302 |
 | [Immersed bodies](recipes/immersed.md) | put a body in the flow without meshing it: `[immersed]`, the permeability, forces | 270, 291 |
-| [Moving meshes and solids](recipes/moving-solids.md) | move the mesh with a prescribed displacement: `[mesh_motion]`, moving walls, a piston on a closed volume | 296 |
+| [Moving meshes and solids](recipes/moving-solids.md) | move the mesh with a prescribed displacement: `[mesh_motion]`, moving walls, a piston on a closed volume; ranks and restart files | 296, 307 |
 | [Species and reacting flows](recipes/species.md) | species of an ideal-gas mixture: names, compositions in mole or mass fractions, diffusion by Schmidt or Lewis numbers, mixture properties, the element ledger | 278, 289 |
 | [Expressions and materials](recipes/properties.md) | values as expressions of x, y, z and t, constants and tables, wall mass flux, the material database, regions | 31, 32 |
 | [Python](recipes/python.md) | the `foehncraft` package: cases, expressions, runs with callbacks, results, materials, studies | 33 |
@@ -180,6 +180,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="structure-contact"></a>302 | [Let a reed touch its seat and its stop](recipes/structure.md#structure-contact) | [Structures](recipes/structure.md) |
 | <a id="run-ranks-sliding"></a>304 | [Run a sliding rotor in conformal stepping on ranks](recipes/meshes.md#run-ranks-sliding) | [Meshes](recipes/meshes.md) |
 | <a id="run-ranks-imprint"></a>305 | [Run a sliding rotor by imprinting on ranks](recipes/meshes.md#run-ranks-imprint) | [Meshes](recipes/meshes.md) |
+| <a id="deforming-mesh-ranks"></a>307 | [Run a deforming mesh on ranks and continue it from a restart file](recipes/moving-solids.md#deforming-mesh-ranks) | [Moving meshes and solids](recipes/moving-solids.md) |
 
 ## Adding a feature
 
