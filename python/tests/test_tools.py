@@ -56,6 +56,9 @@ def test_every_tool_through_call(tmp_path):
             "input": ROOT / "examples/cases/mesh/hex_2d.toml",
             "out": tmp_path / "mesh",
         },
+        "mesh.surface": {
+            "input": ROOT / "examples/cases/flow/spray_datums_section.stl",
+        },
         "flow.run": {"case": case, "out": out},
         "result.read": {"dir": out},
         "result.page": {"dir": out, "series": "residuals", "limit": 5},

@@ -5,7 +5,7 @@
 //! A [`Surface`] is a triangle soup, typically an STL file: the corners are
 //! welded where their coordinates are **bitwise equal** (no tolerance, so
 //! nothing is silently merged), which gives the edge structure the
-//! [`check`] needs. The geometry queries run on the bounding volume
+//! [`check()`] needs. The geometry queries run on the bounding volume
 //! hierarchy of [`crate::query`] (D108): the exact closest point
 //! (distance), the exact segment–triangle test (crossings, D225 predicates)
 //! and the hierarchical winding number of [`winding`].
