@@ -395,6 +395,7 @@ pub fn registry() -> Vec<Entry> {
         entry::<materials::Show>(),
         entry::<expression::Eval>(),
         entry::<mesh::Process>(),
+        entry::<mesh::SurfaceCheck>(),
         entry::<flow::Run>(),
         entry::<flow::Read>(),
         entry::<flow::Page>(),
