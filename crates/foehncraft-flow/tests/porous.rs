@@ -137,7 +137,8 @@ fn porous_keys_are_checked() {
     // a matrix in a fluid region
     let (c, m) = refused(&t.replace("kind = \"porous\"", "kind = \"fluid\""));
     assert_eq!(c, "POR001", "{m}");
-    // with the energy equation: stage PM2
+    // with the energy equation a porous region needs its matrix (`solid`,
+    // `porosity`; PM2)
     let (c, m) = refused(&t.replace(
         "[boundary.xmax]",
         "[boundary.xmin.energy]\ntemperature = 300.0\n[boundary.xmax]",
@@ -145,7 +146,7 @@ fn porous_keys_are_checked() {
         "[fluid]\ndensity = 1.2\nviscosity = 1.8e-5",
         "[fluid]\ndensity = 1.2\nviscosity = 1.8e-5\nspecific_heat = 1005.0\nconductivity = 0.026\n\n[energy]\ninitial = 300.0",
     ));
-    assert_eq!(c, "POR002", "{m}");
+    assert_eq!(c, "POR001", "{m}");
     // direction-dependent values with axes turned against the mesh
     let (c, m) = refused(
         &t.replace("viscous = 1.0e6", "viscous = [1.0e6, 1.0e8, 1.0e8]")

@@ -1,0 +1,101 @@
+# Schumann's bed: hot air into a cold porous bed, gas and matrix with
+# temperatures of their own (D271, porous plan PM2, check V4).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/porous_schumann.toml
+#
+# A bed 1 m long (ε = 0.4) of a ceramic matrix (ρ_s = 2300 kg/m³,
+# c_s = 900 J/(kg K)) at 300 K. Air (ρ c = 1206 J/(m³ K)) flows through it
+# at the superficial velocity u = 0.1 m/s; at t = 0 its inlet temperature
+# steps to 400 K. Gas and matrix exchange heat with h a = 603 W/(m³ K);
+# neither conducts along the bed. Schumann (1929) solved this exactly: with
+# ξ = h a x/(ρ c u) and η = h a (t − ε x/u)/((1 − ε) ρ_s c_s) the gas is
+# J(ξ, η) and the matrix 1 − J(η, ξ) of the step, J(x, y) = 1 −
+# ∫₀ˣ e^{−y−s} I₀(2√(y s)) ds. The bed is 5 exchange lengths long; after
+# 3000 s the matrix at the inlet has taken 77 % of the step.
+#
+# The run writes the fields at 1000, 2000 and 3000 s and the cell values
+# along the axis (line_axis.csv); `tools/plot/porous_energy_fields.py`
+# draws them against the exact solution. The test
+# `a_bed_without_conduction_follows_schumann` runs this case on 25, 50 and
+# 100 cells: the error falls with the square of the cell size.
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [1.0, 0.1, 0.01]
+cells = [100, 1, 1]
+zones = [{ name = "bed", lower = [0.0, 0.0, 0.0], upper = [1.0, 0.1, 0.01] }]
+
+[materials.ceramic]
+kind = "solid"
+description = "a ceramic matrix (chosen values for the exact check)"
+density = 2300.0
+specific_heat = 900.0
+conductivity = 2.0
+
+[fluid]
+density = 1.2
+viscosity = 1.8e-5
+specific_heat = 1005.0
+conductivity = 1.0e-6
+
+[regions.bed]
+kind = "porous"
+zones = ["bed"]
+[regions.bed.porous]
+viscous = 1.0e4
+porosity = 0.4
+solid = "ceramic"
+heat_transfer_coefficient = 10.0
+specific_area = 60.3
+solid_conductivity = 0.0
+source = "chosen values for the exact check (Schumann 1929)"
+
+[energy]
+initial = 300.0
+
+[initial]
+velocity = [0.1, 0.0, 0.0]
+
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [0.1, 0.0, 0.0]
+[boundary.xmin.energy]
+temperature = 400.0
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymin]
+type = "slip-wall"
+[boundary.ymin.energy]
+heat_flux = 0.0
+[boundary.ymax]
+type = "slip-wall"
+[boundary.ymax.energy]
+heat_flux = 0.0
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver.energy]
+tolerance = 1e-12
+
+[time]
+scheme = "bdf2"
+time_step = 15.0
+end_time = 3000.0
+
+[solver]
+outer_iterations = 20
+outer_tolerance = 1e-12
+
+[verification]
+require_convergence = false
+
+[output]
+wall_csv = false
+fields_times = [1000.0, 2000.0]
+lines = [{ name = "axis", from = [0.005, 0.05, 0.005], to = [0.995, 0.05, 0.005], points = 100 }]

@@ -72,6 +72,28 @@ pub struct PorousSection {
     /// Where the values come from.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
+    /// The material of the matrix (density, specific_heat, isotropic
+    /// conductivity): with `[energy]` the region carries a solid
+    /// temperature of its own beside the gas temperature (D271).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub solid: Option<String>,
+    /// Heat transfer coefficient h between gas and matrix (W/(m² K)); a
+    /// honeycomb takes h = Nu k_gas / d_h instead.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub heat_transfer_coefficient: Option<f64>,
+    /// Wetted surface per volume a (1/m); a honeycomb takes 4 ε / d_h.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub specific_area: Option<f64>,
+    /// Effective conductivity of the matrix (W/(m K)), one value or three
+    /// along the axes of the region; default (1 − ε) k_solid, of a
+    /// honeycomb (1 − ε) k_solid along the channels and (1 − √ε) k_solid
+    /// across (D272).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub solid_conductivity: Option<Principal>,
+    /// Start temperature of the matrix (K): a number or an expression of x,
+    /// y, z; default the start temperature of the gas.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub solid_initial: Option<crate::expr::Scalar>,
 }
 
 /// Principal values of a resistance: one number for all directions or
@@ -111,6 +133,52 @@ pub struct Honeycomb {
     /// (default 10⁴: closed walls).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub blocking: Option<f64>,
+    /// Nusselt number of the channels, h d_h / k_gas (default 2.98: fully
+    /// developed laminar flow in a square duct at constant wall
+    /// temperature, Shah & London 1978).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nusselt: Option<f64>,
+}
+
+/// Nu of fully developed laminar flow in a square duct at a constant wall
+/// temperature (Shah & London 1978).
+pub const SQUARE_DUCT_NU_T: f64 = 2.98;
+
+/// How the heat transfer coefficient of a porous region is given.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Transfer {
+    /// h (W/(m² K)).
+    Fixed(f64),
+    /// h = Nu k_gas(T) / d_h.
+    Nusselt {
+        /// Nu.
+        nu: f64,
+        /// d_h (m).
+        dh: f64,
+    },
+}
+
+/// The resolved thermal values of a porous region (D271, D272).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Thermal {
+    /// ε.
+    pub porosity: f64,
+    /// a (1/m).
+    pub area: f64,
+    /// h.
+    pub transfer: Transfer,
+    /// The effective conductivity of the matrix along the three axes: the
+    /// given values (W/(m K)), or factors on k_solid.
+    pub solid_k: SolidK,
+}
+
+/// The effective conductivity of the matrix.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SolidK {
+    /// Given values (W/(m K)).
+    Values([f64; 3]),
+    /// Factors on k_solid(T).
+    Factors([f64; 3]),
 }
 
 /// The resolved values of a porous region in its own frame.
@@ -187,6 +255,80 @@ impl PorousSection {
     }
 }
 
+impl PorousSection {
+    /// The thermal values (with `[energy]`); `Err` with the reason for
+    /// missing or contradicting keys.
+    pub fn thermal(&self) -> std::result::Result<Thermal, String> {
+        let r = self.resolve()?;
+        let eps = r.porosity;
+        if self.solid.is_none() {
+            return Err(
+                "with [energy] a porous region needs `solid`, the material of its \
+                        matrix (density, specific_heat, conductivity)"
+                    .into(),
+            );
+        }
+        if eps >= 1.0 {
+            return Err(
+                "with [energy] a porous region needs its porosity ε < 1 (the share \
+                        of the matrix is 1 − ε)"
+                    .into(),
+            );
+        }
+        let positive = |v: Option<f64>, what: &str| -> std::result::Result<(), String> {
+            match v {
+                Some(x) if !(x.is_finite() && x > 0.0) => Err(format!("{what} = {x}: positive")),
+                _ => Ok(()),
+            }
+        };
+        positive(self.heat_transfer_coefficient, "heat_transfer_coefficient")?;
+        positive(self.specific_area, "specific_area")?;
+        let (area, transfer, factors) = match &self.honeycomb {
+            Some(h) => {
+                let nu = h.nusselt.unwrap_or(SQUARE_DUCT_NU_T);
+                positive(Some(nu), "honeycomb nusselt")?;
+                let transfer = match self.heat_transfer_coefficient {
+                    Some(v) => Transfer::Fixed(v),
+                    None => Transfer::Nusselt { nu, dh: h.channel },
+                };
+                let across = 1.0 - eps.sqrt();
+                (
+                    self.specific_area.unwrap_or(4.0 * eps / h.channel),
+                    transfer,
+                    [1.0 - eps, across, across],
+                )
+            }
+            None => {
+                let (Some(h), Some(a)) = (self.heat_transfer_coefficient, self.specific_area)
+                else {
+                    return Err(
+                        "with [energy] give `heat_transfer_coefficient` (W/(m² K)) and \
+                                `specific_area` (1/m), or `honeycomb`"
+                            .into(),
+                    );
+                };
+                (a, Transfer::Fixed(h), [1.0 - eps; 3])
+            }
+        };
+        let solid_k = match self.solid_conductivity {
+            Some(p) => {
+                let v = p.values();
+                if v.iter().any(|x| !(x.is_finite() && *x >= 0.0)) {
+                    return Err("solid_conductivity: finite and not negative".into());
+                }
+                SolidK::Values(v)
+            }
+            None => SolidK::Factors(factors),
+        };
+        Ok(Thermal {
+            porosity: eps,
+            area,
+            transfer,
+            solid_k,
+        })
+    }
+}
+
 /// Whether the case has a porous region.
 pub fn any(case: &FlowCase) -> bool {
     case.regions.values().any(|r| r.kind == RegionKind::Porous)
@@ -234,6 +376,29 @@ pub fn validate(case: &FlowCase) -> Result<()> {
             )
         })?;
         let isotropic = |a: [f64; 3]| a[1] == a[0] && a[2] == a[0];
+        let mut solid_aniso = false;
+        if case.energy.is_some() {
+            let t = p.thermal().map_err(|m| {
+                diag::err(
+                    Diagnostic::new(diag::POROUS, format!("[regions.{name}.porous] {m}")).key(&key),
+                )
+            })?;
+            solid_aniso = match t.solid_k {
+                SolidK::Values(v) | SolidK::Factors(v) => !isotropic(v),
+            };
+        }
+        if r.axes.is_none() && solid_aniso {
+            return Err(diag::err(
+                Diagnostic::new(
+                    diag::POROUS,
+                    format!(
+                        "[regions.{name}] has a direction-dependent conductivity of its matrix \
+                         but no axes: add `axes = [[..], [..]]` (the first along the channels)"
+                    ),
+                )
+                .key(format!("regions.{name}.axes")),
+            ));
+        }
         if r.axes.is_none() && !(isotropic(v.viscous) && isotropic(v.inertial)) {
             return Err(diag::err(
                 Diagnostic::new(
@@ -258,7 +423,7 @@ pub fn validate(case: &FlowCase) -> Result<()> {
             let along_mesh = e
                 .iter()
                 .all(|v| v.iter().filter(|x| x.abs() > 1e-9).count() == 1);
-            if !(isotropic(v.viscous) && isotropic(v.inertial)) && !along_mesh {
+            if !(isotropic(v.viscous) && isotropic(v.inertial) && !solid_aniso) && !along_mesh {
                 return Err(diag::err(
                     Diagnostic::new(
                         diag::POROUS_UNSUPPORTED,
@@ -278,8 +443,16 @@ pub fn validate(case: &FlowCase) -> Result<()> {
     }
     // not in this version (porous plan: two temperatures PM2, ranks and GPU
     // PM5)
-    let unsupported = if case.energy.is_some() {
-        Some("the energy equation (stage PM2 of the porous plan)")
+    let unsupported = if case.energy.as_ref().is_some_and(|e| e.cycle.is_some()) {
+        Some("the cycle-averaged loop of [energy.cycle]")
+    } else if case
+        .energy
+        .as_ref()
+        .is_some_and(|e| e.acceleration.is_some())
+    {
+        Some("the thermal acceleration of [energy.acceleration]")
+    } else if case.energy.is_some() && crate::density::wanted(case) {
+        Some("a variable density (the gas density follows T in a later stage)")
     } else if !case.scalars.is_empty() {
         Some("passive scalars")
     } else if !case.turbulence.is_laminar() {
@@ -515,10 +688,25 @@ mod tests {
                 pitch: 150e-3 / 11.0,
                 length: None,
                 blocking: None,
+                nusselt: None,
             }),
+            solid: Some("ceramic".into()),
             ..Default::default()
         };
         let r = h.resolve().unwrap();
+        // the thermal values (D272): a = 4 ε/d_h, h = 2.98 k/d_h, the walls
+        // conduct (1 − ε) k_s along and (1 − √ε) k_s across
+        let t = h.thermal().unwrap();
+        assert!((t.area - 4.0 * r.porosity / 6.9e-3).abs() < 1e-9);
+        assert_eq!(
+            t.transfer,
+            Transfer::Nusselt {
+                nu: 2.98,
+                dh: 6.9e-3
+            }
+        );
+        let a = 1.0 - r.porosity.sqrt();
+        assert_eq!(t.solid_k, SolidK::Factors([1.0 - r.porosity, a, a]));
         assert!((r.porosity - 121.0 * 6.9f64.powi(2) / 150f64.powi(2)).abs() < 1e-12);
         let along = 28.45 / (r.porosity * 6.9e-3 * 6.9e-3);
         assert!((r.viscous[0] - along).abs() < 1e-9 * along);

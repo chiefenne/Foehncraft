@@ -781,6 +781,9 @@ struct EnergyField {
     /// The variable density of the fluid (stage 7c), set by the flow
     /// after each refresh of ρ(T, p₀).
     var_rho: Option<VarRho>,
+    /// The matrix temperatures of the porous regions (D271), solved with
+    /// the energy rows in one system.
+    porous: Option<Box<crate::porous_energy::Matrix>>,
 }
 
 /// The variable density of the fluid in the energy equation (stage 7c):
@@ -1605,16 +1608,36 @@ impl Scalars {
                     diag: w_diag,
                     order: w_order,
                 })?;
-                let scale = dev.scalar_scale(f.phi, w_rhs, w_diag, alpha, None)?;
-                let (it, r0) = dev.solve(
-                    w_val,
-                    w_rhs,
-                    f.phi,
-                    Preconditioner::Jacobi,
-                    false,
-                    s.tol(tr),
-                    s.max_iter,
-                )?;
+                let porous = f
+                    .energy
+                    .as_deref_mut()
+                    .and_then(|e| e.porous.as_deref_mut());
+                let (it, r0, scale) = if let Some(pm) = porous {
+                    // the matrix temperatures in the same system (D271)
+                    pm.solve(
+                        dev,
+                        w_val,
+                        w_rhs,
+                        w_diag,
+                        f.phi,
+                        alpha,
+                        time.map(|t| (t.inv_dt, t.a)),
+                        s.tol(tr),
+                        s.max_iter,
+                    )?
+                } else {
+                    let scale = dev.scalar_scale(f.phi, w_rhs, w_diag, alpha, None)?;
+                    let (it, r0) = dev.solve(
+                        w_val,
+                        w_rhs,
+                        f.phi,
+                        Preconditioner::Jacobi,
+                        false,
+                        s.tol(tr),
+                        s.max_iter,
+                    )?;
+                    (it, r0, scale)
+                };
                 if sweep == 0 {
                     res = r0 / scale;
                     if time.is_some() {
@@ -1685,7 +1708,14 @@ impl Scalars {
         has_old: bool,
         extrapolate: Option<f64>,
     ) -> Result<()> {
-        for f in &self.fields {
+        for f in &mut self.fields {
+            if let Some(pm) = f
+                .energy
+                .as_deref_mut()
+                .and_then(|e| e.porous.as_deref_mut())
+            {
+                pm.step_start(has_old, extrapolate);
+            }
             let Some((o1, o2, keep)) = f.old else {
                 continue;
             };
@@ -1736,7 +1766,14 @@ impl Scalars {
     /// Takes the last step back exactly: φ ← φⁿ, φⁿ ← φⁿ⁻¹, φⁿ⁻¹ ← the
     /// one before.
     pub fn step_back(&mut self, dev: &mut dyn FlowDevice) -> Result<()> {
-        for f in &self.fields {
+        for f in &mut self.fields {
+            if let Some(pm) = f
+                .energy
+                .as_deref_mut()
+                .and_then(|e| e.porous.as_deref_mut())
+            {
+                pm.step_back();
+            }
             let Some((o1, o2, keep)) = f.old else {
                 continue;
             };
@@ -1756,13 +1793,27 @@ impl Scalars {
             };
             dev.copy(f.phi, v)?;
             f.valid = Some(v);
+            if let Some(pm) = f
+                .energy
+                .as_deref_mut()
+                .and_then(|e| e.porous.as_deref_mut())
+            {
+                pm.keep_valid();
+            }
         }
         Ok(())
     }
 
     /// Puts the last valid values back.
     pub fn rewind(&mut self, dev: &mut dyn FlowDevice) -> Result<()> {
-        for f in &self.fields {
+        for f in &mut self.fields {
+            if let Some(pm) = f
+                .energy
+                .as_deref_mut()
+                .and_then(|e| e.porous.as_deref_mut())
+            {
+                pm.rewind();
+            }
             if let Some(v) = f.valid {
                 dev.copy(v, f.phi)?;
             }
@@ -1772,7 +1823,14 @@ impl Scalars {
 
     /// After a rewind of a time step: the old level of n−1 back into φⁿ.
     pub fn rewind_levels(&mut self, dev: &mut dyn FlowDevice) -> Result<()> {
-        for f in &self.fields {
+        for f in &mut self.fields {
+            if let Some(pm) = f
+                .energy
+                .as_deref_mut()
+                .and_then(|e| e.porous.as_deref_mut())
+            {
+                pm.rewind_levels();
+            }
             if let Some((o1, o2, _)) = f.old {
                 dev.copy(o2, o1)?;
             }
@@ -1782,6 +1840,32 @@ impl Scalars {
 
     /// Host copies (restart, output).
     pub fn states(&self, dev: &mut dyn FlowDevice) -> Result<Vec<ScalarState>> {
+        let mut out = self.field_states(dev)?;
+        // the matrix temperature of the porous regions (D271): its rows on
+        // the energy cells, the gas temperature elsewhere
+        if let Some((f, pm)) = self.fields.iter().find_map(|f| {
+            f.energy
+                .as_deref()
+                .and_then(|e| e.porous.as_deref())
+                .map(|pm| (f, pm))
+        }) {
+            let t = dev.download(f.phi)?;
+            let old = match f.old {
+                Some((o1, _, _)) => pm.old_field(&dev.download(o1)?),
+                None => None,
+            };
+            out.push(ScalarState {
+                name: crate::porous_energy::FIELD.to_string(),
+                phi: pm.field(&t),
+                old,
+                psi: None,
+                wall: None,
+            });
+        }
+        Ok(out)
+    }
+
+    fn field_states(&self, dev: &mut dyn FlowDevice) -> Result<Vec<ScalarState>> {
         self.fields
             .iter()
             .map(|f| {
@@ -1834,6 +1918,15 @@ impl Scalars {
                     }
                 }
                 None => missing.push(f.name.clone()),
+            }
+        }
+        if let Some(pm) = self.porous_matrix_mut() {
+            match states
+                .iter()
+                .find(|s| s.name == crate::porous_energy::FIELD)
+            {
+                Some(s) => pm.load(&s.phi, s.old.as_deref())?,
+                None => missing.push(crate::porous_energy::FIELD.to_string()),
             }
         }
         Ok(missing)
@@ -1979,18 +2072,28 @@ impl Scalars {
         }
         // with a thermal acceleration (D213) the equation stores f times
         // the heat of the true ρ c_p; the rest is booked as inertia scaling
-        Ok(Some(
-            e.regions
-                .iter()
-                .zip(per)
-                .zip(&e.inertia)
-                .map(|((r, s), &f)| RegionHeat {
-                    region: r.clone(),
-                    storage: f * s,
-                    inertia_scaling: (1.0 - f) * s,
-                })
-                .collect(),
-        ))
+        let mut out: Vec<RegionHeat> = e
+            .regions
+            .iter()
+            .zip(per)
+            .zip(&e.inertia)
+            .map(|((r, s), &f)| RegionHeat {
+                region: r.clone(),
+                storage: f * s,
+                inertia_scaling: (1.0 - f) * s,
+            })
+            .collect();
+        // the matrices of the porous regions (D271)
+        if let (Some(pm), None) = (e.porous.as_deref(), only) {
+            for (name, s) in pm.names().iter().zip(pm.storage(st.a, st.dt)) {
+                out.push(RegionHeat {
+                    region: crate::porous_energy::Matrix::label(name),
+                    storage: s,
+                    inertia_scaling: 0.0,
+                });
+            }
+        }
+        Ok(Some(out))
     }
 
     /// The heat flow through the faces between two regions of the energy
@@ -2021,8 +2124,38 @@ impl Scalars {
             .map(|c| c.boundary_cross.as_slice())
     }
 
+    /// The regions of [`Scalars::energy_storage`]: those of the energy
+    /// equation, then the matrices of the porous regions.
+    pub fn energy_storage_names(&self) -> Vec<String> {
+        let mut v = self.energy_regions();
+        if let Some(pm) = self.porous_matrix() {
+            v.extend(
+                pm.names()
+                    .iter()
+                    .map(|n| crate::porous_energy::Matrix::label(n)),
+            );
+        }
+        v
+    }
+
+    /// The matrix temperatures of the porous regions (D271).
+    pub fn porous_matrix(&self) -> Option<&crate::porous_energy::Matrix> {
+        self.fields
+            .iter()
+            .find_map(|f| f.energy.as_deref())
+            .and_then(|e| e.porous.as_deref())
+    }
+
+    /// See [`Scalars::porous_matrix`].
+    pub fn porous_matrix_mut(&mut self) -> Option<&mut crate::porous_energy::Matrix> {
+        self.fields
+            .iter_mut()
+            .find_map(|f| f.energy.as_deref_mut())
+            .and_then(|e| e.porous.as_deref_mut())
+    }
+
     /// The regions of the energy equation (`fluid` first, then the solid
-    /// regions), the order of [`Scalars::energy_storage`]; empty without
+    /// regions), the first entries of [`Scalars::energy_storage`]; empty without
     /// the energy equation.
     pub fn energy_regions(&self) -> Vec<String> {
         self.fields
@@ -2575,6 +2708,62 @@ impl Scalars {
                 }
             }
         }
+        // the porous regions (D271): their gas with ε ρ_g and ε k_g, and the
+        // material of their matrix
+        let mut porous_specs = Vec::new();
+        for (name, r) in &case.regions {
+            if r.kind != crate::materials::RegionKind::Porous {
+                continue;
+            }
+            let Some(p) = &r.porous else {
+                continue;
+            };
+            let th = p
+                .thermal()
+                .map_err(|m| anyhow::anyhow!("[regions.{name}.porous] {m}"))?;
+            let f = crate::energy::fluid_of(case, env, Some(name))?;
+            let mut m = crate::energy::fluid_material(&f, name, r.temperature.unwrap_or(t_ref));
+            m.rho *= th.porosity;
+            m.k = m.k.scaled(th.porosity);
+            mats.push(m);
+            regions.push(name.clone());
+            let index = (mats.len() - 1) as u32;
+            for z in &r.zones {
+                if let Some(i) = mesh.zones.iter().position(|y| y == z) {
+                    zone_mat[i] = index;
+                }
+            }
+            let solid = crate::energy::solid_material(
+                case,
+                env,
+                name,
+                p.solid.as_deref().unwrap_or_default(),
+                format!("regions.{name}.porous.solid"),
+            )?;
+            anyhow::ensure!(
+                solid.aniso.is_none(),
+                "[regions.{name}.porous] solid `{}`: the matrix material needs one \
+                 conductivity (the porous region gives the direction-dependent effective \
+                 values)",
+                solid.name
+            );
+            let axes = match r.axes {
+                Some(a) => crate::porous::frame(a).map_err(|m| anyhow::anyhow!("{m}"))?,
+                None => [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+            };
+            porous_specs.push((
+                index,
+                crate::porous_energy::RegionSpec {
+                    name: name.clone(),
+                    solid,
+                    dependent: sec.temperature_dependent,
+                    thermal: th,
+                    k_gas: f.k.clone(),
+                    axes,
+                    cells: Vec::new(),
+                },
+            ));
+        }
         for (name, r) in &case.regions {
             if r.kind != crate::materials::RegionKind::Solid {
                 continue;
@@ -2635,6 +2824,41 @@ impl Scalars {
             ));
         }
         let phi = put(&phi0)?;
+        let porous = if porous_specs.is_empty() {
+            None
+        } else {
+            let mut ts0 = phi0.clone();
+            let mut specs = Vec::with_capacity(porous_specs.len());
+            for (i, mut sp) in porous_specs {
+                sp.cells = (0..nc as u32)
+                    .filter(|&c| mat_cell[c as usize] == i)
+                    .collect();
+                let key = format!("regions.{}.porous.solid_initial", sp.name);
+                if let Some(t) = case.regions[&sp.name]
+                    .porous
+                    .as_ref()
+                    .and_then(|p| p.solid_initial.as_ref())
+                {
+                    let v = expr::value(t, env, Vars::SPACE, &key)?;
+                    for &c in &sp.cells {
+                        let x = v.at(geo.cell_centroid[c as usize], 0.0);
+                        crate::need!(
+                            x > 0.0 && x.is_finite(),
+                            EXPR_VALUE,
+                            "[regions.{}.porous] solid_initial is {x} K at {:?}; a temperature \
+                             must be > 0 K",
+                            sp.name,
+                            geo.cell_centroid[c as usize]
+                        );
+                        ts0[c as usize] = x;
+                    }
+                }
+                specs.push(sp);
+            }
+            Some(Box::new(crate::porous_energy::Matrix::new(
+                disc, specs, &ts0, transient,
+            )?))
+        };
         // the start coefficients: the fixed temperatures, zero gradients
         // elsewhere (the first refresh sets them all)
         let (mut a0, mut b0) = (vec![1.0; nb], vec![0.0; nb]);
@@ -2831,6 +3055,7 @@ impl Scalars {
             robin_sp: None,
             extra_heat: None,
             var_rho: None,
+            porous,
             mats,
             mat_cell,
             regions,
@@ -3485,6 +3710,9 @@ pub struct EnergyBalance {
     /// |imbalance| over the largest single heat flow of a boundary, the
     /// source or the storage.
     pub relative: f64,
+    /// The porous regions with two temperatures (D271).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub porous: Vec<crate::porous_energy::PorousHeat>,
 }
 
 /// The heat stored in a region in the last time step (stage 7d6).
@@ -3727,6 +3955,9 @@ pub fn summaries(
             } else {
                 0.0
             };
+            if let Some(pm) = sc.porous_matrix() {
+                bal.porous = pm.report(&phi);
+            }
             bal.clone()
         });
         // the two sides of each periodic pair: the face value interpolated
