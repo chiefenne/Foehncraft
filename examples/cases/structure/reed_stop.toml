@@ -1,0 +1,42 @@
+# A reed stop as a solid (MS5): the curved steel guard above a reed that
+# limits its lift, 25 mm long on a 40 mm radius, 8 mm wide, 1.5 mm thick,
+# meshed as twenty-node hexahedra in Gmsh's .msh format (second order;
+# written by python3 -m tools.mesh.reed_stop_msh). Bolted at its mounting
+# end and loaded on its underside by the reed that lands on it, here as
+# 0.3 MPa over the whole underside. The result: the lift of the tip, the
+# von Mises stress at the root and the first modes of the stop.
+#
+#   foehn call structure.run --input examples/cases/tools/structure_reed_stop.json
+
+[structure]
+name = "reed_stop"
+
+[analysis]
+static = true
+modes = 4
+
+[materials.steel]
+young = 206e9
+poisson = 0.3
+density = 7850.0
+
+[[solids]]
+name = "stop"
+mesh = "reed_stop.msh"     # relative to this file
+volumes = ["stop"]
+material = "steel"
+
+# bolted: the mounting face held
+[[supports]]
+part = "stop"
+surface = "mount"
+fix = ["all"]
+
+# the reed pushes up on the underside (a pressure pushes into the solid)
+[[pressures]]
+part = "stop"
+surface = "underside"
+value = 3.0e5
+
+[points]
+tip = [0.023842713872, 0.0, 0.006953252880]   # the underside at the tip

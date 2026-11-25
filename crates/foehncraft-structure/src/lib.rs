@@ -9,6 +9,8 @@ pub mod eigen;
 pub mod ldlt;
 pub mod model;
 pub mod shell;
+pub mod solid;
+pub mod solid_mesh;
 pub mod sparse;
 
 /// The diagnostic codes of the structural solver (registered with the

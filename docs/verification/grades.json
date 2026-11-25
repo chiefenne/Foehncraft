@@ -1685,7 +1685,24 @@
    "gaps": [
     "temperatures are given per part (uniform change and a linear difference across the thickness); the mapping of the temperature field of a solid region of the flow case is MS6",
     "the moduli do not depend on temperature: give E at the operating temperature",
-    "no thermal stresses in the output (no stresses at all yet)"
+    "no thermal stresses of beams and shells in the output (the solids give the von Mises stress)"
+   ],
+   "range": {}
+  },
+  {
+   "id": "structure.solids",
+   "title": "Quadratic solids: ten-node tetrahedra and twenty-node hexahedra from a second-order Gmsh file or a block (L53, MS5 part 3b)",
+   "grade": "partial",
+   "why": [
+    "a model without reference data",
+    "gaps written"
+   ],
+   "gaps": [
+    "a solid shares no nodes with beams and shells: no solid–shell or solid–beam connection yet",
+    "the von Mises stress at the nodes (averaged over the elements around each) only; no stress components or principal stresses in the output",
+    "Gmsh's complete second-order elements (27-node hexahedra, 9-node quadrilaterals), prisms and pyramids are refused",
+    "a uniform temperature change per part; a temperature field per node (from the flow case) is MS6",
+    "nearly incompressible materials (ν → 0.5) lock with full integration: ν = 0.49 is 1e-3 to 8e-3 off on the Lamé cylinder; no mixed or reduced-integration formulation"
    ],
    "range": {}
   }

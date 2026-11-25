@@ -26,6 +26,7 @@ envelope is on standard output ([gallery 171](../gallery/runs.md#tool-registry),
 | `structure_reed_plate.json` | `structure.run` | the reed petal as MITC4 shells on clamp springs along its edge into `output/reed_plate` ([gallery 297](../gallery/structure.md#reed-plate)) |
 | `structure_reed_plate_pulse.json` | `structure.run` | the reed petal struck by a pressure pulse, in time, into `output/reed_plate_pulse` ([gallery 299](../gallery/structure.md#reed-dynamics)) |
 | `structure_reed_plate_hot.json` | `structure.run` | the hot reed petal: thermal bending into `output/reed_plate_hot` |
+| `structure_reed_stop.json` | `structure.run` | the curved reed stop as twenty-node hexahedra read from Gmsh into `output/reed_stop` ([gallery 300](../gallery/structure.md#reed-stop)) |
 | `structure_fit_clamp.json` | `structure.fitclamp` | the rotational clamp spring that puts the reed's first mode at a measured 150 Hz |
 
 The folder `mcp/` holds what an assistant session through `foehn mcp`

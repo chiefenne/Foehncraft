@@ -305,6 +305,7 @@ name = "foehncraft-structure"
 version = "1.0.1"
 dependencies = [
  "foehncraft-core",
+ "foehncraft-mesh",
  "schemars",
  "serde",
  "serde_json",
