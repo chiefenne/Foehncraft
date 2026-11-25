@@ -124,7 +124,7 @@ matters:
 | Piece | State | Used for |
 |---|---|---|
 | Rigid zone motion and grid flux | sliding rotors D182, D186: the grid flux ρ w·S of moving faces, imprinted interfaces per step, wall distance per step | the pattern for moving faces; a translating sleeve is a surface of revolution, so the D186 imprint already covers a poppet sliding in a bore |
-| Deforming meshes (D91) | design constraint only: the ledger takes volumes per evaluation and the restart file has optional `points_*` and `volume_<k>` datasets, but the transient code copies the volumes once and no face carries a swept volume | MS0 builds it |
+| Deforming meshes (D91) | design constraint only: the ledger takes volumes per evaluation and the restart file has optional `points_*` and `volume_<k>` datasets, but the transient code copies the volumes once and no face carries a swept volume | MS0 builds it (part 1 in #296) |
 | Transient solver | PISO with outer correctors, BDF1, BDF2 with variable steps, Crank–Nicolson; Courant number check | the time loop that the coupling iterates in |
 | Forces on boundaries | monitors D43 (force coefficients), immersed force Σ s u (#270) | the fluid force on a body |
 | Penalisation | `[immersed]` Brinkman sink (#270) | option for the sealed gap and for a body in a cage |
@@ -298,6 +298,13 @@ impacts), closed per step to the coupling tolerance.
   volumes, ranks (point halos) and GPU. First gallery case: the L22 evenly
   compressed cylinder (prescribed motion), with the energy equation and
   variable density (7c) for the adiabatic compression check.
+  *Part 1 built 2026-11-25 (#296, [gallery 296](../gallery/moving-solids.md#deforming-mesh)):
+  prescribed displacement, geometry per step on the host, swept volumes,
+  volumes per time level, BDF1, BDF2 and Crank–Nicolson with PISO, the
+  piston with adiabatic and cooled walls. Part 2 still to do: restart with
+  points and old volumes, ranks, the GPU, keeping the solver setup
+  between steps (the coupled solver is steady only, so it does not meet a
+  moving mesh).*
 - **MS1 mesh motion solver**: the displacement of the moving walls
   propagates into the mesh by one of the methods of section 4.2, chosen by
   the benchmark (card 1). Zones: rigid (moves with the body), deforming

@@ -328,7 +328,8 @@ pub fn rates(
             let fb = fc - ni;
             let s = geo.face_area[fc];
             let ub = sol.ub.get(fb);
-            let mf = sol.mass_flux[fc];
+            // (the flow relative to a deforming mesh, stage MS0)
+            let mf = sol.mass_flux[fc] - sol.phys.grid_flux_at(fc);
             m.push(mf);
             area.push(norm(s));
             let conv = if turning.is_empty() {

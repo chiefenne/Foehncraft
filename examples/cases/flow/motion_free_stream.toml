@@ -1,0 +1,70 @@
+# A uniform flow on a deforming mesh stays uniform (stage MS0, check MS0.1):
+# free-stream preservation, the space conservation law of D91.
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/motion_free_stream.toml
+#
+# A channel 1 m × 0.5 m of perturbed hexahedra with a uniform flow of
+# 1 m/s from the inlet to the outlet between two symmetry planes. The
+# inner nodes swing back and forth by up to 3 cm in both directions; the
+# nodes of the boundaries slide along them. Every face sweeps a volume in
+# every step, so the convecting flux is the relative one ṁ − ρ Ḟ and each
+# time level enters with its own cell volume. Because the swept volumes of
+# a cell add up to its change of volume exactly, the uniform flow is a
+# solution of the discrete equations on the moving mesh: velocity and
+# pressure stay uniform to round-off (the test asserts 1e-10 of the speed).
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [1.0, 0.5, 0.05]
+cells = [20, 10, 1]
+perturb = 0.2
+
+[constants]
+amp = 0.03
+freq = 12.566370614359172   # 2π/0.5 s
+
+[mesh_motion]
+displacement = [
+  "amp * sin(pi * x) * sin(4 * pi * y) * sin(freq * t)",
+  "amp * sin(2 * pi * x) * sin(2 * pi * y) * sin(freq * t)",
+  0.0,
+]
+
+[fluid]
+density = 1.0
+viscosity = 0.01
+
+[initial]
+velocity = [1.0, 0.0, 0.0]
+
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [1.0, 0.0, 0.0]
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymin]
+type = "symmetry"
+[boundary.ymax]
+type = "symmetry"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[time]
+scheme = "bdf2"
+time_step = 0.01
+end_time = 0.5
+
+[solver]
+outer_iterations = 2
+
+[verification]
+require_convergence = false
+
+[output]
+wall_csv = false

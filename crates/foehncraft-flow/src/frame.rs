@@ -585,7 +585,8 @@ impl Flow {
     /// holds it), or `m` itself without frames.
     pub(crate) fn relative_flux(&mut self, m: Buf) -> Result<Buf> {
         let Some(fr) = self.frames.as_ref() else {
-            return Ok(m);
+            // (the grid flux of a deforming mesh, stage MS0)
+            return self.grid_relative(m);
         };
         let (conv, flux) = (fr.conv, fr.flux);
         self.dev.lincomb(conv, 1.0, m, -1.0, flux)?;
@@ -594,7 +595,11 @@ impl Flow {
 
     /// The frame flux ρ **S**·**V** per face, if there are frames.
     pub(crate) fn frame_flux(&self) -> Option<Buf> {
-        self.frames.as_ref().map(|fr| fr.flux)
+        match self.frames.as_ref() {
+            Some(fr) => Some(fr.flux),
+            // the grid mass flux of a deforming mesh (stage MS0)
+            None => self.grid.as_deref().and_then(|g| g.flux).map(|(f, _)| f),
+        }
     }
 
     /// Adds the Coriolis source −ρ V **Ω** × **u** of the rotating cells to
