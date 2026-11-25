@@ -47,6 +47,7 @@ FLOW = {
         "ranks_run_sliding_couette",
         "ranks_run_imprint_couette",
         "immersed_cylinder_re20", "immersed_topology_bend", "immersed_mms",
+        "ranks_water_if97_channel",
     ],
     "linux-3": [
         "species_binary_diffusion", "species_coaxial_jet", "flame_methane_air_jl4",
@@ -75,6 +76,7 @@ FLOW = {
         "spray_cooling_steady", "spray_evaporation",
         "porous_darcy_block", "porous_honeycomb_channel", "porous_schumann", "porous_storage_charge",
         "motion_free_stream", "motion_piston_adiabatic",
+        "steam_heated_duct", "steam_superheater_channel",
     ],
     "long": [
         "cylinder_re100", "cylinder_re100_short", "cylinder_re100_statistics", "cylinder_re100_convective", "cylinder_re20_gci",

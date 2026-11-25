@@ -6,6 +6,8 @@ Part of the [Recipes](../recipes.md): put bodies into the flow without meshing t
 |---|---|
 | 270 | [Put a body in the flow without meshing it](#penalised-body) |
 | 291 | [Search the shape of a duct with a density field](#topology-search) |
+| 310 | [Check an STL surface before it becomes a body](#surface-check) |
+| 315 | [Cut a mesh exactly by an STL surface](#cut-moments) |
 
 ---
 
@@ -92,3 +94,50 @@ The log has one `topology design` line per update (Φ, fluid fraction, largest c
 **What the gradient is.** ∂Φ/∂γ = (μ/K) χ′(γ) |u|² V, the derivative of the dissipation of Stokes flow (self-adjoint): exact for `convection = false`, an approximation with convection (0.5 % at Re 20, larger at higher Re; the adjoint solver L17 is not built yet). Checked against central differences in `tests/immersed.rs`.
 
 **Limits.** Steady, laminar and isothermal only (IMM102 refuses a transient run and the settings of recipe 270), one rank, a box as design region. The result is a topology, not a final shape: the wall is smeared over a cell, so check the design on a body-fitted mesh made from `topology.stl`.
+
+<a id="surface-check"></a>
+## 310. Check an STL surface before it becomes a body
+
+**Run the check** on the file (ASCII or binary STL; `scale` converts the file's unit to metres):
+
+```sh
+echo '{"input": "body.stl", "scale": 1e-3}' | target/release/foehn call mesh.surface --input -
+```
+
+It prints the counts (triangles, distinct corners, pieces, area, enclosed volume, closed or open) and one line per finding; with `--json` the whole report (`clean`, the counts and the first 20 defective triangles or pairs of each kind). Nothing is repaired.
+
+| Code | What | What to do |
+|---|---|---|
+| IMM001 | no triangles, non-finite corners | export again |
+| IMM002 | holes (edges with one triangle) | small holes are fine for inside/outside (the winding number closes them); close large ones in CAD |
+| IMM003 | edges with more than two triangles | separate touching bodies |
+| IMM004 | inconsistent orientation | fix the normals in CAD; a few flipped triangles only dent the inside test locally |
+| IMM005 | self-intersections | tolerated by the winding number; a cut (stage 2) needs a clean surface |
+| IMM006, IMM007 | degenerate, duplicate triangles | remove in CAD |
+| IMM008 | inward normals (negative volume) | flip all triangles |
+| IMM009 | box larger than 20 m, near-duplicate corners | set `scale`; weld in CAD |
+
+**In code** (Rust, `foehncraft_mesh::surface`): `Surface::read_stl(path, scale)`, `check(&s)`, `s.winding_number(x)` (fast, β = 2) or `winding_number_exact(x)`, `s.inside(x)`, `s.signed_distance(x)` and `signed_distances(&points, Some(band))` (negative inside, ±band beyond the band), `s.crossings(p, q)` and `first_crossing(p, q)` (the exact points where a segment enters or leaves the body: the root along a mesh edge for the cut of stage 2).
+
+**Limits.** The fast winding number is within about 4e-3 of the exact sum next to the surface, which decides inside and outside except within a hair of the surface (there `inside` re-evaluates more precisely). The signed distance of a self-overlapping surface counts the buried triangles (its sign is right, its magnitude inside is the distance to the nearest triangle). The signed-distance benchmark and the exact cut followed in [recipe 315](#cut-moments).
+
+<a id="cut-moments"></a>
+## 315. Cut a mesh exactly by an STL surface
+
+The geometry kernel gives the numbers a cut-cell method needs, for any polyhedral mesh (Rust, `foehncraft_mesh::surface`):
+
+```rust
+let s = Surface::read_stl(path, 1e-3)?;            // file in mm
+let geo = Geometry::compute(&mesh);
+let cut = s.cut_moments(&mesh, &geo);
+// cut.cell_inside_volume[c], cut.cell_inside_centroid[c]   part of cell c inside the body
+// cut.face_inside_area[f], cut.face_inside_centroid[f]     part of face f inside (aperture = area / |S_f|)
+// cut.walls: WallPiece { cell, triangle, area (out of the body), centroid }
+```
+
+The fluid part of a cell is its volume minus the inside volume; the fluid aperture of a face is one minus the inside one. Use the signed distance (recipe 310, `signed_distances(&nodes, Some(band))`) where a level set is enough, and `cut_moments` where volumes, apertures and wall faces must be exact: the cut of a sphere is 40 to 2500 times more accurate than a linear level-set cut on 64³ to 8³ cells (gallery 315), and conservative (both cells of a face see the same aperture, every cell closes).
+
+**Which signed distance.** The default (closest point with winding-number sign) won the benchmark of gallery 315: exact on clean surfaces and sharp edges, no sign errors on holes and soups. Check the surface first (recipe 310): a patch of flipped triangles (IMM004) gives wrong signs next to it.
+
+**Limits.** The surface must be in general position with respect to the mesh except for edges lying in a mesh face (handled); a surface lying flat in a mesh face or a surface corner exactly on a mesh node is not decided consistently yet. The cut gives moments, not polygons: building cut cells into a mesh is stage 2 (D227).
+**Limits.** The fast winding number is within about 4e-3 of the exact sum next to the surface, which decides inside and outside except within a hair of the surface (there `inside` re-evaluates more precisely). The signed distance of a self-overlapping surface counts the buried triangles (its sign is right, its magnitude inside is the distance to the nearest triangle). Not yet: the signed-distance benchmark against fast sweeping and the heat method, and the exact triangle–cell clipping (the next parts of stage 0).

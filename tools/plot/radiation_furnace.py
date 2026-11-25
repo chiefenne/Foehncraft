@@ -34,6 +34,9 @@ TUBE_R, TUBE_Z = 0.08, 2.1
 TUBE_X = [0.9 + 0.4 * i for i in range(7)]
 BURNER = (1.0, 0.9, 0.25)
 OUTLET = (0.6, 1.4, 1.75, 2.35)
+# refractory wall patches: `walls` of examples/meshes/furnace.py, and also
+# `sides` (the side walls the tubes pass through) of the KoflCraft mesh
+WALLS = ["walls", "sides"]
 
 
 def read(path):
@@ -63,6 +66,42 @@ def plane_triangulation(x, z):
     return tri
 
 
+def blur(a, sigma):
+    """Gaussian blur of a 2D array (sigma in cells), zero outside."""
+    if sigma <= 0:
+        return a
+    r = int(np.ceil(3 * sigma))
+    k = np.exp(-0.5 * (np.arange(-r, r + 1) / sigma) ** 2)
+    a = np.apply_along_axis(lambda c: np.convolve(c, k, mode="same"), 0, a)
+    return np.apply_along_axis(lambda c: np.convolve(c, k, mode="same"), 1, a)
+
+
+def smooth_grid(u, v, val, weight, extent, h=0.02, sigma=0.05):
+    """The mean of a Monte Carlo field on a grid of spacing h (m) over a
+    plane of size extent: each value counts with its weight (face area or
+    cell volume) under a Gaussian of width sigma (m), normalised by the
+    weight under it (normalised convolution: empty bins and the edges take
+    the mean of their neighbours). This is the field averaged over patches
+    of about 2 sigma, so its noise falls with the square root of the faces
+    or cells under the Gaussian, independent of how fine the mesh is."""
+    nu, nv = max(2, int(round(extent[0] / h))), max(2, int(round(extent[1] / h)))
+    iu = np.clip((u / extent[0] * nu).astype(int), 0, nu - 1)
+    iv = np.clip((v / extent[1] * nv).astype(int), 0, nv - 1)
+    s = np.zeros((nv, nu))
+    w = np.zeros((nv, nu))
+    np.add.at(s, (iv, iu), val * weight)
+    np.add.at(w, (iv, iu), weight)
+    sig = sigma / h
+    sb, wb = blur(s, sig), blur(w, sig)
+    g = np.where(wb > 0, sb / np.where(wb > 0, wb, 1.0), np.nan)
+    # grid at the bin centres, extended to the edges of the plane
+    cu = np.concatenate(([0.0], (np.arange(nu) + 0.5) * extent[0] / nu, [extent[0]]))
+    cv = np.concatenate(([0.0], (np.arange(nv) + 0.5) * extent[1] / nv, [extent[1]]))
+    g = np.pad(g, 1, mode="edge")
+    gu, gv = np.meshgrid(cu, cv)
+    return gu, gv, g
+
+
 def tubes(ax):
     for tx in TUBE_X:
         ax.add_patch(Circle((tx, TUBE_Z), TUBE_R, facecolor="0.85", edgecolor="0.25", lw=0.8, zorder=5))
@@ -81,16 +120,22 @@ def plane(out, cells):
     """Temperature and radiative source on the plane y = 1 m (cells within
     a band about it)."""
     x, y, z = (column(cells, k) for k in "xyz")
+    vol = column(cells, "volume")
+    # the prescribed temperature from a thin band (it varies with y), the
+    # Monte Carlo source averaged over a thicker one (less noise)
+    thin = np.abs(y - DEPTH / 2) < 0.12
     band = np.abs(y - DEPTH / 2) < 0.12
-    tri = plane_triangulation(x[band], z[band])
-    t = column(cells, "temperature")[band] if "temperature" in cells[0] else None
-    src = column(cells, "source")[band] * 1e-3
+    extent = (LENGTH, HEIGHT)
+    t = None
+    if "temperature" in cells[0]:
+        gx, gz, t = smooth_grid(x[thin], z[thin], column(cells, "temperature")[thin], vol[thin], extent, sigma=0.06)
+    sx, sz, src = smooth_grid(x[band], z[band], column(cells, "source")[band] * 1e-3, vol[band], extent)
     fig, axes = plt.subplots(2, 1, figsize=(8.2, 9.6), constrained_layout=True)
     ax = axes[0]
     # the band of cell centres stops half a cell short of the walls, where
     # the gas is at its lowest temperature
     ax.set_facecolor(plt.get_cmap(RAINBOW)(0.0))
-    cs = ax.tricontourf(tri, t, levels=48, cmap=RAINBOW)
+    cs = ax.contourf(gx, gz, t, levels=64, cmap=RAINBOW)
     fig.colorbar(cs, ax=ax, label="temperature (K)", shrink=0.9, ticks=np.arange(1300, 2000, 100))
     tubes(ax)
     _yb, zb, rb = BURNER
@@ -107,7 +152,7 @@ def plane(out, cells):
     # a signed field centred on zero takes Rainbow Uniform (D261); the
     # margin the cell centres leave at the walls shows the colour of zero
     ax.set_facecolor(plt.get_cmap(UNIFORM)(norm(0.0)))
-    cs = ax.tricontourf(tri, np.clip(src, -lim, lim), levels=48, cmap=UNIFORM, norm=norm)
+    cs = ax.contourf(sx, sz, np.clip(src, -lim, lim), levels=64, cmap=UNIFORM, norm=norm)
     fig.colorbar(cs, ax=ax, label="radiative source, absorbed − emitted (kW/m³)", shrink=0.9)
     tubes(ax)
     frame(ax, "Monte Carlo radiation: net source of the gas")
@@ -124,13 +169,13 @@ def walls(out, faces):
     inc = column(faces, "incident") * 1e-3
     net = column(faces, "net") * 1e-3
     area = column(faces, "area")
-    side = (name == "walls") & (y < 1e-6)
+    side = np.isin(name, WALLS) & (y < 1e-6)
     fig, axes = plt.subplots(
         2, 1, figsize=(8.2, 8.0), constrained_layout=True, gridspec_kw={"height_ratios": [1.35, 1]}
     )
     ax = axes[0]
-    tri = plane_triangulation(x[side], z[side])
-    cs = ax.tricontourf(tri, inc[side], levels=48, cmap=RAINBOW)
+    gx, gz, g = smooth_grid(x[side], z[side], inc[side], area[side], (LENGTH, HEIGHT))
+    cs = ax.contourf(gx, gz, g, levels=64, cmap=RAINBOW)
     fig.colorbar(cs, ax=ax, label="incident radiative flux (kW/m²)", shrink=0.9)
     tubes(ax)
     frame(ax, "Incident flux on the side wall y = 0")

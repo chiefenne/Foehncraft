@@ -31,6 +31,10 @@ fn read_case(path: &Path, ctx: &mut Ctx<'_>) -> Result<Case> {
     for mesh in case.mesh_paths() {
         ctx.roots.check_read(&mesh, "the mesh of a solid")?;
     }
+    for file in case.field_paths() {
+        ctx.roots
+            .check_read(&file, "the flow result of a temperature field")?;
+    }
     Ok(case)
 }
 
@@ -67,7 +71,7 @@ pub struct Run;
 impl Tool for Run {
     const ID: &'static str = "structure.run";
     const VERSION: u32 = 1;
-    const SUMMARY: &'static str = "Run a structural case (beams, shells, quadratic solids from Gmsh or a block, clamp springs, temperatures, contact with rigid seats and stops; static, modal and transient analyses) and write `result.json`, `structure.vtk` and, for a transient, `transient.csv`; returns the result.";
+    const SUMMARY: &'static str = "Run a structural case (beams, shells, quadratic solids from Gmsh or a block, clamp springs, temperatures given or mapped from a flow result, contact with rigid seats and stops; static, modal and transient analyses) and write `result.json`, `structure.vtk` and, for a transient, `transient.csv`; returns the result.";
     const CATEGORY: Category = Category::Structure;
     const ACTION: Action = Action::StartRun;
     type Input = RunInput;
