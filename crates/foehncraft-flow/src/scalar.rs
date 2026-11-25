@@ -3804,8 +3804,11 @@ fn refresh_energy(
         // is that of h_s (zero for a constant c_p)
         let mut corr = vec![0.0; nc];
         if e.h.iter().any(|h| !h.is_constant()) {
-            let hc = |c: usize, x: f64| e.h[e.mat_cell[c] as usize].at(x);
-            let hv: Vec<f64> = (0..nc).map(|c| hc(c, tv[c])).collect();
+            // on ranks `tv` holds the halo cells too (their material is
+            // the fluid's, `mc`); the correction of a halo cell belongs to
+            // its own rank
+            let hc = |c: usize, x: f64| e.h[mc(c) as usize].at(x);
+            let hv: Vec<f64> = (0..tv.len()).map(|c| hc(c, tv[c])).collect();
             for f in 0..nf {
                 let o = e.owner[f] as usize;
                 let mf = m[f];
@@ -3821,10 +3824,14 @@ fn refresh_energy(
                 } else {
                     (tf[f], hc(o, tf[f]))
                 };
-                corr[o] += cf[f] * (tu - tv[o]) - mf * (hu - hv[o]);
+                if o < nc {
+                    corr[o] += cf[f] * (tu - tv[o]) - mf * (hu - hv[o]);
+                }
                 if f < ni {
                     let n = e.neighbour[f] as usize;
-                    corr[n] += -cf[f] * (tu - tv[n]) + mf * (hu - hv[n]);
+                    if n < nc {
+                        corr[n] += -cf[f] * (tu - tv[n]) + mf * (hu - hv[n]);
+                    }
                 }
             }
             if let Some((st, o1, o2)) = step {
