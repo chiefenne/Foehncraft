@@ -894,6 +894,9 @@ pub struct FlowCase {
     /// by the reader.
     #[serde(skip)]
     pub boundary_species: BTreeMap<String, crate::species::Composition>,
+    /// Chemistry in the cells (stage SF2b): `[chemistry]`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chemistry: Option<crate::chemistry::flow::ChemistrySection>,
     /// The energy equation of the fluid (stage 7a1): `[energy]`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub energy: Option<crate::energy::EnergySection>,
@@ -1236,6 +1239,9 @@ impl FlowCase {
         crate::expr::resolve_paths(&mut c.tables, dir);
         c.materials.resolve_paths(dir);
         c.spray.resolve_paths(dir);
+        if let Some(ch) = c.chemistry.as_mut() {
+            ch.resolve_paths(dir);
+        }
         crate::datum::resolve_paths(&mut c.datums, dir);
         c.solver.reduction_defaults = crate::turbulence::reduction_defaults(&c);
         // `[energy.cycle] enabled = false` runs the case fully coupled (the
@@ -1430,6 +1436,7 @@ impl FlowCase {
             b.compile(name, &env, transient)?;
         }
         crate::species::validate(self)?;
+        crate::chemistry::flow::validate(self)?;
         let (scalars, boundary_scalar) = crate::species::scalar_sections(self)?;
         crate::scalar::validate(
             &scalars,
@@ -1974,6 +1981,10 @@ pub struct Solve {
     /// fluid on each.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub immersed: Vec<crate::immersed::BodyForce>,
+    /// Chemistry in the cells (SF2b): heat release, integrator steps and
+    /// the flame speed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chemistry: Option<crate::chemistry::flow::Summary>,
 }
 
 /// The value of a wall probe at the end of a solve.
@@ -3995,6 +4006,7 @@ pub fn run_steered(
             statistics: None,
             density,
             immersed,
+            chemistry: None,
         });
         if stopped {
             rep.stopped = true;

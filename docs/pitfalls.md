@@ -514,3 +514,20 @@ Found with the porous regions of D270 (#273):
   step.** A species at zero (AR in the global mechanisms) with a step
   relative to its value gives a step of zero or round-off size; use
   `1e-6·|z| + 1e-9`.
+- **YAML 1.1 reads the species `NO` as the boolean false.** PyYAML (YAML
+  1.1) turns the unquoted keys `NO`, `ON`, `YES`, `OFF` into booleans, so
+  a species table generated from GRI-Mech 3.0 had `[species."False"]`
+  instead of nitric oxide, and a flow with all 53 species failed to find
+  `NO`. The Rust importer (yaml-rust2) is YAML 1.2 and reads `NO` as a
+  string; `tools/data/gri30_species.py` uses a loader with the YAML 1.2
+  booleans only, and the species test checks that every species of every
+  built-in mechanism is in the data.
+- **Field names come from species names.** `CH2(S)` is not a valid scalar
+  name; the field of a species is `Y_` and the name with every character
+  that is not a letter or digit replaced by `_` (`Y_CH2_S`).
+- **The software square root dominates a mixture of many species.** The
+  in-house `sqrt` (D93) is a correctly rounded integer routine, far
+  slower than the hardware instruction; Wilke's rule called it N² times
+  per cell and face: 10 s per time step for 53 species on 200 cells. The pair
+  factors that depend only on the molar masses are computed once
+  (`wilke_pairs`) and the per-species √μ once per cell: 0.3 s per step.
