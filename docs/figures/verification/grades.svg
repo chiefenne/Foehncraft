@@ -87,8 +87,8 @@
 <text x="220" y="504.0" text-anchor="end">Backends and interfaces</text>
 <rect x="230.0" y="490" width="244.6" height="20" fill="#2e9d5b"/>
 <text x="352.3" y="504.0" text-anchor="middle" fill="white" font-weight="bold">6</text>
-<rect x="474.6" y="490" width="244.6" height="20" fill="#e9a23b"/>
-<text x="596.9" y="504.0" text-anchor="middle" fill="white" font-weight="bold">6</text>
+<rect x="474.6" y="490" width="285.4" height="20" fill="#e9a23b"/>
+<text x="617.3" y="504.0" text-anchor="middle" fill="white" font-weight="bold">7</text>
 <text x="220" y="532.0" text-anchor="end">Sprays</text>
 <rect x="230.0" y="518" width="81.5" height="20" fill="#e9a23b"/>
 <text x="270.8" y="532.0" text-anchor="middle" fill="white" font-weight="bold">2</text>

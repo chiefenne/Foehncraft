@@ -140,6 +140,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Backends and interfaces | [Steady SIMPLEC on several ranks, bitwise one rank (MPI step W5 part 1)](#parallel-flow-ranks) | partial |
 | Backends and interfaces | [Turbulence, energy, scalars, transient runs and the coupled solver on several ranks, bitwise one rank (MPI step W5 part 2)](#parallel-flow-models-ranks) | partial |
 | Backends and interfaces | [Restart files on ranks: gathered byte for byte the one-rank file, read on any rank count (MPI step W6)](#parallel-restart-ranks) | partial |
+| Backends and interfaces | [Steady runs on ranks: rank 0 writes the output of one rank (MPI step W7 part 1)](#parallel-run-ranks) | partial |
 | Sprays | [Lagrangian spray parcels, one way (L12, SP1)](#sprays-one-way) | partial |
 | Sprays | [Datums, liquid flow through them and droplet statistics (SP1b)](#sprays-datums-statistics) | partial |
 | Flow models | [Porous regions with a direction-dependent Darcy-Forchheimer resistance (D270, PM1)](#porous-darcy-forchheimer) | partial |
@@ -1756,7 +1757,7 @@ Contracts: `bitwise`.
 Gaps:
 
 - not on ranks yet (refused with an error): zeta-f and elliptic blending, curvature correction and QCR, the MLP limiter and quadratic gradients, gravity, turning zones, solid regions, schedules and level sweeps (restarts: parallel.restart-ranks)
-- monitors, probes and balances are not computed on ranks: they come with the run on ranks (W7)
+- monitors, probes and balances of a run on ranks: parallel.run-ranks (W7 part 1, steady laminar)
 - transient runs are checked with the fixed time step, not the adaptive one
 - 1M cells on 4 cores split into 1, 2, 4 ranks (example ranks_scaling): +2, +10, +28 % time per iteration against threads only, bitwise; strong scaling over more cores is W9
 
@@ -1776,6 +1777,24 @@ Gaps:
 - the file is gathered on every rank and written by rank 0 (no parallel HDF5): memory of the whole state on each rank, as for the replicated multigrid setup
 - restarts of conjugate cases (full-mesh temperature) and moving meshes are refused on ranks
 - the VTKHDF field output of a run on ranks comes with the run on ranks (W7); [run] ranks writes ranks.vtkhdf gathered in global order
+
+Contracts: `bitwise`.
+
+<a id="parallel-run-ranks"></a>
+
+### Steady runs on ranks: rank 0 writes the output of one rank (MPI step W7 part 1)
+
+**partial** (gaps written) · id `parallel.run-ranks` · switch `[run] rank_count, foehn flow --ranks N, flow.run input ranks, mpirun -n N foehn flow` · decisions D84, D85, D93
+
+- contract (bitwise): [`steady_run_on_ranks_writes_the_files_of_one_rank`](../../crates/foehncraft-flow/tests/run_ranks.rs): a steady channel on polyhedra perturbed by 30 % run on 2, 3 and 4 ranks (threads): residuals.csv, balance.csv, boundaries.csv, fields.vtkhdf, restart.h5 byte for byte the run on one rank, the iteration, ledger and log-column rows of run.jsonl equal, the whole result.json equal except the provenance
+- contract (bitwise): [`ranks_run_channel`](../../examples/cases/flow/ranks_run_channel.toml): the channel solved on 5 ranks to convergence (372 outer iterations); every output file compared with --ranks 1 by hand when the case was made (passes in CI (set linux-2), not yet in the manual)
+
+Gaps:
+
+- steady laminar cases only: passive scalars, energy, turbulence models and transient runs are refused on ranks (W7 part 2)
+- settings through the control port (run.set) are refused on ranks
+- MPI processes are not run in CI yet with foehn flow (the threads test covers the same code; the MPI CI job runs the flow kernels across processes, mpi_flow)
+- the fields are gathered on every rank for the output (memory of the whole state per rank), as the replicated multigrid setup
 
 Contracts: `bitwise`.
 
