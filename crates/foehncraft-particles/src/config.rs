@@ -98,7 +98,9 @@ pub struct Injector {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub size: Option<crate::sizes::SizeDistribution>,
     /// Parcels released per second. A parcel stands for the droplets of
-    /// `mass_flow / parcels_per_second` of liquid.
+    /// `mass_flow / parcels_per_second` of liquid. Needed in a transient
+    /// case; the steady mode (D260) uses `[spray.steady] streams` instead.
+    #[serde(default)]
     pub parcels_per_second: f64,
     /// Start of the injection (s).
     #[serde(default)]
@@ -157,6 +159,56 @@ pub struct SpraySection {
     /// `eddy-lifetime` (Gosman and Ioannides 1983); `random-walk` follows
     /// behind the same key. Needs a turbulence model.
     pub dispersion: Dispersion,
+    /// The steady spray mode (D260, SP2s): the keys of a case without
+    /// `[time]` (the defaults when the table is left out); refused in a
+    /// transient case.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub steady: Option<Steady>,
+}
+
+/// `[spray.steady]`: the steady spray mode (D260, SP2s). A parcel is a
+/// *stream*: it stands for a number of droplets per second, starts at its
+/// injector and is followed through the frozen steady gas until it leaves,
+/// sticks or reaches `max_time`. With two-way coupling a stream pass runs
+/// every `every` outer iterations and the gas takes the sources relaxed
+/// between passes, S ← S + α (S_new − S).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct Steady {
+    /// Streams per injector (default 200). Their directions and sizes are
+    /// drawn as those of the parcels of a transient run (keyed by the
+    /// stream, D121), so every pass follows the same streams.
+    pub streams: u32,
+    /// A stream pass every this many outer iterations (default 10).
+    pub every: usize,
+    /// Relaxation α of the sources between passes (default 0.5; 1: the
+    /// sources of the last pass as they are).
+    pub relaxation: f64,
+    /// The source residual below which the spray counts as converged
+    /// (default 1e-3): the difference between the relaxed sources the gas
+    /// holds and those of the last pass, over the sources of the last pass
+    /// (L1 sums over the spray cells, momentum and heat, the larger).
+    pub tolerance: f64,
+    /// Longest time a stream is followed (s, default 10); a stream still
+    /// in the flow then is counted as unfinished (SPR007).
+    pub max_time: f64,
+    /// The key of the streams (default 0): another seed draws other
+    /// directions, sizes and eddies, for the statistical error of the one
+    /// sample (D260 (3)).
+    pub seed: u64,
+}
+
+impl Default for Steady {
+    fn default() -> Self {
+        Self {
+            streams: 200,
+            every: 10,
+            relaxation: 0.5,
+            tolerance: 1e-3,
+            max_time: 10.0,
+            seed: 0,
+        }
+    }
 }
 
 /// The turbulent dispersion model of the parcels (D243).
@@ -303,6 +355,7 @@ impl Default for SpraySection {
             penetration: Penetration::Axial,
             coupling: Coupling::default(),
             dispersion: Dispersion::None,
+            steady: None,
         }
     }
 }
@@ -404,6 +457,23 @@ impl SpraySection {
         if self.max_substeps == 0 {
             bail!("[spray] max_substeps must be at least 1");
         }
+        if let Some(st) = &self.steady {
+            if st.streams == 0 {
+                bail!("[spray.steady] streams must be at least 1");
+            }
+            if st.every == 0 {
+                bail!("[spray.steady] every must be at least 1");
+            }
+            if !(st.relaxation > 0.0 && st.relaxation <= 1.0) {
+                bail!("[spray.steady] relaxation must be in (0, 1]");
+            }
+            if !pos(st.tolerance) {
+                bail!("[spray.steady] tolerance must be positive");
+            }
+            if !pos(st.max_time) {
+                bail!("[spray.steady] max_time must be positive and finite (s)");
+            }
+        }
         let mut names = std::collections::BTreeSet::new();
         for i in &self.injectors {
             let n = &i.name;
@@ -439,13 +509,13 @@ impl SpraySection {
                     }
                 }
             }
-            for (k, v) in [
-                ("mass_flow", i.mass_flow),
-                ("parcels_per_second", i.parcels_per_second),
-            ] {
-                if !pos(v) {
-                    bail!("[[spray.injector]] {n}: {k} must be positive and finite");
-                }
+            if !pos(i.mass_flow) {
+                bail!("[[spray.injector]] {n}: mass_flow must be positive and finite");
+            }
+            // zero: a steady case (streams instead of parcels); a
+            // transient case needs it (checked with the case)
+            if !(i.parcels_per_second.is_finite() && i.parcels_per_second >= 0.0) {
+                bail!("[[spray.injector]] {n}: parcels_per_second must be zero or positive");
             }
             if !i.start.is_finite() || i.start < 0.0 {
                 bail!("[[spray.injector]] {n}: start must be zero or positive");
