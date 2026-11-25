@@ -1,0 +1,2 @@
+- **Box furnace on a fine mesh**: gallery 259 and 281 now run KoflCraft's furnace mesh with wall layers on every wall (2.11 million cells, side walls' layers yielding to the tube layers) and 18 million bundles. The side walls the tubes pass through are a patch `sides` that the example accepts as grey refractory wall.
+- **Smooth radiation plots**: the furnace figures average the Monte Carlo fluxes over about 10 cm of wall and the gas over a volume band, so the contours no longer show single-face and single-cell noise.

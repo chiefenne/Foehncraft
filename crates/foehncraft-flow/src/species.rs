@@ -47,6 +47,7 @@ use crate::scalar::{ScalarBoundary, ScalarSection, ThermalWallFunction};
 use anyhow::Result;
 use foehncraft_core::exact::ExactSumIter as _;
 use foehncraft_kernels::species as ks;
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
@@ -54,9 +55,14 @@ use std::sync::OnceLock;
 /// The prefix of the scalar field of a transported species (`Y_CH4`).
 pub const PREFIX: &str = "Y_";
 
-/// The scalar field name of species `s`.
+/// The scalar field name of species `s`: `Y_` and the name with every
+/// character other than a letter or a digit as `_` (`CH2(S)`: `Y_CH2_S`).
 pub fn field_name(s: &str) -> String {
-    format!("{PREFIX}{s}")
+    let n: String = s
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+        .collect();
+    format!("{PREFIX}{}", n.trim_end_matches('_'))
 }
 
 /// The species data file (GRI-Mech 3.0, written by
@@ -720,6 +726,8 @@ pub struct Link {
     /// The smallest closure fraction before it is held at zero (the sum of
     /// the transported fractions above 1 by this much).
     pub closure_min: f64,
+    /// The factors of Wilke's rule per pair of species.
+    pairs: Vec<f64>,
 }
 
 impl Link {
@@ -747,6 +755,7 @@ impl Link {
             cell: Vec::new(),
             face: Vec::new(),
             closure_min: 0.0,
+            pairs: Vec::new(),
         }
     }
 
@@ -788,32 +797,44 @@ impl Link {
         self.closure_min = min;
         let tf = self.t_fluid;
         let tc = |c: usize| t.map_or(tf, |(t, _)| t[c]);
-        let mut yy = [0.0; ks::MAX_SPECIES];
         let sp = &self.res.data;
+        if self.pairs.len() != n * n {
+            self.pairs = vec![0.0; n * n];
+            ks::wilke_pairs(sp, &mut self.pairs);
+        }
+        let pairs = &self.pairs;
+        let y_cell = &self.y_cell;
+        // every point on its own: the same bits on any number of threads
         self.cell = (0..nc)
+            .into_par_iter()
             .map(|c| {
-                for (v, y) in yy.iter_mut().zip(&self.y_cell) {
+                let mut yy = [0.0; ks::MAX_SPECIES];
+                for (v, y) in yy.iter_mut().zip(y_cell) {
                     *v = y[c];
                 }
-                ks::mixture(sp, &yy[..n], tc(c))
+                ks::mixture_with(sp, pairs, &yy[..n], tc(c))
             })
             .collect();
+        let (owner, neighbour, weight, y_bface) =
+            (&self.owner, &self.neighbour, &self.weight, &self.y_bface);
         self.face = (0..nf)
+            .into_par_iter()
             .map(|f| {
+                let mut yy = [0.0; ks::MAX_SPECIES];
                 let tfv = if f < ni {
-                    let (o, nn) = (self.owner[f] as usize, self.neighbour[f] as usize);
-                    let w = self.weight[f];
-                    for (v, y) in yy.iter_mut().zip(&self.y_cell) {
+                    let (o, nn) = (owner[f] as usize, neighbour[f] as usize);
+                    let w = weight[f];
+                    for (v, y) in yy.iter_mut().zip(y_cell) {
                         *v = w * y[o] + (1.0 - w) * y[nn];
                     }
                     w * tc(o) + (1.0 - w) * tc(nn)
                 } else {
-                    for (v, y) in yy.iter_mut().zip(&self.y_bface) {
+                    for (v, y) in yy.iter_mut().zip(y_bface) {
                         *v = y[f - ni];
                     }
                     t.map_or(tf, |(_, tb)| tb[f - ni])
                 };
-                ks::mixture(sp, &yy[..n], tfv)
+                ks::mixture_with(sp, pairs, &yy[..n], tfv)
             })
             .collect();
     }
@@ -869,6 +890,9 @@ pub struct SpeciesFlow {
     pub defect: f64,
     /// The storage Σ ρ V ∂Y/∂t of a time step (kg/s), 0 steady.
     pub storage: f64,
+    /// The net production by the reactions Σ ρ V S (kg/s) of the last
+    /// reaction step (SF2b), 0 without chemistry.
+    pub reaction: f64,
     /// The mass an evaporating spray gives the species (kg/s, SP5): the
     /// vapour S_v, the mixture the continuity source S_c; the continuity
     /// defect is then taken against S_c.
@@ -910,6 +934,14 @@ pub fn accounts(flows: &[SpeciesFlow], res: &Resolved) -> Vec<crate::balance::Ac
             .exact_sum();
         a.terms
             .push(Term::volume("continuity defect", TermKind::Source, defect));
+        if flows.iter().any(|s| s.reaction != 0.0) {
+            let r: f64 = flows
+                .iter()
+                .enumerate()
+                .map(|(i, s)| weights(i) * s.reaction)
+                .exact_sum();
+            a.terms.push(Term::volume("reaction", TermKind::Source, r));
+        }
         if flows.iter().any(|s| s.spray != 0.0) {
             let spray: f64 = flows
                 .iter()
@@ -991,6 +1023,7 @@ pub fn summary(
     let res = link.res.clone();
     let closure_min = link.closure_min;
     let data = sc.species_host(fl.dev.as_mut())?;
+    let reaction = sc.species_reaction();
     let old = if transient {
         sc.species_old(fl.dev.as_mut())?
     } else {
@@ -1070,6 +1103,11 @@ pub fn summary(
             ));
         }
         s.defect = (0..nc).map(|c| phi[c] * div[c]).exact_sum();
+        if let Some(r) = reaction.as_ref().map(|r| r[k]) {
+            s.reaction = (0..nc)
+                .map(|c| rho(c) * geo.cell_volume[c] * r[c])
+                .exact_sum();
+        }
         if !spray.is_empty() {
             s.defect -= spray.iter().map(|r| phi[r.0] * r.3).exact_sum();
             if vapour_field.as_deref() == Some(field_name(&res.names[k]).as_str()) {
@@ -1101,6 +1139,7 @@ pub fn summary(
     }
     cl.defect -= flows.iter().map(|s| s.defect).exact_sum();
     cl.storage = -flows.iter().map(|s| s.storage).exact_sum();
+    cl.reaction = -flows.iter().map(|s| s.reaction).exact_sum();
     cl.spray -= flows.iter().map(|s| s.spray).exact_sum();
     let (lo, hi) = link.y_cell[n - 1][..nc]
         .iter()
@@ -1166,6 +1205,13 @@ mod tests {
         assert_eq!(d.len(), 53);
         assert!((d["CH4"].molar_mass - 0.01604246).abs() < 1e-8);
         assert!((d["N2"].molar_mass - 0.0280134).abs() < 1e-8);
+        // NO, not the boolean `false` of a YAML 1.1 reader
+        assert!(d.contains_key("NO") && !d.contains_key("False"));
+        // the same species as the mechanism
+        let m = crate::chemistry::Mechanism::load("gri30", None).unwrap();
+        for s in &m.species {
+            assert!(d.contains_key(s), "{s}");
+        }
     }
 
     /// Pure-gas viscosities and conductivities at 300 K against measured

@@ -3,7 +3,9 @@
 //! entries are the kernels of gate G1 (stage 0); the `fv_*` and `blas_*`
 //! entries in [`fv`] are the scalar operators of stage 2, the `amg_*`
 //! entries in [`amg`] the multigrid V-cycle of stage 3; `radiation_transport`
-//! in [`radiation`] moves the energy bundles of the radiation (step 29).
+//! in [`radiation`] moves the energy bundles of the radiation (step 29);
+//! `chemistry_react` in [`chemistry`] integrates the chemistry of the cells
+//! (SF2b).
 //!
 //! The wrappers only compute the thread index, build slices from the raw
 //! device pointers and their sizes, and call the body that the CPU backends
@@ -18,6 +20,7 @@
 #![allow(clippy::missing_safety_doc, clippy::too_many_arguments)]
 
 mod amg;
+mod chemistry;
 mod flow;
 mod fv;
 mod particle;

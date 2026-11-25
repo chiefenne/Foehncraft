@@ -185,6 +185,75 @@ pub struct Mixture {
 /// GRI-Mech 3.0 with room).
 pub const MAX_SPECIES: usize = 64;
 
+/// The temperature-free factors of Wilke's rule per pair of species,
+/// `pairs[i n + j] = 1/√(8 (1 + M_i/M_j))`, for [`mixture_with`]: computed
+/// once per mixture instead of once per point (each a square root).
+pub fn wilke_pairs(sp: &[Species], pairs: &mut [f64]) {
+    let n = sp.len();
+    for i in 0..n {
+        for j in 0..n {
+            pairs[i * n + j] = 1.0 / sqrt(8.0 * (1.0 + sp[i].molar_mass / sp[j].molar_mass));
+        }
+    }
+}
+
+/// [`mixture`] with the factors of [`wilke_pairs`]: the same properties
+/// (equal up to rounding), with one division per pair of species in place
+/// of four square roots, for mixtures of many species (GRI-Mech 3.0 in a
+/// flame).
+#[inline(always)]
+pub fn mixture_with(sp: &[Species], pairs: &[f64], y: &[f64], t: f64) -> Mixture {
+    let n = sp.len();
+    let mut x = [0.0; MAX_SPECIES];
+    let mut mu = [0.0; MAX_SPECIES];
+    let mut k = [0.0; MAX_SPECIES];
+    // √μ_i/M_i^¼: Wilke's √(μ_i/μ_j) (M_j/M_i)^¼ is a_i/a_j
+    let mut a = [0.0; MAX_SPECIES];
+    let mut inv_m = 0.0;
+    let mut cp = 0.0;
+    for i in 0..n {
+        let yi = y[i].max(0.0);
+        inv_m += yi / sp[i].molar_mass;
+        cp += yi * sp[i].cp(t);
+    }
+    let m = 1.0 / inv_m;
+    for i in 0..n {
+        x[i] = y[i].max(0.0) * m / sp[i].molar_mass;
+        mu[i] = sp[i].viscosity(t);
+        k[i] = sp[i].conductivity(t, mu[i]);
+        a[i] = sqrt(mu[i]) / sqrt(sqrt(sp[i].molar_mass));
+    }
+    let mut visc = 0.0;
+    for i in 0..n {
+        if x[i] == 0.0 {
+            continue;
+        }
+        let mut den = 0.0;
+        for j in 0..n {
+            if x[j] == 0.0 {
+                continue;
+            }
+            let r = a[i] / a[j];
+            den += x[j] * (1.0 + r) * (1.0 + r) * pairs[i * n + j];
+        }
+        visc += x[i] * mu[i] / den;
+    }
+    let (mut s1, mut s2) = (0.0, 0.0);
+    for i in 0..n {
+        if x[i] == 0.0 {
+            continue;
+        }
+        s1 += x[i] * k[i];
+        s2 += x[i] / k[i];
+    }
+    Mixture {
+        molar_mass: m,
+        cp,
+        viscosity: visc,
+        conductivity: 0.5 * (s1 + 1.0 / s2),
+    }
+}
+
 /// The properties of the mixture of the species `sp` with the mass
 /// fractions `y` at the temperature `t`; the work arrays hold the mole
 /// fractions and the pure-species viscosities and conductivities. Mass

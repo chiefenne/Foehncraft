@@ -10,6 +10,11 @@ authors.workspace = true
 # The integration tests are one program (tests/main.rs): see its header.
 autotests = false
 
+[features]
+default = ["hdf5"]
+# Temperature fields from VTKHDF result files of the flow solver (MS6).
+hdf5 = ["foehncraft-mesh/hdf5"]
+
 [dependencies]
 foehncraft-core.workspace = true
 foehncraft-mesh.workspace = true

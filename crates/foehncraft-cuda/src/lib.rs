@@ -11,6 +11,8 @@
 //!   (entries `fv_*`, `blas_*`, `amg_*`);
 //! - `radiation`: the transport of the radiation bundles (entry
 //!   `radiation_transport`, step 29);
+//! - `chemistry`: the gas-phase chemistry of the cells (entry
+//!   `chemistry_react`, SF2b);
 //! - `bench`: the G1 benchmark backends `cuda-reference` (hand-written
 //!   CUDA C, `kernels/g1_reference.cu`) and `cuda-rust` (`g1_*`).
 //!
@@ -22,6 +24,8 @@
 
 #[cfg(feature = "cuda")]
 pub mod bench;
+#[cfg(feature = "cuda")]
+pub mod chemistry;
 #[cfg(feature = "cuda")]
 pub mod flow;
 #[cfg(feature = "cuda")]
@@ -43,9 +47,10 @@ pub(crate) fn driver() -> anyhow::Result<()> {
 }
 
 /// Registers the GPU backends of this build with the solver crates (`cuda`
-/// for the flow loop, the scalar operators and the radiation, `cuda-reference` and
-/// `cuda-rust` for G1). Without the `cuda` feature it does nothing. Call it
-/// once at start-up, before any case is run.
+/// for the flow loop, the scalar operators, the radiation and the
+/// chemistry, `cuda-reference` and `cuda-rust` for G1). Without the `cuda`
+/// feature it does nothing. Call it once at start-up, before any case is
+/// run.
 pub fn register() {
     #[cfg(feature = "cuda")]
     {
@@ -57,6 +62,10 @@ pub fn register() {
         foehncraft_radiation::register_gpu("cuda", |m, ordinal, ptx| {
             driver()?;
             Ok(Box::new(radiation::CudaRadiation::new(m, ordinal, ptx)?))
+        });
+        foehncraft_flow::chemistry::device::register_gpu("cuda", |prog, ordinal, ptx| {
+            driver()?;
+            Ok(Box::new(chemistry::CudaChemistry::new(prog, ordinal, ptx)?))
         });
         foehncraft_bench::backend::register_gpu(&["cuda-reference", "cuda-rust"], |name, o| {
             driver()?;
