@@ -690,6 +690,11 @@ impl Spray {
         }
         match self.cfg.liquid.saturation {
             crate::config::Saturation::Water => evap::water::saturation_pressure(t),
+            crate::config::Saturation::Library => self
+                .cfg
+                .liquid
+                .data()
+                .map_or(0.0, |d| d.saturation_pressure(t)),
         }
     }
 
@@ -717,6 +722,7 @@ impl Spray {
             m_vapour: v.species.molar_mass,
             m_gas: gs.m_gas,
             psat: self.saturation_pressure(tp),
+            ys_surface: -1.0,
             latent: self.latent_heat(tp),
             re,
             pr: gs.mu * gs.cp / gs.k,

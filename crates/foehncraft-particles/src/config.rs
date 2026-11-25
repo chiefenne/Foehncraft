@@ -70,6 +70,79 @@ pub struct Liquid {
     pub latent_heat: f64,
     /// The temperature of `latent_heat` (K, default 298.15).
     pub latent_heat_temperature: f64,
+    /// A liquid of the property library (D320): `"water"`, `"n-heptane"`
+    /// or `"n-dodecane"` (fits to the NIST WebBook saturation tables). It
+    /// sets the vapour pressure law, the density and the specific heat (at
+    /// `property_temperature`) and the latent heat (at
+    /// `latent_heat_temperature`); leave `density`, `specific_heat`,
+    /// `latent_heat` and `saturation` out with it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub library: Option<String>,
+    /// The temperature (K) of the constant density and specific heat of a
+    /// library liquid (default: `temperature`, the injected liquid's).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub property_temperature: Option<f64>,
+}
+
+impl Liquid {
+    /// The library data of the liquid, if it names one.
+    pub fn data(&self) -> Option<&'static foehncraft_kernels::liquids::LiquidData> {
+        self.library
+            .as_deref()
+            .and_then(foehncraft_kernels::liquids::by_name)
+    }
+
+    /// Takes the properties of a library liquid (D320): the vapour pressure
+    /// law, ρ and c_l at the property temperature and L at
+    /// `latent_heat_temperature`. Refuses a library liquid with its own
+    /// density, specific heat, latent heat or vapour pressure law.
+    pub fn apply_library(&mut self) -> Result<()> {
+        let Some(name) = self.library.clone() else {
+            if self.property_temperature.is_some() {
+                bail!("[spray.liquid] property_temperature needs a library liquid (`library`)");
+            }
+            return Ok(());
+        };
+        let Some(d) = foehncraft_kernels::liquids::by_name(&name) else {
+            let names: Vec<&str> = foehncraft_kernels::liquids::ALL.iter().map(|l| l.name).collect();
+            bail!(
+                "[spray.liquid] library = \"{name}\" is not a liquid of the library; the liquids are {}",
+                names.join(", ")
+            );
+        };
+        if matches!(self.saturation, Saturation::Library) {
+            return Ok(()); // applied before
+        }
+        let def = Liquid::default();
+        for (k, given) in [
+            ("density", self.density != def.density),
+            ("specific_heat", self.specific_heat != def.specific_heat),
+            ("latent_heat", self.latent_heat != def.latent_heat),
+        ] {
+            if given {
+                bail!(
+                    "[spray.liquid] {k} is given with library = \"{name}\": a library liquid takes it from the library"
+                );
+            }
+        }
+        let tp = self.property_temperature.unwrap_or(self.temperature);
+        if !(tp.is_finite() && tp > 0.0) {
+            bail!("[spray.liquid] property_temperature must be positive and finite (K)");
+        }
+        self.density = d.density(tp);
+        self.specific_heat = d.specific_heat(tp);
+        self.latent_heat = d.latent_heat(self.latent_heat_temperature);
+        // water keeps the IAPWS-95 auxiliary equation as its vapour pressure
+        self.saturation = if name == "water" {
+            Saturation::Water
+        } else {
+            Saturation::Library
+        };
+        if self.name == def.name && name != "water" {
+            self.name = name;
+        }
+        Ok(())
+    }
 }
 
 /// The vapour pressure law of a liquid.
@@ -79,6 +152,9 @@ pub enum Saturation {
     /// Water: Wagner and Pruss (1993), eq. 2.5 of Wagner and Pruss (2002).
     #[default]
     Water,
+    /// The Wagner-form fit of the library liquid (`library`, D320); set by
+    /// `library`, not written by hand.
+    Library,
 }
 
 impl Default for Liquid {
@@ -92,6 +168,8 @@ impl Default for Liquid {
             saturation: Saturation::Water,
             latent_heat: 2.4417e6,
             latent_heat_temperature: 298.15,
+            library: None,
+            property_temperature: None,
         }
     }
 }
@@ -563,6 +641,7 @@ impl SpraySection {
             }
             self.injectors.extend(f.injectors);
         }
+        self.liquid.apply_library()?;
         self.validate()
     }
 
@@ -573,6 +652,9 @@ impl SpraySection {
             bail!(
                 "[spray] dispersion = \"random-walk\" is not available in this version; use \"eddy-lifetime\""
             );
+        }
+        if matches!(self.liquid.saturation, Saturation::Library) && self.liquid.data().is_none() {
+            bail!("[spray.liquid] saturation = \"library\" needs a library liquid (`library`)");
         }
         if !pos(self.liquid.density) {
             bail!("[spray.liquid] density must be positive and finite");

@@ -112,6 +112,10 @@ pub struct EvapInput {
     pub m_gas: f64,
     /// Saturation pressure of the liquid at `tp` (Pa).
     pub psat: f64,
+    /// The vapour mass fraction at the surface from a phase equilibrium
+    /// (a high-pressure model, D310 to D319); negative: from `psat` by
+    /// Raoult's law ([`surface_fraction`]), the default.
+    pub ys_surface: f64,
     /// Latent heat at `tp` (J/kg).
     pub latent: f64,
     /// Particle Reynolds number (of the drag step).
@@ -220,7 +224,11 @@ pub fn surface_fraction(psat: f64, p0: f64, m_vapour: f64, m_gas: f64) -> f64 {
 /// coefficients frozen at the start (module documentation).
 #[inline]
 pub fn evaporation_step(i: &EvapInput) -> EvapStep {
-    let ys = surface_fraction(i.psat, i.p0, i.m_vapour, i.m_gas);
+    let ys = if i.ys_surface >= 0.0 {
+        i.ys_surface.min_of(0.999)
+    } else {
+        surface_fraction(i.psat, i.p0, i.m_vapour, i.m_gas)
+    };
     // B_M > −1 for any Y_∞ < 1
     let bm = (ys - i.yg) / (1.0 - ys);
     let lm = ln1p(bm);
@@ -313,6 +321,7 @@ mod tests {
             m_vapour: water::MOLAR_MASS,
             m_gas: 0.028_97,
             psat: water::saturation_pressure(tp),
+            ys_surface: -1.0,
             latent: 2.44e6,
             re: 0.0,
             pr: 0.7,

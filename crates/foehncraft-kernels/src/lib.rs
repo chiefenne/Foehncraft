@@ -66,6 +66,7 @@ pub mod chemistry;
 pub mod entry;
 pub mod evaporation;
 pub mod expr;
+pub mod liquids;
 pub mod face;
 pub mod flow;
 pub mod fv;
