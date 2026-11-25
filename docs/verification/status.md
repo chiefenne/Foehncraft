@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**128 features: 50 verified, 75 partial, 3 unverified.**
+**129 features: 50 verified, 76 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -152,6 +152,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Flow models | [Porous regions with a direction-dependent Darcy-Forchheimer resistance (D270, PM1)](#porous-darcy-forchheimer) | partial |
 | Flow models | [Gas and matrix temperatures in porous regions, monolithic (D271, D272, PM2)](#porous-two-temperatures) | partial |
 | Flow models | [Species transport of an ideal-gas mixture with mixture properties (L2, steam furnace SF1)](#species-transport) | partial |
+| Flow models | [Gas-phase chemistry: mechanisms, stiff 0D reactor and chemical equilibrium (L2, steam furnace SF2a)](#chemistry-reactor) | partial |
 | Immersed bodies | [Immersed bodies by Brinkman penalisation, primitive shapes (L13 stage 1)](#immersed-penalisation) | partial |
 
 ## Meshes
@@ -2074,6 +2075,29 @@ Gaps:
 - the ledger takes the linear-upwind reconstruction without the clip of bounded = true, and the bounded BDF2 fallback is not booked in the storage
 - no measured reference case of turbulent mixing yet (a jet with measured mass fractions)
 - on ranks without the variable density (stage 7c is refused on ranks, its cell and closed-volume sums need the halo and global sums) and without the MLP limiter (vertex setup not on ranks yet)
+
+<a id="chemistry-reactor"></a>
+
+### Gas-phase chemistry: mechanisms, stiff 0D reactor and chemical equilibrium (L2, steam furnace SF2a)
+
+**partial** (gaps written) · id `chemistry.reactor` · switch `foehn chemistry reactor / equilibrium, [reactor] mechanism` · decisions D120, D103, D93
+
+- reference-data: [`adiabatic_flame_temperature_of_methane_and_air`](../../crates/foehncraft-flow/src/chemistry/tests.rs): stoichiometric CH4-air from 298.15 K at 1 atm: Gibbs equilibrium at fixed enthalpy 2224.9 K, within 10 K of the 2226 K of the textbook (Turns 2012, JANAF data); CO, NO, OH between 1e-4 and 2 %
+- consistency: [`the_reactor_ends_at_the_equilibrium_and_conserves_the_elements`](../../crates/foehncraft-flow/src/chemistry/tests.rs): the GRI-Mech 3.0 reactor from 1400 K ends at its own equilibrium: |T_end - T_eq| below 0.5 K (4e-5 K in the gallery case), mole fractions within 2e-4, element drift below 1e-9; Jones-Lindstedt within 1 K
+- consistency: [`reversible_reactions_stop_at_the_gibbs_equilibrium`](../../crates/foehncraft-flow/src/chemistry/tests.rs): at the Gibbs equilibrium of 1500 and 2200 K every reversible GRI-Mech reaction has a net rate below 1e-6 of its forward rate (detailed balance of the rates and the equilibrium code)
+- exact: [`the_analytic_jacobian_matches_finite_differences`](../../crates/foehncraft-flow/src/chemistry/tests.rs): the analytic Jacobian of species and temperature (third-body, Lindemann, Troe and non-integer-order terms) matches finite differences to 1e-4 scaled, measured 6e-12 to 2e-7, for GRI-Mech 3.0 at 900 and 1600 K and both global mechanisms
+- exact: [`rodas3_has_order_three_and_controls_its_error`](../../crates/foehncraft-kernels/src/chemistry.rs): RODAS3 on a linear stiff problem: third order with fixed steps, the adaptive error within the tolerance
+- consistency: [`the_built_in_mechanisms_load`](../../crates/foehncraft-flow/src/chemistry/mechanism.rs): GRI-Mech 3.0 reads as 53 species and 325 reactions (26 Troe, 3 Lindemann); the rate constants of Jones-Lindstedt in SI equal the cm-mol-s values of the literature table (Si et al. 2020)
+- contract (diagnostics): [`unbalanced_and_unsupported_reactions_are_refused`](../../crates/foehncraft-flow/src/chemistry/mechanism.rs): CHM001 for an unbalanced reaction and for a pressure-dependent (PLOG) rate, which is not implemented
+- consistency: [`reactor_inputs_are_checked`](../../crates/foehncraft-flow/src/chemistry/tests.rs): a composition without oxidiser, an unknown fuel species and a negative temperature are refused
+
+Gaps:
+
+- 0D only: no chemistry in the flow cells and no heat release in the energy equation yet (SF2b)
+- no ignition delay or flame speed against measurements yet (the 1D laminar flame is SF2b); the reactor cases check the equilibrium and an ignition delay band of the code itself
+- the kernel is single-source no_std but not yet compiled to PTX or run on a GPU; no ranks (a 0D reactor has no mesh) until SF2b
+- the Westbrook-Dryer 2-step mechanism overshoots its own equilibrium by 277 K from 1400 K: its CO2 dissociation is an explicit reaction, not the reverse of the CO oxidation (a flaw of the published mechanism, kept as published)
+- PLOG, Chebyshev and SRI rates, surface and electrochemical reactions are refused
 
 ## Immersed bodies
 

@@ -24,7 +24,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | [Lagrangian sprays](gallery/sprays.md) | droplets as Lagrangian parcels in the gas flow: injectors, drag, gravity, wall behaviour, the mass book | 242, 265, 280, 283, 285, 292 |
 | [Porous regions](gallery/porous.md) | flow through porous matrices with a direction-dependent Darcy–Forchheimer resistance: a ceramic honeycomb, the exact pressure drop of a block | 273, 275 |
 | [Immersed bodies](gallery/immersed.md) | bodies in the flow without a body-fitted mesh: Brinkman penalisation of primitive bodies (L13 stage 1) | 270 |
-| [Species and reacting flows](gallery/species.md) | species transport of ideal-gas mixtures on the variable density: mixture properties from kinetic theory, the closure species, the element ledger (steam furnace path, SF1) | 278 |
+| [Species and reacting flows](gallery/species.md) | species transport of ideal-gas mixtures on the variable density: mixture properties from kinetic theory, the closure species, the element ledger (steam furnace path, SF1) | 278, 289 |
 | [Expressions and materials](gallery/properties.md) | boundary values, body forces and viscosities as expressions, the material database, regions, walls with a mass flux | 23 |
 | [Python](gallery/python.md) | cases built, run and studied from Python: expressions with Python operators, callbacks, study tables | 24 |
 | [Verification](gallery/verification.md) | the discretisation uncertainty of mesh sweeps (grid convergence index) and the generated verification manual | 25, 170, 271 |
@@ -152,6 +152,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | <a id="furnace-paths"></a>281 | [Paths of energy bundles in the box furnace, and the net flux into every wall](gallery/radiation.md#furnace-paths) | [Thermal radiation](gallery/radiation.md) |
 | <a id="spray-cooling"></a>283 | [Water droplets cool a hot air stream](gallery/sprays.md#spray-cooling) | [Lagrangian sprays](gallery/sprays.md) |
 | <a id="spray-dispersion"></a>285 | [Droplets spread by the turbulence of a duct](gallery/sprays.md#spray-dispersion) | [Lagrangian sprays](gallery/sprays.md) |
+| <a id="gas-chemistry"></a>289 | [Methane ignites in a constant-pressure reactor and ends at its chemical equilibrium](gallery/species.md#gas-chemistry) | [Species and reacting flows](gallery/species.md) |
 | <a id="run-ranks-physics"></a>290 | [Five ranks, one turbulent heated transient: the physics of a run on ranks](gallery/meshes.md#run-ranks-physics) | [Meshes](gallery/meshes.md) |
 | <a id="spray-steady"></a>292 | [The spray-cooled duct as a steady state](gallery/sprays.md#spray-steady) | [Lagrangian sprays](gallery/sprays.md) |
 
