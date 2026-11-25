@@ -294,6 +294,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "foehncraft-structure"
+version = "1.0.1"
+dependencies = [
+ "foehncraft-core",
+ "schemars",
+ "serde",
+ "serde_json",
+ "toml",
+]
+
+[[package]]
 name = "foehncraft-tools"
 version = "1.0.1"
 dependencies = [
@@ -304,6 +315,7 @@ dependencies = [
  "foehncraft-fv",
  "foehncraft-mesh",
  "foehncraft-parallel",
+ "foehncraft-structure",
  "rayon",
  "schemars",
  "serde",
