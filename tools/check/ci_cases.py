@@ -70,7 +70,7 @@ FLOW = {
         "vd_heated_duct", "vd_closed_box_heating", "vd_closed_box_side_heated", "vd_mms_steady",
         "mixed_convection_channel",
         "spray_duct", "spray_datums", "spray_two_way", "spray_cooling", "spray_dispersion",
-        "spray_cooling_steady",
+        "spray_cooling_steady", "spray_evaporation",
         "porous_darcy_block", "porous_honeycomb_channel", "porous_schumann", "porous_storage_charge",
     ],
     "long": [
@@ -79,7 +79,7 @@ FLOW = {
         "cht_heat_sink_turbulent", "cylinder_steady_diagnosis", "vd_cavity_large_dt",
         "cht_pulsating_channel_skin", "cht_heated_wall_frozen", "cht_pulsating_channel_warmup",
         "natural_convection_cavity_ra1e5", "natural_convection_plate",
-        "immersed_stokes_sphere",
+        "immersed_stokes_sphere", "spray_saturation_steady",
     ],
     "quick": [
         "cavity_re100_budget", "couette_hex", "couette_mixed", "couette_poly", "couette_tet",

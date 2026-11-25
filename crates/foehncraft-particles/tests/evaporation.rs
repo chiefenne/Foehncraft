@@ -66,6 +66,7 @@ fn one_cell(edge: f64) -> (foehncraft_mesh::Mesh, Geometry) {
     (m, g)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn spray(
     env: &Env,
     edge: f64,

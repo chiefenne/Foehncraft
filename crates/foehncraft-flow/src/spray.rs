@@ -380,8 +380,8 @@ impl GasVapour {
         let n = y.len().min(sp.cell.len());
         let mut m_gas = Vec::with_capacity(n);
         let mut diff = Vec::with_capacity(n);
-        for c in 0..n {
-            let yv = y[c].clamp(0.0, 1.0 - 1e-9);
+        for (c, &yc) in y.iter().enumerate().take(n) {
+            let yv = yc.clamp(0.0, 1.0 - 1e-9);
             // 1/M = Y_v/M_v + (1 − Y_v)/M_g
             let inv = 1.0 / sp.cell[c].molar_mass - yv / mv;
             m_gas.push(if inv > 0.0 {

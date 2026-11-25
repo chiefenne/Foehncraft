@@ -316,7 +316,7 @@ parcels in a transient flow, one way or, with `[spray.coupling] mode =
 gas and, with `[energy]`, the heat as a source of the gas energy;
 `[spray] dispersion = "eddy-lifetime"` (SP2c, D243) lets the turbulence
 spread the parcels. In a steady case `[spray.steady]` (SP2s, D260) runs the
-spray as streams through the steady gas, with relaxed sources. The keys are on the [key page](flow-keys.md); the run writes `spray.csv` and
+spray as streams through the steady gas, with relaxed sources. `[spray.evaporation]` (SP4, SP5) lets the droplets evaporate into a species of `[species]`. The keys are on the [key page](flow-keys.md); the run writes `spray.csv` and
 `spray/parcels_<step>.vtkhdf`. `[[datum]]` tables (SP1b, D262) report the
 liquid and the gas through planes, surfaces and boundaries and the droplets
 in volumes, in `datums.csv` and `spray_hist_<datum>.csv`.
@@ -329,6 +329,8 @@ in volumes, in `datums.csv` and `spray_hist_<datum>.csv`.
 | `flow/spray_cooling.toml` | generated hex 2D, 100 × 20 cells | two-way heat: 10 g/s of water at 20 °C (20 to 200 µm, `flow/spray_cooling_injectors.toml`) sprayed into air at 300 °C and 5 m/s; the droplets take about 6.6 kW from the air, which leaves about 50 K cooler; the enthalpy pair cancels to the bit, 3.7 passes per step with `max_passes = 4` | [gallery 283](../gallery/sprays.md#spray-cooling), [recipe 283](../recipes/sprays.md#spray-cooling) |
 | `flow/spray_dispersion.toml` | generated hex 2D, 150 × 30 cells | eddy-lifetime dispersion: water droplets of 20 to 300 µm (`flow/spray_dispersion_injectors.toml`) shot along the axis of a duct with 10 % turbulence spread by the eddies alone (no gravity, no cone); after 1 m the small droplets spread 5.4 cm, the large ones 2.9 cm; no parcel lost | [gallery 285](../gallery/sprays.md#spray-dispersion), [recipe 285](../recipes/sprays.md#spray-dispersion) |
 | `flow/spray_cooling_steady.toml` | generated hex 2D, 100 × 20 cells | the duct of `spray_cooling` as a steady state in the steady spray mode (`[spray.steady]`, D260): 400 water streams through the frozen gas, sources relaxed every 10 iterations; converges in 526 iterations and 58 passes, 6.39 kW from the air (the transient run: 6.58 kW), source residual 1e-4, all liquid leaves through the outlet | [gallery 292](../gallery/sprays.md#spray-steady), [recipe 292](../recipes/sprays.md#spray-steady) |
+| `flow/spray_evaporation.toml` | generated hex 2D, 100 × 20 cells | evaporation (SP4, SP5): 2 g/s of water at 20 °C (10 to 80 µm, `flow/spray_evaporation_injectors.toml`, vapour `H2O`) sprayed into air at 300 °C and 5 m/s; about 1.25 g/s evaporate, the air leaves at 244 °C with 2.5 % vapour; ledger pairs 2801 to 2805 cancel to the bit, 6.6 passes per step with `max_passes = 8` | [gallery 306](../gallery/sprays.md#spray-evaporation), [recipe 306](../recipes/sprays.md#spray-evaporation) |
+| `flow/spray_saturation_steady.toml` | generated hex 2D, 60 × 12 cells | V28.11 in the steady spray mode: 2 g/s of water at 310 K from six nozzles (`flow/spray_saturation_injectors.toml`) in 17.6 g/s of air at 400 K, three times what the air can take; the air saturates within 5 cm, the outlet is at 309.3 K and Y = 0.0375 against the exact 310.1 K and 0.0395; the source residual stalls at about 0.12 (SPR008, SPR009; a gap) | [gallery 306b](../gallery/sprays.md#spray-saturation), [recipe 306](../recipes/sprays.md#spray-evaporation) |
 
 ## Porous regions
 

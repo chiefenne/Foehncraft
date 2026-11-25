@@ -433,10 +433,7 @@ impl SteadySpray {
         env: &Env,
     ) -> (u32, f64) {
         let geo = env.geo;
-        if std::env::var("FOEHN_NO_LIMIT").is_ok()
-            || self.vapour.is_none()
-            || pass.sources.vapour.len() != pass.sources.cells.len()
-        {
+        if self.vapour.is_none() || pass.sources.vapour.len() != pass.sources.cells.len() {
             return (0, 0.0);
         }
         let inflow = crate::spray::Inflow::of(sol, gas, geo);

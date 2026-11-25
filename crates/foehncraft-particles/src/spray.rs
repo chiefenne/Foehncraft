@@ -830,8 +830,8 @@ impl Spray {
                 let mut dm = 0.0;
                 for r in &o.records {
                     let d = du(r.cell);
-                    for k in 0..3 {
-                        dp[k] += r.slope * d.u[k];
+                    for (p, u) in dp.iter_mut().zip(d.u) {
+                        *p += r.slope * u;
                     }
                     dh += r.heat_slope * d.t;
                     if r.vapour_slope != 0.0 {

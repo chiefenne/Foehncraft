@@ -94,7 +94,7 @@ model = "ranz-marshall"
 mode = "two-way"
 passes = "converged"
 tolerance = 1e-3
-max_passes = 4
+max_passes = 8
 
 [solver]
 tolerance = 1e-6

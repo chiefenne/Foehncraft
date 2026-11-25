@@ -159,7 +159,8 @@ pub(crate) fn set_slopes_local(records: &mut [Record], m: f64, mc: f64) {
 /// (kg, or kg/s): the factor f in (0, 1] of the evaporating records that
 /// brings the net vapour down to `capacity`; 1 when it is not above.
 pub fn limiter_factor(evaporated: f64, net: f64, capacity: f64) -> f64 {
-    if !(net > capacity) || evaporated <= 0.0 {
+    // NaN in net or capacity also leaves the records as they are
+    if net.partial_cmp(&capacity) != Some(std::cmp::Ordering::Greater) || evaporated <= 0.0 {
         return 1.0;
     }
     let condensed = net - evaporated;
