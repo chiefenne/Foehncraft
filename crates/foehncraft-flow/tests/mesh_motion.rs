@@ -211,7 +211,7 @@ fn deforming_mesh_restart_continues_bit_identically() {
         std::env::temp_dir().join(format!("foehncraft_motion_{n}_{}", std::process::id()))
     };
     let (da, db) = (dir("restart_full"), dir("restart_cont"));
-    run(&parse(&base), "full", &da, |_| {}).unwrap();
+    run(&parse(&base), "motion", &da, |_| {}).unwrap();
     let from = da.join("restart_000008.h5");
     let g = restart::read(&from)
         .unwrap()
@@ -223,7 +223,7 @@ fn deforming_mesh_restart_continues_bit_identically() {
         "restart_at = [8]",
         &format!("restart = '{}'", from.display()),
     );
-    let rep = run(&parse(&cont), "cont", &db, |_| {}).unwrap();
+    let rep = run(&parse(&cont), "motion", &db, |_| {}).unwrap();
     for f in ["restart.h5", "fields.vtkhdf"] {
         assert!(
             std::fs::read(da.join(f)).unwrap() == std::fs::read(db.join(f)).unwrap(),
