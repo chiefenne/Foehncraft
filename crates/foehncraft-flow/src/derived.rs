@@ -912,17 +912,19 @@ pub fn compute(
                 .cells
                 .push(("wall_distance", wall_distance(case, mesh, geo)?)),
             Derived::SolidFraction => {
-                let bs = crate::immersed::bodies(&case.immersed).map_err(|_| {
-                    crate::diag::err(crate::diag::Diagnostic::new(
-                        crate::diag::CASE_INCONSISTENT,
-                        "derived field `solid-fraction` needs `[immersed]` bodies",
-                    ))
-                })?;
-                let per = crate::immersed::fractions(&bs, case.immersed.samples(), mesh, geo);
-                out.cells.push((
-                    "solid_fraction",
-                    crate::immersed::total_fraction(&per, mesh.n_cells),
-                ));
+                let x = match &fl.phys.immersed_fields {
+                    Some(f) if f.0.len() == nc => f.0.clone(),
+                    _ => {
+                        let bs = crate::immersed::bodies_of(case).map_err(|_| {
+                            crate::diag::err(crate::diag::Diagnostic::new(
+                                crate::diag::CASE_INCONSISTENT,
+                                "derived field `solid-fraction` needs `[immersed]` bodies",
+                            ))
+                        })?;
+                        crate::immersed::body_fraction(&bs, case.immersed.samples(), mesh, geo)
+                    }
+                };
+                out.cells.push(("solid_fraction", x));
             }
             Derived::WallShearStress => {
                 let w = walls.as_ref().expect("computed above");

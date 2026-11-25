@@ -1,0 +1,78 @@
+# The manufactured solution of the penalised equations (L13 stage 1, D226):
+# written by `python3 -m tools.verification.immersed_mms`; do not edit the
+# source expressions by hand.
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/immersed_mms.toml
+#
+# On the unit square, ρ = 1, μ = 0.01 Pa s, K = 0.001 m² (μ/K = 10, the
+# sink at the middle about a hundred times the viscous term). A smooth solid
+# fraction χ = exp(−((x − ½)² + (y − ½)²)/0.05) (a `field` body) and the exact
+# solution of `[analytic] type = "variable-density"` with a zero temperature
+# amplitude (a constant density): the velocity of the stream function
+# ψ = A sin²πx sin²πy, A = 0.02 (u = 0 on the walls), p = P cos πx cos πy,
+# P = 0.01. The momentum source makes it a solution of the steady
+# Navier–Stokes equations with the Brinkman term μ χ u / K. Three nested
+# meshes (16², 32², 64²): the L2 error of u falls at second order on
+# hexahedra, triangular prisms (`type = "tet"`), polygons (`poly`) and the
+# mixed mesh (`mixed`), as without penalisation (tests/immersed.rs).
+
+case_format = "0.7"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [1.0, 1.0, 0.05]
+cells = [16, 16, 1]
+
+[fluid]
+density = 1.0
+viscosity = 0.01
+pressure_values = "gauge"
+
+[flow]
+body_force = [
+  "-0.04*pi*(-0.04*pi^2*sin(pi*x)^2*sin(pi*y)^2 + 0.04*pi^2*sin(pi*x)^2*cos(pi*y)^2)*sin(pi*x)*sin(pi*y)^2*cos(pi*x) + 0.0008*pi^3*(sin(pi*x)^2 - cos(pi*x)^2)*sin(pi*y)*cos(pi*y) + 0.4*pi*exp(-20.0*(x - 1/2)^2 - 20.0*(y - 1/2)^2)*sin(pi*x)^2*sin(pi*y)*cos(pi*y) + 0.0032*pi^3*sin(pi*x)^3*sin(pi*y)^2*cos(pi*x)*cos(pi*y)^2 + 0.0016*pi^3*sin(pi*x)^2*sin(pi*y)*cos(pi*y) - 0.01*pi*sin(pi*x)*cos(pi*y)",
+  "0.04*pi*(0.04*pi^2*sin(pi*x)^2*sin(pi*y)^2 - 0.04*pi^2*sin(pi*y)^2*cos(pi*x)^2)*sin(pi*x)^2*sin(pi*y)*cos(pi*y) - 0.0008*pi^3*(sin(pi*y)^2 - cos(pi*y)^2)*sin(pi*x)*cos(pi*x) - 0.4*pi*exp(-20.0*(x - 1/2)^2 - 20.0*(y - 1/2)^2)*sin(pi*x)*sin(pi*y)^2*cos(pi*x) + 0.0032*pi^3*sin(pi*x)^2*sin(pi*y)^3*cos(pi*x)^2*cos(pi*y) - 0.0016*pi^3*sin(pi*x)*sin(pi*y)^2*cos(pi*x) - 0.01*pi*sin(pi*y)*cos(pi*x)",
+  0.0,
+]
+
+[immersed]
+permeability = 0.001
+
+[[immersed.body]]
+name = "density"
+shape = "field"
+fraction = "exp(-((x - 0.5)^2 + (y - 0.5)^2) / 0.05)"
+
+[boundary.xmin]
+type = "wall"
+[boundary.xmax]
+type = "wall"
+[boundary.ymin]
+type = "wall"
+[boundary.ymax]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+algorithm = "coupled"
+tolerance = 1e-10
+max_iterations = 3000
+
+[analytic]
+type = "variable-density"
+flux = 0.02
+temperature = 0.0
+pressure = 0.01
+
+[verification]
+levels = [0, 1, 2]
+expected_order = [1.8, 2.3]
+require_convergence = true
+
+[output]
+vtkhdf = false
+wall_csv = false

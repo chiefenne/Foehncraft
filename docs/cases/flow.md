@@ -355,6 +355,9 @@ writes χ.
 | Case file | Mesh | Shows | Where |
 |---|---|---|---|
 | `flow/immersed_cylinder_re20.toml` | generated hex 2D, 440 × 82 cells (h = D/20), no cylinder in the mesh | Schäfer & Turek 2D-1 with the cylinder as a penalised body: C_D 5.581 (in range), Δp 0.9 % above, C_L 35 % above the range (smeared wall); fails beyond 40 % of the range midpoint | [gallery 270](../gallery/immersed.md#penalised-cylinder), [recipe 270](../recipes/immersed.md#penalised-body) |
+| `flow/immersed_topology_bend.toml` | generated hex 2D, 60 × 60 cells, split inlet and outlet | topology search of the Borrvall & Petersson pipe bend (Stokes, quarter fluid): 28 design updates, Φ 4.69 → 0.369 W, grey 0.04, `topology.stl` | [gallery 291](../gallery/immersed.md#topology-bend), [recipe 291](../recipes/immersed.md#topology-search) |
+| `flow/immersed_stokes_sphere.toml` | generated hex 3D, 32³ cells, periodic in x, y, z | Stokes flow through a simple cubic array of penalised spheres (c = 0.0335): drag coefficient 3.9 % above the Hasimoto / Sangani & Acrivos series with K = 0.01 h² | [gallery 291](../gallery/immersed.md#topology-bend) |
+| `flow/immersed_mms.toml` | generated hex 2D, 16² to 64² | manufactured solution of the penalised equations (smooth `field` body): velocity order 2.00 (hex), 2.05 (poly); fails outside 1.8 to 2.3 | [gallery 291](../gallery/immersed.md#topology-bend) |
 
 ## Species
 

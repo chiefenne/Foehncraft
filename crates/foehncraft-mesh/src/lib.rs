@@ -37,6 +37,7 @@ pub mod generate;
 pub mod geometry;
 pub mod handover;
 pub mod imprint;
+pub mod isosurface;
 pub mod locate;
 pub mod mesh;
 pub mod partition;

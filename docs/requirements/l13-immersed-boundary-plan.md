@@ -200,6 +200,48 @@ Sizing: kernel and flow hook 1 PR (about 30 to 45 min code), keys and
 diagnostics 1 PR, verification table runs about 1 to 2 hours, topology search
 and extraction 1 PR. Gradient check on the D59 kernels needs no L17.
 
+**Status (stage 1 complete, #270 and #291).** Built: primitive and `field`
+bodies, the implicit sink in the momentum rows and the Rhie–Chow factor, the
+topology search `[immersed.topology]` (design variable γ per cell,
+Borrvall–Petersson χ(γ) with q = 0.1, hat density filter with its exact
+transpose, optimality-criteria updates with a move limit every `every` flow
+iterations, the total-pressure power as objective, one-shot after D206) and
+the iso-surface (`foehncraft_mesh::isosurface`, marching tetrahedra on any
+polyhedral cell, watertight by edge welding, written as `topology.stl`).
+Results against the verification table above:
+
+- Poiseuille channel, walls off the cell faces (16 to 256 cells): the
+  effective wall stays within half a cell for every K, its sign set by
+  where the wall cuts its cell; the mass-flow error of K = c h² falls at
+  about first order, under 0.7 % at 256 cells. K = c h leaks on fine
+  meshes.
+- MMS of the penalised equations (smooth χ): order 2.00 on hexahedra, 2.05
+  on polygons. On triangular prisms and the mixed mesh the velocity error
+  stalls at about 6 % **without** the sink as well (and with P = 0, and with
+  SIMPLEC): a gap of the 2D prism discretisation, not of the penalisation,
+  recorded in the verification gaps.
+- Stokes drag: a periodic simple cubic array of spheres against the series
+  of Hasimoto (1959) and Sangani & Acrivos (1982) replaces the channel with
+  a Faxén correction (an exact periodic reference, no wall correction to
+  fit). K = 0.01 h²: +6.2 % at 16³ to +2.6 % at 48³; K = 0.03 h² within
+  0.2 % from 24³ on (errors of opposite sign cancelling, not a rule).
+- Re 20 cylinder: in #270.
+- Topology of a duct bend: 28 designs, power 4.69 to 0.37 W, grey fraction
+  0.04; the iso-surface at 0.5 is closed and lies within one cell of the
+  cut.
+- Gradient: the self-adjoint Stokes sensitivity (μ/K) χ′ |u|² V against
+  central differences of the converged power, 3.4e-6 relative on 80×40,
+  0.5 % at Re 20 (convection makes the problem non-self-adjoint; the exact
+  gradient there needs the L17 adjoint). The dual-number check of the row
+  stays with L17 A0 (#271).
+- Iso-surface benchmark (`tools/bench/isosurface.py`): dual contouring is
+  more accurate on sharp edges (box Hausdorff 0.26 against 0.47 cells), MT
+  is guaranteed manifold; subgrid MT equals MT for node values linear on
+  the tetrahedra, so it pays only with richer node data (stage 3).
+
+Choice of η (open point above, now decided by the sweep): K = μ/η ≈ 0.01 h²
+with a time scale free of the flow; the recipe says so.
+
 ## 4. Stage 2 – Conservative cut cells (D227–D229)
 
 Method (decided, step 26 §3.2): the background mesh is intersected with the
