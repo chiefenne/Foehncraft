@@ -22,6 +22,9 @@ impl Gas for Uniform {
             u: self.0,
             rho: 1.2,
             mu: 1.8e-5,
+            t: f64::NAN,
+            cp: 1006.0,
+            k: 0.0,
         }
     }
 }
@@ -48,6 +51,7 @@ fn injector(rate: f64) -> Injector {
         parcels_per_second: rate,
         start: 0.0,
         end: None,
+        temperature: None,
     }
 }
 

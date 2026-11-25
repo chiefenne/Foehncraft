@@ -49,6 +49,11 @@ pub struct Liquid {
     pub name: String,
     /// Density (kg/m³).
     pub density: f64,
+    /// Specific heat (J/(kg K)), constant (SP2b: sensible heat).
+    pub specific_heat: f64,
+    /// Temperature of the injected liquid (K), unless an injector gives
+    /// its own.
+    pub temperature: f64,
 }
 
 impl Default for Liquid {
@@ -56,6 +61,8 @@ impl Default for Liquid {
         Self {
             name: "water".into(),
             density: 998.0,
+            specific_heat: 4181.0,
+            temperature: 293.15,
         }
     }
 }
@@ -99,6 +106,9 @@ pub struct Injector {
     /// End of the injection (s); default: the run's end.
     #[serde(default)]
     pub end: Option<f64>,
+    /// Temperature of the injected droplets (K); default: the liquid's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub temperature: Option<f64>,
 }
 
 /// `[spray]`: the Lagrangian parcels of the case.
@@ -319,6 +329,22 @@ impl SpraySection {
         let pos = |x: f64| x.is_finite() && x > 0.0;
         if !pos(self.liquid.density) {
             bail!("[spray.liquid] density must be positive and finite");
+        }
+        if !pos(self.liquid.specific_heat) {
+            bail!("[spray.liquid] specific_heat must be positive and finite");
+        }
+        if !pos(self.liquid.temperature) {
+            bail!("[spray.liquid] temperature must be positive and finite (K)");
+        }
+        for inj in &self.injectors {
+            if let Some(t) = inj.temperature
+                && !pos(t)
+            {
+                bail!(
+                    "[[injector]] `{}`: temperature must be positive and finite (K)",
+                    inj.name
+                );
+            }
         }
         for (k, v) in [
             ("restitution_normal", self.restitution_normal),

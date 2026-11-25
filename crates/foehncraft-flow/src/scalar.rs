@@ -60,6 +60,10 @@ use foehncraft_mesh::{Geometry, Mesh};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+/// Temperature, specific heat and conductivity per cell (the gas the
+/// parcels see, SP2b).
+pub(crate) type CellGas = (Vec<f64>, Vec<f64>, Vec<f64>);
+
 /// `[scalars.<name>]`: a passive scalar.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -788,6 +792,9 @@ struct EnergyField {
     /// The matrix temperatures of the porous regions (D271), solved with
     /// the energy rows in one system.
     porous: Option<Box<crate::porous_energy::Matrix>>,
+    /// The heat of a two-way coupled spray (SP2b, D250), per spray cell
+    /// (cell, Q + G T*, G): S = Q − G (T − T*) in W, G on the diagonal.
+    spray_heat: Option<Vec<(u32, f64, f64)>>,
 }
 
 /// The variable density of the fluid in the energy equation (stage 7c):
@@ -1440,267 +1447,262 @@ impl Scalars {
         );
         let xf = &self.xf;
         let eps_cell = self.eps_cell;
-        // the scalars and species first, then the energy equation; the
-        // mixture (SF1) is that of the fields at the start of the solve and
-        // is renewed at its end, so that it depends on the solved fields
+        // the mixture (SF1) is that of the fields at the start of the solve
+        // and is renewed at its end, so that it depends on the solved fields
         // only (a restart continues bitwise)
-        for pass in 0..2 {
-            for f in self
-                .fields
-                .iter_mut()
-                .filter(|f| f.energy.is_some() == (pass == 1))
-            {
-                let s = f.settings.clone();
-                let alpha = s.alpha(tr);
-                // the energy equation: properties from the current T, the heat
-                // capacity flux, the boundary coefficients and the heat source
-                let mut conv = mass_flux;
-                let mut capacity = None;
-                let frozen = f.energy.as_deref().and_then(|e| e.frozen);
-                let robin_sp = f
-                    .energy
-                    .as_deref()
-                    .filter(|e| e.cond.as_ref().is_some_and(|c| c.robin.is_some()))
-                    .and_then(|e| e.robin_sp);
-                let mut mus = turb.map(|tc| (tc.mu, tc.mu_eff));
-                if let Some(e) = f.energy.as_deref_mut() {
-                    refresh_energy(
-                        dev,
-                        e,
-                        f.phi,
-                        f.bc_a,
-                        f.bc_b,
-                        f.gamma,
-                        f.turb.gamma0,
-                        f.turb.fq,
-                        f.su,
-                        mass_flux,
-                        xf,
-                        time_now,
-                        turb,
-                        link,
-                        match (step, f.old) {
-                            (Some(st), Some((o1, o2, _))) => Some((
-                                st,
-                                f.content.map_or(o1, |c| c.0),
-                                f.content.map_or(o2, |c| c.1),
-                            )),
-                            _ => None,
-                        },
-                    )?;
-                    conv = e.cflux;
-                    capacity = Some(e.capacity);
-                    if let Some(tc) = turb {
-                        // the turbulent conductivity c_p μ_t/Pr_t and the
-                        // Prandtl number μ c_p/k of the thermal law
-                        let mu = dev.download(tc.mu)?;
-                        let me = dev.download(tc.mu_eff)?;
-                        let a: Vec<f64> = mu.iter().zip(&e.cp_face).map(|(m, c)| m * c).collect();
-                        let b: Vec<f64> = me.iter().zip(&e.cp_face).map(|(m, c)| m * c).collect();
-                        dev.upload(e.mu_cp, &a)?;
-                        dev.upload(e.mu_eff_cp, &b)?;
-                        mus = Some((e.mu_cp, e.mu_eff_cp));
-                    }
+        for f in self.fields.iter_mut() {
+            let s = f.settings.clone();
+            let alpha = s.alpha(tr);
+            // the energy equation: properties from the current T, the heat
+            // capacity flux, the boundary coefficients and the heat source
+            let mut conv = mass_flux;
+            let mut capacity = None;
+            let frozen = f.energy.as_deref().and_then(|e| e.frozen);
+            let robin_sp = f
+                .energy
+                .as_deref()
+                .filter(|e| {
+                    e.cond.as_ref().is_some_and(|c| c.robin.is_some()) || e.spray_heat.is_some()
+                })
+                .and_then(|e| e.robin_sp);
+            let mut mus = turb.map(|tc| (tc.mu, tc.mu_eff));
+            if let Some(e) = f.energy.as_deref_mut() {
+                refresh_energy(
+                    dev,
+                    e,
+                    f.phi,
+                    f.bc_a,
+                    f.bc_b,
+                    f.gamma,
+                    f.turb.gamma0,
+                    f.turb.fq,
+                    f.su,
+                    mass_flux,
+                    xf,
+                    time_now,
+                    turb,
+                    link,
+                    match (step, f.old) {
+                        (Some(st), Some((o1, o2, _))) => Some((
+                            st,
+                            f.content.map_or(o1, |c| c.0),
+                            f.content.map_or(o2, |c| c.1),
+                        )),
+                        _ => None,
+                    },
+                )?;
+                conv = e.cflux;
+                capacity = Some(e.capacity);
+                if let Some(tc) = turb {
+                    // the turbulent conductivity c_p μ_t/Pr_t and the
+                    // Prandtl number μ c_p/k of the thermal law
+                    let mu = dev.download(tc.mu)?;
+                    let me = dev.download(tc.mu_eff)?;
+                    let a: Vec<f64> = mu.iter().zip(&e.cp_face).map(|(m, c)| m * c).collect();
+                    let b: Vec<f64> = me.iter().zip(&e.cp_face).map(|(m, c)| m * c).collect();
+                    dev.upload(e.mu_cp, &a)?;
+                    dev.upload(e.mu_eff_cp, &b)?;
+                    mus = Some((e.mu_cp, e.mu_eff_cp));
                 }
-                if let (Some(tc), Some((mu_t, mu_eff_t))) = (turb, mus) {
-                    // the turbulent diffusivity of this iteration (D135)
-                    dev.scalar_turb_faces(&ScalarTurbOps {
+            }
+            if let (Some(tc), Some((mu_t, mu_eff_t))) = (turb, mus) {
+                // the turbulent diffusivity of this iteration (D135)
+                dev.scalar_turb_faces(&ScalarTurbOps {
+                    mu: mu_t,
+                    mu_eff: mu_eff_t,
+                    gamma0: f.turb.gamma0,
+                    wall: tc.wall,
+                    fq: f.turb.fq,
+                    bc_a: f.bc_a,
+                    prt: (f.turb.prt_model, f.turb.prt),
+                    gamma: f.gamma,
+                    bc_b: f.bc_b,
+                })?;
+                if let (Some(y_plus), true) = (tc.y_plus, f.turb.law != thermal::NONE) {
+                    dev.scalar_wall_faces(&ScalarWallOps {
+                        y_plus,
                         mu: mu_t,
-                        mu_eff: mu_eff_t,
                         gamma0: f.turb.gamma0,
-                        wall: tc.wall,
                         fq: f.turb.fq,
                         bc_a: f.bc_a,
-                        prt: (f.turb.prt_model, f.turb.prt),
+                        law: f.turb.law,
+                        prt: f.turb.prt,
+                        y_floor: tc.y_floor,
                         gamma: f.gamma,
                         bc_b: f.bc_b,
+                        t_plus: None,
                     })?;
-                    if let (Some(y_plus), true) = (tc.y_plus, f.turb.law != thermal::NONE) {
-                        dev.scalar_wall_faces(&ScalarWallOps {
-                            y_plus,
-                            mu: mu_t,
-                            gamma0: f.turb.gamma0,
-                            fq: f.turb.fq,
-                            bc_a: f.bc_a,
-                            law: f.turb.law,
-                            prt: f.turb.prt,
-                            y_floor: tc.y_floor,
-                            gamma: f.gamma,
-                            bc_b: f.bc_b,
-                            t_plus: None,
-                        })?;
-                    }
                 }
-                if let Some(e) = f.energy.as_deref() {
-                    convection_faces(dev, e, f.bc_a, f.bc_b, f.gamma, xf, time_now)?;
-                }
-                let mut res = f64::NAN;
-                let mut its = 0;
-                let mut first = 0;
-                for sweep in 0..s.sweeps {
-                    dev.gradient_with(f.lsq, f.phi, f.bc_a, f.bc_b, f.jump, f.grad)?;
-                    // the one-sided gradients of the interface cells (stage 7d2)
-                    let (phi_b, grad_b, bca, bcb) = (f.phi, f.grad, f.bc_a, f.bc_b);
-                    if let Some(cd) = f
-                        .energy
-                        .as_deref_mut()
-                        .and_then(|e| e.cond.as_mut())
-                        .filter(|c| c.is_active())
-                    {
-                        cd.one_sided(dev, phi_b, grad_b, bca, bcb)?;
-                    }
-                    if let (Some(slot), false) = (f.mlp, s.scheme == Scheme::Upwind) {
-                        // ε in the units of the field (Wang 2000)
-                        let (mn, mx) = dev.min_max(f.phi)?;
-                        dev.mlp_limiter(&MlpOps {
-                            slot,
-                            phi: f.phi,
-                            bc_a: f.bc_a,
-                            bc_b: f.bc_b,
-                            grad: f.grad,
-                            func: s.limiter_function.code(),
-                            eps: s.limiter_epsilon * (mx - mn),
-                            eps_cell: eps_cell
-                                .filter(|_| s.limiter_epsilon_scaling == EpsilonScaling::Cell),
-                            relax: s.limiter_relaxation,
-                            out: f.psi,
-                        })?;
-                    } else if s.scheme != Scheme::Upwind && s.limiter != LimiterKind::None {
-                        let eps2 = match (s.limiter, f.eps2) {
-                            (LimiterKind::Venkatakrishnan, Some(b)) => Eps2::Cells(b),
-                            // a negative single ε² selects Barth–Jespersen
-                            (LimiterKind::BarthJespersen, _) => Eps2::Single(-1.0),
-                            _ => {
-                                let (mn, mx) = dev.min_max(f.phi)?;
-                                let e = s.limiter_k * (mx - mn);
-                                Eps2::Single(e * e)
-                            }
-                        };
-                        dev.limiter_with(f.phi, f.bc_a, f.bc_b, f.jump, f.grad, eps2, f.psi)?;
-                    }
-                    dev.scalar_faces(&ScalarFaceArgs {
-                        bc_a: f.bc_a,
-                        bc_b: f.bc_b,
-                        jump: f.jump,
-                        mass_flux: conv,
-                        gamma: f.gamma,
-                        phi: f.phi,
-                        grad: f.grad,
-                        psi: f.psi,
-                        blend: if s.scheme == Scheme::Upwind { 0.0 } else { 1.0 },
-                        central: if s.scheme == Scheme::Central {
-                            s.central_blending
-                        } else {
-                            0.0
-                        },
-                        beta: s.central_bounding,
-                        nonorth: 1.0,
-                        bound: if s.bounded { 1.0 } else { 0.0 },
-                        cp: w_cp,
-                        cn: w_cn,
-                        bf: w_bf,
-                    })?;
-                    // the exact interface flux and the orthotropic cross terms
-                    let gamma_b = f.gamma;
-                    if let Some(cd) = f
-                        .energy
-                        .as_deref_mut()
-                        .and_then(|e| e.cond.as_mut())
-                        .filter(|c| c.is_active())
-                    {
-                        cd.correct(dev, gamma_b, w_bf)?;
-                    }
-                    let time = match (step, f.old) {
-                        (Some(st), Some((o1, o2, _))) => Some(ScalarTime {
-                            inv_dt: 1.0 / st.dt,
-                            a: st.a,
-                            old: f.content.map_or(o1, |c| c.0),
-                            old2: f.content.map_or(o2, |c| c.1),
-                            bounds: f.bounds,
-                        }),
-                        _ => None,
-                    };
-                    dev.scalar_rows(&ScalarRowArgs {
-                        cp: w_cp,
-                        cn: w_cn,
-                        bf: w_bf,
-                        mass_flux: conv,
-                        phi: f.phi,
-                        su: f.su,
-                        sp: robin_sp,
-                        alpha,
-                        time,
-                        fix: frozen,
-                        positive: false,
-                        pseudo: None,
-                        capacity,
-                        val: w_val,
-                        rhs: w_rhs,
-                        diag: w_diag,
-                        order: w_order,
-                    })?;
-                    let porous = f
-                        .energy
-                        .as_deref_mut()
-                        .and_then(|e| e.porous.as_deref_mut());
-                    let (it, r0, scale) = if let Some(pm) = porous {
-                        // the matrix temperatures in the same system (D271)
-                        pm.solve(
-                            dev,
-                            w_val,
-                            w_rhs,
-                            w_diag,
-                            f.phi,
-                            alpha,
-                            time.map(|t| (t.inv_dt, t.a)),
-                            s.tol(tr),
-                            s.max_iter,
-                        )?
-                    } else {
-                        let scale = dev.scalar_scale(f.phi, w_rhs, w_diag, alpha, None)?;
-                        let (it, r0) = dev.solve(
-                            w_val,
-                            w_rhs,
-                            f.phi,
-                            Preconditioner::Jacobi,
-                            false,
-                            s.tol(tr),
-                            s.max_iter,
-                        )?;
-                        (it, r0, scale)
-                    };
-                    if sweep == 0 {
-                        res = r0 / scale;
-                        if time.is_some() {
-                            first = dev.sum_sq(w_order)?.round() as usize;
-                        }
-                    }
-                    its += it;
-                }
-                // the interface report from the solved temperature
-                let phi_b = f.phi;
+            }
+            if let Some(e) = f.energy.as_deref() {
+                convection_faces(dev, e, f.bc_a, f.bc_b, f.gamma, xf, time_now)?;
+            }
+            let mut res = f64::NAN;
+            let mut its = 0;
+            let mut first = 0;
+            for sweep in 0..s.sweeps {
+                dev.gradient_with(f.lsq, f.phi, f.bc_a, f.bc_b, f.jump, f.grad)?;
+                // the one-sided gradients of the interface cells (stage 7d2)
+                let (phi_b, grad_b, bca, bcb) = (f.phi, f.grad, f.bc_a, f.bc_b);
                 if let Some(cd) = f
                     .energy
                     .as_deref_mut()
                     .and_then(|e| e.cond.as_mut())
                     .filter(|c| c.is_active())
                 {
-                    cd.settle(dev, phi_b)?;
+                    cd.one_sided(dev, phi_b, grad_b, bca, bcb)?;
                 }
-                out.residual.push(res);
-                out.iterations.push(its);
-                out.first_order.push(first);
-                // the level of a steady heat-flux field: its bulk value where
-                // it is given (a transient run keeps the level of its start)
-                if let (Some(hf), false) = (&f.heat_flux, tr) {
-                    let (bulk_b, _) = bulk_of(dev, f.phi, f.grad, mass_flux, hf)?;
-                    let at = if hf.bulk.1 < 0.0 {
-                        bulk_b - hf.delta
-                    } else {
-                        bulk_b
+                if let (Some(slot), false) = (f.mlp, s.scheme == Scheme::Upwind) {
+                    // ε in the units of the field (Wang 2000)
+                    let (mn, mx) = dev.min_max(f.phi)?;
+                    dev.mlp_limiter(&MlpOps {
+                        slot,
+                        phi: f.phi,
+                        bc_a: f.bc_a,
+                        bc_b: f.bc_b,
+                        grad: f.grad,
+                        func: s.limiter_function.code(),
+                        eps: s.limiter_epsilon * (mx - mn),
+                        eps_cell: eps_cell
+                            .filter(|_| s.limiter_epsilon_scaling == EpsilonScaling::Cell),
+                        relax: s.limiter_relaxation,
+                        out: f.psi,
+                    })?;
+                } else if s.scheme != Scheme::Upwind && s.limiter != LimiterKind::None {
+                    let eps2 = match (s.limiter, f.eps2) {
+                        (LimiterKind::Venkatakrishnan, Some(b)) => Eps2::Cells(b),
+                        // a negative single ε² selects Barth–Jespersen
+                        (LimiterKind::BarthJespersen, _) => Eps2::Single(-1.0),
+                        _ => {
+                            let (mn, mx) = dev.min_max(f.phi)?;
+                            let e = s.limiter_k * (mx - mn);
+                            Eps2::Single(e * e)
+                        }
                     };
-                    dev.subtract(f.phi, at - hf.bulk.0)?;
+                    dev.limiter_with(f.phi, f.bc_a, f.bc_b, f.jump, f.grad, eps2, f.psi)?;
                 }
+                dev.scalar_faces(&ScalarFaceArgs {
+                    bc_a: f.bc_a,
+                    bc_b: f.bc_b,
+                    jump: f.jump,
+                    mass_flux: conv,
+                    gamma: f.gamma,
+                    phi: f.phi,
+                    grad: f.grad,
+                    psi: f.psi,
+                    blend: if s.scheme == Scheme::Upwind { 0.0 } else { 1.0 },
+                    central: if s.scheme == Scheme::Central {
+                        s.central_blending
+                    } else {
+                        0.0
+                    },
+                    beta: s.central_bounding,
+                    nonorth: 1.0,
+                    bound: if s.bounded { 1.0 } else { 0.0 },
+                    cp: w_cp,
+                    cn: w_cn,
+                    bf: w_bf,
+                })?;
+                // the exact interface flux and the orthotropic cross terms
+                let gamma_b = f.gamma;
+                if let Some(cd) = f
+                    .energy
+                    .as_deref_mut()
+                    .and_then(|e| e.cond.as_mut())
+                    .filter(|c| c.is_active())
+                {
+                    cd.correct(dev, gamma_b, w_bf)?;
+                }
+                let time = match (step, f.old) {
+                    (Some(st), Some((o1, o2, _))) => Some(ScalarTime {
+                        inv_dt: 1.0 / st.dt,
+                        a: st.a,
+                        old: f.content.map_or(o1, |c| c.0),
+                        old2: f.content.map_or(o2, |c| c.1),
+                        bounds: f.bounds,
+                    }),
+                    _ => None,
+                };
+                dev.scalar_rows(&ScalarRowArgs {
+                    cp: w_cp,
+                    cn: w_cn,
+                    bf: w_bf,
+                    mass_flux: conv,
+                    phi: f.phi,
+                    su: f.su,
+                    sp: robin_sp,
+                    alpha,
+                    time,
+                    fix: frozen,
+                    positive: false,
+                    pseudo: None,
+                    capacity,
+                    val: w_val,
+                    rhs: w_rhs,
+                    diag: w_diag,
+                    order: w_order,
+                })?;
+                let porous = f
+                    .energy
+                    .as_deref_mut()
+                    .and_then(|e| e.porous.as_deref_mut());
+                let (it, r0, scale) = if let Some(pm) = porous {
+                    // the matrix temperatures in the same system (D271)
+                    pm.solve(
+                        dev,
+                        w_val,
+                        w_rhs,
+                        w_diag,
+                        f.phi,
+                        alpha,
+                        time.map(|t| (t.inv_dt, t.a)),
+                        s.tol(tr),
+                        s.max_iter,
+                    )?
+                } else {
+                    let scale = dev.scalar_scale(f.phi, w_rhs, w_diag, alpha, None)?;
+                    let (it, r0) = dev.solve(
+                        w_val,
+                        w_rhs,
+                        f.phi,
+                        Preconditioner::Jacobi,
+                        false,
+                        s.tol(tr),
+                        s.max_iter,
+                    )?;
+                    (it, r0, scale)
+                };
+                if sweep == 0 {
+                    res = r0 / scale;
+                    if time.is_some() {
+                        first = dev.sum_sq(w_order)?.round() as usize;
+                    }
+                }
+                its += it;
+            }
+            // the interface report from the solved temperature
+            let phi_b = f.phi;
+            if let Some(cd) = f
+                .energy
+                .as_deref_mut()
+                .and_then(|e| e.cond.as_mut())
+                .filter(|c| c.is_active())
+            {
+                cd.settle(dev, phi_b)?;
+            }
+            out.residual.push(res);
+            out.iterations.push(its);
+            out.first_order.push(first);
+            // the level of a steady heat-flux field: its bulk value where
+            // it is given (a transient run keeps the level of its start)
+            if let (Some(hf), false) = (&f.heat_flux, tr) {
+                let (bulk_b, _) = bulk_of(dev, f.phi, f.grad, mass_flux, hf)?;
+                let at = if hf.bulk.1 < 0.0 {
+                    bulk_b - hf.delta
+                } else {
+                    bulk_b
+                };
+                dev.subtract(f.phi, at - hf.bulk.0)?;
             }
         }
         refresh_species(dev, self.species.as_deref_mut(), &mut self.fields)?;
@@ -2391,6 +2393,59 @@ impl Scalars {
             .map(|x| x.iter().exact_sum())
     }
 
+    /// Sets or clears the heat of a two-way coupled spray (SP2b): per spray
+    /// cell (cell, Q + G T*, G) in W and W/K.
+    pub(crate) fn set_energy_spray(
+        &mut self,
+        dev: &mut dyn FlowDevice,
+        rows: Option<Vec<(u32, f64, f64)>>,
+    ) -> Result<()> {
+        let nc = self.nc;
+        let Some(e) = self.fields.iter_mut().find_map(|f| f.energy.as_deref_mut()) else {
+            return Ok(());
+        };
+        if rows.is_some() && e.robin_sp.is_none() {
+            e.robin_sp = Some(dev.alloc(nc)?);
+        }
+        e.spray_heat = rows;
+        Ok(())
+    }
+
+    /// The heat the spray gives the gas at the temperature `t` (W),
+    /// Σ (Q + G T* − G T) in cell order, if a spray is set.
+    fn energy_spray_total(&self, t: &[f64]) -> Option<f64> {
+        let e = self.fields.iter().find_map(|f| f.energy.as_deref())?;
+        let rows = e.spray_heat.as_ref()?;
+        Some(
+            rows.iter()
+                .map(|&(c, q, g)| q - g * t[c as usize])
+                .exact_sum(),
+        )
+    }
+
+    /// The gas as the parcels see it for the heat exchange (SP2b): per
+    /// cell the temperature, c_p and the conductivity of the material at
+    /// that temperature (no turbulent part).
+    pub(crate) fn energy_gas(&self, dev: &mut dyn FlowDevice) -> Result<Option<CellGas>> {
+        let Some(f) = self.fields.iter().find(|f| f.energy.is_some()) else {
+            return Ok(None);
+        };
+        let Some(e) = f.energy.as_deref() else {
+            return Ok(None);
+        };
+        let t = dev.download(f.phi)?;
+        let mut cp = Vec::with_capacity(t.len());
+        let mut k = Vec::with_capacity(t.len());
+        for (c, &tc) in t.iter().enumerate() {
+            let mat = &e.mats[e.mat_cell[c] as usize];
+            let tm = if e.dependent { tc } else { mat.t_ref };
+            let kt = mat.tensor(tm);
+            cp.push(mat.cp.at(tm));
+            k.push((kt[0][0] + kt[1][1] + kt[2][2]) / 3.0);
+        }
+        Ok(Some((t, cp, k)))
+    }
+
     /// Sets or clears the heat added to cells (W per cell, D204).
     pub(crate) fn set_energy_extra_heat(&mut self, x: Option<Vec<f64>>) {
         if let Some(e) = self.fields.iter_mut().find_map(|f| f.energy.as_deref_mut()) {
@@ -2925,6 +2980,7 @@ impl Scalars {
             || enthalpy.iter().any(|h| !h.is_constant())
             || sec.cycle.is_some()
             || crate::density::wanted(case)
+            || case.spray.coupling.two_way()
         {
             Some(put(&vec![0.0; nc])?)
         } else {
@@ -3090,6 +3146,7 @@ impl Scalars {
             held: None,
             robin_sp: None,
             extra_heat: None,
+            spray_heat: None,
             var_rho: None,
             porous,
             mats,
@@ -3551,9 +3608,14 @@ fn refresh_energy(
                 v[c] += q / (e.volume[c] * cap[c]);
             }
         }
-        if let (Some((_, rs)), Some(spb)) = (&robin, e.robin_sp) {
+        // and the heat of a two-way coupled spray (SP2b) in the same
+        // value-plus-slope form
+        if let Some(spb) = e.robin_sp
+            && (robin.is_some() || e.spray_heat.is_some())
+        {
             let mut sp = vec![0.0; nc];
-            for &(c, q, g) in rs {
+            let rows = robin.iter().flat_map(|(_, rs)| rs.iter());
+            for &(c, q, g) in rows.chain(e.spray_heat.iter().flatten()) {
                 let c = c as usize;
                 let w = e.volume[c] * cap[c];
                 v[c] += q / w;
@@ -3952,6 +4014,11 @@ pub struct EnergyBalance {
     /// or the defect of the mean-flow model.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub robin: Option<f64>,
+    /// The heat a two-way coupled spray gives the gas (W, SP2b); the
+    /// ledger books it as the spray's exchange pair, not as a term of this
+    /// balance.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub spray: Option<f64>,
     /// conduction + convection + source − storage (W): zero in a
     /// converged steady run and in every converged time step.
     pub imbalance: f64,
@@ -4181,6 +4248,12 @@ pub fn summaries(
             // from outside the model like the Robin heat
             if let Some(x) = sc.energy_extra_total() {
                 bal.robin = Some(x);
+                largest = largest.max(x.abs());
+                out -= x;
+            }
+            // the heat of a two-way coupled spray (SP2b)
+            if let Some(x) = sc.energy_spray_total(&phi) {
+                bal.spray = Some(x);
                 largest = largest.max(x.abs());
                 out -= x;
             }

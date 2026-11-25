@@ -6,7 +6,7 @@ use crate::datum::{Crossing, Datum, DatumTally, Moments, Shape, Surface, plane_c
 use anyhow::{Result, bail};
 use foehncraft_core::Real;
 use foehncraft_core::rng::{self, stream};
-use foehncraft_kernels::particle::{ParcelInput, parcel_step};
+use foehncraft_kernels::particle::{HeatInput, ParcelInput, heat_step, parcel_step};
 use foehncraft_mesh::geometry::Geometry;
 use foehncraft_mesh::locate::{Locator, Position, TrackEnd, WalkEnd, step_limit};
 use foehncraft_mesh::mesh::Mesh;
@@ -22,6 +22,32 @@ pub struct GasState {
     pub rho: f64,
     /// Dynamic viscosity (Pa s).
     pub mu: f64,
+    /// Temperature (K); NaN without an energy equation (no heat exchange).
+    pub t: f64,
+    /// Specific heat at constant pressure (J/(kg K)).
+    pub cp: f64,
+    /// Thermal conductivity (W/(m K)); zero: no heat exchange.
+    pub k: f64,
+}
+
+impl GasState {
+    /// A gas without temperature: the parcels keep theirs (no heat
+    /// exchange).
+    pub fn isothermal(u: [f64; 3], rho: f64, mu: f64) -> Self {
+        Self {
+            u,
+            rho,
+            mu,
+            t: f64::NAN,
+            cp: 1006.0,
+            k: 0.0,
+        }
+    }
+
+    /// True when the gas exchanges heat with the parcels.
+    pub fn has_heat(&self) -> bool {
+        self.t.is_finite() && self.k > 0.0 && self.cp > 0.0
+    }
 }
 
 /// The gas field seen by the parcels (one-way coupling in SP1).
@@ -70,6 +96,10 @@ pub struct Parcels {
     pub count: Vec<f64>,
     /// Time of injection (s).
     pub born: Vec<f64>,
+    /// Droplet temperature (K); empty in restart files written before
+    /// SP2b (filled with the injection temperature on restore).
+    #[serde(default)]
+    pub temp: Vec<f64>,
     /// Cell that holds the parcel (rebuilt from the position on a restart).
     #[serde(skip)]
     pub cell: Vec<u32>,
@@ -93,6 +123,7 @@ impl Parcels {
         self.d.push(p.d);
         self.count.push(p.count);
         self.born.push(p.born);
+        self.temp.push(p.temp);
         self.cell.push(p.cell as u32);
     }
 
@@ -104,6 +135,7 @@ impl Parcels {
             d: self.d[i],
             count: self.count[i],
             born: self.born[i],
+            temp: self.temp[i],
             cell: self.cell[i] as usize,
             face: None,
         }
@@ -118,6 +150,7 @@ struct One {
     d: f64,
     count: f64,
     born: f64,
+    temp: f64,
     cell: usize,
     /// Where the walk stands when the parcel was stopped on an interior
     /// face (two-way tracking): the tetrahedron of the next cell.
@@ -474,22 +507,25 @@ impl Spray {
     }
 
     /// Commits pass `pass` (D250, D252): the closing step, when `du` gives
-    /// per cell the change u_new − u* of the gas velocity against the
-    /// frozen state of the pass (every record r gives its parcel
-    /// slope_r (u_new − u*) of momentum, the opposite of what the gas
+    /// per cell the change u_new − u* of the gas velocity and T_new − T*
+    /// of the gas temperature against the frozen state of the pass (every
+    /// record r gives its parcel slope_r (u_new − u*) of momentum and
+    /// heat_slope_r (T_new − T*) of enthalpy, the opposite of what the gas
     /// received), then the books, the release and the fates. Returns the
-    /// momentum books of the step.
+    /// momentum and enthalpy books of the step.
     pub fn commit(
         &mut self,
         env: &Env,
         pass: Pass,
-        du: Option<&dyn Fn(u32) -> [f64; 3]>,
+        du: Option<&dyn Fn(u32) -> ([f64; 3], f64)>,
     ) -> StepBooks {
         let rho_p = self.cfg.liquid.density;
+        let cp_p = self.cfg.liquid.specific_heat;
         let mut books = StepBooks {
             start: self.momentum(),
             ..Default::default()
         };
+        books.enthalpy[0] = self.enthalpy();
         let Pass {
             release,
             mut outcomes,
@@ -508,6 +544,7 @@ impl Spray {
             for k in 0..3 {
                 books.injected[k] += mp * p.v[k];
             }
+            books.enthalpy[3] += mp * cp_p * p.temp;
         }
         // the closing step: the parcel receives what the gas gave up
         if let Some(du) = du {
@@ -517,27 +554,32 @@ impl Spray {
                 }
                 let m = mass_of(o.p.d, o.p.count, rho_p);
                 let mut dp = [0.0; 3];
+                let mut dh = 0.0;
                 for r in &o.records {
-                    let d = du(r.cell);
+                    let (d, dt) = du(r.cell);
                     for k in 0..3 {
                         dp[k] += r.slope * d[k];
                     }
+                    dh += r.heat_slope * dt;
                 }
                 for (v, d) in o.p.v.iter_mut().zip(dp) {
                     *v += d / m;
                 }
+                o.p.temp += dh / (m * cp_p);
             }
             for (j, &c) in sources.cells.iter().enumerate() {
-                let d = du(c);
+                let (d, dt) = du(c);
                 for ((b, i), dk) in books.from_gas.iter_mut().zip(sources.impulse[j]).zip(d) {
                     *b -= i - sources.slope[j] * dk;
                 }
+                books.enthalpy[2] -= sources.heat[j] - sources.heat_slope[j] * dt;
             }
         } else {
-            for imp in &sources.impulse {
+            for (j, imp) in sources.impulse.iter().enumerate() {
                 for (b, i) in books.from_gas.iter_mut().zip(imp) {
                     *b -= i;
                 }
+                books.enthalpy[2] -= sources.heat[j];
             }
         }
         let mut kept = Parcels::default();
@@ -568,6 +610,11 @@ impl Spray {
                     books.removed[k] -= m * o.p.v[k];
                 }
             }
+            if o.fate == Fate::Active {
+                books.enthalpy[1] += m * cp_p * o.p.temp;
+            } else {
+                books.enthalpy[4] -= m * cp_p * o.p.temp;
+            }
         }
         for o in outcomes {
             self.tally.rebounds += o.rebounds;
@@ -596,6 +643,17 @@ impl Spray {
         self.parcels = kept;
         self.time = t1;
         books
+    }
+
+    /// Sensible enthalpy Σ m c_p T of the parcels in the flow (J, from 0 K),
+    /// summed in the order of their identities.
+    pub fn enthalpy(&self) -> f64 {
+        let cp = self.cfg.liquid.specific_heat;
+        let mut h = 0.0;
+        for i in self.by_id() {
+            h += self.parcel_mass(i) * cp * self.parcels.temp[i];
+        }
+        h
     }
 
     /// Momentum of the parcels in the flow (kg m/s), summed in the order of
@@ -685,6 +743,7 @@ impl Spray {
                     d,
                     count,
                     born,
+                    temp: inj.temperature.unwrap_or(self.cfg.liquid.temperature),
                     cell,
                     face: None,
                 });
@@ -839,6 +898,7 @@ impl Spray {
         let two_way = self.cfg.coupling.two_way();
         let re_frac = self.cfg.coupling.max_reynolds_change;
         let mass = mass_of(p.d, p.count, rho_p);
+        let cp_p = self.cfg.liquid.specific_heat;
         let g_eff = |rho_g: f64| 1.0 - rho_g / rho_p;
         let mut cross = Vec::new();
         let mut records: Vec<Record> = Vec::new();
@@ -908,12 +968,16 @@ impl Spray {
             let vel = |tau: f64| parcel_step(&input(tau)).v;
             // the exchange of a sub-step of length dt that ends with the
             // velocity v1 (D249: the parcel's own change less its weight)
+            // the exchange of a sub-step of length dt that ends with the
+            // velocity v1; returns the parcel temperature at its end (the
+            // exact thermal relaxation, SP2b)
             let book = |records: &mut Vec<Record>,
                         weight: &mut [f64; 3],
                         p: &One,
                         dt: f64,
                         v1: [f64; 3],
-                        tau: f64| {
+                        tau: f64|
+             -> f64 {
                 let ge = g_eff(gs.rho);
                 let mut imp = [0.0; 3];
                 for k in 0..3 {
@@ -921,6 +985,23 @@ impl Spray {
                     weight[k] += w;
                     imp[k] = -(mass * (v1[k] - p.v[k]) - w);
                 }
+                let (tp1, heat_decay) = if gs.has_heat() {
+                    let w = [gs.u[0] - p.v[0], gs.u[1] - p.v[1], gs.u[2] - p.v[2]];
+                    let h = heat_step(&HeatInput {
+                        tp: p.temp,
+                        tg: gs.t,
+                        re: gs.rho * p.d * norm(w) / gs.mu,
+                        pr: gs.mu * gs.cp / gs.k,
+                        k_g: gs.k,
+                        d: p.d,
+                        rho_p,
+                        cp_p,
+                        dt,
+                    });
+                    (h.tp, h.decay)
+                } else {
+                    (p.temp, 1.0)
+                };
                 if two_way {
                     records.push(Record {
                         cell: p.cell as u32,
@@ -930,8 +1011,12 @@ impl Spray {
                         slope: 0.0,
                         dt,
                         decay: (-(dt / tau)).exp_of(),
+                        heat: -mass * cp_p * (tp1 - p.temp),
+                        heat_slope: 0.0,
+                        heat_decay,
                     });
                 }
+                tp1
             };
             // A parcel that moves along a face, with the gas of the two
             // cells pushing it towards the face from both sides, would end
@@ -951,7 +1036,7 @@ impl Spray {
             if let Some(ff) = ff {
                 match ff {
                     FirstFace::Reached(cell) => {
-                        book(&mut records, &mut weight, &p, sub, s.v, s.tau);
+                        p.temp = book(&mut records, &mut weight, &p, sub, s.v, s.tau);
                         if any_datum {
                             self.crossings(
                                 &mut cross,
@@ -974,7 +1059,7 @@ impl Spray {
                         let tf =
                             time_at_fraction(&|t| parcel_step(&input(t)).dx, s.dx, lambda, sub);
                         let sf = parcel_step(&input(tf));
-                        book(&mut records, &mut weight, &p, tf, sf.v, sf.tau);
+                        p.temp = book(&mut records, &mut weight, &p, tf, sf.v, sf.tau);
                         if any_datum {
                             self.crossings(
                                 &mut cross,
@@ -998,7 +1083,7 @@ impl Spray {
                         let tf =
                             time_at_fraction(&|t| parcel_step(&input(t)).dx, s.dx, lambda, sub);
                         let sf = parcel_step(&input(tf));
-                        book(&mut records, &mut weight, &p, tf, sf.v, sf.tau);
+                        p.temp = book(&mut records, &mut weight, &p, tf, sf.v, sf.tau);
                         if any_datum {
                             self.crossings(
                                 &mut cross,
@@ -1044,7 +1129,7 @@ impl Spray {
             let tr = env.loc.track(start, target);
             match tr.end {
                 TrackEnd::Reached => {
-                    book(&mut records, &mut weight, &p, sub, s.v, s.tau);
+                    p.temp = book(&mut records, &mut weight, &p, sub, s.v, s.tau);
                     if any_datum {
                         self.crossings(
                             &mut cross,
@@ -1067,7 +1152,7 @@ impl Spray {
                     // sub-step (the sub-step is a fraction of a cell)
                     let thit = tr.fraction * sub;
                     let sh = parcel_step(&input(thit));
-                    book(&mut records, &mut weight, &p, thit, sh.v, sh.tau);
+                    p.temp = book(&mut records, &mut weight, &p, thit, sh.v, sh.tau);
                     if any_datum {
                         self.crossings(
                             &mut cross,
@@ -1106,7 +1191,7 @@ impl Spray {
                     // the walk failed: one search for the target
                     match env.loc.locate_search(target) {
                         Some(c) => {
-                            book(&mut records, &mut weight, &p, sub, s.v, s.tau);
+                            p.temp = book(&mut records, &mut weight, &p, sub, s.v, s.tau);
                             if any_datum {
                                 self.crossings(
                                     &mut cross,
@@ -1133,7 +1218,7 @@ impl Spray {
             }
         }
         p.face = None;
-        crate::coupling::set_slopes(&mut records, mass);
+        crate::coupling::set_slopes(&mut records, mass, mass * cp_p);
         Outcome {
             p,
             fate,
@@ -1236,6 +1321,17 @@ impl Spray {
             bail!("the restart's spray tally has another number of boundaries");
         }
         let mut parcels = s.parcels;
+        if parcels.temp.len() != parcels.len() {
+            // a restart written before SP2b: the injection temperature
+            parcels.temp = parcels
+                .id
+                .iter()
+                .map(|&id| {
+                    let inj = &self.cfg.injectors[(id >> 48) as usize];
+                    inj.temperature.unwrap_or(self.cfg.liquid.temperature)
+                })
+                .collect();
+        }
         parcels.cell = Vec::with_capacity(parcels.len());
         for x in &parcels.x {
             match env.loc.locate_search(*x) {
@@ -1281,6 +1377,11 @@ impl Spray {
                 components: 1,
             },
             PointField {
+                name: "temperature",
+                values: &self.parcels.temp,
+                components: 1,
+            },
+            PointField {
                 name: "droplets",
                 values: &self.parcels.count,
                 components: 1,
@@ -1309,7 +1410,7 @@ impl Spray {
             ("time", Attr::F64(self.time)),
             ("liquid", Attr::Str(&self.cfg.liquid.name)),
             ("liquid_density", Attr::F64(self.cfg.liquid.density)),
-            ("units", Attr::Str("m, m/s, s, droplets")),
+            ("units", Attr::Str("m, m/s, K, s, droplets")),
             ("parcels", Attr::U64(n as u64)),
         ];
         write_points(path, &self.parcels.x, &fields, &attrs)

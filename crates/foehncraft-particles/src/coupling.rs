@@ -55,6 +55,15 @@ pub struct Record {
     pub dt: f64,
     /// exp(−δt/τ) of the sub-step (kept for the slopes).
     pub(crate) decay: f64,
+    /// Heat the gas receives in the sub-step (J): the parcel's own change
+    /// of sensible enthalpy with the opposite sign (SP2b).
+    pub heat: f64,
+    /// Slope of the heat with respect to the gas temperature of the cell
+    /// (J/K), the parcel's heat capacity times (1 − e_r) Π_{l>r} e_l of the
+    /// thermal relaxation.
+    pub heat_slope: f64,
+    /// exp(−δt/τ_h) of the sub-step (1 without heat exchange).
+    pub(crate) heat_decay: f64,
 }
 
 impl Record {
@@ -65,12 +74,17 @@ impl Record {
 }
 
 /// Sets the slopes of the records of one parcel (in sub-step order), of
-/// mass `m`: slope_r = m (1 − e_r) Π_{l>r} e_l (module documentation).
-pub(crate) fn set_slopes(records: &mut [Record], m: f64) {
+/// mass `m` and heat capacity `mc` (J/K): slope_r = m (1 − e_r) Π_{l>r}
+/// e_l (module documentation), and the same for the heat with the thermal
+/// decays.
+pub(crate) fn set_slopes(records: &mut [Record], m: f64, mc: f64) {
     let mut later = 1.0;
+    let mut later_h = 1.0;
     for r in records.iter_mut().rev() {
         r.slope = m * (1.0 - r.decay) * later;
         later *= r.decay;
+        r.heat_slope = mc * (1.0 - r.heat_decay) * later_h;
+        later_h *= r.heat_decay;
     }
 }
 
@@ -84,6 +98,10 @@ pub struct CellSources {
     pub impulse: Vec<[f64; 3]>,
     /// Summed slope of each cell (kg).
     pub slope: Vec<f64>,
+    /// Heat the gas of each cell receives over the step (J).
+    pub heat: Vec<f64>,
+    /// Summed heat slope of each cell (J/K).
+    pub heat_slope: Vec<f64>,
     /// Records per cell.
     pub records: Vec<u32>,
 }
@@ -100,6 +118,8 @@ impl CellSources {
                 s.cells.push(r.cell);
                 s.impulse.push(r.impulse);
                 s.slope.push(r.slope);
+                s.heat.push(r.heat);
+                s.heat_slope.push(r.heat_slope);
                 s.records.push(1);
             } else {
                 let k = s.cells.len() - 1;
@@ -107,6 +127,8 @@ impl CellSources {
                     *a += b;
                 }
                 s.slope[k] += r.slope;
+                s.heat[k] += r.heat;
+                s.heat_slope[k] += r.heat_slope;
                 s.records[k] += 1;
             }
         }
@@ -144,6 +166,9 @@ pub struct StepBooks {
     pub removed: [f64; 3],
     /// Impulse of the walls on rebounding and mirrored parcels.
     pub walls: [f64; 3],
+    /// The sensible enthalpy of the parcels (J, Σ m c_p T): [start, end,
+    /// from the gas, injected, removed] (SP2b).
+    pub enthalpy: [f64; 5],
 }
 
 impl StepBooks {
@@ -161,6 +186,13 @@ impl StepBooks {
         }
         r
     }
+
+    /// end − start − (from the gas + injected + removed) of the enthalpy:
+    /// zero to round-off.
+    pub fn heat_imbalance(&self) -> f64 {
+        let [start, end, from_gas, injected, removed] = self.enthalpy;
+        end - start - (from_gas + injected + removed)
+    }
 }
 
 #[cfg(test)]
@@ -176,18 +208,23 @@ mod tests {
             slope: 0.0,
             dt: 1.0,
             decay,
+            heat: 0.5,
+            heat_slope: 0.0,
+            heat_decay: decay,
         }
     }
 
     #[test]
     fn slopes_of_one_parcel_add_up_to_its_relaxation() {
         let mut r = vec![rec(0, 1, 1, 0.5), rec(0, 1, 2, 0.5), rec(1, 1, 3, 0.25)];
-        set_slopes(&mut r, 2.0);
+        set_slopes(&mut r, 2.0, 3.0);
         let total: f64 = r.iter().map(|x| x.slope).sum();
         assert!((total - 2.0 * (1.0 - 0.5 * 0.5 * 0.25)).abs() < 1e-15);
         // the first sub-step is decayed by the two after it
         assert!((r[0].slope - 2.0 * 0.5 * 0.5 * 0.25).abs() < 1e-15);
         assert!((r[2].slope - 2.0 * 0.75).abs() < 1e-15);
+        let heat: f64 = r.iter().map(|x| x.heat_slope).sum();
+        assert!((heat - 3.0 * (1.0 - 0.5 * 0.5 * 0.25)).abs() < 1e-15);
     }
 
     #[test]

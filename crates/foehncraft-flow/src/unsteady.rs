@@ -1608,7 +1608,7 @@ fn run_one<F: FnMut(&str)>(
         );
         if let Some(sp) = spray.as_ref().filter(|s| s.config().coupling.two_way()) {
             let gm = crate::spray::gas_momentum(&sol, &geo.cell_volume);
-            crate::spray::book(&mut r, sp, None, dt, gm);
+            crate::spray::book(&mut r, sp, None, dt, gm, case.energy.is_some());
         }
         Ledger::start(r, tr.clock.time, first_step, case.balance.tolerance_energy)
     };
@@ -2115,9 +2115,29 @@ fn run_one<F: FnMut(&str)>(
                     spray_step = Some(c);
                     (lost, file)
                 }
-                None => crate::spray::step(
-                    &case, sp, &sol, mesh, geo, &loc, n, rp.time, h, out, name, csv,
-                )?,
+                None => {
+                    let heat = match fl.scalars.as_ref() {
+                        Some(sc) => sc
+                            .energy_gas(fl.dev.as_mut())?
+                            .map(|(t, cp, k)| crate::spray::GasHeat { t, cp, k }),
+                        None => None,
+                    };
+                    crate::spray::step(
+                        &case,
+                        sp,
+                        &sol,
+                        mesh,
+                        geo,
+                        &loc,
+                        n,
+                        rp.time,
+                        h,
+                        out,
+                        name,
+                        csv,
+                        heat.as_ref(),
+                    )?
+                }
             };
             if let (Some(f), Some(se)) = (file, series.as_mut()) {
                 se.add(n, rp.time, "parcels", &f)?;
@@ -2149,7 +2169,14 @@ fn run_one<F: FnMut(&str)>(
             let mut r = r;
             if let Some(sp) = spray.as_ref().filter(|s| s.config().coupling.two_way()) {
                 let gm = crate::spray::gas_momentum(&sol, &geo.cell_volume);
-                crate::spray::book(&mut r, sp, spray_step.as_ref(), h, gm);
+                crate::spray::book(
+                    &mut r,
+                    sp,
+                    spray_step.as_ref(),
+                    h,
+                    gm,
+                    case.energy.is_some(),
+                );
             }
             // the tolerance may change during the run (D40)
             ledger.tolerance = case.balance.tolerance_energy;

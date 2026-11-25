@@ -20,7 +20,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | [Thermal radiation](recipes/radiation.md) | the radiation of a prescribed temperature field by Monte Carlo bundles: walls, noise, threads, ranks and the GPU, the checks against exact solutions | 259, 281 |
 | [Turbulence models](recipes/turbulence.md) | RANS turbulence models: the model, the wall treatment by the mesh, inlet turbulence, roughness, the near-wall checks, curvature correction and QCR on any mesh, the internal flows of D45 (pipe, diffuser, U-bend) | 68, 71, 73, 74, 88, 89, 90, 113, 115, 141, 140, 194, 193, 199, 197, 204 |
 | [Boundary conditions](recipes/boundary-conditions.md) | slip walls, wedges for axisymmetric flow, inlet profiles from tables, backflow at pressure outlets, convective outlets, periodic modules, absolute or gauge pressure values (D239) | 29, 67, 220 |
-| [Lagrangian sprays](recipes/sprays.md) | spray droplets into a flow with an injector file, wall behaviour, the mass book | 242, 265, 280 |
+| [Lagrangian sprays](recipes/sprays.md) | spray droplets into a flow with an injector file, wall behaviour, the mass book | 242, 265, 280, 283 |
 | [Porous regions](recipes/porous.md) | porous blocks and honeycombs in a flow: resistances, axes, the honeycomb shorthand | 273, 275 |
 | [Immersed bodies](recipes/immersed.md) | put a body in the flow without meshing it: `[immersed]`, the permeability, forces | 270 |
 | [Species and reacting flows](recipes/species.md) | species of an ideal-gas mixture: names, compositions in mole or mass fractions, diffusion by Schmidt or Lewis numbers, mixture properties, the element ledger | 278 |
@@ -163,6 +163,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="run-ranks"></a>279 | [Run a case on ranks](recipes/meshes.md#run-ranks) | [Meshes](recipes/meshes.md) |
 | <a id="spray-two-way"></a>280 | [Let the spray push the gas (two-way coupling)](recipes/sprays.md#spray-two-way) | [Lagrangian sprays](recipes/sprays.md) |
 | <a id="radiation-paths"></a>281 | [Follow chosen bundles of a radiation call](recipes/radiation.md#radiation-paths) | [Thermal radiation](recipes/radiation.md) |
+| <a id="spray-cooling"></a>283 | [Cool a gas with droplets (two-way heat)](recipes/sprays.md#spray-cooling) | [Lagrangian sprays](recipes/sprays.md) |
 
 ## Adding a feature
 

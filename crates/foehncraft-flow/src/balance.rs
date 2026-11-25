@@ -970,10 +970,31 @@ impl AccountReport {
 impl Balance {
     /// Books an account of another module on this balance (D119), with its
     /// storage in [`Account::storage`]: it is closed by the one routine and
-    /// reported in `ledger`; the pair residuals are formed anew.
-    pub fn book(&mut self, account: Account) {
-        self.ledger.push(AccountReport::of(&account));
-        self.accounts.push(account);
+    /// reported in `ledger`; the pair residuals are formed anew. An account
+    /// of the same quantity and region already on the balance (the terms a
+    /// module booked during the run, such as the heat of a spray) joins it:
+    /// its terms follow those of `account`, whose content and storage stand.
+    pub fn book(&mut self, mut account: Account) {
+        let same = |a: &Account| a.quantity == account.quantity && a.region == account.region;
+        match self.accounts.iter().position(same) {
+            Some(i) => {
+                account.terms.append(&mut self.accounts[i].terms);
+                let at = self
+                    .ledger
+                    .iter()
+                    .position(|r| r.quantity == account.quantity && r.region == account.region);
+                let report = AccountReport::of(&account);
+                match at {
+                    Some(j) => self.ledger[j] = report,
+                    None => self.ledger.push(report),
+                }
+                self.accounts[i] = account;
+            }
+            None => {
+                self.ledger.push(AccountReport::of(&account));
+                self.accounts.push(account);
+            }
+        }
         self.pairs = pair_residuals(&self.accounts);
     }
 }

@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**124 features: 50 verified, 71 partial, 3 unverified.**
+**125 features: 50 verified, 72 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -145,6 +145,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Sprays | [Lagrangian spray parcels, one way (L12, SP1)](#sprays-one-way) | partial |
 | Sprays | [Datums, liquid flow through them and droplet statistics (SP1b)](#sprays-datums-statistics) | partial |
 | Sprays | [Two-way momentum coupling of the sprays (SP2a, D247 to D252)](#sprays-two-way-momentum) | partial |
+| Sprays | [Two-way sensible heat coupling of the sprays (SP2b, D247 to D252)](#sprays-two-way-heat) | partial |
 | Flow models | [Porous regions with a direction-dependent Darcy-Forchheimer resistance (D270, PM1)](#porous-darcy-forchheimer) | partial |
 | Flow models | [Gas and matrix temperatures in porous regions, monolithic (D271, D272, PM2)](#porous-two-temperatures) | partial |
 | Flow models | [Species transport of an ideal-gas mixture with mixture properties (L2, steam furnace SF1)](#species-transport) | partial |
@@ -1894,7 +1895,7 @@ Gaps:
 
 Gaps:
 
-- no heat exchange yet (SP2b): two-way coupling refuses the energy equation (SPR003)
+- heat exchange is the row sprays.two-way-heat (SP2b)
 - no turbulent dispersion (SP2c) and no turbulence modulation by the droplets (in no decision yet)
 - first order in time (V28.4); second order (an exponentially fitted weight per cell) is an open point of section 5.7
 - V28.6 (two neighbour cells) is covered only through the shuffled-storage test; no reference-data case of a dense spray against measurements
@@ -1903,6 +1904,31 @@ Gaps:
 - the slip-wall normal viscous stress is not booked on the gas momentum account (it is the boundary force)
 - PISO only; not with solid regions, the frozen-flow march, rotating zones or periodic boundaries (SPR003); one process
 - `spray_two_way_injectors` has no run in the verification manual or in CI
+
+<a id="sprays-two-way-heat"></a>
+
+### Two-way sensible heat coupling of the sprays (SP2b, D247 to D252)
+
+**partial** (a model without reference data; gaps written) · id `sprays.two-way-heat` · switch `[spray.coupling] mode = "two-way" with [energy]` · decisions D240, D247, D248, D249, D250, D251, D252, D254
+
+- exact: [`heat_step_relaxes_exactly_and_halves_compose`](../../crates/foehncraft-kernels/src/particle.rs): the parcel temperature relaxes exactly, T_p = T_g + (T_p0 - T_g) exp(-dt/tau_h), with tau_h = rho_p c_p d^2 / (6 Nu k) and Nu of Ranz and Marshall; two half steps give one full step
+- exact: [`a_cloud_and_its_gas_reach_one_temperature_at_any_step`](../../crates/foehncraft-flow/tests/spray_coupling.rs): V28.2, V28.3 for heat: a cloud of water at 300 K in one cell of air at 400 K, loading 0.1 and 1, steps of 0.03 to 23 thermal response times: gas and parcels end at the mixture temperature to 1e-9, the mixture keeps its enthalpy to 1e-9, the parcel enthalpy books close to 1e-12, the ledger pair to the bit, the gas never gains heat
+- consistency: [`the_heat_coupling_converges_at_first_order_in_the_step`](../../crates/foehncraft-flow/tests/spray_coupling.rs): V28.4 for heat: the gas temperature of the same cell with halved steps against a fourth-order reference of the two-temperature relaxation: observed order 1.03 and 1.04 (above 0.9 required)
+- exact: [`passes_give_the_same_bits_on_any_number_of_threads`](../../crates/foehncraft-flow/tests/spray_coupling.rs): V28.1 with heat: spray.csv bitwise equal on 1 and 4 threads, for the momentum case and the heat case
+- exact: [`sources_do_not_depend_on_parcel_order_or_threads`](../../crates/foehncraft-particles/tests/coupling.rs): V28.1: the heat sources and the heat closing step bitwise equal with the parcel storage reversed and on one thread; the heat slopes of a parcel at most m c_p; the enthalpy books close to round-off
+- consistency: [`a_closed_box_with_a_spray_closes_every_step_and_the_run`](../../crates/foehncraft-flow/src/balance.rs): accounts of the same quantity and region booked by two modules are one account (the spray heat on the thermal account of the energy equation)
+- contract (diagnostics): [`spray_cooling`](../../examples/cases/flow/spray_cooling.toml): 10 g/s of water at 20 °C sprayed into air at 300 °C in a duct: about 6.6 kW taken from the air, the mean air temperature falls by about 50 K; gas heat and coupling numbers in spray.csv (passes in CI (set linux-3), not yet in the manual) ([results](../gallery/sprays.md#spray-cooling))
+- contract (schema): [`spray_cooling_injectors`](../../examples/cases/flow/spray_cooling_injectors.toml): the included injector file of spray_cooling with the liquid temperature ([results](../cases/flow.md#lagrangian-sprays)) **missing**
+
+Gaps:
+
+- sensible heat only: no evaporation, no latent heat, no vapour (SP4, SP5); the droplets can get hotter than boiling
+- constant liquid properties (density, specific heat); the gas conductivity and specific heat of the fluid at the cell
+- uniform droplet temperature (no internal conduction, Biot number not checked); no radiation to the droplets
+- the spray-cooling case is checked against its own energy balance only; V28.16 (one-dimensional dusty-gas duct) and V28.21 (plug-flow reference, SP5) are not run
+- with the default max_passes = 3 most steps of the cooling case end above the tolerance (the temperature lag falls by about 7 per pass); the case asks for 4
+- not with solid regions (CHT) or an algorithm other than PISO (SPR003); not checked with a density that varies with temperature (stage 7c); one process
+- `spray_cooling_injectors` has no run in the verification manual or in CI
 
 ## Flow models
 
