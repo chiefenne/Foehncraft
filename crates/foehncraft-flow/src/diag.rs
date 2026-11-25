@@ -196,6 +196,9 @@ codes! {
     REG_INITIAL_VALUE = "REG008", Error, "A start temperature, k, omega or epsilon of `[regions.<name>.initial]` that is not > 0.";
     POROUS = "POR001", Error, "A porous region without its matrix (`[regions.<name>.porous]` with `viscous`/`inertial` or `honeycomb`), contradicting or invalid values, direction-dependent values without `axes`, a matrix in a region that is not porous, or with `[energy]` a matrix without `solid`, porosity, h or a.";
     POROUS_UNSUPPORTED = "POR002", Error, "A setting that does not yet work with porous regions (porous plan, D279): with the energy equation a cycle-averaged or accelerated energy mode or a density that varies, passive scalars, a turbulence model, a rotating zone, the GPU (stage PM5), or direction-dependent resistances whose axes are turned against the mesh axes.";
+    SPECIES = "SPE001", Error, "Invalid `[species]` settings or compositions: an unknown species (the GRI-Mech 3.0 set), a species named twice, a closure species not in `names`, fractions that do not sum to 1 or leave the closure species negative, both or neither of `mole_fractions` and `mass_fractions`, an inlet without `[boundary.<name>.species]`, `properties = \"mixture\"` or `diffusion = \"lewis\"` without `[energy]`, or a variable density without an ideal-gas fluid with its molar mass.";
+    SPECIES_UNSUPPORTED = "SPE002", Error, "A setting that does not yet work with species (stage SF1): regions (solids, several fluids, porous regions); conjugate walls come with SF5.";
+    SPECIES_CLOSURE = "SPE003", Warning, "The transported mass fractions summed to more than 1 somewhere by more than 1e-4, so the closure species was held at zero there: the solve is not converged, the tolerance of `[solver.scalar]` is too loose, or the limiter lets extrema pass (`limiter_epsilon`).";
     REG_INITIAL_INLET = "REG009", Error, "`temperature = \"inlet\"` in `[regions.<name>.initial]` for a region whose fluid part has no inlet with `[boundary.<name>.energy] temperature`.";
     REG_START = "REG010", Note, "The start values of the regions and fluid parts and where they come from: given, a boundary value, a Laplace solve between the pressure boundaries of a part, or the inlets.";
     // pressure values absolute or gauge (D239)
@@ -545,7 +548,7 @@ mod tests {
                     "CASE", "SCHED", "BC", "SCAL", "RUN", "GEN", "DIV", "BAL", "EXPR", "MAT",
                     "REG", "MESH", "TURB", "MRF", "SLD", "ROT", "STAT", "ENE", "THM", "CHT",
                     "TOOL", "LIM", "MCP", "ACC", "CYC", "BUO", "FRZ", "PRS", "SPR", "DAT", "POR",
-                    "IMM"
+                    "IMM", "SPE"
                 ]
                 .contains(&p),
                 "{}",

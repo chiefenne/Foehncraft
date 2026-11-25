@@ -2863,6 +2863,11 @@ fn run_one<F: FnMut(&str)>(
         None
     };
     let density = crate::density::summary(&mut fl, warnings)?;
+    let species_sum = crate::species::summary(&mut fl, mesh, geo, true)?;
+    let species_res = fl
+        .scalars()
+        .and_then(|s| s.species())
+        .map(|l| l.res.clone());
     let sol = Solution {
         state: fl.state()?,
         disc: &fl.disc,
@@ -2987,6 +2992,21 @@ fn run_one<F: FnMut(&str)>(
         && let Some(e) = &sm.energy
     {
         last_balance.book(balance::thermal_account(e, &sm.boundaries));
+    }
+    // the species and element accounts of the last step (SF1, D119)
+    if let Some(sp) = species_sum {
+        for l in crate::species::summary_lines(&sp) {
+            lg.line(&l);
+        }
+        if let Some(d) = crate::species::closure_finding(&sp) {
+            lg.warn(&format!("{}: {}", d.code, d.message));
+            warnings.push(d);
+        }
+        if let Some(r) = &species_res {
+            for a in crate::species::accounts(&sp.flows, r) {
+                last_balance.book(a);
+            }
+        }
     }
     let balance_summary = BalanceSummary {
         last: last_balance,

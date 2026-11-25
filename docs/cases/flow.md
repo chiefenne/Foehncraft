@@ -17,6 +17,7 @@ On this page:
 - [Lagrangian sprays](#lagrangian-sprays)
 - [Porous regions](#porous-regions)
 - [Immersed bodies](#immersed-bodies)
+- [Species](#species)
 
 Stage 4: steady incompressible laminar flow, SIMPLEC with the Rhie–Chow
 interpolation ([explanation](../verification/stage4.md)). Stage 5: transient
@@ -351,3 +352,15 @@ writes χ.
 | Case file | Mesh | Shows | Where |
 |---|---|---|---|
 | `flow/immersed_cylinder_re20.toml` | generated hex 2D, 440 × 82 cells (h = D/20), no cylinder in the mesh | Schäfer & Turek 2D-1 with the cylinder as a penalised body: C_D 5.581 (in range), Δp 0.9 % above, C_L 35 % above the range (smeared wall); fails beyond 40 % of the range midpoint | [gallery 270](../gallery/immersed.md#penalised-cylinder), [recipe 270](../recipes/immersed.md#penalised-body) |
+
+## Species
+
+Mixtures of ideal gases (steam furnace stage SF1): `[species]` with the
+GRI-Mech 3.0 species, N − 1 mass fractions transported and the closure
+species by 1 − Σ; with the variable density ρ = p₀ M/(R T) of the mixture
+and its c_p, λ and μ. The keys are on the [key page](flow-keys.md#species).
+
+| Case file | Mesh | Shows | Where |
+|---|---|---|---|
+| `flow/species_binary_diffusion.toml` | generated hex 2D, 100 × 2 cells | CH₄ diffusing in N₂ at rest: the exact decay of a cosine mode, BDF2 to t = 50 s; L2 error 9.5·10⁻⁶, species and element accounts closed to round-off | [gallery 278](../gallery/species.md#species-transport), [recipe 278](../recipes/species.md#species-transport) |
+| `flow/species_coaxial_jet.toml` | generated hex 2D wedge, 90 × 40 cells | a laminar methane jet (r = 5 mm, 1 m/s) in a coflow of air at 0.2 m/s, isothermal, density from the mixture's molar mass (0.65 to 1.17 kg/m³), mixture properties from kinetic theory; 154 iterations, element accounts closed to 6.4·10⁻⁹ | [gallery 278](../gallery/species.md#species-transport), [recipe 278](../recipes/species.md#species-transport) |

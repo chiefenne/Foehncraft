@@ -1,0 +1,103 @@
+# A laminar methane jet in a coflow of air: species transport of a
+# three-species ideal-gas mixture on the variable density (stage SF1).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/species_coaxial_jet.toml
+#
+# Pure CH4 leaves a nozzle of radius 5 mm at 1 m/s into a coflow of air
+# (x_O2 = 0.21, x_N2 = 0.79) at 0.2 m/s; both at 300 K and 1 atm, so the
+# mixture is isothermal and its density follows the molar mass alone,
+# ρ = p₀ M/(R T): 0.65 kg/m³ in the jet, 1.17 kg/m³ in the air. The jet
+# Reynolds number is ρ U D/μ = 590 (laminar). Axisymmetric: a wedge of
+# 2° about the x axis, y is the radius, out to r = 50 mm; the domain is
+# 0.3 m long and open at the far end. N2 is the closure species
+# (Y_N2 = 1 − Y_CH4 − Y_O2); c_p, λ and μ are those of the local mixture
+# (NASA-7 and kinetic theory, GRI-Mech 3.0 data), ρ D_i = μ/Sc with
+# Sc = 0.7. The report gives the extremes of each species and the
+# closure of the carbon, hydrogen, oxygen and nitrogen accounts.
+
+case_format = "0.7"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [0.3, 0.05, 0.01]
+cells = [90, 40, 1]
+segments = { x = [ { to = 0.3, cells = 90, ratio = 6.0 } ], y = [ { to = 0.005, cells = 12, ratio = 1.0 }, { to = 0.05, cells = 28, ratio = 8.0 } ] }
+split = [ { boundary = "xmin", axis = "y", at = 0.005, name = "coflow" } ]
+wedge = 2.0
+
+[materials.gas]
+kind = "gas"
+description = "the start values of an ideal gas with the molar mass of air; the mixture replaces c_p, k and mu"
+molar_mass = 0.0289647
+density = { form = "ideal-gas", source = "ideal gas, rho = p M / (R T)" }
+specific_heat = 1005.0
+conductivity = 0.0263
+viscosity = 1.85e-5
+
+[fluid]
+material = "gas"
+temperature = 300.0
+operating_pressure = 101325.0
+pressure_values = "gauge"
+
+[energy]
+initial = 300.0
+density = "variable"
+
+[species]
+names = ["CH4", "O2", "N2"]
+initial = { mole_fractions = { O2 = 0.21, N2 = 0.79 } }
+diffusion = "schmidt"
+schmidt = 0.7
+
+[initial]
+velocity = [0.2, 0.0, 0.0]
+
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [1.0, 0.0, 0.0]
+[boundary.xmin.energy]
+temperature = 300.0
+[boundary.xmin.species]
+mole_fractions = { CH4 = 1.0 }
+
+[boundary.coflow]
+type = "velocity-inlet"
+velocity = [0.2, 0.0, 0.0]
+[boundary.coflow.energy]
+temperature = 300.0
+[boundary.coflow.species]
+mole_fractions = { O2 = 0.21, N2 = 0.79 }
+
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+
+[boundary.ymax]
+type = "slip-wall"
+[boundary.ymax.energy]
+heat_flux = 0.0
+
+[boundary.zmin]
+type = "wedge"
+[boundary.zmax]
+type = "wedge"
+
+[solver]
+tolerance = 1e-8
+max_iterations = 2500
+log_every = 100
+
+[solver.scalar]
+limiter = "mlp"
+
+[verification]
+require_convergence = true
+
+[output]
+wall_csv = false
+lines = [
+  { name = "axis", from = [0.0, 0.0, 0.0], to = [0.3, 0.0, 0.0], points = 301 },
+  { name = "x50mm", from = [0.05, 0.0, 0.0], to = [0.05, 0.05, 0.0], points = 201 },
+]

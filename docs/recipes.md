@@ -23,6 +23,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | [Lagrangian sprays](recipes/sprays.md) | spray droplets into a flow with an injector file, wall behaviour, the mass book | 242, 265, 280, 283, 285 |
 | [Porous regions](recipes/porous.md) | porous blocks and honeycombs in a flow: resistances, axes, the honeycomb shorthand | 273, 275 |
 | [Immersed bodies](recipes/immersed.md) | put a body in the flow without meshing it: `[immersed]`, the permeability, forces | 270 |
+| [Species and reacting flows](recipes/species.md) | species of an ideal-gas mixture: names, compositions in mole or mass fractions, diffusion by Schmidt or Lewis numbers, mixture properties, the element ledger | 278 |
 | [Expressions and materials](recipes/properties.md) | values as expressions of x, y, z and t, constants and tables, wall mass flux, the material database, regions | 31, 32 |
 | [Python](recipes/python.md) | the `foehncraft` package: cases, expressions, runs with callbacks, results, materials, studies | 33 |
 | [Verification](recipes/verification.md) | the discretisation uncertainty of a sweep (GCI), the generated verification manual | 34, 35, 165, 170, 271 |
@@ -158,6 +159,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="natural-convection"></a>272 | [Set up a natural convection case and check it: a closed cavity, an open plate, a channel with a net flow](recipes/energy.md#natural-convection) | [Energy equation and heat transfer](recipes/energy.md) |
 | <a id="porous-flow"></a>273 | [Put a porous block or a honeycomb into a flow](recipes/porous.md#porous-flow) | [Porous regions](recipes/porous.md) |
 | <a id="porous-two-temperatures"></a>275 | [Give the matrix a temperature of its own: a packed bed or a heat store](recipes/porous.md#porous-two-temperatures) | [Porous regions](recipes/porous.md) |
+| <a id="species-transport"></a>278 | [Carry the species of a gas mixture with the flow](recipes/species.md#species-transport) | [Species and reacting flows](recipes/species.md) |
 | <a id="run-ranks"></a>279 | [Run a case on ranks](recipes/meshes.md#run-ranks) | [Meshes](recipes/meshes.md) |
 | <a id="spray-two-way"></a>280 | [Let the spray push the gas (two-way coupling)](recipes/sprays.md#spray-two-way) | [Lagrangian sprays](recipes/sprays.md) |
 | <a id="radiation-paths"></a>281 | [Follow chosen bundles of a radiation call](recipes/radiation.md#radiation-paths) | [Thermal radiation](recipes/radiation.md) |

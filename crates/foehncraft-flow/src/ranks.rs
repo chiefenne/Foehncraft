@@ -519,6 +519,55 @@ pub fn check_cases() -> Result<Vec<CheckCase>> {
             iterations: 5,
         },
         CheckCase {
+            name: "channel, polyhedra, species with mixture properties (SF1)",
+            case: FlowCase::from_toml(
+                r#"
+            case_format = "0.6"
+            [mesh.generate]
+            type = "poly"
+            dimension = 3
+            upper = [0.02, 0.01, 0.005]
+            cells = [8, 5, 3]
+            perturb = 0.15
+            [fluid]
+            density = 1.2
+            viscosity = 1.85e-5
+            specific_heat = 1005.0
+            conductivity = 0.0263
+            temperature = 300.0
+            [energy]
+            initial = 300.0
+            [species]
+            names = ["CH4", "O2", "N2"]
+            initial = { mole_fractions = { O2 = 0.21 } }
+            [boundary.xmin]
+            type = "velocity-inlet"
+            velocity = [0.2, 0.02, 0.0]
+            [boundary.xmin.energy]
+            temperature = 300.0
+            [boundary.xmin.species]
+            mole_fractions = { CH4 = 0.4, O2 = 0.12 }
+            [boundary.xmax]
+            type = "static-pressure-outlet"
+            pressure = 0.0
+            [boundary.ymin]
+            type = "wall"
+            [boundary.ymin.energy]
+            temperature = 330.0
+            [boundary.ymax]
+            type = "wall"
+            [boundary.zmin]
+            type = "symmetry"
+            [boundary.zmax]
+            type = "wall"
+            [solver]
+            max_iterations = 100
+            "#,
+                std::path::Path::new("."),
+            )?,
+            iterations: 10,
+        },
+        CheckCase {
             name: "channel, polyhedra, SST",
             case: with(
                 poly,
@@ -589,8 +638,8 @@ impl RanksRun {
 /// SIMPLEC, PISO or the coupled solver, laminar or with the k-ω SST or a
 /// k-ε model, with passive scalars and the energy equation of one fluid;
 /// from the start fields or a restart file (W6); without gravity, turning
-/// zones, a schedule, levels, regions or the model options that are not on
-/// ranks yet.
+/// zones, a schedule, levels, regions, the variable density or the model
+/// options that are not on ranks yet.
 pub fn supported(case: &FlowCase) -> Result<()> {
     use crate::turbulence::{QcrMode, TurbulenceModel as Model};
     let n = &case.run.ranks;
@@ -624,6 +673,10 @@ pub fn supported(case: &FlowCase) -> Result<()> {
             "regions (conjugate heat transfer)",
         ),
         (!case.immersed.is_empty(), "immersed bodies"),
+        (
+            crate::density::wanted(case),
+            "the variable density (stage 7c)",
+        ),
     ]
     .into_iter()
     .filter_map(|(on, what)| on.then_some(what))

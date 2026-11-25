@@ -24,6 +24,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | [Lagrangian sprays](gallery/sprays.md) | droplets as Lagrangian parcels in the gas flow: injectors, drag, gravity, wall behaviour, the mass book | 242, 265, 280, 283, 285 |
 | [Porous regions](gallery/porous.md) | flow through porous matrices with a direction-dependent Darcy–Forchheimer resistance: a ceramic honeycomb, the exact pressure drop of a block | 273, 275 |
 | [Immersed bodies](gallery/immersed.md) | bodies in the flow without a body-fitted mesh: Brinkman penalisation of primitive bodies (L13 stage 1) | 270 |
+| [Species and reacting flows](gallery/species.md) | species transport of ideal-gas mixtures on the variable density: mixture properties from kinetic theory, the closure species, the element ledger (steam furnace path, SF1) | 278 |
 | [Expressions and materials](gallery/properties.md) | boundary values, body forces and viscosities as expressions, the material database, regions, walls with a mass flux | 23 |
 | [Python](gallery/python.md) | cases built, run and studied from Python: expressions with Python operators, callbacks, study tables | 24 |
 | [Verification](gallery/verification.md) | the discretisation uncertainty of mesh sweeps (grid convergence index) and the generated verification manual | 25, 170, 271 |
@@ -145,6 +146,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | <a id="natural-convection"></a>272 | [Natural convection benchmarks: a heated square cavity at Ra 10³ to 10⁶, a vertical plate and mixed convection with flow reversal](gallery/energy.md#natural-convection) | [Energy equation and heat transfer](gallery/energy.md) |
 | <a id="porous-flow"></a>273 | [A ceramic honeycomb in an air channel, and a porous block against the exact pressure drop](gallery/porous.md#porous-flow) | [Porous regions](gallery/porous.md) |
 | <a id="porous-two-temperatures"></a>275 | [Charging a honeycomb heat store, and Schumann's bed against the exact solution](gallery/porous.md#porous-two-temperatures) | [Porous regions](gallery/porous.md) |
+| <a id="species-transport"></a>278 | [A methane jet in a coflow of air, and binary diffusion against the exact solution](gallery/species.md#species-transport) | [Species and reacting flows](gallery/species.md) |
 | <a id="run-ranks"></a>279 | [Solved on five ranks, written by one: a run on ranks](gallery/meshes.md#run-ranks) | [Meshes](gallery/meshes.md) |
 | <a id="spray-two-way"></a>280 | [A water spray that drives the air](gallery/sprays.md#spray-two-way) | [Lagrangian sprays](gallery/sprays.md) |
 | <a id="furnace-paths"></a>281 | [Paths of energy bundles in the box furnace, and the net flux into every wall](gallery/radiation.md#furnace-paths) | [Thermal radiation](gallery/radiation.md) |

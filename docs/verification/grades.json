@@ -1433,6 +1433,25 @@
    "range": {}
   },
   {
+   "id": "species.transport",
+   "title": "Species transport of an ideal-gas mixture with mixture properties (L2, steam furnace SF1)",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "no chemistry and no heat release (SF2, SF3); no enthalpy flux of the species diffusion in the energy equation (zero for isothermal mixing, needed with SF2)",
+    "Schmidt or Lewis numbers only: no mixture-averaged or multicomponent diffusion with a correction velocity (differential diffusion of hydrogen, SF2h)",
+    "one fluid region: no solids, porous regions or several fluids with species (SPE002)",
+    "the mixture is evaluated on the host once per outer iteration (as the energy properties); its device kernel follows with SF2; not run on a GPU in this PR",
+    "the MLP limiter lets mass fractions leave [0, 1] by its smooth-extremum allowance (a few 1e-6 in the jet); strictly bounded (limiter_epsilon = 0) stalls the steady residual",
+    "the ledger takes the linear-upwind reconstruction without the clip of bounded = true, and the bounded BDF2 fallback is not booked in the storage",
+    "no measured reference case of turbulent mixing yet (a jet with measured mass fractions)",
+    "on ranks without the variable density (stage 7c is refused on ranks, its cell and closed-volume sums need the halo and global sums) and without the MLP limiter (vertex setup not on ranks yet)"
+   ],
+   "range": {}
+  },
+  {
    "id": "parallel.flow-models-ranks",
    "title": "Turbulence, energy, scalars, transient runs and the coupled solver on several ranks, bitwise one rank (MPI step W5 part 2)",
    "grade": "partial",

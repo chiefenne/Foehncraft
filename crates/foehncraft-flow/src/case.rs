@@ -884,6 +884,14 @@ pub struct FlowCase {
     /// from the boundary tables by the reader (part of the case hash).
     #[serde(skip)]
     pub boundary_scalar: BTreeMap<String, BTreeMap<String, crate::scalar::ScalarBoundary>>,
+    /// The species of an ideal-gas mixture (stage SF1): `[species]`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub species: Option<crate::species::SpeciesSection>,
+    /// The species sub-tables of the boundaries,
+    /// `[boundary.<boundary>.species]`: moved here from the boundary tables
+    /// by the reader.
+    #[serde(skip)]
+    pub boundary_species: BTreeMap<String, crate::species::Composition>,
     /// The energy equation of the fluid (stage 7a1): `[energy]`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub energy: Option<crate::energy::EnergySection>,
@@ -1183,6 +1191,7 @@ impl FlowCase {
         // the per-physics sub-tables of the boundaries (D116)
         let boundary_scalar = crate::scalar::extract_boundary_tables(&mut v)?;
         let boundary_energy = crate::energy::extract_boundary_tables(&mut v)?;
+        let boundary_species = crate::species::extract_boundary_tables(&mut v)?;
         // the changed default of D239 alone does not need the table: the
         // text keeps the line numbers of its errors
         let defaulted = !stated && has_convention(&v);
@@ -1190,6 +1199,7 @@ impl FlowCase {
             && notes.len() == usize::from(defaulted)
             && boundary_scalar.is_empty()
             && boundary_energy.is_empty()
+            && boundary_species.is_empty()
         {
             toml::from_str(text).map_err(|e| diag::err(toml_diagnostic(text, &e)))?
         } else {
@@ -1207,6 +1217,7 @@ impl FlowCase {
         c.case_format = Some(foehncraft_mesh::case_format::CURRENT.into());
         c.boundary_scalar = boundary_scalar;
         c.boundary_energy = boundary_energy;
+        c.boundary_species = boundary_species;
         c.notes = notes;
         c.overrides = sets.to_vec();
         if let Some(f) = &c.mesh.file {
@@ -1416,9 +1427,11 @@ impl FlowCase {
         for (name, b) in &self.boundary {
             b.compile(name, &env, transient)?;
         }
+        crate::species::validate(self)?;
+        let (scalars, boundary_scalar) = crate::species::scalar_sections(self)?;
         crate::scalar::validate(
-            &self.scalars,
-            &self.boundary_scalar,
+            &scalars,
+            &boundary_scalar,
             &self.boundary,
             &self.solver.scalar,
             &env,
@@ -1461,7 +1474,10 @@ impl FlowCase {
         {
             c.fluid.viscosity = Some(Scalar::Number(mu));
         }
-        let mut text = if c.boundary_scalar.is_empty() && c.boundary_energy.is_empty() {
+        let mut text = if c.boundary_scalar.is_empty()
+            && c.boundary_energy.is_empty()
+            && c.boundary_species.is_empty()
+        {
             toml::to_string_pretty(&c)?
         } else {
             // the scalar and energy sub-tables live outside the flow
@@ -1477,6 +1493,11 @@ impl FlowCase {
                 for (b, t) in &c.boundary_energy {
                     if let Some(toml::Value::Table(bt)) = bs.get_mut(b) {
                         bt.insert("energy".into(), toml::Value::try_from(t)?);
+                    }
+                }
+                for (b, t) in &c.boundary_species {
+                    if let Some(toml::Value::Table(bt)) = bs.get_mut(b) {
+                        bt.insert("species".into(), toml::Value::try_from(t)?);
                     }
                 }
             }
@@ -3792,6 +3813,25 @@ pub fn run_steered(
             summary
                 .last
                 .book(balance::thermal_account(e, &sm.boundaries));
+        }
+        // the species and element accounts (SF1, D119)
+        if let Some(sp) = crate::species::summary(&mut fl, &mesh, &geo, false)? {
+            for l in crate::species::summary_lines(&sp) {
+                lg.line(&l);
+            }
+            if let Some(d) = crate::species::closure_finding(&sp) {
+                lg.warn(&format!("{}: {}", d.code, d.message));
+                rep.warnings.push(d);
+            }
+            let r = fl
+                .scalars()
+                .and_then(|s| s.species())
+                .map(|l| l.res.clone());
+            if let Some(r) = r {
+                for a in crate::species::accounts(&sp.flows, &r) {
+                    summary.last.book(a);
+                }
+            }
         }
         let periodic = periodic_summaries(&mut fl, &mesh, &mut lg)?;
         let turbulence = turbulence_summary(&mut fl, &mesh, &mut lg, &mut rep.warnings)?;

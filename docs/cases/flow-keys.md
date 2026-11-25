@@ -525,6 +525,28 @@ every output file (`properties_hash`, `materials_database`).
 | `regions.<name>.initial.temperature` | start temperature of the region (K, a number or an expression), or `"inlet"` for a fluid region: the inflow-weighted inlet temperature of its fluid part; the only key of a solid region (REG007) |
 | `regions.<name>.initial.k` with `.omega` or `.epsilon` | turbulence start values of a fluid region |
 
+<a id="species"></a>
+**Species** (steam furnace stage SF1, [recipe 278](../recipes/species.md#species-transport)).
+`[species]` names the species of an ideal-gas mixture; their mass
+fractions are the fields `Y_<name>`:
+
+| Key | Meaning |
+|---|---|
+| `species.names` | the species, names of GRI-Mech 3.0 (`CH4`, `O2`, `N2`, `H2O`, `CO2`, `CO`, `H2`, `AR`, …); at least two |
+| `species.closure` | the species by Y = 1 − Σ of the others (default: the last name) |
+| `species.initial` | start composition: `mole_fractions = { … }` (numbers) or `mass_fractions = { … }` (numbers or expressions of x, y, z); a species left out is 0, the closure species takes the rest |
+| `species.diffusion` | `schmidt` (ρ D_i = μ/Sc_i, default) or `lewis` (ρ D_i = λ/(c_p Le_i), needs `[energy]`) |
+| `species.schmidt`, `species.lewis` | one number, or one per species `{ CH4 = 0.71 }` (defaults 0.7 and 1) |
+| `species.turbulent_schmidt` | Sc_t of the turbulent diffusivity μ_t/Sc_t (default 0.7) |
+| `species.properties` | `mixture` (default, needs `[energy]`): c_p, λ, μ of the mixture (NASA-7, Chapman–Enskog, Wilke, Mathur); `fluid`: the fluid's own (only the molar mass follows the mixture) |
+| `species.exact` | exact mass fractions per transported species (expressions of x, y, z, t), for the verification |
+| `boundary.<name>.species` | composition at a boundary, as `species.initial`; every inlet needs one (SPE001) |
+
+With `[energy] density = "variable"` the density is p₀ M/(R T) with the
+mixture's molar mass; the fluid must be a material with `molar_mass` and
+`density = { form = "ideal-gas" }`. Species run in one fluid region
+(SPE002). SPE003 warns when the transported fractions sum above 1 + 10⁻⁴.
+
 **Interfaces** (conjugate cases, stage 7d2, [recipe 160](../recipes/energy.md#cht-contact)).
 `[interfaces.<name>]` puts a resistance into the faces between two regions:
 

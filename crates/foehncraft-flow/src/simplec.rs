@@ -2062,6 +2062,7 @@ impl Flow {
         if let Some(sc) = self.scalars.as_mut() {
             sc.load(self.dev.as_mut(), &s.scalars)?;
         }
+        self.upload_species_viscosity()?;
         if s.periodic_force.len() == self.periodic.len() {
             for (d, &b) in self.periodic.iter_mut().zip(&s.periodic_force) {
                 d.beta = b;
@@ -2821,7 +2822,12 @@ impl Flow {
             return Ok(());
         };
         let tb = self.fluid_boundary_temperature(&t)?;
+        // the molar mass of a species mixture (SF1)
+        let molar = self.scalars.as_ref().and_then(|s| s.species_molar_factor());
         let d = self.density.as_deref_mut().expect("density");
+        if molar.is_some() {
+            d.set_molar(molar);
+        }
         d.refresh(&t, &tb);
         self.dev.set_density(&d.rho, &d.rho_face)?;
         self.phys.rho_var = Some(std::sync::Arc::new((d.rho.clone(), d.rho_face.clone())));
@@ -2991,6 +2997,23 @@ impl Flow {
         self.dev.set_balanced_force(&a.jump, &a.pb)
     }
 
+    /// The viscosity of the mixture after the last species refresh (SF1)
+    /// into the momentum equations' laminar viscosity, so that the next
+    /// momentum solve depends on the solved fields only (as after a
+    /// restart).
+    fn upload_species_viscosity(&mut self) -> Result<()> {
+        let Some(mu) = self.scalars.as_ref().and_then(|s| s.species_viscosity()) else {
+            return Ok(());
+        };
+        let target = match self.turbulence.as_ref() {
+            Some(t) => t.scalar_coupling(self.dev.as_ref()).mu,
+            None => self.dev.face_viscosity(),
+        };
+        self.dev.upload(target, &mu)?;
+        self.phys.mu_face = Some(std::sync::Arc::new(mu));
+        Ok(())
+    }
+
     /// The scalar solves with the turbulent coupling `coupling` (that of
     /// the flow's own turbulence model, or, in the energy view of a
     /// conjugate case, the fluid view's mapped onto the full mesh).
@@ -3035,6 +3058,7 @@ impl Flow {
         if let Some(mu) = sc.energy_viscosity() {
             self.phys.mu_face = Some(std::sync::Arc::new(mu.to_vec()));
         }
+        self.upload_species_viscosity()?;
         self.dev.sync()?;
         self.timings.scalars += t.elapsed().as_secs_f64();
         if !res.finite() {

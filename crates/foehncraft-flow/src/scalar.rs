@@ -742,6 +742,10 @@ struct EnergyField {
     cells: Vec<[f64; 3]>,
     /// μ(T) per face of the last refresh, if the viscosity follows T.
     mu_face: Option<Vec<f64>>,
+    /// The properties of a species mixture (stage SF1, `properties =
+    /// "mixture"`): c_p per cell and face, λ and μ per face, in place of
+    /// the fluid's.
+    mixture: Option<MixtureProps>,
     /// h_s(T) per material, in which the equation is conservative (D150).
     h: Vec<crate::energy::Enthalpy>,
     /// The thermal wall function on the fluid side of the interface faces
@@ -805,6 +809,20 @@ pub struct VarRho {
     pub drho_dt: Vec<f64>,
     /// dp₀/dt (Pa/s), the heat source of the pressure work in the fluid.
     pub pressure_work: f64,
+}
+
+/// The properties of a species mixture for the energy equation and the
+/// flow (stage SF1).
+#[derive(Debug, Clone, Default)]
+pub struct MixtureProps {
+    /// c_p per cell (own and halo cells).
+    pub cp_cell: Vec<f64>,
+    /// c_p per face.
+    pub cp_face: Vec<f64>,
+    /// λ per face.
+    pub k_face: Vec<f64>,
+    /// μ per face.
+    pub mu_face: Vec<f64>,
 }
 
 impl EnergyField {
@@ -979,6 +997,9 @@ pub struct Scalars {
     vert: Option<usize>,
     /// The factors of `limiter_epsilon_scaling = "cell"` on the device.
     eps_cell: Option<Buf>,
+    /// The species of a mixture (stage SF1): their fields among the
+    /// scalars and the mixture of the last refresh.
+    species: Option<Box<crate::species::Link>>,
 }
 
 impl Scalars {
@@ -1300,6 +1321,7 @@ impl Scalars {
             last_step: None,
             vert,
             eps_cell,
+            species: None,
         };
         let cells: Vec<[f64; 3]> = geo.cell_centroid[..nc].to_vec();
         s.set_values(dev, &cells, 0.0, true)?;
@@ -1425,6 +1447,9 @@ impl Scalars {
         );
         let xf = &self.xf;
         let eps_cell = self.eps_cell;
+        // the mixture (SF1) is that of the fields at the start of the solve
+        // and is renewed at its end, so that it depends on the solved fields
+        // only (a restart continues bitwise)
         for f in self.fields.iter_mut() {
             let s = f.settings.clone();
             let alpha = s.alpha(tr);
@@ -1680,6 +1705,7 @@ impl Scalars {
                 dev.subtract(f.phi, at - hf.bulk.0)?;
             }
         }
+        refresh_species(dev, self.species.as_deref_mut(), &mut self.fields)?;
         Ok(out)
     }
 
@@ -1938,6 +1964,8 @@ impl Scalars {
                 None => missing.push(crate::porous_energy::FIELD.to_string()),
             }
         }
+        // the mixture of the loaded mass fractions and temperature
+        refresh_species(dev, self.species.as_deref_mut(), &mut self.fields)?;
         Ok(missing)
     }
 
@@ -3104,6 +3132,7 @@ impl Scalars {
             k_face: vec![k0; nf],
             heat: vec![0.0; nc],
             mu_face: None,
+            mixture: None,
             h: enthalpy,
             iface: None,
             iface_law: (turb.law, turb.prt),
@@ -3323,6 +3352,15 @@ fn refresh_energy(
     e.iface_g = iface_g;
     e.cp_face = cp_face;
     e.k_face = k_face;
+    if let Some(mx) = e.mixture.as_ref() {
+        // a species mixture (SF1): its c_p and λ in place of the fluid's
+        let n = nc.min(mx.cp_cell.len());
+        e.cp_cell[..n].copy_from_slice(&mx.cp_cell[..n]);
+        if mx.cp_face.len() == nf {
+            e.cp_face.copy_from_slice(&mx.cp_face);
+            e.k_face.copy_from_slice(&mx.k_face);
+        }
+    }
     for (what, vals, ts, cell) in [
         ("specific_heat", &e.cp_cell, &tv, true),
         ("specific_heat", &e.cp_face, &tf, false),
@@ -3416,6 +3454,17 @@ fn refresh_energy(
             dev.upload(b, &v)?;
             e.mu_face = Some(v);
         }
+    }
+    // the mixture's μ of a species case (SF1)
+    if let Some(mu) = e
+        .mixture
+        .as_ref()
+        .map(|m| &m.mu_face)
+        .filter(|m| m.len() == nf)
+        && let Some(b) = turb.map(|tc| tc.mu).or(link.map(|l| l.mu_face))
+    {
+        dev.upload(b, mu)?;
+        e.mu_face = Some(mu.clone());
     }
     // the thermal conditions
     let (mut a, mut b, mut q) = (vec![1.0; nb], vec![0.0; nb], vec![0.0; nb]);
@@ -3670,7 +3719,7 @@ pub fn attach(
     mesh: &Mesh,
     geo: &Geometry,
 ) -> Result<()> {
-    if case.scalars.is_empty() && case.energy.is_none() {
+    if case.scalars.is_empty() && case.energy.is_none() && case.species.is_none() {
         return Ok(());
     }
     // conjugate heat transfer: the energy equation on the full mesh
@@ -3679,27 +3728,219 @@ pub fn attach(
     }
     let env = case.env()?;
     let transient = case.time.is_some();
+    let (scalars, tables) = crate::species::scalar_sections(case)?;
     let mut s = Scalars::new(
         fl.dev.as_mut(),
         mesh,
         geo,
         &fl.disc,
         fl.phys.rho,
-        &case.scalars,
-        &case.boundary_scalar,
+        &scalars,
+        &tables,
         &case.boundary,
         &case.solver.scalar,
         &env,
         transient,
     )?;
     s.add_energy(fl.dev.as_mut(), mesh, geo, &fl.disc, case, &env, transient)?;
+    s.add_species(fl.dev.as_mut(), &fl.disc, case, fl.phys.rho)?;
     fl.add_scalars(s);
     Ok(())
 }
 
+/// Recomputes the mixture of a species case (SF1) from the current mass
+/// fractions and temperature: the face diffusivities ρ D_i of the species
+/// fields and, with `properties = "mixture"`, c_p, λ and μ of the energy
+/// equation.
+fn refresh_species(
+    dev: &mut dyn FlowDevice,
+    sp: Option<&mut crate::species::Link>,
+    fields: &mut [Field],
+) -> Result<()> {
+    let Some(sp) = sp else { return Ok(()) };
+    let mut y = Vec::with_capacity(sp.fields.len());
+    let mut yb = Vec::with_capacity(sp.fields.len());
+    let bvals = |dev: &mut dyn FlowDevice, f: &Field, v: &[f64], owner: &dyn Fn(usize) -> usize| {
+        let a = dev.download(f.bc_a)?;
+        let b = dev.download(f.bc_b)?;
+        Ok::<_, anyhow::Error>(
+            (0..a.len())
+                .map(|fb| a[fb] * v[owner(fb)] + b[fb])
+                .collect::<Vec<f64>>(),
+        )
+    };
+    let owner = |fb: usize| sp.boundary_owner(fb);
+    for &i in &sp.fields {
+        let f = &fields[i];
+        let v = dev.download_with_halo(f.phi)?;
+        yb.push(bvals(dev, f, &v, &owner)?);
+        y.push(v);
+    }
+    let temp = match fields.iter().find(|f| f.energy.is_some()) {
+        Some(f) => {
+            let v = dev.download_with_halo(f.phi)?;
+            let b = bvals(dev, f, &v, &owner)?;
+            Some((v, b))
+        }
+        None => None,
+    };
+    sp.compute(
+        &y,
+        &yb,
+        temp.as_ref().map(|(a, b)| (a.as_slice(), b.as_slice())),
+    );
+    for (k, &i) in sp.fields.iter().enumerate() {
+        let g = sp.gamma(k);
+        dev.upload(fields[i].gamma, &g)?;
+        dev.upload(fields[i].turb.gamma0, &g)?;
+    }
+    if sp.properties() == crate::species::PropertyModel::Mixture
+        && let Some(e) = fields.iter_mut().find_map(|f| f.energy.as_deref_mut())
+    {
+        e.mixture = Some(MixtureProps {
+            cp_cell: sp.cell.iter().map(|m| m.cp).collect(),
+            cp_face: sp.face.iter().map(|m| m.cp).collect(),
+            k_face: sp.face.iter().map(|m| m.conductivity).collect(),
+            mu_face: sp.face.iter().map(|m| m.viscosity).collect(),
+        });
+    }
+    Ok(())
+}
+
+impl Scalars {
+    /// Adds the species of `case` (stage SF1), whose mass fractions are
+    /// among the scalars, and computes the start mixture.
+    pub fn add_species(
+        &mut self,
+        dev: &mut dyn FlowDevice,
+        disc: &Discretisation,
+        case: &crate::case::FlowCase,
+        rho: f64,
+    ) -> Result<()> {
+        let Some(s) = &case.species else {
+            return Ok(());
+        };
+        let res = crate::species::Resolved::of(s)?;
+        let fields = res
+            .transported()
+            .iter()
+            .map(|n| {
+                let name = crate::species::field_name(n);
+                self.fields
+                    .iter()
+                    .position(|f| f.name == name)
+                    .ok_or_else(|| anyhow::anyhow!("species field {name} missing"))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let p = case.properties()?;
+        let mu = p.fluid.viscosity.value.constant().unwrap_or(f64::NAN);
+        let t_fluid = case.fluid.conditions().temperature;
+        let (k, cp) = match self.fields.iter().find_map(|f| f.energy.as_deref()) {
+            Some(e) => {
+                let m = &e.mats[0];
+                (m.k.at(m.t_ref), m.cp.at(m.t_ref))
+            }
+            None => (f64::NAN, f64::NAN),
+        };
+        let m_fluid = if crate::density::wanted(case) {
+            crate::species::fluid_molar_mass(case)?
+        } else {
+            None
+        };
+        let _ = rho;
+        let link = crate::species::Link::new(res, fields, disc, t_fluid, (mu, k, cp), m_fluid);
+        self.species = Some(Box::new(link));
+        refresh_species(dev, self.species.as_deref_mut(), &mut self.fields)
+    }
+
+    /// The face viscosity of the last mixture of a species case with
+    /// mixture properties (SF1): what the next momentum solve takes.
+    pub fn species_viscosity(&self) -> Option<Vec<f64>> {
+        let sp = self.species.as_deref()?;
+        (sp.properties() == crate::species::PropertyModel::Mixture)
+            .then(|| sp.face.iter().map(|m| m.viscosity).collect())
+    }
+
+    /// The species of the case, if it has any.
+    pub fn species(&self) -> Option<&crate::species::Link> {
+        self.species.as_deref()
+    }
+
+    /// The factor M/M_fluid of the density per cell and per boundary face
+    /// of a species mixture with a variable density (SF1).
+    pub fn species_molar_factor(&self) -> Option<(Vec<f64>, Vec<f64>)> {
+        self.species.as_deref().and_then(|s| s.molar_factor())
+    }
+
+    /// The fields of the transported species for the ledger: per species
+    /// the cell values, the boundary coefficients, ρΓ per face and the
+    /// outflow reconstruction (gradient, limiter, weights).
+    #[allow(clippy::type_complexity)]
+    pub fn species_host(
+        &self,
+        dev: &mut dyn FlowDevice,
+    ) -> Result<Vec<(Vec<f64>, Vec<f64>, Vec<f64>, Vec<f64>, Outflow)>> {
+        let Some(sp) = self.species.as_deref() else {
+            return Ok(Vec::new());
+        };
+        let mut out = Vec::new();
+        for &i in &sp.fields {
+            let f = &self.fields[i];
+            let s = &f.settings;
+            let blend = if s.scheme == Scheme::Upwind { 0.0 } else { 1.0 };
+            let central = if s.scheme == Scheme::Central {
+                s.central_blending
+            } else {
+                0.0
+            };
+            out.push((
+                dev.download(f.phi)?,
+                dev.download(f.bc_a)?,
+                dev.download(f.bc_b)?,
+                dev.download(f.gamma)?,
+                Outflow {
+                    grad: [
+                        dev.download(f.grad.x)?,
+                        dev.download(f.grad.y)?,
+                        dev.download(f.grad.z)?,
+                    ],
+                    psi: dev.download(f.psi)?,
+                    linear: if central > 0.0 {
+                        (1.0 - central) * blend
+                    } else {
+                        blend
+                    },
+                    central,
+                },
+            ));
+        }
+        Ok(out)
+    }
+
+    /// The time terms of the last step (a₀, a₁, a₂, Δt) and φⁿ, φⁿ⁻¹ of the
+    /// transported species, for the storage of the ledger.
+    #[allow(clippy::type_complexity)]
+    pub fn species_old(
+        &self,
+        dev: &mut dyn FlowDevice,
+    ) -> Result<Option<(StepTime, Vec<(Vec<f64>, Vec<f64>)>)>> {
+        let (Some(sp), Some(st)) = (self.species.as_deref(), self.last_step) else {
+            return Ok(None);
+        };
+        let mut v = Vec::new();
+        for &i in &sp.fields {
+            let Some((o1, o2, _)) = self.fields[i].old else {
+                return Ok(None);
+            };
+            v.push((dev.download(o1)?, dev.download(o2)?));
+        }
+        Ok(Some((st, v)))
+    }
+}
+
 /// The outflow face values of the energy equation's convection scheme
-/// ([`Scalars::energy_outflow`]).
-struct Outflow {
+/// (`Scalars::energy_outflow`).
+pub struct Outflow {
     grad: [Vec<f64>; 3],
     psi: Vec<f64>,
     linear: f64,
@@ -3709,7 +3950,7 @@ struct Outflow {
 impl Outflow {
     /// The value carried out through boundary face `f` of cell `o` with
     /// the boundary value `tb`.
-    fn at(&self, geo: &Geometry, f: usize, o: usize, tp: f64, tb: f64) -> f64 {
+    pub fn at(&self, geo: &Geometry, f: usize, o: usize, tp: f64, tb: f64) -> f64 {
         let r: f64 = (0..3)
             .map(|d| self.grad[d][o] * (geo.face_centroid[f][d] - geo.cell_centroid[o][d]))
             .sum();
@@ -4190,6 +4431,11 @@ pub fn heat_balance_finding(s: &ScalarSummary) -> Option<crate::diag::Diagnostic
 fn exact_of<'a>(case: &'a crate::case::FlowCase, name: &str) -> Option<(&'a Scalar, String)> {
     if let Some(e) = case.scalars.get(name).and_then(|s| s.exact.as_ref()) {
         return Some((e, format!("scalars.{name}.exact")));
+    }
+    if let (Some(sp), Some(n)) = (&case.species, name.strip_prefix(crate::species::PREFIX))
+        && let Some(e) = sp.exact.get(n)
+    {
+        return Some((e, format!("species.exact.{n}")));
     }
     if name == crate::energy::FIELD {
         return case
