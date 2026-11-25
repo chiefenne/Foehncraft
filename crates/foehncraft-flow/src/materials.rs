@@ -201,6 +201,91 @@ pub enum Form {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         source: Option<String>,
     },
+    /// Water and steam of IAPWS-IF97 at the operating pressure (stage SF7a):
+    /// the density, viscosity (IAPWS R12-08), specific heat or conductivity
+    /// (IAPWS R15-11) of the phase `phase` as a function of T, from the
+    /// single-source kernel `foehncraft_kernels::steam`. Below the critical
+    /// pressure the liquid branch ends at T_s(p) and the vapour branch starts
+    /// there; a temperature beyond the end of the branch takes the saturated
+    /// state (MAT003).
+    If97 {
+        /// The branch below the critical pressure; default the phase at the
+        /// case temperature (`[fluid] temperature`).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        phase: Option<If97Phase>,
+        /// Where it comes from.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        source: Option<String>,
+    },
+}
+
+/// The phase branch of an `if97` property.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum If97Phase {
+    /// The liquid, up to the saturation temperature.
+    Liquid,
+    /// The vapour, from the saturation temperature.
+    Vapour,
+}
+
+/// The temperature range (K) of the `if97` branch at the pressure `p` (Pa)
+/// and its phase name: the branch `phase`, or the phase of `t_case`.
+pub fn if97_branch(
+    p: f64,
+    phase: Option<If97Phase>,
+    t_case: f64,
+) -> Option<([f64; 2], &'static str)> {
+    use foehncraft_kernels::steam;
+    if !(p > 0.0 && p <= steam::P_MAX) {
+        return None;
+    }
+    let t_max = if p <= steam::P_MAX_5 {
+        steam::T_MAX_5
+    } else {
+        steam::T_MAX_2
+    };
+    if p >= steam::P_CRIT {
+        return Some(([steam::T_MIN, t_max], "supercritical"));
+    }
+    if p < steam::P_SAT_MIN {
+        return Some(([steam::T_MIN, t_max], "vapour"));
+    }
+    let ts = steam::t_sat(p);
+    let phase = phase.unwrap_or(if t_case < ts {
+        If97Phase::Liquid
+    } else {
+        If97Phase::Vapour
+    });
+    Some(match phase {
+        If97Phase::Liquid => ([steam::T_MIN, ts], "liquid"),
+        If97Phase::Vapour => ([ts, t_max], "vapour"),
+    })
+}
+
+/// The `if97` value of `what` at (p, T) on the branch `range` (from
+/// [`if97_branch`]), T clamped to the branch; NaN for a property the form
+/// does not give.
+pub fn if97_value(what: &str, p: f64, t: f64, range: [f64; 2], branch: &str) -> f64 {
+    use foehncraft_kernels::steam;
+    let t = t.clamp(range[0], range[1]);
+    let s = if branch == "liquid" && t >= range[1] {
+        steam::saturation_p(p).map(|s| s.liquid)
+    } else if branch == "vapour" && p >= steam::P_SAT_MIN && t <= range[0] {
+        steam::saturation_p(p).map(|s| s.vapour)
+    } else {
+        steam::props_pt(p, t)
+    };
+    let Some(s) = s else {
+        return f64::NAN;
+    };
+    match what {
+        "density" => s.rho,
+        "viscosity" => steam::viscosity(s.rho, s.t),
+        "specific_heat" => s.cp,
+        "conductivity" => steam::conductivity(&s),
+        _ => f64::NAN,
+    }
 }
 
 impl Form {
@@ -216,6 +301,7 @@ impl Form {
             Form::IdealGas { .. } => "ideal-gas",
             Form::Nasa7 { .. } => "nasa-7",
             Form::Nasa9 { .. } => "nasa-9",
+            Form::If97 { .. } => "if97",
         }
     }
 
@@ -229,7 +315,8 @@ impl Form {
             | Form::Expression { source, .. }
             | Form::IdealGas { source, .. }
             | Form::Nasa7 { source, .. }
-            | Form::Nasa9 { source, .. } => source.as_deref(),
+            | Form::Nasa9 { source, .. }
+            | Form::If97 { source, .. } => source.as_deref(),
         }
     }
 
@@ -960,6 +1047,41 @@ pub fn steffen(xs: &[f64], ys: &[f64], x: f64) -> f64 {
     ((a * d + b) * d + y0) * d + ys[i]
 }
 
+/// The checks of an `if97` property `what` (key `key`) at the case
+/// conditions: the property is one the form gives and the operating
+/// pressure lies inside IF97.
+fn if97_check(
+    what: &str,
+    cond: Conditions,
+    phase: Option<If97Phase>,
+    key: &str,
+) -> Result<([f64; 2], &'static str)> {
+    if !matches!(
+        what,
+        "density" | "viscosity" | "specific_heat" | "conductivity"
+    ) {
+        return Err(mat_err(
+            diag::MAT_FORM,
+            key,
+            format!(
+                "{key}: the if97 form gives the density, viscosity, specific heat and \
+                 conductivity only"
+            ),
+        ));
+    }
+    if97_branch(cond.pressure, phase, cond.temperature).ok_or_else(|| {
+        mat_err(
+            diag::MAT_FORM,
+            key,
+            format!(
+                "{key}: the if97 form needs an operating pressure inside IF97 (0 < p ≤ 100 MPa), \
+                 not {} Pa",
+                cond.pressure
+            ),
+        )
+    })
+}
+
 /// Evaluates a property of `material` (name for messages) at the
 /// conditions. `space` allows x, y, z (the viscosity).
 #[allow(clippy::too_many_arguments)]
@@ -1136,6 +1258,17 @@ fn evaluate(
                     num(
                         R_GAS / mm * nasa_cp_over_r(temperature, coefficients, nine, tt),
                         origin(&format!(", M = {mm} kg/mol")),
+                    )
+                }
+                Form::If97 { phase, .. } => {
+                    let (range, branch) = if97_check(what, cond, *phase, &key)?;
+                    let tt = warn_range(Some(range), warnings);
+                    num(
+                        if97_value(what, cond.pressure, tt, range, branch),
+                        format!(
+                            "if97 ({branch}), p = {} Pa, at T = {tt} K{src}",
+                            cond.pressure
+                        ),
                     )
                 }
             }
@@ -1572,6 +1705,8 @@ impl Curve {
     pub const SAMPLE_STEP: f64 = 0.5;
     /// The range of the samples of an expression in `T` (K).
     pub const SAMPLE_RANGE: [f64; 2] = [1.0, 4000.0];
+    /// The step of the samples of an `if97` property (K), at most.
+    pub const IF97_STEP: f64 = 0.25;
 
     /// A constant.
     pub fn constant(v: f64) -> Self {
@@ -1747,6 +1882,24 @@ pub fn curve(
                 nine: matches!(f, Form::Nasa9 { .. }),
                 r: R_GAS / m.molar_mass.unwrap_or(f64::NAN),
             },
+            Form::If97 { phase, .. } => {
+                // checked by `evaluate` above
+                let (range, branch) = if97_check(what, cond, *phase, &format!("{owner}.{what}"))?;
+                let [lo, hi] = range;
+                let n = (((hi - lo) / Curve::IF97_STEP).ceil() as usize).max(1);
+                let dt = (hi - lo) / n as f64;
+                let v = (0..=n)
+                    .map(|i| {
+                        let t = if i == n { hi } else { lo + i as f64 * dt };
+                        if97_value(what, cond.pressure, t, range, branch)
+                    })
+                    .collect();
+                return Ok(Curve {
+                    kind: CurveKind::Sampled { t0: lo, dt, v },
+                    range: Some(range),
+                    origin,
+                });
+            }
         },
     };
     let range = match p {
@@ -2503,6 +2656,93 @@ file = "k.csv"
         let mut warn = Vec::new();
         th_warn("water", 293.15, &mut warn);
         assert!(warn.is_empty(), "{warn:?}");
+    }
+
+    #[test]
+    fn if97_steam_and_water_at_the_operating_pressure() {
+        use foehncraft_kernels::steam;
+        let lib = CaseMaterials::default();
+        let m = lookup("steam", &lib).unwrap();
+        let env = Env::default();
+        let cond = Conditions {
+            temperature: 700.0,
+            pressure: 4e6,
+        };
+        // the curve equals the kernel at its samples and is within the
+        // linear-interpolation error between them
+        let rho = curve(
+            m.density.as_ref().unwrap(),
+            "density",
+            "steam",
+            &m,
+            &env,
+            cond,
+        )
+        .unwrap();
+        for t in [600.0, 700.0, 812.37, 1500.0] {
+            let s = steam::props_pt(4e6, t).unwrap();
+            let e = (rho.at(t) - s.rho).abs() / s.rho;
+            assert!(e < 1e-6, "rho({t}) = {} vs {}", rho.at(t), s.rho);
+        }
+        // below T_s(4 MPa) = 523.5 K the vapour branch gives saturated vapour
+        let sat = steam::saturation_p(4e6).unwrap();
+        assert_eq!(rho.at(400.0), sat.vapour.rho);
+        let mu = curve(
+            m.viscosity.as_ref().unwrap(),
+            "viscosity",
+            "steam",
+            &m,
+            &env,
+            cond,
+        )
+        .unwrap();
+        let s = steam::props_pt(4e6, 700.0).unwrap();
+        assert!((mu.at(700.0) / steam::viscosity(s.rho, 700.0) - 1.0).abs() < 1e-6);
+        let Some(Conductivity::Isotropic(kp)) = m.conductivity.as_ref() else {
+            panic!("steam has an isotropic conductivity")
+        };
+        let k = curve(kp, "conductivity", "steam", &m, &env, cond).unwrap();
+        assert!((k.at(700.0) / steam::conductivity(&s) - 1.0).abs() < 1e-6);
+        // liquid water at 10 MPa and 450 K, and the case value with MAT003
+        // above the saturation temperature
+        let w = Conditions {
+            temperature: 450.0,
+            pressure: 10e6,
+        };
+        let t = thermal_properties("water-if97", &lib, &env, w, &mut Vec::new()).unwrap();
+        let cp = t.specific_heat.unwrap().value.constant().unwrap();
+        assert!(
+            (cp - steam::region1(10e6, 450.0).cp).abs() < 1e-9 * cp,
+            "{cp}"
+        );
+        let mut warn = Vec::new();
+        thermal_properties(
+            "water-if97",
+            &lib,
+            &env,
+            Conditions {
+                temperature: 700.0,
+                pressure: 10e6,
+            },
+            &mut warn,
+        )
+        .unwrap();
+        assert!(warn.iter().any(|d| d.code == diag::MAT_RANGE), "{warn:?}");
+        // a pressure outside IF97 and a property the form does not give
+        let bad = Conditions {
+            temperature: 700.0,
+            pressure: 200e6,
+        };
+        let e = curve(
+            m.density.as_ref().unwrap(),
+            "density",
+            "steam",
+            &m,
+            &env,
+            bad,
+        )
+        .unwrap_err();
+        assert!(format!("{e:#}").contains("100 MPa"), "{e:#}");
     }
 
     fn th_warn(name: &str, t: f64, w: &mut Vec<Diagnostic>) {

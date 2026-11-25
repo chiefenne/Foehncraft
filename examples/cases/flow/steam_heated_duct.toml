@@ -1,0 +1,72 @@
+# Superheated steam heated on its way through a duct: the IAPWS-IF97
+# states of stage SF7a in a flow with variable density, against the exact
+# balances of a one-dimensional low-Mach flow.
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/steam_heated_duct.toml
+#
+# Steam of the database material `steam` (IAPWS-IF97 density and c_p,
+# IAPWS R12-08 viscosity, IAPWS R15-11 conductivity, all at the operating
+# pressure of 4 MPa, the absolute pressure of the outlet) enters a duct 1 m
+# long and 0.1 m high at 2 m/s and 600 K; the side walls are slip walls, so
+# the flow is one-dimensional. A uniform heat source q''' = 5.6844892e7
+# W/m³ in the middle section 0.4 m < x < 0.6 m adds Δh = q''' · 0.2 m/G =
+# 358.481 kJ/kg, which by IF97 takes the steam from h(4 MPa, 600 K) =
+# 3034.300 kJ/kg to h(4 MPa, 750 K) = 3392.781 kJ/kg. Exact, for any mesh
+# at the solver tolerance: the outlet temperature is 750 K (to the 0.25 K
+# sampling of the property curves: the energy equation integrates the
+# IF97 c_p, whose integral at constant p is the IF97 enthalpy), the mass
+# flux G = ρ_in u_in = 31.71430 kg/(m² s) is the same at both ends, the
+# outlet velocity is G/ρ(4 MPa, 750 K) = 2.648119 m/s, and the inviscid
+# momentum balance gives p_in − p_out = G² (1/ρ_out − 1/ρ_in) = 20.5547 Pa.
+
+case_format = "0.7"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [1.0, 0.1, 0.01]
+cells = [100, 4, 1]
+
+[fluid]
+material = "steam"
+temperature = 600.0
+
+[initial]
+velocity = [2.0, 0.0, 0.0]
+pressure = 4.0e6
+
+[energy]
+initial = 600.0
+source = "if(x > 0.4, if(x < 0.6, 5.6844892012526296e7, 0.0), 0.0)"
+density = "variable"
+
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [2.0, 0.0, 0.0]
+[boundary.xmin.energy]
+temperature = 600.0
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 4.0e6
+[boundary.ymin]
+type = "slip-wall"
+[boundary.ymin.energy]
+heat_flux = 0.0
+[boundary.ymax]
+type = "slip-wall"
+[boundary.ymax.energy]
+heat_flux = 0.0
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-10
+max_iterations = 2000
+
+[verification]
+require_convergence = true
+
+[output]
+wall_csv = false

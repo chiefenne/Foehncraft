@@ -6,6 +6,7 @@ Part of the [Example gallery](../gallery.md): bodies in the flow without a body-
 |---|---|---|---|
 | 270 | [A cylinder put into a box mesh by Brinkman penalisation](#penalised-cylinder) | L13 stage 1 | `[immersed]`, `[[immersed.body]]`, solid fraction, body force, `solid-fraction` field |
 | 291 | [Topology search of a pipe bend, and how accurate the penalised wall is](#topology-bend) | L13 stage 1 | `[immersed.topology]`, `shape = "field"`, `topology.stl`, K/h sweeps, Stokes sphere array, MMS, gradient check, iso-surface benchmark |
+| 310 | [A dirty STL body: surface check, winding number and signed distance](#dirty-stl-winding) | L13 stage 0 | `mesh.surface`, IMM001 to IMM009, `foehncraft_mesh::surface` (winding number, signed distance, crossings) |
 
 ---
 
@@ -208,3 +209,63 @@ python3 -m tools.bench.isosurface --figure docs/figures/gallery/immersed_isosurf
 ```
 
 Recipe: [291](../recipes/immersed.md#topology-search). Case files: `examples/cases/flow/immersed_topology_bend.toml`, `immersed_stokes_sphere.toml`, `immersed_mms.toml`.
+
+<a id="dirty-stl-winding"></a>
+## 310. A dirty STL body: surface check, winding number and signed distance
+
+<img src="../figures/gallery/immersed_surface_winding.png" alt="Three panels of a slice through a lumpy body. Left: the generalised winding number, blue zero outside, green one inside, red two where a second lump overlaps the main body; at a hole in the top and at a patch of flipped triangles on the lower left the value dips smoothly, and the dashed line where it is one half closes the hole. Middle: the signed distance, negative (green) inside and positive (yellow to red) outside, with contour lines every 0.1 m; the zero line follows the body and bridges the hole. Right: the base-10 logarithm of the difference between the fast and the exact winding number, between 1e-10 and 4e-3, largest next to the surface." width="900" height="273">
+
+The geometry kernel of L13 stage 0 (D225) on a surface with the defects
+real STL files have: a lumpy ball of 25 443 triangles with a hole in its top
+(37 open edges), a patch of flipped triangles (85 edges run the same way by
+both triangles) and a second lump that overlaps it (335 pairs of
+intersecting triangles). The surface check (`mesh.surface`, IMM001 to
+IMM009) finds each of them with exact predicates and repairs nothing (Q2):
+
+```text
+IMM005 335 pairs of triangles intersect (first: [[9536, 20617], [9536, 20623], [9809, 21289]]); inside/outside comes from the winding number
+IMM002 open surface: 37 edges with one triangle (holes); the winding number closes them smoothly
+IMM004 85 edges whose two triangles run them in the same direction (inconsistent orientation)
+```
+
+**Winding number** (left): the solid angle the surface subtends, divided by
+4π (Jacobson et al. 2013). It is 1 inside, 0 outside and 2 where the lumps
+overlap; at the hole it falls smoothly and the half level closes the hole
+with a cap close to the missing surface. The flipped patch cancels part of
+the surface, so there the half level bulges into a small bubble: a defect
+the check reports and the winding number only softens.
+
+**Signed distance** (middle): the exact closest-point distance of the
+surface hierarchy (D108) with the sign of the winding number, negative
+inside. The overlapping lump keeps its buried surface, so inside the body
+the distance falls to zero along it while the sign stays negative: what a
+cut needs (φ < 0) is right, the magnitude inside a dirty body is not a
+distance to the outer skin.
+
+**Fast winding number** (right): the hierarchy replaces far groups of
+triangles by a three-term expansion of the dipole kernel (Barill et al.
+2018). With the default ratio β = 2 it differs from the exact sum by at most
+3.9e-3 next to the surface and by 1e-6 to 1e-9 away from it, 211 times
+faster (118 400 points: 0.07 s against 15.6 s on 4 threads); the inside test
+re-evaluates points with |w − ½| < 0.05 with β = 8 (error 6e-6).
+
+Verification (`crates/foehncraft-mesh/tests/surface.rs`): the signed
+distance of icospheres converges to the sphere at second order (the sagitta
+h²/8) and equals the brute-force closest point bitwise; the fast winding
+number against the exact sum on 2000 points; holes, flips, duplicates,
+degenerate and intersecting triangles detected; touching configurations
+(corner on a face, edge through an edge, coplanar overlap, folds over a
+shared edge, a corner 1e-300 above a face) decided exactly; crossings
+through a surface edge counted once with the exact root; results bitwise
+equal on 1, 2 and 4 threads (D93).
+
+Reproduce:
+
+```sh
+cargo run --release -p foehncraft-mesh --example surface_slice -- output/surface
+pip install matplotlib numpy
+python3 -m tools.plot.surface_slice output/surface docs/figures/gallery/immersed_surface_winding.png
+echo '{"input": "output/surface/body.stl"}' | target/release/foehn call mesh.surface --input -
+```
+
+Recipe: [310](../recipes/immersed.md#surface-check).
