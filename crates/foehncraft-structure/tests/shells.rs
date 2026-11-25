@@ -16,9 +16,9 @@
 
 #![allow(clippy::needless_range_loop)]
 
-use foehncraft_structure::{analysis, case, codes};
 use foehncraft_structure::model::{AreaLoad, DOFS, Model, Shell};
 use foehncraft_structure::shell::ShellProps;
+use foehncraft_structure::{analysis, case, codes};
 use std::f64::consts::PI;
 
 fn props(e: f64, nu: f64, rho: f64, t: f64) -> ShellProps {
@@ -53,13 +53,27 @@ fn patch(t: f64, tri: bool) -> (Model, Vec<usize>) {
         m.add_node([p[0], p[1], 0.0]);
     }
     m.shell_props.push(props(1.0e6, 0.25, 1.0, t));
-    for q in [[0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7], [4, 5, 6, 7]] {
+    for q in [
+        [0, 1, 5, 4],
+        [1, 2, 6, 5],
+        [2, 3, 7, 6],
+        [3, 0, 4, 7],
+        [4, 5, 6, 7],
+    ] {
         if tri {
             for t in [[q[0], q[1], q[2]], [q[0], q[2], q[3]]] {
-                m.shells.push(Shell { nodes: [t[0], t[1], t[2], usize::MAX], tri: true, props: 0 });
+                m.shells.push(Shell {
+                    nodes: [t[0], t[1], t[2], usize::MAX],
+                    tri: true,
+                    props: 0,
+                });
             }
         } else {
-            m.shells.push(Shell { nodes: q, tri: false, props: 0 });
+            m.shells.push(Shell {
+                nodes: q,
+                tri: false,
+                props: 0,
+            });
         }
     }
     (m, vec![0, 1, 2, 3])
@@ -94,7 +108,12 @@ fn membrane_patch(tri: bool) {
     for n in 4..8 {
         let v = field(m.nodes[n]);
         for d in 0..2 {
-            assert!((s.u[DOFS * n + d] - v[d]).abs() < 1e-12, "tri {tri} node {n} {d}: {} {}", s.u[DOFS * n + d], v[d]);
+            assert!(
+                (s.u[DOFS * n + d] - v[d]).abs() < 1e-12,
+                "tri {tri} node {n} {d}: {} {}",
+                s.u[DOFS * n + d],
+                v[d]
+            );
         }
     }
 }
@@ -129,7 +148,11 @@ fn bending_patch(tri: bool) {
     for n in 4..8 {
         let x = m.nodes[n];
         for (d, v) in [(2, w(x)), (3, rx(x)), (4, ry(x))] {
-            assert!((s.u[DOFS * n + d] - v).abs() < 1e-9 * 1e-4, "tri {tri} node {n} {d}: {} {v}", s.u[DOFS * n + d]);
+            assert!(
+                (s.u[DOFS * n + d] - v).abs() < 1e-9 * 1e-4,
+                "tri {tri} node {n} {d}: {} {v}",
+                s.u[DOFS * n + d]
+            );
         }
     }
 }
@@ -161,7 +184,11 @@ fn simply_supported_plate_converges_to_navier() {
 }
 
 fn grid(m: &mut Model, tri: bool, at: impl Fn(f64, f64) -> [f64; 3], n: usize) -> Vec<Vec<usize>> {
-    if tri { m.add_tri_grid(at, n, n, 0) } else { m.add_shell_grid(at, n, n, 0) }
+    if tri {
+        m.add_tri_grid(at, n, n, 0)
+    } else {
+        m.add_shell_grid(at, n, n, 0)
+    }
 }
 
 fn navier(tri: bool) {
@@ -199,7 +226,11 @@ fn navier_t(tri: bool, t: f64) {
             }
         }
         for el in 0..m.shells.len() {
-            m.area_loads.push(AreaLoad { element: el, q: [0.0; 3], pressure: -q });
+            m.area_loads.push(AreaLoad {
+                element: el,
+                q: [0.0; 3],
+                pressure: -q,
+            });
         }
         let s = analysis::solve_static(&m).unwrap();
         let w = s.u[DOFS * g[n / 2][n / 2] + 2];
@@ -249,8 +280,17 @@ fn leissa(tri: bool) {
     assert!(md.sturm.ok(), "{:?}", md.sturm);
     for (i, mo) in md.modes.iter().enumerate() {
         let lam = mo.lambda.sqrt() * a * a * (rho * t / d).sqrt();
-        eprintln!("tri {tri} mode {}: λ = {lam:.4} (Leissa {})", i + 1, LEISSA[i]);
-        assert!(rel(lam, LEISSA[i]) < 1e-2, "mode {}: {lam} {}", i + 1, LEISSA[i]);
+        eprintln!(
+            "tri {tri} mode {}: λ = {lam:.4} (Leissa {})",
+            i + 1,
+            LEISSA[i]
+        );
+        assert!(
+            rel(lam, LEISSA[i]) < 1e-2,
+            "mode {}: {lam} {}",
+            i + 1,
+            LEISSA[i]
+        );
     }
 }
 
@@ -296,7 +336,11 @@ fn scordelis_lo(n: usize, tri: bool) -> f64 {
         }
     }
     for el in 0..m.shells.len() {
-        m.area_loads.push(AreaLoad { element: el, q: [0.0, 0.0, -90.0], pressure: 0.0 });
+        m.area_loads.push(AreaLoad {
+            element: el,
+            q: [0.0, 0.0, -90.0],
+            pressure: 0.0,
+        });
     }
     let s = analysis::solve_static(&m).unwrap();
     -s.u[DOFS * g[n][n] + 2]
@@ -311,12 +355,18 @@ fn scordelis_lo_roof_converges() {
     // alternating diagonals, hence 3 %).
     const KO_2017: [f64; 4] = [0.6695, 0.8577, 0.9550, 0.9851];
     for tri in [false, true] {
-        let w: Vec<f64> = [4, 8, 16, 32].iter().map(|&n| scordelis_lo(n, tri)).collect();
+        let w: Vec<f64> = [4, 8, 16, 32]
+            .iter()
+            .map(|&n| scordelis_lo(n, tri))
+            .collect();
         eprintln!("Scordelis–Lo, tri {tri}: {w:?}");
         if tri {
             for k in 2..4 {
                 let ratio = w[k] / 0.3024;
-                assert!((ratio - KO_2017[k]).abs() < 3e-2, "N index {k}: {ratio} {w:?}");
+                assert!(
+                    (ratio - KO_2017[k]).abs() < 3e-2,
+                    "N index {k}: {ratio} {w:?}"
+                );
             }
             assert!(w.windows(2).all(|p| p[1] > p[0]), "not monotone: {w:?}");
         } else {
@@ -381,7 +431,9 @@ tip = [0.03, 0.0, 0.0]
     );
     let out = case::run(&c).unwrap();
     let j = out.to_json("t");
-    let w = j["static"]["points"]["tip"]["displacement"][2].as_f64().unwrap();
+    let w = j["static"]["points"]["tip"]["displacement"][2]
+        .as_f64()
+        .unwrap();
     let d = e * t.powi(3) / 12.0;
     let g = e / 2.0;
     let exact = q * l.powi(4) / (8.0 * d)
@@ -393,12 +445,20 @@ tip = [0.03, 0.0, 0.0]
     let rz = j["static"]["reaction_force"][2].as_f64().unwrap();
     assert!(rel(rz, -q * l * 12e-3) < 1e-9, "{rz}");
     assert_eq!(j["clamps"][0]["nodes"], 5);
-    assert!(rel(j["clamps"][0]["rotation"]["stiffness"].as_f64().unwrap(), kr * 12e-3) < 1e-12);
+    assert!(
+        rel(
+            j["clamps"][0]["rotation"]["stiffness"].as_f64().unwrap(),
+            kr * 12e-3
+        ) < 1e-12
+    );
 }
 
 #[test]
 fn reed_plate_catalogue_case() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../examples/cases/structure/reed_plate.toml");
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../examples/cases/structure/reed_plate.toml"
+    );
     let c = case::Case::from_toml(&std::fs::read_to_string(path).unwrap()).unwrap();
     let out = case::run(&c).unwrap();
     let j = out.to_json("reed_plate");
@@ -452,7 +512,9 @@ fix = ["all"]
 "#,
     ];
     for extra in bad {
-        let e = case::run(&reed_plate(extra, 0.3)).err().expect(extra);
+        let Err(e) = case::run(&reed_plate(extra, 0.3)) else {
+            panic!("accepted: {extra}");
+        };
         assert_eq!(e.code, codes::CASE, "{extra}: {e}");
     }
 }

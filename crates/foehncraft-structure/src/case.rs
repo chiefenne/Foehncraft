@@ -636,7 +636,10 @@ pub fn build(case: &Case) -> Result<Built, Error> {
             return Err(bad(format!("two parts are named `{}`", p.name)));
         }
         let mat = case.materials.get(&p.material).ok_or_else(|| {
-            bad(format!("plate `{}`: no material `{}` in [materials]", p.name, p.material))
+            bad(format!(
+                "plate `{}`: no material `{}` in [materials]",
+                p.name, p.material
+            ))
         })?;
         if !(mat.young > 0.0 && mat.density > 0.0 && mat.poisson > -1.0 && mat.poisson < 0.5) {
             return Err(bad(format!(
@@ -645,15 +648,25 @@ pub fn build(case: &Case) -> Result<Built, Error> {
             )));
         }
         if p.thickness.is_nan() || p.thickness <= 0.0 {
-            return Err(bad(format!("plate `{}`: thickness must be positive", p.name)));
+            return Err(bad(format!(
+                "plate `{}`: thickness must be positive",
+                p.name
+            )));
         }
         let [na, nb] = p.divisions;
         if na == 0 || nb == 0 {
-            return Err(bad(format!("plate `{}`: `divisions` must be at least 1", p.name)));
+            return Err(bad(format!(
+                "plate `{}`: `divisions` must be at least 1",
+                p.name
+            )));
         }
         let n = crate::beam::cross(p.edge_a, p.edge_b);
-        if crate::beam::norm(n) <= 1e-12 * crate::beam::norm(p.edge_a) * crate::beam::norm(p.edge_b) {
-            return Err(bad(format!("plate `{}`: edge_a and edge_b are parallel or zero", p.name)));
+        if crate::beam::norm(n) <= 1e-12 * crate::beam::norm(p.edge_a) * crate::beam::norm(p.edge_b)
+        {
+            return Err(bad(format!(
+                "plate `{}`: edge_a and edge_b are parallel or zero",
+                p.name
+            )));
         }
         model.shell_props.push(crate::shell::ShellProps {
             young: mat.young,
@@ -693,46 +706,61 @@ pub fn build(case: &Case) -> Result<Built, Error> {
         }
     };
     // the nodes on a segment, with the length each one stands for
-    let along = |model: &Model, seg: [[f64; 3]; 2], what: &str| -> Result<Vec<(usize, f64)>, Error> {
-        let d = crate::beam::sub(seg[1], seg[0]);
-        let len = crate::beam::norm(d);
-        if len.is_nan() || len <= 0.0 {
-            return Err(bad(format!("{what}: `along` needs two different points")));
-        }
-        let tol = 1e-6 * size.max(f64::MIN_POSITIVE);
-        let mut hits: Vec<(f64, usize)> = Vec::new();
-        for (i, x) in model.nodes.iter().enumerate() {
-            let r = crate::beam::sub(*x, seg[0]);
-            let t = crate::beam::dot3(r, d) / (len * len);
-            if !(-1e-9..=1.0 + 1e-9).contains(&t) {
-                continue;
+    let along =
+        |model: &Model, seg: [[f64; 3]; 2], what: &str| -> Result<Vec<(usize, f64)>, Error> {
+            let d = crate::beam::sub(seg[1], seg[0]);
+            let len = crate::beam::norm(d);
+            if len.is_nan() || len <= 0.0 {
+                return Err(bad(format!("{what}: `along` needs two different points")));
             }
-            let off = crate::beam::sub(r, crate::beam::scale(d, t));
-            if crate::beam::norm(off) <= tol {
-                hits.push((t, i));
+            let tol = 1e-6 * size.max(f64::MIN_POSITIVE);
+            let mut hits: Vec<(f64, usize)> = Vec::new();
+            for (i, x) in model.nodes.iter().enumerate() {
+                let r = crate::beam::sub(*x, seg[0]);
+                let t = crate::beam::dot3(r, d) / (len * len);
+                if !(-1e-9..=1.0 + 1e-9).contains(&t) {
+                    continue;
+                }
+                let off = crate::beam::sub(r, crate::beam::scale(d, t));
+                if crate::beam::norm(off) <= tol {
+                    hits.push((t, i));
+                }
             }
-        }
-        if hits.len() < 2 {
-            return Err(bad(format!(
-                "{what}: fewer than two nodes lie on the segment from {:?} to {:?}",
-                seg[0], seg[1]
-            )));
-        }
-        hits.sort_by(|a, b| a.0.total_cmp(&b.0));
-        let m = hits.len();
-        Ok((0..m)
-            .map(|k| {
-                let lo = if k == 0 { hits[0].0 } else { 0.5 * (hits[k - 1].0 + hits[k].0) };
-                let hi = if k + 1 == m { hits[m - 1].0 } else { 0.5 * (hits[k].0 + hits[k + 1].0) };
-                (hits[k].1, (hi - lo) * len)
-            })
-            .collect())
-    };
-    let place = |model: &Model, at: Option<[f64; 3]>, seg: Option<[[f64; 3]; 2]>, what: &str| -> Result<Vec<(usize, f64)>, Error> {
+            if hits.len() < 2 {
+                return Err(bad(format!(
+                    "{what}: fewer than two nodes lie on the segment from {:?} to {:?}",
+                    seg[0], seg[1]
+                )));
+            }
+            hits.sort_by(|a, b| a.0.total_cmp(&b.0));
+            let m = hits.len();
+            Ok((0..m)
+                .map(|k| {
+                    let lo = if k == 0 {
+                        hits[0].0
+                    } else {
+                        0.5 * (hits[k - 1].0 + hits[k].0)
+                    };
+                    let hi = if k + 1 == m {
+                        hits[m - 1].0
+                    } else {
+                        0.5 * (hits[k].0 + hits[k + 1].0)
+                    };
+                    (hits[k].1, (hi - lo) * len)
+                })
+                .collect())
+        };
+    let place = |model: &Model,
+                 at: Option<[f64; 3]>,
+                 seg: Option<[[f64; 3]; 2]>,
+                 what: &str|
+     -> Result<Vec<(usize, f64)>, Error> {
         match (at, seg) {
             (Some(x), None) => Ok(vec![(find(model, x, what)?, 0.0)]),
             (None, Some(s)) => along(model, s, what),
-            _ => Err(bad(format!("{what}: give `at` (a node) or `along` (a segment), not both"))),
+            _ => Err(bad(format!(
+                "{what}: give `at` (a node) or `along` (a segment), not both"
+            ))),
         }
     };
     for s in &case.supports {
@@ -746,13 +774,20 @@ pub fn build(case: &Case) -> Result<Built, Error> {
     for c in &case.clamps {
         let nodes = place(&model, c.at, c.along, "[[clamps]]")?;
         if c.normal == c.line {
-            return Err(bad("[[clamps]]: `normal` and `line` must be different axes"));
+            return Err(bad(
+                "[[clamps]]: `normal` and `line` must be different axes",
+            ));
         }
         let (width, share): (f64, Vec<f64>) = if c.along.is_some() {
             if c.width.is_some() {
-                return Err(bad("[[clamps]]: a clamp `along` an edge takes its length from the segment; leave out `width`"));
+                return Err(bad(
+                    "[[clamps]]: a clamp `along` an edge takes its length from the segment; leave out `width`",
+                ));
             }
-            (nodes.iter().map(|x| x.1).sum(), nodes.iter().map(|x| x.1).collect())
+            (
+                nodes.iter().map(|x| x.1).sum(),
+                nodes.iter().map(|x| x.1).collect(),
+            )
         } else {
             let n = nodes[0].0;
             match c.width.or(widths[n]) {
@@ -768,7 +803,9 @@ pub fn build(case: &Case) -> Result<Built, Error> {
         let rl = 3 + c.line.index();
         for k in [c.k_translation, c.k_rotation].into_iter().flatten() {
             if k.is_nan() || k < 0.0 || !k.is_finite() {
-                return Err(bad(format!("[[clamps]]: spring stiffness must be ≥ 0 (is {k})")));
+                return Err(bad(format!(
+                    "[[clamps]]: spring stiffness must be ≥ 0 (is {k})"
+                )));
             }
         }
         for (&(n, _), &l) in nodes.iter().zip(&share) {

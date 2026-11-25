@@ -138,7 +138,11 @@ impl System {
 impl Shell {
     /// The nodes in use.
     pub fn used(&self) -> &[usize] {
-        if self.tri { &self.nodes[..3] } else { &self.nodes }
+        if self.tri {
+            &self.nodes[..3]
+        } else {
+            &self.nodes
+        }
     }
 }
 
@@ -147,7 +151,11 @@ impl Model {
     pub fn shell_normal(&self, e: usize) -> [f64; 3] {
         let s = &self.shells[e];
         if s.tri {
-            let x = [self.nodes[s.nodes[0]], self.nodes[s.nodes[1]], self.nodes[s.nodes[2]]];
+            let x = [
+                self.nodes[s.nodes[0]],
+                self.nodes[s.nodes[1]],
+                self.nodes[s.nodes[2]],
+            ];
             let n = beam::cross(beam::sub(x[1], x[0]), beam::sub(x[2], x[0]));
             beam::scale(n, 1.0 / beam::norm(n))
         } else {
@@ -171,7 +179,7 @@ impl Model {
         for (c, q) in quads.iter().enumerate() {
             let n = q.nodes;
             // alternate the diagonal so the mesh has no preferred direction
-            let (t1, t2) = if (c / nb + c % nb) % 2 == 0 {
+            let (t1, t2) = if (c / nb + c % nb).is_multiple_of(2) {
                 ([n[0], n[1], n[2]], [n[0], n[2], n[3]])
             } else {
                 ([n[0], n[1], n[3]], [n[1], n[2], n[3]])
@@ -238,7 +246,12 @@ impl Model {
         for i in 0..na {
             for j in 0..nb {
                 self.shells.push(Shell {
-                    nodes: [grid[i][j], grid[i + 1][j], grid[i + 1][j + 1], grid[i][j + 1]],
+                    nodes: [
+                        grid[i][j],
+                        grid[i + 1][j],
+                        grid[i + 1][j + 1],
+                        grid[i][j + 1],
+                    ],
                     tri: false,
                     props,
                 });
@@ -265,7 +278,9 @@ impl Model {
         }
         for s in &self.shells {
             for &n in s.used() {
-                used[DOFS * n..DOFS * n + DOFS].iter_mut().for_each(|u| *u = true);
+                used[DOFS * n..DOFS * n + DOFS]
+                    .iter_mut()
+                    .for_each(|u| *u = true);
             }
         }
         for &(d, _) in &self.springs {
@@ -327,7 +342,11 @@ impl Model {
             let used = sh.used();
             let (kg, mg) = if sh.tri {
                 let geo = shell::TriGeometry {
-                    x: [self.nodes[used[0]], self.nodes[used[1]], self.nodes[used[2]]],
+                    x: [
+                        self.nodes[used[0]],
+                        self.nodes[used[1]],
+                        self.nodes[used[2]],
+                    ],
                     v: [dirs[used[0]], dirs[used[1]], dirs[used[2]]],
                     h: 0.5 * p.thickness,
                 };
@@ -351,10 +370,16 @@ impl Model {
                     l.q[2] + l.pressure * normal[2],
                 ];
                 let fg: Vec<f64> = if sh.tri {
-                    let x = [self.nodes[used[0]], self.nodes[used[1]], self.nodes[used[2]]];
+                    let x = [
+                        self.nodes[used[0]],
+                        self.nodes[used[1]],
+                        self.nodes[used[2]],
+                    ];
                     shell::tri_area_load(&x, q).0.to_vec()
                 } else {
-                    shell::area_load(&self.shell_geometry(e, &dirs), q).0.to_vec()
+                    shell::area_load(&self.shell_geometry(e, &dirs), q)
+                        .0
+                        .to_vec()
                 };
                 for (i, &d) in all.iter().enumerate() {
                     f_all[d] += fg[i];
@@ -442,7 +467,11 @@ impl Model {
                 let s = &self.shells[e];
                 let p = &self.shell_props[s.props];
                 let area = if s.tri {
-                    let x = [self.nodes[s.nodes[0]], self.nodes[s.nodes[1]], self.nodes[s.nodes[2]]];
+                    let x = [
+                        self.nodes[s.nodes[0]],
+                        self.nodes[s.nodes[1]],
+                        self.nodes[s.nodes[2]],
+                    ];
                     shell::tri_area_load(&x, [0.0; 3]).1
                 } else {
                     let geo = shell::Geometry {

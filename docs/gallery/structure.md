@@ -1,10 +1,11 @@
 # Structures
 
-Part of the [Example gallery](../gallery.md): the linear structural solver of the crate `foehncraft-structure` (L53, stage MS5 of the [moving solids plan](../assessments/moving-solids-reed-valves-plan.md)), made for reed valves and other parts that the flow moves. Part 1 has Euler–Bernoulli and Timoshenko beams, clamp springs per length of the clamp line (D290) with the fit to a measured frequency, static analysis and modes by shift-invert Lanczos with a Sturm check. Shells, solid elements, dynamics and contact follow in the next parts of MS5; the coupling to the flow is MS6.
+Part of the [Example gallery](../gallery.md): the linear structural solver of the crate `foehncraft-structure` (L53, stage MS5 of the [moving solids plan](../assessments/moving-solids-reed-valves-plan.md)), made for reed valves and other parts that the flow moves. Part 1 has Euler–Bernoulli and Timoshenko beams, clamp springs per length of the clamp line (D290) with the fit to a measured frequency, static analysis and modes by shift-invert Lanczos with a Sturm check; part 2 adds MITC4 and MITC3+ shells for plates and reed petals. Solid elements, dynamics and contact follow in the next parts of MS5; the coupling to the flow is MS6.
 
 | # | Example | Stage | Feature |
 |---|---|---|---|
 | 295 | [A reed valve as a beam: modes, and the clamp spring against the frequency equation](#reed-beam) | MS5 | `structure.run`, `structure.fitclamp`, `[[beams]]`, `[[clamps]]` |
+| NNN | [A reed petal as a shell: bending and twist on clamp springs](#reed-plate) | MS5 | `structure.run`, `[[plates]]`, `[[pressures]]`, `[[clamps]] along` |
 
 ---
 
@@ -96,3 +97,66 @@ The Timoshenko element (interdependent interpolation, Friedman & Kosmatka
 at second order in the frequency of a thick beam; on a thin reed it is the
 Euler–Bernoulli element to rounding. The pictures are made with
 `python3 -m tools.plot.structure_reed` (the commands are in its header).
+
+---
+
+<a id="reed-plate"></a>
+## NNN. A reed petal as a shell: bending and twist on clamp springs
+
+<img src="../figures/gallery/structure_plate_modes.png" alt="The first four modes of a reed petal 30 mm long, 12 mm wide and 0.2 mm thick on clamp springs, drawn as the moved shell surface over the flat reed and coloured by the displacement: mode 1 at 154 Hz bends the petal once, mode 2 at 927 Hz twists it, mode 3 at 1002 Hz bends it with one node line across, mode 4 at 2865 Hz with two" width="1100" height="770">
+
+**The petal.** `examples/cases/structure/reed_plate.toml` is a reed petal
+of spring steel, 30 mm free length, 12 mm wide and 0.2 mm thick, as a
+`[[plates]]` of 40 × 16 MITC4 shell elements (Dvorkin & Bathe 1984). The
+clamp runs `along` the edge x = 0: its rotational spring
+(40 N·m/rad per m) and translational spring (2·10⁷ N/m per m) are spread
+over the 17 nodes of the edge by the length each node stands for (D290).
+A `[[pressures]]` of 2 kPa pushes the petal off its seat:
+
+```sh
+target/release/foehn call structure.run --input examples/cases/tools/structure_reed_plate.json
+```
+
+```text
+reed_plate: 6 modes, Sturm check passed
+  mode   1      153.998466 Hz
+  mode   2      926.558218 Hz
+  mode   3     1001.871055 Hz
+  mode   4     2865.342344 Hz
+  ...
+reed_plate: static, largest displacement 2.098715e-3 m
+```
+
+The clamp springs carry the whole load: the reaction force is the 0.72 N
+of 2 kPa on 30 × 12 mm. The beam of entry 295 on the same springs per
+metre flaps at 152.0 Hz; the plate flaps at 154.0 Hz because a wide plate
+bends stiffer than a beam, by up to 1/(1 − ν²) (anticlastic bending held
+back). What the beam cannot show is mode 2: the petal twists at 927 Hz,
+below its second bending mode, the motion that makes a wide reed leak
+at one corner first. The picture is made with
+`python3 -m tools.plot.structure_plate` (commands in its header).
+
+**Two elements.** `element = "mitc4"` (default) is the four-node shell
+with assumed transverse shear strains on the edge midpoints (Dvorkin &
+Bathe 1984); `element = "mitc3+"` is the three-node shell with a cubic
+bubble on the rotations and the assumed shear of Lee, Lee & Bathe (2014)
+on a grid of triangles with alternating diagonals. Both pass the patch
+tests, neither locks in shear at thickness ratios down to 10⁻⁴, and both
+carry six unknowns per node (a small drilling spring holds the rotation
+about the normal), so beams and shells use the same nodes.
+
+**Verification** (`crates/foehncraft-structure/tests/shells.rs`):
+
+| Check | Reference | MITC4 | MITC3+ |
+|---|---|---|---|
+| Membrane and bending patch tests, distorted five-element mesh | MacNeal & Harder (1985): a constant strain or curvature field exactly | to rounding | to rounding |
+| Simply supported square plate under uniform load, a/t = 100 and 10⁴ | Navier series with the Mindlin shear term (Timoshenko & Woinowsky-Krieger 1959) | within 4·10⁻⁴ at 32 × 32, second order | within 4·10⁻³, second order |
+| Square plate clamped on one edge, first five modes | Leissa (1969), NASA SP-160, table 4.30 | within 1 % on 24 × 24 | within 1 % |
+| Scordelis–Lo roof, vertical lift at the free edge | 0.3024 (MacNeal & Harder 1985) | within 2 % on 16 × 16 | 0.961 and 0.987 of it on 16 and 32 per side, as Ko, Lee, Lee & Bathe (2017, table 10): 0.955 and 0.985 |
+| Plate on clamp springs, ν = 0 | the beam: qL⁴/(8D) + qL²/(2κGt) + qL³/(2k_r) + qL/k_t | within 10⁻³ | – |
+| Case errors | – | `STR001` for a clamp `along` an edge with a `width`, a pressure on a missing plate, a segment off the mesh | |
+
+MITC3+ converges from below more slowly than MITC4 on the curved roof, as
+published; MITC4 is the default. Stresses, a Gmsh reader for shell
+meshes and beams joined to plates come later.
+

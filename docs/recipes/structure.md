@@ -5,6 +5,7 @@ Part of the [Recipes](../recipes.md): the linear structural solver `foehncraft-s
 | # | Recipe |
 |---|---|
 | 295 | [Run a structural case of beams and clamp springs, and fit the clamp to a measured frequency](#structure-case) |
+| NNN | [Model a flat reed as a shell clamped along an edge](#structure-plate) |
 
 ---
 
@@ -83,3 +84,57 @@ Part of the [Recipes](../recipes.md): the linear structural solver `foehncraft-s
 5. For a free part (no supports), give `[analysis] shift` a negative
    value of about −0.01 (2π f₁)² so that K − σM can be factorised; the six
    rigid-body modes come out at 0 Hz first.
+
+---
+
+<a id="structure-plate"></a>
+## NNN. Model a flat reed as a shell clamped along an edge
+
+1. Give the plate as a parallelogram: a corner, two edges and the
+   divisions along them. The normal is `edge_a × edge_b`; a positive
+   pressure pushes along it.
+
+   ```toml
+   [[plates]]
+   name = "reed"
+   origin = [0.0, -6e-3, 0.0]
+   edge_a = [0.03, 0.0, 0.0]     # along the reed
+   edge_b = [0.0, 12e-3, 0.0]    # across it: normal +z
+   divisions = [40, 16]
+   thickness = 0.2e-3
+   material = "spring_steel"
+   element = "mitc4"             # or "mitc3+"
+   ```
+
+2. Clamp it along the edge: `along` takes the two ends of a segment and
+   holds every node on it. The springs are per metre of clamp line and
+   are shared by the length each node stands for; the clamp line's length
+   is the segment's, so leave out `width`.
+
+   ```toml
+   [[clamps]]
+   along = [[0.0, -6e-3, 0.0], [0.0, 6e-3, 0.0]]
+   normal = "z"
+   line = "y"
+   k_rotation = 40.0
+   k_translation = 2.0e7
+   ```
+
+   `[[supports]]` take `along` in the same way, for example a simply
+   supported edge with `fix = ["uz"]`.
+
+3. Load it with a pressure (Pa, along the normal) or a force per area
+   (N/m², global axes):
+
+   ```toml
+   [[pressures]]
+   plate = "reed"
+   value = 2000.0
+   ```
+
+4. Run it with `structure.run` as in recipe 295. `structure.vtk` holds the
+   shell as polygons: in ParaView, *Warp By Vector* with `mode_2` shows
+   the twist. Use 2 to 4 elements across a reed of a few millimetres for
+   the bending modes and 8 to 16 for the twist and the modes across the
+   width.
+

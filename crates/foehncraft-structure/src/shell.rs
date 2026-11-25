@@ -1,6 +1,9 @@
-//! Four-node shells with assumed transverse shear strains: MITC4
+//! Shells with assumed transverse shear strains: the four-node MITC4
 //! (Dvorkin & Bathe 1984, *Engineering Computations* 1; Bathe, *Finite
-//! Element Procedures*, 2nd ed. 2014, section 5.4).
+//! Element Procedures*, 2nd ed. 2014, section 5.4) and the three-node
+//! MITC3+ with a cubic bubble on the rotations (Lee, Lee & Bathe 2014,
+//! *Comput. Struct.* 138; Lee, Jeon, Lee & Bathe 2015, *Comput. Struct.*
+//! 153, equations 6 to 9 and table 1).
 //!
 //! The element is the degenerated continuum: the position is the
 //! bilinear interpolation of the nodes plus the thickness coordinate t
@@ -25,6 +28,8 @@
 //! diagonal of the element at that node) keeps K regular without changing
 //! the response of a smooth shell to the digits that matter. Integration:
 //! 2 × 2 Gauss points on the mid-surface and 2 through the thickness.
+
+#![allow(clippy::needless_range_loop)] // index loops over tensor components read as the formulas
 
 /// Material and thickness of a shell.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -147,7 +152,11 @@ fn inverse(m: [[f64; 3]; 3]) -> ([[f64; 3]; 3], f64) {
     let c1 = cross(a[2], a[0]);
     let c2 = cross(a[0], a[1]);
     (
-        [scale(c0, 1.0 / det), scale(c1, 1.0 / det), scale(c2, 1.0 / det)],
+        [
+            scale(c0, 1.0 / det),
+            scale(c1, 1.0 / det),
+            scale(c2, 1.0 / det),
+        ],
         det,
     )
 }
@@ -197,7 +206,13 @@ pub fn mitc4(geo: &Geometry, p: &ShellProps) -> (Vec<f64>, Vec<f64>) {
                 // Cartesian strain ε_ab = Σ (e_a·g^i)(e_b·g^j) e_ij, e_tt = 0
                 let pairs = [(0, 0, 0), (1, 1, 1), (0, 1, 2), (0, 2, 3), (1, 2, 4)];
                 let mut eps = [[0.0f64; 24]; 5]; // ε11, ε22, γ12, γ13, γ23
-                let outs = [(0, 0, 1.0), (1, 1, 1.0), (0, 1, 2.0), (0, 2, 2.0), (1, 2, 2.0)];
+                let outs = [
+                    (0, 0, 1.0),
+                    (1, 1, 1.0),
+                    (0, 1, 2.0),
+                    (0, 2, 2.0),
+                    (1, 2, 2.0),
+                ];
                 for (o, &(a, b, f)) in outs.iter().enumerate() {
                     for &(i, j, idx) in &pairs {
                         let w_ij = dot3(ea[a], gc[i]) * dot3(ea[b], gc[j]);
@@ -306,12 +321,36 @@ pub fn centre_normal(x: &[[f64; 3]; 4]) -> [f64; 3] {
 /// for polynomials of degree 5 (Dunavant 1985), weights summing to ½.
 const TRI7: [(f64, f64, f64); 7] = [
     (1.0 / 3.0, 1.0 / 3.0, 0.225 / 2.0),
-    (0.059_715_871_789_769_82, 0.470_142_064_105_115_1, 0.132_394_152_788_506_2 / 2.0),
-    (0.470_142_064_105_115_1, 0.059_715_871_789_769_82, 0.132_394_152_788_506_2 / 2.0),
-    (0.470_142_064_105_115_1, 0.470_142_064_105_115_1, 0.132_394_152_788_506_2 / 2.0),
-    (0.797_426_985_353_087_3, 0.101_286_507_323_456_3, 0.125_939_180_544_827_1 / 2.0),
-    (0.101_286_507_323_456_3, 0.797_426_985_353_087_3, 0.125_939_180_544_827_1 / 2.0),
-    (0.101_286_507_323_456_3, 0.101_286_507_323_456_3, 0.125_939_180_544_827_1 / 2.0),
+    (
+        0.059_715_871_789_769_82,
+        0.470_142_064_105_115_1,
+        0.132_394_152_788_506_2 / 2.0,
+    ),
+    (
+        0.470_142_064_105_115_1,
+        0.059_715_871_789_769_82,
+        0.132_394_152_788_506_2 / 2.0,
+    ),
+    (
+        0.470_142_064_105_115_1,
+        0.470_142_064_105_115_1,
+        0.132_394_152_788_506_2 / 2.0,
+    ),
+    (
+        0.797_426_985_353_087_3,
+        0.101_286_507_323_456_3,
+        0.125_939_180_544_827_1 / 2.0,
+    ),
+    (
+        0.101_286_507_323_456_3,
+        0.797_426_985_353_087_3,
+        0.125_939_180_544_827_1 / 2.0,
+    ),
+    (
+        0.101_286_507_323_456_3,
+        0.101_286_507_323_456_3,
+        0.125_939_180_544_827_1 / 2.0,
+    ),
 ];
 
 /// The geometry of a three-node shell element.
@@ -336,7 +375,11 @@ impl TriGeometry {
             let s = add(add(self.v[0], self.v[1]), self.v[2]);
             scale(s, 1.0 / norm(s))
         };
-        let pick = if vn[1].abs() < 0.9 { [0.0, 1.0, 0.0] } else { [1.0, 0.0, 0.0] };
+        let pick = if vn[1].abs() < 0.9 {
+            [0.0, 1.0, 0.0]
+        } else {
+            [1.0, 0.0, 0.0]
+        };
         let v1 = {
             let c = cross(pick, vn);
             scale(c, 1.0 / norm(c))
@@ -401,7 +444,12 @@ impl TriGeometry {
         // the bubble: θ₄ = α V₁ + β V₂ turns the centroid director V₄
         let fr4 = self.bubble_frame();
         let m4 = turn(fr4[2]);
-        let w = [(br * t * self.h), (bs * t * self.h), (b * self.h), (b * t * self.h)];
+        let w = [
+            (br * t * self.h),
+            (bs * t * self.h),
+            (b * self.h),
+            (b * t * self.h),
+        ];
         for (which, &rot) in w.iter().enumerate() {
             for d in 0..3 {
                 for (j, axis) in [fr4[0], fr4[1]].iter().enumerate() {
@@ -478,8 +526,10 @@ pub fn mitc3plus(geo: &TriGeometry, p: &ShellProps) -> (Vec<f64>, Vec<f64>) {
             for q in 0..NT {
                 let chat = f.0[q] - d.0[q] - f.1[q] + ee.1[q];
                 let common = (cc.0[q] + cc.1[q]) / 3.0;
-                cov[3][q] = 2.0 / 3.0 * (b.0[q] - 0.5 * b.1[q]) + common + chat / 3.0 * (3.0 * s - 1.0);
-                cov[4][q] = 2.0 / 3.0 * (a.1[q] - 0.5 * a.0[q]) + common + chat / 3.0 * (1.0 - 3.0 * r);
+                cov[3][q] =
+                    2.0 / 3.0 * (b.0[q] - 0.5 * b.1[q]) + common + chat / 3.0 * (3.0 * s - 1.0);
+                cov[4][q] =
+                    2.0 / 3.0 * (a.1[q] - 0.5 * a.0[q]) + common + chat / 3.0 * (1.0 - 3.0 * r);
             }
             let e3 = {
                 let n = cross(g[0], g[1]);
@@ -489,7 +539,13 @@ pub fn mitc3plus(geo: &TriGeometry, p: &ShellProps) -> (Vec<f64>, Vec<f64>) {
             let e2 = cross(e3, e1);
             let ea = [e1, e2, e3];
             let pairs = [(0, 0, 0), (1, 1, 1), (0, 1, 2), (0, 2, 3), (1, 2, 4)];
-            let outs = [(0, 0, 1.0), (1, 1, 1.0), (0, 1, 2.0), (0, 2, 2.0), (1, 2, 2.0)];
+            let outs = [
+                (0, 0, 1.0),
+                (1, 1, 1.0),
+                (0, 1, 2.0),
+                (0, 2, 2.0),
+                (1, 2, 2.0),
+            ];
             let mut eps = [[0.0f64; NT]; 5];
             for (o, &(a1, b1, fac)) in outs.iter().enumerate() {
                 for &(i, j, idx) in &pairs {
@@ -504,7 +560,13 @@ pub fn mitc3plus(geo: &TriGeometry, p: &ShellProps) -> (Vec<f64>, Vec<f64>) {
                 }
             }
             let wdet = w * det.abs();
-            let dmat = [[c, c * nu, 0.0, 0.0, 0.0], [c * nu, c, 0.0, 0.0, 0.0], [0.0, 0.0, gm, 0.0, 0.0], [0.0, 0.0, 0.0, gk, 0.0], [0.0, 0.0, 0.0, 0.0, gk]];
+            let dmat = [
+                [c, c * nu, 0.0, 0.0, 0.0],
+                [c * nu, c, 0.0, 0.0, 0.0],
+                [0.0, 0.0, gm, 0.0, 0.0],
+                [0.0, 0.0, 0.0, gk, 0.0],
+                [0.0, 0.0, 0.0, 0.0, gk],
+            ];
             for a1 in 0..NT {
                 for b1 in a1..NT {
                     let mut v = 0.0;
@@ -578,7 +640,11 @@ pub fn mitc3plus(geo: &TriGeometry, p: &ShellProps) -> (Vec<f64>, Vec<f64>) {
 /// Work-equivalent nodal forces (18) of a load per area `q` on a
 /// three-node element, and its area.
 pub fn tri_area_load(x: &[[f64; 3]; 3], q: [f64; 3]) -> ([f64; 18], f64) {
-    let area = 0.5 * norm(cross(crate::beam::sub(x[1], x[0]), crate::beam::sub(x[2], x[0])));
+    let area = 0.5
+        * norm(cross(
+            crate::beam::sub(x[1], x[0]),
+            crate::beam::sub(x[2], x[0]),
+        ));
     let mut f = [0.0; 18];
     for k in 0..3 {
         for d in 0..3 {

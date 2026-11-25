@@ -23,7 +23,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | [Boundary conditions](gallery/boundary-conditions.md) | slip walls, axisymmetric wedges, inlet profiles from tables, backflow at pressure outlets, convective outlets, periodic modules, absolute pressure values (D239) | 21, 67, 220 |
 | [Lagrangian sprays](gallery/sprays.md) | droplets as Lagrangian parcels in the gas flow: injectors, drag, gravity, wall behaviour, the mass book | 242, 265, 280, 283, 285, 292 |
 | [Porous regions](gallery/porous.md) | flow through porous matrices with a direction-dependent Darcy–Forchheimer resistance: a ceramic honeycomb, the exact pressure drop of a block | 273, 275 |
-| [Structures](gallery/structure.md) | the linear structural solver for reeds and other parts the flow moves: beams, clamp springs and their fit to a measured frequency, static and modal analyses (MS5) | 295 |
+| [Structures](gallery/structure.md) | the linear structural solver for reeds and other parts the flow moves: beams and MITC shells, clamp springs and their fit to a measured frequency, static and modal analyses (MS5) | 295 |
 | [Immersed bodies](gallery/immersed.md) | bodies in the flow without a body-fitted mesh: Brinkman penalisation of primitive bodies (L13 stage 1) | 270, 291 |
 | [Moving meshes and solids](gallery/moving-solids.md) | meshes whose nodes move in time: the deforming mesh with swept volumes, a piston compressing a closed gas volume, free-stream preservation (stage MS0, L22) | |
 | [Species and reacting flows](gallery/species.md) | species transport of ideal-gas mixtures on the variable density: mixture properties from kinetic theory, the closure species, the element ledger (steam furnace path, SF1) | 278, 289 |
