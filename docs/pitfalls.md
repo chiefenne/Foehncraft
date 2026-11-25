@@ -516,6 +516,16 @@ Found with the porous regions of D270 (#273):
   relative to its value gives a step of zero or round-off size; use
   `1e-6·|z| + 1e-9`.
 
+**A rank does not know the cell zone of its halo cells (turning zones on
+ranks, #301).** `extract` gives the local mesh the zones of the own cells
+only (`cell_zone` has `n_cells` entries), so anything that reads the zone
+of the cell across a face, such as the frame flux of a rotating zone on a
+face between two ranks, must get the zone of the halo cell from its owner:
+upload the own values of a cell array and read it back with
+`download_with_halo`. A per-rank decision like "this part has a pressure
+boundary" must be taken on the global arrays (`OnRanks::arrays`), or ranks
+start from different pressures.
+
 <a id="deforming-mesh"></a>
 ## Deforming meshes: the grid flux and the old levels
 

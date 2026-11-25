@@ -279,7 +279,9 @@ pub struct RunSection {
     /// `run.restart` file (read on every rank count by global identity,
     /// MPI step W6); the restart of the largest count is gathered into
     /// `ranks.restart.h5` and must have the bytes of the one-rank restart.
-    /// Not yet with gravity, turning zones, regions or a schedule.
+    /// With the rotating zones of `[[mrf]]` and in closed domains (a
+    /// reference cell of the pressure). Not yet with gravity, a sliding
+    /// mesh, regions or a schedule.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub ranks: Vec<usize>,
     /// Solve the run on this number of ranks (MPI step W7; `foehn run
@@ -290,8 +292,9 @@ pub struct RunSection {
     /// that of one rank. Under an MPI launcher (`mpirun -n N foehn run`,
     /// a build with the `mpi` feature) the ranks are its processes;
     /// otherwise threads of this process. 1: no ranks. Steady and transient
-    /// runs with scalars, energy, k-ω SST and k-ε (refused: species,
-    /// statistics, what `[run] ranks` refuses).
+    /// runs with scalars, energy, k-ω SST and k-ε, the rotating zones of
+    /// `[[mrf]]` (refused: species, statistics, what `[run] ranks`
+    /// refuses).
     #[serde(skip_serializing_if = "is_one")]
     pub rank_count: usize,
 }
@@ -3022,7 +3025,10 @@ pub fn run_steered(
         );
         let phys = phys_on;
         let loc = Locator::new(&mesh, &geo);
-        let reference_cell = if arrays.has_pressure() {
+        let reference_cell = if on
+            .as_ref()
+            .map_or(arrays.has_pressure(), |o| o.arrays.has_pressure())
+        {
             None
         } else {
             let x = case.pressure.reference_point.unwrap_or_else(|| {

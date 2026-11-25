@@ -1,0 +1,87 @@
+# Taylor-Couette flow with a rotating zone (`[[mrf]]`, D55) solved on
+# ranks (MPI step W7, turning zones): the gap between a cylinder turning at
+# 10 rad/s and a fixed outer cylinder, the inner half of the gap a moving
+# reference frame that turns with the inner cylinder, solved on five ranks.
+# The recursive coordinate bisection cuts through the rotor, the stator and
+# the interface between them: the frame flux ρ S·V of a face between two
+# ranks takes the zone of the halo cell from its owner, so every rank
+# solves bitwise the cells of the one-rank run. Rank 0 writes every output
+# file, computed on the fields gathered into the order of the whole mesh,
+# byte for byte that of one rank (D93, D84), the torque and the shaft power
+# of the rotor among them.
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/ranks_run_mrf_couette.toml
+#
+# runs it on the five ranks of `[run] rank_count` (threads of this process;
+# `--ranks N` overrides the count, `--ranks 1` gives the reference). With a
+# build that has the `mpi` feature the ranks may be MPI processes:
+#
+#   cargo build --release -p foehncraft-cli --features mpi
+#   mpirun -n 5 target/release/foehn flow examples/cases/flow/ranks_run_mrf_couette.toml
+#
+# Re = w r1 (r2 - r1) / nu = 50; the exact solution is u_theta = A r + B/r,
+# and the run fails if the relative L2 error of the velocity exceeds 1 %.
+
+case_format = "0.7"
+
+[mesh.annulus]
+r_inner = 0.05
+r_outer = 0.10
+depth = 0.01
+n_theta = 32
+n_r = 8
+rotor_layers = 4
+refine = 1
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 5e-4
+
+[constants]
+spin = 10.0
+
+[flow]
+convection = true
+
+[[mrf]]
+zone = "rotor"
+axis = [0.0, 0.0, 1.0]
+omega = 10.0
+
+[boundary.inner]
+type = "wall"
+velocity = ["-spin * y", "spin * x", 0.0]
+[boundary.outer]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-10
+max_iterations = 3000
+
+[solver.momentum]
+relaxation = 0.8
+
+[analytic]
+type = "taylor-couette"
+inner_radius = 0.05
+outer_radius = 0.10
+inner_omega = 10.0
+
+[verification]
+max_error = 0.01
+
+[log]
+columns = ["residual.momentum", "rotor.rotor.torque", "rotor.rotor.power"]
+
+[output]
+derived = ["relative-velocity", "frame-velocity"]
+
+[run]
+rank_count = 5

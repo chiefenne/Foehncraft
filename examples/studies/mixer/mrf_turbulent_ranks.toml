@@ -1,0 +1,74 @@
+# The turbulent baffled stirred vessel of mrf_turbulent.toml with five
+# blades and three baffles, solved on five ranks (MPI step W7, turning
+# zones): the rotating zone of [[mrf]] (D55), k-omega SST with the
+# automatic wall treatment and the coupled solver. The recursive
+# coordinate bisection cuts the rotor, the stator and the interface between
+# them; the frame flux of a face between two ranks takes the zone of the
+# halo cell from its owner, the closed vessel's pressure level is fixed in
+# one reference cell whose value its rank hands to all, and rank 0 writes
+# every output file byte for byte as one rank does (D93, D84). Gallery
+# image of the turning zones on ranks.
+#
+#   pip install gmsh
+#   python3 examples/meshes/mixer.py --blades 5 --baffles 3
+#   cargo run --release -p foehncraft-cli -- flow examples/studies/mixer/mrf_turbulent_ranks.toml
+#   cargo run --release -p foehncraft-cli -- flow examples/studies/mixer/mrf_turbulent_ranks.toml --ranks 1 --out output/one
+#
+# 16 800 cells. `--ranks N` overrides the five ranks of [run] rank_count;
+# under mpirun (a build with the `mpi` feature) the ranks are processes.
+
+case_format = "0.6"
+
+[mesh]
+file = "../../meshes/mixer5_conformal.msh"
+renumber = "rcm"
+
+[fluid]
+density = 1000.0
+viscosity = 1e-3          # Pa s: water, nu = 1e-6 m^2/s
+
+[constants]
+spin = 10.0
+
+[turbulence]
+model = "k-omega-sst"
+wall_treatment = "automatic"
+
+[initial]
+turbulence_intensity = 0.05
+viscosity_ratio = 10.0
+
+[flow]
+convection = true
+
+[[mrf]]
+zone = "rotor"
+axis = [0.0, 0.0, 1.0]
+omega = 10.0
+
+[boundary.blades]
+type = "wall"
+velocity = ["-spin * y", "spin * x", 0.0]
+[boundary.vessel]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+algorithm = "coupled"
+tolerance = 1e-5
+max_iterations = 4000
+
+[log]
+columns = ["residual.momentum", "rotor.rotor.torque", "rotor.rotor.power"]
+
+[output]
+vtkhdf = true
+wall_csv = false
+derived = ["vorticity", "relative-velocity", "frame-velocity", "turbomachinery",
+           "relative-total-pressure", "rothalpy"]
+
+[run]
+rank_count = 5

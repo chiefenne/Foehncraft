@@ -1166,7 +1166,10 @@ fn run_one<F: FnMut(&str)>(
     if let Some(sp) = spray.as_mut() {
         sp.set_datums(datum_built.iter().map(|b| b.parcels.clone()).collect());
     }
-    let reference_cell = if arrays.has_pressure() {
+    let reference_cell = if on
+        .as_ref()
+        .map_or(arrays.has_pressure(), |o| o.arrays.has_pressure())
+    {
         None
     } else {
         let x = case.pressure.reference_point.unwrap_or_else(|| {
@@ -1250,9 +1253,10 @@ fn run_one<F: FnMut(&str)>(
     // the sliding mesh (D182): the rotating zone and the shift of its data
     let slide = crate::sliding::attach(&case, mesh, &fl.disc, dt0)?;
     // the rotating zones: the frames of `[[mrf]]` (a transient frozen rotor,
-    // D185) and the grid flux of the sliding rotors (D182)
-    if (slide.is_some() || !case.mrf.is_empty())
-        && let Some(notes) = crate::frame::attach(&mut fl, &case, mesh, geo)?
+    // D185), the grid flux of the sliding rotors (D182) and the rotating
+    // frame of the whole domain (`flow.frame_rotation`)
+    if (slide.is_some() || !case.mrf.is_empty() || case.flow.frame_rotation != [0.0; 3])
+        && let Some(notes) = crate::frame::attach(&mut fl, &case, smesh, sgeo)?
     {
         for l in &notes.lines {
             lg.line(l);

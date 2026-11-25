@@ -132,6 +132,9 @@ impl Solver {
         crate::scalar::attach(&mut fl, case, mesh, geo)?;
         crate::density::attach(&mut fl, case)?;
         crate::turbulence::attach_with(&mut fl, case, mesh, geo, wall_distance)?;
+        // the rotating zones of [[mrf]] (steady, or the transient frozen
+        // rotor)
+        crate::frame::attach(&mut fl, case, mesh, geo)?;
         let (tr, dt) = match case.time {
             Some(t) => (
                 Some(crate::transient::Transient::new(
@@ -379,7 +382,7 @@ pub fn check(rank: usize, mine: &FlowSolve, reference: &FlowSolve) -> RankCheck 
 /// limiter and bounded central, CG with Jacobi and with multigrid for the
 /// pressure; transient PISO with BDF2; a passive scalar; the energy
 /// equation (transient); the k-ω SST and the k-ε model with scalable wall
-/// functions; the coupled solver.
+/// functions; the coupled solver; a rotating zone of `[[mrf]]`.
 pub fn check_cases() -> Result<Vec<CheckCase>> {
     let with = |mesh: &str, solver: &str, fluid: &str, extra: &str| -> Result<FlowCase> {
         let text = format!(
@@ -607,6 +610,47 @@ pub fn check_cases() -> Result<Vec<CheckCase>> {
             )?,
             iterations: 6,
         },
+        CheckCase {
+            name: "annulus with an outlet, rotating zone of [[mrf]]",
+            case: FlowCase::from_toml(
+                r#"
+                case_format = "0.6"
+                [mesh.annulus]
+                r_inner = 0.05
+                r_outer = 0.10
+                depth = 0.01
+                n_theta = 24
+                n_r = 6
+                rotor_layers = 3
+                [fluid]
+                density = 1.0
+                viscosity = 5e-4
+                [[mrf]]
+                zone = "rotor"
+                axis = [0.0, 0.0, 1.0]
+                omega = 10.0
+                [boundary.inner]
+                type = "wall"
+                velocity = ["-10.0 * y", "10.0 * x", 0.0]
+                [boundary.outer]
+                type = "static-pressure-outlet"
+                pressure = 0.0
+                [boundary.zmin]
+                type = "symmetry"
+                [boundary.zmax]
+                type = "symmetry"
+                [solver]
+                max_iterations = 100
+                [solver.momentum]
+                limiter = "venkatakrishnan"
+                [solver.pressure]
+                preconditioner = "jacobi"
+                max_iter = 400
+                "#,
+                std::path::Path::new("."),
+            )?,
+            iterations: 10,
+        },
     ])
 }
 
@@ -636,9 +680,10 @@ impl RanksRun {
 
 /// Fails unless `[run] ranks` can solve `case`: steady or transient
 /// SIMPLEC, PISO or the coupled solver, laminar or with the k-ω SST or a
-/// k-ε model, with passive scalars and the energy equation of one fluid;
-/// from the start fields or a restart file (W6); without gravity, turning
-/// zones, a schedule, levels, regions, the variable density or the model
+/// k-ε model, with passive scalars and the energy equation of one fluid,
+/// in a rotating frame of the whole domain or with the rotating zones of
+/// `[[mrf]]`; from the start fields or a restart file (W6); without
+/// gravity, a sliding mesh, a schedule, levels, regions, the variable density or the model
 /// options that are not on ranks yet.
 pub fn supported(case: &FlowCase) -> Result<()> {
     use crate::turbulence::{QcrMode, TurbulenceModel as Model};
@@ -662,10 +707,7 @@ pub fn supported(case: &FlowCase) -> Result<()> {
         ),
         (case.gravity.is_some(), "gravity"),
         (!case.spray.is_empty(), "sprays"),
-        (
-            !case.mrf.is_empty() || !case.sliding.is_empty(),
-            "turning zones",
-        ),
+        (!case.sliding.is_empty(), "a sliding mesh ([[sliding]])"),
         (!case.schedule.is_empty(), "a [[schedule]]"),
         (
             case.mesh_motion.is_some(),

@@ -23,6 +23,7 @@ Part of the [Example gallery](../gallery.md): the built-in test mesher in 2D and
 | 262 | [Written on five ranks, read on any: restart files on ranks](#restart-ranks) | 8 | the restart gathered from the ranks has the bytes of the one-rank file; read on any rank count by global identity, the continuation bitwise one rank (MPI step W6, D84, D93) |
 | 279 | [Solved on five ranks, written by one: a run on ranks](#run-ranks) | 8 | `foehn flow --ranks N`: every rank runs the loop, rank 0 writes; monitors, ledger, fields and restart from the gathered fields, every output file byte for byte one rank (MPI step W7, D84, D93) |
 | 290 | [Five ranks, one turbulent heated transient: the physics of a run on ranks](#run-ranks-physics) | 8 | k-ω SST, energy, a passive dye and BDF2 time steps solved on ranks as the run itself; heat balance of every step, history, probes, forces, fields and restart byte for byte one rank (MPI step W7 part 2, D84, D93) |
+| 301 | [A stirred vessel on five ranks: rotating zones of MRF on ranks](#run-ranks-mrf) | 8 | the frame flux of a face between ranks from the zone of the halo cell, the pressure level of a closed vessel fixed in one rank's reference cell; torque, shaft power, fields and restart byte for byte one rank (MPI step W7, turning zones, D55, D93) |
 
 ---
 
@@ -836,6 +837,64 @@ python3 -m tools.mesh.render_mesh output/ranks_run_transient_sst/fields.vtkhdf t
 python3 -m tools.mesh.render_mesh output/ranks_run_transient_sst/fields.vtkhdf dye.png \
     --field dye --top --size 1200x460 --zoom 1.9 \
     --title "passive dye of the upper inflow, t = 4.5 s, solved on 5 ranks"
+```
+
+[↑ back to top](#meshes)
+
+---
+
+<a id="run-ranks-mrf"></a>
+## 301. A stirred vessel on five ranks: rotating zones of MRF on ranks
+
+<img src="../figures/gallery/ranks_mrf_mixer_speed.png" alt="Speed in the five-blade stirred vessel solved with a moving reference frame on five ranks" width="1000" height="1000">
+
+<img src="../figures/gallery/ranks_mrf_mixer_rank.png" alt="The five ranks of the stirred vessel" width="1000" height="1000">
+
+The turbulent baffled vessel of gallery 100 with five blades and three
+baffles (water, the rotor at 10 rad/s, Re = ΩR²/ν = 20 000, k-ω SST, the
+coupled solver), the rotor a moving reference frame (`[[mrf]]`, D55),
+solved on five ranks as the run itself (`[run] rank_count = 5`). The
+recursive coordinate bisection cuts through the rotor, the stator and the
+circle between them (second image), so faces between two ranks join rotor
+and stator cells. The frame flux ρ **S**·**V** of such a face is the mean of
+the frame velocities of its two cells; the rank of one of them knows only
+its own cells, so the zone of every halo cell now comes from its owner
+through the halo exchange, and the closure check of the frame flux and the
+cell counts of the log are sums over all ranks. The vessel is closed, so
+the pressure level is fixed in one reference cell: the rank that owns it
+pins the row and hands the value of the cell to all ranks after every
+pressure solve (SIMPLEC, PISO and the coupled solver), which is what a
+closed domain needed to run on ranks at all. The run converges in 456
+iterations to 1e-5 on five ranks as on one, and `residuals.csv`,
+`balance.csv`, `boundaries.csv`, `fields.vtkhdf` and `restart.h5` are
+byte for byte those of `--ranks 1`, with the torque of the fluid on the
+rotor (−5.43e-5 N m on the 5 mm slab) and the shaft power −Ω·T in the log
+columns and the ledger. 57 s on five thread ranks against 45 s on one on
+this 16 800-cell mesh: the gathers of the output and the exact sums over
+ranks, not a speed-up (strong scaling is W9). The transient frozen rotor
+(MRF in a `[time]` run, D185) runs on ranks the same way; the tests check
+a steady laminar Taylor–Couette gap with energy on 2, 3 and 4 ranks and the
+transient frozen rotor with SST on 2 and 3. The sliding mesh follows.
+
+| | |
+|---|---|
+| Mesh | Gmsh, 16 848 cells (quadrilaterals and triangles extruded by one layer), rotor and stator conformal on the interface circle |
+| Ranks | 5 (recursive coordinate bisection), threads of one process; or MPI processes under `mpirun` |
+| Model | k-ω SST, automatic wall treatment, rotor zone as a moving reference frame |
+| Solver | coupled, 456 iterations to 1e-5 |
+| Output | every file byte for byte the run on one rank |
+| Case file | `examples/studies/mixer/mrf_turbulent_ranks.toml`; the CI case `flow/ranks_run_mrf_couette.toml` |
+
+```
+pip install gmsh
+python3 examples/meshes/mixer.py --blades 5 --baffles 3
+target/release/foehn flow examples/studies/mixer/mrf_turbulent_ranks.toml --out output/mixer_ranks
+python3 -m tools.mesh.render_mesh output/mixer_ranks/fields.vtkhdf speed.png \
+    --field speed --top --no-edges --size 1000x1000 \
+    --title "speed (m/s), 5-blade mixer, MRF + SST, solved on 5 ranks"
+python3 -m tools.mesh.render_mesh output/mixer_ranks/ranks.vtkhdf rank.png \
+    --field rank --top --categorical --size 1000x1000 \
+    --title "the five ranks (recursive coordinate bisection)"
 ```
 
 [↑ back to top](#meshes)
