@@ -67,7 +67,7 @@ pub struct Run;
 impl Tool for Run {
     const ID: &'static str = "structure.run";
     const VERSION: u32 = 1;
-    const SUMMARY: &'static str = "Run a structural case (beams, shells, quadratic solids from Gmsh or a block, clamp springs, temperatures; static, modal and transient analyses) and write `result.json`, `structure.vtk` and, for a transient, `transient.csv`; returns the result.";
+    const SUMMARY: &'static str = "Run a structural case (beams, shells, quadratic solids from Gmsh or a block, clamp springs, temperatures, contact with rigid seats and stops; static, modal and transient analyses) and write `result.json`, `structure.vtk` and, for a transient, `transient.csv`; returns the result.";
     const CATEGORY: Category = Category::Structure;
     const ACTION: Action = Action::StartRun;
     type Input = RunInput;

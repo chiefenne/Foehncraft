@@ -173,8 +173,7 @@ impl Contacts {
     pub fn gap(&self, p: usize, u: &[f64]) -> f64 {
         let pr = &self.pairs[p];
         pr.g0
-            + pr
-                .terms
+            + pr.terms
                 .iter()
                 .filter_map(|&(i, n)| i.map(|i| n * u[i]))
                 .sum::<f64>()
@@ -255,7 +254,9 @@ pub fn solve_static(
         let mut settled = false;
         for _inner in 0..100 {
             if cached.as_ref().is_none_or(|(a, _)| *a != active) {
-                let k = sys.k.plus_scaled(1.0, &c.penalty_matrix(nf, &active, |_| c.k));
+                let k = sys
+                    .k
+                    .plus_scaled(1.0, &c.penalty_matrix(nf, &active, |_| c.k));
                 cached = Some((active.clone(), factor(model, sys, &k)?));
             }
             let mut f = sys.f.clone();
@@ -264,11 +265,12 @@ pub fn solve_static(
                     c.add_force(p, lam[p] - c.k * c.pairs[p].g0, &mut f);
                 }
             }
-            u = cached.as_ref().map(|(_, l)| l.solve(&f)).unwrap_or_default();
+            u = cached
+                .as_ref()
+                .map(|(_, l)| l.solve(&f))
+                .unwrap_or_default();
             solves += 1;
-            let next: Vec<bool> = (0..np)
-                .map(|p| lam[p] - c.k * c.gap(p, &u) > 0.0)
-                .collect();
+            let next: Vec<bool> = (0..np).map(|p| lam[p] - c.k * c.gap(p, &u) > 0.0).collect();
             if next == active {
                 settled = true;
                 break;
@@ -282,9 +284,7 @@ pub fn solve_static(
             ));
         }
         let gaps: Vec<f64> = (0..np).map(|p| c.gap(p, &u)).collect();
-        let force: Vec<f64> = (0..np)
-            .map(|p| (lam[p] - c.k * gaps[p]).max(0.0))
-            .collect();
+        let force: Vec<f64> = (0..np).map(|p| (lam[p] - c.k * gaps[p]).max(0.0)).collect();
         let pen = gaps.iter().fold(0.0f64, |a, &g| a.max(-g));
         if pen <= tol {
             return Ok((u, State { force, gap: gaps }, solves));

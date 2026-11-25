@@ -86,14 +86,19 @@ normal = [0.0, 0.0, 1.0]
         let w = s.u[DOFS * n + 2];
         let free = -p * L.powi(3) / (3.0 * ei);
         let j = out.to_json("c");
-        let force = j["static"]["contact"]["planes"][0]["force"].as_f64().unwrap();
+        let force = j["static"]["contact"]["planes"][0]["force"]
+            .as_f64()
+            .unwrap();
         if free > -g {
             // the tip does not reach the seat
             assert!(rel(w, free) < 1e-9, "{p}: {w} {free}");
             assert_eq!(force, 0.0);
         } else {
             let r = p - 3.0 * ei * g / L.powi(3);
-            eprintln!("P = {p} N: tip {w:.9e} (seat {:.9e}), contact force {force:.9e} (exact {r:.9e})", -g);
+            eprintln!(
+                "P = {p} N: tip {w:.9e} (seat {:.9e}), contact force {force:.9e} (exact {r:.9e})",
+                -g
+            );
             assert!((w + g).abs() < 1e-9 * L, "{p}: {w}");
             assert!(rel(force, r) < 1e-6, "{p}: {force} {r}");
             assert_eq!(j["static"]["contact"]["planes"][0]["nodes_in_contact"], 1);
@@ -213,8 +218,16 @@ tolerance = 1e-13
     }
     eprintln!(
         "block on a seat: corners lift by up to {:.3e} m ({:.1} % of the largest displacement), {} solves",
-        bottom.iter().map(|&n| b[DOFS * n + 2]).fold(0.0f64, f64::max),
-        100.0 * bottom.iter().map(|&n| b[DOFS * n + 2]).fold(0.0f64, f64::max) / big,
+        bottom
+            .iter()
+            .map(|&n| b[DOFS * n + 2])
+            .fold(0.0f64, f64::max),
+        100.0
+            * bottom
+                .iter()
+                .map(|&n| b[DOFS * n + 2])
+                .fold(0.0f64, f64::max)
+            / big,
         j["static"]["contact"]["solves"]
     );
     // a node starting inside the plane is refused
@@ -402,7 +415,12 @@ tip = [0.03, 0.0, 0.0]
     assert!(fseat.iter().any(|&f| f > 0.0), "the reed lands on its seat");
     assert!(pen < 2e-5, "{pen}");
     let csv = out.to_csv().unwrap();
-    assert!(csv.lines().next().unwrap().ends_with(",contact_seat,contact_stop"));
+    assert!(
+        csv.lines()
+            .next()
+            .unwrap()
+            .ends_with(",contact_seat,contact_stop")
+    );
     // the modal method does not take contact
     let mut m = c.clone();
     m.transient.as_mut().unwrap().method = case::Method::Modal;

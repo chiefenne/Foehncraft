@@ -269,3 +269,64 @@ solid shares no nodes with them), stresses other than the von Mises
 stress at the nodes, a temperature field per node, and Gmsh's complete
 second-order elements (27-node hexahedra; use
 `Mesh.SecondOrderIncomplete = 1`).
+
+
+---
+
+<a id="reed-valve-contact"></a>
+## 302. A reed valve between its seat and its stop
+
+<img src="../figures/gallery/structure_reed_valve.png" alt="Four snapshots of the reed petal coloured by its lift from blue (0) to red (1.2 mm) under the grey plane of the stop: on the stop at 1.19 ms, sprung back to 0.8 mm at 2.40 ms, on the stop again at 3.40 ms and flat on its seat at 4.51 ms; below, the lift of the tip against time with the stop and the seat, and the contact forces of the stop (red) and the seat (green) at every step" width="1100" height="800">
+
+**The valve.** A reed opens off its seat until it lies on its stop, and
+closes by slamming back onto the seat; both are where it wears and
+breaks. `examples/cases/structure/reed_valve_stop.toml` puts the reed
+petal of gallery 299 (MITC4 shells on its clamp springs) between two
+rigid planes: the seat under it, and the stop, a plane rising 1 mm over
+the 30 mm of the reed. Both keep half the plate thickness from the
+mid-surface (`offset = 0.1e-3`), so the faces touch. A pressure of 3 kPa
+for 3 ms lifts it:
+
+```sh
+target/release/foehn call structure.run --input examples/cases/tools/structure_reed_valve_stop.json
+```
+
+The tip reaches the stop at 1.19 ms, springs back to 0.8 mm and settles
+on it while the pressure holds; the stop takes up to 14 N. When the
+pressure falls, the reed slams onto its seat at 4.5 ms, rebounds to
+0.87 mm and lands again and again; the clamp end rocks on the seat
+edge between the impacts (the small green humps). 2400 steps of 5 µs
+take 20 s with 1990 factorisations (the active set changes in most
+steps); the largest penetration is 6·10⁻¹¹ m.
+
+**How.** A node touches a plane when its gap
+g = (x + u − point)·n − offset falls to zero; the contact force pushes
+along n and never pulls. A static solution is exact: the augmented
+Lagrangian method (Simo & Laursen 1992; Wriggers 2006) iterates a
+penalty and its multiplier until the penetration is below 10⁻⁹ of the
+model size. In time, the penalty force acts at the end of each step and
+enters the generalised-α balance α-averaged, like the other forces
+(Erlicher, Bonaventura & Bursi 2002), with an active-set loop in each
+step. Holding the α-point on the plane instead puts the end of the step
+inside it and feeds energy into the next impact; a first version did,
+and the reed bounced back to the stop after every slam. The penalty is
+1000 times the stiffness of the stiffest contact node along the normal.
+
+**Verification** (`crates/foehncraft-structure/tests/contact.rs`):
+
+| Check | Exact solution | Result |
+|---|---|---|
+| Cantilever pressed by P onto a seat g = 1 mm below its tip | the propped cantilever with a settled support: R = P − 3EIg/L³ (Timoshenko & Gere) | the tip on the seat to 10⁻⁹ L; R within 10⁻⁶; the clamp takes P − R; short of the seat the free answer |
+| Hex20 block pressed onto a seat by a uniform pressure | the block on rollers at the nodes that touch, every reaction pushing | to 10⁻⁶ of the largest displacement; the total force equals the load to 10⁻⁹ |
+| Mass on a spring driven against a stop, elastic | the penalty model in continuous time: back at rest at the start after 2t₁ + τ; its penetration | 200 to 1600 steps converge to it (5.9·10⁻³ to 5.5·10⁻⁵ of the gap); the penetration within 5 % of the penalty model's, falling as 1/√penalty |
+| Reed between a seat and a stop, the case keys | the tip between the planes | within the penetration; both planes carry force; a modal transient with contact is refused |
+
+The block shows a property of the serendipity elements: a uniform
+pressure gives the corner nodes of an eight-node face a pulling share
+(−1/12), so on a seat these corners lift off (by 24 % of the largest
+displacement here) and only the mid-side nodes carry the load. The
+picture is made with `python3 -m tools.plot.structure_contact` (commands
+in its header). Not yet: friction, curved or deformable seats and stops
+(contact between parts), a coefficient of restitution (the impacts are
+elastic; numerical damping, ρ∞ < 1, takes the energy of the high
+frequencies they excite), and the flow through the closing gap (MS6).

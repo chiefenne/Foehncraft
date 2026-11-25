@@ -1493,18 +1493,27 @@ pub fn build(case: &Case) -> Result<Built, Error> {
     let mut contacts = Vec::new();
     for ck in &case.contacts {
         let what = format!("[[contacts]] `{}`", ck.name);
-        if contacts.iter().any(|p: &crate::contact::Plane| p.name == ck.name) {
+        if contacts
+            .iter()
+            .any(|p: &crate::contact::Plane| p.name == ck.name)
+        {
             return Err(bad(format!("{what}: two contacts have this name")));
         }
         let len = crate::beam::norm(ck.normal);
         if !(len > 0.0 && len.is_finite()) || ck.point.iter().any(|v| !v.is_finite()) {
-            return Err(bad(format!("{what}: `normal` must be a finite non-zero vector and `point` finite")));
+            return Err(bad(format!(
+                "{what}: `normal` must be a finite non-zero vector and `point` finite"
+            )));
         }
         if !(ck.offset.is_finite() && ck.offset >= 0.0) {
             return Err(bad(format!("{what}: `offset` must be ≥ 0")));
         }
         let mut nodes: Vec<usize> = if let Some(sf) = &ck.surface {
-            surface(&ck.part, sf, &what)?.iter().flatten().copied().collect()
+            surface(&ck.part, sf, &what)?
+                .iter()
+                .flatten()
+                .copied()
+                .collect()
         } else if let Some(r) = lines.get(&ck.part) {
             r.clone().flat_map(|e| model.beams[e].nodes).collect()
         } else if let Some(r) = plates.get(&ck.part) {

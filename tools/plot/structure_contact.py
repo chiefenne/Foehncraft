@@ -55,7 +55,8 @@ def main(out_dir, fig_path):
     snaps = tr["snapshots"]
     names = [f"transient_{i + 1}" for i in range(len(snaps))]
     need(names, vec, path)
-    rows = list(csv.DictReader(open(os.path.join(out_dir, "transient.csv"))))
+    with open(os.path.join(out_dir, "transient.csv")) as f:
+        rows = list(csv.DictReader(f))
     need(["time", "tip_uz", "contact_seat", "contact_stop"], rows[0], "transient.csv")
     t = np.array([float(r["time"]) for r in rows]) * 1e3
     tip = np.array([float(r["tip_uz"]) for r in rows]) * MM

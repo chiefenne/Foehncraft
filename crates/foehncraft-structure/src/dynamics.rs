@@ -219,12 +219,7 @@ impl<'a> GenAlpha<'a> {
 
     /// The predictors of a step, ũ and ṽ, and the right-hand side of
     /// (cm M + ck K) a = rhs.
-    fn predict(
-        &self,
-        s: &State,
-        f_n: &[f64],
-        f_next: &[f64],
-    ) -> (Vec<f64>, Vec<f64>, Vec<f64>) {
+    fn predict(&self, s: &State, f_n: &[f64], f_next: &[f64]) -> (Vec<f64>, Vec<f64>, Vec<f64>) {
         let sys = self.sys;
         let (dt, am, af, g, b) = (self.dt, self.am, self.af, self.gamma, self.beta);
         let n = s.u.len();
