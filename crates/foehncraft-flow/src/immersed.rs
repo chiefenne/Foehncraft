@@ -66,6 +66,10 @@ pub enum Shape {
     Sphere,
     /// An axis-aligned box from `lower` to `upper`.
     Box,
+    /// A solid fraction given as a field χ(x, y, z) ∈ [0, 1] (an
+    /// expression, D53): a smooth density, as in the manufactured solution
+    /// of the penalised equations or a design density.
+    Field,
 }
 
 /// One `[[immersed.body]]`.
@@ -96,6 +100,10 @@ pub struct BodySection {
     /// Upper corner of a box (m).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub upper: Option<[f64; 3]>,
+    /// The solid fraction χ(x, y, z) of a `field` body (an expression of
+    /// x, y, z and the case constants, clipped to [0, 1]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fraction: Option<crate::expr::Scalar>,
 }
 
 /// `[immersed]`: bodies in the flow by Brinkman penalisation.
@@ -113,6 +121,9 @@ pub struct ImmersedSection {
     /// The bodies.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub body: Vec<BodySection>,
+    /// A density-field topology search (D226): `[immersed.topology]`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub topology: Option<crate::topology::TopologySection>,
 }
 
 impl ImmersedSection {
@@ -171,10 +182,31 @@ enum Kind {
         lo: [f64; 3],
         hi: [f64; 3],
     },
+    Field(crate::expr::Value),
 }
 
 impl Body {
-    /// True if `x` lies inside the body (the surface counts as inside).
+    /// The solid fraction at `x`: 1 inside a primitive body (the surface
+    /// counts as inside), 0 outside; the clipped field of a `field` body.
+    #[inline]
+    pub fn value(&self, x: [f64; 3]) -> f64 {
+        match &self.kind {
+            Kind::Field(v) => {
+                let f = v.at(x, 0.0);
+                if f.is_nan() { 0.0 } else { f.clamp(0.0, 1.0) }
+            }
+            _ => {
+                if self.inside(x) {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
+        }
+    }
+
+    /// True if `x` lies inside the body (the surface counts as inside; a
+    /// `field` body where χ ≥ ½).
     #[inline]
     pub fn inside(&self, x: [f64; 3]) -> bool {
         match &self.kind {
@@ -192,6 +224,7 @@ impl Body {
                 dot(d, d) <= *r2
             }
             Kind::Box { lo, hi } => (0..3).all(|i| x[i] >= lo[i] && x[i] <= hi[i]),
+            Kind::Field(v) => v.at(x, 0.0) >= 0.5,
         }
     }
 
@@ -223,14 +256,26 @@ impl Body {
                 let l = (c[i] + half).min(hi[i]) - (c[i] - half).max(lo[i]);
                 Some(std::f64::consts::PI * r2 * l.max(0.0))
             }
+            Kind::Field(_) => None,
         }
     }
 }
 
-/// The checked bodies of a case.
+/// The checked bodies of a case (its constants for the expressions of
+/// `field` bodies).
+pub fn bodies_of(case: &crate::case::FlowCase) -> Result<Vec<Body>> {
+    bodies_with(&case.immersed, &case.env()?)
+}
+
+/// The checked bodies, expressions without case constants.
 pub fn bodies(s: &ImmersedSection) -> Result<Vec<Body>> {
+    bodies_with(s, &crate::expr::Env::default())
+}
+
+/// The checked bodies; `env` holds the constants of the expressions.
+pub fn bodies_with(s: &ImmersedSection, env: &crate::expr::Env) -> Result<Vec<Body>> {
     let mut out: Vec<Body> = Vec::with_capacity(s.body.len());
-    if s.body.is_empty() {
+    if s.body.is_empty() && s.topology.is_none() {
         return Err(bad(
             "immersed.body".into(),
             "[immersed] without a [[immersed.body]]".into(),
@@ -320,6 +365,24 @@ pub fn bodies(s: &ImmersedSection) -> Result<Vec<Body>> {
                 }
                 Kind::Box { lo, hi }
             }
+            Shape::Field => {
+                let f = b.fraction.as_ref().ok_or_else(|| {
+                    bad(
+                        format!("{key}.fraction"),
+                        format!(
+                            "immersed body {}: a field body needs `fraction`, the solid \
+                             fraction as an expression of x, y, z",
+                            b.name
+                        ),
+                    )
+                })?;
+                Kind::Field(crate::expr::value(
+                    f,
+                    env,
+                    crate::expr::Vars::SPACE,
+                    &format!("{key}.fraction"),
+                )?)
+            }
         };
         out.push(Body {
             name: b.name.clone(),
@@ -334,7 +397,10 @@ pub fn check_case(case: &crate::case::FlowCase) -> Result<()> {
     if case.immersed.is_empty() {
         return Ok(());
     }
-    bodies(&case.immersed)?;
+    bodies_of(case)?;
+    if let Some(t) = &case.immersed.topology {
+        t.check()?;
+    }
     let what = if !case.turbulence.is_laminar() {
         Some(
             "a turbulence model (penalised walls are laminar and low-Re only; wall functions do \
@@ -352,6 +418,8 @@ pub fn check_case(case: &crate::case::FlowCase) -> Result<()> {
         Some("rotating zones")
     } else if !case.spray.is_empty() {
         Some("sprays")
+    } else if case.immersed.topology.is_some() && case.time.is_some() {
+        Some("a transient run (the topology search is steady)")
     } else {
         None
     };
@@ -428,9 +496,7 @@ pub fn fractions(bodies: &[Body], samples: usize, mesh: &Mesh, geo: &Geometry) -
                             xc[1] + z[0] * e1[1] + z[1] * e2[1] + z[2] * e3[1],
                             xc[2] + z[0] * e1[2] + z[1] * e2[2] + z[2] * e3[2],
                         ];
-                        if body.inside(x) {
-                            frac += w;
-                        }
+                        frac += w * body.value(x);
                     }
                     inside[b] += v * frac;
                 }
@@ -479,30 +545,38 @@ pub struct BodyForce {
     pub force: [f64; 3],
 }
 
+/// The solid fraction χ of every local cell of the primitive and field
+/// bodies (zero everywhere without bodies).
+pub fn body_fraction(bs: &[Body], samples: usize, mesh: &Mesh, geo: &Geometry) -> Vec<f64> {
+    if bs.is_empty() {
+        return vec![0.0; mesh.n_cells];
+    }
+    total_fraction(&fractions(bs, samples, mesh, geo), mesh.n_cells)
+}
+
 /// Sets the penalisation of `case` on the flow (nothing without
-/// `[immersed]`); returns the log lines and the diagnostics (IMM103,
-/// IMM104).
+/// `[immersed]`); returns the diagnostics (IMM103, IMM104) and the topology
+/// search of `[immersed.topology]`, if any.
 pub fn attach(
     fl: &mut crate::simplec::Flow,
     case: &crate::case::FlowCase,
     mesh: &Mesh,
     geo: &Geometry,
-) -> Result<Vec<Diagnostic>> {
+) -> Result<(Vec<Diagnostic>, Option<crate::topology::Search>)> {
     if case.immersed.is_empty() {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), None));
     }
     check_case(case)?;
-    let bs = bodies(&case.immersed)?;
+    let bs = bodies_of(case)?;
     let k = case.immersed.permeability.unwrap_or(f64::INFINITY);
     let mu = case.mu();
     let nc = mesh.n_cells;
     let per = fractions(&bs, case.immersed.samples(), mesh, geo);
-    let chi = total_fraction(&per, nc);
-    let sink: Vec<f64> = chi
-        .iter()
-        .zip(&geo.cell_volume)
-        .map(|(x, v)| mu * x * v / k)
-        .collect();
+    let chi = if bs.is_empty() {
+        vec![0.0; nc]
+    } else {
+        total_fraction(&per, nc)
+    };
     let mut notes = Vec::new();
     let (lo, hi) = mesh.bounding_box();
     for (b, x) in bs.iter().zip(&per) {
@@ -539,52 +613,98 @@ pub fn attach(
             ));
         }
     }
-    fl.set_immersed(&sink)?;
-    Ok(notes)
+    let search = crate::topology::Search::new(case, mesh, geo, chi.clone())?;
+    match &search {
+        Some(t) => {
+            notes.push(Diagnostic::new(
+                diag::IMM_BODIES,
+                format!(
+                    "topology search: {} design cells, fluid fraction {}, μ/K = {:.3e} kg/(m³ s)",
+                    t.cells.len(),
+                    case.immersed.topology.as_ref().map_or(0.0, |s| s.fluid_fraction),
+                    mu / k
+                ),
+            ));
+            fl.set_immersed(&t.sink(geo))?;
+            fl.set_immersed_fields(t.solid(), t.design_chi(nc));
+        }
+        None => {
+            let sink: Vec<f64> = chi
+                .iter()
+                .zip(&geo.cell_volume)
+                .map(|(x, v)| mu * x * v / k)
+                .collect();
+            fl.set_immersed(&sink)?;
+            fl.set_immersed_fields(chi, Vec::new());
+        }
+    }
+    Ok((notes, search))
 }
 
-/// The force of the fluid on every body, Σ s_P u_P, from the host velocity.
+/// Puts the current design of a topology search on the flow.
+pub fn update_design(
+    fl: &mut crate::simplec::Flow,
+    t: &crate::topology::Search,
+    geo: &Geometry,
+) -> Result<()> {
+    fl.set_immersed(&t.sink(geo))?;
+    fl.set_immersed_fields(t.solid(), t.design_chi(geo.cell_volume.len()));
+    Ok(())
+}
+
+/// The force of the fluid on every body, Σ s_P u_P, from the host velocity;
+/// with a topology search the design is the last entry (`design`), with
+/// χ from `phys`.
 pub fn forces(
     case: &crate::case::FlowCase,
     mesh: &Mesh,
     geo: &Geometry,
     u: &foehncraft_fv::disc::Soa3,
+    phys: &crate::simplec::Physics,
 ) -> Result<Vec<BodyForce>> {
     if case.immersed.is_empty() {
         return Ok(Vec::new());
     }
-    let bs = bodies(&case.immersed)?;
+    let bs = bodies_of(case)?;
     let k = case.immersed.permeability.unwrap_or(f64::INFINITY);
     let mu = case.mu();
     let per = fractions(&bs, case.immersed.samples(), mesh, geo);
     let (lo, hi) = mesh.bounding_box();
-    Ok(bs
+    let one = |name: String, x: &[f64], exact: Option<f64>| {
+        let mut f = [0.0; 3];
+        let mut vol = 0.0;
+        for (c, &a) in x.iter().enumerate() {
+            if a == 0.0 {
+                continue;
+            }
+            let v = geo.cell_volume[c];
+            vol += a * v;
+            let s = mu * a * v / k;
+            let uc = u.get(c);
+            for i in 0..3 {
+                f[i] += s * uc[i];
+            }
+        }
+        BodyForce {
+            name,
+            solid_volume: vol,
+            exact_volume: exact,
+            cells: x.iter().filter(|&&a| a > 0.0).count(),
+            force: f,
+        }
+    };
+    let mut out: Vec<BodyForce> = bs
         .iter()
         .zip(&per)
-        .map(|(b, x)| {
-            let mut f = [0.0; 3];
-            let mut vol = 0.0;
-            for (c, &a) in x.iter().enumerate() {
-                if a == 0.0 {
-                    continue;
-                }
-                let v = geo.cell_volume[c];
-                vol += a * v;
-                let s = mu * a * v / k;
-                let uc = u.get(c);
-                for i in 0..3 {
-                    f[i] += s * uc[i];
-                }
-            }
-            BodyForce {
-                name: b.name.clone(),
-                solid_volume: vol,
-                exact_volume: b.exact_volume(lo, hi),
-                cells: x.iter().filter(|&&a| a > 0.0).count(),
-                force: f,
-            }
-        })
-        .collect())
+        .map(|(b, x)| one(b.name.clone(), x, b.exact_volume(lo, hi)))
+        .collect();
+    if case.immersed.topology.is_some()
+        && let Some(f) = &phys.immersed_fields
+        && !f.1.is_empty()
+    {
+        out.push(one("design".into(), &f.1, None));
+    }
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -604,7 +724,9 @@ mod tests {
                 length: None,
                 lower: None,
                 upper: None,
+                fraction: None,
             }],
+            topology: None,
         }
     }
 

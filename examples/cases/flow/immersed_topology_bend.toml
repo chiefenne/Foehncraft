@@ -1,0 +1,83 @@
+# Topology search of a pipe bend with a density field (L13 stage 1, D226):
+# the bend of Borrvall & Petersson (2003, §6), Stokes flow in the unit
+# square. Fluid enters on the left (0.7 ≤ y ≤ 0.9, parabolic, 1 m/s at the
+# middle) and leaves at the bottom (0.7 ≤ x ≤ 0.9) at zero pressure; the
+# other boundaries are walls. Every cell is a design cell: its fluid
+# fraction γ makes the Brinkman sink μ χ(γ) V / K with
+# χ = q (1 − γ)/(q + γ), q = 0.1 and μ/K = 2.5e4 (the α̅ and q of the
+# paper). The search minimises the power the flow takes from its
+# boundaries with a quarter of the square fluid; the gradient is the
+# self-adjoint one of Stokes flow (no adjoint solve).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/immersed_topology_bend.toml
+#
+# The run writes topology.csv (one row per design update) and topology.stl
+# (the surface γ̃ = ½ by marching tetrahedra); the solid-fraction field is
+# 1 − γ̃. Gallery and recipe 289.
+
+case_format = "0.7"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [1.0, 1.0, 0.02]
+cells = [60, 60, 1]
+split = [
+  { boundary = "xmin", axis = "y", at = 0.9, name = "left_top" },
+  { boundary = "xmin", axis = "y", at = 0.7, name = "inlet" },
+  { boundary = "ymin", axis = "x", at = 0.9, name = "bottom_right" },
+  { boundary = "ymin", axis = "x", at = 0.7, name = "outlet" },
+]
+
+[fluid]
+density = 1.0
+viscosity = 1.0
+pressure_values = "gauge"
+
+[flow]
+convection = false
+
+[immersed]
+permeability = 4e-5
+
+[immersed.topology]
+lower = [0.0, 0.0, -1.0]
+upper = [1.0, 1.0, 1.0]
+fluid_fraction = 0.25
+interpolation = 0.1
+every = 20
+designs = 80
+change = 0.01
+
+[boundary.inlet]
+type = "velocity-inlet"
+profile = "parabolic"
+max_velocity = 1.0
+profile_axes = ["y"]
+[boundary.outlet]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.xmin]
+type = "wall"
+[boundary.left_top]
+type = "wall"
+[boundary.ymin]
+type = "wall"
+[boundary.bottom_right]
+type = "wall"
+[boundary.xmax]
+type = "wall"
+[boundary.ymax]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-8
+max_iterations = 6000
+
+[output]
+derived = ["solid-fraction"]
+wall_csv = false
