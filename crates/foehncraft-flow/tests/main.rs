@@ -47,6 +47,7 @@ mod run_ranks;
 mod scalars;
 mod schedule;
 mod sliding;
+mod species;
 mod spray_coupling;
 mod stage4;
 mod stage5;

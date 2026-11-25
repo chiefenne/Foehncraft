@@ -4194,8 +4194,8 @@ pub(crate) fn summaries_on(
             *src = g.cells(&sc.energy_source_cells())?.iter().exact_sum();
         }
         if let Some(w) = outflow.as_mut() {
-            for d in 0..3 {
-                w.grad[d] = g.cells(&w.grad[d])?;
+            for gr in &mut w.grad {
+                *gr = g.cells(gr)?;
             }
             w.psi = g.cells(&w.psi)?;
         }
