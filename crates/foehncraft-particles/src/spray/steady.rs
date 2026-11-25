@@ -280,8 +280,8 @@ impl Spray {
         };
         if two_way {
             for (j, imp) in sources.impulse.iter().enumerate() {
-                for k in 0..3 {
-                    b.momentum.from_gas[k] -= imp[k];
+                for (f, i) in b.momentum.from_gas.iter_mut().zip(imp) {
+                    *f -= i;
                 }
                 b.enthalpy[2] -= sources.heat[j];
             }

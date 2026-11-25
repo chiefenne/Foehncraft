@@ -609,8 +609,8 @@ fn numbers(
     let s = &pass.sources;
     let mut n = PassNumbers::default();
     for (j, e) in s.impulse.iter().enumerate() {
-        for k in 0..3 {
-            n.gas_force[k] += e[k];
+        for (f, x) in n.gas_force.iter_mut().zip(e) {
+            *f += x;
         }
         n.gas_heat += s.heat[j];
     }
