@@ -20,10 +20,12 @@
 
 pub mod check;
 pub mod distance;
+pub mod moments;
 pub mod winding;
 
 pub use check::{SurfaceReport, check};
 pub use distance::Crossing;
+pub use moments::{CutMoments, WallPiece};
 pub use winding::{Winding, solid_angle};
 
 use crate::format::stl::Triangle;
