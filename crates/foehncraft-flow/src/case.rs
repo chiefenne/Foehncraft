@@ -275,8 +275,11 @@ pub struct RunSection {
     /// coordinate bisection, and the run fails unless every rank's cells
     /// are bitwise those of one rank. Steady and transient, SIMPLEC, PISO
     /// and the coupled solver, laminar, k-ω SST and k-ε, passive scalars
-    /// and the energy equation of one fluid; not yet with gravity, turning
-    /// zones, regions, a schedule or a restart.
+    /// and the energy equation of one fluid; from the start fields or a
+    /// `run.restart` file (read on every rank count by global identity,
+    /// MPI step W6); the restart of the largest count is gathered into
+    /// `ranks.restart.h5` and must have the bytes of the one-rank restart.
+    /// Not yet with gravity, turning zones, regions or a schedule.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub ranks: Vec<usize>,
 }
