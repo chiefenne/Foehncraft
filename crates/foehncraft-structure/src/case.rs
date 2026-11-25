@@ -199,13 +199,72 @@ pub struct Plate {
     pub element: ShellElement,
 }
 
-/// `[[pressures]]`: a uniform load per area on a plate.
+/// Element of a generated solid block.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum SolidElement {
+    /// Twenty-node hexahedra.
+    #[default]
+    Hex20,
+    /// Ten-node tetrahedra, six per hexahedron.
+    Tet10,
+}
+
+/// A generated block: `origin + [0, size]` divided into `divisions`
+/// hexahedra along x, y and z.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BlockKeys {
+    /// The corner with the smallest coordinates.
+    pub origin: [f64; 3],
+    /// Edge lengths along x, y, z (m).
+    pub size: [f64; 3],
+    /// Cells along x, y, z.
+    pub divisions: [usize; 3],
+    /// Element: `hex20` (default) or `tet10`.
+    #[serde(default)]
+    pub element: SolidElement,
+}
+
+/// `[[solids]]`: a part of quadratic solid elements, from a Gmsh file of
+/// second order (`mesh`) or a generated block (`block`).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SolidKeys {
+    /// Name (for loads, supports and results).
+    pub name: String,
+    /// A Gmsh `.msh` 4.1 file (relative to the case file): ten-node
+    /// tetrahedra or twenty-node hexahedra; physical surfaces of six-node
+    /// triangles or eight-node quadrilaterals name the surfaces.
+    #[serde(default)]
+    pub mesh: Option<String>,
+    /// Physical volumes of the mesh that make the part (default: all).
+    #[serde(default)]
+    pub volumes: Vec<String>,
+    /// A generated block (surfaces `xmin` … `zmax`).
+    #[serde(default)]
+    pub block: Option<BlockKeys>,
+    /// Material name.
+    pub material: String,
+}
+
+/// `[[pressures]]`: a uniform load per area on a plate, or on a named
+/// surface of a solid.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Pressure {
     /// Name of the plate.
-    pub plate: String,
-    /// Pressure along the plate's normal (Pa); positive pushes along it.
+    #[serde(default)]
+    pub plate: Option<String>,
+    /// Name of the solid (with `surface`).
+    #[serde(default)]
+    pub part: Option<String>,
+    /// Named surface of the solid.
+    #[serde(default)]
+    pub surface: Option<String>,
+    /// Pressure (Pa). Plate: along the plate's normal, positive pushes
+    /// along it. Solid: positive pushes into the solid (a fluid's
+    /// pressure).
     #[serde(default)]
     pub value: f64,
     /// Force per area, global axes (N/m²), added to the pressure.
@@ -392,10 +451,17 @@ pub enum DofName {
     Rz,
 }
 
-/// `[[supports]]`: fixed unknowns at a node or along a line of nodes.
+/// `[[supports]]`: fixed unknowns at a node, along a line of nodes, or on
+/// a named surface of a solid (`part` and `surface`).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Support {
+    /// The solid whose `surface` is held.
+    #[serde(default)]
+    pub part: Option<String>,
+    /// A named surface of the solid: every node on it.
+    #[serde(default)]
+    pub surface: Option<String>,
     /// The node (a point of the mesh).
     #[serde(default)]
     pub at: Option<[f64; 3]>,
@@ -534,6 +600,9 @@ pub struct Case {
     /// `[[plates]]`.
     #[serde(default)]
     pub plates: Vec<Plate>,
+    /// `[[solids]]`.
+    #[serde(default)]
+    pub solids: Vec<SolidKeys>,
     /// `[[pressures]]`.
     #[serde(default)]
     pub pressures: Vec<Pressure>,
@@ -573,6 +642,10 @@ pub struct Case {
     /// `[output]`.
     #[serde(default)]
     pub output: OutputKeys,
+    /// The folder of the case file: relative mesh paths start there (set
+    /// by whoever reads the file; default the working directory).
+    #[serde(skip)]
+    pub base: Option<std::path::PathBuf>,
 }
 
 /// `[output]`.
@@ -599,6 +672,27 @@ impl Case {
     pub fn from_toml(text: &str) -> Result<Self, Error> {
         toml::from_str(text).map_err(|e| bad(format!("structural case: {e}")))
     }
+
+    /// Reads a case file; relative mesh paths start at its folder.
+    pub fn from_file(path: &std::path::Path) -> Result<Self, Error> {
+        let text = std::fs::read_to_string(path)
+            .map_err(|e| bad(format!("{}: {e}", path.display())))?;
+        let mut c = Self::from_toml(&text)?;
+        c.base = path.parent().map(|p| p.to_path_buf());
+        Ok(c)
+    }
+
+    /// The mesh files the case reads, resolved.
+    pub fn mesh_paths(&self) -> Vec<std::path::PathBuf> {
+        self.solids
+            .iter()
+            .filter_map(|s| s.mesh.as_ref())
+            .map(|m| match &self.base {
+                Some(b) => b.join(m),
+                None => std::path::PathBuf::from(m),
+            })
+            .collect()
+    }
 }
 
 /// How a clamp was taken (D290: the result says when it was rigid).
@@ -614,6 +708,17 @@ pub struct ClampInfo {
     pub k_rotation: Option<f64>,
 }
 
+/// A solid part of the model.
+#[derive(Debug, Clone)]
+pub struct SolidPart {
+    /// Its elements.
+    pub elements: std::ops::Range<usize>,
+    /// Named surfaces: faces (model nodes, pointing out of the solid).
+    pub surfaces: BTreeMap<String, Vec<Vec<usize>>>,
+    /// Where the mesh came from.
+    pub source: String,
+}
+
 /// The model of a case with what the results need.
 #[derive(Debug, Clone)]
 pub struct Built {
@@ -623,6 +728,8 @@ pub struct Built {
     pub lines: BTreeMap<String, std::ops::Range<usize>>,
     /// Shell elements of each plate, by name.
     pub plates: BTreeMap<String, std::ops::Range<usize>>,
+    /// The solid parts, by name.
+    pub solids: BTreeMap<String, SolidPart>,
     /// The clamps.
     pub clamps: Vec<ClampInfo>,
     /// Named points and their nodes.
@@ -719,8 +826,10 @@ pub fn build(case: &Case) -> Result<Built, Error> {
     let mut model = Model::default();
     let mut lines = BTreeMap::new();
     let mut widths: Vec<Option<f64>> = Vec::new(); // rectangle width per node
-    if case.beams.is_empty() && case.plates.is_empty() {
-        return Err(bad("the case has no `[[beams]]` and no `[[plates]]`"));
+    if case.beams.is_empty() && case.plates.is_empty() && case.solids.is_empty() {
+        return Err(bad(
+            "the case has no `[[beams]]`, no `[[plates]]` and no `[[solids]]`",
+        ));
     }
     // merge tolerance: end points closer than this are one node
     let mut lo = [f64::INFINITY; 3];
@@ -885,6 +994,132 @@ pub fn build(case: &Case) -> Result<Built, Error> {
         plates.insert(p.name.clone(), first..model.shells.len());
         plate_thermal.insert(p.name.clone(), (mat.expansion, p.thickness));
     }
+    let mut solids: BTreeMap<String, SolidPart> = BTreeMap::new();
+    let mut solid_alpha: BTreeMap<String, Option<f64>> = BTreeMap::new();
+    for sk in &case.solids {
+        let what = format!("solid `{}`", sk.name);
+        if lines.contains_key(&sk.name) || plates.contains_key(&sk.name) || !seen.insert(sk.name.clone())
+        {
+            return Err(bad(format!("two parts are named `{}`", sk.name)));
+        }
+        let mat = case.materials.get(&sk.material).ok_or_else(|| {
+            bad(format!("{what}: no material `{}` in [materials]", sk.material))
+        })?;
+        if !(mat.young > 0.0 && mat.density > 0.0 && mat.poisson > -1.0 && mat.poisson < 0.5) {
+            return Err(bad(format!(
+                "{what}: the material needs young > 0, density > 0 and −1 < poisson < 0.5"
+            )));
+        }
+        let mesh = match (&sk.mesh, &sk.block) {
+            (Some(path), None) => {
+                let full = match &case.base {
+                    Some(b) => b.join(path),
+                    None => std::path::PathBuf::from(path),
+                };
+                let raw = foehncraft_mesh::gmsh::read_raw(&full)
+                    .map_err(|e| bad(format!("{what}: {e}")))?;
+                crate::solid_mesh::from_gmsh(&raw)
+                    .and_then(|m| m.select(&sk.volumes))
+                    .map_err(|e| bad(format!("{what}: {}: {e}", full.display())))?
+            }
+            (None, Some(b)) => {
+                if !sk.volumes.is_empty() {
+                    return Err(bad(format!("{what}: `volumes` is for a `mesh`")));
+                }
+                if b.size.iter().any(|v| !(v.is_finite() && *v > 0.0))
+                    || b.origin.iter().any(|v| !v.is_finite())
+                {
+                    return Err(bad(format!(
+                        "{what}: the block's `size` must be positive and `origin` finite"
+                    )));
+                }
+                if b.divisions.contains(&0) {
+                    return Err(bad(format!(
+                        "{what}: `divisions` must be at least 1 along each axis"
+                    )));
+                }
+                if b.divisions.iter().product::<usize>() > 2_000_000 {
+                    return Err(bad(format!("{what}: more than 2 million cells")));
+                }
+                let kind = match b.element {
+                    SolidElement::Hex20 => crate::solid::Kind::Hex20,
+                    SolidElement::Tet10 => crate::solid::Kind::Tet10,
+                };
+                crate::solid_mesh::block(b.origin, b.size, b.divisions, kind)
+            }
+            _ => {
+                return Err(bad(format!(
+                    "{what}: give `mesh` (a Gmsh file) or `block`, one of them"
+                )));
+            }
+        };
+        model.solid_props.push(crate::solid::SolidProps {
+            young: mat.young,
+            poisson: mat.poisson,
+            density: mat.density,
+        });
+        let pi = model.solid_props.len() - 1;
+        let off = model.nodes.len();
+        for &x in &mesh.nodes {
+            model.add_node(x);
+            widths.push(None);
+        }
+        let first = model.solids.len();
+        for (kind, e) in &mesh.elements {
+            let v: Vec<usize> = e.iter().map(|n| n + off).collect();
+            model.add_solid(*kind, &v, pi);
+        }
+        for e in first..model.solids.len() {
+            crate::solid::volume(model.solids[e].kind, &model.solid_coords(e)).map_err(|m| {
+                let c = model.nodes[model.solids[e].nodes[0]];
+                bad(format!(
+                    "{what}: element {} (first node at ({}, {}, {})): {m}",
+                    e - first,
+                    c[0],
+                    c[1],
+                    c[2]
+                ))
+            })?;
+        }
+        let surfaces = mesh
+            .surfaces
+            .into_iter()
+            .map(|(k, v)| {
+                (
+                    k,
+                    v.into_iter()
+                        .map(|f| f.into_iter().map(|n| n + off).collect())
+                        .collect(),
+                )
+            })
+            .collect();
+        solids.insert(
+            sk.name.clone(),
+            SolidPart {
+                elements: first..model.solids.len(),
+                surfaces,
+                source: mesh.source,
+            },
+        );
+        solid_alpha.insert(sk.name.clone(), mat.expansion);
+    }
+    // the faces of a named surface of a solid
+    let surface = |part: &str, name: &str, what: &str| -> Result<&Vec<Vec<usize>>, Error> {
+        let p = solids
+            .get(part)
+            .ok_or_else(|| bad(format!("{what}: no solid `{part}`")))?;
+        p.surfaces.get(name).ok_or_else(|| {
+            let names: Vec<String> = p.surfaces.keys().map(|k| format!("`{k}`")).collect();
+            bad(format!(
+                "{what}: solid `{part}` has no surface `{name}`; it has {}",
+                if names.is_empty() {
+                    "none".to_string()
+                } else {
+                    names.join(", ")
+                }
+            ))
+        })
+    };
     let size = model.size();
     let find = |model: &Model, x: [f64; 3], what: &str| -> Result<usize, Error> {
         let (n, d) = model.nearest(x).ok_or_else(|| bad("no nodes"))?;
@@ -957,7 +1192,33 @@ pub fn build(case: &Case) -> Result<Built, Error> {
         }
     };
     for s in &case.supports {
-        for (n, _) in place(&model, s.at, s.along, "[[supports]]")? {
+        let nodes: Vec<usize> = match (&s.part, &s.surface) {
+            (None, None) => place(&model, s.at, s.along, "[[supports]]")?
+                .into_iter()
+                .map(|x| x.0)
+                .collect(),
+            (Some(p), Some(sf)) => {
+                if s.at.is_some() || s.along.is_some() {
+                    return Err(bad(
+                        "[[supports]]: give `at`, `along` or `part` with `surface`, one of them",
+                    ));
+                }
+                let mut v: Vec<usize> = surface(p, sf, "[[supports]]")?
+                    .iter()
+                    .flatten()
+                    .copied()
+                    .collect();
+                v.sort_unstable();
+                v.dedup();
+                v
+            }
+            _ => {
+                return Err(bad(
+                    "[[supports]]: `part` and `surface` go together",
+                ));
+            }
+        };
+        for n in nodes {
             for d in dofs_of(&s.fix) {
                 model.fixed[DOFS * n + d] = true;
             }
@@ -1054,15 +1315,39 @@ pub fn build(case: &Case) -> Result<Built, Error> {
         }
     }
     for pr in &case.pressures {
-        let r = plates
-            .get(&pr.plate)
-            .ok_or_else(|| bad(format!("[[pressures]]: no plate `{}`", pr.plate)))?;
-        for e in r.clone() {
-            model.area_loads.push(crate::model::AreaLoad {
-                element: e,
-                q: pr.force_per_area,
-                pressure: pr.value,
-            });
+        if !pr.value.is_finite() || pr.force_per_area.iter().any(|v| !v.is_finite()) {
+            return Err(bad("[[pressures]]: values must be finite"));
+        }
+        match (&pr.plate, &pr.part, &pr.surface) {
+            (Some(plate), None, None) => {
+                let r = plates
+                    .get(plate)
+                    .ok_or_else(|| bad(format!("[[pressures]]: no plate `{plate}`")))?;
+                for e in r.clone() {
+                    model.area_loads.push(crate::model::AreaLoad {
+                        element: e,
+                        q: pr.force_per_area,
+                        pressure: pr.value,
+                    });
+                }
+            }
+            (None, Some(p), Some(sf)) => {
+                for f in surface(p, sf, "[[pressures]]")? {
+                    let mut nodes = [0; 8];
+                    nodes[..f.len()].copy_from_slice(f);
+                    model.face_loads.push(crate::model::FaceLoad {
+                        nodes,
+                        count: f.len(),
+                        q: pr.force_per_area,
+                        pressure: pr.value,
+                    });
+                }
+            }
+            _ => {
+                return Err(bad(
+                    "[[pressures]]: give `plate`, or `part` with `surface` (a solid)",
+                ));
+            }
         }
     }
     for l in &case.line_loads {
@@ -1123,8 +1408,20 @@ pub fn build(case: &Case) -> Result<Built, Error> {
                     curvature: [alpha * t.difference / h, 0.0],
                 });
             }
+        } else if let Some(sp) = solids.get(&t.part) {
+            let alpha = need(solid_alpha[&t.part])?;
+            if t.difference != 0.0 || t.difference_y != 0.0 {
+                return Err(bad(format!(
+                    "{what}: a solid takes a uniform `change`; differences are for beams and plates"
+                )));
+            }
+            for e in sp.elements.clone() {
+                model.solid_thermal.push((e, alpha * t.change));
+            }
         } else {
-            return Err(bad(format!("{what}: no beam line or plate of that name")));
+            return Err(bad(format!(
+                "{what}: no beam line, plate or solid of that name"
+            )));
         }
     }
     let mut points = BTreeMap::new();
@@ -1135,6 +1432,7 @@ pub fn build(case: &Case) -> Result<Built, Error> {
         model,
         lines,
         plates,
+        solids,
         clamps,
         points,
     })
@@ -1391,6 +1689,43 @@ fn node_vec(u: &[f64], n: usize, off: usize) -> [f64; 3] {
 }
 
 impl Outcome {
+    /// The von Mises stress at each node of the solids for the
+    /// displacements `u` (every unknown), with the static thermal strains:
+    /// the mean over the elements around the node (zero off the solids).
+    pub fn solid_von_mises(&self, u: &[f64]) -> Vec<f64> {
+        let m = &self.built.model;
+        let mut sum = vec![0.0; m.nodes.len()];
+        let mut count = vec![0usize; m.nodes.len()];
+        let mut strain = vec![0.0; m.solids.len()];
+        for &(e, a) in &m.solid_thermal {
+            strain[e] += a;
+        }
+        for (e, el) in m.solids.iter().enumerate() {
+            let ue: Vec<f64> = el
+                .used()
+                .iter()
+                .flat_map(|&n| (0..3).map(move |d| u[DOFS * n + d]))
+                .collect();
+            let Ok(st) = crate::solid::nodal_stresses(
+                el.kind,
+                &m.solid_coords(e),
+                &m.solid_props[el.props],
+                &ue,
+                strain[e],
+            ) else {
+                continue;
+            };
+            for (a, &n) in el.used().iter().enumerate() {
+                sum[n] += crate::solid::von_mises(&st[a]);
+                count[n] += 1;
+            }
+        }
+        sum.iter()
+            .zip(&count)
+            .map(|(s, &c)| if c > 0 { s / c as f64 } else { 0.0 })
+            .collect()
+    }
+
     /// The result as JSON (`result.json`).
     pub fn to_json(&self, name: &str) -> Value {
         let m = &self.built.model;
@@ -1401,9 +1736,10 @@ impl Outcome {
             "format_version": RESULT_VERSION,
             "name": name,
             "nodes": m.nodes.len(),
-            "elements": m.beams.len() + m.shells.len(),
+            "elements": m.beams.len() + m.shells.len() + m.solids.len(),
             "beam_elements": m.beams.len(),
             "shell_elements": m.shells.len(),
+            "solid_elements": m.solids.len(),
             "unknowns": m.dofs(),
             "free_unknowns": free,
             "mass": m.total_mass(),
@@ -1415,6 +1751,26 @@ impl Outcome {
                 "rotation": match c.k_rotation { Some(k) => json!({"rigid": false, "stiffness": k}), None => json!({"rigid": true}) },
             })).collect::<Vec<_>>(),
         });
+        if !self.built.solids.is_empty() {
+            out["solids"] = Value::Array(
+                self.built
+                    .solids
+                    .iter()
+                    .map(|(k, p)| {
+                        json!({
+                            "name": k,
+                            "elements": p.elements.len(),
+                            "element": match m.solids[p.elements.start].kind {
+                                crate::solid::Kind::Tet10 => "tet10",
+                                crate::solid::Kind::Hex20 => "hex20",
+                            },
+                            "mesh": p.source,
+                            "surfaces": p.surfaces.iter().map(|(n, f)| json!({"name": n, "faces": f.len()})).collect::<Vec<_>>(),
+                        })
+                    })
+                    .collect(),
+            );
+        }
         if let Some(s) = &self.statics {
             let (mut best, mut at) = (0.0, 0);
             for n in 0..m.nodes.len() {
@@ -1448,6 +1804,18 @@ impl Outcome {
                 "factor_entries": s.fill,
                 "points": points,
             });
+            if !m.solids.is_empty() {
+                let vm = self.solid_von_mises(&s.u);
+                let (mut best, mut at) = (0.0, 0);
+                for (n, &v) in vm.iter().enumerate() {
+                    if v > best {
+                        best = v;
+                        at = n;
+                    }
+                }
+                out["static"]["max_von_mises"] =
+                    json!({"value": best, "node": at, "at": m.nodes[at]});
+            }
         }
         if let Some(md) = &self.modal {
             for w in &md.warnings {
@@ -1553,21 +1921,47 @@ impl Outcome {
         use std::fmt::Write;
         let m = &self.built.model;
         let mut s = String::new();
+        // with solids an unstructured grid (quadratic cells), else polydata
+        let grid = !m.solids.is_empty();
         let _ = writeln!(
             s,
-            "# vtk DataFile Version 3.0\nFoehncraft structure {name}\nASCII\nDATASET POLYDATA"
+            "# vtk DataFile Version 3.0\nFoehncraft structure {name}\nASCII\nDATASET {}",
+            if grid { "UNSTRUCTURED_GRID" } else { "POLYDATA" }
         );
         let _ = writeln!(s, "POINTS {} double", m.nodes.len());
         for p in &m.nodes {
             let _ = writeln!(s, "{:.9e} {:.9e} {:.9e}", p[0], p[1], p[2]);
         }
-        if !m.beams.is_empty() {
+        if grid {
+            let mut cells: Vec<(u8, Vec<usize>)> = Vec::new();
+            for b in &m.beams {
+                cells.push((3, b.nodes.to_vec()));
+            }
+            for e in &m.shells {
+                let n = e.used().to_vec();
+                cells.push((if n.len() == 3 { 5 } else { 9 }, n));
+            }
+            for e in &m.solids {
+                cells.push((e.kind.vtk_type(), e.used().to_vec()));
+            }
+            let size: usize = cells.iter().map(|c| c.1.len() + 1).sum();
+            let _ = writeln!(s, "CELLS {} {size}", cells.len());
+            for (_, c) in &cells {
+                let ids: Vec<String> = c.iter().map(|n| n.to_string()).collect();
+                let _ = writeln!(s, "{} {}", c.len(), ids.join(" "));
+            }
+            let _ = writeln!(s, "CELL_TYPES {}", cells.len());
+            for (t, _) in &cells {
+                let _ = writeln!(s, "{t}");
+            }
+        }
+        if !grid && !m.beams.is_empty() {
             let _ = writeln!(s, "LINES {} {}", m.beams.len(), 3 * m.beams.len());
             for b in &m.beams {
                 let _ = writeln!(s, "2 {} {}", b.nodes[0], b.nodes[1]);
             }
         }
-        if !m.shells.is_empty() {
+        if !grid && !m.shells.is_empty() {
             let size: usize = m.shells.iter().map(|e| e.used().len() + 1).sum();
             let _ = writeln!(s, "POLYGONS {} {size}", m.shells.len());
             for e in &m.shells {
@@ -1593,6 +1987,12 @@ impl Outcome {
         if let Some(st) = &self.statics {
             vector(&mut s, "displacement", &st.u, 0, 1.0);
             vector(&mut s, "rotation", &st.u, 3, 1.0);
+            if grid {
+                let _ = writeln!(s, "SCALARS von_mises double 1\nLOOKUP_TABLE default");
+                for v in self.solid_von_mises(&st.u) {
+                    let _ = writeln!(s, "{v:.9e}");
+                }
+            }
         }
         if let Some(md) = &self.modal {
             for (i, mo) in md.modes.iter().enumerate() {

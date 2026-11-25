@@ -159,55 +159,159 @@ impl<'a> Cursor<'a> {
     }
 }
 
-/// Element type: (number of nodes, dimension, name), or the reason it is
-/// refused.
-fn element_info(t: i64) -> Result<(usize, u8), String> {
+/// Element type: (number of nodes, dimension, order), or the reason it is
+/// refused. Second-order types are read by [`parse_raw`] (the structural
+/// solver's quadratic elements); [`parse`] refuses them.
+fn element_info(t: i64) -> Result<(usize, u8, u8), String> {
     Ok(match t {
-        15 => (1, 0),
-        1 => (2, 1),
-        2 => (3, 2),
-        3 => (4, 2),
-        4 => (4, 3),
-        5 => (8, 3),
-        6 => (6, 3),
-        7 => (5, 3),
-        8
-        | 9
-        | 10
-        | 11
-        | 12
-        | 13
-        | 14
-        | 16
-        | 17
-        | 18
-        | 19
-        | 20
-        | 21
-        | 22
-        | 23
-        | 24
-        | 25
-        | 26..=31
-        | 36..=99 => {
+        15 => (1, 0, 1),
+        1 => (2, 1, 1),
+        2 => (3, 2, 1),
+        3 => (4, 2, 1),
+        4 => (4, 3, 1),
+        5 => (8, 3, 1),
+        6 => (6, 3, 1),
+        7 => (5, 3, 1),
+        8 => (3, 1, 2),
+        9 => (6, 2, 2),
+        10 => (9, 2, 2),
+        11 => (10, 3, 2),
+        12 => (27, 3, 2),
+        13 => (18, 3, 2),
+        14 => (14, 3, 2),
+        16 => (8, 2, 2),
+        17 => (20, 3, 2),
+        18 => (15, 3, 2),
+        19 => (13, 3, 2),
+        20..=25 | 26..=31 | 36..=99 => {
             return Err(format!(
-                "element type {t} is a higher-order element; mesh with order 1 \
-                 (Gmsh option -order 1 or Mesh.ElementOrder = 1)"
+                "element type {t} is a higher-order element; mesh with order 1 or 2 \
+                 (Gmsh option -order or Mesh.ElementOrder)"
             ));
         }
         _ => return Err(format!("unsupported element type {t}")),
     })
 }
 
-struct Block {
-    dim: u8,
-    entity: i64,
-    nodes_per: usize,
-    nodes: Vec<u64>,
+/// The message for a second-order element where only linear ones are read.
+fn refuse_order(t: i64) -> String {
+    format!(
+        "element type {t} is a higher-order element; mesh with order 1 \
+         (Gmsh option -order 1 or Mesh.ElementOrder = 1)"
+    )
 }
 
-/// Parses the bytes of a `.msh` file.
-pub fn parse(bytes: &[u8]) -> Result<GmshMesh, String> {
+/// A block of elements of one type on one entity, as read.
+#[derive(Debug, Clone)]
+pub struct RawBlock {
+    /// Dimension of the entity (2 or 3: lower dimensions are skipped).
+    pub dim: u8,
+    /// Entity tag.
+    pub entity: i64,
+    /// Gmsh element type (4 tetrahedron, 11 ten-node tetrahedron, …).
+    pub etype: i64,
+    /// Nodes per element.
+    pub nodes_per: usize,
+    /// Node tags, `nodes_per` per element in Gmsh order.
+    pub nodes: Vec<u64>,
+}
+
+/// A `.msh` file as read, before any mesh is built: nodes, element blocks
+/// of dimension 2 and 3 (any order up to 2), physical names and periodic
+/// links.
+#[derive(Debug, Clone, Default)]
+pub struct RawGmsh {
+    /// Format version and encoding, for reports.
+    pub format: String,
+    /// Node tags.
+    pub node_tags: Vec<u64>,
+    /// Node coordinates, in the order of `node_tags`.
+    pub nodes: Vec<[f64; 3]>,
+    /// Element blocks of dimension 2 and 3.
+    pub blocks: Vec<RawBlock>,
+    /// Physical names ((dimension, tag), name), in file order.
+    pub physical_names: Vec<((i64, i64), String)>,
+    /// Physical tags of each entity, by (dimension, entity tag).
+    pub entity_physicals: HashMap<(u8, i64), Vec<i64>>,
+    /// Periodic links (dimension, tag, master tag, affine, node tag pairs).
+    pub periodic: Vec<RawPeriodic>,
+    /// Warnings.
+    pub warnings: Vec<String>,
+}
+
+/// A periodic link as read: (dimension, tag, master tag, affine transform,
+/// node tag pairs).
+pub type RawPeriodic = (i64, i64, i64, Vec<f64>, Vec<(u64, u64)>);
+
+impl RawGmsh {
+    /// The index of each node tag: a closure that maps a tag to its index
+    /// in `nodes`, or an error for an unknown tag.
+    pub fn indexer(&self) -> impl Fn(u64) -> Result<u32, String> + '_ {
+        // a table for dense tags, a map for sparse ones: the same indices
+        let max_tag = self.node_tags.iter().copied().max().unwrap_or(0) as usize;
+        let dense = max_tag <= 4 * self.node_tags.len() + 1024;
+        let mut tag_index = vec![u32::MAX; if dense { max_tag + 1 } else { 0 }];
+        let mut tag_map: HashMap<u64, u32> = HashMap::new();
+        for (i, &t) in self.node_tags.iter().enumerate() {
+            if dense {
+                tag_index[t as usize] = i as u32;
+            } else {
+                tag_map.insert(t, i as u32);
+            }
+        }
+        move |t: u64| -> Result<u32, String> {
+            if dense {
+                tag_index.get(t as usize).copied()
+            } else {
+                tag_map.get(&t).copied()
+            }
+            .filter(|&i| i != u32::MAX)
+            .ok_or_else(|| format!("element refers to unknown node {t}"))
+        }
+    }
+
+    /// The name of a physical group, or `physical_<tag>`.
+    pub fn physical_name(&self, dim: i64, tag: i64) -> String {
+        self.physical_names
+            .iter()
+            .find(|(k, _)| *k == (dim, tag))
+            .map(|(_, n)| n.clone())
+            .unwrap_or_else(|| format!("physical_{tag}"))
+    }
+
+    /// The name of an entity: its first physical group, or
+    /// `surface_<tag>` / `volume_<tag>`.
+    pub fn entity_name(&self, dim: u8, entity: i64) -> String {
+        match self.entity_physicals.get(&(dim, entity)).and_then(|v| v.first()) {
+            Some(&p) => self.physical_name(dim as i64, p),
+            None if dim == 2 => format!("surface_{entity}"),
+            None => format!("volume_{entity}"),
+        }
+    }
+
+    /// The names of every physical group of an entity (its own name if it
+    /// has none).
+    pub fn entity_names(&self, dim: u8, entity: i64) -> Vec<String> {
+        match self.entity_physicals.get(&(dim, entity)) {
+            Some(v) if !v.is_empty() => v
+                .iter()
+                .map(|&p| self.physical_name(dim as i64, p))
+                .collect(),
+            _ => vec![self.entity_name(dim, entity)],
+        }
+    }
+}
+
+/// Reads a `.msh` file without building a mesh: second-order elements are
+/// kept (see [`RawGmsh`]).
+pub fn read_raw(path: impl AsRef<Path>) -> Result<RawGmsh, String> {
+    let path = path.as_ref();
+    let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    parse_raw(&bytes).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+/// Parses the bytes of a `.msh` file without building a mesh.
+pub fn parse_raw(bytes: &[u8]) -> Result<RawGmsh, String> {
     let mut c = Cursor {
         b: bytes,
         pos: 0,
@@ -216,14 +320,11 @@ pub fn parse(bytes: &[u8]) -> Result<GmshMesh, String> {
         swap: false,
     };
     let mut format = String::new();
-    let mut phys_names: HashMap<(i64, i64), String> = HashMap::new();
-    let mut phys_order: Vec<(i64, i64)> = Vec::new();
+    let mut phys_names: Vec<((i64, i64), String)> = Vec::new();
     let mut entity_phys: HashMap<(u8, i64), Vec<i64>> = HashMap::new();
     let mut node_tag: Vec<u64> = Vec::new();
     let mut node_xyz: Vec<[f64; 3]> = Vec::new();
-    let mut blocks: Vec<Block> = Vec::new();
-    // (dimension, tag, master tag, affine transform, node pairs) as read
-    type RawPeriodic = (i64, i64, i64, Vec<f64>, Vec<(u64, u64)>);
+    let mut blocks: Vec<RawBlock> = Vec::new();
     let mut periodic: Vec<RawPeriodic> = Vec::new();
     let mut warnings = Vec::new();
 
@@ -288,8 +389,8 @@ pub fn parse(bytes: &[u8]) -> Result<GmshMesh, String> {
                     let tag: i64 = c.ascii()?;
                     let rest = c.line()?;
                     let nm = rest.trim().trim_matches('"').to_string();
-                    phys_names.insert((dim, tag), nm);
-                    phys_order.push((dim, tag));
+                    phys_names.retain(|(k, _)| *k != (dim, tag));
+                    phys_names.push(((dim, tag), nm));
                 }
                 c.expect_end("PhysicalNames")?;
             }
@@ -358,7 +459,7 @@ pub fn parse(bytes: &[u8]) -> Result<GmshMesh, String> {
                     let entity = c.int()?;
                     let etype = c.int()?;
                     let n = declared(c.size()? as usize, bytes.len(), "elements of a block")?;
-                    let (nn, edim) = element_info(etype)?;
+                    let (nn, edim, _) = element_info(etype)?;
                     if edim != dim {
                         return Err(format!(
                             "an element block of dimension {dim} holds elements of type {etype} \
@@ -376,9 +477,10 @@ pub fn parse(bytes: &[u8]) -> Result<GmshMesh, String> {
                         }
                     }
                     if dim >= 2 {
-                        blocks.push(Block {
+                        blocks.push(RawBlock {
                             dim,
                             entity,
+                            etype,
                             nodes_per: nn,
                             nodes,
                         });
@@ -426,29 +528,30 @@ pub fn parse(bytes: &[u8]) -> Result<GmshMesh, String> {
     if format.is_empty() {
         return Err("no $MeshFormat section".into());
     }
+    Ok(RawGmsh {
+        format,
+        node_tags: node_tag,
+        nodes: node_xyz,
+        blocks,
+        physical_names: phys_names,
+        entity_physicals: entity_phys,
+        periodic,
+        warnings,
+    })
+}
 
-    // node tag -> index
-    // (a table for dense tags, a map for sparse ones: the same indices)
-    let max_tag = node_tag.iter().copied().max().unwrap_or(0) as usize;
-    let dense = max_tag <= 4 * node_tag.len() + 1024;
-    let mut tag_index = vec![u32::MAX; if dense { max_tag + 1 } else { 0 }];
-    let mut tag_map: HashMap<u64, u32> = HashMap::new();
-    for (i, &t) in node_tag.iter().enumerate() {
-        if dense {
-            tag_index[t as usize] = i as u32;
-        } else {
-            tag_map.insert(t, i as u32);
-        }
+/// Parses the bytes of a `.msh` file.
+pub fn parse(bytes: &[u8]) -> Result<GmshMesh, String> {
+    let raw = parse_raw(bytes)?;
+    if let Some(b) = raw
+        .blocks
+        .iter()
+        .find(|b| element_info(b.etype).is_ok_and(|i| i.2 > 1))
+    {
+        return Err(refuse_order(b.etype));
     }
-    let idx = |t: u64| -> Result<u32, String> {
-        if dense {
-            tag_index.get(t as usize).copied()
-        } else {
-            tag_map.get(&t).copied()
-        }
-        .filter(|&i| i != u32::MAX)
-        .ok_or_else(|| format!("element refers to unknown node {t}"))
-    };
+    let idx = raw.indexer();
+    let blocks = &raw.blocks;
     if !blocks.iter().any(|b| b.dim == 3 && !b.nodes.is_empty()) {
         return Err(
             "the file has no 3D cells. For a 2D case, extrude the surface mesh one \
@@ -457,23 +560,8 @@ pub fn parse(bytes: &[u8]) -> Result<GmshMesh, String> {
         );
     }
 
-    // names
-    let phys_name = |dim: i64, tag: i64| -> String {
-        phys_names
-            .get(&(dim, tag))
-            .cloned()
-            .unwrap_or_else(|| format!("physical_{tag}"))
-    };
-    let entity_name = |dim: u8, entity: i64| -> String {
-        match entity_phys.get(&(dim, entity)).and_then(|v| v.first()) {
-            Some(&p) => phys_name(dim as i64, p),
-            None if dim == 2 => format!("surface_{entity}"),
-            None => format!("volume_{entity}"),
-        }
-    };
-
     let mut em = ElementMesh {
-        points: node_xyz,
+        points: raw.nodes.clone(),
         face_word: "surface elements",
         group_word: "surface physical group",
         ..Default::default()
@@ -481,7 +569,7 @@ pub fn parse(bytes: &[u8]) -> Result<GmshMesh, String> {
     // cells: volume physical groups are the zones
     let mut v = Vec::with_capacity(8);
     for b in blocks.iter().filter(|b| b.dim == 3) {
-        let z = em.zone(&entity_name(3, b.entity));
+        let z = em.zone(&raw.entity_name(3, b.entity));
         let kind = match b.nodes_per {
             4 => CellKind::Tetrahedron,
             8 => CellKind::Hexahedron,
@@ -499,13 +587,13 @@ pub fn parse(bytes: &[u8]) -> Result<GmshMesh, String> {
     }
     // boundary faces named by the 2D elements: boundaries in the order of
     // the physical names, then entity order
-    for &(d, t) in &phys_order {
-        if d == 2 {
-            em.boundaries.push(phys_name(d, t));
+    for ((d, _), name) in &raw.physical_names {
+        if *d == 2 {
+            em.boundaries.push(name.clone());
         }
     }
     for b in blocks.iter().filter(|b| b.dim == 2) {
-        let bi = em.boundary(&entity_name(2, b.entity));
+        let bi = em.boundary(&raw.entity_name(2, b.entity));
         for e in b.nodes.chunks(b.nodes_per) {
             v.clear();
             for &t in e {
@@ -515,11 +603,14 @@ pub fn parse(bytes: &[u8]) -> Result<GmshMesh, String> {
         }
     }
     let built = em.into_mesh()?;
+    let mut warnings = raw.warnings.clone();
     warnings.extend(built.warnings);
     let node = |t: u64| -> Result<u32, String> { Ok(built.node_map[idx(t)? as usize]) };
 
-    let periodic = periodic
-        .into_iter()
+    let periodic = raw
+        .periodic
+        .iter()
+        .cloned()
         .map(|(dim, tag, master, affine, pairs)| PeriodicLink {
             dim: dim as i32,
             tag: tag as i32,
@@ -538,7 +629,7 @@ pub fn parse(bytes: &[u8]) -> Result<GmshMesh, String> {
     Ok(GmshMesh {
         mesh: built.mesh,
         periodic,
-        format,
+        format: raw.format.clone(),
         warnings,
     })
 }

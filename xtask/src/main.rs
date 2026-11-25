@@ -43,8 +43,12 @@ const ALLOWED: &[(&str, &[&str])] = &[
             "foehncraft-mesh",
         ],
     ),
-    // The structural solver (L53): pure numerics on the core crate.
-    ("foehncraft-structure", &["foehncraft-core"]),
+    // The structural solver (L53): numerics on the core crate; the mesh
+    // crate only for its Gmsh reader (second-order solids).
+    (
+        "foehncraft-structure",
+        &["foehncraft-core", "foehncraft-mesh"],
+    ),
     // The Lagrangian parcels (L12): the parcel kernel and the tracker on the
     // mesh locator; the gas enters through a trait, so no `foehncraft-fv`.
     (

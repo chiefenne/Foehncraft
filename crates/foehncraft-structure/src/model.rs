@@ -1,9 +1,12 @@
-//! The structural model: nodes with six unknowns each, beam elements,
-//! supports, springs to ground and loads; assembly of the stiffness K,
-//! the consistent mass M and the load vector f on the free unknowns.
+//! The structural model: nodes with six unknowns each, beam, shell and
+//! solid elements, supports, springs to ground and loads; assembly of the
+//! stiffness K, the consistent mass M and the load vector f on the free
+//! unknowns. Solid elements use the three translations of their nodes; the
+//! rotations of a node that only solids touch are fixed.
 
 use crate::beam::{self, BeamProps};
 use crate::shell::{self, ShellProps};
+use crate::solid::{self, SolidProps};
 use crate::sparse::{Assembly, SymCsc};
 
 /// Unknowns per node: u, v, w, θx, θy, θz (global axes).
@@ -72,6 +75,46 @@ pub struct ThermalLoad {
     pub curvature: [f64; 2],
 }
 
+/// A quadratic solid element (ten-node tetrahedron or twenty-node
+/// hexahedron, nodes in VTK order).
+#[derive(Debug, Clone, Copy)]
+pub struct Solid {
+    /// The element.
+    pub kind: solid::Kind,
+    /// Its nodes (the first [`solid::Kind::nodes`]).
+    pub nodes: [usize; solid::MAX_NODES],
+    /// Index into [`Model::solid_props`].
+    pub props: usize,
+}
+
+impl Solid {
+    /// The nodes of the element.
+    pub fn used(&self) -> &[usize] {
+        &self.nodes[..self.kind.nodes()]
+    }
+}
+
+/// A load on a face of a solid (six-node triangle or eight-node
+/// quadrilateral, counter-clockwise seen from outside).
+#[derive(Debug, Clone, Copy)]
+pub struct FaceLoad {
+    /// The face's nodes (the first `count`).
+    pub nodes: [usize; 8],
+    /// Nodes of the face: 6 or 8.
+    pub count: usize,
+    /// Force per area, global axes (N/m²).
+    pub q: [f64; 3],
+    /// Pressure pushing into the solid (Pa), against the outward normal.
+    pub pressure: f64,
+}
+
+impl FaceLoad {
+    /// The nodes of the face.
+    pub fn used(&self) -> &[usize] {
+        &self.nodes[..self.count]
+    }
+}
+
 /// The model.
 #[derive(Debug, Clone, Default)]
 pub struct Model {
@@ -102,6 +145,14 @@ pub struct Model {
     pub prescribed: Vec<(usize, f64)>,
     /// Thermal strains of elements.
     pub thermal: Vec<ThermalLoad>,
+    /// Solid materials.
+    pub solid_props: Vec<SolidProps>,
+    /// Solid elements.
+    pub solids: Vec<Solid>,
+    /// Loads on solid faces.
+    pub face_loads: Vec<FaceLoad>,
+    /// Thermal strains α ΔT of solid elements (element, strain).
+    pub solid_thermal: Vec<(usize, f64)>,
 }
 
 /// The assembled system on the free unknowns.
@@ -299,6 +350,13 @@ impl Model {
                     .for_each(|u| *u = true);
             }
         }
+        for e in &self.solids {
+            for &n in e.used() {
+                used[DOFS * n..DOFS * n + 3]
+                    .iter_mut()
+                    .for_each(|u| *u = true);
+            }
+        }
         for &(d, _) in &self.springs {
             used[d] = true;
         }
@@ -420,6 +478,43 @@ impl Model {
                 }
             }
         }
+        let mut strain = vec![0.0; self.solids.len()];
+        for &(e, a) in &self.solid_thermal {
+            if let Some(s) = strain.get_mut(e) {
+                *s += a;
+            }
+        }
+        for (e, el) in self.solids.iter().enumerate() {
+            let x = self.solid_coords(e);
+            // a distorted element is reported by `check_solids`
+            let Ok((kg, mg, fth)) =
+                solid::matrices(el.kind, &x, &self.solid_props[el.props], strain[e])
+            else {
+                continue;
+            };
+            let all: Vec<usize> = el
+                .used()
+                .iter()
+                .flat_map(|&nd| (0..3).map(move |d| DOFS * nd + d))
+                .collect();
+            let fr: Vec<Option<usize>> = all.iter().map(|&d| map[d]).collect();
+            let al: Vec<Option<usize>> = all.iter().map(|&d| Some(d)).collect();
+            k.add_block(&fr, &kg);
+            m.add_block(&fr, &mg);
+            ka.add_block(&al, &kg);
+            for (i, &d) in all.iter().enumerate() {
+                f_all[d] += fth[i];
+            }
+        }
+        for l in &self.face_loads {
+            let x: Vec<[f64; 3]> = l.used().iter().map(|&n| self.nodes[n]).collect();
+            let (fg, _) = solid::face_load(&x, l.q, l.pressure);
+            for (a, &nd) in l.used().iter().enumerate() {
+                for d in 0..3 {
+                    f_all[DOFS * nd + d] += fg[3 * a + d];
+                }
+            }
+        }
         for &(d, s) in &self.springs {
             if let Some(i) = map[d] {
                 k.add(i, i, s);
@@ -453,6 +548,32 @@ impl Model {
             f_all,
             prescribed: up,
         }
+    }
+
+    /// The node coordinates of solid element `e`.
+    pub fn solid_coords(&self, e: usize) -> Vec<[f64; 3]> {
+        self.solids[e].used().iter().map(|&n| self.nodes[n]).collect()
+    }
+
+    /// Checks that every solid element has a positive Jacobian at its
+    /// integration points: the first bad element and why.
+    pub fn check_solids(&self) -> Result<(), (usize, String)> {
+        for (e, el) in self.solids.iter().enumerate() {
+            solid::volume(el.kind, &self.solid_coords(e)).map_err(|m| (e, m))?;
+        }
+        Ok(())
+    }
+
+    /// Adds a solid element on existing nodes (VTK order).
+    pub fn add_solid(&mut self, kind: solid::Kind, nodes: &[usize], props: usize) -> usize {
+        let mut a = [0; solid::MAX_NODES];
+        a[..nodes.len()].copy_from_slice(nodes);
+        self.solids.push(Solid {
+            kind,
+            nodes: a,
+            props,
+        });
+        self.solids.len() - 1
     }
 
     /// The unit directors of the shell nodes: the mean of the normals of
@@ -518,7 +639,14 @@ impl Model {
                 p.density * p.thickness * area
             })
             .sum();
-        beams + shells + self.masses.iter().map(|m| m.1).sum::<f64>()
+        let solids: f64 = (0..self.solids.len())
+            .map(|e| {
+                let el = &self.solids[e];
+                self.solid_props[el.props].density
+                    * solid::volume(el.kind, &self.solid_coords(e)).unwrap_or(0.0)
+            })
+            .sum();
+        beams + shells + solids + self.masses.iter().map(|m| m.1).sum::<f64>()
     }
 
     /// The node closest to `x` and its distance.

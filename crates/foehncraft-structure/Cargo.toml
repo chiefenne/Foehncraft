@@ -1,6 +1,6 @@
 [package]
 name = "foehncraft-structure"
-description = "Foehncraft structure: a small linear structural finite element solver (beams first; shells, solids, dynamics and contact follow), for reed valves and other parts moved by the flow (L53, MS5)"
+description = "Foehncraft structure: a small linear structural finite element solver (beams, shells, quadratic solids, dynamics; contact follows), for reed valves and other parts moved by the flow (L53, MS5)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,6 +10,7 @@ authors.workspace = true
 
 [dependencies]
 foehncraft-core.workspace = true
+foehncraft-mesh.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 toml.workspace = true
