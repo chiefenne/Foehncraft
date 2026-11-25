@@ -163,7 +163,7 @@ impl TopologySection {
         if self.every() == 0 || self.designs() == 0 {
             return Err(bad("every", "every and designs must be ≥ 1".into()));
         }
-        if !(self.change() > 0.0) {
+        if self.change().is_nan() || self.change() <= 0.0 {
             return Err(bad("change", "change must be > 0".into()));
         }
         Ok(())
@@ -236,7 +236,8 @@ impl Filter {
                     for dz in -1..=1 {
                         if let Some(list) = grid.get(&[k[0] + dx, k[1] + dy, k[2] + dz]) {
                             for &j in list {
-                                let d = (0..3).map(|i| (x[j][i] - p[i]).powi(2)).sum::<f64>().sqrt();
+                                let d =
+                                    (0..3).map(|i| (x[j][i] - p[i]).powi(2)).sum::<f64>().sqrt();
                                 if d < r {
                                     let w = (r - d) * v[j];
                                     index.push(j);
@@ -525,7 +526,11 @@ impl Search {
                 .sum()
         };
         // bisection on λ in log space: the volume falls as λ grows
-        let scale = df.iter().map(|d| d.abs()).fold(0.0f64, f64::max).max(f64::MIN_POSITIVE);
+        let scale = df
+            .iter()
+            .map(|d| d.abs())
+            .fold(0.0f64, f64::max)
+            .max(f64::MIN_POSITIVE);
         let (mut lo, mut hi) = (scale * 1e-12, scale * 1e12);
         for _ in 0..200 {
             let mid = (lo * hi).sqrt();
@@ -596,7 +601,11 @@ impl Search {
     }
 
     /// The summary, with Φ of the final state and the surface.
-    pub fn report(&self, objective: f64, surface: &foehncraft_mesh::isosurface::Surface) -> TopologyReport {
+    pub fn report(
+        &self,
+        objective: f64,
+        surface: &foehncraft_mesh::isosurface::Surface,
+    ) -> TopologyReport {
         TopologyReport {
             designs: self.done,
             converged: self.converged,

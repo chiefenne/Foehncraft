@@ -223,8 +223,8 @@ pub fn extract_with(
             (out.points.len() - 1) as u32
         })
     };
-    for c in 0..mesh.n_cells {
-        let cc: Corner = (np + nf + c as u64, geo.cell_centroid[c], cell[c]);
+    for (c, &value) in cell.iter().enumerate().take(mesh.n_cells) {
+        let cc: Corner = (np + nf + c as u64, geo.cell_centroid[c], value);
         for (f, _) in mesh.cell_face_iter(c) {
             let fc: Corner = (np + f as u64, geo.face_centroid[f], face_value(f));
             let fnodes = mesh.face(f);
@@ -242,8 +242,8 @@ pub fn extract_with(
                 let mean = |ks: &[usize]| -> [f64; 3] {
                     let mut m = [0.0; 3];
                     for &k in ks {
-                        for d in 0..3 {
-                            m[d] += tet[k].1[d] / ks.len() as f64;
+                        for (md, td) in m.iter_mut().zip(tet[k].1) {
+                            *md += td / ks.len() as f64;
                         }
                     }
                     m
@@ -343,7 +343,11 @@ mod tests {
                 assert_eq!(e.boundary, 0, "{kind} {n}: open");
                 assert_eq!(e.non_manifold, 0, "{kind} {n}: non-manifold");
                 assert_eq!(e.misoriented, 0, "{kind} {n}: orientation");
-                errs.push(((s.area() - sa) / sa).abs().max(((s.volume() - sv) / sv).abs()));
+                errs.push(
+                    ((s.area() - sa) / sa)
+                        .abs()
+                        .max(((s.volume() - sv) / sv).abs()),
+                );
                 // every point on the sphere within the chord error
                 let h = 2.0 / n as f64;
                 let worst = s

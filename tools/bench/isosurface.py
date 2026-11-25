@@ -7,7 +7,8 @@ and subgrid marching tetrahedra (Baktash, Gillespie & Crane 2026, read in
 full: ACM TOG 45(4) 57, CC BY 4.0) on fields with an exact surface:
 
     sphere      signed distance of a sphere (smooth)
-    box         signed distance of a rotated box (sharp edges and corners)
+    box         signed distance of a rotated box 1.1 × 0.76 × 0.54 (sharp edges
+                and corners)
     plate       signed distance of a plate thinner than a cell (sub-grid)
     fraction    a smeared solid fraction of the sphere, clamp(½ + d/h): what
                 a penalised body or a design density gives
@@ -61,7 +62,7 @@ def sdf_box(x, half, rot=None):
 def shapes(h):
     rot = rotation(np.radians(20.0), np.radians(30.0))
     r = 0.6
-    box_half = np.array([0.45, 0.45, 0.45])
+    box_half = np.array([0.55, 0.38, 0.27])
     plate_half = np.array([0.7, 0.7, 0.15 * h])
     sphere = lambda x: np.linalg.norm(x, axis=-1) - r  # noqa: E731
     return {
@@ -71,7 +72,7 @@ def shapes(h):
         ),
         "box": dict(
             f=lambda x: sdf_box(x, box_half, rot), d=lambda x: sdf_box(x, box_half, rot),
-            area=6 * 0.9**2, volume=0.9**3,
+            area=8 * (0.55 * 0.38 + 0.38 * 0.27 + 0.55 * 0.27), volume=8 * 0.55 * 0.38 * 0.27,
             sample=lambda n: sample_box(box_half, rot, n),
         ),
         "plate": dict(
@@ -457,17 +458,17 @@ def figure(surfaces, path):
     import matplotlib.pyplot as plt
     from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
-    fig = plt.figure(figsize=(12, 6.4), dpi=150)
+    fig = plt.figure(figsize=(12, 4.6), dpi=150)
     panels = [("box", "marching tets"), ("box", "dual contouring"),
-              ("fraction", "marching tets"), ("plate", "marching tets")]
-    titles = ["rotated box: marching tetrahedra", "rotated box: dual contouring",
-              "smeared solid fraction of a sphere:\nmarching tetrahedra",
-              "plate 0.3 cells thick:\nmarching tetrahedra miss it"]
+              ("fraction", "marching tets")]
+    titles = ["rotated box: marching tetrahedra\n(closed, manifold; slivers, rounded edges)",
+              "rotated box: dual contouring\n(sharp edges; manifold not guaranteed)",
+              "smeared solid fraction of a sphere:\nmarching tetrahedra (what stage 1 writes)"]
     light = np.array([0.4, -0.5, 0.75])
     light /= np.linalg.norm(light)
     cmap = plt.get_cmap("viridis")
     for k, ((name, method), title) in enumerate(zip(panels, titles)):
-        ax = fig.add_subplot(1, 4, k + 1, projection="3d")
+        ax = fig.add_subplot(1, 3, k + 1, projection="3d")
         V, T = surfaces[(name, method)]
         if len(T):
             tri = V[T]
@@ -481,14 +482,14 @@ def figure(surfaces, path):
         else:
             ax.text(0, 0, 0, "no triangles", ha="center")
         for s in "xyz":
-            getattr(ax, f"set_{s}lim")(-0.8, 0.8)
+            getattr(ax, f"set_{s}lim")(-0.62, 0.62)
         ax.set_box_aspect((1, 1, 1))
         ax.view_init(elev=24, azim=-58)
         ax.set_axis_off()
         ax.set_title(title, fontsize=10)
     fig.suptitle("Iso-surface extraction benchmark (24³ grid): marching tetrahedra, dual contouring",
                  fontsize=12)
-    fig.subplots_adjust(left=0.0, right=1.0, bottom=0.0, top=0.86, wspace=0.0)
+    fig.subplots_adjust(left=0.0, right=1.0, bottom=0.0, top=0.84, wspace=0.0)
     fig.savefig(path, facecolor="white")
     print(f"wrote {path}")
 

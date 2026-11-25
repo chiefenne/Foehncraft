@@ -621,7 +621,10 @@ pub fn attach(
                 format!(
                     "topology search: {} design cells, fluid fraction {}, μ/K = {:.3e} kg/(m³ s)",
                     t.cells.len(),
-                    case.immersed.topology.as_ref().map_or(0.0, |s| s.fluid_fraction),
+                    case.immersed
+                        .topology
+                        .as_ref()
+                        .map_or(0.0, |s| s.fluid_fraction),
                     mu / k
                 ),
             ));

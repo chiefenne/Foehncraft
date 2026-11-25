@@ -13,7 +13,7 @@
 #
 # The run writes topology.csv (one row per design update) and topology.stl
 # (the surface γ̃ = ½ by marching tetrahedra); the solid-fraction field is
-# 1 − γ̃. Gallery and recipe 289.
+# 1 − γ̃. Gallery and recipe 291.
 
 case_format = "0.7"
 

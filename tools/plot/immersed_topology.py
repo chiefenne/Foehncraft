@@ -1,4 +1,4 @@
-"""Topology search of a pipe bend, L13 stage 1 (gallery and recipe 289).
+"""Topology search of a pipe bend, L13 stage 1 (gallery and recipe 291).
 
 immersed_topology_bend.png: the design found by the density-field topology
 search (Borrvall & Petersson 2003 bend, Stokes flow): the solid fraction
