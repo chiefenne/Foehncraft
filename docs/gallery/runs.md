@@ -894,12 +894,18 @@ What happened, in the order of the calls:
   It interpolated 3.55 g/s and checked it with a run: 149.4 °C.
 - Every run evaporates all its water (the last droplets at 2.7 m); none
   reaches a wall or the outlet.
+- As a mesh check it ran 3.55 g/s on the mesh refined once (300 × 40,
+  12 000 cells, under the cap of 40 000). The run stopped at its own
+  wall-time limit of 900 s after 1977 iterations (`RUN003`), with its
+  restart file: 150.3 °C at the outlet, 0.9 K above the coarse mesh, and
+  104 to 228 °C across it.
 
 | Water (g/s) | Iterations | Outlet, mass-flow mean (°C) | Vapour at the outlet, Y_H2O | Evaporated |
 |---|---|---|---|---|
 | 3.00 | 2000 | 171.1 | 0.052 | all |
 | 3.50 | 2000 | 151.3 | 0.060 | all |
 | 3.55 | 2000 | 149.4 | 0.061 | all |
+| 3.55, mesh refined once | 1977 (wall-time limit) | 150.3 | 0.061 | 99.9 % |
 
 And its answer, in its own words:
 
@@ -912,11 +918,13 @@ And its answer, in its own words:
 > 104 °C and the layers at the walls at up to 225 °C, because three nozzles
 > in the middle do not reach the wall layers within 3 m. If the filter
 > needs 150 °C everywhere, spread the nozzles towards the walls or give the
-> spray more length. Limitations: one mesh (`LIM004`); the steady solve
+> spray more length. On the mesh refined once the outlet is 0.9 K warmer,
+> which asks for about 0.02 g/s more: **3.54 to 3.56 g/s**; two meshes
+> give no GCI. Limitations: the steady solve
 > stops at 2000 iterations with residuals near 10⁻⁵ (`LIM003`, the outlet
 > moved 0.003 K in 1000 more iterations) and the spray source residual
-> stalls at 0.006 against its tolerance of 0.001; first-cell y⁺ of about
-> 29, outside the validated range of the wall treatment (`LIM002`); SST,
+> stalls at 0.006 to 0.009 against its tolerance of 0.001; first-cell y⁺ of
+> 15 to 29, outside the validated range of the wall treatment (`LIM002`); SST,
 > its automatic wall treatment and the energy equation with turbulence are
 > graded partial (`LIM001`); the density is constant (0.6 kg/m³), so the
 > cooled air does not slow down. A sizing estimate, not a design.
@@ -926,6 +934,10 @@ And its answer, in its own words:
 | Code | `tools/agent/stdio_host.py` (the host), `tools/plot/spray_cooler.py` (the figure); no engine change |
 | Case files | `tools/mcp/spray_cooler/`: `foehn-mcp.toml` (the action table), `spray_cooler.toml` and the nozzle files the assistant wrote, `journal.jsonl` (the session), `results.csv` (what it read) |
 | Guides | [A recorded chat](../agents.md#a-recorded-chat-sizing-a-spray-cooler), [Connect an assistant](../agents.md) |
+
+The journal replays the session without a window; it runs the six flow
+runs again, about 45 minutes on 4 threads. This entry's journal has not
+been replayed yet.
 
 ```
 cargo build --release -p foehncraft-cli

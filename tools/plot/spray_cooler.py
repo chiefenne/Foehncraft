@@ -7,7 +7,7 @@ temperature against the water flow, with the 150 °C target.
 
     python3 tools/plot/spray_cooler.py RUNS_DIR OUT.png
 
-RUNS_DIR holds the run folders w3.0, w3.5 and w3.55 of the session
+RUNS_DIR holds the run folder w3.55 of the session (the coarse mesh)
 (output/agent/spray_cooler after a replay); the outlet temperatures are
 those of examples/cases/tools/mcp/spray_cooler/results.csv.
 """
@@ -89,7 +89,7 @@ def main(runs, out):
     ax.grid(alpha=0.3)
 
     ax = fig.add_subplot(gs[2, 1])
-    rows = [r for r in csv.DictReader(open(ROOT / "examples/cases/tools/mcp/spray_cooler/results.csv")) if not r["run"].endswith("-b")]
+    rows = [r for r in csv.DictReader(open(ROOT / "examples/cases/tools/mcp/spray_cooler/results.csv")) if r["run"] in ("w3.0", "w3.5", "w3.55")]
     q = [float(r["water_g_s"]) for r in rows]
     tc = [float(r["outlet_mass_mean_C"]) for r in rows]
     ax.plot(q, tc, "o-", color="#1f6fb4")

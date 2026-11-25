@@ -328,10 +328,10 @@ The session as it went, its own slips included:
 | 11–14 | `flow.run` continued to 3000 iterations; `post.datums` on both restart files | after adding an outlet datum to the case: **171.1 °C** at the outlet (mass-flow mean), 0.003 K apart between 2000 and 3000 iterations |
 | 15–19 | `flow.run` with 3.5 g/s, `run.status`, `post.datums` | one `post.datums` before the run had written its restart file (`GEN001`); then **151.3 °C** |
 | 20–23 | `flow.run` with 3.55 g/s (interpolated), `post.datums` | **149.4 °C** |
-| 24–… | `case.estimate` and `flow.run` on the mesh refined once (12 000 cells) | the mesh check (see the gallery entry) |
+| 24–… | `case.estimate` and `flow.run` on the mesh refined once (12 000 cells), `post.datums` | the first try died with the cloud machine it ran on and was started again; the run stops at its own wall-time limit of 900 s after 1977 iterations (`RUN003`): **150.3 °C**, 0.9 K above the coarse mesh |
 
 Its answer: **about 3.54 g/s of water per 0.1 m of duct depth, 5.9 % of
-the air mass flow**, all of it evaporated within 2.7 m, with the heat
+the air mass flow** (3.56 g/s on the mesh refined once), all of it evaporated within 2.7 m, with the heat
 balance as a plausibility check (2.66 MJ per kg of water). And the catch
 it reported unasked: 150 °C is the mass-flow mean, while the outlet has a
 core at about 104 °C and wall layers at up to 225 °C. The limitations it
