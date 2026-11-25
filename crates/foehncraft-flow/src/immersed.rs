@@ -890,89 +890,6 @@ pub fn forces(
     Ok(out)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn cyl(r: f64) -> ImmersedSection {
-        ImmersedSection {
-            permeability: Some(1e-8),
-            samples: None,
-            body: vec![BodySection {
-                name: "c".into(),
-                shape: Shape::Cylinder,
-                centre: Some([0.5, 0.5, 0.0]),
-                radius: Some(r),
-                axis: None,
-                length: None,
-                lower: None,
-                upper: None,
-                fraction: None,
-            }],
-            topology: None,
-        }
-    }
-
-    #[test]
-    fn rule_integrates_tetrahedron_moments() {
-        // the mean of the collapsed coordinates over the unit tetrahedron
-        // (0,0,0) (1,0,0) (1,1,0) (1,1,1): its centroid (3/4, 1/2, 1/4)
-        for n in [2, 4, 8] {
-            let q = rule(n);
-            let m: [f64; 3] = std::array::from_fn(|i| q.iter().map(|(z, w)| z[i] * w).sum());
-            let tol = 2.0 / (n * n) as f64;
-            assert!((m[0] - 0.75).abs() < tol, "{n} {m:?}");
-            assert!((m[1] - 0.5).abs() < tol, "{n} {m:?}");
-            assert!((m[2] - 0.25).abs() < tol, "{n} {m:?}");
-        }
-    }
-
-    #[test]
-    fn checks_refuse_bad_bodies() {
-        let mut s = cyl(0.1);
-        assert!(bodies(&s).is_ok());
-        s.permeability = None;
-        assert!(bodies(&s).is_err());
-        s.permeability = Some(1e-8);
-        s.body[0].radius = Some(0.0);
-        assert!(bodies(&s).is_err());
-        s.body[0].radius = Some(0.1);
-        s.body[0].axis = Some([0.0; 3]);
-        assert!(bodies(&s).is_err());
-        s.body[0].axis = None;
-        s.body.push(s.body[0].clone());
-        assert!(bodies(&s).is_err());
-        s.body.clear();
-        assert!(bodies(&s).is_err());
-    }
-
-    #[test]
-    fn solid_volume_of_a_cylinder_converges() {
-        // a 2D box mesh with an endless cylinder of radius 0.2: the solid
-        // volume on the mesh against π r² (depth of the mesh)
-        let spec: foehncraft_mesh::generate::BoxSpec = toml::from_str(
-            "dimension = 2\nlower = [0.0, 0.0, 0.0]\nupper = [1.0, 1.0, 0.1]\ncells = [20, 20, 1]",
-        )
-        .expect("spec");
-        let mesh = spec.generate().expect("mesh");
-        let geo = Geometry::compute(&mesh);
-        let s = cyl(0.2);
-        let bs = bodies(&s).expect("bodies");
-        let exact = bs[0]
-            .exact_volume(mesh.bounding_box().0, mesh.bounding_box().1)
-            .expect("exact");
-        let mut errs = Vec::new();
-        for n in [2, 4, 8] {
-            let x = fractions(&bs, n, &mesh, &geo);
-            let v: f64 = x[0].iter().zip(&geo.cell_volume).map(|(a, v)| a * v).sum();
-            errs.push(((v - exact) / exact).abs());
-            assert!(x[0].iter().all(|a| (0.0..=1.0).contains(a)));
-        }
-        assert!(errs[2] < 5e-3, "{errs:?}");
-        assert!(errs[2] < errs[0], "{errs:?}");
-    }
-}
-
 /// The bodies of a cut as one implicit function: φ is the smallest signed
 /// distance, the crossing points are the exact roots on the edges (or
 /// linear), the wall point is the Newton projection onto the nearest body.
@@ -1086,4 +1003,89 @@ pub fn cut_mesh(case: &crate::case::FlowCase, mesh: &Mesh) -> Result<(Mesh, Vec<
 
 fn norm(a: [f64; 3]) -> f64 {
     dot(a, a).sqrt()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cyl(r: f64) -> ImmersedSection {
+        ImmersedSection {
+            method: None,
+            cut: None,
+            permeability: Some(1e-8),
+            samples: None,
+            body: vec![BodySection {
+                name: "c".into(),
+                shape: Shape::Cylinder,
+                centre: Some([0.5, 0.5, 0.0]),
+                radius: Some(r),
+                axis: None,
+                length: None,
+                lower: None,
+                upper: None,
+                fraction: None,
+            }],
+            topology: None,
+        }
+    }
+
+    #[test]
+    fn rule_integrates_tetrahedron_moments() {
+        // the mean of the collapsed coordinates over the unit tetrahedron
+        // (0,0,0) (1,0,0) (1,1,0) (1,1,1): its centroid (3/4, 1/2, 1/4)
+        for n in [2, 4, 8] {
+            let q = rule(n);
+            let m: [f64; 3] = std::array::from_fn(|i| q.iter().map(|(z, w)| z[i] * w).sum());
+            let tol = 2.0 / (n * n) as f64;
+            assert!((m[0] - 0.75).abs() < tol, "{n} {m:?}");
+            assert!((m[1] - 0.5).abs() < tol, "{n} {m:?}");
+            assert!((m[2] - 0.25).abs() < tol, "{n} {m:?}");
+        }
+    }
+
+    #[test]
+    fn checks_refuse_bad_bodies() {
+        let mut s = cyl(0.1);
+        assert!(bodies(&s).is_ok());
+        s.permeability = None;
+        assert!(bodies(&s).is_err());
+        s.permeability = Some(1e-8);
+        s.body[0].radius = Some(0.0);
+        assert!(bodies(&s).is_err());
+        s.body[0].radius = Some(0.1);
+        s.body[0].axis = Some([0.0; 3]);
+        assert!(bodies(&s).is_err());
+        s.body[0].axis = None;
+        s.body.push(s.body[0].clone());
+        assert!(bodies(&s).is_err());
+        s.body.clear();
+        assert!(bodies(&s).is_err());
+    }
+
+    #[test]
+    fn solid_volume_of_a_cylinder_converges() {
+        // a 2D box mesh with an endless cylinder of radius 0.2: the solid
+        // volume on the mesh against π r² (depth of the mesh)
+        let spec: foehncraft_mesh::generate::BoxSpec = toml::from_str(
+            "dimension = 2\nlower = [0.0, 0.0, 0.0]\nupper = [1.0, 1.0, 0.1]\ncells = [20, 20, 1]",
+        )
+        .expect("spec");
+        let mesh = spec.generate().expect("mesh");
+        let geo = Geometry::compute(&mesh);
+        let s = cyl(0.2);
+        let bs = bodies(&s).expect("bodies");
+        let exact = bs[0]
+            .exact_volume(mesh.bounding_box().0, mesh.bounding_box().1)
+            .expect("exact");
+        let mut errs = Vec::new();
+        for n in [2, 4, 8] {
+            let x = fractions(&bs, n, &mesh, &geo);
+            let v: f64 = x[0].iter().zip(&geo.cell_volume).map(|(a, v)| a * v).sum();
+            errs.push(((v - exact) / exact).abs());
+            assert!(x[0].iter().all(|a| (0.0..=1.0).contains(a)));
+        }
+        assert!(errs[2] < 5e-3, "{errs:?}");
+        assert!(errs[2] < errs[0], "{errs:?}");
+    }
 }

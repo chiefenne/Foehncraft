@@ -154,7 +154,7 @@ pub fn project_newton<F: Fn([f64; 3]) -> f64>(f: F, x: [f64; 3], h: f64) -> Opti
             *gi = (f(a) - f(b)) / (2.0 * h);
         }
         let gg = dot(g, g);
-        if !(gg > 0.0) || !gg.is_finite() {
+        if gg.is_nan() || gg <= 0.0 || !gg.is_finite() {
             return None;
         }
         let step = scale(g, v / gg);
@@ -511,9 +511,6 @@ pub fn cut(
     bnames.extend(names.iter().cloned());
 
     // 3. small cells: merge, again while a merged cell is ill-shaped
-    let mut out_faces = out_faces;
-    let mut parent = parent;
-    let mut cut_cell = cut_cell;
     let mut min_fraction = opt.min_fraction;
     for _ in 0..6 {
         let (f, p, c, had_bad) = merge_pass(
@@ -864,6 +861,10 @@ impl ImplicitBody for Sphere {
     }
 }
 
+/// The faces, parents and cut flags of the merged cells, and whether the
+/// mesh before the pass had ill-shaped cells.
+type Merged = (Vec<Face>, Vec<u32>, Vec<bool>, bool);
+
 /// One pass of the small-cell merge (see the module docs): the faces,
 /// parents and cut flags of the merged cells, and whether the mesh before
 /// the pass had ill-shaped cells.
@@ -879,7 +880,7 @@ fn merge_pass(
     min_fraction: f64,
     merged: &mut usize,
     failed: &mut usize,
-) -> Result<(Vec<Face>, Vec<u32>, Vec<bool>, bool), String> {
+) -> Result<Merged, String> {
     let n_cells = parent.len();
     let zone: Vec<u32> = parent.iter().map(|&p| mesh.cell_zone[p as usize]).collect();
     let tmp = build(points, n_cells, out_faces, bnames, &mesh.zones, &zone)?;
@@ -952,7 +953,7 @@ fn merge_pass(
         for &(h, _) in &cand {
             let mut un: Vec<usize> = members[g].clone();
             un.extend_from_slice(&members[h]);
-            if joinable(&un, &cell_faces, &out_faces, &mut uf, g, h) {
+            if joinable(&un, &cell_faces, out_faces, &mut uf, g, h) {
                 let r = uf.union(g, h);
                 let (keep, gone) = if r == g { (g, h) } else { (h, g) };
                 let moved = std::mem::take(&mut members[gone]);

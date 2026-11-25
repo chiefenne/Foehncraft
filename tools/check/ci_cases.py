@@ -47,6 +47,7 @@ FLOW = {
         "ranks_run_sliding_couette",
         "ranks_run_imprint_couette",
         "immersed_cylinder_re20", "immersed_topology_bend", "immersed_mms",
+        "immersed_cut_cylinder_re20",
     ],
     "linux-3": [
         "species_binary_diffusion", "species_coaxial_jet",

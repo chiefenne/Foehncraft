@@ -1998,11 +1998,36 @@ evidence = [
 gaps = [
   "the wall is smeared over about one cell: first order in h, lift 27 % above the benchmark range at h = D/40, wall shear stress and heat flux not accurate (by design of the pre-stage)",
   "laminar and isothermal only: turbulence, energy, scalars, gravity, regions, rotating zones and sprays are refused (IMM102)",
-  "primitive bodies (cylinder, sphere, box) and `field` expressions only; STL bodies need the geometry kernel of stage 0",
+  "primitive bodies (cylinder, sphere, box) and `field` expressions only; STL bodies need the geometry kernel of stage 0 (sharp walls on cut cells: feature immersed.cut)",
   "the coupled solver breaks down from rest when the sink exceeds about 1e5 times the viscous diagonal (K below about 1e-5 h²); SIMPLEC takes any K",
   "the drag error depends on K/h²: with K = 0.01 h² the Stokes sphere array is 6.2, 5.5, 3.9, 2.6 % high on 16³ to 48³ (about first order); smaller K smears the body outward (up to +18 % at 1e-3 h² on 16³); in the Poiseuille channel the effective wall stays within half a cell (16 to 256 cells), its sign set by where the wall cuts its cell (sweeps run by tools/verification/immersed_sweeps.py, not in CI)",
   "manufactured solution on 2D triangular prisms and the mixed 2D mesh: the velocity error stalls at about 2 % (6 % without the sink, so a gap of the flow discretisation on these meshes, not of the penalisation)",
   "one rank only: `foehn run --ranks N` refuses immersed bodies",
+]
+
+[[feature]]
+id = "immersed.cut"
+area = "Immersed bodies"
+title = "Immersed bodies as cut cells, primitive shapes (L13 stage 2a, 2b)"
+switch = "[immersed] method = \"cut\""
+decisions = ["D227", "D228"]
+model = true
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-mesh/tests/cut.rs::sphere_closure_volume_and_area_converge", what = "a sphere cut out of hexahedral, tetrahedral and polyhedral box meshes (8³ to 32³): every cut cell closes to 1e-12 of its largest face, no face with d · S ≤ 0, fluid volume and wall area converge at order above 1.6 (measured 2.0 to 2.2)" },
+  { kind = "exact", test = "crates/foehncraft-mesh/tests/cut.rs::flat_body_is_exact_and_splits_cells", what = "a slab with flat faces: fluid volume and wall area exact to 1e-12; a cell whose fluid is two corner pieces becomes two cells" },
+  { kind = "consistency", test = "crates/foehncraft-mesh/tests/cut.rs::small_cells_merge", what = "merging small cells moves no volume and no wall area (1e-12), the merged cells close to round-off" },
+  { kind = "consistency", test = "crates/foehncraft-mesh/tests/cut.rs::cut_is_independent_of_threads", what = "the cut mesh is bitwise the same on 1 and 4 threads (D93)" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/immersed.rs::cut_poiseuille_converges_at_second_order", what = "plane Poiseuille flow between two cut walls off the cell faces: mass flow error 1.24, 0.29, 0.066 % on 16, 32, 64 cells across, order 2.1 (penalised walls: 20.5, 8.5, 2.3 %)" },
+  { kind = "reference-data", case = "immersed_cut_cylinder_re20", what = "Schäfer & Turek 2D-1 on a plain box mesh (h = D/20) with the cylinder cut out: C_D 5.583 in range, C_L 2.1 % and Δp 1.0 % below the range; the run fails beyond 5 % of the range midpoint", doc = "docs/gallery/immersed.md#cut-cylinder" },
+  { kind = "contract", property = "diagnostics", test = "crates/foehncraft-flow/tests/immersed.rs::cut_settings_are_refused", what = "IMM101 for [immersed.cut] without method = \"cut\", IMM201 for a threshold out of range, IMM202 for regions" },
+]
+gaps = [
+  "primitive bodies and `field` expressions only; STL bodies need the signed distance and segment-triangle crossings of the stage 0 geometry kernel",
+  "the body is seen through its node values: features thinner than a cell vanish; the refusal of thin solids (Q4, IMM for D189) is not built yet",
+  "Δp of the Re 20 cylinder stays about 1 % below the range at D/20 (D/40: C_D 5.592, C_L 0.0105, Δp 0.1171, all within 0.1 % of the range; SIMPLEC stalls at residual 1e-7 there); the lift depends on the merge threshold (0.1: 4 % low, 0.4: 0.4 % low); the default 0.3 is set on this one case",
+  "wall functions with the exact first-cell distance (2c), conjugate heat transfer through cut cells (2d, refused), named surface patches (2e) and the near-body refinement (2f) are not built",
+  "the other verification cases of the plan (cut-sphere Poisson MMS, annulus conduction, Taylor-Couette, inclined channel, Stokes sphere, Re 100 cylinder, turbulent plate) are not run yet",
+  "one rank only: the cut runs on the global mesh, `foehn run --ranks N` with a cut is not tested",
 ]
 
 [[feature]]

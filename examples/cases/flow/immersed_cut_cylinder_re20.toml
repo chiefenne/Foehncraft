@@ -12,7 +12,12 @@
 # surface becomes the wall boundary `cylinder`: the drag and lift are the
 # ordinary wall forces, and the wall is sharp.
 #
-# RESULTS_PLACEHOLDER
+# On this mesh 80 cells are cut, 274 removed and 26 merged (35 780 cells).
+# C_D 5.583 (in the range), C_L 0.0102 (2 % below it; penalised: 35 %
+# above), Δp 0.1160 (1 % below). SIMPLEC, 1 627 iterations, about a minute
+# and a half. The run fails if any value lies further from its range than
+# 5 % of the range midpoint. Gallery 313 has D/10 to D/40 and the settings
+# of [immersed.cut].
 
 case_format = "0.7"
 
