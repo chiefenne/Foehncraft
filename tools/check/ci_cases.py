@@ -75,11 +75,15 @@ FLOW = {
         "mixed_convection_channel",
         "spray_duct", "spray_datums", "spray_two_way", "spray_cooling", "spray_dispersion",
         "spray_cooling_steady", "spray_evaporation", "spray_heptane_evaporation",
+        # two fluids (L3, MP1)
+        "vof_static_drop",
         "porous_darcy_block", "porous_honeycomb_channel", "porous_schumann", "porous_storage_charge",
         "motion_free_stream", "motion_piston_adiabatic", "motion_channel_ranks",
         "steam_heated_duct", "steam_superheater_channel",
     ],
     "long": [
+        # two fluids (L3, MP1)
+        "vof_dam_break",
         "cylinder_re100", "cylinder_re100_short", "cylinder_re100_statistics", "cylinder_re100_convective", "cylinder_re20_gci",
         "tmr_plate_zeta_f", "backstep_zeta_f0", "tmr_plate_eb", "backstep_eb", "impinging_jet",
         "cht_heat_sink_turbulent", "cylinder_steady_diagnosis", "vd_cavity_large_dt",

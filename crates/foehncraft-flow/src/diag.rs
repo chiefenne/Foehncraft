@@ -149,6 +149,10 @@ codes! {
     SPRAY_UNFINISHED = "SPR007", Warning, "Steady spray mode (D260): streams still in the flow after `[spray.steady] max_time` (caught in a recirculation, or a domain the droplets need longer to cross); their mass flow is counted as unfinished in `spray.csv` and `result.json` (fix: a larger `max_time`).";
     SPRAY_SOURCES = "SPR008", Warning, "Steady spray mode (D260 (4)): the source residual of the final stream pass is above `[spray.steady] tolerance`, so the run is not reported as converged (fix: more outer iterations, or a smaller `[spray.steady] relaxation` if the residual swings).";
     SPRAY_LIMITER = "SPR009", Warning, "The saturation limiter of D253 held vapour back: the evaporation of a spray cell was above what brings the gas the cell holds and the gas that flows in to adiabatic saturation (transient: in a step; steady: in the final stream pass). Counted in `spray.csv` (`limiter_cells`, `limiter_kg_s`) and `result.json` (fix: more passes or a smaller time step; steady, more outer iterations or a smaller `[spray.steady] relaxation`).";
+    // two fluids by the volume-of-fluid method (L3, stage MP1)
+    VOF_CONFIG = "VOF001", Error, "A `[vof]` value that does not fit: not exactly two `[[vof.phase]]` tables, a density or viscosity that is not > 0, a negative surface tension, `thinc_beta` outside (0, 20], `max_courant` outside (0, 1], more than 10 smoothing passes, an α outside [0, 1] (`initial`, a region, an inflow), a region without the keys of its shape, or an inflow for a boundary the case does not have.";
+    VOF_UNSUPPORTED = "VOF002", Error, "A `[vof]` case with a setting the first version (MP1) does not have: a steady case, a turbulence model, the energy equation, passive scalars or species, a `[buoyancy]` model, regions or several fluids, sprays, immersed bodies, the coupled algorithm, rotating zones or sliding interfaces, a moving mesh, periodic boundaries, ranks, or a restart.";
+    VOF_CLIPPED = "VOF003", Warning, "The volume of phase 1 clipped to keep 0 ≤ α ≤ 1 is above 10⁻⁶ of the phase volume over the run (fix: a smaller `[vof] max_courant` or converged pressure corrections; `vof.csv` counts it per step).";
     // immersed bodies, the surface check (L13 stage 0, D225)
     IMM_SURFACE_EMPTY = "IMM001", Error, "A triangle surface (STL) with no triangles or with corners whose coordinates are not finite.";
     IMM_SURFACE_OPEN = "IMM002", Warning, "An open triangle surface: edges with only one triangle (holes, open borders). Inside and outside still come from the generalised winding number, which closes small holes smoothly; nothing is repaired.";
@@ -584,7 +588,7 @@ mod tests {
                     "CASE", "SCHED", "BC", "SCAL", "RUN", "GEN", "DIV", "BAL", "EXPR", "MAT",
                     "REG", "MESH", "TURB", "MRF", "SLD", "ROT", "STAT", "ENE", "THM", "CHT",
                     "TOOL", "LIM", "MCP", "ACC", "CYC", "BUO", "FRZ", "PRS", "SPR", "DAT", "POR",
-                    "IMM", "SPE", "CHM", "STR", "MOV", "CIR"
+                    "IMM", "SPE", "CHM", "STR", "MOV", "CIR", "VOF"
                 ]
                 .contains(&p),
                 "{}",

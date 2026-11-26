@@ -776,6 +776,9 @@ pub struct Physics {
     /// current step (D91, stage MS0), as last set: the flow through a face
     /// is the relative flux ṁ_f − ρ_f Ḟ_f (`None`: a fixed mesh).
     pub grid_flux: Option<std::sync::Arc<Vec<f64>>>,
+    /// The volume fraction α of phase 1 per cell of a volume-of-fluid case
+    /// (L3, MP1), as last advanced.
+    pub vof_alpha: Option<std::sync::Arc<Vec<f64>>>,
 }
 
 impl Physics {
@@ -794,6 +797,7 @@ impl Physics {
             rho_var: None,
             zones: false,
             grid_flux: None,
+            vof_alpha: None,
         }
     }
 
@@ -1134,6 +1138,8 @@ pub struct Flow {
     buoyancy_source: Option<Buf3>,
     /// The variable density ρ(T, p₀) of stage 7c.
     pub density: Option<Box<crate::density::Variable>>,
+    /// Two fluids by the volume-of-fluid method (L3, MP1).
+    pub vof: Option<Box<crate::vof::Vof>>,
     /// The backward-difference coefficients (a₀, −a₁, −a₂, as the
     /// momentum time terms) and Δt of the current time step (`None` in a
     /// steady run): the mass source V ∂ρ/∂t of the continuity.
@@ -1661,6 +1667,7 @@ impl Flow {
             immersed: None,
             buoyancy_source: None,
             density: None,
+            vof: None,
             density_time: None,
             grid: None,
             density_source: None,
@@ -2301,6 +2308,24 @@ impl Flow {
         }
         self.dev
             .gradient(Lsq::Pressure, f.p, Mask::Pressure, f.pb, f.grad_p)?;
+        if let Some(v) = self.vof.as_deref() {
+            // two fluids (L3): ∇p − B of a cell is the reconstruction of
+            // its faces' (Δp − o_f)/ρ_f, times ρ_P; ∇p of the rows is that
+            // plus B_P
+            self.dev.vof(
+                crate::device::VofOp::Reconstruct,
+                &crate::device::VofBufs {
+                    alpha: Some(f.p),
+                    alpha_f: Some(v.offset),
+                    flux: Some(v.rho_f),
+                    kappa: Some(v.rho_c),
+                    alpha_b: Some(f.pb),
+                    grad: Some(v.body),
+                    out3: Some(f.grad_p),
+                    ..Default::default()
+                },
+            )?;
+        }
         let s = &self.settings;
         let bounded = s.face_velocity == FaceVelocity::Bounded;
         if !bounded
@@ -2474,6 +2499,15 @@ impl Flow {
     /// Continuity residual of the fluxes `m`.
     pub(crate) fn continuity(&mut self, m: Buf) -> Result<f64> {
         let w = self.w;
+        // the volume fluxes of a volume-of-fluid case (L3)
+        let m = match self.vof.as_deref() {
+            Some(v) => {
+                let (mv, rf) = (v.m_vol, v.rho_f);
+                self.dev.quotient(mv, 1.0, m, rf)?;
+                mv
+            }
+            None => m,
+        };
         self.dev.net_outflow(m, w.defect)?;
         if let (Some(src), true) = (
             self.density_source,
@@ -2527,7 +2561,17 @@ impl Flow {
         let t = Instant::now();
         let w = self.w;
         self.dev.pressure_faces(w.dc, w.cf)?;
-        self.dev.pressure_rows(w.cf, m, w.pval, w.prhs)?;
+        match self.vof.as_deref() {
+            // two incompressible phases (L3): the continuity of the volume,
+            // Σ ṁ_f/ρ_f = 0, with the coefficients c_f/ρ_f
+            Some(v) => {
+                let (cv, mv, rf) = (v.cf_vol, v.m_vol, v.rho_f);
+                self.dev.quotient(cv, 1.0, w.cf, rf)?;
+                self.dev.quotient(mv, 1.0, m, rf)?;
+                self.dev.pressure_rows(cv, mv, w.pval, w.prhs)?;
+            }
+            None => self.dev.pressure_rows(w.cf, m, w.pval, w.prhs)?,
+        }
         if let Some(r) = self.reference_cell {
             let pos = self.disc.sell.pos(r, 0);
             self.dev.scale_entry(w.pval, pos, 2.0)?;
@@ -2588,6 +2632,19 @@ impl Flow {
             w.zero_boundary,
             w.gpc,
         )?;
+        if let Some(v) = self.vof.as_deref() {
+            // two fluids (L3): the balanced reconstruction of p'
+            self.dev.vof(
+                crate::device::VofOp::Reconstruct,
+                &crate::device::VofBufs {
+                    alpha: Some(w.pc),
+                    flux: Some(v.rho_f),
+                    kappa: Some(v.rho_c),
+                    out3: Some(w.gpc),
+                    ..Default::default()
+                },
+            )?;
+        }
         self.dev.correct_velocity(w.dc, w.gpc, f.u)?;
         self.drive_mass_flow()?;
         self.dev.lincomb(f.p, 1.0, f.p, alpha_p, w.pc)
@@ -3054,6 +3111,153 @@ impl Flow {
         Ok(())
     }
 
+    /// Attaches the two fluids of a volume-of-fluid case (L3, MP1) with the
+    /// start field `alpha`: the densities and viscosities of the mixture,
+    /// the mass flux rescaled to the face densities, gravity and surface
+    /// tension in the balanced-force arrays.
+    pub fn attach_vof(
+        &mut self,
+        section: crate::vof::VofSection,
+        alpha: &[f64],
+        open: &[u32],
+        alpha_b: &[f64],
+        gravity: Option<([f64; 3], f64)>,
+    ) -> Result<()> {
+        let v = crate::vof::Vof::new(section, self.dev.as_mut(), &self.disc, alpha, open, alpha_b)?;
+        self.vof = Some(Box::new(v));
+        // the volume flux of the start velocity: ṁ / ρ (one density so far)
+        let rho = self.phys.rho;
+        let m = self.f.mass_flux;
+        let flux = self.vof.as_deref().map(|v| v.flux_buf()).expect("vof");
+        self.dev.lincomb(flux, 1.0 / rho, m, 0.0, m)?;
+        let (g, rho_ref) = gravity.unwrap_or(([0.0; 3], rho));
+        let c = crate::buoyancy::Constants {
+            g,
+            rho0: rho_ref,
+            rho_ref,
+            beta: 0.0,
+            t_ref: 0.0,
+            beta_source: "vof",
+            variable: true,
+        };
+        self.buoyancy = Some(Box::new(crate::buoyancy::Balanced::new(
+            c,
+            &self.disc,
+            &self.lsq_p,
+            &self.bc.p_zero_gradient,
+        )));
+        self.apply_vof(true, false)
+    }
+
+    /// Uploads the mixture of the last advection: ρ per cell and face, the
+    /// old density levels of a time step, μ per face, the rescaled mass
+    /// flux (`rescale`), and the forces. `in_step`: within a time step, the
+    /// momentum rows take ρ of the levels n and n − 1 (the conservative
+    /// time term (ρⁿ⁺¹uⁿ⁺¹ − ρⁿuⁿ)/Δt that the mass fluxes of the advection
+    /// balance; without it a cell that fills with the heavy phase gains
+    /// the factor ρⁿ⁺¹/ρⁿ in its velocity each step).
+    fn apply_vof(&mut self, rescale: bool, in_step: bool) -> Result<()> {
+        let m = self.f.mass_flux;
+        let v = self.vof.as_deref_mut().expect("vof");
+        v.upload_faces(self.dev.as_mut(), rescale.then_some(m))?;
+        self.dev.set_density(&v.rho_cell, &v.rho_face)?;
+        self.phys.rho_var = Some(std::sync::Arc::new((
+            v.rho_cell.clone(),
+            v.rho_face.clone(),
+        )));
+        let old = v.old_levels().filter(|_| in_step);
+        self.dev.set_variable_density(
+            None,
+            old.map(|o| o[0].as_slice()),
+            old.map(|o| o[1].as_slice()),
+        )?;
+        let af = v.face_alpha();
+        let mu = v.mu_face(&af);
+        self.phys.vof_alpha = Some(std::sync::Arc::new(v.alpha_host.clone()));
+        let target = self.dev.face_viscosity();
+        self.dev.upload(target, &mu)?;
+        self.phys.mu_face = Some(std::sync::Arc::new(mu));
+        self.refresh_vof_forces()
+    }
+
+    /// The balanced-force arrays of gravity and surface tension of a
+    /// volume-of-fluid case.
+    fn refresh_vof_forces(&mut self) -> Result<()> {
+        let nc = self.disc.n_cells;
+        let delta = {
+            let vol: f64 = self.disc.cell_volume[..nc].iter().sum();
+            1e-6 / (vol / nc as f64).cbrt()
+        };
+        let v = self.vof.as_deref_mut().expect("vof");
+        v.refresh_tension(self.dev.as_mut(), delta)?;
+        let rho = v.rho_cell.clone();
+        let extra = v.tension_offset.clone();
+        let a = self
+            .buoyancy
+            .as_mut()
+            .expect("the balanced force of the vof")
+            .arrays_with(&[], Some(&rho), Some(&extra));
+        let b = match self.buoyancy_source {
+            Some(b) => b,
+            None => {
+                let b = Buf3 {
+                    x: self.dev.alloc(nc)?,
+                    y: self.dev.alloc(nc)?,
+                    z: self.dev.alloc(nc)?,
+                };
+                self.buoyancy_source = Some(b);
+                b
+            }
+        };
+        for (bi, v) in b.all().into_iter().zip(&a.source) {
+            self.dev.upload(bi, v)?;
+        }
+        let vol = &self.disc.cell_volume;
+        let body: [Vec<f64>; 3] =
+            std::array::from_fn(|i| a.source[i].iter().zip(vol).map(|(s, v)| s / v).collect());
+        // the D-weighted Rhie–Chow flux: the plain offsets with B_P
+        self.dev.set_body_force(&body)?;
+        // the balanced reconstruction of the pressure force
+        let v = self.vof.as_deref().expect("vof");
+        let (vo, vr, vb) = (v.offset, v.rho_c, v.body);
+        self.dev.upload(vo, &a.offset)?;
+        self.dev.upload(vr, &rho)?;
+        for (bi, x) in vb.all().into_iter().zip(&body) {
+            self.dev.upload(bi, x)?;
+        }
+        self.phys.buoyancy = Some(std::sync::Arc::new(body));
+        self.dev.set_balanced_force(&a.offset, &a.pb)
+    }
+
+    /// Starts a time step of a volume-of-fluid case: α advances over `dt`
+    /// with the fluxes of the step before, the mixture of the new α enters
+    /// the momentum rows (level n + 1), the density before the advection
+    /// is level n.
+    pub(crate) fn vof_step_start(&mut self, dt: f64) -> Result<Option<Buf>> {
+        let ni = self.disc.n_interior;
+        let m = self.f.mass_flux;
+        let Some(v) = self.vof.as_deref_mut() else {
+            return Ok(None);
+        };
+        v.start_step();
+        let before = v.rho_face.clone();
+        v.advance(self.dev.as_mut(), m, dt, ni)?;
+        let ratio: Vec<f64> = before.iter().zip(&v.rho_face).map(|(a, b)| a / b).collect();
+        let r = v.ratio_buf();
+        self.dev.upload(r, &ratio)?;
+        self.apply_vof(true, true)?;
+        Ok(Some(r))
+    }
+
+    /// Takes the last step of a volume-of-fluid case back.
+    pub(crate) fn vof_step_back(&mut self) -> Result<()> {
+        let Some(v) = self.vof.as_deref_mut() else {
+            return Ok(());
+        };
+        v.step_back(self.dev.as_mut())?;
+        self.apply_vof(false, false)
+    }
+
     /// Starts a time step of a variable density (stage 7c) with the
     /// backward-difference coefficients `a` (a₀, −a₁, −a₂) and Δt: the
     /// current density becomes level n.
@@ -3123,6 +3327,9 @@ impl Flow {
     pub fn refresh_buoyancy(&mut self) -> Result<()> {
         if self.buoyancy.is_none() {
             return Ok(());
+        }
+        if self.vof.is_some() {
+            return self.refresh_vof_forces();
         }
         let Some(t) = self.fluid_temperature()? else {
             return Ok(());

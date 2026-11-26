@@ -205,6 +205,31 @@ Published measurements and equations, quoted by
   critical conditions of the equation (Peng, D.-Y., Robinson, D. B. (1976),
   Ind. Eng. Chem. Fundam. 15, 59-64, doi:10.1021/i160057a011), recomputed
   to 19 digits by us; a test checks the triple root.
+- Ideal gas of n-dodecane (`fuels::N_DODECANE.ideal_gas`, written by
+  `tools/data/dodecane_ideal_gas.py`): the recommended c_p of n-nonane and
+  n-decane of Scott, D. W. (1974), Correlation of the chemical
+  thermodynamic properties of alkane hydrocarbons, J. Chem. Phys. 60,
+  3144-3165, doi:10.1063/1.1681500, as the NIST Chemistry WebBook lists them
+  (gas phase thermochemistry, 200 to 1500 K); Scott's scheme adds the same
+  c_p per CH₂ group (the C7 to C10 differences agree to 0.01 J/(mol K)), so
+  n-dodecane is n-decane plus two increments. Checked against the c_p of
+  the reference equation of state of Lemmon, E. W., Huber, M. L. (2004),
+  Energy Fuels 18, 960-967, doi:10.1021/ef0341062, at 1 Pa (NIST WebBook
+  fluid tables): within 0.11 % at 300 to 700 K. Enthalpy of formation of
+  the gas −290.9 kJ/mol (Prosen and Rossini 1945) and standard entropy
+  622.50 J/(mol K) (Stull 1969), both NIST WebBook.
+- Mixing line and liquid length (VA.4, VA.5,
+  `crates/foehncraft-particles/tests/mixing_line.rs`): liquid density of
+  n-dodecane at 363.15 K and 6 MPa, 703.71 kg/m³ (Lemmon and Huber 2004,
+  NIST WebBook fluid tables). Measured Spray A liquid lengths by diffused
+  back-illumination, injector 210675, 150 MPa, 0 % O₂: 11.7 mm at 900 K,
+  16.3 mm at 700 K, 7.4 mm at 1200 K (22.8 kg/m³), 20.6 mm at 900 K and
+  7.6 kg/m³ (Engine Combustion Network, ecn.sandia.gov/data/dbi675/, read
+  2026-11-25; no uncertainty on the page). Nozzle: d = 90 µm, C_a = 0.95,
+  full spreading angle 21.5° (and 18.7°), Pickett, L. M. et al. (2011),
+  SAE 2011-01-0901 (OSTI 1121363). The scaling law and C_L = 0.62 of
+  Siebers, D. L. (1999), SAE 1999-01-0528, as Yue, Z., Reitz, R. D. (2019),
+  arXiv:1811.03714, eq. 4, give them.
 
 ## 3f. Liquid property library and single droplets (D320, D321)
 
@@ -238,6 +263,16 @@ the tables they are fitted to are not stored. Generators:
   their enthalpies of formation (−187.8 and −224.1 kJ/mol); Lennard-Jones
   parameters from the critical point and acentric factor by Tee, L. S.,
   Gotoh, S., Stewart, W. E. (1966), Ind. Eng. Chem. Fundam. 5, 356-363.
+- Vapour species NC12H26 (#320): the n-dodecane ideal gas of the real-fluid
+  kernel (section 3e: Scott 1974 by the CH₂ increment, NIST WebBook
+  enthalpy of formation −290.9 kJ/mol and standard entropy 622.50 J/(mol K),
+  critical point of Ambrose and Walton 1989), written by
+  `tools/data/vapour_species.py DIR NC12H26` from the table of
+  `tools/data/dodecane_ideal_gas.py --csv`. The test quotes the c_p of the
+  reference equation of Lemmon, E. W., Huber, M. L. (2004), Energy Fuels
+  18, 960-967, at 1 Pa (NIST fluid tables: 426.12 and 532.92 J/(mol K) at
+  500 and 700 K) and the dilute-gas viscosity of the same tables,
+  7.660e-6 Pa s at 500 K.
 - Single droplets: Chauveau, C., Birouk, M., Halter, F., Gökalp, I. (2019),
   Int. J. Heat Mass Transfer (title, volume and pages **to verify**; the
   rates are those of its eq. (4) as read in this work) (microgravity
@@ -331,6 +366,23 @@ are not stored.
   the air temperature (22 °C) and humidity, the droplet temperature at
   20 mm (95 °C), the nozzle geometry and air flow (the case starts at the
   measured plane), and the size dependence of the probe area.
+
+## 3h. Collapse of a liquid column (Martin & Moyce 1952, L3 MP1)
+
+- Citation: J. C. Martin, W. J. Moyce, *Part IV. An experimental study of
+  the collapse of liquid columns on a rigid horizontal plane*, Philosophical
+  Transactions of the Royal Society of London A 244 (882), 312-324 (1952),
+  JSTOR 91519 (**to verify**: the DOI 10.1098/rsta.1952.0006 is to be checked).
+- Quantities used: table 2, n² = 2 (column height 2a, a = 2¼ in), the surge
+  front Z = z/a at T = n t √(g/a), twelve points from Z = 1.44 to 6.33.
+  They are quoted in `crates/foehncraft-flow/tests/vof.rs` and
+  `tools/plot/vof_dam_break.py`.
+- The points were read from the text layer of the scanned paper, which is
+  partly garbled (**to verify** against the scan before the check is
+  tightened).
+- Zalesak's slotted disk (Zalesak 1979, J. Comput. Phys. 31, 335-362,
+  doi:10.1016/0021-9991(79)90051-2) and the Laplace jump σ/R are exact
+  tests; no data are stored.
 
 ## 4. Rules for adding an entry
 

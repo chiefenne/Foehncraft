@@ -368,6 +368,15 @@ temperatures of their own (D271, PM2). The keys are on the [key page](flow-keys.
 | `flow/porous_schumann.toml` | generated hex 2D, 100 × 1 cells | check V4: air at 400 K into a ceramic bed at 300 K, gas and matrix against the exact solution of Schumann (1929) at 1000, 2000 and 3000 s; L1 error 5.2·10⁻⁵ of the step, second order in the cell size; heat balance to 10⁻¹³ | [gallery 275](../gallery/porous.md#porous-two-temperatures), [recipe 275](../recipes/porous.md#porous-two-temperatures) |
 | `flow/porous_storage_charge.toml` | generated hex 2D, 40 × 100 cells | charging a honeycomb store: air at 573 K from the top right through a stack of ceramic bricks (6.9 mm channels, ε = 0.256) at 293 K; the thermocline half way after 6000 s, 200 steps in about 70 s | [gallery 275](../gallery/porous.md#porous-two-temperatures), [recipe 275](../recipes/porous.md#porous-two-temperatures) |
 
+## Two fluids (volume of fluid)
+
+`[vof]` with two `[[vof.phase]]` tables (L3, stage MP1, D293): two immiscible fluids with a sharp interface, α of phase 1 advected by THINC, CICSAM or upwind, gravity and surface tension as balanced face forces. Transient and laminar only. The keys are on the [key page](flow-keys.md), and the run writes `vof.csv`.
+
+| Case file | Mesh | Shows | Where |
+|---|---|---|---|
+| `flow/vof_dam_break.toml` | generated hex 2D, 168 × 45 cells | the collapse of a water column a = 57.15 mm wide and 2a high in air (Martin & Moyce 1952, n² = 2); the surge front runs 5 to 17 % ahead of the measured points, and a/32 gives the same curve; the water volume is conserved to 10⁻¹⁴; about 70 s | [gallery 317](../gallery/multiphase.md#vof-dam-break), [recipe 317](../recipes/multiphase.md#vof-two-fluids) |
+| `flow/vof_static_drop.toml` | generated hex 2D, 40 × 40 cells | a water drop of R = 2 mm at rest in air, σ = 0.07 N/m: Laplace jump 32.2 Pa against the exact 35 Pa, spurious currents 0.18 m/s | [gallery 317](../gallery/multiphase.md#vof-dam-break), [recipe 317](../recipes/multiphase.md#vof-two-fluids) |
+
 ## Immersed bodies
 
 `[immersed]` with `[[immersed.body]]` tables: cylinders, spheres, boxes and STL surfaces

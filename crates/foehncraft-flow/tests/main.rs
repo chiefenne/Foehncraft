@@ -65,6 +65,7 @@ mod turbulence;
 mod turbulence_derived;
 mod uncertainty;
 mod variable_density;
+mod vof;
 mod wall_crossing;
 mod zeta_f;
 mod zeta_f0;

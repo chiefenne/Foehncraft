@@ -15,6 +15,7 @@ Part of the [Recipes](../recipes.md): droplets that move with and through the ga
 | 314 | [Evaporate fuel droplets at high ambient pressure](#spray-a-surface) |
 | 321 | [Evaporate a fuel: take a liquid of the library](#spray-liquid-library) |
 | 325 | [Start a spray from measured droplets](#spray-brno) |
+| 320 | [Check the thermodynamics of a high-pressure spray before the CFD](#spray-a-mixing-line) |
 | 319 | [Report the liquid length and the vapour penetration (ECN)](#spray-ecn) |
 
 ---
@@ -489,6 +490,45 @@ no latent heat and are counted in the tally (`critical_parcels`,
 `critical_mass`). See the [gallery entry](../gallery/sprays.md#spray-a-surface)
 for what is checked and what is not.
 
+---
+
+<a id="spray-a-mixing-line"></a>
+## 320. Check the thermodynamics of a high-pressure spray before the CFD
+
+**Run the mixing line of your fuel and gas.** For n-dodecane into
+nitrogen (ECN Spray A) the example writes the line and the liquid lengths:
+
+```bash
+cargo run --release -p foehncraft-particles --example spray_a_mixing_line -- output/spray_a_mixing_line
+python3 -m tools.plot.spray_a_mixing_line output/spray_a_mixing_line output/spray_a_mixing_line
+```
+
+`line.csv` has the mixing temperature, the liquid mass fraction, the
+density and the energy-balance error over the mixture fraction for the
+frozen, the equilibrium and the ideal line; `liquid_length.csv` the
+saturation mixture fraction Z_sat of each model and Siebers' liquid length
+from it at the measured conditions.
+
+**Your own streams.** Build the mixture as for the droplet surface
+(recipe 314), give the ideal-gas enthalpy of every component (the species
+data of the flow, read with `foehncraft_particles::ideal_gas_species`) and
+the two streams:
+
+```rust
+let n2 = ideal_gas_species(&std::fs::read_to_string("crates/foehncraft-flow/data/species-gri30.toml")?, "N2")?;
+let fuel = N_DODECANE.ideal_gas;
+let h_ig = |i: usize, t: f64| R * t * if i == 0 { fuel.h_over_rt(t) } else { n2.h_over_rt(t) };
+let line = Streams { mix: &mix, ideal: &h_ig, p: 6e6, t_fuel: 363.0, t_gas: 900.0, gas };
+let z_sat = line.saturation(Mixing::Equilibrium);
+```
+
+Compare Z_sat of `Mixing::Equilibrium` and `Mixing::Ideal`: when they
+differ by more than a few per cent, the droplet surface needs
+`equilibrium = "peng-robinson"`. A liquid length from
+`siebers_liquid_length` is a scaling estimate (C_L = 0.62); quote it next
+to the measured value, not instead of it. See the
+[gallery entry](../gallery/sprays.md#spray-a-mixing-line) for what is
+checked and what is not.
 <a id="spray-ecn"></a>
 ## 319. Report the liquid length and the vapour penetration (ECN)
 
@@ -537,7 +577,7 @@ file:
 [liquid]
 library = "n-heptane"          # "water", "n-heptane", "n-dodecane", "iso-octane"
 temperature = 300.0            # K, the injected liquid
-vapour = "NC7H16"              # its species in [species]: NC7H16, IC8H18, H2O
+vapour = "NC7H16"              # its species in [species]: NC7H16, IC8H18, NC12H26, H2O
 # property_temperature = 330.0 # K of the constant density and c_l (default: temperature)
 ```
 

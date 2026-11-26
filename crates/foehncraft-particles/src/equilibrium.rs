@@ -331,3 +331,76 @@ fn solve3(mut a: [[f64; 3]; 3], mut b: [f64; 3]) -> Option<[f64; 3]> {
     }
     Some(x)
 }
+
+/// The liquid length (m) of a mixing-limited spray by the scaling law of
+/// Siebers (1999): L = C_L √(ρ_f/ρ_a) √C_a d/tan(θ/2) √((2/B + 1)² − 1),
+/// C_L = 0.62, B = Z_sat/(1 − Z_sat) the ratio of the fuel to the
+/// entrained ambient mass where the last liquid evaporates (Siebers, SAE
+/// 1999-01-0528; the form and C_L as Yue and Reitz 2019, arXiv:1811.03714,
+/// eq. 4, give them). `z_sat` from a mixing line
+/// ([`foehncraft_kernels::realfluid::Streams::saturation`]), densities in
+/// kg/m³, `ca` the area contraction of the nozzle, `d` its diameter (m),
+/// `theta` the full spreading angle (degrees). A check of the
+/// thermodynamics without CFD (D319, VA.5).
+pub fn siebers_liquid_length(
+    z_sat: f64,
+    rho_f: f64,
+    rho_a: f64,
+    ca: f64,
+    d: f64,
+    theta: f64,
+) -> f64 {
+    let b = z_sat / (1.0 - z_sat);
+    let s = 2.0 / b + 1.0;
+    0.62 * (rho_f / rho_a).sqrt() * ca.sqrt() * d / (0.5 * theta.to_radians()).tan()
+        * (s * s - 1.0).sqrt()
+}
+
+/// The ideal-gas data of the species `name` from the text of a species
+/// data file of the flow (`crates/foehncraft-flow/data/species-*.toml`):
+/// molar mass, NASA-7 ranges and coefficients, Lennard-Jones data. For the
+/// mixing lines of the checks, which need the gas enthalpies outside a
+/// flow case.
+pub fn ideal_gas_species(text: &str, name: &str) -> Result<foehncraft_kernels::species::Species> {
+    let doc: toml::Table = toml::from_str(text)?;
+    let Some(rec) = doc
+        .get("species")
+        .and_then(|s| s.get(name))
+        .and_then(toml::Value::as_table)
+    else {
+        bail!("species `{name}` is not in the data");
+    };
+    let num = |v: &toml::Value| v.as_float().or_else(|| v.as_integer().map(|i| i as f64));
+    let get = |k: &str| rec.get(k).and_then(num);
+    let list = |v: &toml::Value| -> Option<Vec<f64>> { v.as_array()?.iter().map(num).collect() };
+    let t = rec
+        .get("temperature")
+        .and_then(list)
+        .filter(|t| t.len() == 3);
+    let c: Option<Vec<Vec<f64>>> = rec
+        .get("coefficients")
+        .and_then(toml::Value::as_array)
+        .and_then(|a| a.iter().map(list).collect());
+    let (Some(t), Some(c), Some(m)) = (t, c, get("molar_mass")) else {
+        bail!("species `{name}`: molar_mass, temperature (3) and coefficients needed");
+    };
+    if c.len() != 2 || c.iter().any(|r| r.len() != 7) {
+        bail!("species `{name}`: two ranges of seven NASA-7 coefficients needed");
+    }
+    let row = |r: &[f64]| -> [f64; 7] { [r[0], r[1], r[2], r[3], r[4], r[5], r[6]] };
+    let geometry = match rec.get("geometry").and_then(toml::Value::as_str) {
+        Some("atom") => 0,
+        Some("linear") => 1,
+        _ => 2,
+    };
+    Ok(foehncraft_kernels::species::Species {
+        molar_mass: m,
+        t_range: [t[0], t[1], t[2]],
+        low: row(&c[0]),
+        high: row(&c[1]),
+        well_depth: get("well_depth").unwrap_or(0.0),
+        diameter: get("diameter").unwrap_or(0.0),
+        dipole: get("dipole").unwrap_or(0.0),
+        geometry,
+    })
+}

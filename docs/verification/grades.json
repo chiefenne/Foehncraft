@@ -1447,7 +1447,6 @@
     "density and specific heat of the liquid constant in a run (at property_temperature): no thermal expansion of a heating droplet",
     "iso-octane above about 400 K rests on extrapolated correlations (density, c_l, mu, sigma); not in the NIST fluid system",
     "the film carrier is the start composition of the case, not the local gas of the cell",
-    "no NC12H26 vapour species yet (Spray A stages)",
     "`spray_heptane_evaporation_injectors` has no run in the verification manual or in CI"
    ],
    "range": {}
@@ -1496,10 +1495,11 @@
     "gaps written"
    ],
    "gaps": [
+    "VA.5 not met: Siebers' scaling (C_L = 0.62, measured 21.5 deg angle) with our saturation mixture fraction is 30 to 48 % below the measured liquid lengths (equilibrium) and 20 to 45 % (ideal); the real fluid shortens it by 5 to 14 %, away from the measurement; Siebers' own B is not in an open paper",
     "above 550 K Peng-Robinson with one k_ij is 3 to 9 % low on the measured bubble pressures (the measured Henry constant falls faster with T); the surface vapour fraction moves by 2 to 6 % between the k_ij of the whole set and of the hot isotherms",
     "the dissolved gas shifts the equilibrium but is not booked: the liquid stays pure fuel (D311)",
     "the gas solver stays ideal (D317): the departure enthalpy of the dense vapour enters the gas as a sensible-heat deficit",
-    "no flow case yet: the n-dodecane vapour species data come with the liquid library; VA.4 to VA.9 (mixing line, Siebers liquid length, the Spray A case) are later stages",
+    "no flow case yet: VA.7 to VA.9 (order independence with a fuel vapour, the Spray A case) are later stages; the vapour species NC12H26 is in the species data",
     "built-in high-pressure data for n-dodecane only; other liquids take the plain 1978 kappa (water: 11 % low on its vapour pressure at 320 K)"
    ],
    "range": {}
@@ -1902,6 +1902,22 @@
     "impacts are elastic: no coefficient of restitution; generalised-α with ρ∞ < 1 damps the high frequencies an impact excites, and the penalty contact of a shell node lasts far less than a step",
     "an impact is not resolved in time: no step cut at contact changes (plan 5.4) and no energy-conserving contact scheme; the energy of the reed example decays but is not checked against a balance",
     "the active-set loop refactors the matrix whenever the set changes (1990 factorisations in 2400 steps of the example)"
+   ],
+   "range": {}
+  },
+  {
+   "id": "multiphase.vof",
+   "title": "Two fluids by the volume of fluid: THINC, CICSAM, balanced gravity and surface tension (L3, MP1, D293)",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "the dam-break front runs 5 to 17 % ahead of the measurements on meshes a/16 and a/32 alike (the early part of the gap may be the lifting time of the experiment's gate); the measured points are read from the text of the paper and still to be checked against the scan",
+    "the static drop keeps spurious currents of 0.18 m/s (Ca ~ 3e-3) and a Laplace jump 8 % low: the curvature is from twice-smoothed alpha, no height functions yet",
+    "isothermal and laminar only: no energy, phase change (MP2), turbulence, scalars, sprays, immersed bodies, rotating zones, moving meshes, periodic boundaries or the coupled algorithm (VOF002)",
+    "one process, no restart; the GPU (PTX) entries are built but not yet run on a GPU",
+    "the kinetic-energy balance (BAL003) is not adapted to the variable density of the mixture and may warn"
    ],
    "range": {}
   },
