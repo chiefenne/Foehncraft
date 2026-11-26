@@ -263,6 +263,16 @@ the tables they are fitted to are not stored. Generators:
   their enthalpies of formation (−187.8 and −224.1 kJ/mol); Lennard-Jones
   parameters from the critical point and acentric factor by Tee, L. S.,
   Gotoh, S., Stewart, W. E. (1966), Ind. Eng. Chem. Fundam. 5, 356-363.
+- Vapour species NC12H26 (#320): the n-dodecane ideal gas of the real-fluid
+  kernel (section 3e: Scott 1974 by the CH₂ increment, NIST WebBook
+  enthalpy of formation −290.9 kJ/mol and standard entropy 622.50 J/(mol K),
+  critical point of Ambrose and Walton 1989), written by
+  `tools/data/vapour_species.py DIR NC12H26` from the table of
+  `tools/data/dodecane_ideal_gas.py --csv`. The test quotes the c_p of the
+  reference equation of Lemmon, E. W., Huber, M. L. (2004), Energy Fuels
+  18, 960-967, at 1 Pa (NIST fluid tables: 426.12 and 532.92 J/(mol K) at
+  500 and 700 K) and the dilute-gas viscosity of the same tables,
+  7.660e-6 Pa s at 500 K.
 - Single droplets: Chauveau, C., Birouk, M., Halter, F., Gökalp, I. (2019),
   Int. J. Heat Mass Transfer (title, volume and pages **to verify**; the
   rates are those of its eq. (4) as read in this work) (microgravity
@@ -277,7 +287,65 @@ the tables they are fitted to are not stored. Generators:
   Int. J. Heat Mass Transfer 18, 1003-1008; Yuen, M. C., Chen, L. W. (1976),
   Combust. Sci. Technol. 14, 147-154.
 
-## 3g. Real-fluid film (Spray A, SA2, D313)
+## 3g. ECN Spray G, condition G1 (D309)
+
+Measurements of the Engine Combustion Network, quoted by
+`tools/plot/spray_g_g1.py` (the penetrations) and
+`examples/cases/flow/spray_g_g1_injectors.toml` (the injector); the files
+are not stored.
+
+- Liquid and vapour penetration along the injector axis, iso-octane, G1
+  (573 K, 3.5 kg/m³, 20 MPa): the Sandia Spray G data of the ECN,
+  https://ecn.sandia.gov/data/sandia-spray-g-data/ (files
+  `liquid_data_2e-4_thr.mat`, `liquid_data_2e-3_thr.mat`, column 16, and
+  `vapor_data.mat`, column 12; high-speed extinction imaging evaluated as
+  projected liquid volume above 0.2e-3 and 2e-3 mm³/mm², and schlieren
+  imaging, by J. Hwang and L. M. Pickett), cited as the data page asks:
+  Hwang, J., Weiss, L., Karathanassis, I. K., Koukouvinis, P., Pickett,
+  L. M., Skeen, S. A. (2020), Spatio-temporal identification of plume
+  dynamics by 3D computed tomography using engine combustion network
+  spray G injector and various fuels, Fuel 280, 118359,
+  doi:10.1016/j.fuel.2020.118359. The script quotes 12, 10 and 12 points
+  (the frames nearest to 0.05 to 1.2 ms). Measurements, D201 accepted
+  class.
+- Plume direction 33°: our mean of `plume_angles.mat` of the G1 3D
+  computed tomography of the same data page and paper (0.3 to 0.7 ms,
+  planes 2 to 15 mm from the tip: 32.9° to 33.7°).
+- Rate of injection: the ECN file `roi_20MPa_680us.csv` (20 MPa, 680 µs
+  energising, 10.16 mg); the injector file holds our 17-point
+  least-squares fit to it, not the file.
+- Nozzle: ECN Spray G specification (8 holes of 0.165 mm, orifice length
+  0.16 to 0.18 mm, drill angle 37°), the ECN page "Spray G geometry".
+  Area contraction 0.635 to 0.687 measured by Payri, R., Gimeno, J.,
+  Martí-Aldaraví, P., Vaquerizo, D. (2015), Momentum flux measurements on
+  an ECN GDi injector, SAE 2015-01-1893, doi:10.4271/2015-01-1893, and the
+  full plume cone of 25° from the tomography and the schlieren boundary
+  at 50 % intermittency, both as quoted by Colmenares F., J. D., Ameen,
+  M. M., Patel, S. S., Large eddy simulation of gasoline sprays in a
+  Lagrangian-Eulerian framework using the high-order spectral element
+  method, ASME J. Eng. Gas Turbines Power, paper GTP-22-1576 (OSTI
+  2427994; volume and pages **to verify**). Their model settings (B₁ = 80
+  and others) are not used (D201).
+- Drop size: the phase-Doppler data of the same data page ("Droplet size
+  and velocity at z = 15 mm", GM, S. Parrish, injector #16, plume 1, file
+  `PDI_distribution.xlsx`): the time-averaged Sauter mean diameter of
+  9 µm, quoted by the plot script. Measurements, D201 accepted class.
+- Gas velocity on the injector axis 15 mm from the tip: the PIV data of
+  the same page ("Gas velocity at z = 15 mm, y = 0", Sandia, P. Sphicas,
+  file `gasvel_z15.dat`, column Vzt), cited as Sphicas, P., Pickett,
+  L. M., Skeen, S., Frank, J., Lucchini, T., Sinoir, D., D'Errico, G.,
+  Saha, K., Som, S. (2017), A comparison of experimental and modeled
+  velocity in gasoline direct-injection sprays with plume interaction and
+  collapse, SAE Int. J. Fuels Lubr. 10(1), 184-201,
+  doi:10.4271/2017-01-0837 (as listed in the references of OSTI 2427994);
+  12 points quoted by the plot script. Their model settings are not used
+  (D201). Measurements, D201 accepted class.
+- Turbulence scale of KH-ACT at low gas density (a finding quoted in the
+  gallery text, no numbers taken): Magnotti, G. M. (2017), Modeling the
+  influence of nozzle-generated turbulence on diesel sprays, PhD thesis,
+  Georgia Institute of Technology (OSTI 1785739), section 1.2.3.3.
+
+## 3h. Real-fluid film (Spray A, SA2, D313)
 
 Only the published coefficients and the table points the tests quote are
 in the repository (`crates/foehncraft-kernels/src/realfluid.rs`,
@@ -322,7 +390,7 @@ in the repository (`crates/foehncraft-kernels/src/realfluid.rs`,
   (2004), Energy Fuels 18, 968), viscosity and conductivity at 500, 600 and
   700 K at 0.1 and 6 MPa.
 
-## 3h. Distorted drops: the Corrected Distortion model (Spray A, SA4, D316)
+## 3i. Distorted drops: the Corrected Distortion model (Spray A, SA4, D316)
 
 Only published correlation coefficients are in the repository
 (`crates/foehncraft-kernels/src/distortion.rs`); no data set.

@@ -93,6 +93,11 @@ def test_every_tool_through_call(tmp_path):
             "case": ROOT / "examples/cases/structure/reed_beam_clamp_springs.toml",
             "frequency": 150.0,
         },
+        # the water and steam circuits of stage SF7b
+        "circuits.run": {
+            "case": ROOT / "examples/cases/circuits/drum_natural_circulation.toml",
+            "out": tmp_path / "circuits",
+        },
         # the 0D reactor and the equilibrium of stage SF2a
         "chemistry.reactor": {
             "case": ROOT / "examples/cases/chemistry/reactor_methane_air_jl4.toml",
@@ -129,6 +134,7 @@ def test_every_tool_through_call(tmp_path):
     assert results["post.penetration"]["injectors"][0]["name"] == "nozzle"
     assert results["structure.run"]["modal"]["sturm"]["ok"]
     assert abs(results["structure.fitclamp"]["frequency"] - 150.0) < 1e-3
+    assert results["circuits.run"]["format"] == "foehncraft.circuit-result"
     assert results["chemistry.reactor"]["failures"] == []
     assert 2690.0 < results["chemistry.equilibrium"]["state"]["temperature"] < 2705.0
 

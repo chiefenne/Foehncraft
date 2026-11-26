@@ -72,8 +72,9 @@ pub const DATA: &str = include_str!("../data/species-gri30.toml");
 /// The vapours of the spray liquids (D320, written by
 /// `tools/data/vapour_species.py`): NASA-7 fits to the NIST WebBook
 /// ideal-gas heat capacities and Lennard-Jones data of Tee, Gotoh and
-/// Stewart (1966). Their entropy constant is not set: not for chemical
-/// equilibrium.
+/// Stewart (1966). The entropy constant is set only where NIST lists a
+/// standard entropy (n-dodecane); the other vapours are not for chemical
+/// equilibrium. NC12H26 is the kernel's `fuels::N_DODECANE.ideal_gas`.
 pub const DATA_VAPOURS: &str = include_str!("../data/species-vapours.toml");
 
 /// One species of the data file.
@@ -1213,7 +1214,7 @@ mod tests {
     #[test]
     fn the_data_file_has_the_53_species_of_gri_mech() {
         let d = database();
-        assert_eq!(d.len(), 53 + 2, "GRI-Mech 3.0 and the two spray vapours");
+        assert_eq!(d.len(), 53 + 3, "GRI-Mech 3.0 and the three spray vapours");
         assert!((d["CH4"].molar_mass - 0.01604246).abs() < 1e-8);
         assert!((d["N2"].molar_mass - 0.0280134).abs() < 1e-8);
         // NO, not the boolean `false` of a YAML 1.1 reader
@@ -1226,9 +1227,11 @@ mod tests {
     }
 
     /// The spray vapours (D320): c_p of the fits against the NIST WebBook
-    /// ideal-gas values (Scott 1974) and the kinetic-theory viscosity of
-    /// n-heptane vapour against the NIST fluid table (7.209e-6 Pa s at
-    /// 371.2 K, 0.1 MPa) within 5 %.
+    /// ideal-gas values (Scott 1974; for n-dodecane the reference equation
+    /// of Lemmon and Huber (2004) at 1 Pa) and the kinetic-theory viscosity
+    /// of n-heptane vapour against the NIST fluid table (7.209e-6 Pa s at
+    /// 371.2 K, 0.1 MPa) and of n-dodecane vapour (7.660e-6 Pa s at 500 K,
+    /// 1 Pa) within 5 %.
     #[test]
     fn the_spray_vapours_meet_the_nist_data() {
         for (n, t, cp) in [
@@ -1236,6 +1239,8 @@ mod tests {
             ("NC7H16", 800.0, 342.25),
             ("IC8H18", 500.0, 293.42),
             ("IC8H18", 1200.0, 494.55),
+            ("NC12H26", 500.0, 426.12),
+            ("NC12H26", 700.0, 532.92),
         ] {
             let s = db(n);
             let c = s.cp(t) * s.molar_mass;
@@ -1243,6 +1248,22 @@ mod tests {
         }
         let mu = db("NC7H16").viscosity(371.208);
         assert!((mu / 7.20901e-6 - 1.0).abs() < 0.05, "{mu}");
+        let mu = db("NC12H26").viscosity(500.0);
+        assert!((mu / 7.65991e-6 - 1.0).abs() < 0.05, "{mu}");
+    }
+
+    /// The n-dodecane vapour of the data file is the ideal gas of the
+    /// real-fluid kernel (both written from `tools/data/dodecane_ideal_gas.py`
+    /// data), so that the spray's vapour and the flow's species agree.
+    #[test]
+    fn the_dodecane_vapour_is_the_kernel_ideal_gas() {
+        let a = db("NC12H26");
+        let b = foehncraft_kernels::realfluid::fuels::N_DODECANE.ideal_gas;
+        assert_eq!(a.t_range, b.t_range);
+        assert_eq!(a.low, b.low);
+        assert_eq!(a.high, b.high);
+        assert_eq!((a.well_depth, a.diameter), (b.well_depth, b.diameter));
+        assert!((a.molar_mass / b.molar_mass - 1.0).abs() < 1e-5);
     }
 
     /// Pure-gas viscosities and conductivities at 300 K against measured

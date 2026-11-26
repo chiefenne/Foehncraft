@@ -160,14 +160,14 @@ codes! {
     IMM_SURFACE_INVERTED = "IMM008", Warning, "A closed surface whose normals point inward (negative enclosed volume): as given, the body is its complement (fix: flip the triangles in the CAD export).";
     IMM_SURFACE_UNITS = "IMM009", Note, "A surface hint: a bounding box larger than 20 m (a file in millimetres needs `scale = 1e-3`), or distinct corners closer than 1e-9 of the box diagonal (welding candidates, not welded).";
     // immersed bodies, Brinkman penalisation (L13 stage 1, D226)
-    IMM_CONFIG = "IMM101", Error, "An `[immersed]` value that does not fit: a permeability that is not > 0, a body without the keys of its shape (`centre` and `radius`, `lower` and `upper`), a radius or length that is not > 0, a zero cylinder axis, two bodies with the same name, a `field` body without `fraction`, no body at all, or an `[immersed.topology]` value out of range (an empty design region, a fluid fraction not in (0, 1], a negative filter radius).";
+    IMM_CONFIG = "IMM101", Error, "An `[immersed]` value that does not fit: a permeability that is not > 0, a body without the keys of its shape (`centre` and `radius`, `lower` and `upper`), a radius or length that is not > 0, a zero cylinder axis, two bodies with the same name, a `field` body without `fraction`, an `stl` body without `file` or with a `scale` that is not > 0, `file` or `scale` on a body of another shape, no body at all, or an `[immersed.topology]` value out of range (an empty design region, a fluid fraction not in (0, 1], a negative filter radius).";
     IMM_UNSUPPORTED = "IMM102", Error, "An `[immersed]` body in a case it does not fit (L13 stage 1, D226): a turbulence model (penalised walls are laminar and low-Re only; a wall function on a penalised wall is refused), the energy equation (no penalised conjugate heat transfer, Q9), passive scalars, gravity, regions or several fluids, rotating zones, or sprays; a topology search in a transient run.";
     IMM_RESOLUTION = "IMM103", Warning, "An immersed body that the mesh does not resolve: no cell lies more than half inside it, or its solid volume on the mesh differs from its exact volume inside the mesh by more than 5 %.";
     IMM_BODIES = "IMM104", Note, "The immersed bodies of the case: their solid volume on the mesh against the exact volume, the cells they touch and the sink coefficient μ/K; the design cells of a topology search.";
     // immersed bodies, cut cells (L13 stage 2, D227 to D229)
     IMM_CUT = "IMM201", Error, "The cut of `[immersed] method = \"cut\"` failed: the bodies fill the whole mesh, a body has the name of a mesh boundary, the mesh is a rank's part or periodic before the cut, or an `[immersed.cut]` value is out of range (`min_volume_fraction` not in [0, 0.9]).";
     IMM_CUT_UNSUPPORTED = "IMM202", Error, "Cut cells (L13 stage 2) with a setting they do not have yet: regions or conjugate heat transfer (stage 2d), a topology search (it needs the penalised density field), rotating zones or a moving mesh (rigid motion is stage 5).";
-    IMM_CUT_REPORT = "IMM203", Note, "The cut of the immersed bodies: cells cut, removed, split into pieces and merged, the smallest kept volume fraction, the wall area of every body against its exact area where simple, and the closure of the cut cells.";
+    IMM_CUT_REPORT = "IMM203", Note, "The cut of the immersed bodies: cells cut, removed, split into pieces and merged, the smallest kept volume fraction, the wall area of every body against its exact area where simple (an STL body: the area of its triangles, when the surface is clean and lies inside the mesh), the closure of the cut cells, the cells cut with fewer wall and face points so that the discretisation takes their faces (the fallback), and the joined faces of merged cells that fold.";
     IMM_CUT_QUALITY = "IMM204", Warning, "Cut cells the merge could not fix: a small cut cell without a neighbour to merge into, or faces whose normal does not point from the cell centroid to its neighbour (the run refuses them). Fix: refine the mesh near the body, or move the body by a small fraction of a cell.";
     // datums and their reports (SP1b, D262 to D267)
     DATUM_CONFIG = "DAT001", Error, "A `[[datum]]` table that cannot be used: a name used twice or with other characters than letters, digits, `_` and `-`, an unknown type, a missing or invalid key of its type (plane point and normal, bound, boundary, zones, STL file, box corners, cylinder, zone), or bad histogram bins.";
@@ -326,6 +326,10 @@ codes! {
     STR_SINGULAR = "STR002", Error, "The stiffness of a structural case is singular: the structure can move freely (a missing support or clamp, or a mechanism); the message names the first free unknown. For the modes of a free structure give a negative `shift`.";
     STR_MODES = "STR003", Warning, "A modal analysis may have missed modes: the Sturm count (the inertia of K − σM) finds more eigenvalues in the range than Lanczos returned, or Lanczos stopped above its tolerance.";
     STR_FIT = "STR004", Error, "The clamp fit (D290) cannot reach the measured frequency: it lies at or above the frequency of the rigidly clamped model (the model is too soft), or the mode does not depend on the spring.";
+    CIR_CASE = "CIR001", Error, "A circuit case (SF7b) that is not valid: an unknown key or a wrong value, a tube to a node that does not exist, a circuit without a pressure or drum node, a drum above the critical pressure, a CHF table that is not complete.";
+    CIR_CONVERGENCE = "CIR002", Error, "The Newton solve of a circuit did not converge or stalled: give start flows (`start_flow`) near the expected ones, check that every part of the circuit reaches a pressure or drum node, and that the flow can carry the heat.";
+    CIR_RANGE = "CIR003", Warning, "A state of a circuit left the range of the IAPWS-IF97 properties (the pressure fell below 1 kPa, or the enthalpy of a tube reached 4.1 MJ/kg): too much flow for the pressure level, or too little flow for the heat.";
+    CIR_CHF = "CIR004", Warning, "The critical heat flux ratio q_CHF/q of a tube segment is below the margin of the case (`chf_margin`, default 1.3); below 1 the wall is beyond the CHF and its temperature is that of vapour convection (Dougall-Rohsenow).";
     // anything else
     GENERAL = "GEN001", Error, "An error without a more specific code.";
 }
@@ -580,7 +584,7 @@ mod tests {
                     "CASE", "SCHED", "BC", "SCAL", "RUN", "GEN", "DIV", "BAL", "EXPR", "MAT",
                     "REG", "MESH", "TURB", "MRF", "SLD", "ROT", "STAT", "ENE", "THM", "CHT",
                     "TOOL", "LIM", "MCP", "ACC", "CYC", "BUO", "FRZ", "PRS", "SPR", "DAT", "POR",
-                    "IMM", "SPE", "CHM", "STR", "MOV"
+                    "IMM", "SPE", "CHM", "STR", "MOV", "CIR"
                 ]
                 .contains(&p),
                 "{}",

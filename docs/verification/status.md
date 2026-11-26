@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**147 features: 50 verified, 94 partial, 3 unverified.**
+**149 features: 50 verified, 96 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -94,6 +94,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Energy | [Temperature, heat-flux, heat-flow and convection walls](#energy-wall-conditions) | verified |
 | Energy | [Energy with a turbulence model (thermal wall function, Pr_t)](#energy-turbulent) | partial |
 | Energy | [Water and steam of IAPWS-IF97: states, saturation, transport properties and the if97 material form (SF7a)](#materials-if97-water-steam) | partial |
+| Energy | [One-dimensional water and steam tube circuits of a boiler: two-phase pressure drop, flow boiling, CHF margin and natural circulation (steam furnace SF7b)](#circuits-water-steam) | partial |
 | Conjugate heat transfer | [Solid regions, steady](#cht-steady) | verified |
 | Conjugate heat transfer | [Transient conjugate heat transfer](#cht-transient) | verified |
 | Conjugate heat transfer | [Thermal acceleration of solids (scaled ρ c_p, restored)](#cht-thermal-acceleration) | partial |
@@ -153,7 +154,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Sprays | [Steady spray mode: streams through the steady gas with relaxed sources (SP2s, D260)](#sprays-steady-mode) | partial |
 | Sprays | [Evaporating sprays: vapour, mass and enthalpy to the gas (SP4, SP5, D250 to D253)](#sprays-evaporation) | partial |
 | Sprays | [Liquid property library and the 1/3-rule film state of the evaporation (D320, D321)](#sprays-liquid-library) | partial |
-| Sprays | [Spray breakup: KH-ACT and KH-RT with blob injection, TAB distortion and dynamic drag (SP6, D300 to D308)](#sprays-breakup) | partial |
+| Sprays | [Spray breakup: KH-ACT and KH-RT with blob injection, TAB distortion and dynamic drag (SP6, D300 to D309)](#sprays-breakup) | partial |
 | Sprays | [High-pressure droplet surface: Peng-Robinson phase equilibrium and latent heat (Spray A, SA1, D311, D312, D314)](#sprays-high-pressure-surface) | partial |
 | Flow models | [Porous regions with a direction-dependent Darcy-Forchheimer resistance (D270, PM1)](#porous-darcy-forchheimer) | partial |
 | Flow models | [Gas and matrix temperatures in porous regions, monolithic (D271, D272, PM2)](#porous-two-temperatures) | partial |
@@ -162,6 +163,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Flow models | [Gas-phase chemistry in the cells of a transient laminar flow with heat release, the 1D premixed flame (L2, steam furnace SF2b)](#chemistry-flow) | partial |
 | Immersed bodies | [Immersed bodies by Brinkman penalisation, primitive shapes (L13 stage 1)](#immersed-penalisation) | partial |
 | Immersed bodies | [Immersed bodies as cut cells, primitive shapes (L13 stage 2a, 2b)](#immersed-cut) | partial |
+| Immersed bodies | [STL bodies, cut out of the mesh or penalised, with sharp edges and face points (L13 stage 2)](#immersed-stl) | partial |
 | Immersed bodies | [Density-field topology search with the Brinkman penalisation, iso-surface by marching tetrahedra (L13 stage 1)](#immersed-topology) | partial |
 | Structures | [Linear structural solver: Euler–Bernoulli and Timoshenko beams, static and modal analyses (L53, MS5 part 1)](#structure-beams) | partial |
 | Structures | [Clamp springs per length of the clamp line and their fit to a measured frequency (D290)](#structure-clamp) | partial |
@@ -185,6 +187,8 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 - consistency: [`golden_values_of_mesher_and_partitioner`](../../crates/foehncraft-mesh/tests/golden.rs): golden values of the mesher and the partitioner
 - exact: [`poiseuille_poly`](../../examples/cases/flow/poiseuille_poly.toml): second order of the flow solver on generated polyhedra (manual: observed order in space (finest pair) 1.8 – 2.2) ([results](stage4.md#couette-and-poiseuille-flow))
 - exact: [`mms_mixed_box`](../../examples/cases/scalar/mms_mixed_box.toml): second order of convection-diffusion on mixed cells (manual: observed order (finest pair) 1.8 – 2.2) ([results](stage2.md#order-of-accuracy))
+- exact: [`sectors_of_hexahedra`](../../crates/foehncraft-mesh/src/wedge.rs): D309: a 3D box revolved into a 22.5 deg sector of hexahedra has the exact volume of its polygonal sector to 1e-12, closed cells and the side planes zmin and zmax with their normals
+- contract (diagnostics): [`a_perturbed_or_tetrahedral_sector_is_refused`](../../crates/foehncraft-mesh/src/wedge.rs): D309: a sector of tetrahedra or with perturb is refused
 
 <a id="mesh-gmsh"></a>
 
@@ -1168,6 +1172,35 @@ Gaps:
 - no metastable (subcooled vapour) states and no backward equations; a (p, h) state is a bracketed Newton solve on the forward equations
 - the variable density is not on ranks yet (refused): the steam duct and channel run on one rank
 
+<a id="circuits-water-steam"></a>
+
+### One-dimensional water and steam tube circuits of a boiler: two-phase pressure drop, flow boiling, CHF margin and natural circulation (steam furnace SF7b)
+
+**partial** (gaps written) · id `circuits.water-steam` · switch `circuits.run, [[nodes]] kind = "drum", [circuit] friction, void, boiling, subcooled, chf` · decisions D282, D94
+
+- exact: [`laminar_parallel_tubes_split_as_hagen_poiseuille`](../../crates/foehncraft-circuits/tests/exact.rs): laminar water between two parallel tubes of 2 m and 4 m: the Hagen-Poiseuille split 2:1 and the inlet pressure drop to 1e-6
+- exact: [`heated_tube_meets_the_energy_and_pressure_balances`](../../crates/foehncraft-circuits/tests/exact.rs): water at 16 MPa heated in a riser: outlet enthalpy h_in + Q/m to 1e-6 J/kg, pressure drop = friction + gravity + acceleration, acceleration G^2 (1/rho_out - 1/rho_in) to 2e-3, Gnielinski wall below saturation
+- exact: [`drum_loop_closes_its_mass_energy_and_pressure_balances`](../../crates/foehncraft-circuits/tests/exact.rs): drum boiler loop at 7 MPa with 30 risers: downcomer flow = riser flow to 1e-8, steam flow = heat/(h'' - h_feed) to 1e-6, pressure drops around the loop sum to zero within 1e-3 Pa; circulation ratio 16
+- exact: [`churchill_is_laminar_and_colebrook_like`](../../crates/foehncraft-circuits/src/correlations.rs): Churchill's friction factor is 64/Re in laminar flow to 1e-12 and within 2 % of Colebrook for smooth and rough tubes
+- reference-data: [`chen_and_gungor_winterton_agree_on_the_wall_superheat`](../../crates/foehncraft-circuits/tests/boiling.rs): two independent flow boiling correlations (Chen 1966, Gungor-Winterton 1986, each fitted to measured data) give wall superheats within a factor of two along an evaporator at 7 MPa, 400 kW/m2
+- consistency: [`evaporator_passes_through_the_regimes_in_order`](../../crates/foehncraft-circuits/tests/boiling.rs): regimes in order (liquid, subcooled, saturated boiling), vapour before the bulk saturates (Saha-Zuber, Levy), 0 <= x <= max(x_eq, 0) bound, nucleate superheat below 30 K, outlet enthalpy exact
+- consistency: [`friedel_and_drift_flux_differ_from_homogeneous_as_expected`](../../crates/foehncraft-circuits/tests/boiling.rs): drift flux gives less void and a heavier column than homogeneous in upflow; Friedel friction above the homogeneous model and below three times it
+- consistency: [`a_high_heat_flux_reaches_the_chf_and_warns`](../../crates/foehncraft-circuits/tests/boiling.rs): at 1 MW/m2 and low flow the Bowring CHF is exceeded: CIR004, post-CHF wall more than 50 K above saturation
+- consistency: [`bowring_is_continuous_at_its_reference_pressure_and_falls_with_quality`](../../crates/foehncraft-circuits/src/chf.rs): Bowring's two pressure branches meet at p_R = 1 (6.9 MPa) to 1e-6 and match the closed form there; CHF falls with quality
+- exact: [`table_reads_and_interpolates`](../../crates/foehncraft-circuits/src/chf.rs): a CHF table in the layout of the 2006 table: trilinear interpolation exact on linear data, the diameter factor (0.008/D)^0.5, missing grid points refused
+- contract (diagnostics): [`broken_cases_are_refused`](../../crates/foehncraft-circuits/tests/boiling.rs): CIR001 for a tube to a missing node, a rise above the length, no pressure level, a drum without feedwater, an unknown key, a supercritical drum
+- consistency: [`the_drum_loop_runs_through_the_tool`](../../crates/foehncraft-tools/src/circuits.rs): circuits.run writes result.json and profiles.csv through the registry
+
+Gaps:
+
+- no comparison with measured void or wall temperatures yet (Bartolomei et al. 1982 not reachable from the build environment); the boiling correlations are checked against each other only
+- the CHF look-up table of Groeneveld et al. (2007) is not shipped (the paper was not reachable): chf = "table" reads it from a CSV file the user supplies, Bowring (1972) is the built-in default
+- post-dryout heat transfer is the vapour convection of Dougall-Rohsenow (1963) with no thermal non-equilibrium; no film boiling or rewetting
+- supercritical water takes Gnielinski with bulk properties: no correction for the pseudo-critical region
+- steady only: no density-wave or Ledinegg instability check, no transients (SF18)
+- the drift velocity is scaled by the sine of the tube angle; horizontal tubes have no stratified-flow void model
+- not yet coupled to the 3D furnace walls (SF7c)
+
 ## Conjugate heat transfer
 
 <a id="cht-steady"></a>
@@ -2139,9 +2172,9 @@ Gaps:
 
 <a id="sprays-breakup"></a>
 
-### Spray breakup: KH-ACT and KH-RT with blob injection, TAB distortion and dynamic drag (SP6, D300 to D308)
+### Spray breakup: KH-ACT and KH-RT with blob injection, TAB distortion and dynamic drag (SP6, D300 to D309)
 
-**partial** (gaps written) · id `sprays.breakup` · switch `[spray.breakup] model = "kh-act" or "kh-rt", drag = "dynamic"; injector hole_diameter, area_contraction, rate, flow_share, hole_length, discharge_coefficient` · decisions D247, D300, D301, D302, D303, D304, D305, D306, D307, D308
+**partial** (gaps written) · id `sprays.breakup` · switch `[spray.breakup] model = "kh-act" or "kh-rt", drag = "dynamic"; injector hole_diameter, area_contraction, rate, flow_share, hole_length, discharge_coefficient` · decisions D247, D300, D301, D302, D303, D304, D305, D306, D307, D308, D309
 
 - exact: [`kh_fits_match_the_dispersion_relation`](../../crates/foehncraft-kernels/src/breakup.rs): Reitz's KH fits against our own inviscid dispersion relation of a liquid column (Bessel functions): wavelength within 5 % for every We_g, growth rate within 3 % below We_g 0.1 and above 50 (up to 46 % high near We_g 2, a property of the fit)
 - exact: [`tab_step_is_exact`](../../crates/foehncraft-kernels/src/breakup.rs): the TAB oscillator step against fourth-order Runge-Kutta, under-, over- and critically damped
@@ -2158,15 +2191,20 @@ Gaps:
 - contract (diagnostics): [`kh_act_needs_the_nozzle_turbulence`](../../crates/foehncraft-particles/tests/breakup.rs): the nozzle keys of KH-ACT are checked (missing turbulence, half a pair, C_d above C_a, no friction left)
 - reference-data: [`spray_breakup`](../../examples/cases/flow/spray_breakup.toml): a diesel-like spray at 60 MPa from a 0.15 mm hole into nitrogen at 15 kg/m3 (KH-ACT, k-eps): 97 % of the liquid at 50.6 mm after 1 ms against 51.1 mm of the correlation of Hiroyasu and Arai (1990), up to 24 % ahead at 0.2 to 0.4 ms; 47.0 mm with kh-rt (passes in CI (set long), not yet in the manual) ([results](../gallery/sprays.md#spray-breakup))
 - contract (schema): [`spray_breakup_injectors`](../../examples/cases/flow/spray_breakup_injectors.toml): the included injector file of spray_breakup (rate table, hole, nozzle turbulence) ([results](../cases/flow.md#lagrangian-sprays)) **missing**
+- reference-data: [`spray_g_g1`](../../examples/cases/flow/spray_g_g1.toml): ECN Spray G, G1 (D309): iso-octane at 20 MPa into nitrogen at 573 K and 3.5 kg/m3 on a 22.5 deg sector of the 8-hole injector, KH-ACT untuned, against the liquid (0.2e-3 mm3/mm2) and vapour (0.1 %) penetration the ECN measured: within 1 mm up to 0.4 ms (20.5 against 20.4 mm at 0.3 ms), then ahead, 12 % at 0.6 ms and 33 % at 1.2 ms (51.7 against 38.9 mm); vapour 32.8 against 29.4 mm at 0.6 ms and 50.8 against 42.0 mm at 1.2 ms; the gas velocity on the injector axis at 15 mm within about 1.5 m/s of the PIV (-7.9 against -7.6 m/s at 0.3 ms); Sauter mean diameter at 15 mm 17 um with KH-ACT and 7.4 um with KH-RT against the measured 9 um, both models with the same penetration (passes in CI (set long), not yet in the manual) ([results](../gallery/sprays.md#spray-g))
+- contract (schema): [`spray_g_g1_injectors`](../../examples/cases/flow/spray_g_g1_injectors.toml): the included injector file of spray_g_g1 (library iso-octane, measured rate of injection, plume direction, flow_share 0.5) ([results](../cases/flow.md#lagrangian-sprays)) **missing**
 
 Gaps:
 
-- validated against a penetration correlation only; ECN Spray G (G1, measured liquid and vapour penetration) is the next part (D309)
+- ECN Spray G (G1): the liquid runs ahead of the measured penetration after 0.4 ms (33 % at 1.2 ms) and the vapour after 0.5 ms (21 % at 1.2 ms), with KH-ACT and KH-RT alike, so not from the breakup; cause open (candidates: the cells of the far field, the constant gas density, the k-eps constants) (D309)
+- KH-ACT drops on ECN Spray G (G1) are about twice the measured size at 15 mm (17 against 9 um; KH-RT 7.4 um): the children of the cavitation (R_CAV from C_a 0.65) and of the integral turbulence scale are large for the short Spray G hole; constants untuned
+- a gas that diverges in some cells leaves its parcels spending max_substeps each, and their exchange records can fill the memory instead of stopping the run with a message (seen on the sector before the slip core, D309)
 - drop sizes not validated: the gallery spray has a Sauter mean diameter near 2 um, small next to measured diesel sprays; no collision or coalescence yet
 - the nozzle turbulence of the Huh-Gosman estimate takes the inlet loss K_c = 0.5 and the area ratio s = 0 as our own choices (the papers give no values)
 - the k-omega SST model does not build up the turbulence of a thin spray jet in a still chamber (the gallery case uses k-eps)
 - breakup is refused in the steady spray mode; constant surface tension and viscosity; children leave with the blob's velocity (no radial velocity); no GPU entry of the breakup kernel; one process
 - `spray_breakup_injectors` has no run in the verification manual or in CI
+- `spray_g_g1_injectors` has no run in the verification manual or in CI
 
 <a id="sprays-high-pressure-surface"></a>
 
@@ -2337,7 +2375,7 @@ Gaps:
 
 - the wall is smeared over about one cell: first order in h, lift 27 % above the benchmark range at h = D/40, wall shear stress and heat flux not accurate (by design of the pre-stage)
 - laminar and isothermal only: turbulence, energy, scalars, gravity, regions, rotating zones and sprays are refused (IMM102)
-- primitive bodies (cylinder, sphere, box) and `field` expressions only; STL bodies need the geometry kernel of stage 0 (sharp walls on cut cells: feature immersed.cut)
+- STL bodies (feature immersed.stl) take the exact cut volumes as solid fractions; the penalised wall of an STL body is as smeared as that of a primitive one
 - the coupled solver breaks down from rest when the sink exceeds about 1e5 times the viscous diagonal (K below about 1e-5 h²); SIMPLEC takes any K
 - the drag error depends on K/h²: with K = 0.01 h² the Stokes sphere array is 6.2, 5.5, 3.9, 2.6 % high on 16³ to 48³ (about first order); smaller K smears the body outward (up to +18 % at 1e-3 h² on 16³); in the Poiseuille channel the effective wall stays within half a cell (16 to 256 cells), its sign set by where the wall cuts its cell (sweeps run by tools/verification/immersed_sweeps.py, not in CI)
 - manufactured solution on 2D triangular prisms and the mixed 2D mesh: the velocity error stalls at about 2 % (6 % without the sink, so a gap of the flow discretisation on these meshes, not of the penalisation)
@@ -2354,17 +2392,41 @@ Gaps:
 - consistency: [`small_cells_merge`](../../crates/foehncraft-mesh/tests/cut.rs): merging small cells moves no volume and no wall area (1e-12), the merged cells close to round-off
 - consistency: [`cut_is_independent_of_threads`](../../crates/foehncraft-mesh/tests/cut.rs): the cut mesh is bitwise the same on 1 and 4 threads (D93)
 - exact: [`cut_poiseuille_converges_at_second_order`](../../crates/foehncraft-flow/tests/immersed.rs): plane Poiseuille flow between two cut walls off the cell faces: mass flow error 1.24, 0.29, 0.066 % on 16, 32, 64 cells across, order 2.1 (penalised walls: 20.5, 8.5, 2.3 %)
-- reference-data: [`immersed_cut_cylinder_re20`](../../examples/cases/flow/immersed_cut_cylinder_re20.toml): Schäfer & Turek 2D-1 on a plain box mesh (h = D/20) with the cylinder cut out: C_D 5.583 in range, C_L 2.1 % and Δp 1.0 % below the range; the run fails beyond 5 % of the range midpoint (passes in CI (set linux-2), not yet in the manual) ([results](../gallery/immersed.md#cut-cylinder))
+- reference-data: [`immersed_cut_cylinder_re20`](../../examples/cases/flow/immersed_cut_cylinder_re20.toml): Schäfer & Turek 2D-1 on a plain box mesh (h = D/20) with the cylinder cut out: C_D 5.588 in range, C_L 1.4 % and Δp 1.0 % below the range (with face points; without: C_D 5.583, C_L 2.1 % below); the run fails beyond 5 % of the range midpoint (passes in CI (set linux-2), not yet in the manual) ([results](../gallery/immersed.md#cut-cylinder))
 - contract (diagnostics): [`cut_settings_are_refused`](../../crates/foehncraft-flow/tests/immersed.rs): IMM101 for [immersed.cut] without method = "cut", IMM201 for a threshold out of range, IMM202 for regions
 
 Gaps:
 
-- primitive bodies and `field` expressions only; STL bodies need the signed distance and segment-triangle crossings of the stage 0 geometry kernel
 - the body is seen through its node values: features thinner than a cell vanish; the refusal of thin solids (Q4, IMM for D189) is not built yet
-- Δp of the Re 20 cylinder stays about 1 % below the range at D/20 (D/40: C_D 5.592, C_L 0.0105, Δp 0.1171, all within 0.1 % of the range; SIMPLEC stalls at residual 1e-7 there); the lift depends on the merge threshold (0.1: 4 % low, 0.4: 0.4 % low); the default 0.3 is set on this one case
+- Δp of the Re 20 cylinder stays about 1 % below the range at D/20 (D/40: C_D 5.595, C_L 0.0106, Δp 0.1171, all within 0.1 % of the range; SIMPLEC stalls at residual 1e-7 there); the lift depends on the merge threshold (0.1: 4 % low, 0.4: 0.4 % low); the default 0.3 is set on this one case; the threshold sweep ran without face points
+- the joined faces of merged cells can fold: their fan moves volume from one cell to the other (48 faces on the 32³ STL sphere array, the largest 11.5 % of the smaller cell; on tetrahedra up to half); the merge avoids folds where it has a choice and IMM203 reports the rest; a fix needs two cells to share more than one face (a solver change, owner decision)
 - wall functions with the exact first-cell distance (2c), conjugate heat transfer through cut cells (2d, refused), named surface patches (2e) and the near-body refinement (2f) are not built
 - the other verification cases of the plan (cut-sphere Poisson MMS, annulus conduction, Taylor-Couette, inclined channel, Stokes sphere, Re 100 cylinder, turbulent plate) are not run yet
 - one rank only: the cut runs on the global mesh, `foehn run --ranks N` with a cut is not tested
+
+<a id="immersed-stl"></a>
+
+### STL bodies, cut out of the mesh or penalised, with sharp edges and face points (L13 stage 2)
+
+**partial** (gaps written) · id `immersed.stl` · switch `[[immersed.body]] shape = "stl"` · decisions D225, D227, D228
+
+- exact: [`stl_sphere_cut_matches_the_exact_moments`](../../crates/foehncraft-mesh/tests/stl_cut.rs): an icosphere cut out of hexahedral, tetrahedral and polyhedral meshes against the exact moments of its triangles: fluid volume order above 1.6 from 8³ to 16³, volume and wall area within 1e-2 on 16³, the fluid volume of every group of input cells a merged cell covers within 5e-2 of the body volume (L1), the face apertures within 6e-3 (hexahedra, tetrahedra); face points lower the volume error by more than a fifth and the aperture error; no face with d · S ≤ 0
+- exact: [`stl_box_edges_and_corners_are_kept`](../../crates/foehncraft-mesh/tests/stl_cut.rs): a box turned against a hexahedral mesh: with the dual-contouring wall point and face points the wall area and volume errors are below half those of the closest point on 16³ and 32³, the wall area converges at order above 1.5 (the closest point: first order)
+- consistency: [`fallback_keeps_every_face_usable`](../../crates/foehncraft-mesh/tests/stl_cut.rs): the turned box on hexahedra, tetrahedra and polyhedra with all points: the fallback leaves no face with d · S ≤ 0, simplifies fewer than a quarter of the cut cells and stays more accurate than the cut without wall and face points
+- consistency: [`stl_cut_is_independent_of_threads`](../../crates/foehncraft-mesh/tests/stl_cut.rs): the cut of an STL box is bitwise the same on 1 and 4 threads, its report too (D93)
+- reference-data: [`immersed_cut_stl_sphere_array`](../../examples/cases/flow/immersed_cut_stl_sphere_array.toml), [`stl_sphere_array_cut_converges_to_the_series`](../../crates/foehncraft-flow/tests/immersed.rs): Stokes flow through a simple cubic array of STL spheres cut out of the mesh: drag coefficient against the Hasimoto (1959) / Sangani & Acrivos (1982) series 2.152, −9.0 and −3.6 % on 16³ and 24³ hexahedra (test: below 4.5 % and halving), −2.3 % on 32³ and −0.9 % on 48³ (order 2.1); the wall carries G L³ to 6 % ([results](../gallery/immersed.md#stl-cut))
+- consistency: [`penalised_stl_sphere_matches_the_primitive`](../../crates/foehncraft-flow/tests/immersed.rs): the penalised STL sphere (exact cut volumes as solid fractions) gives the drag of the penalised primitive sphere within 1 % on 16³
+- contract (diagnostics): [`stl_body_settings_are_refused`](../../crates/foehncraft-flow/tests/immersed.rs): IMM101 for an stl body without `file`, a `scale` not > 0, `file` on another shape; CASE006 for a missing file, a file without triangles or with a corner that is not a number
+
+Gaps:
+
+- on tetrahedra the sphere array is +1.7 % on 16³ and −1.8 % on 24³, and the wall carries G L³ only to 5 % (0.949 on 24³, a side force of 2 % on 16³): the cut tetrahedra need a closer look
+- on polyhedral meshes the faces are not planar: the fan of a clipped face is not that of the input face, so the face apertures (4.7e-2) and the cell-by-cell volumes do not converge (the totals do); the sphere array is −5.6 and −4.0 % on 17³ and 25³ polyhedra
+- on sharp bodies the cell-by-cell volume error with the dual-contouring point is about twice that of the closest point (1.4e-2 against 7.3e-3 on 32³ hexahedra) while the total is better: the feature point serves the whole loop, not each cell's share of the edge
+- the fallback cuts the whole mesh again per round (the turned box on 196 608 tetrahedra: three rounds, 18 s against 1.4 s without wall and face points); a local re-cut is not built
+- the cut reaches only the totals and the drag of the sphere array: the other cases of the plan (cut-sphere Poisson MMS, Taylor-Couette, Re 100 cylinder) are not run with STL bodies
+- a surface feature thinner than a cell vanishes between the nodes; the thin-solid refusal (Q4) is not built
+- one rank only
 
 <a id="immersed-topology"></a>
 
