@@ -1512,25 +1512,20 @@ impl Spray {
                     continue;
                 }
                 let id = ((ii as u64) << 48) | k;
-                let dir = direction(id, axis, e1, e2, cos_a);
-                let d = match &inj.size {
-                    Some(sz) => {
-                        sz.quantile(rng::uniform_keyed([stream::SPRAY_INJECTION, id, 1, 0]))
-                    }
-                    None => inj.fixed_diameter(),
-                };
-                let speed = inj.exit_speed(rho_p, m_whole * rate);
+                let (x, v, d, speed) = start(id, inj, (axis, e1, e2, cos_a), rho_p, m_whole * rate);
                 let count = m_parcel / (rho_p * std::f64::consts::PI / 6.0 * d * d * d);
-                let Some(cell) = env.loc.locate_search(inj.position) else {
+                let Some(cell) = env.loc.locate_search(x) else {
                     bail!(
-                        "[[spray.injector]] {}: the position lies outside the mesh",
-                        inj.name
+                        "[[spray.injector]] {}: the position {:?} of a parcel lies outside the \
+                         mesh",
+                        inj.name,
+                        x
                     );
                 };
                 out.fresh.push(One {
                     id,
-                    x: inj.position,
-                    v: [dir[0] * speed, dir[1] * speed, dir[2] * speed],
+                    x,
+                    v,
                     d,
                     count,
                     born,
@@ -2872,6 +2867,77 @@ fn frame(a: [f64; 3]) -> ([f64; 3], [f64; 3]) {
         a[0] * t[1] - a[1] * t[0],
     ];
     let e1 = unit(c);
+    let e2 = [
+        a[1] * e1[2] - a[2] * e1[1],
+        a[2] * e1[0] - a[0] * e1[2],
+        a[0] * e1[1] - a[1] * e1[0],
+    ];
+    (e1, e2)
+}
+
+/// Position, velocity and diameter of the parcel or stream `id` of the
+/// injector `inj` (cone frame `(axis, e1, e2, cos_a)`) at the mass flow
+/// `m_dot`, and the speed: a measured droplet of its sample table (D322), or
+/// a direction of the cone and a size of its distribution from the
+/// injector's position.
+pub(crate) fn start(
+    id: u64,
+    inj: &crate::config::Injector,
+    (axis, e1, e2, cos_a): ([f64; 3], [f64; 3], [f64; 3], f64),
+    rho_p: f64,
+    m_dot: f64,
+) -> ([f64; 3], [f64; 3], f64, f64) {
+    if let Some(table) = &inj.sample_data {
+        let (x, v, d) = sampled(id, inj, table, axis);
+        return (x, v, d, norm(v));
+    }
+    let dir = direction(id, axis, e1, e2, cos_a);
+    let d = match &inj.size {
+        Some(sz) => sz.quantile(rng::uniform_keyed([stream::SPRAY_INJECTION, id, 1, 0])),
+        None => inj.fixed_diameter(),
+    };
+    let speed = inj.exit_speed(rho_p, m_dot);
+    let v = [dir[0] * speed, dir[1] * speed, dir[2] * speed];
+    (inj.position, v, d, speed)
+}
+
+/// The start of the parcel `id` drawn from the sample table of `inj`
+/// (D322): position, velocity and diameter of one measured droplet, by mass,
+/// on a random azimuth of the injector's sector.
+fn sampled(
+    id: u64,
+    inj: &crate::config::Injector,
+    table: &crate::config::Samples,
+    axis: [f64; 3],
+) -> ([f64; 3], [f64; 3], f64) {
+    let s = table.pick(rng::uniform_keyed([stream::SPRAY_INJECTION, id, 2, 0]));
+    let phi = inj.sector.to_radians() * rng::uniform_keyed([stream::SPRAY_INJECTION, id, 2, 1]);
+    let (e1, e2) = sector_frame(axis);
+    let (sp, cp) = phi.sin_cos();
+    let mut x = inj.position;
+    let mut v = [0.0; 3];
+    for k in 0..3 {
+        let radial = cp * e1[k] + sp * e2[k];
+        let tangential = -sp * e1[k] + cp * e2[k];
+        x[k] += s.r * radial;
+        v[k] = s.u[0] * axis[k] + s.u[1] * radial + s.u[2] * tangential;
+    }
+    (x, v, s.d)
+}
+
+/// The frame of the azimuth of a sector (D322): e1 along the first global
+/// axis least aligned with `a` (made normal to it), e2 = a × e1.
+fn sector_frame(a: [f64; 3]) -> ([f64; 3], [f64; 3]) {
+    let mut best = 0;
+    for k in 1..3 {
+        if a[k].abs() < a[best].abs() {
+            best = k;
+        }
+    }
+    let mut t = [0.0; 3];
+    t[best] = 1.0;
+    let dot = a[best];
+    let e1 = unit([t[0] - dot * a[0], t[1] - dot * a[1], t[2] - dot * a[2]]);
     let e2 = [
         a[1] * e1[2] - a[2] * e1[1],
         a[2] * e1[0] - a[0] * e1[2],

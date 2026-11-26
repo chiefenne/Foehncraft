@@ -1,0 +1,11 @@
+# The gas at z = 20 mm: droplets below 5 um of the y traverse (mean axial velocity, k from the
+# variances of LDA1 and twice LDA4); Racz et al., Zenodo 17935932, CC BY 4.0
+r_mm,u_gas,k,n
+0,108.8,471.3,4074
+1,94.871,532.73,4734
+2,61.279,571.09,6826
+3,32.793,358.53,11161
+4,18.811,225.7,12462
+5,12.393,187.25,10076
+6,7.5715,148.8,2638
+7,5.1657,120.41,235
