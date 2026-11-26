@@ -1389,7 +1389,10 @@ impl Spray {
     /// The vapour that brings a gas of mass `mass` in the state `gs` to
     /// adiabatic saturation with this liquid (kg; 0 when the gas is
     /// saturated or does not carry the vapour): Δ = M (Y_s − Y*)/(1 − Y_s)
-    /// at the temperature T where M c_p (T* − T) = Δ L(T) (D253).
+    /// at the temperature T where M c_p (T* − T) = Δ L(T) (D253). A gas at
+    /// or above the end of the Peng-Robinson surface (the critical mixing
+    /// state, D314) has no latent heat to give: it takes the vapour up to
+    /// the surface fraction there without cooling, Δ at T*.
     pub fn saturation_capacity(&self, gs: &GasState, mass: f64) -> f64 {
         let Some(v) = self.vapour else {
             return 0.0;
@@ -1412,7 +1415,13 @@ impl Spray {
         let g = |t: f64| mass * gs.cp * (gs.t - t) - delta(t) * self.latent_heat(t);
         let (mut lo, mut hi) = (200.0f64.min(gs.t), gs.t);
         if g(hi) >= 0.0 {
-            return 0.0;
+            // no latent heat at T*: T* itself is the root, and Δ is largest
+            // there (Y_s does not fall with T)
+            return if self.latent_heat(hi) <= 0.0 {
+                delta(hi)
+            } else {
+                0.0
+            };
         }
         for _ in 0..60 {
             let mid = 0.5 * (lo + hi);
