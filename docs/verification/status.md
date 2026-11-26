@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**144 features: 50 verified, 91 partial, 3 unverified.**
+**145 features: 50 verified, 92 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -159,6 +159,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Flow models | [Gas-phase chemistry: mechanisms, stiff 0D reactor and chemical equilibrium (L2, steam furnace SF2a)](#chemistry-reactor) | partial |
 | Flow models | [Gas-phase chemistry in the cells of a transient laminar flow with heat release, the 1D premixed flame (L2, steam furnace SF2b)](#chemistry-flow) | partial |
 | Immersed bodies | [Immersed bodies by Brinkman penalisation, primitive shapes (L13 stage 1)](#immersed-penalisation) | partial |
+| Immersed bodies | [Immersed bodies as cut cells, primitive shapes (L13 stage 2a, 2b)](#immersed-cut) | partial |
 | Immersed bodies | [Density-field topology search with the Brinkman penalisation, iso-surface by marching tetrahedra (L13 stage 1)](#immersed-topology) | partial |
 | Structures | [Linear structural solver: Euler–Bernoulli and Timoshenko beams, static and modal analyses (L53, MS5 part 1)](#structure-beams) | partial |
 | Structures | [Clamp springs per length of the clamp line and their fit to a measured frequency (D290)](#structure-clamp) | partial |
@@ -2276,11 +2277,34 @@ Gaps:
 
 - the wall is smeared over about one cell: first order in h, lift 27 % above the benchmark range at h = D/40, wall shear stress and heat flux not accurate (by design of the pre-stage)
 - laminar and isothermal only: turbulence, energy, scalars, gravity, regions, rotating zones and sprays are refused (IMM102)
-- primitive bodies (cylinder, sphere, box) and `field` expressions only; STL bodies need the geometry kernel of stage 0
+- primitive bodies (cylinder, sphere, box) and `field` expressions only; STL bodies need the geometry kernel of stage 0 (sharp walls on cut cells: feature immersed.cut)
 - the coupled solver breaks down from rest when the sink exceeds about 1e5 times the viscous diagonal (K below about 1e-5 h²); SIMPLEC takes any K
 - the drag error depends on K/h²: with K = 0.01 h² the Stokes sphere array is 6.2, 5.5, 3.9, 2.6 % high on 16³ to 48³ (about first order); smaller K smears the body outward (up to +18 % at 1e-3 h² on 16³); in the Poiseuille channel the effective wall stays within half a cell (16 to 256 cells), its sign set by where the wall cuts its cell (sweeps run by tools/verification/immersed_sweeps.py, not in CI)
 - manufactured solution on 2D triangular prisms and the mixed 2D mesh: the velocity error stalls at about 2 % (6 % without the sink, so a gap of the flow discretisation on these meshes, not of the penalisation)
 - one rank only: `foehn run --ranks N` refuses immersed bodies
+
+<a id="immersed-cut"></a>
+
+### Immersed bodies as cut cells, primitive shapes (L13 stage 2a, 2b)
+
+**partial** (gaps written) · id `immersed.cut` · switch `[immersed] method = "cut"` · decisions D227, D228
+
+- exact: [`sphere_closure_volume_and_area_converge`](../../crates/foehncraft-mesh/tests/cut.rs): a sphere cut out of hexahedral, tetrahedral and polyhedral box meshes (8³ to 32³): every cut cell closes to 1e-12 of its largest face, no face with d · S ≤ 0, fluid volume and wall area converge at order above 1.6 (measured 2.0 to 2.2)
+- exact: [`flat_body_is_exact_and_splits_cells`](../../crates/foehncraft-mesh/tests/cut.rs): a slab with flat faces: fluid volume and wall area exact to 1e-12; a cell whose fluid is two corner pieces becomes two cells
+- consistency: [`small_cells_merge`](../../crates/foehncraft-mesh/tests/cut.rs): merging small cells moves no volume and no wall area (1e-12), the merged cells close to round-off
+- consistency: [`cut_is_independent_of_threads`](../../crates/foehncraft-mesh/tests/cut.rs): the cut mesh is bitwise the same on 1 and 4 threads (D93)
+- exact: [`cut_poiseuille_converges_at_second_order`](../../crates/foehncraft-flow/tests/immersed.rs): plane Poiseuille flow between two cut walls off the cell faces: mass flow error 1.24, 0.29, 0.066 % on 16, 32, 64 cells across, order 2.1 (penalised walls: 20.5, 8.5, 2.3 %)
+- reference-data: [`immersed_cut_cylinder_re20`](../../examples/cases/flow/immersed_cut_cylinder_re20.toml): Schäfer & Turek 2D-1 on a plain box mesh (h = D/20) with the cylinder cut out: C_D 5.583 in range, C_L 2.1 % and Δp 1.0 % below the range; the run fails beyond 5 % of the range midpoint (passes in CI (set linux-2), not yet in the manual) ([results](../gallery/immersed.md#cut-cylinder))
+- contract (diagnostics): [`cut_settings_are_refused`](../../crates/foehncraft-flow/tests/immersed.rs): IMM101 for [immersed.cut] without method = "cut", IMM201 for a threshold out of range, IMM202 for regions
+
+Gaps:
+
+- primitive bodies and `field` expressions only; STL bodies need the signed distance and segment-triangle crossings of the stage 0 geometry kernel
+- the body is seen through its node values: features thinner than a cell vanish; the refusal of thin solids (Q4, IMM for D189) is not built yet
+- Δp of the Re 20 cylinder stays about 1 % below the range at D/20 (D/40: C_D 5.592, C_L 0.0105, Δp 0.1171, all within 0.1 % of the range; SIMPLEC stalls at residual 1e-7 there); the lift depends on the merge threshold (0.1: 4 % low, 0.4: 0.4 % low); the default 0.3 is set on this one case
+- wall functions with the exact first-cell distance (2c), conjugate heat transfer through cut cells (2d, refused), named surface patches (2e) and the near-body refinement (2f) are not built
+- the other verification cases of the plan (cut-sphere Poisson MMS, annulus conduction, Taylor-Couette, inclined channel, Stokes sphere, Re 100 cylinder, turbulent plate) are not run yet
+- one rank only: the cut runs on the global mesh, `foehn run --ranks N` with a cut is not tested
 
 <a id="immersed-topology"></a>
 

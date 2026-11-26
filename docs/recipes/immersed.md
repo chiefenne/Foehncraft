@@ -6,6 +6,7 @@ Part of the [Recipes](../recipes.md): put bodies into the flow without meshing t
 |---|---|
 | 270 | [Put a body in the flow without meshing it](#penalised-body) |
 | 291 | [Search the shape of a duct with a density field](#topology-search) |
+| 313 | [Cut a body out of a mesh](#cut-body) |
 | 310 | [Check an STL surface before it becomes a body](#surface-check) |
 | 315 | [Cut a mesh exactly by an STL surface](#cut-moments) |
 
@@ -95,6 +96,39 @@ The log has one `topology design` line per update (Φ, fluid fraction, largest c
 
 **Limits.** Steady, laminar and isothermal only (IMM102 refuses a transient run and the settings of recipe 270), one rank, a box as design region. The result is a topology, not a final shape: the wall is smeared over a cell, so check the design on a body-fitted mesh made from `topology.stl`.
 
+---
+
+<a id="cut-body"></a>
+## 313. Cut a body out of a mesh
+
+**Set `method = "cut"`** in `[immersed]` and name a wall condition for every body: the cut takes the bodies out of the mesh before the run, and each body surface becomes a wall boundary with the body's name.
+
+```toml
+[immersed]
+method = "cut"
+
+[immersed.cut]
+min_volume_fraction = 0.3   # merge cut cells below this fraction (0 to 0.9)
+# edge_root = "exact"       # crossing points on the true surface; "linear": marching cubes
+# wall_point = true         # wall faces fanned around a point on the surface
+
+[[immersed.body]]
+name = "cylinder"
+shape = "cylinder"          # "cylinder", "sphere", "box" or "field"
+centre = [0.2, 0.2, 0.0]
+radius = 0.05
+
+[boundary.cylinder]
+type = "wall"               # any wall condition: velocity, temperature, heat flux
+```
+
+No permeability is needed. The log has the cut report (IMM203): cells cut, removed, split and merged, the smallest kept volume fraction, the closure of the cut cells and the wall area of each body against the exact area where it is simple. IMM204 warns when a small cell found no neighbour to merge into or a face is left that the discretisation refuses; refine the mesh near the body or move it by a small fraction of a cell. Forces and coefficients come from the body boundary like from any wall (`boundaries.csv`, `[verification] benchmark_boundary`).
+
+**Choose the merge threshold.** On the Re 20 cylinder the lift moves from 4 % to 0.4 % below the benchmark range between 0.1 and 0.4, drag and Δp hardly move ([gallery 313](../gallery/immersed.md#cut-cylinder)); 0.3 is the default. Merged cells are larger and non-convex, so do not go far above 0.4.
+
+**Resolution.** The body is seen through its values at the mesh nodes: a part thinner than a cell can vanish, and the wall faces are flat between crossing points (second order in the cell width). Put about 20 cells across the smallest feature.
+
+**Limits.** Primitive bodies and `field` expressions (the level χ = ½) only; STL bodies come with the stage 0 geometry kernel. Regions and conjugate heat transfer, a topology search and rotating zones are refused (IMM202). One rank only.
 <a id="surface-check"></a>
 ## 310. Check an STL surface before it becomes a body
 
