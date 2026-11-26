@@ -14,6 +14,8 @@
 //!   the exact drag relaxation of `foehncraft_kernels::particle`, the
 //!   walls, the tallies, the state for a restart and the VTKHDF output.
 //!
+//! - [`collision`]: the collisions of the drops (NTC sampling with the
+//!   outcomes of O'Rourke, D331);
 //! - [`coupling`]: the records, the sorted per-cell sums and the books of
 //!   the two-way coupling (SP2, D247 to D252).
 //!
@@ -22,6 +24,7 @@
 //! migration between ranks is SP3.
 
 pub mod batch;
+pub mod collision;
 pub mod config;
 pub mod coupling;
 pub mod datum;
@@ -30,10 +33,10 @@ pub mod sizes;
 pub mod spray;
 
 pub use config::{
-    BoundaryMode, Breakup, BreakupModel, Coupling, CouplingMode, Dispersion, DragLaw, Ecn,
-    Equilibrium, Evaporation, EvaporationModel, Film, FilmFluid, Injector, Liquid, Passes,
-    PassesName, Penetration, PengRobinson, Sample, Samples, Saturation, SprayBoundary,
-    SpraySection, Steady,
+    BoundaryMode, Breakup, BreakupModel, Collision, CollisionModel, Coupling, CouplingMode,
+    Dispersion, DragLaw, Ecn, Equilibrium, Evaporation, EvaporationModel, Film, FilmFluid,
+    Injector, Liquid, Passes, PassesName, Penetration, PengRobinson, Sample, Samples, Saturation,
+    SprayBoundary, SpraySection, Steady,
 };
 pub use coupling::{CellSources, Delta, Record, StepBooks, limiter_factor};
 pub use datum::{Bound, Datum, DatumTally, HistSpec, Moments, Shape, Stats, Surface, Volume};

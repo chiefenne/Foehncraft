@@ -1902,7 +1902,13 @@ impl Turbulence {
             section.sst_constants()?
         };
         let o = section.sst_options(&settings);
-        let zc = section.zeta_f_constants()?;
+        // the ζ-f constants are read only for the ζ-f family: the
+        // overrides of SST (`gamma2`) or k-ε (`a0`) are not ζ-f names
+        let zc = if model.has_zeta() {
+            section.zeta_f_constants()?
+        } else {
+            ZetaFConstants::default()
+        };
         // the wall kernel of the k-ε family serves k-ε-ζ-f with its
         // equilibrium C_μ (compound treatment)
         let ke = if model.has_zeta() {

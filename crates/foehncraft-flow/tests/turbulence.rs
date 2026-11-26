@@ -516,3 +516,67 @@ vtkhdf = false
         let _ = std::fs::remove_dir_all(d);
     }
 }
+
+/// The SST constants of `[turbulence.constants]` reach the run (they were
+/// checked against the ζ-f names at the start of the run and `gamma2` was
+/// refused): homogeneous decay with β₂ = 0.1 follows ω = ω₀/(1 + β₂ω₀t).
+#[cfg(feature = "hdf5")]
+#[test]
+fn sst_constant_overrides_reach_the_run() {
+    use foehncraft_flow::restart;
+    let (w0, t_end, beta): (f64, f64, f64) = (10.0, 0.5, 0.1);
+    let c = parse(&format!(
+        r#"
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [1.0, 1.0, 0.5]
+cells = [2, 2, 1]
+[fluid]
+viscosity = 1e-3
+[turbulence]
+model = "k-omega-sst"
+[turbulence.constants]
+beta2 = {beta}
+gamma2 = 0.44
+[initial]
+velocity = [0.0, 0.0, 0.0]
+k = 1.0
+omega = {w0}
+[boundary.xmin]
+type = "symmetry"
+[boundary.xmax]
+type = "symmetry"
+[boundary.ymin]
+type = "symmetry"
+[boundary.ymax]
+type = "symmetry"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+[solver.turbulence]
+tolerance = 1e-12
+[time]
+scheme = "bdf2"
+time_step = {dt}
+steps = 40
+[output]
+vtkhdf = false
+wall_csv = false
+"#,
+        dt = t_end / 40.0
+    ));
+    let d = out("constants");
+    let r = run(&c, "constants", &d, |_| {}).unwrap();
+    assert!(r.failures.is_empty(), "{:?}", r.failures);
+    let rs = restart::read(&d.join("restart.h5")).unwrap();
+    let t = rs.state.turbulence.unwrap();
+    let _ = std::fs::remove_dir_all(&d);
+    let exact = w0 / (1.0 + beta * w0 * t_end);
+    assert!(
+        (t.omega[0] - exact).abs() < 1e-3 * exact,
+        "{} vs {exact}",
+        t.omega[0]
+    );
+}
