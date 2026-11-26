@@ -875,9 +875,23 @@ of each size to the decaying jet and the turbulent dispersion, agree
 mostly within 10 %. The core Sauter diameter is 1 to 3 µm too small and the
 edge too coarse: the model sorts the sizes radially more than the spray
 does, and it evaporates the small droplets with the assumed droplet
-temperature of 95 °C at 20 mm.
+temperature of 95 °C at 20 mm; most of the gap is the sorting, see
+below.
 
-**The droplet temperature.** The data set does not give it at 20 mm; the case assumes 95 °C (a droplet of 15 µm cools with a time constant of about 3 ms, the flight from the atomizer takes about 0.2 ms).
+**Where the d32 gap comes from.** The data set does not give the droplet
+temperature at 20 mm; the case assumes 95 °C (a droplet of 15 µm cools
+with a time constant of about 3 ms, its flight from the atomizer takes
+about 0.2 ms). A second run with the droplets at 22 °C evaporates 4 % of
+the liquid instead of 13 % and raises the core d32 by only 0.3 to 0.4 µm,
+so evaporation is not the cause. The start is faithful: just behind the
+inlet (z = 20.2 mm, rings of ± 0.5 mm) the model's d32 lies 0.3 to 0.7 µm
+below the measured traverse it was drawn from. The rest grows on the way
+downstream: the large droplets leave the core with the radial velocities
+they were measured with (rms about 8 m/s at 20 mm) while the small ones
+stay with the gas. The measurement itself differs by up to 1.5 µm between
+its x and y traverses at 20 mm, and the turbulence of the inlet, taken
+from the scatter of the droplets below 5 µm, may be too high. The gap is
+recorded, not tuned away.
 
 ```toml
 [[injector]]                    # in spray_brno_injectors.toml

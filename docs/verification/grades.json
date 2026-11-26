@@ -1461,7 +1461,7 @@
    ],
    "gaps": [
     "the Brno comparison is run by hand (compare.py); the case itself checks only its books and convergence",
-    "the core d32 of the Brno spray at 40 and 60 mm is 1 to 3 um below the measured 14 to 15 um; the droplet and air temperatures are not in the data set and were assumed",
+    "the core d32 of the Brno spray at 40 and 60 mm is 1 to 3 um below the measured 14 to 15 um: the start is within 0.7 um, evaporation explains 0.3 to 0.4 um (cold-droplet run), the rest is a radial sorting of the sizes stronger than measured; the droplet and air temperatures are not in the data set and were assumed",
     "the axisymmetric plane is made from one traverse; the tangential velocity and the size dependence of the probe area are left out",
     "SST k-omega for the round jet (the round-jet spreading anomaly of two-equation models is not corrected)",
     "`spray_brno_injectors` has no run in the verification manual or in CI"
