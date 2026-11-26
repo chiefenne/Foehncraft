@@ -74,7 +74,7 @@ FLOW = {
         "vd_heated_duct", "vd_closed_box_heating", "vd_closed_box_side_heated", "vd_mms_steady",
         "mixed_convection_channel",
         "spray_duct", "spray_datums", "spray_two_way", "spray_cooling", "spray_dispersion",
-        "spray_cooling_steady", "spray_evaporation",
+        "spray_cooling_steady", "spray_evaporation", "spray_heptane_evaporation",
         "porous_darcy_block", "porous_honeycomb_channel", "porous_schumann", "porous_storage_charge",
         "motion_free_stream", "motion_piston_adiabatic", "motion_channel_ranks",
         "steam_heated_duct", "steam_superheater_channel",

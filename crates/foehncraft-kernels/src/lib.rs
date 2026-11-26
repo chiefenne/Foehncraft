@@ -73,6 +73,7 @@ pub mod expr;
 pub mod face;
 pub mod flow;
 pub mod fv;
+pub mod liquids;
 pub mod particle;
 pub mod radiation;
 pub mod realfluid;

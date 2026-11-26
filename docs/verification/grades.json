@@ -1426,11 +1426,29 @@
     "the heat balance closes to round-off only with [species] properties = \"fluid\"; with the mixture properties the energy account keeps a few parts in a thousand (the T-form of the energy equation against the material enthalpy of the balance)",
     "the transient domain mass check fails for heated cases with variable density even without evaporation; the examples use constant density",
     "the momentum equation does not book the momentum the vapour brings separately (it comes with the parcel impulse) nor the dilution term u S_c",
-    "water only (saturation law and latent heat); no boiling, no multicomponent liquids",
+    "single-component liquids of the library only (water, n-heptane, n-dodecane, iso-octane, sprays.liquid-library); no boiling, no multicomponent liquids",
     "no GPU (PTX) entry for the evaporation kernel; one process",
     "V28.5 to V28.8 of section 5 not all run as named checks (the closed box and the crowded cell cover the bounds)",
     "`spray_evaporation_injectors` has no run in the verification manual or in CI",
     "`spray_saturation_injectors` has no run in the verification manual or in CI"
+   ],
+   "range": {}
+  },
+  {
+   "id": "sprays.liquid-library",
+   "title": "Liquid property library and the 1/3-rule film state of the evaporation (D320, D321)",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "single n-heptane droplets: K with the 1/3 rule +39 to +59 % above the microgravity data and +16 to +38 % above the fibre-free extrapolation of Chauveau et al.; the same gap is reported for this model class (Both, Mira, Lehmkuhl 2022) and the microgravity data lie below quasi-steady theory (vapour accumulation); not closed",
+    "no spray-scale evaporation case against measurements yet (CORIA n-heptane data on request; the Brno PDA data are a dispersion case)",
+    "density and specific heat of the liquid constant in a run (at property_temperature): no thermal expansion of a heating droplet",
+    "iso-octane above about 400 K rests on extrapolated correlations (density, c_l, mu, sigma); not in the NIST fluid system",
+    "the film carrier is the start composition of the case, not the local gas of the cell",
+    "no NC12H26 vapour species yet (Spray A stages)",
+    "`spray_heptane_evaporation_injectors` has no run in the verification manual or in CI"
    ],
    "range": {}
   },
