@@ -86,8 +86,8 @@ FLOW = {
         "cht_pulsating_channel_skin", "cht_heated_wall_frozen", "cht_pulsating_channel_warmup",
         "natural_convection_cavity_ra1e5", "natural_convection_plate",
         "flame_methane_air_gri30",
-        "immersed_stokes_sphere", "spray_saturation_steady", "spray_breakup", "spray_brno",
-        "motion_piston_cooled_walls", "spray_g_g1",
+        "immersed_stokes_sphere", "immersed_cut_stl_sphere_array", "spray_saturation_steady",
+        "spray_breakup", "spray_brno", "motion_piston_cooled_walls", "spray_g_g1",
     ],
     "quick": [
         "cavity_re100_budget", "couette_hex", "couette_mixed", "couette_poly", "couette_tet",
