@@ -1403,6 +1403,7 @@
     "gaps written"
    ],
    "gaps": [
+    "on ECN Spray G (G1) with k-epsilon-zeta-f0 the run with the term stops at step 24 (0.05 ms) in a failed CG solve of the pressure (DIV006, RUN014); the cause is not found; without the term the same case runs",
     "on ECN Spray G (G1) the term removes nearly all of the plume turbulence and moves the penetration away from the measurement (liquid 33 % ahead at 1.1 ms on SST instead of 15 %): off by default and in the case",
     "only damping: no production of turbulence by the wakes of drops larger than the eddies",
     "the eddies are the isotropic Gaussian eddies of the eddy-lifetime model (D243); the continuous random walk (not built) would need its own form",

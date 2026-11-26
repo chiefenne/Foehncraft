@@ -1210,6 +1210,13 @@ turbulence scale. On k-ε, the case with `--set spray.breakup.model=kh-rt`
 has drops of 7.4 µm at 15 mm, close to the measurement, and still reaches
 51.1 mm of liquid and 50.8 mm of vapour at 1.2 ms, as KH-ACT does.
 
+**On ζ-f0 the run with the term fails.** On `k-epsilon-zeta-f0` with
+`compound-2023` the run with the term stops at step 24 (0.05 ms): the
+conjugate-gradient solve of the pressure breaks down (its matrix is not
+positive definite) and the solution diverges in 226 cells. Without the term
+the same case runs. We have not found the cause; it is a gap, not a result,
+and the feature row records it.
+
 **The drops' work on the turbulence stays off.** With `[spray.coupling]
 turbulence = "dispersion-work"` (gallery 333) the drops take the work of
 their eddies out of k. On G1 that damps the plume turbulence to almost
