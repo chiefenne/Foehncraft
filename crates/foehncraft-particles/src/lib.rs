@@ -3,6 +3,8 @@
 //! - [`batch`]: the parcel step for a batch of parcels, the CPU backends of the
 //!   kernel that also runs on the GPU (D245);
 //! - [`config`]: the `[spray]` table and its `include` file;
+//! - [`equilibrium`]: the high-pressure phase equilibrium at the droplet
+//!   surface, tabulated over the droplet temperature (Spray A, SA1, D311);
 //! - [`datum`]: the datums of the sprays, the crossing records and the
 //!   droplet statistics from moment sums (SP1b, D262 to D265);
 //! - [`sizes`]: the droplet size distributions of the injectors (D242);
@@ -23,17 +25,20 @@ pub mod batch;
 pub mod config;
 pub mod coupling;
 pub mod datum;
+pub mod equilibrium;
 pub mod sizes;
 pub mod spray;
 
 pub use config::{
-    BoundaryMode, Coupling, CouplingMode, Dispersion, Evaporation, EvaporationModel, Injector,
-    Liquid, Passes, PassesName, Penetration, Saturation, SprayBoundary, SpraySection, Steady,
+    BoundaryMode, Breakup, BreakupModel, Coupling, CouplingMode, Dispersion, DragLaw, Equilibrium,
+    Evaporation, EvaporationModel, Film, Injector, Liquid, Passes, PassesName, Penetration,
+    PengRobinson, Saturation, SprayBoundary, SpraySection, Steady,
 };
 pub use coupling::{CellSources, Delta, Record, StepBooks, limiter_factor};
 pub use datum::{Bound, Datum, DatumTally, HistSpec, Moments, Shape, Stats, Surface, Volume};
+pub use equilibrium::{SurfacePoint, SurfaceTable, TableEnd, fit_mathias_copeman};
 pub use sizes::SizeDistribution;
 pub use spray::{
-    BoundaryRule, Eddy, Env, Gas, GasState, InjectorStats, MomentumFlows, Parcels, Pass, Spray,
-    StreamBooks, StreamPass, Streams, Tally, Vapour, injector_stats, moments_of,
+    BoundaryRule, BreakupState, Eddy, Env, Gas, GasState, InjectorStats, MomentumFlows, Parcels,
+    Pass, Spray, StreamBooks, StreamPass, Streams, Tally, Vapour, injector_stats, moments_of,
 };

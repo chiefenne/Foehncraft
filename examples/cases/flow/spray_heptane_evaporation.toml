@@ -1,0 +1,106 @@
+# n-heptane droplets evaporating in hot nitrogen (D320, the liquid library):
+# `[spray.liquid] library = "n-heptane"` takes the vapour pressure, density,
+# specific heat and latent heat from fits to the NIST WebBook saturation
+# tables; the vapour NC7H16 has NASA-7 data fitted to the NIST ideal-gas
+# heat capacities.
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/spray_heptane_evaporation.toml
+#
+# Nitrogen at 600 K flows at 5 m/s through a duct of 1 m by 0.2 m (2D, SST
+# k-omega). A nozzle 0.1 m behind the inlet sprays 1 g/s of n-heptane at
+# 300 K as droplets of 10 to 80 um, which evaporate with Abramzon and
+# Sirignano. The Schmidt number of the vapour, 2.1, is mu/(rho D) of
+# n-heptane in nitrogen at 600 K (Chapman-Enskog with the Lennard-Jones data
+# of the species file).
+#
+# Constant density and `properties = "fluid"`: the heat balance then closes
+# to round-off; with the mixture properties of the species the energy
+# account keeps a gap of a few parts in a thousand (the T-form of the
+# energy equation against the material enthalpy of the balance).
+
+case_format = "0.7"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [1.0, 0.2, 0.1]
+cells = [100, 20, 1]
+
+[fluid]
+density = 0.57
+viscosity = 2.95e-5
+specific_heat = 1075.0
+conductivity = 0.044
+operating_pressure = 101325.0
+pressure_values = "gauge"
+
+[turbulence]
+model = "k-omega-sst"
+wall_treatment = "automatic"
+
+[initial]
+velocity = [5.0, 0.0, 0.0]
+turbulence_intensity = 0.05
+viscosity_ratio = 10.0
+
+[energy]
+initial = 600.0
+
+[species]
+names = ["NC7H16", "N2"]
+initial = { mass_fractions = { NC7H16 = 0.0, N2 = 1.0 } }
+diffusion = "schmidt"
+schmidt = { NC7H16 = 2.1, N2 = 0.7 }
+properties = "fluid"
+
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [5.0, 0.0, 0.0]
+[boundary.xmin.energy]
+temperature = 600.0
+[boundary.xmin.species]
+mass_fractions = { NC7H16 = 0.0, N2 = 1.0 }
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymin]
+type = "wall"
+[boundary.ymin.energy]
+heat_flux = 0.0
+[boundary.ymax]
+type = "wall"
+[boundary.ymax.energy]
+heat_flux = 0.0
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[time]
+scheme = "bdf2"
+time_step = 0.002
+end_time = 0.4
+
+[spray]
+include = "spray_heptane_evaporation_injectors.toml"
+wall_mode = "stick"
+write_every = 50
+
+[spray.evaporation]
+model = "abramzon-sirignano"
+
+[spray.coupling]
+mode = "two-way"
+passes = "converged"
+tolerance = 1e-3
+max_passes = 8
+
+[solver]
+tolerance = 1e-6
+max_iterations = 300
+
+[solver.scalar]
+limiter = "mlp"
+
+[verification]
+require_convergence = false

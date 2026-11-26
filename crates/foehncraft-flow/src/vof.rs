@@ -482,6 +482,7 @@ pub fn start_alpha(case: &crate::case::FlowCase, mesh: &Mesh, geo: &Geometry) ->
             })
             .collect(),
         topology: None,
+        ..Default::default()
     };
     let bodies = crate::immersed::bodies_with(&sec, &case.env()?)
         .map_err(|e| bad("vof.region", format!("[[vof.region]]: {e:#}")))?;

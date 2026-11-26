@@ -170,7 +170,89 @@ its use.
 - Adiabatic saturation (closed box and V28.11): an exact energy and mass
   balance of the case itself, no external number.
 
-## 3e. Collapse of a liquid column (Martin & Moyce 1952, L3 MP1)
+## 3e. High-pressure droplet surface (Spray A, SA1)
+
+Published measurements and equations, quoted by
+`crates/foehncraft-particles/tests/high_pressure.rs` and the constants of
+`foehncraft_kernels::realfluid`; no data set is stored.
+
+- Vapour pressure of n-dodecane up to its critical point: eq. (3) and
+  table 1 of Ambrose, D., Walton, J. (1989), Vapour pressures up to their
+  critical temperatures of normal alkanes and 1-alkanols, Pure Appl. Chem.
+  61, 1395-1403, doi:10.1351/pac198961081395 (T_c = 658.65 K, p_c =
+  1.83 MPa, ω = 0.573, a = −9.08593, b = 2.77846, c = −5.1985,
+  d = −4.173). The coefficients were read from the text layer of the open
+  PDF; the test checks them against the normal boiling point 489.439 K of
+  Lemmon, E. W., Goodwin, A. R. H. (2000), J. Phys. Chem. Ref. Data 29,
+  1-39, doi:10.1063/1.556054, table 2 (0.1 % at 101.325 kPa). The
+  Mathias-Copeman coefficients of `fuels::N_DODECANE` are our fit to this
+  equation (300 to 655 K, every 5 K; reproduced by a test).
+- Bubble points of nitrogen + n-dodecane: García-Córdova, T.,
+  Justo-García, D. N., García-Flores, B. E., García-Sánchez, F. (2011),
+  Vapor-liquid equilibrium data for the nitrogen + dodecane system at
+  temperatures from (344 to 593) K and at pressures up to 60 MPa, J. Chem.
+  Eng. Data 56, 1555-1564, doi:10.1021/je1012372 (record read through NIST
+  ThermoML). The test quotes 21 of the points (three per isotherm, near 2,
+  5 and 12 MPa); k_ij = 0.205 is our fit to all 75 points up to 20 MPa
+  (mean deviation 2.7 %, at most 9.1 %).
+- Critical points of the ambient gases from their reference equations of
+  state (N₂: Span, Lemmon, Jacobsen, Wagner, Yokozeki 2000; O₂: Schmidt and
+  Wagner 1985; CO₂: Span and Wagner 1996; H₂O: Wagner and Pruss 2002; Ar:
+  Tegeler, Span, Wagner 1999); acentric factors from Poling, B. E.,
+  Prausnitz, J. M., O'Connell, J. P. (2001), The Properties of Gases and
+  Liquids, 5th ed., appendix A (**to verify** against the printed table).
+- The Peng-Robinson constants Ω_a, Ω_b and Z_c are the roots of the
+  critical conditions of the equation (Peng, D.-Y., Robinson, D. B. (1976),
+  Ind. Eng. Chem. Fundam. 15, 59-64, doi:10.1021/i160057a011), recomputed
+  to 19 digits by us; a test checks the triple root.
+
+## 3f. Liquid property library and single droplets (D320, D321)
+
+Only our fitted coefficients are in the repository
+(`crates/foehncraft-kernels/src/liquids.rs`, `crates/foehncraft-flow/data/species-vapours.toml`);
+the tables they are fitted to are not stored. Generators:
+`tools/data/liquid_properties.py`, `tools/data/isooctane_table.py`,
+`tools/data/vapour_species.py`.
+
+- Water, n-heptane, n-dodecane: saturation tables of the NIST Chemistry
+  WebBook, SRD 69, "Thermophysical Properties of Fluid Systems" (Lemmon,
+  E. W., McLinden, M. O., Friend, D. G.), https://webbook.nist.gov/chemistry/fluid/,
+  1 K steps from the triple point region to T_c (URLs printed by
+  `liquid_properties.py --urls`). The tests quote single table points.
+- Iso-octane (not in the NIST fluid system): vapour pressure, Wagner 3-6
+  form of McGarry, J. (1983), Ind. Eng. Chem. Process Des. Dev. 22, 313
+  (T_c 543.96 K, p_c 2.56155 MPa), checked against the Antoine law of
+  Willingham, C. B., Taylor, W. J., Pignocco, J. M., Rossini, F. D. (1945),
+  J. Res. NBS 35, 219 (297.5 to 373.3 K); density, specific heat, latent
+  heat and viscosity: the DIPPR correlations printed in Perry's Chemical
+  Engineers' Handbook, 8th ed. (2008), tables 2-32, 2-153, 2-150 and 2-313
+  (published coefficients, transcribed through the `chemicals` Python
+  package data files and **to verify** against the printed tables); latent
+  heat checked against the calorimetric values of Majer, V., Svoboda, V.
+  et al. (1979, 1982, 1985) quoted on the NIST WebBook (±0.1 kJ/mol);
+  surface tension: Mulero, A., Cachadiña, I., Parra, M. I. (2012), J. Phys.
+  Chem. Ref. Data 41, 043105 (σ0 = 0.04794 N/m, n0 = 1.209, 273 to 373 K);
+  normal boiling point 372.4 K (NIST WebBook).
+- Vapour species NC7H16 and IC8H18: ideal-gas heat capacities of the NIST
+  WebBook gas-phase data (n-heptane and 2,2,4-trimethylpentane pages) and
+  their enthalpies of formation (−187.8 and −224.1 kJ/mol); Lennard-Jones
+  parameters from the critical point and acentric factor by Tee, L. S.,
+  Gotoh, S., Stewart, W. E. (1966), Ind. Eng. Chem. Fundam. 5, 356-363.
+- Single droplets: Chauveau, C., Birouk, M., Halter, F., Gökalp, I. (2019),
+  Int. J. Heat Mass Transfer (title, volume and pages **to verify**; the
+  rates are those of its eq. (4) as read in this work) (microgravity
+  K0 = 3.6552e-4 T − 0.1078 mm²/s, 473 to 748 K, n-heptane in N2 at
+  0.1 MPa, 14 µm cross fibres, d0 about 0.37 mm); Chauveau, C., Halter, F.,
+  Lalonde, A., Gökalp, I. (2008), ILASS-Europe, Como (fibre-free
+  extrapolation K0 = 4.485e-4 T − 0.1369 mm²/s). Measurements, D201
+  accepted class. The model results of Both, A., Mira, D., Lehmkuhl, O.
+  (2022), Int. J. Heat Mass Transfer, arXiv:2201.02818, are quoted only as
+  context for the gap, not as targets (D201).
+- Film reference state: Hubbard, G. L., Denny, V. E., Mills, A. F. (1975),
+  Int. J. Heat Mass Transfer 18, 1003-1008; Yuen, M. C., Chen, L. W. (1976),
+  Combust. Sci. Technol. 14, 147-154.
+
+## 3f. Collapse of a liquid column (Martin & Moyce 1952, L3 MP1)
 
 - Citation: J. C. Martin, W. J. Moyce, *Part IV. An experimental study of
   the collapse of liquid columns on a rigid horizontal plane*, Philosophical

@@ -6,7 +6,9 @@ Part of the [Example gallery](../gallery.md): bodies in the flow without a body-
 |---|---|---|---|
 | 270 | [A cylinder put into a box mesh by Brinkman penalisation](#penalised-cylinder) | L13 stage 1 | `[immersed]`, `[[immersed.body]]`, solid fraction, body force, `solid-fraction` field |
 | 291 | [Topology search of a pipe bend, and how accurate the penalised wall is](#topology-bend) | L13 stage 1 | `[immersed.topology]`, `shape = "field"`, `topology.stl`, K/h sweeps, Stokes sphere array, MMS, gradient check, iso-surface benchmark |
+| 313 | [A cylinder cut out of a box mesh: sharp walls on cut cells](#cut-cylinder) | L13 stage 2 | `[immersed] method = "cut"`, `[immersed.cut]`, cut and merged cells, body walls as boundaries, cut benchmark (marching cubes, exact crossings, dual-contouring wall point) |
 | 310 | [A dirty STL body: surface check, winding number and signed distance](#dirty-stl-winding) | L13 stage 0 | `mesh.surface`, IMM001 to IMM009, `foehncraft_mesh::surface` (winding number, signed distance, crossings) |
+| 315 | [Signed distance by three methods, and a sphere cut exactly out of a mesh](#sdf-benchmark-cut) | L13 stage 0 | signed-distance benchmark (ours, fast sweeping, heat method), `Surface::cut_moments` (volume fractions, apertures, wall pieces) |
 
 ---
 
@@ -210,6 +212,100 @@ python3 -m tools.bench.isosurface --figure docs/figures/gallery/immersed_isosurf
 
 Recipe: [291](../recipes/immersed.md#topology-search). Case files: `examples/cases/flow/immersed_topology_bend.toml`, `immersed_stokes_sphere.toml`, `immersed_mms.toml`.
 
+---
+
+<a id="cut-cylinder"></a>
+## 313. A cylinder cut out of a box mesh: sharp walls on cut cells
+
+<img src="../figures/gallery/immersed_cut_cylinder.png" alt="Three panels of the cylinder in a channel at Re 20 on a box mesh with the cylinder cut out. Top left: the speed, slow behind the cylinder and fastest beside it. Bottom left: the vorticity, blue above and red below the cylinder. Right: a close-up of the cut mesh coloured by the pressure: square cells everywhere except a ring of cut cells whose wall faces follow the dashed exact circle, high pressure in front of the cylinder and low behind it." width="1375" height="660">
+
+`immersed_cut_cylinder_re20.toml` is the case of [gallery 270](#penalised-cylinder)
+(Schäfer & Turek 2D-1, Re = 20, the same box mesh of 440 × 82 hexahedra,
+h = D/20) with `[immersed] method = "cut"`: the cylinder is cut out of the
+mesh instead of penalised (L13 stage 2a and 2b, D227, D228). The mesh
+operation `foehncraft_mesh::cut`
+
+- takes the signed distance of the body at the nodes (negative inside),
+- clips every face to its fluid part, with the crossing point of each mixed
+  edge shared by all faces of the edge (so the cut is watertight),
+- closes every cut cell with wall faces made of the chords of its faces,
+  fanned around a point projected onto the surface,
+- turns a cell whose fluid falls into separate pieces into one cell per piece,
+- merges cut cells below `min_volume_fraction` (0.3) of their volume, or
+  with a face the discretisation cannot take, into the neighbour with the
+  largest shared face; the faces a merged cell shares with one neighbour are
+  joined into one face.
+
+The body surface becomes the wall boundary `cylinder`: the forces are the
+ordinary wall forces and the wall is sharp. The cut is serial on the global
+mesh before renumbering, so the cut mesh is bitwise the same for any number
+of threads. Plane Poiseuille flow between two cut walls off the cell faces
+(the channel of [gallery 270](#penalised-cylinder)) has mass flow errors of
+1.24, 0.29 and 0.066 % on 16, 32 and 64 cells across, second order (the
+penalised walls: 20.5, 8.5, 2.3 %). On the cylinder mesh 80 cells are cut, 274 removed and 26 merged; the
+area vectors of every cut cell close to 3·10⁻¹⁶ of its largest face, and the
+wall area is 0.024 % below 2πr × depth.
+
+| Mesh, method | Cells | C_D | C_L | Δp (Pa) | Iterations |
+|---|---|---|---|---|---|
+| box h = D/10, cut | 8 944 | 5.542 | 0.0076 | 0.1140 | 543 |
+| box h = D/20, cut (the case file) | 35 780 | 5.583 | 0.0102 | 0.1160 | 1 627 |
+| box h = D/40, cut | 143 088 | 5.592 | 0.0105 | 0.1171 | 4 000 (residual 1.1·10⁻⁷) |
+| box h = D/20, penalised ([gallery 270](#penalised-cylinder)) | 36 080 | 5.581 | 0.0147 | 0.1187 | |
+| body-fitted, [gallery 15](flow.md#cylinder) | 24 576 | 5.581 | 0.0104 | 0.1175 | |
+| reference range | | 5.57 – 5.59 | 0.0104 – 0.0110 | 0.1172 – 0.1176 | |
+
+At h = D/20 the drag is in the range, the lift 2 % below it (the penalised
+wall: 35 % above), Δp 1 % below. At h = D/40 all three values meet the
+range (C_D 0.04 % above its upper end, Δp 0.06 % below its lower end); the
+penalised wall at D/40 still has the lift 27 % high. SIMPLEC stalls at a
+residual of 10⁻⁷ on the D/40 mesh, as the penalised run does; the values do
+not move in the last thousand iterations. The settings of the cut at h = D/20:
+
+| `[immersed.cut]` | C_D | C_L | Δp (Pa) |
+|---|---|---|---|
+| `min_volume_fraction` 0.1 | 5.580 | 0.0100 | 0.1158 |
+| 0.2 | 5.583 | 0.0102 | 0.1160 |
+| 0.3 (default) | 5.583 | 0.0102 | 0.1160 |
+| 0.4 | 5.586 | 0.0104 | 0.1160 |
+| `wall_point = false` (one non-planar wall face per cell) | 5.557 | 0.0099 | 0.1160 |
+| `edge_root = "linear"`, `wall_point = false` (marching cubes) | 5.556 | 0.0099 | 0.1160 |
+
+<img src="../figures/gallery/immersed_cut_benchmark.png" alt="Two log-log charts of the relative error of the fluid volume (left) and the wall area (right) of a sphere cut out of a box against the cell width, for hexahedral, tetrahedral and polyhedral meshes and three ways to place the cut surface. All lines run parallel to the slope-2 guide; the green lines of the exact crossings with the surface point lie lowest, the red lines of the linear crossings highest." width="1210" height="462">
+
+**Benchmark with the computer-graphics methods (maintainer rule).** The
+crossing points can be put where the linear interpolant of the node values is
+zero (marching cubes and marching tetrahedra), or at the root of the body's
+own function on the edge, on the true surface; the wall face can stay one
+polygon through the crossing points, or be fanned around a point projected
+onto the surface (the vertex of dual contouring, which lets the wall bulge
+with the body inside the cell). A sphere (r = 0.55) cut out of box meshes
+of 8³ to 32³ cells (`cargo run --release -p foehncraft-mesh --example
+cut_bench`): all three converge at second order in volume and area on
+hexahedra, tetrahedra and polyhedra; exact crossings with the wall point are
+2 to 4 times closer than the linear crossings (volume error at 32³: hex
+7.7·10⁻³ → 3.1·10⁻³, tet 6.5·10⁻³ → 1.6·10⁻³, poly 4.7·10⁻³ → 2.0·10⁻³), so
+they are the default. On the cylinder the wall point moves the drag from
+0.3 % below the range into it. Cutting 33 000 polyhedra takes 1.7 s.
+
+**What is not here yet.** The bodies are the primitive shapes and `field`
+expressions; STL surfaces need the signed distance and the exact
+segment–triangle crossings of the stage 0 geometry kernel. Wall functions
+with the exact first-cell distance (2c), conjugate heat transfer through cut
+cells (2d, refused with IMM202), named surface patches with other conditions
+(2e) and the near-body refinement (2f) follow. One rank only.
+
+Reproduce (about a minute and a half for the case, ten minutes for D/40):
+
+```sh
+cargo build --release -p foehncraft-cli
+target/release/foehn flow examples/cases/flow/immersed_cut_cylinder_re20.toml --out output/cut
+cargo run --release -p foehncraft-mesh --example cut_bench > output/cut_bench.md
+pip install matplotlib h5py numpy
+python3 -m tools.plot.immersed_cut docs/figures/gallery output/cut output/cut_bench.md
+```
+
+Recipe: [313](../recipes/immersed.md#cut-body). Case file: `examples/cases/flow/immersed_cut_cylinder_re20.toml`.
 <a id="dirty-stl-winding"></a>
 ## 310. A dirty STL body: surface check, winding number and signed distance
 
@@ -269,3 +365,107 @@ echo '{"input": "output/surface/body.stl"}' | target/release/foehn call mesh.sur
 ```
 
 Recipe: [310](../recipes/immersed.md#surface-check).
+
+<a id="sdf-benchmark-cut"></a>
+## 315. Signed distance by three methods, and a sphere cut exactly out of a mesh
+
+<img src="../figures/gallery/immersed_sdf_benchmark.png" alt="Nine panels in three rows (a rotated box, a sphere with a hole, a soup of a sphere with duplicated triangles and an overlapping inner ball) and three columns (closest point with the winding-number sign, fast sweeping with scan conversion, the signed heat method), each a slice of the signed distance from blue inside to red outside with contour lines, the exact surface dashed white and the zero level magenta. The closest point keeps the box sharp and the zero level on the dashed line in every row. Fast sweeping leaks a streak of wrong sign through the hole and turns the inner ball into a cavity. The heat method rounds the box corners, closes the hole best and shrinks the soup." width="900" height="855">
+
+**Signed distance, benchmarked against the graphics methods** (decision
+Q11: the default is decided by this benchmark). Three methods on the nodes
+of a grid over [−1.5, 1.5]³ (`examples/sdf_benchmark.rs`,
+`tools/bench/sdf.py`): **ours**, the exact closest point on the surface
+hierarchy with the winding-number sign (#310); **sweep**, fast sweeping for
+the eikonal equation (Zhao 2005) from the exact distance within 1.5 cells,
+sign by scan conversion (crossing parity along grid lines, as in Roosing et
+al. 2019); **heat**, the signed heat method (Feng & Crane 2024: diffused
+normals, normalised, integrated by a Poisson solve), on the grid with
+conjugate gradients. Errors in cells against the exact distance (the clean
+sphere for the dirty variants), 96³ nodes (Hausdorff of the marching-tets
+zero level on 48³):
+
+| Surface | Method | Near max | Near RMS | Wrong signs | Zero level Hausdorff (48³) | s per M nodes |
+|---|---|---|---|---|---|---|
+| sphere | ours | 0.009 | 0.006 | 0 | 0.026 | 1.8 |
+| sphere | sweep | 0.041 | 0.016 | 0 | 0.026 | 0.27 |
+| sphere | heat | 0.126 | 0.041 | 0 | 0.031 | 2.3 |
+| torus | ours | 0.036 | 0.020 | 0 | 0.071 | 0.84 |
+| torus | sweep | 0.098 | 0.034 | 0 | 0.071 | 0.46 |
+| torus | heat | 0.474 | 0.218 | 0 | 0.342 | 2.4 |
+| box (sharp) | ours | 0.000 | 0.000 | 0 | 0.485 | 0.11 |
+| box (sharp) | sweep | 0.460 | 0.053 | 0 | 0.485 | 0.94 |
+| box (sharp) | heat | 2.323 | 0.505 | 0 | 1.287 | 2.9 |
+| holed | ours | 7.59 | 0.272 | 0 | 0.867 | 1.7 |
+| holed | sweep | 7.94 | 0.402 | 0.22 % | 12.8 | 0.54 |
+| holed | heat | 1.07 | 0.071 | 0 | 0.516 | 3.0 |
+| flipped | ours | 6.38 | 0.674 | 0.39 % | 4.56 | 1.8 |
+| flipped | sweep | 0.041 | 0.016 | 0 | 0.026 | 0.36 |
+| flipped | heat | 4.75 | 0.712 | 0.35 % | 20.6 | 3.0 |
+| soup | ours | 3.09 | 0.219 | 0.01 % | 1.06 | 2.0 |
+| soup | sweep | 6.36 | 0.515 | 1.85 % | 15.0 | 0.54 |
+| soup | heat | 5.82 | 2.96 | 2.30 % | 2.25 | 3.0 |
+
+"Near": nodes within 0.1 m of the surface; "wrong signs": nodes more than
+a cell from the surface; 4 threads. The sphere and torus errors of ours are
+the facets of the STL (the reference is the smooth shape); the box is exact.
+
+**Decision (Q11): the default is ours**, the exact closest point with the
+winding-number sign: exact on clean surfaces including sharp edges, the
+only method without sign errors on holes and soups, and with a narrow band
+(3 cells) about four times cheaper than the full grid. Its weak case is a
+patch of flipped triangles (the winding number subtracts it; IMM004 reports
+it); scan conversion ignores orientation and wins there but leaks through
+every hole. The heat method fills holes most smoothly (its zero level is the
+best cap of the missing surface) but rounds sharp edges by about two cells,
+loses accuracy away from the surface and is the slowest: it stays a
+candidate for hole filling of the layered boundary (stage 3), not the
+default. The zero levels of all three are limited by marching tetrahedra on
+sharp edges (0.49 cells on the box, see gallery 291).
+
+<img src="../figures/gallery/immersed_cut_sphere.png" alt="Three panels. Left: a slice of a 24 cubed hexahedral mesh with the volume fraction inside a sphere per cell, 1 (red) inside, 0 (blue) outside and partial values in a ring of cut cells along the dashed exact circle, with short black lines for the wall area vector of each cut cell pointing outward. Middle: the aperture of the low-x face of the cut cells on a dark background, from 0 to 1 around the circle. Right: log-log chart of the volume fraction error of the cut cells against cells per side: a linear level-set cut from 0.14 down to 0.018 (maximum) at first order, the exact cut between 4e-5 and 3e-4, rising slowly as the cells shrink because it is the facet error of the STL." width="900" height="285">
+
+**Exact cut of a mesh by the surface** (`Surface::cut_moments`): for every
+cell the volume and centroid of its part inside the body, for every face
+the area and centroid of its part inside (the aperture, computed once per
+face so both cells agree), and the surface clipped to each cell (wall
+pieces with area vector, centroid and triangle). It works by Gauss–Green in
+one dimension after the other: inside parts of edges from exact crossings,
+inside parts of face triangles from those and the surface segments, cell
+volumes from the face parts and the clipped surface. Nothing is meshed, so
+there is no topology to break; ties where surface edges lie exactly in a
+mesh face are decided by simulation of simplicity.
+
+On a sphere of 327 680 triangles cut out of hexahedral meshes of 8³ to
+64³ cells (`examples/cut_sphere.rs`):
+
+| Cells per side | Cut cells | Fraction error, exact cut (max / mean) | Fraction error, linear level set (max / mean) | Time |
+|---|---|---|---|---|
+| 8 | 118 | 3.8e-5 / 1.7e-5 | 0.138 / 0.042 | 0.12 s |
+| 16 | 432 | 8.0e-5 / 3.6e-5 | 0.068 / 0.023 | 0.16 s |
+| 32 | 1744 | 1.6e-4 / 7.2e-5 | 0.034 / 0.012 | 0.36 s |
+| 64 | 6968 | 3.3e-4 / 1.4e-4 | 0.018 / 0.0058 | 1.8 s |
+
+The reference is the analytic sphere (sub-grid integration of each cut cell,
+Richardson-extrapolated). The linear level-set cut (exact distance at the
+nodes, interpolated linearly in six tetrahedra per cube, what a cut from
+node values gives) is first order in the volume fraction. The exact cut is
+exact for the STL: its error against the sphere is the facet error of the
+triangles (2.8e-6 m), seen relative to the shrinking cells; its total
+volume and wall area differ from the sphere by −3.4e-5 and −1.9e-5 on every
+mesh, which is the icosphere's own volume and area to 1e-15.
+`tests/surface_cut.rs` checks on hexahedra, tetrahedra, polyhedra and
+mixed meshes that the inside volumes add up to the STL volume and the wall
+pieces to its area to 1e-12, that every cell closes (inside face areas plus
+wall area vector sum to zero, 1e-12), a torus whose ring of edges lies
+exactly in a mesh plane, and bitwise equal results on 1, 2 and 4 threads.
+
+Reproduce:
+
+```sh
+cargo run --release -p foehncraft-mesh --example sdf_benchmark -- output/sdf 48 96
+python3 -m tools.bench.sdf output/sdf --figure docs/figures/gallery/immersed_sdf_benchmark.png
+cargo run --release -p foehncraft-mesh --example cut_sphere -- output/cut
+python3 -m tools.plot.cut_sphere output/cut docs/figures/gallery/immersed_cut_sphere.png
+```
+
+Recipe: [315](../recipes/immersed.md#cut-moments).

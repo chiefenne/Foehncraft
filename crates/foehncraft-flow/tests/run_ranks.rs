@@ -595,3 +595,71 @@ fn the_check_of_ranks_refuses_a_sliding_mesh() {
     let err = foehncraft_flow::ranks::supported(&case).unwrap_err();
     assert!(err.to_string().contains("sliding"), "{err}");
 }
+
+/// The breathing channel of motion_channel_ranks.toml (stage MS0 part 2),
+/// smaller and shorter: a deforming mesh with walls, a dye stripe and a
+/// restart file at step 10.
+fn motion_case() -> String {
+    let p = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../examples/cases/flow/motion_channel_ranks.toml");
+    std::fs::read_to_string(p)
+        .unwrap()
+        .replace("\r\n", "\n")
+        .replace("cells = [48, 16, 1]", "cells = [24, 8, 1]")
+        .replace("end_time = 1.5", "end_time = 0.2")
+        .replace("restart_at = [75]", "restart_at = [10]")
+        .replace("fields_every = 75", "fields_every = 10")
+}
+
+const MOTION_FILES: &[&str] = &[
+    "history.csv",
+    "balance.csv",
+    "probes.csv",
+    "boundaries.csv",
+    "forces.csv",
+    "wall_ymin.csv",
+    #[cfg(feature = "hdf5")]
+    "fields.vtkhdf",
+    #[cfg(feature = "hdf5")]
+    "fields_000010.vtkhdf",
+    #[cfg(feature = "hdf5")]
+    "restart.h5",
+    #[cfg(feature = "hdf5")]
+    "restart_000010.h5",
+];
+
+/// MS0 part 2: every rank moves the whole mesh and keeps the partition of
+/// the start; the files, the restart files with the nodes and the old
+/// volumes among them, are those of one rank byte for byte.
+#[test]
+fn deforming_mesh_on_ranks_writes_the_files_of_one_rank() {
+    same_as_one_rank("motion", &motion_case(), MOTION_FILES, &[2, 3]);
+}
+
+/// MS0 part 2 (D42, D93): a restart file of the deforming mesh written on
+/// three ranks continues on two and on one, and both end bitwise as the
+/// run without the interruption.
+#[cfg(feature = "hdf5")]
+#[test]
+fn deforming_mesh_restart_on_ranks_continues_bit_identically() {
+    let base = std::env::temp_dir().join(format!("foehn-w7-motion-restart-{}", std::process::id()));
+    let text = motion_case();
+    let full = base.join("full");
+    run_text(&text, &full, 3);
+    let from = full.join("restart_000010.h5");
+    let cont = text.replace(
+        "restart_at = [10]",
+        &format!("restart = '{}'", from.display()),
+    );
+    for n in [2, 1] {
+        let dir = base.join(format!("cont{n}"));
+        run_text(&cont, &dir, n);
+        for f in ["restart.h5", "fields.vtkhdf"] {
+            assert!(
+                std::fs::read(full.join(f)).unwrap() == std::fs::read(dir.join(f)).unwrap(),
+                "{f} of the run continued on {n} ranks differs"
+            );
+        }
+    }
+    let _ = std::fs::remove_dir_all(&base);
+}

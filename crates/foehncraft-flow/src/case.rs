@@ -281,8 +281,8 @@ pub struct RunSection {
     /// `ranks.restart.h5` and must have the bytes of the one-rank restart.
     /// With the rotating zones of `[[mrf]]` and in closed domains (a
     /// reference cell of the pressure). Not yet with gravity, a sliding
-    /// mesh (it runs on ranks with `run.rank_count`), regions or a
-    /// schedule.
+    /// mesh or a deforming mesh (both run on ranks with `run.rank_count`),
+    /// regions or a schedule.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub ranks: Vec<usize>,
     /// Solve the run on this number of ranks (MPI step W7; `foehn run
@@ -295,8 +295,8 @@ pub struct RunSection {
     /// otherwise threads of this process. 1: no ranks. Steady and transient
     /// runs with scalars, energy, k-ω SST and k-ε, the rotating zones of
     /// `[[mrf]]` and the sliding mesh, in conformal stepping and by
-    /// imprinting (refused: species, statistics, what `[run] ranks`
-    /// refuses).
+    /// imprinting, and the deforming mesh of `[mesh_motion]` (refused:
+    /// species, statistics, what `[run] ranks` refuses).
     #[serde(skip_serializing_if = "is_one")]
     pub rank_count: usize,
 }
@@ -2466,9 +2466,18 @@ pub(crate) fn mesh_for(case: &FlowCase, level: Option<u32>) -> Result<(Mesh, Geo
         g.refine = l;
     }
     let (mut mesh, source, _) = build_mesh(&sec)?;
+    let mut desc = format!("{source}: {} cells", mesh.n_cells);
+    // cut cells (L13 stage 2, D227): before the renumbering and the pairing
+    if case.immersed.is_cut() {
+        crate::immersed::check_case(case)?;
+        let (m, notes) = crate::immersed::cut_mesh(case, &mesh)?;
+        mesh = m;
+        for n in notes {
+            let _ = write!(desc, "; {}", n.message);
+        }
+    }
     renumber(&mut mesh, sec.renumber, sec.seed).map_err(anyhow::Error::msg)?;
     // periodic pairs (D29): the last step, after the renumbering
-    let mut desc = format!("{source}: {} cells", mesh.n_cells);
     if !pairs.is_empty() {
         let specs: Vec<_> = pairs.iter().map(|p| p.spec.clone()).collect();
         mesh = foehncraft_mesh::periodic::pair(&mesh, &specs)

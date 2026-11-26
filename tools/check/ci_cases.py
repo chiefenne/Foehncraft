@@ -47,6 +47,7 @@ FLOW = {
         "ranks_run_sliding_couette",
         "ranks_run_imprint_couette",
         "immersed_cylinder_re20", "immersed_topology_bend", "immersed_mms",
+        "immersed_cut_cylinder_re20",
         "ranks_water_if97_channel",
     ],
     "linux-3": [
@@ -73,9 +74,9 @@ FLOW = {
         "vd_heated_duct", "vd_closed_box_heating", "vd_closed_box_side_heated", "vd_mms_steady",
         "mixed_convection_channel",
         "spray_duct", "spray_datums", "spray_two_way", "spray_cooling", "spray_dispersion",
-        "spray_cooling_steady", "spray_evaporation", "vof_static_drop",
+        "spray_cooling_steady", "spray_evaporation", "spray_heptane_evaporation", "vof_static_drop",
         "porous_darcy_block", "porous_honeycomb_channel", "porous_schumann", "porous_storage_charge",
-        "motion_free_stream", "motion_piston_adiabatic",
+        "motion_free_stream", "motion_piston_adiabatic", "motion_channel_ranks",
         "steam_heated_duct", "steam_superheater_channel",
     ],
     "long": [
@@ -85,7 +86,7 @@ FLOW = {
         "cht_pulsating_channel_skin", "cht_heated_wall_frozen", "cht_pulsating_channel_warmup",
         "natural_convection_cavity_ra1e5", "natural_convection_plate",
         "flame_methane_air_gri30",
-        "immersed_stokes_sphere", "spray_saturation_steady", "vof_dam_break",
+        "immersed_stokes_sphere", "spray_saturation_steady", "spray_breakup", "vof_dam_break",
         "motion_piston_cooled_walls",
     ],
     "quick": [

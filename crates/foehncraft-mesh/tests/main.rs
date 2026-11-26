@@ -16,6 +16,7 @@
 mod broken_inputs;
 mod canonical_local_mesh;
 mod cgns;
+mod cut;
 mod decompose;
 mod exact_reductions;
 mod fluent_msh;
@@ -29,6 +30,7 @@ mod openfoam;
 mod ray;
 mod su2;
 mod surface;
+mod surface_cut;
 mod vtk;
 mod vtkhdf;
 mod vtkhdf_read;

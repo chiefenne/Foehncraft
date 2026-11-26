@@ -17,8 +17,8 @@ use foehncraft_mesh::Geometry;
 use foehncraft_mesh::generate::{BoxSpec, Kind};
 use foehncraft_mesh::locate::Locator;
 use foehncraft_particles::{
-    BoundaryMode, BoundaryRule, CouplingMode, Delta, Env, EvaporationModel, Gas, GasState,
-    Injector, Parcels, Spray, SpraySection, Vapour,
+    BoundaryMode, BoundaryRule, CouplingMode, Delta, Env, Equilibrium, EvaporationModel, Gas,
+    GasState, Injector, Parcels, Spray, SpraySection, Vapour,
 };
 
 const P0: f64 = 101_325.0;
@@ -77,6 +77,23 @@ fn spray(
     end: Option<f64>,
     two_way: bool,
 ) -> Spray {
+    spray_with(env, edge, mass_flow, pps, d, temp, end, two_way, false)
+}
+
+/// As [`spray`]; `pr`: the Peng-Robinson surface of water (critical point
+/// of Wagner and Pruss 2002) in nitrogen at P0 (D311).
+#[allow(clippy::too_many_arguments)]
+fn spray_with(
+    env: &Env,
+    edge: f64,
+    mass_flow: f64,
+    pps: f64,
+    d: f64,
+    temp: f64,
+    end: Option<f64>,
+    two_way: bool,
+    pr: bool,
+) -> Spray {
     let mut cfg = SpraySection {
         injectors: vec![Injector {
             name: "n".into(),
@@ -91,6 +108,7 @@ fn spray(
             start: 0.0,
             end,
             temperature: Some(temp),
+            ..Default::default()
         }],
         ..SpraySection::default()
     };
@@ -99,6 +117,14 @@ fn spray(
     }
     cfg.liquid.vapour = Some("H2O".into());
     cfg.evaporation.model = EvaporationModel::RanzMarshall;
+    if pr {
+        cfg.evaporation.equilibrium = Equilibrium::PengRobinson;
+        let p = &mut cfg.evaporation.peng_robinson;
+        p.critical_temperature = Some(647.096);
+        p.critical_pressure = Some(22.064e6);
+        p.acentric_factor = Some(0.3443);
+        p.molar_mass = Some(water::MOLAR_MASS);
+    }
     let rules = vec![
         BoundaryRule {
             mode: BoundaryMode::Rebound,
@@ -109,6 +135,7 @@ fn spray(
     ];
     let mut sp = Spray::new(&cfg, env, rules, [0.0; 3]).unwrap();
     sp.set_vapour(Some(Vapour::water()));
+    sp.set_surface_pressure(P0).unwrap();
     sp
 }
 
@@ -322,6 +349,19 @@ fn a_single_droplet_follows_the_d2_law_at_the_wet_bulb() {
 
 #[test]
 fn a_closed_box_ends_at_the_adiabatic_saturation() {
+    closed_box(false);
+}
+
+/// VA.6 of the Spray A plan: the same box with the Peng-Robinson surface
+/// (water in nitrogen, D311, D312): water and energy kept to round-off and
+/// the end state at the adiabatic saturation of the spray's own surface
+/// fraction and latent heat.
+#[test]
+fn a_closed_box_with_the_peng_robinson_surface_closes_its_books() {
+    closed_box(true);
+}
+
+fn closed_box(pr: bool) {
     let edge = 0.01;
     let (m, geo) = one_cell(edge);
     let loc = Locator::new(&m, &geo);
@@ -337,7 +377,7 @@ fn a_closed_box_ends_at_the_adiabatic_saturation() {
     let m_air = rho0 * vol;
     // 1e-7 kg of water at 300 K in 100 parcels of 20 µm droplets, released
     // in the first step: more than the air can take
-    let mut sp = spray(
+    let mut sp = spray_with(
         &env,
         edge,
         1e-7 / dt,
@@ -346,15 +386,39 @@ fn a_closed_box_ends_at_the_adiabatic_saturation() {
         300.0,
         Some(dt),
         true,
+        pr,
     );
-    // the vapour enthalpy of the parcels' reference, c_l T + L(T)
+    // the same spray, to read its surface laws while `sp` runs
+    let probe = spray_with(
+        &env,
+        edge,
+        1e-7 / dt,
+        100.0 / dt,
+        20e-6,
+        300.0,
+        Some(dt),
+        true,
+        pr,
+    );
+    // the vapour enthalpy of the parcels' reference, c_l T + L(T): written
+    // out for Raoult's law, the spray's own with Peng-Robinson
     let liq = sp.config().liquid.clone();
     let c_l = liq.specific_heat;
     let wv = Vapour::water();
     let hv = |t: f64| {
+        if pr {
+            return probe.vapour_enthalpy(t);
+        }
         c_l * t + liq.latent_heat + wv.h(t)
             - wv.h(liq.latent_heat_temperature)
             - c_l * (t - liq.latent_heat_temperature)
+    };
+    let ys = |t: f64| {
+        if pr {
+            surface_fraction(probe.saturation_pressure(t), P0, water::MOLAR_MASS, M_AIR)
+        } else {
+            ys(t)
+        }
     };
     let cpv = |t: f64| wv.cp(t);
     // the gas: air and vapour, its enthalpy in the parcels' reference
@@ -474,7 +538,7 @@ fn a_closed_box_ends_at_the_adiabatic_saturation() {
         ys(t_sat)
     );
     eprintln!(
-        "closed box: gas {t:.4} K, liquid {tp:.4} K (droplets within {spread:.2} K), Y \
+        "closed box (Peng-Robinson {pr}): gas {t:.4} K, liquid {tp:.4} K (droplets within {spread:.2} K), Y \
          {y:.6e}; adiabatic saturation {t_sat:.4} K, Y_s {:.6e}",
         ys(t_sat)
     );

@@ -1,0 +1,35 @@
+# A once-through evaporator tube at 7 MPa: subcooled water enters at the
+# bottom, is heated by 400 kW/m2 and leaves as wet steam (SF7b). Subcooled
+# boiling starts at the Saha-Zuber point, the void follows the Levy
+# profile and the drift flux of Rouhani-Axelsson; wall temperature by
+# Chen, two-phase friction by Friedel, CHF margin by Bowring.
+
+[circuit]
+name = "evaporator_tube"
+segments = 80
+boiling = "chen"
+friction = "friedel"
+void = "drift-flux"
+subcooled = "saha-zuber"
+chf = "bowring"
+
+[[nodes]]
+name = "inlet"
+kind = "junction"
+mass_flow = 0.35
+temperature = 530.0
+
+[[nodes]]
+name = "outlet"
+kind = "pressure"
+pressure = 7.0e6
+temperature = 530.0
+
+[[tubes]]
+name = "evaporator"
+from = "inlet"
+to = "outlet"
+length = 12.0
+rise = 12.0
+diameter = 0.02
+heat_flux = 4.0e5

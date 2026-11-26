@@ -288,6 +288,8 @@ fn restart_geometry_round_trip() {
             z: vec![0.0; 3],
         },
         volumes: vec![vec![1.0; n], vec![0.5; n]],
+        swept: vec![vec![0.25; r.face_id.len()]],
+        volume_ratio: Some([0.5, 2.0]),
     };
     r.geometry = Some(g.clone());
     let f = d.join("geometry.h5");
@@ -296,5 +298,7 @@ fn restart_geometry_round_trip() {
     assert_eq!(back.point_id, g.point_id);
     assert_eq!(back.points.y, g.points.y);
     assert_eq!(back.volumes, g.volumes);
+    assert_eq!(back.swept, g.swept);
+    assert_eq!(back.volume_ratio, g.volume_ratio);
     let _ = std::fs::remove_dir_all(&d);
 }

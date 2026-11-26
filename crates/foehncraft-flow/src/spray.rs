@@ -483,7 +483,10 @@ pub const CSV_UNITS: &str = "step -; time s; parcels -; injected_kg kg; in_flow_
      also gas_vapour_kg_s kg/s (vapour the gas received per second), vapour_lag_kg_s kg/s (mass \
      source of the continuity less gas_vapour_kg_s), coupling_vapour_max - (largest Δt/τ of the \
      vapour of a cell, β Δt / (ρ V)), limiter_cells - (cells where the saturation limiter of \
-     D253 held vapour back in the last pass), limiter_kg_s kg/s (the vapour held back)";
+     D253 held vapour back in the last pass), limiter_kg_s kg/s (the vapour held back); breakup \
+     (SP6): child_parcels - (child parcels the blobs shed since the start), rt_breakups - \
+     (Rayleigh-Taylor breakups of drops since the start); KH-ACT: act_children - (of the child \
+     parcels, those the nozzle turbulence or the cavitation stripped)";
 
 /// The header of `spray.csv`.
 pub fn csv_head(sp: &foehncraft_particles::Spray) -> String {
@@ -510,6 +513,12 @@ pub fn csv_head(sp: &foehncraft_particles::Spray) -> String {
             h.push_str(
                 ",gas_vapour_kg_s,vapour_lag_kg_s,coupling_vapour_max,limiter_cells,limiter_kg_s",
             );
+        }
+    }
+    if sp.config().breakup.on() {
+        h.push_str(",child_parcels,rt_breakups");
+        if sp.config().breakup.act() {
+            h.push_str(",act_children");
         }
     }
     h
@@ -561,6 +570,46 @@ pub fn summary(sp: &foehncraft_particles::Spray, zone: &[u32]) -> SpraySummary {
     }
 }
 
+/// The carrier gas of the evaporation film (D321): the species of the
+/// start composition without the vapour `v`, by mass. An expression in the
+/// start composition leaves the closure species alone as the carrier.
+fn carrier(case: &FlowCase, v: &str) -> Result<Vec<(foehncraft_kernels::species::Species, f64)>> {
+    let Some(sec) = case.species.as_ref() else {
+        return Ok(Vec::new());
+    };
+    let res = crate::species::Resolved::of(sec)?;
+    let ys = res.mass_fractions(&sec.initial, "species.initial")?;
+    let index = |n: &str| res.names.iter().position(|m| m == n);
+    let closure = res.names[res.names.len() - 1].clone();
+    let numbers: Option<Vec<f64>> = ys.iter().map(|y| y.number()).collect();
+    let mut out = Vec::new();
+    match numbers {
+        Some(ys) => {
+            let rest: f64 = ys.iter().sum();
+            for (n, y) in res.transported().iter().zip(&ys) {
+                if n != v
+                    && *y > 0.0
+                    && let Some(i) = index(n)
+                {
+                    out.push((res.data[i], *y));
+                }
+            }
+            if let Some(i) = index(&closure)
+                && closure != v
+                && rest < 1.0
+            {
+                out.push((res.data[i], 1.0 - rest));
+            }
+        }
+        None => {
+            if let Some(i) = index(&closure) {
+                out.push((res.data[i], 1.0));
+            }
+        }
+    }
+    Ok(out)
+}
+
 /// The sprays of a run, or `None` without `[spray]`.
 pub fn create(
     case: &FlowCase,
@@ -594,6 +643,18 @@ pub fn create(
         sp.set_vapour(Some(foehncraft_particles::Vapour {
             species: rec.kernel(),
         }));
+        sp.set_carrier(carrier(case, v)?);
+    }
+    // the Peng-Robinson surface at the run's p₀ (D311): the operating
+    // pressure, as `GasVapour` gives it (a closed volume is refused above)
+    if let Some(link) = VapourLink::of(case) {
+        sp.set_surface_pressure(link.p_op).map_err(|e| {
+            err(
+                diag::SPRAY_CONFIG,
+                "spray.evaporation.peng_robinson",
+                format!("{e:#}"),
+            )
+        })?;
     }
     Ok(Some(sp))
 }
@@ -662,6 +723,12 @@ pub fn csv_row(
                 c.limiter_cells,
                 c.limiter_mass
             ));
+        }
+    }
+    if sp.config().breakup.on() {
+        extra.push_str(&format!(",{},{}", t.child_parcels, t.rt_breakups));
+        if sp.config().breakup.act() {
+            extra.push_str(&format!(",{}", t.act_children));
         }
     }
     format!(
