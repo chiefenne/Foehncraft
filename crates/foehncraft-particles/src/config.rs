@@ -497,6 +497,156 @@ pub struct Injector {
     /// Its dissipation rate ε₀ (m²/s³, with `nozzle_k`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub nozzle_epsilon: Option<f64>,
+    /// Droplets measured in a plane across the spray (D322), for example by
+    /// phase Doppler anemometry: a file (relative to the file that names it)
+    /// of the columns `r`, the distance from the axis, and `d`, the
+    /// diameter, in metres, `u_axial` and `u_radial` in m/s and, optionally,
+    /// `u_tangential` in m/s and `weight`, the share of the liquid mass flow that the row stands
+    /// for (any unit; equal shares without it). A parcel takes the size and
+    /// velocity of one row, drawn by mass with the counter-based generator
+    /// keyed by the parcel identity (D121), and starts at its radius on a
+    /// random azimuth in the plane through `position` normal to `direction`,
+    /// so the measured correlation of size, velocity and place is kept.
+    /// Replaces `speed`, `half_angle`, `diameter` and `size`; `mass_flow`
+    /// is the liquid through the whole plane.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub samples: Option<PathBuf>,
+    /// The sector of the azimuth that the sampled parcels start in
+    /// (degrees, default 360), for a model of part of a round spray between
+    /// symmetry planes: the azimuth runs from the first global axis least
+    /// aligned with `direction` (x for a spray along z) towards `direction`
+    /// × that axis (y). `mass_flow` stays that of the whole plane: give
+    /// `flow_share` = sector/360 with it.
+    #[serde(default = "full_turn", skip_serializing_if = "is_full_turn")]
+    pub sector: f64,
+    /// The rows of `samples`, read with the case.
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub sample_data: Option<std::sync::Arc<Samples>>,
+}
+
+/// One measured droplet of a sample table (D322).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Sample {
+    /// Distance from the axis (m).
+    pub r: f64,
+    /// Diameter (m).
+    pub d: f64,
+    /// Axial, radial and tangential velocity (m/s).
+    pub u: [f64; 3],
+}
+
+/// The rows of a sample table and their cumulative mass shares (D322).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Samples {
+    /// The droplets, in the order of the file.
+    pub rows: Vec<Sample>,
+    /// The cumulative mass share up to and including each row (the last
+    /// one is 1).
+    pub cumulative: Vec<f64>,
+}
+
+impl Samples {
+    /// Reads a sample table from a file.
+    pub fn read(path: &Path) -> Result<Self> {
+        let text = std::fs::read_to_string(path)
+            .map_err(|e| anyhow::anyhow!("samples {}: {e}", path.display()))?;
+        Self::parse(&text).map_err(|e| anyhow::anyhow!("samples {}: {e}", path.display()))
+    }
+
+    /// Parses a sample table: a header that names the columns, then one
+    /// row per droplet; commas or white space separate the values and `#`
+    /// starts a comment.
+    pub fn parse(text: &str) -> Result<Self> {
+        let mut lines = text
+            .lines()
+            .map(|l| l.split('#').next().unwrap_or("").trim())
+            .enumerate()
+            .filter(|(_, l)| !l.is_empty());
+        let split = |l: &str| -> Vec<String> {
+            l.split(|c: char| c == ',' || c.is_whitespace())
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+                .collect()
+        };
+        let Some((_, head)) = lines.next() else {
+            bail!("the file is empty");
+        };
+        let names = split(head);
+        let col = |n: &str| names.iter().position(|h| h == n);
+        let need = |n: &str| {
+            col(n).ok_or_else(|| anyhow::anyhow!("the header names no column `{n}` (r, d, u_axial, u_radial, and optionally u_tangential, weight)"))
+        };
+        let (ir, id, ia, irad) = (need("r")?, need("d")?, need("u_axial")?, need("u_radial")?);
+        let (it, iw) = (col("u_tangential"), col("weight"));
+        for h in &names {
+            if !["r", "d", "u_axial", "u_radial", "u_tangential", "weight"].contains(&h.as_str()) {
+                bail!("unknown column `{h}`");
+            }
+        }
+        let mut rows = Vec::new();
+        let mut cumulative = Vec::new();
+        let mut sum = 0.0;
+        for (k, l) in lines {
+            let v: Vec<f64> = split(l)
+                .iter()
+                .map(|x| x.parse::<f64>())
+                .collect::<std::result::Result<_, _>>()
+                .map_err(|e| anyhow::anyhow!("line {}: {e}", k + 1))?;
+            if v.len() != names.len() {
+                bail!(
+                    "line {}: {} values for {} columns",
+                    k + 1,
+                    v.len(),
+                    names.len()
+                );
+            }
+            if !v.iter().all(|x| x.is_finite()) {
+                bail!("line {}: the values must be finite", k + 1);
+            }
+            let s = Sample {
+                r: v[ir],
+                d: v[id],
+                u: [v[ia], v[irad], it.map_or(0.0, |i| v[i])],
+            };
+            if s.r < 0.0 {
+                bail!("line {}: r must be zero or positive (m)", k + 1);
+            }
+            if s.d <= 0.0 {
+                bail!("line {}: d must be positive (m)", k + 1);
+            }
+            let w = iw.map_or(1.0, |i| v[i]);
+            if w < 0.0 {
+                bail!("line {}: weight must be zero or positive", k + 1);
+            }
+            sum += w;
+            rows.push(s);
+            cumulative.push(sum);
+        }
+        if rows.is_empty() || sum <= 0.0 {
+            bail!("the table holds no droplet with a positive weight");
+        }
+        for c in &mut cumulative {
+            *c /= sum;
+        }
+        *cumulative.last_mut().unwrap() = 1.0;
+        Ok(Self { rows, cumulative })
+    }
+
+    /// The row of the uniform number `u` in [0, 1): the first row whose
+    /// cumulative share exceeds `u` (rows of zero weight are never drawn).
+    pub fn pick(&self, u: f64) -> &Sample {
+        let i = self.cumulative.partition_point(|&c| c <= u);
+        &self.rows[i.min(self.rows.len() - 1)]
+    }
+}
+
+fn full_turn() -> f64 {
+    360.0
+}
+
+fn is_full_turn(x: &f64) -> bool {
+    *x == 360.0
 }
 
 fn one() -> f64 {
@@ -548,6 +698,9 @@ impl Default for Injector {
             inlet_loss: 0.5,
             nozzle_k: None,
             nozzle_epsilon: None,
+            samples: None,
+            sector: 360.0,
+            sample_data: None,
         }
     }
 }
@@ -1066,6 +1219,11 @@ impl SpraySection {
         if let Some(f) = &mut self.include {
             *f = dir.join(&*f);
         }
+        for i in &mut self.injectors {
+            if let Some(f) = &mut i.samples {
+                *f = dir.join(&*f);
+            }
+        }
     }
 
     /// Reads the include file into the section (D246) and checks the values.
@@ -1090,7 +1248,21 @@ impl SpraySection {
             if let Some(l) = f.liquid {
                 self.liquid = l;
             }
-            self.injectors.extend(f.injectors);
+            // the sample tables of the spray file lie next to it (D322)
+            let dir = path.parent().unwrap_or(Path::new(""));
+            self.injectors.extend(f.injectors.into_iter().map(|mut i| {
+                if let Some(s) = &mut i.samples {
+                    *s = dir.join(&*s);
+                }
+                i
+            }));
+        }
+        for i in &mut self.injectors {
+            if let Some(p) = &i.samples {
+                let data = Samples::read(p)
+                    .map_err(|e| anyhow::anyhow!("[[spray.injector]] {}: {e:#}", i.name))?;
+                i.sample_data = Some(std::sync::Arc::new(data));
+            }
         }
         self.liquid.apply_library()?;
         self.validate()
@@ -1421,7 +1593,38 @@ impl SpraySection {
             if !(0.0..180.0).contains(&i.half_angle) {
                 bail!("[[spray.injector]] {n}: half_angle must be in [0, 180) degrees");
             }
+            if !(i.sector > 0.0 && i.sector <= 360.0) {
+                bail!("[[spray.injector]] {n}: sector must be in (0, 360] degrees");
+            }
+            if i.samples.is_some() {
+                for (k, given) in [
+                    ("speed", i.speed != 0.0),
+                    ("half_angle", i.half_angle != 0.0),
+                    ("diameter", i.diameter != 0.0),
+                    ("size", i.size.is_some()),
+                    ("hole_diameter", i.hole_diameter.is_some()),
+                ] {
+                    if given {
+                        bail!(
+                            "[[spray.injector]] {n}: samples gives the sizes and velocities of \
+                             the droplets (D322); leave out {k}"
+                        );
+                    }
+                }
+                if (i.flow_share - i.sector / 360.0).abs() > 1e-9 {
+                    bail!(
+                        "[[spray.injector]] {n}: a sector of {} degrees carries the share {} of \
+                         the liquid: set flow_share = {} (D322)",
+                        i.sector,
+                        i.sector / 360.0,
+                        i.sector / 360.0
+                    );
+                }
+            } else if i.sector != 360.0 {
+                bail!("[[spray.injector]] {n}: sector needs samples (D322)");
+            }
             match &i.size {
+                _ if i.samples.is_some() => {}
                 Some(sz) => {
                     if i.diameter != 0.0 {
                         bail!("[[spray.injector]] {n}: give either diameter or size, not both");

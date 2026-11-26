@@ -27,6 +27,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 <p align="center">
+  <b><a href="#install">Install</a></b> ·
   <b><a href="docs/features.md">What works today</a></b> ·
   <b><a href="docs/gallery.md">Example gallery</a></b> ·
   <b><a href="docs/applications.md">Engineering gallery</a></b> ·
@@ -155,10 +156,62 @@ turbulent reacting flows, the steam furnace, boiling, fluid–structure
 coupling, radiation coupled to the energy equation and scale-resolving
 turbulence.
 
+## Install
+
+### Download a release
+
+*Coming soon.* Ready-to-run programs for macOS, Linux and Windows will be
+attached to the [releases](https://github.com/chiefenne/Foehncraft/releases)
+with checksums. Until then, build Foehncraft from source as below.
+
+### Build from source
+
+You need:
+
+- Rust 1.89 or newer, installed with [rustup](https://rustup.rs)
+  (`rustup update stable` brings an older one up to date).
+- A C compiler and CMake: HDF5 (VTKHDF output, restart files) and METIS
+  (partitioning) are built from source on the first build.
+  - macOS: the Xcode Command Line Tools (`xcode-select --install`) and
+    `brew install cmake`.
+  - Linux (Ubuntu): `sudo apt install build-essential cmake`.
+  - Windows: the Visual Studio C++ Build Tools (`rustup-init.exe` offers
+    them) and `winget install Kitware.CMake`.
+- Git.
+
+Then, in a terminal (on Windows in PowerShell):
+
+```
+git clone https://github.com/chiefenne/Foehncraft.git
+cd Foehncraft
+cargo build --release -p foehncraft-cli
+target/release/foehn info
+```
+
+The first build takes several minutes (HDF5 and METIS), later builds are
+fast. The program is `target/release/foehn` (`foehn.exe` on Windows). To
+call `foehn` from any folder, install it into `~/.cargo/bin`, which rustup
+puts on your `PATH`:
+
+```
+cargo install --locked --path crates/foehncraft-cli
+foehn info
+```
+
+To update, pull and build again:
+
+```
+git pull --ff-only
+cargo build --release -p foehncraft-cli    # and cargo install ... again if you installed it
+```
+
+CI builds and tests on Linux, macOS and Windows. The GPU backend
+(`--features cuda`), a build without the C libraries, the Python package
+and the checks after an install are in [docs/install.md](docs/install.md).
+
 ## Build and run
 
-Needs Rust 1.89 or newer, a C compiler and CMake (HDF5 and METIS are built
-from source on the first build; recipe 1 has the details).
+With the prerequisites of [Install](#install) in place:
 
 ```
 cargo test --workspace

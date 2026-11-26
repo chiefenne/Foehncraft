@@ -1867,6 +1867,27 @@ gaps = [
 ]
 
 [[feature]]
+id = "sprays.measured-injection"
+area = "Sprays"
+title = "Injection from measured droplets of a plane, and the Brno spray against its phase Doppler data (D322)"
+switch = "[[spray.injector]] samples, sector"
+decisions = ["D322"]
+model = true
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-particles/tests/samples.rs::a_sample_table_reads_and_draws_by_mass", what = "the cumulative mass shares of a sample table, the row drawn for a uniform number, rows of no weight never drawn, equal shares without weights; the errors of a malformed table" },
+  { kind = "consistency", test = "crates/foehncraft-particles/tests/samples.rs::sampled_parcels_start_on_their_radius_in_the_sector", what = "4000 parcels of a two-row table start on their rows' radius inside a 90 degree sector with the rows' axial, radial and tangential velocity, three quarters by number in the row of three quarters of the mass, and carry the sector's share of the mass flow to 1e-9" },
+  { kind = "contract", property = "diagnostics", test = "crates/foehncraft-particles/tests/samples.rs::the_sample_table_replaces_the_droplet_keys", what = "speed, half_angle, diameter beside samples, a sector without samples, a flow_share other than sector/360 and a sector outside (0, 360] are refused with the key named" },
+  { kind = "reference-data", case = "spray_brno", what = "the Brno air-blast water spray (Racz et al., Zenodo 17935932) from its measured plane z = 20 mm: the axial velocity of each size class (5 to 50 um) at 40 and 60 mm mostly within about 10 % of the measurements (examples/studies/brno_spray/compare.py); the core d32 below the measured one (see gaps)", doc = "docs/gallery/sprays.md#spray-brno" },
+  { kind = "contract", property = "schema", case = "spray_brno_injectors", what = "the included injector file with the sample table of the measured plane", doc = "docs/cases/flow.md#lagrangian-sprays" },
+]
+gaps = [
+  "the Brno comparison is run by hand (compare.py); the case itself checks only its books and convergence",
+  "the core d32 of the Brno spray at 40 and 60 mm is 1 to 3 um below the measured 14 to 15 um: the start is within 0.7 um, evaporation explains 0.3 to 0.4 um (cold-droplet run), the rest is a radial sorting of the sizes stronger than measured; the droplet and air temperatures are not in the data set and were assumed",
+  "the axisymmetric plane is made from one traverse; the tangential velocity and the size dependence of the probe area are left out",
+  "SST k-omega for the round jet (the round-jet spreading anomaly of two-equation models is not corrected)",
+]
+
+[[feature]]
 id = "sprays.breakup"
 area = "Sprays"
 title = "Spray breakup: KH-ACT and KH-RT with blob injection, TAB distortion and dynamic drag (SP6, D300 to D309)"

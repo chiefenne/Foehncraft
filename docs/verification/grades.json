@@ -1452,6 +1452,22 @@
    "range": {}
   },
   {
+   "id": "sprays.measured-injection",
+   "title": "Injection from measured droplets of a plane, and the Brno spray against its phase Doppler data (D322)",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "the Brno comparison is run by hand (compare.py); the case itself checks only its books and convergence",
+    "the core d32 of the Brno spray at 40 and 60 mm is 1 to 3 um below the measured 14 to 15 um: the start is within 0.7 um, evaporation explains 0.3 to 0.4 um (cold-droplet run), the rest is a radial sorting of the sizes stronger than measured; the droplet and air temperatures are not in the data set and were assumed",
+    "the axisymmetric plane is made from one traverse; the tangential velocity and the size dependence of the probe area are left out",
+    "SST k-omega for the round jet (the round-jet spreading anomaly of two-equation models is not corrected)",
+    "`spray_brno_injectors` has no run in the verification manual or in CI"
+   ],
+   "range": {}
+  },
+  {
    "id": "sprays.breakup",
    "title": "Spray breakup: KH-ACT and KH-RT with blob injection, TAB distortion and dynamic drag (SP6, D300 to D309)",
    "grade": "partial",

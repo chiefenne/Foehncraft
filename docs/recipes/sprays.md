@@ -13,6 +13,8 @@ Part of the [Recipes](../recipes.md): droplets that move with and through the ga
 | 306 | [Let the droplets evaporate](#spray-evaporation) |
 | 318 | [Break a fuel jet up into drops (KH-ACT, KH-RT)](#spray-breakup) |
 | 314 | [Evaporate fuel droplets at high ambient pressure](#spray-a-surface) |
+| 321 | [Evaporate a fuel: take a liquid of the library](#spray-liquid-library) |
+| 325 | [Start a spray from measured droplets](#spray-brno) |
 | 320 | [Check the thermodynamics of a high-pressure spray before the CFD](#spray-a-mixing-line) |
 | 319 | [Report the liquid length and the vapour penetration (ECN)](#spray-ecn) |
 
@@ -604,6 +606,48 @@ overstates the evaporation of fuel droplets by 50 to 100 % against
 measurements. Case: `examples/cases/flow/spray_heptane_evaporation.toml`;
 [gallery entry](../gallery/sprays.md#spray-liquid-library) for what is
 checked and what is not.
+
+<a id="spray-brno"></a>
+## 325. Start a spray from measured droplets
+
+**When the droplets of a plane are known**, from a phase Doppler or
+shadowgraph measurement or from a finer simulation of the atomizer, start
+the parcels from them instead of a cone and a size law (D322). Write a
+table of one droplet per row, SI units:
+
+```text
+# r (m), d (m), axial and radial velocity (m/s); optional u_tangential, weight
+r, d, u_axial, u_radial
+2.98e-03, 1.164e-05, 7.25, -6.67
+5.20e-03, 1.866e-05, 60.0, 13.4
+```
+
+and name it in the injector (in the included file, the path is relative to
+that file):
+
+```toml
+[[injector]]
+name = "plane_z20"
+position = [0.0, 0.0, 0.0201]   # on the axis, in the measured plane
+direction = [0.0, 0.0, 1.0]     # the axis of the spray
+mass_flow = 3.5556e-4           # kg/s through the whole plane
+samples = "spray_brno_samples.csv"
+sector = 90.0                   # a quarter model between symmetry planes
+flow_share = 0.25               # = sector / 360
+```
+
+Each parcel takes the diameter and velocity of one row, drawn by mass
+(`weight`, or equal shares), at the row's radius on a random azimuth, so
+the measured link between size, speed and place is kept. Leave out
+`speed`, `half_angle`, `diameter`, `size` and `hole_diameter`. With a
+`sector` the azimuth runs from the global axis least aligned with
+`direction` (x for a spray along z) towards the next one (y): put the
+symmetry planes at x = 0 and y = 0. A plane of measured points is
+turned into such a table by drawing droplets by their liquid volume and
+the ring area of their point; `examples/studies/brno_spray/pda_to_csv.py`
+does it for the Brno data. Case: `examples/cases/flow/spray_brno.toml`;
+[gallery entry](../gallery/sprays.md#spray-brno) for what is checked and
+what is not.
 
 
 ---
