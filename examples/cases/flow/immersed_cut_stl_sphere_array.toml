@@ -1,0 +1,74 @@
+# Stokes flow through a simple cubic array of spheres, the sphere an STL
+# surface cut out of the mesh (L13 stage 2, D227): the drag check of the
+# plan with a triangle surface instead of a primitive shape.
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/immersed_cut_stl_sphere_array.toml
+#
+# The case of immersed_stokes_sphere.toml (a unit cube, periodic in all
+# three directions, a sphere of radius a = 0.2 m at its middle, μ = 1 Pa s,
+# Stokes flow driven by the mean pressure gradient G = 1 Pa/m along x), but
+# the sphere is immersed_sphere.stl, an icosphere of 5120 triangles (its
+# volume-equivalent radius is 0.07 % below 0.2 m), cut out of the mesh: every
+# cell the surface crosses keeps its fluid part, closed by wall faces at the
+# exact crossings with the triangles, and the surface becomes the wall
+# boundary `sphere`. At the steady state the wall carries the whole driving
+# force, F = G L³ (minus the force on the fluid volume the cut takes away);
+# the result is the mean (superficial) velocity U of the periodic mass flow.
+# The drag coefficient K = F/(6π μ a U) of the array is 2.152 from the series
+# of Hasimoto (1959) extended by Sangani & Acrivos (1982).
+#
+# The mesh has 32³ hexahedra (6.4 cells per radius). Gallery 322 has the
+# result, the same on tetrahedra and polyhedra, and the penalised sphere.
+#
+# immersed_sphere.stl is written by
+#   python3 -m tools.plot.immersed_stl stl examples/cases/flow/immersed_sphere.stl
+
+case_format = "0.7"
+
+[mesh.generate]
+type = "hex"
+upper = [1.0, 1.0, 1.0]
+cells = [32, 32, 32]
+
+[fluid]
+density = 1.0
+viscosity = 1.0
+pressure_values = "gauge"
+
+[flow]
+convection = false
+
+[immersed]
+method = "cut"
+
+[[immersed.body]]
+name = "sphere"
+shape = "stl"
+file = "immersed_sphere.stl"
+
+[boundary.xmin]
+type = "periodic"
+partner = "xmax"
+pressure_gradient = 1.0
+[boundary.xmax]
+type = "periodic"
+[boundary.ymin]
+type = "periodic"
+partner = "ymax"
+[boundary.ymax]
+type = "periodic"
+[boundary.zmin]
+type = "periodic"
+partner = "zmax"
+[boundary.zmax]
+type = "periodic"
+[boundary.sphere]
+type = "wall"
+
+[solver]
+algorithm = "coupled"
+tolerance = 1e-9
+max_iterations = 3000
+
+[output]
+wall_csv = false

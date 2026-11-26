@@ -61,6 +61,7 @@ fn main() {
                     &CutOptions {
                         min_fraction: 0.3,
                         wall_point,
+                        face_point: false,
                     },
                 )
                 .expect("cut");

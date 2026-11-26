@@ -1,10 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 736" width="800" height="736" font-family="Helvetica, Arial, sans-serif" font-size="12">
 <rect width="800" height="736" fill="white"/>
-<text x="400.0" y="22" text-anchor="middle" font-size="15" font-weight="bold">Verification grades of 148 features (D199)</text>
+<text x="400.0" y="22" text-anchor="middle" font-size="15" font-weight="bold">Verification grades of 149 features (D199)</text>
 <rect x="230" y="36" width="14" height="14" fill="#2e9d5b"/>
 <text x="250" y="48">verified (50)</text>
 <rect x="380" y="36" width="14" height="14" fill="#e9a23b"/>
-<text x="400" y="48">partial (95)</text>
+<text x="400" y="48">partial (96)</text>
 <rect x="530" y="36" width="14" height="14" fill="#d64541"/>
 <text x="550" y="48">unverified (3)</text>
 <text x="220" y="84.0" text-anchor="end">Meshes</text>
@@ -99,8 +99,8 @@
 <rect x="230.0" y="574" width="176.7" height="20" fill="#e9a23b"/>
 <text x="318.3" y="588.0" text-anchor="middle" fill="white" font-weight="bold">5</text>
 <text x="220" y="616.0" text-anchor="end">Immersed bodies</text>
-<rect x="230.0" y="602" width="106.0" height="20" fill="#e9a23b"/>
-<text x="283.0" y="616.0" text-anchor="middle" fill="white" font-weight="bold">3</text>
+<rect x="230.0" y="602" width="141.3" height="20" fill="#e9a23b"/>
+<text x="300.7" y="616.0" text-anchor="middle" fill="white" font-weight="bold">4</text>
 <text x="220" y="644.0" text-anchor="end">Structures</text>
 <rect x="230.0" y="630" width="282.7" height="20" fill="#e9a23b"/>
 <text x="371.3" y="644.0" text-anchor="middle" fill="white" font-weight="bold">8</text>

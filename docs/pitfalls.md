@@ -27,6 +27,7 @@ instead.
 - [High-pressure phase equilibrium](#high-pressure-equilibrium)
 - [Property solves and new kernels on ranks](#property-solves)
 - [Spray diagnostics and small test sprays](#spray-diagnostics)
+- [Cut cells: check what the solver takes, cell by cell](#cut-cells)
 - [Sprays on a sector of an injector](#spray-sectors)
 - [Long-lived branches and the one test program per crate](#stale-branches)
 
@@ -634,6 +635,26 @@ Found with the ECN diagnostics of SA3 (#319):
   its own line (`"\n[spray.evaporation]\n"`), after turning `"\r\n"` into
   `"\n"`: a Windows checkout has CRLF line ends, and a match on `"\n[..]\n"`
   finds nothing there, so the table is silently not inserted.
+<a id="cut-cells"></a>
+## Cut cells: check what the solver takes, cell by cell
+
+Found while adding STL bodies to the cut (L13 stage 2, #322):
+- **Totals hide cell errors.** The fluid volume and wall area of the cut
+  converged at second order while single cells were wrong by half their
+  volume: the joined face of two merged cells, fanned about the mean of
+  its nodes, folds when its parts are not coplanar and moves volume into
+  the neighbour. Compare the volume of every group of input cells a cut
+  cell covers with the exact moments (`Surface::cut_moments`), not only
+  the sums.
+- **A better surface point can make a face the solver refuses.** The
+  dual-contouring point on a sharp edge, and the face points, made concave
+  cut cells whose centroid lies behind a face (d · S ≤ 0): 13 to 861 such
+  faces on a turned box where the closest point had none. Flatness tests
+  and merging the folding neighbour as well made it worse (larger,
+  snake-like groups). What works: pick the merge neighbour by the validity
+  of the union, and cut the cells around a refused face again with fewer
+  points, finest first. Count the refused faces in every benchmark row.
+
 <a id="spray-sectors"></a>
 ## Sprays on a sector of an injector
 
