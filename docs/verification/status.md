@@ -154,7 +154,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Sprays | [Steady spray mode: streams through the steady gas with relaxed sources (SP2s, D260)](#sprays-steady-mode) | partial |
 | Sprays | [Evaporating sprays: vapour, mass and enthalpy to the gas (SP4, SP5, D250 to D253)](#sprays-evaporation) | partial |
 | Sprays | [Liquid property library and the 1/3-rule film state of the evaporation (D320, D321)](#sprays-liquid-library) | partial |
-| Sprays | [Spray breakup: KH-ACT and KH-RT with blob injection, TAB distortion and dynamic drag (SP6, D300 to D308)](#sprays-breakup) | partial |
+| Sprays | [Spray breakup: KH-ACT and KH-RT with blob injection, TAB distortion and dynamic drag (SP6, D300 to D309)](#sprays-breakup) | partial |
 | Sprays | [High-pressure droplet surface: Peng-Robinson phase equilibrium and latent heat (Spray A, SA1, D311, D312, D314)](#sprays-high-pressure-surface) | partial |
 | Flow models | [Porous regions with a direction-dependent Darcy-Forchheimer resistance (D270, PM1)](#porous-darcy-forchheimer) | partial |
 | Flow models | [Gas and matrix temperatures in porous regions, monolithic (D271, D272, PM2)](#porous-two-temperatures) | partial |
@@ -186,6 +186,8 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 - consistency: [`golden_values_of_mesher_and_partitioner`](../../crates/foehncraft-mesh/tests/golden.rs): golden values of the mesher and the partitioner
 - exact: [`poiseuille_poly`](../../examples/cases/flow/poiseuille_poly.toml): second order of the flow solver on generated polyhedra (manual: observed order in space (finest pair) 1.8 – 2.2) ([results](stage4.md#couette-and-poiseuille-flow))
 - exact: [`mms_mixed_box`](../../examples/cases/scalar/mms_mixed_box.toml): second order of convection-diffusion on mixed cells (manual: observed order (finest pair) 1.8 – 2.2) ([results](stage2.md#order-of-accuracy))
+- exact: [`sectors_of_hexahedra`](../../crates/foehncraft-mesh/src/wedge.rs): D309: a 3D box revolved into a 22.5 deg sector of hexahedra has the exact volume of its polygonal sector to 1e-12, closed cells and the side planes zmin and zmax with their normals
+- contract (diagnostics): [`a_perturbed_or_tetrahedral_sector_is_refused`](../../crates/foehncraft-mesh/src/wedge.rs): D309: a sector of tetrahedra or with perturb is refused
 
 <a id="mesh-gmsh"></a>
 
@@ -2169,9 +2171,9 @@ Gaps:
 
 <a id="sprays-breakup"></a>
 
-### Spray breakup: KH-ACT and KH-RT with blob injection, TAB distortion and dynamic drag (SP6, D300 to D308)
+### Spray breakup: KH-ACT and KH-RT with blob injection, TAB distortion and dynamic drag (SP6, D300 to D309)
 
-**partial** (gaps written) · id `sprays.breakup` · switch `[spray.breakup] model = "kh-act" or "kh-rt", drag = "dynamic"; injector hole_diameter, area_contraction, rate, flow_share, hole_length, discharge_coefficient` · decisions D247, D300, D301, D302, D303, D304, D305, D306, D307, D308
+**partial** (gaps written) · id `sprays.breakup` · switch `[spray.breakup] model = "kh-act" or "kh-rt", drag = "dynamic"; injector hole_diameter, area_contraction, rate, flow_share, hole_length, discharge_coefficient` · decisions D247, D300, D301, D302, D303, D304, D305, D306, D307, D308, D309
 
 - exact: [`kh_fits_match_the_dispersion_relation`](../../crates/foehncraft-kernels/src/breakup.rs): Reitz's KH fits against our own inviscid dispersion relation of a liquid column (Bessel functions): wavelength within 5 % for every We_g, growth rate within 3 % below We_g 0.1 and above 50 (up to 46 % high near We_g 2, a property of the fit)
 - exact: [`tab_step_is_exact`](../../crates/foehncraft-kernels/src/breakup.rs): the TAB oscillator step against fourth-order Runge-Kutta, under-, over- and critically damped
@@ -2188,15 +2190,20 @@ Gaps:
 - contract (diagnostics): [`kh_act_needs_the_nozzle_turbulence`](../../crates/foehncraft-particles/tests/breakup.rs): the nozzle keys of KH-ACT are checked (missing turbulence, half a pair, C_d above C_a, no friction left)
 - reference-data: [`spray_breakup`](../../examples/cases/flow/spray_breakup.toml): a diesel-like spray at 60 MPa from a 0.15 mm hole into nitrogen at 15 kg/m3 (KH-ACT, k-eps): 97 % of the liquid at 50.6 mm after 1 ms against 51.1 mm of the correlation of Hiroyasu and Arai (1990), up to 24 % ahead at 0.2 to 0.4 ms; 47.0 mm with kh-rt (passes in CI (set long), not yet in the manual) ([results](../gallery/sprays.md#spray-breakup))
 - contract (schema): [`spray_breakup_injectors`](../../examples/cases/flow/spray_breakup_injectors.toml): the included injector file of spray_breakup (rate table, hole, nozzle turbulence) ([results](../cases/flow.md#lagrangian-sprays)) **missing**
+- reference-data: [`spray_g_g1`](../../examples/cases/flow/spray_g_g1.toml): ECN Spray G, G1 (D309): iso-octane at 20 MPa into nitrogen at 573 K and 3.5 kg/m3 on a 22.5 deg sector of the 8-hole injector, KH-ACT untuned, against the liquid (0.2e-3 mm3/mm2) and vapour (0.1 %) penetration the ECN measured: within 1 mm up to 0.4 ms (20.5 against 20.4 mm at 0.3 ms), then ahead, 12 % at 0.6 ms and 33 % at 1.2 ms (51.7 against 38.9 mm); vapour 32.8 against 29.4 mm at 0.6 ms and 50.8 against 42.0 mm at 1.2 ms; the gas velocity on the injector axis at 15 mm within about 1.5 m/s of the PIV (-7.9 against -7.6 m/s at 0.3 ms); Sauter mean diameter at 15 mm 17 um with KH-ACT and 7.4 um with KH-RT against the measured 9 um, both models with the same penetration (passes in CI (set long), not yet in the manual) ([results](../gallery/sprays.md#spray-g))
+- contract (schema): [`spray_g_g1_injectors`](../../examples/cases/flow/spray_g_g1_injectors.toml): the included injector file of spray_g_g1 (library iso-octane, measured rate of injection, plume direction, flow_share 0.5) ([results](../cases/flow.md#lagrangian-sprays)) **missing**
 
 Gaps:
 
-- validated against a penetration correlation only; ECN Spray G (G1, measured liquid and vapour penetration) is the next part (D309)
+- ECN Spray G (G1): the liquid runs ahead of the measured penetration after 0.4 ms (33 % at 1.2 ms) and the vapour after 0.5 ms (21 % at 1.2 ms), with KH-ACT and KH-RT alike, so not from the breakup; cause open (candidates: the cells of the far field, the constant gas density, the k-eps constants) (D309)
+- KH-ACT drops on ECN Spray G (G1) are about twice the measured size at 15 mm (17 against 9 um; KH-RT 7.4 um): the children of the cavitation (R_CAV from C_a 0.65) and of the integral turbulence scale are large for the short Spray G hole; constants untuned
+- a gas that diverges in some cells leaves its parcels spending max_substeps each, and their exchange records can fill the memory instead of stopping the run with a message (seen on the sector before the slip core, D309)
 - drop sizes not validated: the gallery spray has a Sauter mean diameter near 2 um, small next to measured diesel sprays; no collision or coalescence yet
 - the nozzle turbulence of the Huh-Gosman estimate takes the inlet loss K_c = 0.5 and the area ratio s = 0 as our own choices (the papers give no values)
 - the k-omega SST model does not build up the turbulence of a thin spray jet in a still chamber (the gallery case uses k-eps)
 - breakup is refused in the steady spray mode; constant surface tension and viscosity; children leave with the blob's velocity (no radial velocity); no GPU entry of the breakup kernel; one process
 - `spray_breakup_injectors` has no run in the verification manual or in CI
+- `spray_g_g1_injectors` has no run in the verification manual or in CI
 
 <a id="sprays-high-pressure-surface"></a>
 

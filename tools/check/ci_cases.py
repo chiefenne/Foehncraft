@@ -87,8 +87,7 @@ FLOW = {
         "natural_convection_cavity_ra1e5", "natural_convection_plate",
         "flame_methane_air_gri30",
         "immersed_stokes_sphere", "immersed_cut_stl_sphere_array", "spray_saturation_steady",
-        "spray_breakup",
-        "motion_piston_cooled_walls",
+        "spray_breakup", "motion_piston_cooled_walls", "spray_g_g1",
     ],
     "quick": [
         "cavity_re100_budget", "couette_hex", "couette_mixed", "couette_poly", "couette_tet",
@@ -105,6 +104,10 @@ LINUX = ("linux-1", "linux-2", "linux-3", "long")
 # Cases whose expected exit code is not 0: the steady cylinder that sheds is
 # stopped by its diagnosis on purpose (D198, exit code 3 = stopped).
 EXPECTED_EXIT = {F + "cylinder_steady_diagnosis.toml": 3}
+# Extra arguments of a case in CI: the ECN Spray G run (1.2 ms, about 30
+# minutes on 4 threads) runs its first 0.1 ms there; the gallery has the
+# whole run.
+ARGS = {F + "spray_g_g1.toml": ["--set", "time.end_time=1e-4"]}
 
 
 def _files(pattern: str) -> list[str]:
@@ -161,7 +164,7 @@ def run(name: str, foehn: str) -> int:
     for cmd, f in cases(name):
         print(f"::group::{cmd} {f}", flush=True)
         start = time.monotonic()
-        code = subprocess.run([foehn, *cmd.split(), f], cwd=ROOT).returncode
+        code = subprocess.run([foehn, *cmd.split(), f, *ARGS.get(f, [])], cwd=ROOT).returncode
         if code != EXPECTED_EXIT.get(f, 0):
             print(f"::error::{cmd} {f} failed (exit code {code})", flush=True)
             status = 1
@@ -178,7 +181,7 @@ def main(argv: list[str]) -> int:
         return check()
     if argv[0] == "--list":
         for cmd, f in cases(argv[1]):
-            print(cmd, f)
+            print(cmd, f, *ARGS.get(f, []))
         return 0
     foehn = argv[1] if len(argv) > 1 else "target/release/foehn"
     for name in (foehn, foehn + ".exe"):  # Windows: foehn.exe
