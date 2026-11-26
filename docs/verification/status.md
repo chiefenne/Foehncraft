@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**146 features: 50 verified, 93 partial, 3 unverified.**
+**147 features: 50 verified, 94 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -152,6 +152,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Sprays | [Turbulent dispersion of the sprays, eddy lifetime (SP2c, D243)](#sprays-dispersion-eddy-lifetime) | partial |
 | Sprays | [Steady spray mode: streams through the steady gas with relaxed sources (SP2s, D260)](#sprays-steady-mode) | partial |
 | Sprays | [Evaporating sprays: vapour, mass and enthalpy to the gas (SP4, SP5, D250 to D253)](#sprays-evaporation) | partial |
+| Sprays | [Liquid property library and the 1/3-rule film state of the evaporation (D320, D321)](#sprays-liquid-library) | partial |
 | Sprays | [Spray breakup: KH-ACT and KH-RT with blob injection, TAB distortion and dynamic drag (SP6, D300 to D308)](#sprays-breakup) | partial |
 | Sprays | [High-pressure droplet surface: Peng-Robinson phase equilibrium and latent heat (Spray A, SA1, D311, D312, D314)](#sprays-high-pressure-surface) | partial |
 | Flow models | [Porous regions with a direction-dependent Darcy-Forchheimer resistance (D270, PM1)](#porous-darcy-forchheimer) | partial |
@@ -2103,11 +2104,38 @@ Gaps:
 - the heat balance closes to round-off only with [species] properties = "fluid"; with the mixture properties the energy account keeps a few parts in a thousand (the T-form of the energy equation against the material enthalpy of the balance)
 - the transient domain mass check fails for heated cases with variable density even without evaporation; the examples use constant density
 - the momentum equation does not book the momentum the vapour brings separately (it comes with the parcel impulse) nor the dilution term u S_c
-- water only (saturation law and latent heat); no boiling, no multicomponent liquids
+- single-component liquids of the library only (water, n-heptane, n-dodecane, iso-octane, sprays.liquid-library); no boiling, no multicomponent liquids
 - no GPU (PTX) entry for the evaporation kernel; one process
 - V28.5 to V28.8 of section 5 not all run as named checks (the closed box and the crowded cell cover the bounds)
 - `spray_evaporation_injectors` has no run in the verification manual or in CI
 - `spray_saturation_injectors` has no run in the verification manual or in CI
+
+<a id="sprays-liquid-library"></a>
+
+### Liquid property library and the 1/3-rule film state of the evaporation (D320, D321)
+
+**partial** (gaps written) · id `sprays.liquid-library` · switch `[spray.liquid] library, property_temperature; [spray.evaporation] film = "one-third" (default) or "far-field"` · decisions D320, D321
+
+- reference-data: [`the_fits_meet_the_nist_tables`](../../crates/foehncraft-kernels/src/liquids.rs): water, n-heptane and n-dodecane: vapour pressure, density, specific heat, latent heat, surface tension and viscosity at points of the NIST WebBook saturation tables (SRD 69), within the fit errors of the generator (psat 0.3 %, density 0.1 %, c_l and L 1.5 %, sigma 1 % (n-dodecane 3.6 %), mu 1.4 % up to 0.9 Tc)
+- reference-data: [`the_normal_boiling_points_and_critical_ends`](../../crates/foehncraft-kernels/src/liquids.rs): normal boiling points within 0.5 K of NIST, psat(tb) = 101.325 kPa to 1e-4, the water fit within 0.2 % of the IAPWS-95 auxiliary equation; L and sigma zero at Tc
+- reference-data: [`iso_octane_meets_the_primary_data`](../../crates/foehncraft-kernels/src/liquids.rs): iso-octane: vapour pressure within 0.3 % of Willingham et al. (1945), latent heat within 0.6 % of the calorimetry of Majer and Svoboda, sigma of Mulero et al. (2012), tb within 0.5 K of 372.4 K
+- consistency: [`the_functions_are_smooth_and_monotone_where_they_must_be`](../../crates/foehncraft-kernels/src/liquids.rs): psat rising, density, L and sigma falling with T over the whole range of each liquid
+- reference-data: [`the_spray_vapours_meet_the_nist_data`](../../crates/foehncraft-flow/src/species.rs): NC7H16 and IC8H18 ideal-gas c_p within 0.6 % of the NIST data; heptane vapour viscosity at 371 K within 5 % of NIST
+- exact: [`a_given_surface_fraction_replaces_raoults_law`](../../crates/foehncraft-kernels/src/evaporation.rs): a surface fraction given to the kernel (the hook of the high-pressure surface) replaces Raoult's law bit for bit; capped at 0.999
+- reference-data: [`n_heptane_droplets_against_chauveau_2019`](../../crates/foehncraft-flow/tests/droplet_validation.rs): n-heptane droplets of 0.37 mm in N2 at 0.1 MPa, 473 to 748 K, through Spray::evaporation: K with the 1/3 rule +39 to +59 % above the microgravity fit of Chauveau et al. (2019), with far-field properties +93 to +99 %; the 1/3 rule closer at every temperature (a recorded gap, see gaps) ([results](../gallery/sprays.md#spray-liquid-library))
+- contract (diagnostics): [`a_library_liquid_takes_its_properties_and_checks_its_keys`](../../crates/foehncraft-particles/src/config.rs): a library liquid takes its properties, a second application keeps them, water keeps IAPWS-95; an unknown liquid (names listed), a value given beside the library and a property temperature without a library are refused
+- contract (diagnostics): [`spray_heptane_evaporation`](../../examples/cases/flow/spray_heptane_evaporation.toml): 1 g/s of n-heptane at 300 K in N2 at 600 K: evaporates within about 5 cm, the gas takes 1 g/s of vapour and leaves at 312 C with 1.7 % vapour (passes in CI (set linux-3), not yet in the manual) ([results](../gallery/sprays.md#spray-liquid-library))
+- contract (schema): [`spray_heptane_evaporation_injectors`](../../examples/cases/flow/spray_heptane_evaporation_injectors.toml): the included injector file with the library liquid n-heptane ([results](../cases/flow.md#lagrangian-sprays)) **missing**
+
+Gaps:
+
+- single n-heptane droplets: K with the 1/3 rule +39 to +59 % above the microgravity data and +16 to +38 % above the fibre-free extrapolation of Chauveau et al.; the same gap is reported for this model class (Both, Mira, Lehmkuhl 2022) and the microgravity data lie below quasi-steady theory (vapour accumulation); not closed
+- no spray-scale evaporation case against measurements yet (CORIA n-heptane data on request; the Brno PDA data are a dispersion case)
+- density and specific heat of the liquid constant in a run (at property_temperature): no thermal expansion of a heating droplet
+- iso-octane above about 400 K rests on extrapolated correlations (density, c_l, mu, sigma); not in the NIST fluid system
+- the film carrier is the start composition of the case, not the local gas of the cell
+- no NC12H26 vapour species yet (Spray A stages)
+- `spray_heptane_evaporation_injectors` has no run in the verification manual or in CI
 
 <a id="sprays-breakup"></a>
 
@@ -2540,11 +2568,16 @@ Gaps:
 - exact: [`motion_piston_adiabatic`](../../examples/cases/flow/motion_piston_adiabatic.toml), [`piston_compression_keeps_p_v_gamma`](../../crates/foehncraft-flow/tests/mesh_motion.rs): check MS0.2: a closed gas volume compressed by four with adiabatic walls follows p₀V^γ: error 6.6e-4 at the top dead centre with Δt = 0.01 s, observed order 1.8 to 2.2 in Δt, back to p₀(0) within 1e-4 after the period; mass to 1e-13, T uniform, heat book to 1e-8 ([results](../gallery/moving-solids.md#deforming-mesh))
 - consistency: [`motion_piston_cooled_walls`](../../examples/cases/flow/motion_piston_cooled_walls.toml): walls at 300 K: p₀ below the isentrope (572 kPa at the top dead centre), the expansion ends at 90.4 kPa, mass and heat book closed every step (passes in CI (set long), not yet in the manual) ([results](../gallery/moving-solids.md#deforming-mesh))
 - contract (diagnostics): [`deforming_mesh_settings_are_checked`](../../crates/foehncraft-flow/tests/mesh_motion.rs): MOV001 for a steady case, MOV002 for a folding displacement, MOV003 for an inlet moved out of its plane, MOV004 for a closed volume of constant density that is compressed
+- contract (bitwise): [`deforming_mesh_restart_continues_bit_identically`](../../crates/foehncraft-flow/tests/mesh_motion.rs): MS0 part 2: the restart file holds the nodes, Vⁿ, Vⁿ⁻¹ and the swept volumes of the last step; a BDF2 run continued from it writes restart.h5 and fields.vtkhdf byte for byte as the unbroken run; a changed displacement is refused (MOV001) ([results](../gallery/moving-solids.md#deforming-mesh-ranks))
+- contract (bitwise): [`motion_channel_ranks`](../../examples/cases/flow/motion_channel_ranks.toml), [`deforming_mesh_on_ranks_writes_the_files_of_one_rank`](../../crates/foehncraft-flow/tests/run_ranks.rs): MS0 part 2: a breathing channel with walls and a dye on 2 and 3 ranks writes history, balance, probes, boundaries, forces, wall, field and restart files byte for byte as one rank ([results](../gallery/moving-solids.md#deforming-mesh-ranks))
+- contract (bitwise): [`deforming_mesh_restart_on_ranks_continues_bit_identically`](../../crates/foehncraft-flow/tests/run_ranks.rs): a restart file of the deforming mesh written on 3 ranks continues on 2 and on 1 rank to the bytes of the unbroken run ([results](../gallery/moving-solids.md#deforming-mesh-ranks))
 
 Gaps:
 
 - the motion is prescribed by an expression only: no mesh-motion solver, no cell layering, no bodies moved by the fluid (MS1, MS2)
 - the geometry and the solver setup (an AMG setup) are rebuilt every step
-- refused with MOV001: restarts (the restart datasets of D91 are not written yet), several ranks, turning zones, regions, sprays, immersed bodies, periodic boundaries, an error-controlled time step, level sweeps
-- turbulence models and passive scalars run on the moving mesh but are not checked against a reference; the GPU backend is not tested on a moving mesh
+- refused with MOV001: turning zones, regions, sprays, immersed bodies, periodic boundaries, an error-controlled time step, level sweeps, the check mode [run] ranks
+- on ranks every rank moves the whole mesh and rebuilds its part every step (3 ranks about 5 times slower than 1 on 768 cells)
+- the closed-volume piston (variable density, stage 7c) neither restarts nor runs on ranks: the variable density has no restart yet
+- turbulence models and passive scalars run on the moving mesh but are not checked against a reference; the GPU backend has a Colab check (tools/notebooks/motion_colab.ipynb) that has not been run on a GPU yet
 - the cooled piston has no reference data (no heat-transfer correlation compared yet)

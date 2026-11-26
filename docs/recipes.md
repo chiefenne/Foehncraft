@@ -20,11 +20,11 @@ The recipes are split by topic; each page has its own table of contents. The num
 | [Thermal radiation](recipes/radiation.md) | the radiation of a prescribed temperature field by Monte Carlo bundles: walls, noise, threads, ranks and the GPU, the checks against exact solutions | 259, 281 |
 | [Turbulence models](recipes/turbulence.md) | RANS turbulence models: the model, the wall treatment by the mesh, inlet turbulence, roughness, the near-wall checks, curvature correction and QCR on any mesh, the internal flows of D45 (pipe, diffuser, U-bend) | 68, 71, 73, 74, 88, 89, 90, 113, 115, 141, 140, 194, 193, 199, 197, 204 |
 | [Boundary conditions](recipes/boundary-conditions.md) | slip walls, wedges for axisymmetric flow, inlet profiles from tables, backflow at pressure outlets, convective outlets, periodic modules, absolute or gauge pressure values (D239) | 29, 67, 220 |
-| [Lagrangian sprays](recipes/sprays.md) | spray droplets into a flow with an injector file, wall behaviour, the mass book | 242, 265, 280, 283, 285, 292, 306, 318, 314 |
+| [Lagrangian sprays](recipes/sprays.md) | spray droplets into a flow with an injector file, wall behaviour, the mass book | 242, 265, 280, 283, 285, 292, 306, 318, 314, 321 |
 | [Porous regions](recipes/porous.md) | porous blocks and honeycombs in a flow: resistances, axes, the honeycomb shorthand | 273, 275 |
 | [Structures](recipes/structure.md) | a structural case of beams, plates, solids and clamp springs: static and modal analyses, the clamp spring fitted to a measured frequency, runs in time with damping and temperatures, contact with a seat and a stop, temperatures from a flow case, the results | 295, 297, 299, 300, 302, 308 |
 | [Immersed bodies](recipes/immersed.md) | put a body in the flow without meshing it: `[immersed]`, the permeability, forces | 270, 291, 313, 310, 315 |
-| [Moving meshes and solids](recipes/moving-solids.md) | move the mesh with a prescribed displacement: `[mesh_motion]`, moving walls, a piston on a closed volume | 296 |
+| [Moving meshes and solids](recipes/moving-solids.md) | move the mesh with a prescribed displacement: `[mesh_motion]`, moving walls, a piston on a closed volume | 296, 307 |
 | [Species and reacting flows](recipes/species.md) | species of an ideal-gas mixture: names, compositions in mole or mass fractions, diffusion by Schmidt or Lewis numbers, mixture properties, the element ledger | 278, 289, 298 |
 | [Expressions and materials](recipes/properties.md) | values as expressions of x, y, z and t, constants and tables, wall mass flux, the material database, regions | 31, 32, 277 |
 | [Python](recipes/python.md) | the `foehncraft` package: cases, expressions, runs with callbacks, results, materials, studies | 33 |
@@ -183,6 +183,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="run-ranks-sliding"></a>304 | [Run a sliding rotor in conformal stepping on ranks](recipes/meshes.md#run-ranks-sliding) | [Meshes](recipes/meshes.md) |
 | <a id="run-ranks-imprint"></a>305 | [Run a sliding rotor by imprinting on ranks](recipes/meshes.md#run-ranks-imprint) | [Meshes](recipes/meshes.md) |
 | <a id="spray-evaporation"></a>306 | [Let the droplets evaporate](recipes/sprays.md#spray-evaporation) | [Lagrangian sprays](recipes/sprays.md) |
+| <a id="deforming-mesh-ranks"></a>307 | [Run a deforming mesh on ranks and continue it from a restart file](recipes/moving-solids.md#deforming-mesh-ranks) | [Moving meshes and solids](recipes/moving-solids.md) |
 | <a id="structure-temperature-field"></a>308 | [Load a structure with the temperatures of a flow case](recipes/structure.md#structure-temperature-field) | [Structures](recipes/structure.md) |
 | <a id="surface-check"></a>310 | [Check an STL surface before it becomes a body](recipes/immersed.md#surface-check) | [Immersed bodies](recipes/immersed.md) |
 | <a id="cut-body"></a>313 | [Cut a body out of a mesh](recipes/immersed.md#cut-body) | [Immersed bodies](recipes/immersed.md) |
@@ -190,6 +191,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="cut-moments"></a>315 | [Cut a mesh exactly by an STL surface](recipes/immersed.md#cut-moments) | [Immersed bodies](recipes/immersed.md) |
 | <a id="spray-cooler-chat"></a>316 | [Ask an assistant an engineering question: size a spray cooler](recipes/runs.md#spray-cooler-chat) | [Run control and health](recipes/runs.md) |
 | <a id="spray-breakup"></a>318 | [Break a fuel jet up into drops (KH-ACT, KH-RT)](recipes/sprays.md#spray-breakup) | [Lagrangian sprays](recipes/sprays.md) |
+| <a id="spray-liquid-library"></a>321 | [Evaporate a fuel: take a liquid of the library](recipes/sprays.md#spray-liquid-library) | [Lagrangian sprays](recipes/sprays.md) |
 
 ## Adding a feature
 

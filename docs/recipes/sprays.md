@@ -525,3 +525,42 @@ parcel's volume over `bin`² is well below the smaller threshold). A
 background of the fuel vapour in the gas counts for the vapour penetration
 (the fraction is absolute). Not with `[spray.steady]`. See the
 [gallery entry](../gallery/sprays.md#spray-ecn).
+<a id="spray-liquid-library"></a>
+## 321. Evaporate a fuel: take a liquid of the library
+
+**Name the liquid instead of typing its properties.** In the injector
+file:
+
+```toml
+[liquid]
+library = "n-heptane"          # "water", "n-heptane", "n-dodecane", "iso-octane"
+temperature = 300.0            # K, the injected liquid
+vapour = "NC7H16"              # its species in [species]: NC7H16, IC8H18, H2O
+# property_temperature = 330.0 # K of the constant density and c_l (default: temperature)
+```
+
+The library sets the vapour pressure law, the density, the specific heat
+and the latent heat; leave `density`, `specific_heat`, `latent_heat` and
+`saturation` out (a value given beside `library` is refused). The droplet
+heats up to its wet-bulb temperature, so for long-lived droplets set
+`property_temperature` near it (n-heptane in hot nitrogen: 330 to 340 K).
+
+**Put the vapour in the gas.** The vapour must be a transported species of
+the case, not the closure species:
+
+```toml
+[species]
+names = ["NC7H16", "N2"]
+initial = { mass_fractions = { NC7H16 = 0.0, N2 = 1.0 } }
+```
+
+**The film.** `[spray.evaporation] film = "one-third"` is the default: the
+gas properties around each droplet are those of the vapour and carrier
+mixture at the 1/3 reference state, from the species data. The carrier is
+the start composition without the vapour. `film = "far-field"` gives the
+first version's behaviour (the gas properties of the cell), which
+overstates the evaporation of fuel droplets by 50 to 100 % against
+measurements. Case: `examples/cases/flow/spray_heptane_evaporation.toml`;
+[gallery entry](../gallery/sprays.md#spray-liquid-library) for what is
+checked and what is not.
+
