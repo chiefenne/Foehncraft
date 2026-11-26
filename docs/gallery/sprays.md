@@ -869,3 +869,81 @@ later stages.
 [case row](../cases/flow.md#lagrangian-sprays).
 
 ---
+
+<a id="spray-a-film"></a>
+## 324. The gas film of a fuel droplet at diesel pressure
+
+<img src="../figures/gallery/spray_a_film.png" alt="Three charts. Left: the dense-fluid factors of viscosity (dark blue) and conductivity (dark red) of nitrogen against the temperature from 300 to 1200 K, solid at 6 MPa and dashed at 15 MPa, falling from up to 1.37 towards 1; the NIST ratios as filled (6 MPa) and open (15 MPa) markers lie on or near the lines. Middle: the real-fluid film over the ideal-gas film against the droplet temperature from 370 to 650 K in 900 K nitrogen: density about 0.98 at 6 MPa and 0.94 at 15 MPa, viscosity, conductivity, heat capacity and diffusivity 0.99 to 1.07 at 6 MPa and up to 1.14 at 15 MPa, rising towards the critical mixing temperature marked by vertical lines at 636 and 651 K. Right: the squared diameter of a 10 micrometre n-dodecane droplet falling from 1 to 0 in 0.55 ms with the real-fluid film and 0.57 ms with the ideal-gas film, and its temperature rising from 363 K to about 615 K." width="800" height="245">
+
+At 6 MPa the nitrogen around an ECN Spray A droplet is a dense gas, about
+22 kg/m³ at 900 K. Gallery 321 takes the gas properties of the droplet's
+film at the 1/3 reference state as an ideal gas. With the Peng-Robinson
+surface (gallery 314) the film is now a real fluid (D313, the default of
+`[spray.evaporation.peng_robinson] film`):
+
+- **Density and c_p** come from the Peng-Robinson equation of the film
+  mixture: ρ = ρ_ig/Z on the vapour root, and c_p is the ideal-gas value
+  plus ∂(h − h_ig)/∂T.
+- **Viscosity and conductivity** are the kinetic-theory values of the
+  ideal film times the dense-fluid factors η/η° and λ/λ° of Chung, Ajlan,
+  Lee and Starling (1988), with their mixing rules. The low-pressure limit
+  is therefore exactly the ideal film.
+- **Diffusivity:** the low-pressure ρD times the factor of Riazi and
+  Whitson (1993) on the same viscosity factor, without their constant 1.07,
+  so that the factor is 1 at low pressure.
+
+The image comes from `cargo run --release -p foehncraft-particles --example
+spray_a_film` and `tools/plot/spray_a_film.py`.
+
+- **Left:** the Chung factors of nitrogen along the Peng-Robinson isobars
+  against the ratios of the NIST reference equations (Span et al. 2000,
+  Lemmon and Jacobsen 2004) to 0.1 MPa. Viscosity is within 2 % and
+  conductivity within 4 %, with the largest errors at 300 K and 15 MPa.
+- **Middle:** the film of a droplet in 900 K nitrogen, with the fuel
+  fraction of the Peng-Robinson surface. At 6 MPa the film moves by 1 to
+  7 % from the ideal one: density −2 %, the transport properties and c_p
+  −1 to +7 %, growing towards the critical mixing temperature. At 15 MPa it
+  moves by 1 to 14 %, the density by −5 to −7 %.
+- **Right:** a 10 µm droplet of 363 K n-dodecane in still 900 K nitrogen at
+  6 MPa lives 0.548 ms with the real-fluid film against 0.566 ms with the
+  ideal one (−3 %), and its temperature levels off 3 K higher (616 K).
+
+```toml
+[spray.evaporation]
+model = "abramzon-sirignano"
+equilibrium = "peng-robinson"
+
+[spray.evaporation.peng_robinson]
+film = "real-fluid"     # default; "ideal-gas" is the D321 film
+```
+
+**What is checked.** Chung's method with the NIST density reproduces the
+NIST nitrogen viscosity within 1.3 % and the conductivity within 6.8 % from
+0.1 to 15 MPa. The factors that the film takes are within 1.3 % and 4.8 %
+of the NIST ratios. The factors are 1 at low density, and at 0.1 MPa the
+real-fluid film is the ideal one within 1 %. The Peng-Robinson c_p and
+density of nitrogen are within 1 % and 2.5 % of NIST. The vapour c_p that
+books the enthalpy stays the ideal gas's. The film of a Spray A droplet at
+450 to 600 K lies within recorded bands.
+
+**Also fixed.** With a cold start of the surface table (250 K or below, the
+lower end the spray takes for fuel injected at 363 K), Newton's method
+stalled at round-off near 260 K. The table then ended there as "critical",
+and every droplet above it took no latent heat. Now a stall is accepted as
+converged, and the table retries from Wilson's K values. The table reaches
+the critical mixing state at 651 K (6 MPa) from any start.
+
+**What this version does not do.** The Chung coefficient tables were
+transcribed from secondary sources and checked against the NIST nitrogen
+data, not yet against the printed paper. For a liquid-like dense fuel
+(n-dodecane at 6 MPa and 500 to 700 K) the factors are 9 to 17 % too high
+on the viscosity and 40 to 55 % on the conductivity. The film of a Spray A
+droplet is mostly nitrogen, where the method holds. The Riazi-Whitson
+factor is used without its constant. The film gases are those of the
+`ambient` key, not the local gas of the cell, and the gas solver itself
+stays an ideal gas (D317).
+
+[Recipe 324](../recipes/sprays.md#spray-a-film),
+[plan](../requirements/step28-spray-a.md).
+
+---

@@ -588,6 +588,22 @@ Found with the deforming mesh of stage MS0 (#296):
   option and runs it too. Use `--print` (as CI does), and if it ran by
   mistake, `git checkout -- CHANGELOG.md changelog.d/` and recreate any
   untracked fragment of the branch.
+- **Newton on the surface equilibrium can stall at round-off, not fail.**
+  From a cold start of the surface table (250 K and below at 6 MPa) the
+  steps fell to 2e-11 and stopped shrinking near 260 K, above the absolute
+  tolerance; the table took this as the critical end, so every droplet
+  above 260 K had no latent heat. Test convergence relative to the size of
+  ln K and accept a step that no longer halves once it is below 1e-8 of
+  it; retry a failed node from Wilson's K. Check that a table reaches the
+  same end from several start temperatures (#324).
+- **Chung's conductivity needs η° in Pa s and M in kg/mol together.** The
+  printed form λ° = 7.452 η°Ψ/M is in cgs units; mixing them with SI gave a
+  conductivity 10 times off. Write it as λ° = 3.75 R η° Ψ/M in SI units
+  and check one NIST point at low pressure first.
+- **A real-fluid film can raise the diffusivity.** ρD falls with pressure
+  (Riazi and Whitson), but D = ρD/ρ and the dense film's density is ρ_ig/Z
+  with Z > 1 at 900 K, so D of the film came out 1 to 2 % above the ideal
+  one at 6 MPa, not below. Expect the sign from Z, not from ρD alone.
 
 <a id="property-solves"></a>
 ## Property solves and new kernels on ranks
