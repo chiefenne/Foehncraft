@@ -691,6 +691,11 @@ pub fn supported(case: &FlowCase) -> Result<()> {
         "[run] ranks does not solve this case yet: it has a sliding mesh ([[sliding]]); \
          run it on ranks with [run] rank_count (foehn flow --ranks N)"
     );
+    anyhow::ensure!(
+        case.mesh_motion.is_none(),
+        "[run] ranks does not solve this case yet: it has a deforming mesh ([mesh_motion]); \
+         run it on ranks with [run] rank_count (foehn flow --ranks N)"
+    );
     supported_solver(case)
 }
 
@@ -719,10 +724,6 @@ fn supported_solver(case: &FlowCase) -> Result<()> {
         (case.gravity.is_some(), "gravity"),
         (!case.spray.is_empty(), "sprays"),
         (!case.schedule.is_empty(), "a [[schedule]]"),
-        (
-            case.mesh_motion.is_some(),
-            "a deforming mesh ([mesh_motion])",
-        ),
         (case.verification.levels.len() > 1, "a sweep over levels"),
         (
             !case.regions.is_empty(),
@@ -1701,6 +1702,31 @@ impl OnRanks {
         })
     }
 
+    /// The position in the whole mesh `global` of every own and halo cell
+    /// of this rank's part, and of every local face with `true` where the
+    /// face is stored the other way round: what restricts the grid of a
+    /// deforming mesh to the part (stage MS0).
+    pub fn grid_map(&self, global: &Mesh) -> (Vec<usize>, Vec<(usize, bool)>) {
+        let lm = &self.local.mesh;
+        let cells = self
+            .local
+            .cell_position
+            .iter()
+            .map(|&c| c as usize)
+            .collect();
+        let faces = self
+            .layout
+            .faces
+            .iter()
+            .enumerate()
+            .map(|(f, &g)| {
+                let owner = self.local.cell_position[lm.owner[f] as usize] as usize;
+                (g, owner != global.owner[g] as usize)
+            })
+            .collect();
+        (cells, faces)
+    }
+
     /// This rank writes the output (rank 0).
     pub fn lead(&self) -> bool {
         self.comm.rank() == 0
@@ -1750,6 +1776,10 @@ impl OnRanks {
         }
         if let Some(r) = &phys.rho_var {
             phys.rho_var = Some(std::sync::Arc::new((m.cells(&r.0)?, m.faces(&r.1)?)));
+        }
+        // the grid mass flux of a deforming mesh (stage MS0)
+        if let Some(g) = &phys.grid_flux {
+            phys.grid_flux = Some(std::sync::Arc::new(m.faces(g)?));
         }
         Ok(crate::simplec::Solution {
             state,

@@ -2540,11 +2540,16 @@ Gaps:
 - exact: [`motion_piston_adiabatic`](../../examples/cases/flow/motion_piston_adiabatic.toml), [`piston_compression_keeps_p_v_gamma`](../../crates/foehncraft-flow/tests/mesh_motion.rs): check MS0.2: a closed gas volume compressed by four with adiabatic walls follows p₀V^γ: error 6.6e-4 at the top dead centre with Δt = 0.01 s, observed order 1.8 to 2.2 in Δt, back to p₀(0) within 1e-4 after the period; mass to 1e-13, T uniform, heat book to 1e-8 ([results](../gallery/moving-solids.md#deforming-mesh))
 - consistency: [`motion_piston_cooled_walls`](../../examples/cases/flow/motion_piston_cooled_walls.toml): walls at 300 K: p₀ below the isentrope (572 kPa at the top dead centre), the expansion ends at 90.4 kPa, mass and heat book closed every step (passes in CI (set long), not yet in the manual) ([results](../gallery/moving-solids.md#deforming-mesh))
 - contract (diagnostics): [`deforming_mesh_settings_are_checked`](../../crates/foehncraft-flow/tests/mesh_motion.rs): MOV001 for a steady case, MOV002 for a folding displacement, MOV003 for an inlet moved out of its plane, MOV004 for a closed volume of constant density that is compressed
+- contract (bitwise): [`deforming_mesh_restart_continues_bit_identically`](../../crates/foehncraft-flow/tests/mesh_motion.rs): MS0 part 2: the restart file holds the nodes, Vⁿ, Vⁿ⁻¹ and the swept volumes of the last step; a BDF2 run continued from it writes restart.h5 and fields.vtkhdf byte for byte as the unbroken run; a changed displacement is refused (MOV001) ([results](../gallery/moving-solids.md#deforming-mesh-ranks))
+- contract (bitwise): [`motion_channel_ranks`](../../examples/cases/flow/motion_channel_ranks.toml), [`deforming_mesh_on_ranks_writes_the_files_of_one_rank`](../../crates/foehncraft-flow/tests/run_ranks.rs): MS0 part 2: a breathing channel with walls and a dye on 2 and 3 ranks writes history, balance, probes, boundaries, forces, wall, field and restart files byte for byte as one rank ([results](../gallery/moving-solids.md#deforming-mesh-ranks))
+- contract (bitwise): [`deforming_mesh_restart_on_ranks_continues_bit_identically`](../../crates/foehncraft-flow/tests/run_ranks.rs): a restart file of the deforming mesh written on 3 ranks continues on 2 and on 1 rank to the bytes of the unbroken run ([results](../gallery/moving-solids.md#deforming-mesh-ranks))
 
 Gaps:
 
 - the motion is prescribed by an expression only: no mesh-motion solver, no cell layering, no bodies moved by the fluid (MS1, MS2)
 - the geometry and the solver setup (an AMG setup) are rebuilt every step
-- refused with MOV001: restarts (the restart datasets of D91 are not written yet), several ranks, turning zones, regions, sprays, immersed bodies, periodic boundaries, an error-controlled time step, level sweeps
-- turbulence models and passive scalars run on the moving mesh but are not checked against a reference; the GPU backend is not tested on a moving mesh
+- refused with MOV001: turning zones, regions, sprays, immersed bodies, periodic boundaries, an error-controlled time step, level sweeps, the check mode [run] ranks
+- on ranks every rank moves the whole mesh and rebuilds its part every step (3 ranks about 5 times slower than 1 on 768 cells)
+- the closed-volume piston (variable density, stage 7c) neither restarts nor runs on ranks: the variable density has no restart yet
+- turbulence models and passive scalars run on the moving mesh but are not checked against a reference; the GPU backend has a Colab check (tools/notebooks/motion_colab.ipynb) that has not been run on a GPU yet
 - the cooled piston has no reference data (no heat-transfer correlation compared yet)
