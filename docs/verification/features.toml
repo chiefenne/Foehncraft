@@ -39,6 +39,8 @@ evidence = [
   { kind = "consistency", test = "crates/foehncraft-mesh/tests/golden.rs::golden_values_of_mesher_and_partitioner", what = "golden values of the mesher and the partitioner" },
   { kind = "exact", case = "poiseuille_poly", what = "second order of the flow solver on generated polyhedra", doc = "docs/verification/stage4.md#couette-and-poiseuille-flow" },
   { kind = "exact", case = "mms_mixed_box", what = "second order of convection-diffusion on mixed cells", doc = "docs/verification/stage2.md#order-of-accuracy" },
+  { kind = "exact", test = "crates/foehncraft-mesh/src/wedge.rs::sectors_of_hexahedra", what = "D309: a 3D box revolved into a 22.5 deg sector of hexahedra has the exact volume of its polygonal sector to 1e-12, closed cells and the side planes zmin and zmax with their normals" },
+  { kind = "contract", property = "diagnostics", test = "crates/foehncraft-mesh/src/wedge.rs::a_perturbed_or_tetrahedral_sector_is_refused", what = "D309: a sector of tetrahedra or with perturb is refused" },
 ]
 
 [[feature]]

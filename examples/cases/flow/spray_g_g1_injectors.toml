@@ -1,0 +1,68 @@
+# The Spray G injector of spray_g_g1.toml (D309): hole 1 of the 8, whose
+# plume lies on the side plane `zmin` of the 22.5° sector, so half of its
+# liquid is in the domain (`flow_share = 0.5`). Iso-octane of the property
+# library (D320): vapour pressure, density, specific heat, latent heat,
+# surface tension and viscosity come from the library at the fuel
+# temperature; leave them out here.
+#
+# The nozzle (ECN Spray G specification): holes of 0.165 mm, orifice length
+# 0.16 to 0.18 mm (0.17 mm here), drill angle 37°. The plume leaves at 33°
+# from the injector axis: our mean of the plume direction angles of the
+# ECN's 3D computed tomography of G1 (file plume_angles.mat; Hwang et al.,
+# Fuel 280, 2020) over 0.3 to 0.7 ms and the planes 2 to 15 mm from the
+# tip (32.9° to 33.7°); the plume bends towards the axis from the drill
+# angle. Full cone 25°, the tomographic and schlieren plume width at 50 %
+# intermittency (Hwang et al. 2020, as quoted by Colmenares, Ameen and
+# Patel, ASME J. Eng. Gas Turbines Power, GTP-22-1576). Area contraction
+# C_a = 0.65, in the measured range 0.635 to 0.687 of Payri et al. (SAE
+# 2015-01-1893) as quoted by the same authors. The
+# discharge coefficient 0.51 is ours: the plateau of the measured rate,
+# 13.8 mg/ms over 8 holes, over ρ_l A_hole (2 Δp/ρ_l)^½ at 20 MPa less
+# 0.6 MPa.
+#
+# The hole exit (our choice): 1 mm from the injector axis and 0.1 mm into
+# the chamber, on the plume plane φ = −11.25° (moved 2 µm into the domain,
+# normal to the plane, so that the parcels start inside it).
+#
+# The rate is our 17-point piecewise-linear least-squares fit to the
+# measured rate of injection of the ECN for 20 MPa and 680 µs (file
+# roi_20MPa_680us.csv of the ECN Spray G data; 10.16 mg in all, the fit
+# within 0.06 %), divided by 8 holes: kg/s per hole over the time after the
+# start of injection.
+
+[liquid]
+library = "iso-octane"
+temperature = 363.0
+vapour = "IC8H18"
+
+[[injector]]
+name = "hole1"
+position = [1.000000e-04, 9.81175461e-04, -1.93128751e-04]
+direction = [0.83867057, 0.53417395, -0.10625380]
+half_angle = 12.5
+hole_diameter = 1.65e-4
+area_contraction = 0.65
+hole_length = 1.7e-4
+discharge_coefficient = 0.51
+flow_share = 0.5
+parcels_per_second = 4e6
+start = 0.0
+rate = [
+  [0.000e+00, 0.0000e+00],
+  [7.000e-06, 2.3126e-04],
+  [2.700e-05, 1.9515e-03],
+  [4.700e-05, 1.7192e-03],
+  [7.700e-05, 1.8837e-03],
+  [1.070e-04, 1.5721e-03],
+  [1.270e-04, 1.5577e-03],
+  [1.570e-04, 1.6783e-03],
+  [2.500e-04, 1.7430e-03],
+  [4.500e-04, 1.7293e-03],
+  [6.500e-04, 1.7166e-03],
+  [6.870e-04, 1.6571e-03],
+  [7.070e-04, 1.5838e-03],
+  [7.270e-04, 1.4658e-03],
+  [7.470e-04, 1.3067e-03],
+  [7.670e-04, 4.6475e-04],
+  [7.870e-04, 0.0000e+00],
+]

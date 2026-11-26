@@ -252,6 +252,46 @@ the tables they are fitted to are not stored. Generators:
   Int. J. Heat Mass Transfer 18, 1003-1008; Yuen, M. C., Chen, L. W. (1976),
   Combust. Sci. Technol. 14, 147-154.
 
+## 3g. ECN Spray G, condition G1 (D309)
+
+Measurements of the Engine Combustion Network, quoted by
+`tools/plot/spray_g_g1.py` (the penetrations) and
+`examples/cases/flow/spray_g_g1_injectors.toml` (the injector); the files
+are not stored.
+
+- Liquid and vapour penetration along the injector axis, iso-octane, G1
+  (573 K, 3.5 kg/m³, 20 MPa): the Sandia Spray G data of the ECN,
+  https://ecn.sandia.gov/data/sandia-spray-g-data/ (files
+  `liquid_data_2e-4_thr.mat`, `liquid_data_2e-3_thr.mat`, column 16, and
+  `vapor_data.mat`, column 12; high-speed extinction imaging evaluated as
+  projected liquid volume above 0.2e-3 and 2e-3 mm³/mm², and schlieren
+  imaging, by J. Hwang and L. M. Pickett), cited as the data page asks:
+  Hwang, J., Weiss, L., Karathanassis, I. K., Koukouvinis, P., Pickett,
+  L. M., Skeen, S. A. (2020), Spatio-temporal identification of plume
+  dynamics by 3D computed tomography using engine combustion network
+  spray G injector and various fuels, Fuel 280, 118359,
+  doi:10.1016/j.fuel.2020.118359. The script quotes 12, 10 and 12 points
+  (the frames nearest to 0.05 to 1.2 ms). Measurements, D201 accepted
+  class.
+- Plume direction 33°: our mean of `plume_angles.mat` of the G1 3D
+  computed tomography of the same data page and paper (0.3 to 0.7 ms,
+  planes 2 to 15 mm from the tip: 32.9° to 33.7°).
+- Rate of injection: the ECN file `roi_20MPa_680us.csv` (20 MPa, 680 µs
+  energising, 10.16 mg); the injector file holds our 17-point
+  least-squares fit to it, not the file.
+- Nozzle: ECN Spray G specification (8 holes of 0.165 mm, orifice length
+  0.16 to 0.18 mm, drill angle 37°), the ECN page "Spray G geometry".
+  Area contraction 0.635 to 0.687 measured by Payri, R., Gimeno, J.,
+  Martí-Aldaraví, P., Vaquerizo, D. (2015), Momentum flux measurements on
+  an ECN GDi injector, SAE 2015-01-1893, doi:10.4271/2015-01-1893, and the
+  full plume cone of 25° from the tomography and the schlieren boundary
+  at 50 % intermittency, both as quoted by Colmenares F., J. D., Ameen,
+  M. M., Patel, S. S., Large eddy simulation of gasoline sprays in a
+  Lagrangian-Eulerian framework using the high-order spectral element
+  method, ASME J. Eng. Gas Turbines Power, paper GTP-22-1576 (OSTI
+  2427994; volume and pages **to verify**). Their model settings (B₁ = 80
+  and others) are not used (D201).
+
 ## 4. Rules for adding an entry
 
 1. A value goes into the repository only when a test or a validation page
