@@ -345,7 +345,7 @@ all; code about 30 to 60 min per PR. Cut robustness on messy surfaces and
 the small-cell statistics on complex CAD are **not sized yet**.
 
 **Status (2a, 2b for primitives #313; STL bodies #322; several faces per
-cell pair #PRNUM).** Built: the cut of
+cell pair #329).** Built: the cut of
 primitive, `field` and STL bodies on any polyhedral mesh with exact
 crossings, the closest-point or dual-contouring wall point, face points on
 the clipped faces, the validity-driven merge (faces between two cells

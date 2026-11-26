@@ -709,7 +709,7 @@ Found while adding STL bodies to the cut (L13 stage 2, #322):
   cell covers with the exact moments (`Surface::cut_moments`), not only
   the sums. Avoiding folds in the choice of the merge neighbour left 48 on
   the 32³ sphere array; keeping the parts apart as separate faces between
-  the same two cells (#PRNUM) made the cell errors equal the total's on
+  the same two cells (#329) made the cell errors equal the total's on
   hexahedra and tetrahedra. Code that maps a pair of cells to one face
   (graph edges for partitioning, a face per matrix entry) must allow
   several.

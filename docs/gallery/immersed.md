@@ -609,7 +609,7 @@ default): C_D 5.588 (in the range), C_L 0.01025 (1.4 % below it; 2.1 %
 without face points), Δp 0.1160, and the wall area 0.012 % below 2πr ×
 depth instead of 0.024 %.
 
-**Several faces per cell pair (#PRNUM).** Keeping the faces at a bend
+**Several faces per cell pair (#329).** Keeping the faces at a bend
 apart first cost the 32³ run its force balance: a small separate piece
 nearly parallel to the line between the two cell centroids (84°) counted as
 a face of skewness 5.2, which switched on the cell-quality remediation (D50:
