@@ -43,7 +43,7 @@ pub use equilibrium::{
 };
 pub use sizes::SizeDistribution;
 pub use spray::{
-    BoundaryRule, BreakupState, Eddy, Env, Gas, GasState, InjectorStats, MirrorPlane,
-    MomentumFlows, Parcels, Pass, Spray, StreamBooks, StreamPass, Streams, Tally, Vapour,
-    injector_stats, injector_stats_mirrored, moments_of,
+    BoundaryRule, BreakupState, Eddy, Env, Gas, GasState, InjectorStats, MAX_EDDIES_PER_STEP,
+    MirrorPlane, MomentumFlows, Parcels, Pass, Spray, StreamBooks, StreamPass, Streams, Tally,
+    Vapour, injector_stats, injector_stats_mirrored, moments_of,
 };

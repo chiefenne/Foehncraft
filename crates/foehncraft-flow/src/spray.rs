@@ -490,7 +490,9 @@ pub const CSV_UNITS: &str = "step -; time s; parcels -; injected_kg kg; in_flow_
      D253 held vapour back in the last pass), limiter_kg_s kg/s (the vapour held back); breakup \
      (SP6): child_parcels - (child parcels the blobs shed since the start), rt_breakups - \
      (Rayleigh-Taylor breakups of drops since the start); KH-ACT: act_children - (of the child \
-     parcels, those the nozzle turbulence or the cavitation stripped)";
+     parcels, those the nozzle turbulence or the cavitation stripped); with [spray.coupling] \
+     turbulence = \"dispersion-work\" (D330): gas_turbulence_w W (work of the parcels' eddies \
+     on the turbulence of the gas per second, negative: what the drops take out of k)";
 
 /// The header of `spray.csv`.
 pub fn csv_head(sp: &foehncraft_particles::Spray) -> String {
@@ -533,7 +535,17 @@ pub fn csv_head(sp: &foehncraft_particles::Spray) -> String {
             h.push_str(",act_children");
         }
     }
+    if turbulence_work(sp) {
+        h.push_str(",gas_turbulence_w");
+    }
     h
+}
+
+/// Whether the parcels give their eddies' work to the turbulence (D330).
+fn turbulence_work(sp: &foehncraft_particles::Spray) -> bool {
+    sp.config().coupling.two_way()
+        && sp.config().coupling.turbulence
+            == foehncraft_particles::TurbulenceCoupling::DispersionWork
 }
 
 /// The sprays in `result.json` (D265, D267).
@@ -750,6 +762,9 @@ pub fn csv_row(
         if sp.config().breakup.act() {
             extra.push_str(&format!(",{}", t.act_children));
         }
+    }
+    if turbulence_work(sp) {
+        extra.push_str(&format!(",{:e}", c.map_or(0.0, |c| c.gas_turbulence)));
     }
     format!(
         "{step},{:e},{},{:e},{:e},{:e},{:e},{:e},{},{},{}{extra}",
@@ -1730,9 +1745,7 @@ impl crate::transient::OuterHook for TwoWay<'_> {
         });
         let turb = (self.sp.config().coupling.turbulence
             == foehncraft_particles::TurbulenceCoupling::DispersionWork)
-            .then(|| {
-                turbulence_sources(&pass.sources, &sol, &self.geo.cell_volume, self.dt)
-            })
+            .then(|| turbulence_sources(&pass.sources, &sol, &self.geo.cell_volume, self.dt))
             .flatten();
         drop(sol);
         if let (Some((sk, sw)), Some(t)) = (turb, fl.turbulence.as_mut()) {

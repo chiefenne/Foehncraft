@@ -59,8 +59,9 @@ stage of each check (V28.12 to V28.21) are in
   ECN Spray G and Spray A; section 7). Collision, a nozzle-turbulence and
   cavitation term and the fragment-size distributions of slow drops are
   later parts.
-- Turbulence modulation by particles is in no decision yet (see the
-  validation page, open points).
+- Turbulence modulation by particles: the drops' damping of the gas
+  turbulence is D330 (section 5.10, owner go 2026-11-26); the wake
+  production of large particles is in no decision yet.
 - Liquids beyond water (ethanol, n-heptane, n-dodecane) need source entries
   in `DATA_SOURCES.md` before use.
 
@@ -237,11 +238,33 @@ Checks of the steady mode:
 | V28.10 | Order independence of the steady mode: streams shuffled, 1 to 4 threads | fields and ledger bitwise equal |
 | V28.11 | Duct with more water than the gas can take | outlet at the adiabatic saturation state (exact, from the enthalpy balance); vapour fraction monotone along the duct; source residual falling with the passes |
 
+### 5.10 The drops take turbulence energy from the gas (D330)
+
+Asked by the maintainer on 2026-11-26 ("turbulence and heat should be
+exchanged in both directions"), decided on a card the same day ("add it
+and validate on G1"). Until then the turbulence went one way: the gas
+eddies disperse the parcels (D243), and the parcels gave nothing back.
+
+| ID | Decision |
+|---|---|
+| D330 | **The work of the eddies on the drops is taken out of k.** `[spray.coupling] turbulence = "dispersion-work"` (default `none`; needs `mode = "two-way"` and `[spray] dispersion = "eddy-lifetime"`; not in the steady spray mode yet). The term of KIVA-II (Amsden, O'Rourke and Butler 1989, Eqs. 7, 8, 46 and C-4): the gas loses the work its eddies do on the drops they disperse, W = −Σ m_p Δv_p·u′_p / (Δt V) per cell, and ε gets c_s (ε/k) W with c_s = 1.5; for ω of SST the length scale k^{3/2}/ε is kept, which gives (c_s − 1)(ω/k) W. **Only the part correlated with the eddy.** Sampled as written, Δv_p·u′_p holds the product of the eddy with the drag change of the mean slip: zero on average, but near the nozzle a hundred times the work, and its noise made the first SST run of ECN Spray G blow up. Every parcel therefore carries its response v′ to its current eddy: v′ = 0 when it enters a new eddy and v′ ← u′ + (v′ − u′) e^{−Δt/τ} in a sub-step, the exact drag relaxation of D251 for a constant eddy (a mirror wall reflects it with u′). A sub-step books −m_p (1 − e^{−Δt/τ}) u′·(u′ − v′), the work of the eddy on the parcel's fluctuation. Its mean is that of the KIVA-II term, and as the eddy of the eddy-lifetime model is constant, u′ − v′ = u′ e^{−t/τ} and the booked work is never positive: the drops only take energy, as KIVA-II states (W^s < 0). **Sources:** per unit mass, S_k = W/(ρ V Δt) and S_ε (S_ω) as above, set for every pass (D252) beside the momentum; the negative part goes to the diagonal of the k and ε (ω) equations (Patankar 1980), so k stays positive at any loading. The records are summed in the order of D247 like the other sources (bitwise on any threads). `spray.csv` gets `gas_turbulence_w` (W per step) and `result.json` `gas_turbulence_work` (J over the run). Only damping: the wake production of particles larger than the turbulence scale is not modelled; for drops below a tenth of the integral scale the data show damping (Skartlien, Palmer and Skjæraasen 2022, review of the Gore and Crowe data). |
+
+Checks of D330:
+
+| Check | Content | Passes when |
+|---|---|---|
+| V28.22 | Drops born in still turbulent gas (k = 0.5 m²/s²): the work of their eddies in the first pass, and zero without dispersion | the work is −2k times the injected mass within −40 % and +20 % (drops born late in the step relax only partly; found 0.88) |
+| V28.23 | Lumped cell with k-ε and drops: k at the end with the term against k without it less the booked work over ρV | within 3 % |
+| V28.24 | ECN Spray G (G1) with the term on k-ω SST, k-ε and ζ-f0 | the liquid and vapour penetration against the ECN measurements and the runs without the term (gallery of the pull request) |
+
 ### 5.8 References of this section
 
 - Amsden, A. A., O'Rourke, P. J., Butler, T. D. (1989), KIVA-II: a computer
   program for chemically reactive flows with sprays, Los Alamos report
   LA-11560-MS.
+- Skartlien, R., Palmer, K., Skjæraasen, O. (2022), A model for turbulence
+  modulation by particles (review of the measurements collected by Gore and
+  Crowe 1989), arXiv:2211.04516.
 - Balachandar, S., Liu, K., Lakhote, M. (2019), Self-induced velocity
   correction for improved drag estimation in Euler-Lagrange point-particle
   simulations, J. Comput. Phys. 376.
@@ -606,19 +629,27 @@ area contraction, plume direction and cone) and the distortion of the drops.
   a 3D sector of hexahedra against the exact volume of the faceted sector
   to 10⁻¹², closed cells, the side planes as boundaries; tetrahedra and
   `perturb` refused.
-- ECN Spray G, G1 (D309, gallery 323, KH-ACT with the default constants):
-  the liquid penetration (0.2e-3 mm³/mm²) within 1 mm of the measured one
-  up to 0.4 ms, then ahead, 12 % at 0.6 ms, 19 % at the end of injection,
-  33 % at 1.2 ms (51.7 against 38.9 mm); the vapour 32.8 against 29.4 mm at
-  0.6 ms and 50.8 against 42.0 mm at 1.2 ms; the gas velocity on the
-  injector axis 15 mm from the tip within about 1.5 m/s of the PIV of the
-  ECN. The Sauter mean diameter at 15 mm is 17 µm against the measured
-  9 µm: the children of the cavitation (R_CAV = r_hole (1 − C_a)^½ =
-  49 µm) and of the integral turbulence scale are large for the short
-  Spray G hole (Magnotti 2017 reported KH-ACT little better than KH below
-  7 kg/m³ and pointed to a smaller turbulence scale). KH-RT gives 7.4 µm
-  and the same penetration, so the late lead is not from the breakup; its
-  cause is open, a recorded gap.
+- ECN Spray G, G1 (D309, gallery 323, KH-ACT with the default constants,
+  k-ω SST since PR #333): the liquid penetration (0.2e-3 mm³/mm²) within
+  2.1 mm of the measured one up to 0.4 ms (1.2 mm at 0.4 ms), then ahead,
+  9 % at 0.6 ms, 12 % at 0.8 ms, 15 % at 1.1 ms (43.6 against 37.9 mm);
+  the vapour 31.7 against 29.4 mm at 0.6 ms and 42.9 against 40.2 mm at
+  1.1 ms; the gas velocity on the injector axis 15 mm from the tip within
+  0.5 m/s of the PIV of the ECN up to 0.7 ms, late to return after the end
+  of injection. On k-ε (the case before PR #333) the liquid ran 30 % and
+  the vapour 22 % ahead at 1.1 ms, on ζ-f0 34 % and 26 %: the late lead
+  comes from the turbulence of the gas jets the drops drive, which the
+  k-ε family keeps low. Ruled out on k-ε: the mesh (0.6, 0.4 and 0.2 mm
+  near the nozzle), the breakup (KH-RT with drops of 7.4 µm penetrates as
+  far as KH-ACT with 17 µm; measured 9 µm), the gas density (an ideal gas
+  runs as far) and the injected momentum (9 % above the measured one). The
+  Sauter mean diameter at 15 mm is 16 µm on SST: the children of the
+  cavitation (R_CAV = r_hole (1 − C_a)^½ = 49 µm) and of the integral
+  turbulence scale are large for the short Spray G hole (Magnotti 2017
+  reported KH-ACT little better than KH below 7 kg/m³ and pointed to a
+  smaller turbulence scale).
+- The drops' work on the gas turbulence (D330, V28.22 to V28.24): see
+  section 5.10 and gallery 333.
 
 ### 7.2 Not yet
 
@@ -627,11 +658,10 @@ mean diameter near 2 µm, small next to measured diesel sprays); a size distribu
 fragment model for slow drops is a candidate); breakup in the steady mode;
 temperature-dependent surface tension and viscosity (with the liquid
 property library); radial velocity of the children (they leave with the
-blob's velocity); GPU entry of the breakup kernel. For Spray G (G1): the cause
-of the late lead of the liquid and the vapour (the far-field cells, the
-gas density of the cooled plume with its vapour, the k-ε constants), the
-drop size of the KH-ACT children, a calibration of the constants against
-G1, and a run
-whose gas diverges in some cells can fill the memory with the exchange
-records of parcels that spend `max_substeps` instead of stopping with a
-message.
+blob's velocity); GPU entry of the breakup kernel. For Spray G (G1): the
+remaining lead of 15 % on SST at 1.1 ms and the late return of the gas on
+the axis after the injection, the drop size of the KH-ACT children, a
+calibration of the constants against G1, and a run whose gas diverges in
+some cells can fill the memory with the exchange records of parcels that
+spend `max_substeps` (cell crossings) instead of stopping with a message;
+short eddies no longer do (at most 32 per parcel and step, D330).

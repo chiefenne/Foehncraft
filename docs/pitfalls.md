@@ -750,6 +750,21 @@ Found while adding STL bodies to the cut (L13 stage 2, #322):
   twice the measured size; the obvious reading was "too large drops". KH-RT
   with drops of the measured size ran exactly as far, so the cause is
   elsewhere. Run both models (one `--set`) before tuning breakup constants.
+- **Check the turbulence model before the spray models.** The late lead
+  of G1 (D309) survived the mesh (0.6, 0.4 and 0.2 mm), the breakup model,
+  the gas density and the injected momentum. It came from the turbulence:
+  on the plume axis the k-ε family made a fraction of the eddy viscosity
+  of a developed jet, k-ω SST about the jet's, and SST cut the lead to
+  about a third. Run the case on two turbulence models (one `--set` each)
+  before searching the spray.
+- **A source sampled from random eddies must not carry their zero-mean
+  products.** The two-way turbulence term of KIVA-II written as
+  u′·Δv (D330), with Δv the drag change of a parcel's velocity, contains
+  the eddy times the change of the mean slip: zero on average, a hundred
+  times the work near the nozzle. Its noise made the first SST run of G1
+  blow up at step 2 (the parcels in the broken gas then filled the memory).
+  Book only the part correlated with the eddy (the parcel's response to
+  it), whose sign is known.
 - **A string slice can drop the exponent.** `str(x)[:8]` of 1.2345678e-05
   is `1.234567`: a liquid volume fraction read that way looked above 1 and
   sent the search the wrong way for a while. Format numbers with `:.3e`.

@@ -389,7 +389,21 @@ struct Outcome {
     /// Of them, those the nozzle turbulence or the cavitation stripped
     /// (KH-ACT, D307).
     act_kids: u64,
+    /// Eddies held to the end of the step because the parcel had entered
+    /// [`MAX_EDDIES_PER_STEP`] in it.
+    held_eddies: u64,
 }
+
+/// The most eddies a parcel enters in one time step (transient passes;
+/// D243, D330). Beyond it the eddy lasts to the end of the step, as in a
+/// code that samples the eddy once per step. Where the gas is turbulent
+/// an eddy lasts about a step or longer and the limit is never reached;
+/// where k is nearly zero (in a spray that has damped its gas turbulence,
+/// D330) the crossing time l_e/|w| tends to zero, and without the limit
+/// every eddy would end a sub-step and the parcels would spend
+/// `max_substeps` each. Such eddies are negligible: their velocity is of
+/// the order √k. Counted in [`Tally::held_eddies`].
+pub const MAX_EDDIES_PER_STEP: u64 = 32;
 
 impl Outcome {
     /// The outcome and those of its children, in order.
@@ -478,6 +492,11 @@ pub struct Tally {
     /// no latent heat, diffusive mixing); a health number, not a total.
     #[serde(default)]
     pub critical_parcels: u64,
+    /// Eddies held to the end of their step because the parcel had already
+    /// entered [`MAX_EDDIES_PER_STEP`] in it (a safety net, counted; zero
+    /// in a gas with developed turbulence).
+    #[serde(default)]
+    pub held_eddies: u64,
     /// Their liquid mass (kg).
     #[serde(default)]
     pub critical_mass: f64,
@@ -1461,6 +1480,7 @@ impl Spray {
             self.tally.rt_breakups += o.rt_breakups;
             self.tally.child_parcels += o.kids_shed;
             self.tally.act_children += o.act_kids;
+            self.tally.held_eddies += o.held_eddies;
             let m = mass_of(o.p.d, o.p.count, rho_p);
             match o.fate {
                 Fate::Active => {
@@ -1959,6 +1979,8 @@ impl Spray {
         // the time of the eddy is spent with the sub-steps (D251: a
         // sub-step ends at the end of an eddy)
         let mut last_left = left;
+        // eddies entered in this step, and those held to its end
+        let (mut eddies, mut held_eddies) = (0u64, 0u64);
         let mut path: Vec<PathPoint> = Vec::new();
         // breakup and distortion (SP6): applied after each sub-step with the
         // gas and the slip of its start
@@ -2007,6 +2029,11 @@ impl Spray {
                 // resolve is over (else its sub-steps would not advance)
                 if p.eddy.left <= tiny {
                     self.new_eddy(&mut p, &gs, rho_p);
+                    eddies += 1;
+                    if !opts.steady && eddies > MAX_EDDIES_PER_STEP {
+                        p.eddy.left = left;
+                        held_eddies += 1;
+                    }
                 }
                 for k in 0..3 {
                     gs.u[k] += p.eddy.u[k];
@@ -2549,6 +2576,7 @@ impl Spray {
             rt_breakups: counts[0],
             kids_shed,
             act_kids: counts[1],
+            held_eddies,
         }
     }
 

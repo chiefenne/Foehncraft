@@ -11,8 +11,10 @@ ECN sees the spray, with its contour at 0.2e-3 mm³/mm²; right, the liquid
 penetration (projected liquid volume above 0.2e-3 and 2e-3 mm³/mm²), the
 vapour penetration (vapour mass fraction above 0.1 %) and the gas velocity
 on the injector axis 15 mm from the tip over time against the measured
-ones. With a second run (the same case with
-`--set spray.breakup.model=kh-rt`) its curves are drawn thin for comparison.
+ones. With a second run (the same case with another setting, for example
+`--set turbulence.model=k-epsilon --set turbulence.wall_treatment=scalable`
+or `--set spray.breakup.model=kh-rt`) its curves are drawn thin for
+comparison, named by LABEL (default "KH-RT").
 The script also prints the Sauter mean diameter of the drops 15 mm from the
 tip along the injector axis, 5 to 14 mm from it, averaged over 0.2 to
 1.0 ms, next to the phase-Doppler measurement of the ECN.
@@ -33,7 +35,7 @@ points; negative is towards the injector.
 
     pip install matplotlib h5py numpy
     target/release/foehn flow examples/cases/flow/spray_g_g1.toml --out output/spray_g_g1
-    python3 -m tools.plot.spray_g_g1 OUT_DIR output/spray_g_g1 [output/spray_g_g1_khrt]
+    python3 -m tools.plot.spray_g_g1 OUT_DIR output/spray_g_g1 [output/spray_g_g1_keps [k-ε]]
 """
 import glob
 import os
@@ -207,7 +209,7 @@ def d32_at_15mm(run):
     return s3 / s2 * 1e6 if s2 > 0.0 else float("nan")
 
 
-def plot(out, run, run_rt=None):
+def plot(out, run, run_rt=None, label="KH-RT"):
     liq, vap = penetrations(run)
     rt = penetrations(run_rt) if run_rt else None
     tmap = times(run)
@@ -258,7 +260,7 @@ def plot(out, run, run_rt=None):
     a.plot(liq[:, 0], liq[:, 1], color="tab:red", lw=2.0, label="Foehncraft, 0.2e-3")
     a.plot(liq[:, 0], liq[:, 2], color="tab:red", lw=1.4, ls="--", label="Foehncraft, 2e-3")
     if rt is not None:
-        a.plot(rt[0][:, 0], rt[0][:, 1], color="tab:orange", lw=1.2, label="Foehncraft KH-RT, 0.2e-3")
+        a.plot(rt[0][:, 0], rt[0][:, 1], color="tab:orange", lw=1.2, label=f"Foehncraft {label}, 0.2e-3")
     a.axvline(0.78, color="0.6", lw=0.8, ls=":")
     a.set_ylabel("liquid penetration (mm)")
     a.set_xlim(0.0, 1.25)
@@ -272,7 +274,7 @@ def plot(out, run, run_rt=None):
     b.plot(m[:, 0], m[:, 1], "o", color="k", ms=4, label="measured (schlieren)")
     b.plot(vap[:, 0], vap[:, 1], color="tab:blue", lw=2.0, label="Foehncraft, vapour mass fraction 0.1 %")
     if rt is not None:
-        b.plot(rt[1][:, 0], rt[1][:, 1], color="tab:cyan", lw=1.2, label="Foehncraft KH-RT")
+        b.plot(rt[1][:, 0], rt[1][:, 1], color="tab:cyan", lw=1.2, label=f"Foehncraft {label}")
     b.axvline(0.78, color="0.6", lw=0.8, ls=":")
     b.set_ylabel("vapour penetration (mm)")
     b.set_xlim(0.0, 1.25)
@@ -286,7 +288,7 @@ def plot(out, run, run_rt=None):
     g.plot(m[:, 0], m[:, 1], "o", color="k", ms=4, label="measured (PIV)")
     g.plot(ua[:, 0], ua[:, 1], color="tab:green", lw=2.0, label="Foehncraft")
     if ua_rt is not None:
-        g.plot(ua_rt[:, 0], ua_rt[:, 1], color="yellowgreen", lw=1.2, label="Foehncraft KH-RT")
+        g.plot(ua_rt[:, 0], ua_rt[:, 1], color="yellowgreen", lw=1.2, label=f"Foehncraft {label}")
     g.axvline(0.78, color="0.6", lw=0.8, ls=":")
     g.axhline(0.0, color="0.3", lw=0.6)
     g.set_xlabel("time after the start of injection (ms)")
@@ -309,16 +311,16 @@ def plot(out, run, run_rt=None):
     print(f"D32 at 15 mm, 0.2 to 1.0 ms: {d32_at_15mm(run):.1f} µm (measured {PDI_D32:.0f} µm)")
     if rt is not None:
         for (t, lo, _), (_, v) in zip(rt[0], rt[1]):
-            print(f"kh-rt  {t:6.3f} ms  liquid {lo:6.2f} mm  vapour {v:6.2f} mm")
-        print(f"kh-rt D32 at 15 mm: {d32_at_15mm(run_rt):.1f} µm")
+            print(f"{label}  {t:6.3f} ms  liquid {lo:6.2f} mm  vapour {v:6.2f} mm")
+        print(f"{label} D32 at 15 mm: {d32_at_15mm(run_rt):.1f} µm")
 
 
 def main():
-    if len(sys.argv) not in (3, 4):
+    if len(sys.argv) not in (3, 4, 5):
         sys.exit(__doc__)
     out, run = sys.argv[1], sys.argv[2]
     os.makedirs(out, exist_ok=True)
-    plot(out, run, sys.argv[3] if len(sys.argv) == 4 else None)
+    plot(out, run, sys.argv[3] if len(sys.argv) >= 4 else None, sys.argv[4] if len(sys.argv) == 5 else "KH-RT")
 
 
 if __name__ == "__main__":
