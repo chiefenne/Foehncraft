@@ -457,3 +457,22 @@ mod tests {
         assert!((critical_impact(31.2, 1.0) - 0.1).abs() < 1e-12);
     }
 }
+
+#[cfg(test)]
+mod checks {
+    use crate::config::{CollisionModel, SpraySection, Steady};
+
+    /// The collisions need the surface tension and the transient spray.
+    #[test]
+    fn the_collision_table_is_checked() {
+        let mut s = SpraySection::default();
+        s.collision.model = CollisionModel::Ntc;
+        let e = s.validate().unwrap_err().to_string();
+        assert!(e.contains("surface tension"), "{e}");
+        s.liquid.surface_tension = Some(0.02);
+        assert!(s.validate().is_ok());
+        s.steady = Some(Steady::default());
+        let e = s.validate().unwrap_err().to_string();
+        assert!(e.contains("transient"), "{e}");
+    }
+}

@@ -1538,6 +1538,21 @@
    "range": {}
   },
   {
+   "id": "sprays.collision",
+   "title": "Drop collisions: no-time-counter sampling with O'Rourke's coalescence and grazing separation (D331)",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "only coalescence and grazing separation (O'Rourke); no stretching or reflexive separation (Post and Abraham 2002), no bouncing at high ambient density",
+    "collisions within a cell of the flow mesh only, none with the injected blobs; no collision mesh of its own",
+    "the G1 liquid still runs 12 % ahead at 0.8 ms and its drops at 15 mm are 18 um against the measured 9 um",
+    "transient spray only, CPU only, one process"
+   ],
+   "range": {}
+  },
+  {
    "id": "sprays.ecn-diagnostics",
    "title": "ECN liquid length (projected liquid volume) and vapour penetration (Spray A, SA3, D315)",
    "grade": "partial",

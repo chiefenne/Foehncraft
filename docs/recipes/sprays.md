@@ -813,3 +813,45 @@ python3 -m tools.plot.spray_g_g1 OUT_DIR output/spray_g_g1 output/spray_g_g1_khr
 Case: `examples/cases/flow/spray_g_g1.toml` with its injector file;
 [gallery entry](../gallery/sprays.md#spray-g) for the comparison with the
 measurements.
+
+---
+
+<a id="spray-collisions"></a>
+## 335. Let the drops collide
+
+Dense sprays near the nozzle hold many drops per cell, and their
+collisions merge drops and slow the core of the spray. Switch them on in
+any transient spray:
+
+```toml
+[spray.liquid]
+surface_tension = 0.02      # N/m; a library liquid brings its own
+
+[spray.collision]
+model = "ntc"               # no-time-counter sampling, O'Rourke's outcomes
+# coalescence = false       # every collision a grazing separation (a check)
+```
+
+The drops of two parcels in one cell meet at the rate q_i q_j σ v Δt / V
+(q the drops of a parcel, σ = π (r_i + r_j)², v their relative speed, V the
+cell volume). Below O'Rourke's critical impact parameter they coalesce,
+above it they separate with their sizes and pull their velocities
+together. Mass, momentum and liquid enthalpy stay exact. The injected blobs
+of the breakup model do not collide.
+
+Watch `spray.csv`: `collisions`, `coalescences`, `drop_collisions`,
+`merged_parcels`, and `collision_capped_cells`, the cell steps whose
+candidate pairs reached the cap of 20000 per parcel. A few capped cells
+near the nozzle are harmless (in G1, raising the cap from 1000 changed the
+penetration by less than 1 %); many mean the cells are too large for the
+spray.
+
+```sh
+foehn flow examples/cases/flow/spray_g_g1.toml --out output/spray_g_g1
+foehn flow examples/cases/flow/spray_g_g1.toml --set spray.collision.model=none --out output/spray_g_g1_nocol
+python3 -m tools.plot.spray_g_g1 OUT_DIR output/spray_g_g1 output/spray_g_g1_nocol \
+    --label "without collisions" --name spray_g_g1_collisions.png   # gallery 335
+```
+
+Case: `examples/cases/flow/spray_g_g1.toml`;
+[gallery entry](../gallery/sprays.md#spray-collisions).
