@@ -21,6 +21,10 @@
 //!   B_T = (1 + B_M)^φ − 1, φ = (c_p,v/c_p,g)(Sh*/Nu*)/Le, found by a fixed
 //!   number of substitutions (the same bits on every target).
 //!
+//! A distorted, viscous drop (the Corrected Distortion model, SA4) takes
+//! the factors `sh_factor` and `nu_factor` on Sh and Nu (after the film
+//! thickening); both are 1 for a sphere, which keeps the bits.
+//!
 //! The heat to the droplet is Q = π d k Nu (T_∞ − T_p) ln(1 + B_T)/B_T (the
 //! correction for the outflow of the vapour; it tends to 1 as B → 0), and
 //! the droplet balance is m c_l dT_p/dt = Q − ṁ L.
@@ -144,6 +148,11 @@ pub struct EvapInput {
     pub dt: f64,
     /// [`model`].
     pub model: u32,
+    /// Factor on the Sherwood number of the sphere (1: a sphere; the shape,
+    /// circulation and surface of a distorted drop, [`crate::distortion`]).
+    pub sh_factor: f64,
+    /// Factor on the Nusselt number of the sphere (1: a sphere).
+    pub nu_factor: f64,
 }
 
 /// The result of [`evaporation_step`].
@@ -237,8 +246,8 @@ pub fn evaporation_step(i: &EvapInput) -> EvapStep {
     let nu0 = 2.0 + 0.6 * root * cbrt(i.pr.max_of(1e-30));
     let le = i.k_g / (i.rho_g * i.cp_g * i.diff);
     let (sh, nu, bt) = if i.model == model::ABRAMZON_SIRIGNANO {
-        let sh = 2.0 + (sh0 - 2.0) / film_factor(bm);
-        let mut nu = nu0;
+        let sh = i.sh_factor * (2.0 + (sh0 - 2.0) / film_factor(bm));
+        let mut nu = i.nu_factor * nu0;
         let mut bt = 0.0;
         // φ and B_T by a fixed number of substitutions (converged to
         // round-off for the B of sprays; a fixed count keeps the bits)
@@ -246,13 +255,14 @@ pub fn evaporation_step(i: &EvapInput) -> EvapStep {
         while k < 8 {
             let phi = i.cp_v / i.cp_g * sh / nu / le;
             bt = (phi * lm).exp_of() - 1.0;
-            nu = 2.0 + (nu0 - 2.0) / film_factor(bt);
+            nu = i.nu_factor * (2.0 + (nu0 - 2.0) / film_factor(bt));
             k += 1;
         }
         (sh, nu, bt)
     } else {
-        let phi = i.cp_v / i.cp_g * sh0 / nu0 / le;
-        (sh0, nu0, (phi * lm).exp_of() - 1.0)
+        let (sh, nu) = (i.sh_factor * sh0, i.nu_factor * nu0);
+        let phi = i.cp_v / i.cp_g * sh / nu / le;
+        (sh, nu, (phi * lm).exp_of() - 1.0)
     };
     let pi = core::f64::consts::PI;
     // per unit diameter: ṁ/d and the heat conductance h/d (W/(m K))
@@ -336,6 +346,29 @@ mod tests {
             cp_l: 4181.0,
             dt,
             model,
+            sh_factor: 1.0,
+            nu_factor: 1.0,
+        }
+    }
+
+    #[test]
+    fn the_transfer_factors_scale_the_rates() {
+        // a factor on Sh scales the d² rate exactly; equal factors on Sh
+        // and Nu leave the wet-bulb state of Ranz-Marshall unchanged
+        for m in [model::RANZ_MARSHALL, model::ABRAMZON_SIRIGNANO] {
+            let i = input(330.0, 500.0, 0.0, 50e-6, 1e-4, m);
+            let one = evaporation_step(&i);
+            let two = evaporation_step(&EvapInput {
+                sh_factor: 2.0,
+                nu_factor: 2.0,
+                ..i
+            });
+            assert!((two.k / one.k - 2.0).abs() < 1e-12, "{m}");
+            assert!((two.nu / one.nu - 2.0).abs() < 1e-12, "{m}");
+            if m == model::RANZ_MARSHALL {
+                assert!((two.t_eq - one.t_eq).abs() < 1e-9);
+            }
+            assert!((two.tau / one.tau - 0.5).abs() < 1e-12, "{m}");
         }
     }
 

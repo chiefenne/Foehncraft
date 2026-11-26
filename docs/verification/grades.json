@@ -1506,6 +1506,22 @@
    "range": {}
   },
   {
+   "id": "sprays.corrected-distortion",
+   "title": "Distorted drops: the Corrected Distortion model for drag and evaporation (Spray A, SA4 part 1, D316)",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "the Spray A liquid length is 24 % (dynamic drag) and 32 % (Corrected Distortion) short of the measured 11.2 mm: the untuned KH-ACT constants give drops of about 1 um; the model shortens the liquid length as in the paper, away from the measurement here",
+    "one run per law on a coarse mesh (0.5 mm along the axis, ECN asks for 0.25 mm), no ensemble; the difference between the laws (0.9 mm) lies within the scatter of the Corrected Distortion run (s.d. 1.6 mm)",
+    "the correlations of Feng and Michaelides (2001) and of Richter and Nikrityuk (2012) are taken as Nguyen et al. (2022) print them, not yet checked against the originals",
+    "SA4 part 2 not done: the liquid volume does not displace the gas and the sources are not spread over a fixed radius; no collisions",
+    "`spray_a_distortion_injectors` has no run in the verification manual or in CI"
+   ],
+   "range": {}
+  },
+  {
    "id": "sprays.ecn-diagnostics",
    "title": "ECN liquid length (projected liquid volume) and vapour penetration (Spray A, SA3, D315)",
    "grade": "partial",

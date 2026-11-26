@@ -6,9 +6,13 @@
 use foehncraft_mesh::Geometry;
 use foehncraft_mesh::generate::{BoxSpec, Kind};
 use foehncraft_mesh::locate::Locator;
-use foehncraft_particles::spray::{line_of_sight, plv_lengths, plv_profile};
+use foehncraft_particles::spray::{
+    format_mirrors, line_of_sight, mirror_image_count, parse_mirrors, plv_lengths,
+    plv_lengths_mirrored, plv_profile, plv_profile_mirrored,
+};
 use foehncraft_particles::{
-    BoundaryMode, BoundaryRule, Ecn, Env, Injector, Spray, SpraySection, injector_stats,
+    BoundaryMode, BoundaryRule, Ecn, Env, Injector, MirrorPlane, Spray, SpraySection,
+    injector_stats,
 };
 
 const RHO: f64 = 700.0;
@@ -252,4 +256,234 @@ fn the_ecn_table_is_checked() {
     c.steady = Some(Default::default());
     let e = c.validate().unwrap_err().to_string();
     assert!(e.contains("transient"), "{e}");
+}
+
+fn plane(normal: [f64; 3], offset: f64) -> MirrorPlane {
+    MirrorPlane { normal, offset }
+}
+
+#[test]
+fn the_mirror_planes_close_into_the_images_of_the_spray() {
+    let y0 = plane([0.0, 1.0, 0.0], 0.0);
+    let z0 = plane([0.0, 0.0, 1.0], 0.0);
+    assert_eq!(mirror_image_count(&[]), Some(1));
+    assert_eq!(mirror_image_count(&[y0]), Some(2));
+    // the same plane twice (a symmetry plane split into two boundaries)
+    assert_eq!(mirror_image_count(&[y0, y0]), Some(2));
+    assert_eq!(mirror_image_count(&[y0, z0]), Some(4));
+    // a sector of 60° between two planes through the x axis: 6 images
+    let (s, c) = (60f64.to_radians().sin(), 60f64.to_radians().cos());
+    assert_eq!(mirror_image_count(&[y0, plane([0.0, -c, s], 0.0)]), Some(6));
+    // 50° = 5 · 180°/18: 36 images that cover the circle five times (the
+    // spray refuses them, see below)
+    let (s, c) = (50f64.to_radians().sin(), 50f64.to_radians().cos());
+    assert_eq!(
+        mirror_image_count(&[y0, plane([0.0, -c, s], 0.0)]),
+        Some(36)
+    );
+    // one radian is no rational part of 180°: no finite set of images
+    let (s, c) = (1f64.sin(), 1f64.cos());
+    assert_eq!(mirror_image_count(&[y0, plane([0.0, -c, s], 0.0)]), None);
+    // the text of the parcel file reads back to the bit
+    let m = vec![vec![y0, plane([0.0, -0.6, 0.8], 1.25e-3)], vec![], vec![z0]];
+    assert_eq!(parse_mirrors(&format_mirrors(&m)).unwrap(), m);
+    assert!(parse_mirrors("0 1 0").is_err());
+}
+
+/// Parcels of a round spray along +x from `p`, inside a cone of 10°, with
+/// masses that fall along the axis, in the quarter y > 0, z > 0 of the
+/// planes y = 0 and z = 0 (the nozzle lies 1 µm off both).
+fn quarter(p: [f64; 3]) -> (Vec<u64>, Vec<[f64; 3]>, Vec<f64>) {
+    let (mut id, mut x, mut m) = (Vec::new(), Vec::new(), Vec::new());
+    let mut k = 0u64;
+    for i in 0..400 {
+        let s = 0.01 * (f64::from(i) + 0.5) / 400.0;
+        for j in 0..6 {
+            let r = 0.17 * s * (f64::from(j) + 0.5) / 6.0;
+            let th = std::f64::consts::FRAC_PI_2 * (f64::from((i * 7 + j * 3) % 11) + 0.5) / 11.0;
+            let pos = [p[0] + s, r * th.cos(), r * th.sin()];
+            if pos[1] > 0.0 && pos[2] > 0.0 {
+                id.push(k);
+                x.push(pos);
+                m.push(RHO * 2e-13 * (1.0 - s / 0.012));
+                k += 1;
+            }
+        }
+    }
+    (id, x, m)
+}
+
+#[test]
+fn a_quarter_spray_with_its_mirror_images_is_the_whole_spray() {
+    // the Spray A layout: the axis on two symmetry planes, seen along y
+    let mut inj = injector([1.0, 0.0, 0.0]);
+    inj.position = [0.0002, 1e-6, 1e-6];
+    let e = Ecn {
+        plv: vec![2e-8, 2e-7],
+        ..Ecn::default()
+    };
+    let (id, x, m) = quarter(inj.position);
+    let own: Vec<usize> = (0..id.len()).collect();
+    let planes = [plane([0.0, 1.0, 0.0], 0.0), plane([0.0, 0.0, 1.0], 0.0)];
+    // the whole spray built by hand: the quarter and its three images
+    let (mut id4, mut x4, mut m4) = (Vec::new(), Vec::new(), Vec::new());
+    for (q, (sy, sz)) in [(1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)]
+        .into_iter()
+        .enumerate()
+    {
+        for i in 0..id.len() {
+            id4.push(id[i] + 1_000_000 * q as u64);
+            x4.push([x[i][0], sy * x[i][1], sz * x[i][2]]);
+            m4.push(m[i]);
+        }
+    }
+    let own4: Vec<usize> = (0..id4.len()).collect();
+    let whole = plv_profile(&e, &inj, RHO, &own4, &id4, &x4, &m4);
+    let mirrored = plv_profile_mirrored(&e, &inj, RHO, &own, &id, &x, &m, &planes);
+    assert_eq!(whole.len(), mirrored.len());
+    for (a, b) in whole.iter().zip(&mirrored) {
+        assert!((a - b).abs() <= 1e-12 * a.abs(), "{a} {b}");
+    }
+    let lw = plv_lengths(&e, &inj, RHO, &own4, &id4, &x4, &m4);
+    let lm = plv_lengths_mirrored(&e, &inj, RHO, &own, &id, &x, &m, &planes);
+    for (a, b) in lw.iter().zip(&lm) {
+        assert!((a - b).abs() <= 1e-12 * a, "{a} {b}");
+    }
+    // seen along y, the quarter alone holds half the liquid of each line
+    // of sight: its projection is half (from 2 mm on, where every parcel
+    // lies more than the 1 µm of the nozzle off the planes and so in the
+    // bin of its image), and its liquid lengths are shorter
+    let plain = plv_profile(&e, &inj, RHO, &own, &id, &x, &m);
+    for (a, b) in whole.iter().zip(&plain).skip(8) {
+        assert!((b / a - 0.5).abs() < 1e-12, "{a} {b}");
+    }
+    let lq = plv_lengths(&e, &inj, RHO, &own, &id, &x, &m);
+    assert!(lq[0] < lw[0] && lq[1] < lw[1], "{lq:?} {lw:?}");
+}
+
+#[test]
+fn the_spray_finds_the_mirror_planes_through_the_axis() {
+    let mut b = BoxSpec::new(Kind::Hex, 3, [4, 2, 2]);
+    b.lower = [0.0; 3];
+    b.upper = [0.01, 0.002, 0.002];
+    let m = b.generate().unwrap();
+    let geo = Geometry::compute(&m);
+    let loc = Locator::new(&m, &geo);
+    let env = Env {
+        mesh: &m,
+        geo: &geo,
+        loc: &loc,
+    };
+    let mut inj = injector([1.0, 0.0, 0.0]);
+    inj.position = [0.0002, 1e-6, 1e-6];
+    inj.hole_diameter = Some(9e-5);
+    let rules = |mirror: &[&str]| -> Vec<BoundaryRule> {
+        m.boundaries
+            .iter()
+            .map(|b| BoundaryRule {
+                mode: if mirror.contains(&b.name.as_str()) {
+                    BoundaryMode::Mirror
+                } else {
+                    BoundaryMode::Stick
+                },
+                e_normal: 0.5,
+                e_tangential: 0.5,
+            })
+            .collect()
+    };
+    let names = |inj: &Injector, mirror: &[&str]| -> Vec<String> {
+        let cfg = SpraySection {
+            injectors: vec![inj.clone()],
+            ecn: Some(Ecn::default()),
+            ..SpraySection::default()
+        };
+        let sp = Spray::new(&cfg, &env, rules(mirror), [0.0; 3]).unwrap();
+        sp.ecn_mirrors()[0].iter().map(|x| x.0.clone()).collect()
+    };
+    // ymax mirrors too, but the axis is 2 mm away from it
+    assert_eq!(names(&inj, &["ymin", "zmin", "ymax"]), ["ymin", "zmin"]);
+    let sp = Spray::new(
+        &SpraySection {
+            injectors: vec![inj.clone()],
+            ..SpraySection::default()
+        },
+        &env,
+        rules(&["ymin", "zmin"]),
+        [0.0; 3],
+    )
+    .unwrap();
+    let planes = &sp.ecn_mirrors()[0];
+    assert_eq!(planes[0].1.normal, [0.0, -1.0, 0.0]);
+    assert_eq!(planes[0].1.offset, 0.0);
+    // a wall is no mirror
+    assert_eq!(names(&inj, &["zmin"]), ["zmin"]);
+    // half a millimetre off the plane is beyond half the hole
+    inj.position[1] = 5e-4;
+    assert_eq!(names(&inj, &["ymin", "zmin"]), ["zmin"]);
+    // an axis across a plane (+y) does not lie in it
+    inj.position = [0.005, 1e-6, 1e-6];
+    inj.direction = [0.0, 1.0, 0.0];
+    assert_eq!(names(&inj, &["ymin", "zmin"]), ["zmin"]);
+}
+
+#[test]
+fn a_sector_must_tile_the_whole_spray() {
+    // a box sheared into a wedge between the x-y plane (zmin) and a plane
+    // through the x axis at `deg` to it (ymin), the nozzle on the x axis
+    let wedge = |deg: f64| {
+        let mut b = BoxSpec::new(Kind::Hex, 3, [4, 2, 2]);
+        b.lower = [0.0; 3];
+        b.upper = [0.01, 0.002, 0.002];
+        let mut m = b.generate().unwrap();
+        let (s, c) = (deg.to_radians().sin(), deg.to_radians().cos());
+        for p in &mut m.points {
+            *p = [p[0], p[1] + p[2] * c, p[2] * s];
+        }
+        m
+    };
+    let mut inj = injector([1.0, 0.0, 0.0]);
+    // inside the wedge, 1 µm off both planes for every angle tried here
+    inj.position = [0.0002, 4e-6, 1e-6];
+    inj.hole_diameter = Some(9e-5);
+    let cfg = SpraySection {
+        injectors: vec![inj.clone()],
+        ecn: Some(Ecn::default()),
+        ..SpraySection::default()
+    };
+    let run = |deg: f64| {
+        let m = wedge(deg);
+        let geo = Geometry::compute(&m);
+        let loc = Locator::new(&m, &geo);
+        let env = Env {
+            mesh: &m,
+            geo: &geo,
+            loc: &loc,
+        };
+        let rules: Vec<BoundaryRule> = m
+            .boundaries
+            .iter()
+            .map(|b| BoundaryRule {
+                mode: if ["ymin", "zmin"].contains(&b.name.as_str()) {
+                    BoundaryMode::Mirror
+                } else {
+                    BoundaryMode::Stick
+                },
+                e_normal: 0.5,
+                e_tangential: 0.5,
+            })
+            .collect();
+        Spray::new(&cfg, &env, rules, [0.0; 3]).map(|sp| {
+            let planes: Vec<MirrorPlane> = sp.ecn_mirrors()[0].iter().map(|x| x.1).collect();
+            mirror_image_count(&planes)
+        })
+    };
+    // 90° and 60°: the images tile the spray (4 and 6 of them)
+    assert_eq!(run(90.0).unwrap(), Some(4));
+    assert_eq!(run(60.0).unwrap(), Some(6));
+    // 50° makes 36 images that cover the spray five times; one radian
+    // makes no finite set: both refused
+    for deg in [50.0, 1f64.to_degrees()] {
+        let e = run(deg).unwrap_err().to_string();
+        assert!(e.contains("do not tile the whole spray"), "{deg}: {e}");
+    }
 }
