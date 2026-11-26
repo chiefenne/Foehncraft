@@ -572,7 +572,10 @@ impl Spray {
     /// (Chapman-Enskog, Blanc's law). Returns (ρ, μ, k, c_p, D, c_pv).
     pub fn film_properties(&self, gs: &GasState, tp: f64, ys: f64) -> [f64; 6] {
         use foehncraft_kernels::species as ks;
-        let v = self.vapour.as_ref().expect("film_properties needs the vapour");
+        let v = self
+            .vapour
+            .as_ref()
+            .expect("film_properties needs the vapour");
         let yg = gs.y_v.clamp(0.0, 1.0);
         let tm = tp + (gs.t - tp) / 3.0;
         let ym = (ys + (yg - ys) / 3.0).clamp(0.0, 1.0);

@@ -95,7 +95,9 @@ fn slope(h: &[(f64, f64, f64)]) -> f64 {
 }
 
 fn main() -> Result<()> {
-    let out = std::env::args().nth(1).unwrap_or_else(|| "output/droplet_heptane".into());
+    let out = std::env::args()
+        .nth(1)
+        .unwrap_or_else(|| "output/droplet_heptane".into());
     std::fs::create_dir_all(&out).with_context(|| format!("create {out}"))?;
     let mut s = BoxSpec::new(Kind::Hex, 3, [1, 1, 1]);
     s.lower = [0.0; 3];
@@ -103,8 +105,15 @@ fn main() -> Result<()> {
     let mesh = s.generate().map_err(anyhow::Error::msg)?;
     let geo = Geometry::compute(&mesh);
     let loc = Locator::new(&mesh, &geo);
-    let env = Env { mesh: &mesh, geo: &geo, loc: &loc };
-    let films = [("one-third", spray(&env, Film::OneThird)?), ("far-field", spray(&env, Film::FarField)?)];
+    let env = Env {
+        mesh: &mesh,
+        geo: &geo,
+        loc: &loc,
+    };
+    let films = [
+        ("one-third", spray(&env, Film::OneThird)?),
+        ("far-field", spray(&env, Film::FarField)?),
+    ];
     let mut hist = String::from("T_gas,film,t_over_d0sq_s_per_mm2,d2_over_d02,T_drop\n");
     let mut rates = String::from("T_gas,K_one_third,K_far_field,K_microgravity,K_fibre_free\n");
     for tg in [473.0, 548.0, 623.0, 698.0, 748.0] {
@@ -114,7 +123,13 @@ fn main() -> Result<()> {
             k[j] = slope(&h);
             for (i, x) in h.iter().enumerate() {
                 if i % 20 == 0 || i + 1 == h.len() {
-                    writeln!(hist, "{tg},{name},{:.6},{:.6},{:.3}", x.0 / (D0 * D0 * 1e6), x.1, x.2)?;
+                    writeln!(
+                        hist,
+                        "{tg},{name},{:.6},{:.6},{:.3}",
+                        x.0 / (D0 * D0 * 1e6),
+                        x.1,
+                        x.2
+                    )?;
                 }
             }
         }

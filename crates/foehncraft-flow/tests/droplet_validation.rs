@@ -63,12 +63,7 @@ fn rate(sp: &Spray, tg: f64, d0: f64) -> (f64, f64) {
         y_v: 0.0,
         p0: P0,
         m_gas: n2.molar_mass,
-        diff: foehncraft_kernels::species::binary_diffusion(
-            &db["NC7H16"].kernel(),
-            &n2,
-            tg,
-            P0,
-        ),
+        diff: foehncraft_kernels::species::binary_diffusion(&db["NC7H16"].kernel(), &n2, tg, P0),
     };
     let (mut d, mut tp, mut t) = (d0, 300.0, 0.0);
     let mut hist = Vec::new();

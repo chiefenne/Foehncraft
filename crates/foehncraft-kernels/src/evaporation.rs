@@ -340,6 +340,21 @@ mod tests {
     }
 
     #[test]
+    fn a_given_surface_fraction_replaces_raoults_law() {
+        let mut i = input(330.0, 500.0, 0.0, 50e-6, 1e-4, model::ABRAMZON_SIRIGNANO);
+        let raoult = evaporation_step(&i);
+        i.ys_surface = raoult.ys;
+        let same = evaporation_step(&i);
+        assert_eq!(same.d.to_bits(), raoult.d.to_bits());
+        i.ys_surface = 2.0 * raoult.ys;
+        let more = evaporation_step(&i);
+        assert_eq!(more.ys, 2.0 * raoult.ys);
+        assert!(more.k > raoult.k);
+        i.ys_surface = 5.0;
+        assert_eq!(evaporation_step(&i).ys, 0.999);
+    }
+
+    #[test]
     fn saturation_pressure_of_water_at_its_anchor_points() {
         // triple point 611.657 Pa, 25 °C 3169.9 Pa, normal boiling point
         // (373.124 K on ITS-90) 101.325 kPa, all from the IAPWS-95 tables

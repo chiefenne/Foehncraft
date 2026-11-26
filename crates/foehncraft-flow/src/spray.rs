@@ -578,11 +578,17 @@ fn carrier(case: &FlowCase, v: &str) -> Result<Vec<(foehncraft_kernels::species:
         Some(ys) => {
             let rest: f64 = ys.iter().sum();
             for (n, y) in res.transported().iter().zip(&ys) {
-                if n != v && *y > 0.0 && let Some(i) = index(n) {
+                if n != v
+                    && *y > 0.0
+                    && let Some(i) = index(n)
+                {
                     out.push((res.data[i], *y));
                 }
             }
-            if let Some(i) = index(&closure) && closure != v && rest < 1.0 {
+            if let Some(i) = index(&closure)
+                && closure != v
+                && rest < 1.0
+            {
                 out.push((res.data[i], 1.0 - rest));
             }
         }

@@ -59,8 +59,8 @@ pub struct Liquid {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub vapour: Option<String>,
     /// The vapour pressure law: `water` (the auxiliary equation of the
-    /// IAPWS-95 formulation, Wagner and Pruss 1993; the only one in this
-    /// version).
+    /// IAPWS-95 formulation, Wagner and Pruss 1993) or `library` (the
+    /// Wagner-form fit of the `library` liquid, which sets it).
     pub saturation: Saturation,
     /// Latent heat of vaporisation (J/kg) at `latent_heat_temperature`
     /// (default 2.4417e6 J/kg, water at 298.15 K, IAPWS-95 tables). At
@@ -70,8 +70,10 @@ pub struct Liquid {
     pub latent_heat: f64,
     /// The temperature of `latent_heat` (K, default 298.15).
     pub latent_heat_temperature: f64,
-    /// A liquid of the property library (D320): `"water"`, `"n-heptane"`
-    /// or `"n-dodecane"` (fits to the NIST WebBook saturation tables). It
+    /// A liquid of the property library (D320): `"water"`, `"n-heptane"`,
+    /// `"n-dodecane"` (fits to the NIST WebBook saturation tables) or
+    /// `"iso-octane"` (fits to published correlations, see
+    /// docs/verification/DATA_SOURCES.md). It
     /// sets the vapour pressure law, the density and the specific heat (at
     /// `property_temperature`) and the latent heat (at
     /// `latent_heat_temperature`); leave `density`, `specific_heat`,
@@ -104,30 +106,42 @@ impl Liquid {
             return Ok(());
         };
         let Some(d) = foehncraft_kernels::liquids::by_name(&name) else {
-            let names: Vec<&str> = foehncraft_kernels::liquids::ALL.iter().map(|l| l.name).collect();
+            let names: Vec<&str> = foehncraft_kernels::liquids::ALL
+                .iter()
+                .map(|l| l.name)
+                .collect();
             bail!(
                 "[spray.liquid] library = \"{name}\" is not a liquid of the library; the liquids are {}",
                 names.join(", ")
             );
         };
-        if matches!(self.saturation, Saturation::Library) {
-            return Ok(()); // applied before
-        }
         let def = Liquid::default();
-        for (k, given) in [
-            ("density", self.density != def.density),
-            ("specific_heat", self.specific_heat != def.specific_heat),
-            ("latent_heat", self.latent_heat != def.latent_heat),
+        let tp = self.property_temperature.unwrap_or(self.temperature);
+        if !(tp.is_finite() && tp > 0.0) {
+            bail!("[spray.liquid] property_temperature must be positive and finite (K)");
+        }
+        // a value given in the file must be the default or the library's
+        // own (a second application, a re-read of the case)
+        for (k, v, dv, lib) in [
+            ("density", self.density, def.density, d.density(tp)),
+            (
+                "specific_heat",
+                self.specific_heat,
+                def.specific_heat,
+                d.specific_heat(tp),
+            ),
+            (
+                "latent_heat",
+                self.latent_heat,
+                def.latent_heat,
+                d.latent_heat(self.latent_heat_temperature),
+            ),
         ] {
-            if given {
+            if v != dv && v != lib {
                 bail!(
                     "[spray.liquid] {k} is given with library = \"{name}\": a library liquid takes it from the library"
                 );
             }
-        }
-        let tp = self.property_temperature.unwrap_or(self.temperature);
-        if !(tp.is_finite() && tp > 0.0) {
-            bail!("[spray.liquid] property_temperature must be positive and finite (K)");
         }
         self.density = d.density(tp);
         self.specific_heat = d.specific_heat(tp);
@@ -818,5 +832,64 @@ impl SpraySection {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod library_tests {
+    use super::*;
+
+    #[test]
+    fn a_library_liquid_takes_its_properties_and_checks_its_keys() {
+        let mut l = Liquid {
+            library: Some("n-heptane".into()),
+            temperature: 300.0,
+            vapour: Some("NC7H16".into()),
+            ..Liquid::default()
+        };
+        l.apply_library().unwrap();
+        let d = &foehncraft_kernels::liquids::N_HEPTANE;
+        assert_eq!(l.density, d.density(300.0));
+        assert_eq!(l.saturation, Saturation::Library);
+        assert_eq!(l.name, "n-heptane");
+        // applying twice (a re-read of the case) keeps the values
+        let once = l.clone();
+        l.apply_library().unwrap();
+        assert_eq!(l, once);
+        // water keeps its IAPWS-95 vapour pressure
+        let mut w = Liquid {
+            library: Some("water".into()),
+            ..Liquid::default()
+        };
+        w.apply_library().unwrap();
+        assert_eq!(w.saturation, Saturation::Water);
+        w.apply_library().unwrap();
+        // refused: an unknown liquid (the names are listed), a value given
+        // beside the library, a property temperature without a library
+        let e = Liquid {
+            library: Some("benzene".into()),
+            ..Liquid::default()
+        }
+        .apply_library()
+        .unwrap_err()
+        .to_string();
+        assert!(e.contains("iso-octane") && e.contains("n-dodecane"), "{e}");
+        let e = Liquid {
+            library: Some("n-heptane".into()),
+            density: 700.0,
+            ..Liquid::default()
+        }
+        .apply_library()
+        .unwrap_err()
+        .to_string();
+        assert!(e.contains("density"), "{e}");
+        assert!(
+            Liquid {
+                property_temperature: Some(320.0),
+                ..Liquid::default()
+            }
+            .apply_library()
+            .is_err()
+        );
     }
 }
