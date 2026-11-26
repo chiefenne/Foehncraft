@@ -11,7 +11,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 |---|---|---|
 | [Kernel benchmark G1](recipes/benchmarks.md) | build and run gate G1 on a CPU, on Windows and on an NVIDIA GPU, and rerun it on unstructured meshes | 1, 2, 3, 10 |
 | [Development: tests, CI and releases](recipes/development.md) | MPI tests, checking a change the way CI does, releases, derivative checks of the kernels, manufactured solutions of the turbulence models | 4, 5, 6, 25, 184 |
-| [Meshes](recipes/meshes.md) | generate, read, convert and partition meshes, update the mesher's golden values, run flows on poor Gmsh meshes, the operator exactness check, the canonical local mesh and exact reductions | 7, 8, 9, 11, 36, 127, 129, 134, 138, 189, 200, 219, 230, 231, 234, 244, 262, 279, 290, 301, 304, 305 |
+| [Meshes](recipes/meshes.md) | generate, read, convert and partition meshes, update the mesher's golden values, run flows on poor Gmsh meshes, the operator exactness check, the canonical local mesh and exact reductions | 7, 8, 9, 11, 36, 127, 129, 134, 138, 189, 200, 219, 230, 231, 234, 244, 262, 279, 290, 301, 303, 304, 305 |
 | [Scalar transport and the pressure solver](recipes/scalar-pressure.md) | order of accuracy of the scalar operators, convection schemes, pressure-solver studies, hypre | 12, 13, 15, 17 |
 | [GPU runs](recipes/gpu.md) | scalar operators, pressure solver and flow cases on an NVIDIA GPU (also a free Colab T4) | 14, 16, 24 |
 | [Incompressible flow](recipes/flow.md) | Couette, Poiseuille, cavity and cylinder runs, boundary conditions, transient runs, time-step control, the coupled algorithm, heat transfer in turbulent flow, rotating machinery, the T-junction mixing study | 18, 19, 20, 21, 23, 28, 78, 80, 81, 83, 85, 86, 87, 94, 95, 96, 98, 99, 100, 101, 102, 225, 103, 196 |
@@ -182,6 +182,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="structure-solid"></a>300 | [Model a thick part as a solid, from Gmsh or as a block](recipes/structure.md#structure-solid) | [Structures](recipes/structure.md) |
 | <a id="run-ranks-mrf"></a>301 | [Run a case with rotating zones (MRF) or a closed domain on ranks](recipes/meshes.md#run-ranks-mrf) | [Meshes](recipes/meshes.md) |
 | <a id="structure-contact"></a>302 | [Let a reed touch its seat and its stop](recipes/structure.md#structure-contact) | [Structures](recipes/structure.md) |
+| <a id="run-ranks-species"></a>303 | [Run species, a variable density or statistics on ranks](recipes/meshes.md#run-ranks-species) | [Meshes](recipes/meshes.md) |
 | <a id="run-ranks-sliding"></a>304 | [Run a sliding rotor in conformal stepping on ranks](recipes/meshes.md#run-ranks-sliding) | [Meshes](recipes/meshes.md) |
 | <a id="run-ranks-imprint"></a>305 | [Run a sliding rotor by imprinting on ranks](recipes/meshes.md#run-ranks-imprint) | [Meshes](recipes/meshes.md) |
 | <a id="spray-evaporation"></a>306 | [Let the droplets evaporate](recipes/sprays.md#spray-evaporation) | [Lagrangian sprays](recipes/sprays.md) |

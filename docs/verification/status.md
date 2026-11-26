@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**153 features: 50 verified, 100 partial, 3 unverified.**
+**154 features: 50 verified, 101 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -146,6 +146,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Backends and interfaces | [Steady runs on ranks: rank 0 writes the output of one rank (MPI step W7 part 1)](#parallel-run-ranks) | partial |
 | Backends and interfaces | [Turbulent, heated and transient runs on ranks with the output of one rank (MPI step W7 part 2)](#parallel-run-ranks-physics) | partial |
 | Backends and interfaces | [Rotating zones (MRF), the sliding mesh (conformal stepping and imprinting) and closed domains on ranks with the output of one rank (MPI step W7, turning zones)](#parallel-run-ranks-turning) | partial |
+| Backends and interfaces | [Species, the variable density and statistics on ranks with the output of one rank (MPI step W7)](#parallel-run-ranks-species) | partial |
 | Sprays | [Lagrangian spray parcels, one way (L12, SP1)](#sprays-one-way) | partial |
 | Sprays | [Datums, liquid flow through them and droplet statistics (SP1b)](#sprays-datums-statistics) | partial |
 | Sprays | [Two-way momentum coupling of the sprays (SP2a, D247 to D252)](#sprays-two-way-momentum) | partial |
@@ -1931,8 +1932,9 @@ Contracts: `bitwise`.
 
 Gaps:
 
-- refused on ranks: species transport, [output.statistics], the thermal acceleration, cycle loop and frozen-flow march, sweeps over time steps, several fluids with a turbulence model, and what [run] ranks refuses
-- the scalar summary stops with an error on ranks for orthotropic solids, porous matrices, heat-flux periodic pairs, sprays and a variable density (all refused before the run by the rules above)
+- species, the variable density and statistics: parallel.run-ranks-species
+- refused on ranks: the thermal acceleration, cycle loop and frozen-flow march, sweeps over time steps, several fluids with a turbulence model, and what [run] ranks refuses
+- the scalar summary stops with an error on ranks for orthotropic solids, porous matrices, heat-flux periodic pairs and sprays (all refused before the run by the rules above)
 - Crank-Nicolson and PISO without outer iterations are not tested on ranks in this step (the solver on ranks is, W5)
 - MPI processes are run in CI with the steady laminar case only; the threads tests cover the same code
 
@@ -1962,6 +1964,28 @@ Gaps:
 - conformal stepping gathers the whole old levels on every rank every step (memory and time of the whole field per rank); only the rotor cells at the cuts would need to move
 - the five-blade stirred vessel of gallery 301 (16 848 cells, SST, coupled solver) was compared with --ranks 1 by hand, not in CI (its mesh needs Gmsh)
 - the reference cell's value is handed to all ranks with one all-gather per pressure solve
+
+Contracts: `bitwise`.
+
+<a id="parallel-run-ranks-species"></a>
+
+### Species, the variable density and statistics on ranks with the output of one rank (MPI step W7)
+
+**partial** (gaps written) · id `parallel.run-ranks-species` · switch `[run] rank_count, foehn flow --ranks N, mpirun -n N foehn flow; with [species], [energy] density = "variable", [output.statistics], limiter = "mlp"` · decisions D71, D84, D93, D237
+
+- contract (bitwise): [`steady_species_on_ranks_write_the_files_of_one_rank`](../../crates/foehncraft-flow/tests/run_ranks.rs): steady channel with CH4, O2, N2 (constant density, MLP limiter) on 2 and 3 ranks: residuals, ledger, boundaries, fields.vtkhdf, restart.h5 byte for byte one rank; result.json solves (species extremes and element accounts) equal
+- contract (bitwise): [`steady_species_on_a_variable_density_on_ranks_write_the_files_of_one_rank`](../../crates/foehncraft-flow/tests/run_ranks.rs): the same mixture as an ideal gas with mixture properties, the energy equation and a heated wall on 2 and 4 ranks: the same files and the density summary (mass, extremes, Mach number)
+- contract (bitwise): [`transient_species_with_statistics_on_ranks_write_the_files_of_one_rank`](../../crates/foehncraft-flow/tests/run_ranks.rs): transient BDF2 species with [output.statistics] fields = true on 2 and 3 ranks: history, ledger, probes, statistics.csv, statistics.vtkhdf, the field and restart files byte for byte one rank
+- contract (bitwise): [`transient_species_on_a_variable_density_on_ranks_write_the_files_of_one_rank`](../../crates/foehncraft-flow/tests/run_ranks.rs): transient species on the variable density with a heated wall on 2 and 3 ranks: history.csv with p0, mass, rho_min, rho_max, the field and restart files byte for byte one rank
+- contract (bitwise): [`parabolic_inlet_split_between_ranks_writes_the_files_of_one_rank`](../../crates/foehncraft-flow/tests/run_ranks.rs): a parabolic inlet cut by the partition on 2 and 4 ranks (10 x 30 cells, tall channel): the profile takes the extent of the whole boundary, every file byte for byte one rank; fails without the fix
+- contract (bitwise): [`ranks_cylinder_species_statistics`](../../examples/cases/flow/ranks_cylinder_species_statistics.toml): the vortex street at Re 100 with methane from the cylinder surface on 4 ranks, statistics from t = 5 s with phase averages; every output file compared with --ranks 1 when the case was made (passes in CI (set long), not yet in the manual)
+
+Gaps:
+
+- refused on ranks: a closed volume (p0 from the mass), gravity (so buoyant variable-density flows), chemistry (SF2b, its own step), and what parallel.run-ranks-physics lists
+- a transient run on a variable density in an open domain reports RUN007 on one rank and on ranks (the mass check of the verification books no storage, a stage 7c gap); the files agree byte for byte
+- a vertex bound of the MLP limiter that is -0 on one rank and +0 on another may take either sign (f64 min of equal zeros); not seen in the tests
+- MPI processes are run in CI with the steady laminar case only; the threads tests cover the same code
 
 Contracts: `bitwise`.
 
@@ -2397,7 +2421,7 @@ Gaps:
 - the MLP limiter lets mass fractions leave [0, 1] by its smooth-extremum allowance (a few 1e-6 in the jet); strictly bounded (limiter_epsilon = 0) stalls the steady residual
 - the ledger takes the linear-upwind reconstruction without the clip of bounded = true, and the bounded BDF2 fallback is not booked in the storage
 - no measured reference case of turbulent mixing yet (a jet with measured mass fractions)
-- on ranks without the variable density (stage 7c is refused on ranks, its cell and closed-volume sums need the halo and global sums) and without the MLP limiter (vertex setup not on ranks yet)
+- on ranks (parallel.run-ranks-species) without a closed volume and without chemistry in the cells
 
 <a id="chemistry-reactor"></a>
 
