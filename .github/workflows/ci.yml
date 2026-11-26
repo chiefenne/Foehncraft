@@ -216,12 +216,16 @@ jobs:
 
   # ---------------------------------------------------------------------
   # Unit and integration tests, including every bitwise-reproducibility
-  # test, and the G1 smoke run (all CPU backends bitwise equal).
-  # cargo-nextest runs the tests of all test programs in one pool (cargo
-  # test runs the programs one after another, and the long tail of one
-  # program kept the other cores idle), each test in a process of its own.
+  # test, and the G1 smoke run (all CPU backends bitwise equal), in two
+  # halves per platform that run side by side. cargo-nextest runs the tests
+  # of all test programs in one pool (cargo test runs the programs one after
+  # another, and the long tail of one program kept the other cores idle),
+  # each test in a process of its own; `--partition count:k/2` deals the
+  # tests out to the two halves in turn. Both halves compile the same build
+  # (about 9 minutes on Linux, the warm cache holds the dependencies); the
+  # tests are about 30 CPU minutes, 8 minutes on one runner.
   test:
-    name: Test (${{ matrix.os }})
+    name: Test (${{ matrix.os }}, ${{ matrix.part }}/2)
     needs: plan
     if: needs.plan.outputs.code == 'true'
     runs-on: ${{ matrix.os }}
@@ -229,6 +233,7 @@ jobs:
       fail-fast: false
       matrix:
         os: ${{ fromJSON(needs.plan.outputs.test_os) }}
+        part: [1, 2]
     env:
       BUILD_PROFILE: ${{ needs.plan.outputs.profile }}
     steps:
@@ -238,23 +243,26 @@ jobs:
         with:
           # build-ci is written by warm-ci-cache on main, build-release here
           shared-key: build-${{ needs.plan.outputs.profile }}
-          save-if: ${{ github.ref == 'refs/heads/main' && needs.plan.outputs.profile == 'release' }}
+          save-if: ${{ github.ref == 'refs/heads/main' && needs.plan.outputs.profile == 'release' && matrix.part == 1 }}
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest
       # the debug-assertion run and the run without HDF5 and METIS are jobs
       # of their own (below), so that they run beside this one
-      - run: cargo nextest run --workspace --locked --cargo-profile "$BUILD_PROFILE" --no-fail-fast
-      - run: cargo test --workspace --doc --locked --profile "$BUILD_PROFILE"
+      - run: cargo nextest run --workspace --locked --cargo-profile "$BUILD_PROFILE" --no-fail-fast --partition count:${{ matrix.part }}/2
+      - if: matrix.part == 1
+        run: cargo test --workspace --doc --locked --profile "$BUILD_PROFILE"
       - name: Slow tests (marked #[ignore]; nightly and manual runs)
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-        run: cargo nextest run --workspace --locked --cargo-profile "$BUILD_PROFILE" --no-fail-fast --run-ignored only
+        run: cargo nextest run --workspace --locked --cargo-profile "$BUILD_PROFILE" --no-fail-fast --run-ignored only --partition count:${{ matrix.part }}/2
       # the tests of foehncraft-cli have already built the command line
       # (target/<profile>/foehn); `cargo run -p foehncraft-cli` would build
       # it a second time with other features
       - name: G1 smoke run (CPU backends, results bitwise equal)
+        if: matrix.part == 1
         run: target/$BUILD_PROFILE/foehn bench g1 examples/cases/bench/g1_ci_small.toml
       - uses: actions/upload-artifact@v4
+        if: matrix.part == 1
         with:
           name: g1-ci-small-${{ matrix.os }}
           path: output/g1_ci_small/
@@ -299,11 +307,13 @@ jobs:
         with:
           shared-key: build-${{ needs.plan.outputs.profile }}
           save-if: false
-      # one crate at a time: each with its own dependency features
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+      # the three crates in one build and one pool of tests: without default
+      # features none of them turns on HDF5 or METIS in another
       - run: |
-          cargo test -p foehncraft-mesh --no-default-features --locked --profile "$BUILD_PROFILE"
-          cargo test -p foehncraft-fv --no-default-features --locked --profile "$BUILD_PROFILE"
-          cargo test -p foehncraft-flow --no-default-features --locked --profile "$BUILD_PROFILE"
+          cargo nextest run -p foehncraft-mesh -p foehncraft-fv -p foehncraft-flow --no-default-features --locked --cargo-profile "$BUILD_PROFILE" --no-fail-fast
           python3 -m tools.check.c_free
 
   # ---------------------------------------------------------------------

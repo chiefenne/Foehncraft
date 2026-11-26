@@ -84,11 +84,16 @@ only 5 macOS jobs at once per account):
 
 The check "CI OK" sums up all jobs.
 
-The test job runs the tests with [cargo-nextest](https://nexte.st): the
+The test job runs the tests with [cargo-nextest](https://nexte.st), in two
+halves per platform side by side (`--partition count:1/2` and `2/2`): the
 tests of all test programs share one pool (cargo test runs the programs one
-after another), each in a process of its own. Locally
+after another), each in a process of its own. Both halves compile the same
+build; the tests take about 30 CPU minutes. The job without HDF5 and METIS
+runs its three crates in one nextest pool too. Locally
 `cargo test --workspace --profile ci` runs the same tests;
 `cargo nextest run --workspace --cargo-profile ci` runs them as CI does.
+The three Linux case sets are balanced on their run times (about 8 minutes
+each, `tools/check/ci_cases.py`).
 
 The MPI job builds all its example programs in one `cargo build` with the
 `ci` profile, so that the crates are compiled once with one feature set.
