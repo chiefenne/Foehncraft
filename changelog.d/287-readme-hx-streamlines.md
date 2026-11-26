@@ -1,1 +1,0 @@
-- README and heat exchanger application renderings: air streamlines seeded at both the inlet (forward) and outlet (backward) so they cover the whole path.

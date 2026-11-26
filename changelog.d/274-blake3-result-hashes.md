@@ -1,1 +1,0 @@
-- **BLAKE3 hashes in `result.json`** (D84, the maintainer's choice of 2026-11-24, shared with KoflCraft and MurmelCraft): each output file is listed with `bytes` and `blake3` instead of `sha256`, read in pieces and hashed on every core instead of read whole into memory. The engine's machine formats are version 2.0. Python's `Result.files()` reads both keys.

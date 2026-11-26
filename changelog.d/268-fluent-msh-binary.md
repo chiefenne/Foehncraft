@@ -1,1 +1,0 @@
-- **Binary Fluent `.msh` files.** The Fluent face-based `.msh` reader now reads binary files too: single-precision (`20xx`) and double-precision (`30xx`) sections for nodes, cells, faces and periodic pairs, mixed freely with ASCII sections; other binary sections are skipped. Written from the public description of the format.

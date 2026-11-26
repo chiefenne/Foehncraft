@@ -1,6 +1,6 @@
 # Install and update
 
-Foehncraft is built from source, also release 1.0.1 (tag `v1.0.1`);
+Foehncraft is built from source, also release 1.1.0 (tag `v1.1.0`);
 release binaries for Linux, macOS and Windows with `SHA256SUMS.txt` and
 `foehn doctor` are planned (D203) but not part of a release yet. See also
 [Connect an assistant](agents.md) and [Troubleshooting](troubleshooting.md).
@@ -19,7 +19,7 @@ release binaries for Linux, macOS and Windows with `SHA256SUMS.txt` and
 ```
 git clone https://github.com/chiefenne/Foehncraft.git
 cd Foehncraft
-git checkout v1.0.1          # optional: the release instead of main
+git checkout v1.1.0          # optional: the release instead of main
 cargo build --release -p foehncraft-cli
 target/release/foehn info
 ```

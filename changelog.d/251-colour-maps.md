@@ -1,1 +1,0 @@
-- **Colour maps shared with KoflCraft and MurmelCraft (D261).** Field pictures default to Rainbow Desaturated (ParaView's eight control points, `tools/plot/colormaps.py`), with Inferno as the second map and diverging maps for signed fields; the plot scripts and application examples moved from viridis, plasma, magma and turbo to it.

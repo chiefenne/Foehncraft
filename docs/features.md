@@ -6,7 +6,7 @@ The full list of what Foehncraft does on `main` now. The
 commands, and the [Engineering Gallery](applications.md) puts them together
 on industrial geometries.
 
-Everything below is in release 1.0.1 and on `main`, checked by the
+Everything below is in release 1.1.0 and on `main`, checked by the
 verification cases of the [case catalogue](cases.md) and shown in the
 [gallery](gallery.md). How well each feature is checked (verified,
 partial or unverified, with the evidence and the known gaps) is on the
