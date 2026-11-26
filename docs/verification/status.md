@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**152 features: 50 verified, 99 partial, 3 unverified.**
+**153 features: 50 verified, 100 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -157,6 +157,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Sprays | [Spray breakup: KH-ACT and KH-RT with blob injection, TAB distortion and dynamic drag (SP6, D300 to D309)](#sprays-breakup) | partial |
 | Sprays | [High-pressure droplet surface: Peng-Robinson phase equilibrium and latent heat (Spray A, SA1, D311, D312, D314)](#sprays-high-pressure-surface) | partial |
 | Sprays | [Real-fluid gas film of the Peng-Robinson surface: Chung dense-fluid transport, Riazi-Whitson diffusivity, Peng-Robinson density and c_p (Spray A, SA2, D313)](#sprays-high-pressure-film) | partial |
+| Sprays | [Distorted drops: the Corrected Distortion model for drag and evaporation (Spray A, SA4 part 1, D316)](#sprays-corrected-distortion) | partial |
 | Sprays | [ECN liquid length (projected liquid volume) and vapour penetration (Spray A, SA3, D315)](#sprays-ecn-diagnostics) | partial |
 | Flow models | [Porous regions with a direction-dependent Darcy-Forchheimer resistance (D270, PM1)](#porous-darcy-forchheimer) | partial |
 | Flow models | [Gas and matrix temperatures in porous regions, monolithic (D271, D272, PM2)](#porous-two-temperatures) | partial |
@@ -2235,6 +2236,7 @@ Gaps:
 - consistency: [`the_dodecane_vapour_is_the_kernel_ideal_gas`](../../crates/foehncraft-flow/src/species.rs): the vapour species NC12H26 of the flow's species data is the kernel's n-dodecane ideal gas (same coefficients, range and Lennard-Jones data); its c_p within 0.6 % of Lemmon and Huber (2004) at 500 and 700 K, its kinetic-theory viscosity within 5 % at 500 K (the_spray_vapours_meet_the_nist_data)
 - exact: [`va4_the_mixing_line_closes_the_energy_balance`](../../crates/foehncraft-particles/tests/mixing_line.rs): VA.4: 363 K n-dodecane into 900 K N2 at 6 MPa, frozen, equilibrium and ideal: the enthalpy of the state found equals that of the mixed streams to 1e-13 of the stream difference (found 7e-16), the end points are the streams
 - consistency: [`va4_the_two_phase_region_of_the_mixing_line`](../../crates/foehncraft-particles/tests/mixing_line.rs): VA.4: Z_sat 0.357 (equilibrium) against 0.320 (ideal); the frozen line equals the equilibrium line before Z_sat and fails the stability test where the flash splits (1e-6); equal fugacities and dissolved N2 in the two-phase region
+- consistency: [`a_gas_above_the_critical_mixing_state_takes_vapour`](../../crates/foehncraft-particles/tests/dense_film.rs): the saturation limiter (D253) with the Peng-Robinson surface: a 900 K gas at 6 MPa (above the critical mixing temperature, no latent heat) takes vapour up to the fuel fraction of the critical surface (1e-12), a 600 K gas less, a gas at that fraction none
 - reference-data: [`va5_the_siebers_liquid_length_with_our_thermodynamics`](../../crates/foehncraft-particles/tests/mixing_line.rs): VA.5: Siebers (1999) liquid length with our Z_sat at the four measured Spray A conditions (ECN DBI, 210675): 7.2/11.3/4.9/10.7 mm (equilibrium) and 8.2/13.0/5.7/11.3 mm (ideal) against 11.7/16.3/7.4/20.6 mm; the trends with temperature and density right
 
 Gaps:
@@ -2268,6 +2270,32 @@ Gaps:
 - the film gases are the `ambient` key, not the local gas of the cell; the gas solver stays an ideal gas (D317)
 - at Spray A conditions (6 MPa) the effect is small (film 1 to 7 %, droplet life -3 %): no measurement isolates it
 
+<a id="sprays-corrected-distortion"></a>
+
+### Distorted drops: the Corrected Distortion model for drag and evaporation (Spray A, SA4 part 1, D316)
+
+**partial** (gaps written) · id `sprays.corrected-distortion` · switch `[spray.breakup] drag = "corrected-distortion"` · decisions D316
+
+- exact: [`the_sphere_is_the_sphere`](../../crates/foehncraft-kernels/src/distortion.rs): at y = 0 the shape, drag and transfer ratios are 1 (1e-15); a solid drop (lambda -> infinity) is the solid sphere (1e-10)
+- exact: [`the_spheroid_surface_and_volume`](../../crates/foehncraft-kernels/src/distortion.rs): the spheroid surface of eq. 30 against quadrature of the surface of revolution (1e-9), the volume of the sphere kept (1e-14); the flattest drop has 22.7 % more surface
+- consistency: [`the_viscous_sphere_branches_meet_at_lambda_two`](../../crates/foehncraft-kernels/src/distortion.rs): the two branches of Feng and Michaelides meet at lambda = 2 (1e-10); from lambda 2 on the internal circulation lowers the drag and raises the transfer, less so the more viscous the drop
+- consistency: [`a_flattened_drop_drags_more_and_evaporates_faster`](../../crates/foehncraft-kernels/src/distortion.rs): the trends of figs. 18 and 19 of Nguyen et al. (2022): at y = 1 the drag 1.1 to 2 and the transfer 1.5 to 4.5 times the sphere's, rising with y; a prolate drop drags less
+- exact: [`the_transfer_factors_scale_the_rates`](../../crates/foehncraft-kernels/src/evaporation.rs): a factor on Sh and Nu scales the d2 rate and Nu exactly (1e-12) and leaves the Ranz-Marshall wet-bulb state unchanged
+- exact: [`the_rate_of_a_distorted_drop_is_the_sherwood_factor`](../../crates/foehncraft-particles/tests/distortion.rs): the evaporation rate of a distorted drop is the sphere's times the Sherwood factor (1e-12); the dynamic drag leaves the evaporation bitwise alone
+- exact: [`the_factor_is_the_kernel_factor_at_the_film_state`](../../crates/foehncraft-particles/tests/distortion.rs): the factor the spray applies is the kernel's at the film Reynolds and Schmidt numbers and lambda = mu_l(T_p)/mu_film (1e-12)
+- consistency: [`corrected_distortion_drags_between_the_sphere_and_the_dynamic_drag`](../../crates/foehncraft-particles/tests/breakup.rs): a spray with the Corrected Distortion drag goes farther than with the dynamic drag and less far than with the sphere
+- contract (bitwise): [`same_bits_on_any_threads_and_order`](../../crates/foehncraft-particles/tests/breakup.rs): D247: the Corrected Distortion drag and transfer bitwise equal on 1 and 4 threads with the storage reversed
+- reference-data: [`spray_a_distortion`](../../examples/cases/flow/spray_a_distortion.toml): ECN Spray A (900 K, 22.8 kg/m3, n-dodecane, quarter domain, 0.6 ms): liquid length 7.6 +- 1.6 mm with the Corrected Distortion model and 8.5 +- 0.3 mm with the dynamic drag against the measured 11.2 mm (PLV) and 10.4 mm (Mie 3 %); not met, see gaps (passes in CI (set long), not yet in the manual) ([results](../gallery/sprays.md#spray-a-distortion))
+- contract (schema): [`spray_a_distortion_injectors`](../../examples/cases/flow/spray_a_distortion_injectors.toml): the included injector file of spray_a_distortion (Spray A hole, rate table, rounded inlet) ([results](../cases/flow.md#lagrangian-sprays)) **missing**
+
+Gaps:
+
+- the Spray A liquid length is 24 % (dynamic drag) and 32 % (Corrected Distortion) short of the measured 11.2 mm: the untuned KH-ACT constants give drops of about 1 um; the model shortens the liquid length as in the paper, away from the measurement here
+- one run per law on a coarse mesh (0.5 mm along the axis, ECN asks for 0.25 mm), no ensemble; the difference between the laws (0.9 mm) lies within the scatter of the Corrected Distortion run (s.d. 1.6 mm)
+- the correlations of Feng and Michaelides (2001) and of Richter and Nikrityuk (2012) are taken as Nguyen et al. (2022) print them, not yet checked against the originals
+- SA4 part 2 not done: the liquid volume does not displace the gas and the sources are not spread over a fixed radius; no collisions
+- `spray_a_distortion_injectors` has no run in the verification manual or in CI
+
 <a id="sprays-ecn-diagnostics"></a>
 
 ### ECN liquid length (projected liquid volume) and vapour penetration (Spray A, SA3, D315)
@@ -2280,6 +2308,10 @@ Gaps:
 - exact: [`the_vapour_penetration_is_the_farthest_cell_at_the_threshold`](../../crates/foehncraft-particles/tests/ecn.rs): the vapour penetration is the farthest axial distance of a cell at or above 0.1 % on a slanted axis (to 1e-15), behind the nozzle and off threshold ignored
 - contract (bitwise): [`the_liquid_length_does_not_depend_on_the_parcel_order`](../../crates/foehncraft-particles/tests/ecn.rs): the parcels in reverse order give the same bits; without [spray.ecn] no length is written
 - contract (diagnostics): [`the_ecn_table_is_checked`](../../crates/foehncraft-particles/tests/ecn.rs): negative thresholds, a line of sight along an injector, a vapour fraction outside (0, 1) and the steady spray mode are refused with the key named
+- exact: [`the_mirror_planes_close_into_the_images_of_the_spray`](../../crates/foehncraft-particles/tests/ecn.rs): the reflections in the symmetry planes through the axis close into a group: 1, 2, 4 images for none, one and two planes, 6 for a 60 deg sector, 36 for 50 deg, none for one radian; the planes read back from the parcel file to the bit
+- exact: [`a_quarter_spray_with_its_mirror_images_is_the_whole_spray`](../../crates/foehncraft-particles/tests/ecn.rs): the PLV profile of a quarter spray between the planes y = 0 and z = 0 with its mirror images equals that of the whole spray built by hand in every bin and in both liquid lengths (1e-12); the quarter alone projects half the volume from 2 mm on and gives shorter lengths
+- consistency: [`the_spray_finds_the_mirror_planes_through_the_axis`](../../crates/foehncraft-particles/tests/ecn.rs): the spray finds the symmetry planes and slip walls that contain the injector axis, not those beside it
+- contract (diagnostics): [`a_sector_must_tile_the_whole_spray`](../../crates/foehncraft-particles/tests/ecn.rs): sectors of 90 and 60 deg are accepted; 50 deg (images overlap) and one radian (no closed set) are refused with the reason
 - consistency: [`the_ecn_diagnostics_are_written_per_step`](../../crates/foehncraft-flow/tests/spray_evaporation.rs): the evaporating duct writes both liquid lengths and the vapour penetration per step; the smaller threshold lies farther out, within the farthest parcel, and the vapour inside the duct
 - consistency: [`spray_chamber_ecn`](../../examples/cases/flow/spray_chamber_ecn.toml): water sprayed into still air at 300 C: the liquid lengths settle while the vapour penetration keeps growing (passes in CI (set long), not yet in the manual) ([results](../gallery/sprays.md#spray-ecn))
 - contract (schema): [`spray_chamber_ecn_injectors`](../../examples/cases/flow/spray_chamber_ecn_injectors.toml): the included injector file of spray_chamber_ecn ([results](../cases/flow.md#lagrangian-sprays)) **missing**
