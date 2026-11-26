@@ -2461,9 +2461,18 @@ pub(crate) fn mesh_for(case: &FlowCase, level: Option<u32>) -> Result<(Mesh, Geo
         g.refine = l;
     }
     let (mut mesh, source, _) = build_mesh(&sec)?;
+    let mut desc = format!("{source}: {} cells", mesh.n_cells);
+    // cut cells (L13 stage 2, D227): before the renumbering and the pairing
+    if case.immersed.is_cut() {
+        crate::immersed::check_case(case)?;
+        let (m, notes) = crate::immersed::cut_mesh(case, &mesh)?;
+        mesh = m;
+        for n in notes {
+            let _ = write!(desc, "; {}", n.message);
+        }
+    }
     renumber(&mut mesh, sec.renumber, sec.seed).map_err(anyhow::Error::msg)?;
     // periodic pairs (D29): the last step, after the renumbering
-    let mut desc = format!("{source}: {} cells", mesh.n_cells);
     if !pairs.is_empty() {
         let specs: Vec<_> = pairs.iter().map(|p| p.spec.clone()).collect();
         mesh = foehncraft_mesh::periodic::pair(&mesh, &specs)
