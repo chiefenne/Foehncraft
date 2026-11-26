@@ -1716,7 +1716,7 @@
     "gaps written"
    ],
    "gaps": [
-    "on tetrahedra the sphere array is +1.7 % on 16³ and −1.8 % on 24³, and the wall carries G L³ only to 5 % (0.949 on 24³, a side force of 2 % on 16³): the cut tetrahedra need a closer look",
+    "on tetrahedra the sphere array is +1.7 % on 16³ and +4.8 % on 24³ (the error grows; #322 had −1.8 % on 24³ with the cell-quality remediation on), and the wall carries G L³ only to 5 % on 16³ (1.3 % on 24³, a side force of 2 % on 16³): the cut tetrahedra need a closer look",
     "on polyhedral meshes the faces are not planar: the fan of a clipped face is not that of the input face, so the face apertures do not converge (4.6e-2; the cell-by-cell volumes converge at order 1.6 to 1.8, up to 1.9 times the total); the sphere array is −6.1 and −4.0 % on 17³ and 25³ polyhedra",
     "the fallback cuts the whole mesh again per round (the turned box on 196 608 tetrahedra: three rounds, 16 s against 1.6 s with the exact crossings alone); a local re-cut is not built",
     "the cut reaches only the totals and the drag of the sphere array: the other cases of the plan (cut-sphere Poisson MMS, Taylor-Couette, Re 100 cylinder) are not run with STL bodies",

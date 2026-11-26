@@ -478,7 +478,7 @@ Recipe: [315](../recipes/immersed.md#cut-moments).
 <a id="stl-cut"></a>
 ## 322. STL bodies cut out of a mesh: sharp edges, face points and the Stokes sphere array
 
-<img src="../figures/gallery/immersed_stl_sphere_array.png" alt="Three panels of Stokes flow through a simple cubic array of spheres, the sphere a triangle surface cut out of a hexahedral mesh of 32 cubed cells. Left: the cut sphere wall seen from the side, coloured by the pressure, red on the upstream side, blue on the downstream side, the fan triangles of the cut wall faces visible. Middle: the speed in the plane through the sphere's centre, upper half, slow (blue) next to the sphere and fastest (red) midway between the spheres, the square cells meeting the dashed exact circle. Right: log-log chart of the error of the drag coefficient against the series of Hasimoto and Sangani and Acrivos over the cell width: the cut sphere on hexahedra falls along the slope-2 line from 9 to 0.9 percent, tetrahedra and polyhedra lie between 1.7 and 5.6 percent, the penalised sphere stays between 3.9 and 6.2 percent along slope 1." width="800" height="267">
+<img src="../figures/gallery/immersed_stl_sphere_array.png" alt="Three panels of Stokes flow through a simple cubic array of spheres, the sphere a triangle surface cut out of a hexahedral mesh of 32 cubed cells. Left: the cut sphere wall seen from the side, coloured by the pressure, red on the upstream side, blue on the downstream side, the fan triangles of the cut wall faces visible. Middle: the speed in the plane through the sphere's centre, upper half, slow (blue) next to the sphere and fastest (red) midway between the spheres, the square cells meeting the dashed exact circle. Right: log-log chart of the error of the drag coefficient against the series of Hasimoto and Sangani and Acrivos over the cell width: the cut sphere on hexahedra falls along the slope-2 line from 9 to 0.9 percent, tetrahedra rise from 1.7 to 4.8 percent, polyhedra fall from 6.1 to 4.0 percent, the penalised sphere stays between 3.9 and 6.2 percent along slope 1." width="800" height="267">
 
 `[[immersed.body]] shape = "stl"` reads a triangle surface (ASCII or binary
 STL, `file` relative to the case file, `scale` for its unit) and makes it a
@@ -591,7 +591,7 @@ Hasimoto (1959) and Sangani & Acrivos (1982), 2.152:
 | hex 32³ (the case file, 256 iterations, 51 s) | 31 752 | 2.111 | −1.9 % | 1.004 |
 | hex 48³ | 107 144 | 2.132 | −0.9 % | 0.998 |
 | tet 16³ | 23 856 | 2.188 | +1.7 % | 1.047 |
-| tet 24³ | 80 340 | 2.113 | −1.8 % | 0.949 |
+| tet 24³ | 80 340 | 2.254 | +4.8 % | 0.987 |
 | poly 16³ (17³ polyhedra) | 4 820 | 2.021 | −6.1 % | 1.027 |
 | poly 24³ (25³ polyhedra) | 15 212 | 2.066 | −4.0 % | 1.011 |
 | hex 32³, primitive sphere cut | 31 752 | 2.108 | −2.0 % | 1.004 |
@@ -624,9 +624,10 @@ The merge threshold 0.4 instead of 0.3 gives −2.3 % on 32³ (24³ and the
 **What is not here yet.** The fallback cuts the whole mesh again per round.
 On polyhedral meshes the faces are not planar, so the fan of a clipped face
 is not that of the input face and the face apertures do not converge (the
-cell-by-cell volumes now do). On tetrahedra the wall carries G L³ only to 5 % (0.949 on
-24³) and the drag error changes sign between 16³ and 24³: the cut cells of
-tetrahedra need a closer look (features.toml). A feature thinner than a cell can vanish between the
+cell-by-cell volumes now do). On tetrahedra the drag error grows from +1.7 %
+on 16³ to +4.8 % on 24³ and the wall carries G L³ to 5 % on 16³ (1.3 % on
+24³; the −1.8 % of #322 on 24³ ran with the cell-quality remediation on): the
+cut cells of tetrahedra need a closer look (features.toml). A feature thinner than a cell can vanish between the
 nodes. Wall functions with the exact first-cell distance (2c), conjugate
 heat transfer through cut cells (2d), named surface patches (2e) and the
 near-body refinement (2f) follow. One rank only.
