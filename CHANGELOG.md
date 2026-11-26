@@ -223,8 +223,8 @@ page. A gap is listed as a gap.
 - Fluid–structure coupling (the rest of MS6) and the mesh-motion solver
   (MS1) are not built; immersed walls are laminar and isothermal, and on
   tetrahedra the drag of the STL sphere array is still 1.7 to 4.8 % high.
-- The verification manual was last generated on 0.6.0; the status page is
-  current.
+- The verification manual was generated for this release (185 of 185
+  catalogue cases pass); the status page is current.
 - No prebuilt binaries (D203): build from source ([install](docs/install.md)).
 
 ### Also in this release: changes already in the 1.0.1 code
