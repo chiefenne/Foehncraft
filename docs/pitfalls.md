@@ -26,6 +26,7 @@ instead.
 - [Deforming meshes: the grid flux and the old levels](#deforming-mesh)
 - [High-pressure phase equilibrium](#high-pressure-equilibrium)
 - [Property solves and new kernels on ranks](#property-solves)
+- [Sprays on a sector of an injector](#spray-sectors)
 - [Long-lived branches and the one test program per crate](#stale-branches)
 
 <a id="steady-runs"></a>
@@ -607,6 +608,28 @@ Found with the IAPWS-IF97 states of SF7a (#277):
   own-cell arrays), and the variable density of stage 7c crashed as well;
   W5 had checked only constant properties. The c_p path is fixed; the
   variable density is refused on ranks until it is ported.
+
+<a id="spray-sectors"></a>
+## Sprays on a sector of an injector
+
+- **Keep the cells on the axis out of a sector that the plumes draw gas
+  into.** The 22.5° sector of ECN Spray G reaching the axis (D309) went
+  unstable at 0.13 ms in every trial: the cells on the axis are prisms
+  whose faces have a skewness of 1/(4Δφ), 5 with 8 angular cells, and they
+  were the first to diverge once the plumes drew gas to the axis (12
+  angular cells failed sooner). The parcels in the diverging gas then spent
+  `max_substeps` each and their exchange records filled the memory, so the
+  run died without a message. A slip core of 0.3 mm (`ymin` symmetry) with
+  three graded cells next to it has no skewed face and runs clean; the gas
+  on the axis of a symmetric injector moves only along it anyway.
+- **Do not blame the breakup before comparing a second model.** G1 ran
+  33 % ahead of the measured liquid at 1.2 ms with KH-ACT, whose drops are
+  twice the measured size; the obvious reading was "too large drops". KH-RT
+  with drops of the measured size ran exactly as far, so the cause is
+  elsewhere. Run both models (one `--set`) before tuning breakup constants.
+- **A string slice can drop the exponent.** `str(x)[:8]` of 1.2345678e-05
+  is `1.234567`: a liquid volume fraction read that way looked above 1 and
+  sent the search the wrong way for a while. Format numbers with `:.3e`.
 
 <a id="stale-branches"></a>
 ## Long-lived branches and the one test program per crate

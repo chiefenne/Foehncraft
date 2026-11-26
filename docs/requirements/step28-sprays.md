@@ -33,7 +33,7 @@ viewer (D261 to D268) are in
 | SP4 | Minimal vapour species on the low-Mach density, liquid property set for water first | SP2 |
 | SP5 | Evaporation (Ranz-Marshall, Abramzon-Sirignano), closed-box mass and energy ledger test, the spray-cooling case. Vapour and enthalpy exchange in the relaxation form of D250, parcel integrators of D251, saturation limiter of D253, checks V28.1 to V28.8 | SP4 |
 | SP2s | Steady spray mode (D260): parcel streams through the steady gas field, relaxed sources, checks V28.9 to V28.11. Momentum and sensible heat first; evaporation in the steady mode when SP5 is merged. **Implemented 2026-11-25 (PR #292)** for momentum and sensible heat; see section 6 | SP2 merged and V28.1 to V28.4 passed |
-| SP6 | Breakup (KH-ACT and KH-RT with blob injection, TAB distortion with dynamic drag, rate tables, mirrored eddies; D300 to D308, section 7), then collision | owner request 2026-11-25 (ECN Spray G) |
+| SP6 | Breakup (KH-ACT and KH-RT with blob injection, TAB distortion with dynamic drag, rate tables, mirrored eddies, the ECN Spray G case; D300 to D309, section 7), then collision | owner request 2026-11-25 (ECN Spray G) |
 | SP3 | Parcel migration between ranks | MPI W3 to W5 merged |
 | SP7 | Wall film | 7t2 surface mesh |
 
@@ -545,7 +545,7 @@ PR #292). What the code does:
   several processes; the heat balance closes to round-off only with
   `[species] properties = "fluid"`.
 
-## 7. Breakup (SP6, D300 to D308)
+## 7. Breakup (SP6, D300 to D309)
 
 The owner asked on 2026-11-25 for the current best breakup model, for the
 ECN Spray G validation (iso-octane, condition G1) and then Spray A. The
@@ -566,6 +566,7 @@ area contraction, plume direction and cone) and the distortion of the drops.
 | D306 | **Injector keys for nozzles.** `hole_diameter` and `area_contraction` C_a: without `diameter` and `size` the parcels start as blobs of √C_a d_hole, without `speed` they leave at U = ṁ/(ρ_l C_a A_hole); `rate` is the mass flow over time, a table [t, ṁ] linear in between, and each parcel carries the exact integral of the table over its share of the injection time; `flow_share` is the share of the injector's liquid in the domain (a quarter or sector model of a jet), with the speed from the whole flow. |
 | D307 | **KH-ACT: the nozzle turbulence and the cavitation strip the blobs** (Som and Aggarwal, Combust. Flame 157, 2010, eqs. 7 to 19; formulation also in Magnotti's thesis, Georgia Tech 2017, OSTI 1785739, eqs. 1.13 to 1.25). Key `model = "kh-act"`. A blob is stripped by the mechanism with the largest ratio of length to time scale at the start of each sub-step: Kelvin-Helmholtz (a − r_c)/τ_KH as in D301; the turbulence the liquid brings out of the hole, L_T/τ_T with L_T = C_μ k^1.5/ε, τ_T = C_μ k/ε (C_μ = 0.09); the cavitation R_CAV/τ_CAV with R_CAV = r_hole (1 − C_a)^½, τ_CAV the shorter of the Rayleigh collapse time 0.9145 R_CAV (ρ_l/p_v)^½ and the burst time (r_hole − R_CAV)/(2k/3)^½. Turbulence and cavitation take the radius down at da/dt = −C_T,CAV L/τ (key `c_tcav`, default 1) to no less than their child radius (L_T, R_CAV), and the children of the stripped liquid have that radius (KH children keep B₀Λ). The turbulence of a parcel decays without production, convection or diffusion as in the standard k-ε model (C_ε2 = 1.92); our own solution of those two equations is exact, k = k₀ (1 + t/T)^(−1/(C_ε2−1)), T = k₀/((C_ε2 − 1) ε₀), so L_T grows as (1 + t/T)^0.457, τ_T = τ_T0 + 0.0828 t, L_T/τ_T = √k, and the stripped radius over a sub-step is the exact integral of √k (the papers' constants 0.0828 and 0.457 follow). k₀ and ε₀ at the exit: `nozzle_k`, `nozzle_epsilon` (for example from a nozzle flow simulation, as Som and Aggarwal used), or the force balance of Huh and Gosman (1991, as given by Magnotti eqs. 1.22 and 1.23), k₀ = U²/(8 L/d) B, ε₀ = 0.27 U³/(2L) B, B = 1/C_d² − K_c − (1 − s²), from `hole_length`, `discharge_coefficient` and `inlet_loss` K_c (default 0.5, the textbook loss of a sharp-edged entrance; our choice, the papers give no value), with U the blob's speed from the hole and s → 0 (the hole fed from a much larger sac, our reading). `[spray.liquid] vapour_pressure` sets the collapse; without it the cavities only burst. Refused: C_d above C_a, losses that leave no friction (B ≤ 0), half of a pair of keys. Only blobs feel the turbulence and the cavitation (Som and Aggarwal: primary breakup acts on the parent parcels); children and drops follow KH-RT. `spray.csv` counts `act_children`, the children the turbulence or the cavitation stripped. |
 | D308 | **The eddy is mirrored with the parcel.** At a mirror boundary (symmetry plane, slip wall) the normal component of the parcel's eddy fluctuation changes sign with its velocity: the parcel goes on in the mirror image of the flow. Before, the fluctuation drove a small drop back into the plane at once and it bounced in tiny sub-steps for the eddy's life: in the gallery spray, injected on the corner of two symmetry planes, 47 million rebounds in 0.3 ms; with the mirrored eddy 25 thousand, the run 8 times faster and the penetration the same to 0.1 mm. |
+| D309 | **ECN Spray G, condition G1, on a sector of the injector.** A sector mesh: `[mesh.generate] wedge` with `dimension = 3` revolves a 3D box of hexahedra about the x axis into a sector of the angle; the z intervals are the angular cells, `zmin` and `zmax` the side planes, ordinary boundaries (refused: tetrahedra, which collapse on the axis, and `perturb`, which would move the nodes on the axis apart). The G1 case computes one eighth of the 8-hole injector: a 22.5° sector with the plume of hole 1 on `zmin` (half a plume, `flow_share = 0.5`) and the plane half way to the next plume as `zmax`, both mirror planes of the 8 plumes. **A thin slip core on the axis** (0.3 mm, `ymin` symmetry) with the cells next to it graded: the prisms that meet on the axis have faces of skewness 1/(4Δφ), 5 with 8 angular cells, which the mesh check remediates to first order; in our trials (8 angular cells) they were the first cells to go unstable once the plumes drew gas to the axis, after 0.13 ms (12 angular cells: sooner), and the parcels in the diverging gas then spent `max_substeps` each and filled the memory with their exchange records; with the core the same runs are clean. By the symmetry of the plumes the gas on the axis moves only along it, which the core imposes. **The ECN metrics** (`tools/plot/spray_g_metrics.py`), both along the injector axis from the tip: the liquid penetration is the farthest distance where the projected liquid volume of the 8 plumes (each parcel mirrored and turned by k·45°), seen perpendicular to the plane of plumes 1 and 5, exceeds 0.2e-3 or 2e-3 mm³/mm² (pixels of 0.1 mm and a Gaussian blur of 0.1 mm, our choices: without the blur the penetration moves by less than 0.1 mm between 0.05 and 0.2 mm pixels); the vapour penetration is the farthest cell whose vapour mass fraction exceeds 0.1 % (the ECN model definition, our threshold). **The injector from the measurements:** the ECN rate of injection (our 17-point fit), the plume direction 33° (our mean of the ECN tomography), the full cone 25°, C_a = 0.65 (measured range 0.635 to 0.687); C_d = 0.51 is ours from the measured rate. KH-ACT with the default constants (B₁ = 10), not tuned to the measurements. |
 
 ### 7.1 Checks
 
@@ -600,8 +601,24 @@ area contraction, plume direction and cone) and the distortion of the drops.
   at 1 ms (correlation 51.1 mm), 47.0 mm with KH-RT; up to 24 % ahead at
   0.2 to 0.4 ms. With the SST model of the first runs the turbulence of the
   thin gas jet did not build up in the still chamber (k near its start
-  value) and the tip ran 80 % ahead; the case uses k-ε. ECN Spray G (G1)
-  is the next part (D309).
+  value) and the tip ran 80 % ahead; the case uses k-ε.
+- The sector mesh (D309, `foehncraft-mesh`, module `wedge`): the volume of
+  a 3D sector of hexahedra against the exact volume of the faceted sector
+  to 10⁻¹², closed cells, the side planes as boundaries; tetrahedra and
+  `perturb` refused.
+- ECN Spray G, G1 (D309, gallery 323, KH-ACT with the default constants):
+  the liquid penetration (0.2e-3 mm³/mm²) within 1 mm of the measured one
+  up to 0.4 ms, then ahead, 12 % at 0.6 ms, 19 % at the end of injection,
+  33 % at 1.2 ms (51.7 against 38.9 mm); the vapour 32.8 against 29.4 mm at
+  0.6 ms and 50.8 against 42.0 mm at 1.2 ms; the gas velocity on the
+  injector axis 15 mm from the tip within about 1.5 m/s of the PIV of the
+  ECN. The Sauter mean diameter at 15 mm is 17 µm against the measured
+  9 µm: the children of the cavitation (R_CAV = r_hole (1 − C_a)^½ =
+  49 µm) and of the integral turbulence scale are large for the short
+  Spray G hole (Magnotti 2017 reported KH-ACT little better than KH below
+  7 kg/m³ and pointed to a smaller turbulence scale). KH-RT gives 7.4 µm
+  and the same penetration, so the late lead is not from the breakup; its
+  cause is open, a recorded gap.
 
 ### 7.2 Not yet
 
@@ -610,4 +627,11 @@ mean diameter near 2 µm, small next to measured diesel sprays); a size distribu
 fragment model for slow drops is a candidate); breakup in the steady mode;
 temperature-dependent surface tension and viscosity (with the liquid
 property library); radial velocity of the children (they leave with the
-blob's velocity); GPU entry of the breakup kernel.
+blob's velocity); GPU entry of the breakup kernel. For Spray G (G1): the cause
+of the late lead of the liquid and the vapour (the far-field cells, the
+gas density of the cooled plume with its vapour, the k-ε constants), the
+drop size of the KH-ACT children, a calibration of the constants against
+G1, and a run
+whose gas diverges in some cells can fill the memory with the exchange
+records of parcels that spend `max_substeps` instead of stopping with a
+message.

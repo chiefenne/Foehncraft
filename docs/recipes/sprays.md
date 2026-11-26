@@ -569,3 +569,79 @@ does it for the Brno data. Case: `examples/cases/flow/spray_brno.toml`;
 [gallery entry](../gallery/sprays.md#spray-brno) for what is checked and
 what is not.
 
+
+<a id="spray-g-sector"></a>
+## 323. Model a multi-hole injector on a sector (ECN Spray G)
+
+**Mesh one plume's share.** The plumes of an injector of n equal holes
+repeat every 360°/n about its axis, and each plume is mirror-symmetric
+about its own plane. A sector of 180°/n with the plume on one side plane
+holds half a plume, and both side planes are mirror planes. `wedge` with
+`dimension = 3` revolves a box of hexahedra into such a sector (D309): x is
+the injector axis, y the radius, and the z intervals become the angular
+cells.
+
+```toml
+[mesh.generate]
+type = "hex"
+dimension = 3
+lower = [0.0, 3.0e-4, 0.0]   # a slip core of 0.3 mm on the axis
+upper = [0.06, 0.05, 1.0]    # 60 mm along the axis, 50 mm radius
+cells = [72, 65, 8]          # 8 angular cells
+wedge = 22.5                 # 8 holes: 180°/8
+segments.x = [ { to = 0.03, cells = 50 }, { to = 0.06, cells = 22, ratio = 3.0 } ]
+segments.y = [
+  { to = 0.0012, cells = 3, ratio = 2.0 },   # small cells next to the core: no skewed faces
+  { to = 0.03, cells = 48 },
+  { to = 0.05, cells = 14, ratio = 3.0 },
+]
+
+[boundary.ymin]
+type = "symmetry"    # the core
+[boundary.zmin]
+type = "symmetry"    # the plane of the plume
+[boundary.zmax]
+type = "symmetry"    # half way to the next plume
+```
+
+Keep the thin core. Without it the cells next to the axis are prisms whose
+faces have a skewness of 1/(4Δφ), 5 with 8 angular cells, and in our trials
+they were the first to go unstable once the plumes drew gas to the axis.
+By the symmetry of the plumes the gas on the axis moves only along it, and
+the slip core imposes just that.
+
+**Put the hole on the plume plane.** The angle runs from −wedge/2 at `zmin`
+to +wedge/2 at `zmax`. Put the hole exit a few µm inside the plane
+φ = −wedge/2, point the plume along that plane, and give the sector half of
+the hole's liquid:
+
+```toml
+[[injector]]
+name = "hole1"
+position = [1.0e-4, 9.81175461e-04, -1.93128751e-04]   # r = 1 mm on φ = −11.25°, 2 µm inside
+direction = [0.83867057, 0.53417395, -0.10625380]      # 33° from the axis, in that plane
+half_angle = 12.5
+flow_share = 0.5           # half of the plume is in the sector
+hole_diameter = 1.65e-4
+area_contraction = 0.65
+rate = [ [0.0, 0.0], [2.7e-5, 1.95e-3], [6.5e-4, 1.72e-3], [7.87e-4, 0.0] ]   # [t, kg/s] of one hole
+```
+
+**Measure as the ECN measures.** `tools/plot/spray_g_metrics.py` turns the
+sector's parcels into the whole injector (each parcel mirrored about its
+plume plane and turned to every plume). `liquid_penetration(x, d, n,
+threshold)` projects the liquid volume along the line of sight
+perpendicular to the plane of plumes 1 and 5 and returns the farthest
+distance along the injector axis above the threshold (0.2e-3 or
+2e-3 mm³/mm²). `vapour_penetration(centres, y)` returns the farthest cell
+above 0.1 % vapour.
+
+```sh
+foehn flow examples/cases/flow/spray_g_g1.toml --out output/spray_g_g1
+foehn flow examples/cases/flow/spray_g_g1.toml --set spray.breakup.model=kh-rt --out output/spray_g_g1_khrt
+python3 -m tools.plot.spray_g_g1 OUT_DIR output/spray_g_g1 output/spray_g_g1_khrt   # gallery 323
+```
+
+Case: `examples/cases/flow/spray_g_g1.toml` with its injector file;
+[gallery entry](../gallery/sprays.md#spray-g) for the comparison with the
+measurements.
