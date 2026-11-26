@@ -124,14 +124,14 @@ index tables; pull requests commit only `features.toml` and `grades.json`.
 <a id="release"></a>
 ## 6. Make a release (tag and GitHub release)
 
-A release is a Git tag `v<version>` (D46; `v0.1` to `v0.7`, then `v1.0.0` and `v1.0.1`) plus a GitHub release. Steps:
+A release is a Git tag `v<version>` (D46; `v0.1` to `v0.7`, then `v1.0.0`, `v1.0.1` and `v1.1.0`) plus a GitHub release. Steps:
 
 1. A pull request runs `python -m tools.release.changelog` (moves the
    fragments of `changelog.d/` into `## Unreleased`), then moves that section to
    `## <version> (YYYY-MM-DD) – ...` and adds a row to the summary table
    (`## Summary`, at the top of `CHANGELOG.md` below `## Unreleased`).
 2. After the merge: GitHub, Actions, **Release**, *Run workflow*, version
-   `1.0.1` (the number without the `v`), first with *dry run* checked (prints the notes), then without.
+   `1.1.0` (the number without the `v`), first with *dry run* checked (prints the notes), then without.
 
 The workflow refuses a version without a changelog section, and creates
 only the release if the tag already exists. The assistant starts it through

@@ -44,6 +44,10 @@ FAMILIES = [
     ("poisson", "poisson.json", "Pressure equation (`foehn poisson`)"),
 ]
 FORMAT, VERSION = "foehncraft.verification-manual", "1.0"
+# Exit codes other than 0 that a case expects (the steady cylinder that
+# sheds is stopped by its diagnosis on purpose, D198): the run status that
+# stands for each, so that the run counts as passed.
+EXPECTED_STATUS = {"flow/cylinder_steady_diagnosis": "stopped"}
 
 
 def describe(path: pathlib.Path) -> str:
@@ -199,7 +203,9 @@ def collect(output: pathlib.Path) -> dict:
     for family, report, title in FAMILIES:
         cases = []
         for path in sorted((ROOT / "examples" / "cases" / family).glob("*.toml")):
-            if path.stem.endswith("_gpu"):
+            # GPU twins, and the injector files that a spray case includes
+            # (D246), are not cases of their own
+            if path.stem.endswith(("_gpu", "_injectors")):
                 continue
             case = tomllib.loads(path.read_text(encoding="utf-8"))
             rp = output / path.stem / report
@@ -218,7 +224,8 @@ def collect(output: pathlib.Path) -> dict:
             ]
             status = rep.get("status") or ("failed" if failures else "passed")
             checks = CHECKS[family](case, rep)
-            passed = status in ("finished", "passed") and not failures and all(c["passed"] for c in checks)
+            ok = ("finished", "passed", EXPECTED_STATUS.get(f"{family}/{path.stem}"))
+            passed = status in ok and not failures and all(c["passed"] for c in checks)
             entry.update(
                 status="passed" if passed else "failed",
                 cells=meshes(family, rep),
