@@ -1925,6 +1925,7 @@ evidence = [
   { kind = "reference-data", test = "crates/foehncraft-particles/tests/mixing_line.rs::the_ideal_gas_of_dodecane_follows_its_heat_capacity_table", what = "n-dodecane ideal gas: Scott (1974) c_p by the CH2 increment, NASA-7 fit within 0.3 % (within 0.24 % of Lemmon and Huber 2004 at 300 to 700 K), enthalpy of formation -290.9 kJ/mol" },
   { kind = "exact", test = "crates/foehncraft-particles/tests/mixing_line.rs::va4_the_mixing_line_closes_the_energy_balance", what = "VA.4: 363 K n-dodecane into 900 K N2 at 6 MPa, frozen, equilibrium and ideal: the enthalpy of the state found equals that of the mixed streams to 1e-13 of the stream difference (found 7e-16), the end points are the streams" },
   { kind = "consistency", test = "crates/foehncraft-particles/tests/mixing_line.rs::va4_the_two_phase_region_of_the_mixing_line", what = "VA.4: Z_sat 0.357 (equilibrium) against 0.320 (ideal); the frozen line equals the equilibrium line before Z_sat and fails the stability test where the flash splits (1e-6); equal fugacities and dissolved N2 in the two-phase region" },
+  { kind = "consistency", test = "crates/foehncraft-particles/tests/dense_film.rs::a_gas_above_the_critical_mixing_state_takes_vapour", what = "the saturation limiter (D253) with the Peng-Robinson surface: a 900 K gas at 6 MPa (above the critical mixing temperature, no latent heat) takes vapour up to the fuel fraction of the critical surface (1e-12), a 600 K gas less, a gas at that fraction none" },
   { kind = "reference-data", test = "crates/foehncraft-particles/tests/mixing_line.rs::va5_the_siebers_liquid_length_with_our_thermodynamics", what = "VA.5: Siebers (1999) liquid length with our Z_sat at the four measured Spray A conditions (ECN DBI, 210675): 7.2/11.3/4.9/10.7 mm (equilibrium) and 8.2/13.0/5.7/11.3 mm (ideal) against 11.7/16.3/7.4/20.6 mm; the trends with temperature and density right" },
 ]
 gaps = [
@@ -1958,6 +1959,33 @@ gaps = [
   "for a liquid-like dense fuel the factors are 9 to 17 % (viscosity) and 40 to 55 % (conductivity) too high; the Spray A film is mostly nitrogen gas, where the method holds",
   "the film gases are the `ambient` key, not the local gas of the cell; the gas solver stays an ideal gas (D317)",
   "at Spray A conditions (6 MPa) the effect is small (film 1 to 7 %, droplet life -3 %): no measurement isolates it",
+]
+
+[[feature]]
+id = "sprays.corrected-distortion"
+area = "Sprays"
+title = "Distorted drops: the Corrected Distortion model for drag and evaporation (Spray A, SA4 part 1, D316)"
+switch = "[spray.breakup] drag = \"corrected-distortion\""
+decisions = ["D316"]
+model = true
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-kernels/src/distortion.rs::the_sphere_is_the_sphere", what = "at y = 0 the shape, drag and transfer ratios are 1 (1e-15); a solid drop (lambda -> infinity) is the solid sphere (1e-10)" },
+  { kind = "exact", test = "crates/foehncraft-kernels/src/distortion.rs::the_spheroid_surface_and_volume", what = "the spheroid surface of eq. 30 against quadrature of the surface of revolution (1e-9), the volume of the sphere kept (1e-14); the flattest drop has 22.7 % more surface" },
+  { kind = "consistency", test = "crates/foehncraft-kernels/src/distortion.rs::the_viscous_sphere_branches_meet_at_lambda_two", what = "the two branches of Feng and Michaelides meet at lambda = 2 (1e-10); from lambda 2 on the internal circulation lowers the drag and raises the transfer, less so the more viscous the drop" },
+  { kind = "consistency", test = "crates/foehncraft-kernels/src/distortion.rs::a_flattened_drop_drags_more_and_evaporates_faster", what = "the trends of figs. 18 and 19 of Nguyen et al. (2022): at y = 1 the drag 1.1 to 2 and the transfer 1.5 to 4.5 times the sphere's, rising with y; a prolate drop drags less" },
+  { kind = "exact", test = "crates/foehncraft-kernels/src/evaporation.rs::the_transfer_factors_scale_the_rates", what = "a factor on Sh and Nu scales the d2 rate and Nu exactly (1e-12) and leaves the Ranz-Marshall wet-bulb state unchanged" },
+  { kind = "exact", test = "crates/foehncraft-particles/tests/distortion.rs::the_rate_of_a_distorted_drop_is_the_sherwood_factor", what = "the evaporation rate of a distorted drop is the sphere's times the Sherwood factor (1e-12); the dynamic drag leaves the evaporation bitwise alone" },
+  { kind = "exact", test = "crates/foehncraft-particles/tests/distortion.rs::the_factor_is_the_kernel_factor_at_the_film_state", what = "the factor the spray applies is the kernel's at the film Reynolds and Schmidt numbers and lambda = mu_l(T_p)/mu_film (1e-12)" },
+  { kind = "consistency", test = "crates/foehncraft-particles/tests/breakup.rs::corrected_distortion_drags_between_the_sphere_and_the_dynamic_drag", what = "a spray with the Corrected Distortion drag goes farther than with the dynamic drag and less far than with the sphere" },
+  { kind = "contract", property = "bitwise", test = "crates/foehncraft-particles/tests/breakup.rs::same_bits_on_any_threads_and_order", what = "D247: the Corrected Distortion drag and transfer bitwise equal on 1 and 4 threads with the storage reversed" },
+  { kind = "reference-data", case = "spray_a_distortion", what = "ECN Spray A (900 K, 22.8 kg/m3, n-dodecane, quarter domain, 0.6 ms): liquid length 7.6 +- 1.6 mm with the Corrected Distortion model and 8.5 +- 0.3 mm with the dynamic drag against the measured 11.2 mm (PLV) and 10.4 mm (Mie 3 %); not met, see gaps", doc = "docs/gallery/sprays.md#spray-a-distortion" },
+  { kind = "contract", property = "schema", case = "spray_a_distortion_injectors", what = "the included injector file of spray_a_distortion (Spray A hole, rate table, rounded inlet)", doc = "docs/cases/flow.md#lagrangian-sprays" },
+]
+gaps = [
+  "the Spray A liquid length is 24 % (dynamic drag) and 32 % (Corrected Distortion) short of the measured 11.2 mm: the untuned KH-ACT constants give drops of about 1 um; the model shortens the liquid length as in the paper, away from the measurement here",
+  "one run per law on a coarse mesh (0.5 mm along the axis, ECN asks for 0.25 mm), no ensemble; the difference between the laws (0.9 mm) lies within the scatter of the Corrected Distortion run (s.d. 1.6 mm)",
+  "the correlations of Feng and Michaelides (2001) and of Richter and Nikrityuk (2012) are taken as Nguyen et al. (2022) print them, not yet checked against the originals",
+  "SA4 part 2 not done: the liquid volume does not displace the gas and the sources are not spread over a fixed radius; no collisions",
 ]
 
 [[feature]]
