@@ -84,6 +84,23 @@ only 5 macOS jobs at once per account):
 
 The check "CI OK" sums up all jobs.
 
+The tests run in three shards per platform, side by side, each a job that
+compiles only what it runs: `flow-1` and `flow-2` take turns over the tests
+of `foehncraft-flow` (its test program and its unit tests are the longest
+build and the longest run), and `rest` runs every other crate, the
+documentation tests and the G1 smoke run. The shards use
+[cargo-nextest](https://nexte.st), which runs every test in a process of its
+own; locally `cargo test --workspace --profile ci` runs the same tests. One
+shard by hand:
+
+```
+cargo nextest run --cargo-profile ci -p foehncraft-flow --partition count:1/2
+cargo nextest run --cargo-profile ci --workspace --exclude foehncraft-flow
+```
+
+The MPI job builds all its example programs in one `cargo build` with the
+`ci` profile, so that the crates are compiled once with one feature set.
+
 The integration tests of `foehncraft-flow` and `foehncraft-mesh` are one
 test program per crate (`tests/main.rs`, one `mod` line per file), not one
 program per file: each program compiled and linked the solver's generic

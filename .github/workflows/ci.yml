@@ -4,7 +4,8 @@
 #
 # Three tiers, one workflow (see docs/recipes/development.md, "CI tiers"):
 #   PR gate     pull requests: Linux only, `ci` profile (release optimisation,
-#               no LTO, 16 codegen units), cases sharded over three jobs.
+#               no LTO, 16 codegen units), tests sharded over three jobs
+#               (flow-1, flow-2, rest; cargo-nextest), cases over three.
 #               macOS and Windows join when the PR touches platform-sensitive
 #               files (build files, I/O, restart, run control, the CLI).
 #               Target: about 5 minutes with a warm cache.
@@ -216,9 +217,15 @@ jobs:
 
   # ---------------------------------------------------------------------
   # Unit and integration tests, including every bitwise-reproducibility
-  # test, and the G1 smoke run (all CPU backends bitwise equal).
+  # test, and the G1 smoke run (all CPU backends bitwise equal), in three
+  # shards per platform that compile and run beside each other: the tests
+  # of foehncraft-flow in two halves (its one test program ran 5 of the 8
+  # minutes of tests, and its two test builds are the longest compile) and
+  # every other crate. cargo-nextest runs each test in a process of its own
+  # and the tests of all programs of a shard in one pool; `--partition
+  # count:k/2` deals the flow tests out in turn.
   test:
-    name: Test (${{ matrix.os }})
+    name: Test (${{ matrix.os }}, ${{ matrix.shard }})
     needs: plan
     if: needs.plan.outputs.code == 'true'
     runs-on: ${{ matrix.os }}
@@ -226,8 +233,10 @@ jobs:
       fail-fast: false
       matrix:
         os: ${{ fromJSON(needs.plan.outputs.test_os) }}
+        shard: [flow-1, flow-2, rest]
     env:
       BUILD_PROFILE: ${{ needs.plan.outputs.profile }}
+      SHARD: ${{ matrix.shard }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -235,19 +244,35 @@ jobs:
         with:
           # build-ci is written by warm-ci-cache on main, build-release here
           shared-key: build-${{ needs.plan.outputs.profile }}
-          save-if: ${{ github.ref == 'refs/heads/main' && needs.plan.outputs.profile == 'release' }}
+          save-if: ${{ github.ref == 'refs/heads/main' && needs.plan.outputs.profile == 'release' && matrix.shard == 'rest' }}
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
       # the debug-assertion run and the run without HDF5 and METIS are jobs
       # of their own (below), so that they run beside this one
-      - run: cargo test --workspace --locked --profile "$BUILD_PROFILE"
+      - name: Tests of shard ${{ matrix.shard }}
+        run: |
+          case "$SHARD" in
+            flow-1) select=(-p foehncraft-flow --partition count:1/2) ;;
+            flow-2) select=(-p foehncraft-flow --partition count:2/2) ;;
+            rest)   select=(--workspace --exclude foehncraft-flow) ;;
+          esac
+          echo "select=${select[*]}" >> "$GITHUB_ENV"
+          cargo nextest run --locked --cargo-profile "$BUILD_PROFILE" --no-fail-fast "${select[@]}"
+      - name: Documentation tests
+        if: matrix.shard == 'rest'
+        run: cargo test --workspace --doc --locked --profile "$BUILD_PROFILE"
       - name: Slow tests (marked #[ignore]; nightly and manual runs)
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-        run: cargo test --workspace --locked --profile "$BUILD_PROFILE" -- --ignored
-      # `cargo test --workspace` has already built the command line for the
-      # tests of foehncraft-cli (target/<profile>/foehn); `cargo run -p
-      # foehncraft-cli` would build it a second time with other features
+        run: cargo nextest run --locked --cargo-profile "$BUILD_PROFILE" --no-fail-fast --run-ignored only --no-tests=pass $select
+      # the tests of foehncraft-cli have already built the command line
+      # (target/<profile>/foehn); `cargo run -p foehncraft-cli` would build
+      # it a second time with other features
       - name: G1 smoke run (CPU backends, results bitwise equal)
+        if: matrix.shard == 'rest'
         run: target/$BUILD_PROFILE/foehn bench g1 examples/cases/bench/g1_ci_small.toml
       - uses: actions/upload-artifact@v4
+        if: matrix.shard == 'rest'
         with:
           name: g1-ci-small-${{ matrix.os }}
           path: output/g1_ci_small/
@@ -424,58 +449,61 @@ jobs:
       - name: Install Open MPI (macOS)
         if: runner.os == 'macOS'
         run: brew install open-mpi
-      - run: cargo test -p foehncraft-parallel --features mpi --locked
-      - run: cargo build --release -p foehncraft-parallel --features mpi --example mpi_smoke --locked
+      # All examples in one build, so that the crates are compiled once with
+      # one feature set (seven builds of one package each compiled mesh, fv
+      # and flow again for each feature set). The `ci` profile: the results
+      # are bitwise equal to `release`, without the thin LTO and the one
+      # codegen unit that made each build several minutes long.
+      - run: cargo test -p foehncraft-parallel --features mpi --locked --profile ci
+      - name: Build the MPI examples
+        run: >-
+          cargo build --locked --profile ci
+          -p foehncraft-parallel -p foehncraft-mesh -p foehncraft-radiation -p foehncraft-fv -p foehncraft-flow
+          --features foehncraft-parallel/mpi,foehncraft-mesh/mpi,foehncraft-radiation/mpi,foehncraft-fv/mpi,foehncraft-flow/mpi
+          --example mpi_smoke --example mpi_halo --example mpi_matrix --example mpi_reductions
+          --example mpi_walk --example mpi_radiation --example mpi_scalar --example mpi_flow
       - name: Run with 4 ranks
-        run: mpirun --oversubscribe -n 4 target/release/examples/mpi_smoke
+        run: mpirun --oversubscribe -n 4 target/ci/examples/mpi_smoke
       - name: Run with 2 ranks
-        run: mpirun --oversubscribe -n 2 target/release/examples/mpi_smoke
-      - run: cargo build --release -p foehncraft-mesh --features mpi --example mpi_halo --locked
+        run: mpirun --oversubscribe -n 2 target/ci/examples/mpi_smoke
       - name: Halo exchange of a partitioned mesh, 4 and 2 ranks
         run: |
-          mpirun --oversubscribe -n 4 target/release/examples/mpi_halo
-          mpirun --oversubscribe -n 2 target/release/examples/mpi_halo
-      - run: cargo build --release -p foehncraft-mesh --features mpi --example mpi_matrix --locked
+          mpirun --oversubscribe -n 4 target/ci/examples/mpi_halo
+          mpirun --oversubscribe -n 2 target/ci/examples/mpi_halo
       - name: Canonical local mesh, geometry and matrix rows bitwise equal to one rank (W1, 1 to 4 ranks)
         run: |
           for n in 1 2 3 4; do
             for kind in poly hex tet mixed; do
-              SPIKE_KIND=$kind mpirun --oversubscribe -n $n target/release/examples/mpi_matrix
+              SPIKE_KIND=$kind mpirun --oversubscribe -n $n target/ci/examples/mpi_matrix
             done
           done
-      - run: cargo build --release -p foehncraft-mesh --features mpi --example mpi_reductions --locked
       - name: Exact reductions bitwise equal to one rank (W2, 1 to 4 ranks)
         run: |
           for n in 1 2 3 4; do
             for kind in poly hex; do
-              SPIKE_KIND=$kind mpirun --oversubscribe -n $n target/release/examples/mpi_reductions
+              SPIKE_KIND=$kind mpirun --oversubscribe -n $n target/ci/examples/mpi_reductions
             done
           done
-      - run: cargo build --release -p foehncraft-mesh --features mpi --example mpi_walk --locked
       - name: Cell walk handed over between ranks bitwise equal to one rank (radiation R1a, 1 to 4 ranks)
         run: |
           for n in 1 2 3 4; do
             for kind in poly tet mixed; do
-              SPIKE_KIND=$kind mpirun --oversubscribe -n $n target/release/examples/mpi_walk
+              SPIKE_KIND=$kind mpirun --oversubscribe -n $n target/ci/examples/mpi_walk
             done
           done
-      - run: cargo build --release -p foehncraft-radiation --features mpi --example mpi_radiation --locked
       - name: Radiation call on ranks bitwise equal to one rank (R1a, 1 to 4 ranks)
-        run: for n in 1 2 3 4; do mpirun --oversubscribe -n $n target/release/examples/mpi_radiation; done
-      - run: cargo build --release -p foehncraft-fv --features mpi --example mpi_scalar --locked
+        run: for n in 1 2 3 4; do mpirun --oversubscribe -n $n target/ci/examples/mpi_radiation; done
       - name: Scalar solver and multigrid on ranks bitwise equal to one rank (W3, W4, 1 to 4 ranks)
-        run: for n in 1 2 3 4; do mpirun --oversubscribe -n $n target/release/examples/mpi_scalar; done
-      - run: cargo build --release -p foehncraft-flow --features mpi --example mpi_flow --locked
+        run: for n in 1 2 3 4; do mpirun --oversubscribe -n $n target/ci/examples/mpi_scalar; done
       - name: Steady flow on ranks bitwise equal to one rank (W5, 1 to 4 ranks)
-        run: for n in 1 2 3 4; do mpirun --oversubscribe -n $n target/release/examples/mpi_flow; done
-      - run: cargo build --release -p foehncraft-cli --no-default-features --features mpi --locked
+        run: for n in 1 2 3 4; do mpirun --oversubscribe -n $n target/ci/examples/mpi_flow; done
       - name: foehn flow on MPI processes writes the files of one rank (W7)
         run: |
           set -e
           case=examples/cases/flow/ranks_run_channel.toml
-          target/release/foehn flow $case --ranks 1 --set solver.max_iterations=60 --set verification.require_convergence=false --out out_w7/one > /dev/null
+          target/ci/foehn flow $case --ranks 1 --set solver.max_iterations=60 --set verification.require_convergence=false --out out_w7/one > /dev/null
           for n in 2 3; do
-            mpirun --oversubscribe -n $n target/release/foehn flow $case --set solver.max_iterations=60 --set verification.require_convergence=false --out out_w7/mpi$n > out_w7_$n.log
+            mpirun --oversubscribe -n $n target/ci/foehn flow $case --set solver.max_iterations=60 --set verification.require_convergence=false --out out_w7/mpi$n > out_w7_$n.log
             grep -q "solved on $n ranks (mpi communicator" out_w7/mpi$n/flow.log
             for f in residuals.csv balance.csv boundaries.csv wall_ymin.csv wall_ymax.csv; do
               cmp out_w7/one/$f out_w7/mpi$n/$f
@@ -526,6 +554,9 @@ jobs:
         with:
           shared-key: build-ci
       - run: cargo test --workspace --locked --profile ci --no-run
+      # the flow shards of the test job build foehncraft-flow alone, with
+      # its own features
+      - run: cargo test -p foehncraft-flow --locked --profile ci --no-run
       - run: cargo build --locked --profile ci -p foehncraft-cli
 
   # ---------------------------------------------------------------------
