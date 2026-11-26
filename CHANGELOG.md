@@ -141,7 +141,8 @@ page. A gap is listed as a gap.
   Peng–Robinson droplet surface and mixing line of high-pressure sprays,
   a real-fluid droplet film (Chung and Riazi–Whitson factors), the
   Corrected Distortion drag and evaporation of distorted drops, and the ECN
-  liquid length and vapour penetration. **Bitwise equal on any
+  liquid length and vapour penetration, and injection from measured
+  droplets with the Brno phase Doppler spray. **Bitwise equal on any
   thread count; a 60 MPa diesel-like spray within 1 % of the Hiroyasu–Arai
   penetration at 1 ms.** Recorded gaps: on ECN Spray G (G1) the untuned
   model runs 33 % ahead in liquid penetration at 1.2 ms, and the
@@ -268,6 +269,7 @@ face centroid on twisted faces (#246). They are listed below with the rest.
 - The Corrected Distortion model of Nguyen, Dahms, Pickett and Tagliante (2022) for distorted spray drops (ECN Spray A, SA4, D316): `[spray.breakup] drag = "corrected-distortion"`. A drop of TAB distortion y drags, heats and evaporates as an oblate or prolate spheroid, with the internal circulation of a viscous drop (Feng and Michaelides 2001) and the shape corrections of Richter and Nikrityuk (2012). A fully flattened drop drags 1.0 to 1.9 times a sphere instead of the 3.6 times of the dynamic drag, and evaporates 2 to 5 times faster. New case `spray_a_distortion.toml` (ECN Spray A, a quarter domain), gallery 326, recipe 326.
 - With the Peng-Robinson surface, the saturation limiter of D253 gave gas above the critical mixing temperature (651 K at 6 MPa) no room for vapour, so it held back all the evaporation in the hot gas of a Spray A run. Drops then heated to 900 K without evaporating, and the liquid length grew with the vapour tip. Gas above the critical mixing temperature now takes vapour up to the critical surface fraction.
 - `[spray.ecn]` liquid lengths of a half or quarter domain counted only the liquid inside the domain, so a line of sight across a symmetry plane saw half the spray. The projection now adds the mirror images of the parcels across the symmetry planes (and slip walls) that contain the injector axis. A sector whose images do not tile the whole spray is refused.
+- **Spray injection from measured droplets (D322) and the Brno spray against its phase Doppler data.** `[[spray.injector]] samples = "table.csv"` starts every parcel or steady stream from one measured droplet of a plane (radius, diameter, axial, radial and optional tangential velocity, optional mass weight), drawn by mass and placed on a random azimuth, so the measured link of size, velocity and place is kept; `sector` with `flow_share` = sector/360 models part of a round spray between symmetry planes. New case `spray_brno`: the air-blast water spray of Rácz et al. (Brno University of Technology, Zenodo 17935932, CC BY 4.0) from its measured plane z = 20 mm, compared with the measured planes at 40 and 60 mm per size class by `examples/studies/brno_spray/compare.py`; gallery and recipe 325.
 
 ### Species, reacting flows, water and steam (steam furnace path)
 
@@ -352,6 +354,9 @@ face centroid on twisted faces (#246). They are listed below with the rest.
   run times (the third took 15 minutes, the first 4); the MPI job builds
   its example programs in one build with the `ci` profile instead of eight
   `release` builds.
+- **Install section in the README.** How to build Foehncraft from source on
+  macOS, Linux and Windows (prerequisites, clone, build, where `foehn` lands,
+  `cargo install`, update), with a placeholder for release downloads.
 
 ## 1.0.1 (2026-11-24) – patch: three rotors by one sentence, heat exchanger renderings, MPI step W3
 
