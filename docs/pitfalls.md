@@ -27,6 +27,7 @@ instead.
 - [High-pressure phase equilibrium](#high-pressure-equilibrium)
 - [Property solves and new kernels on ranks](#property-solves)
 - [Sprays on a sector of an injector](#spray-sectors)
+- [Long-lived branches and the one test program per crate](#stale-branches)
 
 <a id="steady-runs"></a>
 ## Steady runs: budget and stopping
@@ -629,3 +630,17 @@ Found with the IAPWS-IF97 states of SF7a (#277):
 - **A string slice can drop the exponent.** `str(x)[:8]` of 1.2345678e-05
   is `1.234567`: a liquid volume fraction read that way looked above 1 and
   sent the search the wrong way for a while. Format numbers with `:.3e`.
+
+<a id="stale-branches"></a>
+## Long-lived branches and the one test program per crate
+
+Found when the SF7a branch (#277) was merged with main a day later for
+SF7b (#312):
+- **A test file written before #288 is never compiled after it.** Since
+  #288 every crate builds one test program (`tests/main.rs`); a file in
+  `tests/` without a `mod` line there is silently skipped. Run
+  `python3 -m tools.check.test_modules` after merging main into an old
+  branch.
+- **Run `cargo fmt --all` after resolving a conflict in a `mod` list.**
+  Keeping both sides of a conflict leaves the module lines out of order,
+  and the format check of CI fails on it.

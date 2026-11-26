@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**146 features: 50 verified, 93 partial, 3 unverified.**
+**148 features: 50 verified, 95 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -94,6 +94,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Energy | [Temperature, heat-flux, heat-flow and convection walls](#energy-wall-conditions) | verified |
 | Energy | [Energy with a turbulence model (thermal wall function, Pr_t)](#energy-turbulent) | partial |
 | Energy | [Water and steam of IAPWS-IF97: states, saturation, transport properties and the if97 material form (SF7a)](#materials-if97-water-steam) | partial |
+| Energy | [One-dimensional water and steam tube circuits of a boiler: two-phase pressure drop, flow boiling, CHF margin and natural circulation (steam furnace SF7b)](#circuits-water-steam) | partial |
 | Conjugate heat transfer | [Solid regions, steady](#cht-steady) | verified |
 | Conjugate heat transfer | [Transient conjugate heat transfer](#cht-transient) | verified |
 | Conjugate heat transfer | [Thermal acceleration of solids (scaled ρ c_p, restored)](#cht-thermal-acceleration) | partial |
@@ -152,6 +153,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Sprays | [Turbulent dispersion of the sprays, eddy lifetime (SP2c, D243)](#sprays-dispersion-eddy-lifetime) | partial |
 | Sprays | [Steady spray mode: streams through the steady gas with relaxed sources (SP2s, D260)](#sprays-steady-mode) | partial |
 | Sprays | [Evaporating sprays: vapour, mass and enthalpy to the gas (SP4, SP5, D250 to D253)](#sprays-evaporation) | partial |
+| Sprays | [Liquid property library and the 1/3-rule film state of the evaporation (D320, D321)](#sprays-liquid-library) | partial |
 | Sprays | [Spray breakup: KH-ACT and KH-RT with blob injection, TAB distortion and dynamic drag (SP6, D300 to D308)](#sprays-breakup) | partial |
 | Sprays | [High-pressure droplet surface: Peng-Robinson phase equilibrium and latent heat (Spray A, SA1, D311, D312, D314)](#sprays-high-pressure-surface) | partial |
 | Flow models | [Porous regions with a direction-dependent Darcy-Forchheimer resistance (D270, PM1)](#porous-darcy-forchheimer) | partial |
@@ -1167,6 +1169,35 @@ Gaps:
 - no metastable (subcooled vapour) states and no backward equations; a (p, h) state is a bracketed Newton solve on the forward equations
 - the variable density is not on ranks yet (refused): the steam duct and channel run on one rank
 
+<a id="circuits-water-steam"></a>
+
+### One-dimensional water and steam tube circuits of a boiler: two-phase pressure drop, flow boiling, CHF margin and natural circulation (steam furnace SF7b)
+
+**partial** (gaps written) · id `circuits.water-steam` · switch `circuits.run, [[nodes]] kind = "drum", [circuit] friction, void, boiling, subcooled, chf` · decisions D282, D94
+
+- exact: [`laminar_parallel_tubes_split_as_hagen_poiseuille`](../../crates/foehncraft-circuits/tests/exact.rs): laminar water between two parallel tubes of 2 m and 4 m: the Hagen-Poiseuille split 2:1 and the inlet pressure drop to 1e-6
+- exact: [`heated_tube_meets_the_energy_and_pressure_balances`](../../crates/foehncraft-circuits/tests/exact.rs): water at 16 MPa heated in a riser: outlet enthalpy h_in + Q/m to 1e-6 J/kg, pressure drop = friction + gravity + acceleration, acceleration G^2 (1/rho_out - 1/rho_in) to 2e-3, Gnielinski wall below saturation
+- exact: [`drum_loop_closes_its_mass_energy_and_pressure_balances`](../../crates/foehncraft-circuits/tests/exact.rs): drum boiler loop at 7 MPa with 30 risers: downcomer flow = riser flow to 1e-8, steam flow = heat/(h'' - h_feed) to 1e-6, pressure drops around the loop sum to zero within 1e-3 Pa; circulation ratio 16
+- exact: [`churchill_is_laminar_and_colebrook_like`](../../crates/foehncraft-circuits/src/correlations.rs): Churchill's friction factor is 64/Re in laminar flow to 1e-12 and within 2 % of Colebrook for smooth and rough tubes
+- reference-data: [`chen_and_gungor_winterton_agree_on_the_wall_superheat`](../../crates/foehncraft-circuits/tests/boiling.rs): two independent flow boiling correlations (Chen 1966, Gungor-Winterton 1986, each fitted to measured data) give wall superheats within a factor of two along an evaporator at 7 MPa, 400 kW/m2
+- consistency: [`evaporator_passes_through_the_regimes_in_order`](../../crates/foehncraft-circuits/tests/boiling.rs): regimes in order (liquid, subcooled, saturated boiling), vapour before the bulk saturates (Saha-Zuber, Levy), 0 <= x <= max(x_eq, 0) bound, nucleate superheat below 30 K, outlet enthalpy exact
+- consistency: [`friedel_and_drift_flux_differ_from_homogeneous_as_expected`](../../crates/foehncraft-circuits/tests/boiling.rs): drift flux gives less void and a heavier column than homogeneous in upflow; Friedel friction above the homogeneous model and below three times it
+- consistency: [`a_high_heat_flux_reaches_the_chf_and_warns`](../../crates/foehncraft-circuits/tests/boiling.rs): at 1 MW/m2 and low flow the Bowring CHF is exceeded: CIR004, post-CHF wall more than 50 K above saturation
+- consistency: [`bowring_is_continuous_at_its_reference_pressure_and_falls_with_quality`](../../crates/foehncraft-circuits/src/chf.rs): Bowring's two pressure branches meet at p_R = 1 (6.9 MPa) to 1e-6 and match the closed form there; CHF falls with quality
+- exact: [`table_reads_and_interpolates`](../../crates/foehncraft-circuits/src/chf.rs): a CHF table in the layout of the 2006 table: trilinear interpolation exact on linear data, the diameter factor (0.008/D)^0.5, missing grid points refused
+- contract (diagnostics): [`broken_cases_are_refused`](../../crates/foehncraft-circuits/tests/boiling.rs): CIR001 for a tube to a missing node, a rise above the length, no pressure level, a drum without feedwater, an unknown key, a supercritical drum
+- consistency: [`the_drum_loop_runs_through_the_tool`](../../crates/foehncraft-tools/src/circuits.rs): circuits.run writes result.json and profiles.csv through the registry
+
+Gaps:
+
+- no comparison with measured void or wall temperatures yet (Bartolomei et al. 1982 not reachable from the build environment); the boiling correlations are checked against each other only
+- the CHF look-up table of Groeneveld et al. (2007) is not shipped (the paper was not reachable): chf = "table" reads it from a CSV file the user supplies, Bowring (1972) is the built-in default
+- post-dryout heat transfer is the vapour convection of Dougall-Rohsenow (1963) with no thermal non-equilibrium; no film boiling or rewetting
+- supercritical water takes Gnielinski with bulk properties: no correction for the pseudo-critical region
+- steady only: no density-wave or Ledinegg instability check, no transients (SF18)
+- the drift velocity is scaled by the sine of the tube angle; horizontal tubes have no stratified-flow void model
+- not yet coupled to the 3D furnace walls (SF7c)
+
 ## Conjugate heat transfer
 
 <a id="cht-steady"></a>
@@ -2103,11 +2134,38 @@ Gaps:
 - the heat balance closes to round-off only with [species] properties = "fluid"; with the mixture properties the energy account keeps a few parts in a thousand (the T-form of the energy equation against the material enthalpy of the balance)
 - the transient domain mass check fails for heated cases with variable density even without evaporation; the examples use constant density
 - the momentum equation does not book the momentum the vapour brings separately (it comes with the parcel impulse) nor the dilution term u S_c
-- water only (saturation law and latent heat); no boiling, no multicomponent liquids
+- single-component liquids of the library only (water, n-heptane, n-dodecane, iso-octane, sprays.liquid-library); no boiling, no multicomponent liquids
 - no GPU (PTX) entry for the evaporation kernel; one process
 - V28.5 to V28.8 of section 5 not all run as named checks (the closed box and the crowded cell cover the bounds)
 - `spray_evaporation_injectors` has no run in the verification manual or in CI
 - `spray_saturation_injectors` has no run in the verification manual or in CI
+
+<a id="sprays-liquid-library"></a>
+
+### Liquid property library and the 1/3-rule film state of the evaporation (D320, D321)
+
+**partial** (gaps written) · id `sprays.liquid-library` · switch `[spray.liquid] library, property_temperature; [spray.evaporation] film = "one-third" (default) or "far-field"` · decisions D320, D321
+
+- reference-data: [`the_fits_meet_the_nist_tables`](../../crates/foehncraft-kernels/src/liquids.rs): water, n-heptane and n-dodecane: vapour pressure, density, specific heat, latent heat, surface tension and viscosity at points of the NIST WebBook saturation tables (SRD 69), within the fit errors of the generator (psat 0.3 %, density 0.1 %, c_l and L 1.5 %, sigma 1 % (n-dodecane 3.6 %), mu 1.4 % up to 0.9 Tc)
+- reference-data: [`the_normal_boiling_points_and_critical_ends`](../../crates/foehncraft-kernels/src/liquids.rs): normal boiling points within 0.5 K of NIST, psat(tb) = 101.325 kPa to 1e-4, the water fit within 0.2 % of the IAPWS-95 auxiliary equation; L and sigma zero at Tc
+- reference-data: [`iso_octane_meets_the_primary_data`](../../crates/foehncraft-kernels/src/liquids.rs): iso-octane: vapour pressure within 0.3 % of Willingham et al. (1945), latent heat within 0.6 % of the calorimetry of Majer and Svoboda, sigma of Mulero et al. (2012), tb within 0.5 K of 372.4 K
+- consistency: [`the_functions_are_smooth_and_monotone_where_they_must_be`](../../crates/foehncraft-kernels/src/liquids.rs): psat rising, density, L and sigma falling with T over the whole range of each liquid
+- reference-data: [`the_spray_vapours_meet_the_nist_data`](../../crates/foehncraft-flow/src/species.rs): NC7H16 and IC8H18 ideal-gas c_p within 0.6 % of the NIST data; heptane vapour viscosity at 371 K within 5 % of NIST
+- exact: [`a_given_surface_fraction_replaces_raoults_law`](../../crates/foehncraft-kernels/src/evaporation.rs): a surface fraction given to the kernel (the hook of the high-pressure surface) replaces Raoult's law bit for bit; capped at 0.999
+- reference-data: [`n_heptane_droplets_against_chauveau_2019`](../../crates/foehncraft-flow/tests/droplet_validation.rs): n-heptane droplets of 0.37 mm in N2 at 0.1 MPa, 473 to 748 K, through Spray::evaporation: K with the 1/3 rule +39 to +59 % above the microgravity fit of Chauveau et al. (2019), with far-field properties +93 to +99 %; the 1/3 rule closer at every temperature (a recorded gap, see gaps) ([results](../gallery/sprays.md#spray-liquid-library))
+- contract (diagnostics): [`a_library_liquid_takes_its_properties_and_checks_its_keys`](../../crates/foehncraft-particles/src/config.rs): a library liquid takes its properties, a second application keeps them, water keeps IAPWS-95; an unknown liquid (names listed), a value given beside the library and a property temperature without a library are refused
+- contract (diagnostics): [`spray_heptane_evaporation`](../../examples/cases/flow/spray_heptane_evaporation.toml): 1 g/s of n-heptane at 300 K in N2 at 600 K: evaporates within about 5 cm, the gas takes 1 g/s of vapour and leaves at 312 C with 1.7 % vapour (passes in CI (set linux-3), not yet in the manual) ([results](../gallery/sprays.md#spray-liquid-library))
+- contract (schema): [`spray_heptane_evaporation_injectors`](../../examples/cases/flow/spray_heptane_evaporation_injectors.toml): the included injector file with the library liquid n-heptane ([results](../cases/flow.md#lagrangian-sprays)) **missing**
+
+Gaps:
+
+- single n-heptane droplets: K with the 1/3 rule +39 to +59 % above the microgravity data and +16 to +38 % above the fibre-free extrapolation of Chauveau et al.; the same gap is reported for this model class (Both, Mira, Lehmkuhl 2022) and the microgravity data lie below quasi-steady theory (vapour accumulation); not closed
+- no spray-scale evaporation case against measurements yet (CORIA n-heptane data on request; the Brno PDA data are a dispersion case)
+- density and specific heat of the liquid constant in a run (at property_temperature): no thermal expansion of a heating droplet
+- iso-octane above about 400 K rests on extrapolated correlations (density, c_l, mu, sigma); not in the NIST fluid system
+- the film carrier is the start composition of the case, not the local gas of the cell
+- no NC12H26 vapour species yet (Spray A stages)
+- `spray_heptane_evaporation_injectors` has no run in the verification manual or in CI
 
 <a id="sprays-breakup"></a>
 
