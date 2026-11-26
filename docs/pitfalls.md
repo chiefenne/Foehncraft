@@ -26,6 +26,7 @@ instead.
 - [Deforming meshes: the grid flux and the old levels](#deforming-mesh)
 - [High-pressure phase equilibrium](#high-pressure-equilibrium)
 - [Property solves and new kernels on ranks](#property-solves)
+- [Long-lived branches and the one test program per crate](#stale-branches)
 
 <a id="steady-runs"></a>
 ## Steady runs: budget and stopping
@@ -606,3 +607,17 @@ Found with the IAPWS-IF97 states of SF7a (#277):
   own-cell arrays), and the variable density of stage 7c crashed as well;
   W5 had checked only constant properties. The c_p path is fixed; the
   variable density is refused on ranks until it is ported.
+
+<a id="stale-branches"></a>
+## Long-lived branches and the one test program per crate
+
+Found when the SF7a branch (#277) was merged with main a day later for
+SF7b (#312):
+- **A test file written before #288 is never compiled after it.** Since
+  #288 every crate builds one test program (`tests/main.rs`); a file in
+  `tests/` without a `mod` line there is silently skipped. Run
+  `python3 -m tools.check.test_modules` after merging main into an old
+  branch.
+- **Run `cargo fmt --all` after resolving a conflict in a `mod` list.**
+  Keeping both sides of a conflict leaves the module lines out of order,
+  and the format check of CI fails on it.

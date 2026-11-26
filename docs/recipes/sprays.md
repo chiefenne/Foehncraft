@@ -11,6 +11,7 @@ Part of the [Recipes](../recipes.md): droplets that move with and through the ga
 | 285 | [Let the turbulence spread the droplets](#spray-dispersion) |
 | 292 | [Solve a spray in a steady flow (steady spray mode)](#spray-steady) |
 | 306 | [Let the droplets evaporate](#spray-evaporation) |
+| 318 | [Break a fuel jet up into drops (KH-ACT, KH-RT)](#spray-breakup) |
 | 314 | [Evaporate fuel droplets at high ambient pressure](#spray-a-surface) |
 | 320 | [Check the thermodynamics of a high-pressure spray before the CFD](#spray-a-mixing-line) |
 
@@ -355,6 +356,98 @@ checked and what is not.
 
 ---
 
+<a id="spray-breakup"></a>
+## 318. Break a fuel jet up into drops (KH-ACT, KH-RT)
+
+**Describe the nozzle, not the drops.** Give the injector its hole instead
+of a drop size and speed: the parcels then leave as blobs of the diameter
+√C_a d_hole at U = ṁ/(ρ_l C_a A_hole), and a measured rate of injection
+replaces the constant mass flow (D306):
+
+```toml
+# spray_breakup_injectors.toml
+[liquid]
+name = "diesel-like fuel"
+density = 830.0
+specific_heat = 2000.0
+temperature = 300.0
+surface_tension = 0.027    # N/m, needed by the breakup and the dynamic drag
+viscosity = 2.5e-3         # Pa s
+# vapour_pressure = 5e4    # Pa: the cavities of kh-act may collapse (else they only burst)
+
+[[injector]]
+name = "hole"
+position = [0.0005, 1e-5, 1e-5]
+direction = [1.0, 0.0, 0.0]
+half_angle = 6.0
+hole_diameter = 1.5e-4
+area_contraction = 0.86    # C_a: the blob is √C_a d_hole, the jet speed ṁ/(ρ C_a A)
+flow_share = 0.25          # a quarter model of the jet takes a quarter of the liquid
+rate = [[0.0, 0.0], [5e-5, 4.46e-3], [1.45e-3, 4.46e-3], [1.5e-3, 0.0]]   # [t, kg/s]
+parcels_per_second = 1e6
+hole_length = 6e-4         # kh-act: the nozzle turbulence from the hole (Huh and Gosman)
+discharge_coefficient = 0.8
+# inlet_loss = 0.5         # K_c of the inlet, 0.5 for a sharp edge
+# nozzle_k = 240.0         # or give k0 and epsilon0 at the exit directly,
+# nozzle_epsilon = 6e8     # for example from a nozzle flow simulation
+```
+
+**Pick the model.** `kh-act` lets the turbulence and the cavities the
+nozzle leaves in the liquid strip the blobs as well as the
+Kelvin-Helmholtz waves, whichever is faster (D307); `kh-rt` is the
+aerodynamic model alone. Both shed child parcels off the blobs and break the
+drops beyond the breakup length by Rayleigh-Taylor waves:
+
+```toml
+[spray.breakup]
+model = "kh-act"       # or "kh-rt"
+drag = "dynamic"       # TAB distortion raises the drag towards a disc's
+# b0 = 0.61            # KH child radius B0 Λ
+# b1 = 10.0            # KH time constant: the one a validation calibrates
+# c_rt = 1.0           # RT drop size C_RT Λ_RT
+# c_tau = 1.0          # RT time C_τ / Ω_RT
+# breakup_length = 5.0 # C_bl: RT beyond C_bl √(ρl/ρg) d_hole (default b1/2)
+# shed_fraction = 0.03 # a blob sheds a child per 3 % of its liquid
+# c_tcav = 1.0         # kh-act: the rate constant of turbulence and cavitation
+```
+
+**Let the gas spread the jet.** In a still chamber use k-ε: the SST model
+does not build up the turbulence of the thin gas jet during the injection,
+and the spray then runs far ahead (D308 notes). Two-way coupling and the
+eddy-lifetime dispersion carry the drops with the gas.
+
+```toml
+[turbulence]
+model = "k-epsilon"
+wall_treatment = "scalable"
+
+[spray]
+include = "spray_breakup_injectors.toml"
+dispersion = "eddy-lifetime"
+penetration_fraction = 0.97    # the penetration in spray.csv: 97 % of the liquid
+
+[spray.coupling]
+mode = "two-way"
+passes = "converged"
+max_passes = 3
+```
+
+**Run and look.**
+
+```bash
+foehn flow examples/cases/flow/spray_breakup.toml --out output/spray_breakup
+foehn flow examples/cases/flow/spray_breakup.toml --out output/spray_breakup_khrt --set spray.breakup.model=kh-rt
+python3 -m tools.plot.spray_breakup OUT_DIR output/spray_breakup output/spray_breakup_khrt   # the picture of gallery 318
+```
+
+`spray.csv` adds `child_parcels` (children the blobs shed), `rt_breakups`
+and, with `kh-act`, `act_children` (the children the turbulence or the
+cavitation stripped); `hole.penetration_m` is the distance that holds
+`penetration_fraction` of the liquid. The parcel files have `distortion`
+with the dynamic drag. A child's `parcel_id` holds its blob's injector and
+injection index. Breakup is refused in the steady spray mode. See the
+[gallery entry](../gallery/sprays.md#spray-breakup) for what is checked and
+what is not.
 <a id="spray-a-surface"></a>
 ## 314. Evaporate fuel droplets at high ambient pressure
 
@@ -433,3 +526,42 @@ differ by more than a few per cent, the droplet surface needs
 to the measured value, not instead of it. See the
 [gallery entry](../gallery/sprays.md#spray-a-mixing-line) for what is
 checked and what is not.
+<a id="spray-liquid-library"></a>
+## 321. Evaporate a fuel: take a liquid of the library
+
+**Name the liquid instead of typing its properties.** In the injector
+file:
+
+```toml
+[liquid]
+library = "n-heptane"          # "water", "n-heptane", "n-dodecane", "iso-octane"
+temperature = 300.0            # K, the injected liquid
+vapour = "NC7H16"              # its species in [species]: NC7H16, IC8H18, H2O
+# property_temperature = 330.0 # K of the constant density and c_l (default: temperature)
+```
+
+The library sets the vapour pressure law, the density, the specific heat
+and the latent heat; leave `density`, `specific_heat`, `latent_heat` and
+`saturation` out (a value given beside `library` is refused). The droplet
+heats up to its wet-bulb temperature, so for long-lived droplets set
+`property_temperature` near it (n-heptane in hot nitrogen: 330 to 340 K).
+
+**Put the vapour in the gas.** The vapour must be a transported species of
+the case, not the closure species:
+
+```toml
+[species]
+names = ["NC7H16", "N2"]
+initial = { mass_fractions = { NC7H16 = 0.0, N2 = 1.0 } }
+```
+
+**The film.** `[spray.evaporation] film = "one-third"` is the default: the
+gas properties around each droplet are those of the vapour and carrier
+mixture at the 1/3 reference state, from the species data. The carrier is
+the start composition without the vapour. `film = "far-field"` gives the
+first version's behaviour (the gas properties of the cell), which
+overstates the evaporation of fuel droplets by 50 to 100 % against
+measurements. Case: `examples/cases/flow/spray_heptane_evaporation.toml`;
+[gallery entry](../gallery/sprays.md#spray-liquid-library) for what is
+checked and what is not.
+

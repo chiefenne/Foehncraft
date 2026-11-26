@@ -1426,11 +1426,46 @@
     "the heat balance closes to round-off only with [species] properties = \"fluid\"; with the mixture properties the energy account keeps a few parts in a thousand (the T-form of the energy equation against the material enthalpy of the balance)",
     "the transient domain mass check fails for heated cases with variable density even without evaporation; the examples use constant density",
     "the momentum equation does not book the momentum the vapour brings separately (it comes with the parcel impulse) nor the dilution term u S_c",
-    "water only (saturation law and latent heat); no boiling, no multicomponent liquids",
+    "single-component liquids of the library only (water, n-heptane, n-dodecane, iso-octane, sprays.liquid-library); no boiling, no multicomponent liquids",
     "no GPU (PTX) entry for the evaporation kernel; one process",
     "V28.5 to V28.8 of section 5 not all run as named checks (the closed box and the crowded cell cover the bounds)",
     "`spray_evaporation_injectors` has no run in the verification manual or in CI",
     "`spray_saturation_injectors` has no run in the verification manual or in CI"
+   ],
+   "range": {}
+  },
+  {
+   "id": "sprays.liquid-library",
+   "title": "Liquid property library and the 1/3-rule film state of the evaporation (D320, D321)",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "single n-heptane droplets: K with the 1/3 rule +39 to +59 % above the microgravity data and +16 to +38 % above the fibre-free extrapolation of Chauveau et al.; the same gap is reported for this model class (Both, Mira, Lehmkuhl 2022) and the microgravity data lie below quasi-steady theory (vapour accumulation); not closed",
+    "no spray-scale evaporation case against measurements yet (CORIA n-heptane data on request; the Brno PDA data are a dispersion case)",
+    "density and specific heat of the liquid constant in a run (at property_temperature): no thermal expansion of a heating droplet",
+    "iso-octane above about 400 K rests on extrapolated correlations (density, c_l, mu, sigma); not in the NIST fluid system",
+    "the film carrier is the start composition of the case, not the local gas of the cell",
+    "no NC12H26 vapour species yet (Spray A stages)",
+    "`spray_heptane_evaporation_injectors` has no run in the verification manual or in CI"
+   ],
+   "range": {}
+  },
+  {
+   "id": "sprays.breakup",
+   "title": "Spray breakup: KH-ACT and KH-RT with blob injection, TAB distortion and dynamic drag (SP6, D300 to D308)",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "validated against a penetration correlation only; ECN Spray G (G1, measured liquid and vapour penetration) is the next part (D309)",
+    "drop sizes not validated: the gallery spray has a Sauter mean diameter near 2 um, small next to measured diesel sprays; no collision or coalescence yet",
+    "the nozzle turbulence of the Huh-Gosman estimate takes the inlet loss K_c = 0.5 and the area ratio s = 0 as our own choices (the papers give no values)",
+    "the k-omega SST model does not build up the turbulence of a thin spray jet in a still chamber (the gallery case uses k-eps)",
+    "breakup is refused in the steady spray mode; constant surface tension and viscosity; children leave with the blob's velocity (no radial velocity); no GPU entry of the breakup kernel; one process",
+    "`spray_breakup_injectors` has no run in the verification manual or in CI"
    ],
    "range": {}
   },
@@ -1599,11 +1634,28 @@
    "gaps": [
     "the wall is smeared over about one cell: first order in h, lift 27 % above the benchmark range at h = D/40, wall shear stress and heat flux not accurate (by design of the pre-stage)",
     "laminar and isothermal only: turbulence, energy, scalars, gravity, regions, rotating zones and sprays are refused (IMM102)",
-    "primitive bodies (cylinder, sphere, box) and `field` expressions only; STL bodies need the geometry kernel of stage 0",
+    "primitive bodies (cylinder, sphere, box) and `field` expressions only; STL bodies need the geometry kernel of stage 0 (sharp walls on cut cells: feature immersed.cut)",
     "the coupled solver breaks down from rest when the sink exceeds about 1e5 times the viscous diagonal (K below about 1e-5 h²); SIMPLEC takes any K",
     "the drag error depends on K/h²: with K = 0.01 h² the Stokes sphere array is 6.2, 5.5, 3.9, 2.6 % high on 16³ to 48³ (about first order); smaller K smears the body outward (up to +18 % at 1e-3 h² on 16³); in the Poiseuille channel the effective wall stays within half a cell (16 to 256 cells), its sign set by where the wall cuts its cell (sweeps run by tools/verification/immersed_sweeps.py, not in CI)",
     "manufactured solution on 2D triangular prisms and the mixed 2D mesh: the velocity error stalls at about 2 % (6 % without the sink, so a gap of the flow discretisation on these meshes, not of the penalisation)",
     "one rank only: `foehn run --ranks N` refuses immersed bodies"
+   ],
+   "range": {}
+  },
+  {
+   "id": "immersed.cut",
+   "title": "Immersed bodies as cut cells, primitive shapes (L13 stage 2a, 2b)",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "primitive bodies and `field` expressions only; STL bodies need the signed distance and segment-triangle crossings of the stage 0 geometry kernel",
+    "the body is seen through its node values: features thinner than a cell vanish; the refusal of thin solids (Q4, IMM for D189) is not built yet",
+    "Δp of the Re 20 cylinder stays about 1 % below the range at D/20 (D/40: C_D 5.592, C_L 0.0105, Δp 0.1171, all within 0.1 % of the range; SIMPLEC stalls at residual 1e-7 there); the lift depends on the merge threshold (0.1: 4 % low, 0.4: 0.4 % low); the default 0.3 is set on this one case",
+    "wall functions with the exact first-cell distance (2c), conjugate heat transfer through cut cells (2d, refused), named surface patches (2e) and the near-body refinement (2f) are not built",
+    "the other verification cases of the plan (cut-sphere Poisson MMS, annulus conduction, Taylor-Couette, inclined channel, Stokes sphere, Re 100 cylinder, turbulent plate) are not run yet",
+    "one rank only: the cut runs on the global mesh, `foehn run --ranks N` with a cut is not tested"
    ],
    "range": {}
   },
@@ -1711,8 +1763,10 @@
    "gaps": [
     "the motion is prescribed by an expression only: no mesh-motion solver, no cell layering, no bodies moved by the fluid (MS1, MS2)",
     "the geometry and the solver setup (an AMG setup) are rebuilt every step",
-    "refused with MOV001: restarts (the restart datasets of D91 are not written yet), several ranks, turning zones, regions, sprays, immersed bodies, periodic boundaries, an error-controlled time step, level sweeps",
-    "turbulence models and passive scalars run on the moving mesh but are not checked against a reference; the GPU backend is not tested on a moving mesh",
+    "refused with MOV001: turning zones, regions, sprays, immersed bodies, periodic boundaries, an error-controlled time step, level sweeps, the check mode [run] ranks",
+    "on ranks every rank moves the whole mesh and rebuilds its part every step (3 ranks about 5 times slower than 1 on 768 cells)",
+    "the closed-volume piston (variable density, stage 7c) neither restarts nor runs on ranks: the variable density has no restart yet",
+    "turbulence models and passive scalars run on the moving mesh but are not checked against a reference; the GPU backend has a Colab check (tools/notebooks/motion_colab.ipynb) that has not been run on a GPU yet",
     "the cooled piston has no reference data (no heat-transfer correlation compared yet)"
    ],
    "range": {}
@@ -1814,6 +1868,24 @@
     "the mapping is one way: the structure's motion and the fluid forces (the two-way FSI of MS6) are not coupled yet",
     "the moduli do not depend on temperature",
     "no check against a measured thermal deformation of a part in a flow"
+   ],
+   "range": {}
+  },
+  {
+   "id": "circuits.water-steam",
+   "title": "One-dimensional water and steam tube circuits of a boiler: two-phase pressure drop, flow boiling, CHF margin and natural circulation (steam furnace SF7b)",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "no comparison with measured void or wall temperatures yet (Bartolomei et al. 1982 not reachable from the build environment); the boiling correlations are checked against each other only",
+    "the CHF look-up table of Groeneveld et al. (2007) is not shipped (the paper was not reachable): chf = \"table\" reads it from a CSV file the user supplies, Bowring (1972) is the built-in default",
+    "post-dryout heat transfer is the vapour convection of Dougall-Rohsenow (1963) with no thermal non-equilibrium; no film boiling or rewetting",
+    "supercritical water takes Gnielinski with bulk properties: no correction for the pseudo-critical region",
+    "steady only: no density-wave or Ledinegg instability check, no transients (SF18)",
+    "the drift velocity is scaled by the sine of the tube angle; horizontal tubes have no stratified-flow void model",
+    "not yet coupled to the 3D furnace walls (SF7c)"
    ],
    "range": {}
   }

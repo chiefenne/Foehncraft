@@ -1,0 +1,35 @@
+# The nozzle and the liquid of spray_breakup.toml (D246, D306, D307).
+#
+# A diesel-like fuel at 300 K (representative open-literature values of a
+# light gas oil; the breakup needs the surface tension and the viscosity).
+# One hole of 0.15 mm, 60 MPa above the gas: 4.46 g/s for the whole hole
+# (C_d = 0.8 = C_a C_v), of which the quarter domain takes a quarter
+# (`flow_share`). Without `speed` and `diameter` the parcels leave as blobs
+# of the diameter √C_a d_hole = 139 µm at U = ṁ/(ρ_l C_a A_hole) = 353 m/s
+# on the plateau of the rate (D306). The hole is 0.6 mm long (L/d = 4) with
+# a sharp inlet (inlet_loss 0.5 by default): the force balance of Huh and
+# Gosman gives the liquid k₀ ≈ 240 m²/s² and ε₀ ≈ 6e8 m²/s³ at the exit on
+# the plateau (D307). The cavities of C_a = 0.86 burst at the jet surface;
+# the vapour pressure of a gas oil at 300 K is too small for them to
+# collapse first, so it is not given.
+
+[liquid]
+name = "diesel-like fuel"
+density = 830.0
+specific_heat = 2000.0
+temperature = 300.0
+surface_tension = 0.027
+viscosity = 2.5e-3
+
+[[injector]]
+name = "hole"
+position = [0.0005, 1e-5, 1e-5]
+direction = [1.0, 0.0, 0.0]
+half_angle = 6.0
+hole_diameter = 1.5e-4
+area_contraction = 0.86
+flow_share = 0.25
+hole_length = 6e-4
+discharge_coefficient = 0.8
+rate = [[0.0, 0.0], [5e-5, 4.46e-3], [1.45e-3, 4.46e-3], [1.5e-3, 0.0]]
+parcels_per_second = 1e6

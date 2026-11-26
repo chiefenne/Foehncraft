@@ -1091,6 +1091,65 @@ fn rebuild_on_ranks(
     Ok((no, nfl, ntr))
 }
 
+/// The deforming mesh on ranks (stage MS0 part 2): the solver of this
+/// rank on its part of the moved whole mesh `(mesh, geo)`, the part itself
+/// and the rank's part of the grid `grid` of the step. The partition stays
+/// that of the start (the cells keep their numbers) and the faces are the
+/// same, so the state and the old levels stay on their rank; the geometry
+/// and the swept volumes of the part are those of the whole mesh, so every
+/// rank solves bitwise the cells of the one-rank run. Collective.
+#[allow(clippy::too_many_arguments)]
+fn rebuild_deformed_on_ranks(
+    case: &FlowCase,
+    tv: &TimeValues,
+    target: &Target,
+    reference_cell: Option<usize>,
+    (mesh, geo): (&foehncraft_mesh::Mesh, &foehncraft_mesh::Geometry),
+    grid: &crate::motion::Grid,
+    t: f64,
+    fl: &mut Flow,
+    tr: &Transient,
+    o: &crate::ranks::OnRanks,
+) -> Result<(crate::ranks::OnRanks, Flow, Transient, crate::motion::Grid)> {
+    // the boundary arrays of the whole mesh, for the output
+    let phys = crate::case::physics(case)?;
+    let gphys = crate::case::physics_on(case, &phys, mesh, geo)?;
+    let analytic = case.analytic_at(t);
+    let at = bc::At {
+        analytic: analytic.as_ref(),
+        values: &tv.values,
+        t,
+        turning: &case.turning(),
+        hydrostatic: crate::buoyancy::hydrostatic(case),
+    };
+    let garrays = bc::arrays(mesh, geo, &case.boundary, &gphys, at)?;
+    let no =
+        crate::ranks::OnRanks::imprinted(o.comm.clone(), mesh, geo, garrays, Some(o.part.clone()))?;
+    // the wall distance of the whole moved mesh, each rank its cells
+    let wall_distance = if case.turbulence.is_laminar() {
+        None
+    } else {
+        Some(no.own(&crate::derived::wall_distance(case, mesh, geo)?))
+    };
+    let (mut nfl, mut ntr, _) = new_flow(
+        case,
+        tv,
+        &no.target(target),
+        reference_cell,
+        (&no.local.mesh, &no.geo),
+        t,
+        fl,
+        tr,
+        wall_distance,
+    )?;
+    let state = fl.state()?;
+    let old = tr.old_levels(fl)?;
+    take_over(fl, tr, &mut nfl, &mut ntr, &state, &old, true)?;
+    let (cells, faces) = no.grid_map(mesh);
+    let grid = grid.restricted(&cells, &faces);
+    Ok((no, nfl, ntr, grid))
+}
+
 /// Loads the carried `state` and old levels `old` into the new solver and
 /// takes over what goes on from the old one (`density`: the variable
 /// density goes along, a deforming mesh).
@@ -1175,13 +1234,24 @@ fn run_one<F: FnMut(&str)>(
     // the deforming mesh (D91, stage MS0): the nodes at the start time; the
     // mesh of the end of each step replaces it before the step
     let mut deform = crate::motion::Deforming::new(&case, mesh0, time0.start_time)?;
+    // a continued run starts on the mesh of the restart time (MS0 part 2)
+    if let Some(d) = deform.as_mut()
+        && single
+        && restart::AVAILABLE
+        && let Some(path) = &case.run.restart
+    {
+        let r = restart::read(path)?;
+        if let Some(note) = d.restore(&r, path)? {
+            lg.note(&note);
+        }
+    }
     let moving = imprint.is_some() || deform.is_some();
     if let Some(d) = &deform {
         lg.line(&format!(
             "deforming mesh (D91, stage MS0): the nodes move by [mesh_motion] displacement; volume \
              {:.6e} m³ at t = {:.6e} s; the solver is built again on the moved mesh in every step",
             d.volume(),
-            time0.start_time
+            d.time
         ));
     }
     let (mesh, geo) = current(&work, &deform, mesh0, geo0);
@@ -1207,8 +1277,9 @@ fn run_one<F: FnMut(&str)>(
     let mut on = match steer.ranks.clone() {
         Some(c) => {
             crate::ranks::supported_mesh(&case, mesh)?;
-            Some(if work.is_some() {
+            Some(if work.is_some() || deform.is_some() {
                 // the geometry of the rotor angle (rigid turn of the base
+                // mesh) or of the deformed mesh (every rank moves the whole
                 // mesh), the partition kept for the whole run
                 crate::ranks::OnRanks::imprinted(c, mesh, geo, arrays.clone(), None)?
             } else {
@@ -1407,7 +1478,11 @@ fn run_one<F: FnMut(&str)>(
         None
     };
     if let Some(path) = &restart_file {
-        let r = restart::read(path)?;
+        let mut r = restart::read(path)?;
+        // the deforming mesh took its geometry at the start (MS0 part 2)
+        if deform.is_some() {
+            r.geometry = None;
+        }
         let (r, same) = match &on {
             // every rank its part, by global identity (W6)
             Some(o) => (o.scatter(r)?, true),
@@ -2116,23 +2191,44 @@ fn run_one<F: FnMut(&str)>(
         // solver built on it, the grid of the step attached
         if let Some(d) = deform.as_mut() {
             let grid = d.advance(t0 + h)?;
-            let (nfl, ntr) = rebuild_flow(
-                &case,
-                &tv,
-                &target,
-                reference_cell,
-                (&d.mesh, &d.geo),
-                None,
-                t0 + h,
-                &mut fl,
-                &tr,
-                None,
-            )?;
+            gcl_worst = gcl_worst.max(d.closure(&grid));
+            let (nfl, ntr, grid) = match on.as_ref() {
+                None => {
+                    let (nfl, ntr) = rebuild_flow(
+                        &case,
+                        &tv,
+                        &target,
+                        reference_cell,
+                        (&d.mesh, &d.geo),
+                        None,
+                        t0 + h,
+                        &mut fl,
+                        &tr,
+                        None,
+                    )?;
+                    (nfl, ntr, grid)
+                }
+                Some(o) => {
+                    let (no, nfl, ntr, grid) = rebuild_deformed_on_ranks(
+                        &case,
+                        &tv,
+                        &target,
+                        reference_cell,
+                        (&d.mesh, &d.geo),
+                        &grid,
+                        t0 + h,
+                        &mut fl,
+                        &tr,
+                        o,
+                    )?;
+                    on = Some(no);
+                    (nfl, ntr, grid)
+                }
+            };
             setups_past.0 += fl.amg_setups;
             setups_past.1 += fl.sweep_setups;
             fl = nfl;
             tr = ntr;
-            gcl_worst = gcl_worst.max(d.closure(&grid));
             fl.attach_grid(grid)?;
         }
         let (mesh, geo) = current(&work, &deform, mesh0, geo0);
@@ -2260,7 +2356,7 @@ fn run_one<F: FnMut(&str)>(
                         }
                         files.push("fields_last_valid.vtkhdf");
                     }
-                    if last && restart::AVAILABLE && !moving {
+                    if last && restart::AVAILABLE && imprint.is_none() {
                         let mut rs = restart_of(
                             &mut fl,
                             &tr,
@@ -2272,6 +2368,12 @@ fn run_one<F: FnMut(&str)>(
                             on.as_ref(),
                         )?;
                         rs.spray = crate::spray::state(spray.as_ref())?;
+                        rs.geometry = deform
+                            .as_ref()
+                            .map(crate::motion::Deforming::restart_geometry);
+                        rs.geometry = deform
+                            .as_ref()
+                            .map(crate::motion::Deforming::restart_geometry);
                         if lead {
                             restart::write(&out.join("restart.h5"), &rs)?;
                         }
@@ -2975,7 +3077,7 @@ fn run_one<F: FnMut(&str)>(
                 dt = dt.min(m);
             }
         }
-        if restart_now && restart::AVAILABLE && !moving {
+        if restart_now && restart::AVAILABLE && imprint.is_none() {
             let mut rs = restart_of(
                 &mut fl,
                 &tr,
@@ -2987,6 +3089,9 @@ fn run_one<F: FnMut(&str)>(
                 on.as_ref(),
             )?;
             rs.spray = crate::spray::state(spray.as_ref())?;
+            rs.geometry = deform
+                .as_ref()
+                .map(crate::motion::Deforming::restart_geometry);
             if lead {
                 restart::write(&out.join("restart.h5"), &rs)?;
             }
@@ -3106,7 +3211,7 @@ fn run_one<F: FnMut(&str)>(
         }
         lg.frame(&f);
     }
-    if last && (case.run.restart_final || stopped) && restart::AVAILABLE && !moving {
+    if last && (case.run.restart_final || stopped) && restart::AVAILABLE && imprint.is_none() {
         let (smesh, _) = match &on {
             Some(o) => (&o.local.mesh, &o.geo),
             None => (mesh, geo),
