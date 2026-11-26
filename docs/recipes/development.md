@@ -84,30 +84,27 @@ only 5 macOS jobs at once per account):
 
 The check "CI OK" sums up all jobs.
 
-The tests run in three shards per platform, side by side, each a job that
-compiles only what it runs: `flow-1` and `flow-2` take turns over the tests
-of `foehncraft-flow` (its test program and its unit tests are the longest
-build and the longest run), and `rest` runs every other crate, the
-documentation tests and the G1 smoke run. The shards use
-[cargo-nextest](https://nexte.st), which runs every test in a process of its
-own; locally `cargo test --workspace --profile ci` runs the same tests. One
-shard by hand:
-
-```
-cargo nextest run --cargo-profile ci -p foehncraft-flow --partition count:1/2
-cargo nextest run --cargo-profile ci --workspace --exclude foehncraft-flow
-```
+The test job runs the tests with [cargo-nextest](https://nexte.st): the
+tests of all test programs share one pool (cargo test runs the programs one
+after another), each in a process of its own. Locally
+`cargo test --workspace --profile ci` runs the same tests;
+`cargo nextest run --workspace --cargo-profile ci` runs them as CI does.
 
 The MPI job builds all its example programs in one `cargo build` with the
 `ci` profile, so that the crates are compiled once with one feature set.
 
-The integration tests of `foehncraft-flow` and `foehncraft-mesh` are one
-test program per crate (`tests/main.rs`, one `mod` line per file), not one
-program per file: each program compiled and linked the solver's generic
-code again, and the test build was the longest step of CI. Run one file
-with a module filter, for example
-`cargo test --release -p foehncraft-flow --test flow energy::`; a new test
-file needs its `mod` line (`python3 -m tools.check.test_modules` checks it).
+The integration tests of `foehncraft-mesh` are one test program
+(`tests/main.rs`, one `mod` line per file), those of `foehncraft-flow` two
+(`flow` in `tests/main.rs` and `flow2` in `tests/main2.rs`, each file in one
+of them), not one program per file: each program compiled and linked the
+solver's generic code again, and the test build was the longest step of
+CI. Flow has two halves because the compiler front end works on one crate
+with one thread: the single program compiled for nine minutes, the two
+halves compile side by side. Run one file with a module filter, for example
+`cargo test --release -p foehncraft-flow --test flow energy::` (or
+`--test flow2` for a file listed in `tests/main2.rs`); a new test file needs
+its `mod` line, in the shorter of the two flow lists
+(`python3 -m tools.check.test_modules` checks it).
 The G1 smoke run uses the `foehn` binary that the tests already built.
 
 The verification status page and its chart

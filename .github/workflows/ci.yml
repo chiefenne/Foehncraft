@@ -4,8 +4,7 @@
 #
 # Three tiers, one workflow (see docs/recipes/development.md, "CI tiers"):
 #   PR gate     pull requests: Linux only, `ci` profile (release optimisation,
-#               no LTO, 16 codegen units), tests sharded over three jobs
-#               (flow-1, flow-2, rest; cargo-nextest), cases over three.
+#               no LTO, 16 codegen units), cases sharded over three jobs.
 #               macOS and Windows join when the PR touches platform-sensitive
 #               files (build files, I/O, restart, run control, the CLI).
 #               Target: about 5 minutes with a warm cache.
@@ -188,7 +187,7 @@ jobs:
       - run: cargo fmt --all --check
       - name: Every flow case is in a CI case set
         run: python3 -m tools.check.ci_cases --check
-      - name: Every integration test file is compiled (one test program per crate)
+      - name: Every integration test file is compiled (few test programs per crate)
         run: python3 -m tools.check.test_modules
       - run: cargo clippy --workspace --all-targets --locked
       # the CUDA backends compile without a CUDA toolkit (driver and NVRTC
@@ -217,15 +216,12 @@ jobs:
 
   # ---------------------------------------------------------------------
   # Unit and integration tests, including every bitwise-reproducibility
-  # test, and the G1 smoke run (all CPU backends bitwise equal), in three
-  # shards per platform that compile and run beside each other: the tests
-  # of foehncraft-flow in two halves (its one test program ran 5 of the 8
-  # minutes of tests, and its two test builds are the longest compile) and
-  # every other crate. cargo-nextest runs each test in a process of its own
-  # and the tests of all programs of a shard in one pool; `--partition
-  # count:k/2` deals the flow tests out in turn.
+  # test, and the G1 smoke run (all CPU backends bitwise equal).
+  # cargo-nextest runs the tests of all test programs in one pool (cargo
+  # test runs the programs one after another, and the long tail of one
+  # program kept the other cores idle), each test in a process of its own.
   test:
-    name: Test (${{ matrix.os }}, ${{ matrix.shard }})
+    name: Test (${{ matrix.os }})
     needs: plan
     if: needs.plan.outputs.code == 'true'
     runs-on: ${{ matrix.os }}
@@ -233,10 +229,8 @@ jobs:
       fail-fast: false
       matrix:
         os: ${{ fromJSON(needs.plan.outputs.test_os) }}
-        shard: [flow-1, flow-2, rest]
     env:
       BUILD_PROFILE: ${{ needs.plan.outputs.profile }}
-      SHARD: ${{ matrix.shard }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -244,35 +238,23 @@ jobs:
         with:
           # build-ci is written by warm-ci-cache on main, build-release here
           shared-key: build-${{ needs.plan.outputs.profile }}
-          save-if: ${{ github.ref == 'refs/heads/main' && needs.plan.outputs.profile == 'release' && matrix.shard == 'rest' }}
+          save-if: ${{ github.ref == 'refs/heads/main' && needs.plan.outputs.profile == 'release' }}
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest
       # the debug-assertion run and the run without HDF5 and METIS are jobs
       # of their own (below), so that they run beside this one
-      - name: Tests of shard ${{ matrix.shard }}
-        run: |
-          case "$SHARD" in
-            flow-1) select=(-p foehncraft-flow --partition count:1/2) ;;
-            flow-2) select=(-p foehncraft-flow --partition count:2/2) ;;
-            rest)   select=(--workspace --exclude foehncraft-flow) ;;
-          esac
-          echo "select=${select[*]}" >> "$GITHUB_ENV"
-          cargo nextest run --locked --cargo-profile "$BUILD_PROFILE" --no-fail-fast "${select[@]}"
-      - name: Documentation tests
-        if: matrix.shard == 'rest'
-        run: cargo test --workspace --doc --locked --profile "$BUILD_PROFILE"
+      - run: cargo nextest run --workspace --locked --cargo-profile "$BUILD_PROFILE" --no-fail-fast
+      - run: cargo test --workspace --doc --locked --profile "$BUILD_PROFILE"
       - name: Slow tests (marked #[ignore]; nightly and manual runs)
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-        run: cargo nextest run --locked --cargo-profile "$BUILD_PROFILE" --no-fail-fast --run-ignored only --no-tests=pass $select
+        run: cargo nextest run --workspace --locked --cargo-profile "$BUILD_PROFILE" --no-fail-fast --run-ignored only
       # the tests of foehncraft-cli have already built the command line
       # (target/<profile>/foehn); `cargo run -p foehncraft-cli` would build
       # it a second time with other features
       - name: G1 smoke run (CPU backends, results bitwise equal)
-        if: matrix.shard == 'rest'
         run: target/$BUILD_PROFILE/foehn bench g1 examples/cases/bench/g1_ci_small.toml
       - uses: actions/upload-artifact@v4
-        if: matrix.shard == 'rest'
         with:
           name: g1-ci-small-${{ matrix.os }}
           path: output/g1_ci_small/
@@ -554,9 +536,6 @@ jobs:
         with:
           shared-key: build-ci
       - run: cargo test --workspace --locked --profile ci --no-run
-      # the flow shards of the test job build foehncraft-flow alone, with
-      # its own features
-      - run: cargo test -p foehncraft-flow --locked --profile ci --no-run
       - run: cargo build --locked --profile ci -p foehncraft-cli
 
   # ---------------------------------------------------------------------

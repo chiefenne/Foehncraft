@@ -47,6 +47,11 @@ foehncraft-bench.workspace = true
 name = "flow"
 path = "tests/main.rs"
 
+# the second half of the integration tests (see tests/main.rs)
+[[test]]
+name = "flow2"
+path = "tests/main2.rs"
+
 [[example]]
 name = "mpi_flow"
 required-features = ["mpi"]
