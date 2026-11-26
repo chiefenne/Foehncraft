@@ -331,6 +331,7 @@ fn dam_break_martin_moyce() {
 
 /// The static drop: the Laplace jump σ/R within 15 %, the spurious
 /// currents below 0.3 m/s (balanced CSF, density ratio 828).
+#[cfg(feature = "hdf5")]
 #[test]
 fn static_drop_laplace_jump() {
     let case = FlowCase::from_toml(
