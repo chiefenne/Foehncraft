@@ -651,6 +651,32 @@ Found with the ECN diagnostics of SA3 (#319):
   its own line (`"\n[spray.evaporation]\n"`), after turning `"\r\n"` into
   `"\n"`: a Windows checkout has CRLF line ends, and a match on `"\n[..]\n"`
   finds nothing there, so the table is silently not inserted.
+
+Found with the Spray A runs of SA4 (#326):
+- **A PLV on a half or quarter domain needs the mirror images.** Seen
+  across a symmetry plane that contains the spray axis, the domain holds
+  half of every line of sight, so the projected liquid volume was half and
+  the liquid lengths too short. `[spray.ecn]` now adds the images of the
+  parcels in the symmetry planes and slip walls through the axis; a sector
+  whose images do not tile the spray (not 180°/n) is refused. Check the
+  first run of a new symmetric case against the whole spray.
+- **A limiter that is right at low pressure can be wrong at the critical
+  state.** The saturation limiter (D253) gave a gas above the critical
+  mixing temperature (651 K at 6 MPa) no room for vapour, because the
+  Peng-Robinson surface takes no latent heat there. It then held back 35
+  times the vapour that still evaporated, 1 µm drops heated to 900 K, and
+  the liquid length grew with the vapour tip (35 mm at 1 ms instead of
+  about 9). When the liquid length follows the vapour, look at the
+  limiter columns of `spray.csv` (`limiter_cells`, `limiter_kg_s`) before
+  the breakup.
+- **Liquid lengths need parcels, and parcels cost substeps.** At 10⁶
+  parcels per second one parcel of Spray A projects 1.4·10⁻⁵ m, 70 times
+  the smaller PLV threshold, so the length jumped with single parcels;
+  2·10⁷ per second (about 9000 in the flow) settles it. The run time is
+  set by the substeps of the 1 µm drops after breakup (the 2 K default of
+  `max_temperature_change`), not by the gas: 27 to 36 minutes for 0.6 ms
+  on 2 threads.
+
 <a id="cut-cells"></a>
 ## Cut cells: check what the solver takes, cell by cell
 
