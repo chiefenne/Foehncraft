@@ -12,6 +12,12 @@
 //! `lower[1] > 0` (an annulus) it stays. `zmin` and `zmax` become the two
 //! wedge planes (at −θ/2 and +θ/2); the other boundaries keep their names.
 //!
+//! A 3D box of hexahedra revolves the same way into a sector (D309): its
+//! z intervals become the angular cells, every face stays planar (faces of constant x
+//! lie in a plane x = const, faces of constant y are chords, faces of
+//! constant z lie in a plane through the axis), and `zmin`, `zmax` are the
+//! side planes of the sector.
+//!
 //! Every cell type of the box generator revolves: hexahedra, prisms on a
 //! triangulation, polygonal prisms and the mixed bands, perturbed or not
 //! (the perturbation moves nodes in x and y only, so the wedge planes stay
@@ -23,7 +29,8 @@ use crate::mesh::Mesh;
 use std::collections::HashMap;
 
 /// Revolves a 2D mesh (one layer in z, y ≥ 0) into a wedge of `angle`
-/// degrees about the x axis.
+/// degrees about the x axis, or a 3D box mesh into a sector whose z
+/// intervals are the angular cells.
 pub fn revolve(m: &Mesh, angle: f64) -> Result<Mesh, String> {
     if !(angle > 0.0 && angle <= 90.0) {
         return Err(format!(
@@ -187,6 +194,86 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// A 3D box revolves into a sector: its z intervals are the angular
+    /// cells, and the volume is that of the polygonal sector, N planar
+    /// wedges of the section ½ R² sin(θ/N); every cell is closed and the
+    /// side planes lie at ∓θ/2 (D309).
+    #[test]
+    fn sectors_of_hexahedra() {
+        let angle: f64 = 22.5;
+        let th = angle.to_radians();
+        for kind in [Kind::Hex] {
+            {
+                let s = BoxSpec {
+                    kind,
+                    dimension: 3,
+                    lower: [0.0, 0.0, 0.0],
+                    upper: [2.0, 0.5, 0.1],
+                    cells: [6, 5, 4],
+                    wedge: Some(angle),
+                    ..Default::default()
+                };
+                let m = s.generate().unwrap();
+                let g = Geometry::compute(&m);
+                assert!(g.cell_volume.iter().all(|&v| v > 0.0), "{kind:?}");
+                let vol: f64 = g.cell_volume.iter().sum();
+                let exact = 2.0 * 4.0 * 0.5 * 0.5 * 0.5 * (th / 4.0).sin();
+                assert!(
+                    (vol - exact).abs() < 1e-12 * exact,
+                    "{kind:?}: {vol} {exact}"
+                );
+                let names: Vec<&str> = m.boundaries.iter().map(|p| p.name.as_str()).collect();
+                assert_eq!(names, ["xmin", "xmax", "ymax", "zmin", "zmax"], "{kind:?}");
+                for c in 0..m.n_cells {
+                    let mut sum = [0.0; 3];
+                    for (f, nb) in m.cell_face_iter(c) {
+                        let a = g.face_area[f];
+                        let sg = if nb { -1.0 } else { 1.0 };
+                        for i in 0..3 {
+                            sum[i] += sg * a[i];
+                        }
+                    }
+                    let n = (sum[0] * sum[0] + sum[1] * sum[1] + sum[2] * sum[2]).sqrt();
+                    assert!(n < 1e-15, "{kind:?} cell {c}: {n}");
+                }
+                for (name, sgn) in [("zmin", -1.0), ("zmax", 1.0)] {
+                    let p = m.boundary(name).unwrap();
+                    for f in p.range() {
+                        let a = g.face_area[f];
+                        let n = (a[0] * a[0] + a[1] * a[1] + a[2] * a[2]).sqrt();
+                        let e = [0.0, -(0.5 * th).sin(), (0.5 * th).cos() * sgn];
+                        let d = (0..3).map(|i| (a[i] / n - e[i]).abs()).fold(0.0, f64::max);
+                        assert!(d < 1e-12, "{kind:?} {name}: normal off by {d}");
+                    }
+                }
+            }
+        }
+    }
+
+    /// A perturbed 3D box would move the nodes on the axis apart, and
+    /// cells other than hexahedra would collapse on the axis: refused.
+    #[test]
+    fn a_perturbed_or_tetrahedral_sector_is_refused() {
+        let s = BoxSpec {
+            dimension: 3,
+            cells: [2, 2, 2],
+            perturb: 0.1,
+            wedge: Some(10.0),
+            ..Default::default()
+        };
+        let e = s.generate().unwrap_err();
+        assert!(e.contains("perturb"), "{e}");
+        let s = BoxSpec {
+            kind: Kind::Tet,
+            dimension: 3,
+            cells: [2, 2, 2],
+            wedge: Some(10.0),
+            ..Default::default()
+        };
+        let e = s.generate().unwrap_err();
+        assert!(e.contains("hex"), "{e}");
     }
 
     /// An annulus keeps its inner boundary.
