@@ -1862,7 +1862,6 @@ gaps = [
   "density and specific heat of the liquid constant in a run (at property_temperature): no thermal expansion of a heating droplet",
   "iso-octane above about 400 K rests on extrapolated correlations (density, c_l, mu, sigma); not in the NIST fluid system",
   "the film carrier is the start composition of the case, not the local gas of the cell",
-  "no NC12H26 vapour species yet (Spray A stages)",
 ]
 
 [[feature]]
@@ -1923,6 +1922,7 @@ evidence = [
   { kind = "consistency", test = "crates/foehncraft-kernels/src/realfluid.rs::a_binary_flash_gives_the_phases_of_the_surface_equilibrium", what = "the flash of N2 + n-dodecane at 500 K, 6 MPa gives the same coexisting phases for three feeds, equal to the droplet surface solution (1e-9), mass balance to 1e-12; a feed outside the two-phase range stays one phase" },
   { kind = "consistency", test = "crates/foehncraft-kernels/src/realfluid.rs::the_stability_test_tells_one_phase_from_two", what = "Michelsen's tangent-plane test: pure components and hot gas with a little fuel stable, an equimolar mixture at 450 K, 6 MPa unstable" },
   { kind = "reference-data", test = "crates/foehncraft-particles/tests/mixing_line.rs::the_ideal_gas_of_dodecane_follows_its_heat_capacity_table", what = "n-dodecane ideal gas: Scott (1974) c_p by the CH2 increment, NASA-7 fit within 0.3 % (within 0.24 % of Lemmon and Huber 2004 at 300 to 700 K), enthalpy of formation -290.9 kJ/mol" },
+  { kind = "consistency", test = "crates/foehncraft-flow/src/species.rs::the_dodecane_vapour_is_the_kernel_ideal_gas", what = "the vapour species NC12H26 of the flow's species data is the kernel's n-dodecane ideal gas (same coefficients, range and Lennard-Jones data); its c_p within 0.6 % of Lemmon and Huber (2004) at 500 and 700 K, its kinetic-theory viscosity within 5 % at 500 K (the_spray_vapours_meet_the_nist_data)" },
   { kind = "exact", test = "crates/foehncraft-particles/tests/mixing_line.rs::va4_the_mixing_line_closes_the_energy_balance", what = "VA.4: 363 K n-dodecane into 900 K N2 at 6 MPa, frozen, equilibrium and ideal: the enthalpy of the state found equals that of the mixed streams to 1e-13 of the stream difference (found 7e-16), the end points are the streams" },
   { kind = "consistency", test = "crates/foehncraft-particles/tests/mixing_line.rs::va4_the_two_phase_region_of_the_mixing_line", what = "VA.4: Z_sat 0.357 (equilibrium) against 0.320 (ideal); the frozen line equals the equilibrium line before Z_sat and fails the stability test where the flash splits (1e-6); equal fugacities and dissolved N2 in the two-phase region" },
   { kind = "reference-data", test = "crates/foehncraft-particles/tests/mixing_line.rs::va5_the_siebers_liquid_length_with_our_thermodynamics", what = "VA.5: Siebers (1999) liquid length with our Z_sat at the four measured Spray A conditions (ECN DBI, 210675): 7.2/11.3/4.9/10.7 mm (equilibrium) and 8.2/13.0/5.7/11.3 mm (ideal) against 11.7/16.3/7.4/20.6 mm; the trends with temperature and density right" },
@@ -1932,7 +1932,7 @@ gaps = [
   "above 550 K Peng-Robinson with one k_ij is 3 to 9 % low on the measured bubble pressures (the measured Henry constant falls faster with T); the surface vapour fraction moves by 2 to 6 % between the k_ij of the whole set and of the hot isotherms",
   "the dissolved gas shifts the equilibrium but is not booked: the liquid stays pure fuel (D311)",
   "the gas solver stays ideal (D317): the departure enthalpy of the dense vapour enters the gas as a sensible-heat deficit",
-  "no flow case yet: the n-dodecane vapour species data come with the liquid library; VA.7 to VA.9 (order independence with a fuel vapour, the Spray A case) are later stages",
+  "no flow case yet: VA.7 to VA.9 (order independence with a fuel vapour, the Spray A case) are later stages; the vapour species NC12H26 is in the species data",
   "built-in high-pressure data for n-dodecane only; other liquids take the plain 1978 kappa (water: 11 % low on its vapour pressure at 320 K)",
 ]
 

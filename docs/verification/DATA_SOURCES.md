@@ -263,6 +263,16 @@ the tables they are fitted to are not stored. Generators:
   their enthalpies of formation (−187.8 and −224.1 kJ/mol); Lennard-Jones
   parameters from the critical point and acentric factor by Tee, L. S.,
   Gotoh, S., Stewart, W. E. (1966), Ind. Eng. Chem. Fundam. 5, 356-363.
+- Vapour species NC12H26 (#320): the n-dodecane ideal gas of the real-fluid
+  kernel (section 3e: Scott 1974 by the CH₂ increment, NIST WebBook
+  enthalpy of formation −290.9 kJ/mol and standard entropy 622.50 J/(mol K),
+  critical point of Ambrose and Walton 1989), written by
+  `tools/data/vapour_species.py DIR NC12H26` from the table of
+  `tools/data/dodecane_ideal_gas.py --csv`. The test quotes the c_p of the
+  reference equation of Lemmon, E. W., Huber, M. L. (2004), Energy Fuels
+  18, 960-967, at 1 Pa (NIST fluid tables: 426.12 and 532.92 J/(mol K) at
+  500 and 700 K) and the dilute-gas viscosity of the same tables,
+  7.660e-6 Pa s at 500 K.
 - Single droplets: Chauveau, C., Birouk, M., Halter, F., Gökalp, I. (2019),
   Int. J. Heat Mass Transfer (title, volume and pages **to verify**; the
   rates are those of its eq. (4) as read in this work) (microgravity

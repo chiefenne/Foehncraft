@@ -703,9 +703,8 @@ dissolved gas is not booked (the liquid stays pure fuel), and the gas
 solver stays an ideal gas, so the departure enthalpy of the dense vapour
 enters the gas as a small heat deficit (D317). Built-in high-pressure data
 for n-dodecane only; any other liquid can give its critical point,
-acentric factor and molar mass. The Spray A flow case comes with the
-breakup model and the n-dodecane vapour species (stages SA2 to SA6 of
-[the Spray A plan](../requirements/step28-spray-a.md)).
+acentric factor and molar mass. The Spray A flow case is stage SA6 of
+[the Spray A plan](../requirements/step28-spray-a.md).
 
 [Recipe 314](../recipes/sprays.md#spray-a-surface),
 [plan](../requirements/step28-spray-a.md).
@@ -753,7 +752,10 @@ streams (VA.4). The stability test of Michelsen (1982) and the flash
 same coexisting phases as the droplet surface of gallery 314, and the
 frozen line becomes unstable exactly where the flash splits. The ideal gas
 of n-dodecane is Scott's (1974) c_p, n-decane plus two CH₂ increments,
-within 0.11 % of the reference equation of Lemmon and Huber (2004).
+within 0.11 % of the reference equation of Lemmon and Huber (2004). The
+same record joins the species data of the flow solver as the vapour
+species `NC12H26`, so a spray of n-dodecane can evaporate into a flow
+(`[spray.liquid] vapour = "NC12H26"`).
 
 **What this version does not do.** Siebers' scaling with C_L = 0.62 and
 the measured 21.5° spreading angle (Pickett et al. 2011) gives lengths 30
@@ -784,7 +786,7 @@ correlations (iso-octane is not in the NIST fluid system). Each gives its
 vapour pressure (Wagner form), density, specific heat, latent heat (Watson
 form), surface tension and viscosity as functions of the temperature, from
 the triple point region to the critical point. The vapour species of the
-gas come with it: `NC7H16` and `IC8H18` (NASA-7 polynomials fitted to
+gas come with it: `NC7H16`, `IC8H18` and `NC12H26` (NASA-7 polynomials fitted to
 published ideal-gas heat capacities, Lennard-Jones data from the critical
 point) join the species data of the flow solver.
 
@@ -861,9 +863,8 @@ followed. Iso-octane density, specific heat, viscosity and surface tension
 above about 400 K rest on extrapolated correlations. The single-droplet
 comparison is a recorded gap (+16 to +59 %), not a pass. The film carrier is
 the start composition of the case, not the local gas of the cell (enough
-for an inert carrier, not for a reacting gas). No n-dodecane vapour species
-yet (the Spray A work adds it). Multicomponent liquids and boiling are
-later stages.
+for an inert carrier, not for a reacting gas). Multicomponent liquids and
+boiling are later stages.
 
 [Recipe 321](../recipes/sprays.md#spray-liquid-library),
 [case row](../cases/flow.md#lagrangian-sprays).

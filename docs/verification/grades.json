@@ -1447,7 +1447,6 @@
     "density and specific heat of the liquid constant in a run (at property_temperature): no thermal expansion of a heating droplet",
     "iso-octane above about 400 K rests on extrapolated correlations (density, c_l, mu, sigma); not in the NIST fluid system",
     "the film carrier is the start composition of the case, not the local gas of the cell",
-    "no NC12H26 vapour species yet (Spray A stages)",
     "`spray_heptane_evaporation_injectors` has no run in the verification manual or in CI"
    ],
    "range": {}
@@ -1481,7 +1480,7 @@
     "above 550 K Peng-Robinson with one k_ij is 3 to 9 % low on the measured bubble pressures (the measured Henry constant falls faster with T); the surface vapour fraction moves by 2 to 6 % between the k_ij of the whole set and of the hot isotherms",
     "the dissolved gas shifts the equilibrium but is not booked: the liquid stays pure fuel (D311)",
     "the gas solver stays ideal (D317): the departure enthalpy of the dense vapour enters the gas as a sensible-heat deficit",
-    "no flow case yet: the n-dodecane vapour species data come with the liquid library; VA.7 to VA.9 (order independence with a fuel vapour, the Spray A case) are later stages",
+    "no flow case yet: VA.7 to VA.9 (order independence with a fuel vapour, the Spray A case) are later stages; the vapour species NC12H26 is in the species data",
     "built-in high-pressure data for n-dodecane only; other liquids take the plain 1978 kappa (water: 11 % low on its vapour pressure at 320 K)"
    ],
    "range": {}
