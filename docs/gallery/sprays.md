@@ -21,6 +21,7 @@ Part of the [Example gallery](../gallery.md): droplets as Lagrangian parcels in 
 | 323 | [ECN Spray G: a gasoline injector against the measurements](#spray-g) | SP6, D309 | `[mesh.generate] wedge` with `dimension = 3` (a sector of the injector), thin slip core on the axis, injector from the measured rate, plume direction and cone, `flow_share`, the ECN liquid and vapour penetration (`tools/plot/spray_g_metrics.py`), library iso-octane, KH-ACT |
 | 324 | [The gas film of a fuel droplet at diesel pressure](#spray-a-film) | SA2 | `[spray.evaporation.peng_robinson] film = "real-fluid"` (default), `critical_volume`: Peng-Robinson density and c_p, the dense-fluid viscosity and conductivity of Chung et al. (1988), the high-pressure diffusivity of Riazi and Whitson (1993) in the droplet film (D313) |
 | 326 | [Flattened drops in ECN Spray A: the Corrected Distortion model](#spray-a-distortion) | SA4 | `[spray.breakup] drag = "corrected-distortion"` (D316): drag and evaporation of the TAB spheroid (Nguyen, Dahms, Pickett and Tagliante 2022), viscous-sphere circulation, ECN liquid length on a quarter domain with mirror images |
+| 333 | [The drops take turbulence energy from the gas](#spray-turbulence) | D330 | `[spray.coupling] turbulence = "dispersion-work"`: the work of the dispersing eddies on the drops taken out of k with the ε or ω term of KIVA-II, booked from the part of the drop motion that follows the eddy; `gas_turbulence_w` in `spray.csv`; at most 32 eddies per parcel and step |
 | 335 | [Colliding drops in ECN Spray G](#spray-collisions) | D331 | `[spray.collision] model = "ntc"`: no-time-counter sampling with O'Rourke's coalescence and grazing separation; G1 liquid lead at 0.8 ms from 19 % to 12 % |
 
 ---
@@ -1327,6 +1328,106 @@ Collisions are later work.
 [Recipe 326](../recipes/sprays.md#spray-a-distortion),
 [case row](../cases/flow.md#lagrangian-sprays),
 [plan](../requirements/step28-spray-a.md).
+
+---
+
+<a id="spray-turbulence"></a>
+## 333. The drops take turbulence energy from the gas
+
+<img src="../figures/gallery/spray_turbulence_two_way.png" alt="Left: side view of one plume of the Spray G injector at 0.6 ms on the k-omega SST model, the injector tip at the left and its axis horizontal, coloured by the turbulence kinetic energy of the gas on a logarithmic scale from 0.01 to 1000 square metres per square second. Above the axis, the run without the term: a band leaving the tip at about 33 degrees, dark red (several hundred) along its whole length to a rounded head about 32 mm along the axis and 20 mm from it. Below the axis, the mirrored run with the drops' work on the turbulence: only a thin yellow and green streak near the tip that turns cyan and fades out by about 20 mm, the rest of the plume blue, below 0.01. Right top: the turbulence kinetic energy of the gas of the whole injector over 1.2 ms; without the term (dashed) it rises from 0.3 ms to 12.5 millijoules at 0.85 ms and falls slowly to 11 millijoules; with the term (solid) it stays near zero until 0.8 ms and reaches 1.8 millijoules at 1.2 ms. Right middle and bottom: liquid and vapour penetration with the measured points; both curves follow the points to 0.4 ms, then the curve with the term runs above the one without, 50 against 44 mm of liquid at 1.1 ms against 38 mm measured, and 51 against 43 mm of vapour against 40 mm measured. A dotted line marks the end of injection at 0.78 ms." width="1200" height="760">
+
+*Measured before the collision model of gallery 335 (D331), on the G1
+set-up of this PR without collisions: k-ω SST as the main run and k-ε as
+the comparison. The G1 case is now k-ε with collisions (gallery 335); the
+term was not re-measured on it. The numbers below are those of the
+collision-free runs, not current G1 results.*
+
+The owner asked for the turbulence to be exchanged in both directions, as
+momentum, heat and vapour are. Until now it went one way: the gas eddies
+disperse the parcels (D243), and the parcels gave nothing back. With
+`[spray.coupling] turbulence = "dispersion-work"` (D330) the gas loses the
+work its eddies do on the drops they disperse, the term of KIVA-II
+(Amsden, O'Rourke and Butler 1989): W = −Σ m Δv·u′ per cell and step,
+with c_s (ε/k) W in the ε equation (c_s = 1.5) and, for SST, the same
+source written with ε = β* k ω, (c_s − 1)(ω/k) W in the ω equation.
+
+**Only the part that follows the eddy.** Δv·u′ sampled as it stands holds
+the eddy times the drag change of the mean slip: zero on average, but near
+the nozzle a hundred times the work itself. Its noise broke the first SST
+run of Spray G at step 2. Every parcel therefore carries its response v′
+to its current eddy, zero when it enters a new one and relaxed with the
+exact drag of each sub-step, and books −m (1 − e^{−Δt/τ}) u′·(u′ − v′): the
+work of the eddy on the parcel's own fluctuation. As the eddy is constant
+over its life, u′ − v′ = u′ e^{−t/τ} and the booked work is never
+positive, as KIVA-II states for the term. k and ε (ω) take it implicitly
+where it takes away, so k stays positive at any loading.
+
+**What is checked.** Drops born in still turbulent gas (k = 0.5 m²/s²) take
+from their first eddies 0.88 times −2k times the injected mass in the first
+step, as they should for drops that relax into eddies of variance 2k/3 per
+component (less than 1 because the drops born late in the step relax only
+partly); without dispersion nothing is booked (V28.22). In a lumped cell on
+k-ε, k at the end of the run with the term is k without it less the booked
+work over ρV, within 3 % (V28.23). The work enters the sums of a pass with
+the other sources: bitwise the same with the parcels in reversed order and
+on one thread.
+
+**On ECN Spray G (G1, gallery 323), k-ω SST.** The drops of a fuel spray
+are much smaller than the eddies and heavy against the gas: they take
+energy from the eddies at a rate of about 2φ/τ times k, with φ the mass
+loading of the liquid and τ the response time of the drops (a few tenths
+of a millisecond here). In the first 5 mm from the tip φ is about 1 in
+the median cell and up to 50 in the densest, so k there decays within a
+tenth of a millisecond or much faster, before the jet can build its
+turbulence up: the median k of the plume cells at 0.6 ms falls from 106 to
+0.004 m²/s², and
+the turbulence kinetic energy of the gas of the injector from 8.6 to
+0.01 mJ. The drops took only 0.18 mJ over the whole run: the term removes
+the seed near the nozzle from which the production of the jet would grow,
+and with k near zero the model has nothing to grow from. On k-ε the term
+is as strong and the spray runs further still: the median k of the plume
+cells at 0.3 ms falls from 3.9 to 0.05 m²/s², and the liquid is 52 %
+ahead at 1.1 ms against 30 % without it (49.1 and 57.5 mm; 66 969
+eddies held). Without the
+turbulence the plumes mix less and run further: the liquid is 33 % ahead
+of the measurement at 1.1 ms (50.4 against 37.9 mm) instead of 15 %, the
+vapour 26 % (50.8 against 40.2 mm) instead of 7 %. The coupling passes of
+59 steps end above their tolerance (2 without the term), and the run takes
+19 minutes instead of 16.
+
+**On ζ-f0 the run with the term failed before #334.** On `k-epsilon-zeta-f0` with
+`compound-2023` the run with the term stopped at step 24 (0.05 ms): the
+conjugate-gradient solve of the pressure broke down (its matrix is not
+positive definite) and the solution diverged in 226 cells. Without the term
+the same case ran. This was before the start-of-step bound of #334 (the
+start of k, ε and ζ floored at a tenth of the old value): with it, and
+with collisions, the run with the term passes step 24 and runs to 0.1 ms
+(50 steps, re-checked 2026-11-26). The full run on ζ-f0 with the term is
+not done; the feature row records it.
+
+**Short eddies.** With k near zero the eddies of the dispersion become
+tiny, and a parcel with a large slip crosses one in nanoseconds; every
+eddy ended a sub-step, the parcels spent thousands each and their records
+filled the memory at 0.51 ms. A parcel now enters at most 32 eddies in a
+step (`MAX_EDDIES_PER_STEP`) and keeps the last one to the end of the step,
+as a code that samples the eddy once per step does; such eddies carry a
+velocity of the order √k and do not matter. `held_eddies` in the tally of
+`result.json` counts them: 65 632 in this run, none without the term (in
+the 0.1 ms CI run of the case and in the unit test of developed
+turbulence).
+
+**What this version does not do.** Only damping: the wakes of drops larger
+than the eddies, which can add turbulence (Skartlien, Palmer and
+Skjæraasen 2022 review the measurements), are not modelled, and for drops
+of 10 to 50 µm against eddies of about a millimetre the data show damping.
+The term is off by default and in the Spray G case, where it moves the
+result away from the measurement. Not in the steady spray mode. The eddies
+are the isotropic Gaussian eddies of the eddy-lifetime model. One process.
+
+Files: `spray.csv` (column `gas_turbulence_w`, W per step),
+`result.json` (`gas_turbulence_work`, J over the run; `held_eddies`).
+[Recipe 333](../recipes/sprays.md#spray-turbulence),
+[case row](../cases/flow.md#lagrangian-sprays).
 
 ---
 

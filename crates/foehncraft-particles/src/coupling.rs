@@ -85,6 +85,12 @@ pub struct Record {
     /// evaporation (Q ≈ L β ΔY at the wet bulb), and an evaporating cell
     /// tends to the adiabatic saturation, not below it (SP5).
     pub liquid_h: f64,
+    /// Work of the parcel's eddy on the gas in the sub-step (J; D330):
+    /// u′ · impulse, the fluctuation of the eddy the parcel sees times the
+    /// drag impulse the gas receives (KIVA-II Eq. C-4: −m Δv·u′). Zero
+    /// without an eddy; negative on average, the energy the eddies spend
+    /// dispersing the parcel.
+    pub turb: f64,
 }
 
 /// The vapour slopes of one parcel (SP5, D250): the closing step gives the
@@ -190,6 +196,8 @@ pub struct CellSources {
     pub vapour_slope_h: Vec<f64>,
     /// Σ of the evaporating (positive) vapour records of each cell (kg).
     pub evaporated: Vec<f64>,
+    /// Work of the parcels' eddies on the gas of each cell (J; D330).
+    pub turb: Vec<f64>,
     /// Records per cell.
     pub records: Vec<u32>,
 }
@@ -212,6 +220,7 @@ impl CellSources {
                 s.vapour_slope.push(r.vapour_slope);
                 s.vapour_slope_h.push(r.vapour_slope * r.liquid_h);
                 s.evaporated.push(r.vapour.max(0.0));
+                s.turb.push(r.turb);
                 s.records.push(1);
             } else {
                 let k = s.cells.len() - 1;
@@ -225,6 +234,7 @@ impl CellSources {
                 s.vapour_slope[k] += r.vapour_slope;
                 s.vapour_slope_h[k] += r.vapour_slope * r.liquid_h;
                 s.evaporated[k] += r.vapour.max(0.0);
+                s.turb[k] += r.turb;
                 s.records[k] += 1;
             }
         }
@@ -334,6 +344,7 @@ mod tests {
             vapour_slope: 0.0,
             vapour_y: 0.0,
             liquid_h: 0.0,
+            turb: 0.0,
         }
     }
 

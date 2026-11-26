@@ -562,3 +562,79 @@ fn dispersion_needs_a_turbulence_model() {
     };
     assert!(e.contains("dispersion needs a turbulence model"), "{e}");
 }
+
+// The work of the eddies on the drops (D330): with `[spray.coupling]
+// turbulence = "dispersion-work"` k loses what the eddies spend on the
+// drops. In the lumped cell (no velocity gradient, no transport) k and ε
+// change by their decay and the spray term only, so k at the end is that
+// of the run without the term less the work over ρ V.
+
+/// k at the end, the work of the run (J) and the column `gas_turbulence_w`
+/// of `spray.csv` if it is there.
+#[cfg(feature = "hdf5")]
+fn k_and_work(name: &str, text: &str) -> (f64, f64, Option<Vec<f64>>) {
+    let d = out(name);
+    let case = FlowCase::from_toml(text, Path::new(".")).unwrap();
+    let r = run(&case, name, &d, |_| {}).unwrap();
+    let work = r
+        .solves
+        .last()
+        .unwrap()
+        .spray
+        .as_ref()
+        .unwrap()
+        .coupling
+        .as_ref()
+        .unwrap()
+        .gas_turbulence_work;
+    let st = foehncraft_flow::restart::read(&d.join("restart.h5")).unwrap();
+    let k = st.state.turbulence.as_ref().unwrap().k[0];
+    let csv = std::fs::read_to_string(d.join("spray.csv")).unwrap();
+    let mut lines = csv.lines().filter(|l| !l.starts_with('#'));
+    let col = lines
+        .next()
+        .unwrap()
+        .split(',')
+        .position(|h| h == "gas_turbulence_w");
+    let power = col.map(|i| {
+        lines
+            .map(|l| l.split(',').nth(i).unwrap().parse::<f64>().unwrap())
+            .collect::<Vec<_>>()
+    });
+    let _ = std::fs::remove_dir_all(&d);
+    (k, work, power)
+}
+
+#[cfg(feature = "hdf5")]
+#[test]
+fn k_loses_the_work_the_eddies_do_on_the_drops() {
+    // a loading of 0.05: the drops take about a tenth of the gas's k
+    let base = case(0.05, 1e-3, 0.02, "\"converged\"")
+        .replace(
+            "[initial]\nvelocity = [0.0, 0.0, 0.0]",
+            "[turbulence]\nmodel = \"k-epsilon\"\n[initial]\nvelocity = [0.0, 0.0, 0.0]\nk = 1.0\nepsilon = 0.1",
+        )
+        .replace("[spray]\n", "[spray]\ndispersion = \"eddy-lifetime\"\n");
+    let with = base.replace(
+        "max_passes = 30",
+        "max_passes = 30\nturbulence = \"dispersion-work\"",
+    );
+    let (k0, w0, p0) = k_and_work("turb_off", &base);
+    let (k1, w1, p1) = k_and_work("turb_on", &with);
+    // without the term nothing is booked; with it the eddies lose energy,
+    // and spray.csv has the power of every step
+    assert_eq!(w0, 0.0);
+    assert!(p0.is_none());
+    assert!(w1 < 0.0, "{w1}");
+    let p1 = p1.expect("spray.csv has gas_turbulence_w");
+    assert!(
+        p1.iter().all(|&p| p <= 0.0) && p1.iter().any(|&p| p < 0.0),
+        "{p1:?}"
+    );
+    let rho_v = RHO_G * 10.0 * 0.1;
+    let drop = (k0 - k1) / (-w1 / rho_v);
+    assert!(
+        (drop - 1.0).abs() < 0.03,
+        "k {k0} -> {k1}, work {w1} J: ratio {drop}"
+    );
+}

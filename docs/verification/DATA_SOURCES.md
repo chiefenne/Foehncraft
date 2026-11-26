@@ -340,6 +340,16 @@ are not stored.
   doi:10.4271/2017-01-0837 (as listed in the references of OSTI 2427994);
   12 points quoted by the plot script. Their model settings are not used
   (D201). Measurements, D201 accepted class.
+- Momentum flux of the Spray G holes (quoted in the gallery text to rule
+  out the injected momentum, not used by the case): 2.5 N for the 8 holes
+  at G1, measured at CMT, from Fig. 6b of Duke, D. J., Kastengren, A. L.,
+  Matusik, K. E., Swantek, A. B., Powell, C. F., Payri, R., Vaquerizo, D.,
+  Itani, L., Bruneaux, G., Grover, R. O., Parrish, S., Markle, L.,
+  Schmidt, D., Manin, J., Skeen, S. A., Pickett, L. M. (2017), Internal
+  and near nozzle measurements of Engine Combustion Network "Spray G"
+  gasoline direct injectors, Exp. Therm. Fluid Sci. 88 (the accepted
+  manuscript at OSTI 1392620; journal pages and DOI **to verify**).
+  Measurements, D201 accepted class.
 - Turbulence scale of KH-ACT at low gas density (a finding quoted in the
   gallery text, no numbers taken): Magnotti, G. M. (2017), Modeling the
   influence of nozzle-generated turbulence on diesel sprays, PhD thesis,
@@ -465,6 +475,24 @@ Only published correlation coefficients are in the repository
   correlations, on our own sphere laws (Schiller-Naumann, Ranz-Marshall,
   Abramzon-Sirignano), is our choice: the paper replaces the sphere laws.
   At y = 0 and λ → ∞ the ratios are 1, so the sphere laws are kept.
+
+## 3k. The drops' work on the gas turbulence (D330)
+
+Model equations and one model constant; no data set.
+
+- The term: Amsden, A. A., O'Rourke, P. J., Butler, T. D. (1989), KIVA-II:
+  a computer program for chemically reactive flows with sprays, Los Alamos
+  report LA-11560-MS (OSTI 6228444, doi:10.2172/6228444), Eqs. 7, 8 and 46
+  (the work W^s of the spray on the turbulence in the k and ε equations,
+  with c_s (ε/k) W^s in ε) and the discrete form C-4; the constant
+  c_s = 1.5 as the report gives it. The report's equations are used, not
+  its code (D201). Taking only the part of the work correlated with the
+  eddy (the parcel's response v′ to it) and the ω form for SST (the ε
+  source written with ε = β* k ω) are our own steps.
+- That small particles damp the turbulence (a finding quoted in the docs,
+  no numbers taken): Skartlien, R., Palmer, K., Skjæraasen, O. (2022), a
+  model of turbulence modulation by particles and its comparison with the
+  measurements collected by Gore and Crowe (1989), arXiv:2211.04516.
 
 ## 4. Rules for adding an entry
 

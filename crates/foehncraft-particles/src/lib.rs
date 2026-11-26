@@ -36,7 +36,7 @@ pub use config::{
     BoundaryMode, Breakup, BreakupModel, Collision, CollisionModel, Coupling, CouplingMode,
     Dispersion, DragLaw, Ecn, Equilibrium, Evaporation, EvaporationModel, Film, FilmFluid,
     Injector, Liquid, Passes, PassesName, Penetration, PengRobinson, Sample, Samples, Saturation,
-    SprayBoundary, SpraySection, Steady,
+    SprayBoundary, SpraySection, Steady, TurbulenceCoupling,
 };
 pub use coupling::{CellSources, Delta, Record, StepBooks, limiter_factor};
 pub use datum::{Bound, Datum, DatumTally, HistSpec, Moments, Shape, Stats, Surface, Volume};
@@ -46,7 +46,7 @@ pub use equilibrium::{
 };
 pub use sizes::SizeDistribution;
 pub use spray::{
-    BoundaryRule, BreakupState, Eddy, Env, Gas, GasState, InjectorStats, MirrorPlane,
-    MomentumFlows, Parcels, Pass, Spray, StreamBooks, StreamPass, Streams, Tally, Vapour,
-    injector_stats, injector_stats_mirrored, moments_of,
+    BoundaryRule, BreakupState, Eddy, Env, Gas, GasState, InjectorStats, MAX_EDDIES_PER_STEP,
+    MirrorPlane, MomentumFlows, Parcels, Pass, Spray, StreamBooks, StreamPass, Streams, Tally,
+    Vapour, injector_stats, injector_stats_mirrored, moments_of,
 };

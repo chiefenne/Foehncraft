@@ -17,6 +17,11 @@ Part of the [Recipes](../recipes.md): droplets that move with and through the ga
 | 325 | [Start a spray from measured droplets](#spray-brno) |
 | 320 | [Check the thermodynamics of a high-pressure spray before the CFD](#spray-a-mixing-line) |
 | 319 | [Report the liquid length and the vapour penetration (ECN)](#spray-ecn) |
+| 324 | [Give the droplet film real-fluid properties at high pressure](#spray-a-film) |
+| 326 | [Let distorted drops drag and evaporate as spheroids](#spray-a-distortion) |
+| 323 | [Model a multi-hole injector on a sector (ECN Spray G)](#spray-g-sector) |
+| 333 | [Let the drops damp the gas turbulence (two-way turbulence)](#spray-turbulence) |
+| 335 | [Let the drops collide](#spray-collisions) |
 
 ---
 
@@ -813,6 +818,56 @@ python3 -m tools.plot.spray_g_g1 OUT_DIR output/spray_g_g1 output/spray_g_g1_khr
 Case: `examples/cases/flow/spray_g_g1.toml` with its injector file;
 [gallery entry](../gallery/sprays.md#spray-g) for the comparison with the
 measurements.
+
+---
+
+<a id="spray-turbulence"></a>
+## 333. Let the drops damp the gas turbulence (two-way turbulence)
+
+**Switch it on.** With two-way coupling and the eddy-lifetime dispersion,
+the drops can give back to the turbulence what its eddies spend on them
+(D330, the term of KIVA-II):
+
+```toml
+[spray]
+dispersion = "eddy-lifetime"        # needed: the work is that of these eddies
+
+[spray.coupling]
+mode = "two-way"                    # needed
+turbulence = "dispersion-work"      # default "none"
+```
+
+Every sub-step of a parcel books the work of its eddy on the parcel's
+response to it, −m (1 − e^{−Δt/τ}) u′·(u′ − v′), which is never positive.
+k loses it per unit mass, ε gets c_s (ε/k) of it (c_s = 1.5) and ω of SST
+(c_s − 1)(ω/k), all implicit where they take away, so k stays positive.
+The steady spray mode refuses the key for now.
+
+**Read what the drops took.** `spray.csv` gets the column
+`gas_turbulence_w` (W in each step, negative) and `result.json` the total
+`gas_turbulence_work` (J) of the run. `held_eddies` in the tally of
+`result.json` counts eddies a parcel kept to the end of a step because it
+had already entered 32 in it (`MAX_EDDIES_PER_STEP`): that happens only
+where k is nearly gone, as in a spray that has damped its gas turbulence.
+
+**Expect damping, and a lot of it in a dense spray.** Drops much smaller
+than the eddies take energy from them at a rate of about 2φ/τ times k, φ
+the mass loading of the liquid and τ the response time of the drops. Near
+the nozzle of a fuel spray φ is 1 or more, and k decays there within a
+fraction of a millisecond, before the gas jet builds its turbulence up;
+a two-equation model cannot grow turbulence back from nearly zero k.
+Only damping is modelled: the wakes of
+drops larger than the eddies, which can add turbulence, are not. On ECN
+Spray G (G1, measured before the collision model) this term made the
+spray run further ahead of the measurement, so the case leaves it off; see the
+[gallery entry](../gallery/sprays.md#spray-turbulence) for the numbers.
+
+```sh
+foehn flow examples/cases/flow/spray_g_g1.toml --out output/spray_g_g1
+foehn flow examples/cases/flow/spray_g_g1.toml --set spray.coupling.turbulence=dispersion-work \
+    --out output/spray_g_g1_work
+python3 -m tools.plot.spray_turbulence_two_way OUT_DIR output/spray_g_g1 output/spray_g_g1_work   # gallery 333
+```
 
 ---
 

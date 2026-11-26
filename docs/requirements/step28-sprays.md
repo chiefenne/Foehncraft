@@ -59,8 +59,9 @@ stage of each check (V28.12 to V28.21) are in
   ECN Spray G and Spray A; section 7). Collision, a nozzle-turbulence and
   cavitation term and the fragment-size distributions of slow drops are
   later parts.
-- Turbulence modulation by particles is in no decision yet (see the
-  validation page, open points).
+- Turbulence modulation by particles: the drops' damping of the gas
+  turbulence is D330 (section 5.10, owner go 2026-11-26); the wake
+  production of large particles is in no decision yet.
 - Liquids beyond water (ethanol, n-heptane, n-dodecane) need source entries
   in `DATA_SOURCES.md` before use.
 
@@ -237,11 +238,33 @@ Checks of the steady mode:
 | V28.10 | Order independence of the steady mode: streams shuffled, 1 to 4 threads | fields and ledger bitwise equal |
 | V28.11 | Duct with more water than the gas can take | outlet at the adiabatic saturation state (exact, from the enthalpy balance); vapour fraction monotone along the duct; source residual falling with the passes |
 
+### 5.10 The drops take turbulence energy from the gas (D330)
+
+Asked by the maintainer on 2026-11-26 ("turbulence and heat should be
+exchanged in both directions"), decided on a card the same day ("add it
+and validate on G1"). Until then the turbulence went one way: the gas
+eddies disperse the parcels (D243), and the parcels gave nothing back.
+
+| ID | Decision |
+|---|---|
+| D330 | **The work of the eddies on the drops is taken out of k.** `[spray.coupling] turbulence = "dispersion-work"` (default `none`; needs `mode = "two-way"` and `[spray] dispersion = "eddy-lifetime"`; not in the steady spray mode yet). The term of KIVA-II (Amsden, O'Rourke and Butler 1989, Eqs. 7, 8, 46 and C-4): the gas loses the work its eddies do on the drops they disperse, W = −Σ m_p Δv_p·u′_p / (Δt V) per cell, and ε gets c_s (ε/k) W with c_s = 1.5, which keeps the length scale k^{3/2}/ε; for ω of SST the same ε source written with ε = β* k ω gives (c_s − 1)(ω/k) W. **Only the part correlated with the eddy.** Sampled as written, Δv_p·u′_p holds the product of the eddy with the drag change of the mean slip: zero on average, but near the nozzle a hundred times the work, and its noise made the first SST run of ECN Spray G blow up. Every parcel therefore carries its response v′ to its current eddy: v′ = 0 when it enters a new eddy and v′ ← u′ + (v′ − u′) e^{−Δt/τ} in a sub-step, the exact drag relaxation of D251 for a constant eddy (a mirror wall reflects it with u′). A sub-step books −m_p (1 − e^{−Δt/τ}) u′·(u′ − v′), the work of the eddy on the parcel's fluctuation. Its mean is that of the KIVA-II term, and as the eddy of the eddy-lifetime model is constant, u′ − v′ = u′ e^{−t/τ} and the booked work is never positive: the drops only take energy, as KIVA-II states (W^s < 0). **Sources:** per unit mass, S_k = W/(ρ V Δt) and S_ε (S_ω) as above, set for every pass (D252) beside the momentum; the negative part goes to the diagonal of the k and ε (ω) equations (Patankar 1980), so k stays positive at any loading. The records are summed in the order of D247 like the other sources (bitwise on any threads). `spray.csv` gets `gas_turbulence_w` (W per step) and `result.json` `gas_turbulence_work` (J over the run). Only damping: the wake production of particles larger than the turbulence scale is not modelled; for drops below a tenth of the integral scale the data show damping (Skartlien, Palmer and Skjæraasen 2022, review of the Gore and Crowe data). |
+
+Checks of D330:
+
+| Check | Content | Passes when |
+|---|---|---|
+| V28.22 | Drops born in still turbulent gas (k = 0.5 m²/s²): the work of their eddies in the first pass, and zero without dispersion | the work is −2k times the injected mass within −40 % and +20 % (drops born late in the step relax only partly; found 0.88) |
+| V28.23 | Lumped cell with k-ε and drops: k at the end with the term against k without it less the booked work over ρV | within 3 % |
+| V28.24 | ECN Spray G (G1) with the term on k-ω SST, k-ε and ζ-f0 | the liquid and vapour penetration against the ECN measurements and the runs without the term (gallery of the pull request) |
+
 ### 5.8 References of this section
 
 - Amsden, A. A., O'Rourke, P. J., Butler, T. D. (1989), KIVA-II: a computer
   program for chemically reactive flows with sprays, Los Alamos report
   LA-11560-MS.
+- Skartlien, R., Palmer, K., Skjæraasen, O. (2022), A model for turbulence
+  modulation by particles (review of the measurements collected by Gore and
+  Crowe 1989), arXiv:2211.04516.
 - Balachandar, S., Liu, K., Lakhote, M. (2019), Self-induced velocity
   correction for improved drag estimation in Euler-Lagrange point-particle
   simulations, J. Comput. Phys. 376.
@@ -619,6 +642,8 @@ area contraction, plume direction and cone) and the distortion of the drops.
   7 kg/m³ and pointed to a smaller turbulence scale). KH-RT gives 7.4 µm
   and the same penetration, so the late lead is not from the breakup; its
   cause is open, a recorded gap.
+- The drops' work on the gas turbulence (D330, V28.22 to V28.24): see
+  section 5.10 and gallery 333.
 
 ### 7.2 Not yet
 
@@ -632,8 +657,9 @@ gas density of the cooled plume with its vapour, the k-ε constants), the
 drop size of the KH-ACT children, a calibration of the constants against
 G1, and a run
 whose gas diverges in some cells can fill the memory with the exchange
-records of parcels that spend `max_substeps` instead of stopping with a
-message.
+records of parcels that spend `max_substeps` (cell crossings) instead of
+stopping with a message; short eddies no longer do (at most 32 per parcel
+and step, D330).
 
 ## 8. Collisions of the drops (D331)
 

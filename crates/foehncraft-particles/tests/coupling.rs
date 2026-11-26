@@ -8,8 +8,8 @@ use foehncraft_mesh::Geometry;
 use foehncraft_mesh::generate::{BoxSpec, Kind};
 use foehncraft_mesh::locate::Locator;
 use foehncraft_particles::{
-    BoundaryMode, BoundaryRule, CouplingMode, Dispersion, Env, Gas, GasState, Injector, Parcels,
-    Spray, SpraySection,
+    BoundaryMode, BoundaryRule, CouplingMode, Dispersion, Env, Gas, GasState, Injector,
+    MAX_EDDIES_PER_STEP, Parcels, Spray, SpraySection,
 };
 
 struct Swirl;
@@ -251,4 +251,157 @@ fn a_parcel_on_a_face_pushed_from_both_sides_is_not_lost() {
     }
     assert!(sp.parcels.len() > 100, "{}", sp.parcels.len());
     assert_eq!(sp.tally.lost_parcels, 0);
+}
+
+/// Still gas with uniform turbulence (k = 0.5 m²/s², ε = 1 m²/s³).
+struct StillTurbulent;
+
+impl Gas for StillTurbulent {
+    fn at(&self, _cell: usize, _x: [f64; 3]) -> GasState {
+        GasState {
+            tke: 0.5,
+            eps: 1.0,
+            ..GasState::isothermal([0.0; 3], 1.2, 1.8e-5)
+        }
+    }
+}
+
+#[test]
+fn the_eddies_do_work_on_the_parcels_they_disperse() {
+    // D330 (KIVA-II Eq. C-4, the part correlated with the eddy): each
+    // record holds −m (1 − e^{−Δt/τ}) u′·(u′ − v′), the work of the
+    // parcel's eddy u′ on the parcel's response v′ to it, with the sign of
+    // the gas. Drops born in still turbulent gas relax to the velocity u′
+    // of their first eddy within τ ≈ 1.2 ms and take m |u′|² from it, 2k m
+    // on average (k = 0.5): over the first step the work of the eddies is
+    // about −2k times the mass injected, a little less for the drops born
+    // at the end of the step; without dispersion it is zero.
+    let mut s = BoxSpec::new(Kind::Hex, 3, [4, 4, 4]);
+    s.lower = [0.0; 3];
+    s.upper = [1.0; 3];
+    let m = s.generate().unwrap();
+    let geo = Geometry::compute(&m);
+    let loc = Locator::new(&m, &geo);
+    let env = Env {
+        mesh: &m,
+        geo: &geo,
+        loc: &loc,
+    };
+    for dispersion in [Dispersion::None, Dispersion::EddyLifetime] {
+        let mut cfg = SpraySection {
+            injectors: vec![Injector {
+                name: "a".into(),
+                position: [0.5, 0.5, 0.5],
+                direction: [1.0, 0.0, 0.0],
+                speed: 0.01,
+                half_angle: 0.0,
+                mass_flow: 1e-3,
+                diameter: 20e-6,
+                size: None,
+                parcels_per_second: 50000.0,
+                start: 0.0,
+                end: None,
+                temperature: None,
+                ..Default::default()
+            }],
+            ..SpraySection::default()
+        };
+        cfg.coupling.mode = CouplingMode::TwoWay;
+        cfg.dispersion = dispersion;
+        let sp = Spray::new(&cfg, &env, sp_rules(&m), [0.0; 3]).unwrap();
+        let dt = 0.01;
+        let a = sp.pass(&env, &StillTurbulent, 0.0, dt).unwrap();
+        let w: f64 = a.sources.turb.iter().sum();
+        if dispersion == Dispersion::None {
+            assert!(
+                a.records().count() > 100 && a.records().all(|r| r.turb == 0.0),
+                "{w}"
+            );
+            continue;
+        }
+        let scale = 1e-3 * dt * 2.0 * 0.5;
+        assert!(
+            -w > 0.6 * scale && -w < 1.2 * scale,
+            "work of the eddies {w} J against −2k m = {} J",
+            -scale
+        );
+    }
+}
+
+/// Still gas whose turbulence has almost gone (k = 1e-12 m²/s², ε = 1
+/// m²/s³): its eddies are 1e-19 m long.
+struct FadedTurbulence;
+
+impl Gas for FadedTurbulence {
+    fn at(&self, _cell: usize, _x: [f64; 3]) -> GasState {
+        GasState {
+            tke: 1e-12,
+            eps: 1.0,
+            ..GasState::isothermal([0.0; 3], 1.2, 1.8e-5)
+        }
+    }
+}
+
+#[test]
+fn a_parcel_enters_at_most_a_set_number_of_eddies_in_a_step() {
+    // D330: where a spray has damped the gas turbulence to nearly nothing
+    // the crossing time of an eddy tends to zero; without a limit every
+    // eddy would end a sub-step and the parcels would spend max_substeps
+    // each. Beyond MAX_EDDIES_PER_STEP the eddy lasts to the end of the
+    // step (counted); in developed turbulence the limit is not reached.
+    let mut s = BoxSpec::new(Kind::Hex, 3, [4, 4, 4]);
+    s.lower = [0.0; 3];
+    s.upper = [1.0; 3];
+    let m = s.generate().unwrap();
+    let geo = Geometry::compute(&m);
+    let loc = Locator::new(&m, &geo);
+    let env = Env {
+        mesh: &m,
+        geo: &geo,
+        loc: &loc,
+    };
+    let cfg = SpraySection {
+        injectors: vec![Injector {
+            name: "a".into(),
+            position: [0.1, 0.5, 0.5],
+            direction: [1.0, 0.0, 0.0],
+            speed: 5.0,
+            half_angle: 0.0,
+            mass_flow: 1e-5,
+            diameter: 50e-6,
+            size: None,
+            parcels_per_second: 20000.0,
+            start: 0.0,
+            end: None,
+            temperature: None,
+            ..Default::default()
+        }],
+        dispersion: Dispersion::EddyLifetime,
+        ..SpraySection::default()
+    };
+    let dt = 0.01;
+    for (gas, faded) in [
+        (&StillTurbulent as &dyn Gas, false),
+        (&FadedTurbulence, true),
+    ] {
+        let mut sp = Spray::new(&cfg, &env, sp_rules(&m), [0.0; 3]).unwrap();
+        for n in 0..3 {
+            sp.advance(&env, gas, n as f64 * dt, dt).unwrap();
+        }
+        let t = &sp.tally;
+        assert_eq!(t.lost_parcels, 0);
+        let parcels = t.injected_parcels;
+        if faded {
+            assert!(t.held_eddies > 0, "{t:?}");
+            // at most the limit of eddies (one sub-step each) and a few
+            // cell crossings per parcel and step
+            let per = t.substeps as f64 / (parcels as f64 * 3.0);
+            assert!(
+                per < MAX_EDDIES_PER_STEP as f64 + 10.0,
+                "{per} sub-steps per parcel and step"
+            );
+        } else {
+            assert_eq!(t.held_eddies, 0, "{t:?}");
+        }
+    }
 }

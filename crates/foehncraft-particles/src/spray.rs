@@ -153,6 +153,20 @@ pub struct Eddy {
     pub left: f64,
     /// Eddies entered so far.
     pub n: u64,
+    /// The part of the parcel's velocity its eddy has given it since the
+    /// parcel entered it (m/s; D330): it relaxes from zero towards `u`
+    /// with the drag of each sub-step, v′ ← u′ + (v′ − u′) e^{−δt/τ}.
+    #[serde(default)]
+    pub v: [f64; 3],
+}
+
+/// The response of a parcel to its eddy over a sub-step of length `dt`
+/// with the relaxation time `tau` (D330, [`Eddy::v`]).
+fn relax_response(e: &mut Eddy, dt: f64, tau: f64) {
+    let f = (-(dt / tau)).exp_of();
+    for k in 0..3 {
+        e.v[k] = e.u[k] + (e.v[k] - e.u[k]) * f;
+    }
 }
 
 /// The breakup state of a parcel (SP6, D300 to D305).
@@ -400,7 +414,21 @@ struct Outcome {
     /// Of them, those the nozzle turbulence or the cavitation stripped
     /// (KH-ACT, D307).
     act_kids: u64,
+    /// Eddies held to the end of the step because the parcel had entered
+    /// [`MAX_EDDIES_PER_STEP`] in it.
+    held_eddies: u64,
 }
+
+/// The most eddies a parcel enters in one time step (transient passes;
+/// D243, D330). Beyond it the eddy lasts to the end of the step, as in a
+/// code that samples the eddy once per step. Where the gas is turbulent
+/// an eddy lasts about a step or longer and the limit is never reached;
+/// where k is nearly zero (in a spray that has damped its gas turbulence,
+/// D330) the crossing time l_e/|w| tends to zero, and without the limit
+/// every eddy would end a sub-step and the parcels would spend
+/// `max_substeps` each. Such eddies are negligible: their velocity is of
+/// the order √k. Counted in [`Tally::held_eddies`].
+pub const MAX_EDDIES_PER_STEP: u64 = 32;
 
 impl Outcome {
     /// The outcome and those of its children, in order.
@@ -489,6 +517,11 @@ pub struct Tally {
     /// no latent heat, diffusive mixing); a health number, not a total.
     #[serde(default)]
     pub critical_parcels: u64,
+    /// Eddies held to the end of their step because the parcel had already
+    /// entered [`MAX_EDDIES_PER_STEP`] in it (a safety net, counted; zero
+    /// in a gas with developed turbulence).
+    #[serde(default)]
+    pub held_eddies: u64,
     /// Their liquid mass (kg).
     #[serde(default)]
     pub critical_mass: f64,
@@ -1487,6 +1520,7 @@ impl Spray {
             self.tally.rt_breakups += o.rt_breakups;
             self.tally.child_parcels += o.kids_shed;
             self.tally.act_children += o.act_kids;
+            self.tally.held_eddies += o.held_eddies;
             let m = mass_of(o.p.d, o.p.count, rho_p);
             match o.fate {
                 Fate::Active => {
@@ -1975,6 +2009,7 @@ impl Spray {
         );
         let slip = norm([ug[0] - p.v[0], ug[1] - p.v[1], ug[2] - p.v[2]]);
         p.eddy.u = u;
+        p.eddy.v = [0.0; 3];
         p.eddy.left = eddy_times(gs.tke, gs.eps, s.tau, slip).interaction;
     }
 
@@ -2008,6 +2043,8 @@ impl Spray {
         // the time of the eddy is spent with the sub-steps (D251: a
         // sub-step ends at the end of an eddy)
         let mut last_left = left;
+        // eddies entered in this step, and those held to its end
+        let (mut eddies, mut held_eddies) = (0u64, 0u64);
         let mut path: Vec<PathPoint> = Vec::new();
         // breakup and distortion (SP6): applied after each sub-step with the
         // gas and the slip of its start
@@ -2056,6 +2093,11 @@ impl Spray {
                 // resolve is over (else its sub-steps would not advance)
                 if p.eddy.left <= tiny {
                     self.new_eddy(&mut p, &gs, rho_p);
+                    eddies += 1;
+                    if !opts.steady && eddies > MAX_EDDIES_PER_STEP {
+                        p.eddy.left = left;
+                        held_eddies += 1;
+                    }
                 }
                 for k in 0..3 {
                     gs.u[k] += p.eddy.u[k];
@@ -2063,6 +2105,7 @@ impl Spray {
             } else {
                 // no turbulence here: the parcel sees the mean gas
                 p.eddy.u = [0.0; 3];
+                p.eddy.v = [0.0; 3];
                 p.eddy.left = 0.0;
             }
             let d_start = p.d;
@@ -2281,6 +2324,21 @@ impl Spray {
                             let hl = cp_p * tp1;
                             hl + heat_decay * (self.vapour_enthalpy(tp1) - hl)
                         },
+                        // the work of the eddy on the gas (D330, KIVA-II
+                        // Eq. C-4: u′ · impulse), the part of it that is
+                        // correlated with u′: the impulse of the parcel's
+                        // response to its eddy, −m (u′ − v′)(1 − e); the
+                        // rest, u′ · (the impulse of the mean slip), has
+                        // zero mean; zero outside an eddy
+                        turb: {
+                            let e = &p.eddy;
+                            let f = 1.0 - (-(dt / tau)).exp_of();
+                            -mass
+                                * f
+                                * (e.u[0] * (e.u[0] - e.v[0])
+                                    + e.u[1] * (e.u[1] - e.v[1])
+                                    + e.u[2] * (e.u[2] - e.v[2]))
+                        },
                     });
                 }
                 (tp1, ev.map_or(p.d, |e| e.d), vapour)
@@ -2304,6 +2362,7 @@ impl Spray {
                 match ff {
                     FirstFace::Reached(cell) => {
                         let bk = book(&mut records, &mut weight, &p, sub, s.v, s.tau);
+                        relax_response(&mut p.eddy, sub, s.tau);
                         p.temp = bk.0;
                         p.d = bk.1;
                         vapour_total += bk.2;
@@ -2334,6 +2393,7 @@ impl Spray {
                         );
                         let sf = parcel_step_drag(&input(tf), drag);
                         let bk = book(&mut records, &mut weight, &p, tf, sf.v, sf.tau);
+                        relax_response(&mut p.eddy, tf, sf.tau);
                         p.temp = bk.0;
                         p.d = bk.1;
                         vapour_total += bk.2;
@@ -2365,6 +2425,7 @@ impl Spray {
                         );
                         let sf = parcel_step_drag(&input(tf), drag);
                         let bk = book(&mut records, &mut weight, &p, tf, sf.v, sf.tau);
+                        relax_response(&mut p.eddy, tf, sf.tau);
                         p.temp = bk.0;
                         p.d = bk.1;
                         vapour_total += bk.2;
@@ -2415,6 +2476,7 @@ impl Spray {
             match tr.end {
                 TrackEnd::Reached => {
                     let bk = book(&mut records, &mut weight, &p, sub, s.v, s.tau);
+                    relax_response(&mut p.eddy, sub, s.tau);
                     p.temp = bk.0;
                     p.d = bk.1;
                     vapour_total += bk.2;
@@ -2441,6 +2503,7 @@ impl Spray {
                     let thit = tr.fraction * sub;
                     let sh = parcel_step_drag(&input(thit), drag);
                     let bk = book(&mut records, &mut weight, &p, thit, sh.v, sh.tau);
+                    relax_response(&mut p.eddy, thit, sh.tau);
                     p.temp = bk.0;
                     p.d = bk.1;
                     vapour_total += bk.2;
@@ -2484,6 +2547,7 @@ impl Spray {
                     match env.loc.locate_search(target) {
                         Some(c) => {
                             let bk = book(&mut records, &mut weight, &p, sub, s.v, s.tau);
+                            relax_response(&mut p.eddy, sub, s.tau);
                             p.temp = bk.0;
                             p.d = bk.1;
                             vapour_total += bk.2;
@@ -2576,6 +2640,7 @@ impl Spray {
             rt_breakups: counts[0],
             kids_shed,
             act_kids: counts[1],
+            held_eddies,
         }
     }
 
@@ -2871,6 +2936,11 @@ impl Spray {
                     let un = p.eddy.u[0] * n[0] + p.eddy.u[1] * n[1] + p.eddy.u[2] * n[2];
                     for (uk, nk) in p.eddy.u.iter_mut().zip(n) {
                         *uk -= 2.0 * un * nk;
+                    }
+                    // and the parcel's response to it (D330)
+                    let vn = p.eddy.v[0] * n[0] + p.eddy.v[1] * n[1] + p.eddy.v[2] * n[2];
+                    for (vk, nk) in p.eddy.v.iter_mut().zip(n) {
+                        *vk -= 2.0 * vn * nk;
                     }
                 }
                 // a hair inside the cell, so the next track starts in it
