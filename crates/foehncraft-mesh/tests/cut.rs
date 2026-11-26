@@ -93,6 +93,7 @@ fn flat_body_is_exact_and_splits_cells() {
         &CutOptions {
             min_fraction: 0.0,
             wall_point: false,
+            face_point: false,
         },
     )
     .unwrap();
@@ -112,6 +113,7 @@ fn flat_body_is_exact_and_splits_cells() {
         &CutOptions {
             min_fraction: 0.0,
             wall_point: false,
+            face_point: false,
         },
     )
     .unwrap();
@@ -135,6 +137,7 @@ fn small_cells_merge() {
         &CutOptions {
             min_fraction: 0.0,
             wall_point: false,
+            face_point: false,
         },
     )
     .unwrap();
@@ -145,6 +148,7 @@ fn small_cells_merge() {
         &CutOptions {
             min_fraction: 0.3,
             wall_point: false,
+            face_point: false,
         },
     )
     .unwrap();
@@ -178,6 +182,7 @@ fn wall_point_follows_the_sphere() {
             &CutOptions {
                 min_fraction: 0.2,
                 wall_point,
+                face_point: false,
             },
         )
         .unwrap();
@@ -240,6 +245,7 @@ fn node_on_the_surface_is_snapped() {
         &CutOptions {
             min_fraction: 0.3,
             wall_point: true,
+            face_point: false,
         },
     )
     .unwrap();

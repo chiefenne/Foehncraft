@@ -18,11 +18,13 @@
 //! winding number degrades gracefully (Jacobson et al. 2013), the check
 //! reports, and nothing is repaired (owner decision Q2, 2026-11-22).
 
+pub mod body;
 pub mod check;
 pub mod distance;
 pub mod moments;
 pub mod winding;
 
+pub use body::SurfaceBody;
 pub use check::{SurfaceReport, check};
 pub use distance::Crossing;
 pub use moments::{CutMoments, WallPiece};

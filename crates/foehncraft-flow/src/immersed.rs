@@ -48,7 +48,22 @@
 //! axis = [0.0, 0.0, 1.0]     # cylinder axis (default z)
 //! # length = 0.1             # cylinder length centred on `centre`; default endless
 //! # lower = [..], upper = [..]   # box corners
+//!
+//! [[immersed.body]]
+//! name = "part"
+//! shape = "stl"              # a triangle surface (L13 stage 2)
+//! file = "part.stl"          # ASCII or binary, relative to the case file
+//! scale = 1e-3               # factor on the coordinates (a file in mm)
 //! ```
+//!
+//! **STL bodies.** The surface is checked when the case is read (IMM001 to
+//! IMM009 of stage 0: holes, flips, self-intersections; nothing is
+//! repaired) and its triangles are the body: inside is where the
+//! generalised winding number exceeds ½. A penalised STL body gets the
+//! exact solid fraction of every cell from the cut moments of stage 0
+//! (`Surface::cut_moments`, no sampling); a cut STL body is cut with the
+//! exact segment–triangle crossings, the exact closest point and the
+//! dual-contouring point on its sharp edges ([`foehncraft_mesh::surface::SurfaceBody`]).
 
 use crate::diag::{self, Diagnostic};
 use anyhow::Result;
@@ -70,6 +85,8 @@ pub enum Shape {
     /// expression, D53): a smooth density, as in the manufactured solution
     /// of the penalised equations or a design density.
     Field,
+    /// A closed triangle surface from an STL file (`file`, `scale`).
+    Stl,
 }
 
 /// One `[[immersed.body]]`.
@@ -104,6 +121,14 @@ pub struct BodySection {
     /// x, y, z and the case constants, clipped to [0, 1]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fraction: Option<crate::expr::Scalar>,
+    /// The STL file of an `stl` body (ASCII or binary), relative to the
+    /// case file.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file: Option<std::path::PathBuf>,
+    /// Factor on the coordinates of the STL file (default 1; 1e-3 for a
+    /// file in millimetres).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scale: Option<f64>,
 }
 
 /// How the bodies enter the flow.
@@ -147,15 +172,26 @@ pub struct CutSection {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub edge_root: Option<EdgeRoot>,
     /// Fan every wall face around a point on the surface, so that it
-    /// follows a curved body inside the cell (default true).
+    /// follows a curved body inside the cell, and a sharp edge or corner
+    /// of an STL body (default true).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wall_point: Option<bool>,
+    /// Bend every straight cut across a face through a point on the
+    /// surface in the face plane (or where a sharp edge pierces the face),
+    /// so that the clipped faces follow the body too (default true).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub face_point: Option<bool>,
 }
 
 impl CutSection {
     /// The merge threshold.
     pub fn min_volume_fraction(&self) -> f64 {
         self.min_volume_fraction.unwrap_or(0.3)
+    }
+
+    /// Bent face chords (default true).
+    pub fn face_point(&self) -> bool {
+        self.face_point.unwrap_or(true)
     }
 }
 
@@ -183,6 +219,15 @@ pub struct ImmersedSection {
     /// A density-field topology search (D226): `[immersed.topology]`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub topology: Option<crate::topology::TopologySection>,
+}
+
+/// Resolves the STL files of the bodies against the case directory.
+pub fn resolve_paths(s: &mut ImmersedSection, dir: &std::path::Path) {
+    for b in &mut s.body {
+        if let Some(f) = &mut b.file {
+            *f = dir.join(&*f);
+        }
+    }
 }
 
 impl ImmersedSection {
@@ -228,6 +273,19 @@ pub struct Body {
     /// Name.
     pub name: String,
     kind: Kind,
+    /// The surface check of an STL body (IMM001 to IMM009).
+    pub findings: Vec<foehncraft_mesh::surface::check::Finding>,
+}
+
+/// An STL body: the surface and what its check found.
+#[derive(Debug, Clone)]
+struct StlBody {
+    surface: std::sync::Arc<foehncraft_mesh::surface::Surface>,
+    /// Closed, oriented outward and free of self-intersections: its
+    /// enclosed volume and area are exact references.
+    clean: bool,
+    volume: f64,
+    area: f64,
 }
 
 #[derive(Debug, Clone)]
@@ -247,9 +305,18 @@ enum Kind {
         hi: [f64; 3],
     },
     Field(crate::expr::Value),
+    Stl(StlBody),
 }
 
 impl Body {
+    /// The surface of an STL body.
+    pub fn surface(&self) -> Option<&foehncraft_mesh::surface::Surface> {
+        match &self.kind {
+            Kind::Stl(s) => Some(&s.surface),
+            _ => None,
+        }
+    }
+
     /// The solid fraction at `x`: 1 inside a primitive body (the surface
     /// counts as inside), 0 outside; the clipped field of a `field` body.
     #[inline]
@@ -306,6 +373,7 @@ impl Body {
                     0.5 - f.clamp(0.0, 1.0)
                 }
             }
+            Kind::Stl(s) => s.surface.signed_distance(x),
         }
     }
 
@@ -338,6 +406,10 @@ impl Body {
                 Some(2.0 * std::f64::consts::PI * r * (hi[i] - lo[i]))
             }
             Kind::Field(_) => None,
+            Kind::Stl(s) => {
+                let (a, b) = s.surface.bounding_box();
+                (s.clean && inside(a) && inside(b)).then_some(s.area)
+            }
         }
     }
 
@@ -361,6 +433,7 @@ impl Body {
             }
             Kind::Box { lo, hi } => (0..3).all(|i| x[i] >= lo[i] && x[i] <= hi[i]),
             Kind::Field(v) => v.at(x, 0.0) >= 0.5,
+            Kind::Stl(s) => s.surface.inside(x),
         }
     }
 
@@ -393,6 +466,10 @@ impl Body {
                 Some(std::f64::consts::PI * r2 * l.max(0.0))
             }
             Kind::Field(_) => None,
+            Kind::Stl(s) => {
+                let (a, b) = s.surface.bounding_box();
+                (s.clean && inside(a) && inside(b)).then_some(s.volume)
+            }
         }
     }
 }
@@ -456,6 +533,16 @@ pub fn bodies_with(s: &ImmersedSection, env: &crate::expr::Env) -> Result<Vec<Bo
     }
     for (i, b) in s.body.iter().enumerate() {
         let key = format!("immersed.body[{i}]");
+        let mut findings = Vec::new();
+        if b.shape != Shape::Stl && (b.file.is_some() || b.scale.is_some()) {
+            return Err(bad(
+                format!("{key}.file"),
+                format!(
+                    "immersed body {}: `file` and `scale` belong to shape = \"stl\"",
+                    b.name
+                ),
+            ));
+        }
         if out.iter().any(|o| o.name == b.name) {
             return Err(bad(key, format!("two immersed bodies named {}", b.name)));
         }
@@ -537,14 +624,112 @@ pub fn bodies_with(s: &ImmersedSection, env: &crate::expr::Env) -> Result<Vec<Bo
                     &format!("{key}.fraction"),
                 )?)
             }
+            Shape::Stl => {
+                let (st, f) = stl_body(b, &key)?;
+                findings = f;
+                Kind::Stl(st)
+            }
         };
         out.push(Body {
             name: b.name.clone(),
             kind,
+            findings,
         });
     }
     Ok(out)
 }
+
+/// Reads and checks the surface of an `stl` body (IMM001 is an error, the
+/// other findings of the check are reported).
+fn stl_body(
+    b: &BodySection,
+    key: &str,
+) -> Result<(StlBody, Vec<foehncraft_mesh::surface::check::Finding>)> {
+    let file = b.file.as_ref().ok_or_else(|| {
+        bad(
+            format!("{key}.file"),
+            format!(
+                "immersed body {}: an stl body needs `file`, the STL file",
+                b.name
+            ),
+        )
+    })?;
+    let scale = b.scale.unwrap_or(1.0);
+    if !(scale > 0.0 && scale.is_finite()) {
+        return Err(bad(
+            format!("{key}.scale"),
+            format!("immersed body {}: `scale` must be > 0", b.name),
+        ));
+    }
+    // the case is checked and read several times per run: the surface,
+    // its hierarchy and its check are kept for the same file and scale
+    let meta = std::fs::metadata(file).ok();
+    let id: StlKey = (
+        file.clone(),
+        scale.to_bits(),
+        meta.as_ref().map_or(0, |m| m.len()),
+        meta.and_then(|m| m.modified().ok()),
+    );
+    let cache = STL_CACHE.get_or_init(Default::default);
+    if let Ok(c) = cache.lock()
+        && let Some((_, hit)) = c.iter().find(|(k, _)| *k == id)
+    {
+        return Ok(hit.clone());
+    }
+    let surface = foehncraft_mesh::surface::Surface::read_stl(file, scale).map_err(|e| {
+        diag::err(
+            Diagnostic::new(
+                diag::CASE_FILE,
+                format!("immersed body {}: {}: {e}", b.name, file.display()),
+            )
+            .key(format!("{key}.file")),
+        )
+    })?;
+    let report = foehncraft_mesh::surface::check(&surface);
+    if let Some(f) = report
+        .findings
+        .iter()
+        .find(|f| f.code == diag::IMM_SURFACE_EMPTY)
+    {
+        return Err(diag::err(
+            Diagnostic::new(
+                diag::IMM_SURFACE_EMPTY,
+                format!("immersed body {}: {}", b.name, f.message),
+            )
+            .key(format!("{key}.file")),
+        ));
+    }
+    let out = (
+        StlBody {
+            surface: std::sync::Arc::new(surface),
+            clean: report.clean(),
+            volume: report.volume,
+            area: report.area,
+        },
+        report.findings,
+    );
+    if let Ok(mut c) = cache.lock() {
+        if c.len() >= 8 {
+            c.remove(0);
+        }
+        c.push((id, out.clone()));
+    }
+    Ok(out)
+}
+
+/// File, scale, length and modification time of a read STL body.
+type StlKey = (std::path::PathBuf, u64, u64, Option<std::time::SystemTime>);
+
+/// The STL bodies read in this process.
+#[allow(clippy::type_complexity)]
+static STL_CACHE: std::sync::OnceLock<
+    std::sync::Mutex<
+        Vec<(
+            StlKey,
+            (StlBody, Vec<foehncraft_mesh::surface::check::Finding>),
+        )>,
+    >,
+> = std::sync::OnceLock::new();
 
 /// The settings that do not go with a penalised body (IMM102).
 pub fn check_case(case: &crate::case::FlowCase) -> Result<()> {
@@ -640,11 +825,32 @@ fn rule(n: usize) -> Vec<([f64; 3], f64)> {
     out
 }
 
-/// The solid fraction χ of every local cell, one array per body.
+/// The solid fraction χ of every local cell, one array per body: sampled
+/// for the primitive and field bodies, exact for STL bodies (the inside
+/// volume of the cut moments of stage 0 over the cell volume).
 pub fn fractions(bodies: &[Body], samples: usize, mesh: &Mesh, geo: &Geometry) -> Vec<Vec<f64>> {
     let nc = mesh.n_cells;
     let q = rule(samples);
     let mut out = vec![vec![0.0; nc]; bodies.len()];
+    let sampled: Vec<usize> = (0..bodies.len())
+        .filter(|&b| bodies[b].surface().is_none())
+        .collect();
+    for (b, body) in bodies.iter().enumerate() {
+        if let Some(s) = body.surface() {
+            let m = s.cut_moments(mesh, geo);
+            for c in 0..nc {
+                let v = geo.cell_volume[c];
+                out[b][c] = if v > 0.0 {
+                    (m.cell_inside_volume[c] / v).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+            }
+        }
+    }
+    if sampled.is_empty() {
+        return out;
+    }
     let mut inside = vec![0.0; bodies.len()];
     for c in 0..nc {
         let xc = geo.cell_centroid[c];
@@ -663,7 +869,8 @@ pub fn fractions(bodies: &[Body], samples: usize, mesh: &Mesh, geo: &Geometry) -
                     continue;
                 }
                 vol += v;
-                for (b, body) in bodies.iter().enumerate() {
+                for &b in &sampled {
+                    let body = &bodies[b];
                     let mut frac = 0.0;
                     for (z, w) in &q {
                         let x = [
@@ -677,8 +884,8 @@ pub fn fractions(bodies: &[Body], samples: usize, mesh: &Mesh, geo: &Geometry) -
                 }
             }
         }
-        for (b, o) in out.iter_mut().enumerate() {
-            o[c] = if vol > 0.0 {
+        for &b in &sampled {
+            out[b][c] = if vol > 0.0 {
                 (inside[b] / vol).clamp(0.0, 1.0)
             } else {
                 0.0
@@ -756,7 +963,7 @@ pub fn attach(
     } else {
         total_fraction(&per, nc)
     };
-    let mut notes = Vec::new();
+    let mut notes = surface_notes(&bs);
     let (lo, hi) = mesh.bounding_box();
     for (b, x) in bs.iter().zip(&per) {
         let vol: f64 = x.iter().zip(&geo.cell_volume).map(|(a, v)| a * v).sum();
@@ -891,8 +1098,12 @@ pub fn forces(
 }
 
 /// The bodies of a cut as one implicit function: φ is the smallest signed
-/// distance, the crossing points are the exact roots on the edges (or
-/// linear), the wall point is the Newton projection onto the nearest body.
+/// distance (narrow band for STL bodies), the crossing point on an edge is
+/// the nearest entry into any body the edge ends in (the exact crossing of
+/// an STL body, the root of a primitive's own function; or linear), the
+/// wall and face points are those of the nearest body (dual contouring on
+/// the sharp edges of an STL body, the Newton projection or the bisector
+/// root of a primitive).
 struct CutBodies<'a> {
     bodies: &'a [Body],
     exact: bool,
@@ -904,12 +1115,39 @@ impl CutBodies<'_> {
     fn nearest(&self, x: [f64; 3]) -> usize {
         let mut best = (f64::INFINITY, 0);
         for (i, b) in self.bodies.iter().enumerate() {
-            let d = b.distance(x).abs();
+            let d = match b.surface() {
+                Some(s) => s.distance(x),
+                None => b.distance(x).abs(),
+            };
             if d < best.0 {
                 best = (d, i);
             }
         }
         best.1
+    }
+
+    fn stl(&self, i: usize) -> Option<foehncraft_mesh::surface::SurfaceBody<'_>> {
+        self.bodies[i]
+            .surface()
+            .map(|s| foehncraft_mesh::surface::SurfaceBody {
+                surface: s,
+                exact: self.exact,
+                features: true,
+            })
+    }
+
+    /// The unit outward normal of primitive body `b` at `x` (central
+    /// differences of its distance).
+    fn normal(&self, b: &Body, x: [f64; 3]) -> Option<[f64; 3]> {
+        let mut g = [0.0; 3];
+        for (k, gk) in g.iter_mut().enumerate() {
+            let (mut a, mut c) = (x, x);
+            a[k] += self.h;
+            c[k] -= self.h;
+            *gk = b.distance(a) - b.distance(c);
+        }
+        let n = norm(g);
+        (n > 0.0 && n.is_finite()).then(|| [g[0] / n, g[1] / n, g[2] / n])
     }
 }
 
@@ -920,25 +1158,119 @@ impl foehncraft_mesh::cut::ImplicitBody for CutBodies<'_> {
             .map(|b| b.distance(x))
             .fold(f64::INFINITY, f64::min)
     }
+    fn values(&self, points: &[[f64; 3]], reach: &[f64]) -> Vec<f64> {
+        use rayon::prelude::*;
+        let mut phi = vec![f64::INFINITY; points.len()];
+        for (i, b) in self.bodies.iter().enumerate() {
+            let v: Vec<f64> = match self.stl(i) {
+                Some(s) => s.values(points, reach),
+                None => points.par_iter().map(|&x| b.distance(x)).collect(),
+            };
+            for (p, x) in phi.iter_mut().zip(v) {
+                *p = p.min(x);
+            }
+        }
+        phi
+    }
     fn edge_point(&self, a: [f64; 3], b: [f64; 3], fa: f64, fb: f64) -> [f64; 3] {
-        if self.exact {
-            foehncraft_mesh::cut::edge_root(|x| self.value(x), a, b, fa, fb)
-        } else {
+        let linear = || {
             let t = fa / (fa - fb);
             [
                 a[0] + t * (b[0] - a[0]),
                 a[1] + t * (b[1] - a[1]),
                 a[2] + t * (b[2] - a[2]),
             ]
+        };
+        if !self.exact {
+            return linear();
+        }
+        // the nearest entry along the edge into a body that holds `b`
+        let mut best: Option<(f64, [f64; 3])> = None;
+        for (i, body) in self.bodies.iter().enumerate() {
+            let x = match body.surface() {
+                Some(s) => {
+                    if !s.inside(b) {
+                        continue;
+                    }
+                    match s.first_crossing(a, b) {
+                        Some(c) => c.point,
+                        None => continue,
+                    }
+                }
+                None => {
+                    let (da, db) = (body.distance(a), body.distance(b));
+                    if db > 0.0 || da <= 0.0 {
+                        continue;
+                    }
+                    foehncraft_mesh::cut::edge_root(|x| body.distance(x), a, b, da, db)
+                }
+            };
+            let t = norm(sub(x, a));
+            if best.is_none_or(|(bt, _)| t < bt) {
+                best = Some((t, x));
+            }
+            let _ = i;
+        }
+        match best {
+            Some((_, x)) => x,
+            None => foehncraft_mesh::cut::edge_root(|x| self.value(x), a, b, fa, fb),
         }
     }
     fn project(&self, x: [f64; 3]) -> Option<[f64; 3]> {
-        let b = &self.bodies[self.nearest(x)];
-        foehncraft_mesh::cut::project_newton(|y| b.distance(y), x, self.h)
+        let i = self.nearest(x);
+        match self.stl(i) {
+            Some(s) => s.project(x),
+            None => {
+                let b = &self.bodies[i];
+                foehncraft_mesh::cut::project_newton(|y| b.distance(y), x, self.h)
+            }
+        }
+    }
+    fn wall_point(&self, ring: &[[f64; 3]], centre: [f64; 3]) -> Option<[f64; 3]> {
+        let i = self.nearest(centre);
+        match self.stl(i) {
+            Some(s) => s.wall_point(ring, centre),
+            None => {
+                let b = &self.bodies[i];
+                // a sharp edge of a box: the dual-contouring point
+                let n: Vec<[f64; 3]> = ring
+                    .iter()
+                    .map(|&p| self.normal(b, p).unwrap_or([0.0; 3]))
+                    .collect();
+                if let Some(x) = foehncraft_mesh::cut::feature_point(ring, &n, centre) {
+                    let r = ring
+                        .iter()
+                        .map(|&y| norm(sub(y, centre)))
+                        .fold(0.0, f64::max);
+                    if b.distance(x).abs() <= 1e-7 * r {
+                        return Some(x);
+                    }
+                }
+                self.project(centre)
+            }
+        }
+    }
+    fn face_point(&self, p: [f64; 3], q: [f64; 3], n: [f64; 3]) -> Option<[f64; 3]> {
+        let i = self.nearest(scale3(add3(p, q), 0.5));
+        match self.stl(i) {
+            Some(s) => s.face_point(p, q, n),
+            None => {
+                let b = &self.bodies[i];
+                foehncraft_mesh::cut::chord_point(|x| b.distance(x), |x| self.normal(b, x), p, q, n)
+            }
+        }
     }
     fn patch(&self, x: [f64; 3]) -> usize {
         self.nearest(x)
     }
+}
+
+fn add3(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
+}
+
+fn scale3(a: [f64; 3], s: f64) -> [f64; 3] {
+    [a[0] * s, a[1] * s, a[2] * s]
 }
 
 /// The cut of `[immersed] method = "cut"` (L13 stage 2, D227): the mesh
@@ -958,11 +1290,13 @@ pub fn cut_mesh(case: &crate::case::FlowCase, mesh: &Mesh) -> Result<(Mesh, Vec<
     let opt = foehncraft_mesh::cut::CutOptions {
         min_fraction: sec.min_volume_fraction(),
         wall_point: sec.wall_point.unwrap_or(true),
+        face_point: sec.face_point(),
     };
     let c = foehncraft_mesh::cut::cut(mesh, &body, &names, &opt)
         .map_err(|e| diag::err(Diagnostic::new(diag::IMM_CUT, format!("cut cells: {e}"))))?;
     let r = &c.report;
-    let mut notes = vec![Diagnostic::new(
+    let mut notes = surface_notes(&bs);
+    notes.push(Diagnostic::new(
         diag::IMM_CUT_REPORT,
         format!(
             "cut cells: {} of {} cells cut, {} removed, {} extra from split cells, {} merged \
@@ -977,7 +1311,7 @@ pub fn cut_mesh(case: &crate::case::FlowCase, mesh: &Mesh) -> Result<(Mesh, Vec<
             r.max_closure,
             r.cells_out
         ),
-    )];
+    ));
     for (b, a) in bs.iter().zip(&r.wall_area) {
         let mut line = format!("cut body {}: wall area {a:.6e} m²", b.name);
         if let Some(e) = b.exact_area(lo, hi) {
@@ -987,6 +1321,27 @@ pub fn cut_mesh(case: &crate::case::FlowCase, mesh: &Mesh) -> Result<(Mesh, Vec<
             ));
         }
         notes.push(Diagnostic::new(diag::IMM_CUT_REPORT, line));
+    }
+    if r.simplified > 0 {
+        notes.push(Diagnostic::new(
+            diag::IMM_CUT_REPORT,
+            format!(
+                "cut cells: {} cells cut with fewer wall and face points so that the \
+                 discretisation takes their faces ({} rounds)",
+                r.simplified, r.rounds
+            ),
+        ));
+    }
+    if r.folded_faces > 0 {
+        notes.push(Diagnostic::new(
+            diag::IMM_CUT_REPORT,
+            format!(
+                "cut cells: {} joined faces of merged cells fold, the largest moves {:.1} % \
+                 of the smaller cell into its neighbour (the total volume is kept)",
+                r.folded_faces,
+                100.0 * r.max_fold
+            ),
+        ));
     }
     if r.merge_failed > 0 || r.bad_faces > 0 {
         notes.push(Diagnostic::new(
@@ -1003,6 +1358,21 @@ pub fn cut_mesh(case: &crate::case::FlowCase, mesh: &Mesh) -> Result<(Mesh, Vec<
 
 fn norm(a: [f64; 3]) -> f64 {
     dot(a, a).sqrt()
+}
+
+/// The findings of the surface check of the STL bodies (IMM002 to IMM009),
+/// for the log.
+fn surface_notes(bs: &[Body]) -> Vec<Diagnostic> {
+    let mut out = Vec::new();
+    for b in bs {
+        for f in &b.findings {
+            out.push(Diagnostic::new(
+                f.code,
+                format!("immersed body {}: {}", b.name, f.message),
+            ));
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -1025,6 +1395,8 @@ mod tests {
                 lower: None,
                 upper: None,
                 fraction: None,
+                file: None,
+                scale: None,
             }],
             topology: None,
         }
