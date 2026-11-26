@@ -169,7 +169,7 @@ numbers are.
   properties, Ind. Eng. Chem. Res. 27, 671–679 (built in SA2 from the
   form printed in Poling et al. 2001 and secondary accounts, checked
   against NIST nitrogen; the printed paper **to verify**, DATA_SOURCES
-  3h).
+  3i).
 - Crua, C., Manin, J., Pickett, L. M. (2017), On the transcritical mixing of
   fuels at diesel engine conditions, Fuel 208, 535–548, doi
   10.1016/j.fuel.2017.06.091 (abstract and data page read).
@@ -214,7 +214,7 @@ numbers are.
   effects on multicomponent diesel sprays, SAE 2020-01-0240 (read).
 - Riazi, M. R., Whitson, C. H. (1993), Estimating diffusion coefficients of
   dense fluids, Ind. Eng. Chem. Res. 32, 3081–3088 (built in SA2 from
-  secondary accounts; the printed paper **to verify**, DATA_SOURCES 3h).
+  secondary accounts; the printed paper **to verify**, DATA_SOURCES 3i).
 - Schmidt, D. P., Rutland, C. J. (2000), A new droplet collision algorithm,
   J. Comput. Phys. 164 (cited by Torelli et al.).
 - Schmidt, D. P. et al., The Eulerian Lagrangian Mixing-Oriented (ELMO)

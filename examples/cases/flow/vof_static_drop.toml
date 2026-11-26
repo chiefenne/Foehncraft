@@ -1,0 +1,66 @@
+# A water drop at rest in air (volume of fluid, L3 stage MP1): the pressure
+# jump of Laplace, Δp = σ/R in 2D, and the spurious currents of the surface
+# tension.
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/vof_static_drop.toml
+#
+# A cylinder of water of radius R = 2 mm sits in the middle of a closed box
+# of 8 mm (2D, 40 × 40 cells, R = 10 cells), no gravity, σ = 0.07 N/m:
+# Δp = 35 Pa. The surface tension is the continuum surface force of
+# Brackbill et al. (1992) in balanced form: the face offset σκ_f(α_N − α_P)
+# beside the pressure difference of the same face, κ from α smoothed twice.
+# A sharp drop gives the jump within a few percent and spurious currents of
+# order 0.1 m/s (Capillary number of the currents ~ 10⁻³).
+
+case_format = "0.7"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [0.008, 0.008, 0.0002]
+cells = [40, 40, 1]
+
+[fluid]
+density = 1.205
+viscosity = 1.82e-5
+
+[vof]
+surface_tension = 0.07
+[[vof.phase]]
+name = "water"
+density = 998.2
+viscosity = 1.0e-3
+[[vof.phase]]
+name = "air"
+density = 1.205
+viscosity = 1.82e-5
+[[vof.region]]
+shape = "cylinder"
+centre = [0.004, 0.004, 0.0]
+radius = 0.002
+alpha = 1.0
+
+[boundary.xmin]
+type = "wall"
+[boundary.xmax]
+type = "wall"
+[boundary.ymin]
+type = "wall"
+[boundary.ymax]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+algorithm = "piso"
+log_every = 20
+
+[time]
+scheme = "bdf1"
+time_step = 2e-5
+steps = 100
+
+[verification]
+require_convergence = false

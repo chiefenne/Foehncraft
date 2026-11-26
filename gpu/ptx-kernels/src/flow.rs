@@ -81,4 +81,13 @@ entries! {
     flow_wall_faces => e::WallFaces,
     flow_wall_cells => e::WallCells,
     flow_floor => e::Floor,
+    flow_quotient => e::Quotient,
+    flow_vof_faces => e::VofFaces,
+    flow_vof_update => e::VofUpdate,
+    flow_vof_outflow_rate => e::VofOutflowRate,
+    flow_vof_smooth => e::VofSmooth,
+    flow_vof_gradient => e::VofGradient,
+    flow_vof_curvature => e::VofCurvature,
+    flow_vof_tension => e::VofTension,
+    flow_vof_reconstruct => e::VofReconstruct,
 }
