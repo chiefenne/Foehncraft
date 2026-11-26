@@ -622,8 +622,7 @@ area contraction, plume direction and cone) and the distortion of the drops.
 
 ### 7.2 Not yet
 
-Collision and coalescence (the drops of the gallery case have a Sauter
-mean diameter near 2 µm, small next to measured diesel sprays); a size distribution of the children (the Jackiw and Ashgriz
+A size distribution of the children (the Jackiw and Ashgriz
 fragment model for slow drops is a candidate); breakup in the steady mode;
 temperature-dependent surface tension and viscosity (with the liquid
 property library); radial velocity of the children (they leave with the
@@ -635,3 +634,49 @@ G1, and a run
 whose gas diverges in some cells can fill the memory with the exchange
 records of parcels that spend `max_substeps` instead of stopping with a
 message.
+
+## 8. Collisions of the drops (D331)
+
+The gold-standard survey of 2026-11-26
+(`foehncraft/assessments/spray-gold-standard-survey.md` in the project
+files) found a collision model in every reference set-up of the ECN for
+Spray G and Spray A (NTC or O'Rourke in CONVERGE; Bestel et al., Fuel 2024:
+collisions "greatly affect" liquid length and drop size), and none in ours.
+
+| ID | Decision |
+|----|----------|
+| D331 | **Drop collisions by no-time-counter sampling with O'Rourke's outcomes**, `[spray.collision] model = "ntc"` (default `none`). In each cell of volume V with N parcels (the injected blobs of the breakup model excluded: they stand for the liquid core), M = N(N−1)/2 · q_max (σv)_max Δt/V candidate pairs (rounded at random, at most 20000 per parcel of the cell, counted when the cap is reached), each accepted with P = max(q_i, q_j) σ_ij v_ij/(q_max (σv)_max) (Schmidt and Rutland 2000); an accepted pair is q_min drop collisions. Outcome (O'Rourke 1981; KIVA-II): We = ρ_l v² r_s/σ, b_cr² = (r₁ + r₂)² min(1, 2.4 f(γ)/We), f(γ) = γ³ − 2.4γ² + 2.7γ; b = (r₁ + r₂)√ξ; below b_cr the drops coalesce (each collector drop takes up one drop of the other parcel), above it they separate grazing with the velocities of O'Rourke. At the end of each time step, after the transport; mass, momentum and liquid enthalpy are kept exactly, the gas is not touched. Random numbers keyed by the smallest parcel identity of the cell, the time and the candidate (stream `SPRAY_COLLISION`), the parcels of a cell taken in the order of their identities: the same drops for any thread count or parcel order. `coalescence = false` makes every collision grazing. Needs the surface tension; refused in the steady spray mode. Counts in `spray.csv`: collisions, coalescences, drop_collisions, merged_parcels, collision_capped_cells. |
+
+### 8.1 Checks
+
+- `crates/foehncraft-particles/src/collision.rs`: the drop collisions of
+  two opposed groups of parcels over many steps against the pair rate
+  q_i q_j σ v Δt/V summed over the pairs, within 3 % for equal (1/1) and
+  unequal (10/1000) drop counts; mass, momentum and enthalpy kept to 10⁻¹²
+  through coalescence and grazing; the same drops with the parcels in
+  reverse order; O'Rourke's b_cr at small Weber numbers and for equal
+  drops; the table is checked (surface tension, transient spray).
+- ECN Spray G, G1 (D309) to 0.9 ms, one change at a time on the same
+  binary (liquid penetration at 0.2e-3 mm³/mm², against the ECN):
+
+  | set-up | 0.3 ms | 0.5 ms | 0.8 ms | vapour 0.8 ms | d32 at 15 mm |
+  |---|---|---|---|---|---|
+  | G1 without collisions | 0 % | +8 % | +19 % | +17 % | 17 µm |
+  | with collisions (the G1 case now) | −2 % | +6 % | +12 % | +10 % | 18 µm |
+  | with collisions and C1ε = 1.52 | −2 % | +7 % | +15 % | +10 % | 19 µm |
+  | the published set-up of Bestel et al.: also KH-RT with B₁ = 50, no breakup length, Corrected Distortion | +26 % | +19 % | +18 % | +7 % | 23 µm |
+
+  The candidate cap raised from 1000 to 20000 per parcel changed the
+  penetration by less than 1 % (3553 capped cell steps at 1000, 206 at
+  20000). The ECN raises C1ε because standard k-ε penetrates short; ours
+  is long, so G1 keeps 1.44. Bestel's constants were tuned to CONVERGE and
+  make the early spray worse here; owner decision 2026-11-26: G1 =
+  collisions on our other settings.
+
+### 8.2 Not yet
+
+Other outcomes (stretching separation and reflexive separation of Post and
+Abraham 2002, bouncing at high ambient density), collisions between cells
+or with the blobs, a collision mesh independent of the flow mesh (as in
+the CONVERGE set-ups), collisions in the steady spray mode, the GPU entry; the
+drop size of G1 stays twice the measured one (18 against 9 µm).

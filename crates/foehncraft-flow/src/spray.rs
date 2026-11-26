@@ -490,7 +490,11 @@ pub const CSV_UNITS: &str = "step -; time s; parcels -; injected_kg kg; in_flow_
      D253 held vapour back in the last pass), limiter_kg_s kg/s (the vapour held back); breakup \
      (SP6): child_parcels - (child parcels the blobs shed since the start), rt_breakups - \
      (Rayleigh-Taylor breakups of drops since the start); KH-ACT: act_children - (of the child \
-     parcels, those the nozzle turbulence or the cavitation stripped)";
+     parcels, those the nozzle turbulence or the cavitation stripped); collisions (D331): \
+     collisions - (colliding parcel pairs since the start), coalescences - (of them, \
+     coalescences), drop_collisions - (drop collisions since the start), merged_parcels - \
+     (parcels taken up completely by coalescence), collision_capped_cells - (cell steps whose \
+     candidate pairs were capped)";
 
 /// The header of `spray.csv`.
 pub fn csv_head(sp: &foehncraft_particles::Spray) -> String {
@@ -532,6 +536,11 @@ pub fn csv_head(sp: &foehncraft_particles::Spray) -> String {
         if sp.config().breakup.act() {
             h.push_str(",act_children");
         }
+    }
+    if sp.config().collision.on() {
+        h.push_str(
+            ",collisions,coalescences,drop_collisions,merged_parcels,collision_capped_cells",
+        );
     }
     h
 }
@@ -750,6 +759,16 @@ pub fn csv_row(
         if sp.config().breakup.act() {
             extra.push_str(&format!(",{}", t.act_children));
         }
+    }
+    if sp.config().collision.on() {
+        extra.push_str(&format!(
+            ",{},{},{:e},{},{}",
+            t.collisions,
+            t.coalescences,
+            t.drop_collisions,
+            t.merged_parcels,
+            t.collision_capped_cells
+        ));
     }
     format!(
         "{step},{:e},{},{:e},{:e},{:e},{:e},{:e},{},{},{}{extra}",

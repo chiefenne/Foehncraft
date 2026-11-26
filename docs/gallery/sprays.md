@@ -1120,6 +1120,10 @@ stays an ideal gas (D317).
 
 <img src="../figures/gallery/spray_g_g1.png" alt="Left: side view of one plume of the Spray G injector at 0.6 ms, the injector tip at the left and its axis horizontal. Above the axis the iso-octane vapour mass fraction on the plane of the plume: a band leaving the tip at about 33 degrees, dark red (more than 10 percent) in its core and orange, yellow and green at its edges, ending in a rounded head about 33 mm along the axis and 20 mm from it, the rest of the plane blue. Below the axis the projected liquid volume of all eight plumes as grey shades, densest near the tip and in two lobes of the plume head, with a red outline at 0.2e-3 cubic millimetres per square millimetre ending at about 33 mm. Right top: liquid penetration over 1.2 ms; the red computed curve and the thin orange KH-RT curve lie on the black measured points up to 0.4 ms and then rise almost straight to 51 to 52 mm, while the measured points bend over to 39 mm; the measured dense-liquid points (open squares) stop at 27 mm, the computed dense-liquid curve runs with the thin one. Right middle: vapour penetration; both computed curves follow the measured points to 0.4 ms and then run above them, 51 against 42 mm at 1.2 ms. Right bottom: the gas velocity on the injector axis 15 mm from the tip; the measured points and both computed curves fall from zero to about minus 7 to minus 8 metres per second (towards the injector) at 0.3 ms, stay there to 0.7 ms and return to zero at 1.2 ms, the computed curves within about 1.5 metres per second of the points. A dotted line marks the end of injection at 0.78 ms in all three charts." width="1200" height="840">
 
+*Since #335 the case also lets the drops collide; the run and the numbers
+of this entry are without collisions, the case as it is now is
+[gallery 335](#spray-collisions).*
+
 `spray_g_g1.toml` is condition G1 of Spray G of the Engine Combustion
 Network: iso-octane at 363 K and 20 MPa from the 8-hole Spray G injector
 (holes of 0.165 mm) into still nitrogen at 573 K and 3.5 kg/m³, for 0.78 ms
@@ -1205,7 +1209,8 @@ CI set runs the first 0.1 ms. The metrics script has no tests of its own.
 not a match, and its cause is open (above). KH-ACT makes drops twice the
 measured size here. The KH-ACT constants are not calibrated to G1. The gas
 density stays that of the ambient nitrogen (the vapour changes the
-properties, not the density). There are no collisions and no wall film,
+properties, not the density). There are no collisions in this run
+(gallery 335 adds them) and no wall film,
 and the penetration far from the tip is limited by the cell size (2.5 mm
 at 50 mm). One process.
 
@@ -1321,3 +1326,77 @@ Collisions are later work.
 [Recipe 326](../recipes/sprays.md#spray-a-distortion),
 [case row](../cases/flow.md#lagrangian-sprays),
 [plan](../requirements/step28-spray-a.md).
+
+---
+
+<a id="spray-collisions"></a>
+## 335. Colliding drops in ECN Spray G
+
+<img src="../figures/gallery/spray_g_g1_collisions.png" alt="Left: side view of one plume of the Spray G injector at 0.6 ms with the drops colliding, the injector tip at the left and its axis horizontal. Above the axis the iso-octane vapour mass fraction on the plane of the plume: a band leaving the tip at about 33 degrees, dark red in its core, ending in a rounded head about 31 mm along the axis and 21 mm from it, the rest of the plane blue. Below the axis the projected liquid volume of all eight plumes in grey shades with a red outline at 0.2e-3 cubic millimetres per square millimetre ending at about 32 mm. Right top: liquid penetration over 1.2 ms; the thick red computed curve lies on the black measured points up to 0.4 ms and then rises to 49 mm at 1.2 ms, the thin orange curve without collisions above it to 52 mm, the measured points bending over to 39 mm. Right middle: vapour penetration; the thick blue curve with collisions lies on the measured points to 0.6 ms and reaches 49 mm at 1.2 ms against 42 mm measured, the thin cyan curve without collisions above it, 51 mm. Right bottom: the gas velocity on the injector axis 15 mm from the tip; the measured points and both computed curves fall to about minus 7 to minus 8 metres per second at 0.3 ms and return to zero at 1.2 ms. A dotted line marks the end of injection at 0.78 ms." width="1200" height="840">
+
+The case of [gallery 323](#spray-g), ECN Spray G condition G1, now with the
+drops of the spray colliding (`[spray.collision] model = "ntc"`, D331).
+Every reference set-up of the ECN for Spray G has a collision model (the
+survey of our set-up against the leading groups, 2026-11-26), and Bestel
+et al. (Fuel 2024) found that collisions "greatly affect" the liquid length
+and the drop size. Our G1 had none.
+
+**The model.** In each cell the drops of two parcels meet at the rate
+q_i q_j σ v Δt / V, with q the drops a parcel stands for, σ = π (r_i +
+r_j)² and v their relative speed. The no-time-counter method of Schmidt
+and Rutland (2000) samples the colliding pairs at a cost that grows with
+the collisions, not with the square of the parcels. O'Rourke's outcome
+(1981, the KIVA-II model): below the critical impact parameter, which
+depends on the collision Weber number and the size ratio, the drops
+coalesce; above it they separate grazing, with their sizes, and their
+velocities move towards each other. The injected blobs of the breakup model
+take no part (they stand for the liquid core).
+
+**What the collisions do in G1.** Near the nozzle the cells hold many slow
+and fast drops, and most collisions there are coalescences (4.7 of the 5.6
+million colliding pairs to 0.9 ms). The core of the spray loses speed and
+the late lead shrinks:
+
+| | 0.3 ms | 0.6 ms | 0.8 ms | 1.2 ms |
+|---|---|---|---|---|
+| liquid, measured (mm) | 20.4 | 29.3 | 33.8 | 38.9 |
+| with collisions | 20.2 (−1 %) | 31.6 (+8 %) | 37.8 (+12 %) | 48.8 (+25 %) |
+| without (thin curves) | 20.5 (0 %) | 32.9 (+12 %) | 40.2 (+19 %) | 51.7 (+33 %) |
+| vapour, measured (mm) | 20.5 | 29.4 | 34.4 | 42.0 |
+| with collisions | 19.5 (−5 %) | 31.1 (+6 %) | 37.8 (+10 %) | 49.0 (+17 %) |
+| without | 20.1 (−2 %) | 32.8 (+11 %) | 40.2 (+17 %) | 50.8 (+21 %) |
+
+The gas on the injector axis stays within about 1.5 m/s of the PIV. The
+Sauter mean diameter 15 mm from the tip grows from 17.3 to 18.7 µm (the
+measurement: 9 µm).
+
+**The rest of the ECN set-up does not help here.** The same runs to 0.9 ms
+with C1ε = 1.52 (the ECN raises it because standard k-ε penetrates short)
+put the liquid 15 % ahead at 0.8 ms instead of 12 %: ours is long, so G1
+keeps the standard 1.44. The published constants of Bestel et al. (KH-RT
+with B₁ = 50 and no breakup length, the Corrected Distortion drag) gave
++26 % at 0.3 ms, where the case matched before, and drops of 23 µm; they
+were tuned to another code. The numbers are in section 8 of
+`docs/requirements/step28-sprays.md`.
+
+**What is checked.** The collision rate of opposed groups of parcels
+against the exact pair rate, within 3 % for equal and unequal drop counts;
+mass, momentum and liquid enthalpy to 10⁻¹² through coalescence and
+grazing; the same drops with the parcels in reverse order; O'Rourke's
+critical impact parameter; the checks of the table. In G1 the cap on the
+candidate pairs (20000 per parcel of a cell) is reached in 206 cell steps;
+with a cap of 1000 (3553 capped cell steps) the penetration moved by less
+than 1 %. The run takes 30 minutes on 4 threads.
+
+**What this version does not do.** The liquid still runs ahead after
+0.4 ms (25 % at 1.2 ms) and the drops are twice the measured size; the
+cause of the rest of the lead is open (gallery 323). Only coalescence and
+grazing separation, no stretching or reflexive separation (Post and
+Abraham 2002); collisions only within a cell of the flow mesh and not with
+the blobs; transient sprays only, CPU only, one process.
+
+Files: `spray.csv` (with `collisions`, `coalescences`, `drop_collisions`,
+`merged_parcels`, `collision_capped_cells`), `spray/parcels_<step>.vtkhdf`,
+`fields_<step>.vtkhdf`.
+[Recipe 335](../recipes/sprays.md#spray-collisions),
+[case row](../cases/flow.md#lagrangian-sprays).
