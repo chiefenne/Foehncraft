@@ -93,7 +93,13 @@ TC, PC, OMEGA, M = 658.65, 1.83e6, 0.573, 0.170334
 
 
 def table():
-    return [(t, c10 + 2.0 * (c10 - c9)) for (t, c10), (_, c9) in zip(DECANE, NONANE)]
+    """c_p of n-dodecane, rounded to the 0.01 J/(mol K) of its sources (so
+    that the --csv table read by tools/data/vapour_species.py gives the
+    same fit, bit for bit)."""
+    return [
+        (t, round(c10 + 2.0 * (c10 - c9), 2))
+        for (t, c10), (_, c9) in zip(DECANE, NONANE)
+    ]
 
 
 def fit(t, cp_r):
