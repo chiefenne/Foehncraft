@@ -8,6 +8,7 @@ use anyhow::{Result, bail};
 use foehncraft_core::Real;
 use foehncraft_core::rng::{self, stream};
 use foehncraft_kernels::breakup as brk;
+use foehncraft_kernels::distortion as cdm;
 use foehncraft_kernels::evaporation::{self as evap, EvapInput, EvapStep};
 use foehncraft_kernels::particle::{
     HeatInput, ParcelInput, eddy_times, heat_step, parcel_step_drag,
@@ -943,6 +944,23 @@ impl Spray {
         re: f64,
         dt: f64,
     ) -> Option<EvapStep> {
+        self.evaporation_of(gs, d, tp, re, dt, 0.0)
+    }
+
+    /// As [`Spray::evaporation`] for a drop of TAB distortion `y`: with
+    /// `[spray.breakup] drag = "corrected-distortion"` the Sherwood and
+    /// Nusselt numbers take the factors of the viscous, distorted drop and
+    /// its larger surface (Nguyen et al. 2022, D316); otherwise `y` is not
+    /// used.
+    pub fn evaporation_of(
+        &self,
+        gs: &GasState,
+        d: f64,
+        tp: f64,
+        re: f64,
+        dt: f64,
+        y: f64,
+    ) -> Option<EvapStep> {
         let v = self.vapour.as_ref()?;
         if !self.cfg.evaporation.on() || !gs.has_vapour() || d <= 0.0 {
             return None;
@@ -960,6 +978,16 @@ impl Spray {
             let cp_v = v.cp(0.5 * (tp + gs.t));
             (gs.rho, gs.mu, gs.k, gs.cp, gs.diff, cp_v, re)
         };
+        let (pr, sc) = (mu * cp / k, mu / (rho * diff));
+        let (sh_factor, nu_factor) = if self.cfg.breakup.corrected() {
+            let lambda = self.liquid_viscosity(tp) / mu;
+            (
+                cdm::transfer_factor(re, sc, lambda, y),
+                cdm::transfer_factor(re, pr, lambda, y),
+            )
+        } else {
+            (1.0, 1.0)
+        };
         Some(evap::evaporation_step(&EvapInput {
             tp,
             tg: gs.t,
@@ -971,8 +999,8 @@ impl Spray {
             ys_surface: -1.0,
             latent: self.latent_heat(tp),
             re,
-            pr: mu * cp / k,
-            sc: mu / (rho * diff),
+            pr,
+            sc,
             rho_g: rho,
             diff,
             k_g: k,
@@ -983,6 +1011,8 @@ impl Spray {
             cp_l: l.specific_heat,
             dt,
             model: self.cfg.evaporation.code(),
+            sh_factor,
+            nu_factor,
         }))
     }
 
@@ -1765,11 +1795,7 @@ impl Spray {
             *uk = sigma * normal([stream::SPRAY_DISPERSION, p.id, p.eddy.n, 2 * k as u64]);
         }
         let ug = [gs.u[0] + u[0], gs.u[1] + u[1], gs.u[2] + u[2]];
-        let drag = if self.cfg.breakup.distortion() {
-            brk::dynamic_drag(p.brk.y)
-        } else {
-            1.0
-        };
+        let drag = self.drag_factor(p, ug, gs.rho, gs.mu);
         let s = parcel_step_drag(
             &ParcelInput {
                 v: p.v,
@@ -1876,12 +1902,8 @@ impl Spray {
                 p.eddy.left = 0.0;
             }
             let d_start = p.d;
-            // the drag of a distorted drop (D303)
-            let drag = if bcfg.distortion() {
-                brk::dynamic_drag(p.brk.y)
-            } else {
-                1.0
-            };
+            // the drag of a distorted drop (D303, D316)
+            let drag = self.drag_factor(&p, gs.u, gs.rho, gs.mu);
             let input = |dt: f64| ParcelInput {
                 v: p.v,
                 u: gs.u,
@@ -1936,7 +1958,9 @@ impl Spray {
             // sub-step finishes there (the d² law is exact with frozen
             // coefficients, so the end of the life is found exactly)
             let evaporating = self.evaporates() && gs.has_vapour();
-            if evaporating && let Some(e) = self.evaporation(&gs, p.d, p.temp, s.re, sub) {
+            if evaporating
+                && let Some(e) = self.evaporation_of(&gs, p.d, p.temp, s.re, sub, p.brk.y)
+            {
                 let ev = &self.cfg.evaporation;
                 let d02 = p.d * p.d;
                 let mut finishing = false;
@@ -1954,7 +1978,7 @@ impl Spray {
                 }
                 let mut halvings = 0;
                 while !finishing && halvings < 40 {
-                    let Some(e) = self.evaporation(&gs, p.d, p.temp, s.re, sub) else {
+                    let Some(e) = self.evaporation_of(&gs, p.d, p.temp, s.re, sub, p.brk.y) else {
                         break;
                     };
                     if (e.tp - p.temp).abs() <= ev.max_temperature_change {
@@ -2005,7 +2029,7 @@ impl Spray {
                 let slip = [gs.u[0] - p.v[0], gs.u[1] - p.v[1], gs.u[2] - p.v[2]];
                 let re = gs.rho * p.d * norm(slip) / gs.mu;
                 let ev = if evaporating {
-                    self.evaporation(&gs, p.d, p.temp, re, dt)
+                    self.evaporation_of(&gs, p.d, p.temp, re, dt, p.brk.y)
                 } else {
                     None
                 };
@@ -2453,6 +2477,33 @@ impl Spray {
         }
         let tau = brk::kh_time(a, &w, b.b1);
         (tau > 0.0 && tau.is_finite()).then_some((a, rc, tau))
+    }
+
+    /// The factor on the sphere drag of parcel `p` in the gas of velocity
+    /// `u`, density `rho_g` and viscosity `mu_g`: 1 for a sphere,
+    /// 1 + 2.632 y with the dynamic drag (D303), the Corrected Distortion
+    /// factor (viscous drop and spheroid, D316) at the Reynolds number of
+    /// the slip at the start of the sub-step.
+    fn drag_factor(&self, p: &One, u: [f64; 3], rho_g: f64, mu_g: f64) -> f64 {
+        match self.cfg.breakup.drag {
+            crate::config::DragLaw::Sphere => 1.0,
+            crate::config::DragLaw::Dynamic => brk::dynamic_drag(p.brk.y),
+            crate::config::DragLaw::CorrectedDistortion => {
+                let slip = norm([u[0] - p.v[0], u[1] - p.v[1], u[2] - p.v[2]]);
+                let re = rho_g * p.d * slip / mu_g;
+                let lambda = self.liquid_viscosity(p.temp) / mu_g;
+                cdm::drag_factor(re, lambda, p.brk.y)
+            }
+        }
+    }
+
+    /// The viscosity of the liquid at `t` (Pa s) for the viscosity ratio of
+    /// the Corrected Distortion model: of the library liquid at the drop's
+    /// temperature, else the constant `[spray.liquid] viscosity`.
+    fn liquid_viscosity(&self, t: f64) -> f64 {
+        let l = &self.cfg.liquid;
+        l.data()
+            .map_or(l.viscosity.unwrap_or(f64::NAN), |d| d.viscosity(t))
     }
 
     fn drop_input(&self, a: f64, u: f64, rho_g: f64) -> brk::DropInput {
