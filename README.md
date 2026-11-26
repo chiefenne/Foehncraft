@@ -10,13 +10,16 @@
 
 ---
 
-> **Status: release 1.0.1, milestone 1.** Incompressible and low-Mach
-> flow, laminar and RANS, the energy equation, conjugate heat transfer with
-> several fluids and solids, buoyancy and rotating machinery, on CPUs and
-> NVIDIA GPUs in one process. The stage plan and every decision are in
-> [docs/requirements.md](docs/requirements.md);
-> [What works today](docs/features.md) lists what is on `main` now.
-> Multi-rank MPI and the natural-convection benchmarks follow in 1.1.
+> **Status: release 1.1.0.** Incompressible and low-Mach flow, laminar and
+> RANS, the energy equation, conjugate heat transfer with several fluids and
+> solids, buoyancy and rotating machinery, on CPUs and NVIDIA GPUs and on
+> several MPI ranks, with the first multiphysics modules: Lagrangian sprays,
+> species and laminar reacting flows, water and steam with boiler circuits,
+> Monte Carlo radiation, two fluids by the volume of fluid, porous regions,
+> deforming meshes, a structural solver and immersed walls. The stage plan
+> and every decision are in [docs/requirements.md](docs/requirements.md);
+> [What works today](docs/features.md) lists what is on `main` now and the
+> [changelog](CHANGELOG.md) what changed.
 
 [![CI](https://github.com/chiefenne/Foehncraft/actions/workflows/ci.yml/badge.svg)](https://github.com/chiefenne/Foehncraft/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/chiefenne/Foehncraft)](https://github.com/chiefenne/Foehncraft/releases)
@@ -107,7 +110,7 @@ slips and the refusals of the action table:
 - **Meshes.** Polyhedral cells in 2D and 3D, read from Gmsh, SU2, CGNS, OpenFOAM, Fluent `.msh`, VTK and VTKHDF.
 - **Flow.** Steady and transient; SIMPLEC, PISO and a coupled solver; RANS from k-ω SST to k-ε-ζ-f₀.
 - **Heat.** The energy equation, conjugate heat transfer with several fluids and solids, buoyancy, low-Mach density, Monte Carlo radiation.
-- **More physics.** Rotating machinery (moving frame, sliding mesh), Lagrangian sprays with evaporation (water and fuel liquids, 1/3-rule film, high-pressure droplet surface) and breakup, species and laminar reacting flows, porous regions, immersed bodies (penalised or cut out of the mesh, primitive shapes and STL surfaces), deforming meshes, linear structures.
+- **More physics.** Rotating machinery (moving frame, sliding mesh), Lagrangian sprays with evaporation (water and fuel liquids, 1/3-rule film, high-pressure droplet surface) and breakup, species and laminar reacting flows, water and steam (IAPWS-IF97) with boiler tube circuits, two fluids by the volume of fluid, porous regions, immersed bodies (penalised or cut out of the mesh, primitive shapes and STL surfaces), deforming meshes, linear structures.
 - **Hardware.** CPUs and NVIDIA GPUs in one process; MPI ranks with results bitwise equal to one rank.
 - **Driving it.** TOML case files, the `foehn` command, a Python package, and an MCP server for AI assistants.
 
@@ -137,16 +140,21 @@ The guiding targets are:
 - **Solver first.** A case file and a command line; meshes from established
   open tools, results to established open post-processors.
 
-## First milestone
+## Milestones
 
-Version 1.0: incompressible flow, steady and transient, on unstructured 3D
-meshes with the RANS models above, heat transfer with the energy equation,
-buoyancy and conjugate heat transfer (stage 7), the internal-flow cases of
-stage 8, on NVIDIA GPUs and CPUs in one process. Runs on several MPI ranks
-(with the exact reductions of v1.0 as the groundwork) follow in v1.1.
-Everything after that follows the roadmap in the
-[requirements](docs/requirements.md): reacting flows, sprays, multiphase
-flow, moving meshes and scale-resolving turbulence.
+Version 1.0 (milestone 1): incompressible flow, steady and transient, on
+unstructured 3D meshes with the RANS models above, heat transfer with the
+energy equation, buoyancy and conjugate heat transfer (stage 7), the
+internal-flow cases of stage 8, on NVIDIA GPUs and CPUs in one process.
+
+Version 1.1: runs on several MPI ranks with the output of one rank, and the
+first version of each multiphysics module (sprays, species and laminar
+reacting flows, water and steam, radiation, the volume of fluid, porous
+regions, deforming meshes, structures, immersed walls). Everything after
+that follows the roadmap in the [requirements](docs/requirements.md):
+turbulent reacting flows, the steam furnace, boiling, fluid–structure
+coupling, radiation coupled to the energy equation and scale-resolving
+turbulence.
 
 ## Install
 
@@ -310,7 +318,7 @@ Innsbruck since the early twentieth century. The command is `foehn`.
 
 ## Contributing
 
-The project is at release 1.0.1 (milestone 1) and has one maintainer. Comments on the
+The project is at release 1.1.0 and has one maintainer. Comments on the
 requirements are welcome as GitHub issues. [CONTRIBUTING.md](CONTRIBUTING.md)
 has the rules every pull request follows, among them that it keeps this
 README and the documentation up to date with what it changes.
