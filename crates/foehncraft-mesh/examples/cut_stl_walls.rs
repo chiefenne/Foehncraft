@@ -72,7 +72,7 @@ fn section(ring: &[[f64; 3]]) -> Vec<[[f64; 2]; 2]> {
     }
     let d = [x[x.len() - 1][0] - x[0][0], x[x.len() - 1][1] - x[0][1]];
     x.sort_by(|p, q| (p[0] * d[0] + p[1] * d[1]).total_cmp(&(q[0] * d[0] + q[1] * d[1])));
-    x.chunks_exact(2).map(|c| [c[0], c[1]]).collect()
+    x.as_chunks::<2>().0.to_vec()
 }
 
 fn segments(s: &[[[f64; 2]; 2]]) -> String {
