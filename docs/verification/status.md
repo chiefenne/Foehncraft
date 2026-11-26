@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**151 features: 50 verified, 98 partial, 3 unverified.**
+**152 features: 50 verified, 99 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -156,6 +156,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Sprays | [Liquid property library and the 1/3-rule film state of the evaporation (D320, D321)](#sprays-liquid-library) | partial |
 | Sprays | [Spray breakup: KH-ACT and KH-RT with blob injection, TAB distortion and dynamic drag (SP6, D300 to D309)](#sprays-breakup) | partial |
 | Sprays | [High-pressure droplet surface: Peng-Robinson phase equilibrium and latent heat (Spray A, SA1, D311, D312, D314)](#sprays-high-pressure-surface) | partial |
+| Sprays | [Real-fluid gas film of the Peng-Robinson surface: Chung dense-fluid transport, Riazi-Whitson diffusivity, Peng-Robinson density and c_p (Spray A, SA2, D313)](#sprays-high-pressure-film) | partial |
 | Sprays | [ECN liquid length (projected liquid volume) and vapour penetration (Spray A, SA3, D315)](#sprays-ecn-diagnostics) | partial |
 | Flow models | [Porous regions with a direction-dependent Darcy-Forchheimer resistance (D270, PM1)](#porous-darcy-forchheimer) | partial |
 | Flow models | [Gas and matrix temperatures in porous regions, monolithic (D271, D272, PM2)](#porous-two-temperatures) | partial |
@@ -2244,6 +2245,28 @@ Gaps:
 - the gas solver stays ideal (D317): the departure enthalpy of the dense vapour enters the gas as a sensible-heat deficit
 - no flow case yet: VA.7 to VA.9 (order independence with a fuel vapour, the Spray A case) are later stages; the vapour species NC12H26 is in the species data
 - built-in high-pressure data for n-dodecane only; other liquids take the plain 1978 kappa (water: 11 % low on its vapour pressure at 320 K)
+
+<a id="sprays-high-pressure-film"></a>
+
+### Real-fluid gas film of the Peng-Robinson surface: Chung dense-fluid transport, Riazi-Whitson diffusivity, Peng-Robinson density and c_p (Spray A, SA2, D313)
+
+**partial** (no exact or manufactured solution; gaps written) · id `sprays.high-pressure-film` · switch `[spray.evaporation.peng_robinson] film = "real-fluid" (default), critical_volume` · decisions D313
+
+- reference-data: [`chung_follows_the_nist_nitrogen_tables`](../../crates/foehncraft-particles/tests/dense_film.rs): Chung et al. (1988) with the NIST density against the NIST nitrogen tables (Span et al. 2000, Lemmon and Jacobsen 2004), 300 to 1200 K, 0.1 to 15 MPa: viscosity within 1.5 % (found 1.3 %), conductivity within 7 % (6.8 %); the dense-fluid factors the film takes within 1.5 % and 5 % of the NIST ratios to 0.1 MPa (1.3 %, 4.8 %)
+- consistency: [`the_factors_vanish_at_low_density_and_riazi_whitson_slows_dense_diffusion`](../../crates/foehncraft-particles/tests/dense_film.rs): the viscosity and conductivity factors are 1 at 1 Pa (1e-6), the Riazi-Whitson factor 1 at low pressure (1e-15) and falling with pressure at 2, 6 and 15 MPa
+- reference-data: [`the_peng_robinson_heat_capacity_and_density_of_nitrogen`](../../crates/foehncraft-particles/tests/dense_film.rs): Peng-Robinson c_p (ideal gas plus departure) of nitrogen within 1 % (found 0.8 %) and the density within 2.5 % (2.2 % at 300 K, 15 MPa) of NIST
+- reference-data: [`chung_overestimates_the_liquid_like_dodecane`](../../crates/foehncraft-particles/tests/dense_film.rs): the recorded gap: n-dodecane at 6 MPa and 500 to 700 K (liquid-like density), the factors 9 to 17 % (viscosity) and 40 to 55 % (conductivity) above the NIST ratios (Lemmon and Huber 2004; Huber, Laesecke, Perkins 2004)
+- consistency: [`at_low_pressure_the_real_fluid_film_is_the_ideal_film`](../../crates/foehncraft-particles/tests/dense_film.rs): at 0.1 MPa the real-fluid film equals the ideal-gas film of D321 within 1 % in all six properties
+- consistency: [`the_film_of_a_spray_a_droplet`](../../crates/foehncraft-particles/tests/dense_film.rs): Spray A film (900 K N2, 6 MPa, droplets at 450 to 600 K with the Peng-Robinson surface fraction): density 0.97 to 0.99, viscosity 1.005 to 1.04, conductivity 1.01 to 1.05, c_p 1.01 to 1.03, diffusivity 1.0 to 1.03 times the ideal film (own results); the vapour c_p bitwise the ideal gas's
+- consistency: [`the_table_reaches_its_end_from_any_cold_start`](../../crates/foehncraft-particles/tests/high_pressure.rs): the surface table from a cold start (150 to 250 K) at 4, 6 and 8 MPa reaches the same critical end above 600 K (1e-6 K); it ended near 260 K before (Newton stalled at round-off)
+
+Gaps:
+
+- the Chung coefficient tables (E1 to E10, B1 to B7) and the water association factor kappa = 0.076 are transcribed from secondary sources and checked against NIST nitrogen only, not yet against the printed paper (Chung et al. 1988; Poling, Prausnitz, O'Connell 2001, tables 9-6 and 10-3)
+- Riazi and Whitson (1993) read from a secondary account; used without their constant 1.07 so that the factor is 1 at low pressure (Takahashi 1975 not built: its correlation is a chart)
+- for a liquid-like dense fuel the factors are 9 to 17 % (viscosity) and 40 to 55 % (conductivity) too high; the Spray A film is mostly nitrogen gas, where the method holds
+- the film gases are the `ambient` key, not the local gas of the cell; the gas solver stays an ideal gas (D317)
+- at Spray A conditions (6 MPa) the effect is small (film 1 to 7 %, droplet life -3 %): no measurement isolates it
 
 <a id="sprays-ecn-diagnostics"></a>
 
