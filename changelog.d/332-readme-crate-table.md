@@ -1,0 +1,1 @@
+- **README and feature list.** The crate table lists `foehncraft-particles`, and the feature list has the injection from measured droplets and the Brno spray.
