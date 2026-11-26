@@ -1237,7 +1237,7 @@ Gaps:
 
 - consistency: [`cht_heated_wall_accelerated`](../../examples/cases/flow/cht_heated_wall_accelerated.toml): the steady state of the true wall five times sooner; measured time constant within 10 % of the case's estimate; balance and inertia-scaling term exact in every step (passes in CI (set linux-3), not yet in the manual) ([results](../gallery/energy.md#cht-acceleration))
 - consistency: [`auto_acceleration_reaches_the_steady_wall_sooner`](../../crates/foehncraft-flow/tests/cht_acceleration.rs): end state within 0.2 % of ΔT of the steady solution; inertia scaling (1 − f)/f of the solved storage to 10⁻¹²
-- consistency: [`cht_heated_wall_periodic_accelerated`](../../examples/cases/flow/cht_heated_wall_periodic_accelerated.toml): periodic inlet temperature: settled at 700 s, ρ c_p restored over three periods, cycle mean within 0.0025 K of the true periodic state at 1500 s (passes in CI (set linux-3), not yet in the manual)
+- consistency: [`cht_heated_wall_periodic_accelerated`](../../examples/cases/flow/cht_heated_wall_periodic_accelerated.toml): periodic inlet temperature: settled at 700 s, ρ c_p restored over three periods, cycle mean within 0.0025 K of the true periodic state at 1500 s (passes in CI (set linux-1), not yet in the manual)
 - consistency: [`periodic_restore_ramp_keeps_the_cycle_mean`](../../crates/foehncraft-flow/tests/cht_acceleration.rs): periodic inlet: cycle mean within 0.01 K of the true periodic state after the ramped restore, ten times closer than a jump
 - consistency: [`fixed_factor_scales_the_heat_up_and_restores_at_a_time`](../../crates/foehncraft-flow/tests/cht_acceleration.rs): a fixed factor and a restore at a set time
 
@@ -2030,7 +2030,7 @@ Gaps:
 - exact: [`passes_give_the_same_bits_on_any_number_of_threads`](../../crates/foehncraft-flow/tests/spray_coupling.rs): V28.1 in a flow run: spray.csv bitwise equal on 1 and 4 threads
 - exact: [`sources_do_not_depend_on_parcel_order_or_threads`](../../crates/foehncraft-particles/tests/coupling.rs): V28.1: per-cell sources and the books of the closing step bitwise equal with the parcel storage reversed and on one thread, on hexahedral, tetrahedral and polyhedral meshes; the slopes of a parcel at most its mass; the parcel books close to round-off
 - exact: [`slopes_of_one_parcel_add_up_to_its_relaxation`](../../crates/foehncraft-particles/src/coupling.rs): the slopes of a parcel add up to m (1 - product of the decays)
-- contract (diagnostics): [`spray_two_way`](../../examples/cases/flow/spray_two_way.toml): a water spray of 50 g/s falling through still air drives a downward jet; passes, coupling lag and the force on the gas in spray.csv (passes in CI (set linux-3), not yet in the manual) ([results](../gallery/sprays.md#spray-two-way))
+- contract (diagnostics): [`spray_two_way`](../../examples/cases/flow/spray_two_way.toml): a water spray of 50 g/s falling through still air drives a downward jet; passes, coupling lag and the force on the gas in spray.csv (passes in CI (set linux-2), not yet in the manual) ([results](../gallery/sprays.md#spray-two-way))
 - contract (schema): [`spray_two_way_injectors`](../../examples/cases/flow/spray_two_way_injectors.toml): the included injector file of spray_two_way ([results](../cases/flow.md#lagrangian-sprays)) **missing**
 
 Gaps:
@@ -2057,7 +2057,7 @@ Gaps:
 - exact: [`passes_give_the_same_bits_on_any_number_of_threads`](../../crates/foehncraft-flow/tests/spray_coupling.rs): V28.1 with heat: spray.csv bitwise equal on 1 and 4 threads, for the momentum case and the heat case
 - exact: [`sources_do_not_depend_on_parcel_order_or_threads`](../../crates/foehncraft-particles/tests/coupling.rs): V28.1: the heat sources and the heat closing step bitwise equal with the parcel storage reversed and on one thread; the heat slopes of a parcel at most m c_p; the enthalpy books close to round-off
 - consistency: [`a_closed_box_with_a_spray_closes_every_step_and_the_run`](../../crates/foehncraft-flow/src/balance.rs): accounts of the same quantity and region booked by two modules are one account (the spray heat on the thermal account of the energy equation)
-- contract (diagnostics): [`spray_cooling`](../../examples/cases/flow/spray_cooling.toml): 10 g/s of water at 20 °C sprayed into air at 300 °C in a duct: about 6.6 kW taken from the air, the mean air temperature falls by about 50 K; gas heat and coupling numbers in spray.csv (passes in CI (set linux-3), not yet in the manual) ([results](../gallery/sprays.md#spray-cooling))
+- contract (diagnostics): [`spray_cooling`](../../examples/cases/flow/spray_cooling.toml): 10 g/s of water at 20 °C sprayed into air at 300 °C in a duct: about 6.6 kW taken from the air, the mean air temperature falls by about 50 K; gas heat and coupling numbers in spray.csv (passes in CI (set linux-1), not yet in the manual) ([results](../gallery/sprays.md#spray-cooling))
 - contract (schema): [`spray_cooling_injectors`](../../examples/cases/flow/spray_cooling_injectors.toml): the included injector file of spray_cooling with the liquid temperature ([results](../cases/flow.md#lagrangian-sprays)) **missing**
 
 Gaps:
@@ -2130,7 +2130,7 @@ Gaps:
 - consistency: [`the_evaporating_duct_closes_its_books`](../../crates/foehncraft-flow/tests/spray_evaporation.rs): a transient evaporating duct: ledger pairs 2801 to 2805 zero to the bit, parcel mass, momentum and enthalpy accounts close to 1e-12, the gas mass account to 1e-9, vapour to the gas = liquid lost by the parcels
 - exact: [`evaporation_gives_the_same_bits_on_any_number_of_threads`](../../crates/foehncraft-flow/tests/spray_evaporation.rs): V28.1 with evaporation in a flow run: spray.csv bitwise equal on 1 and 4 threads
 - contract (diagnostics): [`evaporation_needs_a_vapour_species_of_the_case`](../../crates/foehncraft-flow/tests/spray_evaporation.rs): a liquid whose vapour is not a species of the case is refused
-- contract (diagnostics): [`spray_evaporation`](../../examples/cases/flow/spray_evaporation.toml): 2 g/s of water droplets of 10 to 80 um in air at 300 C: about 1.3 g/s evaporate within the duct, the air leaves about 55 K cooler and 2 % wetter; ledger pairs zero to the bit (passes in CI (set linux-3), not yet in the manual) ([results](../gallery/sprays.md#spray-evaporation))
+- contract (diagnostics): [`spray_evaporation`](../../examples/cases/flow/spray_evaporation.toml): 2 g/s of water droplets of 10 to 80 um in air at 300 C: about 1.3 g/s evaporate within the duct, the air leaves about 55 K cooler and 2 % wetter; ledger pairs zero to the bit (passes in CI (set linux-1), not yet in the manual) ([results](../gallery/sprays.md#spray-evaporation))
 - contract (schema): [`spray_evaporation_injectors`](../../examples/cases/flow/spray_evaporation_injectors.toml): the included injector file of spray_evaporation, with the vapour species ([results](../cases/flow.md#lagrangian-sprays)) **missing**
 - consistency: [`spray_saturation_steady`](../../examples/cases/flow/spray_saturation_steady.toml): V28.11 (partly met, see gaps): 2 g/s of water in 17.6 g/s of air at 400 K, steady mode: the air saturates within 5 cm and stays flat to the outlet; outlet 309.3 K and Y = 0.0375 against the exact adiabatic saturation 310.1 K and 0.0395; the source residual falls from 1 to 0.12 (passes in CI (set long), not yet in the manual) ([results](../gallery/sprays.md#spray-saturation))
 - contract (schema): [`spray_saturation_injectors`](../../examples/cases/flow/spray_saturation_injectors.toml): the six nozzles of spray_saturation_steady ([results](../cases/flow.md#lagrangian-sprays)) **missing**
@@ -2336,7 +2336,7 @@ Gaps:
 - exact: [`a_block_in_a_duct_converges_to_the_exact_pressure_drop`](../../crates/foehncraft-flow/tests/porous.rs): a block in a duct on 50, 100 and 200 cells: 0.41 % off on 100 cells, observed order about 2 (above 1.5 required)
 - consistency: [`honeycomb_values_of_the_brick`](../../crates/foehncraft-flow/src/porous.rs): the honeycomb values against the formulas, a turned tensor stays symmetric
 - exact: [`porous_darcy_block`](../../examples/cases/flow/porous_darcy_block.toml): check V1: a porous block in a duct with slip walls, 4.780 Pa against the exact 4.8 Pa on 100 cells (passes in CI (set linux-3), not yet in the manual) ([results](../cases/flow.md#porous-regions))
-- consistency: [`porous_honeycomb_channel`](../../examples/cases/flow/porous_honeycomb_channel.toml): a ceramic honeycomb block in an air channel, channels along the flow; no air leaves the block sideways (passes in CI (set linux-3), not yet in the manual) ([results](../cases/flow.md#porous-regions))
+- consistency: [`porous_honeycomb_channel`](../../examples/cases/flow/porous_honeycomb_channel.toml): a ceramic honeycomb block in an air channel, channels along the flow; no air leaves the block sideways (passes in CI (set linux-1), not yet in the manual) ([results](../cases/flow.md#porous-regions))
 - contract (diagnostics): [`porous_keys_are_checked`](../../crates/foehncraft-flow/tests/porous.rs): POR001 and POR002 for missing, contradicting and unsupported settings
 
 Gaps:
@@ -2359,7 +2359,7 @@ Gaps:
 - consistency: [`a_bed_with_a_large_exchange_is_in_equilibrium`](../../crates/foehncraft-flow/tests/porous_energy.rs): check V5: with h a = 1e5 gas and matrix within 0.1 K, the front at the speed of the mixture within 0.01 m
 - consistency: [`bicgstab_solves_a_small_nonsymmetric_system`](../../crates/foehncraft-flow/src/porous_energy.rs): the host solver of the extended system
 - exact: [`porous_schumann`](../../examples/cases/flow/porous_schumann.toml): check V4: gas and matrix against Schumann (1929) at 1000, 2000 and 3000 s on 100 cells (passes in CI (set linux-3), not yet in the manual) ([results](../cases/flow.md#porous-regions))
-- consistency: [`porous_storage_charge`](../../examples/cases/flow/porous_storage_charge.toml): charging a honeycomb store: the thermocline moves at the speed of the stored heat, heat balance closed to 3e-9 of the largest flow (passes in CI (set linux-3), not yet in the manual) ([results](../cases/flow.md#porous-regions))
+- consistency: [`porous_storage_charge`](../../examples/cases/flow/porous_storage_charge.toml): charging a honeycomb store: the thermocline moves at the speed of the stored heat, heat balance closed to 3e-9 of the largest flow (passes in CI (set linux-1), not yet in the manual) ([results](../cases/flow.md#porous-regions))
 
 Gaps:
 
