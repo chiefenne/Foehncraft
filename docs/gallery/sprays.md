@@ -14,6 +14,7 @@ Part of the [Example gallery](../gallery.md): droplets as Lagrangian parcels in 
 | 306b | [More water than the air can take, steady](#spray-saturation) | SP5, SP2s | evaporation in the steady spray mode, adiabatic saturation against the exact end state (V28.11, partly met) |
 | 318 | [A fuel spray breaks up in dense nitrogen](#spray-breakup) | SP6 | `[spray.breakup]` KH-ACT and KH-RT, blob injection from `hole_diameter`, `area_contraction` and a `rate` table, child parcels, Rayleigh-Taylor beyond the breakup length, TAB distortion and dynamic drag, mirrored eddies |
 | 314 | [A fuel droplet's surface at diesel pressure](#spray-a-surface) | SA1 | `[spray.evaporation] equilibrium = "peng-robinson"`, `[spray.evaporation.peng_robinson]`: Peng-Robinson phase equilibrium of the fuel and the ambient gas at the droplet surface, latent heat from the same equation, the critical mixing state (D311, D312, D314) |
+| 319 | [Liquid length and vapour penetration as the ECN defines them](#spray-ecn) | SA3 | `[spray.ecn]` (D315): liquid length from the projected liquid volume at two thresholds and vapour penetration at 0.1 % fuel, per injector and step in `spray.csv` and `result.json` |
 | 321 | [Fuel droplets with real liquid properties and the 1/3-rule film](#spray-liquid-library) | D320, D321 | `[spray.liquid] library` (water, n-heptane, n-dodecane, iso-octane), `[spray.evaporation] film = "one-third"` (default), single n-heptane droplets against measurements, an n-heptane spray in hot nitrogen |
 | 323 | [ECN Spray G: a gasoline injector against the measurements](#spray-g) | SP6, D309 | `[mesh.generate] wedge` with `dimension = 3` (a sector of the injector), thin slip core on the axis, injector from the measured rate, plume direction and cone, `flow_share`, the ECN liquid and vapour penetration (`tools/plot/spray_g_metrics.py`), library iso-octane, KH-ACT |
 
@@ -711,6 +712,60 @@ breakup model and the n-dodecane vapour species (stages SA2 to SA6 of
 [Recipe 314](../recipes/sprays.md#spray-a-surface),
 [plan](../requirements/step28-spray-a.md).
 
+<a id="spray-ecn"></a>
+## 319. Liquid length and vapour penetration as the ECN defines them
+
+<img src="../figures/gallery/spray_chamber_ecn.png" alt="Three panels. Left: the water vapour mass fraction in a chamber 0.25 m long and 0.16 m high after 200 ms, a narrow jet of droplets drawn as white dots from the nozzle at the left wall to about 0.12 m, a saturated core of 7 percent vapour along it and a mushroom-shaped cloud of vapour around its head; two black lines mark the liquid lengths at 56 and 85 mm and a red dash-dotted line the vapour penetration at 163 mm. Middle: the projected liquid volume along the axis on a log scale, a plateau of 2 to 5 times 10 to the minus 7 metres up to 55 mm falling by three decades by 120 mm, with the two thresholds and the liquid lengths where it crosses them. Right: over 200 ms the two liquid lengths rise with the vapour for the first 40 ms and then stay between 48 and 64 mm and between 83 and 107 mm, while the vapour penetration keeps rising to 163 mm." width="1600" height="480">
+
+The Engine Combustion Network compares spray simulations by two numbers
+its modelling standard defines (ecn.sandia.gov, Modeling Standards): the
+**liquid length**, the farthest axial position where the projected liquid
+volume PLV = ∫ LVF dy, the liquid volume per area seen along a line of
+sight across the spray, falls to a threshold (0.2·10⁻³ and
+2·10⁻³ mm³/mm²), and the **vapour penetration**, the farthest axial
+position where the fuel mass fraction is 0.1 %. `[spray.ecn]` (D315)
+writes both for every injector and step. This is what the Spray A case
+(SA6) will be compared by; here it is shown on water.
+
+`spray_chamber_ecn.toml` sprays 12 mg/s of water at 20 °C and 40 m/s,
+droplets of 4 to 30 µm in a cone of 4°, into a chamber of dry air at
+300 °C at rest (2D, a slab 1 cm deep, standard k-ε). The droplets slow
+down within a few centimetres and drag the air into a jet. They evaporate
+only as fast as the jet brings in hot air: the core of the spray is
+saturated (7 % vapour at about 326 K), the evaporation is limited by
+mixing, the regime in which Siebers explained the liquid length of diesel
+sprays. After about 100 ms the liquid stops: the length at 3·10⁻⁷ m stays
+between 48 and 64 mm, the one at 3·10⁻⁸ m between 83 and 107 mm, with
+3300 to 3800 parcels in the flow, while the vapour goes on to 163 mm at
+200 ms. 97 % of the water injected has evaporated by then.
+
+The image comes from `foehn flow examples/cases/flow/spray_chamber_ecn.toml`
+(1.7 minutes on 4 cores) and `tools/plot/spray_chamber_ecn.py`.
+**Left:** the vapour, the droplets and the three lengths at 200 ms.
+**Middle:** the PLV along the axis, the largest across, recomputed from the
+parcel file with the bins of the case; the lengths the solver wrote sit
+where the profile crosses the thresholds. **Right:** the lengths over
+time from `spray.csv`.
+
+**What is checked.** Exact: parcels with a linearly falling liquid volume
+give the PLV of every bin to 1e-12 and both lengths to 1e-12 m; volume
+along the line of sight adds in one bin, volume across it does not; the
+vapour penetration is the farthest cell at the threshold on a slanted
+axis. The lengths are the same bits for any parcel order (and so any
+thread count). Bad keys are refused with the key named.
+
+**What this version does not do.** The thresholds of this planar slab are
+chosen for it (a factor 10 apart, as the standard's): in 2D the PLV is
+per metre of depth. The values are instantaneous; the standard's
+ensemble or time averages are the user's, from the CSV. A single parcel
+holds about 1·10⁻⁸ m of PLV here, so the lower threshold is three parcels
+in a bin and the length jumps by a bin or two from step to step; with
+too few parcels the length follows the farthest parcel (check the parcel
+volume over `bin`² against the smaller threshold, [recipe
+319](../recipes/sprays.md#spray-ecn)). Not built yet: the ECN5 path-averaged
+liquid volume fraction (0.15 % on 0.5 × 0.5 mm paths), the averaged fields
+on the ECN output grid, and any comparison with measurements (VA.8, stage
+SA6). Not with `[spray.steady]`.
 ---
 
 <a id="spray-liquid-library"></a>

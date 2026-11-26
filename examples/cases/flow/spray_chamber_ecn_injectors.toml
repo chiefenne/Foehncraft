@@ -1,0 +1,18 @@
+# The water nozzle of spray_chamber_ecn.toml (D246).
+
+[liquid]
+name = "water"
+density = 998.0
+specific_heat = 4181.0
+temperature = 293.15
+vapour = "H2O"
+
+[[injector]]
+name = "nozzle"
+position = [0.0005, 0.08, 0.005]
+direction = [1.0, 0.0, 0.0]
+speed = 40.0
+half_angle = 4.0
+mass_flow = 1.2e-5
+size = { distribution = "rosin-rammler", mean = 12e-6, spread = 3.0, min = 4e-6, max = 30e-6 }
+parcels_per_second = 200000.0

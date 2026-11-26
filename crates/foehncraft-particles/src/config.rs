@@ -771,6 +771,50 @@ pub struct SpraySection {
     pub evaporation: Evaporation,
     /// The breakup of the drops and the drag of distorted drops (SP6).
     pub breakup: Breakup,
+    /// The diagnostics of the Engine Combustion Network modelling standard
+    /// (D315): liquid length from the projected liquid volume and vapour
+    /// penetration, per injector in `spray.csv` and `result.json`; off
+    /// without the table.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ecn: Option<Ecn>,
+}
+
+/// `[spray.ecn]`: the liquid length and the vapour penetration as the ECN
+/// modelling standard defines them (ecn.sandia.gov, Modeling Standards,
+/// D315). Liquid length: the farthest axial position where the projected
+/// liquid volume PLV = ∫ LVF dy across the spray (along the line of sight)
+/// falls to a threshold. Vapour penetration: the farthest axial distance
+/// from the nozzle where the fuel mass fraction is `vapour_fraction`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct Ecn {
+    /// PLV thresholds (m, liquid volume per projected area: 2e-7 m is the
+    /// ECN 0.2·10⁻³ mm³/mm²); default `[2e-7, 2e-6]`, the two values of the
+    /// standard. One liquid length per threshold.
+    pub plv: Vec<f64>,
+    /// Size of the square bins of the projection (m), along the axis and
+    /// across it (default 2.5e-4, the smallest cell the standard
+    /// recommends for RANS Lagrangian sprays).
+    pub bin: f64,
+    /// The line of sight (any direction not along the injector axis; its
+    /// part across the axis is used); default: the coordinate axis most
+    /// nearly perpendicular to the injector axis.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub line_of_sight: Option<[f64; 3]>,
+    /// Fuel mass fraction of the vapour penetration (default 1e-3, the
+    /// 0.1 % of the standard); needs evaporation.
+    pub vapour_fraction: f64,
+}
+
+impl Default for Ecn {
+    fn default() -> Self {
+        Self {
+            plv: vec![2e-7, 2e-6],
+            bin: 2.5e-4,
+            line_of_sight: None,
+            vapour_fraction: 1e-3,
+        }
+    }
 }
 
 /// `[spray.steady]`: the steady spray mode (D260, SP2s). A parcel is a
@@ -965,6 +1009,7 @@ impl Default for SpraySection {
             steady: None,
             evaporation: Evaporation::default(),
             breakup: Breakup::default(),
+            ecn: None,
         }
     }
 }
@@ -1203,6 +1248,37 @@ impl SpraySection {
         }
         if !(self.penetration_fraction > 0.0 && self.penetration_fraction <= 1.0) {
             bail!("[spray] penetration_fraction must be in (0, 1]");
+        }
+        if let Some(e) = &self.ecn {
+            if self.steady.is_some() {
+                bail!(
+                    "[spray.ecn] needs the transient spray: the streams of [spray.steady] carry \
+                     rates, not the liquid in the flow"
+                );
+            }
+            if e.plv.iter().any(|&v| !pos(v)) {
+                bail!("[spray.ecn] plv thresholds must be positive (m, 2e-7 = 0.2e-3 mm3/mm2)");
+            }
+            if !pos(e.bin) {
+                bail!("[spray.ecn] bin must be positive (m)");
+            }
+            if !(e.vapour_fraction > 0.0 && e.vapour_fraction < 1.0) {
+                bail!("[spray.ecn] vapour_fraction must be in (0, 1)");
+            }
+            if let Some(l) = e.line_of_sight {
+                for inj in &self.injectors {
+                    let a = inj.direction;
+                    let na = (a[0] * a[0] + a[1] * a[1] + a[2] * a[2]).sqrt();
+                    let nl = (l[0] * l[0] + l[1] * l[1] + l[2] * l[2]).sqrt();
+                    let c = (a[0] * l[0] + a[1] * l[1] + a[2] * l[2]) / (na * nl);
+                    if !(nl > 0.0 && c.abs() < 0.99) {
+                        bail!(
+                            "[spray.ecn] line_of_sight must not lie along the axis of injector `{}`",
+                            inj.name
+                        );
+                    }
+                }
+            }
         }
         let c = &self.coupling;
         if let Passes::Fixed(0) = c.passes {

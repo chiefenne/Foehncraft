@@ -1489,6 +1489,21 @@
    "range": {}
   },
   {
+   "id": "sprays.ecn-diagnostics",
+   "title": "ECN liquid length (projected liquid volume) and vapour penetration (Spray A, SA3, D315)",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "the PLV definition of the modelling standard only: the ECN5 path-averaged liquid volume fraction (0.15 % on 0.5 x 0.5 mm paths) and the time- and Favre-averaged fields on the ECN output grid are not built",
+    "instantaneous values per step: an average over the quasi-steady period is the user's (the CSV has every step)",
+    "no Spray A comparison yet (VA.8, stage SA6)",
+    "`spray_chamber_ecn_injectors` has no run in the verification manual or in CI"
+   ],
+   "range": {}
+  },
+  {
    "id": "porous.darcy-forchheimer",
    "title": "Porous regions with a direction-dependent Darcy-Forchheimer resistance (D270, PM1)",
    "grade": "partial",
