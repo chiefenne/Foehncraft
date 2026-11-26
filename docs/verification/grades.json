@@ -1869,6 +1869,24 @@
     "no check against a measured thermal deformation of a part in a flow"
    ],
    "range": {}
+  },
+  {
+   "id": "circuits.water-steam",
+   "title": "One-dimensional water and steam tube circuits of a boiler: two-phase pressure drop, flow boiling, CHF margin and natural circulation (steam furnace SF7b)",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "no comparison with measured void or wall temperatures yet (Bartolomei et al. 1982 not reachable from the build environment); the boiling correlations are checked against each other only",
+    "the CHF look-up table of Groeneveld et al. (2007) is not shipped (the paper was not reachable): chf = \"table\" reads it from a CSV file the user supplies, Bowring (1972) is the built-in default",
+    "post-dryout heat transfer is the vapour convection of Dougall-Rohsenow (1963) with no thermal non-equilibrium; no film boiling or rewetting",
+    "supercritical water takes Gnielinski with bulk properties: no correction for the pseudo-critical region",
+    "steady only: no density-wave or Ledinegg instability check, no transients (SF18)",
+    "the drift velocity is scaled by the sine of the tube angle; horizontal tubes have no stratified-flow void model",
+    "not yet coupled to the 3D furnace walls (SF7c)"
+   ],
+   "range": {}
   }
  ]
 }
