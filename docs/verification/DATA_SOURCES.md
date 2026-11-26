@@ -206,6 +206,52 @@ Published measurements and equations, quoted by
   Ind. Eng. Chem. Fundam. 15, 59-64, doi:10.1021/i160057a011), recomputed
   to 19 digits by us; a test checks the triple root.
 
+## 3f. Liquid property library and single droplets (D320, D321)
+
+Only our fitted coefficients are in the repository
+(`crates/foehncraft-kernels/src/liquids.rs`, `crates/foehncraft-flow/data/species-vapours.toml`);
+the tables they are fitted to are not stored. Generators:
+`tools/data/liquid_properties.py`, `tools/data/isooctane_table.py`,
+`tools/data/vapour_species.py`.
+
+- Water, n-heptane, n-dodecane: saturation tables of the NIST Chemistry
+  WebBook, SRD 69, "Thermophysical Properties of Fluid Systems" (Lemmon,
+  E. W., McLinden, M. O., Friend, D. G.), https://webbook.nist.gov/chemistry/fluid/,
+  1 K steps from the triple point region to T_c (URLs printed by
+  `liquid_properties.py --urls`). The tests quote single table points.
+- Iso-octane (not in the NIST fluid system): vapour pressure, Wagner 3-6
+  form of McGarry, J. (1983), Ind. Eng. Chem. Process Des. Dev. 22, 313
+  (T_c 543.96 K, p_c 2.56155 MPa), checked against the Antoine law of
+  Willingham, C. B., Taylor, W. J., Pignocco, J. M., Rossini, F. D. (1945),
+  J. Res. NBS 35, 219 (297.5 to 373.3 K); density, specific heat, latent
+  heat and viscosity: the DIPPR correlations printed in Perry's Chemical
+  Engineers' Handbook, 8th ed. (2008), tables 2-32, 2-153, 2-150 and 2-313
+  (published coefficients, transcribed through the `chemicals` Python
+  package data files and **to verify** against the printed tables); latent
+  heat checked against the calorimetric values of Majer, V., Svoboda, V.
+  et al. (1979, 1982, 1985) quoted on the NIST WebBook (±0.1 kJ/mol);
+  surface tension: Mulero, A., Cachadiña, I., Parra, M. I. (2012), J. Phys.
+  Chem. Ref. Data 41, 043105 (σ0 = 0.04794 N/m, n0 = 1.209, 273 to 373 K);
+  normal boiling point 372.4 K (NIST WebBook).
+- Vapour species NC7H16 and IC8H18: ideal-gas heat capacities of the NIST
+  WebBook gas-phase data (n-heptane and 2,2,4-trimethylpentane pages) and
+  their enthalpies of formation (−187.8 and −224.1 kJ/mol); Lennard-Jones
+  parameters from the critical point and acentric factor by Tee, L. S.,
+  Gotoh, S., Stewart, W. E. (1966), Ind. Eng. Chem. Fundam. 5, 356-363.
+- Single droplets: Chauveau, C., Birouk, M., Halter, F., Gökalp, I. (2019),
+  Int. J. Heat Mass Transfer (title, volume and pages **to verify**; the
+  rates are those of its eq. (4) as read in this work) (microgravity
+  K0 = 3.6552e-4 T − 0.1078 mm²/s, 473 to 748 K, n-heptane in N2 at
+  0.1 MPa, 14 µm cross fibres, d0 about 0.37 mm); Chauveau, C., Halter, F.,
+  Lalonde, A., Gökalp, I. (2008), ILASS-Europe, Como (fibre-free
+  extrapolation K0 = 4.485e-4 T − 0.1369 mm²/s). Measurements, D201
+  accepted class. The model results of Both, A., Mira, D., Lehmkuhl, O.
+  (2022), Int. J. Heat Mass Transfer, arXiv:2201.02818, are quoted only as
+  context for the gap, not as targets (D201).
+- Film reference state: Hubbard, G. L., Denny, V. E., Mills, A. F. (1975),
+  Int. J. Heat Mass Transfer 18, 1003-1008; Yuen, M. C., Chen, L. W. (1976),
+  Combust. Sci. Technol. 14, 147-154.
+
 ## 4. Rules for adding an entry
 
 1. A value goes into the repository only when a test or a validation page

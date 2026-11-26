@@ -63,8 +63,8 @@ pub struct Liquid {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub vapour: Option<String>,
     /// The vapour pressure law: `water` (the auxiliary equation of the
-    /// IAPWS-95 formulation, Wagner and Pruss 1993; the only one in this
-    /// version).
+    /// IAPWS-95 formulation, Wagner and Pruss 1993) or `library` (the
+    /// Wagner-form fit of the `library` liquid, which sets it).
     pub saturation: Saturation,
     /// Latent heat of vaporisation (J/kg) at `latent_heat_temperature`
     /// (default 2.4417e6 J/kg, water at 298.15 K, IAPWS-95 tables). At
@@ -87,6 +87,103 @@ pub struct Liquid {
     /// cavities only burst.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub vapour_pressure: Option<f64>,
+    /// A liquid of the property library (D320): `"water"`, `"n-heptane"`,
+    /// `"n-dodecane"` (fits to the NIST WebBook saturation tables) or
+    /// `"iso-octane"` (fits to published correlations, see
+    /// docs/verification/DATA_SOURCES.md). It
+    /// sets the vapour pressure law, the density and the specific heat (at
+    /// `property_temperature`) and the latent heat (at
+    /// `latent_heat_temperature`); leave `density`, `specific_heat`,
+    /// `latent_heat` and `saturation` out with it. It also gives
+    /// `surface_tension`, `viscosity` (at `property_temperature`) and
+    /// `vapour_pressure` (at `temperature`) of the breakup unless they are
+    /// set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub library: Option<String>,
+    /// The temperature (K) of the constant density and specific heat of a
+    /// library liquid (default: `temperature`, the injected liquid's).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub property_temperature: Option<f64>,
+}
+
+impl Liquid {
+    /// The library data of the liquid, if it names one.
+    pub fn data(&self) -> Option<&'static foehncraft_kernels::liquids::LiquidData> {
+        self.library
+            .as_deref()
+            .and_then(foehncraft_kernels::liquids::by_name)
+    }
+
+    /// Takes the properties of a library liquid (D320): the vapour pressure
+    /// law, ρ and c_l at the property temperature and L at
+    /// `latent_heat_temperature`. Refuses a library liquid with its own
+    /// density, specific heat, latent heat or vapour pressure law.
+    pub fn apply_library(&mut self) -> Result<()> {
+        let Some(name) = self.library.clone() else {
+            if self.property_temperature.is_some() {
+                bail!("[spray.liquid] property_temperature needs a library liquid (`library`)");
+            }
+            return Ok(());
+        };
+        let Some(d) = foehncraft_kernels::liquids::by_name(&name) else {
+            let names: Vec<&str> = foehncraft_kernels::liquids::ALL
+                .iter()
+                .map(|l| l.name)
+                .collect();
+            bail!(
+                "[spray.liquid] library = \"{name}\" is not a liquid of the library; the liquids are {}",
+                names.join(", ")
+            );
+        };
+        let def = Liquid::default();
+        let tp = self.property_temperature.unwrap_or(self.temperature);
+        if !(tp.is_finite() && tp > 0.0) {
+            bail!("[spray.liquid] property_temperature must be positive and finite (K)");
+        }
+        // a value given in the file must be the default or the library's
+        // own (a second application, a re-read of the case)
+        for (k, v, dv, lib) in [
+            ("density", self.density, def.density, d.density(tp)),
+            (
+                "specific_heat",
+                self.specific_heat,
+                def.specific_heat,
+                d.specific_heat(tp),
+            ),
+            (
+                "latent_heat",
+                self.latent_heat,
+                def.latent_heat,
+                d.latent_heat(self.latent_heat_temperature),
+            ),
+        ] {
+            if v != dv && v != lib {
+                bail!(
+                    "[spray.liquid] {k} is given with library = \"{name}\": a library liquid takes it from the library"
+                );
+            }
+        }
+        self.density = d.density(tp);
+        self.specific_heat = d.specific_heat(tp);
+        self.latent_heat = d.latent_heat(self.latent_heat_temperature);
+        // the constants of the breakup (D300, D307) unless the file gives
+        // them: σ and μ at the property temperature, the vapour pressure at
+        // the injected liquid's temperature
+        self.surface_tension.get_or_insert(d.surface_tension(tp));
+        self.viscosity.get_or_insert(d.viscosity(tp));
+        self.vapour_pressure
+            .get_or_insert(d.saturation_pressure(self.temperature));
+        // water keeps the IAPWS-95 auxiliary equation as its vapour pressure
+        self.saturation = if name == "water" {
+            Saturation::Water
+        } else {
+            Saturation::Library
+        };
+        if self.name == def.name && name != "water" {
+            self.name = name;
+        }
+        Ok(())
+    }
 }
 
 /// The vapour pressure law of a liquid.
@@ -96,6 +193,9 @@ pub enum Saturation {
     /// Water: Wagner and Pruss (1993), eq. 2.5 of Wagner and Pruss (2002).
     #[default]
     Water,
+    /// The Wagner-form fit of the library liquid (`library`, D320); set by
+    /// `library`, not written by hand.
+    Library,
 }
 
 impl Default for Liquid {
@@ -112,6 +212,8 @@ impl Default for Liquid {
             surface_tension: None,
             viscosity: None,
             vapour_pressure: None,
+            library: None,
+            property_temperature: None,
         }
     }
 }
@@ -198,12 +300,32 @@ impl Default for PengRobinson {
     }
 }
 
+/// The reference state of the gas film around a droplet at which the
+/// evaporation takes its gas properties (D321).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum Film {
+    /// The 1/3 rule (Hubbard, Denny and Mills 1975; Yuen and Chen 1976):
+    /// T_m = T_p + (T_g − T_p)/3, Y_m = Y_s + (Y_g − Y_s)/3, with the
+    /// mixture properties of the vapour and the carrier gas from the
+    /// species data (kinetic theory) at that state (default).
+    #[default]
+    OneThird,
+    /// The properties of the gas at the droplet as the flow has them (the
+    /// SP5 behaviour; the vapour c_p at the mean temperature).
+    FarField,
+}
+
 /// `[spray.evaporation]` (SP5, D251).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct Evaporation {
     /// `none` (default), `ranz-marshall` or `abramzon-sirignano`.
     pub model: EvaporationModel,
+    /// The film state of the gas properties: `one-third` (default, the
+    /// 1/3 rule with kinetic-theory mixture properties) or `far-field`
+    /// (D321).
+    pub film: Film,
     /// A sub-step ends when d² would fall by more than this fraction of its
     /// value at the start (default 0.1, D251).
     pub max_mass_change: f64,
@@ -224,6 +346,7 @@ impl Default for Evaporation {
     fn default() -> Self {
         Self {
             model: EvaporationModel::None,
+            film: Film::OneThird,
             max_mass_change: 0.1,
             max_temperature_change: 2.0,
             min_diameter: 1e-6,
@@ -883,6 +1006,7 @@ impl SpraySection {
             }
             self.injectors.extend(f.injectors);
         }
+        self.liquid.apply_library()?;
         self.validate()
     }
 
@@ -965,6 +1089,9 @@ impl SpraySection {
             bail!(
                 "[spray] dispersion = \"random-walk\" is not available in this version; use \"eddy-lifetime\""
             );
+        }
+        if matches!(self.liquid.saturation, Saturation::Library) && self.liquid.data().is_none() {
+            bail!("[spray.liquid] saturation = \"library\" needs a library liquid (`library`)");
         }
         if !pos(self.liquid.density) {
             bail!("[spray.liquid] density must be positive and finite");
@@ -1216,5 +1343,67 @@ impl SpraySection {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod library_tests {
+    use super::*;
+
+    #[test]
+    fn a_library_liquid_takes_its_properties_and_checks_its_keys() {
+        let mut l = Liquid {
+            library: Some("n-heptane".into()),
+            temperature: 300.0,
+            vapour: Some("NC7H16".into()),
+            ..Liquid::default()
+        };
+        l.apply_library().unwrap();
+        let d = &foehncraft_kernels::liquids::N_HEPTANE;
+        assert_eq!(l.density, d.density(300.0));
+        assert_eq!(l.saturation, Saturation::Library);
+        assert_eq!(l.name, "n-heptane");
+        assert_eq!(l.surface_tension, Some(d.surface_tension(300.0)));
+        assert_eq!(l.viscosity, Some(d.viscosity(300.0)));
+        assert_eq!(l.vapour_pressure, Some(d.saturation_pressure(300.0)));
+        // applying twice (a re-read of the case) keeps the values
+        let once = l.clone();
+        l.apply_library().unwrap();
+        assert_eq!(l, once);
+        // water keeps its IAPWS-95 vapour pressure
+        let mut w = Liquid {
+            library: Some("water".into()),
+            ..Liquid::default()
+        };
+        w.apply_library().unwrap();
+        assert_eq!(w.saturation, Saturation::Water);
+        w.apply_library().unwrap();
+        // refused: an unknown liquid (the names are listed), a value given
+        // beside the library, a property temperature without a library
+        let e = Liquid {
+            library: Some("benzene".into()),
+            ..Liquid::default()
+        }
+        .apply_library()
+        .unwrap_err()
+        .to_string();
+        assert!(e.contains("iso-octane") && e.contains("n-dodecane"), "{e}");
+        let e = Liquid {
+            library: Some("n-heptane".into()),
+            density: 700.0,
+            ..Liquid::default()
+        }
+        .apply_library()
+        .unwrap_err()
+        .to_string();
+        assert!(e.contains("density"), "{e}");
+        assert!(
+            Liquid {
+                property_temperature: Some(320.0),
+                ..Liquid::default()
+            }
+            .apply_library()
+            .is_err()
+        );
     }
 }
