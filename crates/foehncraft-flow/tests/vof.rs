@@ -259,7 +259,7 @@ fn zalesak_disk_level_set_benchmark() {
 
 /// Martin & Moyce (1952), Phil. Trans. R. Soc. A 244, 312-324, part IV,
 /// table 2 (n² = 2, a = 2¼ in): the surge front Z = z/a at T = n t √(g/a)
-/// (docs/verification/DATA_SOURCES.md section 3f).
+/// (docs/verification/DATA_SOURCES.md section 3h).
 const MARTIN_MOYCE: [(f64, f64); 12] = [
     (1.19, 1.44),
     (1.56, 1.89),

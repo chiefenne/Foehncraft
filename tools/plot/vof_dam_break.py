@@ -28,7 +28,7 @@ from tools.plot.turbulence_fields import read
 # collapse of liquid columns on a rigid horizontal plane, Phil. Trans. R.
 # Soc. A 244, 312-324, table 2 (n² = 2, a = 2¼ in): the surge front Z = z/a
 # at T = n t sqrt(g/a). Read from the JSTOR text of the table (to verify
-# against the scan, docs/verification/DATA_SOURCES.md section 3f).
+# against the scan, docs/verification/DATA_SOURCES.md section 3h).
 MEASURED_T = [1.19, 1.56, 1.87, 2.26, 2.57, 2.88, 3.25, 3.59, 3.89, 4.20, 4.54, 4.85]
 MEASURED_Z = [1.44, 1.89, 2.33, 2.78, 3.22, 3.67, 4.11, 4.56, 5.00, 5.44, 5.89, 6.33]
 
