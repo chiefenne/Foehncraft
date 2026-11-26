@@ -469,6 +469,10 @@ pub const CSV_UNITS: &str = "step -; time s; parcels -; injected_kg kg; in_flow_
      <name>.penetration_m m (distance from the injector, along its axis or straight as [spray] \
      penetration says, within which the share [spray] penetration_fraction of the injector's \
      liquid in the flow lies), <name>.farthest_m m (the farthest parcel, outlier-sensitive); \
+     with [spray.ecn] (D315) <name>.liquid_length_<k>_m m (the farthest axial position where \
+     the projected liquid volume across the spray falls to the k-th threshold of [spray.ecn] \
+     plv) and, evaporating, <name>.vapour_penetration_m m (the farthest axial distance of a cell \
+     centre with the fuel mass fraction at or above [spray.ecn] vapour_fraction); \
      two-way coupling (SP2): passes - (parcel passes of the step), coupling_lag - (largest change \
      of the gas velocity of a spray cell against the frozen state of the last pass, over the \
      larger of the largest slip velocity and the largest change of the gas velocity of a spray \
@@ -499,6 +503,14 @@ pub fn csv_head(sp: &foehncraft_particles::Spray) -> String {
         h.push_str(&format!(
             ",{n}.parcels,{n}.in_flow_kg,{n}.penetration_m,{n}.farthest_m"
         ));
+        if let Some(e) = &sp.config().ecn {
+            for k in 1..=e.plv.len() {
+                h.push_str(&format!(",{n}.liquid_length_{k}_m"));
+            }
+            if sp.evaporates() {
+                h.push_str(&format!(",{n}.vapour_penetration_m"));
+            }
+        }
     }
     if sp.config().coupling.two_way() {
         h.push_str(
@@ -688,6 +700,14 @@ pub fn csv_row(
             ",{},{:e},{:e},{:e}",
             i.parcels, i.mass, i.penetration, i.farthest
         ));
+        if sp.config().ecn.is_some() {
+            for l in &i.liquid_length {
+                extra.push_str(&format!(",{l:e}"));
+            }
+            if sp.evaporates() {
+                extra.push_str(&format!(",{:e}", i.vapour_penetration.unwrap_or(0.0)));
+            }
+        }
     }
     if let Some(c) = c {
         extra.push_str(&format!(
@@ -776,6 +796,9 @@ pub fn step(
         vapour,
     };
     sp.advance(&env, &gas, t_end - h, h)?;
+    if let Some(v) = vapour {
+        sp.set_vapour_penetration(&v.y, &geo.cell_centroid);
+    }
     csv.row(&csv_row(n, sp, &mesh.cell_zone, None));
     let every = case.spray.write_every;
     let mut file = None;
@@ -805,6 +828,13 @@ pub fn step_coupled(
     let env = foehncraft_particles::Env { mesh, geo, loc };
     let lost0 = sp.tally.lost_parcels;
     let c = close(sp, &env, fl, done)?;
+    if sp.config().ecn.is_some()
+        && let Some(link) = VapourLink::of(case)
+        && let Some(sc) = fl.scalars.as_ref()
+        && let Some(y) = sc.field_values(fl.dev.as_mut(), &link.field)?
+    {
+        sp.set_vapour_penetration(&y, &geo.cell_centroid);
+    }
     csv.row(&csv_row(n, sp, &mesh.cell_zone, Some(&c)));
     let every = case.spray.write_every;
     let mut file = None;

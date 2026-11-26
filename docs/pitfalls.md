@@ -26,6 +26,7 @@ instead.
 - [Deforming meshes: the grid flux and the old levels](#deforming-mesh)
 - [High-pressure phase equilibrium](#high-pressure-equilibrium)
 - [Property solves and new kernels on ranks](#property-solves)
+- [Spray diagnostics and small test sprays](#spray-diagnostics)
 - [Cut cells: check what the solver takes, cell by cell](#cut-cells)
 - [Sprays on a sector of an injector](#spray-sectors)
 - [Long-lived branches and the one test program per crate](#stale-branches)
@@ -610,6 +611,30 @@ Found with the IAPWS-IF97 states of SF7a (#277):
   W5 had checked only constant properties. The c_p path is fixed; the
   variable density is refused on ranks until it is ported.
 
+<a id="spray-diagnostics"></a>
+## Spray diagnostics and small test sprays
+
+Found with the ECN diagnostics of SA3 (#319):
+- **A PLV threshold below one parcel measures the farthest parcel.** The
+  projected liquid volume of a bin is the parcels' volume over the bin
+  area; when one parcel alone exceeds the threshold, the "liquid length"
+  is the tip of the spray. Check the volume of one parcel over `bin`²
+  against the smaller threshold (aim for several parcels per bin) before
+  reading a length; raise `parcels_per_second` or the bin, or choose the
+  thresholds for the case.
+- **A planar test spray in still air saturates its own core.** 0.5 g/s of
+  water in a 2D slab 1 cm deep needs more hot air than the jet entrains:
+  the core sat at 326 K and 9 % vapour, the droplets stopped evaporating
+  and the liquid length grew with the tip. Estimate the air the
+  evaporation needs (water mass flow per depth times the air-to-water
+  ratio at saturation) against the entrainment of the jet before choosing
+  the mass flow; 12 mg/s gave a liquid length that settles.
+- **A text replace on a case file also hits its comments.** Inserting a
+  table before `[spray.evaporation]` with a plain `replace` also changed
+  the comment that quotes `[spray.evaporation]`; match the table header on
+  its own line (`"\n[spray.evaporation]\n"`), after turning `"\r\n"` into
+  `"\n"`: a Windows checkout has CRLF line ends, and a match on `"\n[..]\n"`
+  finds nothing there, so the table is silently not inserted.
 <a id="cut-cells"></a>
 ## Cut cells: check what the solver takes, cell by cell
 

@@ -15,6 +15,7 @@ Part of the [Recipes](../recipes.md): droplets that move with and through the ga
 | 314 | [Evaporate fuel droplets at high ambient pressure](#spray-a-surface) |
 | 321 | [Evaporate a fuel: take a liquid of the library](#spray-liquid-library) |
 | 325 | [Start a spray from measured droplets](#spray-brno) |
+| 319 | [Report the liquid length and the vapour penetration (ECN)](#spray-ecn) |
 
 ---
 
@@ -488,6 +489,44 @@ no latent heat and are counted in the tally (`critical_parcels`,
 `critical_mass`). See the [gallery entry](../gallery/sprays.md#spray-a-surface)
 for what is checked and what is not.
 
+<a id="spray-ecn"></a>
+## 319. Report the liquid length and the vapour penetration (ECN)
+
+**Add `[spray.ecn]`.** The Engine Combustion Network compares spray
+simulations by two numbers defined in its modelling standard
+(ecn.sandia.gov, Modeling Standards): the liquid length, the farthest
+axial position where the projected liquid volume PLV = ∫ LVF dy across the
+spray falls to a threshold, and the vapour penetration, the farthest axial
+position where the fuel mass fraction is 0.1 %. With the table, both are
+written for every injector and step:
+
+```toml
+[spray.ecn]
+# plv = [2e-7, 2e-6]          # m: 0.2e-3 and 2e-3 mm³/mm², one liquid length each
+# bin = 2.5e-4                # m: square bins along the axis and across
+# line_of_sight = [0, 0, 1]   # default: the coordinate axis most nearly across the injector
+# vapour_fraction = 1e-3      # fuel mass fraction of the vapour penetration
+```
+
+`spray.csv` gets `<injector>.liquid_length_<k>_m` (k counts the `plv`
+thresholds from 1) and, with `[spray.evaporation]`,
+`<injector>.vapour_penetration_m`; `result.json` lists the same per
+injector (`liquid_length`, `vapour_penetration`). The PLV of a bin is the
+liquid volume of the injector's parcels in the bin, summed along the line
+of sight, over the bin area; the profile along the axis takes the largest
+bin across, and the length is interpolated between bin centres. The sums
+run in the order of the parcel identities, so the lengths are the same
+bits on any number of threads.
+
+The defaults are those of the standard for a round jet such as Spray A.
+For a planar (2D) case the PLV is per metre of depth and the thresholds
+are yours to choose. With few parcels a single parcel can exceed a
+threshold on its own and the length jumps with the farthest parcels: the
+standard assumes enough parcels that a bin holds many (check that one
+parcel's volume over `bin`² is well below the smaller threshold). A
+background of the fuel vapour in the gas counts for the vapour penetration
+(the fraction is absolute). Not with `[spray.steady]`. See the
+[gallery entry](../gallery/sprays.md#spray-ecn).
 <a id="spray-liquid-library"></a>
 ## 321. Evaporate a fuel: take a liquid of the library
 
