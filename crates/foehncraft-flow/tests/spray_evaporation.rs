@@ -156,12 +156,14 @@ fn evaporation_needs_a_vapour_species_of_the_case() {
 #[test]
 fn the_ecn_diagnostics_are_written_per_step() {
     // [spray.ecn] (D315) on the duct: the 2D duct is seen along z; the
-    // vapour threshold lies above the 0.005 of the incoming air
-    let text = duct(0.04).replace(
+    // vapour threshold lies above the 0.005 of the incoming air (a Windows
+    // checkout has CRLF line ends: normalise before matching a line)
+    let text = duct(0.04).replace("\r\n", "\n").replace(
         "\n[spray.evaporation]\n",
         "\n[spray.ecn]\nplv = [1e-8, 1e-7]\nbin = 5e-3\nline_of_sight = [0.0, 0.0, 1.0]\n\
          vapour_fraction = 0.0052\n\n[spray.evaporation]\n",
     );
+    assert!(text.contains("[spray.ecn]"), "the table was not inserted");
     let b = go("ecn", &text);
     let mut lines = b.csv.lines();
     let head: Vec<&str> = lines.next().unwrap().split(',').collect();

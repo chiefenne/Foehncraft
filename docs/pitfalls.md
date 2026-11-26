@@ -629,5 +629,7 @@ Found with the ECN diagnostics of SA3 (#319):
 - **A text replace on a case file also hits its comments.** Inserting a
   table before `[spray.evaporation]` with a plain `replace` also changed
   the comment that quotes `[spray.evaporation]`; match the table header on
-  its own line (`"\n[spray.evaporation]\n"`).
+  its own line (`"\n[spray.evaporation]\n"`), after turning `"\r\n"` into
+  `"\n"`: a Windows checkout has CRLF line ends, and a match on `"\n[..]\n"`
+  finds nothing there, so the table is silently not inserted.
 
