@@ -126,7 +126,12 @@ impl SurfaceTable {
             if t > t_hi {
                 break;
             }
-            match rf::surface(mix, t, p0, r, start.as_ref()) {
+            let mut state = rf::surface(mix, t, p0, r, start.as_ref());
+            if matches!(state, SurfaceState::NotConverged) && start.is_some() {
+                // once more from Wilson's K before taking it for the end
+                state = rf::surface(mix, t, p0, r, None);
+            }
+            match state {
                 SurfaceState::TwoPhase(s) => {
                     tab.push(mix, &s, t, p0);
                     start = Some(s.ln_k);
