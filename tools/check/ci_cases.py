@@ -5,11 +5,14 @@ its own results and exits non-zero on failure).
     python -m tools.check.ci_cases --check       every flow case file is in exactly one Linux set
     python -m tools.check.ci_cases --list SET    print the commands and case files of the set
 
-Sets (times are the Linux CI runner, main run of 2026-11-15):
-  linux-1  mesh, scalar, poisson, the 3D cavities           about 2.2 min
-  linux-2  cylinder Re 20, cavity Re 1000, Poiseuille       about 2.7 min
+Sets (times are the Linux CI runner, PR run of 2026-11-26; the sets are
+balanced on these times, keep them within a minute of each other):
+  linux-1  mesh, scalar, poisson, the 3D cavities, porous
+           storage, sprays                                  about 8 min
+  linux-2  cylinder Re 20, cavity Re 1000, Poiseuille,
+           ranks, immersed walls                            about 8 min
   linux-3  Taylor-Green, transient cavity, the rest, and the
-           chemistry reactors                               about 2.2 min
+           chemistry reactors                               about 8 min
   long     cylinder Re 100 (long and short channels, statistics) and the
            cylinder Re 20 on three meshes                   main, nightly and full-ci only
   quick    macOS and Windows: mesh, scalar, poisson and the quick flows
@@ -37,6 +40,9 @@ FLOW = {
         "channel_eb", "channel_rotating_sst", "square_duct_qcr", "pipe_turbulent_sst",
         "tjunction_mixing", "diffuser_sst", "diffuser_channel_profile",
         "ubend_sst", "ubend_channel_profile",
+        # moved from linux-3 to balance the sets (2026-11-26)
+        "porous_storage_charge", "spray_evaporation", "porous_honeycomb_channel",
+        "backstep_validation", "spray_cooling", "cht_heated_wall_periodic_accelerated",
     ],
     "linux-2": [
         "cylinder_re20", "cavity_re1000", "taylor_green_cfl10", "poiseuille_tet",
@@ -49,6 +55,8 @@ FLOW = {
         "immersed_cylinder_re20", "immersed_topology_bend", "immersed_mms",
         "immersed_cut_cylinder_re20",
         "ranks_water_if97_channel",
+        # moved from linux-3 to balance the sets (2026-11-26)
+        "channel_heated_periodic", "spray_two_way",
     ],
     "linux-3": [
         "species_binary_diffusion", "species_coaxial_jet", "flame_methane_air_jl4",
@@ -56,29 +64,26 @@ FLOW = {
         "taylor_green_cn", "poiseuille_mixed", "cavity_re100_transient", "taylor_green_space",
         "cavity_re100_poly3d", "cavity_re100_tet3d", "pipe_wedge", "poiseuille_expression",
         "taylor_green_expression", "channel_ramp", "scalar_front_bdf2", "scalar_oblique_step_mlp",
-        "poiseuille_periodic", "channel_heated_periodic", "pipe_heated_periodic",
-        "pipe_rough_keps", "backstep_zeta_f0_coupled", "backstep_validation",
-        "pipe_heated_keps", "plate_heated_keps", "jet_pipe_profile", "taylor_couette_mrf",
+        "poiseuille_periodic", "pipe_heated_periodic",
+        "pipe_rough_keps", "backstep_zeta_f0_coupled",         "pipe_heated_keps", "plate_heated_keps", "jet_pipe_profile", "taylor_couette_mrf",
         "taylor_couette_sliding", "taylor_couette_imprint", "couette_two_rotors",
         "axial_stage_uniform", "pot_solid_body", "pot_solid_body_viscous",
         "naca0012_su2_re1000", "backstep_outlet_backflow", "taylor_couette_su2_zones",
         "cavity_heated", "conduction_mms", "couette_viscous_heating", "cht_composite_wall",
         "cht_heated_wall", "cht_turbulent_channel", "cht_contact_transient",
         "cht_heated_wall_transient", "cht_orthotropic_patch", "cht_circuit_board",
-        "cht_heated_wall_accelerated", "cht_heated_wall_periodic_accelerated",
-        "cht_pulsating_channel_cycle", "cht_counterflow_two_fluids", "cht_two_fluids_absolute",
+        "cht_heated_wall_accelerated",         "cht_pulsating_channel_cycle", "cht_counterflow_two_fluids", "cht_two_fluids_absolute",
         "cht_two_fluids_start",
         "cavity_sst_operator_check",
         "buoyancy_box_at_rest", "buoyancy_slot", "buoyancy_channel_reduced",
         "buoyancy_channel_static", "buoyancy_open_box", "buoyancy_enclosure_plume",
         "vd_heated_duct", "vd_closed_box_heating", "vd_closed_box_side_heated", "vd_mms_steady",
         "mixed_convection_channel",
-        "spray_duct", "spray_datums", "spray_two_way", "spray_cooling", "spray_dispersion",
-        "spray_cooling_steady", "spray_evaporation", "spray_heptane_evaporation",
+        "spray_duct", "spray_datums", "spray_dispersion",
+        "spray_cooling_steady", "spray_heptane_evaporation",
         # two fluids (L3, MP1)
         "vof_static_drop",
-        "porous_darcy_block", "porous_honeycomb_channel", "porous_schumann", "porous_storage_charge",
-        "motion_free_stream", "motion_piston_adiabatic", "motion_channel_ranks",
+        "porous_darcy_block", "porous_schumann",         "motion_free_stream", "motion_piston_adiabatic", "motion_channel_ranks",
         "steam_heated_duct", "steam_superheater_channel",
     ],
     "long": [

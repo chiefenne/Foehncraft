@@ -84,13 +84,32 @@ only 5 macOS jobs at once per account):
 
 The check "CI OK" sums up all jobs.
 
-The integration tests of `foehncraft-flow` and `foehncraft-mesh` are one
-test program per crate (`tests/main.rs`, one `mod` line per file), not one
-program per file: each program compiled and linked the solver's generic
-code again, and the test build was the longest step of CI. Run one file
-with a module filter, for example
-`cargo test --release -p foehncraft-flow --test flow energy::`; a new test
-file needs its `mod` line (`python3 -m tools.check.test_modules` checks it).
+The test job runs the tests with [cargo-nextest](https://nexte.st), in two
+halves per platform side by side (`--partition count:1/2` and `2/2`): the
+tests of all test programs share one pool (cargo test runs the programs one
+after another), each in a process of its own. Both halves compile the same
+build; the tests take about 30 CPU minutes. The job without HDF5 and METIS
+runs its three crates in one nextest pool too. Locally
+`cargo test --workspace --profile ci` runs the same tests;
+`cargo nextest run --workspace --cargo-profile ci` runs them as CI does.
+The three Linux case sets are balanced on their run times (about 8 minutes
+each, `tools/check/ci_cases.py`).
+
+The MPI job builds all its example programs in one `cargo build` with the
+`ci` profile, so that the crates are compiled once with one feature set.
+
+The integration tests of `foehncraft-mesh` are one test program
+(`tests/main.rs`, one `mod` line per file), those of `foehncraft-flow` two
+(`flow` in `tests/main.rs` and `flow2` in `tests/main2.rs`, each file in one
+of them), not one program per file: each program compiled and linked the
+solver's generic code again, and the test build was the longest step of
+CI. Flow has two halves because the compiler front end works on one crate
+with one thread: the single program compiled for nine minutes, the two
+halves compile side by side. Run one file with a module filter, for example
+`cargo test --release -p foehncraft-flow --test flow energy::` (or
+`--test flow2` for a file listed in `tests/main2.rs`); a new test file needs
+its `mod` line, in the shorter of the two flow lists
+(`python3 -m tools.check.test_modules` checks it).
 The G1 smoke run uses the `foehn` binary that the tests already built.
 
 The verification status page and its chart
