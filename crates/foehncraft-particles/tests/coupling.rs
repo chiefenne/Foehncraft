@@ -252,3 +252,74 @@ fn a_parcel_on_a_face_pushed_from_both_sides_is_not_lost() {
     assert!(sp.parcels.len() > 100, "{}", sp.parcels.len());
     assert_eq!(sp.tally.lost_parcels, 0);
 }
+
+/// Still gas with uniform turbulence (k = 0.5 m²/s², ε = 1 m²/s³).
+struct StillTurbulent;
+
+impl Gas for StillTurbulent {
+    fn at(&self, _cell: usize, _x: [f64; 3]) -> GasState {
+        GasState {
+            tke: 0.5,
+            eps: 1.0,
+            ..GasState::isothermal([0.0; 3], 1.2, 1.8e-5)
+        }
+    }
+}
+
+#[test]
+fn the_eddies_do_work_on_the_parcels_they_disperse() {
+    // D330 (KIVA-II Eq. C-4): each record holds u′ · impulse, the work of
+    // the parcel's eddy with the sign of the gas. Drops born nearly at
+    // rest in still turbulent gas relax to the velocity u′ of their first
+    // eddy within τ ≈ 1.2 ms and take m |u′|² from it, 2k m on average
+    // (k = 0.5): over the first step the work of the eddies is about
+    // −2k times the mass injected, a little less for the drops born at
+    // the end of the step; without dispersion it is zero.
+    let mut s = BoxSpec::new(Kind::Hex, 3, [4, 4, 4]);
+    s.lower = [0.0; 3];
+    s.upper = [1.0; 3];
+    let m = s.generate().unwrap();
+    let geo = Geometry::compute(&m);
+    let loc = Locator::new(&m, &geo);
+    let env = Env {
+        mesh: &m,
+        geo: &geo,
+        loc: &loc,
+    };
+    for dispersion in [Dispersion::None, Dispersion::EddyLifetime] {
+        let mut cfg = SpraySection {
+            injectors: vec![Injector {
+                name: "a".into(),
+                position: [0.5, 0.5, 0.5],
+                direction: [1.0, 0.0, 0.0],
+                speed: 0.01,
+                half_angle: 0.0,
+                mass_flow: 1e-3,
+                diameter: 20e-6,
+                size: None,
+                parcels_per_second: 50000.0,
+                start: 0.0,
+                end: None,
+                temperature: None,
+                ..Default::default()
+            }],
+            ..SpraySection::default()
+        };
+        cfg.coupling.mode = CouplingMode::TwoWay;
+        cfg.dispersion = dispersion;
+        let sp = Spray::new(&cfg, &env, sp_rules(&m), [0.0; 3]).unwrap();
+        let dt = 0.01;
+        let a = sp.pass(&env, &StillTurbulent, 0.0, dt).unwrap();
+        let w: f64 = a.sources.turb.iter().sum();
+        if dispersion == Dispersion::None {
+            assert!(a.records().count() > 100 && a.records().all(|r| r.turb == 0.0), "{w}");
+            continue;
+        }
+        let scale = 1e-3 * dt * 2.0 * 0.5;
+        assert!(
+            -w > 0.6 * scale && -w < 1.2 * scale,
+            "work of the eddies {w} J against −2k m = {} J",
+            -scale
+        );
+    }
+}

@@ -33,7 +33,7 @@ pub use config::{
     BoundaryMode, Breakup, BreakupModel, Coupling, CouplingMode, Dispersion, DragLaw, Ecn,
     Equilibrium, Evaporation, EvaporationModel, Film, FilmFluid, Injector, Liquid, Passes,
     PassesName, Penetration, PengRobinson, Sample, Samples, Saturation, SprayBoundary,
-    SpraySection, Steady,
+    SpraySection, Steady, TurbulenceCoupling,
 };
 pub use coupling::{CellSources, Delta, Record, StepBooks, limiter_factor};
 pub use datum::{Bound, Datum, DatumTally, HistSpec, Moments, Shape, Stats, Surface, Volume};

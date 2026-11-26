@@ -1087,6 +1087,25 @@ pub enum CouplingMode {
     TwoWay,
 }
 
+/// What the parcels give back to the turbulence of the gas (D330).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum TurbulenceCoupling {
+    /// Nothing: the turbulence of the gas disperses the parcels (D243), the
+    /// parcels do not act on it.
+    #[default]
+    None,
+    /// The work of the gas eddies on the parcels they disperse is taken
+    /// from k (Amsden, O'Rourke and Butler 1989, KIVA-II, LA-11560-MS,
+    /// Eqs. 7, 8, 46 and C-4): W = −Σ m_p Δv_p·u′_p / (Δt V) per cell, with
+    /// Δv_p the drag change of the parcel's velocity in a sub-step and u′_p
+    /// the fluctuation of its eddy; the dissipation (ε) gets c_s (ε/k) W
+    /// with c_s = 1.5 (the length scale kept, k^{3/2}/ε), and ω of SST the
+    /// same length scale, (c_s − 1)(ω/k) W. Over many parcels W < 0: the
+    /// drops take energy out of the turbulence.
+    DispersionWork,
+}
+
 /// The number of parcel passes in a time step (D252): a number, or
 /// `"converged"` (passes until the coupling lag is below `tolerance`, at
 /// most `max_passes`).
@@ -1133,6 +1152,10 @@ pub struct Coupling {
     /// A sub-step ends when the particle Reynolds number would change by
     /// more than this fraction of max(Re, 1) (D251; default 0.2).
     pub max_reynolds_change: f64,
+    /// What the parcels give back to the turbulence of the gas (D330):
+    /// `none` (default) or `dispersion-work` (needs `mode = "two-way"` and
+    /// `[spray] dispersion = "eddy-lifetime"`).
+    pub turbulence: TurbulenceCoupling,
 }
 
 impl Default for Coupling {
@@ -1143,6 +1166,7 @@ impl Default for Coupling {
             tolerance: 1e-3,
             max_passes: 3,
             max_reynolds_change: 0.2,
+            turbulence: TurbulenceCoupling::None,
         }
     }
 }
@@ -1507,6 +1531,26 @@ impl SpraySection {
         }
         if !pos(c.max_reynolds_change) {
             bail!("[spray.coupling] max_reynolds_change must be positive");
+        }
+        if c.turbulence == TurbulenceCoupling::DispersionWork {
+            if !c.two_way() {
+                bail!(
+                    "[spray.coupling] turbulence = \"dispersion-work\" needs mode = \"two-way\": \
+                     the work goes to the gas only when the gas feels the parcels"
+                );
+            }
+            if self.dispersion != Dispersion::EddyLifetime {
+                bail!(
+                    "[spray.coupling] turbulence = \"dispersion-work\" needs [spray] dispersion = \
+                     \"eddy-lifetime\": the work is that of the eddies the parcels see"
+                );
+            }
+            if self.steady.is_some() {
+                bail!(
+                    "[spray.coupling] turbulence = \"dispersion-work\" is not available in the \
+                     steady spray mode yet ([spray.steady]); run the case in time"
+                );
+            }
         }
         if self.max_substeps == 0 {
             bail!("[spray] max_substeps must be at least 1");

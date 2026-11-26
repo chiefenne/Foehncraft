@@ -876,6 +876,10 @@ pub struct CouplingSummary {
     /// The vapour it held back over the run (kg).
     #[serde(skip_serializing_if = "is_zero")]
     pub limiter_mass: f64,
+    /// Work of the parcels' eddies on the turbulence of the gas over the
+    /// run (J; D330): negative, what the drops took out of k.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub gas_turbulence_work: f64,
 }
 
 fn is_zero(x: &f64) -> bool {
@@ -906,6 +910,7 @@ impl CouplingSummary {
             self.limiter_steps += 1;
             self.limiter_mass += dt * c.limiter_mass;
         }
+        self.gas_turbulence_work += dt * c.gas_turbulence;
     }
 }
 
@@ -1618,6 +1623,35 @@ impl TwoWay<'_> {
     }
 }
 
+/// The sources of k and of the second variable of the turbulence model per
+/// unit mass (m²/s³; m²/s⁴ for ε, 1/s² for ω) from the work of the parcels'
+/// eddies of a pass (D330, KIVA-II Eqs. 7, 8 and C-4): S_k = W / (ρ V Δt);
+/// ε gets c_s (ε/k) S_k with c_s = 1.5, ω of SST the same length scale,
+/// (c_s − 1)(ω/k) S_k. One value per cell, zero off the spray; `None`
+/// without a turbulence model.
+pub(crate) fn turbulence_sources(
+    src: &foehncraft_particles::CellSources,
+    sol: &Solution,
+    vol: &[f64],
+    dt: f64,
+) -> Option<(Vec<f64>, Vec<f64>)> {
+    const C_S: f64 = 1.5;
+    let t = sol.state.turbulence.as_ref()?;
+    let n = t.k.len();
+    let (mut sk, mut sw) = (vec![0.0; n], vec![0.0; n]);
+    for (&c, &w) in src.cells.iter().zip(&src.turb) {
+        let c = c as usize;
+        let s = w / (sol.phys.rho_at(c) * vol[c] * dt);
+        if !s.is_finite() {
+            continue;
+        }
+        let k = t.k[c].max(1e-300);
+        sk[c] = s;
+        sw[c] = if t.epsilon { C_S } else { C_S - 1.0 } * t.omega[c].max(0.0) / k * s;
+    }
+    Some((sk, sw))
+}
+
 fn fl_old<T: Copy>(old: &[(u32, T)], c: u32) -> Option<T> {
     old.binary_search_by_key(&c, |x| x.0).ok().map(|i| old[i].1)
 }
@@ -1694,7 +1728,16 @@ impl crate::transient::OuterHook for TwoWay<'_> {
         add_missing(&mut self.u_old, &cells, &|c| {
             cell_velocity(&sol.state, c as usize)
         });
+        let turb = (self.sp.config().coupling.turbulence
+            == foehncraft_particles::TurbulenceCoupling::DispersionWork)
+            .then(|| {
+                turbulence_sources(&pass.sources, &sol, &self.geo.cell_volume, self.dt)
+            })
+            .flatten();
         drop(sol);
+        if let (Some((sk, sw)), Some(t)) = (turb, fl.turbulence.as_mut()) {
+            t.set_added_sources(fl.dev.as_mut(), &sk, &sw)?;
+        }
         fl.spray_momentum = Some(src);
         // the heat of the pass (SP2b): S = Q − G (T − T*), Q = heat / Δt,
         // G = heat slope / Δt
@@ -1850,6 +1893,10 @@ pub struct StepCoupling {
     pub limiter_cells: u32,
     /// The vapour it held back per second (kg/s).
     pub limiter_mass: f64,
+    /// Work of the parcels' eddies on the turbulence of the gas per second
+    /// (W; D330, with `[spray.coupling] turbulence = "dispersion-work"`,
+    /// else 0): negative, what the drops take out of k.
+    pub gas_turbulence: f64,
 }
 
 /// The scalar field of the vapour of an evaporating spray, if set (SP5).
@@ -1963,6 +2010,9 @@ pub fn close(
     }
     if !src.cells.is_empty() {
         out.coupling_share = above as f64 / src.cells.len() as f64;
+    }
+    if sp.config().coupling.turbulence == foehncraft_particles::TurbulenceCoupling::DispersionWork {
+        out.gas_turbulence = src.turb.iter().exact_sum() / dt;
     }
     if out.vapour {
         out.gas_vapour = vap.iter().exact_sum();
