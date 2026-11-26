@@ -301,10 +301,14 @@ impacts), closed per step to the coupling tolerance.
   *Part 1 built 2026-11-25 (#296, [gallery 296](../gallery/moving-solids.md#deforming-mesh)):
   prescribed displacement, geometry per step on the host, swept volumes,
   volumes per time level, BDF1, BDF2 and Crank–Nicolson with PISO, the
-  piston with adiabatic and cooled walls. Part 2 still to do: restart with
-  points and old volumes, ranks, the GPU, keeping the solver setup
-  between steps (the coupled solver is steady only, so it does not meet a
-  moving mesh).*
+  piston with adiabatic and cooled walls. Part 2 built 2026-11-25 (#307,
+  [gallery 307](../gallery/moving-solids.md#deforming-mesh-ranks)): restart
+  with points, old volumes and the last swept volumes (bitwise
+  continuation), ranks (every rank moves the whole mesh, files byte for
+  byte as one rank), a Colab GPU check. Still to do: keeping the solver
+  setup between steps, a scalable motion of the parts on ranks (with MS1),
+  the restart of the variable density (closed-volume piston) (the coupled
+  solver is steady only, so it does not meet a moving mesh).*
 - **MS1 mesh motion solver**: the displacement of the moving walls
   propagates into the mesh by one of the methods of section 4.2, chosen by
   the benchmark (card 1). Zones: rigid (moves with the body), deforming
