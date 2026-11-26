@@ -398,7 +398,7 @@ const ARRAY_K: f64 = 2.1518;
 
 /// The STL sphere of the array cut out of the mesh (L13 stage 2, D227):
 /// the drag coefficient approaches the series from below at second order
-/// (measured −9.0, −3.6, −2.3 and −0.9 % on 16³, 24³, 32³ and 48³; the
+/// (measured −9.0, −3.6, −1.9 and −0.9 % on 16³, 24³, 32³ and 48³; the
 /// penalised sphere: +6.2, +5.5, +3.9 %), and the wall carries the
 /// driving force G L³ to the error of the cut.
 #[test]

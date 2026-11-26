@@ -168,8 +168,18 @@ fn stl_sphere_cut_matches_the_exact_moments() {
             if n == 16 {
                 assert!(e.volume < 1e-2, "{kind:?}: {e:?}");
                 assert!(e.area < 1e-2, "{kind:?}: {e:?}");
-                // cell by cell: what one cell lacks shows up in no other
-                assert!(e.cells < 5e-2, "{kind:?}: {e:?}");
+                // cell by cell: what one cell lacks shows up in no other.
+                // Merged cells keep faces that do not lie in one plane apart
+                // instead of joining them (owner decision 2026-11-26): no
+                // volume moves between cells, so on hex and tet every cell
+                // misses the volume in the same direction and the sum of
+                // the cell errors is the error of the total (1.7-6.7 times
+                // it with folded joined faces)
+                assert!(e.cells < 1e-2, "{kind:?}: {e:?}");
+                // the case of the test: merged cells with several faces
+                assert!(c.report.shared_pairs > 0, "{kind:?}: {:?}", c.report);
+                let ratio = if kind == Kind::Poly { 1.5 } else { 1.05 };
+                assert!(e.cells < ratio * e.volume, "{kind:?}: {e:?}");
                 if kind != Kind::Poly {
                     // the faces of the poly mesh are not planar: the fan of
                     // a clipped face is not that of the input face

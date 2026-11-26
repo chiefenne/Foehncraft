@@ -645,7 +645,22 @@ Found while adding STL bodies to the cut (L13 stage 2, #322):
   its nodes, folds when its parts are not coplanar and moves volume into
   the neighbour. Compare the volume of every group of input cells a cut
   cell covers with the exact moments (`Surface::cut_moments`), not only
-  the sums.
+  the sums. Avoiding folds in the choice of the merge neighbour left 48 on
+  the 32³ sphere array; keeping the parts apart as separate faces between
+  the same two cells (#PRNUM) made the cell errors equal the total's on
+  hexahedra and tetrahedra. Code that maps a pair of cells to one face
+  (graph edges for partitioning, a face per matrix entry) must allow
+  several.
+- **A mesh check can change the schemes of the whole run.** The separate
+  pieces first cost the 32³ sphere array its force balance (0.94 of the
+  driving force instead of 1.004), and the flux coefficients, the gradient
+  stencil and the interpolation weight were each suspected in turn without
+  effect. The log had it: a small piece nearly parallel to the line between
+  the cell centroids counted as a face of skewness 5.2, and the cell-quality
+  remediation (D50) switched the pressure gradient, the limiter and the face
+  velocity for every cell. Read the MESH001/MESH002 lines of a run before
+  suspecting the discretisation, and measure a cut mesh the way the solver
+  does (the faces of one cell pair as one face).
 - **A better surface point can make a face the solver refuses.** The
   dual-contouring point on a sharp edge, and the face points, made concave
   cut cells whose centroid lies behind a face (d · S ≤ 0): 13 to 861 such

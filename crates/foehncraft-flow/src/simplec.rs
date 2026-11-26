@@ -229,14 +229,53 @@ pub fn face_skewness(d: &Discretisation) -> Vec<f64> {
     let c = &d.cell_centroid;
     let fc = &d.face_centroid;
     let a = &d.face_area;
+    // two cells that share several faces (merged cut cells, L13 D228): the
+    // flux sees one face, the pieces' summed area vector at their area
+    // centroid (`Discretisation::new`); a small piece nearly parallel to
+    // the centroid distance alone would count as badly skewed
+    let same = |f: usize, g: usize| {
+        g < d.periodic
+            && f < d.periodic
+            && d.owner[f] == d.owner[g]
+            && d.neighbour[f] == d.neighbour[g]
+    };
     (0..d.n_interior)
         .map(|f| {
             let p = d.owner[f] as usize;
             let xp = [c.x[p], c.y[p], c.z[p]];
             let xn = d.neighbour_centroid(f);
             let dd = [xn[0] - xp[0], xn[1] - xp[1], xn[2] - xp[2]];
-            let r = [fc.x[f] - xp[0], fc.y[f] - xp[1], fc.z[f] - xp[2]];
-            let s = [a.x[f], a.y[f], a.z[f]];
+            let (mut lo, mut hi) = (f, f + 1);
+            while lo > 0 && same(f, lo - 1) {
+                lo -= 1;
+            }
+            while hi < d.n_interior && same(f, hi) {
+                hi += 1;
+            }
+            let mut s = [0.0; 3];
+            for g in lo..hi {
+                s[0] += a.x[g];
+                s[1] += a.y[g];
+                s[2] += a.z[g];
+            }
+            // the centroid of the pieces projected onto the pair's plane
+            // (`foehncraft_fv::disc::pair_centroid`)
+            let (mut xm, mut w) = ([fc.x[f], fc.y[f], fc.z[f]], 0.0);
+            if hi - lo > 1 {
+                let sn = (s[0] * s[0] + s[1] * s[1] + s[2] * s[2]).sqrt();
+                let mut x = [0.0; 3];
+                for g in lo..hi {
+                    let ag = ((a.x[g] * s[0] + a.y[g] * s[1] + a.z[g] * s[2]) / sn).max(0.0);
+                    x[0] += ag * fc.x[g];
+                    x[1] += ag * fc.y[g];
+                    x[2] += ag * fc.z[g];
+                    w += ag;
+                }
+                if w > 0.0 {
+                    xm = [x[0] / w, x[1] / w, x[2] / w];
+                }
+            }
+            let r = [xm[0] - xp[0], xm[1] - xp[1], xm[2] - xp[2]];
             let t = (r[0] * s[0] + r[1] * s[1] + r[2] * s[2])
                 / (dd[0] * s[0] + dd[1] * s[1] + dd[2] * s[2]);
             let e = [t * dd[0] - r[0], t * dd[1] - r[1], t * dd[2] - r[2]];

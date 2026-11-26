@@ -297,6 +297,7 @@ impl Discretisation {
         let mut k = Soa3::zeros(nf);
         let mut weight = vec![1.0; nf];
         let mut max_nonorth = 0.0f64;
+        let (mut pair_nonorth, mut shared) = (0.0f64, false);
         let mut bc_a = vec![0.0; nb];
         let mut bc_b = vec![0.0; nb];
         for f in 0..nf {
@@ -335,6 +336,74 @@ impl Discretisation {
                     }
                 }
             }
+        }
+
+        // two cells that share several faces (the pieces of a merged cut
+        // cell around a bend, L13 D228): the two-point flux of the pair
+        // uses the summed area vector, |S|²/(d·S) split over the pieces by
+        // area, so that Σ dgeo and Σ k are those of one face with the exact
+        // geometry of the pieces (a small piece nearly parallel to d alone
+        // would get a large implicit part and an explicit correction ten
+        // times its area). Faces of one pair are adjacent in face order
+        // (`MeshBuilder` sorts them by owner and neighbour).
+        let mut f = 0;
+        while f < periodic {
+            let (p, n) = (mesh.owner[f], mesh.neighbour[f]);
+            let mut e = f + 1;
+            while e < periodic && mesh.owner[e] == p && mesh.neighbour[e] == n {
+                e += 1;
+            }
+            if e - f > 1 {
+                let d = sub(xn(f), xc[p as usize]);
+                let mut s = [0.0; 3];
+                let mut area = 0.0;
+                for a in &geo.face_area[f..e] {
+                    s = foehncraft_mesh::geometry::add(s, *a);
+                    area += norm(*a);
+                }
+                let (ds, ss) = (dot(d, s), dot(s, s));
+                let pair = ss / ds;
+                // the interpolation weight of the pair, along its normal from
+                // the centroid of the pieces projected onto its plane
+                // ([`pair_centroid`]): along one piece's own normal it can
+                // leave [0, 1] (the piece's plane need not lie between the
+                // two centroids)
+                let nrm = scale(s, 1.0 / ss.sqrt());
+                let xm = pair_centroid(geo, f..e, nrm);
+                let dpf = dot(sub(xm, xc[p as usize]), nrm);
+                let dfn = dot(sub(xn(f), xm), nrm);
+                let w = (dfn / (dpf + dfn)).clamp(0.0, 1.0);
+                for g in f..e {
+                    dgeo[g] = pair * norm(geo.face_area[g]) / area;
+                    k.set(g, sub(geo.face_area[g], scale(d, dgeo[g])));
+                    weight[g] = w;
+                }
+                let cosang = (ds / (norm(d) * ss.sqrt())).clamp(-1.0, 1.0);
+                pair_nonorth = pair_nonorth.max(cosang.acos().to_degrees());
+                shared = true;
+            } else {
+                let s = geo.face_area[f];
+                let d = sub(xn(f), xc[p as usize]);
+                let cosang = (dot(d, s) / (norm(d) * norm(s))).clamp(-1.0, 1.0);
+                pair_nonorth = pair_nonorth.max(cosang.acos().to_degrees());
+            }
+            f = e;
+        }
+        if shared {
+            // the angle the flux sees: that of the pair
+            let mut bmax = 0.0f64;
+            for f in periodic..nf {
+                let s = geo.face_area[f];
+                let p = mesh.owner[f] as usize;
+                let d = if f < ni {
+                    sub(xn(f), xc[p])
+                } else {
+                    sub(geo.face_centroid[f], xc[p])
+                };
+                let cosang = (dot(d, s) / (norm(d) * norm(s))).clamp(-1.0, 1.0);
+                bmax = bmax.max(cosang.acos().to_degrees());
+            }
+            max_nonorth = pair_nonorth.max(bmax);
         }
 
         // least-squares weights
@@ -529,13 +598,29 @@ pub(crate) fn lsq_weights(mesh: &Mesh, geo: &Geometry, kind: &[BoundaryKind]) ->
     let ne = mesh.cell_faces.len();
     let mut lsq = Soa3::zeros(ne);
     let mut stencil: Vec<([f64; 3], f64)> = Vec::new();
+    let mut other: Vec<i64> = Vec::new();
     for c in 0..nc {
         stencil.clear();
         let mut g = [[0.0; 3]; 3];
         let lo = mesh.cell_ptr[c] as usize;
         let hi = mesh.cell_ptr[c + 1] as usize;
-        for &e in &mesh.cell_faces[lo..hi] {
+        // the cell across each interior face: a neighbour that shares
+        // several faces with the cell (merged cut cells, L13 D228) is one
+        // point of the stencil, its weight split over those faces
+        other.clear();
+        other.extend(mesh.cell_faces[lo..hi].iter().map(|&e| {
             let (f, is_nb) = unpack_face(e);
+            if f >= ni || f >= periodic {
+                -1 - f as i64
+            } else if is_nb {
+                mesh.owner[f] as i64
+            } else {
+                mesh.neighbour[f] as i64
+            }
+        }));
+        for (i, &e) in mesh.cell_faces[lo..hi].iter().enumerate() {
+            let (f, is_nb) = unpack_face(e);
+            let times = other.iter().filter(|&&o| o == other[i]).count() as f64;
             let d = if f < ni {
                 if is_nb {
                     sub(xc[mesh.owner[f] as usize], xc[c])
@@ -553,7 +638,7 @@ pub(crate) fn lsq_weights(mesh: &Mesh, geo: &Geometry, kind: &[BoundaryKind]) ->
                     }
                 }
             };
-            let w = 1.0 / dot(d, d);
+            let w = 1.0 / (dot(d, d) * times);
             for i in 0..3 {
                 for j in 0..3 {
                     g[i][j] += w * d[i] * d[j];
@@ -573,6 +658,24 @@ pub(crate) fn lsq_weights(mesh: &Mesh, geo: &Geometry, kind: &[BoundaryKind]) ->
         }
     }
     Ok(lsq)
+}
+
+/// The centroid of the faces `faces` of one cell pair projected onto the
+/// plane of their summed area vector (unit normal `n`): each piece weighted
+/// by its area seen along `n`. Pieces in one plane give their joint
+/// centroid; a small piece nearly parallel to `n` hardly counts.
+pub fn pair_centroid(geo: &Geometry, faces: std::ops::Range<usize>, n: [f64; 3]) -> [f64; 3] {
+    let (mut x, mut w) = ([0.0; 3], 0.0);
+    for g in faces.clone() {
+        let a = dot(geo.face_area[g], n).max(0.0);
+        x = foehncraft_mesh::geometry::add(x, scale(geo.face_centroid[g], a));
+        w += a;
+    }
+    if w > 0.0 {
+        scale(x, 1.0 / w)
+    } else {
+        geo.face_centroid[faces.start]
+    }
 }
 
 /// Sliced-ELL structure of the matrix of `mesh` (see the module docs).
