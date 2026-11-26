@@ -1453,18 +1453,21 @@
   },
   {
    "id": "sprays.breakup",
-   "title": "Spray breakup: KH-ACT and KH-RT with blob injection, TAB distortion and dynamic drag (SP6, D300 to D308)",
+   "title": "Spray breakup: KH-ACT and KH-RT with blob injection, TAB distortion and dynamic drag (SP6, D300 to D309)",
    "grade": "partial",
    "why": [
     "gaps written"
    ],
    "gaps": [
-    "validated against a penetration correlation only; ECN Spray G (G1, measured liquid and vapour penetration) is the next part (D309)",
+    "ECN Spray G (G1): the liquid runs ahead of the measured penetration after 0.4 ms (33 % at 1.2 ms) and the vapour after 0.5 ms (21 % at 1.2 ms), with KH-ACT and KH-RT alike, so not from the breakup; cause open (candidates: the cells of the far field, the constant gas density, the k-eps constants) (D309)",
+    "KH-ACT drops on ECN Spray G (G1) are about twice the measured size at 15 mm (17 against 9 um; KH-RT 7.4 um): the children of the cavitation (R_CAV from C_a 0.65) and of the integral turbulence scale are large for the short Spray G hole; constants untuned",
+    "a gas that diverges in some cells leaves its parcels spending max_substeps each, and their exchange records can fill the memory instead of stopping the run with a message (seen on the sector before the slip core, D309)",
     "drop sizes not validated: the gallery spray has a Sauter mean diameter near 2 um, small next to measured diesel sprays; no collision or coalescence yet",
     "the nozzle turbulence of the Huh-Gosman estimate takes the inlet loss K_c = 0.5 and the area ratio s = 0 as our own choices (the papers give no values)",
     "the k-omega SST model does not build up the turbulence of a thin spray jet in a still chamber (the gallery case uses k-eps)",
     "breakup is refused in the steady spray mode; constant surface tension and viscosity; children leave with the blob's velocity (no radial velocity); no GPU entry of the breakup kernel; one process",
-    "`spray_breakup_injectors` has no run in the verification manual or in CI"
+    "`spray_breakup_injectors` has no run in the verification manual or in CI",
+    "`spray_g_g1_injectors` has no run in the verification manual or in CI"
    ],
    "range": {}
   },
@@ -1482,6 +1485,21 @@
     "the gas solver stays ideal (D317): the departure enthalpy of the dense vapour enters the gas as a sensible-heat deficit",
     "no flow case yet: VA.7 to VA.9 (order independence with a fuel vapour, the Spray A case) are later stages; the vapour species NC12H26 is in the species data",
     "built-in high-pressure data for n-dodecane only; other liquids take the plain 1978 kappa (water: 11 % low on its vapour pressure at 320 K)"
+   ],
+   "range": {}
+  },
+  {
+   "id": "sprays.ecn-diagnostics",
+   "title": "ECN liquid length (projected liquid volume) and vapour penetration (Spray A, SA3, D315)",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "the PLV definition of the modelling standard only: the ECN5 path-averaged liquid volume fraction (0.15 % on 0.5 x 0.5 mm paths) and the time- and Favre-averaged fields on the ECN output grid are not built",
+    "instantaneous values per step: an average over the quasi-steady period is the user's (the CSV has every step)",
+    "no Spray A comparison yet (VA.8, stage SA6)",
+    "`spray_chamber_ecn_injectors` has no run in the verification manual or in CI"
    ],
    "range": {}
   },
@@ -1633,7 +1651,7 @@
    "gaps": [
     "the wall is smeared over about one cell: first order in h, lift 27 % above the benchmark range at h = D/40, wall shear stress and heat flux not accurate (by design of the pre-stage)",
     "laminar and isothermal only: turbulence, energy, scalars, gravity, regions, rotating zones and sprays are refused (IMM102)",
-    "primitive bodies (cylinder, sphere, box) and `field` expressions only; STL bodies need the geometry kernel of stage 0 (sharp walls on cut cells: feature immersed.cut)",
+    "STL bodies (feature immersed.stl) take the exact cut volumes as solid fractions; the penalised wall of an STL body is as smeared as that of a primitive one",
     "the coupled solver breaks down from rest when the sink exceeds about 1e5 times the viscous diagonal (K below about 1e-5 h²); SIMPLEC takes any K",
     "the drag error depends on K/h²: with K = 0.01 h² the Stokes sphere array is 6.2, 5.5, 3.9, 2.6 % high on 16³ to 48³ (about first order); smaller K smears the body outward (up to +18 % at 1e-3 h² on 16³); in the Poiseuille channel the effective wall stays within half a cell (16 to 256 cells), its sign set by where the wall cuts its cell (sweeps run by tools/verification/immersed_sweeps.py, not in CI)",
     "manufactured solution on 2D triangular prisms and the mixed 2D mesh: the velocity error stalls at about 2 % (6 % without the sink, so a gap of the flow discretisation on these meshes, not of the penalisation)",
@@ -1649,12 +1667,30 @@
     "gaps written"
    ],
    "gaps": [
-    "primitive bodies and `field` expressions only; STL bodies need the signed distance and segment-triangle crossings of the stage 0 geometry kernel",
     "the body is seen through its node values: features thinner than a cell vanish; the refusal of thin solids (Q4, IMM for D189) is not built yet",
-    "Δp of the Re 20 cylinder stays about 1 % below the range at D/20 (D/40: C_D 5.592, C_L 0.0105, Δp 0.1171, all within 0.1 % of the range; SIMPLEC stalls at residual 1e-7 there); the lift depends on the merge threshold (0.1: 4 % low, 0.4: 0.4 % low); the default 0.3 is set on this one case",
+    "Δp of the Re 20 cylinder stays about 1 % below the range at D/20 (D/40: C_D 5.595, C_L 0.0106, Δp 0.1171, all within 0.1 % of the range; SIMPLEC stalls at residual 1e-7 there); the lift depends on the merge threshold (0.1: 4 % low, 0.4: 0.4 % low); the default 0.3 is set on this one case; the threshold sweep ran without face points",
+    "the joined faces of merged cells can fold: their fan moves volume from one cell to the other (48 faces on the 32³ STL sphere array, the largest 11.5 % of the smaller cell; on tetrahedra up to half); the merge avoids folds where it has a choice and IMM203 reports the rest; a fix needs two cells to share more than one face (a solver change, owner decision)",
     "wall functions with the exact first-cell distance (2c), conjugate heat transfer through cut cells (2d, refused), named surface patches (2e) and the near-body refinement (2f) are not built",
     "the other verification cases of the plan (cut-sphere Poisson MMS, annulus conduction, Taylor-Couette, inclined channel, Stokes sphere, Re 100 cylinder, turbulent plate) are not run yet",
     "one rank only: the cut runs on the global mesh, `foehn run --ranks N` with a cut is not tested"
+   ],
+   "range": {}
+  },
+  {
+   "id": "immersed.stl",
+   "title": "STL bodies, cut out of the mesh or penalised, with sharp edges and face points (L13 stage 2)",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "on tetrahedra the sphere array is +1.7 % on 16³ and −1.8 % on 24³, and the wall carries G L³ only to 5 % (0.949 on 24³, a side force of 2 % on 16³): the cut tetrahedra need a closer look",
+    "on polyhedral meshes the faces are not planar: the fan of a clipped face is not that of the input face, so the face apertures (4.7e-2) and the cell-by-cell volumes do not converge (the totals do); the sphere array is −5.6 and −4.0 % on 17³ and 25³ polyhedra",
+    "on sharp bodies the cell-by-cell volume error with the dual-contouring point is about twice that of the closest point (1.4e-2 against 7.3e-3 on 32³ hexahedra) while the total is better: the feature point serves the whole loop, not each cell's share of the edge",
+    "the fallback cuts the whole mesh again per round (the turned box on 196 608 tetrahedra: three rounds, 18 s against 1.4 s without wall and face points); a local re-cut is not built",
+    "the cut reaches only the totals and the drag of the sphere array: the other cases of the plan (cut-sphere Poisson MMS, Taylor-Couette, Re 100 cylinder) are not run with STL bodies",
+    "a surface feature thinner than a cell vanishes between the nodes; the thin-solid refusal (Q4) is not built",
+    "one rank only"
    ],
    "range": {}
   },

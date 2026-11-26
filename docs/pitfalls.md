@@ -26,6 +26,9 @@ instead.
 - [Deforming meshes: the grid flux and the old levels](#deforming-mesh)
 - [High-pressure phase equilibrium](#high-pressure-equilibrium)
 - [Property solves and new kernels on ranks](#property-solves)
+- [Spray diagnostics and small test sprays](#spray-diagnostics)
+- [Cut cells: check what the solver takes, cell by cell](#cut-cells)
+- [Sprays on a sector of an injector](#spray-sectors)
 - [Long-lived branches and the one test program per crate](#stale-branches)
 
 <a id="steady-runs"></a>
@@ -607,6 +610,72 @@ Found with the IAPWS-IF97 states of SF7a (#277):
   own-cell arrays), and the variable density of stage 7c crashed as well;
   W5 had checked only constant properties. The c_p path is fixed; the
   variable density is refused on ranks until it is ported.
+
+<a id="spray-diagnostics"></a>
+## Spray diagnostics and small test sprays
+
+Found with the ECN diagnostics of SA3 (#319):
+- **A PLV threshold below one parcel measures the farthest parcel.** The
+  projected liquid volume of a bin is the parcels' volume over the bin
+  area; when one parcel alone exceeds the threshold, the "liquid length"
+  is the tip of the spray. Check the volume of one parcel over `bin`²
+  against the smaller threshold (aim for several parcels per bin) before
+  reading a length; raise `parcels_per_second` or the bin, or choose the
+  thresholds for the case.
+- **A planar test spray in still air saturates its own core.** 0.5 g/s of
+  water in a 2D slab 1 cm deep needs more hot air than the jet entrains:
+  the core sat at 326 K and 9 % vapour, the droplets stopped evaporating
+  and the liquid length grew with the tip. Estimate the air the
+  evaporation needs (water mass flow per depth times the air-to-water
+  ratio at saturation) against the entrainment of the jet before choosing
+  the mass flow; 12 mg/s gave a liquid length that settles.
+- **A text replace on a case file also hits its comments.** Inserting a
+  table before `[spray.evaporation]` with a plain `replace` also changed
+  the comment that quotes `[spray.evaporation]`; match the table header on
+  its own line (`"\n[spray.evaporation]\n"`), after turning `"\r\n"` into
+  `"\n"`: a Windows checkout has CRLF line ends, and a match on `"\n[..]\n"`
+  finds nothing there, so the table is silently not inserted.
+<a id="cut-cells"></a>
+## Cut cells: check what the solver takes, cell by cell
+
+Found while adding STL bodies to the cut (L13 stage 2, #322):
+- **Totals hide cell errors.** The fluid volume and wall area of the cut
+  converged at second order while single cells were wrong by half their
+  volume: the joined face of two merged cells, fanned about the mean of
+  its nodes, folds when its parts are not coplanar and moves volume into
+  the neighbour. Compare the volume of every group of input cells a cut
+  cell covers with the exact moments (`Surface::cut_moments`), not only
+  the sums.
+- **A better surface point can make a face the solver refuses.** The
+  dual-contouring point on a sharp edge, and the face points, made concave
+  cut cells whose centroid lies behind a face (d · S ≤ 0): 13 to 861 such
+  faces on a turned box where the closest point had none. Flatness tests
+  and merging the folding neighbour as well made it worse (larger,
+  snake-like groups). What works: pick the merge neighbour by the validity
+  of the union, and cut the cells around a refused face again with fewer
+  points, finest first. Count the refused faces in every benchmark row.
+
+<a id="spray-sectors"></a>
+## Sprays on a sector of an injector
+
+- **Keep the cells on the axis out of a sector that the plumes draw gas
+  into.** The 22.5° sector of ECN Spray G reaching the axis (D309) went
+  unstable at 0.13 ms in every trial: the cells on the axis are prisms
+  whose faces have a skewness of 1/(4Δφ), 5 with 8 angular cells, and they
+  were the first to diverge once the plumes drew gas to the axis (12
+  angular cells failed sooner). The parcels in the diverging gas then spent
+  `max_substeps` each and their exchange records filled the memory, so the
+  run died without a message. A slip core of 0.3 mm (`ymin` symmetry) with
+  three graded cells next to it has no skewed face and runs clean; the gas
+  on the axis of a symmetric injector moves only along it anyway.
+- **Do not blame the breakup before comparing a second model.** G1 ran
+  33 % ahead of the measured liquid at 1.2 ms with KH-ACT, whose drops are
+  twice the measured size; the obvious reading was "too large drops". KH-RT
+  with drops of the measured size ran exactly as far, so the cause is
+  elsewhere. Run both models (one `--set`) before tuning breakup constants.
+- **A string slice can drop the exponent.** `str(x)[:8]` of 1.2345678e-05
+  is `1.234567`: a liquid volume fraction read that way looked above 1 and
+  sent the search the wrong way for a while. Format numbers with `:.3e`.
 
 <a id="stale-branches"></a>
 ## Long-lived branches and the one test program per crate

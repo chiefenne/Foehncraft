@@ -14,6 +14,7 @@ Part of the [Recipes](../recipes.md): droplets that move with and through the ga
 | 318 | [Break a fuel jet up into drops (KH-ACT, KH-RT)](#spray-breakup) |
 | 314 | [Evaporate fuel droplets at high ambient pressure](#spray-a-surface) |
 | 320 | [Check the thermodynamics of a high-pressure spray before the CFD](#spray-a-mixing-line) |
+| 319 | [Report the liquid length and the vapour penetration (ECN)](#spray-ecn) |
 
 ---
 
@@ -526,6 +527,44 @@ differ by more than a few per cent, the droplet surface needs
 to the measured value, not instead of it. See the
 [gallery entry](../gallery/sprays.md#spray-a-mixing-line) for what is
 checked and what is not.
+<a id="spray-ecn"></a>
+## 319. Report the liquid length and the vapour penetration (ECN)
+
+**Add `[spray.ecn]`.** The Engine Combustion Network compares spray
+simulations by two numbers defined in its modelling standard
+(ecn.sandia.gov, Modeling Standards): the liquid length, the farthest
+axial position where the projected liquid volume PLV = ∫ LVF dy across the
+spray falls to a threshold, and the vapour penetration, the farthest axial
+position where the fuel mass fraction is 0.1 %. With the table, both are
+written for every injector and step:
+
+```toml
+[spray.ecn]
+# plv = [2e-7, 2e-6]          # m: 0.2e-3 and 2e-3 mm³/mm², one liquid length each
+# bin = 2.5e-4                # m: square bins along the axis and across
+# line_of_sight = [0, 0, 1]   # default: the coordinate axis most nearly across the injector
+# vapour_fraction = 1e-3      # fuel mass fraction of the vapour penetration
+```
+
+`spray.csv` gets `<injector>.liquid_length_<k>_m` (k counts the `plv`
+thresholds from 1) and, with `[spray.evaporation]`,
+`<injector>.vapour_penetration_m`; `result.json` lists the same per
+injector (`liquid_length`, `vapour_penetration`). The PLV of a bin is the
+liquid volume of the injector's parcels in the bin, summed along the line
+of sight, over the bin area; the profile along the axis takes the largest
+bin across, and the length is interpolated between bin centres. The sums
+run in the order of the parcel identities, so the lengths are the same
+bits on any number of threads.
+
+The defaults are those of the standard for a round jet such as Spray A.
+For a planar (2D) case the PLV is per metre of depth and the thresholds
+are yours to choose. With few parcels a single parcel can exceed a
+threshold on its own and the length jumps with the farthest parcels: the
+standard assumes enough parcels that a bin holds many (check that one
+parcel's volume over `bin`² is well below the smaller threshold). A
+background of the fuel vapour in the gas counts for the vapour penetration
+(the fraction is absolute). Not with `[spray.steady]`. See the
+[gallery entry](../gallery/sprays.md#spray-ecn).
 <a id="spray-liquid-library"></a>
 ## 321. Evaporate a fuel: take a liquid of the library
 
@@ -565,3 +604,79 @@ measurements. Case: `examples/cases/flow/spray_heptane_evaporation.toml`;
 [gallery entry](../gallery/sprays.md#spray-liquid-library) for what is
 checked and what is not.
 
+
+<a id="spray-g-sector"></a>
+## 323. Model a multi-hole injector on a sector (ECN Spray G)
+
+**Mesh one plume's share.** The plumes of an injector of n equal holes
+repeat every 360°/n about its axis, and each plume is mirror-symmetric
+about its own plane. A sector of 180°/n with the plume on one side plane
+holds half a plume, and both side planes are mirror planes. `wedge` with
+`dimension = 3` revolves a box of hexahedra into such a sector (D309): x is
+the injector axis, y the radius, and the z intervals become the angular
+cells.
+
+```toml
+[mesh.generate]
+type = "hex"
+dimension = 3
+lower = [0.0, 3.0e-4, 0.0]   # a slip core of 0.3 mm on the axis
+upper = [0.06, 0.05, 1.0]    # 60 mm along the axis, 50 mm radius
+cells = [72, 65, 8]          # 8 angular cells
+wedge = 22.5                 # 8 holes: 180°/8
+segments.x = [ { to = 0.03, cells = 50 }, { to = 0.06, cells = 22, ratio = 3.0 } ]
+segments.y = [
+  { to = 0.0012, cells = 3, ratio = 2.0 },   # small cells next to the core: no skewed faces
+  { to = 0.03, cells = 48 },
+  { to = 0.05, cells = 14, ratio = 3.0 },
+]
+
+[boundary.ymin]
+type = "symmetry"    # the core
+[boundary.zmin]
+type = "symmetry"    # the plane of the plume
+[boundary.zmax]
+type = "symmetry"    # half way to the next plume
+```
+
+Keep the thin core. Without it the cells next to the axis are prisms whose
+faces have a skewness of 1/(4Δφ), 5 with 8 angular cells, and in our trials
+they were the first to go unstable once the plumes drew gas to the axis.
+By the symmetry of the plumes the gas on the axis moves only along it, and
+the slip core imposes just that.
+
+**Put the hole on the plume plane.** The angle runs from −wedge/2 at `zmin`
+to +wedge/2 at `zmax`. Put the hole exit a few µm inside the plane
+φ = −wedge/2, point the plume along that plane, and give the sector half of
+the hole's liquid:
+
+```toml
+[[injector]]
+name = "hole1"
+position = [1.0e-4, 9.81175461e-04, -1.93128751e-04]   # r = 1 mm on φ = −11.25°, 2 µm inside
+direction = [0.83867057, 0.53417395, -0.10625380]      # 33° from the axis, in that plane
+half_angle = 12.5
+flow_share = 0.5           # half of the plume is in the sector
+hole_diameter = 1.65e-4
+area_contraction = 0.65
+rate = [ [0.0, 0.0], [2.7e-5, 1.95e-3], [6.5e-4, 1.72e-3], [7.87e-4, 0.0] ]   # [t, kg/s] of one hole
+```
+
+**Measure as the ECN measures.** `tools/plot/spray_g_metrics.py` turns the
+sector's parcels into the whole injector (each parcel mirrored about its
+plume plane and turned to every plume). `liquid_penetration(x, d, n,
+threshold)` projects the liquid volume along the line of sight
+perpendicular to the plane of plumes 1 and 5 and returns the farthest
+distance along the injector axis above the threshold (0.2e-3 or
+2e-3 mm³/mm²). `vapour_penetration(centres, y)` returns the farthest cell
+above 0.1 % vapour.
+
+```sh
+foehn flow examples/cases/flow/spray_g_g1.toml --out output/spray_g_g1
+foehn flow examples/cases/flow/spray_g_g1.toml --set spray.breakup.model=kh-rt --out output/spray_g_g1_khrt
+python3 -m tools.plot.spray_g_g1 OUT_DIR output/spray_g_g1 output/spray_g_g1_khrt   # gallery 323
+```
+
+Case: `examples/cases/flow/spray_g_g1.toml` with its injector file;
+[gallery entry](../gallery/sprays.md#spray-g) for the comparison with the
+measurements.

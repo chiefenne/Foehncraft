@@ -28,6 +28,7 @@ mod locate;
 mod multizone;
 mod openfoam;
 mod ray;
+mod stl_cut;
 mod su2;
 mod surface;
 mod surface_cut;

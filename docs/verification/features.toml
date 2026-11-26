@@ -39,6 +39,8 @@ evidence = [
   { kind = "consistency", test = "crates/foehncraft-mesh/tests/golden.rs::golden_values_of_mesher_and_partitioner", what = "golden values of the mesher and the partitioner" },
   { kind = "exact", case = "poiseuille_poly", what = "second order of the flow solver on generated polyhedra", doc = "docs/verification/stage4.md#couette-and-poiseuille-flow" },
   { kind = "exact", case = "mms_mixed_box", what = "second order of convection-diffusion on mixed cells", doc = "docs/verification/stage2.md#order-of-accuracy" },
+  { kind = "exact", test = "crates/foehncraft-mesh/src/wedge.rs::sectors_of_hexahedra", what = "D309: a 3D box revolved into a 22.5 deg sector of hexahedra has the exact volume of its polygonal sector to 1e-12, closed cells and the side planes zmin and zmax with their normals" },
+  { kind = "contract", property = "diagnostics", test = "crates/foehncraft-mesh/src/wedge.rs::a_perturbed_or_tetrahedral_sector_is_refused", what = "D309: a sector of tetrahedra or with perturb is refused" },
 ]
 
 [[feature]]
@@ -1867,9 +1869,9 @@ gaps = [
 [[feature]]
 id = "sprays.breakup"
 area = "Sprays"
-title = "Spray breakup: KH-ACT and KH-RT with blob injection, TAB distortion and dynamic drag (SP6, D300 to D308)"
+title = "Spray breakup: KH-ACT and KH-RT with blob injection, TAB distortion and dynamic drag (SP6, D300 to D309)"
 switch = "[spray.breakup] model = \"kh-act\" or \"kh-rt\", drag = \"dynamic\"; injector hole_diameter, area_contraction, rate, flow_share, hole_length, discharge_coefficient"
-decisions = ["D247", "D300", "D301", "D302", "D303", "D304", "D305", "D306", "D307", "D308"]
+decisions = ["D247", "D300", "D301", "D302", "D303", "D304", "D305", "D306", "D307", "D308", "D309"]
 model = true
 evidence = [
   { kind = "exact", test = "crates/foehncraft-kernels/src/breakup.rs::kh_fits_match_the_dispersion_relation", what = "Reitz's KH fits against our own inviscid dispersion relation of a liquid column (Bessel functions): wavelength within 5 % for every We_g, growth rate within 3 % below We_g 0.1 and above 50 (up to 46 % high near We_g 2, a property of the fit)" },
@@ -1887,9 +1889,13 @@ evidence = [
   { kind = "contract", property = "diagnostics", test = "crates/foehncraft-particles/tests/breakup.rs::kh_act_needs_the_nozzle_turbulence", what = "the nozzle keys of KH-ACT are checked (missing turbulence, half a pair, C_d above C_a, no friction left)" },
   { kind = "reference-data", case = "spray_breakup", what = "a diesel-like spray at 60 MPa from a 0.15 mm hole into nitrogen at 15 kg/m3 (KH-ACT, k-eps): 97 % of the liquid at 50.6 mm after 1 ms against 51.1 mm of the correlation of Hiroyasu and Arai (1990), up to 24 % ahead at 0.2 to 0.4 ms; 47.0 mm with kh-rt", doc = "docs/gallery/sprays.md#spray-breakup" },
   { kind = "contract", property = "schema", case = "spray_breakup_injectors", what = "the included injector file of spray_breakup (rate table, hole, nozzle turbulence)", doc = "docs/cases/flow.md#lagrangian-sprays" },
+  { kind = "reference-data", case = "spray_g_g1", what = "ECN Spray G, G1 (D309): iso-octane at 20 MPa into nitrogen at 573 K and 3.5 kg/m3 on a 22.5 deg sector of the 8-hole injector, KH-ACT untuned, against the liquid (0.2e-3 mm3/mm2) and vapour (0.1 %) penetration the ECN measured: within 1 mm up to 0.4 ms (20.5 against 20.4 mm at 0.3 ms), then ahead, 12 % at 0.6 ms and 33 % at 1.2 ms (51.7 against 38.9 mm); vapour 32.8 against 29.4 mm at 0.6 ms and 50.8 against 42.0 mm at 1.2 ms; the gas velocity on the injector axis at 15 mm within about 1.5 m/s of the PIV (-7.9 against -7.6 m/s at 0.3 ms); Sauter mean diameter at 15 mm 17 um with KH-ACT and 7.4 um with KH-RT against the measured 9 um, both models with the same penetration", doc = "docs/gallery/sprays.md#spray-g" },
+  { kind = "contract", property = "schema", case = "spray_g_g1_injectors", what = "the included injector file of spray_g_g1 (library iso-octane, measured rate of injection, plume direction, flow_share 0.5)", doc = "docs/cases/flow.md#lagrangian-sprays" },
 ]
 gaps = [
-  "validated against a penetration correlation only; ECN Spray G (G1, measured liquid and vapour penetration) is the next part (D309)",
+  "ECN Spray G (G1): the liquid runs ahead of the measured penetration after 0.4 ms (33 % at 1.2 ms) and the vapour after 0.5 ms (21 % at 1.2 ms), with KH-ACT and KH-RT alike, so not from the breakup; cause open (candidates: the cells of the far field, the constant gas density, the k-eps constants) (D309)",
+  "KH-ACT drops on ECN Spray G (G1) are about twice the measured size at 15 mm (17 against 9 um; KH-RT 7.4 um): the children of the cavitation (R_CAV from C_a 0.65) and of the integral turbulence scale are large for the short Spray G hole; constants untuned",
+  "a gas that diverges in some cells leaves its parcels spending max_substeps each, and their exchange records can fill the memory instead of stopping the run with a message (seen on the sector before the slip core, D309)",
   "drop sizes not validated: the gallery spray has a Sauter mean diameter near 2 um, small next to measured diesel sprays; no collision or coalescence yet",
   "the nozzle turbulence of the Huh-Gosman estimate takes the inlet loss K_c = 0.5 and the area ratio s = 0 as our own choices (the papers give no values)",
   "the k-omega SST model does not build up the turbulence of a thin spray jet in a still chamber (the gallery case uses k-eps)",
@@ -1934,6 +1940,30 @@ gaps = [
   "the gas solver stays ideal (D317): the departure enthalpy of the dense vapour enters the gas as a sensible-heat deficit",
   "no flow case yet: VA.7 to VA.9 (order independence with a fuel vapour, the Spray A case) are later stages; the vapour species NC12H26 is in the species data",
   "built-in high-pressure data for n-dodecane only; other liquids take the plain 1978 kappa (water: 11 % low on its vapour pressure at 320 K)",
+]
+
+[[feature]]
+id = "sprays.ecn-diagnostics"
+area = "Sprays"
+title = "ECN liquid length (projected liquid volume) and vapour penetration (Spray A, SA3, D315)"
+switch = "[spray.ecn]"
+decisions = ["D315"]
+model = false
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-particles/tests/ecn.rs::the_liquid_length_of_a_linear_plv_profile_is_exact", what = "parcels with a linearly falling liquid volume: the PLV of every bin to 1e-12 and both liquid lengths (0.95 and 0.5 of the line) to 1e-12 m" },
+  { kind = "exact", test = "crates/foehncraft-particles/tests/ecn.rs::the_volume_along_the_line_of_sight_is_summed_and_across_it_is_not", what = "two parcels along the line of sight add in one bin, two across it fall in two; the threshold is reached at the summed bin" },
+  { kind = "exact", test = "crates/foehncraft-particles/tests/ecn.rs::the_default_line_of_sight_is_across_the_axis", what = "the default and a given line of sight are unit vectors across the axis (to 1e-15)" },
+  { kind = "exact", test = "crates/foehncraft-particles/tests/ecn.rs::the_vapour_penetration_is_the_farthest_cell_at_the_threshold", what = "the vapour penetration is the farthest axial distance of a cell at or above 0.1 % on a slanted axis (to 1e-15), behind the nozzle and off threshold ignored" },
+  { kind = "contract", property = "bitwise", test = "crates/foehncraft-particles/tests/ecn.rs::the_liquid_length_does_not_depend_on_the_parcel_order", what = "the parcels in reverse order give the same bits; without [spray.ecn] no length is written" },
+  { kind = "contract", property = "diagnostics", test = "crates/foehncraft-particles/tests/ecn.rs::the_ecn_table_is_checked", what = "negative thresholds, a line of sight along an injector, a vapour fraction outside (0, 1) and the steady spray mode are refused with the key named" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/spray_evaporation.rs::the_ecn_diagnostics_are_written_per_step", what = "the evaporating duct writes both liquid lengths and the vapour penetration per step; the smaller threshold lies farther out, within the farthest parcel, and the vapour inside the duct" },
+  { kind = "consistency", case = "spray_chamber_ecn", what = "water sprayed into still air at 300 C: the liquid lengths settle while the vapour penetration keeps growing", doc = "docs/gallery/sprays.md#spray-ecn" },
+  { kind = "contract", property = "schema", case = "spray_chamber_ecn_injectors", what = "the included injector file of spray_chamber_ecn", doc = "docs/cases/flow.md#lagrangian-sprays" },
+]
+gaps = [
+  "the PLV definition of the modelling standard only: the ECN5 path-averaged liquid volume fraction (0.15 % on 0.5 x 0.5 mm paths) and the time- and Favre-averaged fields on the ECN output grid are not built",
+  "instantaneous values per step: an average over the quasi-steady period is the user's (the CSV has every step)",
+  "no Spray A comparison yet (VA.8, stage SA6)",
 ]
 
 [[feature]]
@@ -2155,7 +2185,7 @@ evidence = [
 gaps = [
   "the wall is smeared over about one cell: first order in h, lift 27 % above the benchmark range at h = D/40, wall shear stress and heat flux not accurate (by design of the pre-stage)",
   "laminar and isothermal only: turbulence, energy, scalars, gravity, regions, rotating zones and sprays are refused (IMM102)",
-  "primitive bodies (cylinder, sphere, box) and `field` expressions only; STL bodies need the geometry kernel of stage 0 (sharp walls on cut cells: feature immersed.cut)",
+  "STL bodies (feature immersed.stl) take the exact cut volumes as solid fractions; the penalised wall of an STL body is as smeared as that of a primitive one",
   "the coupled solver breaks down from rest when the sink exceeds about 1e5 times the viscous diagonal (K below about 1e-5 h²); SIMPLEC takes any K",
   "the drag error depends on K/h²: with K = 0.01 h² the Stokes sphere array is 6.2, 5.5, 3.9, 2.6 % high on 16³ to 48³ (about first order); smaller K smears the body outward (up to +18 % at 1e-3 h² on 16³); in the Poiseuille channel the effective wall stays within half a cell (16 to 256 cells), its sign set by where the wall cuts its cell (sweeps run by tools/verification/immersed_sweeps.py, not in CI)",
   "manufactured solution on 2D triangular prisms and the mixed 2D mesh: the velocity error stalls at about 2 % (6 % without the sink, so a gap of the flow discretisation on these meshes, not of the penalisation)",
@@ -2175,16 +2205,42 @@ evidence = [
   { kind = "consistency", test = "crates/foehncraft-mesh/tests/cut.rs::small_cells_merge", what = "merging small cells moves no volume and no wall area (1e-12), the merged cells close to round-off" },
   { kind = "consistency", test = "crates/foehncraft-mesh/tests/cut.rs::cut_is_independent_of_threads", what = "the cut mesh is bitwise the same on 1 and 4 threads (D93)" },
   { kind = "exact", test = "crates/foehncraft-flow/tests/immersed.rs::cut_poiseuille_converges_at_second_order", what = "plane Poiseuille flow between two cut walls off the cell faces: mass flow error 1.24, 0.29, 0.066 % on 16, 32, 64 cells across, order 2.1 (penalised walls: 20.5, 8.5, 2.3 %)" },
-  { kind = "reference-data", case = "immersed_cut_cylinder_re20", what = "Schäfer & Turek 2D-1 on a plain box mesh (h = D/20) with the cylinder cut out: C_D 5.583 in range, C_L 2.1 % and Δp 1.0 % below the range; the run fails beyond 5 % of the range midpoint", doc = "docs/gallery/immersed.md#cut-cylinder" },
+  { kind = "reference-data", case = "immersed_cut_cylinder_re20", what = "Schäfer & Turek 2D-1 on a plain box mesh (h = D/20) with the cylinder cut out: C_D 5.588 in range, C_L 1.4 % and Δp 1.0 % below the range (with face points; without: C_D 5.583, C_L 2.1 % below); the run fails beyond 5 % of the range midpoint", doc = "docs/gallery/immersed.md#cut-cylinder" },
   { kind = "contract", property = "diagnostics", test = "crates/foehncraft-flow/tests/immersed.rs::cut_settings_are_refused", what = "IMM101 for [immersed.cut] without method = \"cut\", IMM201 for a threshold out of range, IMM202 for regions" },
 ]
 gaps = [
-  "primitive bodies and `field` expressions only; STL bodies need the signed distance and segment-triangle crossings of the stage 0 geometry kernel",
   "the body is seen through its node values: features thinner than a cell vanish; the refusal of thin solids (Q4, IMM for D189) is not built yet",
-  "Δp of the Re 20 cylinder stays about 1 % below the range at D/20 (D/40: C_D 5.592, C_L 0.0105, Δp 0.1171, all within 0.1 % of the range; SIMPLEC stalls at residual 1e-7 there); the lift depends on the merge threshold (0.1: 4 % low, 0.4: 0.4 % low); the default 0.3 is set on this one case",
+  "Δp of the Re 20 cylinder stays about 1 % below the range at D/20 (D/40: C_D 5.595, C_L 0.0106, Δp 0.1171, all within 0.1 % of the range; SIMPLEC stalls at residual 1e-7 there); the lift depends on the merge threshold (0.1: 4 % low, 0.4: 0.4 % low); the default 0.3 is set on this one case; the threshold sweep ran without face points",
+  "the joined faces of merged cells can fold: their fan moves volume from one cell to the other (48 faces on the 32³ STL sphere array, the largest 11.5 % of the smaller cell; on tetrahedra up to half); the merge avoids folds where it has a choice and IMM203 reports the rest; a fix needs two cells to share more than one face (a solver change, owner decision)",
   "wall functions with the exact first-cell distance (2c), conjugate heat transfer through cut cells (2d, refused), named surface patches (2e) and the near-body refinement (2f) are not built",
   "the other verification cases of the plan (cut-sphere Poisson MMS, annulus conduction, Taylor-Couette, inclined channel, Stokes sphere, Re 100 cylinder, turbulent plate) are not run yet",
   "one rank only: the cut runs on the global mesh, `foehn run --ranks N` with a cut is not tested",
+]
+
+[[feature]]
+id = "immersed.stl"
+area = "Immersed bodies"
+title = "STL bodies, cut out of the mesh or penalised, with sharp edges and face points (L13 stage 2)"
+switch = "[[immersed.body]] shape = \"stl\""
+decisions = ["D225", "D227", "D228"]
+model = true
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-mesh/tests/stl_cut.rs::stl_sphere_cut_matches_the_exact_moments", what = "an icosphere cut out of hexahedral, tetrahedral and polyhedral meshes against the exact moments of its triangles: fluid volume order above 1.6 from 8³ to 16³, volume and wall area within 1e-2 on 16³, the fluid volume of every group of input cells a merged cell covers within 5e-2 of the body volume (L1), the face apertures within 6e-3 (hexahedra, tetrahedra); face points lower the volume error by more than a fifth and the aperture error; no face with d · S ≤ 0" },
+  { kind = "exact", test = "crates/foehncraft-mesh/tests/stl_cut.rs::stl_box_edges_and_corners_are_kept", what = "a box turned against a hexahedral mesh: with the dual-contouring wall point and face points the wall area and volume errors are below half those of the closest point on 16³ and 32³, the wall area converges at order above 1.5 (the closest point: first order)" },
+  { kind = "consistency", test = "crates/foehncraft-mesh/tests/stl_cut.rs::fallback_keeps_every_face_usable", what = "the turned box on hexahedra, tetrahedra and polyhedra with all points: the fallback leaves no face with d · S ≤ 0, simplifies fewer than a quarter of the cut cells and stays more accurate than the cut without wall and face points" },
+  { kind = "consistency", test = "crates/foehncraft-mesh/tests/stl_cut.rs::stl_cut_is_independent_of_threads", what = "the cut of an STL box is bitwise the same on 1 and 4 threads, its report too (D93)" },
+  { kind = "reference-data", case = "immersed_cut_stl_sphere_array", test = "crates/foehncraft-flow/tests/immersed.rs::stl_sphere_array_cut_converges_to_the_series", what = "Stokes flow through a simple cubic array of STL spheres cut out of the mesh: drag coefficient against the Hasimoto (1959) / Sangani & Acrivos (1982) series 2.152, −9.0 and −3.6 % on 16³ and 24³ hexahedra (test: below 4.5 % and halving), −2.3 % on 32³ and −0.9 % on 48³ (order 2.1); the wall carries G L³ to 6 %", doc = "docs/gallery/immersed.md#stl-cut" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/immersed.rs::penalised_stl_sphere_matches_the_primitive", what = "the penalised STL sphere (exact cut volumes as solid fractions) gives the drag of the penalised primitive sphere within 1 % on 16³" },
+  { kind = "contract", property = "diagnostics", test = "crates/foehncraft-flow/tests/immersed.rs::stl_body_settings_are_refused", what = "IMM101 for an stl body without `file`, a `scale` not > 0, `file` on another shape; CASE006 for a missing file, a file without triangles or with a corner that is not a number" },
+]
+gaps = [
+  "on tetrahedra the sphere array is +1.7 % on 16³ and −1.8 % on 24³, and the wall carries G L³ only to 5 % (0.949 on 24³, a side force of 2 % on 16³): the cut tetrahedra need a closer look",
+  "on polyhedral meshes the faces are not planar: the fan of a clipped face is not that of the input face, so the face apertures (4.7e-2) and the cell-by-cell volumes do not converge (the totals do); the sphere array is −5.6 and −4.0 % on 17³ and 25³ polyhedra",
+  "on sharp bodies the cell-by-cell volume error with the dual-contouring point is about twice that of the closest point (1.4e-2 against 7.3e-3 on 32³ hexahedra) while the total is better: the feature point serves the whole loop, not each cell's share of the edge",
+  "the fallback cuts the whole mesh again per round (the turned box on 196 608 tetrahedra: three rounds, 18 s against 1.4 s without wall and face points); a local re-cut is not built",
+  "the cut reaches only the totals and the drag of the sphere array: the other cases of the plan (cut-sphere Poisson MMS, Taylor-Couette, Re 100 cylinder) are not run with STL bodies",
+  "a surface feature thinner than a cell vanishes between the nodes; the thin-solid refusal (Q4) is not built",
+  "one rank only",
 ]
 
 [[feature]]

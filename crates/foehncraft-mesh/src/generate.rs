@@ -186,7 +186,10 @@ pub struct BoxSpec {
     pub seed: u64,
     /// Revolve the 2D mesh about the x axis into an axisymmetric wedge of
     /// this angle (degrees; y is the radius, `zmin` and `zmax` become the
-    /// wedge planes, see [`crate::wedge`]).
+    /// wedge planes, see [`crate::wedge`]). With `dimension = 3` the z
+    /// intervals become the angular cells of a sector of the angle (D309),
+    /// whose side planes `zmin` and `zmax` are ordinary boundaries, for
+    /// example symmetry planes; a sector is of hexahedra, not perturbed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wedge: Option<f64>,
     /// Directions whose two boundaries form a periodic pair (set by the
@@ -551,9 +554,6 @@ impl BoxSpec {
             }
         }
         if let Some(a) = self.wedge {
-            if self.dimension != 2 {
-                return Err("a wedge revolves a 2D mesh: set dimension = 2".into());
-            }
             if self.lower[1] < 0.0 {
                 return Err(format!(
                     "a wedge needs lower[1] >= 0 (y is the radius), not {}",
@@ -562,6 +562,18 @@ impl BoxSpec {
             }
             if !(a > 0.0 && a <= 90.0) {
                 return Err(format!("the wedge angle must lie in (0°, 90°], not {a}°"));
+            }
+            if self.dimension == 3 && self.kind != Kind::Hex {
+                return Err(
+                    "a sector (wedge with dimension = 3) needs type = \"hex\": other cells collapse on the axis"
+                        .into(),
+                );
+            }
+            if self.dimension == 3 && self.perturb != 0.0 {
+                return Err(
+                    "a sector (wedge with dimension = 3) cannot be perturbed: perturb would move the nodes on the axis apart"
+                        .into(),
+                );
             }
         }
         let est = self.estimated_cells();
