@@ -27,6 +27,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | [Immersed bodies](gallery/immersed.md) | bodies in the flow without a body-fitted mesh: Brinkman penalisation of primitive bodies (L13 stage 1) | 270, 291, 313, 310, 315 |
 | [Moving meshes and solids](gallery/moving-solids.md) | meshes whose nodes move in time: the deforming mesh with swept volumes, a piston compressing a closed gas volume, free-stream preservation (stage MS0, L22) | 296, 307 |
 | [Species and reacting flows](gallery/species.md) | species transport of ideal-gas mixtures on the variable density: mixture properties from kinetic theory, the closure species, the element ledger (steam furnace path, SF1) | 278, 289, 298 |
+| [Water and steam circuits](gallery/circuits.md) | one-dimensional water and steam tube circuits of a boiler on IAPWS-IF97: flow boiling in an evaporator tube, the natural circulation of a drum loop, two-phase pressure drop, wall temperatures and the CHF margin (steam furnace path, SF7b) | 312 |
 | [Expressions and materials](gallery/properties.md) | boundary values, body forces and viscosities as expressions, the material database, regions, walls with a mass flux | 23, 277 |
 | [Python](gallery/python.md) | cases built, run and studied from Python: expressions with Python operators, callbacks, study tables | 24 |
 | [Verification](gallery/verification.md) | the discretisation uncertainty of mesh sweeps (grid convergence index) and the generated verification manual | 25, 170, 271 |
@@ -174,6 +175,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | <a id="deforming-mesh-ranks"></a>307 | [A breathing channel on three ranks, continued from a restart file](gallery/moving-solids.md#deforming-mesh-ranks) | [Moving meshes and solids](gallery/moving-solids.md) |
 | <a id="heat-sink-hot"></a>308 | [A heat sink warmed by its chip: the flow case's temperatures as the load](gallery/structure.md#heat-sink-hot) | [Structures](gallery/structure.md) |
 | <a id="dirty-stl-winding"></a>310 | [A dirty STL body: surface check, winding number and signed distance](gallery/immersed.md#dirty-stl-winding) | [Immersed bodies](gallery/immersed.md) |
+| <a id="water-steam-circuits"></a>312 | [Flow boiling in an evaporator tube, and the natural circulation of a drum boiler](gallery/circuits.md#water-steam-circuits) | [Water and steam circuits](gallery/circuits.md) |
 | <a id="cut-cylinder"></a>313 | [A cylinder cut out of a box mesh: sharp walls on cut cells](gallery/immersed.md#cut-cylinder) | [Immersed bodies](gallery/immersed.md) |
 | <a id="spray-a-surface"></a>314 | [A fuel droplet's surface at diesel pressure](gallery/sprays.md#spray-a-surface) | [Lagrangian sprays](gallery/sprays.md) |
 | <a id="sdf-benchmark-cut"></a>315 | [Signed distance by three methods, and a sphere cut exactly out of a mesh](gallery/immersed.md#sdf-benchmark-cut) | [Immersed bodies](gallery/immersed.md) |

@@ -21,6 +21,8 @@ envelope is on standard output ([gallery 171](../gallery/runs.md#tool-registry),
 | `equilibrium_methane_air.json` | `chemistry.equilibrium` | the adiabatic flame state of stoichiometric methane and air from 298.15 K with GRI-Mech 3.0 (T = 2224.9 K, SF2) |
 | `reactor_methane_air.json` | `chemistry.reactor` | the constant-pressure reactor of `reactor_methane_air_gri30.toml`: ignition after 3.4 ms and the end state at the equilibrium, the trace in `output/tools/reactor/reactor.csv` |
 | `page_cavity.json` | `result.page` | the first 100 rows of the residual history of that run; the answer's `next_cursor` gives the next page |
+| `circuits_evaporator.json` | `circuits.run` | the once-through evaporator tube at 7 MPa into `output/evaporator_tube` ([gallery 312](../gallery/circuits.md#water-steam-circuits)) |
+| `circuits_drum_loop.json` | `circuits.run` | the natural circulation loop of a drum boiler into `output/drum_natural_circulation` ([gallery 312](../gallery/circuits.md#water-steam-circuits)) |
 | `structure_reed_beam.json` | `structure.run` | the reed valve beam with a rigid clamp: static deflection and eight modes into `output/reed_beam` ([gallery 295](../gallery/structure.md#reed-beam)) |
 | `structure_reed_beam_clamp_springs.json` | `structure.run` | the same reed on clamp springs (D290) into `output/reed_beam_clamp_springs` |
 | `structure_reed_plate.json` | `structure.run` | the reed petal as MITC4 shells on clamp springs along its edge into `output/reed_plate` ([gallery 297](../gallery/structure.md#reed-plate)) |
