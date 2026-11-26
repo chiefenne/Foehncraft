@@ -334,6 +334,7 @@ mod in_the_spray {
                 start: 0.0,
                 end: Some(1e-3),
                 temperature: Some(temp),
+                ..Injector::default()
             }],
             ..SpraySection::default()
         };

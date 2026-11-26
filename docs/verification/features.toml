@@ -1832,9 +1832,69 @@ gaps = [
   "the heat balance closes to round-off only with [species] properties = \"fluid\"; with the mixture properties the energy account keeps a few parts in a thousand (the T-form of the energy equation against the material enthalpy of the balance)",
   "the transient domain mass check fails for heated cases with variable density even without evaporation; the examples use constant density",
   "the momentum equation does not book the momentum the vapour brings separately (it comes with the parcel impulse) nor the dilution term u S_c",
-  "water only (saturation law and latent heat); no boiling, no multicomponent liquids",
+  "single-component liquids of the library only (water, n-heptane, n-dodecane, iso-octane, sprays.liquid-library); no boiling, no multicomponent liquids",
   "no GPU (PTX) entry for the evaporation kernel; one process",
   "V28.5 to V28.8 of section 5 not all run as named checks (the closed box and the crowded cell cover the bounds)",
+]
+
+[[feature]]
+id = "sprays.liquid-library"
+area = "Sprays"
+title = "Liquid property library and the 1/3-rule film state of the evaporation (D320, D321)"
+switch = "[spray.liquid] library, property_temperature; [spray.evaporation] film = \"one-third\" (default) or \"far-field\""
+decisions = ["D320", "D321"]
+model = true
+evidence = [
+  { kind = "reference-data", test = "crates/foehncraft-kernels/src/liquids.rs::the_fits_meet_the_nist_tables", what = "water, n-heptane and n-dodecane: vapour pressure, density, specific heat, latent heat, surface tension and viscosity at points of the NIST WebBook saturation tables (SRD 69), within the fit errors of the generator (psat 0.3 %, density 0.1 %, c_l and L 1.5 %, sigma 1 % (n-dodecane 3.6 %), mu 1.4 % up to 0.9 Tc)" },
+  { kind = "reference-data", test = "crates/foehncraft-kernels/src/liquids.rs::the_normal_boiling_points_and_critical_ends", what = "normal boiling points within 0.5 K of NIST, psat(tb) = 101.325 kPa to 1e-4, the water fit within 0.2 % of the IAPWS-95 auxiliary equation; L and sigma zero at Tc" },
+  { kind = "reference-data", test = "crates/foehncraft-kernels/src/liquids.rs::iso_octane_meets_the_primary_data", what = "iso-octane: vapour pressure within 0.3 % of Willingham et al. (1945), latent heat within 0.6 % of the calorimetry of Majer and Svoboda, sigma of Mulero et al. (2012), tb within 0.5 K of 372.4 K" },
+  { kind = "consistency", test = "crates/foehncraft-kernels/src/liquids.rs::the_functions_are_smooth_and_monotone_where_they_must_be", what = "psat rising, density, L and sigma falling with T over the whole range of each liquid" },
+  { kind = "reference-data", test = "crates/foehncraft-flow/src/species.rs::the_spray_vapours_meet_the_nist_data", what = "NC7H16 and IC8H18 ideal-gas c_p within 0.6 % of the NIST data; heptane vapour viscosity at 371 K within 5 % of NIST" },
+  { kind = "exact", test = "crates/foehncraft-kernels/src/evaporation.rs::a_given_surface_fraction_replaces_raoults_law", what = "a surface fraction given to the kernel (the hook of the high-pressure surface) replaces Raoult's law bit for bit; capped at 0.999" },
+  { kind = "reference-data", test = "crates/foehncraft-flow/tests/droplet_validation.rs::n_heptane_droplets_against_chauveau_2019", what = "n-heptane droplets of 0.37 mm in N2 at 0.1 MPa, 473 to 748 K, through Spray::evaporation: K with the 1/3 rule +39 to +59 % above the microgravity fit of Chauveau et al. (2019), with far-field properties +93 to +99 %; the 1/3 rule closer at every temperature (a recorded gap, see gaps)", doc = "docs/gallery/sprays.md#spray-liquid-library" },
+  { kind = "contract", property = "diagnostics", test = "crates/foehncraft-particles/src/config.rs::a_library_liquid_takes_its_properties_and_checks_its_keys", what = "a library liquid takes its properties, a second application keeps them, water keeps IAPWS-95; an unknown liquid (names listed), a value given beside the library and a property temperature without a library are refused" },
+  { kind = "contract", property = "diagnostics", case = "spray_heptane_evaporation", what = "1 g/s of n-heptane at 300 K in N2 at 600 K: evaporates within about 5 cm, the gas takes 1 g/s of vapour and leaves at 312 C with 1.7 % vapour", doc = "docs/gallery/sprays.md#spray-liquid-library" },
+  { kind = "contract", property = "schema", case = "spray_heptane_evaporation_injectors", what = "the included injector file with the library liquid n-heptane", doc = "docs/cases/flow.md#lagrangian-sprays" },
+]
+gaps = [
+  "single n-heptane droplets: K with the 1/3 rule +39 to +59 % above the microgravity data and +16 to +38 % above the fibre-free extrapolation of Chauveau et al.; the same gap is reported for this model class (Both, Mira, Lehmkuhl 2022) and the microgravity data lie below quasi-steady theory (vapour accumulation); not closed",
+  "no spray-scale evaporation case against measurements yet (CORIA n-heptane data on request; the Brno PDA data are a dispersion case)",
+  "density and specific heat of the liquid constant in a run (at property_temperature): no thermal expansion of a heating droplet",
+  "iso-octane above about 400 K rests on extrapolated correlations (density, c_l, mu, sigma); not in the NIST fluid system",
+  "the film carrier is the start composition of the case, not the local gas of the cell",
+  "no NC12H26 vapour species yet (Spray A stages)",
+]
+
+[[feature]]
+id = "sprays.breakup"
+area = "Sprays"
+title = "Spray breakup: KH-ACT and KH-RT with blob injection, TAB distortion and dynamic drag (SP6, D300 to D308)"
+switch = "[spray.breakup] model = \"kh-act\" or \"kh-rt\", drag = \"dynamic\"; injector hole_diameter, area_contraction, rate, flow_share, hole_length, discharge_coefficient"
+decisions = ["D247", "D300", "D301", "D302", "D303", "D304", "D305", "D306", "D307", "D308"]
+model = true
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-kernels/src/breakup.rs::kh_fits_match_the_dispersion_relation", what = "Reitz's KH fits against our own inviscid dispersion relation of a liquid column (Bessel functions): wavelength within 5 % for every We_g, growth rate within 3 % below We_g 0.1 and above 50 (up to 46 % high near We_g 2, a property of the fit)" },
+  { kind = "exact", test = "crates/foehncraft-kernels/src/breakup.rs::tab_step_is_exact", what = "the TAB oscillator step against fourth-order Runge-Kutta, under-, over- and critically damped" },
+  { kind = "exact", test = "crates/foehncraft-kernels/src/breakup.rs::nozzle_turbulence_decays_as_the_k_eps_equations", what = "KH-ACT: the exact decay of the nozzle turbulence against RK4 of the k-eps equations without production (k, eps, L_T, tau_T to 1e-9), the integral of sqrt(k) against Simpson's rule, L_T/tau_T = sqrt(k)" },
+  { kind = "exact", test = "crates/foehncraft-kernels/src/breakup.rs::act_strip_picks_the_strongest", what = "KH-ACT: the mechanism with the largest L/tau strips the blob, the radius stops at the child radius, C_T,CAV scales the rate" },
+  { kind = "exact", test = "crates/foehncraft-particles/tests/breakup.rs::a_blob_strips_as_the_breakup_equation", what = "the KH radius of a blob follows da/dt = -(a - B0 Lambda)/tau integrated independently by RK4, within 2 % of the stripped part over more than half of its life" },
+  { kind = "exact", test = "crates/foehncraft-particles/tests/breakup.rs::kh_act_turbulence_strips_at_the_root_of_k", what = "KH-ACT: a blob stripped by the nozzle turbulence alone has the radius a0 - C_T,CAV int sqrt(k) dt to 1e-12 of a0 whatever the sub-steps" },
+  { kind = "exact", test = "crates/foehncraft-particles/tests/breakup.rs::same_bits_on_any_threads_and_order", what = "D247 with breakup: children, RT breakups and dynamic drag bitwise equal on 1 and 4 threads with the storage reversed" },
+  { kind = "exact", test = "crates/foehncraft-particles/tests/breakup.rs::kh_act_keeps_the_liquid_and_the_bits", what = "KH-ACT with the Huh-Gosman turbulence and cavities: liquid kept to 1e-13, bitwise equal on 1 and 4 threads with the storage reversed" },
+  { kind = "consistency", test = "crates/foehncraft-particles/tests/breakup.rs::blobs_shed_children_and_keep_the_liquid", what = "blobs shed children of the KH size, each of one to three shares; liquid in the flow plus out = injected to 1e-13" },
+  { kind = "consistency", test = "crates/foehncraft-particles/tests/breakup.rs::rayleigh_taylor_acts_beyond_the_breakup_length_only", what = "RT breakup only beyond the breakup length" },
+  { kind = "consistency", test = "crates/foehncraft-particles/tests/breakup.rs::a_rate_table_gives_exact_shares_and_speeds", what = "a rate table gives each parcel its exact share of the liquid and the speed mdot/(rho_l C_a A)" },
+  { kind = "contract", property = "bitwise", test = "crates/foehncraft-particles/tests/breakup.rs::a_restart_continues_with_the_same_bits", what = "a restart with breakup continues with the same bits" },
+  { kind = "contract", property = "diagnostics", test = "crates/foehncraft-particles/tests/breakup.rs::kh_act_needs_the_nozzle_turbulence", what = "the nozzle keys of KH-ACT are checked (missing turbulence, half a pair, C_d above C_a, no friction left)" },
+  { kind = "reference-data", case = "spray_breakup", what = "a diesel-like spray at 60 MPa from a 0.15 mm hole into nitrogen at 15 kg/m3 (KH-ACT, k-eps): 97 % of the liquid at 50.6 mm after 1 ms against 51.1 mm of the correlation of Hiroyasu and Arai (1990), up to 24 % ahead at 0.2 to 0.4 ms; 47.0 mm with kh-rt", doc = "docs/gallery/sprays.md#spray-breakup" },
+  { kind = "contract", property = "schema", case = "spray_breakup_injectors", what = "the included injector file of spray_breakup (rate table, hole, nozzle turbulence)", doc = "docs/cases/flow.md#lagrangian-sprays" },
+]
+gaps = [
+  "validated against a penetration correlation only; ECN Spray G (G1, measured liquid and vapour penetration) is the next part (D309)",
+  "drop sizes not validated: the gallery spray has a Sauter mean diameter near 2 um, small next to measured diesel sprays; no collision or coalescence yet",
+  "the nozzle turbulence of the Huh-Gosman estimate takes the inlet loss K_c = 0.5 and the area ratio s = 0 as our own choices (the papers give no values)",
+  "the k-omega SST model does not build up the turbulence of a thin spray jet in a still chamber (the gallery case uses k-eps)",
+  "breakup is refused in the steady spray mode; constant surface tension and viscosity; children leave with the blob's velocity (no radial velocity); no GPU entry of the breakup kernel; one process",
 ]
 
 [[feature]]
@@ -2095,11 +2155,36 @@ evidence = [
 gaps = [
   "the wall is smeared over about one cell: first order in h, lift 27 % above the benchmark range at h = D/40, wall shear stress and heat flux not accurate (by design of the pre-stage)",
   "laminar and isothermal only: turbulence, energy, scalars, gravity, regions, rotating zones and sprays are refused (IMM102)",
-  "primitive bodies (cylinder, sphere, box) and `field` expressions only; STL bodies need the geometry kernel of stage 0",
+  "primitive bodies (cylinder, sphere, box) and `field` expressions only; STL bodies need the geometry kernel of stage 0 (sharp walls on cut cells: feature immersed.cut)",
   "the coupled solver breaks down from rest when the sink exceeds about 1e5 times the viscous diagonal (K below about 1e-5 h²); SIMPLEC takes any K",
   "the drag error depends on K/h²: with K = 0.01 h² the Stokes sphere array is 6.2, 5.5, 3.9, 2.6 % high on 16³ to 48³ (about first order); smaller K smears the body outward (up to +18 % at 1e-3 h² on 16³); in the Poiseuille channel the effective wall stays within half a cell (16 to 256 cells), its sign set by where the wall cuts its cell (sweeps run by tools/verification/immersed_sweeps.py, not in CI)",
   "manufactured solution on 2D triangular prisms and the mixed 2D mesh: the velocity error stalls at about 2 % (6 % without the sink, so a gap of the flow discretisation on these meshes, not of the penalisation)",
   "one rank only: `foehn run --ranks N` refuses immersed bodies",
+]
+
+[[feature]]
+id = "immersed.cut"
+area = "Immersed bodies"
+title = "Immersed bodies as cut cells, primitive shapes (L13 stage 2a, 2b)"
+switch = "[immersed] method = \"cut\""
+decisions = ["D227", "D228"]
+model = true
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-mesh/tests/cut.rs::sphere_closure_volume_and_area_converge", what = "a sphere cut out of hexahedral, tetrahedral and polyhedral box meshes (8³ to 32³): every cut cell closes to 1e-12 of its largest face, no face with d · S ≤ 0, fluid volume and wall area converge at order above 1.6 (measured 2.0 to 2.2)" },
+  { kind = "exact", test = "crates/foehncraft-mesh/tests/cut.rs::flat_body_is_exact_and_splits_cells", what = "a slab with flat faces: fluid volume and wall area exact to 1e-12; a cell whose fluid is two corner pieces becomes two cells" },
+  { kind = "consistency", test = "crates/foehncraft-mesh/tests/cut.rs::small_cells_merge", what = "merging small cells moves no volume and no wall area (1e-12), the merged cells close to round-off" },
+  { kind = "consistency", test = "crates/foehncraft-mesh/tests/cut.rs::cut_is_independent_of_threads", what = "the cut mesh is bitwise the same on 1 and 4 threads (D93)" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/immersed.rs::cut_poiseuille_converges_at_second_order", what = "plane Poiseuille flow between two cut walls off the cell faces: mass flow error 1.24, 0.29, 0.066 % on 16, 32, 64 cells across, order 2.1 (penalised walls: 20.5, 8.5, 2.3 %)" },
+  { kind = "reference-data", case = "immersed_cut_cylinder_re20", what = "Schäfer & Turek 2D-1 on a plain box mesh (h = D/20) with the cylinder cut out: C_D 5.583 in range, C_L 2.1 % and Δp 1.0 % below the range; the run fails beyond 5 % of the range midpoint", doc = "docs/gallery/immersed.md#cut-cylinder" },
+  { kind = "contract", property = "diagnostics", test = "crates/foehncraft-flow/tests/immersed.rs::cut_settings_are_refused", what = "IMM101 for [immersed.cut] without method = \"cut\", IMM201 for a threshold out of range, IMM202 for regions" },
+]
+gaps = [
+  "primitive bodies and `field` expressions only; STL bodies need the signed distance and segment-triangle crossings of the stage 0 geometry kernel",
+  "the body is seen through its node values: features thinner than a cell vanish; the refusal of thin solids (Q4, IMM for D189) is not built yet",
+  "Δp of the Re 20 cylinder stays about 1 % below the range at D/20 (D/40: C_D 5.592, C_L 0.0105, Δp 0.1171, all within 0.1 % of the range; SIMPLEC stalls at residual 1e-7 there); the lift depends on the merge threshold (0.1: 4 % low, 0.4: 0.4 % low); the default 0.3 is set on this one case",
+  "wall functions with the exact first-cell distance (2c), conjugate heat transfer through cut cells (2d, refused), named surface patches (2e) and the near-body refinement (2f) are not built",
+  "the other verification cases of the plan (cut-sphere Poisson MMS, annulus conduction, Taylor-Couette, inclined channel, Stokes sphere, Re 100 cylinder, turbulent plate) are not run yet",
+  "one rank only: the cut runs on the global mesh, `foehn run --ranks N` with a cut is not tested",
 ]
 
 [[feature]]
@@ -2254,12 +2339,17 @@ evidence = [
   { kind = "exact", case = "motion_piston_adiabatic", test = "crates/foehncraft-flow/tests/mesh_motion.rs::piston_compression_keeps_p_v_gamma", what = "check MS0.2: a closed gas volume compressed by four with adiabatic walls follows p₀V^γ: error 6.6e-4 at the top dead centre with Δt = 0.01 s, observed order 1.8 to 2.2 in Δt, back to p₀(0) within 1e-4 after the period; mass to 1e-13, T uniform, heat book to 1e-8", doc = "docs/gallery/moving-solids.md#deforming-mesh" },
   { kind = "consistency", case = "motion_piston_cooled_walls", what = "walls at 300 K: p₀ below the isentrope (572 kPa at the top dead centre), the expansion ends at 90.4 kPa, mass and heat book closed every step", doc = "docs/gallery/moving-solids.md#deforming-mesh" },
   { kind = "contract", property = "diagnostics", test = "crates/foehncraft-flow/tests/mesh_motion.rs::deforming_mesh_settings_are_checked", what = "MOV001 for a steady case, MOV002 for a folding displacement, MOV003 for an inlet moved out of its plane, MOV004 for a closed volume of constant density that is compressed" },
+  { kind = "contract", property = "bitwise", test = "crates/foehncraft-flow/tests/mesh_motion.rs::deforming_mesh_restart_continues_bit_identically", what = "MS0 part 2: the restart file holds the nodes, Vⁿ, Vⁿ⁻¹ and the swept volumes of the last step; a BDF2 run continued from it writes restart.h5 and fields.vtkhdf byte for byte as the unbroken run; a changed displacement is refused (MOV001)", doc = "docs/gallery/moving-solids.md#deforming-mesh-ranks" },
+  { kind = "contract", property = "bitwise", case = "motion_channel_ranks", test = "crates/foehncraft-flow/tests/run_ranks.rs::deforming_mesh_on_ranks_writes_the_files_of_one_rank", what = "MS0 part 2: a breathing channel with walls and a dye on 2 and 3 ranks writes history, balance, probes, boundaries, forces, wall, field and restart files byte for byte as one rank", doc = "docs/gallery/moving-solids.md#deforming-mesh-ranks" },
+  { kind = "contract", property = "bitwise", test = "crates/foehncraft-flow/tests/run_ranks.rs::deforming_mesh_restart_on_ranks_continues_bit_identically", what = "a restart file of the deforming mesh written on 3 ranks continues on 2 and on 1 rank to the bytes of the unbroken run", doc = "docs/gallery/moving-solids.md#deforming-mesh-ranks" },
 ]
 gaps = [
   "the motion is prescribed by an expression only: no mesh-motion solver, no cell layering, no bodies moved by the fluid (MS1, MS2)",
   "the geometry and the solver setup (an AMG setup) are rebuilt every step",
-  "refused with MOV001: restarts (the restart datasets of D91 are not written yet), several ranks, turning zones, regions, sprays, immersed bodies, periodic boundaries, an error-controlled time step, level sweeps",
-  "turbulence models and passive scalars run on the moving mesh but are not checked against a reference; the GPU backend is not tested on a moving mesh",
+  "refused with MOV001: turning zones, regions, sprays, immersed bodies, periodic boundaries, an error-controlled time step, level sweeps, the check mode [run] ranks",
+  "on ranks every rank moves the whole mesh and rebuilds its part every step (3 ranks about 5 times slower than 1 on 768 cells)",
+  "the closed-volume piston (variable density, stage 7c) neither restarts nor runs on ranks: the variable density has no restart yet",
+  "turbulence models and passive scalars run on the moving mesh but are not checked against a reference; the GPU backend has a Colab check (tools/notebooks/motion_colab.ipynb) that has not been run on a GPU yet",
   "the cooled piston has no reference data (no heat-transfer correlation compared yet)",
 ]
 

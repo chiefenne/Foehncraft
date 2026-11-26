@@ -1,0 +1,18 @@
+# The n-heptane nozzle of spray_heptane_evaporation.toml: a liquid of the
+# property library (D320). Density, specific heat and latent heat come from
+# the library; leave them out here.
+
+[liquid]
+library = "n-heptane"
+temperature = 300.0
+vapour = "NC7H16"
+
+[[injector]]
+name = "nozzle"
+position = [0.1, 0.1, 0.05]
+direction = [1.0, 0.0, 0.0]
+speed = 10.0
+half_angle = 15.0
+mass_flow = 0.001
+size = { distribution = "rosin-rammler", mean = 30e-6, spread = 3.0, min = 10e-6, max = 80e-6 }
+parcels_per_second = 20000.0
