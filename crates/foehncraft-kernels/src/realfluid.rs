@@ -1029,13 +1029,6 @@ impl Mixture {
                 }
             }
         }
-        let scale = |lk: &[f64; MAX]| {
-            let mut m: f64 = 0.0;
-            for v in lk.iter().take(n) {
-                m = m.max(v.abs());
-            }
-            1.0 + m
-        };
         let trivial = |lk: &[f64; MAX]| {
             let mut s = 0.0;
             for i in 0..n {
@@ -1531,6 +1524,8 @@ impl ChungFluid {
         let a = cv / R - 1.5;
         let b = 0.7862 - 0.7109 * self.omega + 1.3168 * self.omega * self.omega;
         let z = 2.0 + 10.5 * tr * tr;
+        // 0.6366 is Chung's printed constant, not 2/π
+        #[allow(clippy::approx_constant)]
         let psi = 1.0
             + a * (0.215 + 0.282_88 * a - 1.061 * b + 0.266_65 * z)
                 / (0.6366 + b * z + 1.061 * a * b);
@@ -1609,9 +1604,9 @@ impl Mixture {
     /// model there (D313).
     pub fn riazi_whitson(&self, x: &[f64; MAX], p: f64, eta_ratio: f64) -> f64 {
         let (mut w, mut pc) = (0.0, 0.0);
-        for i in 0..self.n {
-            w += x[i] * self.c[i].omega;
-            pc += x[i] * self.c[i].pc;
+        for (xi, c) in x.iter().zip(&self.c[..self.n]) {
+            w += xi * c.omega;
+            pc += xi * c.pc;
         }
         let n = -0.27 - 0.38 * w + (-0.05 + 0.1 * w) * p / pc;
         math::exp(n * math::ln(eta_ratio))
