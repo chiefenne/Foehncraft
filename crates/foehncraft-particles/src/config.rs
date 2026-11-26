@@ -471,9 +471,9 @@ pub struct Injector {
     pub nozzle_epsilon: Option<f64>,
     /// Droplets measured in a plane across the spray (D322), for example by
     /// phase Doppler anemometry: a file (relative to the file that names it)
-    /// of the columns `r` (m, the distance from the axis), `d` (m),
-    /// `u_axial` and `u_radial` (m/s) and, optionally, `u_tangential` (m/s)
-    /// and `weight`, the share of the liquid mass flow that the row stands
+    /// of the columns `r`, the distance from the axis, and `d`, the
+    /// diameter, in metres, `u_axial` and `u_radial` in m/s and, optionally,
+    /// `u_tangential` in m/s and `weight`, the share of the liquid mass flow that the row stands
     /// for (any unit; equal shares without it). A parcel takes the size and
     /// velocity of one row, drawn by mass with the counter-based generator
     /// keyed by the parcel identity (D121), and starts at its radius on a

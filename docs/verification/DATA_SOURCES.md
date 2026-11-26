@@ -252,6 +252,29 @@ the tables they are fitted to are not stored. Generators:
   Int. J. Heat Mass Transfer 18, 1003-1008; Yuen, M. C., Chen, L. W. (1976),
   Combust. Sci. Technol. 14, 147-154.
 
+## 3g. Air-blast water spray, phase Doppler data (D322)
+
+- Rácz, E., Malý, M., Jedelský, J. et al., "Spatio-temporal analysis of
+  sprays by using Phase Doppler Anemometry data", data set, Brno
+  University of Technology (measured 2017), Zenodo record 17935932,
+  licence CC BY 4.0. Measurements, D201 accepted class. Operating point
+  `air-blast_1.28kgh_W_1.2bar_100C_1`: water, 1.28 kg/h, 1.2 bar air
+  over-pressure, liquid at 100 °C at the atomizer inlet; 90 points on the
+  x and y traverses at z = 20, 40 and 60 mm, raw droplet records (arrival
+  time, axial velocity, the velocity along y, diameter).
+- In the repository (attributed, CC BY 4.0 allows it): the reduced files
+  made by `examples/studies/brno_spray/pda_to_csv.py` from the raw files:
+  `examples/cases/flow/spray_brno_samples.csv` (6000 droplets of the plane
+  z = 20 mm drawn by liquid volume), `examples/cases/flow/spray_brno_inlet.csv`
+  (gas velocity and k from the droplets below 5 µm), and
+  `examples/studies/brno_spray/data/brno_profiles.csv`,
+  `brno_gas_20mm.csv` (statistics per point and size class). The raw files
+  are not stored.
+- Not in the data set and assumed in the case (stated in gallery 325):
+  the air temperature (22 °C) and humidity, the droplet temperature at
+  20 mm (95 °C), the nozzle geometry and air flow (the case starts at the
+  measured plane), and the size dependence of the probe area.
+
 ## 4. Rules for adding an entry
 
 1. A value goes into the repository only when a test or a validation page
