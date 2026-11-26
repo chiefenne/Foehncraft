@@ -664,6 +664,13 @@ pub enum DragLaw {
     /// TAB distortion y of every parcel (O'Rourke and Amsden 1987; Liu,
     /// Mather and Reitz 1993).
     Dynamic,
+    /// The Corrected Distortion model of Nguyen, Dahms, Pickett and
+    /// Tagliante (2022) on the same TAB distortion (SA4, D316): the drag of
+    /// a viscous sphere (Feng and Michaelides 2001) with the shape ratio of
+    /// a spheroid (Richter and Nikrityuk 2012), and the same corrections
+    /// with the larger surface on the heat and mass transfer. Needs
+    /// `[spray.liquid] viscosity` (or a library liquid).
+    CorrectedDistortion,
 }
 
 /// `[spray.breakup]` (SP6, D300 to D305): the breakup of the drops and the
@@ -674,7 +681,7 @@ pub enum DragLaw {
 pub struct Breakup {
     /// `none` (default), `kh-rt` or `kh-act`.
     pub model: BreakupModel,
-    /// `sphere` (default) or `dynamic`.
+    /// `sphere` (default), `dynamic` or `corrected-distortion`.
     pub drag: DragLaw,
     /// KH child size constant B₀: r_c = B₀ Λ (default 0.61, Reitz 1987).
     pub b0: f64,
@@ -728,9 +735,15 @@ impl Breakup {
         self.model == BreakupModel::KhAct
     }
 
-    /// True when the parcels carry the TAB distortion (dynamic drag).
+    /// True when the parcels carry the TAB distortion (dynamic drag or the
+    /// Corrected Distortion model).
     pub fn distortion(&self) -> bool {
-        self.drag == DragLaw::Dynamic
+        self.drag != DragLaw::Sphere
+    }
+
+    /// True for the Corrected Distortion model (SA4, D316).
+    pub fn corrected(&self) -> bool {
+        self.drag == DragLaw::CorrectedDistortion
     }
 
     /// True when the surface tension and viscosity are needed.
@@ -1220,6 +1233,8 @@ impl SpraySection {
         if br.needs_properties() {
             let what = if br.on() {
                 "the breakup"
+            } else if br.corrected() {
+                "the Corrected Distortion drag"
             } else {
                 "the dynamic drag"
             };

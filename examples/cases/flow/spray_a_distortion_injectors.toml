@@ -1,0 +1,31 @@
+# The Spray A injector of spray_a_distortion.toml (ECN Spray A, nominal
+# conditions; Pickett et al. 2011, SAE 2011-01-0901, and the ECN data
+# pages): one hole of 90 µm, 1.03 mm long, C_d = 0.89, C_a = 0.98;
+# n-dodecane at 363 K from the liquid library; 3.46 mg in 1.5 ms with a
+# short ramp (a plateau of 2.39 g/s for the whole hole), of which the
+# quarter domain takes a quarter. Without `speed` and `diameter` the
+# parcels leave as blobs of √C_a d_hole at ṁ/(ρ_l C_a A_hole) (D306).
+# The hole is hydro-ground, so its inlet is rounded: inlet_loss 0.05, the
+# textbook loss of a well-rounded pipe entrance (the sharp-edge default 0.5
+# would leave no wall friction at C_d = 0.89 for the nozzle turbulence
+# estimate of D307).
+
+[liquid]
+library = "n-dodecane"
+temperature = 363.0
+vapour = "NC12H26"
+
+[[injector]]
+name = "spray-a"
+position = [0.0002, 1e-6, 1e-6]
+direction = [1.0, 0.0, 0.0]
+half_angle = 10.0
+hole_diameter = 9.0e-5
+area_contraction = 0.98
+flow_share = 0.25
+hole_length = 1.03e-3
+discharge_coefficient = 0.89
+inlet_loss = 0.05
+rate = [[0.0, 0.0], [5e-5, 2.39e-3], [1.45e-3, 2.39e-3], [1.5e-3, 0.0]]
+parcels_per_second = 2e7
+temperature = 363.0

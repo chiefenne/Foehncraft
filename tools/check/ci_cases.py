@@ -92,7 +92,7 @@ FLOW = {
         "flame_methane_air_gri30",
         "immersed_stokes_sphere", "immersed_cut_stl_sphere_array", "spray_saturation_steady",
         "spray_breakup", "spray_chamber_ecn", "motion_piston_cooled_walls", "spray_g_g1",
-        "ranks_cylinder_species_statistics",
+        "ranks_cylinder_species_statistics", "spray_a_distortion",
     ],
     "quick": [
         "cavity_re100_budget", "couette_hex", "couette_mixed", "couette_poly", "couette_tet",
@@ -110,9 +110,12 @@ LINUX = ("linux-1", "linux-2", "linux-3", "long")
 # stopped by its diagnosis on purpose (D198, exit code 3 = stopped).
 EXPECTED_EXIT = {F + "cylinder_steady_diagnosis.toml": 3}
 # Extra arguments of a case in CI: the ECN Spray G run (1.2 ms, about 30
-# minutes on 4 threads) runs its first 0.1 ms there; the gallery has the
-# whole run.
-ARGS = {F + "spray_g_g1.toml": ["--set", "time.end_time=1e-4"]}
+# minutes on 4 threads) and the Spray A run (0.6 ms, about 30 minutes on 2
+# threads) run their first 0.1 ms there; the gallery has the whole runs.
+ARGS = {
+    F + "spray_g_g1.toml": ["--set", "time.end_time=1e-4"],
+    F + "spray_a_distortion.toml": ["--set", "time.end_time=1e-4"],
+}
 
 
 def _files(pattern: str) -> list[str]:
