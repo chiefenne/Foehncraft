@@ -153,8 +153,12 @@ fn unsupported_settings_are_refused() {
     assert_eq!(refused(&turb), "IMM102");
 }
 
+/// A case file of the catalogue with `\n` line ends (a Windows checkout
+/// has `\r\n`, and the tests edit the text line by line).
 fn text(file: &str) -> String {
-    std::fs::read_to_string(cases().join(file)).unwrap()
+    std::fs::read_to_string(cases().join(file))
+        .unwrap()
+        .replace("\r\n", "\n")
 }
 
 /// The manufactured solution of the penalised equations (a smooth solid
