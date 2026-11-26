@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 1.1.0 (b35bc269d4e1)), never typed in. The same as data: [grades.json](grades.json).
 
-**156 features: 50 verified, 103 partial, 3 unverified.**
+**157 features: 50 verified, 104 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -152,6 +152,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Sprays | [Two-way momentum coupling of the sprays (SP2a, D247 to D252)](#sprays-two-way-momentum) | partial |
 | Sprays | [Two-way sensible heat coupling of the sprays (SP2b, D247 to D252)](#sprays-two-way-heat) | partial |
 | Sprays | [Turbulent dispersion of the sprays, eddy lifetime (SP2c, D243)](#sprays-dispersion-eddy-lifetime) | partial |
+| Sprays | [The drops damp the gas turbulence: the work of the dispersing eddies taken out of k (D330)](#sprays-turbulence-two-way) | partial |
 | Sprays | [Steady spray mode: streams through the steady gas with relaxed sources (SP2s, D260)](#sprays-steady-mode) | partial |
 | Sprays | [Evaporating sprays: vapour, mass and enthalpy to the gas (SP4, SP5, D250 to D253)](#sprays-evaporation) | partial |
 | Sprays | [Liquid property library and the 1/3-rule film state of the evaporation (D320, D321)](#sprays-liquid-library) | partial |
@@ -2062,7 +2063,7 @@ Gaps:
 Gaps:
 
 - heat exchange is the row sprays.two-way-heat (SP2b)
-- turbulent dispersion is the row sprays.dispersion-eddy-lifetime (SP2c); no turbulence modulation by the droplets (in no decision yet)
+- turbulent dispersion is the row sprays.dispersion-eddy-lifetime (SP2c); the damping of the gas turbulence by the drops is the row sprays.turbulence-two-way (D330); no turbulence production by drop wakes
 - first order in time (V28.4); second order (an exponentially fitted weight per cell) is an open point of section 5.7
 - V28.6 (two neighbour cells) is covered only through the shuffled-storage test; no reference-data case of a dense spray against measurements
 - the time-step study as a registered tool (D254 (4)) is not built
@@ -2115,9 +2116,31 @@ Gaps:
 - V28.17 not run: no comparison with the grid-turbulence measurements (Snyder and Lumley 1971; Wells and Stock 1983)
 - isotropic eddies: the wall-normal fluctuation near walls is overestimated (a known flaw of the model), so wall deposition rates are not reliable
 - the continuous random walk (second value of the key, D243) is not built
-- no turbulence modulation by the droplets
+- the drops' damping of the gas turbulence is the row sprays.turbulence-two-way (D330, off by default); no production by drop wakes
 - one process
 - `spray_dispersion_injectors` has no run in the verification manual or in CI
+
+<a id="sprays-turbulence-two-way"></a>
+
+### The drops damp the gas turbulence: the work of the dispersing eddies taken out of k (D330)
+
+**partial** (gaps written) · id `sprays.turbulence-two-way` · switch `[spray.coupling] turbulence = "dispersion-work" (with mode = "two-way" and [spray] dispersion = "eddy-lifetime")` · decisions D330, D243, D247, D250, D251
+
+- exact: [`the_eddies_do_work_on_the_parcels_they_disperse`](../../crates/foehncraft-particles/tests/coupling.rs): V28.22: drops born in still turbulent gas (k = 0.5 m2/s2) book -2k times the injected mass in the first pass within -40 % and +20 % (found 0.88: drops born late in the step relax only partly); nothing without dispersion
+- exact: [`k_loses_the_work_the_eddies_do_on_the_drops`](../../crates/foehncraft-flow/tests/spray_coupling.rs): V28.23: a lumped cell on k-eps with drops: k at the end with the term equals k without it less the booked work over rho V within 3 %; the column gas_turbulence_w of spray.csv is never positive, and absent without the key
+- exact: [`sources_do_not_depend_on_parcel_order_or_threads`](../../crates/foehncraft-particles/tests/coupling.rs): the work is summed with the other sources of a pass: bitwise equal with the storage reversed and on one thread
+- contract (diagnostics): [`a_parcel_enters_at_most_a_set_number_of_eddies_in_a_step`](../../crates/foehncraft-particles/tests/coupling.rs): in a gas with k = 1e-12 m2/s2 a parcel enters at most 32 eddies in a step and keeps the last one to its end (counted as held_eddies); in developed turbulence none is held
+- reference-data: recorded run (spray_g_g1 with turbulence = dispersion-work on k-omega SST and k-epsilon): measured before the collision model (D331), on the G1 of PR 333 without collisions: ECN Spray G on SST: the median k of the plume cells at 0.6 ms falls from 106 to 0.004 m2/s2 and the turbulence kinetic energy of the gas of the injector from 8.6 to 0.01 mJ (the drops took 0.18 mJ over the run: the seed near the nozzle is gone); the liquid at 1.1 ms 33 % ahead of the measurement instead of 15 %, the vapour 26 % instead of 7 %; on k-epsilon the liquid 52 % ahead instead of 30 % (plume k median 3.9 to 0.05 m2/s2 at 0.3 ms); 65 632 eddies held to the end of their step on SST, 66 969 on k-epsilon ([results](../gallery/sprays.md#spray-turbulence))
+
+Gaps:
+
+- on ECN Spray G (G1) with k-epsilon-zeta-f0 the run with the term stopped at step 24 (0.05 ms) in a failed CG solve of the pressure (DIV006, RUN014) before the start-of-step bound of #334; after it (G1 with collisions, re-checked 2026-11-26) the run passes step 24 and runs to 0.1 ms (50 steps, term active); the full 1.2 ms run with the term on zeta-f0 is not done
+- on ECN Spray G (G1) the term removes nearly all of the plume turbulence and moves the penetration away from the measurement (without collisions: liquid 33 % ahead at 1.1 ms on SST instead of 15 %, 52 % on k-epsilon instead of 30 %): off by default and in the case; not re-measured with collisions (D331)
+- only damping: no production of turbulence by the wakes of drops larger than the eddies
+- the eddies are the isotropic Gaussian eddies of the eddy-lifetime model (D243); the continuous random walk (not built) would need its own form
+- the omega form of SST is the eps form written with eps = beta* k omega (our step; KIVA-II gives the eps form only)
+- not in the steady spray mode
+- one process
 
 <a id="sprays-steady-mode"></a>
 
