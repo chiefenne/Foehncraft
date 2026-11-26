@@ -619,7 +619,8 @@ as one face and the merge avoiding skewed faces, the 32³ run takes no
 remediation, K is −1.9 % (−2.3 % with the folded faces of #322) and the
 wall carries G L³ to 0.4 %; 288 pairs of cells share several faces there.
 The merge threshold 0.4 instead of 0.3 gives −2.3 % on 32³ (24³ and the
-2D cylinder at h = D/10: no change).
+2D cylinder at h = D/10: no change; at D/20 it puts C_L into the range,
+0.01047, and C_D 0.06 % above it); the maintainer kept 0.3.
 
 **What is not here yet.** The fallback cuts the whole mesh again per round.
 On polyhedral meshes the faces are not planar, so the fan of a clipped face
