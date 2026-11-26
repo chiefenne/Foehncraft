@@ -40,6 +40,8 @@ NOZZLE_X = 0.0002
 # the PLV threshold 0.2e-3 mm³/mm² (nozzle 210370)
 MEASURED = [(10.4, "Mie scattering, 3 %"), (11.2, "PLV 0.2·10⁻³ mm³/mm²")]
 FUEL = "Y_NC12H26"
+# the window of the field panel (mm)
+XMAX, YMAX = 30.0, 8.0
 
 
 def plane(path):
@@ -93,8 +95,8 @@ def history(run):
 
 
 def plot(out, factors, runs):
-    fig = plt.figure(figsize=(16.0, 5.6), constrained_layout=True)
-    gs = fig.add_gridspec(1, 3, width_ratios=[1.75, 1.0, 1.0])
+    fig = plt.figure(figsize=(16.0, 5.2), constrained_layout=True)
+    gs = fig.add_gridspec(1, 3, width_ratios=[1.9, 1.0, 1.0])
 
     ax = fig.add_subplot(gs[0, 0])
     vmax = 0.0
@@ -114,23 +116,25 @@ def plot(out, factors, runs):
         hist[name] = h
         k = int(np.argmin(np.abs(h["t"] - attrs["time"])))
         ll = (NOZZLE_X + h["ll"][k]) * 1000.0
-        ax.plot([ll, ll], [0.0, sign * 12.0], color="k", lw=1.6)
-        ax.text(ll + 0.4, sign * 10.8, f"liquid length {h['ll'][k] * 1000:.1f} mm", fontsize=8,
-                va="center", color="k")
-        ax.text(1.0, sign * 10.8, name, fontsize=9.5, va="center", color="white", weight="bold")
+        ax.plot([ll, ll], [0.0, sign * YMAX], color="k", lw=1.6)
+        ax.text(ll + 0.3, sign * 0.55 * YMAX, f"liquid length\n{h['ll'][k] * 1000:.1f} mm", fontsize=8,
+                va="center", color="white")
+        ax.text(XMAX - 0.5, sign * 0.85 * YMAX, name, fontsize=10, va="center", ha="right", color="white",
+                weight="bold")
     for c in ax.collections:
         if isinstance(c, PolyCollection):
             c.set_clim(0.0, vmax)
     fig.colorbar(ax.collections[0], ax=ax, label="n-dodecane vapour mass fraction (%)", shrink=0.85, pad=0.01)
     m = (NOZZLE_X * 1000.0 + MEASURED[1][0])
-    ax.plot([m, m], [-12.0, 12.0], color="0.85", ls="--", lw=1.3, label=f"measured liquid length {MEASURED[1][0]} mm (PLV)")
+    ax.plot([m, m], [-YMAX, YMAX], color="0.85", ls="--", lw=1.3,
+            label=f"measured liquid length {MEASURED[1][0]} mm (PLV)")
     ax.axhline(0.0, color="0.9", lw=0.8)
-    ax.set_xlim(0.0, 50.0)
-    ax.set_ylim(-12.0, 12.0)
+    ax.set_xlim(0.0, XMAX)
+    ax.set_ylim(-YMAX, YMAX)
     ax.set_aspect("equal")
     ax.set_xlabel("distance from the nozzle wall (mm)")
     ax.set_ylabel("distance from the axis (mm)")
-    ax.legend(fontsize=8, loc="lower right", framealpha=0.85)
+    ax.legend(fontsize=8, loc="lower left", framealpha=0.85)
     ax.set_title(f"ECN Spray A, 900 K, 6 MPa, t = {attrs['time'] * 1000:.1f} ms: vapour and droplets", fontsize=10)
 
     b = fig.add_subplot(gs[0, 1])
@@ -139,9 +143,12 @@ def plot(out, factors, runs):
         c = colours.get(name, "k")
         b.plot(h["t"] * 1000.0, h["ll"] * 1000.0, color=c, lw=1.7, label=f"liquid length, {name}")
         b.plot(h["t"] * 1000.0, h["vp"] * 1000.0, color=c, lw=1.4, ls="-.", label=f"vapour penetration, {name}")
-    for val, lab in MEASURED:
+    for val, _ in MEASURED:
         b.axhline(val, color="0.35", ls=":", lw=1.2)
-        b.text(0.02, val + 0.6, f"measured {val} mm ({lab})", fontsize=7.5, color="0.25")
+    t_end = max(h["t"][-1] for h in hist.values()) * 1000.0
+    b.text(t_end, MEASURED[1][0] + 0.5,
+           f"measured {MEASURED[0][0]} mm ({MEASURED[0][1]})\nand {MEASURED[1][0]} mm (PLV)",
+           fontsize=7.5, color="0.25", ha="right")
     b.set_xlabel("time after the start of injection (ms)")
     b.set_ylabel("distance from the nozzle (mm)")
     b.set_title("Liquid length (PLV 0.2·10⁻³ mm³/mm²) and vapour penetration (0.1 %)", fontsize=9.5)

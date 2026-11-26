@@ -16,6 +16,7 @@ Part of the [Example gallery](../gallery.md): droplets as Lagrangian parcels in 
 | 314 | [A fuel droplet's surface at diesel pressure](#spray-a-surface) | SA1 | `[spray.evaporation] equilibrium = "peng-robinson"`, `[spray.evaporation.peng_robinson]`: Peng-Robinson phase equilibrium of the fuel and the ambient gas at the droplet surface, latent heat from the same equation, the critical mixing state (D311, D312, D314) |
 | 320 | [Where the last liquid evaporates: the Spray A mixing line](#spray-a-mixing-line) | SA1 | `realfluid::Streams`: the adiabatic mixing line of fuel and gas (frozen, Peng-Robinson equilibrium, ideal), stability test and flash, the saturation mixture fraction, the liquid length of Siebers (1999) against the measured Spray A lengths (D319, VA.4, VA.5) |
 | 321 | [Fuel droplets with real liquid properties and the 1/3-rule film](#spray-liquid-library) | D320, D321 | `[spray.liquid] library` (water, n-heptane, n-dodecane, iso-octane), `[spray.evaporation] film = "one-third"` (default), single n-heptane droplets against measurements, an n-heptane spray in hot nitrogen |
+| 326 | [Flattened drops in ECN Spray A: the Corrected Distortion model](#spray-a-distortion) | SA4 | `[spray.breakup] drag = "corrected-distortion"` (D316): drag and evaporation of the TAB spheroid (Nguyen, Dahms, Pickett and Tagliante 2022), viscous-sphere circulation, ECN liquid length on a quarter domain with mirror images |
 
 ---
 
@@ -947,3 +948,110 @@ stays an ideal gas (D317).
 [plan](../requirements/step28-spray-a.md).
 
 ---
+
+<a id="spray-a-distortion"></a>
+## 326. Flattened drops in ECN Spray A: the Corrected Distortion model
+
+<img src="../figures/gallery/spray_a_distortion.png" alt="Three panels. Left: the n-dodecane vapour mass fraction near the symmetry plane of ECN Spray A at 0.6 ms, 0 to 30 mm from the nozzle and 8 mm on each side of the axis, the dynamic drag above the axis and the Corrected Distortion model below it; a narrow white cone of droplets from the nozzle ends at the liquid length, 8.8 mm above and 7.0 mm below, both short of the measured 11.2 mm drawn as a dashed line; the vapour, up to 30 percent near the liquid tip, spreads into a cloud about 4 mm wide that reaches 25 mm. Middle: over 0.6 ms the liquid lengths of both runs rise to about 10 mm by 0.1 ms and then stay between 6 and 11 mm, the Corrected Distortion one lower and more ragged, below the measured 10.4 and 11.2 mm; the vapour penetration of both runs rises together to 27 mm. Right: the drag and the Sherwood number of a drop over those of a solid sphere against its distortion from -1 to 1 at Reynolds numbers 20, 100 and 500: the drag rises from 0.65 to 0.8 for a prolate drop to 1.6 to 1.8 for a flat one, the Sherwood number from about 1.05 to 2.2 to 4, while the dynamic drag of the standard model rises to 3.6." width="1600" height="520">
+
+The KH-ACT breakup of gallery 318 makes every drop a TAB oscillator: its
+distortion y flattens it across the flow (y > 0) or stretches it along
+the flow (y < 0). The standard dynamic drag (Liu, Mather and Reitz 1993)
+raises the drag of a flat drop to 3.6 times a sphere and leaves its
+evaporation alone. The Corrected Distortion model of Nguyen, Dahms,
+Pickett and Tagliante (2022) treats the drop as the spheroid of its
+distortion instead (`[spray.breakup] drag = "corrected-distortion"`):
+
+- **Shape:** the axis along the flow l = d (1 − y/2) and the volume of the
+  sphere; the surface, the sphericity and the crosswise sphericity follow
+  (their eqs. 24 to 31).
+- **Drag:** the viscous sphere of Feng and Michaelides (2001a) for the
+  viscosity ratio λ = μ_l(T_p)/μ_g, times the shape ratio of Richter and
+  Nikrityuk (2012). A fully flattened drop drags 1.0 to 1.9 times a solid
+  sphere (right panel; the paper's fig. 19 gives 1.2 to 1.9).
+- **Heat and mass transfer:** the Sherwood and Nusselt numbers of the sphere
+  laws times the internal circulation (Feng and Michaelides 2001b), the
+  shape ratio and the surface ratio. A flat drop evaporates 2 to 5 times
+  faster than a solid sphere, a prolate one about as fast as a round drop
+  of the same liquid.
+
+The corrections are ratios to the solid sphere of the same correlations,
+applied as factors on the sphere laws of the spray (Schiller-Naumann,
+Ranz-Marshall or Abramzon-Sirignano with the film thickening). At y = 0
+and λ → ∞ they are 1.
+
+`spray_a_distortion.toml` is a first Spray A run with both laws: a quarter
+of the vessel (50 × 12 × 12 mm, 40 000 cells, 0.5 mm along the axis),
+n-dodecane at 363 K from the 90 µm hole (C_d 0.89, C_a 0.98, 3.46 mg in
+1.5 ms) into nitrogen at 900 K and 22.8 kg/m³, KH-ACT, the Peng-Robinson
+surface with the real-fluid film, two-way coupling, k-ε, 2·10⁷ parcels
+per second (about 9000 in the flow). It runs to 0.6 ms in 27 minutes
+(dynamic drag) and 36 minutes (Corrected Distortion) on 2 threads each.
+
+| 0.3 to 0.6 ms | Dynamic drag | Corrected Distortion | Measured |
+|---|---|---|---|
+| Liquid length, PLV 0.2·10⁻³ mm³/mm² (mean ± s.d.) | 8.5 ± 0.3 mm | 7.6 ± 1.6 mm | 11.2 mm (PLV), 10.4 mm (Mie 3 %) |
+| Vapour penetration (0.1 %) at 0.6 ms | 26.6 mm | 26.6 mm | – |
+| Sauter mean diameter in the flow | 1.05 µm | 1.08 µm | – |
+
+The Corrected Distortion model shortens the liquid length by about 1 mm,
+the way it does in the paper (RANS: 12.5 mm standard, 10.5 mm Corrected
+Distortion). Here both runs are already short of the measurement, by 24
+and 32 %, so the model moves this run away from it. The vapour penetration
+does not change.
+
+```toml
+[spray.breakup]
+model = "kh-act"
+drag = "corrected-distortion"
+```
+
+**Also fixed.** Two errors showed up in the first runs of this case:
+
+- **The saturation limiter (D253) above the critical mixing temperature.**
+  With the Peng-Robinson surface, the gas above 651 K (at 6 MPa) got no
+  room for vapour, because the surface there takes no latent heat. The
+  limiter then held back 35 times the vapour that still evaporated. Drops
+  of 1 µm heated to 900 K without evaporating, and the liquid length grew
+  with the vapour tip (35 mm at 1 ms). Such a gas now takes vapour up to
+  the fuel fraction of the critical surface.
+- **`[spray.ecn]` on a half or quarter domain.** Seen across a symmetry
+  plane, the domain holds half of each line of sight, so the projected
+  liquid volume was half and the liquid lengths too short. The projection
+  now adds the mirror images of the parcels across the symmetry planes
+  and slip walls that contain the injector axis (a quarter domain: four
+  images). A sector whose images do not tile the whole spray (planes not
+  at 180°/n) is refused.
+
+**What is checked.**
+
+- The spheroid surface against quadrature, and the sphere limits to
+  1e-10.
+- The viscous-sphere branches of Feng and Michaelides meet at λ = 2.
+- The trends of the paper's figs. 18 and 19.
+- The evaporation rate of a distorted drop is the sphere's times the
+  Sherwood factor, to 1e-12.
+- The factor the spray applies is the kernel's at the film state.
+- The drag lies between the sphere and the dynamic drag.
+- The same bits on 1 and 4 threads.
+- Mirror images: a quarter spray with its images gives the whole spray's
+  projection to 1e-12, and sectors of 90° and 60° are accepted while 50°
+  and one radian are refused.
+- The limiter: the capacity of a 900 K gas at 6 MPa is the critical
+  fraction's, to 1e-12.
+
+**What this version does not do.** This is one run per law on a coarse
+mesh (ECN asks for 0.25 mm), without the ensemble or time averages of the
+ECN fields. The KH-ACT constants of gallery 318 are untuned and give drops
+of about 1 µm; the liquid length is 24 to 32 % short, so this case is not
+yet the Spray A validation (SA6). The difference between the two laws
+(0.9 mm) is within the scatter of the Corrected Distortion run (s.d. 1.6
+mm). The correlations of Feng and Michaelides and of Richter and
+Nikrityuk are taken as Nguyen et al. print them; the originals are still
+to be checked. The liquid volume does not yet displace the gas, and the
+sources are not yet spread over a fixed radius (SA4 part 2, D316).
+Collisions are later work.
+
+[Recipe 326](../recipes/sprays.md#spray-a-distortion),
+[case row](../cases/flow.md#lagrangian-sprays),
+[plan](../requirements/step28-spray-a.md).
