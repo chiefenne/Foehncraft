@@ -203,4 +203,4 @@ type = "wall"
 
 **Resolution.** About 6 cells per radius give the drag of a sphere array within 2.3 %, 10 cells within 0.9 % (hexahedra, second order). A part of the surface thinner than a cell can vanish; put two or more cells across thin walls.
 
-**Limits.** Hexahedral meshes are the best checked; on tetrahedra the force balance of the wall is within 5 %, on polyhedra the cut is less accurate (the faces are not planar). The joined faces of merged cells can fold (IMM203). Wall functions, conjugate heat transfer, other wall conditions per surface patch and near-body refinement follow (stages 2c to 2f). One rank only.
+**Limits.** Hexahedral meshes are the best checked; on tetrahedra the force balance of the wall is within 5 %, on polyhedra the cut is less accurate (the faces are not planar). Merged cells keep faces that do not lie in one plane apart, so two cells can share several faces (IMM203 counts them). Wall functions, conjugate heat transfer, other wall conditions per surface patch and near-body refinement follow (stages 2c to 2f). One rank only.

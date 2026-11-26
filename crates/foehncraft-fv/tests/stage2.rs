@@ -237,3 +237,103 @@ fn bicgstab_reaches_its_tolerance() {
         "{it} iterations, {r1:e} / {r0:e}"
     );
 }
+
+/// Two cells that share several faces (the pieces of a merged cut cell
+/// around a bend, L13 D228) are one face to the two-point flux: over the
+/// pieces of each pair Σ |S|²/(d·S) and Σ k are those of the summed area
+/// vector, all pieces take the pair's interpolation weight, and the
+/// least-squares gradient of a linear field stays exact.
+#[test]
+fn faces_of_one_cell_pair_act_as_one_face() {
+    use foehncraft_mesh::cut::{CutOptions, Sphere, cut};
+    use foehncraft_mesh::generate::BoxSpec;
+    use foehncraft_mesh::geometry::{add, dot, norm, scale, sub};
+    let mut s = BoxSpec::new(Kind::Poly, 3, [16, 16, 16]);
+    s.lower = [0.0; 3];
+    s.upper = [1.0; 3];
+    let m = s.generate().unwrap();
+    let body = Sphere {
+        centre: [0.5, 0.5, 0.5],
+        radius: 0.2,
+        exact: true,
+    };
+    let opts = CutOptions {
+        min_fraction: 0.3,
+        wall_point: true,
+        face_point: true,
+    };
+    let c = cut(&m, &body, &["body".to_string()], &opts).unwrap();
+    assert!(c.report.shared_pairs > 0, "{:?}", c.report);
+    let mesh = c.mesh;
+    let geo = foehncraft_mesh::Geometry::compute(&mesh);
+    let mut p = Problem {
+        velocity: [0.0; 3],
+        ..Default::default()
+    };
+    for b in &mesh.boundaries {
+        p.boundary.insert(
+            b.name.clone(),
+            foehncraft_fv::problem::Boundary::zero_gradient(),
+        );
+    }
+    let d = Discretisation::new(&mesh, &geo, &p).unwrap();
+    let ni = mesh.n_interior_faces();
+    let (mut f, mut pairs) = (0, 0);
+    while f < ni {
+        let mut e = f + 1;
+        while e < ni && mesh.owner[e] == mesh.owner[f] && mesh.neighbour[e] == mesh.neighbour[f] {
+            e += 1;
+        }
+        if e - f > 1 {
+            pairs += 1;
+            let dd = sub(
+                geo.cell_centroid[mesh.neighbour[f] as usize],
+                geo.cell_centroid[mesh.owner[f] as usize],
+            );
+            let st = (f..e).fold([0.0; 3], |a, g| add(a, geo.face_area[g]));
+            let want = dot(st, st) / dot(dd, st);
+            let got: f64 = (f..e).map(|g| d.dgeo[g]).sum();
+            assert!(
+                (got / want - 1.0).abs() < 1e-12,
+                "faces {f}..{e}: {got} vs {want}"
+            );
+            let k = (f..e).fold([0.0; 3], |a, g| add(a, d.k.get(g)));
+            let kw = sub(st, scale(dd, want));
+            assert!(norm(sub(k, kw)) < 1e-12 * norm(st), "faces {f}..{e}");
+            for g in f + 1..e {
+                assert_eq!(d.weight[g], d.weight[f]);
+            }
+            assert!((0.0..=1.0).contains(&d.weight[f]));
+        }
+        f = e;
+    }
+    assert!(pairs > 0);
+    // the least-squares gradient of φ = a · x (zero normal gradient at
+    // the boundaries does not hold for it: interior cells only)
+    let a = [0.3, -1.1, 0.7];
+    let phi: Vec<f64> = (0..mesh.n_cells)
+        .map(|c| dot(a, geo.cell_centroid[c]))
+        .collect();
+    for cell in 0..mesh.n_cells {
+        let lo = mesh.cell_ptr[cell] as usize;
+        let hi = mesh.cell_ptr[cell + 1] as usize;
+        let mut inner = true;
+        let mut g = [0.0; 3];
+        for (i, &en) in mesh.cell_faces[lo..hi].iter().enumerate() {
+            let (fc, is_nb) = unpack_face(en);
+            if fc >= ni {
+                inner = false;
+                break;
+            }
+            let o = if is_nb {
+                mesh.owner[fc]
+            } else {
+                mesh.neighbour[fc]
+            } as usize;
+            g = add(g, scale(d.lsq.get(lo + i), phi[o] - phi[cell]));
+        }
+        if inner {
+            assert!(norm(sub(g, a)) < 1e-9, "cell {cell}: {g:?}");
+        }
+    }
+}

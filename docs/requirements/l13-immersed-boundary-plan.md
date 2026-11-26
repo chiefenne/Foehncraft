@@ -344,14 +344,16 @@ Sizing: 2a 2 PRs, 2b 1, 2c 1, 2d 1, 2e 1, verification runs 2 to 3 hours in
 all; code about 30 to 60 min per PR. Cut robustness on messy surfaces and
 the small-cell statistics on complex CAD are **not sized yet**.
 
-**Status (2a, 2b for primitives #313; STL bodies #322).** Built: the cut of
+**Status (2a, 2b for primitives #313; STL bodies #322; several faces per
+cell pair #329).** Built: the cut of
 primitive, `field` and STL bodies on any polyhedral mesh with exact
 crossings, the closest-point or dual-contouring wall point, face points on
-the clipped faces, the validity-driven merge and the per-cell fallback to
-fewer points; the Re 20 cylinder ([gallery 313](../gallery/immersed.md#cut-cylinder))
+the clipped faces, the validity-driven merge (faces between two cells
+joined only where they lie in one plane, otherwise kept apart: two cells
+may share several faces, owner decision 2026-11-26) and the per-cell
+fallback to fewer points; the Re 20 cylinder ([gallery 313](../gallery/immersed.md#cut-cylinder))
 and the Stokes array of STL spheres, second order on hexahedra
-([gallery 322](../gallery/immersed.md#stl-cut)). Open: folded joined faces
-of merged cells (needs several faces between two cells), the force balance
+([gallery 322](../gallery/immersed.md#stl-cut)). Open: the force balance
 on tetrahedra, non-planar polyhedral faces, the thin-solid refusal, and 2c
 to 2f.
 

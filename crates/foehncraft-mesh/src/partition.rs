@@ -69,9 +69,15 @@ fn metis_partition(mesh: &Mesh, parts: usize) -> Result<Vec<u32>, String> {
     let mut adjncy: Vec<metis::Idx> = Vec::with_capacity(2 * mesh.n_inner_faces);
     xadj.push(0);
     for c in 0..n {
+        let start = adjncy.len();
         for (f, _) in mesh.cell_face_iter(c) {
             if f < mesh.n_inner_faces {
-                adjncy.push(mesh.across(f, c).unwrap() as metis::Idx);
+                let o = mesh.across(f, c).unwrap() as metis::Idx;
+                // one edge per neighbour, also where two cells share several
+                // faces (merged cut cells)
+                if !adjncy[start..].contains(&o) {
+                    adjncy.push(o);
+                }
             }
         }
         xadj.push(adjncy.len() as metis::Idx);

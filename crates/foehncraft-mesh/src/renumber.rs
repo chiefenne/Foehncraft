@@ -145,6 +145,8 @@ pub fn apply(mesh: &Mesh, perm: &[u32]) -> Result<Mesh, String> {
     }
     let n = mesh.n_cells;
     let mut b = MeshBuilder::new(mesh.points.clone(), n);
+    // a mesh with cells that share several faces (merged cut cells) keeps them
+    b.allow_shared_pairs();
     let mut zone = vec![0u32; n];
     for c in 0..n {
         zone[perm[c] as usize] = mesh.cell_zone[c];

@@ -29,6 +29,7 @@ pub struct MeshBuilder {
     boundary_names: Vec<String>,
     cell_zone: Vec<u32>,
     zones: Vec<String>,
+    shared_pairs: bool,
 }
 
 impl MeshBuilder {
@@ -59,6 +60,14 @@ impl MeshBuilder {
         assert_eq!(cell_zone.len(), self.n_cells);
         self.zones = zones;
         self.cell_zone = cell_zone;
+    }
+
+    /// Lets two cells share more than one face (the pieces of a cut cell
+    /// merged with its neighbours, L13 D228: joining them into one face
+    /// could fold). Without it, [`Self::finish`] refuses such a pair, which
+    /// in a mesh read from a file is a broken mesh.
+    pub fn allow_shared_pairs(&mut self) {
+        self.shared_pairs = true;
     }
 
     /// Interior face between cells `from` and `to`; the normal of `nodes`
@@ -103,6 +112,7 @@ impl MeshBuilder {
             boundary_names,
             cell_zone,
             zones,
+            shared_pairs,
         } = self;
         let nf = a.len();
         // sort key: interior faces by (owner, neighbour), then boundary
@@ -165,7 +175,7 @@ impl MeshBuilder {
         }
         for f in 1..mesh.n_inner_faces {
             let (p, n) = (mesh.owner[f], mesh.neighbour[f]);
-            if p == mesh.owner[f - 1] && n == mesh.neighbour[f - 1] {
+            if !shared_pairs && p == mesh.owner[f - 1] && n == mesh.neighbour[f - 1] {
                 return Err(format!("cells {p} and {n} share more than one face"));
             }
         }
@@ -476,4 +486,38 @@ fn match_faces(
         }
     }
     Ok(partner)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::MeshBuilder;
+
+    /// Two cells with two faces between them: refused by default (a broken
+    /// mesh file), taken where it is asked for (merged cut cells).
+    #[test]
+    fn several_faces_per_cell_pair_only_when_allowed() {
+        let points = vec![
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 1.0, 0.0],
+            [0.0, 1.0, 0.0],
+        ];
+        let make = |allow: bool| {
+            let mut b = MeshBuilder::new(points.clone(), 2);
+            if allow {
+                b.allow_shared_pairs();
+            }
+            b.add_interior(&[0, 1, 2], 0, 1);
+            b.add_interior(&[0, 2, 3], 1, 0);
+            b.finish()
+        };
+        let e = make(false).expect_err("refused");
+        assert!(e.contains("share more than one face"), "{e}");
+        let m = make(true).expect("taken");
+        assert_eq!(m.n_inner_faces, 2);
+        assert_eq!((m.owner[0], m.neighbour[0]), (0, 1));
+        assert_eq!((m.owner[1], m.neighbour[1]), (0, 1));
+        // the second face was given from cell 1: reversed to point from 0
+        assert_eq!(m.face(1), &[0, 3, 2]);
+    }
 }

@@ -1334,14 +1334,13 @@ pub fn cut_mesh(case: &crate::case::FlowCase, mesh: &Mesh) -> Result<(Mesh, Vec<
             ),
         ));
     }
-    if r.folded_faces > 0 {
+    if r.shared_pairs > 0 {
         notes.push(Diagnostic::new(
             diag::IMM_CUT_REPORT,
             format!(
-                "cut cells: {} joined faces of merged cells fold, the largest moves {:.1} % \
-                 of the smaller cell into its neighbour (the total volume is kept)",
-                r.folded_faces,
-                100.0 * r.max_fold
+                "cut cells: {} merged cells share several faces with a neighbour (faces \
+                 that do not lie in one plane are kept apart, not joined)",
+                r.shared_pairs
             ),
         ));
     }

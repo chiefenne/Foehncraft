@@ -41,12 +41,15 @@
 //! volume is below [`CutOptions::min_fraction`] of its uncut cell, or that
 //! has a face whose normal does not point from its centroid to the
 //! neighbour's (the discretisation needs d · S > 0), is merged into the
-//! neighbour with which it shares the largest face area. A merged cell is a
+//! neighbour with which it shares the largest face area, or the next one
+//! where that union would have a face with d · S ≤ 0. A merged cell is a
 //! polyhedron; the faces it shares with one neighbour are joined into one
-//! face along their common edges (two cells share at most one face). A
-//! merge that would give a face that is not one ring is not made, the next
-//! neighbour is tried, and a cell that cannot be merged at all is kept and
-//! counted in the report.
+//! face where they lie in one plane, and kept as separate faces where they
+//! do not (owner decision 2026-11-26): a joined face across a bend (an
+//! L-shaped group around its neighbour) is fanned about one point and moves
+//! volume from one cell to the other, so two cells may share several faces
+//! ([`MeshBuilder::allow_shared_pairs`]). A cell that cannot be merged at
+//! all is kept and counted in the report.
 //!
 //! **Determinism (D93).** The cut is a serial mesh operation on the global
 //! mesh, before renumbering and partitioning, in face and cell order: the
@@ -436,12 +439,10 @@ pub struct CutReport {
     pub wall_area: Vec<f64>,
     /// Largest |Σ S| of a cell over the largest face area of that cell.
     pub max_closure: f64,
-    /// Joined faces of merged cells that fold: their fan moves more than
-    /// 1 % of the smaller cell's volume into the other cell (the merge
-    /// picks a neighbour without a fold where it can).
-    pub folded_faces: usize,
-    /// The largest volume a joined face moves, over the smaller cell.
-    pub max_fold: f64,
+    /// Pairs of cells that share more than one face: the faces between a
+    /// merged cell and a neighbour that do not lie in one plane are kept
+    /// apart (one joined face would fold).
+    pub shared_pairs: usize,
     /// Input cells cut with fewer points than asked for, so that the
     /// discretisation takes their faces: the face points dropped first,
     /// then the sharp-feature wall point, then the projected one (the
@@ -879,8 +880,7 @@ fn cut_with(
             min_fraction,
             &mut report.cells_merged,
             &mut report.merge_failed,
-            &mut report.folded_faces,
-            &mut report.max_fold,
+            &mut report.shared_pairs,
         )?;
         let changed = p.len() != parent.len();
         let mut next: Vec<Vec<u32>> = vec![Vec::new(); p.len()];
@@ -959,6 +959,7 @@ fn build(
     zone: &[u32],
 ) -> Result<Mesh, String> {
     let mut b = MeshBuilder::new(points.to_vec(), n_cells);
+    b.allow_shared_pairs();
     for n in bnames {
         b.declare_boundary(n);
     }
@@ -993,14 +994,36 @@ fn bad_faces(mesh: &Mesh, geo: &Geometry) -> usize {
         .count()
 }
 
+/// Whether the discretisation takes face `f`: d · S > 0 from the owner's
+/// centroid. Two cells that share several faces are one face to it
+/// (`foehncraft_fv::Discretisation`): their summed area vector counts.
 fn face_ok(mesh: &Mesh, geo: &Geometry, f: usize) -> bool {
     let p = mesh.owner[f] as usize;
-    let to = if f < mesh.n_interior_faces() {
-        geo.cell_centroid[mesh.neighbour[f] as usize]
-    } else {
-        geo.face_centroid[f]
-    };
-    dot(sub(to, geo.cell_centroid[p]), geo.face_area[f]) > 0.0
+    let ni = mesh.n_interior_faces();
+    if f >= ni {
+        return dot(
+            sub(geo.face_centroid[f], geo.cell_centroid[p]),
+            geo.face_area[f],
+        ) > 0.0;
+    }
+    let same = |g: usize| mesh.owner[g] == mesh.owner[f] && mesh.neighbour[g] == mesh.neighbour[f];
+    let (mut lo, mut hi) = (f, f + 1);
+    while lo > 0 && same(lo - 1) {
+        lo -= 1;
+    }
+    while hi < ni && same(hi) {
+        hi += 1;
+    }
+    let s = geo.face_area[lo..hi]
+        .iter()
+        .fold([0.0; 3], |a, &x| add(a, x));
+    dot(
+        sub(
+            geo.cell_centroid[mesh.neighbour[f] as usize],
+            geo.cell_centroid[p],
+        ),
+        s,
+    ) > 0.0
 }
 
 /// Puts a point of the surface into the chords of a clipped face ring
@@ -1244,17 +1267,31 @@ fn join(rings: &[Vec<u32>]) -> Option<Vec<u32>> {
 }
 
 /// Faces that a merged cell shares with one neighbour are joined into one
-/// face (two cells share at most one face); the fan of a joined face that
-/// folds (an L-shaped group of merged cells around an uncut neighbour)
-/// cuts through the neighbour and moves volume between the two cells. A
-/// join may move at most this fraction of the smaller cell's volume.
+/// face only where the join moves no volume between the two cells (the
+/// pieces lie in one plane): at most this fraction of the smaller cell's
+/// volume, round-off. Elsewhere they stay separate faces.
+const PLANAR: f64 = 1e-9;
+
+/// The merge prefers a neighbour whose union shares with every other cell
+/// faces that join with at most this fraction of the smaller volume moved:
+/// an L-shaped group around a neighbour shares two faces at an angle with
+/// it, kept apart (exact volumes) one of them can be a small piece nearly
+/// parallel to the line between the cell centres (cos 0.1 on the 32³ STL
+/// sphere array), which costs the solver accuracy (the wall force dropped
+/// from 1.004 to 0.94 of the driving force without this preference).
 const FOLD: f64 = 1e-2;
 
-/// The groups (other than those in `skip`) with which the cells `un` share
-/// faces whose join would move more than [`FOLD`] of the smaller volume
-/// (the volume between the joined face's fan about its node average and the
-/// pieces, ⅓ |Σᵢ (cᵢ − m) · Sᵢ|), and whether all shared faces join into
-/// one ring at all.
+/// The merge prefers unions without a face more skewed than this (the
+/// solver's measure, its default `solver.skewness_limit`): a more skewed
+/// face switches on the cell-quality remediation (D50) of the whole run.
+const SKEWED: f64 = 0.9;
+
+/// How the faces that the cells `un` share with each group other than those
+/// in `skip` lie: 0 all in one plane (their join would move at most
+/// [`FOLD`] of the smaller volume, the volume between the joined face's fan
+/// about its node average and the pieces, ⅓ |Σᵢ (cᵢ − m) · Sᵢ|), 1 some at
+/// a bend, 2 some that do not form one ring at all (the largest over the
+/// groups).
 #[allow(clippy::too_many_arguments)]
 fn folds(
     points: &[[f64; 3]],
@@ -1265,7 +1302,7 @@ fn folds(
     skip: &[usize],
     group_volume: &dyn Fn(usize) -> f64,
     un_volume: f64,
-) -> (Vec<usize>, bool) {
+) -> u8 {
     let mut by: Vec<(usize, Vec<Vec<u32>>)> = Vec::new();
     for &m in un {
         for &fi in &cell_faces[m] {
@@ -1288,29 +1325,33 @@ fn folds(
             }
         }
     }
-    let mut joins = true;
-    let mut out = Vec::new();
-    for (og, r) in by {
-        if r.len() == 1 {
-            continue;
-        }
-        let Some(joined) = join(&r) else {
-            joins = false;
-            out.push(og);
-            continue;
-        };
-        if fold_fraction(points, &r, &joined, group_volume(og).min(un_volume)) > FOLD {
-            out.push(og);
-        }
-    }
-    (out, joins)
+    by.into_iter()
+        .map(|(og, r)| {
+            if r.len() == 1 {
+                return 0;
+            }
+            match join(&r) {
+                None => 2,
+                Some(joined) => {
+                    let fr = fold_fraction(points, &r, &joined, group_volume(og).min(un_volume));
+                    u8::from(fr > FOLD)
+                }
+            }
+        })
+        .max()
+        .unwrap_or(0)
 }
+
+/// The faces of a union to one neighbour group: the group, its centroid,
+/// the summed area vector and each piece's area vector and centroid.
+type NeighbourFaces = (usize, [f64; 3], [f64; 3], Vec<([f64; 3], [f64; 3])>);
 
 /// The smallest cosine between the centroid distance d and the outward
 /// area vector S over the faces of the union of the cells `un` (from the
 /// union's centroid to the neighbour group's centroid, or to the face
 /// centroid at a boundary): positive when the union is a cell the
-/// discretisation takes.
+/// discretisation takes; and the largest skewness of its faces to the
+/// neighbour groups as the solver measures it.
 #[allow(clippy::too_many_arguments)]
 fn union_score(
     un: &[usize],
@@ -1320,7 +1361,7 @@ fn union_score(
     geo: &Geometry,
     members: &[Vec<usize>],
     uf: &mut Uf,
-) -> f64 {
+) -> (f64, f64) {
     let centroid = |cells: &[usize]| -> [f64; 3] {
         let mut v = 0.0;
         let mut m = [0.0; 3];
@@ -1332,6 +1373,9 @@ fn union_score(
     };
     let x = centroid(un);
     let mut worst = f64::INFINITY;
+    // the faces to each neighbour group: (group, its centroid, Σ S, the
+    // pieces' S and centroids)
+    let mut pairs: Vec<NeighbourFaces> = Vec::new();
     for &m in un {
         for &fi in &cell_faces[m] {
             let f = &faces[fi];
@@ -1347,7 +1391,15 @@ fn union_score(
                     continue;
                 }
                 let og = uf.find(o);
-                centroid(&members[og])
+                let to = centroid(&members[og]);
+                match pairs.iter_mut().find(|p| p.0 == og) {
+                    Some(p) => {
+                        p.2 = add(p.2, s);
+                        p.3.push((s, c0));
+                    }
+                    None => pairs.push((og, to, s, vec![(s, c0)])),
+                }
+                to
             } else {
                 c0
             };
@@ -1357,7 +1409,32 @@ fn union_score(
             worst = worst.min(cos);
         }
     }
-    worst
+    // the solver's skewness of the faces to each neighbour (the flow
+    // crate's `face_skewness`, the faces of one pair as one face at the
+    // centroid of the pieces projected onto its plane): how far the face
+    // lies off the line between the two centroids, over their distance
+    let mut skew = 0.0f64;
+    for (_, to, st, pieces) in &pairs {
+        let d = sub(*to, x);
+        let ds = dot(d, *st);
+        if ds <= 0.0 {
+            continue;
+        }
+        let n = scale(*st, 1.0 / norm(*st));
+        let (mut c, mut w) = ([0.0; 3], 0.0);
+        for (sp, cp) in pieces {
+            let a = dot(*sp, n).max(0.0);
+            c = add(c, scale(*cp, a));
+            w += a;
+        }
+        if w <= 0.0 {
+            continue;
+        }
+        let r = sub(scale(c, 1.0 / w), x);
+        let t = dot(r, *st) / ds;
+        skew = skew.max(norm(sub(scale(d, t), r)) / norm(d));
+    }
+    (worst, skew)
 }
 
 /// The volume a joined face moves between its two cells, over `volume`:
@@ -1491,8 +1568,7 @@ fn merge_pass(
     min_fraction: f64,
     merged: &mut usize,
     failed: &mut usize,
-    folded: &mut usize,
-    max_fold: &mut f64,
+    shared: &mut usize,
 ) -> Result<Merged, String> {
     let n_cells = parent.len();
     let zone: Vec<u32> = parent.iter().map(|&p| mesh.cell_zone[p as usize]).collect();
@@ -1563,23 +1639,25 @@ fn merge_pass(
                 .then(y.1.total_cmp(&x.1))
                 .then(x.0.cmp(&y.0))
         });
-        // the first neighbour (largest shared face first) whose shared
-        // faces join into one ring and whose union with the cell is valid
-        // (every face of the union with d · S > 0 from its centroid); if
-        // none is, the one whose union comes closest (a join may fold:
-        // `folded_faces` counts those)
+        // the first neighbour (largest shared face first) whose union with
+        // the cell is valid (every face of the union with d · S > 0 from its
+        // centroid), has no face more skewed than [`SKEWED`] and shares
+        // only faces in one plane with every other cell; else the first
+        // valid one with faces at a bend, else one with faces that do not
+        // form a ring (both kept apart), each first without a skewed face;
+        // if none is valid, the one whose union comes closest, faces that
+        // form rings first. This keeps the groups compact
         let gv = |x: usize, members: &[Vec<usize>]| -> f64 {
             members[x].iter().map(|&m| geo1.cell_volume[m]).sum()
         };
-        let mut pick: Option<Vec<usize>> = None;
-        let mut valid: Option<Vec<usize>> = None;
-        let mut fallback: Option<(f64, Vec<usize>)> = None;
+        let mut valid: [Option<Vec<usize>>; 6] = Default::default();
+        let mut fallback: [Option<(f64, Vec<usize>)>; 2] = [None, None];
         for &(h, _) in &cand {
             let mut un: Vec<usize> = members[g].clone();
             un.extend_from_slice(&members[h]);
             let gvm = |x: usize| gv(x, &members);
             let v_un = gvm(g) + gvm(h);
-            let (fold, joins) = folds(
+            let level = folds(
                 points,
                 &un,
                 &cell_faces,
@@ -1588,11 +1666,8 @@ fn merge_pass(
                 &[g, h],
                 &gvm,
                 v_un,
-            );
-            if !joins {
-                continue;
-            }
-            let score = union_score(
+            ) as usize;
+            let (score, skew) = union_score(
                 &un,
                 &cell_faces,
                 out_faces,
@@ -1602,19 +1677,27 @@ fn merge_pass(
                 &mut uf,
             );
             if score > 0.0 {
-                if fold.is_empty() {
-                    pick = Some(vec![g, h]);
+                let tier = level + if skew <= SKEWED { 0 } else { 3 };
+                if valid[tier].is_none() {
+                    valid[tier] = Some(vec![g, h]);
+                }
+                if tier == 0 {
                     break;
                 }
-                if valid.is_none() {
-                    valid = Some(vec![g, h]);
+            } else {
+                let fb = &mut fallback[usize::from(level == 2)];
+                if fb.as_ref().is_none_or(|f| score > f.0) {
+                    *fb = Some((score, vec![g, h]));
                 }
-            } else if fallback.as_ref().is_none_or(|f| score > f.0) {
-                fallback = Some((score, vec![g, h]));
             }
         }
-        let pick = pick.or(valid);
-        let take = pick.or(fallback.map(|f| f.1));
+        let [f0, f1] = fallback;
+        let take = valid
+            .into_iter()
+            .flatten()
+            .next()
+            .or(f0.map(|f| f.1))
+            .or(f1.map(|f| f.1));
         let mut done = false;
         if let Some(take) = take {
             let mut root = take[0];
@@ -1637,7 +1720,8 @@ fn merge_pass(
         }
     }
 
-    // 4. the final mesh: one cell per group, faces between groups joined
+    // 4. the final mesh: one cell per group, the faces between two groups
+    // joined where they lie in one plane
     let mut gid = vec![u32::MAX; n_cells];
     let mut final_parent = Vec::new();
     for c in 0..n_cells {
@@ -1696,28 +1780,35 @@ fn merge_pass(
                 }
             })
             .collect();
-        let ring = if rings.len() == 1 {
-            rings.into_iter().next().expect("one")
+        let joined = if rings.len() == 1 {
+            Some(rings[0].clone())
         } else {
-            let joined = join(&rings).ok_or("internal: merged faces do not form one ring")?;
             let vol = |g: u32| -> f64 {
                 (0..n_cells)
                     .filter(|&c| gid[c] == g)
                     .map(|c| geo1.cell_volume[c])
                     .sum()
             };
-            let fr = fold_fraction(points, &rings, &joined, vol(key.0).min(vol(key.1)));
-            if fr > FOLD {
-                *folded += 1;
-            }
-            *max_fold = max_fold.max(fr);
-            joined
+            join(&rings)
+                .filter(|j| fold_fraction(points, &rings, j, vol(key.0).min(vol(key.1))) <= PLANAR)
         };
-        fin_faces.push(Face {
-            ring,
-            a: key.0,
-            b: key.1 as i64,
-        });
+        match joined {
+            Some(ring) => fin_faces.push(Face {
+                ring,
+                a: key.0,
+                b: key.1 as i64,
+            }),
+            None => {
+                *shared += 1;
+                for ring in rings {
+                    fin_faces.push(Face {
+                        ring,
+                        a: key.0,
+                        b: key.1 as i64,
+                    });
+                }
+            }
+        }
     }
     let mut fin_cut = vec![false; nfin];
     for c in 0..n_cells {

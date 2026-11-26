@@ -235,7 +235,9 @@ operation `foehncraft_mesh::cut`
 - merges cut cells below `min_volume_fraction` (0.3) of their volume, or
   with a face the discretisation cannot take, into the neighbour with the
   largest shared face; the faces a merged cell shares with one neighbour are
-  joined into one face.
+  joined into one face where they lie in one plane and kept as separate
+  faces where they do not (two cells may share several faces, see
+  [gallery 322](#stl-cut)).
 
 The body surface becomes the wall boundary `cylinder`: the forces are the
 ordinary wall forces and the wall is sharp. The cut is serial on the global
@@ -476,7 +478,7 @@ Recipe: [315](../recipes/immersed.md#cut-moments).
 <a id="stl-cut"></a>
 ## 322. STL bodies cut out of a mesh: sharp edges, face points and the Stokes sphere array
 
-<img src="../figures/gallery/immersed_stl_sphere_array.png" alt="Three panels of Stokes flow through a simple cubic array of spheres, the sphere a triangle surface cut out of a hexahedral mesh of 32 cubed cells. Left: the cut sphere wall seen from the side, coloured by the pressure, red on the upstream side, blue on the downstream side, the fan triangles of the cut wall faces visible. Middle: the speed in the plane through the sphere's centre, upper half, slow (blue) next to the sphere and fastest (red) midway between the spheres, the square cells meeting the dashed exact circle. Right: log-log chart of the error of the drag coefficient against the series of Hasimoto and Sangani and Acrivos over the cell width: the cut sphere on hexahedra falls along the slope-2 line from 9 to 0.9 percent, tetrahedra and polyhedra lie between 1.7 and 5.6 percent, the penalised sphere stays between 3.9 and 6.2 percent along slope 1." width="800" height="267">
+<img src="../figures/gallery/immersed_stl_sphere_array.png" alt="Three panels of Stokes flow through a simple cubic array of spheres, the sphere a triangle surface cut out of a hexahedral mesh of 32 cubed cells. Left: the cut sphere wall seen from the side, coloured by the pressure, red on the upstream side, blue on the downstream side, the fan triangles of the cut wall faces visible. Middle: the speed in the plane through the sphere's centre, upper half, slow (blue) next to the sphere and fastest (red) midway between the spheres, the square cells meeting the dashed exact circle. Right: log-log chart of the error of the drag coefficient against the series of Hasimoto and Sangani and Acrivos over the cell width: the cut sphere on hexahedra falls along the slope-2 line from 9 to 0.9 percent, tetrahedra rise from 1.7 to 4.8 percent, polyhedra fall from 6.1 to 4.0 percent, the penalised sphere stays between 3.9 and 6.2 percent along slope 1." width="800" height="267">
 
 `[[immersed.body]] shape = "stl"` reads a triangle surface (ASCII or binary
 STL, `file` relative to the case file, `scale` for its unit) and makes it a
@@ -518,15 +520,28 @@ dual-contouring point puts it on the edge or corner, and the face points
 keep the edge where it passes from cell to cell (−1.3 %).
 
 **The merge and the fallback.** A cut cell with a face where d · S ≤ 0 is
-refused by the discretisation. The merge now picks the neighbour whose
-union passes that check, preferring one whose joined face does not fold
-(IMM203 reports folds that remain); and where a face is still refused after
+refused by the discretisation. The merge picks the neighbour whose union
+passes that check, preferring one whose faces to every other cell lie in
+one plane and none of which the solver would count as skewed (above its
+`skewness_limit` 0.9: that switches on the cell-quality remediation of the
+whole run, D50). The faces a merged cell shares with a neighbour are joined
+into one face where they lie in one plane and kept as separate faces where
+they do not: one face joined across a bend (an L-shaped group of cells
+around its neighbour) is fanned about one point, folds, and moves volume
+from one cell into the other (48 such faces on the 32³ sphere array of
+#322, the largest moving 11.5 % of the smaller cell). So two cells may
+share several faces (owner decision; the mesh builder allows it for cut
+meshes only, IMM203 counts the pairs), and the solver treats them as one
+face: the two-point flux, the interpolation weight, the least-squares
+stencil, the skewness and the d · S check take the summed area vector of
+the pieces at their centroid projected onto its plane, while the volumes
+stay exact. Where a face is still refused after
 the merge, the input cells around it are cut again with fewer points: first
 without face points, then without the sharp-edge point, then without a
 wall point (one wall face per loop). Each step is a new round of the cut,
 the rest of the mesh keeps the finest points. In all 162 cuts of the
 benchmark below no refused face is left; the box on 32³ tetrahedra, the
-hardest case, needs three rounds and simplifies 332 of its cells.
+hardest case, needs three rounds and simplifies 307 of its cells.
 
 <img src="../figures/gallery/immersed_stl_benchmark.png" alt="Six log-log charts of the relative error against the cell width for an icosphere, a turned box and a torus (columns) cut out of hexahedral, tetrahedral and polyhedral meshes of 8 to 32 cells per side, top row the fluid volume, bottom row the wall area. Five methods: marching cubes (red), exact crossings (orange), with the closest-point wall point (light green), with the dual-contouring wall point (teal) and with face points (dark blue). On the icosphere and the torus all methods follow the slope-2 line, the face points lowest. On the box the wall area of marching cubes, exact crossings and the closest point follows slope 1, dual contouring and face points slope 2, ten times lower at 32 cells." width="800" height="468">
 
@@ -540,22 +555,28 @@ errors at 32³ cells per side:
 | Surface, mesh | Marching cubes | Exact crossings | + closest point | + dual contouring | + face points (default) |
 |---|---|---|---|---|---|
 | icosphere, hex: volume | 7.7e-3 | 6.2e-3 | 3.1e-3 | 3.1e-3 | 1.6e-3 |
-| icosphere, tet: volume | 6.5e-3 | 3.0e-3 | 1.6e-3 | 1.6e-3 | 7.3e-4 |
+| icosphere, tet: volume | 6.5e-3 | 3.0e-3 | 1.6e-3 | 1.6e-3 | 7.2e-4 |
 | icosphere, hex: face apertures (mean) | 4.1e-3 | 2.6e-3 | 2.6e-3 | 2.6e-3 | 6.6e-4 |
-| box, hex: wall area | 5.3e-2 | 4.6e-2 | 3.1e-2 | 4.0e-3 | 4.2e-3 |
-| box, tet: wall area | 3.9e-2 | 2.6e-2 | 1.6e-2 | 2.4e-3 | 1.7e-3 |
-| box, poly: wall area | 4.2e-2 | 4.2e-2 | 2.4e-2 | 6.8e-3 | 4.0e-3 |
+| box, hex: wall area | 5.3e-2 | 4.5e-2 | 3.1e-2 | 4.0e-3 | 4.2e-3 |
+| box, tet: wall area | 3.9e-2 | 2.6e-2 | 1.6e-2 | 2.6e-3 | 1.6e-3 |
+| box, poly: wall area | 4.2e-2 | 4.2e-2 | 2.4e-2 | 7.2e-3 | 4.5e-3 |
 | box, hex: volume | 1.3e-2 | 1.0e-2 | 7.0e-3 | 4.0e-3 | 2.0e-3 |
 | torus, tet: volume | 1.2e-2 | 6.1e-3 | 3.3e-3 | 3.3e-3 | 1.5e-3 |
+| icosphere, poly: volume cell by cell (L1) | 5.1e-3 | 5.0e-3 | 2.7e-3 | 2.7e-3 | 2.2e-3 |
 
 On smooth surfaces every method is second order and each step halves the
 error; on the sharp box the wall area of everything without the
 dual-contouring point is first order. The fluid volume of every group of
 input cells that a merged cell covers is checked too (L1 over the body
-volume, 1.6e-3 on the icosphere with face points on 32³ hexahedra). The
-default is the last column. Timings (busy machine): 0.3 to 0.4 s for 32³
-hexahedra, 6 to 18 s for 196 608 tetrahedra with face points and the
-fallback (1.4 s without).
+volume): with the faces kept apart where they do not lie in one plane, it
+equals the error of the total volume on hexahedra and tetrahedra (at most
+1.06 times it in every cut; with the joined faces up to 4 times it, 6.9e-3
+against 2.0e-3 for the box on 32³ hexahedra), so no volume moves from one
+cell into another; on polyhedra it is 1.0 to 1.9 times the total and
+converges at order 1.6 to 1.8 from 16³ to 32³ (with the joined faces up to
+24 times the total, order 0.9). The default is the last column. Timings (busy machine): 0.3 to 0.4 s for 32³
+hexahedra, 8 to 16 s for 196 608 tetrahedra with face points and the
+fallback (1.5 to 2.0 s with the exact crossings alone).
 
 **Stokes flow through an array of STL spheres** (top figure,
 `immersed_cut_stl_sphere_array.toml`): the case of [gallery 291](#topology-bend)
@@ -567,19 +588,19 @@ Hasimoto (1959) and Sangani & Acrivos (1982), 2.152:
 |---|---|---|---|---|
 | hex 16³ | 3 960 | 1.959 | −9.0 % | 1.044 |
 | hex 24³ | 13 392 | 2.074 | −3.6 % | 1.015 |
-| hex 32³ (the case file, 257 iterations, 46 s) | 31 752 | 2.102 | −2.3 % | 1.004 |
+| hex 32³ (the case file, 256 iterations, 51 s) | 31 752 | 2.111 | −1.9 % | 1.004 |
 | hex 48³ | 107 144 | 2.132 | −0.9 % | 0.998 |
 | tet 16³ | 23 856 | 2.188 | +1.7 % | 1.047 |
-| tet 24³ | 80 340 | 2.113 | −1.8 % | 0.949 |
-| poly 16³ (17³ polyhedra) | 4 820 | 2.031 | −5.6 % | 1.028 |
-| poly 24³ (25³ polyhedra) | 15 212 | 2.065 | −4.0 % | 1.014 |
+| tet 24³ | 80 340 | 2.254 | +4.8 % | 0.987 |
+| poly 16³ (17³ polyhedra) | 4 820 | 2.021 | −6.1 % | 1.027 |
+| poly 24³ (25³ polyhedra) | 15 212 | 2.066 | −4.0 % | 1.011 |
 | hex 32³, primitive sphere cut | 31 752 | 2.108 | −2.0 % | 1.004 |
 | hex 16³, 24³, 32³, penalised ([gallery 291](#topology-bend)) | | | +6.2, +5.5, +3.9 % | |
 
 The cut converges at second order (16³ to 48³: order 2.1) where the
 penalised wall converges at first order or less; on 32³ cells the cut is
-closer than the penalised sphere on 32³ by 1.7 times. The STL sphere and the
-primitive sphere differ by 0.3 %, of which the icosphere's own size (its
+closer than the penalised sphere on 32³ by 2.1 times. The STL sphere and the
+primitive sphere differ by 0.13 %, of which the icosphere's own size (its
 volume-equivalent radius is 0.07 % below 0.2 m) is part. The penalised STL
 sphere matches the penalised primitive within 1 % (`tests/immersed.rs`).
 
@@ -588,16 +609,26 @@ default): C_D 5.588 (in the range), C_L 0.01025 (1.4 % below it; 2.1 %
 without face points), Δp 0.1160, and the wall area 0.012 % below 2πr ×
 depth instead of 0.024 %.
 
-**What is not here yet.** The joined faces of merged cells can still fold
-(48 on the 32³ sphere array, the largest moving 11.5 % of the smaller cell
-into its neighbour; the total volume is kept): a fix needs two cells to
-share more than one face, a change of the solver (owner decision). The
-fallback cuts the whole mesh again per round. On polyhedral meshes the
-faces are not planar, so the fan of a clipped face is not that of the
-input face and the face apertures and cell-by-cell volumes do not converge
-(the totals do). On tetrahedra the wall carries G L³ only to 5 % (0.949 on
-24³) and the drag error changes sign between 16³ and 24³: the cut cells of
-tetrahedra need a closer look (features.toml). A feature thinner than a cell can vanish between the
+**Several faces per cell pair (#329).** Keeping the faces at a bend
+apart first cost the 32³ run its force balance: a small separate piece
+nearly parallel to the line between the two cell centroids (84°) counted as
+a face of skewness 5.2, which switched on the cell-quality remediation (D50:
+Gauss pressure gradient, limiter, bounded face velocity) for the whole run,
+and the wall carried only 0.94 of G L³. With the faces of one pair treated
+as one face and the merge avoiding skewed faces, the 32³ run takes no
+remediation, K is −1.9 % (−2.3 % with the folded faces of #322) and the
+wall carries G L³ to 0.4 %; 288 pairs of cells share several faces there.
+The merge threshold 0.4 instead of 0.3 gives −2.3 % on 32³ (24³ and the
+2D cylinder at h = D/10: no change; at D/20 it puts C_L into the range,
+0.01047, and C_D 0.06 % above it); the maintainer kept 0.3.
+
+**What is not here yet.** The fallback cuts the whole mesh again per round.
+On polyhedral meshes the faces are not planar, so the fan of a clipped face
+is not that of the input face and the face apertures do not converge (the
+cell-by-cell volumes now do). On tetrahedra the drag error grows from +1.7 %
+on 16³ to +4.8 % on 24³ and the wall carries G L³ to 5 % on 16³ (1.3 % on
+24³; the −1.8 % of #322 on 24³ ran with the cell-quality remediation on): the
+cut cells of tetrahedra need a closer look (features.toml). A feature thinner than a cell can vanish between the
 nodes. Wall functions with the exact first-cell distance (2c), conjugate
 heat transfer through cut cells (2d), named surface patches (2e) and the
 near-body refinement (2f) follow. One rank only.
