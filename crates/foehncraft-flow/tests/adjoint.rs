@@ -493,6 +493,11 @@ fn flux_inputs<'a, T: Real>(
         psi: l.v3("u"),
         bounded: false,
         jump_offset: &[],
+        body: foehncraft_kernels::fv::Vec3 {
+            x: &[],
+            y: &[],
+            z: &[],
+        },
     }
 }
 

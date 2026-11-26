@@ -671,6 +671,13 @@ pub struct FluxInputs<'a, T> {
     /// pressure jump of interior and pressure-boundary faces; empty
     /// without gravity.
     pub jump_offset: &'a [T],
+    /// The cell body force B_P (N/m³) of the D-weighted form (volume of
+    /// fluid, L3): non-empty, the pressure term of the jump is the
+    /// D-weighted mean of the cell terms (∇p − B)·d and `jump_offset`
+    /// holds the plain offsets o_f, so that the face flux reacts to the
+    /// pressure as the two cell velocities do (density ratios of 1000);
+    /// empty: the form above.
+    pub body: Vec3<'a, T>,
 }
 
 /// Face mass flux (kg/s) out of the owner, with the Rhie–Chow interpolation
@@ -758,7 +765,24 @@ pub unsafe fn face_mass_flux<T: Real>(f: usize, inp: &FluxInputs<T>) -> T {
             ];
             let d = sub(xn, xp);
             let df = w * ld(inp.d, p) + wn * ld(inp.d, n);
-            let mut jump = (ld(inp.p, n) - ld(inp.p, p)) - dot(gpf, d);
+            let mut jump = if inp.body.x.is_empty() {
+                (ld(inp.p, n) - ld(inp.p, p)) - dot(gpf, d)
+            } else {
+                // D-weighted: (w D_P (∇p − B)_P + (1 − w) D_N (∇p − B)_N)/D̄
+                let (bp, bn) = (inp.body.at(p), inp.body.at(n));
+                // (the plain interpolated flux has D = 0: the weights w)
+                let (dp, dn, df) = if df > T::ZERO {
+                    (w * ld(inp.d, p), wn * ld(inp.d, n), df)
+                } else {
+                    (w, wn, T::ONE)
+                };
+                let gw = [
+                    (dp * (gpp[0] - bp[0]) + dn * (gpn[0] - bn[0])) / df,
+                    (dp * (gpp[1] - bp[1]) + dn * (gpn[1] - bn[1])) / df,
+                    (dp * (gpp[2] - bp[2]) + dn * (gpn[2] - bn[2])) / df,
+                ];
+                (ld(inp.p, n) - ld(inp.p, p)) - dot(gw, d)
+            };
             if !inp.jump_offset.is_empty() {
                 jump -= ld(inp.jump_offset, f);
             }
@@ -787,7 +811,12 @@ pub unsafe fn face_mass_flux<T: Real>(f: usize, inp: &FluxInputs<T>) -> T {
                 } else {
                     ld(inp.pb, fb)
                 };
-                let mut jump = (pb - ld(inp.p, p)) - dot(gpp, rp);
+                let mut jump = if inp.body.x.is_empty() {
+                    (pb - ld(inp.p, p)) - dot(gpp, rp)
+                } else {
+                    let bp = inp.body.at(p);
+                    (pb - ld(inp.p, p)) - dot(sub(gpp, bp), rp)
+                };
                 if !inp.jump_offset.is_empty() {
                     jump -= ld(inp.jump_offset, f);
                 }

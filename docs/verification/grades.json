@@ -1890,6 +1890,22 @@
    "range": {}
   },
   {
+   "id": "multiphase.vof",
+   "title": "Two fluids by the volume of fluid: THINC, CICSAM, balanced gravity and surface tension (L3, MP1, D293)",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "the dam-break front runs 5 to 17 % ahead of the measurements on meshes a/16 and a/32 alike (the early part of the gap may be the lifting time of the experiment's gate); the measured points are read from the text of the paper and still to be checked against the scan",
+    "the static drop keeps spurious currents of 0.18 m/s (Ca ~ 3e-3) and a Laplace jump 8 % low: the curvature is from twice-smoothed alpha, no height functions yet",
+    "isothermal and laminar only: no energy, phase change (MP2), turbulence, scalars, sprays, immersed bodies, rotating zones, moving meshes, periodic boundaries or the coupled algorithm (VOF002)",
+    "one process, no restart; the GPU (PTX) entries are built but not yet run on a GPU",
+    "the kinetic-energy balance (BAL003) is not adapted to the variable density of the mixture and may warn"
+   ],
+   "range": {}
+  },
+  {
    "id": "structure.temperature-field",
    "title": "Temperatures of a solid region of a flow case as the thermal load of beams, shells and solids: VTKHDF cell field, linear least-squares fit at the nodes (L53, MS6 part 1)",
    "grade": "partial",

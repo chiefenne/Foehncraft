@@ -253,6 +253,12 @@ pub struct Mesh {
     pub rho_old: Raw<f64>,
     /// See `rho_old`.
     pub rho_old2: Raw<f64>,
+    /// The body force per unit volume B_P per cell of the balanced force
+    /// (N/m³) of a volume-of-fluid case (L3): with it the Rhie–Chow flux
+    /// takes the D-weighted form of [`k::face_mass_flux`] and `jump_offset`
+    /// holds the plain face offsets o_f; empty otherwise (bit for bit the
+    /// former flux).
+    pub body: Raw3,
 }
 
 impl Mesh {
@@ -961,6 +967,7 @@ impl Entry for MassFlux {
                 psi: a.psi.v(),
                 bounded: a.bounded != 0,
                 jump_offset: a.m.jump_offset.get(),
+                body: a.m.body.v(),
             };
             *a.out.out().add(f) = k::face_mass_flux(f, &inp);
         }
@@ -3135,8 +3142,256 @@ impl Entry for Floor {
     }
 }
 
+/// out = a x / y per entry (the volume flux ṁ_f/ρ_f of the
+/// volume-of-fluid continuity, L3).
+pub struct Quotient;
+impl Entry for Quotient {
+    type Args = LinArgs;
+    const NAME: &'static str = "quotient";
+    #[inline(always)]
+    unsafe fn run(i: usize, a: &LinArgs) {
+        // SAFETY: guaranteed by the caller; index i only.
+        unsafe { *a.out.out().add(i) = a.a * a.x.read(i) / a.y.read(i) }
+    }
+}
+
+/// Arguments of the volume-of-fluid entries (L3, [`crate::vof`]).
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct VofArgs {
+    /// Mesh.
+    pub m: Mesh,
+    /// Volume flux per face (m³/s).
+    pub flux: Raw<f64>,
+    /// α per cell (or the field the entry reads).
+    pub alpha: Raw<f64>,
+    /// α per face of the last [`VofFaces`].
+    pub alpha_f: Raw<f64>,
+    /// A cell gradient (∇α of the face schemes, ∇α̃ of the curvature).
+    pub grad: Raw3,
+    /// α of the inflow per boundary face.
+    pub alpha_b: Raw<f64>,
+    /// 1 where a boundary face takes the interface normal of its owner
+    /// (open boundaries), 0 on walls and symmetry planes (90°).
+    pub open: Raw<u32>,
+    /// Curvature per cell.
+    pub kappa: Raw<f64>,
+    /// |∇α̃| per cell.
+    pub gnorm: Raw<f64>,
+    /// Face scheme ([`crate::vof::SCHEME_THINC`] …).
+    pub scheme: u64,
+    /// Sub-step Δt (s).
+    pub dt: f64,
+    /// β of THINC.
+    pub beta: f64,
+    /// σ (N/m) of [`VofTension`], δ of [`VofCurvature`].
+    pub s: f64,
+    /// Output.
+    pub out: Raw<f64>,
+    /// Second output (the clipped volume of [`VofUpdate`]).
+    pub out2: Raw<f64>,
+    /// Vector output ([`VofGradient`]).
+    pub out3: Raw3,
+}
+
+/// Face value α_f of face `f` ([`crate::vof::face_alpha`]).
+pub struct VofFaces;
+impl Entry for VofFaces {
+    type Args = VofArgs;
+    const NAME: &'static str = "vof_faces";
+    #[inline(always)]
+    unsafe fn run(f: usize, a: &VofArgs) {
+        // SAFETY: guaranteed by the caller.
+        unsafe {
+            let topo = a.m.topo();
+            let cc = a.m.cell_centroid.v();
+            let g = a.grad.v();
+            let inp = crate::vof::FaceIn {
+                topo: &topo,
+                cell_centroid: &cc,
+                volume: a.m.volume.get(),
+                flux: a.flux.get(),
+                alpha: a.alpha.get(),
+                grad: &g,
+                alpha_b: a.alpha_b.get(),
+                scheme: a.scheme as u32,
+                dt: a.dt,
+                beta: a.beta,
+            };
+            *a.out.out().add(f) = crate::vof::face_alpha(f, &inp);
+        }
+    }
+}
+
+/// Explicit update of cell `c` ([`crate::vof::update`]): `out` the new α,
+/// `out2` the clipped volume.
+pub struct VofUpdate;
+impl Entry for VofUpdate {
+    type Args = VofArgs;
+    const NAME: &'static str = "vof_update";
+    #[inline(always)]
+    unsafe fn run(c: usize, a: &VofArgs) {
+        // SAFETY: guaranteed by the caller.
+        unsafe {
+            let (v, clip) = crate::vof::update(
+                c,
+                &a.m.topo(),
+                a.m.volume.get(),
+                a.flux.get(),
+                a.alpha_f.get(),
+                a.alpha.get(),
+                a.dt,
+            );
+            *a.out.out().add(c) = v;
+            *a.out2.out().add(c) = clip;
+        }
+    }
+}
+
+/// Outflow rate Σ_out |F|/V of cell `c` ([`crate::vof::outflow_rate`]).
+pub struct VofOutflowRate;
+impl Entry for VofOutflowRate {
+    type Args = VofArgs;
+    const NAME: &'static str = "vof_outflow_rate";
+    #[inline(always)]
+    unsafe fn run(c: usize, a: &VofArgs) {
+        // SAFETY: guaranteed by the caller.
+        unsafe {
+            *a.out.out().add(c) =
+                crate::vof::outflow_rate(c, &a.m.topo(), a.m.volume.get(), a.flux.get())
+        }
+    }
+}
+
+/// Smoothed α̃ of cell `c` ([`crate::vof::smooth`]).
+pub struct VofSmooth;
+impl Entry for VofSmooth {
+    type Args = VofArgs;
+    const NAME: &'static str = "vof_smooth";
+    #[inline(always)]
+    unsafe fn run(c: usize, a: &VofArgs) {
+        // SAFETY: guaranteed by the caller.
+        unsafe {
+            *a.out.out().add(c) = crate::vof::smooth(
+                c,
+                &a.m.topo(),
+                &a.m.area.v(),
+                a.m.weight.get(),
+                a.alpha.get(),
+            )
+        }
+    }
+}
+
+/// Green–Gauss gradient of `alpha` in cell `c` into `out3`, its norm into
+/// `out` ([`crate::vof::gauss_gradient`]).
+pub struct VofGradient;
+impl Entry for VofGradient {
+    type Args = VofArgs;
+    const NAME: &'static str = "vof_gradient";
+    #[inline(always)]
+    unsafe fn run(c: usize, a: &VofArgs) {
+        // SAFETY: guaranteed by the caller.
+        unsafe {
+            let g = crate::vof::gauss_gradient(
+                c,
+                &a.m.topo(),
+                &a.m.area.v(),
+                a.m.weight.get(),
+                a.m.volume.get(),
+                a.alpha.get(),
+            );
+            *a.out3.x.out().add(c) = g[0];
+            *a.out3.y.out().add(c) = g[1];
+            *a.out3.z.out().add(c) = g[2];
+            *a.out.out().add(c) =
+                foehncraft_core::Real::sqrt_of(g[0] * g[0] + g[1] * g[1] + g[2] * g[2]);
+        }
+    }
+}
+
+/// Curvature of cell `c` ([`crate::vof::curvature`], δ = `s`).
+pub struct VofCurvature;
+impl Entry for VofCurvature {
+    type Args = VofArgs;
+    const NAME: &'static str = "vof_curvature";
+    #[inline(always)]
+    unsafe fn run(c: usize, a: &VofArgs) {
+        // SAFETY: guaranteed by the caller.
+        unsafe {
+            *a.out.out().add(c) = crate::vof::curvature(
+                c,
+                &a.m.topo(),
+                &a.m.area.v(),
+                a.m.weight.get(),
+                a.m.volume.get(),
+                &a.grad.v(),
+                a.open.get(),
+                a.s,
+            )
+        }
+    }
+}
+
+/// The balanced pressure-force reconstruction of cell `c`
+/// ([`crate::vof::reconstruct`]): φ = `alpha`, offsets = `alpha_f`, ρ_f =
+/// `flux`, ρ = `kappa`, boundary values = `alpha_b`, added vector = `grad`,
+/// into `out3`.
+pub struct VofReconstruct;
+impl Entry for VofReconstruct {
+    type Args = VofArgs;
+    const NAME: &'static str = "vof_reconstruct";
+    #[inline(always)]
+    unsafe fn run(c: usize, a: &VofArgs) {
+        // SAFETY: guaranteed by the caller.
+        unsafe {
+            let v = crate::vof::reconstruct(
+                c,
+                &a.m.topo(),
+                &a.m.area.v(),
+                &a.m.face_centroid.v(),
+                &a.m.cell_centroid.v(),
+                a.alpha.get(),
+                a.alpha_f.get(),
+                a.flux.get(),
+                a.kappa.get(),
+                a.open.get(),
+                a.alpha_b.get(),
+                &a.grad.v(),
+            );
+            let o = &a.out3;
+            *o.x.out().add(c) = v[0];
+            *o.y.out().add(c) = v[1];
+            *o.z.out().add(c) = v[2];
+        }
+    }
+}
+
+/// Surface-tension face offset of face `f` ([`crate::vof::tension`],
+/// σ = `s`).
+pub struct VofTension;
+impl Entry for VofTension {
+    type Args = VofArgs;
+    const NAME: &'static str = "vof_tension";
+    #[inline(always)]
+    unsafe fn run(f: usize, a: &VofArgs) {
+        // SAFETY: guaranteed by the caller.
+        unsafe {
+            *a.out.out().add(f) = crate::vof::tension(
+                f,
+                &a.m.topo(),
+                a.alpha.get(),
+                a.kappa.get(),
+                a.gnorm.get(),
+                a.s,
+            )
+        }
+    }
+}
+
 send_sync!(
     LinArgs,
+    VofArgs,
     VecArgs,
     PseudoArgs,
     BlockArgs,
@@ -3175,7 +3430,7 @@ send_sync!(
 );
 
 /// Names of all entries (the PTX module has `flow_<name>` for each).
-pub const NAMES: [&str; 57] = [
+pub const NAMES: [&str; 66] = [
     Lincomb::NAME,
     ScaledDifference::NAME,
     SquaresAdd::NAME,
@@ -3233,6 +3488,15 @@ pub const NAMES: [&str; 57] = [
     WallFaces::NAME,
     WallCells::NAME,
     Floor::NAME,
+    Quotient::NAME,
+    VofFaces::NAME,
+    VofUpdate::NAME,
+    VofOutflowRate::NAME,
+    VofSmooth::NAME,
+    VofGradient::NAME,
+    VofCurvature::NAME,
+    VofTension::NAME,
+    VofReconstruct::NAME,
 ];
 
 #[cfg(test)]
@@ -3317,6 +3581,8 @@ mod tests {
                 + 48
                 + 2 * 16
                 + 3 * 16
+                // body (VOF, D-weighted Rhie–Chow)
+                + 48
         );
     }
 
@@ -3353,7 +3619,7 @@ mod tests {
             unsafe { Product::run(i, &a) };
         }
         assert_eq!(z, [-4.0, -16.0, -36.0]);
-        assert_eq!(NAMES.len(), 57);
+        assert_eq!(NAMES.len(), 66);
         // the elliptic-blending helpers: out += |v|², out3 = s v
         let (vx, vy, vz) = ([1.0, 0.0], [2.0, -3.0], [2.0, 4.0]);
         let s = [0.5, -2.0];

@@ -2527,6 +2527,32 @@ gaps = [
 ]
 
 [[feature]]
+id = "multiphase.vof"
+area = "Multiphase"
+title = "Two fluids by the volume of fluid: THINC, CICSAM, balanced gravity and surface tension (L3, MP1, D293)"
+switch = "[vof] with two [[vof.phase]] tables in a transient case"
+decisions = ["D154", "D293"]
+model = true
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-kernels/src/vof.rs::thinc_matches_quadrature", what = "the time-integrated THINC face value against numerical quadrature to 2e-6, bounded in [0, 1]" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/vof.rs::zalesak_disk_thinc_cicsam_upwind", what = "Zalesak's slotted disk, one revolution on 100 x 100 hex: L1 error THINC 0.048, CICSAM 0.19, upwind 1.10; volume conserved to round-off (the clipped and boundary parts booked); alpha in [0, 1]" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/vof.rs::zalesak_disk_thinc_on_polygons", what = "the disk on a polygon mesh: THINC L1 error 0.09" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/vof.rs::zalesak_disk_level_set_benchmark", what = "the computer-graphics benchmark: a semi-Lagrangian level set (Catmull-Rom, exact back-trace) on the same disk, L1 error 0.27" },
+  { kind = "reference-data", test = "crates/foehncraft-flow/tests/vof.rs::dam_break_martin_moyce", what = "the collapse of a water column (n^2 = 2, density ratio 828) on h = a/8: surge front within 20 % of Martin & Moyce 1952 at every measured point, water volume conserved to 1e-9" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/vof.rs::static_drop_laplace_jump", what = "a 2D water drop in air at rest: Laplace jump 32.2 Pa against sigma/R = 35 Pa, spurious currents 0.18 m/s" },
+  { kind = "contract", property = "diagnostics", test = "crates/foehncraft-flow/tests/vof.rs::refusals", what = "steady runs, turbulence, one phase, a bad Courant number and an inflow on an unknown boundary are refused with VOF001 and VOF002" },
+  { kind = "reference-data", case = "vof_dam_break", what = "h = a/16: the surge front 5 to 17 % ahead of Martin & Moyce 1952, the same curve on a/32", doc = "docs/gallery/multiphase.md#vof-dam-break" },
+  { kind = "contract", property = "diagnostics", case = "vof_static_drop", what = "the static drop of the test as a case", doc = "docs/recipes/multiphase.md#vof-two-fluids" },
+]
+gaps = [
+  "the dam-break front runs 5 to 17 % ahead of the measurements on meshes a/16 and a/32 alike (the early part of the gap may be the lifting time of the experiment's gate); the measured points are read from the text of the paper and still to be checked against the scan",
+  "the static drop keeps spurious currents of 0.18 m/s (Ca ~ 3e-3) and a Laplace jump 8 % low: the curvature is from twice-smoothed alpha, no height functions yet",
+  "isothermal and laminar only: no energy, phase change (MP2), turbulence, scalars, sprays, immersed bodies, rotating zones, moving meshes, periodic boundaries or the coupled algorithm (VOF002)",
+  "one process, no restart; the GPU (PTX) entries are built but not yet run on a GPU",
+  "the kinetic-energy balance (BAL003) is not adapted to the variable density of the mixture and may warn",
+]
+
+[[feature]]
 id = "structure.temperature-field"
 area = "Structures"
 title = "Temperatures of a solid region of a flow case as the thermal load of beams, shells and solids: VTKHDF cell field, linear least-squares fit at the nodes (L53, MS6 part 1)"
