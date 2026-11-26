@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**154 features: 50 verified, 101 partial, 3 unverified.**
+**155 features: 50 verified, 102 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -155,6 +155,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Sprays | [Steady spray mode: streams through the steady gas with relaxed sources (SP2s, D260)](#sprays-steady-mode) | partial |
 | Sprays | [Evaporating sprays: vapour, mass and enthalpy to the gas (SP4, SP5, D250 to D253)](#sprays-evaporation) | partial |
 | Sprays | [Liquid property library and the 1/3-rule film state of the evaporation (D320, D321)](#sprays-liquid-library) | partial |
+| Sprays | [Injection from measured droplets of a plane, and the Brno spray against its phase Doppler data (D322)](#sprays-measured-injection) | partial |
 | Sprays | [Spray breakup: KH-ACT and KH-RT with blob injection, TAB distortion and dynamic drag (SP6, D300 to D309)](#sprays-breakup) | partial |
 | Sprays | [High-pressure droplet surface: Peng-Robinson phase equilibrium and latent heat (Spray A, SA1, D311, D312, D314)](#sprays-high-pressure-surface) | partial |
 | Sprays | [Real-fluid gas film of the Peng-Robinson surface: Chung dense-fluid transport, Riazi-Whitson diffusivity, Peng-Robinson density and c_p (Spray A, SA2, D313)](#sprays-high-pressure-film) | partial |
@@ -2196,6 +2197,26 @@ Gaps:
 - iso-octane above about 400 K rests on extrapolated correlations (density, c_l, mu, sigma); not in the NIST fluid system
 - the film carrier is the start composition of the case, not the local gas of the cell
 - `spray_heptane_evaporation_injectors` has no run in the verification manual or in CI
+
+<a id="sprays-measured-injection"></a>
+
+### Injection from measured droplets of a plane, and the Brno spray against its phase Doppler data (D322)
+
+**partial** (gaps written) · id `sprays.measured-injection` · switch `[[spray.injector]] samples, sector` · decisions D322
+
+- exact: [`a_sample_table_reads_and_draws_by_mass`](../../crates/foehncraft-particles/tests/samples.rs): the cumulative mass shares of a sample table, the row drawn for a uniform number, rows of no weight never drawn, equal shares without weights; the errors of a malformed table
+- consistency: [`sampled_parcels_start_on_their_radius_in_the_sector`](../../crates/foehncraft-particles/tests/samples.rs): 4000 parcels of a two-row table start on their rows' radius inside a 90 degree sector with the rows' axial, radial and tangential velocity, three quarters by number in the row of three quarters of the mass, and carry the sector's share of the mass flow to 1e-9
+- contract (diagnostics): [`the_sample_table_replaces_the_droplet_keys`](../../crates/foehncraft-particles/tests/samples.rs): speed, half_angle, diameter beside samples, a sector without samples, a flow_share other than sector/360 and a sector outside (0, 360] are refused with the key named
+- reference-data: [`spray_brno`](../../examples/cases/flow/spray_brno.toml): the Brno air-blast water spray (Racz et al., Zenodo 17935932) from its measured plane z = 20 mm: the axial velocity of each size class (5 to 50 um) at 40 and 60 mm mostly within about 10 % of the measurements (examples/studies/brno_spray/compare.py); the core d32 below the measured one (see gaps) (passes in CI (set long), not yet in the manual) ([results](../gallery/sprays.md#spray-brno))
+- contract (schema): [`spray_brno_injectors`](../../examples/cases/flow/spray_brno_injectors.toml): the included injector file with the sample table of the measured plane ([results](../cases/flow.md#lagrangian-sprays)) **missing**
+
+Gaps:
+
+- the Brno comparison is run by hand (compare.py); the case itself checks only its books and convergence
+- the core d32 of the Brno spray at 40 and 60 mm is 1 to 3 um below the measured 14 to 15 um: the start is within 0.7 um, evaporation explains 0.3 to 0.4 um (cold-droplet run), the rest is a radial sorting of the sizes stronger than measured; the droplet and air temperatures are not in the data set and were assumed
+- the axisymmetric plane is made from one traverse; the tangential velocity and the size dependence of the probe area are left out
+- SST k-omega for the round jet (the round-jet spreading anomaly of two-equation models is not corrected)
+- `spray_brno_injectors` has no run in the verification manual or in CI
 
 <a id="sprays-breakup"></a>
 
