@@ -18,6 +18,8 @@ Part of the [Example gallery](../gallery.md): droplets as Lagrangian parcels in 
 | 319 | [Liquid length and vapour penetration as the ECN defines them](#spray-ecn) | SA3 | `[spray.ecn]` (D315): liquid length from the projected liquid volume at two thresholds and vapour penetration at 0.1 % fuel, per injector and step in `spray.csv` and `result.json` |
 | 321 | [Fuel droplets with real liquid properties and the 1/3-rule film](#spray-liquid-library) | D320, D321 | `[spray.liquid] library` (water, n-heptane, n-dodecane, iso-octane), `[spray.evaporation] film = "one-third"` (default), single n-heptane droplets against measurements, an n-heptane spray in hot nitrogen |
 | 323 | [ECN Spray G: a gasoline injector against the measurements](#spray-g) | SP6, D309 | `[mesh.generate] wedge` with `dimension = 3` (a sector of the injector), thin slip core on the axis, injector from the measured rate, plume direction and cone, `flow_share`, the ECN liquid and vapour penetration (`tools/plot/spray_g_metrics.py`), library iso-octane, KH-ACT |
+| 324 | [The gas film of a fuel droplet at diesel pressure](#spray-a-film) | SA2 | `[spray.evaporation.peng_robinson] film = "real-fluid"` (default), `critical_volume`: Peng-Robinson density and c_p, the dense-fluid viscosity and conductivity of Chung et al. (1988), the high-pressure diffusivity of Riazi and Whitson (1993) in the droplet film (D313) |
+| 326 | [Flattened drops in ECN Spray A: the Corrected Distortion model](#spray-a-distortion) | SA4 | `[spray.breakup] drag = "corrected-distortion"` (D316): drag and evaporation of the TAB spheroid (Nguyen, Dahms, Pickett and Tagliante 2022), viscous-sphere circulation, ECN liquid length on a quarter domain with mirror images |
 
 ---
 
@@ -809,6 +811,7 @@ streams (VA.4). The stability test of Michelsen (1982) and the flash
 same coexisting phases as the droplet surface of gallery 314, and the
 frozen line becomes unstable exactly where the flash splits. The ideal gas
 of n-dodecane is Scott's (1974) c_p, n-decane plus two CH₂ increments,
+within 0.11 % of the reference equation of Lemmon and Huber (2004).
 within 0.11 % of the reference equation of Lemmon and Huber (2004). The
 same record joins the species data of the flow solver as the vapour
 species `NC12H26`, so a spray of n-dodecane can evaporate into a flow
@@ -928,6 +931,81 @@ boiling are later stages.
 
 ---
 
+<a id="spray-a-film"></a>
+## 324. The gas film of a fuel droplet at diesel pressure
+
+<img src="../figures/gallery/spray_a_film.png" alt="Three charts. Left: the dense-fluid factors of viscosity (dark blue) and conductivity (dark red) of nitrogen against the temperature from 300 to 1200 K, solid at 6 MPa and dashed at 15 MPa, falling from up to 1.37 towards 1; the NIST ratios as filled (6 MPa) and open (15 MPa) markers lie on or near the lines. Middle: the real-fluid film over the ideal-gas film against the droplet temperature from 370 to 650 K in 900 K nitrogen: density about 0.98 at 6 MPa and 0.94 at 15 MPa, viscosity, conductivity, heat capacity and diffusivity 0.99 to 1.07 at 6 MPa and up to 1.14 at 15 MPa, rising towards the critical mixing temperature marked by vertical lines at 636 and 651 K. Right: the squared diameter of a 10 micrometre n-dodecane droplet falling from 1 to 0 in 0.55 ms with the real-fluid film and 0.57 ms with the ideal-gas film, and its temperature rising from 363 K to about 615 K." width="800" height="245">
+
+At 6 MPa the nitrogen around an ECN Spray A droplet is a dense gas, about
+22 kg/m³ at 900 K. Gallery 321 takes the gas properties of the droplet's
+film at the 1/3 reference state as an ideal gas. With the Peng-Robinson
+surface (gallery 314) the film is now a real fluid (D313, the default of
+`[spray.evaporation.peng_robinson] film`):
+
+- **Density and c_p** come from the Peng-Robinson equation of the film
+  mixture: ρ = ρ_ig/Z on the vapour root, and c_p is the ideal-gas value
+  plus ∂(h − h_ig)/∂T.
+- **Viscosity and conductivity** are the kinetic-theory values of the
+  ideal film times the dense-fluid factors η/η° and λ/λ° of Chung, Ajlan,
+  Lee and Starling (1988), with their mixing rules. The low-pressure limit
+  is therefore exactly the ideal film.
+- **Diffusivity:** the low-pressure ρD times the factor of Riazi and
+  Whitson (1993) on the same viscosity factor, without their constant 1.07,
+  so that the factor is 1 at low pressure.
+
+The image comes from `cargo run --release -p foehncraft-particles --example
+spray_a_film` and `tools/plot/spray_a_film.py`.
+
+- **Left:** the Chung factors of nitrogen along the Peng-Robinson isobars
+  against the ratios of the NIST reference equations (Span et al. 2000,
+  Lemmon and Jacobsen 2004) to 0.1 MPa. Viscosity is within 2 % and
+  conductivity within 4 %, with the largest errors at 300 K and 15 MPa.
+- **Middle:** the film of a droplet in 900 K nitrogen, with the fuel
+  fraction of the Peng-Robinson surface. At 6 MPa the film moves by 1 to
+  7 % from the ideal one: density −2 %, the transport properties and c_p
+  −1 to +7 %, growing towards the critical mixing temperature. At 15 MPa it
+  moves by 1 to 14 %, the density by −5 to −7 %.
+- **Right:** a 10 µm droplet of 363 K n-dodecane in still 900 K nitrogen at
+  6 MPa lives 0.548 ms with the real-fluid film against 0.566 ms with the
+  ideal one (−3 %), and its temperature levels off 3 K higher (616 K).
+
+```toml
+[spray.evaporation]
+model = "abramzon-sirignano"
+equilibrium = "peng-robinson"
+
+[spray.evaporation.peng_robinson]
+film = "real-fluid"     # default; "ideal-gas" is the D321 film
+```
+
+**What is checked.** Chung's method with the NIST density reproduces the
+NIST nitrogen viscosity within 1.3 % and the conductivity within 6.8 % from
+0.1 to 15 MPa. The factors that the film takes are within 1.3 % and 4.8 %
+of the NIST ratios. The factors are 1 at low density, and at 0.1 MPa the
+real-fluid film is the ideal one within 1 %. The Peng-Robinson c_p and
+density of nitrogen are within 1 % and 2.5 % of NIST. The vapour c_p that
+books the enthalpy stays the ideal gas's. The film of a Spray A droplet at
+450 to 600 K lies within recorded bands.
+
+**Also fixed.** With a cold start of the surface table (250 K or below, the
+lower end the spray takes for fuel injected at 363 K), Newton's method
+stalled at round-off near 260 K. The table then ended there as "critical",
+and every droplet above it took no latent heat. Now a stall is accepted as
+converged, and the table retries from Wilson's K values. The table reaches
+the critical mixing state at 651 K (6 MPa) from any start.
+
+**What this version does not do.** The Chung coefficient tables were
+transcribed from secondary sources and checked against the NIST nitrogen
+data, not yet against the printed paper. For a liquid-like dense fuel
+(n-dodecane at 6 MPa and 500 to 700 K) the factors are 9 to 17 % too high
+on the viscosity and 40 to 55 % on the conductivity. The film of a Spray A
+droplet is mostly nitrogen, where the method holds. The Riazi-Whitson
+factor is used without its constant. The film gases are those of the
+`ambient` key, not the local gas of the cell, and the gas solver itself
+stays an ideal gas (D317).
+
+[Recipe 324](../recipes/sprays.md#spray-a-film),
+[plan](../requirements/step28-spray-a.md).
 <a id="spray-g"></a>
 ## 323. ECN Spray G: a gasoline injector against the measurements
 
@@ -1027,3 +1105,110 @@ Files: `spray.csv`, `spray/parcels_<step>.vtkhdf`, `fields_<step>.vtkhdf`.
 [case row](../cases/flow.md#lagrangian-sprays).
 
 ---
+
+<a id="spray-a-distortion"></a>
+## 326. Flattened drops in ECN Spray A: the Corrected Distortion model
+
+<img src="../figures/gallery/spray_a_distortion.png" alt="Three panels. Left: the n-dodecane vapour mass fraction near the symmetry plane of ECN Spray A at 0.6 ms, 0 to 30 mm from the nozzle and 8 mm on each side of the axis, the dynamic drag above the axis and the Corrected Distortion model below it; a narrow white cone of droplets from the nozzle ends at the liquid length, 8.8 mm above and 7.0 mm below, both short of the measured 11.2 mm drawn as a dashed line; the vapour, up to 30 percent near the liquid tip, spreads into a cloud about 4 mm wide that reaches 25 mm. Middle: over 0.6 ms the liquid lengths of both runs rise to about 10 mm by 0.1 ms and then stay between 6 and 11 mm, the Corrected Distortion one lower and more ragged, below the measured 10.4 and 11.2 mm; the vapour penetration of both runs rises together to 27 mm. Right: the drag and the Sherwood number of a drop over those of a solid sphere against its distortion from -1 to 1 at Reynolds numbers 20, 100 and 500: the drag rises from 0.65 to 0.8 for a prolate drop to 1.6 to 1.8 for a flat one, the Sherwood number from about 1.05 to 2.2 to 4, while the dynamic drag of the standard model rises to 3.6." width="1600" height="520">
+
+The KH-ACT breakup of gallery 318 makes every drop a TAB oscillator: its
+distortion y flattens it across the flow (y > 0) or stretches it along
+the flow (y < 0). The standard dynamic drag (Liu, Mather and Reitz 1993)
+raises the drag of a flat drop to 3.6 times a sphere and leaves its
+evaporation alone. The Corrected Distortion model of Nguyen, Dahms,
+Pickett and Tagliante (2022) treats the drop as the spheroid of its
+distortion instead (`[spray.breakup] drag = "corrected-distortion"`):
+
+- **Shape:** the axis along the flow l = d (1 − y/2) and the volume of the
+  sphere; the surface, the sphericity and the crosswise sphericity follow
+  (their eqs. 24 to 31).
+- **Drag:** the viscous sphere of Feng and Michaelides (2001a) for the
+  viscosity ratio λ = μ_l(T_p)/μ_g, times the shape ratio of Richter and
+  Nikrityuk (2012). A fully flattened drop drags 1.0 to 1.9 times a solid
+  sphere (right panel; the paper's fig. 19 gives 1.2 to 1.9).
+- **Heat and mass transfer:** the Sherwood and Nusselt numbers of the sphere
+  laws times the internal circulation (Feng and Michaelides 2001b), the
+  shape ratio and the surface ratio. A flat drop evaporates 2 to 5 times
+  faster than a solid sphere, a prolate one about as fast as a round drop
+  of the same liquid.
+
+The corrections are ratios to the solid sphere of the same correlations,
+applied as factors on the sphere laws of the spray (Schiller-Naumann,
+Ranz-Marshall or Abramzon-Sirignano with the film thickening). At y = 0
+and λ → ∞ they are 1.
+
+`spray_a_distortion.toml` is a first Spray A run with both laws: a quarter
+of the vessel (50 × 12 × 12 mm, 40 000 cells, 0.5 mm along the axis),
+n-dodecane at 363 K from the 90 µm hole (C_d 0.89, C_a 0.98, 3.46 mg in
+1.5 ms) into nitrogen at 900 K and 22.8 kg/m³, KH-ACT, the Peng-Robinson
+surface with the real-fluid film, two-way coupling, k-ε, 2·10⁷ parcels
+per second (about 9000 in the flow). It runs to 0.6 ms in 27 minutes
+(dynamic drag) and 36 minutes (Corrected Distortion) on 2 threads each.
+
+| 0.3 to 0.6 ms | Dynamic drag | Corrected Distortion | Measured |
+|---|---|---|---|
+| Liquid length, PLV 0.2·10⁻³ mm³/mm² (mean ± s.d.) | 8.5 ± 0.3 mm | 7.6 ± 1.6 mm | 11.2 mm (PLV), 10.4 mm (Mie 3 %) |
+| Vapour penetration (0.1 %) at 0.6 ms | 26.6 mm | 26.6 mm | – |
+| Sauter mean diameter in the flow | 1.05 µm | 1.08 µm | – |
+
+The Corrected Distortion model shortens the liquid length by about 1 mm,
+the way it does in the paper (RANS: 12.5 mm standard, 10.5 mm Corrected
+Distortion). Here both runs are already short of the measurement, by 24
+and 32 %, so the model moves this run away from it. The vapour penetration
+does not change.
+
+```toml
+[spray.breakup]
+model = "kh-act"
+drag = "corrected-distortion"
+```
+
+**Also fixed.** Two errors showed up in the first runs of this case:
+
+- **The saturation limiter (D253) above the critical mixing temperature.**
+  With the Peng-Robinson surface, the gas above 651 K (at 6 MPa) got no
+  room for vapour, because the surface there takes no latent heat. The
+  limiter then held back 35 times the vapour that still evaporated. Drops
+  of 1 µm heated to 900 K without evaporating, and the liquid length grew
+  with the vapour tip (35 mm at 1 ms). Such a gas now takes vapour up to
+  the fuel fraction of the critical surface.
+- **`[spray.ecn]` on a half or quarter domain.** Seen across a symmetry
+  plane, the domain holds half of each line of sight, so the projected
+  liquid volume was half and the liquid lengths too short. The projection
+  now adds the mirror images of the parcels across the symmetry planes
+  and slip walls that contain the injector axis (a quarter domain: four
+  images). A sector whose images do not tile the whole spray (planes not
+  at 180°/n) is refused.
+
+**What is checked.**
+
+- The spheroid surface against quadrature, and the sphere limits to
+  1e-10.
+- The viscous-sphere branches of Feng and Michaelides meet at λ = 2.
+- The trends of the paper's figs. 18 and 19.
+- The evaporation rate of a distorted drop is the sphere's times the
+  Sherwood factor, to 1e-12.
+- The factor the spray applies is the kernel's at the film state.
+- The drag lies between the sphere and the dynamic drag.
+- The same bits on 1 and 4 threads.
+- Mirror images: a quarter spray with its images gives the whole spray's
+  projection to 1e-12, and sectors of 90° and 60° are accepted while 50°
+  and one radian are refused.
+- The limiter: the capacity of a 900 K gas at 6 MPa is the critical
+  fraction's, to 1e-12.
+
+**What this version does not do.** This is one run per law on a coarse
+mesh (ECN asks for 0.25 mm), without the ensemble or time averages of the
+ECN fields. The KH-ACT constants of gallery 318 are untuned and give drops
+of about 1 µm; the liquid length is 24 to 32 % short, so this case is not
+yet the Spray A validation (SA6). The difference between the two laws
+(0.9 mm) is within the scatter of the Corrected Distortion run (s.d. 1.6
+mm). The correlations of Feng and Michaelides and of Richter and
+Nikrityuk are taken as Nguyen et al. print them; the originals are still
+to be checked. The liquid volume does not yet displace the gas, and the
+sources are not yet spread over a fixed radius (SA4 part 2, D316).
+Collisions are later work.
+
+[Recipe 326](../recipes/sprays.md#spray-a-distortion),
+[case row](../cases/flow.md#lagrangian-sprays),
+[plan](../requirements/step28-spray-a.md).

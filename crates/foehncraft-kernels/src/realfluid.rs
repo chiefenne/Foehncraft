@@ -76,6 +76,14 @@ pub struct Component {
     /// Copeman 1983), fitted to a measured vapour pressure; all zero: the
     /// κ(ω) of Peng and Robinson.
     pub mc: [f64; 3],
+    /// Critical molar volume (m³/mol) for the dense-fluid transport of
+    /// Chung et al. (1988) (D313); 0: estimated by [`Component::vc`].
+    pub vc: f64,
+    /// Dipole moment (debye) for Chung et al. (1988).
+    pub dipole: f64,
+    /// Association factor κ of Chung et al. (1988) (0 for all but strongly
+    /// associating fluids).
+    pub assoc: f64,
 }
 
 impl Component {
@@ -87,6 +95,21 @@ impl Component {
             omega,
             molar_mass,
             mc: [0.0; 3],
+            vc: 0.0,
+            dipole: 0.0,
+            assoc: 0.0,
+        }
+    }
+
+    /// The critical molar volume (m³/mol): the given one, or Z_c R T_c/p_c
+    /// with Z_c = 0.291 − 0.080 ω (Pitzer et al. 1955; 0.5 % below the
+    /// measured V_c of nitrogen, 2.4 % below that of n-dodecane).
+    #[inline]
+    pub fn vc(&self) -> f64 {
+        if self.vc > 0.0 {
+            self.vc
+        } else {
+            (0.291 - 0.080 * self.omega) * R * self.tc / self.pc
         }
     }
 
@@ -487,8 +510,16 @@ pub enum SurfaceState {
 const SUBSTITUTIONS: u32 = 30;
 /// Newton steps at most.
 const NEWTON: u32 = 30;
-/// Convergence of ln K.
+/// Convergence of ln K, relative to 1 + max |ln Kᵢ|. The residual of a
+/// cold fuel carries round-off from ln(Z − B) of its nearly incompressible
+/// liquid, and its Newton steps stall at that floor (about 2e-11 at 267 K
+/// and 6 MPa, more below): a step under [`STALL`] that is no longer half
+/// the one before also ends the iteration. An absolute 1e-12 without that
+/// rule failed at single temperatures and ended the surface table there
+/// as if critical.
 const TOL: f64 = 1e-12;
+/// The largest relative Newton step accepted as the round-off floor.
+const STALL: f64 = 1e-8;
 /// ‖ln K‖² below which the solution is taken as trivial (x = y).
 const TRIVIAL: f64 = 1e-10;
 
@@ -564,6 +595,13 @@ pub fn surface(
         None => mix.wilson(t, p),
     };
     let mut steps = 0;
+    let scale = |lk: &[f64; MAX]| {
+        let mut m: f64 = 0.0;
+        for v in lk.iter().take(n) {
+            m = m.max(v.abs());
+        }
+        1.0 + m
+    };
     let trivial = |lk: &[f64; MAX]| {
         let mut s = 0.0;
         for v in lk.iter().take(n) {
@@ -590,13 +628,14 @@ pub fn surface(
         if trivial(&lnk) {
             return SurfaceState::Critical;
         }
-        if dmax < TOL {
+        if dmax < TOL * scale(&lnk) {
             done = true;
             break;
         }
     }
     // Newton with a difference Jacobian
     let mut it = 0;
+    let mut last = f64::INFINITY;
     while !done && it < NEWTON {
         it += 1;
         steps += 1;
@@ -626,9 +665,11 @@ pub fn surface(
         if trivial(&lnk) {
             return SurfaceState::Critical;
         }
-        if dmax < TOL {
+        let sc = scale(&lnk);
+        if dmax < TOL * sc || (dmax < STALL * sc && dmax > 0.5 * last) {
             done = true;
         }
+        last = dmax;
     }
     if !done {
         return SurfaceState::NotConverged;
@@ -1351,24 +1392,273 @@ impl Streams<'_> {
     }
 }
 
+/// The coefficients a, b, c, d of E₁ … E₁₀ of the dense-fluid viscosity of
+/// Chung et al. (1988), Eᵢ = aᵢ + bᵢ ω + cᵢ μ_r⁴ + dᵢ κ (D313; see
+/// `docs/verification/DATA_SOURCES.md`, section 3i).
+const CHUNG_E: [[f64; 4]; 10] = [
+    [6.324_02, 50.411_9, -51.680_1, 1_189.02],
+    [0.121_02e-2, -0.115_36e-2, -0.625_71e-2, 0.037_283],
+    [5.283_46, 254.209, -168.481, 3_898.27],
+    [6.622_63, 38.095_7, -8.464_14, 31.417_8],
+    [19.745_4, 7.630_34, -14.354_4, 31.526_7],
+    [-1.899_92, -12.536_7, 4.985_29, -18.150_7],
+    [24.274_5, 3.449_45, -11.291_3, 69.346_6],
+    [0.797_16, 1.117_64, 0.012_348, -4.116_61],
+    [-0.238_16, 0.067_695, -0.816_3, 4.025_28],
+    [0.068_629, 0.347_93, 0.592_56, -0.726_63],
+];
+
+/// The coefficients of B₁ … B₇ of the dense-fluid thermal conductivity of
+/// Chung et al. (1988), as [`CHUNG_E`].
+const CHUNG_B: [[f64; 4]; 7] = [
+    [2.416_6, 0.748_24, -0.918_58, 121.72],
+    [-0.509_24, -1.509_4, -49.991, 69.983],
+    [6.610_7, 5.620_7, 64.760, 27.039],
+    [14.543, -8.913_9, -5.637_9, 74.344],
+    [0.792_74, 0.820_19, -0.693_69, 6.317_3],
+    [-5.863_4, 12.801, 9.589_3, 65.529],
+    [91.089, 128.11, -54.217, 523.81],
+];
+
+/// The reduced collision integral Ω_v(T*) of Neufeld, Janzen and Aziz
+/// (1972) with its correction term, as Chung et al. (1988) use it.
+#[inline]
+pub fn neufeld_omega_v(ts: f64) -> f64 {
+    let pw = math::exp(-0.148_74 * math::ln(ts));
+    1.161_45 * pw + 0.524_87 * math::exp(-0.773_20 * ts) + 2.161_78 * math::exp(-2.437_87 * ts)
+        - 6.435e-4 / pw * math::sin(18.032_3 * math::exp(-0.768_3 * math::ln(ts)) - 7.273_71)
+}
+
+/// The pseudo-pure fluid of a mixture by the mixing rules of Chung et al.
+/// (1988): σ_m³ = Σᵢ Σⱼ xᵢ xⱼ σᵢⱼ³, (ε/k)_m σ_m³ = Σ Σ xᵢ xⱼ (ε/k)ᵢⱼ σᵢⱼ³,
+/// ω_m σ_m³ = Σ Σ xᵢ xⱼ ωᵢⱼ σᵢⱼ³, M_m = [Σ Σ xᵢ xⱼ (ε/k)ᵢⱼ σᵢⱼ² √Mᵢⱼ /
+/// ((ε/k)_m σ_m²)]², μ_m⁴ = σ_m³ Σ Σ xᵢ xⱼ μᵢ² μⱼ²/σᵢⱼ³, κ_m = Σ Σ xᵢ xⱼ κᵢⱼ
+/// with σᵢ = 0.809 V_c,ᵢ^⅓, (ε/k)ᵢ = T_c,ᵢ/1.2593, σᵢⱼ = √(σᵢ σⱼ),
+/// (ε/k)ᵢⱼ = √((ε/k)ᵢ (ε/k)ⱼ), ωᵢⱼ = (ωᵢ + ωⱼ)/2, Mᵢⱼ = 2 Mᵢ Mⱼ/(Mᵢ + Mⱼ),
+/// κᵢⱼ = √(κᵢ κⱼ); then T_c = 1.2593 (ε/k)_m, V_c = (σ_m/0.809)³.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ChungFluid {
+    /// T_c (K).
+    pub tc: f64,
+    /// V_c (cm³/mol, the unit of the correlation).
+    pub vc: f64,
+    /// ω.
+    pub omega: f64,
+    /// M (g/mol).
+    pub m: f64,
+    /// The reduced dipole moment μ_r = 131.3 μ/√(V_c T_c).
+    pub mur: f64,
+    /// κ.
+    pub kappa: f64,
+}
+
+impl ChungFluid {
+    /// T* = 1.2593 T/T_c, F_c = 1 − 0.2756 ω + 0.059035 μ_r⁴ + κ and Ω_v.
+    #[inline]
+    fn reduced(&self, t: f64) -> (f64, f64, f64) {
+        let ts = 1.2593 * t / self.tc;
+        let fc = 1.0 - 0.2756 * self.omega
+            + 0.059_035 * self.mur * self.mur * self.mur * self.mur
+            + self.kappa;
+        (ts, fc, neufeld_omega_v(ts))
+    }
+
+    /// The coefficients Eᵢ or Bᵢ of this fluid.
+    #[inline]
+    fn coefficients<const N: usize>(&self, tab: &[[f64; 4]; N]) -> [f64; N] {
+        let m4 = self.mur * self.mur * self.mur * self.mur;
+        let mut e = [0.0; N];
+        for (ei, r) in e.iter_mut().zip(tab.iter()) {
+            *ei = r[0] + r[1] * self.omega + r[2] * m4 + r[3] * self.kappa;
+        }
+        e
+    }
+
+    /// y = ρ V_c/6, G₁ = (1 − y/2)/(1 − y)³ and G₂ (or H₂) of the table `c`.
+    #[inline]
+    fn g2(y: f64, c: &[f64]) -> (f64, f64) {
+        let g1 = (1.0 - 0.5 * y) / ((1.0 - y) * (1.0 - y) * (1.0 - y));
+        // (1 − e^(−c₄ y))/y, by its series below y = 1e-8
+        let q = if y > 1e-8 {
+            (1.0 - math::exp(-c[3] * y)) / y
+        } else {
+            c[3] * (1.0 - 0.5 * c[3] * y)
+        };
+        let g2 =
+            (c[0] * q + c[1] * g1 * math::exp(c[4] * y) + c[2] * g1) / (c[0] * c[3] + c[1] + c[2]);
+        (g1, g2)
+    }
+
+    /// The low-pressure viscosity η° (Pa s): 40.785 F_c √(M T)/(V_c^⅔ Ω_v)
+    /// µP (Chung et al. 1984, 1988).
+    pub fn viscosity0(&self, t: f64) -> f64 {
+        let (_, fc, ov) = self.reduced(t);
+        40.785e-7 * fc * math::sqrt(self.m * t) / (cbrt(self.vc) * cbrt(self.vc) * ov)
+    }
+
+    /// The viscosity (Pa s) at `t` and the molar density `rho` (mol/m³):
+    /// η = η* 36.344 √(M T_c)/V_c^⅔ µP, η* = (√T*/Ω_v) F_c (1/G₂ + E₆ y) +
+    /// η**, η** = E₇ y² G₂ exp(E₈ + E₉/T* + E₁₀/T*²).
+    pub fn viscosity(&self, t: f64, rho: f64) -> f64 {
+        self.viscosity0(t) * self.viscosity_factor(t, rho)
+    }
+
+    /// η/η° at `t` and `rho` (mol/m³): (1/G₂ + E₆ y) + η** Ω_v/(√T* F_c).
+    pub fn viscosity_factor(&self, t: f64, rho: f64) -> f64 {
+        let (ts, fc, ov) = self.reduced(t);
+        let e = self.coefficients(&CHUNG_E);
+        let y = rho * self.vc * 1e-6 / 6.0;
+        let (_, g2) = Self::g2(y, &e);
+        let ess = e[6] * y * y * g2 * math::exp(e[7] + e[8] / ts + e[9] / (ts * ts));
+        1.0 / g2 + e[5] * y + ess * ov / (math::sqrt(ts) * fc)
+    }
+
+    /// The low-pressure thermal conductivity λ° (W/(m K)) with the
+    /// ideal-gas molar heat capacity `cv` (J/(mol K)): λ° M'/(η° c_v) =
+    /// 3.75 Ψ/(c_v/R), that is λ° = 31.2 η° Ψ/M' (η° in Pa s, M' in kg/mol;
+    /// Chung et al. 1984), Ψ = 1 + α (0.215 + 0.28288 α − 1.061 β +
+    /// 0.26665 Z)/(0.6366 + β Z + 1.061 α β), α = c_v/R − 3/2, β = 0.7862 −
+    /// 0.7109 ω + 1.3168 ω², Z = 2 + 10.5 T_r².
+    pub fn conductivity0(&self, t: f64, cv: f64) -> f64 {
+        let tr = t / self.tc;
+        let a = cv / R - 1.5;
+        let b = 0.7862 - 0.7109 * self.omega + 1.3168 * self.omega * self.omega;
+        let z = 2.0 + 10.5 * tr * tr;
+        // 0.6366 is Chung's printed constant, not 2/π
+        #[allow(clippy::approx_constant)]
+        let psi = 1.0
+            + a * (0.215 + 0.282_88 * a - 1.061 * b + 0.266_65 * z)
+                / (0.6366 + b * z + 1.061 * a * b);
+        3.75 * R * self.viscosity0(t) * psi / (self.m * 1e-3)
+    }
+
+    /// The thermal conductivity (W/(m K)) at `t`, `rho` (mol/m³) with the
+    /// ideal-gas `cv` (J/(mol K)): λ = λ° (1/H₂ + B₆ y) + q B₇ y² √T_r H₂,
+    /// q = 3.586e-3 √(T_c/M')/V_c^⅔.
+    pub fn conductivity(&self, t: f64, rho: f64, cv: f64) -> f64 {
+        self.conductivity0(t, cv) * self.conductivity_factor(t, rho, cv)
+    }
+
+    /// λ/λ° at `t`, `rho` (mol/m³) and the ideal-gas `cv` (J/(mol K)).
+    pub fn conductivity_factor(&self, t: f64, rho: f64, cv: f64) -> f64 {
+        let b = self.coefficients(&CHUNG_B);
+        let y = rho * self.vc * 1e-6 / 6.0;
+        let (_, h2) = Self::g2(y, &b);
+        let q = 3.586e-3 * math::sqrt(self.tc / (self.m * 1e-3)) / (cbrt(self.vc) * cbrt(self.vc));
+        let lp = q * b[6] * y * y * math::sqrt(t / self.tc) * h2;
+        1.0 / h2 + b[5] * y + lp / self.conductivity0(t, cv)
+    }
+}
+
+impl Mixture {
+    /// The pseudo-pure fluid of Chung et al. (1988) of the composition `x`
+    /// (see [`ChungFluid`]).
+    pub fn chung(&self, x: &[f64; MAX]) -> ChungFluid {
+        let n = self.n;
+        let mut sig = [0.0; MAX];
+        let mut eps = [0.0; MAX];
+        for i in 0..n {
+            sig[i] = 0.809 * cbrt(self.c[i].vc() * 1e6);
+            eps[i] = self.c[i].tc / 1.2593;
+        }
+        let (mut s3, mut e3, mut w3, mut mm, mut d4, mut k) = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+        for i in 0..n {
+            for j in 0..n {
+                let xx = x[i] * x[j];
+                let sij = math::sqrt(sig[i] * sig[j]);
+                let sij3 = sij * sij * sij;
+                let eij = math::sqrt(eps[i] * eps[j]);
+                let (ci, cj) = (&self.c[i], &self.c[j]);
+                let mij =
+                    2.0 * ci.molar_mass * cj.molar_mass / (ci.molar_mass + cj.molar_mass) * 1e3;
+                s3 += xx * sij3;
+                e3 += xx * eij * sij3;
+                w3 += xx * 0.5 * (ci.omega + cj.omega) * sij3;
+                mm += xx * eij * sij * sij * math::sqrt(mij);
+                d4 += xx * ci.dipole * ci.dipole * cj.dipole * cj.dipole / sij3;
+                k += xx * math::sqrt(ci.assoc * cj.assoc);
+            }
+        }
+        let sm = cbrt(s3);
+        let em = e3 / s3;
+        let tc = 1.2593 * em;
+        let vc = (sm / 0.809) * (sm / 0.809) * (sm / 0.809);
+        let m = (mm / (em * sm * sm)) * (mm / (em * sm * sm));
+        let dm = math::sqrt(math::sqrt(s3 * d4));
+        ChungFluid {
+            tc,
+            vc,
+            omega: w3 / s3,
+            m,
+            mur: 131.3 * dm / math::sqrt(vc * tc),
+            kappa: k,
+        }
+    }
+
+    /// The factor on the low-pressure ρD of a dilute solute in this mixture
+    /// at `p` (Pa) after Riazi and Whitson (1993), ρD/(ρD)° = 1.07 (η/η°)^n,
+    /// n = −0.27 − 0.38 ω + (−0.05 + 0.1 ω) p_r with ω = Σ xᵢ ωᵢ and
+    /// p_r = p/Σ xᵢ p_c,ᵢ, given the dense-fluid factor `eta_ratio` = η/η°;
+    /// here without their constant 1.07, so that the factor is 1 at low
+    /// pressure and the film keeps the diffusivity of the low-pressure
+    /// model there (D313).
+    pub fn riazi_whitson(&self, x: &[f64; MAX], p: f64, eta_ratio: f64) -> f64 {
+        let (mut w, mut pc) = (0.0, 0.0);
+        for (xi, c) in x.iter().zip(&self.c[..self.n]) {
+            w += xi * c.omega;
+            pc += xi * c.pc;
+        }
+        let n = -0.27 - 0.38 * w + (-0.05 + 0.1 * w) * p / pc;
+        math::exp(n * math::ln(eta_ratio))
+    }
+
+    /// The molar heat capacity departure c_p − c_p^ig (J/(mol K)) of a phase
+    /// of composition `x` at `t` and `p`: ∂(h − h^ig)/∂T at constant p and
+    /// x by a centred difference of 0.01 K.
+    pub fn cp_departure(&self, x: &[f64; MAX], t: f64, p: f64, root: Root) -> f64 {
+        let h = 0.01;
+        (self.phase(x, t + h, p, root).h_dep - self.phase(x, t - h, p, root).h_dep) / (2.0 * h)
+    }
+}
+
 /// Critical constants and acentric factors of the gases of the ambient
 /// (species names of the flow's species data). Critical points from the
 /// reference equations of state; acentric factors from the tables of
 /// Poling, Prausnitz and O'Connell (2001), appendix A (see
-/// `docs/verification/DATA_SOURCES.md`, section 3e).
+/// `docs/verification/DATA_SOURCES.md`, section 3e). Critical volumes
+/// (the inverse critical densities), the dipole moment of water from the
+/// NIST Chemistry WebBook fluid tables, the association factor of water
+/// from Chung et al. (1988) (D313, section 3i).
 pub mod gases {
     use super::Component;
 
     /// N₂: Span, Lemmon, Jacobsen, Wagner, Yokozeki (2000).
-    pub const N2: Component = Component::new(126.192, 3.3958e6, 0.0372, 0.028_013_4);
+    pub const N2: Component = Component {
+        vc: 1.0 / 11_183.9,
+        ..Component::new(126.192, 3.3958e6, 0.0372, 0.028_013_4)
+    };
     /// O₂: Schmidt and Wagner (1985).
-    pub const O2: Component = Component::new(154.581, 5.043e6, 0.0222, 0.031_998_8);
+    pub const O2: Component = Component {
+        vc: 1.0 / 13_630.0,
+        ..Component::new(154.581, 5.043e6, 0.0222, 0.031_998_8)
+    };
     /// CO₂: Span and Wagner (1996).
-    pub const CO2: Component = Component::new(304.1282, 7.3773e6, 0.2239, 0.044_009_5);
+    pub const CO2: Component = Component {
+        vc: 1.0 / 10_624.9,
+        ..Component::new(304.1282, 7.3773e6, 0.2239, 0.044_009_5)
+    };
     /// H₂O: Wagner and Pruss (2002).
-    pub const H2O: Component = Component::new(647.096, 22.064e6, 0.3443, 0.018_015_268);
+    pub const H2O: Component = Component {
+        vc: 1.0 / 17_873.728,
+        dipole: 1.855,
+        assoc: 0.076,
+        ..Component::new(647.096, 22.064e6, 0.3443, 0.018_015_268)
+    };
     /// Ar: Tegeler, Span, Wagner (1999).
-    pub const AR: Component = Component::new(150.687, 4.863e6, -0.0022, 0.039_948);
+    pub const AR: Component = Component {
+        vc: 1.0 / 13_407.4,
+        ..Component::new(150.687, 4.863e6, -0.0022, 0.039_948)
+    };
 
     /// The data of a species by its name in the species data, if known.
     pub fn by_name(name: &str) -> Option<Component> {
@@ -1421,11 +1711,14 @@ pub mod fuels {
     /// and Huber (2004) at 300 to 700 K; the NASA-7 fit (within 0.28 %),
     /// a₆ from Δ_f H° = −290.9 kJ/mol, a₇ from S° = 622.50 J/(mol K)
     /// (NIST WebBook), Lennard-Jones data by Tee, Gotoh and Stewart (1966):
-    /// written by `tools/data/dodecane_ideal_gas.py`.
+    /// written by `tools/data/dodecane_ideal_gas.py`. Critical volume
+    /// 1/(1.33 mol/l), the critical density of Lemmon and Huber (2004) (NIST
+    /// WebBook), for the dense-fluid transport (D313).
     pub const N_DODECANE: Fuel = Fuel {
         name: "n-dodecane",
         component: Component {
             mc: [1.208_668, -0.307_470, 0.885_193],
+            vc: 1.0 / 1_330.0,
             ..Component::new(658.65, 1.83e6, 0.573, 0.170_334)
         },
         k: &[("N2", 0.205)],

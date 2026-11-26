@@ -9,7 +9,8 @@
 //! - the KH radius of a blob follows the breakup equation da/dt =
 //!   −(a − B₀Λ(a))/τ(a), integrated independently;
 //! - Rayleigh-Taylor breakup acts beyond the breakup length only;
-//! - the dynamic drag of distorted drops slows the spray down;
+//! - the dynamic drag of distorted drops slows the spray down, the
+//!   Corrected Distortion drag less so;
 //! - a rate table gives each parcel its exact share of the liquid and the
 //!   speed ṁ/(ρ_l C_a A_hole) (D306);
 //! - KH-ACT (D307): the nozzle turbulence strips a young blob at
@@ -185,21 +186,23 @@ fn blobs_shed_children_and_keep_the_liquid() {
 
 #[test]
 fn same_bits_on_any_threads_and_order() {
-    let mut c = cfg(RHO_L);
-    c.breakup.drag = DragLaw::Dynamic;
-    c.breakup.breakup_length = Some(2.0);
-    let (a, ra) = run(1, false, 30, &c);
-    let (_, rb) = run(4, true, 30, &c);
-    assert!(a.tally.child_parcels > 0 && a.tally.rt_breakups > 0);
-    assert_eq!(ra.len(), rb.len());
-    for (x, y) in ra.iter().zip(&rb) {
-        assert_eq!(x.0, y.0);
-        for k in 0..3 {
-            assert_eq!(x.1[k].to_bits(), y.1[k].to_bits());
-            assert_eq!(x.2[k].to_bits(), y.2[k].to_bits());
+    for drag in [DragLaw::Dynamic, DragLaw::CorrectedDistortion] {
+        let mut c = cfg(RHO_L);
+        c.breakup.drag = drag;
+        c.breakup.breakup_length = Some(2.0);
+        let (a, ra) = run(1, false, 30, &c);
+        let (_, rb) = run(4, true, 30, &c);
+        assert!(a.tally.child_parcels > 0 && a.tally.rt_breakups > 0);
+        assert_eq!(ra.len(), rb.len());
+        for (x, y) in ra.iter().zip(&rb) {
+            assert_eq!(x.0, y.0);
+            for k in 0..3 {
+                assert_eq!(x.1[k].to_bits(), y.1[k].to_bits());
+                assert_eq!(x.2[k].to_bits(), y.2[k].to_bits());
+            }
+            assert_eq!(x.3.to_bits(), y.3.to_bits());
+            assert_eq!(x.4.to_bits(), y.4.to_bits());
         }
-        assert_eq!(x.3.to_bits(), y.3.to_bits());
-        assert_eq!(x.4.to_bits(), y.4.to_bits());
     }
 }
 
@@ -351,6 +354,30 @@ fn distorted_drops_feel_more_drag() {
     let p = &dynamic.parcels;
     assert!(p.brk.iter().all(|b| b.y <= 1.0));
     assert!(p.brk.iter().any(|b| b.y == 1.0));
+}
+
+/// The Corrected Distortion drag (Nguyen et al. 2022, D316) of the
+/// flattened blobs lies between the sphere and the dynamic drag of Liu et
+/// al.: about 1.1 to 2 times the sphere at y = 1 instead of 3.6 (fig. 19 of
+/// the paper).
+#[test]
+fn corrected_distortion_drags_between_the_sphere_and_the_dynamic_drag() {
+    let mut c = cfg(RHO_L);
+    c.breakup.model = BreakupModel::None;
+    let (sphere, _) = run(1, false, 30, &c);
+    c.breakup.drag = DragLaw::Dynamic;
+    let (dynamic, _) = run(1, false, 30, &c);
+    c.breakup.drag = DragLaw::CorrectedDistortion;
+    let (corrected, _) = run(1, false, 30, &c);
+    let far = |s: &Spray| s.parcels.x.iter().map(|x| x[0]).fold(0.0, f64::max);
+    assert!(
+        far(&dynamic) < far(&corrected) && far(&corrected) < far(&sphere),
+        "{} {} {}",
+        far(&dynamic),
+        far(&corrected),
+        far(&sphere)
+    );
+    assert!(corrected.parcels.brk.iter().any(|b| b.y == 1.0));
 }
 
 #[test]

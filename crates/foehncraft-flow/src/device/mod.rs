@@ -103,6 +103,12 @@ pub struct VertexStencil {
     pub cell_verts: Vec<u32>,
     /// Vertex coordinates x, y, z.
     pub points: [Vec<f64>; 3],
+    /// On ranks (MPI step W7): the vertices on the processor faces, whose
+    /// bounds the ranks that share them combine, and their global ids.
+    /// Empty on one rank.
+    pub shared: Vec<u32>,
+    /// See `shared`.
+    pub shared_id: Vec<u64>,
 }
 
 /// Inputs and output of [`FlowDevice::mlp_limiter`].
@@ -729,6 +735,65 @@ pub struct Setup<'a> {
     pub ranks: Option<foehncraft_mesh::decompose::Ranks>,
 }
 
+/// The volume-of-fluid operations (L3, stage MP1): which body of
+/// `foehncraft_kernels::vof` [`FlowDevice::vof`] runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VofOp {
+    /// α_f per face from `flux`, `alpha`, `grad`, `alpha_b` → `out`.
+    Faces,
+    /// α per cell from `flux`, `alpha_f`, `alpha` → `out`, clipped volume
+    /// → `out2`.
+    Update,
+    /// Σ_out |F|/V per cell from `flux` → `out`.
+    OutflowRate,
+    /// α̃ per cell from `alpha` → `out`.
+    Smooth,
+    /// ∇ per cell of `alpha` → `out3`, its norm → `out`.
+    Gradient,
+    /// κ per cell from `grad` (δ = `s`) → `out`.
+    Curvature,
+    /// σ κ_f (α_N − α_P) per face from `alpha`, `kappa`, `gnorm` (σ = `s`)
+    /// → `out`.
+    Tension,
+    /// The balanced pressure force ρ_P R_P[g_f/ρ_f] + `grad` per cell of φ =
+    /// `alpha` with the face offsets `alpha_f`, ρ_f = `flux`, ρ = `kappa`
+    /// and the boundary values `alpha_b` → `out3`.
+    Reconstruct,
+}
+
+/// The buffers and numbers of [`FlowDevice::vof`] (unused ones `None`).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct VofBufs {
+    /// Volume flux per face.
+    pub flux: Option<Buf>,
+    /// α (or the field read) per cell.
+    pub alpha: Option<Buf>,
+    /// α per face.
+    pub alpha_f: Option<Buf>,
+    /// A cell gradient.
+    pub grad: Option<Buf3>,
+    /// α of the inflow per boundary face.
+    pub alpha_b: Option<Buf>,
+    /// Curvature per cell.
+    pub kappa: Option<Buf>,
+    /// |∇α̃| per cell.
+    pub gnorm: Option<Buf>,
+    /// Face scheme.
+    pub scheme: u32,
+    /// Sub-step Δt.
+    pub dt: f64,
+    /// β of THINC.
+    pub beta: f64,
+    /// σ or δ.
+    pub s: f64,
+    /// Output.
+    pub out: Option<Buf>,
+    /// Second output.
+    pub out2: Option<Buf>,
+    /// Vector output.
+    pub out3: Option<Buf3>,
+}
+
 /// The operations of the flow algorithms. Buffers are created by
 /// [`alloc`](FlowDevice::alloc); an output buffer is never one of the
 /// inputs of the same operation unless the operation says so.
@@ -887,6 +952,18 @@ pub trait FlowDevice {
     fn pressure_faces(&mut self, dc: Buf, out: Buf) -> Result<()>;
     /// Pressure-correction rows.
     fn pressure_rows(&mut self, cf: Buf, m: Buf, val: Buf, rhs: Buf) -> Result<()>;
+    /// out = a x / y per entry (the volume fluxes and the volume-based
+    /// pressure-correction coefficients of the volume-of-fluid method).
+    fn quotient(&mut self, out: Buf, a: f64, x: Buf, y: Buf) -> Result<()>;
+    /// The boundary faces that take the interface normal of their owner in
+    /// the curvature (1: open boundaries; 0: walls and symmetry planes).
+    fn vof_open(&mut self, open: &[u32]) -> Result<()>;
+    /// The cell body force B_P (N/m³) of the D-weighted Rhie–Chow flux of a
+    /// volume-of-fluid case (the balanced-force jump then holds the plain
+    /// offsets o_f).
+    fn set_body_force(&mut self, b: &[Vec<f64>; 3]) -> Result<()>;
+    /// One volume-of-fluid operation (L3, stage MP1).
+    fn vof(&mut self, op: VofOp, b: &VofBufs) -> Result<()>;
     /// Corrected fluxes ṁ − c_f (p'_N − p'_P).
     fn correct_fluxes(&mut self, cf: Buf, m: Buf, pc: Buf, out: Buf) -> Result<()>;
     /// u_i −= D^C ∇p'_i.

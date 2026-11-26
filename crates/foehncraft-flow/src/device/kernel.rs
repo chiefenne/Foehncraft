@@ -13,8 +13,8 @@
 use super::{
     BoundaryArgs, Buf, Buf3, CurvatureOps, Eps2, FlowDevice, FluxArgs, KepsCellOps, Lsq, Mask,
     MlpOps, MomentumFaceArgs, MomentumRowArgs, ScalarFaceArgs, ScalarRowArgs, ScalarTurbOps,
-    ScalarWallOps, Setup, SstCellOps, TurbFaceOps, VertexStencil, WallCellOps, WallFaceOps,
-    WallStatic, ZetaFCellOps,
+    ScalarWallOps, Setup, SstCellOps, TurbFaceOps, VertexStencil, VofBufs, VofOp, WallCellOps,
+    WallFaceOps, WallStatic, ZetaFCellOps,
 };
 use anyhow::{Result, ensure};
 use foehncraft_core::repro::{BLOCK, combine_block_sums};
@@ -155,6 +155,24 @@ pub struct KernelFlow<E: Exec> {
     quad: Vec<[Raw<u32>; 3]>,
     /// The vertex stencils of the MLP limiter.
     vert: Vec<VertSlot>,
+    /// On ranks: the shared vertices of each stencil of `vert` (MPI step
+    /// W7).
+    vert_shared: Vec<Option<VertShared>>,
+    /// The open-boundary flags of the volume-of-fluid curvature.
+    vof_open: Raw<u32>,
+    /// The cell body force of the D-weighted Rhie–Chow flux.
+    body: Option<[Buf; 3]>,
+}
+
+/// The vertices a rank shares with other ranks (on their processor faces)
+/// and, per shared vertex, where the other ranks hold it: the bounds of a
+/// shared vertex are the minimum and the maximum over the ranks.
+#[derive(Debug, Clone)]
+struct VertShared {
+    /// The local vertex of each shared vertex.
+    local: Vec<u32>,
+    /// Per shared vertex: (rank, position in that rank's list).
+    others: Vec<Vec<(u32, u32)>>,
 }
 
 /// A vertex stencil on the device ([`FlowDevice::vertex_setup`]).
@@ -270,6 +288,7 @@ impl<E: Exec> KernelFlow<E> {
             mass_source: Raw::EMPTY,
             rho_old: Raw::EMPTY,
             rho_old2: Raw::EMPTY,
+            body: Raw3::default(),
         };
         let pca: Vec<f64> =
             s.bc.flux_kind
@@ -309,6 +328,9 @@ impl<E: Exec> KernelFlow<E> {
             wall: None,
             quad: Vec::new(),
             vert: Vec::new(),
+            vert_shared: Vec::new(),
+            vof_open: Raw::EMPTY,
+            body: None,
             lsq_u,
             lsq_p,
             rho: s.rho,
@@ -462,6 +484,36 @@ impl<E: Exec> KernelFlow<E> {
 }
 
 impl<E: Exec> KernelFlow<E> {
+    /// The bounds of the shared vertices of a stencil on ranks (MPI step
+    /// W7): the minimum and the maximum of the bounds of every rank that
+    /// holds the vertex, which are those of all cells and boundary faces
+    /// of the vertex in the whole mesh (the same in any order).
+    fn combine_bounds(&mut self, v: &VertSlot, sh: &VertShared) -> Result<()> {
+        let Some(c) = self.x.comm() else {
+            return Ok(());
+        };
+        let mut lo = self.x.download(v.vmin)?;
+        let mut hi = self.x.download(v.vmax)?;
+        let n = sh.local.len();
+        let mut mine = Vec::with_capacity(2 * n);
+        mine.extend(sh.local.iter().map(|&i| lo[i as usize]));
+        mine.extend(sh.local.iter().map(|&i| hi[i as usize]));
+        let all = c.all_gather_vec_f64(&mine);
+        for (k, &i) in sh.local.iter().enumerate() {
+            let (mut a, mut b) = (lo[i as usize], hi[i as usize]);
+            for &(r, j) in &sh.others[k] {
+                let theirs = &all[r as usize];
+                let m = theirs.len() / 2;
+                a = a.min(theirs[j as usize]);
+                b = b.max(theirs[m + j as usize]);
+            }
+            lo[i as usize] = a;
+            hi[i as usize] = b;
+        }
+        self.x.upload(v.vmin, &lo)?;
+        self.x.upload(v.vmax, &hi)
+    }
+
     /// Fails on ranks: the operation does not run there yet.
     fn not_on_ranks(&self, what: &str) -> Result<()> {
         ensure!(
@@ -1208,6 +1260,161 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
         self.x.exchange(&[rhs])
     }
 
+    fn quotient(&mut self, out: Buf, a: f64, x: Buf, y: Buf) -> Result<()> {
+        let r = self.r(out);
+        let args = e::LinArgs {
+            a,
+            b: 0.0,
+            x: self.r(x),
+            y: self.r(y),
+            out: r,
+        };
+        self.lin::<e::Quotient>(r.len as usize, args)
+    }
+
+    fn set_body_force(&mut self, b: &[Vec<f64>; 3]) -> Result<()> {
+        self.not_on_ranks("the volume-of-fluid method")?;
+        ensure!(
+            b.iter().all(|v| v.len() == self.nc),
+            "flow device: a body force of {} cells expected",
+            self.nc
+        );
+        let bufs = match self.body {
+            Some(x) => x,
+            None => {
+                let x = [
+                    self.x.alloc(self.nc)?,
+                    self.x.alloc(self.nc)?,
+                    self.x.alloc(self.nc)?,
+                ];
+                self.body = Some(x);
+                x
+            }
+        };
+        for (bb, v) in bufs.iter().zip(b) {
+            self.x.upload(*bb, v)?;
+        }
+        self.m.body = Raw3 {
+            x: self.x.raw(bufs[0]),
+            y: self.x.raw(bufs[1]),
+            z: self.x.raw(bufs[2]),
+        };
+        Ok(())
+    }
+
+    fn vof_open(&mut self, open: &[u32]) -> Result<()> {
+        self.not_on_ranks("the volume-of-fluid method")?;
+        ensure!(
+            open.len() == self.nb,
+            "flow device: {} open-boundary flags expected",
+            self.nb
+        );
+        self.vof_open = if open.is_empty() {
+            Raw::EMPTY
+        } else {
+            self.x.alloc_u32(open)?
+        };
+        Ok(())
+    }
+
+    fn vof(&mut self, op: VofOp, b: &VofBufs) -> Result<()> {
+        self.not_on_ranks("the volume-of-fluid method")?;
+        let ins: Vec<Buf> = [b.flux, b.alpha, b.alpha_f, b.alpha_b, b.kappa, b.gnorm]
+            .into_iter()
+            .flatten()
+            .chain(b.grad.map(|g| g.all()).into_iter().flatten())
+            .collect();
+        let outs: Vec<Buf> = [b.out, b.out2]
+            .into_iter()
+            .flatten()
+            .chain(b.out3.map(|g| g.all()).into_iter().flatten())
+            .collect();
+        check(&outs, &ins)?;
+        let o = |x: Option<Buf>| x.map_or(Raw::EMPTY, |x| self.r(x));
+        let args = e::VofArgs {
+            m: self.m,
+            flux: o(b.flux),
+            alpha: o(b.alpha),
+            alpha_f: o(b.alpha_f),
+            grad: b.grad.map_or(Raw3::default(), |g| self.r3(g)),
+            alpha_b: o(b.alpha_b),
+            open: self.vof_open,
+            kappa: o(b.kappa),
+            gnorm: o(b.gnorm),
+            scheme: b.scheme as u64,
+            dt: b.dt,
+            beta: b.beta,
+            s: b.s,
+            out: o(b.out),
+            out2: o(b.out2),
+            out3: b.out3.map_or(Raw3::default(), |g| self.r3(g)),
+        };
+        let need = |x: bool, what: &str| -> Result<()> {
+            ensure!(
+                x,
+                "flow device: the volume-of-fluid operation {op:?} needs {what}"
+            );
+            Ok(())
+        };
+        match op {
+            VofOp::Faces => {
+                need(
+                    b.flux.is_some() && b.alpha.is_some() && b.grad.is_some() && b.out.is_some(),
+                    "flux, alpha, grad, out",
+                )?;
+                need(b.alpha_b.is_some() || self.nb == 0, "alpha_b")?;
+                self.go::<e::VofFaces>(self.nf, &args)
+            }
+            VofOp::Update => {
+                need(
+                    b.flux.is_some()
+                        && b.alpha_f.is_some()
+                        && b.alpha.is_some()
+                        && b.out.is_some()
+                        && b.out2.is_some(),
+                    "flux, alpha_f, alpha, out, out2",
+                )?;
+                self.go::<e::VofUpdate>(self.nc, &args)
+            }
+            VofOp::OutflowRate => {
+                need(b.flux.is_some() && b.out.is_some(), "flux, out")?;
+                self.go::<e::VofOutflowRate>(self.nc, &args)
+            }
+            VofOp::Smooth => {
+                need(b.alpha.is_some() && b.out.is_some(), "alpha, out")?;
+                self.go::<e::VofSmooth>(self.nc, &args)
+            }
+            VofOp::Gradient => {
+                need(
+                    b.alpha.is_some() && b.out.is_some() && b.out3.is_some(),
+                    "alpha, out, out3",
+                )?;
+                self.go::<e::VofGradient>(self.nc, &args)
+            }
+            VofOp::Curvature => {
+                need(b.grad.is_some() && b.out.is_some(), "grad, out")?;
+                need(self.vof_open.len as usize == self.nb, "vof_open first")?;
+                self.go::<e::VofCurvature>(self.nc, &args)
+            }
+            VofOp::Reconstruct => {
+                need(
+                    b.alpha.is_some() && b.flux.is_some() && b.kappa.is_some() && b.out3.is_some(),
+                    "alpha, flux (rho_f), kappa (rho), out3",
+                )?;
+                need(self.vof_open.len as usize == self.nb, "vof_open first")?;
+                self.go::<e::VofReconstruct>(self.nc, &args)?;
+                self.x.exchange(&b.out3.expect("out3").all())
+            }
+            VofOp::Tension => {
+                need(
+                    b.alpha.is_some() && b.kappa.is_some() && b.gnorm.is_some() && b.out.is_some(),
+                    "alpha, kappa, gnorm, out",
+                )?;
+                self.go::<e::VofTension>(self.nf, &args)
+            }
+        }
+    }
+
     fn correct_fluxes(&mut self, cf: Buf, m: Buf, pc: Buf, out: Buf) -> Result<()> {
         check(&[out], &[cf, m, pc])?;
         let args = e::CorrectFluxArgs {
@@ -1328,8 +1535,9 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
     }
 
     fn set_density(&mut self, cell: &[f64], face: &[f64]) -> Result<()> {
+        // on ranks the cells may come with their halo
         ensure!(
-            cell.len() == self.nc && face.len() == self.nf,
+            cell.len() >= self.nc && face.len() == self.nf,
             "flow device: density fields of {} cells and {} faces expected",
             self.nc,
             self.nf
@@ -1380,8 +1588,9 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
         let mut raws = [Raw::EMPTY; 3];
         for (i, v) in [source, old, old2].into_iter().enumerate() {
             if let Some(v) = v {
+                // on ranks the levels may come with their halo
                 ensure!(
-                    v.len() == self.nc,
+                    v.len() >= self.nc,
                     "flow device: a variable-density array of {} cells expected",
                     self.nc
                 );
@@ -1585,7 +1794,6 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
     }
 
     fn vertex_setup(&mut self, s: &VertexStencil) -> Result<usize> {
-        self.not_on_ranks("vertex setup")?;
         let nv = s.vert_ptr.len().saturating_sub(1);
         ensure!(
             nv > 0
@@ -1605,15 +1813,49 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             self.x.alloc_u32(&s.cell_ptr)?,
             self.x.alloc_u32(&s.cell_verts)?,
         ];
+        // vertex arrays (on ranks neither cell nor face fields)
         let points = Buf3 {
-            x: self.x.alloc(nv)?,
-            y: self.x.alloc(nv)?,
-            z: self.x.alloc(nv)?,
+            x: self.x.alloc_plain(nv)?,
+            y: self.x.alloc_plain(nv)?,
+            z: self.x.alloc_plain(nv)?,
         };
         self.x.upload(points.x, &s.points[0])?;
         self.x.upload(points.y, &s.points[1])?;
         self.x.upload(points.z, &s.points[2])?;
-        let (vmin, vmax) = (self.x.alloc(nv)?, self.x.alloc(nv)?);
+        let (vmin, vmax) = (self.x.alloc_plain(nv)?, self.x.alloc_plain(nv)?);
+        // on ranks: where the other ranks hold the shared vertices (their
+        // global ids, gathered once)
+        let shared = match self.x.comm().filter(|_| self.x.on_ranks()) {
+            Some(c) => {
+                ensure!(
+                    s.shared.len() == s.shared_id.len(),
+                    "flow device: inconsistent shared vertices"
+                );
+                // the ids as f64: exact below 2⁵³
+                let ids: Vec<f64> = s.shared_id.iter().map(|&i| i as f64).collect();
+                let all = c.all_gather_vec_f64(&ids);
+                let me = c.rank();
+                let mut at: std::collections::HashMap<u64, Vec<(u32, u32)>> =
+                    std::collections::HashMap::new();
+                for (r, list) in all.iter().enumerate() {
+                    if r == me {
+                        continue;
+                    }
+                    for (j, &id) in list.iter().enumerate() {
+                        at.entry(id as u64).or_default().push((r as u32, j as u32));
+                    }
+                }
+                Some(VertShared {
+                    local: s.shared.clone(),
+                    others: s
+                        .shared_id
+                        .iter()
+                        .map(|id| at.remove(id).unwrap_or_default())
+                        .collect(),
+                })
+            }
+            None => None,
+        };
         self.vert.push(VertSlot {
             lists,
             points,
@@ -1621,11 +1863,11 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             vmax,
             n_vert: nv,
         });
+        self.vert_shared.push(shared);
         Ok(self.vert.len() - 1)
     }
 
     fn mlp_limiter(&mut self, a: &MlpOps) -> Result<()> {
-        self.not_on_ranks("mlp limiter")?;
         let Some(&v) = self.vert.get(a.slot) else {
             anyhow::bail!("flow device: no vertex stencil {}", a.slot);
         };
@@ -1656,7 +1898,12 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             out: self.r(a.out),
         };
         self.go::<e::VertexBounds>(v.n_vert, &args)?;
-        self.go::<e::MlpLimiter>(self.nc, &args)
+        if let Some(sh) = self.vert_shared.get(a.slot).cloned().flatten() {
+            self.combine_bounds(&v, &sh)?;
+        }
+        self.go::<e::MlpLimiter>(self.nc, &args)?;
+        // an own-cell loop: the halo of ψ from the owners
+        self.x.exchange(&[a.out])
     }
 
     fn quadratic_setup(&mut self, cells: &[u32], ptr: &[u32], idx: &[u32]) -> Result<usize> {

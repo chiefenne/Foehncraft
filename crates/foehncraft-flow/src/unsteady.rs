@@ -1277,6 +1277,7 @@ fn run_one<F: FnMut(&str)>(
     let mut on = match steer.ranks.clone() {
         Some(c) => {
             crate::ranks::supported_mesh(&case, mesh)?;
+            bc::global_profile_extents(&mut case.boundary, mesh);
             Some(if work.is_some() || deform.is_some() {
                 // the geometry of the rotor angle (rigid turn of the base
                 // mesh) or of the deformed mesh (every rank moves the whole
@@ -1397,6 +1398,7 @@ fn run_one<F: FnMut(&str)>(
     crate::density::attach(&mut fl, &case)?;
     crate::buoyancy::attach(&mut fl, &case)?;
     crate::porous::attach(&mut fl, &case, smesh)?;
+    crate::vof::attach(&mut fl, &case, smesh, sgeo)?;
     for d in crate::immersed::attach(&mut fl, &case, smesh, sgeo)?.0 {
         if d.severity == crate::diag::Severity::Warning {
             lg.warn(&format!("{}: {}", d.code, d.message));
@@ -1903,6 +1905,18 @@ fn run_one<F: FnMut(&str)>(
     } else {
         None
     };
+    // two fluids by the volume of fluid (L3): `vof.csv`
+    let mut vof_csv = if case.vof.is_empty() {
+        None
+    } else {
+        Some(History::new(
+            out,
+            &suffix_name("vof", desc, last),
+            &crate::case::csv_preamble("vof", name, None, crate::vof::CSV_UNITS),
+            crate::vof::CSV_HEAD,
+            cont,
+        )?)
+    };
     let mut chem_csv = match (&chem, &case.species) {
         (Some(_), Some(sp)) => {
             let names = crate::species::Resolved::of(sp)?.names;
@@ -1957,6 +1971,9 @@ fn run_one<F: FnMut(&str)>(
         }
         crate::statistics::Series::new(names)
     });
+    // the transported fields of the statistics: the scalars, the species
+    // and the temperature, as the solver names them
+    let stat_scalars: Vec<String> = fl.scalars().map(|s| s.names()).unwrap_or_default();
     let mut stat_fields = stat_cfg.as_ref().filter(|c| c.fields).map(|_| {
         let mut names: Vec<String> = ["velocity_x", "velocity_y", "velocity_z", "pressure"]
             .map(String::from)
@@ -1969,7 +1986,7 @@ fn run_one<F: FnMut(&str)>(
         if !case.turbulence.is_laminar() {
             names.push("k".into());
         }
-        for sname in case.scalars.keys() {
+        for sname in &stat_scalars {
             let i = names.len();
             names.push(sname.clone());
             for (j, c) in ["x", "y", "z"].into_iter().enumerate() {
@@ -2527,13 +2544,8 @@ fn run_one<F: FnMut(&str)>(
                 let _ = write!(sc, ",{x:e},{k}");
             }
             if let (true, Some(d)) = (vd_csv, fl.density.as_deref()) {
-                let (lo, hi) = d
-                    .rho
-                    .iter()
-                    .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), &r| {
-                        (a.min(r), b.max(r))
-                    });
-                let _ = write!(sc, ",{:e},{:e},{lo:e},{hi:e}", d.p0, d.total_mass());
+                let [p0, mass, lo, hi] = d.history_values(on.as_ref());
+                let _ = write!(sc, ",{p0:e},{mass:e},{lo:e},{hi:e}");
             }
             if let Some(d) = &deform {
                 let _ = write!(sc, ",{:e}", d.volume());
@@ -2573,6 +2585,9 @@ fn run_one<F: FnMut(&str)>(
                 }
                 steer.record.row(&row);
             }
+        }
+        if let (Some(v), Some(csv)) = (fl.vof.as_deref(), vof_csv.as_mut()) {
+            csv.row(&v.csv_row(n, tr.clock.time, &geo.cell_centroid));
         }
         if let (Some(ch), Some(csv)) = (chem.as_ref(), chem_csv.as_mut())
             && let Some(row) = ch.csv_row(n)
@@ -2692,8 +2707,10 @@ fn run_one<F: FnMut(&str)>(
                 if let Some(t) = &sol.state.turbulence {
                     x.push(&t.k);
                 }
-                for st in &sol.state.scalars {
-                    x.push(&st.phi);
+                for n in &stat_scalars {
+                    if let Some(st) = sol.state.scalars.iter().find(|st| &st.name == n) {
+                        x.push(&st.phi);
+                    }
                 }
                 m.add(h, &x);
             }
@@ -3147,6 +3164,20 @@ fn run_one<F: FnMut(&str)>(
     if let Some(f) = spray_csv.as_mut() {
         f.flush()?;
     }
+    if let Some(f) = vof_csv.as_mut() {
+        f.flush()?;
+    }
+    if let Some(t) = fl.vof.as_deref().map(|v| &v.totals)
+        && t.clipped_volume.abs() > 1e-6 * t.volume_start.abs()
+    {
+        lg.warn(&format!(
+            "{}: {:.3e} m³ of phase 1 clipped over the run ({:.2e} of its volume); \
+             `vof.csv` counts it per step",
+            crate::diag::VOF_CLIPPED,
+            t.clipped_volume,
+            t.clipped_volume / t.volume_start
+        ));
+    }
     if let Some(f) = chem_csv.as_mut() {
         f.flush()?;
     }
@@ -3387,8 +3418,8 @@ fn run_one<F: FnMut(&str)>(
     } else {
         None
     };
-    let density = crate::density::summary(&mut fl, warnings)?;
-    let species_sum = crate::species::summary(&mut fl, mesh, geo, true)?;
+    let density = crate::density::summary_on(&mut fl, warnings, on.as_ref())?;
+    let species_sum = crate::species::summary_on(&mut fl, mesh, geo, true, on.as_ref())?;
     let species_res = fl
         .scalars()
         .and_then(|s| s.species())

@@ -1090,6 +1090,17 @@ pub fn file_statistics(
         .filter(|x| *x.1)
         .map(|x| *x.0)
         .collect();
+    // the mirror planes of the ECN projection the run wrote (D315)
+    let mirrors = match pf.text.get("ecn_mirrors") {
+        Some(t) => foehncraft_particles::spray::parse_mirrors(t).map_err(|e| {
+            err(
+                diag::SPRAY_CONFIG,
+                "ecn_mirrors",
+                format!("{}: {e:#}", file.display()),
+            )
+        })?,
+        None => Vec::new(),
+    };
     let (ds, cs) = (pick(d), pick(count));
     let m = foehncraft_particles::moments_of(&spec, &ids, &ds, &cs, &vs, rho);
     let masses: Vec<f64> = ds
@@ -1109,7 +1120,14 @@ pub fn file_statistics(
             under: m.under,
             over: m.over,
         },
-        injectors: foehncraft_particles::injector_stats(&case.spray, &ids, &xs, &masses, None),
+        injectors: foehncraft_particles::injector_stats_mirrored(
+            &case.spray,
+            &ids,
+            &xs,
+            &masses,
+            None,
+            &mirrors,
+        ),
         definitions: DEFINITIONS,
     })
 }

@@ -212,6 +212,28 @@ fn the_surface_at_six_megapascal_is_richer_than_raoult_and_ends_critical() {
 }
 
 #[test]
+fn the_table_reaches_its_end_from_any_cold_start() {
+    // the spray starts the table 60 K below the injected liquid, at most at
+    // 250 K: from every start the table runs to the critical mixing state
+    // (a stalled iteration near 267 K at 6 MPa once ended it there, as if
+    // critical)
+    let mix = dodecane_n2();
+    let r = nitrogen_ratios();
+    for p in [4e6, 6e6, 8e6] {
+        let mut end: Option<f64> = None;
+        for lo in [150.0, 200.0, 240.0, 250.0] {
+            let tab = SurfaceTable::build(&mix, &r, p, lo, 700.0, 1.0).unwrap();
+            assert_eq!(tab.end, TableEnd::Critical, "{p} Pa from {lo} K");
+            assert!(tab.t_end > 600.0, "{p} Pa from {lo} K: {}", tab.t_end);
+            if let Some(e) = end {
+                assert!((tab.t_end - e).abs() < 1e-6, "{p} Pa from {lo} K");
+            }
+            end = Some(tab.t_end);
+        }
+    }
+}
+
+#[test]
 fn the_critical_mixing_temperature_falls_with_pressure() {
     // above the fuel's critical pressure the end of the two-phase surface
     // follows the critical locus of the binary: 656.6 K at 3 MPa down to

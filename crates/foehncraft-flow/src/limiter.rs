@@ -65,39 +65,81 @@ pub enum EpsilonScaling {
     Cell,
 }
 
-/// The factors √(V_c / V_domain) of [`EpsilonScaling::Cell`].
-pub fn cell_factors(volume: &[f64]) -> Vec<f64> {
-    let total: f64 = volume.iter().exact_sum();
+/// The factors √(V_c / V_domain) of [`EpsilonScaling::Cell`]: `volume`
+/// of the own cells; on ranks (`comm`) V_domain is the exact sum over all
+/// ranks (the same value as on one rank).
+pub fn cell_factors(
+    volume: &[f64],
+    comm: Option<&foehncraft_mesh::decompose::SharedComm>,
+) -> Vec<f64> {
+    let total: f64 = match comm {
+        Some(c) => {
+            let mut s = foehncraft_core::exact::ExactSum::new();
+            for &v in volume {
+                s.add(v);
+            }
+            c.sum_exact(&s)
+        }
+        None => volume.iter().exact_sum(),
+    };
     volume.iter().map(|v| (v / total).sqrt()).collect()
 }
 
 /// The vertex stencil of `mesh`: the cells and boundary faces of every
 /// vertex and the vertices of every cell (each list sorted, no
-/// duplicates). A periodic face (each side keeps its own face) and a
-/// processor face count for their owner only, so the bounds at a vertex
-/// on a periodic plane come from the cells on its own side: tighter, never
-/// looser. Vertices no cell uses (the points of the solid cells in the
-/// flow mesh of a conjugate case) keep an empty list; no cell reads them.
+/// duplicates). A periodic face (each side keeps its own face) counts for
+/// its owner only, so the bounds at a vertex on a periodic plane come from
+/// the cells on its own side: tighter, never looser. Vertices no cell uses
+/// (the points of the solid cells in the flow mesh of a conjugate case)
+/// keep an empty list; no cell reads them.
+///
+/// The part of a rank (MPI step W7): the own cells only (a processor face
+/// counts for its own side, the halo cells for no vertex); the vertices of
+/// the processor faces are `shared`, and the ranks that share one combine
+/// their bounds into those of the whole mesh (a minimum and a maximum: the
+/// same in any order).
 pub fn vertex_stencil(mesh: &Mesh) -> VertexStencil {
     let nv = mesh.points.len();
     let nc = mesh.n_cells;
     let inner = mesh.n_inner_faces;
+    let processor_end = mesh.periodic_start();
     let ni = mesh.n_interior_faces();
     let nf = mesh.n_faces();
     let mut of_cell: Vec<Vec<u32>> = vec![Vec::new(); nc];
     let mut bf_of_vert: Vec<Vec<u32>> = vec![Vec::new(); nv];
+    let mut shared = Vec::new();
     for f in 0..nf {
         let nodes = mesh.face(f);
         let o = mesh.owner[f] as usize;
-        of_cell[o].extend_from_slice(nodes);
+        if o < nc {
+            of_cell[o].extend_from_slice(nodes);
+        }
         if f < inner {
             of_cell[mesh.neighbour[f] as usize].extend_from_slice(nodes);
+        } else if f < processor_end {
+            // a processor face: its own side (the owner may be the halo)
+            let n = mesh.neighbour[f] as usize;
+            if n < nc {
+                of_cell[n].extend_from_slice(nodes);
+            }
+            shared.extend_from_slice(nodes);
         } else if f >= ni {
             for &v in nodes {
                 bf_of_vert[v as usize].push((f - ni) as u32);
             }
         }
     }
+    shared.sort_unstable();
+    shared.dedup();
+    let shared_id = shared
+        .iter()
+        .map(|&v| {
+            mesh.point_id
+                .get(v as usize)
+                .copied()
+                .unwrap_or(u64::from(v))
+        })
+        .collect();
     let mut cells_of_vert: Vec<Vec<u32>> = vec![Vec::new(); nv];
     let mut cell_ptr = Vec::with_capacity(nc + 1);
     let mut cell_verts = Vec::new();
@@ -138,6 +180,8 @@ pub fn vertex_stencil(mesh: &Mesh) -> VertexStencil {
         cell_ptr,
         cell_verts,
         points,
+        shared,
+        shared_id,
     }
 }
 

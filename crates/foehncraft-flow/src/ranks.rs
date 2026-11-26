@@ -336,7 +336,10 @@ pub fn solve_part(
         ranks: Some(Ranks::new(comm, &local, part)),
         ..Target::default()
     };
-    let mut sv = Solver::new(case, &local.mesh, &geo, &target, d)?;
+    // a parabolic inlet spans the whole boundary, not this rank's part
+    let mut case = case.clone();
+    crate::bc::global_profile_extents(&mut case.boundary, global);
+    let mut sv = Solver::new(&case, &local.mesh, &geo, &target, d)?;
     run(&mut sv, &geo, n, &local.mesh.cell_id, steps)
 }
 
@@ -732,8 +735,10 @@ fn supported_solver(case: &FlowCase) -> Result<()> {
         (!case.immersed.is_empty(), "immersed bodies"),
         (case.chemistry.is_some(), "chemistry in the cells (SF2b)"),
         (
-            crate::density::wanted(case),
-            "the variable density (stage 7c)",
+            case.energy.as_ref().is_some_and(|e| {
+                e.thermodynamic_pressure == crate::density::ThermodynamicPressure::ClosedVolume
+            }),
+            "the thermodynamic pressure of a closed volume",
         ),
     ]
     .into_iter()
@@ -856,6 +861,10 @@ pub fn verify(
     use foehncraft_mesh::partition::{Method, partition};
     use foehncraft_parallel::ThreadComm;
     supported(case)?;
+    // a parabolic inlet spans the whole boundary on every rank
+    let mut fixed = case.clone();
+    crate::bc::global_profile_extents(&mut fixed.boundary, mesh);
+    let case = &fixed;
     let cores = case
         .run
         .threads
@@ -1850,9 +1859,10 @@ impl OnRanks {
 
 /// Fails unless a case can run on ranks (`[run] rank_count`, `foehn run
 /// --ranks N`): what [`supported`] allows (laminar or k-ω SST and k-ε,
-/// passive scalars and the energy equation of one fluid, steady or
-/// transient, in a rotating frame of the whole domain), without species,
-/// statistics or the time-saving loops of conjugate runs.
+/// passive scalars, species and the energy equation of one fluid with a
+/// constant or a variable density, steady or transient with statistics,
+/// in a rotating frame of the whole domain), without the time-saving loops
+/// of conjugate runs.
 pub fn supported_run(case: &FlowCase) -> Result<()> {
     let n = case.run.rank_count;
     anyhow::ensure!(
@@ -1869,16 +1879,11 @@ pub fn supported_run(case: &FlowCase) -> Result<()> {
         )
     })?;
     let missing: Vec<&str> = [
-        (case.species.is_some(), "species transport"),
         (
             case.energy.as_ref().is_some_and(|e| {
                 e.acceleration.is_some() || e.cycle.is_some() || e.frozen_flow.is_some()
             }),
             "the thermal acceleration, the cycle loop or the frozen-flow march of [energy]",
-        ),
-        (
-            case.output.statistics.is_some(),
-            "[output.statistics] (their moments on ranks follow)",
         ),
         (
             !case.run.ranks.is_empty(),

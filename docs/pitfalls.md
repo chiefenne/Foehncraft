@@ -396,6 +396,26 @@ wall, ν_t/ν max and its cell): gather the arrays with `OnRanks::fields`
 and run the one-rank loop on the whole mesh, since plain `+=` sums in
 another order give other bits even where the set of values is the same.
 
+**Host arrays that faces read need the halo (#303).** `download` of a
+cell buffer on ranks returns the own cells only, so a host loop over
+faces that indexes `owner` and `neighbour` (the face density of the
+variable density, ρ_f = w ρ_O + (1 − w) ρ_N) runs past the end of the
+array at a processor face, whose owner may be the halo cell. Read the
+input with `download_with_halo` (`Flow::fluid_temperature_with_halo`),
+keep per-cell results with their halo, and restrict sums and extremes to
+the first `n_cells` entries (the own cells) before reducing them over the
+ranks. A vertex stencil (the MLP limiter) is the same in another shape:
+the vertices of a processor face are also bounded by the cells of the
+other rank, so the ranks that share a vertex combine their bounds.
+
+**Geometry of a whole boundary is global (#303).** A quantity taken over
+the faces of a boundary (the extent that scales a parabolic inlet
+profile) is that of the rank's own part on a local mesh. It agreed with one
+rank only while the partition left the boundary on one rank. Take such
+extents from the global mesh before the solver is built
+(`bc::global_profile_extents`), and test with a partition that cuts the
+boundary.
+
 <a id="coupling-loops"></a>
 ## Coupling loops: the solid must see the flow's response
 
@@ -592,6 +612,22 @@ Found with the deforming mesh of stage MS0 (#296):
   option and runs it too. Use `--print` (as CI does), and if it ran by
   mistake, `git checkout -- CHANGELOG.md changelog.d/` and recreate any
   untracked fragment of the branch.
+- **Newton on the surface equilibrium can stall at round-off, not fail.**
+  From a cold start of the surface table (250 K and below at 6 MPa) the
+  steps fell to 2e-11 and stopped shrinking near 260 K, above the absolute
+  tolerance; the table took this as the critical end, so every droplet
+  above 260 K had no latent heat. Test convergence relative to the size of
+  ln K and accept a step that no longer halves once it is below 1e-8 of
+  it; retry a failed node from Wilson's K. Check that a table reaches the
+  same end from several start temperatures (#324).
+- **Chung's conductivity needs η° in Pa s and M in kg/mol together.** The
+  printed form λ° = 7.452 η°Ψ/M is in cgs units; mixing them with SI gave a
+  conductivity 10 times off. Write it as λ° = 3.75 R η° Ψ/M in SI units
+  and check one NIST point at low pressure first.
+- **A real-fluid film can raise the diffusivity.** ρD falls with pressure
+  (Riazi and Whitson), but D = ρD/ρ and the dense film's density is ρ_ig/Z
+  with Z > 1 at 900 K, so D of the film came out 1 to 2 % above the ideal
+  one at 6 MPa, not below. Expect the sign from Z, not from ρD alone.
 
 <a id="property-solves"></a>
 ## Property solves and new kernels on ranks
@@ -635,6 +671,32 @@ Found with the ECN diagnostics of SA3 (#319):
   its own line (`"\n[spray.evaporation]\n"`), after turning `"\r\n"` into
   `"\n"`: a Windows checkout has CRLF line ends, and a match on `"\n[..]\n"`
   finds nothing there, so the table is silently not inserted.
+
+Found with the Spray A runs of SA4 (#326):
+- **A PLV on a half or quarter domain needs the mirror images.** Seen
+  across a symmetry plane that contains the spray axis, the domain holds
+  half of every line of sight, so the projected liquid volume was half and
+  the liquid lengths too short. `[spray.ecn]` now adds the images of the
+  parcels in the symmetry planes and slip walls through the axis; a sector
+  whose images do not tile the spray (not 180°/n) is refused. Check the
+  first run of a new symmetric case against the whole spray.
+- **A limiter that is right at low pressure can be wrong at the critical
+  state.** The saturation limiter (D253) gave a gas above the critical
+  mixing temperature (651 K at 6 MPa) no room for vapour, because the
+  Peng-Robinson surface takes no latent heat there. It then held back 35
+  times the vapour that still evaporated, 1 µm drops heated to 900 K, and
+  the liquid length grew with the vapour tip (35 mm at 1 ms instead of
+  about 9). When the liquid length follows the vapour, look at the
+  limiter columns of `spray.csv` (`limiter_cells`, `limiter_kg_s`) before
+  the breakup.
+- **Liquid lengths need parcels, and parcels cost substeps.** At 10⁶
+  parcels per second one parcel of Spray A projects 1.4·10⁻⁵ m, 70 times
+  the smaller PLV threshold, so the length jumped with single parcels;
+  2·10⁷ per second (about 9000 in the flow) settles it. The run time is
+  set by the substeps of the 1 µm drops after breakup (the 2 K default of
+  `max_temperature_change`), not by the gas: 27 to 36 minutes for 0.6 ms
+  on 2 threads.
+
 <a id="cut-cells"></a>
 ## Cut cells: check what the solver takes, cell by cell
 

@@ -293,10 +293,11 @@ pub struct RunSection {
     /// that of one rank. Under an MPI launcher (`mpirun -n N foehn run`,
     /// a build with the `mpi` feature) the ranks are its processes;
     /// otherwise threads of this process. 1: no ranks. Steady and transient
-    /// runs with scalars, energy, k-ω SST and k-ε, the rotating zones of
-    /// `[[mrf]]` and the sliding mesh, in conformal stepping and by
-    /// imprinting, and the deforming mesh of `[mesh_motion]` (refused:
-    /// species, statistics, what `[run] ranks` refuses).
+    /// runs with scalars, species, energy (constant or variable density),
+    /// k-ω SST and k-ε, statistics, the rotating zones of `[[mrf]]` and the
+    /// sliding mesh, in conformal stepping and by imprinting, and the
+    /// deforming mesh of `[mesh_motion]` (refused: a closed volume, the
+    /// time-saving loops of conjugate runs, what `[run] ranks` refuses).
     #[serde(skip_serializing_if = "is_one")]
     pub rank_count: usize,
 }
@@ -927,6 +928,10 @@ pub struct FlowCase {
         skip_serializing_if = "crate::immersed::ImmersedSection::is_empty"
     )]
     pub immersed: crate::immersed::ImmersedSection,
+    /// Two immiscible fluids by the volume-of-fluid method (L3, MP1):
+    /// `[vof]` with two `[[vof.phase]]` tables.
+    #[serde(default, skip_serializing_if = "crate::vof::VofSection::is_empty")]
+    pub vof: crate::vof::VofSection,
     /// Lagrangian parcels of the sprays (L12): `[spray]`.
     #[serde(skip_serializing_if = "foehncraft_particles::SpraySection::is_empty")]
     pub spray: foehncraft_particles::SpraySection,
@@ -1536,6 +1541,7 @@ impl FlowCase {
         crate::motion::validate(self)?;
         crate::rotor::validate(self)?;
         crate::spray::validate(self)?;
+        crate::vof::validate(self)?;
         crate::immersed::check_case(self)?;
         crate::datum::validate(self)?;
         if let Some(d) = &self.fluid.density
@@ -3003,6 +3009,7 @@ pub fn run_steered(
         let on = match steer.ranks.clone() {
             Some(c) => {
                 crate::ranks::supported_mesh(&case, &mesh)?;
+                bc::global_profile_extents(&mut case.boundary, &mesh);
                 Some(crate::ranks::OnRanks::new(c, &mesh, &geo, arrays.clone())?)
             }
             None => None,
@@ -4026,7 +4033,7 @@ pub fn run_steered(
                 .book(balance::thermal_account(e, &sm.boundaries));
         }
         // the species and element accounts (SF1, D119)
-        if let Some(sp) = crate::species::summary(&mut fl, &mesh, &geo, false)? {
+        if let Some(sp) = crate::species::summary_on(&mut fl, &mesh, &geo, false, on.as_ref())? {
             for l in crate::species::summary_lines(&sp) {
                 lg.line(&l);
             }
@@ -4052,7 +4059,7 @@ pub fn run_steered(
             &mut lg,
             &mut rep.warnings,
         )?;
-        let density = crate::density::summary(&mut fl, &mut rep.warnings)?;
+        let density = crate::density::summary_on(&mut fl, &mut rep.warnings, on.as_ref())?;
         if single && (case.run.restart_final || stopped) && restart::AVAILABLE {
             let rs = restart_of(&mut fl, smesh, name, on.as_ref())?;
             if lead {
@@ -5137,6 +5144,13 @@ pub(crate) fn write_fields(
         fields.push(CellField {
             name: "density",
             values: r,
+        });
+    }
+    // the volume fraction of phase 1 of a volume-of-fluid case (L3)
+    if let Some(a) = &fl.phys.vof_alpha {
+        fields.push(CellField {
+            name: "volume_fraction",
+            values: a,
         });
     }
     let err: Vec<f64>;

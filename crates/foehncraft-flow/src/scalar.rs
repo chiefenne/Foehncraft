@@ -1091,7 +1091,8 @@ impl Scalars {
             && !scalars.is_empty()
         {
             let b = dev.alloc(nc)?;
-            dev.upload(b, &crate::limiter::cell_factors(&disc.cell_volume[..nc]))?;
+            let f = crate::limiter::cell_factors(&disc.cell_volume[..nc], dev.comm().as_ref());
+            dev.upload(b, &f)?;
             Some(b)
         } else {
             None
@@ -2199,6 +2200,8 @@ impl Scalars {
             std::borrow::Cow::Borrowed(&e.mat_cell[..]),
             std::borrow::Cow::Borrowed(&e.volume[..]),
         );
+        // the variable density (stage 7c): ρ and ∂ρ/∂t per cell
+        let mut var_rho = e.var_rho.as_ref().map(std::borrow::Cow::Borrowed);
         if let Some(g) = g {
             use crate::restart::FieldMap as _;
             t = g.cells(&t)?;
@@ -2207,6 +2210,20 @@ impl Scalars {
             let mc: Vec<f64> = e.mat_cell.iter().map(|&x| f64::from(x)).collect();
             mat_cell = g.cells(&mc)?.into_iter().map(|x| x as u32).collect();
             volume = std::borrow::Cow::Owned(g.cells(&e.volume)?);
+            if let Some(v) = e.var_rho.as_ref() {
+                // the same branch on every rank: an empty ∂ρ/∂t is empty
+                // on all of them (outside a time step)
+                let drho_dt = if v.drho_dt.is_empty() {
+                    Vec::new()
+                } else {
+                    g.cells(&v.drho_dt)?
+                };
+                var_rho = Some(std::borrow::Cow::Owned(VarRho {
+                    rho: g.cells(&v.rho)?,
+                    drho_dt,
+                    pressure_work: v.pressure_work,
+                }));
+            }
         }
         let [a0, a1, a2] = st.a;
         let mut per = vec![0.0; e.regions.len()];
@@ -2220,7 +2237,7 @@ impl Scalars {
             if a2 != 0.0 {
                 l += a2 * h.at(t2[c]);
             }
-            match e.var_rho.as_ref().filter(|v| !v.rho[c].is_nan()) {
+            match var_rho.as_deref().filter(|v| !v.rho[c].is_nan()) {
                 // the bounded convection Σ ṁ (h_f − h_P) adds h_P ∂ρ/∂t
                 // to the boundary outflow Σ ṁ h_f: the storage of the
                 // ledger is ∂(ρ h)/∂t (stage 7c)
@@ -3115,7 +3132,8 @@ impl Scalars {
             }
             if es.limiter_epsilon_scaling == EpsilonScaling::Cell && self.eps_cell.is_none() {
                 let b = dev.alloc(nc)?;
-                dev.upload(b, &crate::limiter::cell_factors(&disc.cell_volume[..nc]))?;
+                let f = crate::limiter::cell_factors(&disc.cell_volume[..nc], dev.comm().as_ref());
+                dev.upload(b, &f)?;
                 self.eps_cell = Some(b);
             }
             self.vert
@@ -4202,6 +4220,17 @@ pub struct Outflow {
 }
 
 impl Outflow {
+    /// The arrays of this rank's part gathered into the order of the whole
+    /// mesh (a run on ranks, MPI step W7). Collective.
+    pub(crate) fn gather(&mut self, g: &mut crate::ranks::Fields<'_>) -> Result<()> {
+        use crate::restart::FieldMap as _;
+        for gr in &mut self.grad {
+            *gr = g.cells(gr)?;
+        }
+        self.psi = g.cells(&self.psi)?;
+        Ok(())
+    }
+
     /// The value carried out through boundary face `f` of cell `o` with
     /// the boundary value `tb`.
     pub fn at(&self, geo: &Geometry, f: usize, o: usize, tp: f64, tb: f64) -> f64 {
@@ -4375,12 +4404,12 @@ pub(crate) fn summaries_on(
                 .fields
                 .iter()
                 .find_map(|f| f.energy.as_deref())
-                .is_some_and(|e| e.spray_heat.is_some() || e.var_rho.is_some());
+                .is_some_and(|e| e.spray_heat.is_some());
         // the same answer on every rank: the case decides it
         anyhow::ensure!(
             !unsupported,
             "the scalar summary of orthotropic solids, held cells, porous matrices, heat-flux \
-             pairs, sprays or a variable density does not run on ranks yet (MPI step W7)"
+             pairs or sprays does not run on ranks yet (MPI step W7)"
         );
     }
     let mut data = sc.host_data(fl.dev.as_mut())?;

@@ -18,6 +18,9 @@
 //! - [`breakup`]: droplet breakup of the sprays (SP6): the Kelvin-Helmholtz
 //!   and Rayleigh-Taylor waves of Reitz, the exact TAB oscillator and the
 //!   drag of a distorted drop;
+//! - [`distortion`]: the drag, heat and mass transfer of a distorted,
+//!   viscous drop (the Corrected Distortion model of Nguyen et al. 2022,
+//!   ECN Spray A, SA4);
 //! - [`blas`]: vector operations and reproducible block dot products of the
 //!   Krylov solvers;
 //! - [`expr`]: the stack machine of the compiled case-file expressions (D53);
@@ -67,6 +70,7 @@ pub mod amg;
 pub mod blas;
 pub mod breakup;
 pub mod chemistry;
+pub mod distortion;
 pub mod entry;
 pub mod evaporation;
 pub mod expr;
@@ -83,6 +87,7 @@ pub mod species;
 pub mod spmv;
 pub mod steam;
 pub mod turb;
+pub mod vof;
 pub mod walk;
 
 use foehncraft_core::index::FLAG_BIT;
