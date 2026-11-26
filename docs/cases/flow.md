@@ -368,7 +368,7 @@ temperatures of their own (D271, PM2). The keys are on the [key page](flow-keys.
 
 ## Immersed bodies
 
-`[immersed]` with `[[immersed.body]]` tables: cylinders, spheres and boxes
+`[immersed]` with `[[immersed.body]]` tables: cylinders, spheres, boxes and STL surfaces
 put into any mesh by Brinkman penalisation (L13 stage 1, D226; laminar and
 isothermal only) or cut out of it as sharp walls (`method = "cut"`, stage 2,
 D227). The keys are on the [key page](../keys.md) (`immersed.*`);
@@ -381,7 +381,8 @@ writes χ.
 | `flow/immersed_topology_bend.toml` | generated hex 2D, 60 × 60 cells, split inlet and outlet | topology search of the Borrvall & Petersson pipe bend (Stokes, quarter fluid): 28 design updates, Φ 4.69 → 0.369 W, grey 0.04, `topology.stl` | [gallery 291](../gallery/immersed.md#topology-bend), [recipe 291](../recipes/immersed.md#topology-search) |
 | `flow/immersed_stokes_sphere.toml` | generated hex 3D, 32³ cells, periodic in x, y, z | Stokes flow through a simple cubic array of penalised spheres (c = 0.0335): drag coefficient 3.9 % above the Hasimoto / Sangani & Acrivos series with K = 0.01 h² | [gallery 291](../gallery/immersed.md#topology-bend) |
 | `flow/immersed_mms.toml` | generated hex 2D, 16² to 64² | manufactured solution of the penalised equations (smooth `field` body): velocity order 2.00 (hex), 2.05 (poly); fails outside 1.8 to 2.3 | [gallery 291](../gallery/immersed.md#topology-bend) |
-| `flow/immersed_cut_cylinder_re20.toml` | generated hex 2D, 440 × 82 cells (h = D/20), the cylinder cut out (35 780 cells) | Schäfer & Turek 2D-1 on cut cells (L13 stage 2): C_D 5.583 in range, C_L 2 % and Δp 1 % below the range; fails beyond 5 % of the range midpoint | [gallery 313](../gallery/immersed.md#cut-cylinder), [recipe 313](../recipes/immersed.md#cut-body) |
+| `flow/immersed_cut_cylinder_re20.toml` | generated hex 2D, 440 × 82 cells (h = D/20), the cylinder cut out (35 780 cells) | Schäfer & Turek 2D-1 on cut cells (L13 stage 2): C_D 5.588 in range, C_L 1.4 % and Δp 1 % below the range; fails beyond 5 % of the range midpoint | [gallery 313](../gallery/immersed.md#cut-cylinder), [recipe 313](../recipes/immersed.md#cut-body) |
+| `flow/immersed_cut_stl_sphere_array.toml` | generated hex 3D, 32³ cells, periodic in x, y, z, the STL sphere `immersed_sphere.stl` (5120 triangles) cut out (31 752 cells) | Stokes flow through a simple cubic array of STL spheres on cut cells: drag coefficient 2.3 % below the Hasimoto / Sangani & Acrivos series (0.9 % on 48³, second order) | [gallery 322](../gallery/immersed.md#stl-cut), [recipe 322](../recipes/immersed.md#stl-body) |
 
 ## Deforming meshes
 
