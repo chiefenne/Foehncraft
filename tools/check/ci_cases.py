@@ -47,6 +47,7 @@ FLOW = {
         "ranks_run_sliding_couette",
         "ranks_run_imprint_couette",
         "immersed_cylinder_re20", "immersed_topology_bend", "immersed_mms",
+        "immersed_cut_cylinder_re20",
         "ranks_water_if97_channel",
     ],
     "linux-3": [
@@ -85,7 +86,8 @@ FLOW = {
         "cht_pulsating_channel_skin", "cht_heated_wall_frozen", "cht_pulsating_channel_warmup",
         "natural_convection_cavity_ra1e5", "natural_convection_plate",
         "flame_methane_air_gri30",
-        "immersed_stokes_sphere", "spray_saturation_steady", "spray_chamber_ecn",
+        "immersed_stokes_sphere", "spray_saturation_steady", "spray_breakup",
+        "spray_chamber_ecn",
         "motion_piston_cooled_walls",
     ],
     "quick": [

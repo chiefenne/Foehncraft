@@ -27,6 +27,7 @@ fn injector(direction: [f64; 3]) -> Injector {
         start: 0.0,
         end: None,
         temperature: None,
+        ..Injector::default()
     }
 }
 
