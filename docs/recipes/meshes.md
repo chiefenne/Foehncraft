@@ -24,6 +24,7 @@ Part of the [Recipes](../recipes.md): generate, read (Gmsh, SU2, CGNS, OpenFOAM,
 | 279 | [Run a case on ranks](#run-ranks) |
 | 290 | [Run a turbulent, heated or transient case on ranks](#run-ranks-physics) |
 | 301 | [Run a case with rotating zones (MRF) or a closed domain on ranks](#run-ranks-mrf) |
+| 303 | [Run species, a variable density or statistics on ranks](#run-ranks-species) |
 | 304 | [Run a sliding rotor in conformal stepping on ranks](#run-ranks-sliding) |
 | 305 | [Run a sliding rotor by imprinting on ranks](#run-ranks-imprint) |
 
@@ -820,13 +821,13 @@ done
 ```
 
 A restart written on ranks continues on any rank count (recipe 262).
-Refused on ranks with an error that names them: species transport,
-`[output.statistics]`, `[energy.acceleration]`, `[energy.cycle]`,
-`[energy.frozen_flow]`, a sweep over time steps
+Species, the variable density and statistics: recipe 303. Refused on
+ranks with an error that names them: `[energy.acceleration]`,
+`[energy.cycle]`, `[energy.frozen_flow]`, a sweep over time steps
 (`verification.time_steps`), several fluids with a turbulence model, and
 everything `[run] ranks` refuses (recipe 234: turning zones, solid regions,
-gravity, the variable density, ζ-f and elliptic blending, the curvature
-correction and the QCR, sprays, immersed bodies, a `[[schedule]]`). A
+gravity, ζ-f and elliptic blending, the curvature correction and the QCR,
+sprays, immersed bodies, a `[[schedule]]`, a closed volume). A
 summary that would read the part of one rank (orthotropic solids, porous
 matrices, heat-flux periodic pairs) stops the run with an error rather
 than write a wrong number.
@@ -870,6 +871,42 @@ mesh in conformal stepping: recipe 304.
 
 ---
 
+<a id="run-ranks-species"></a>
+## 303. Run species, a variable density or statistics on ranks
+
+Species transport (`[species]`, stage SF1), the variable density of stage
+7c (`[energy] density = "variable"`, also with the mixture of a species
+case) and `[output.statistics]` run on ranks like any other case (recipes
+279 and 290):
+
+```
+target/release/foehn flow examples/cases/flow/ranks_cylinder_species_statistics.toml --ranks 4
+mpirun -n 4 target/release/foehn flow examples/cases/flow/ranks_cylinder_species_statistics.toml   # mpi feature
+```
+
+Every output file is byte for byte that of one rank, among them
+`statistics.csv`, `statistics_phase.csv` and `statistics.vtkhdf` (the time
+mean, RMS and covariances of velocity, pressure and every transported
+field: passive scalars, the species `Y_*` and the temperature), the
+species lines and element accounts of the log and `result.json`, and the
+`p0`, `mass`, `rho_min`, `rho_max` columns of `history.csv`. Check it:
+
+```
+target/release/foehn flow examples/cases/flow/ranks_cylinder_species_statistics.toml --ranks 1 --out output/one
+for f in history.csv probes.csv forces.csv balance.csv statistics.csv statistics_phase.csv statistics.vtkhdf fields.vtkhdf restart.h5; do
+  cmp output/one/$f output/ranks_cylinder_species_statistics/$f
+done
+```
+
+The MLP limiter (`limiter = "mlp"`, the default of species) works on ranks:
+each rank bounds the vertices of its own cells, and the ranks that share a
+vertex take the minimum and the maximum of their bounds. Refused on ranks:
+a closed volume (`thermodynamic_pressure = "closed-volume"`; its p₀ comes
+from the mass of the whole domain) and gravity, so buoyant variable-density
+flows wait for gravity on ranks. A transient run on a variable density in
+an open domain reports `RUN007` on one rank and on ranks alike (its mass
+check books no storage, a gap of stage 7c); the files still agree byte for
+byte.
 <a id="run-ranks-sliding"></a>
 ## 304. Run a sliding rotor in conformal stepping on ranks
 

@@ -117,7 +117,7 @@ numbers are.
 | D313 | **High-pressure film properties.** Film mixture at the 1/3 reference state (Hubbard, Denny, Mills 1975): density from Peng-Robinson; diffusivity from the low-pressure value with a high-pressure correction (Takahashi 1975 or Riazi and Whitson 1993; chosen after both are read); viscosity and conductivity by Chung et al. (1988). Each source is read in full and gets its `DATA_SOURCES.md` entry before it is built. |
 | D314 | **The critical mixing state.** When the surface equilibrium has no two-phase solution (T_s at or above the mixture critical temperature at p₀), the parcel is in the diffusive regime: no surface tension (no further breakup), no latent heat, and it mixes at the diffusion-limited rate of the d² law with the surface at the critical composition. Counted per step (parcels, mass) as a health number. At 900 K and 6 MPa this should not occur (section 2, own check); it matters for the 1000 and 1100 K variants. |
 | D315 | **ECN diagnostics as tools.** Liquid length by the ECN modelling standard (ecn.sandia.gov, Modeling Standards page, read 2026-11-25): the farthest axial position where the projected liquid volume PLV = ∫ LVF dy across the spray falls to 0.2·10⁻³ and to 2.0·10⁻³ mm³/mm², both reported (thresholds a key); also by the ECN5 definition (0.15 % path-averaged liquid volume fraction on 0.5 × 0.5 mm paths) and by liquid mass share (95, 97, 99 %); vapour penetration: the farthest distance from the nozzle where the fuel mass fraction is 0.1 % (same page); time- and Favre-averaged fields on the ECN output grid; axial and radial mixture-fraction profiles. Registered tools (D196), written to `result.json` and CSV with the definition in the header (D265). |
-| D316 | **Dense-spray effects:** chosen by the maintainer (card, section 6). |
+| D316 | **Dense-spray effects:** chosen by the maintainer (card, section 6). The card is open; the work goes on with its recommended option, distortion first, then the liquid volume in the gas equations and the spreading of the sources over a fixed radius (Torelli et al. 2014), collisions later. |
 | D317 | **Real gas in the gas phase:** chosen by the maintainer (card, section 6). |
 | D318 | **Turbulence for the first Spray A runs.** RANS k-ε with the existing case keys; the case states the value of `c_epsilon1` it uses and why (the round-jet spreading of standard k-ε is known to be too large; the value is set by a sensitivity run against the measured vapour penetration, not copied). Large-eddy simulation of Spray A needs 10⁷ cells and several realisations; later. |
 | D319 | **Thermodynamics checked before the spray.** The equilibrium, the mixing line and a mixing-limited liquid-length model (Siebers 1999, an analytic scaling calibrated on measurements) are checked against measured data without CFD (VA.1 to VA.5), so a liquid-length error of the full case can be traced to mixing or to thermodynamics. |
@@ -144,7 +144,7 @@ numbers are.
 | SA1 | Real-fluid kernel (Peng-Robinson, mixtures, fugacity, departure functions, surface equilibrium, stability test, mixing line), `equilibrium = "peng-robinson"`, D312 latent heat, D314 critical state; checks VA.1 to VA.4, VA.6, VA.7; gallery example with the equilibrium and mixing-line images. **Part 1 (#314):** kernel, surface table, `[spray.evaporation] equilibrium` and `[spray.evaporation.peng_robinson]` (`fuel`, or `critical_temperature`, `critical_pressure`, `acentric_factor`, `molar_mass`; `ambient`, `k_ij`, `table_step`), critical-state counts; VA.1 to VA.3, VA.6 (closed box, water in nitrogen); gallery 314. **Part 2 (#320):** Michelsen stability test, isothermal flash, the mixing line `realfluid::Streams` (frozen, equilibrium, ideal; Z_sat), the n-dodecane ideal gas (Scott 1974), Siebers' liquid length; VA.4, VA.5 (moved here from SA2: it needs only the mixing line); the same ideal gas as the vapour species NC12H26 of the flow's species data; gallery 320. Still open: VA.7 with the fuel vapour in a flow case (SA6) | the liquid library (#321) |
 | SA2 | High-pressure film properties (D313); VA.5 moved to SA1 part 2. **Done (#324):** the real-fluid film of the Peng-Robinson surface (`[spray.evaporation.peng_robinson] film`, default `real-fluid`): Peng-Robinson density and c_p, Chung et al. (1988) dense-fluid factors on the kinetic-theory viscosity and conductivity, Riazi and Whitson (1993) on the diffusivity (Takahashi 1975 not built: a chart); NIST nitrogen within 1.3 % and 4.8 % on the factors; the surface table's early "critical" end from a cold start fixed; gallery 324. The coefficient tables are **to verify** against the printed sources | SA1, sources read |
 | SA3 | ECN diagnostics (D315). **Part 1 (#319):** `[spray.ecn]`, liquid length from the projected liquid volume at the two thresholds of the modelling standard and vapour penetration at 0.1 % fuel, per injector and step in `spray.csv` and `result.json`, keyed for bitwise results; gallery 319 (water into still hot air). Still to come: the ECN5 path-averaged liquid volume fraction, the time- and Favre-averaged fields on the ECN output grid, the mixture-fraction profiles. | – |
-| SA4 | Dense-spray effects (D316) | card |
+| SA4 | Dense-spray effects (D316). **Part 1 (#326):** the Corrected Distortion model of Nguyen et al. (2022), `[spray.breakup] drag = "corrected-distortion"`: the drag, heat and mass transfer of the TAB spheroid with the internal circulation of a viscous drop (Feng and Michaelides 2001a, 2001b) and the shape ratios of Richter and Nikrityuk (2012), as factors on the sphere laws; gallery 326 with a first Spray A run (quarter domain, both drag laws). Also fixed there: the saturation limiter above the critical mixing temperature, and the `[spray.ecn]` projection of half and quarter domains (mirror images). Still open: the liquid volume in the gas equations and the source spreading (part 2); collisions | card (recommended option taken) |
 | SA5 | Real gas in the gas phase if chosen (D317) | card |
 | SA6 | The Spray A case: mesh, injection, runs at 900 K and the variants, VA.8, VA.9; gallery with liquid, vapour and mixture-fraction fields | breakup model and SA1 to SA4 |
 
@@ -179,6 +179,11 @@ numbers are.
   non-sphericity in sprays, Int. J. Multiphase Flow 86 (not yet read).
 - ECN: ECN5 Topic 3 guidelines; Sandia Spray A data pages (liquid length
   bkldaAL1, bkldaAL4, nozzle 370 PLV; Rayleigh burst), read 2026-11-25.
+- Feng, Z.-G., Michaelides, E. E. (2001a), Drag coefficients of viscous
+  spheres at intermediate and high Reynolds numbers, J. Fluids Eng. 123,
+  841-849; (2001b), Heat and mass transfer coefficients of viscous
+  spheres, Int. J. Heat Mass Transfer 44, 4445-4454 (as printed by Nguyen
+  et al. 2022; the originals **to verify**, DATA_SOURCES 3j).
 - García-Córdova, T. et al. (2011), Vapor-liquid equilibrium data for the
   nitrogen + dodecane system at temperatures from (344 to 593) K and at
   pressures up to 60 MPa, J. Chem. Eng. Data 56, 1555–1564, doi
@@ -193,6 +198,8 @@ numbers are.
   pressure equation for alkanes CnH2n+2, J. Phys. Chem. Ref. Data 29, 1-39,
   doi 10.1063/1.556054 (table 2 read: the normal boiling point check of
   VA.1).
+- Liu, A. B., Mather, D., Reitz, R. D. (1993), Modeling the effects of
+  drop drag and breakup on fuel sprays, SAE 930072 (the dynamic drag).
 - Luijten, C. C. M., Kurvers, C. (2010), Real gas effects in mixing-limited
   diesel spray vaporization models, Atomization and Sprays 20, 595–609
   (abstract read).
@@ -205,8 +212,8 @@ numbers are.
   Equilib. 9 (not yet read).
 - Nguyen, T. M., Dahms, R. N., Pickett, L. M., Tagliante, F. (2022), The
   Corrected Distortion model for Lagrangian spray simulation of
-  transcritical fuel injection, Int. J. Multiphase Flow, doi
-  10.1016/j.ijmultiphaseflow.2021.103927 (read).
+  transcritical fuel injection, Int. J. Multiphase Flow 148, 103927, doi
+  10.1016/j.ijmultiphaseflow.2021.103927 (read in full; built in SA4).
 - Peng, D.-Y., Robinson, D. B. (1976), A new two-constant equation of state,
   Ind. Eng. Chem. Fundam. 15, 59–64; Robinson, D. B., Peng, D.-Y. (1978),
   GPA research report RR-28 (the κ(ω) for heavy components).
@@ -215,6 +222,11 @@ numbers are.
 - Riazi, M. R., Whitson, C. H. (1993), Estimating diffusion coefficients of
   dense fluids, Ind. Eng. Chem. Res. 32, 3081–3088 (built in SA2 from
   secondary accounts; the printed paper **to verify**, DATA_SOURCES 3i).
+- Richter, A., Nikrityuk, P. A. (2012), Drag forces and heat transfer
+  coefficients for spherical, cuboidal and ellipsoidal particles in cross
+  flow at sub-critical Reynolds numbers, Int. J. Heat Mass Transfer 55,
+  1343-1354 (as printed by Nguyen et al. 2022; the original **to
+  verify**).
 - Schmidt, D. P., Rutland, C. J. (2000), A new droplet collision algorithm,
   J. Comput. Phys. 164 (cited by Torelli et al.).
 - Schmidt, D. P. et al., The Eulerian Lagrangian Mixing-Oriented (ELMO)

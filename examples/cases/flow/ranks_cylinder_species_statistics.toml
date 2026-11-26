@@ -1,0 +1,112 @@
+# The vortex street behind a cylinder at Re = 100 with methane diffusing
+# from its surface into the wake, solved on four ranks with species
+# transport and the statistics of the fields (MPI step W7, gallery and
+# recipe of the pull request that put species, the variable density and
+# `[output.statistics]` on ranks).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/ranks_cylinder_species_statistics.toml
+#
+# runs it on the four ranks of `[run] rank_count` (threads of this process;
+# `--ranks N` overrides the count, `--ranks 1` gives the reference). With a
+# build that has the `mpi` feature the ranks may be MPI processes:
+#
+#   cargo build --release -p foehncraft-cli --features mpi
+#   mpirun -n 4 target/release/foehn flow examples/cases/flow/ranks_cylinder_species_statistics.toml
+#
+# The flow of cylinder_re100_statistics.toml (the 2D-2 benchmark channel,
+# Ū = 1 m/s, D = 0.1 m, ν = 1e-3 m²/s) with a mixture of CH4, O2 and N2
+# (N2 the closure species): air at the inlet and in the channel, the
+# surface of the cylinder held at pure methane (a wet surface that
+# evaporates; mole fraction 1). The mixture takes the fluid's constant
+# density and viscosity (`properties = "fluid"`, a dilute tracer), ρD = μ/Sc
+# with Sc = 0.7, so the methane is a passive mixture carried by the
+# vortices. From t = 5 s, when the street is periodic, the run averages the
+# fields (mean, RMS and the covariances of velocity and mass fractions,
+# statistics.vtkhdf), the wake probe and the force coefficients with their
+# phase averages over the shedding period. Every output file is byte for
+# byte that of one rank: the species summaries and element accounts, the
+# statistics and the field files.
+
+case_format = "0.7"
+
+[mesh.cylinder]
+refine = 0
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 1e-3
+pressure_values = "gauge"
+
+[flow]
+convection = true
+
+[species]
+names = ["CH4", "O2", "N2"]
+initial = { mole_fractions = { O2 = 0.21, N2 = 0.79 } }
+properties = "fluid"
+schmidt = 0.7
+
+[boundary.inlet]
+type = "velocity-inlet"
+profile = "parabolic"
+max_velocity = 1.5
+profile_axes = ["y"]
+[boundary.inlet.species]
+mole_fractions = { O2 = 0.21, N2 = 0.79 }
+[boundary.outlet]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.walls]
+type = "wall"
+[boundary.cylinder]
+type = "wall"
+[boundary.cylinder.species]
+mole_fractions = { CH4 = 1.0 }
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+log_every = 500
+
+[solver.scalar]
+limiter = "mlp"
+
+[time]
+scheme = "bdf2"
+time_step = 0.0005
+end_time = 8.0
+adaptive = true
+max_cfl = 0.8
+
+[verification]
+benchmark = "schafer-turek-2d2"
+benchmark_tolerance = 0.025
+evaluation_start = 5.0
+
+[output]
+vtkhdf = true
+fields_every = 0
+wall_csv = false
+
+[output.coefficients]
+boundaries = ["cylinder"]
+velocity = 1.0          # the mean inlet velocity Ū (m/s)
+area = 0.001            # D times the depth of the layer (m²)
+
+[[output.probes]]
+name = "wake"
+point = [0.5, 0.2, 0.005]   # 3 D behind the cylinder centre, on the axis
+
+[output.statistics]
+start = 5.0
+batches = 6
+phase_period = 0.3384
+fields = true
+
+[run]
+rank_count = 4

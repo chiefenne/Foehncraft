@@ -429,6 +429,43 @@ in the repository (`crates/foehncraft-kernels/src/realfluid.rs`,
   (2004), Energy Fuels 18, 968), viscosity and conductivity at 500, 600 and
   700 K at 0.1 and 6 MPa.
 
+## 3j. Distorted drops: the Corrected Distortion model (Spray A, SA4, D316)
+
+Only published correlation coefficients are in the repository
+(`crates/foehncraft-kernels/src/distortion.rs`); no data set.
+
+- The model: Nguyen, T. M., Dahms, R. N., Pickett, L. M., Tagliante, F.
+  (2022), The Corrected Distortion model for Lagrangian spray simulation of
+  transcritical fuel injection, Int. J. Multiphase Flow 148, 103927 (doi
+  10.1016/j.ijmultiphaseflow.2021.103927; the accepted manuscript at OSTI
+  1841989, read in full 2026-11-26). Equations 17 to 32 and table 1 are
+  built as printed: the spheroid of the TAB distortion (eqs. 24 to 31,
+  C_b = 0.5), the drag and transfer of a viscous sphere (eqs. 17 to 20),
+  the shape ratios (eqs. 23, 25) and the surface ratio (eq. 32). The
+  comparison numbers quoted in the docs (liquid length about 10 mm
+  measured, 12.5 mm standard and 10.5 mm Corrected Distortion with their
+  RANS; fig. 18 transfer 1.1 to 1.2 at y ≤ 0.25 and 2.5 to 3.7 at y = 1;
+  fig. 19 drag 1.2 to 1.9 at y = 1 against 3.63) are read from their text
+  and figures.
+- The viscous sphere: Feng, Z.-G., Michaelides, E. E. (2001a), Drag
+  coefficients of viscous spheres at intermediate and high Reynolds
+  numbers, J. Fluids Eng. 123, 841-849, and (2001b), Heat and mass
+  transfer coefficients of viscous spheres, Int. J. Heat Mass Transfer 44,
+  4445-4454. Taken as Nguyen et al. print them (eqs. 17 to 20); the
+  original papers **to verify** (fit range 5 < Re < 1000, which we hold).
+- The shape ratios: Richter, A., Nikrityuk, P. A. (2012), Drag forces and
+  heat transfer coefficients for spherical, cuboidal and ellipsoidal
+  particles in cross flow at sub-critical Reynolds numbers, Int. J. Heat
+  Mass Transfer 55, 1343-1354. Taken as Nguyen et al. print them (eqs. 23,
+  25); the original **to verify**.
+- The dynamic drag compared with: Liu, A. B., Mather, D., Reitz, R. D.
+  (1993), Modeling the effects of drop drag and breakup on fuel sprays,
+  SAE 930072 (C_D = C_D,sphere (1 + 2.632 y), as already built in SP6).
+- Applying the corrections as ratios to the solid sphere of the same
+  correlations, on our own sphere laws (Schiller-Naumann, Ranz-Marshall,
+  Abramzon-Sirignano), is our choice: the paper replaces the sphere laws.
+  At y = 0 and λ → ∞ the ratios are 1, so the sphere laws are kept.
+
 ## 4. Rules for adding an entry
 
 1. A value goes into the repository only when a test or a validation page

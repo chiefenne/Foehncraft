@@ -8,6 +8,7 @@ use anyhow::{Result, bail};
 use foehncraft_core::Real;
 use foehncraft_core::rng::{self, stream};
 use foehncraft_kernels::breakup as brk;
+use foehncraft_kernels::distortion as cdm;
 use foehncraft_kernels::evaporation::{self as evap, EvapInput, EvapStep};
 use foehncraft_kernels::particle::{
     HeatInput, ParcelInput, eddy_times, heat_step, parcel_step_drag,
@@ -549,6 +550,9 @@ pub struct Spray {
     /// The vapour penetration per injector of the last gas the flow gave
     /// (`[spray.ecn]`, D315), from [`Spray::set_vapour_penetration`].
     vapour_penetration: Vec<Option<f64>>,
+    /// Per injector the mirror boundaries through its axis, with their
+    /// names ([`axis_mirrors`]): the ECN projection adds the mirror images.
+    ecn_mirrors: Vec<Vec<(String, MirrorPlane)>>,
 }
 
 /// What `state()` writes and `restore()` reads (restart, D42).
@@ -626,7 +630,41 @@ impl Spray {
                 );
             }
         }
+        let ecn_mirrors: Vec<Vec<(String, MirrorPlane)>> = cfg
+            .injectors
+            .iter()
+            .map(|i| axis_mirrors(env, &rules, i))
+            .collect();
+        if cfg.ecn.is_some() {
+            for (i, m) in cfg.injectors.iter().zip(&ecn_mirrors) {
+                let planes: Vec<MirrorPlane> = m.iter().map(|x| x.1).collect();
+                let names: Vec<&str> = m.iter().map(|x| x.0.as_str()).collect();
+                let refuse = || {
+                    anyhow::anyhow!(
+                        "[[spray.injector]] {}: the mirror boundaries {} through its axis do \
+                         not tile the whole spray with their images (a sector between planes \
+                         must have 180°/n), so [spray.ecn] cannot project the whole spray; \
+                         give the sector sides another boundary type or leave out [spray.ecn]",
+                        i.name,
+                        names.join(", ")
+                    )
+                };
+                let images = mirror_images(&planes).ok_or_else(refuse)?;
+                // the images tile the spray once: no image of a point of the
+                // domain (the centre of the nozzle's cell) lies in the domain
+                if let Some(c) = env.loc.locate_search(i.position) {
+                    let p = env.geo.cell_centroid[c];
+                    if images[1..]
+                        .iter()
+                        .any(|g| env.loc.locate_search(g.apply(p)).is_some())
+                    {
+                        return Err(refuse());
+                    }
+                }
+            }
+        }
         Ok(Self {
+            ecn_mirrors,
             cfg: cfg.clone(),
             rules,
             boundary_names: env.mesh.boundaries.iter().map(|b| b.name.clone()).collect(),
@@ -948,6 +986,23 @@ impl Spray {
         re: f64,
         dt: f64,
     ) -> Option<EvapStep> {
+        self.evaporation_of(gs, d, tp, re, dt, 0.0)
+    }
+
+    /// As [`Spray::evaporation`] for a drop of TAB distortion `y`: with
+    /// `[spray.breakup] drag = "corrected-distortion"` the Sherwood and
+    /// Nusselt numbers take the factors of the viscous, distorted drop and
+    /// its larger surface (Nguyen et al. 2022, D316); otherwise `y` is not
+    /// used.
+    pub fn evaporation_of(
+        &self,
+        gs: &GasState,
+        d: f64,
+        tp: f64,
+        re: f64,
+        dt: f64,
+        y: f64,
+    ) -> Option<EvapStep> {
         let v = self.vapour.as_ref()?;
         if !self.cfg.evaporation.on() || !gs.has_vapour() || d <= 0.0 {
             return None;
@@ -965,6 +1020,16 @@ impl Spray {
             let cp_v = v.cp(0.5 * (tp + gs.t));
             (gs.rho, gs.mu, gs.k, gs.cp, gs.diff, cp_v, re)
         };
+        let (pr, sc) = (mu * cp / k, mu / (rho * diff));
+        let (sh_factor, nu_factor) = if self.cfg.breakup.corrected() {
+            let lambda = self.liquid_viscosity(tp) / mu;
+            (
+                cdm::transfer_factor(re, sc, lambda, y),
+                cdm::transfer_factor(re, pr, lambda, y),
+            )
+        } else {
+            (1.0, 1.0)
+        };
         Some(evap::evaporation_step(&EvapInput {
             tp,
             tg: gs.t,
@@ -976,8 +1041,8 @@ impl Spray {
             ys_surface: -1.0,
             latent: self.latent_heat(tp),
             re,
-            pr: mu * cp / k,
-            sc: mu / (rho * diff),
+            pr,
+            sc,
             rho_g: rho,
             diff,
             k_g: k,
@@ -988,6 +1053,8 @@ impl Spray {
             cp_l: l.specific_heat,
             dt,
             model: self.cfg.evaporation.code(),
+            sh_factor,
+            nu_factor,
         }))
     }
 
@@ -1049,6 +1116,22 @@ impl Spray {
         ix
     }
 
+    /// Per injector the mirror boundaries (symmetry planes, slip walls)
+    /// through its axis, by name, with their planes: the liquid lengths of
+    /// `[spray.ecn]` count the mirror images of the parcels across them, so
+    /// that a half or quarter domain gives the projection of the whole
+    /// spray (D315).
+    pub fn ecn_mirrors(&self) -> &[Vec<(String, MirrorPlane)>] {
+        &self.ecn_mirrors
+    }
+
+    fn mirror_planes(&self) -> Vec<Vec<MirrorPlane>> {
+        self.ecn_mirrors
+            .iter()
+            .map(|m| m.iter().map(|x| x.1).collect())
+            .collect()
+    }
+
     /// Per injector: parcels and liquid in the flow, the liquid
     /// penetration and the farthest parcel (D265), with the definitions of
     /// `[spray] penetration` and `penetration_fraction`.
@@ -1057,12 +1140,13 @@ impl Spray {
             .map(|i| self.parcel_mass(i))
             .collect();
         let released: Vec<u64> = self.injectors.iter().map(|i| i.released).collect();
-        let mut st = injector_stats(
+        let mut st = injector_stats_mirrored(
             &self.cfg,
             &self.parcels.id,
             &self.parcels.x,
             &masses,
             Some(&released),
+            &self.mirror_planes(),
         );
         for (s, v) in st.iter_mut().zip(&self.vapour_penetration) {
             s.vapour_penetration = *v;
@@ -1401,7 +1485,10 @@ impl Spray {
     /// The vapour that brings a gas of mass `mass` in the state `gs` to
     /// adiabatic saturation with this liquid (kg; 0 when the gas is
     /// saturated or does not carry the vapour): Δ = M (Y_s − Y*)/(1 − Y_s)
-    /// at the temperature T where M c_p (T* − T) = Δ L(T) (D253).
+    /// at the temperature T where M c_p (T* − T) = Δ L(T) (D253). A gas at
+    /// or above the end of the Peng-Robinson surface (the critical mixing
+    /// state, D314) has no latent heat to give: it takes the vapour up to
+    /// the surface fraction there without cooling, Δ at T*.
     pub fn saturation_capacity(&self, gs: &GasState, mass: f64) -> f64 {
         let Some(v) = self.vapour else {
             return 0.0;
@@ -1424,7 +1511,13 @@ impl Spray {
         let g = |t: f64| mass * gs.cp * (gs.t - t) - delta(t) * self.latent_heat(t);
         let (mut lo, mut hi) = (200.0f64.min(gs.t), gs.t);
         if g(hi) >= 0.0 {
-            return 0.0;
+            // no latent heat at T*: T* itself is the root, and Δ is largest
+            // there (Y_s does not fall with T)
+            return if self.latent_heat(hi) <= 0.0 {
+                delta(hi)
+            } else {
+                0.0
+            };
         }
         for _ in 0..60 {
             let mid = 0.5 * (lo + hi);
@@ -1802,11 +1895,7 @@ impl Spray {
             *uk = sigma * normal([stream::SPRAY_DISPERSION, p.id, p.eddy.n, 2 * k as u64]);
         }
         let ug = [gs.u[0] + u[0], gs.u[1] + u[1], gs.u[2] + u[2]];
-        let drag = if self.cfg.breakup.distortion() {
-            brk::dynamic_drag(p.brk.y)
-        } else {
-            1.0
-        };
+        let drag = self.drag_factor(p, ug, gs.rho, gs.mu);
         let s = parcel_step_drag(
             &ParcelInput {
                 v: p.v,
@@ -1913,12 +2002,8 @@ impl Spray {
                 p.eddy.left = 0.0;
             }
             let d_start = p.d;
-            // the drag of a distorted drop (D303)
-            let drag = if bcfg.distortion() {
-                brk::dynamic_drag(p.brk.y)
-            } else {
-                1.0
-            };
+            // the drag of a distorted drop (D303, D316)
+            let drag = self.drag_factor(&p, gs.u, gs.rho, gs.mu);
             let input = |dt: f64| ParcelInput {
                 v: p.v,
                 u: gs.u,
@@ -1973,7 +2058,9 @@ impl Spray {
             // sub-step finishes there (the d² law is exact with frozen
             // coefficients, so the end of the life is found exactly)
             let evaporating = self.evaporates() && gs.has_vapour();
-            if evaporating && let Some(e) = self.evaporation(&gs, p.d, p.temp, s.re, sub) {
+            if evaporating
+                && let Some(e) = self.evaporation_of(&gs, p.d, p.temp, s.re, sub, p.brk.y)
+            {
                 let ev = &self.cfg.evaporation;
                 let d02 = p.d * p.d;
                 let mut finishing = false;
@@ -1991,7 +2078,7 @@ impl Spray {
                 }
                 let mut halvings = 0;
                 while !finishing && halvings < 40 {
-                    let Some(e) = self.evaporation(&gs, p.d, p.temp, s.re, sub) else {
+                    let Some(e) = self.evaporation_of(&gs, p.d, p.temp, s.re, sub, p.brk.y) else {
                         break;
                     };
                     if (e.tp - p.temp).abs() <= ev.max_temperature_change {
@@ -2042,7 +2129,7 @@ impl Spray {
                 let slip = [gs.u[0] - p.v[0], gs.u[1] - p.v[1], gs.u[2] - p.v[2]];
                 let re = gs.rho * p.d * norm(slip) / gs.mu;
                 let ev = if evaporating {
-                    self.evaporation(&gs, p.d, p.temp, re, dt)
+                    self.evaporation_of(&gs, p.d, p.temp, re, dt, p.brk.y)
                 } else {
                     None
                 };
@@ -2492,6 +2579,33 @@ impl Spray {
         (tau > 0.0 && tau.is_finite()).then_some((a, rc, tau))
     }
 
+    /// The factor on the sphere drag of parcel `p` in the gas of velocity
+    /// `u`, density `rho_g` and viscosity `mu_g`: 1 for a sphere,
+    /// 1 + 2.632 y with the dynamic drag (D303), the Corrected Distortion
+    /// factor (viscous drop and spheroid, D316) at the Reynolds number of
+    /// the slip at the start of the sub-step.
+    fn drag_factor(&self, p: &One, u: [f64; 3], rho_g: f64, mu_g: f64) -> f64 {
+        match self.cfg.breakup.drag {
+            crate::config::DragLaw::Sphere => 1.0,
+            crate::config::DragLaw::Dynamic => brk::dynamic_drag(p.brk.y),
+            crate::config::DragLaw::CorrectedDistortion => {
+                let slip = norm([u[0] - p.v[0], u[1] - p.v[1], u[2] - p.v[2]]);
+                let re = rho_g * p.d * slip / mu_g;
+                let lambda = self.liquid_viscosity(p.temp) / mu_g;
+                cdm::drag_factor(re, lambda, p.brk.y)
+            }
+        }
+    }
+
+    /// The viscosity of the liquid at `t` (Pa s) for the viscosity ratio of
+    /// the Corrected Distortion model: of the library liquid at the drop's
+    /// temperature, else the constant `[spray.liquid] viscosity`.
+    fn liquid_viscosity(&self, t: f64) -> f64 {
+        let l = &self.cfg.liquid;
+        l.data()
+            .map_or(l.viscosity.unwrap_or(f64::NAN), |d| d.viscosity(t))
+    }
+
     fn drop_input(&self, a: f64, u: f64, rho_g: f64) -> brk::DropInput {
         let l = &self.cfg.liquid;
         brk::DropInput {
@@ -2841,7 +2955,8 @@ impl Spray {
                 components: 1,
             });
         }
-        let attrs = [
+        let mirrors = format_mirrors(&self.mirror_planes());
+        let mut attrs = vec![
             ("format", Attr::Str("foehncraft.parcels")),
             ("format_version", Attr::U64(1)),
             ("case", Attr::Str(case)),
@@ -2852,6 +2967,10 @@ impl Spray {
             ("units", Attr::Str("m, m/s, K, s, droplets")),
             ("parcels", Attr::U64(n as u64)),
         ];
+        // the mirror planes of the ECN projection, for `post.droplets`
+        if self.ecn_mirrors.iter().any(|m| !m.is_empty()) {
+            attrs.push(("ecn_mirrors", Attr::Str(&mirrors)));
+        }
         write_points(path, &self.parcels.x, &fields, &attrs)
     }
 }
@@ -2866,6 +2985,20 @@ pub fn injector_stats(
     x: &[[f64; 3]],
     mass: &[f64],
     released: Option<&[u64]>,
+) -> Vec<InjectorStats> {
+    injector_stats_mirrored(cfg, id, x, mass, released, &[])
+}
+
+/// [`injector_stats`] with the liquid lengths of `[spray.ecn]` from the
+/// parcels and their mirror images across `mirrors` (per injector, the
+/// planes of [`axis_mirrors`]; a missing entry: none).
+pub fn injector_stats_mirrored(
+    cfg: &SpraySection,
+    id: &[u64],
+    x: &[[f64; 3]],
+    mass: &[f64],
+    released: Option<&[u64]>,
+    mirrors: &[Vec<MirrorPlane>],
 ) -> Vec<InjectorStats> {
     let frac = cfg.penetration_fraction;
     cfg.injectors
@@ -2904,7 +3037,8 @@ pub fn injector_stats(
                     let own: Vec<usize> = (0..id.len())
                         .filter(|&i| (id[i] >> 48) as usize == ii)
                         .collect();
-                    plv_lengths(e, inj, cfg.liquid.density, &own, id, x, mass)
+                    let m = mirrors.get(ii).map_or(&[][..], |v| &v[..]);
+                    plv_lengths_mirrored(e, inj, cfg.liquid.density, &own, id, x, mass, m)
                 }
                 None => Vec::new(),
             };
@@ -2941,6 +3075,211 @@ pub fn line_of_sight(e: &crate::config::Ecn, a: [f64; 3]) -> [f64; 3] {
     unit([l[0] - d * a[0], l[1] - d * a[1], l[2] - d * a[2]])
 }
 
+/// A flat boundary where the parcels mirror (a symmetry plane or a slip
+/// wall) that contains the axis of an injector: the points x with
+/// n·x = `offset`, n the unit `normal`. A half or quarter domain of a
+/// round spray is cut by such planes; the ECN projection (D315) adds the
+/// mirror images of the parcels across them, so that the projected
+/// liquid volume is that of the whole spray, whatever the line of sight.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MirrorPlane {
+    /// Unit normal.
+    pub normal: [f64; 3],
+    /// n·x of the points of the plane (m).
+    pub offset: f64,
+}
+
+/// The most images of a spray the mirror planes may generate: the whole
+/// spray from a sector between two mirror planes at 180°/n has 2n.
+pub const MAX_IMAGES: usize = 64;
+
+/// One image x' = m x + c of the spray.
+#[derive(Clone, Copy, Debug)]
+struct Image {
+    m: [[f64; 3]; 3],
+    c: [f64; 3],
+}
+
+impl Image {
+    fn apply(&self, x: [f64; 3]) -> [f64; 3] {
+        let m = &self.m;
+        [
+            m[0][0] * x[0] + m[0][1] * x[1] + m[0][2] * x[2] + self.c[0],
+            m[1][0] * x[0] + m[1][1] * x[1] + m[1][2] * x[2] + self.c[1],
+            m[2][0] * x[0] + m[2][1] * x[1] + m[2][2] * x[2] + self.c[2],
+        ]
+    }
+}
+
+/// The images of the spray that the reflections across `planes` generate,
+/// the identity first (the group closure, in a fixed order); `None` when
+/// they do not close within [`MAX_IMAGES`] (two planes at an angle that is
+/// not 180°/n, or parallel planes apart).
+fn mirror_images(planes: &[MirrorPlane]) -> Option<Vec<Image>> {
+    let one = Image {
+        m: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+        c: [0.0; 3],
+    };
+    let reflections: Vec<Image> = planes
+        .iter()
+        .map(|p| {
+            let n = p.normal;
+            let mut m = [[0.0; 3]; 3];
+            for (i, row) in m.iter_mut().enumerate() {
+                for (j, v) in row.iter_mut().enumerate() {
+                    *v = f64::from(u8::from(i == j)) - 2.0 * n[i] * n[j];
+                }
+            }
+            Image {
+                m,
+                c: [
+                    2.0 * p.offset * n[0],
+                    2.0 * p.offset * n[1],
+                    2.0 * p.offset * n[2],
+                ],
+            }
+        })
+        .collect();
+    let scale = 1.0 + planes.iter().map(|p| p.offset.abs()).fold(0.0, f64::max);
+    let same = |a: &Image, b: &Image| {
+        (0..3).all(|i| {
+            (0..3).all(|j| (a.m[i][j] - b.m[i][j]).abs() <= 1e-9)
+                && (a.c[i] - b.c[i]).abs() <= 1e-9 * scale
+        })
+    };
+    let mut set = vec![one];
+    let mut k = 0;
+    while k < set.len() {
+        let g = set[k];
+        for r in &reflections {
+            // r after g
+            let mut h = Image {
+                m: [[0.0; 3]; 3],
+                c: r.apply(g.c),
+            };
+            for i in 0..3 {
+                for j in 0..3 {
+                    h.m[i][j] = (0..3).map(|l| r.m[i][l] * g.m[l][j]).sum();
+                }
+            }
+            if !set.iter().any(|s| same(s, &h)) {
+                if set.len() == MAX_IMAGES {
+                    return None;
+                }
+                set.push(h);
+            }
+        }
+        k += 1;
+    }
+    Some(set)
+}
+
+/// The number of images of the spray (with itself) that the reflections
+/// across `planes` generate: 1 without planes, 2 for a half domain, 4 for
+/// a quarter, 2n for a sector between planes at 180°/n; `None` when they
+/// do not close within [`MAX_IMAGES`].
+pub fn mirror_image_count(planes: &[MirrorPlane]) -> Option<usize> {
+    mirror_images(planes).map(|v| v.len())
+}
+
+/// The flat boundaries of `env` where the parcels mirror (by `rules`) that
+/// contain the axis of `inj`, with their names: the faces of the boundary
+/// lie in one plane, its normal is across the axis, and the nozzle lies on
+/// it within half the hole diameter (or `diameter`; at least 10⁻⁴ of the
+/// boundary's size). The planes of the ECN projection (D315).
+pub fn axis_mirrors(
+    env: &Env,
+    rules: &[BoundaryRule],
+    inj: &Injector,
+) -> Vec<(String, MirrorPlane)> {
+    let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    let axis = unit(inj.direction);
+    let mut out = Vec::new();
+    for (b, rule) in env.mesh.boundaries.iter().zip(rules) {
+        if rule.mode != BoundaryMode::Mirror {
+            continue;
+        }
+        let faces: Vec<usize> = b
+            .range()
+            .filter(|&f| norm(env.geo.face_area[f]) > 0.0)
+            .collect();
+        let Some(&f0) = faces.first() else {
+            continue;
+        };
+        let n = unit(env.geo.face_area[f0]);
+        let c0 = env.geo.face_centroid[f0];
+        let d = dot(n, c0);
+        let ext = faces
+            .iter()
+            .map(|&f| {
+                let c = env.geo.face_centroid[f];
+                norm([c[0] - c0[0], c[1] - c0[1], c[2] - c0[2]])
+            })
+            .fold(0.0, f64::max);
+        let flat = faces.iter().all(|&f| {
+            1.0 - dot(unit(env.geo.face_area[f]), n) <= 1e-8
+                && (dot(n, env.geo.face_centroid[f]) - d).abs() <= 1e-7 * ext
+        });
+        let tol = (0.5 * inj.hole_diameter.unwrap_or(inj.diameter)).max(1e-4 * ext);
+        if flat && dot(n, axis).abs() <= 1e-6 && (dot(n, inj.position) - d).abs() <= tol {
+            out.push((
+                b.name.clone(),
+                MirrorPlane {
+                    normal: n,
+                    offset: d,
+                },
+            ));
+        }
+    }
+    out
+}
+
+/// The mirror planes of [`Spray::ecn_mirrors`] as text for the parcel file
+/// (attribute `ecn_mirrors`): per injector, in order, separated by `|`,
+/// the planes `nx ny nz d` separated by `;`.
+pub fn format_mirrors(m: &[Vec<MirrorPlane>]) -> String {
+    m.iter()
+        .map(|planes| {
+            planes
+                .iter()
+                .map(|p| {
+                    format!(
+                        "{} {} {} {}",
+                        p.normal[0], p.normal[1], p.normal[2], p.offset
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(";")
+        })
+        .collect::<Vec<_>>()
+        .join("|")
+}
+
+/// Reads the text of [`format_mirrors`]; a broken entry is an error.
+pub fn parse_mirrors(s: &str) -> Result<Vec<Vec<MirrorPlane>>> {
+    s.split('|')
+        .map(|inj| {
+            inj.split(';')
+                .filter(|p| !p.trim().is_empty())
+                .map(|p| {
+                    let v: Vec<f64> = p
+                        .split_whitespace()
+                        .map(str::parse)
+                        .collect::<std::result::Result<_, _>>()
+                        .map_err(|e| anyhow::anyhow!("mirror plane `{p}`: {e}"))?;
+                    match v[..] {
+                        [a, b, c, d] => Ok(MirrorPlane {
+                            normal: [a, b, c],
+                            offset: d,
+                        }),
+                        _ => bail!("mirror plane `{p}`: four numbers expected"),
+                    }
+                })
+                .collect()
+        })
+        .collect()
+}
+
 /// The projected liquid volume of the parcels `own` of injector `inj`
 /// (D315): the liquid volume m/ρ_l of each parcel in square bins of size
 /// `e.bin` in the plane of the axis and the direction across both the axis
@@ -2957,6 +3296,24 @@ pub fn plv_profile(
     x: &[[f64; 3]],
     mass: &[f64],
 ) -> Vec<f64> {
+    plv_profile_mirrored(e, inj, rho_l, own, id, x, mass, &[])
+}
+
+/// [`plv_profile`] with the mirror images of the parcels across `mirrors`
+/// (the planes of [`axis_mirrors`]): each parcel adds its volume at its
+/// position and at each image, in a fixed order. Planes whose images do
+/// not close are left out ([`Spray::new`] refuses them).
+#[allow(clippy::too_many_arguments)]
+pub fn plv_profile_mirrored(
+    e: &crate::config::Ecn,
+    inj: &Injector,
+    rho_l: f64,
+    own: &[usize],
+    id: &[u64],
+    x: &[[f64; 3]],
+    mass: &[f64],
+    mirrors: &[MirrorPlane],
+) -> Vec<f64> {
     let a = unit(inj.direction);
     let l = line_of_sight(e, a);
     // across the axis and the line of sight
@@ -2965,22 +3322,26 @@ pub fn plv_profile(
         a[2] * l[0] - a[0] * l[2],
         a[0] * l[1] - a[1] * l[0],
     ]);
+    let images = mirror_images(mirrors).unwrap_or_else(|| mirror_images(&[]).unwrap_or_default());
     let mut ix = own.to_vec();
     ix.sort_by_key(|&i| id[i]);
     let mut bins: BTreeMap<(i64, i64), f64> = BTreeMap::new();
     for i in ix {
-        let r = [
-            x[i][0] - inj.position[0],
-            x[i][1] - inj.position[1],
-            x[i][2] - inj.position[2],
-        ];
-        let s = r[0] * a[0] + r[1] * a[1] + r[2] * a[2];
-        if s < 0.0 {
-            continue;
+        for g in &images {
+            let p = g.apply(x[i]);
+            let r = [
+                p[0] - inj.position[0],
+                p[1] - inj.position[1],
+                p[2] - inj.position[2],
+            ];
+            let s = r[0] * a[0] + r[1] * a[1] + r[2] * a[2];
+            if s < 0.0 {
+                continue;
+            }
+            let t = r[0] * b[0] + r[1] * b[1] + r[2] * b[2];
+            let key = ((s / e.bin).floor() as i64, (t / e.bin).floor() as i64);
+            *bins.entry(key).or_insert(0.0) += mass[i] / rho_l;
         }
-        let t = r[0] * b[0] + r[1] * b[1] + r[2] * b[2];
-        let key = ((s / e.bin).floor() as i64, (t / e.bin).floor() as i64);
-        *bins.entry(key).or_insert(0.0) += mass[i] / rho_l;
     }
     let n = bins.keys().map(|k| k.0 + 1).max().unwrap_or(0).max(0) as usize;
     let mut prof = vec![0.0f64; n];
@@ -3007,7 +3368,22 @@ pub fn plv_lengths(
     x: &[[f64; 3]],
     mass: &[f64],
 ) -> Vec<f64> {
-    let prof = plv_profile(e, inj, rho_l, own, id, x, mass);
+    plv_lengths_mirrored(e, inj, rho_l, own, id, x, mass, &[])
+}
+
+/// [`plv_lengths`] on the profile of [`plv_profile_mirrored`].
+#[allow(clippy::too_many_arguments)]
+pub fn plv_lengths_mirrored(
+    e: &crate::config::Ecn,
+    inj: &Injector,
+    rho_l: f64,
+    own: &[usize],
+    id: &[u64],
+    x: &[[f64; 3]],
+    mass: &[f64],
+    mirrors: &[MirrorPlane],
+) -> Vec<f64> {
+    let prof = plv_profile_mirrored(e, inj, rho_l, own, id, x, mass, mirrors);
     e.plv
         .iter()
         .map(|&th| match prof.iter().rposition(|&p| p >= th) {

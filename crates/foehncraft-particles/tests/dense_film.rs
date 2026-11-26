@@ -253,6 +253,38 @@ mod film {
     }
 
     #[test]
+    fn a_gas_above_the_critical_mixing_state_takes_vapour() {
+        // the saturation limiter of D253 with the Peng-Robinson surface:
+        // above the critical mixing temperature (651 K at 6 MPa) the
+        // surface takes no latent heat, so the gas takes vapour without
+        // cooling, up to the fuel fraction of the critical surface. The
+        // capacity was zero there, and in a Spray A run the limiter held
+        // back all the evaporation in the hot gas (35 times what still
+        // evaporated, droplets of 1 µm heating to 900 K)
+        let sp = spray(6e6, FilmFluid::RealFluid);
+        let g = gas(900.0, 6e6);
+        let s = sp.surface_state(g.t).unwrap();
+        assert!(!s.two_phase);
+        assert_eq!(sp.latent_heat(g.t), 0.0);
+        let ys = foehncraft_kernels::evaporation::surface_fraction(
+            sp.saturation_pressure(g.t),
+            g.p0,
+            N_DODECANE.ideal_gas.molar_mass,
+            g.m_gas,
+        );
+        let m = 1e-9;
+        let cap = sp.saturation_capacity(&g, m);
+        assert!(ys > 0.3 && ys < 0.999, "{ys}");
+        assert!((cap / (m * ys / (1.0 - ys)) - 1.0).abs() < 1e-12, "{cap}");
+        // below it the gas cools as it takes the vapour: less, but some
+        let cold = sp.saturation_capacity(&gas(600.0, 6e6), m);
+        assert!(cold > 0.0 && cold < cap, "{cold} {cap}");
+        // a gas at the critical fraction takes none
+        let full = foehncraft_particles::GasState { y_v: ys, ..g };
+        assert_eq!(sp.saturation_capacity(&full, m), 0.0);
+    }
+
+    #[test]
     fn at_low_pressure_the_real_fluid_film_is_the_ideal_film() {
         let real = spray(1e5, FilmFluid::RealFluid);
         let ideal = spray(1e5, FilmFluid::IdealGas);

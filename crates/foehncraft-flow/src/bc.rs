@@ -452,6 +452,24 @@ pub enum Axis {
 pub type Extent = ([f64; 3], [f64; 3]);
 
 /// The bounding box of the nodes of boundary `p`.
+/// Stores the extent of every boundary with a parabolic inlet profile on
+/// the whole mesh `mesh` in its condition, for a run on ranks (MPI step
+/// W7): the profile then spans the whole boundary on every rank, as on one
+/// rank, and not the part of the boundary that a rank holds.
+pub fn global_profile_extents(bcs: &mut BTreeMap<String, BoundaryCondition>, mesh: &Mesh) {
+    for p in &mesh.boundaries {
+        if let Some(BoundaryCondition::VelocityInlet {
+            profile: Some(InletProfile::Parabolic),
+            profile_extent,
+            ..
+        }) = bcs.get_mut(&p.name)
+        {
+            *profile_extent = Some(boundary_extent(mesh, p));
+        }
+    }
+}
+
+/// The bounding box of the nodes of boundary `p`.
 pub fn boundary_extent(mesh: &Mesh, p: &foehncraft_mesh::Boundary) -> Extent {
     let mut lo = [f64::INFINITY; 3];
     let mut hi = [f64::NEG_INFINITY; 3];
@@ -581,6 +599,12 @@ pub enum BoundaryCondition {
         #[serde(skip)]
         #[schemars(skip)]
         table_data: Option<Arc<ProfileTable>>,
+        /// The extent of the boundary on the whole mesh, for the parabolic
+        /// profile of a run on ranks (MPI step W7), where a rank holds only
+        /// a part of the boundary ([`global_profile_extents`]).
+        #[serde(skip)]
+        #[schemars(skip)]
+        profile_extent: Option<Extent>,
         /// Turbulence values (stage 6).
         #[serde(default)]
         turbulence_intensity: Option<f64>,
@@ -1495,11 +1519,14 @@ pub fn inlet_velocity(
         table_origin,
         table_direction,
         table_data,
+        profile_extent,
         ..
     } = bc
     else {
         return None;
     };
+    // on ranks the extent of the whole boundary, not of this rank's part
+    let ext = profile_extent.as_ref().unwrap_or(ext);
     if let Some(InletProfile::Analytic) = profile {
         return analytic.map(|a| a.velocity(geo.face_centroid[f]));
     }

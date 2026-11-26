@@ -1522,6 +1522,22 @@
    "range": {}
   },
   {
+   "id": "sprays.corrected-distortion",
+   "title": "Distorted drops: the Corrected Distortion model for drag and evaporation (Spray A, SA4 part 1, D316)",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "the Spray A liquid length is 24 % (dynamic drag) and 32 % (Corrected Distortion) short of the measured 11.2 mm: the untuned KH-ACT constants give drops of about 1 um; the model shortens the liquid length as in the paper, away from the measurement here",
+    "one run per law on a coarse mesh (0.5 mm along the axis, ECN asks for 0.25 mm), no ensemble; the difference between the laws (0.9 mm) lies within the scatter of the Corrected Distortion run (s.d. 1.6 mm)",
+    "the correlations of Feng and Michaelides (2001) and of Richter and Nikrityuk (2012) are taken as Nguyen et al. (2022) print them, not yet checked against the originals",
+    "SA4 part 2 not done: the liquid volume does not displace the gas and the sources are not spread over a fixed radius; no collisions",
+    "`spray_a_distortion_injectors` has no run in the verification manual or in CI"
+   ],
+   "range": {}
+  },
+  {
    "id": "sprays.ecn-diagnostics",
    "title": "ECN liquid length (projected liquid volume) and vapour penetration (Spray A, SA3, D315)",
    "grade": "partial",
@@ -1588,7 +1604,7 @@
     "the MLP limiter lets mass fractions leave [0, 1] by its smooth-extremum allowance (a few 1e-6 in the jet); strictly bounded (limiter_epsilon = 0) stalls the steady residual",
     "the ledger takes the linear-upwind reconstruction without the clip of bounded = true, and the bounded BDF2 fallback is not booked in the storage",
     "no measured reference case of turbulent mixing yet (a jet with measured mass fractions)",
-    "on ranks without the variable density (stage 7c is refused on ranks, its cell and closed-volume sums need the halo and global sums) and without the MLP limiter (vertex setup not on ranks yet)"
+    "on ranks (parallel.run-ranks-species) without a closed volume and without chemistry in the cells"
    ],
    "range": {}
   },
@@ -1766,8 +1782,9 @@
     "gaps written"
    ],
    "gaps": [
-    "refused on ranks: species transport, [output.statistics], the thermal acceleration, cycle loop and frozen-flow march, sweeps over time steps, several fluids with a turbulence model, and what [run] ranks refuses",
-    "the scalar summary stops with an error on ranks for orthotropic solids, porous matrices, heat-flux periodic pairs, sprays and a variable density (all refused before the run by the rules above)",
+    "species, the variable density and statistics: parallel.run-ranks-species",
+    "refused on ranks: the thermal acceleration, cycle loop and frozen-flow march, sweeps over time steps, several fluids with a turbulence model, and what [run] ranks refuses",
+    "the scalar summary stops with an error on ranks for orthotropic solids, porous matrices, heat-flux periodic pairs and sprays (all refused before the run by the rules above)",
     "Crank-Nicolson and PISO without outer iterations are not tested on ranks in this step (the solver on ranks is, W5)",
     "MPI processes are run in CI with the steady laminar case only; the threads tests cover the same code"
    ],
@@ -1786,6 +1803,21 @@
     "conformal stepping gathers the whole old levels on every rank every step (memory and time of the whole field per rank); only the rotor cells at the cuts would need to move",
     "the five-blade stirred vessel of gallery 301 (16 848 cells, SST, coupled solver) was compared with --ranks 1 by hand, not in CI (its mesh needs Gmsh)",
     "the reference cell's value is handed to all ranks with one all-gather per pressure solve"
+   ],
+   "range": {}
+  },
+  {
+   "id": "parallel.run-ranks-species",
+   "title": "Species, the variable density and statistics on ranks with the output of one rank (MPI step W7)",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "refused on ranks: a closed volume (p0 from the mass), gravity (so buoyant variable-density flows), chemistry (SF2b, its own step), and what parallel.run-ranks-physics lists",
+    "a transient run on a variable density in an open domain reports RUN007 on one rank and on ranks (the mass check of the verification books no storage, a stage 7c gap); the files agree byte for byte",
+    "a vertex bound of the MLP limiter that is -0 on one rank and +0 on another may take either sign (f64 min of equal zeros); not seen in the tests",
+    "MPI processes are run in CI with the steady laminar case only; the threads tests cover the same code"
    ],
    "range": {}
   },
