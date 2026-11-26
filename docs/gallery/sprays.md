@@ -1394,7 +1394,11 @@ turbulence up: the median k of the plume cells at 0.6 ms falls from 106 to
 the turbulence kinetic energy of the gas of the injector from 8.6 to
 0.01 mJ. The drops took only 0.18 mJ over the whole run: the term removes
 the seed near the nozzle from which the production of the jet would grow,
-and with k near zero the model has nothing to grow from. Without the
+and with k near zero the model has nothing to grow from. On k-ε the term
+is as strong and the spray runs further still: the median k of the plume
+cells at 0.3 ms falls from 3.9 to 0.05 m²/s², and the liquid is 52 %
+ahead at 1.1 ms against 30 % without it (49.1 and 57.5 mm; 66 969
+eddies held). Without the
 turbulence the plumes mix less and run further: the liquid is 33 % ahead
 of the measurement at 1.1 ms (50.4 against 37.9 mm) instead of 15 %, the
 vapour 26 % (50.8 against 40.2 mm) instead of 7 %. The coupling passes of
