@@ -1,0 +1,156 @@
+# The air-blast water spray of Brno against its phase Doppler measurements
+# (D322: injection from measured droplets).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/spray_brno.toml
+#
+# Rácz, Malý, Jedelský et al. (Brno University of Technology) measured the
+# droplets of an air-blast atomizer with a phase Doppler anemometer: water,
+# 1.28 kg/h, 1.2 bar air over-pressure, liquid at 100 °C at the atomizer
+# inlet, at z = 20, 40 and 60 mm from the exit (data set on Zenodo, record
+# 17935932, CC BY 4.0). The case starts at the plane z = 20 mm: the gas jet
+# enters with the velocity and k of the droplets below 5 µm (they follow the
+# air), and the parcels start from 6000 measured droplets of that plane
+# (`[[spray.injector]] samples`), each with its own diameter, axial and
+# radial velocity and radius. What the case tests is what happens after
+# that: the dispersion of the droplets of each size by the turbulence of the
+# decaying jet, their slowing down, and the little they evaporate, compared
+# with the measured planes at 40 and 60 mm by
+# examples/studies/brno_spray/compare.py.
+#
+# A quarter of the round spray between two symmetry planes; steady SST
+# k-omega gas, steady spray streams (D260) with two-way coupling and the
+# eddy-lifetime dispersion. Assumed (not in the data set): air at 22 °C with
+# Y_H2O = 0.005 at 1 atm, no evaporation before 20 mm, droplets at 95 °C at
+# the plane, and a coflow of 1 m/s outside the measured jet.
+
+case_format = "0.7"
+
+[mesh.generate]
+type = "hex"
+lower = [0.0, 0.0, 0.02]
+upper = [0.025, 0.025, 0.08]
+cells = [26, 26, 55]
+[[mesh.generate.segments.x]]
+to = 0.008
+cells = 16
+[[mesh.generate.segments.x]]
+to = 0.025
+cells = 10
+ratio = 4.0
+[[mesh.generate.segments.y]]
+to = 0.008
+cells = 16
+[[mesh.generate.segments.y]]
+to = 0.025
+cells = 10
+ratio = 4.0
+[[mesh.generate.segments.z]]
+to = 0.03
+cells = 15
+[[mesh.generate.segments.z]]
+to = 0.08
+cells = 40
+ratio = 1.5
+
+[fluid]
+density = 1.19
+viscosity = 1.82e-5
+specific_heat = 1007.0
+conductivity = 0.0259
+operating_pressure = 101325.0
+pressure_values = "gauge"
+
+[turbulence]
+model = "k-omega-sst"
+wall_treatment = "automatic"
+
+# the start: potential flow from the jet inlet to the openings, k and omega
+# of the self-similar round jet through the measured plane (U_c z and
+# r_1/2 / z of z = 20 mm; nu_t = 0.028 U_c r_1/2, Pope 2000, section 5.1)
+[constants]
+uz = 2.18          # U_c z (m²/s): 108.8 m/s at 20 mm
+spread = 0.112     # r_1/2 / z: 2.24 mm at 20 mm
+nu_jet = 0.00683      # 0.028 U_c r_1/2 (m²/s), the same at every z
+
+[initial]
+potential_flow = true
+k = "max(1.0, 0.04 * (uz / z)^2 * exp(-0.693 * (x^2 + y^2) / (spread * z)^2))"
+omega = "max(1.0, 0.04 * (uz / z)^2 * exp(-0.693 * (x^2 + y^2) / (spread * z)^2)) / nu_jet"
+
+[energy]
+initial = 295.15
+
+[species]
+names = ["H2O", "O2", "N2"]
+initial = { mass_fractions = { H2O = 0.005, O2 = 0.2318, N2 = 0.7632 } }
+diffusion = "schmidt"
+schmidt = 0.7
+properties = "fluid"
+
+[boundary.zmin]
+type = "velocity-inlet"
+profile = "table"
+table = "spray_brno_inlet.csv"   # r, u_n, k, omega at z = 20 mm
+table_coordinate = "radius"
+table_direction = [0.0, 0.0, 1.0]
+[boundary.zmin.energy]
+temperature = 295.15
+[boundary.zmin.species]
+mass_fractions = { H2O = 0.005, O2 = 0.2318, N2 = 0.7632 }
+[boundary.xmax]
+type = "total-pressure-inlet"
+total_pressure = 0.0
+turbulence_intensity = 0.01
+viscosity_ratio = 1.0
+[boundary.xmax.energy]
+temperature = 295.15
+[boundary.xmax.species]
+mass_fractions = { H2O = 0.005, O2 = 0.2318, N2 = 0.7632 }
+[boundary.ymax]
+type = "total-pressure-inlet"
+total_pressure = 0.0
+turbulence_intensity = 0.01
+viscosity_ratio = 1.0
+[boundary.ymax.energy]
+temperature = 295.15
+[boundary.ymax.species]
+mass_fractions = { H2O = 0.005, O2 = 0.2318, N2 = 0.7632 }
+[boundary.zmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.xmin]
+type = "symmetry"
+[boundary.ymin]
+type = "symmetry"
+
+[spray]
+include = "spray_brno_injectors.toml"
+dispersion = "eddy-lifetime"
+
+[spray.evaporation]
+model = "abramzon-sirignano"
+
+[spray.coupling]
+mode = "two-way"
+
+[spray.steady]
+streams = 6000
+every = 10
+relaxation = 0.5
+tolerance = 1e-3
+max_time = 0.5
+
+[solver]
+algorithm = "simplec"
+tolerance = 1e-6
+max_iterations = 2000
+log_every = 50
+
+[solver.momentum]
+relaxation = 0.5
+
+[solver.scalar]
+limiter = "mlp"
+
+[verification]
+require_convergence = false

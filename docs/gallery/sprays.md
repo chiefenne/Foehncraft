@@ -17,6 +17,7 @@ Part of the [Example gallery](../gallery.md): droplets as Lagrangian parcels in 
 | 320 | [Where the last liquid evaporates: the Spray A mixing line](#spray-a-mixing-line) | SA1 | `realfluid::Streams`: the adiabatic mixing line of fuel and gas (frozen, Peng-Robinson equilibrium, ideal), stability test and flash, the saturation mixture fraction, the liquid length of Siebers (1999) against the measured Spray A lengths (D319, VA.4, VA.5) |
 | 319 | [Liquid length and vapour penetration as the ECN defines them](#spray-ecn) | SA3 | `[spray.ecn]` (D315): liquid length from the projected liquid volume at two thresholds and vapour penetration at 0.1 % fuel, per injector and step in `spray.csv` and `result.json` |
 | 321 | [Fuel droplets with real liquid properties and the 1/3-rule film](#spray-liquid-library) | D320, D321 | `[spray.liquid] library` (water, n-heptane, n-dodecane, iso-octane), `[spray.evaporation] film = "one-third"` (default), single n-heptane droplets against measurements, an n-heptane spray in hot nitrogen |
+| 325 | [A measured water spray, continued from its first plane](#spray-brno) | D322 | `[[spray.injector]] samples` and `sector`: parcels from measured droplets; the Brno air-blast spray against its phase Doppler data at 40 and 60 mm, per size class |
 | 323 | [ECN Spray G: a gasoline injector against the measurements](#spray-g) | SP6, D309 | `[mesh.generate] wedge` with `dimension = 3` (a sector of the injector), thin slip core on the axis, injector from the measured rate, plume direction and cone, `flow_share`, the ECN liquid and vapour penetration (`tools/plot/spray_g_metrics.py`), library iso-octane, KH-ACT |
 | 324 | [The gas film of a fuel droplet at diesel pressure](#spray-a-film) | SA2 | `[spray.evaporation.peng_robinson] film = "real-fluid"` (default), `critical_volume`: Peng-Robinson density and c_p, the dense-fluid viscosity and conductivity of Chung et al. (1988), the high-pressure diffusivity of Riazi and Whitson (1993) in the droplet film (D313) |
 | 326 | [Flattened drops in ECN Spray A: the Corrected Distortion model](#spray-a-distortion) | SA4 | `[spray.breakup] drag = "corrected-distortion"` (D316): drag and evaporation of the TAB spheroid (Nguyen, Dahms, Pickett and Tagliante 2022), viscous-sphere circulation, ECN liquid length on a quarter domain with mirror images |
@@ -930,6 +931,114 @@ boiling are later stages.
 [case row](../cases/flow.md#lagrangian-sprays).
 
 ---
+
+---
+
+<a id="spray-brno"></a>
+## 325. A measured water spray, continued from its first plane
+
+<img src="../figures/gallery/spray_brno.png" alt="A round water spray from z = 20 to 80 mm, cut along its axis. Below the axis the gas speed: a red core of about 110 m/s at z = 20 mm that turns yellow, green and cyan as the jet slows to about 40 m/s at 60 mm and widens to about 8 mm, surrounded by dark blue still air. Above the axis the paths of the droplet streams on a dark background, purple for small droplets, orange and yellow for large ones: the small droplets stay near the axis and follow the gas, the large ones fly outwards along straight lines and reach 15 mm from the axis by 60 mm; dashed lines mark the measured planes at 40 and 60 mm." width="1200" height="560">
+
+<img src="../figures/gallery/spray_brno_compare.png" alt="Six charts against the distance from the axis, the top row at z = 40 mm and the bottom row at 60 mm. Left: the axial velocity of four droplet size classes, 5 to 10, 10 to 20, 20 to 30 and 30 to 50 µm, lines of the model and circles of the measurements, falling from 60 to 90 m/s on the axis to 5 to 15 m/s at 12 mm, the large droplets faster everywhere; the lines follow the circles mostly within a few m/s. Middle: the Sauter mean diameter, flat at 14 to 15 µm in the measurements out to 6 to 8 mm and rising to 20 to 28 µm at the edge; the model lies 1 to 3 µm lower in the core and rises more steeply at the edge. Right: the liquid volume flux over its plane mean, falling from about 2 on the axis to zero at the edge in both; at 60 mm the two agree, at 40 mm the model's flux is more peaked on the axis." width="1500" height="820">
+
+The Brno University of Technology measured the droplets of an air-blast
+atomizer with a phase Doppler anemometer and published every droplet
+record (Rácz, Malý, Jedelský et al., Zenodo record 17935932, CC BY 4.0):
+water, 1.28 kg/h, 1.2 bar air over-pressure, liquid at 100 °C at the
+atomizer inlet, 90 points on two traverses at z = 20, 40 and 60 mm. The
+data set has no nozzle geometry and no air flow rate, so the case starts
+where the data start: at the plane z = 20 mm.
+
+**Injection from measured droplets (D322).** `[[spray.injector]] samples`
+names a table of droplets: radius, diameter, axial and radial velocity
+(tangential velocity and a mass weight optional). Every parcel, or every
+stream of the steady mode, takes one row, drawn by mass with the
+counter-based generator keyed by its identity (D121), and starts at the
+row's radius on a random azimuth with the row's velocity. A droplet of
+40 µm at 6 mm from the axis keeps its own 36 m/s and its 5 m/s outwards;
+a cone with a size law would give every size the same speed and
+direction. `sector` limits the azimuth for a model of part of the spray
+between symmetry planes. `examples/studies/brno_spray/pda_to_csv.py`
+turns the raw files into the table: the droplets of the y traverse,
+each standing for its liquid volume per sampling time and the ring area
+of its point, drawn as 6000 rows of equal mass (d32 of the draw 15.6 µm).
+
+**The gas.** The droplets below 5 µm follow the air (their response time
+is below 0.1 ms), so their mean velocity and fluctuations at 20 mm give the
+inlet of the jet: 109 m/s on the axis, half the speed at 2.2 mm, k up to
+570 m²/s², ω from the eddy viscosity of the self-similar round jet
+(0.028 U_c r_1/2, Pope 2000). Outside the measured jet 1 m/s of coflow; the
+sides are openings at ambient pressure that let the jet entrain air.
+
+**The case.** `spray_brno.toml` models a quarter of the spray between two
+symmetry planes (26 × 26 × 55 cells, graded to the axis and the inlet):
+steady SST k-ω gas with energy and water vapour, 6000 steady streams
+(D260) with two-way coupling, eddy-lifetime dispersion and
+Abramzon-Sirignano evaporation with the 1/3-rule film. It converges in
+about 1500 iterations (27 min on 4 threads).
+`examples/studies/brno_spray/compare.py` cuts the streams by the planes
+40 and 60 mm and weights each crossing with its droplets per second, as
+the probe counts the droplets that cross it.
+
+| at 40 / 60 mm | model | measured |
+|---|---|---|
+| axial velocity per size class, 5 to 50 µm, r ≤ 10 mm | mostly within 10 % | |
+| mean droplet velocity on the axis (m/s) | 68 / 40 | 71 / 48 |
+| mean droplet velocity at r = 6 mm (m/s) | 22.9 / 25.3 | 23.9 / 26.4 |
+| d32 at r = 2 to 4 mm (µm) | 12.2 / 12.0 to 12.4 | 14.3 / 14.8 |
+| d32 at r = 10 mm (µm) | 22.3 / 17.1 | 20.1 / 15.2 |
+| liquid evaporated between 20 and 80 mm | 13 % | not measured |
+
+The velocities of the size classes, which carry the drag, the response
+of each size to the decaying jet and the turbulent dispersion, agree
+mostly within 10 %. The core Sauter diameter is 1 to 3 µm too small and the
+edge too coarse: the model sorts the sizes radially more than the spray
+does, and it evaporates the small droplets with the assumed droplet
+temperature of 95 °C at 20 mm; most of the gap is the sorting, see
+below.
+
+**Where the d32 gap comes from.** The data set does not give the droplet
+temperature at 20 mm; the case assumes 95 °C (a droplet of 15 µm cools
+with a time constant of about 3 ms, its flight from the atomizer takes
+about 0.2 ms). A second run with the droplets at 22 °C evaporates 4 % of
+the liquid instead of 13 % and raises the core d32 by only 0.3 to 0.4 µm,
+so evaporation is not the cause. The start is faithful: just behind the
+inlet (z = 20.2 mm, rings of ± 0.5 mm) the model's d32 lies 0.3 to 0.7 µm
+below the measured traverse it was drawn from. The rest grows on the way
+downstream: the large droplets leave the core with the radial velocities
+they were measured with (rms about 8 m/s at 20 mm) while the small ones
+stay with the gas. The measurement itself differs by up to 1.5 µm between
+its x and y traverses at 20 mm, and the turbulence of the inlet, taken
+from the scatter of the droplets below 5 µm, may be too high. The gap is
+recorded, not tuned away.
+
+```toml
+[[injector]]                    # in spray_brno_injectors.toml
+name = "plane_z20"
+position = [0.0, 0.0, 0.0201]
+direction = [0.0, 0.0, 1.0]
+mass_flow = 3.5556e-4           # 1.28 kg/h through the whole plane
+samples = "spray_brno_samples.csv"
+sector = 90.0
+flow_share = 0.25
+```
+
+**What is checked.** The unit tests draw rows by mass (cumulative shares,
+rows of no weight never drawn), start 4000 parcels on their rows' radius
+inside the sector with the rows' velocity components, three quarters of
+them in the row of three quarters of the mass, and refuse the keys a
+table replaces. The case runs in the long CI set (books, convergence);
+the comparison with the measurements is run by hand with `compare.py`.
+
+**What this version does not do.** The plane is made axisymmetric from
+one traverse; the tangential velocity and the size dependence of the probe
+area are left out. The air and droplet temperatures and the humidity are
+not in the data set and are assumed (22 °C, 95 °C, Y_H2O = 0.005). SST is
+not corrected for the round-jet spreading anomaly. One process.
+
+Files: `spray/streams.vtkhdf` (stream paths), `spray.csv`;
+`brno_compare.csv` from `compare.py`. [Recipe 325](../recipes/sprays.md#spray-brno),
+[case row](../cases/flow.md#lagrangian-sprays).
 
 <a id="spray-a-film"></a>
 ## 324. The gas film of a fuel droplet at diesel pressure

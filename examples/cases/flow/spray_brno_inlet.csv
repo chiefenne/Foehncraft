@@ -1,0 +1,15 @@
+# Inlet of spray_brno.toml at z = 20 mm: the gas velocity and k of the droplets below 5 um
+# (Racz et al., Zenodo 17935932, CC BY 4.0); omega = k / nu_t with nu_t = 0.028 U_c r_1/2
+# = 0.00683 m2/s (U_c = 108.8 m/s, r_1/2 = 2.24 mm); 1.0 m/s of coflow outside
+# made by examples/studies/brno_spray/pda_to_csv.py
+r, u_n, k, omega
+0, 108.8, 471.3, 69020
+0.001, 94.871, 532.73, 78017
+0.002, 61.279, 571.09, 83634
+0.003, 32.793, 358.53, 52505
+0.004, 18.811, 225.7, 33053
+0.005, 12.393, 187.25, 27423
+0.006, 7.5715, 148.8, 21791
+0.007, 5.1657, 120.41, 17634
+0.012, 1, 1, 146.45
+0.05, 1, 1, 146.45

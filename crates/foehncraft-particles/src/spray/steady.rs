@@ -12,11 +12,10 @@
 //! pass on the same gas gives the same bits, whatever the thread count
 //! (D247, D260 (3) and (4)).
 
-use super::{Env, Fate, Gas, One, Spray, TrackOpts, direction, frame, mass_of, unit};
+use super::{Env, Fate, Gas, One, Spray, TrackOpts, frame, mass_of, start, unit};
 use crate::config::Steady;
 use crate::coupling::{CellSources, Record};
 use anyhow::{Result, bail};
-use foehncraft_core::rng::{self, stream};
 use rayon::prelude::*;
 use serde::Serialize;
 
@@ -156,27 +155,22 @@ impl Spray {
             let (e1, e2) = frame(axis);
             let cos_a = inj.half_angle.to_radians().cos();
             let m_stream = inj.flow_share * inj.mass_flow / n as f64;
-            let Some(cell) = env.loc.locate_search(inj.position) else {
-                bail!(
-                    "[[spray.injector]] {}: the position lies outside the mesh",
-                    inj.name
-                );
-            };
             for k in 0..n {
                 let key = st.seed.wrapping_mul(n).wrapping_add(k) & ((1u64 << 48) - 1);
                 let id = ((ii as u64) << 48) | key;
-                let dir = direction(id, axis, e1, e2, cos_a);
-                let d = match &inj.size {
-                    Some(sz) => {
-                        sz.quantile(rng::uniform_keyed([stream::SPRAY_INJECTION, id, 1, 0]))
-                    }
-                    None => inj.fixed_diameter(),
+                let (x, v, d, _) = start(id, inj, (axis, e1, e2, cos_a), rho_p, inj.mass_flow);
+                let Some(cell) = env.loc.locate_search(x) else {
+                    bail!(
+                        "[[spray.injector]] {}: the position {:?} of a stream lies outside the \
+                         mesh",
+                        inj.name,
+                        x
+                    );
                 };
-                let speed = inj.exit_speed(rho_p, inj.mass_flow);
                 out.push(One {
                     id,
-                    x: inj.position,
-                    v: [dir[0] * speed, dir[1] * speed, dir[2] * speed],
+                    x,
+                    v,
                     d,
                     count: m_stream / (rho_p * std::f64::consts::PI / 6.0 * d * d * d),
                     born: 0.0,

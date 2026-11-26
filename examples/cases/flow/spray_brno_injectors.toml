@@ -1,0 +1,19 @@
+# The measured plane z = 20 mm of spray_brno.toml (D322): 6000 droplets of
+# the phase Doppler data (Rácz et al., Zenodo 17935932, CC BY 4.0), drawn by
+# liquid volume, as rows of equal mass; examples/studies/brno_spray/pda_to_csv.py
+# makes the table from the raw files.
+
+[liquid]
+name = "water"
+library = "water"
+temperature = 368.15
+vapour = "H2O"
+
+[[injector]]
+name = "plane_z20"
+position = [0.0, 0.0, 0.0201]
+direction = [0.0, 0.0, 1.0]
+mass_flow = 3.5556e-4    # 1.28 kg/h through the whole plane
+samples = "spray_brno_samples.csv"
+sector = 90.0
+flow_share = 0.25
