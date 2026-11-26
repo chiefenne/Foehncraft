@@ -55,3 +55,6 @@ __pycache__/
 examples/studies/impinging_jet/data/*.csv
 # the skewed-tetrahedra test tank (D50): made by its mesh script
 examples/studies/skewed_tets/*.msh
+
+# Python wheels (a Gmsh wheel was committed by accident in #196)
+*.whl

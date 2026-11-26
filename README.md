@@ -158,18 +158,23 @@ with checksums. Until then, build Foehncraft from source as below.
 
 ### Build from source
 
-You need:
+You need Rust 1.89 or newer ([rustup](https://rustup.rs)), a C and C++
+compiler, CMake (HDF5 and METIS are built from source on the first build;
+no system HDF5 or METIS is needed) and Git:
 
-- Rust 1.89 or newer, installed with [rustup](https://rustup.rs)
-  (`rustup update stable` brings an older one up to date).
-- A C compiler and CMake: HDF5 (VTKHDF output, restart files) and METIS
-  (partitioning) are built from source on the first build.
-  - macOS: the Xcode Command Line Tools (`xcode-select --install`) and
-    `brew install cmake`.
-  - Linux (Ubuntu): `sudo apt install build-essential cmake`.
-  - Windows: the Visual Studio C++ Build Tools (`rustup-init.exe` offers
-    them) and `winget install Kitware.CMake`.
-- Git.
+| System | Commands |
+|---|---|
+| macOS | `xcode-select --install`, then `brew install cmake` and rustup |
+| Ubuntu, Debian | `sudo apt install build-essential cmake git curl`, then rustup |
+| Fedora | `sudo dnf install gcc gcc-c++ make cmake git curl`, then rustup |
+| Windows | Visual Studio C++ Build Tools, rustup, CMake and Git with `winget install --id ...` (the four commands are in the guide) |
+
+The rustup command on macOS and Linux is
+`curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`.
+Gmsh is not needed to build or run Foehncraft; the Python mesh scripts in
+`examples/` use the pip package `gmsh`. The step-by-step guide for each
+system, with Python, Gmsh, MPI and the GPU backend, is
+[docs/install.md](docs/install.md).
 
 Then, in a terminal (on Windows in PowerShell):
 
@@ -197,9 +202,10 @@ git pull --ff-only
 cargo build --release -p foehncraft-cli    # and cargo install ... again if you installed it
 ```
 
-CI builds and tests on Linux, macOS and Windows. The GPU backend
-(`--features cuda`), a build without the C libraries, the Python package
-and the checks after an install are in [docs/install.md](docs/install.md).
+CI builds and tests on Linux, macOS and Windows. Python and Gmsh for the
+example scripts, MPI, the GPU backend (`--features cuda`), a build without
+the C libraries and the checks after an install are in
+[docs/install.md](docs/install.md).
 
 ## Build and run
 
