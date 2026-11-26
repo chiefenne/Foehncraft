@@ -701,6 +701,656 @@ pub fn bubble_pressure(
     None
 }
 
+/// The outcome of [`Mixture::stability`].
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Stability {
+    /// The smallest modified tangent-plane distance tm of the trial
+    /// phases; negative when the phase splits.
+    pub tm: f64,
+    /// The composition of the trial phase of that minimum (mole
+    /// fractions; the feed when the phase is stable).
+    pub w: [f64; MAX],
+    /// The trial phase is less dense than the feed (a vapour-like trial).
+    pub lighter: bool,
+    /// Substitution steps of both trials.
+    pub steps: u32,
+}
+
+/// tm below which a phase is taken as unstable (the round-off of the sums
+/// is near 1e-15).
+pub const STABILITY_TOL: f64 = 1e-10;
+/// Substitution steps of one trial phase at most.
+const STABILITY_STEPS: u32 = 300;
+/// Substitution steps of the flash before Newton takes over.
+const FLASH_SUBSTITUTIONS: u32 = 60;
+
+impl Stability {
+    /// Whether the phase splits into two.
+    pub fn unstable(&self) -> bool {
+        self.tm < -STABILITY_TOL
+    }
+}
+
+/// Two phases in equilibrium, from [`Mixture::flash`].
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Split {
+    /// Mole fraction of the feed in the lighter phase.
+    pub beta: f64,
+    /// Composition of the denser phase (mole fractions).
+    pub x: [f64; MAX],
+    /// Composition of the lighter phase (mole fractions).
+    pub y: [f64; MAX],
+    /// ln Kᵢ = ln(yᵢ/xᵢ).
+    pub ln_k: [f64; MAX],
+    /// The denser phase.
+    pub l: Phase,
+    /// The lighter phase.
+    pub v: Phase,
+    /// Steps taken (substitution and Newton).
+    pub steps: u32,
+}
+
+/// Outcome of [`Mixture::flash`] (kept by value: the kernels allocate
+/// nothing).
+#[allow(clippy::large_enum_variant)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Flash {
+    /// The feed is stable as one phase (the root of the lower Gibbs
+    /// energy).
+    One(Phase),
+    /// The feed splits into two phases.
+    Two(Split),
+    /// The stability test found a split but the flash did not converge in
+    /// its bounded number of steps.
+    NotConverged,
+}
+
+/// The lighter-phase fraction β of the feed `z` for the K values `lnk`: the
+/// root of the Rachford-Rice function Σ zᵢ (Kᵢ − 1)/(1 + β (Kᵢ − 1)) between
+/// its poles 1/(1 − K_max) and 1/(1 − K_min) (β outside 0 to 1 is kept, a
+/// negative flash), by Newton steps kept inside a shrinking bracket;
+/// `None` when all K are on one side of 1.
+fn rachford_rice(n: usize, z: &[f64; MAX], lnk: &[f64; MAX]) -> Option<f64> {
+    let mut k = [1.0; MAX];
+    let mut kmin = f64::INFINITY;
+    let mut kmax: f64 = 0.0;
+    for i in 0..n {
+        if z[i] > 0.0 {
+            k[i] = math::exp(lnk[i]);
+            kmin = kmin.min(k[i]);
+            kmax = kmax.max(k[i]);
+        }
+    }
+    if !(kmax > 1.0 && kmin < 1.0) {
+        return None;
+    }
+    let mut lo = 1.0 / (1.0 - kmax);
+    let mut hi = 1.0 / (1.0 - kmin);
+    let mut b: f64 = 0.5;
+    for _ in 0..200 {
+        let mut g = 0.0;
+        let mut dg = 0.0;
+        for i in 0..n {
+            if z[i] > 0.0 {
+                let c = k[i] - 1.0;
+                let den = 1.0 + b * c;
+                g += z[i] * c / den;
+                dg -= z[i] * c * c / (den * den);
+            }
+        }
+        if g == 0.0 {
+            return Some(b);
+        }
+        // g falls with β: a positive g puts the root to the right
+        if g > 0.0 {
+            lo = b;
+        } else {
+            hi = b;
+        }
+        let mut bn = b - g / dg;
+        if !(bn > lo && bn < hi) {
+            bn = 0.5 * (lo + hi);
+        }
+        if (bn - b).abs() <= 1e-15 * (1.0 + b.abs()) {
+            return Some(bn);
+        }
+        b = bn;
+    }
+    Some(b)
+}
+
+/// F, β, x, y and the denser and lighter phases of a flash.
+type FlashResidual = ([f64; MAX], f64, [f64; MAX], [f64; MAX], Phase, Phase);
+
+impl Mixture {
+    /// The pressure (Pa) of the composition `x` at `t` (K) and the molar
+    /// volume `v` (m³/mol), explicit in the equation of state.
+    pub fn pressure(&self, x: &[f64; MAX], t: f64, v: f64) -> f64 {
+        let n = self.n;
+        let mut am = 0.0;
+        let mut bm = 0.0;
+        let mut ai = [0.0; MAX];
+        for i in 0..n {
+            ai[i] = self.c[i].a(t).0;
+            bm += x[i] * self.c[i].b();
+        }
+        for i in 0..n {
+            for j in 0..n {
+                am += x[i] * x[j] * (1.0 - self.k[i][j]) * math::sqrt(ai[i] * ai[j]);
+            }
+        }
+        R * t / (v - bm) - am / (v * v + 2.0 * bm * v - bm * bm)
+    }
+
+    /// The stability test of the phase `z` at `t` (K) and `p` (Pa) by the
+    /// tangent plane of Michelsen (1982): with dᵢ = ln zᵢ + ln φᵢ(z) (the
+    /// root of the lower Gibbs energy), a trial phase of mole numbers W is
+    /// moved by ln Wᵢ ← dᵢ − ln φᵢ(W/ΣW) from a vapour-like (Wᵢ = Kᵢ zᵢ) and
+    /// a liquid-like (Wᵢ = zᵢ/Kᵢ) start with Wilson's K. The modified
+    /// distance tm = 1 + Σ Wᵢ (ln Wᵢ + ln φᵢ(w) − dᵢ − 1) is negative only
+    /// if the tangent-plane distance of w = W/ΣW is (tm = 1 + θ (ln θ − 1) +
+    /// θ TPD(w) with θ = ΣW, own rearrangement), so any negative value on
+    /// the way proves a split. A trial stops when it returns to the feed or
+    /// moves by less than 1e-10 in ln W, after at most 300 steps each.
+    /// Components with zᵢ = 0 stay absent; a single component is stable.
+    pub fn stability(&self, z: &[f64; MAX], t: f64, p: f64) -> Stability {
+        let n = self.n;
+        let feed = self.phase(z, t, p, Root::Stable);
+        let mut d = [0.0; MAX];
+        let mut active = 0;
+        for i in 0..n {
+            if z[i] > 0.0 {
+                d[i] = math::ln(z[i]) + feed.ln_phi[i];
+                active += 1;
+            }
+        }
+        let mut best = Stability {
+            tm: 0.0,
+            w: *z,
+            lighter: false,
+            steps: 0,
+        };
+        if active < 2 {
+            return best;
+        }
+        let lk = self.wilson(t, p);
+        for sign in [1.0, -1.0] {
+            let mut lw = [0.0; MAX];
+            for i in 0..n {
+                if z[i] > 0.0 {
+                    lw[i] = math::ln(z[i]) + sign * lk[i];
+                }
+            }
+            for _ in 0..STABILITY_STEPS {
+                best.steps += 1;
+                let mut wv = [0.0; MAX];
+                let mut s = 0.0;
+                for i in 0..n {
+                    if z[i] > 0.0 {
+                        wv[i] = math::exp(lw[i]);
+                        s += wv[i];
+                    }
+                }
+                let mut w = [0.0; MAX];
+                for i in 0..n {
+                    w[i] = wv[i] / s;
+                }
+                let ph = self.phase(&w, t, p, Root::Stable);
+                let mut tm = 1.0;
+                let mut dmax: f64 = 0.0;
+                let mut back = 0.0;
+                let mut next = lw;
+                for i in 0..n {
+                    if z[i] > 0.0 {
+                        tm += wv[i] * (lw[i] + ph.ln_phi[i] - d[i] - 1.0);
+                        next[i] = d[i] - ph.ln_phi[i];
+                        dmax = dmax.max((next[i] - lw[i]).abs());
+                        let r = math::ln(w[i] / z[i]);
+                        back += r * r;
+                    }
+                }
+                if tm < best.tm {
+                    best.tm = tm;
+                    best.w = w;
+                    best.lighter = ph.v > feed.v;
+                }
+                if back < 1e-8 || dmax < 1e-10 {
+                    break;
+                }
+                lw = next;
+            }
+        }
+        best
+    }
+
+    /// The residual F(ln K) = ln K − (ln φ^l(x) − ln φ^v(y)) of a flash of
+    /// the feed `z`, with β from Rachford-Rice and both phases on the root
+    /// of the lower Gibbs energy.
+    fn flash_residual(
+        &self,
+        z: &[f64; MAX],
+        t: f64,
+        p: f64,
+        lnk: &[f64; MAX],
+    ) -> Option<FlashResidual> {
+        let n = self.n;
+        let beta = rachford_rice(n, z, lnk)?;
+        let mut x = [0.0; MAX];
+        let mut y = [0.0; MAX];
+        let mut sx = 0.0;
+        let mut sy = 0.0;
+        for i in 0..n {
+            if z[i] > 0.0 {
+                let k = math::exp(lnk[i]);
+                x[i] = z[i] / (1.0 + beta * (k - 1.0));
+                y[i] = k * x[i];
+                sx += x[i];
+                sy += y[i];
+            }
+        }
+        for i in 0..n {
+            x[i] /= sx;
+            y[i] /= sy;
+        }
+        let l = self.phase(&x, t, p, Root::Stable);
+        let v = self.phase(&y, t, p, Root::Stable);
+        let mut f = [0.0; MAX];
+        for i in 0..n {
+            if z[i] > 0.0 {
+                f[i] = lnk[i] - (l.ln_phi[i] - v.ln_phi[i]);
+            }
+        }
+        Some((f, beta, x, y, l, v))
+    }
+
+    /// The isothermal flash of the feed `z` at `t` (K) and `p` (Pa): the
+    /// stability test first; on a split, K from the trial phase (or from
+    /// `start`, ln K of a nearby state), successive substitution ln K ←
+    /// ln φ^l(x) − ln φ^v(y) with β from Rachford-Rice, finished by Newton's
+    /// method on ln K with a difference Jacobian, each a bounded number of
+    /// steps. When the K values collapse to 1 or β leaves 0 to 1 the feed
+    /// is one phase.
+    pub fn flash(&self, z: &[f64; MAX], t: f64, p: f64, start: Option<&[f64; MAX]>) -> Flash {
+        let n = self.n;
+        let one = || Flash::One(self.phase(z, t, p, Root::Stable));
+        let st = self.stability(z, t, p);
+        if !st.unstable() {
+            return one();
+        }
+        let mut lnk = [0.0; MAX];
+        if let Some(s) = start {
+            lnk = *s;
+        } else {
+            for i in 0..n {
+                if z[i] > 0.0 {
+                    let r = math::ln(st.w[i] / z[i]);
+                    lnk[i] = if st.lighter { r } else { -r };
+                }
+            }
+        }
+        let trivial = |lk: &[f64; MAX]| {
+            let mut s = 0.0;
+            for i in 0..n {
+                if z[i] > 0.0 {
+                    s += lk[i] * lk[i];
+                }
+            }
+            s < TRIVIAL
+        };
+        let mut steps = st.steps;
+        let mut done = false;
+        for _ in 0..FLASH_SUBSTITUTIONS {
+            steps += 1;
+            let Some((f, ..)) = self.flash_residual(z, t, p, &lnk) else {
+                return one();
+            };
+            let mut dmax: f64 = 0.0;
+            for i in 0..n {
+                lnk[i] -= f[i];
+                dmax = dmax.max(f[i].abs());
+            }
+            if trivial(&lnk) {
+                return one();
+            }
+            if dmax < TOL {
+                done = true;
+                break;
+            }
+        }
+        let mut it = 0;
+        while !done && it < NEWTON {
+            it += 1;
+            steps += 1;
+            let Some((f, ..)) = self.flash_residual(z, t, p, &lnk) else {
+                return Flash::NotConverged;
+            };
+            let mut jac = [[0.0; MAX]; MAX];
+            for c in 0..n {
+                if z[c] <= 0.0 {
+                    jac[c][c] = 1.0;
+                    continue;
+                }
+                let h = 1e-7 * (1.0 + lnk[c].abs());
+                let mut lp = lnk;
+                lp[c] += h;
+                let Some((fp, ..)) = self.flash_residual(z, t, p, &lp) else {
+                    return Flash::NotConverged;
+                };
+                for r in 0..n {
+                    jac[r][c] = (fp[r] - f[r]) / h;
+                }
+            }
+            let Some(dl) = solve(n, &mut jac, &f) else {
+                return Flash::NotConverged;
+            };
+            let mut dmax: f64 = 0.0;
+            for i in 0..n {
+                lnk[i] += dl[i];
+                dmax = dmax.max(dl[i].abs());
+            }
+            if trivial(&lnk) {
+                return one();
+            }
+            if dmax < TOL {
+                done = true;
+            }
+        }
+        if !done {
+            return Flash::NotConverged;
+        }
+        let Some((_, beta, x, y, l, v)) = self.flash_residual(z, t, p, &lnk) else {
+            return one();
+        };
+        if !(beta > 0.0 && beta < 1.0) {
+            return one();
+        }
+        // the lighter phase is y: swap when the roots say otherwise
+        let s = if v.v >= l.v {
+            Split {
+                beta,
+                x,
+                y,
+                ln_k: lnk,
+                l,
+                v,
+                steps,
+            }
+        } else {
+            let mut nk = [0.0; MAX];
+            for i in 0..n {
+                nk[i] = -lnk[i];
+            }
+            Split {
+                beta: 1.0 - beta,
+                x: y,
+                y: x,
+                ln_k: nk,
+                l: v,
+                v: l,
+                steps,
+            }
+        };
+        Flash::Two(s)
+    }
+}
+
+/// How a mixing line treats the phases (D319, VA.4).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Mixing {
+    /// One phase of the equation of state at every mixture fraction, the
+    /// root of the lower Gibbs energy (no phase split: "frozen").
+    Frozen,
+    /// Phase equilibrium of the equation of state (isobaric and
+    /// isenthalpic flash).
+    Equilibrium,
+    /// Ideal gas and ideal solution: the liquid is pure fuel with the
+    /// enthalpy h^ig − L_sat of the equation of state (L_sat = h_v − h_l at
+    /// the pure fuel's saturation pressure), the vapour fraction of the fuel
+    /// over it is p_sat/p (Raoult's law), no gas dissolves.
+    Ideal,
+}
+
+/// A state of a mixing line.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct MixingPoint {
+    /// Mixture fraction Z: the mass fraction that comes from the fuel
+    /// stream.
+    pub z: f64,
+    /// Temperature (K).
+    pub t: f64,
+    /// Specific enthalpy of the mixture, Z h_fuel + (1 − Z) h_gas (J/kg).
+    pub h: f64,
+    /// The enthalpy of the state found minus `h` (J/kg): the error of the
+    /// energy balance.
+    pub residual: f64,
+    /// Mass fraction of the denser phase (0 for one phase).
+    pub liquid: f64,
+    /// Density of the mixture (kg/m³), both phases together.
+    pub rho: f64,
+    /// Two phases (equilibrium and ideal), or the one phase of the frozen
+    /// line fails the stability test.
+    pub split: bool,
+}
+
+/// The two streams of an adiabatic mixing line at one pressure: the fuel
+/// (component 0, pure) and the ambient gas.
+#[derive(Clone, Copy)]
+pub struct Streams<'a> {
+    /// The mixture of the fuel and the gases.
+    pub mix: &'a Mixture,
+    /// The ideal-gas molar enthalpy hᵢ^ig(T) of component i (J/mol), with
+    /// the same reference for all components (the enthalpies of formation
+    /// cancel in the balance; only differences of temperature enter).
+    pub ideal: &'a dyn Fn(usize, f64) -> f64,
+    /// Pressure (Pa).
+    pub p: f64,
+    /// Temperature of the fuel (K).
+    pub t_fuel: f64,
+    /// Temperature of the gas (K).
+    pub t_gas: f64,
+    /// Mole fractions of the ambient gas (component 0 zero).
+    pub gas: [f64; MAX],
+}
+
+impl Streams<'_> {
+    /// Molar enthalpy of a phase: Σ xᵢ hᵢ^ig(T) + h − h^ig.
+    fn molar_h(&self, x: &[f64; MAX], t: f64, ph: &Phase) -> f64 {
+        let mut h = ph.h_dep;
+        for (i, &xi) in x.iter().enumerate().take(self.mix.n) {
+            if xi > 0.0 {
+                h += xi * (self.ideal)(i, t);
+            }
+        }
+        h
+    }
+
+    /// Latent heat (J/mol) of the pure fuel at `t` at its saturation
+    /// pressure and that pressure; `None` at or above its critical
+    /// temperature.
+    fn latent(&self, t: f64) -> Option<(f64, f64)> {
+        let pure = Mixture::new(&[self.mix.c[0]]);
+        let ps = pure.saturation_pressure(0, t)?;
+        let mut x = [0.0; MAX];
+        x[0] = 1.0;
+        let l = pure.phase(&x, t, ps, Root::Liquid);
+        let v = pure.phase(&x, t, ps, Root::Vapour);
+        Some((v.h_dep - l.h_dep, ps))
+    }
+
+    /// Specific enthalpies (J/kg) of the fuel and the gas stream.
+    pub fn stream_enthalpies(&self, model: Mixing) -> (f64, f64) {
+        let m = self.mix;
+        let mut f = [0.0; MAX];
+        f[0] = 1.0;
+        let mf = m.c[0].molar_mass;
+        let mg = m.molar_mass(&self.gas);
+        let hf_ig = (self.ideal)(0, self.t_fuel);
+        let mut hg_ig = 0.0;
+        for i in 1..m.n {
+            if self.gas[i] > 0.0 {
+                hg_ig += self.gas[i] * (self.ideal)(i, self.t_gas);
+            }
+        }
+        match model {
+            Mixing::Ideal => {
+                let l = self.latent(self.t_fuel).map_or(0.0, |(l, _)| l);
+                ((hf_ig - l) / mf, hg_ig / mg)
+            }
+            Mixing::Frozen | Mixing::Equilibrium => {
+                let pf = m.phase(&f, self.t_fuel, self.p, Root::Stable);
+                let pg = m.phase(&self.gas, self.t_gas, self.p, Root::Stable);
+                ((hf_ig + pf.h_dep) / mf, (hg_ig + pg.h_dep) / mg)
+            }
+        }
+    }
+
+    /// Mole fractions of the mixture at the mixture fraction `z`.
+    pub fn composition(&self, z: f64) -> [f64; MAX] {
+        let m = self.mix;
+        let mg = m.molar_mass(&self.gas);
+        let nf = z / m.c[0].molar_mass;
+        let ng = (1.0 - z) / mg;
+        let mut x = [0.0; MAX];
+        x[0] = nf / (nf + ng);
+        for (xi, gi) in x.iter_mut().zip(self.gas.iter()).take(m.n).skip(1) {
+            *xi = ng * gi / (nf + ng);
+        }
+        x
+    }
+
+    /// Specific enthalpy (J/kg), liquid mass fraction, density and the
+    /// split flag of the mixture `x` at `t`.
+    fn state(&self, x: &[f64; MAX], t: f64, model: Mixing) -> (f64, f64, f64, bool) {
+        let m = self.mix;
+        let mm = m.molar_mass(x);
+        match model {
+            Mixing::Frozen => {
+                let ph = m.phase(x, t, self.p, Root::Stable);
+                (self.molar_h(x, t, &ph) / mm, 0.0, mm / ph.v, false)
+            }
+            Mixing::Equilibrium => match m.flash(x, t, self.p, None) {
+                Flash::Two(s) => {
+                    let h = s.beta * self.molar_h(&s.y, t, &s.v)
+                        + (1.0 - s.beta) * self.molar_h(&s.x, t, &s.l);
+                    let ml = (1.0 - s.beta) * m.molar_mass(&s.x);
+                    let v = s.beta * s.v.v + (1.0 - s.beta) * s.l.v;
+                    (h / mm, ml / mm, mm / v, true)
+                }
+                Flash::One(ph) => (self.molar_h(x, t, &ph) / mm, 0.0, mm / ph.v, false),
+                Flash::NotConverged => {
+                    let ph = m.phase(x, t, self.p, Root::Stable);
+                    (self.molar_h(x, t, &ph) / mm, 0.0, mm / ph.v, false)
+                }
+            },
+            Mixing::Ideal => {
+                let mut h = 0.0;
+                for (i, &xi) in x.iter().enumerate().take(m.n) {
+                    if xi > 0.0 {
+                        h += xi * (self.ideal)(i, t);
+                    }
+                }
+                let v_gas = R * t / self.p;
+                let Some((l, ps)) = self.latent(t) else {
+                    return (h / mm, 0.0, mm / v_gas, false);
+                };
+                let y0 = ps / self.p;
+                if x[0] <= y0 || y0 >= 1.0 {
+                    return (h / mm, 0.0, mm / v_gas, false);
+                }
+                // moles per mole of mixture: gas 1 − x₀, fuel vapour
+                // y₀/(1 − y₀) of that, the rest of the fuel liquid
+                let nv = y0 / (1.0 - y0) * (1.0 - x[0]);
+                let nl = x[0] - nv;
+                let mut one = [0.0; MAX];
+                one[0] = 1.0;
+                let pure = Mixture::new(&[m.c[0]]);
+                let lv = pure.phase(&one, t, self.p, Root::Liquid).v;
+                let v = (1.0 - nl) * v_gas + nl * lv;
+                let ml = nl * m.c[0].molar_mass;
+                ((h - nl * l) / mm, ml / mm, mm / v, true)
+            }
+        }
+    }
+
+    /// The state of the mixing line at the mixture fraction `z`: the
+    /// temperature at which the enthalpy of the mixture equals Z h_fuel +
+    /// (1 − Z) h_gas, by bisection between the stream temperatures (widened
+    /// when needed) down to adjacent floating-point numbers, so the energy
+    /// balance holds to round-off wherever h(T) is continuous.
+    pub fn point(&self, z: f64, model: Mixing) -> MixingPoint {
+        let (hf, hg) = self.stream_enthalpies(model);
+        let target = z * hf + (1.0 - z) * hg;
+        let x = self.composition(z);
+        let f = |t: f64| self.state(&x, t, model).0 - target;
+        let mut lo = self.t_fuel.min(self.t_gas);
+        let mut hi = self.t_fuel.max(self.t_gas);
+        for _ in 0..40 {
+            if f(lo) <= 0.0 || lo <= 20.0 {
+                break;
+            }
+            lo -= 10.0;
+        }
+        for _ in 0..40 {
+            if f(hi) >= 0.0 {
+                break;
+            }
+            hi += 10.0;
+        }
+        for _ in 0..200 {
+            let mid = 0.5 * (lo + hi);
+            if mid <= lo || mid >= hi {
+                break;
+            }
+            if f(mid) > 0.0 {
+                hi = mid;
+            } else {
+                lo = mid;
+            }
+        }
+        let t = if f(lo).abs() <= f(hi).abs() { lo } else { hi };
+        let (h, liquid, rho, two) = self.state(&x, t, model);
+        let split = match model {
+            Mixing::Frozen => self.mix.stability(&x, t, self.p).unstable(),
+            Mixing::Equilibrium | Mixing::Ideal => two,
+        };
+        MixingPoint {
+            z,
+            t,
+            h: target,
+            residual: h - target,
+            liquid,
+            rho,
+            split,
+        }
+    }
+
+    /// The smallest mixture fraction at which the line splits (two phases;
+    /// for the frozen line, a phase that fails the stability test): the
+    /// saturation mixture fraction Z_sat of a mixing-limited liquid length
+    /// (Siebers 1999, B = Z_sat/(1 − Z_sat)). A scan in steps of 0.02 and
+    /// 40 bisections; `None` if the line does not split.
+    pub fn saturation(&self, model: Mixing) -> Option<f64> {
+        let mut prev = 0.0;
+        for k in 1..50 {
+            let z = f64::from(k) / 50.0;
+            if self.point(z, model).split {
+                let (mut lo, mut hi) = (prev, z);
+                for _ in 0..40 {
+                    let mid = 0.5 * (lo + hi);
+                    if self.point(mid, model).split {
+                        hi = mid;
+                    } else {
+                        lo = mid;
+                    }
+                }
+                return Some(0.5 * (lo + hi));
+            }
+            prev = z;
+        }
+        None
+    }
+}
+
 /// Critical constants and acentric factors of the gases of the ambient
 /// (species names of the flow's species data). Critical points from the
 /// reference equations of state; acentric factors from the tables of
@@ -743,6 +1393,7 @@ pub mod gases {
 /// `docs/verification/DATA_SOURCES.md`, section 3e).
 pub mod fuels {
     use super::Component;
+    use crate::species::Species;
 
     /// A fuel of the high-pressure equilibrium.
     #[derive(Clone, Copy, Debug, PartialEq)]
@@ -754,6 +1405,9 @@ pub mod fuels {
         /// k_ij with the gases of `super::gases`, by species name; a gas
         /// that is not listed takes k_ij = 0 unless the case sets one.
         pub k: &'static [(&'static str, f64)],
+        /// The vapour as an ideal gas: NASA-7 polynomials and
+        /// Lennard-Jones data, for the enthalpies of a mixing line.
+        pub ideal_gas: Species,
     }
 
     /// n-dodecane: T_c = 658.65 K, p_c = 1.83 MPa and ω = 0.573 of Ambrose
@@ -761,7 +1415,13 @@ pub mod fuels {
     /// Mathias-Copeman α follows within 1 % from 300 K to 655 K;
     /// k_ij(N₂) = 0.205 fitted to the bubble points of García-Córdova,
     /// Justo-García, García-Flores and García-Sánchez (2011) up to 20 MPa
-    /// (344 K to 594 K; mean deviation 2.7 % in pressure).
+    /// (344 K to 594 K; mean deviation 2.7 % in pressure). The ideal gas:
+    /// c_p of Scott (1974) by his CH₂ increment from n-nonane and n-decane
+    /// (NIST WebBook), within 0.11 % of the reference equation of Lemmon
+    /// and Huber (2004) at 300 to 700 K; the NASA-7 fit (within 0.28 %),
+    /// a₆ from Δ_f H° = −290.9 kJ/mol, a₇ from S° = 622.50 J/(mol K)
+    /// (NIST WebBook), Lennard-Jones data by Tee, Gotoh and Stewart (1966):
+    /// written by `tools/data/dodecane_ideal_gas.py`.
     pub const N_DODECANE: Fuel = Fuel {
         name: "n-dodecane",
         component: Component {
@@ -769,6 +1429,32 @@ pub mod fuels {
             ..Component::new(658.65, 1.83e6, 0.573, 0.170_334)
         },
         k: &[("N2", 0.205)],
+        ideal_gas: Species {
+            molar_mass: 0.170_334,
+            t_range: [273.15, 1000.0, 1500.0],
+            low: [
+                8.188_509_276_7e+00,
+                6.192_592_478_3e-02,
+                1.344_050_352_0e-04,
+                -2.169_816_494_6e-07,
+                8.846_824_376_0e-11,
+                -4.098_147_708_7e+04,
+                5.519_801_006_6e+00,
+            ],
+            high: [
+                -1.754_171_607_7e+02,
+                7.161_772_083_1e-01,
+                -7.908_491_224_2e-04,
+                4.051_954_953_7e-07,
+                -7.910_035_693_4e-11,
+                1.886_037_663_3e+03,
+                9.166_984_013_4e+02,
+            ],
+            well_depth: 585.22,
+            diameter: 7.6447,
+            dipole: 0.0,
+            geometry: 2,
+        },
     };
 
     /// The fuel of a liquid name, if its high-pressure data are known.
@@ -970,5 +1656,97 @@ mod tests {
         // below the fuel's critical pressure the droplet boils instead
         let st = surface(&m, 700.0, 1e6, &r, None);
         assert!(!matches!(st, SurfaceState::TwoPhase(_)), "{st:?}");
+    }
+
+    #[test]
+    fn rachford_rice_finds_the_vapour_fraction_of_a_known_split() {
+        // K = (2, 1/2), z = (1/2, 1/2): 1/(1 + β) = 1/(2 − β), β = 1/2
+        let mut z = [0.0; MAX];
+        z[0] = 0.5;
+        z[1] = 0.5;
+        let mut lk = [0.0; MAX];
+        lk[0] = 2.0f64.ln();
+        lk[1] = 0.5f64.ln();
+        let b = rachford_rice(2, &z, &lk).unwrap();
+        assert!((b - 0.5).abs() < 1e-15, "{b}");
+        // all K above 1: no split
+        lk[1] = 0.1;
+        assert!(rachford_rice(2, &z, &lk).is_none());
+    }
+
+    #[test]
+    fn the_pressure_is_the_inverse_of_the_phase_volume() {
+        let m = binary(0.205);
+        let mut x = [0.0; MAX];
+        x[0] = 0.3;
+        x[1] = 0.7;
+        for (t, p, root) in [(700.0, 6e6, Root::Vapour), (400.0, 6e6, Root::Liquid)] {
+            let ph = m.phase(&x, t, p, root);
+            let back = m.pressure(&x, t, ph.v);
+            assert!((back / p - 1.0).abs() < 1e-9, "{t} K: {back} {p}");
+        }
+    }
+
+    #[test]
+    fn the_stability_test_tells_one_phase_from_two() {
+        let m = binary(0.205);
+        let mut z = [0.0; MAX];
+        // pure fuel and pure nitrogen: one component, stable
+        z[0] = 1.0;
+        assert!(!m.stability(&z, 450.0, 6e6).unstable());
+        // hot nitrogen with a little fuel vapour: stable
+        z[0] = 0.02;
+        z[1] = 0.98;
+        assert!(!m.stability(&z, 800.0, 6e6).unstable());
+        // half fuel, half nitrogen at 450 K: liquid and gas
+        z[0] = 0.5;
+        z[1] = 0.5;
+        let st = m.stability(&z, 450.0, 6e6);
+        assert!(st.unstable(), "{st:?}");
+    }
+
+    #[test]
+    fn a_binary_flash_gives_the_phases_of_the_surface_equilibrium() {
+        // two components at fixed T and p: the coexisting compositions do
+        // not depend on the feed, and they are those of the droplet
+        // surface with nitrogen as the only gas
+        let m = binary(0.205);
+        let (t, p) = (500.0, 6e6);
+        let mut r = [0.0; MAX];
+        r[1] = 1.0;
+        let SurfaceState::TwoPhase(s) = surface(&m, t, p, &r, None) else {
+            panic!()
+        };
+        for z0 in [0.2, 0.5, 0.8] {
+            let mut z = [0.0; MAX];
+            z[0] = z0;
+            z[1] = 1.0 - z0;
+            let Flash::Two(f) = m.flash(&z, t, p, None) else {
+                panic!("{z0}: no split");
+            };
+            assert!(
+                (f.x[0] - s.x[0]).abs() < 1e-9,
+                "{z0}: x {} {}",
+                f.x[0],
+                s.x[0]
+            );
+            assert!(
+                (f.y[0] - s.y[0]).abs() < 1e-9,
+                "{z0}: y {} {}",
+                f.y[0],
+                s.y[0]
+            );
+            // mass balance and the denser phase second
+            for (i, zi) in z.iter().enumerate().take(2) {
+                let back = f.beta * f.y[i] + (1.0 - f.beta) * f.x[i];
+                assert!((back - zi).abs() < 1e-12, "{z0}, {i}: {back}");
+            }
+            assert!(f.l.v < f.v.v);
+        }
+        // a feed outside the two-phase range is one phase
+        let mut z = [0.0; MAX];
+        z[0] = 0.5 * s.y[0];
+        z[1] = 1.0 - z[0];
+        assert!(matches!(m.flash(&z, t, p, None), Flash::One(_)));
     }
 }
