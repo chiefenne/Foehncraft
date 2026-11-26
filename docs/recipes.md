@@ -193,6 +193,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="spray-a-surface"></a>314 | [Evaporate fuel droplets at high ambient pressure](recipes/sprays.md#spray-a-surface) | [Lagrangian sprays](recipes/sprays.md) |
 | <a id="cut-moments"></a>315 | [Cut a mesh exactly by an STL surface](recipes/immersed.md#cut-moments) | [Immersed bodies](recipes/immersed.md) |
 | <a id="spray-cooler-chat"></a>316 | [Ask an assistant an engineering question: size a spray cooler](recipes/runs.md#spray-cooler-chat) | [Run control and health](recipes/runs.md) |
+| <a id="vof-two-fluids"></a>317 | [Put water and air into one case](recipes/multiphase.md#vof-two-fluids) | [Two fluids (volume of fluid)](recipes/multiphase.md) |
 | <a id="spray-breakup"></a>318 | [Break a fuel jet up into drops (KH-ACT, KH-RT)](recipes/sprays.md#spray-breakup) | [Lagrangian sprays](recipes/sprays.md) |
 | <a id="spray-ecn"></a>319 | [Report the liquid length and the vapour penetration (ECN)](recipes/sprays.md#spray-ecn) | [Lagrangian sprays](recipes/sprays.md) |
 | <a id="spray-a-mixing-line"></a>320 | [Check the thermodynamics of a high-pressure spray before the CFD](recipes/sprays.md#spray-a-mixing-line) | [Lagrangian sprays](recipes/sprays.md) |

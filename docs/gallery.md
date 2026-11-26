@@ -181,6 +181,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | <a id="spray-a-surface"></a>314 | [A fuel droplet's surface at diesel pressure](gallery/sprays.md#spray-a-surface) | [Lagrangian sprays](gallery/sprays.md) |
 | <a id="sdf-benchmark-cut"></a>315 | [Signed distance by three methods, and a sphere cut exactly out of a mesh](gallery/immersed.md#sdf-benchmark-cut) | [Immersed bodies](gallery/immersed.md) |
 | <a id="spray-cooler-chat"></a>316 | [An assistant sizes a spray cooler from one question](gallery/runs.md#spray-cooler-chat) | [Run control, health and adjoint readiness](gallery/runs.md) |
+| <a id="vof-dam-break"></a>317 | [A water column collapses in air, against Martin & Moyce](gallery/multiphase.md#vof-dam-break) | [Two fluids (volume of fluid)](gallery/multiphase.md) |
 | <a id="spray-breakup"></a>318 | [A fuel spray breaks up in dense nitrogen](gallery/sprays.md#spray-breakup) | [Lagrangian sprays](gallery/sprays.md) |
 | <a id="spray-ecn"></a>319 | [Liquid length and vapour penetration as the ECN defines them](gallery/sprays.md#spray-ecn) | [Lagrangian sprays](gallery/sprays.md) |
 | <a id="spray-a-mixing-line"></a>320 | [Where the last liquid evaporates: the Spray A mixing line](gallery/sprays.md#spray-a-mixing-line) | [Lagrangian sprays](gallery/sprays.md) |

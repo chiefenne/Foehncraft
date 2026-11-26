@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**150 features: 50 verified, 97 partial, 3 unverified.**
+**151 features: 50 verified, 98 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -175,6 +175,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Structures | [Unilateral contact with rigid seats and stops: exact in statics, penalty at the end of each generalised-α step (L53, MS5 part 4)](#structure-contact) | partial |
 | Structures | [Temperatures of a solid region of a flow case as the thermal load of beams, shells and solids: VTKHDF cell field, linear least-squares fit at the nodes (L53, MS6 part 1)](#structure-temperature-field) | partial |
 | Moving meshes and solids | [Deforming meshes with a prescribed node displacement, and the piston (stage MS0)](#mesh-deforming) | partial |
+| Multiphase | [Two fluids by the volume of fluid: THINC, CICSAM, balanced gravity and surface tension (L3, MP1, D293)](#multiphase-vof) | partial |
 
 ## Meshes
 
@@ -2675,3 +2676,29 @@ Gaps:
 - the closed-volume piston (variable density, stage 7c) neither restarts nor runs on ranks: the variable density has no restart yet
 - turbulence models and passive scalars run on the moving mesh but are not checked against a reference; the GPU backend has a Colab check (tools/notebooks/motion_colab.ipynb) that has not been run on a GPU yet
 - the cooled piston has no reference data (no heat-transfer correlation compared yet)
+
+## Multiphase
+
+<a id="multiphase-vof"></a>
+
+### Two fluids by the volume of fluid: THINC, CICSAM, balanced gravity and surface tension (L3, MP1, D293)
+
+**partial** (gaps written) · id `multiphase.vof` · switch `[vof] with two [[vof.phase]] tables in a transient case` · decisions D154, D293
+
+- exact: [`thinc_matches_quadrature`](../../crates/foehncraft-kernels/src/vof.rs): the time-integrated THINC face value against numerical quadrature to 2e-6, bounded in [0, 1]
+- consistency: [`zalesak_disk_thinc_cicsam_upwind`](../../crates/foehncraft-flow/tests/vof.rs): Zalesak's slotted disk, one revolution on 100 x 100 hex: L1 error THINC 0.048, CICSAM 0.19, upwind 1.10; volume conserved to round-off (the clipped and boundary parts booked); alpha in [0, 1]
+- consistency: [`zalesak_disk_thinc_on_polygons`](../../crates/foehncraft-flow/tests/vof.rs): the disk on a polygon mesh: THINC L1 error 0.09
+- consistency: [`zalesak_disk_level_set_benchmark`](../../crates/foehncraft-flow/tests/vof.rs): the computer-graphics benchmark: a semi-Lagrangian level set (Catmull-Rom, exact back-trace) on the same disk, L1 error 0.27
+- reference-data: [`dam_break_martin_moyce`](../../crates/foehncraft-flow/tests/vof.rs): the collapse of a water column (n^2 = 2, density ratio 828) on h = a/8: surge front within 20 % of Martin & Moyce 1952 at every measured point, water volume conserved to 1e-9
+- exact: [`static_drop_laplace_jump`](../../crates/foehncraft-flow/tests/vof.rs): a 2D water drop in air at rest: Laplace jump 32.2 Pa against sigma/R = 35 Pa, spurious currents 0.18 m/s
+- contract (diagnostics): [`refusals`](../../crates/foehncraft-flow/tests/vof.rs): steady runs, turbulence, one phase, a bad Courant number and an inflow on an unknown boundary are refused with VOF001 and VOF002
+- reference-data: [`vof_dam_break`](../../examples/cases/flow/vof_dam_break.toml): h = a/16: the surge front 5 to 17 % ahead of Martin & Moyce 1952, the same curve on a/32 (passes in CI (set long), not yet in the manual) ([results](../gallery/multiphase.md#vof-dam-break))
+- contract (diagnostics): [`vof_static_drop`](../../examples/cases/flow/vof_static_drop.toml): the static drop of the test as a case (passes in CI (set linux-3), not yet in the manual) ([results](../recipes/multiphase.md#vof-two-fluids))
+
+Gaps:
+
+- the dam-break front runs 5 to 17 % ahead of the measurements on meshes a/16 and a/32 alike (the early part of the gap may be the lifting time of the experiment's gate); the measured points are read from the text of the paper and still to be checked against the scan
+- the static drop keeps spurious currents of 0.18 m/s (Ca ~ 3e-3) and a Laplace jump 8 % low: the curvature is from twice-smoothed alpha, no height functions yet
+- isothermal and laminar only: no energy, phase change (MP2), turbulence, scalars, sprays, immersed bodies, rotating zones, moving meshes, periodic boundaries or the coupled algorithm (VOF002)
+- one process, no restart; the GPU (PTX) entries are built but not yet run on a GPU
+- the kinetic-energy balance (BAL003) is not adapted to the variable density of the mixture and may warn
