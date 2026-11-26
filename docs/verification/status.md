@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**149 features: 50 verified, 96 partial, 3 unverified.**
+**150 features: 50 verified, 97 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -156,6 +156,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Sprays | [Liquid property library and the 1/3-rule film state of the evaporation (D320, D321)](#sprays-liquid-library) | partial |
 | Sprays | [Spray breakup: KH-ACT and KH-RT with blob injection, TAB distortion and dynamic drag (SP6, D300 to D309)](#sprays-breakup) | partial |
 | Sprays | [High-pressure droplet surface: Peng-Robinson phase equilibrium and latent heat (Spray A, SA1, D311, D312, D314)](#sprays-high-pressure-surface) | partial |
+| Sprays | [ECN liquid length (projected liquid volume) and vapour penetration (Spray A, SA3, D315)](#sprays-ecn-diagnostics) | partial |
 | Flow models | [Porous regions with a direction-dependent Darcy-Forchheimer resistance (D270, PM1)](#porous-darcy-forchheimer) | partial |
 | Flow models | [Gas and matrix temperatures in porous regions, monolithic (D271, D272, PM2)](#porous-two-temperatures) | partial |
 | Flow models | [Species transport of an ideal-gas mixture with mixture properties (L2, steam furnace SF1)](#species-transport) | partial |
@@ -2234,6 +2235,29 @@ Gaps:
 - the gas solver stays ideal (D317): the departure enthalpy of the dense vapour enters the gas as a sensible-heat deficit
 - no flow case yet: the n-dodecane vapour species data come with the liquid library; VA.4 to VA.9 (mixing line, Siebers liquid length, the Spray A case) are later stages
 - built-in high-pressure data for n-dodecane only; other liquids take the plain 1978 kappa (water: 11 % low on its vapour pressure at 320 K)
+
+<a id="sprays-ecn-diagnostics"></a>
+
+### ECN liquid length (projected liquid volume) and vapour penetration (Spray A, SA3, D315)
+
+**partial** (gaps written) · id `sprays.ecn-diagnostics` · switch `[spray.ecn]` · decisions D315
+
+- exact: [`the_liquid_length_of_a_linear_plv_profile_is_exact`](../../crates/foehncraft-particles/tests/ecn.rs): parcels with a linearly falling liquid volume: the PLV of every bin to 1e-12 and both liquid lengths (0.95 and 0.5 of the line) to 1e-12 m
+- exact: [`the_volume_along_the_line_of_sight_is_summed_and_across_it_is_not`](../../crates/foehncraft-particles/tests/ecn.rs): two parcels along the line of sight add in one bin, two across it fall in two; the threshold is reached at the summed bin
+- exact: [`the_default_line_of_sight_is_across_the_axis`](../../crates/foehncraft-particles/tests/ecn.rs): the default and a given line of sight are unit vectors across the axis (to 1e-15)
+- exact: [`the_vapour_penetration_is_the_farthest_cell_at_the_threshold`](../../crates/foehncraft-particles/tests/ecn.rs): the vapour penetration is the farthest axial distance of a cell at or above 0.1 % on a slanted axis (to 1e-15), behind the nozzle and off threshold ignored
+- contract (bitwise): [`the_liquid_length_does_not_depend_on_the_parcel_order`](../../crates/foehncraft-particles/tests/ecn.rs): the parcels in reverse order give the same bits; without [spray.ecn] no length is written
+- contract (diagnostics): [`the_ecn_table_is_checked`](../../crates/foehncraft-particles/tests/ecn.rs): negative thresholds, a line of sight along an injector, a vapour fraction outside (0, 1) and the steady spray mode are refused with the key named
+- consistency: [`the_ecn_diagnostics_are_written_per_step`](../../crates/foehncraft-flow/tests/spray_evaporation.rs): the evaporating duct writes both liquid lengths and the vapour penetration per step; the smaller threshold lies farther out, within the farthest parcel, and the vapour inside the duct
+- consistency: [`spray_chamber_ecn`](../../examples/cases/flow/spray_chamber_ecn.toml): water sprayed into still air at 300 C: the liquid lengths settle while the vapour penetration keeps growing (passes in CI (set long), not yet in the manual) ([results](../gallery/sprays.md#spray-ecn))
+- contract (schema): [`spray_chamber_ecn_injectors`](../../examples/cases/flow/spray_chamber_ecn_injectors.toml): the included injector file of spray_chamber_ecn ([results](../cases/flow.md#lagrangian-sprays)) **missing**
+
+Gaps:
+
+- the PLV definition of the modelling standard only: the ECN5 path-averaged liquid volume fraction (0.15 % on 0.5 x 0.5 mm paths) and the time- and Favre-averaged fields on the ECN output grid are not built
+- instantaneous values per step: an average over the quasi-steady period is the user's (the CSV has every step)
+- no Spray A comparison yet (VA.8, stage SA6)
+- `spray_chamber_ecn_injectors` has no run in the verification manual or in CI
 
 ## Flow models
 
