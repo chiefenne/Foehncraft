@@ -536,7 +536,7 @@ file:
 [liquid]
 library = "n-heptane"          # "water", "n-heptane", "n-dodecane", "iso-octane"
 temperature = 300.0            # K, the injected liquid
-vapour = "NC7H16"              # its species in [species]: NC7H16, IC8H18, H2O
+vapour = "NC7H16"              # its species in [species]: NC7H16, IC8H18, NC12H26, H2O
 # property_temperature = 330.0 # K of the constant density and c_l (default: temperature)
 ```
 
