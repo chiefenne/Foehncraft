@@ -36,7 +36,10 @@ pub use config::{
 };
 pub use coupling::{CellSources, Delta, Record, StepBooks, limiter_factor};
 pub use datum::{Bound, Datum, DatumTally, HistSpec, Moments, Shape, Stats, Surface, Volume};
-pub use equilibrium::{SurfacePoint, SurfaceTable, TableEnd, fit_mathias_copeman};
+pub use equilibrium::{
+    SurfacePoint, SurfaceTable, TableEnd, fit_mathias_copeman, ideal_gas_species,
+    siebers_liquid_length,
+};
 pub use sizes::SizeDistribution;
 pub use spray::{
     BoundaryRule, BreakupState, Eddy, Env, Gas, GasState, InjectorStats, MomentumFlows, Parcels,

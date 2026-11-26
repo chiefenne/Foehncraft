@@ -1851,7 +1851,7 @@ evidence = [
   { kind = "reference-data", test = "crates/foehncraft-kernels/src/liquids.rs::the_normal_boiling_points_and_critical_ends", what = "normal boiling points within 0.5 K of NIST, psat(tb) = 101.325 kPa to 1e-4, the water fit within 0.2 % of the IAPWS-95 auxiliary equation; L and sigma zero at Tc" },
   { kind = "reference-data", test = "crates/foehncraft-kernels/src/liquids.rs::iso_octane_meets_the_primary_data", what = "iso-octane: vapour pressure within 0.3 % of Willingham et al. (1945), latent heat within 0.6 % of the calorimetry of Majer and Svoboda, sigma of Mulero et al. (2012), tb within 0.5 K of 372.4 K" },
   { kind = "consistency", test = "crates/foehncraft-kernels/src/liquids.rs::the_functions_are_smooth_and_monotone_where_they_must_be", what = "psat rising, density, L and sigma falling with T over the whole range of each liquid" },
-  { kind = "reference-data", test = "crates/foehncraft-flow/src/species.rs::the_spray_vapours_meet_the_nist_data", what = "NC7H16 and IC8H18 ideal-gas c_p within 0.6 % of the NIST data; heptane vapour viscosity at 371 K within 5 % of NIST" },
+  { kind = "reference-data", test = "crates/foehncraft-flow/src/species.rs::the_spray_vapours_meet_the_nist_data", what = "NC7H16, IC8H18 and NC12H26 ideal-gas c_p within 0.6 % of the NIST data; heptane vapour viscosity at 371 K and dodecane vapour viscosity at 500 K within 5 % of NIST" },
   { kind = "exact", test = "crates/foehncraft-kernels/src/evaporation.rs::a_given_surface_fraction_replaces_raoults_law", what = "a surface fraction given to the kernel (the hook of the high-pressure surface) replaces Raoult's law bit for bit; capped at 0.999" },
   { kind = "reference-data", test = "crates/foehncraft-flow/tests/droplet_validation.rs::n_heptane_droplets_against_chauveau_2019", what = "n-heptane droplets of 0.37 mm in N2 at 0.1 MPa, 473 to 748 K, through Spray::evaporation: K with the 1/3 rule +39 to +59 % above the microgravity fit of Chauveau et al. (2019), with far-field properties +93 to +99 %; the 1/3 rule closer at every temperature (a recorded gap, see gaps)", doc = "docs/gallery/sprays.md#spray-liquid-library" },
   { kind = "contract", property = "diagnostics", test = "crates/foehncraft-particles/src/config.rs::a_library_liquid_takes_its_properties_and_checks_its_keys", what = "a library liquid takes its properties, a second application keeps them, water keeps IAPWS-95; an unknown liquid (names listed), a value given beside the library and a property temperature without a library are refused" },
@@ -1864,7 +1864,6 @@ gaps = [
   "density and specific heat of the liquid constant in a run (at property_temperature): no thermal expansion of a heating droplet",
   "iso-octane above about 400 K rests on extrapolated correlations (density, c_l, mu, sigma); not in the NIST fluid system",
   "the film carrier is the start composition of the case, not the local gas of the cell",
-  "no NC12H26 vapour species yet (Spray A stages)",
 ]
 
 [[feature]]
@@ -1908,7 +1907,7 @@ id = "sprays.high-pressure-surface"
 area = "Sprays"
 title = "High-pressure droplet surface: Peng-Robinson phase equilibrium and latent heat (Spray A, SA1, D311, D312, D314)"
 switch = "[spray.evaporation] equilibrium = \"peng-robinson\", [spray.evaporation.peng_robinson]"
-decisions = ["D310", "D311", "D312", "D314"]
+decisions = ["D310", "D311", "D312", "D314", "D319"]
 model = true
 evidence = [
   { kind = "exact", test = "crates/foehncraft-kernels/src/realfluid.rs::the_omegas_are_the_roots_of_the_critical_conditions", what = "Omega_a, Omega_b and Z_c give the triple root of the cubic at the critical point (to 1e-15)" },
@@ -1925,12 +1924,21 @@ evidence = [
   { kind = "exact", test = "crates/foehncraft-particles/tests/high_pressure.rs::the_spray_takes_the_surface_of_the_table_and_closes_its_books", what = "the spray takes y_f p0 and L_lib L_PR/L_PR,sat of the table bit for bit; the gas receives c_l T + L (books close by construction); a droplet evaporates" },
   { kind = "contract", property = "diagnostics", test = "crates/foehncraft-particles/tests/high_pressure.rs::parcels_above_the_critical_mixing_temperature_are_counted", what = "D314: parcels above the critical mixing temperature are counted with their mass and get no latent heat" },
   { kind = "contract", property = "diagnostics", test = "crates/foehncraft-particles/tests/high_pressure.rs::the_keys_are_checked", what = "unknown fuel, partial critical constants, unknown gas and a k_ij of a gas not in the ambient are refused with the key named" },
+  { kind = "exact", test = "crates/foehncraft-kernels/src/realfluid.rs::rachford_rice_finds_the_vapour_fraction_of_a_known_split", what = "Rachford-Rice gives beta = 1/2 for K = (2, 1/2), z = (1/2, 1/2) to 1e-15 and no split when all K exceed 1" },
+  { kind = "consistency", test = "crates/foehncraft-kernels/src/realfluid.rs::a_binary_flash_gives_the_phases_of_the_surface_equilibrium", what = "the flash of N2 + n-dodecane at 500 K, 6 MPa gives the same coexisting phases for three feeds, equal to the droplet surface solution (1e-9), mass balance to 1e-12; a feed outside the two-phase range stays one phase" },
+  { kind = "consistency", test = "crates/foehncraft-kernels/src/realfluid.rs::the_stability_test_tells_one_phase_from_two", what = "Michelsen's tangent-plane test: pure components and hot gas with a little fuel stable, an equimolar mixture at 450 K, 6 MPa unstable" },
+  { kind = "reference-data", test = "crates/foehncraft-particles/tests/mixing_line.rs::the_ideal_gas_of_dodecane_follows_its_heat_capacity_table", what = "n-dodecane ideal gas: Scott (1974) c_p by the CH2 increment, NASA-7 fit within 0.3 % (within 0.24 % of Lemmon and Huber 2004 at 300 to 700 K), enthalpy of formation -290.9 kJ/mol" },
+  { kind = "consistency", test = "crates/foehncraft-flow/src/species.rs::the_dodecane_vapour_is_the_kernel_ideal_gas", what = "the vapour species NC12H26 of the flow's species data is the kernel's n-dodecane ideal gas (same coefficients, range and Lennard-Jones data); its c_p within 0.6 % of Lemmon and Huber (2004) at 500 and 700 K, its kinetic-theory viscosity within 5 % at 500 K (the_spray_vapours_meet_the_nist_data)" },
+  { kind = "exact", test = "crates/foehncraft-particles/tests/mixing_line.rs::va4_the_mixing_line_closes_the_energy_balance", what = "VA.4: 363 K n-dodecane into 900 K N2 at 6 MPa, frozen, equilibrium and ideal: the enthalpy of the state found equals that of the mixed streams to 1e-13 of the stream difference (found 7e-16), the end points are the streams" },
+  { kind = "consistency", test = "crates/foehncraft-particles/tests/mixing_line.rs::va4_the_two_phase_region_of_the_mixing_line", what = "VA.4: Z_sat 0.357 (equilibrium) against 0.320 (ideal); the frozen line equals the equilibrium line before Z_sat and fails the stability test where the flash splits (1e-6); equal fugacities and dissolved N2 in the two-phase region" },
+  { kind = "reference-data", test = "crates/foehncraft-particles/tests/mixing_line.rs::va5_the_siebers_liquid_length_with_our_thermodynamics", what = "VA.5: Siebers (1999) liquid length with our Z_sat at the four measured Spray A conditions (ECN DBI, 210675): 7.2/11.3/4.9/10.7 mm (equilibrium) and 8.2/13.0/5.7/11.3 mm (ideal) against 11.7/16.3/7.4/20.6 mm; the trends with temperature and density right" },
 ]
 gaps = [
+  "VA.5 not met: Siebers' scaling (C_L = 0.62, measured 21.5 deg angle) with our saturation mixture fraction is 30 to 48 % below the measured liquid lengths (equilibrium) and 20 to 45 % (ideal); the real fluid shortens it by 5 to 14 %, away from the measurement; Siebers' own B is not in an open paper",
   "above 550 K Peng-Robinson with one k_ij is 3 to 9 % low on the measured bubble pressures (the measured Henry constant falls faster with T); the surface vapour fraction moves by 2 to 6 % between the k_ij of the whole set and of the hot isotherms",
   "the dissolved gas shifts the equilibrium but is not booked: the liquid stays pure fuel (D311)",
   "the gas solver stays ideal (D317): the departure enthalpy of the dense vapour enters the gas as a sensible-heat deficit",
-  "no flow case yet: the n-dodecane vapour species data come with the liquid library; VA.4 to VA.9 (mixing line, Siebers liquid length, the Spray A case) are later stages",
+  "no flow case yet: VA.7 to VA.9 (order independence with a fuel vapour, the Spray A case) are later stages; the vapour species NC12H26 is in the species data",
   "built-in high-pressure data for n-dodecane only; other liquids take the plain 1978 kappa (water: 11 % low on its vapour pressure at 320 K)",
 ]
 

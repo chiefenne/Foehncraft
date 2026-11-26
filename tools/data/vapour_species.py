@@ -14,8 +14,14 @@ crates/foehncraft-flow/data/species-vapours.toml, from published data:
   epsilon/k = (0.7915 + 0.1693 omega) Tc.
 
     python3 tools/data/vapour_species.py DIR > crates/foehncraft-flow/data/species-vapours.toml
+    python3 tools/data/vapour_species.py DIR NC12H26      # one record only
 
-DIR holds <file>_cpgas.csv (T K, c_p J/(mol K)) of each species.
+DIR holds <file>_cpgas.csv (T K, c_p J/(mol K)) of each species; the
+n-dodecane table is derived from n-nonane and n-decane by
+tools/data/dodecane_ideal_gas.py --csv (Scott's CH2 increment), and its
+critical data are those of the real-fluid kernel (Ambrose and Walton
+1989), so that the record is the kernel's `fuels::N_DODECANE.ideal_gas`.
+The low end of the temperature range is the first point of the table.
 """
 
 import sys
@@ -32,6 +38,8 @@ SPECIES = {
     "IC8H18": ("isooctane", {"C": 8, "H": 18}, -224.1e3, None, 543.9, 2.57e6,
                ("antoine", 3.93679, 1257.84, -52.415),
                "iso-octane: Cp,gas Scott 1974, dfH Prosen and Rossini 1945, Tc and pc NIST WebBook; omega from the NIST Antoine data at 0.7 Tc"),
+    "NC12H26": ("dodecane", {"C": 12, "H": 26}, -290.9e3, 622.50, 658.65, 1.83e6, 0.573,
+                "n-dodecane: Cp,gas Scott 1974 by the CH2 increment (tools/data/dodecane_ideal_gas.py), dfH Prosen and Rossini 1945, S298 Stull 1969 (NIST WebBook); Tc, pc, omega Ambrose and Walton 1989"),
 }
 T_MID = 1000.0
 
@@ -79,12 +87,15 @@ def single(t, cp_r):
     return x, x.copy(), np.max(np.abs(a @ x - 1.0))
 
 
-def main(d):
-    print("# Vapours of the spray liquids (D320): NASA-7 fitted to the NIST WebBook")
-    print("# ideal-gas heat capacities, Lennard-Jones data of Tee, Gotoh and Stewart")
-    print("# (1966). Written by tools/data/vapour_species.py; do not edit by hand.")
-    print("# Units as in species-gri30.toml.")
+def main(d, only=()):
+    if not only:
+        print("# Vapours of the spray liquids (D320): NASA-7 fitted to the NIST WebBook")
+        print("# ideal-gas heat capacities, Lennard-Jones data of Tee, Gotoh and Stewart")
+        print("# (1966). Written by tools/data/vapour_species.py; do not edit by hand.")
+        print("# Units as in species-gri30.toml.")
     for name, (f, comp, dfh, s298, tc, pc, om, src) in SPECIES.items():
+        if only and name not in only:
+            continue
         data = np.loadtxt(f"{d}/{f}_cpgas.csv", delimiter=",")
         t, cp_r = data[:, 0], data[:, 1] / R
         lo, hi, err = single(t, cp_r)
@@ -106,7 +117,7 @@ def main(d):
         print(f'[species."{name}"]')
         print("composition = { " + ", ".join(f"{e} = {float(n)!r}" for e, n in comp.items()) + " }")
         print(f"molar_mass = {m:.8f}")
-        print(f"temperature = [200.0, {T_MID}, 1500.0]")
+        print(f"temperature = [{t[0]}, {T_MID}, 1500.0]")
         print("coefficients = [")
         print(f"  [{f7(list(lo) + [lo6, lo7])}],")
         print(f"  [{f7(list(hi) + [hi6, hi7])}],")
@@ -118,4 +129,4 @@ def main(d):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1])
+    main(sys.argv[1], tuple(sys.argv[2:]))

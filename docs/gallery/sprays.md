@@ -14,6 +14,7 @@ Part of the [Example gallery](../gallery.md): droplets as Lagrangian parcels in 
 | 306b | [More water than the air can take, steady](#spray-saturation) | SP5, SP2s | evaporation in the steady spray mode, adiabatic saturation against the exact end state (V28.11, partly met) |
 | 318 | [A fuel spray breaks up in dense nitrogen](#spray-breakup) | SP6 | `[spray.breakup]` KH-ACT and KH-RT, blob injection from `hole_diameter`, `area_contraction` and a `rate` table, child parcels, Rayleigh-Taylor beyond the breakup length, TAB distortion and dynamic drag, mirrored eddies |
 | 314 | [A fuel droplet's surface at diesel pressure](#spray-a-surface) | SA1 | `[spray.evaporation] equilibrium = "peng-robinson"`, `[spray.evaporation.peng_robinson]`: Peng-Robinson phase equilibrium of the fuel and the ambient gas at the droplet surface, latent heat from the same equation, the critical mixing state (D311, D312, D314) |
+| 320 | [Where the last liquid evaporates: the Spray A mixing line](#spray-a-mixing-line) | SA1 | `realfluid::Streams`: the adiabatic mixing line of fuel and gas (frozen, Peng-Robinson equilibrium, ideal), stability test and flash, the saturation mixture fraction, the liquid length of Siebers (1999) against the measured Spray A lengths (D319, VA.4, VA.5) |
 | 319 | [Liquid length and vapour penetration as the ECN defines them](#spray-ecn) | SA3 | `[spray.ecn]` (D315): liquid length from the projected liquid volume at two thresholds and vapour penetration at 0.1 % fuel, per injector and step in `spray.csv` and `result.json` |
 | 321 | [Fuel droplets with real liquid properties and the 1/3-rule film](#spray-liquid-library) | D320, D321 | `[spray.liquid] library` (water, n-heptane, n-dodecane, iso-octane), `[spray.evaporation] film = "one-third"` (default), single n-heptane droplets against measurements, an n-heptane spray in hot nitrogen |
 | 323 | [ECN Spray G: a gasoline injector against the measurements](#spray-g) | SP6, D309 | `[mesh.generate] wedge` with `dimension = 3` (a sector of the injector), thin slip core on the axis, injector from the measured rate, plume direction and cone, `flow_share`, the ECN liquid and vapour penetration (`tools/plot/spray_g_metrics.py`), library iso-octane, KH-ACT |
@@ -705,9 +706,8 @@ dissolved gas is not booked (the liquid stays pure fuel), and the gas
 solver stays an ideal gas, so the departure enthalpy of the dense vapour
 enters the gas as a small heat deficit (D317). Built-in high-pressure data
 for n-dodecane only; any other liquid can give its critical point,
-acentric factor and molar mass. The Spray A flow case comes with the
-breakup model and the n-dodecane vapour species (stages SA2 to SA6 of
-[the Spray A plan](../requirements/step28-spray-a.md)).
+acentric factor and molar mass. The Spray A flow case is stage SA6 of
+[the Spray A plan](../requirements/step28-spray-a.md).
 
 [Recipe 314](../recipes/sprays.md#spray-a-surface),
 [plan](../requirements/step28-spray-a.md).
@@ -768,6 +768,66 @@ on the ECN output grid, and any comparison with measurements (VA.8, stage
 SA6). Not with `[spray.steady]`.
 ---
 
+<a id="spray-a-mixing-line"></a>
+## 320. Where the last liquid evaporates: the Spray A mixing line
+
+<img src="../figures/gallery/spray_a_mixing_line.png" alt="Three charts for 363 K n-dodecane injected into nitrogen. Left: the mixing temperature against the mixture fraction from 0 to 1 at 6 MPa and 900 K, falling from 900 K to 363 K; the equilibrium and ideal lines agree down to about 550 K, the equilibrium line enters the shaded two-phase region at Z_sat = 0.356 and the ideal line at 0.320; beyond it the frozen one-phase line falls lower, with a plateau near 400 K between Z = 0.7 and 0.8. Middle: the mass fraction of the liquid phase against the mixture fraction, rising from zero at the saturation point to one at Z = 1, the equilibrium line starting later and crossing above the diagonal past Z = 0.65 because the liquid holds dissolved nitrogen. Right: grey bars of the measured liquid lengths 11.7, 16.3, 7.4 and 20.6 mm at 900 K, 700 K, 1200 K and 900 K at 7.6 kg/m3, with Siebers' liquid length from the ideal (yellow) and equilibrium (dark red) saturation points at 21.5 and 18.7 degree spreading angles, all below the bars." width="800" height="245">
+
+A mixing-limited spray loses its last liquid where the entrained hot gas
+has brought just enough enthalpy to evaporate all the fuel. Along the
+adiabatic mixing line of the fuel and the ambient, that is the saturation
+mixture fraction Z_sat, and the liquid length of Siebers (1999) follows
+from it. Checking this line before any CFD (D319) separates the
+thermodynamics from the spray model: an error in the Spray A liquid length
+can then be traced to one or the other.
+
+The image comes from `cargo run --release -p foehncraft-particles --example
+spray_a_mixing_line` and `tools/plot/spray_a_mixing_line.py`. **Left:**
+363 K n-dodecane into 900 K nitrogen at 6 MPa. Up to Z_sat the three lines
+agree; the Peng-Robinson flash (equilibrium) reaches two phases at
+Z_sat = 0.356, later than the ideal line (ideal gas, Raoult's law) at
+0.320, because the dense nitrogen holds more fuel vapour. The frozen line
+keeps one phase of the same equation where the flash splits and cools
+further. **Middle:** the liquid mass fraction in the two-phase region; at
+high Z the high-pressure liquid carries dissolved nitrogen, so it weighs
+more than the fuel alone. **Right:** Siebers' liquid length with our
+Z_sat at the four conditions where the ECN publishes a measured length.
+
+```rust
+use foehncraft_kernels::realfluid::{Mixing, Streams};
+let line = Streams { mix: &mix, ideal: &h_ig, p: 6e6, t_fuel: 363.0, t_gas: 900.0, gas };
+let pt = line.point(0.5, Mixing::Equilibrium);       // T, liquid fraction, density
+let z_sat = line.saturation(Mixing::Equilibrium);    // Some(0.356)
+let l = foehncraft_particles::siebers_liquid_length(z_sat.unwrap(), 703.71, 22.8, 0.95, 90e-6, 21.5);
+```
+
+**What is checked.** The isobaric, isenthalpic state is found by bisection
+on the temperature; its enthalpy equals that of the mixed streams to
+7e-16 of the stream difference on all three lines, and the ends are the
+streams (VA.4). The stability test of Michelsen (1982) and the flash
+(Rachford-Rice, successive substitution, Newton) give, for the binary, the
+same coexisting phases as the droplet surface of gallery 314, and the
+frozen line becomes unstable exactly where the flash splits. The ideal gas
+of n-dodecane is Scott's (1974) c_p, n-decane plus two CH₂ increments,
+within 0.11 % of the reference equation of Lemmon and Huber (2004). The
+same record joins the species data of the flow solver as the vapour
+species `NC12H26`, so a spray of n-dodecane can evaporate into a flow
+(`[spray.liquid] vapour = "NC12H26"`).
+
+**What this version does not do.** Siebers' scaling with C_L = 0.62 and
+the measured 21.5° spreading angle (Pickett et al. 2011) gives lengths 30
+to 48 % below the measured ones with the equilibrium Z_sat and 20 to 45 %
+with the ideal one: the real fluid shortens the length by 5 to 14 % and
+moves it away from the measurement, so the plan's expectation (the real
+fluid closer, VA.5) is not met. C_L was set by Siebers with his own way of
+computing B, which is not in an open paper; the trends with temperature
+and density are right, the 700 K length 14 % too long relative to 900 K.
+The mixing line is a check, not a model of the solver: the spray itself
+evaporates droplet by droplet (gallery 314) and the Spray A flow case comes
+in stage SA6.
+
+[Recipe 320](../recipes/sprays.md#spray-a-mixing-line),
+[plan](../requirements/step28-spray-a.md).
 <a id="spray-liquid-library"></a>
 ## 321. Fuel droplets with real liquid properties and the 1/3-rule film
 
@@ -783,7 +843,7 @@ correlations (iso-octane is not in the NIST fluid system). Each gives its
 vapour pressure (Wagner form), density, specific heat, latent heat (Watson
 form), surface tension and viscosity as functions of the temperature, from
 the triple point region to the critical point. The vapour species of the
-gas come with it: `NC7H16` and `IC8H18` (NASA-7 polynomials fitted to
+gas come with it: `NC7H16`, `IC8H18` and `NC12H26` (NASA-7 polynomials fitted to
 published ideal-gas heat capacities, Lennard-Jones data from the critical
 point) join the species data of the flow solver.
 
@@ -860,9 +920,8 @@ followed. Iso-octane density, specific heat, viscosity and surface tension
 above about 400 K rest on extrapolated correlations. The single-droplet
 comparison is a recorded gap (+16 to +59 %), not a pass. The film carrier is
 the start composition of the case, not the local gas of the cell (enough
-for an inert carrier, not for a reacting gas). No n-dodecane vapour species
-yet (the Spray A work adds it). Multicomponent liquids and boiling are
-later stages.
+for an inert carrier, not for a reacting gas). Multicomponent liquids and
+boiling are later stages.
 
 [Recipe 321](../recipes/sprays.md#spray-liquid-library),
 [case row](../cases/flow.md#lagrangian-sprays).
