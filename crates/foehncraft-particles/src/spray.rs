@@ -7,8 +7,11 @@ use crate::equilibrium::{SurfacePoint, SurfaceTable};
 use anyhow::{Result, bail};
 use foehncraft_core::Real;
 use foehncraft_core::rng::{self, stream};
+use foehncraft_kernels::breakup as brk;
 use foehncraft_kernels::evaporation::{self as evap, EvapInput, EvapStep};
-use foehncraft_kernels::particle::{HeatInput, ParcelInput, eddy_times, heat_step, parcel_step};
+use foehncraft_kernels::particle::{
+    HeatInput, ParcelInput, eddy_times, heat_step, parcel_step_drag,
+};
 use foehncraft_mesh::geometry::Geometry;
 use foehncraft_mesh::locate::{Locator, Position, TrackEnd, WalkEnd, step_limit};
 use foehncraft_mesh::mesh::Mesh;
@@ -150,6 +153,60 @@ pub struct Eddy {
     pub n: u64,
 }
 
+/// The breakup state of a parcel (SP6, D300 to D305).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct BreakupState {
+    /// TAB distortion y of the drops (dynamic drag, D303).
+    pub y: f64,
+    /// Its rate ẏ (1/s).
+    pub ydot: f64,
+    /// A blob: the radius its Kelvin-Helmholtz stripping has reached, over
+    /// its radius (1: nothing stripped since the last child, D302). The
+    /// stripped liquid stays in the blob until it leaves as a child parcel,
+    /// so the mass of every parcel is exact at all times.
+    pub kh: f64,
+    /// Time the Rayleigh-Taylor wave has grown on the drops (s).
+    pub rt: f64,
+    /// Child parcels shed so far.
+    pub kids: u32,
+    /// Still an injected blob (sheds child parcels).
+    pub blob: bool,
+    /// Liquid of the parcel when it was injected or shed (kg).
+    pub m0: f64,
+    /// A blob: its speed from the hole (m/s), which sets the turbulence it
+    /// brings out of the nozzle (KH-ACT, D307).
+    #[serde(default)]
+    pub u0: f64,
+}
+
+impl Default for BreakupState {
+    fn default() -> Self {
+        Self {
+            y: 0.0,
+            ydot: 0.0,
+            kh: 1.0,
+            rt: 0.0,
+            kids: 0,
+            blob: false,
+            m0: 0.0,
+            u0: 0.0,
+        }
+    }
+}
+
+/// The largest index of a child parcel of one blob (15 bits of the
+/// identity, D302).
+const MAX_KIDS: u32 = (1 << 15) - 1;
+/// The largest injection index of an injector with breakup (32 bits).
+const MAX_INJECTED_WITH_BREAKUP: u64 = 1 << 32;
+
+/// The identity of child `j` (from 1) of the parcel `id` (D302): injector in
+/// the top 16 bits, bit 47 set, the child index in bits 32 to 46 and the
+/// injection index in the low 32.
+pub fn child_id(id: u64, j: u32) -> u64 {
+    (id & !((1u64 << 48) - 1)) | (1u64 << 47) | ((j as u64) << 32) | (id & 0xFFFF_FFFF)
+}
+
 /// The gas field seen by the parcels (one-way coupling in SP1).
 pub trait Gas: Sync {
     /// The gas state at `x`, a point of cell `cell`.
@@ -204,6 +261,10 @@ pub struct Parcels {
     /// restart files written before SP2c (every parcel starts a new eddy).
     #[serde(default)]
     pub eddy: Vec<Eddy>,
+    /// The breakup state (SP6); empty in restart files written before SP6
+    /// (every parcel then starts undistorted, as a drop).
+    #[serde(default)]
+    pub brk: Vec<BreakupState>,
     /// Cell that holds the parcel (rebuilt from the position on a restart).
     #[serde(skip)]
     pub cell: Vec<u32>,
@@ -229,6 +290,7 @@ impl Parcels {
         self.born.push(p.born);
         self.temp.push(p.temp);
         self.eddy.push(p.eddy);
+        self.brk.push(p.brk);
         self.cell.push(p.cell as u32);
     }
 
@@ -242,6 +304,7 @@ impl Parcels {
             born: self.born[i],
             temp: self.temp[i],
             eddy: self.eddy[i],
+            brk: self.brk[i],
             cell: self.cell[i] as usize,
             face: None,
         }
@@ -258,6 +321,7 @@ struct One {
     born: f64,
     temp: f64,
     eddy: Eddy,
+    brk: BreakupState,
     cell: usize,
     /// Where the walk stands when the parcel was stopped on an interior
     /// face (two-way tracking): the tetrahedron of the next cell.
@@ -299,6 +363,27 @@ struct Outcome {
     /// The path (steady streams with [`TrackOpts::paths`]): the state at
     /// the start of every sub-step and at the end.
     path: Vec<PathPoint>,
+    /// The child parcels the parcel shed in the step (SP6), each tracked
+    /// from its birth to the end of the step.
+    kids: Vec<Outcome>,
+    /// Rayleigh-Taylor breakups of the parcel in the step.
+    rt_breakups: u64,
+    /// Child parcels the parcel shed in the step.
+    kids_shed: u64,
+    /// Of them, those the nozzle turbulence or the cavitation stripped
+    /// (KH-ACT, D307).
+    act_kids: u64,
+}
+
+impl Outcome {
+    /// The outcome and those of its children, in order.
+    fn flatten(mut self, out: &mut Vec<Outcome>) {
+        let kids = std::mem::take(&mut self.kids);
+        out.push(self);
+        for k in kids {
+            k.flatten(out);
+        }
+    }
 }
 
 /// A point of the path of a stream (steady mode, D260).
@@ -309,6 +394,19 @@ pub(crate) struct PathPoint {
     pub(crate) x: [f64; 3],
     pub(crate) v: [f64; 3],
     pub(crate) temp: f64,
+}
+
+/// The state at the start of a sub-step that the breakup of its end needs.
+#[derive(Debug, Clone, Copy)]
+struct Pending {
+    /// Time left in the step at the start of the sub-step (s).
+    left: f64,
+    /// Slip speed |u − v| (m/s).
+    u: f64,
+    /// Gas density (kg/m³).
+    rho_g: f64,
+    /// Response time of the drag (s).
+    tau: f64,
 }
 
 /// How [`Spray::track`] follows a parcel.
@@ -349,6 +447,16 @@ pub struct Tally {
     /// Parcels that evaporated completely.
     #[serde(default)]
     pub evaporated_parcels: u64,
+    /// Child parcels shed by the blobs (SP6).
+    #[serde(default)]
+    pub child_parcels: u64,
+    /// Breakup events of drops in place: Rayleigh-Taylor breakups (SP6).
+    #[serde(default)]
+    pub rt_breakups: u64,
+    /// Child parcels the nozzle turbulence or the cavitation stripped off
+    /// the blobs (KH-ACT, D307); the rest the Kelvin-Helmholtz waves did.
+    #[serde(default)]
+    pub act_children: u64,
     /// Parcels at or above the critical mixing temperature of their
     /// surface at the end of the last step (Peng-Robinson surface, D314:
     /// no latent heat, diffusive mixing); a health number, not a total.
@@ -426,6 +534,10 @@ pub struct Spray {
     /// p₀ (`equilibrium = "peng-robinson"`, D311), from
     /// [`Spray::set_surface_pressure`].
     surface: Option<SurfaceTable>,
+    /// The carrier gas of the film (the species without the vapour and
+    /// their mass fractions, Σ = 1) for `film = "one-third"` (D321); empty:
+    /// the far-field properties.
+    carrier: Vec<(foehncraft_kernels::species::Species, f64)>,
 }
 
 /// What `state()` writes and `restore()` reads (restart, D42).
@@ -520,6 +632,7 @@ impl Spray {
             planar: false,
             vapour: None,
             surface: None,
+            carrier: Vec::new(),
             datums: Vec::new(),
             datum_tally: Vec::new(),
             tally: Tally {
@@ -536,6 +649,67 @@ impl Spray {
     /// `[spray.liquid] vapour`): needed for the evaporation (SP5).
     pub fn set_vapour(&mut self, v: Option<Vapour>) {
         self.vapour = v;
+    }
+
+    /// Sets the carrier gas of the film (species and mass fractions; they
+    /// are normalised): the 1/3 rule takes its mixture properties from
+    /// them (D321). Without a carrier the far-field properties are used.
+    pub fn set_carrier(&mut self, c: Vec<(foehncraft_kernels::species::Species, f64)>) {
+        let s: f64 = c.iter().map(|x| x.1.max(0.0)).sum();
+        self.carrier = if s > 0.0 && c.len() < foehncraft_kernels::species::MAX_SPECIES {
+            c.into_iter()
+                .filter(|x| x.1 > 0.0)
+                .map(|(sp, y)| (sp, y / s))
+                .collect()
+        } else {
+            Vec::new()
+        };
+    }
+
+    /// True when the evaporation takes the film properties of the 1/3
+    /// rule (D321): `film = "one-third"` and a carrier gas set.
+    pub fn film_rule(&self) -> bool {
+        self.cfg.evaporation.film == crate::config::Film::OneThird && !self.carrier.is_empty()
+    }
+
+    /// The gas properties of the film at the droplet temperature `tp` and
+    /// surface fraction `ys` in the gas `gs` by the 1/3 rule (D321): the
+    /// mixture of the vapour and the carrier at T_m, Y_m (Wilke viscosity,
+    /// Mathur conductivity, mass-weighted c_p), the density of the ideal
+    /// gas at p₀ and the diffusivity of the vapour in the carrier
+    /// (Chapman-Enskog, Blanc's law). Returns (ρ, μ, k, c_p, D, c_pv).
+    pub fn film_properties(&self, gs: &GasState, tp: f64, ys: f64) -> [f64; 6] {
+        use foehncraft_kernels::species as ks;
+        let v = self
+            .vapour
+            .as_ref()
+            .expect("film_properties needs the vapour");
+        let yg = gs.y_v.clamp(0.0, 1.0);
+        let tm = tp + (gs.t - tp) / 3.0;
+        let ym = (ys + (yg - ys) / 3.0).clamp(0.0, 1.0);
+        let n = self.carrier.len() + 1;
+        let mut sp = [v.species; ks::MAX_SPECIES];
+        let mut y = [0.0; ks::MAX_SPECIES];
+        y[0] = ym;
+        // the carrier's mole fractions among themselves for Blanc's law
+        let inv_mc: f64 = self.carrier.iter().map(|(s, yc)| yc / s.molar_mass).sum();
+        let mut inv_d = 0.0;
+        for (j, (s, yc)) in self.carrier.iter().enumerate() {
+            sp[j + 1] = *s;
+            y[j + 1] = (1.0 - ym) * yc;
+            let xc = yc / s.molar_mass / inv_mc;
+            inv_d += xc / ks::binary_diffusion(&v.species, s, tm, gs.p0);
+        }
+        let mix = ks::mixture(&sp[..n], &y[..n], tm);
+        let rho = gs.p0 * mix.molar_mass / (ks::R * tm);
+        [
+            rho,
+            mix.viscosity,
+            mix.conductivity,
+            mix.cp,
+            1.0 / inv_d,
+            v.species.cp(tm),
+        ]
     }
 
     /// True when the droplets evaporate (`[spray.evaporation]` and the
@@ -690,6 +864,11 @@ impl Spray {
         }
         match self.cfg.liquid.saturation {
             crate::config::Saturation::Water => evap::water::saturation_pressure(t),
+            crate::config::Saturation::Library => self
+                .cfg
+                .liquid
+                .data()
+                .map_or(0.0, |d| d.saturation_pressure(t)),
         }
     }
 
@@ -709,6 +888,18 @@ impl Spray {
             return None;
         }
         let l = &self.cfg.liquid;
+        let psat = self.saturation_pressure(tp);
+        // the gas properties: of the film by the 1/3 rule (D321) or of the
+        // gas at the droplet; with the film, Re takes the film viscosity
+        // and the gas density (Abramzon and Sirignano 1989)
+        let (rho, mu, k, cp, diff, cp_v, re) = if self.film_rule() {
+            let ys = evap::surface_fraction(psat, gs.p0, v.species.molar_mass, gs.m_gas);
+            let [rho, mu, k, cp, diff, cp_v] = self.film_properties(gs, tp, ys);
+            (rho, mu, k, cp, diff, cp_v, re * gs.mu / mu)
+        } else {
+            let cp_v = v.cp(0.5 * (tp + gs.t));
+            (gs.rho, gs.mu, gs.k, gs.cp, gs.diff, cp_v, re)
+        };
         Some(evap::evaporation_step(&EvapInput {
             tp,
             tg: gs.t,
@@ -716,16 +907,17 @@ impl Spray {
             p0: gs.p0,
             m_vapour: v.species.molar_mass,
             m_gas: gs.m_gas,
-            psat: self.saturation_pressure(tp),
+            psat,
+            ys_surface: -1.0,
             latent: self.latent_heat(tp),
             re,
-            pr: gs.mu * gs.cp / gs.k,
-            sc: gs.mu / (gs.rho * gs.diff),
-            rho_g: gs.rho,
-            diff: gs.diff,
-            k_g: gs.k,
-            cp_g: gs.cp,
-            cp_v: v.cp(0.5 * (tp + gs.t)),
+            pr: mu * cp / k,
+            sc: mu / (rho * diff),
+            rho_g: rho,
+            diff,
+            k_g: k,
+            cp_g: cp,
+            cp_v,
             d,
             rho_l: l.density,
             cp_l: l.specific_heat,
@@ -869,7 +1061,7 @@ impl Spray {
         let release = self.release(env, t1)?;
         let n_old = self.parcels.len();
         let fresh = &release.fresh;
-        let outcomes: Vec<Outcome> = (0..n_old + fresh.len())
+        let tracked: Vec<Outcome> = (0..n_old + fresh.len())
             .into_par_iter()
             .map(|i| {
                 let (p, time) = if i < n_old {
@@ -881,6 +1073,12 @@ impl Spray {
                 self.track(env, gas, p, time.max(0.0), t1, TrackOpts::default())
             })
             .collect();
+        // a parcel's children follow it (SP6): the order depends on the
+        // parcels alone, not on the threads
+        let mut outcomes = Vec::with_capacity(tracked.len());
+        for o in tracked {
+            o.flatten(&mut outcomes);
+        }
         let sources = if self.cfg.coupling.two_way() {
             let all: Vec<Record> = outcomes
                 .iter()
@@ -1060,6 +1258,9 @@ impl Spray {
         for o in outcomes {
             self.tally.rebounds += o.rebounds;
             self.tally.substeps += o.substeps;
+            self.tally.rt_breakups += o.rt_breakups;
+            self.tally.child_parcels += o.kids_shed;
+            self.tally.act_children += o.act_kids;
             let m = mass_of(o.p.d, o.p.count, rho_p);
             match o.fate {
                 Fate::Active => {
@@ -1275,17 +1476,20 @@ impl Spray {
     /// books the release.
     fn release(&self, env: &Env, t1: f64) -> Result<Release> {
         let rho_p = self.cfg.liquid.density;
+        let breakup = self.cfg.breakup.on();
         let mut out = Release {
             released: self.injectors.iter().map(|i| i.released).collect(),
             ..Default::default()
         };
         for (ii, inj) in self.cfg.injectors.iter().enumerate() {
             let rate = inj.parcels_per_second;
-            let end = inj.end.unwrap_or(f64::INFINITY);
+            let end = inj.end_time();
             let axis = unit(inj.direction);
             let (e1, e2) = frame(axis);
             let cos_a = inj.half_angle.to_radians().cos();
-            let m_parcel = inj.mass_flow / rate;
+            // blob injection (D306): the parcels of an injector with a hole
+            // and without a droplet size start as blobs
+            let blob = breakup && inj.is_blob();
             loop {
                 let k = out.released[ii];
                 let born = inj.start + (k as f64 + 0.5) / rate;
@@ -1293,14 +1497,29 @@ impl Spray {
                     break;
                 }
                 out.released[ii] += 1;
+                if breakup && k >= MAX_INJECTED_WITH_BREAKUP {
+                    bail!(
+                        "[[spray.injector]] {}: more than 2^32 parcels with [spray.breakup] \
+                         (the identities of the child parcels need the bits)",
+                        inj.name
+                    );
+                }
+                // the exact share of the rate table (D306)
+                let m_whole = inj.mass_between(k as f64 / rate, (k + 1) as f64 / rate);
+                let m_parcel = inj.flow_share * m_whole;
+                if m_parcel.is_nan() || m_parcel <= 0.0 {
+                    // no liquid in this share of the table: no parcel
+                    continue;
+                }
                 let id = ((ii as u64) << 48) | k;
                 let dir = direction(id, axis, e1, e2, cos_a);
                 let d = match &inj.size {
                     Some(sz) => {
                         sz.quantile(rng::uniform_keyed([stream::SPRAY_INJECTION, id, 1, 0]))
                     }
-                    None => inj.diameter,
+                    None => inj.fixed_diameter(),
                 };
+                let speed = inj.exit_speed(rho_p, m_whole * rate);
                 let count = m_parcel / (rho_p * std::f64::consts::PI / 6.0 * d * d * d);
                 let Some(cell) = env.loc.locate_search(inj.position) else {
                     bail!(
@@ -1311,12 +1530,18 @@ impl Spray {
                 out.fresh.push(One {
                     id,
                     x: inj.position,
-                    v: [dir[0] * inj.speed, dir[1] * inj.speed, dir[2] * inj.speed],
+                    v: [dir[0] * speed, dir[1] * speed, dir[2] * speed],
                     d,
                     count,
                     born,
                     temp: inj.temperature.unwrap_or(self.cfg.liquid.temperature),
                     eddy: Eddy::default(),
+                    brk: BreakupState {
+                        blob,
+                        m0: m_parcel,
+                        u0: if blob { speed } else { 0.0 },
+                        ..BreakupState::default()
+                    },
                     cell,
                     face: None,
                 });
@@ -1480,16 +1705,24 @@ impl Spray {
             *uk = sigma * normal([stream::SPRAY_DISPERSION, p.id, p.eddy.n, 2 * k as u64]);
         }
         let ug = [gs.u[0] + u[0], gs.u[1] + u[1], gs.u[2] + u[2]];
-        let s = parcel_step(&ParcelInput {
-            v: p.v,
-            u: ug,
-            rho_g: gs.rho,
-            mu_g: gs.mu,
-            d: p.d,
-            rho_p,
-            g: self.gravity,
-            dt: 0.0,
-        });
+        let drag = if self.cfg.breakup.distortion() {
+            brk::dynamic_drag(p.brk.y)
+        } else {
+            1.0
+        };
+        let s = parcel_step_drag(
+            &ParcelInput {
+                v: p.v,
+                u: ug,
+                rho_g: gs.rho,
+                mu_g: gs.mu,
+                d: p.d,
+                rho_p,
+                g: self.gravity,
+                dt: 0.0,
+            },
+            drag,
+        );
         let slip = norm([ug[0] - p.v[0], ug[1] - p.v[1], ug[2] - p.v[2]]);
         p.eddy.u = u;
         p.eddy.left = eddy_times(gs.tke, gs.eps, s.tau, slip).interaction;
@@ -1526,7 +1759,25 @@ impl Spray {
         // sub-step ends at the end of an eddy)
         let mut last_left = left;
         let mut path: Vec<PathPoint> = Vec::new();
+        // breakup and distortion (SP6): applied after each sub-step with the
+        // gas and the slip of its start
+        let bcfg = self.cfg.breakup;
+        let mut pending: Option<Pending> = None;
+        let mut kids: Vec<(One, f64)> = Vec::new();
+        // Rayleigh-Taylor breakups and KH-ACT children
+        let mut counts = [0u64; 2];
         while left > tiny {
+            if let Some(pre) = pending.take() {
+                self.break_up(
+                    &mut p,
+                    &pre,
+                    pre.left - left,
+                    t1 - left,
+                    left,
+                    &mut kids,
+                    &mut counts,
+                );
+            }
             if p.d <= 0.0 {
                 // evaporated completely (SP5)
                 fate = Fate::Evaporated;
@@ -1565,6 +1816,12 @@ impl Spray {
                 p.eddy.left = 0.0;
             }
             let d_start = p.d;
+            // the drag of a distorted drop (D303)
+            let drag = if bcfg.distortion() {
+                brk::dynamic_drag(p.brk.y)
+            } else {
+                1.0
+            };
             let input = |dt: f64| ParcelInput {
                 v: p.v,
                 u: gs.u,
@@ -1579,11 +1836,23 @@ impl Spray {
             if dispersion && p.eddy.left > 0.0 && p.eddy.left < sub {
                 sub = p.eddy.left;
             }
-            let mut s = parcel_step(&input(sub));
+            let mut s = parcel_step_drag(&input(sub), drag);
             let len = norm(s.dx);
             if len > self.cfg.max_courant * h {
                 sub = sub * self.cfg.max_courant * h / len;
-                s = parcel_step(&input(sub));
+                s = parcel_step_drag(&input(sub), drag);
+            }
+            let slip = norm([gs.u[0] - p.v[0], gs.u[1] - p.v[1], gs.u[2] - p.v[2]]);
+            if bcfg.on() && p.brk.blob {
+                // a blob strips at most the share shed_fraction of its
+                // injected liquid in one sub-step, so its children carry
+                // about that share each (D302)
+                if let Some(lim) = self.shed_limit(&p, slip, gs.rho, t1 - left - p.born)
+                    && sub > lim
+                {
+                    sub = lim;
+                    s = parcel_step_drag(&input(sub), drag);
+                }
             }
             if two_way {
                 // D251: the coefficients are frozen over the sub-step, so
@@ -1596,7 +1865,7 @@ impl Spray {
                 let mut halvings = 0;
                 while (re_end(s.v) - s.re).abs() > lim && halvings < 40 {
                     sub *= 0.5;
-                    s = parcel_step(&input(sub));
+                    s = parcel_step_drag(&input(sub), drag);
                     halvings += 1;
                 }
             }
@@ -1621,7 +1890,7 @@ impl Spray {
                 };
                 if cut < sub {
                     sub = cut;
-                    s = parcel_step(&input(sub));
+                    s = parcel_step_drag(&input(sub), drag);
                 }
                 let mut halvings = 0;
                 while !finishing && halvings < 40 {
@@ -1632,9 +1901,17 @@ impl Spray {
                         break;
                     }
                     sub *= 0.5;
-                    s = parcel_step(&input(sub));
+                    s = parcel_step_drag(&input(sub), drag);
                     halvings += 1;
                 }
+            }
+            if bcfg.needs_properties() {
+                pending = Some(Pending {
+                    left,
+                    u: slip,
+                    rho_g: gs.rho,
+                    tau: s.tau,
+                });
             }
             let target = [p.x[0] + s.dx[0], p.x[1] + s.dx[1], p.x[2] + s.dx[2]];
             // the face the previous sub-step ended on (two-way tracking)
@@ -1651,7 +1928,7 @@ impl Spray {
                 break;
             };
             let t_sub = t1 - left;
-            let vel = |tau: f64| parcel_step(&input(tau)).v;
+            let vel = |tau: f64| parcel_step_drag(&input(tau), drag).v;
             // the exchange of a sub-step of length dt that ends with the
             // velocity v1 (D249: the parcel's own change less its weight);
             // returns the parcel temperature and diameter at its end and the
@@ -1801,9 +2078,13 @@ impl Spray {
                         continue;
                     }
                     FirstFace::Interior { lambda, x, next } => {
-                        let tf =
-                            time_at_fraction(&|t| parcel_step(&input(t)).dx, s.dx, lambda, sub);
-                        let sf = parcel_step(&input(tf));
+                        let tf = time_at_fraction(
+                            &|t| parcel_step_drag(&input(t), drag).dx,
+                            s.dx,
+                            lambda,
+                            sub,
+                        );
+                        let sf = parcel_step_drag(&input(tf), drag);
                         let bk = book(&mut records, &mut weight, &p, tf, sf.v, sf.tau);
                         p.temp = bk.0;
                         p.d = bk.1;
@@ -1828,9 +2109,13 @@ impl Spray {
                         continue;
                     }
                     FirstFace::Boundary { face, lambda, x } => {
-                        let tf =
-                            time_at_fraction(&|t| parcel_step(&input(t)).dx, s.dx, lambda, sub);
-                        let sf = parcel_step(&input(tf));
+                        let tf = time_at_fraction(
+                            &|t| parcel_step_drag(&input(t), drag).dx,
+                            s.dx,
+                            lambda,
+                            sub,
+                        );
+                        let sf = parcel_step_drag(&input(tf), drag);
                         let bk = book(&mut records, &mut weight, &p, tf, sf.v, sf.tau);
                         p.temp = bk.0;
                         p.d = bk.1;
@@ -1906,7 +2191,7 @@ impl Spray {
                     // the time to the face: the chord fraction of the
                     // sub-step (the sub-step is a fraction of a cell)
                     let thit = tr.fraction * sub;
-                    let sh = parcel_step(&input(thit));
+                    let sh = parcel_step_drag(&input(thit), drag);
                     let bk = book(&mut records, &mut weight, &p, thit, sh.v, sh.tau);
                     p.temp = bk.0;
                     p.d = bk.1;
@@ -1979,7 +2264,28 @@ impl Spray {
                 }
             }
         }
+        if fate == Fate::Active
+            && let Some(pre) = pending.take()
+        {
+            let l = left.max(0.0);
+            self.break_up(
+                &mut p,
+                &pre,
+                pre.left - l,
+                t1 - l,
+                l,
+                &mut kids,
+                &mut counts,
+            );
+        }
         p.eddy.left -= last_left - left;
+        // the children, each from its birth to the end of the step (they
+        // shed no children of their own)
+        let kids_shed = kids.len() as u64;
+        let kids: Vec<Outcome> = kids
+            .into_iter()
+            .map(|(c, l)| self.track(env, gas, c, l, t1, opts))
+            .collect();
         p.face = None;
         if fate == Fate::Active && p.d <= 0.0 {
             fate = Fate::Evaporated;
@@ -2018,6 +2324,226 @@ impl Spray {
             used,
             vapour: vapour_total,
             path,
+            kids,
+            rt_breakups: counts[0],
+            kids_shed,
+            act_kids: counts[1],
+        }
+    }
+
+    /// The longest sub-step in which blob `p` strips no more than the share
+    /// `shed_fraction` of its injected liquid (D302), with the slip `u` and
+    /// the gas density `rho_g`; `None` when it does not strip.
+    fn shed_limit(&self, p: &One, u: f64, rho_g: f64, age: f64) -> Option<f64> {
+        let rho_l = self.cfg.liquid.density;
+        let (a, dadt) = if self.cfg.breakup.act() {
+            let a = 0.5 * p.d * p.brk.kh;
+            let s = self.strip(p, u, rho_g, age, age)?;
+            let c = match s.by {
+                brk::Mechanism::Aerodynamic => 1.0,
+                _ => self.cfg.breakup.c_tcav,
+            };
+            (a, c * s.rate)
+        } else {
+            let (a, rc, tau) = self.kh_of(p, u, rho_g)?;
+            (a, (a - rc) / tau)
+        };
+        let rate = p.count * rho_l * 4.0 * std::f64::consts::PI * a * a * dadt;
+        let lim = self.cfg.breakup.shed_fraction * p.brk.m0 / rate;
+        (lim.is_finite() && lim > 0.0).then_some(lim)
+    }
+
+    /// The KH-ACT stripping of blob `p` between the ages `t0` and `t1`
+    /// (D307): the strongest of the aerodynamic, turbulence and cavitation
+    /// mechanisms of its hole.
+    fn strip(&self, p: &One, u: f64, rho_g: f64, t0: f64, t1: f64) -> Option<brk::Stripping> {
+        let a = 0.5 * p.d * p.brk.kh;
+        if a.is_nan() || a <= 0.0 {
+            return None;
+        }
+        let l = &self.cfg.liquid;
+        let inj = &self.cfg.injectors[(p.id >> 48) as usize];
+        let kh = self.kh_of(p, u, rho_g).map(|(_, rc, tau)| (rc, tau));
+        let turb = inj.nozzle_turbulence(p.brk.u0);
+        let cav = inj.cavitation(l.density, l.vapour_pressure);
+        brk::act_strip(
+            a,
+            kh,
+            turb.as_ref(),
+            cav.as_ref(),
+            self.cfg.breakup.c_tcav,
+            t0.max(0.0),
+            t1.max(0.0),
+        )
+    }
+
+    /// The KH radius a of parcel `p` (the radius of a drop; the stripped
+    /// radius of a blob), its child radius r_c = B₀ Λ and breakup time τ,
+    /// when r_c < a (D301).
+    fn kh_of(&self, p: &One, u: f64, rho_g: f64) -> Option<(f64, f64, f64)> {
+        let b = &self.cfg.breakup;
+        let a = 0.5 * p.d * p.brk.kh;
+        if a.is_nan() || a <= 0.0 {
+            return None;
+        }
+        let w = brk::kh_wave(&self.drop_input(a, u, rho_g));
+        let rc = b.b0 * w.lambda;
+        if rc.is_nan() || rc >= a {
+            return None;
+        }
+        let tau = brk::kh_time(a, &w, b.b1);
+        (tau > 0.0 && tau.is_finite()).then_some((a, rc, tau))
+    }
+
+    fn drop_input(&self, a: f64, u: f64, rho_g: f64) -> brk::DropInput {
+        let l = &self.cfg.liquid;
+        brk::DropInput {
+            a,
+            u,
+            rho_l: l.density,
+            rho_g,
+            sigma: l.surface_tension.unwrap_or(f64::NAN),
+            mu_l: l.viscosity.unwrap_or(f64::NAN),
+        }
+    }
+
+    /// The breakup and distortion of parcel `p` over the sub-step `dt` that
+    /// started in the state `pre` (SP6, D301 to D303); `now` is the time at
+    /// its end, `left` the time left in the step. A blob that has stripped
+    /// enough sheds a child parcel into `kids`.
+    #[allow(clippy::too_many_arguments)]
+    fn break_up(
+        &self,
+        p: &mut One,
+        pre: &Pending,
+        dt: f64,
+        now: f64,
+        left: f64,
+        kids: &mut Vec<(One, f64)>,
+        counts: &mut [u64; 2],
+    ) {
+        if !(dt > 0.0 && p.d > 0.0) {
+            return;
+        }
+        let b = self.cfg.breakup;
+        let rho_l = self.cfg.liquid.density;
+        if b.distortion() {
+            // TAB oscillator (O'Rourke and Amsden 1987), exact over the
+            // sub-step; a drop distorted to y = 1 stays there
+            let t = brk::tab_step(
+                &self.drop_input(0.5 * p.d, pre.u, pre.rho_g),
+                p.brk.y,
+                p.brk.ydot,
+                dt,
+            );
+            p.brk.y = t.y;
+            p.brk.ydot = t.ydot;
+            if p.brk.y > 1.0 {
+                p.brk.y = 1.0;
+                p.brk.ydot = 0.0;
+            }
+        }
+        if !b.on() {
+            return;
+        }
+        let sigma = self.cfg.liquid.surface_tension.unwrap_or(f64::NAN);
+        // Rayleigh-Taylor beyond the breakup length (D302, Beale and Reitz
+        // 1999): the wave grows while it fits on the drop; after C_τ/Ω_RT
+        // the drop breaks into drops of the size C_RT Λ_RT
+        let inj = &self.cfg.injectors[(p.id >> 48) as usize];
+        let r = [
+            p.x[0] - inj.position[0],
+            p.x[1] - inj.position[1],
+            p.x[2] - inj.position[2],
+        ];
+        let d0 = inj.hole_diameter.unwrap_or(inj.diameter);
+        let lb = brk::breakup_length(b.c_bl(), rho_l, pre.rho_g, d0);
+        if norm(r) >= lb {
+            // the deceleration by the drag: the slip over the response time
+            let g_t = pre.u / pre.tau;
+            match brk::rt_wave(g_t, rho_l, pre.rho_g, sigma) {
+                Some(w) if b.c_rt * w.lambda < p.d => {
+                    p.brk.rt += dt;
+                    if p.brk.rt >= b.c_tau / w.omega {
+                        let dn = b.c_rt * w.lambda;
+                        let q = p.d / dn;
+                        p.count *= q * q * q;
+                        p.d = dn;
+                        p.brk = BreakupState {
+                            m0: p.brk.m0,
+                            kids: p.brk.kids,
+                            ..BreakupState::default()
+                        };
+                        counts[0] += 1;
+                        return;
+                    }
+                }
+                _ => p.brk.rt = 0.0,
+            }
+        }
+        // Kelvin-Helmholtz (D301); a blob of kh-act also by the nozzle
+        // turbulence and the cavitation (D307)
+        let (an, rc, act) = if b.act() && p.brk.blob {
+            let age = now - p.born;
+            let Some(s) = self.strip(p, pre.u, pre.rho_g, age - dt, age) else {
+                return;
+            };
+            (s.a, s.rc, s.by != brk::Mechanism::Aerodynamic)
+        } else {
+            let Some((a, rc, tau)) = self.kh_of(p, pre.u, pre.rho_g) else {
+                return;
+            };
+            (brk::kh_radius(a, rc, tau, dt), rc, false)
+        };
+        if !p.brk.blob {
+            let a = 0.5 * p.d;
+            // a drop strips in place: smaller drops, more of them
+            let q = a / an;
+            p.count *= q * q * q;
+            p.d = 2.0 * an;
+            return;
+        }
+        // a blob keeps its liquid until the stripped share is shed as a
+        // child parcel of drops of the radius r_c
+        p.brk.kh = an / (0.5 * p.d);
+        let k3 = p.brk.kh * p.brk.kh * p.brk.kh;
+        let m = mass_of(p.d, p.count, rho_l);
+        let shed = m * (1.0 - k3);
+        if shed >= b.shed_fraction * p.brk.m0 && p.brk.kids < MAX_KIDS {
+            p.brk.kids += 1;
+            if act {
+                counts[1] += 1;
+            }
+            let dc = 2.0 * rc;
+            kids.push((
+                One {
+                    id: child_id(p.id, p.brk.kids),
+                    x: p.x,
+                    v: p.v,
+                    d: dc,
+                    count: shed / (rho_l * std::f64::consts::PI / 6.0 * dc * dc * dc),
+                    born: now,
+                    temp: p.temp,
+                    eddy: p.eddy,
+                    brk: BreakupState {
+                        m0: shed,
+                        ..BreakupState::default()
+                    },
+                    cell: p.cell,
+                    face: p.face,
+                },
+                left,
+            ));
+            p.d *= p.brk.kh;
+            p.brk.kh = 1.0;
+        }
+        // a blob too small to shed another child strips in place from now
+        if mass_of(p.d, p.count, rho_l) < b.shed_fraction * p.brk.m0 || p.brk.kids >= MAX_KIDS {
+            let k = p.brk.kh;
+            p.count /= k * k * k;
+            p.d *= k;
+            p.brk.kh = 1.0;
+            p.brk.blob = false;
         }
     }
 
@@ -2061,6 +2587,16 @@ impl Spray {
                     let v1 = et * vt - en * vn * nk;
                     *wk += mass * (v1 - *vk);
                     *vk = v1;
+                }
+                if rule.mode == BoundaryMode::Mirror {
+                    // the parcel goes on in the mirror image of the flow,
+                    // and so does its eddy: without it the fluctuation
+                    // drives a small drop back into the plane at once, and
+                    // it bounces in tiny sub-steps for the eddy's life
+                    let un = p.eddy.u[0] * n[0] + p.eddy.u[1] * n[1] + p.eddy.u[2] * n[2];
+                    for (uk, nk) in p.eddy.u.iter_mut().zip(n) {
+                        *uk -= 2.0 * un * nk;
+                    }
                 }
                 // a hair inside the cell, so the next track starts in it
                 let eps = 1e-6 * h;
@@ -2126,6 +2662,10 @@ impl Spray {
             // a restart written before SP2c: every parcel starts a new eddy
             parcels.eddy = vec![Eddy::default(); parcels.len()];
         }
+        if parcels.brk.len() != parcels.len() {
+            // a restart written before SP6: undistorted drops
+            parcels.brk = vec![BreakupState::default(); parcels.len()];
+        }
         parcels.cell = Vec::with_capacity(parcels.len());
         for x in &parcels.x {
             match env.loc.locate_search(*x) {
@@ -2159,7 +2699,8 @@ impl Spray {
         let id: Vec<f64> = self.parcels.id.iter().map(|&i| i as f64).collect();
         let age: Vec<f64> = self.parcels.born.iter().map(|b| self.time - b).collect();
         let injector: Vec<f64> = self.parcels.id.iter().map(|&i| (i >> 48) as f64).collect();
-        let fields = [
+        let distortion: Vec<f64> = self.parcels.brk.iter().map(|b| b.y).collect();
+        let mut fields = vec![
             PointField {
                 name: "velocity",
                 values: &vel,
@@ -2196,6 +2737,13 @@ impl Spray {
                 components: 1,
             },
         ];
+        if self.cfg.breakup.distortion() {
+            fields.push(PointField {
+                name: "distortion",
+                values: &distortion,
+                components: 1,
+            });
+        }
         let attrs = [
             ("format", Attr::Str("foehncraft.parcels")),
             ("format_version", Attr::U64(1)),
@@ -2352,10 +2900,34 @@ fn direction(id: u64, axis: [f64; 3], e1: [f64; 3], e2: [f64; 3], cos_a: f64) ->
 }
 
 impl Injector {
-    /// Droplets per parcel at the injector.
+    /// Droplets per parcel at the injector (at the constant mass flow).
     pub fn droplets_per_parcel(&self, rho_p: f64) -> f64 {
-        let m = self.mass_flow / self.parcels_per_second;
-        m / (rho_p * std::f64::consts::PI / 6.0 * self.diameter.powi(3))
+        let m = self.flow_share * self.mass_flow / self.parcels_per_second;
+        m / (rho_p * std::f64::consts::PI / 6.0 * self.fixed_diameter().powi(3))
+    }
+
+    /// True for blob injection: a hole and no droplet size of its own.
+    pub fn is_blob(&self) -> bool {
+        self.hole_diameter.is_some() && self.size.is_none() && self.diameter == 0.0
+    }
+
+    /// The diameter of the droplets without a size distribution: `diameter`,
+    /// or the blob diameter √C_a d_hole.
+    pub fn fixed_diameter(&self) -> f64 {
+        if self.diameter > 0.0 {
+            self.diameter
+        } else {
+            self.blob_diameter().unwrap_or(0.0)
+        }
+    }
+
+    /// The speed at the injector for the mass flow `m_dot` (kg/s): `speed`,
+    /// or with a hole and without a speed U = ṁ/(ρ_l C_a A_hole) (D306).
+    pub fn exit_speed(&self, rho_p: f64, m_dot: f64) -> f64 {
+        match self.flow_area() {
+            Some(a) if self.speed == 0.0 => m_dot / (rho_p * a),
+            _ => self.speed,
+        }
     }
 }
 

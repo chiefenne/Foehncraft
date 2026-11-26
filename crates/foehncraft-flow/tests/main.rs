@@ -25,6 +25,7 @@ mod coupled;
 mod curvature;
 mod datums;
 mod derived;
+mod droplet_validation;
 mod eb;
 mod energy;
 mod expressions;

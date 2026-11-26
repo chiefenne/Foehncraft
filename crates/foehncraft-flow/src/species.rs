@@ -69,6 +69,13 @@ pub fn field_name(s: &str) -> String {
 /// `tools/data/gri30_species.py`).
 pub const DATA: &str = include_str!("../data/species-gri30.toml");
 
+/// The vapours of the spray liquids (D320, written by
+/// `tools/data/vapour_species.py`): NASA-7 fits to the NIST WebBook
+/// ideal-gas heat capacities and Lennard-Jones data of Tee, Gotoh and
+/// Stewart (1966). Their entropy constant is not set: not for chemical
+/// equilibrium.
+pub const DATA_VAPOURS: &str = include_str!("../data/species-vapours.toml");
+
 /// One species of the data file.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -109,9 +116,13 @@ pub fn database() -> &'static BTreeMap<String, Record> {
     DB.get_or_init(|| {
         // the file is part of the build; a test reads it (an error here is
         // a broken data file, reported by `Resolved::of`)
-        toml::from_str::<DataFile>(DATA)
+        let mut db = toml::from_str::<DataFile>(DATA)
             .map(|d| d.species)
-            .unwrap_or_default()
+            .unwrap_or_default();
+        if let Ok(v) = toml::from_str::<DataFile>(DATA_VAPOURS) {
+            db.extend(v.species);
+        }
+        db
     })
 }
 
@@ -1202,7 +1213,7 @@ mod tests {
     #[test]
     fn the_data_file_has_the_53_species_of_gri_mech() {
         let d = database();
-        assert_eq!(d.len(), 53);
+        assert_eq!(d.len(), 53 + 2, "GRI-Mech 3.0 and the two spray vapours");
         assert!((d["CH4"].molar_mass - 0.01604246).abs() < 1e-8);
         assert!((d["N2"].molar_mass - 0.0280134).abs() < 1e-8);
         // NO, not the boolean `false` of a YAML 1.1 reader
@@ -1212,6 +1223,26 @@ mod tests {
         for s in &m.species {
             assert!(d.contains_key(s), "{s}");
         }
+    }
+
+    /// The spray vapours (D320): c_p of the fits against the NIST WebBook
+    /// ideal-gas values (Scott 1974) and the kinetic-theory viscosity of
+    /// n-heptane vapour against the NIST fluid table (7.209e-6 Pa s at
+    /// 371.2 K, 0.1 MPa) within 5 %.
+    #[test]
+    fn the_spray_vapours_meet_the_nist_data() {
+        for (n, t, cp) in [
+            ("NC7H16", 400.0, 210.66),
+            ("NC7H16", 800.0, 342.25),
+            ("IC8H18", 500.0, 293.42),
+            ("IC8H18", 1200.0, 494.55),
+        ] {
+            let s = db(n);
+            let c = s.cp(t) * s.molar_mass;
+            assert!((c / cp - 1.0).abs() < 6e-3, "{n} {t}: {c} against {cp}");
+        }
+        let mu = db("NC7H16").viscosity(371.208);
+        assert!((mu / 7.20901e-6 - 1.0).abs() < 0.05, "{mu}");
     }
 
     /// Pure-gas viscosities and conductivities at 300 K against measured

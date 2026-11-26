@@ -12,7 +12,9 @@ Part of the [Example gallery](../gallery.md): droplets as Lagrangian parcels in 
 | 292 | [The spray-cooled duct as a steady state](#spray-steady) | SP2s | `[spray.steady]` (D260): parcel streams through the frozen steady gas, sources relaxed between passes, source residual in the convergence test, keyed streams, `spray/streams.vtkhdf` |
 | 306 | [Water droplets evaporating in hot air](#spray-evaporation) | SP4, SP5 | `[spray.evaporation]` (Ranz-Marshall, Abramzon-Sirignano), `[spray.liquid] vapour`, vapour, mass and enthalpy sources in value-plus-slope form with the closing step (D250), vapour ledger pair, saturation limiter (D253) |
 | 306b | [More water than the air can take, steady](#spray-saturation) | SP5, SP2s | evaporation in the steady spray mode, adiabatic saturation against the exact end state (V28.11, partly met) |
+| 318 | [A fuel spray breaks up in dense nitrogen](#spray-breakup) | SP6 | `[spray.breakup]` KH-ACT and KH-RT, blob injection from `hole_diameter`, `area_contraction` and a `rate` table, child parcels, Rayleigh-Taylor beyond the breakup length, TAB distortion and dynamic drag, mirrored eddies |
 | 314 | [A fuel droplet's surface at diesel pressure](#spray-a-surface) | SA1 | `[spray.evaporation] equilibrium = "peng-robinson"`, `[spray.evaporation.peng_robinson]`: Peng-Robinson phase equilibrium of the fuel and the ambient gas at the droplet surface, latent heat from the same equation, the critical mixing state (D311, D312, D314) |
+| 321 | [Fuel droplets with real liquid properties and the 1/3-rule film](#spray-liquid-library) | D320, D321 | `[spray.liquid] library` (water, n-heptane, n-dodecane, iso-octane), `[spray.evaporation] film = "one-third"` (default), single n-heptane droplets against measurements, an n-heptane spray in hot nitrogen |
 
 ---
 
@@ -422,7 +424,7 @@ Picture:
 <a id="spray-evaporation"></a>
 ## 306. Water droplets evaporating in hot air
 
-<img src="../figures/gallery/spray_evaporation.png" alt="Top: water vapour mass fraction in a duct of 1 m by 0.2 m with a nozzle at x = 0.1 m on the axis; a narrow red plume of 8 % vapour runs along the axis from the nozzle to the outlet, widening into green and blue (2 to 4 %) downstream, the rest of the duct blue at the inlet value of 0.5 %; the droplets are dots on the axis, white for the small and grey for the large ones. Bottom left: the mass-flow mean air temperature falls from 300 °C at the nozzle to 244 °C at the outlet while the mean vapour mass fraction rises from 0.5 % to 2.5 %. Bottom right: over 0.4 s the vapour the spray gives the air rises to about 1.3 g/s against the 2 g/s sprayed, and the Sauter mean diameter of the droplets in the flow settles near 24 µm." width="1200" height="740">
+<img src="../figures/gallery/spray_evaporation.png" alt="Top: water vapour mass fraction in a duct of 1 m by 0.2 m with a nozzle at x = 0.1 m on the axis; a narrow red plume of 8 % vapour runs along the axis from the nozzle to the outlet, widening into green and blue (2 to 4 %) downstream, the rest of the duct blue at the inlet value of 0.5 %; the droplets are dots on the axis, white for the small and grey for the large ones. Bottom left: the mass-flow mean gas temperature falls from 300 °C at the nozzle to 246 °C at the outlet while the mean vapour mass fraction rises from 0.5 % to 2.4 %. Bottom right: over 0.4 s the vapour the spray gives the gas rises to about 1.2 g/s against the 2 g/s sprayed, and the Sauter mean diameter of the droplets in the flow settles near 24 µm." width="1200" height="740">
 
 `spray_evaporation.toml` blows air at 300 °C with a little water vapour
 (Y_H2O = 0.005) at 5 m/s through a duct of 1 m by 0.2 m (2D, 100 × 20
@@ -464,12 +466,14 @@ never acts silently: `spray.csv` counts the cells and the mass, and the run
 warns with SPR009. In this run it acts in 50 cell-steps of the 200 steps,
 holding back at most 5 × 10⁻⁷ kg/s.
 
-In this run about 1.25 g/s of the 2 g/s evaporate in the duct; the air
-leaves at a mass-flow mean of 244 °C and with 2.5 % vapour. **Finding:**
+In this run about 1.2 g/s of the 2 g/s evaporate in the duct; the air
+leaves at a mass-flow mean of 246 °C and with 2.4 % vapour. (Since gallery
+321 the gas properties are those of the film by the 1/3 rule; with the
+far-field properties of the first version it was 1.25 g/s and 244 °C.) **Finding:**
 the coupling lag falls more slowly with evaporation than with heat alone,
 by a factor of about 1.6 per pass: with `max_passes = 4` most steps ended
-at 1.5 to 7 × 10⁻³, so the case asks for 8 (6.6 passes per step on average,
-24 of 200 steps end at 8 with a lag of about 1.2 × 10⁻³, SPR006).
+at 1.5 to 7 × 10⁻³, so the case asks for 8 (6.8 passes per step on average,
+30 of 200 steps end at 8 with a lag of about 1.2 × 10⁻³, SPR006).
 
 **What is checked.** A single droplet of 100 µm at 300 K in still dry air
 at 500 K follows the d² law at the wet-bulb temperature (local K within 1 %,
@@ -483,8 +487,8 @@ In the flow the ledger pairs 2801 to 2805 (momentum, heat, vapour) are zero
 to the bit, the parcel accounts close to 10⁻¹², and `spray.csv` is bitwise
 equal on 1 and 4 threads.
 
-**What this version does not do.** Water only (its vapour-pressure law and
-latent heat); no boiling, no multicomponent liquids. The heat balance closes
+**What this version does not do.** No boiling, no multicomponent liquids
+(other single liquids: gallery 321). The heat balance closes
 to round-off with `[species] properties = "fluid"`; with the mixture
 properties of the species the energy account keeps a few parts in a
 thousand. Constant density in this example: the transient domain mass check
@@ -547,6 +551,98 @@ sub-step boundaries moving with the gas. Water only; one process.
 
 ---
 
+<a id="spray-breakup"></a>
+## 318. A fuel spray breaks up in dense nitrogen
+
+<img src="../figures/gallery/spray_breakup.png" alt="Top: side view of a fuel spray in still nitrogen at 1 ms, the gas speed on the symmetry plane mirrored about the spray axis: a red and yellow jet core of up to 190 m/s along the axis from the nozzle at the left to about 15 mm, widening into green and cyan (50 to 75 m/s) and dark blue at 40 to 50 mm, the still gas around it blue; the drops are small white dots filling a spindle of about plus and minus 6 mm half-width that ends at about 52 mm in a rounded head, with a few grey and black blobs on the axis right at the nozzle. Bottom left: liquid penetration over the first millisecond; the KH-ACT curve for 97 % of the liquid rises with the dashed Hiroyasu-Arai correlation, lags it before 0.15 ms, runs up to a quarter ahead around 0.3 ms and meets it at 51 mm at 1 ms; the KH-RT curve lies below and ends at 47 mm. Bottom right: the Sauter mean diameter along the spray is close to 2 micrometres from 4 mm to the tip for both models, higher only in the first slab at the nozzle." width="1200" height="760">
+
+`spray_breakup.toml` injects a diesel-like fuel (830 kg/m³, 0.027 N/m,
+2.5 mPa s) at 60 MPa through one hole of 0.15 mm into nitrogen at rest at
+15 kg/m³, for 1.5 ms with a measured-style rate of injection (a 50 µs ramp
+to 4.46 g/s). The domain is a quarter of the chamber about the spray axis
+(3D, 100 × 16 × 16 cells graded towards the axis, symmetry planes y = 0 and
+z = 0), so the injector carries `flow_share = 0.25`. The gas is two-way
+coupled and k-ε turbulent, and the eddies disperse the drops.
+
+**How the jet breaks up.** The injector describes the hole, not the drops
+(D306): parcels leave as blobs of √C_a d_hole = 139 µm at
+ṁ/(ρ_l C_a A_hole) = 354 m/s on the plateau. With `model = "kh-act"`
+(Som and Aggarwal 2010, D307) three mechanisms compete for each blob, and the
+one with the largest ratio of length to time scale strips it:
+
+- the **turbulence** the liquid brings out of the hole, here k₀ ≈ 240 m²/s²
+  and ε₀ ≈ 6 × 10⁸ m²/s³ from the force balance of Huh and Gosman for a
+  0.6 mm long hole with C_d = 0.8. It decays as in the k-ε model, so the
+  blob loses radius at C_T,CAV √k and sheds children of the integral length
+  scale (1 to 4 µm);
+- the **cavities** of the contracted jet (C_a = 0.86, R_CAV = 28 µm), which
+  burst at the jet surface;
+- the **Kelvin-Helmholtz waves** of the gas stream (Reitz 1987), which take
+  over once the turbulence has decayed; no blob of more than 50 µm is left
+  4 mm from the nozzle.
+
+Beyond the breakup length the Rayleigh-Taylor waves of the drag deceleration
+break the drops (Beale and Reitz 1999). Every parcel carries the TAB
+distortion, which raises its drag towards that of a disc (`drag =
+"dynamic"`). The stripped liquid leaves as child parcels whose identity
+comes from the blob, so the run gives the same bits on any thread count, and
+the liquid is kept to round-off at every split.
+
+**What the run shows.** After 1 ms, 97 % of the liquid is within 50.6 mm of
+the nozzle. The correlation of Hiroyasu and Arai (1990) for this
+injection pressure, gas density and hole gives 51.1 mm. Over the first
+0.15 ms the spray lags behind the correlation's linear start, because of
+the rate ramp. Between 0.2 and 0.4 ms it runs up to 24 % ahead, and from
+0.8 ms on it is within 5 %. The same case with `--set
+spray.breakup.model=kh-rt` (dashed) reaches 47.0 mm: without the nozzle
+turbulence the blobs carry their momentum farther before the gas takes it.
+In both runs nearly all of the liquid soon sits in drops of about 2 µm that
+follow the gas, so the gas jet carries the tip. The gas on the axis moves
+at 190 m/s 5 mm from the nozzle and at 44 m/s at 40 mm, where the jet has
+a half-width of about 4 mm. The head of
+the spray rolls up into a vortex ring, which pushes the drops at the tip off
+the axis. 20 740 children were shed by 1 ms, 20 651 of them by the nozzle
+turbulence; 1 882 drops broke by Rayleigh-Taylor waves. The coupling takes
+2.9 passes per step on average; 106 of the 500 steps end at `max_passes = 3`
+above the tolerance, mostly in the first 0.26 ms.
+
+**Two findings on the way.** With the k-ω SST model of the first runs, the
+turbulence of the thin gas jet did not build up in the still chamber
+within the injection: k stayed near its start value and ω near 10⁴ 1/s. The
+jet did not spread, and the tip ran 80 % ahead of the correlation. k-ε builds
+it up (k of about 2000 m²/s² near the nozzle after 0.3 ms), so the case uses
+k-ε. The eddy-lifetime dispersion also made the drops on the corner of the
+two symmetry planes bounce millions of times, because the eddy kept pushing
+them back into the plane. The parcel's eddy is now mirrored with it at
+symmetry planes and slip walls (D308): 25 thousand rebounds instead of 47
+million in 0.3 ms, the run 8 times faster, and the same penetration.
+
+**What is checked.** Reitz's KH fits against our own dispersion relation of
+a liquid column: the wavelength within 5 % everywhere, and the growth rate
+within 3 % outside We_g 0.1 to 50 (up to 46 % high near We_g 2). The TAB
+step against RK4. The decay of the nozzle turbulence against RK4 of the k-ε
+equations to 10⁻⁹. A blob stripped by the turbulence alone loses exactly
+C_T,CAV ∫√k dt of radius, to 10⁻¹² of its radius, whatever the sub-steps.
+The KH radius of a blob follows its breakup equation integrated by RK4
+within 2 %. The liquid is kept to 10⁻¹³. Runs give the same bits on 1 and 4
+threads with the storage reversed, and a restart continues with the same
+bits.
+
+**What this version does not do.** The penetration is compared with a
+correlation, not yet with measurements; ECN Spray G is the next part. The
+drop sizes are not validated: a Sauter mean diameter of 2 µm is small next
+to measured diesel sprays, and there are no collisions or coalescence yet.
+The inlet loss K_c = 0.5 and the area ratio s = 0 of the nozzle turbulence
+estimate are our own choices (the papers give no values). Breakup is
+refused in the steady spray mode. Surface tension and viscosity are
+constant, children leave with the blob's velocity, and there is no GPU
+entry of the breakup kernel. One process. The run takes about 4 minutes
+on 4 threads, so the case is in the long CI set.
+
+Files: `spray.csv` (with `child_parcels`, `rt_breakups`, `act_children`,
+`hole.penetration_m`), `spray/parcels_<step>.vtkhdf` (with `distortion`),
+`fields.vtkhdf`. [Recipe 318](../recipes/sprays.md#spray-breakup),
+[case row](../cases/flow.md#lagrangian-sprays).
 <a id="spray-a-surface"></a>
 ## 314. A fuel droplet's surface at diesel pressure
 
@@ -612,3 +708,106 @@ breakup model and the n-dodecane vapour species (stages SA2 to SA6 of
 
 [Recipe 314](../recipes/sprays.md#spray-a-surface),
 [plan](../requirements/step28-spray-a.md).
+
+---
+
+<a id="spray-liquid-library"></a>
+## 321. Fuel droplets with real liquid properties and the 1/3-rule film
+
+<img src="../figures/gallery/droplet_heptane.png" alt="Three charts for single n-heptane droplets of 0.37 mm at 300 K in still nitrogen at 0.1 MPa and 473, 548, 623, 698 and 748 K. Left: d squared over d0 squared against time over d0 squared, straight lines after a short heat-up; the droplets with the 1/3-rule film (solid) live 10.4 s/mm² at 473 K and 4.7 s/mm² at 748 K, those with far-field properties (dashed) about 15 to 30 percent shorter. Middle: the droplet temperature rises within about 1 s/mm² to a wet-bulb plateau of 328 to 341 K with the film rule and 336 to 353 K with far-field properties. Right: the evaporation rate K against the gas temperature, rising from 0.10 to 0.23 mm²/s with the 1/3 rule and from 0.13 to 0.33 mm²/s with far-field properties, above the measured lines: the fibre-free extrapolation 0.075 to 0.20 mm²/s and the microgravity fit 0.065 to 0.166 mm²/s." width="1500" height="490">
+
+<img src="../figures/gallery/spray_heptane_evaporation.png" alt="Top: n-heptane vapour mass fraction in a duct of 1 m by 0.2 m with a nozzle at x = 0.1 m on the axis; a red core of more than 12 % right behind the nozzle turns into a yellow and green plume of 7 to 9 % along the axis to the outlet, surrounded by thin blue and cyan edges, the rest of the duct dark blue at zero; the few droplets left are white and grey dots within 0.15 m of the nozzle. Bottom left: the mass-flow mean gas temperature falls from 327 °C to 312 °C within 5 cm of the nozzle and stays flat, while the mean vapour mass fraction rises from zero to 1.7 % in the same 5 cm. Bottom right: over 0.4 s the vapour the spray gives the gas rises to the 1 g/s of n-heptane sprayed within about 10 ms and fluctuates around it, and the Sauter mean diameter of the droplets in the flow stays between 20 and 30 µm." width="1200" height="740">
+
+Water was the only liquid of the first evaporation version (gallery 306).
+`[spray.liquid] library` now takes a liquid of the property library (D320):
+water, n-heptane and n-dodecane, fitted to the saturation tables of the NIST
+Chemistry WebBook (SRD 69), and iso-octane, fitted to published
+correlations (iso-octane is not in the NIST fluid system). Each gives its
+vapour pressure (Wagner form), density, specific heat, latent heat (Watson
+form), surface tension and viscosity as functions of the temperature, from
+the triple point region to the critical point. The vapour species of the
+gas come with it: `NC7H16` and `IC8H18` (NASA-7 polynomials fitted to
+published ideal-gas heat capacities, Lennard-Jones data from the critical
+point) join the species data of the flow solver.
+
+**The film state (D321).** The gas properties of the evaporation are now
+those of the film around the droplet by the 1/3 rule (Hubbard, Denny and
+Mills 1975; Yuen and Chen 1976): T_m = T_p + (T_g − T_p)/3,
+Y_m = Y_s + (Y_g − Y_s)/3, with the viscosity, conductivity and specific
+heat of the mixture of vapour and carrier gas from the species data (Wilke,
+Mathur), the density of the ideal gas at T_m and the diffusivity of the
+vapour in the carrier from kinetic theory (Chapman-Enskog, Blanc's law).
+The carrier is the start composition of `[species]` without the vapour.
+This is the default; `film = "far-field"` keeps the properties of the gas
+at the droplet, the first version. A heptane vapour layer conducts heat
+less and diffuses more slowly than hot nitrogen, so the far-field
+properties overstate the evaporation of a fuel droplet by a lot.
+
+**Single droplets against measurements.** The left image runs a droplet
+of 0.37 mm through the evaporation of the spray solver (`Spray::evaporation`,
+Abramzon-Sirignano) at rest in nitrogen at 0.1 MPa, as in the experiments of
+Chauveau, Birouk, Halter and Gökalp (2019, microgravity, 14 µm cross
+fibres). K is the slope of d²/d0² between 0.8 and 0.3:
+
+| T_gas (K) | K, 1/3 rule (mm²/s) | K, far field | measured, microgravity fit | measured, fibre-free extrapolation (2008) |
+|---|---|---|---|---|
+| 473 | 0.104 (+59 %) | 0.126 (+93 %) | 0.065 | 0.075 (1/3 rule +38 %) |
+| 548 | 0.143 (+54 %) | 0.183 (+98 %) | 0.093 | 0.109 (+31 %) |
+| 623 | 0.178 (+48 %) | 0.239 (+99 %) | 0.120 | 0.143 (+25 %) |
+| 698 | 0.211 (+43 %) | 0.292 (+98 %) | 0.147 | 0.176 (+20 %) |
+| 748 | 0.231 (+39 %) | 0.326 (+97 %) | 0.166 | 0.199 (+16 %) |
+
+The 1/3 rule halves the error. What is left is the known gap of this class
+of model, not a fault of the implementation: Both, Mira and Lehmkuhl (2022,
+1/3 rule, Abramzon-Sirignano, mixture-averaged properties) report the same
+over-prediction against these data, and Chauveau's group writes that their
+microgravity rates lie below quasi-steady theory, because the vapour
+accumulates around a droplet without buoyancy (vapour residence about ten
+times longer than in normal gravity). Thermal radiation and the heat
+conducted along the fibre would raise the computed K, not lower it. Real-gas
+effects in the film are small at 0.1 MPa (Z of 0.95 to 1).
+
+**An n-heptane spray.** `spray_heptane_evaporation.toml` sprays 1 g/s of
+n-heptane at 300 K (10 to 80 µm) into nitrogen at 600 K and 5 m/s in the
+duct of gallery 306. The droplets evaporate within about 5 cm, the gas
+takes the 1 g/s of vapour (ledger pair) and cools to 312 °C with 1.7 %
+vapour by mass.
+
+```toml
+[spray.liquid]                # in the included injector file
+library = "n-heptane"         # water, n-heptane, n-dodecane, iso-octane
+temperature = 300.0
+vapour = "NC7H16"
+
+[spray.evaporation]           # in the case file
+model = "abramzon-sirignano"
+# film = "one-third"          # the default; "far-field" for the first version
+```
+
+**What is checked.** The fits reproduce the NIST tables (vapour pressure
+within 0.3 %, density within 0.1 %, specific heat and latent heat within
+1.5 %, surface tension within 1 % (n-dodecane 3.6 %), viscosity within
+1.4 %, up to 0.9 T_c) and the normal boiling points within 0.5 K; iso-octane meets the
+measured vapour pressure of Willingham et al. (1945) within 0.3 % and the
+calorimetric latent heat of Majer and Svoboda within 0.6 %. The vapour
+species meet the NIST ideal-gas heat capacity within 0.6 % and the
+viscosity of heptane vapour within 5 %. A library liquid applied twice
+keeps its values; a value given beside `library` and an unknown liquid are
+refused with the names listed. The evaporation cases of gallery 306 run
+with the new default.
+
+**What this version does not do.** The density and specific heat of the
+liquid stay constant in a run (taken at `property_temperature`, default the
+injected temperature): the thermal expansion of a heated droplet is not
+followed. Iso-octane density, specific heat, viscosity and surface tension
+above about 400 K rest on extrapolated correlations. The single-droplet
+comparison is a recorded gap (+16 to +59 %), not a pass. The film carrier is
+the start composition of the case, not the local gas of the cell (enough
+for an inert carrier, not for a reacting gas). No n-dodecane vapour species
+yet (the Spray A work adds it). Multicomponent liquids and boiling are
+later stages.
+
+[Recipe 321](../recipes/sprays.md#spray-liquid-library),
+[case row](../cases/flow.md#lagrangian-sprays).
+
+---
