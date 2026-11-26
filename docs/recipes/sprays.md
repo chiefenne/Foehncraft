@@ -606,3 +606,51 @@ python3 -m tools.plot.spray_a_film output/spray_a_film output/spray_a_film
 
 See the [gallery entry](../gallery/sprays.md#spray-a-film) for what is
 checked and what is not.
+
+---
+
+<a id="spray-a-distortion"></a>
+## 326. Let distorted drops drag and evaporate as spheroids
+
+**One key with breakup.** The TAB distortion y of each drop (`[spray.breakup]`,
+D303) flattens it (y > 0) or stretches it (y < 0). With the Corrected
+Distortion model of Nguyen, Dahms, Pickett and Tagliante (2022) the drop
+drags and evaporates as that spheroid, with the internal circulation of a
+viscous drop:
+
+```toml
+[spray.liquid]
+library = "n-dodecane"            # the viscosity μ_l(T) of the drop
+
+[spray.breakup]
+model = "kh-act"
+drag = "corrected-distortion"     # or "dynamic" (Liu et al. 1993), "sphere"
+
+[spray.evaporation]
+model = "abramzon-sirignano"      # or "ranz-marshall"; both take the factor
+```
+
+- **Drag:** the viscous sphere of Feng and Michaelides (2001a) for
+  λ = μ_l/μ_g, times the shape ratio of Richter and Nikrityuk (2012) in
+  l/d = 1 − y/2. A fully flattened drop drags 1.0 to 1.9 times a sphere
+  (Re 20 to 500, λ 2.5 to 40), not the 3.6 times of the dynamic drag.
+- **Evaporation and heat:** the Sherwood and Nusselt numbers of the sphere
+  laws times the viscous-sphere factor (Feng and Michaelides 2001b), the
+  shape ratio and the surface ratio S/(π d²). A flattened drop evaporates
+  2 to 5 times faster than a solid sphere; a prolate one about as fast as
+  a round drop of the same liquid (the internal circulation alone adds 1
+  to 46 %).
+- **λ** is the liquid's viscosity at the drop temperature (the liquid
+  library, else `[spray.liquid] viscosity`) over the gas (film) viscosity.
+  The liquid needs a viscosity and a surface tension, as for breakup.
+
+The factors of one drop over y, Re and λ are written by the example:
+
+```bash
+cargo run --release -p foehncraft-particles --example spray_a_distortion -- output/spray_a_distortion
+```
+
+The Spray A case `examples/cases/flow/spray_a_distortion.toml` runs the
+model with `--set spray.breakup.drag=dynamic` as the comparison. See the
+[gallery entry](../gallery/sprays.md#spray-a-distortion) for what is
+checked and what is not.

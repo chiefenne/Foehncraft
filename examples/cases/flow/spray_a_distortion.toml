@@ -1,0 +1,123 @@
+# An n-dodecane spray at ECN Spray A conditions with the Corrected
+# Distortion model of the drops (Spray A, SA4, D316).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/spray_a_distortion.toml
+#
+# Nitrogen at rest at 900 K and 22.8 kg/m³ (6 MPa), a quarter of the
+# chamber about the spray axis (symmetry planes y = 0 and z = 0). One hole
+# of 90 µm injects n-dodecane at 363 K for 1.5 ms (3.46 mg in all, the
+# quarter domain takes a quarter) as blobs that break up by KH-ACT. The
+# drops evaporate with the Peng-Robinson surface (SA1) and the real-fluid
+# film (SA2). Every drop carries its TAB distortion; with
+# `drag = "corrected-distortion"` the drag of a viscous spheroid replaces
+# the disc-like drag of Liu et al., and the heat and mass transfer take
+# the shape and the larger surface of the flattened drop (Nguyen, Dahms,
+# Pickett and Tagliante 2022).
+#
+# `--set spray.breakup.drag=dynamic` runs the same spray with the standard
+# dynamic drag, for comparison.
+#
+# The gas is an ideal gas of constant density and properties here (D317);
+# the full Spray A case with its measurements is stage SA6.
+
+case_format = "0.7"
+
+[mesh.generate]
+type = "hex"
+dimension = 3
+upper = [0.05, 0.012, 0.012]
+cells = [100, 20, 20]
+grading = { y = { ratio = 8.0 }, z = { ratio = 8.0 } }
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 22.8
+viscosity = 3.9e-5
+specific_heat = 1153.0
+conductivity = 0.0613
+pressure_values = "gauge"
+operating_pressure = 6.0e6
+
+[turbulence]
+model = "k-epsilon"
+wall_treatment = "scalable"
+
+[initial]
+velocity = [0.0, 0.0, 0.0]
+k = 1e-4
+epsilon = 2e-5
+
+[energy]
+initial = 900.0
+
+[species]
+names = ["NC12H26", "N2"]
+initial = { mass_fractions = { NC12H26 = 0.0, N2 = 1.0 } }
+diffusion = "schmidt"
+schmidt = { NC12H26 = 2.2, N2 = 0.7 }
+properties = "fluid"
+
+[boundary.xmin]
+type = "wall"
+[boundary.xmin.energy]
+heat_flux = 0.0
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymin]
+type = "symmetry"
+[boundary.zmin]
+type = "symmetry"
+[boundary.ymax]
+type = "wall"
+[boundary.ymax.energy]
+heat_flux = 0.0
+[boundary.zmax]
+type = "wall"
+[boundary.zmax.energy]
+heat_flux = 0.0
+
+[time]
+scheme = "bdf2"
+time_step = 2e-6
+end_time = 6e-4
+
+[spray]
+include = "spray_a_distortion_injectors.toml"
+wall_mode = "stick"
+write_every = 50
+dispersion = "eddy-lifetime"
+
+[spray.ecn]
+vapour_fraction = 1e-3
+
+[spray.evaporation]
+model = "abramzon-sirignano"
+equilibrium = "peng-robinson"
+
+[spray.evaporation.peng_robinson]
+ambient = { N2 = 1.0 }
+
+[spray.coupling]
+mode = "two-way"
+passes = "converged"
+tolerance = 1e-3
+max_passes = 3
+
+[spray.breakup]
+model = "kh-act"
+drag = "corrected-distortion"
+b0 = 0.61
+b1 = 10.0
+
+[solver]
+tolerance = 1e-6
+max_iterations = 300
+
+[solver.scalar]
+limiter = "mlp"
+
+[verification]
+require_convergence = false
