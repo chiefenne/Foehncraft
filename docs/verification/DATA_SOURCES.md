@@ -205,6 +205,31 @@ Published measurements and equations, quoted by
   critical conditions of the equation (Peng, D.-Y., Robinson, D. B. (1976),
   Ind. Eng. Chem. Fundam. 15, 59-64, doi:10.1021/i160057a011), recomputed
   to 19 digits by us; a test checks the triple root.
+- Ideal gas of n-dodecane (`fuels::N_DODECANE.ideal_gas`, written by
+  `tools/data/dodecane_ideal_gas.py`): the recommended c_p of n-nonane and
+  n-decane of Scott, D. W. (1974), Correlation of the chemical
+  thermodynamic properties of alkane hydrocarbons, J. Chem. Phys. 60,
+  3144-3165, doi:10.1063/1.1681500, as the NIST Chemistry WebBook lists them
+  (gas phase thermochemistry, 200 to 1500 K); Scott's scheme adds the same
+  c_p per CH₂ group (the C7 to C10 differences agree to 0.01 J/(mol K)), so
+  n-dodecane is n-decane plus two increments. Checked against the c_p of
+  the reference equation of state of Lemmon, E. W., Huber, M. L. (2004),
+  Energy Fuels 18, 960-967, doi:10.1021/ef0341062, at 1 Pa (NIST WebBook
+  fluid tables): within 0.11 % at 300 to 700 K. Enthalpy of formation of
+  the gas −290.9 kJ/mol (Prosen and Rossini 1945) and standard entropy
+  622.50 J/(mol K) (Stull 1969), both NIST WebBook.
+- Mixing line and liquid length (VA.4, VA.5,
+  `crates/foehncraft-particles/tests/mixing_line.rs`): liquid density of
+  n-dodecane at 363.15 K and 6 MPa, 703.71 kg/m³ (Lemmon and Huber 2004,
+  NIST WebBook fluid tables). Measured Spray A liquid lengths by diffused
+  back-illumination, injector 210675, 150 MPa, 0 % O₂: 11.7 mm at 900 K,
+  16.3 mm at 700 K, 7.4 mm at 1200 K (22.8 kg/m³), 20.6 mm at 900 K and
+  7.6 kg/m³ (Engine Combustion Network, ecn.sandia.gov/data/dbi675/, read
+  2026-11-25; no uncertainty on the page). Nozzle: d = 90 µm, C_a = 0.95,
+  full spreading angle 21.5° (and 18.7°), Pickett, L. M. et al. (2011),
+  SAE 2011-01-0901 (OSTI 1121363). The scaling law and C_L = 0.62 of
+  Siebers, D. L. (1999), SAE 1999-01-0528, as Yue, Z., Reitz, R. D. (2019),
+  arXiv:1811.03714, eq. 4, give them.
 
 ## 4. Rules for adding an entry
 

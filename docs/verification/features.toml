@@ -1842,7 +1842,7 @@ id = "sprays.high-pressure-surface"
 area = "Sprays"
 title = "High-pressure droplet surface: Peng-Robinson phase equilibrium and latent heat (Spray A, SA1, D311, D312, D314)"
 switch = "[spray.evaporation] equilibrium = \"peng-robinson\", [spray.evaporation.peng_robinson]"
-decisions = ["D310", "D311", "D312", "D314"]
+decisions = ["D310", "D311", "D312", "D314", "D319"]
 model = true
 evidence = [
   { kind = "exact", test = "crates/foehncraft-kernels/src/realfluid.rs::the_omegas_are_the_roots_of_the_critical_conditions", what = "Omega_a, Omega_b and Z_c give the triple root of the cubic at the critical point (to 1e-15)" },
@@ -1859,12 +1859,20 @@ evidence = [
   { kind = "exact", test = "crates/foehncraft-particles/tests/high_pressure.rs::the_spray_takes_the_surface_of_the_table_and_closes_its_books", what = "the spray takes y_f p0 and L_lib L_PR/L_PR,sat of the table bit for bit; the gas receives c_l T + L (books close by construction); a droplet evaporates" },
   { kind = "contract", property = "diagnostics", test = "crates/foehncraft-particles/tests/high_pressure.rs::parcels_above_the_critical_mixing_temperature_are_counted", what = "D314: parcels above the critical mixing temperature are counted with their mass and get no latent heat" },
   { kind = "contract", property = "diagnostics", test = "crates/foehncraft-particles/tests/high_pressure.rs::the_keys_are_checked", what = "unknown fuel, partial critical constants, unknown gas and a k_ij of a gas not in the ambient are refused with the key named" },
+  { kind = "exact", test = "crates/foehncraft-kernels/src/realfluid.rs::rachford_rice_finds_the_vapour_fraction_of_a_known_split", what = "Rachford-Rice gives beta = 1/2 for K = (2, 1/2), z = (1/2, 1/2) to 1e-15 and no split when all K exceed 1" },
+  { kind = "consistency", test = "crates/foehncraft-kernels/src/realfluid.rs::a_binary_flash_gives_the_phases_of_the_surface_equilibrium", what = "the flash of N2 + n-dodecane at 500 K, 6 MPa gives the same coexisting phases for three feeds, equal to the droplet surface solution (1e-9), mass balance to 1e-12; a feed outside the two-phase range stays one phase" },
+  { kind = "consistency", test = "crates/foehncraft-kernels/src/realfluid.rs::the_stability_test_tells_one_phase_from_two", what = "Michelsen's tangent-plane test: pure components and hot gas with a little fuel stable, an equimolar mixture at 450 K, 6 MPa unstable" },
+  { kind = "reference-data", test = "crates/foehncraft-particles/tests/mixing_line.rs::the_ideal_gas_of_dodecane_follows_its_heat_capacity_table", what = "n-dodecane ideal gas: Scott (1974) c_p by the CH2 increment, NASA-7 fit within 0.3 % (within 0.24 % of Lemmon and Huber 2004 at 300 to 700 K), enthalpy of formation -290.9 kJ/mol" },
+  { kind = "exact", test = "crates/foehncraft-particles/tests/mixing_line.rs::va4_the_mixing_line_closes_the_energy_balance", what = "VA.4: 363 K n-dodecane into 900 K N2 at 6 MPa, frozen, equilibrium and ideal: the enthalpy of the state found equals that of the mixed streams to 1e-13 of the stream difference (found 7e-16), the end points are the streams" },
+  { kind = "consistency", test = "crates/foehncraft-particles/tests/mixing_line.rs::va4_the_two_phase_region_of_the_mixing_line", what = "VA.4: Z_sat 0.357 (equilibrium) against 0.320 (ideal); the frozen line equals the equilibrium line before Z_sat and fails the stability test where the flash splits (1e-6); equal fugacities and dissolved N2 in the two-phase region" },
+  { kind = "reference-data", test = "crates/foehncraft-particles/tests/mixing_line.rs::va5_the_siebers_liquid_length_with_our_thermodynamics", what = "VA.5: Siebers (1999) liquid length with our Z_sat at the four measured Spray A conditions (ECN DBI, 210675): 7.2/11.3/4.9/10.7 mm (equilibrium) and 8.2/13.0/5.7/11.3 mm (ideal) against 11.7/16.3/7.4/20.6 mm; the trends with temperature and density right" },
 ]
 gaps = [
+  "VA.5 not met: Siebers' scaling (C_L = 0.62, measured 21.5 deg angle) with our saturation mixture fraction is 30 to 48 % below the measured liquid lengths (equilibrium) and 20 to 45 % (ideal); the real fluid shortens it by 5 to 14 %, away from the measurement; Siebers' own B is not in an open paper",
   "above 550 K Peng-Robinson with one k_ij is 3 to 9 % low on the measured bubble pressures (the measured Henry constant falls faster with T); the surface vapour fraction moves by 2 to 6 % between the k_ij of the whole set and of the hot isotherms",
   "the dissolved gas shifts the equilibrium but is not booked: the liquid stays pure fuel (D311)",
   "the gas solver stays ideal (D317): the departure enthalpy of the dense vapour enters the gas as a sensible-heat deficit",
-  "no flow case yet: the n-dodecane vapour species data come with the liquid library; VA.4 to VA.9 (mixing line, Siebers liquid length, the Spray A case) are later stages",
+  "no flow case yet: the n-dodecane vapour species data come with the liquid library; VA.7 to VA.9 (order independence with a fuel vapour, the Spray A case) are later stages",
   "built-in high-pressure data for n-dodecane only; other liquids take the plain 1978 kappa (water: 11 % low on its vapour pressure at 320 K)",
 ]
 

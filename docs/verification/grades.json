@@ -1442,10 +1442,11 @@
     "gaps written"
    ],
    "gaps": [
+    "VA.5 not met: Siebers' scaling (C_L = 0.62, measured 21.5 deg angle) with our saturation mixture fraction is 30 to 48 % below the measured liquid lengths (equilibrium) and 20 to 45 % (ideal); the real fluid shortens it by 5 to 14 %, away from the measurement; Siebers' own B is not in an open paper",
     "above 550 K Peng-Robinson with one k_ij is 3 to 9 % low on the measured bubble pressures (the measured Henry constant falls faster with T); the surface vapour fraction moves by 2 to 6 % between the k_ij of the whole set and of the hot isotherms",
     "the dissolved gas shifts the equilibrium but is not booked: the liquid stays pure fuel (D311)",
     "the gas solver stays ideal (D317): the departure enthalpy of the dense vapour enters the gas as a sensible-heat deficit",
-    "no flow case yet: the n-dodecane vapour species data come with the liquid library; VA.4 to VA.9 (mixing line, Siebers liquid length, the Spray A case) are later stages",
+    "no flow case yet: the n-dodecane vapour species data come with the liquid library; VA.7 to VA.9 (order independence with a fuel vapour, the Spray A case) are later stages",
     "built-in high-pressure data for n-dodecane only; other liquids take the plain 1978 kappa (water: 11 % low on its vapour pressure at 320 K)"
    ],
    "range": {}
