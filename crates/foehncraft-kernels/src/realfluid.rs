@@ -510,8 +510,16 @@ pub enum SurfaceState {
 const SUBSTITUTIONS: u32 = 30;
 /// Newton steps at most.
 const NEWTON: u32 = 30;
-/// Convergence of ln K.
+/// Convergence of ln K, relative to 1 + max |ln Kᵢ|. The residual of a
+/// cold fuel carries round-off from ln(Z − B) of its nearly incompressible
+/// liquid, and its Newton steps stall at that floor (about 2e-11 at 267 K
+/// and 6 MPa, more below): a step under [`STALL`] that is no longer half
+/// the one before also ends the iteration. An absolute 1e-12 without that
+/// rule failed at single temperatures and ended the surface table there
+/// as if critical.
 const TOL: f64 = 1e-12;
+/// The largest relative Newton step accepted as the round-off floor.
+const STALL: f64 = 1e-8;
 /// ‖ln K‖² below which the solution is taken as trivial (x = y).
 const TRIVIAL: f64 = 1e-10;
 
@@ -587,6 +595,13 @@ pub fn surface(
         None => mix.wilson(t, p),
     };
     let mut steps = 0;
+    let scale = |lk: &[f64; MAX]| {
+        let mut m: f64 = 0.0;
+        for v in lk.iter().take(n) {
+            m = m.max(v.abs());
+        }
+        1.0 + m
+    };
     let trivial = |lk: &[f64; MAX]| {
         let mut s = 0.0;
         for v in lk.iter().take(n) {
@@ -613,13 +628,14 @@ pub fn surface(
         if trivial(&lnk) {
             return SurfaceState::Critical;
         }
-        if dmax < TOL {
+        if dmax < TOL * scale(&lnk) {
             done = true;
             break;
         }
     }
     // Newton with a difference Jacobian
     let mut it = 0;
+    let mut last = f64::INFINITY;
     while !done && it < NEWTON {
         it += 1;
         steps += 1;
@@ -649,9 +665,11 @@ pub fn surface(
         if trivial(&lnk) {
             return SurfaceState::Critical;
         }
-        if dmax < TOL {
+        let sc = scale(&lnk);
+        if dmax < TOL * sc || (dmax < STALL * sc && dmax > 0.5 * last) {
             done = true;
         }
+        last = dmax;
     }
     if !done {
         return SurfaceState::NotConverged;
@@ -1011,6 +1029,13 @@ impl Mixture {
                 }
             }
         }
+        let scale = |lk: &[f64; MAX]| {
+            let mut m: f64 = 0.0;
+            for v in lk.iter().take(n) {
+                m = m.max(v.abs());
+            }
+            1.0 + m
+        };
         let trivial = |lk: &[f64; MAX]| {
             let mut s = 0.0;
             for i in 0..n {
@@ -1439,7 +1464,9 @@ impl ChungFluid {
     #[inline]
     fn reduced(&self, t: f64) -> (f64, f64, f64) {
         let ts = 1.2593 * t / self.tc;
-        let fc = 1.0 - 0.2756 * self.omega + 0.059_035 * self.mur * self.mur * self.mur * self.mur + self.kappa;
+        let fc = 1.0 - 0.2756 * self.omega
+            + 0.059_035 * self.mur * self.mur * self.mur * self.mur
+            + self.kappa;
         (ts, fc, neufeld_omega_v(ts))
     }
 
@@ -1464,8 +1491,8 @@ impl ChungFluid {
         } else {
             c[3] * (1.0 - 0.5 * c[3] * y)
         };
-        let g2 = (c[0] * q + c[1] * g1 * math::exp(c[4] * y) + c[2] * g1)
-            / (c[0] * c[3] + c[1] + c[2]);
+        let g2 =
+            (c[0] * q + c[1] * g1 * math::exp(c[4] * y) + c[2] * g1) / (c[0] * c[3] + c[1] + c[2]);
         (g1, g2)
     }
 
@@ -1504,8 +1531,9 @@ impl ChungFluid {
         let a = cv / R - 1.5;
         let b = 0.7862 - 0.7109 * self.omega + 1.3168 * self.omega * self.omega;
         let z = 2.0 + 10.5 * tr * tr;
-        let psi =
-            1.0 + a * (0.215 + 0.282_88 * a - 1.061 * b + 0.266_65 * z) / (0.6366 + b * z + 1.061 * a * b);
+        let psi = 1.0
+            + a * (0.215 + 0.282_88 * a - 1.061 * b + 0.266_65 * z)
+                / (0.6366 + b * z + 1.061 * a * b);
         3.75 * R * self.viscosity0(t) * psi / (self.m * 1e-3)
     }
 
@@ -1546,7 +1574,8 @@ impl Mixture {
                 let sij3 = sij * sij * sij;
                 let eij = math::sqrt(eps[i] * eps[j]);
                 let (ci, cj) = (&self.c[i], &self.c[j]);
-                let mij = 2.0 * ci.molar_mass * cj.molar_mass / (ci.molar_mass + cj.molar_mass) * 1e3;
+                let mij =
+                    2.0 * ci.molar_mass * cj.molar_mass / (ci.molar_mass + cj.molar_mass) * 1e3;
                 s3 += xx * sij3;
                 e3 += xx * eij * sij3;
                 w3 += xx * 0.5 * (ci.omega + cj.omega) * sij3;

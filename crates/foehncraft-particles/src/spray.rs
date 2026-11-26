@@ -534,6 +534,13 @@ pub struct Spray {
     /// p₀ (`equilibrium = "peng-robinson"`, D311), from
     /// [`Spray::set_surface_pressure`].
     surface: Option<SurfaceTable>,
+    /// The Peng-Robinson mixture of the fuel and the ambient gases with the
+    /// ambient mole fractions (index 0 unused) for the real-fluid film
+    /// (D313), from [`Spray::set_surface_pressure`].
+    dense: Option<(
+        foehncraft_kernels::realfluid::Mixture,
+        [f64; foehncraft_kernels::realfluid::MAX],
+    )>,
     /// The carrier gas of the film (the species without the vapour and
     /// their mass fractions, Σ = 1) for `film = "one-third"` (D321); empty:
     /// the far-field properties.
@@ -632,6 +639,7 @@ impl Spray {
             planar: false,
             vapour: None,
             surface: None,
+            dense: None,
             carrier: Vec::new(),
             datums: Vec::new(),
             datum_tally: Vec::new(),
@@ -678,6 +686,16 @@ impl Spray {
     /// Mathur conductivity, mass-weighted c_p), the density of the ideal
     /// gas at p₀ and the diffusivity of the vapour in the carrier
     /// (Chapman-Enskog, Blanc's law). Returns (ρ, μ, k, c_p, D, c_pv).
+    ///
+    /// With the Peng-Robinson surface and `film = "real-fluid"` (D313) the
+    /// film is the fuel and the ambient gases of `[spray.evaporation.
+    /// peng_robinson]` at T_m, p₀ and the fuel fraction Y_m, on the vapour
+    /// root: ρ = ρ^ig/Z, c_p = c_p^ig + ∂(h − h^ig)/∂T, μ and k times the
+    /// dense-fluid factors η/η° and λ/λ° of Chung et al. (1988) (the
+    /// kinetic-theory values stay the low-pressure limit), and D times
+    /// Z (ρD/(ρD)°) with the factor of Riazi and Whitson (1993) on η/η°;
+    /// the vapour c_p stays that of the ideal gas, as the enthalpy books
+    /// take it.
     pub fn film_properties(&self, gs: &GasState, tp: f64, ys: f64) -> [f64; 6] {
         use foehncraft_kernels::species as ks;
         let v = self
@@ -702,13 +720,41 @@ impl Spray {
         }
         let mix = ks::mixture(&sp[..n], &y[..n], tm);
         let rho = gs.p0 * mix.molar_mass / (ks::R * tm);
-        [
+        let ideal = [
             rho,
             mix.viscosity,
             mix.conductivity,
             mix.cp,
             1.0 / inv_d,
             v.species.cp(tm),
+        ];
+        let Some((pr, amb)) = &self.dense else {
+            return ideal;
+        };
+        use foehncraft_kernels::realfluid::{MAX, Root};
+        // the fuel mole fraction of the film, the gases in their ambient ratios
+        let nf = ym / v.species.molar_mass;
+        let xf = nf / (nf + (1.0 - ym) * inv_mc);
+        let mut x = [0.0; MAX];
+        x[0] = xf;
+        for j in 1..pr.n {
+            x[j] = (1.0 - xf) * amb[j];
+        }
+        let ph = pr.phase(&x, tm, gs.p0, Root::Vapour);
+        let rho_m = 1.0 / ph.v;
+        let fluid = pr.chung(&x);
+        let cv = mix.cp * mix.molar_mass - ks::R;
+        let f_eta = fluid.viscosity_factor(tm, rho_m);
+        let f_lambda = fluid.conductivity_factor(tm, rho_m, cv);
+        let f_d = ph.z * pr.riazi_whitson(&x, gs.p0, f_eta);
+        let cp_dep = pr.cp_departure(&x, tm, gs.p0, Root::Vapour) / pr.molar_mass(&x);
+        [
+            rho / ph.z,
+            ideal[1] * f_eta,
+            ideal[2] * f_lambda,
+            ideal[3] + cp_dep,
+            ideal[4] * f_d,
+            ideal[5],
         ]
     }
 
@@ -763,6 +809,7 @@ impl Spray {
         let ev = &self.cfg.evaporation;
         if ev.equilibrium != Equilibrium::PengRobinson {
             self.surface = None;
+            self.dense = None;
             return Ok(());
         }
         let pr = &ev.peng_robinson;
@@ -797,6 +844,18 @@ impl Spray {
                 "{key}: give all four of critical_temperature, critical_pressure, \
                      acentric_factor and molar_mass, or none (then the data of `fuel`)"
             ),
+        };
+        let fuel = match pr.critical_volume {
+            Some(vc) if !(vc > 0.0 && vc.is_finite()) => {
+                bail!("{key}: critical_volume {vc} m³/mol: positive")
+            }
+            Some(vc) if defaults.is_some() => {
+                bail!(
+                    "{key}: critical_volume {vc} goes with the four critical keys, not with `fuel`"
+                )
+            }
+            Some(vc) => rf::Component { vc, ..fuel },
+            None => fuel,
         };
         if pr.ambient.is_empty() || pr.ambient.len() + 1 > MAX {
             bail!("{key}: ambient needs 1 to {} gases", MAX - 1);
@@ -840,6 +899,7 @@ impl Spray {
         let t_hi = fuel.tc + 50.0;
         let tab = SurfaceTable::build(&mix, &r, p0, t_lo, t_hi, pr.table_step)?;
         self.surface = Some(tab);
+        self.dense = (pr.film == crate::config::FilmFluid::RealFluid).then_some((mix, r));
         Ok(())
     }
 
