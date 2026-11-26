@@ -25,7 +25,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | [Two fluids (volume of fluid)](recipes/multiphase.md) | water and air in one case: phases, start regions, inflow, `vof.csv` | 317 |
 | [Water and steam circuits](recipes/circuits.md) | a boiler circuit of tubes, headers and a drum: natural circulation, boiling wall temperatures, the CHF margin, the profiles | 312 |
 | [Structures](recipes/structure.md) | a structural case of beams, plates, solids and clamp springs: static and modal analyses, the clamp spring fitted to a measured frequency, runs in time with damping and temperatures, contact with a seat and a stop, temperatures from a flow case, the results | 295, 297, 299, 300, 302, 308 |
-| [Immersed bodies](recipes/immersed.md) | put a body in the flow without meshing it: `[immersed]`, the permeability, forces | 270, 291, 313, 310, 315 |
+| [Immersed bodies](recipes/immersed.md) | put a body in the flow without meshing it: `[immersed]`, the permeability, forces | 270, 291, 313, 310, 315, 322 |
 | [Moving meshes and solids](recipes/moving-solids.md) | move the mesh with a prescribed displacement: `[mesh_motion]`, moving walls, a piston on a closed volume | 296, 307 |
 | [Species and reacting flows](recipes/species.md) | species of an ideal-gas mixture: names, compositions in mole or mass fractions, diffusion by Schmidt or Lewis numbers, mixture properties, the element ledger | 278, 289, 298 |
 | [Expressions and materials](recipes/properties.md) | values as expressions of x, y, z and t, constants and tables, wall mass flux, the material database, regions | 31, 32, 277 |
@@ -195,6 +195,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="spray-cooler-chat"></a>316 | [Ask an assistant an engineering question: size a spray cooler](recipes/runs.md#spray-cooler-chat) | [Run control and health](recipes/runs.md) |
 | <a id="spray-breakup"></a>318 | [Break a fuel jet up into drops (KH-ACT, KH-RT)](recipes/sprays.md#spray-breakup) | [Lagrangian sprays](recipes/sprays.md) |
 | <a id="spray-liquid-library"></a>321 | [Evaporate a fuel: take a liquid of the library](recipes/sprays.md#spray-liquid-library) | [Lagrangian sprays](recipes/sprays.md) |
+| <a id="stl-body"></a>322 | [Put an STL body into the flow](recipes/immersed.md#stl-body) | [Immersed bodies](recipes/immersed.md) |
 | <a id="spray-g-sector"></a>323 | [Model a multi-hole injector on a sector (ECN Spray G)](recipes/sprays.md#spray-g-sector) | [Lagrangian sprays](recipes/sprays.md) |
 
 ## Adding a feature

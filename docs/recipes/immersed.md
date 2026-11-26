@@ -9,6 +9,7 @@ Part of the [Recipes](../recipes.md): put bodies into the flow without meshing t
 | 313 | [Cut a body out of a mesh](#cut-body) |
 | 310 | [Check an STL surface before it becomes a body](#surface-check) |
 | 315 | [Cut a mesh exactly by an STL surface](#cut-moments) |
+| 322 | [Put an STL body into the flow](#stl-body) |
 
 ---
 
@@ -111,10 +112,11 @@ method = "cut"
 min_volume_fraction = 0.3   # merge cut cells below this fraction (0 to 0.9)
 # edge_root = "exact"       # crossing points on the true surface; "linear": marching cubes
 # wall_point = true         # wall faces fanned around a point on the surface
+# face_point = true         # cuts across the faces bent onto the surface
 
 [[immersed.body]]
 name = "cylinder"
-shape = "cylinder"          # "cylinder", "sphere", "box" or "field"
+shape = "cylinder"          # "cylinder", "sphere", "box", "field" or "stl"
 centre = [0.2, 0.2, 0.0]
 radius = 0.05
 
@@ -128,7 +130,7 @@ No permeability is needed. The log has the cut report (IMM203): cells cut, remov
 
 **Resolution.** The body is seen through its values at the mesh nodes: a part thinner than a cell can vanish, and the wall faces are flat between crossing points (second order in the cell width). Put about 20 cells across the smallest feature.
 
-**Limits.** Primitive bodies and `field` expressions (the level χ = ½) only; STL bodies come with the stage 0 geometry kernel. Regions and conjugate heat transfer, a topology search and rotating zones are refused (IMM202). One rank only.
+**Limits.** STL bodies: [recipe 322](#stl-body). Regions and conjugate heat transfer, a topology search and rotating zones are refused (IMM202). One rank only.
 <a id="surface-check"></a>
 ## 310. Check an STL surface before it becomes a body
 
@@ -175,3 +177,30 @@ The fluid part of a cell is its volume minus the inside volume; the fluid apertu
 
 **Limits.** The surface must be in general position with respect to the mesh except for edges lying in a mesh face (handled); a surface lying flat in a mesh face or a surface corner exactly on a mesh node is not decided consistently yet. The cut gives moments, not polygons: building cut cells into a mesh is stage 2 (D227).
 **Limits.** The fast winding number is within about 4e-3 of the exact sum next to the surface, which decides inside and outside except within a hair of the surface (there `inside` re-evaluates more precisely). The signed distance of a self-overlapping surface counts the buried triangles (its sign is right, its magnitude inside is the distance to the nearest triangle). Not yet: the signed-distance benchmark against fast sweeping and the heat method, and the exact triangle–cell clipping (the next parts of stage 0).
+
+<a id="stl-body"></a>
+## 322. Put an STL body into the flow
+
+**Name the file** in a body of `shape = "stl"`; the surface becomes a wall boundary with the body's name when it is cut out of the mesh, or a penalised body without `method = "cut"`:
+
+```toml
+[immersed]
+method = "cut"              # or leave it out (penalisation, needs permeability)
+
+[[immersed.body]]
+name = "part"
+shape = "stl"
+file = "part.stl"           # ASCII or binary, relative to the case file
+scale = 1e-3                # file in millimetres (default 1)
+
+[boundary.part]
+type = "wall"
+```
+
+**Check the surface first** ([recipe 310](#surface-check)): the run does the same check and writes its findings to the log (IMM002 to IMM009); holes and overlaps are tolerated through the winding number, a patch of flipped triangles gives wrong signs next to it. A file that cannot be read (missing, no triangles, a corner that is not a number) stops the run with CASE006.
+
+**Sharp edges and corners stay sharp by default.** Where the triangles under a wall loop meet at more than 15°, the wall faces are fanned around the point of dual contouring on the edge or corner, and `face_point = true` bends the cuts across the faces onto the surface; on a box turned against the mesh this makes the wall area seven to ten times closer at 32³ than the closest point ([gallery 322](../gallery/immersed.md#stl-cut)). Where such a point would give a face the discretisation refuses, the cut drops it for the cells around it (IMM203 says how many cells, in how many rounds); `face_point = false` and `wall_point = false` switch them off everywhere.
+
+**Resolution.** About 6 cells per radius give the drag of a sphere array within 2.3 %, 10 cells within 0.9 % (hexahedra, second order). A part of the surface thinner than a cell can vanish; put two or more cells across thin walls.
+
+**Limits.** Hexahedral meshes are the best checked; on tetrahedra the force balance of the wall is within 5 %, on polyhedra the cut is less accurate (the faces are not planar). The joined faces of merged cells can fold (IMM203). Wall functions, conjugate heat transfer, other wall conditions per surface patch and near-body refinement follow (stages 2c to 2f). One rank only.

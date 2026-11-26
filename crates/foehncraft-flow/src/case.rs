@@ -1256,6 +1256,7 @@ impl FlowCase {
             ch.resolve_paths(dir);
         }
         crate::datum::resolve_paths(&mut c.datums, dir);
+        crate::immersed::resolve_paths(&mut c.immersed, dir);
         c.solver.reduction_defaults = crate::turbulence::reduction_defaults(&c);
         // `[energy.cycle] enabled = false` runs the case fully coupled (the
         // reference of the loop, `--set energy.cycle.enabled=false`)

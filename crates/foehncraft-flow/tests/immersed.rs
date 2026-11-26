@@ -153,8 +153,12 @@ fn unsupported_settings_are_refused() {
     assert_eq!(refused(&turb), "IMM102");
 }
 
+/// A case file of the catalogue with `\n` line ends (a Windows checkout
+/// has `\r\n`, and the tests edit the text line by line).
 fn text(file: &str) -> String {
-    std::fs::read_to_string(cases().join(file)).unwrap()
+    std::fs::read_to_string(cases().join(file))
+        .unwrap()
+        .replace("\r\n", "\n")
 }
 
 /// The manufactured solution of the penalised equations (a smooth solid
@@ -378,4 +382,109 @@ fn cut_settings_are_refused() {
         "[regions.solid]\nmaterial = \"steel\"\n\n[immersed]",
     );
     assert_eq!(refused(&regions), "IMM202");
+}
+
+/// K = F/(6π μ a U) of the sphere array (a = 0.2 m, μ = 1 Pa s, ρ = 1,
+/// L = 1 m, F = G L³ = 1 N): U is the periodic mass flow.
+fn array_drag(r: &FlowReport) -> f64 {
+    assert!(r.failures.is_empty(), "{:?}", r.failures);
+    let s = &r.solves[0];
+    assert!(s.converged);
+    1.0 / (6.0 * std::f64::consts::PI * 0.2 * s.periodic[0].mass_flow)
+}
+
+/// The series of Hasimoto (1959) and Sangani & Acrivos (1982) at c = 0.0335.
+const ARRAY_K: f64 = 2.1518;
+
+/// The STL sphere of the array cut out of the mesh (L13 stage 2, D227):
+/// the drag coefficient approaches the series from below at second order
+/// (measured −9.0, −3.6, −2.3 and −0.9 % on 16³, 24³, 32³ and 48³; the
+/// penalised sphere: +6.2, +5.5, +3.9 %), and the wall carries the
+/// driving force G L³ to the error of the cut.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn stl_sphere_array_cut_converges_to_the_series() {
+    let t = text("immersed_cut_stl_sphere_array.toml");
+    let mut errs = Vec::new();
+    for n in [16usize, 24] {
+        let case = t
+            .replace("cells = [32, 32, 32]", &format!("cells = [{n}, {n}, {n}]"))
+            .replace("wall_csv = false", "wall_csv = false\nvtkhdf = false");
+        let r = run_case(&parse(&case), &format!("stlsphere{n}"));
+        errs.push(array_drag(&r) / ARRAY_K - 1.0);
+        let wall = r.solves[0]
+            .boundaries
+            .iter()
+            .find(|b| b.name == "sphere")
+            .expect("the wall of the cut body");
+        assert!((wall.force[0] - 1.0).abs() < 0.06, "{n}: {:?}", wall.force);
+    }
+    assert!(errs[0] < 0.0 && errs[1] < 0.0, "{errs:?}");
+    assert!(errs[1].abs() < 0.045, "{errs:?}");
+    assert!(errs[1].abs() < 0.5 * errs[0].abs(), "{errs:?}");
+}
+
+/// The same STL sphere as a penalised body: its solid fractions are the
+/// exact cut volumes of the triangles, so the drag is that of the
+/// primitive sphere (whose fractions are sampled) to well within the
+/// penalisation error.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn penalised_stl_sphere_matches_the_primitive() {
+    let t = text("immersed_stokes_sphere.toml")
+        .replace("cells = [32, 32, 32]", "cells = [16, 16, 16]")
+        .replace("permeability = 9.765625e-6", "permeability = 3.90625e-5")
+        .replace("derived = [\"solid-fraction\"]", "vtkhdf = false");
+    let stl = t.replace(
+        "shape = \"sphere\"\ncentre = [0.5, 0.5, 0.5]\nradius = 0.2\n",
+        "shape = \"stl\"\nfile = \"immersed_sphere.stl\"\n",
+    );
+    assert_ne!(stl, t);
+    let kp = array_drag(&run_case(&parse(&t), "penprim"));
+    let ks = array_drag(&run_case(&parse(&stl), "penstl"));
+    assert!((ks / kp - 1.0).abs() < 0.01, "STL {ks}, primitive {kp}");
+    assert!(ks > ARRAY_K, "the penalised wall is too thick: {ks}");
+}
+
+#[test]
+fn stl_body_settings_are_refused() {
+    let base = text("immersed_cut_stl_sphere_array.toml");
+    let file = "file = \"immersed_sphere.stl\"\n";
+    assert_eq!(refused(&base.replace(file, "")), "IMM101");
+    assert_eq!(
+        refused(&base.replace(file, &format!("{file}scale = 0.0\n"))),
+        "IMM101"
+    );
+    assert_eq!(
+        refused(&base.replace("immersed_sphere.stl", "no_such_body.stl")),
+        "CASE006"
+    );
+    assert_eq!(
+        refused(&base.replace(
+            "shape = \"stl\"\n",
+            "shape = \"sphere\"\ncentre = [0.5, 0.5, 0.5]\nradius = 0.2\n"
+        )),
+        "IMM101"
+    );
+    // a file without triangles, or with a corner that is not a number,
+    // cannot be read (the reader refuses it before the surface check)
+    let dir = out("badstl");
+    std::fs::create_dir_all(&dir).unwrap();
+    let with = |name: &str, text: &str| {
+        let path = dir.join(name);
+        std::fs::write(&path, text).unwrap();
+        refused(&base.replace(
+            "immersed_sphere.stl",
+            &path.display().to_string().replace('\\', "/"),
+        ))
+    };
+    let empty = with("empty.stl", "solid empty\nendsolid empty\n");
+    let nan = with(
+        "nan.stl",
+        "solid nan\nfacet normal 0 0 1\nouter loop\nvertex nan 0 0\nvertex 1 0 0\n\
+         vertex 0 1 0\nendloop\nendfacet\nendsolid nan\n",
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(empty, "CASE006");
+    assert_eq!(nan, "CASE006");
 }
