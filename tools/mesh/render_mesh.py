@@ -85,7 +85,11 @@ ren.SetBackground(1, 1, 1)
 m = vtk.vtkPolyDataMapper()
 m.SetInputConnection(surf.GetOutputPort())
 if a.field:
-    arr = surf.GetOutput().GetCellData().GetArray(a.field)
+    cd = surf.GetOutput().GetCellData()
+    arr = cd.GetArray(a.field)
+    if arr is None:
+        names = sorted(cd.GetArrayName(i) for i in range(cd.GetNumberOfArrays()))
+        raise SystemExit(f"no cell field {a.field!r} in {a.file}; available: {', '.join(names)}")
     m.SetScalarModeToUseCellFieldData()
     m.SelectColorArray(a.field)
     lo, hi = a.range if a.range else arr.GetRange()

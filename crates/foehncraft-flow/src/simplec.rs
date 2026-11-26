@@ -2954,7 +2954,7 @@ impl Flow {
         if self.density.is_none() {
             return self.upload_spray_mass();
         }
-        let Some(t) = self.fluid_temperature()? else {
+        let Some(t) = self.fluid_temperature_with_halo()? else {
             return Ok(());
         };
         let tb = self.fluid_boundary_temperature(&t)?;
@@ -3288,6 +3288,15 @@ impl Flow {
             crate::buoyancy::Balanced::new(c, &self.disc, &self.lsq_p, &self.bc.p_zero_gradient);
         self.buoyancy = Some(Box::new(b));
         self.refresh_buoyancy()
+    }
+
+    /// [`Self::fluid_temperature`] with the halo cells of a run on ranks
+    /// (MPI step W7), whose densities the processor faces read.
+    pub(crate) fn fluid_temperature_with_halo(&mut self) -> Result<Option<Vec<f64>>> {
+        match self.scalars.as_ref().and_then(|s| s.energy_phi()) {
+            Some(phi) if self.cht.is_none() => Ok(Some(self.dev.download_with_halo(phi)?)),
+            _ => self.fluid_temperature(),
+        }
     }
 
     /// The fluid temperature per cell of the flow's cells: that of its own

@@ -1026,6 +1026,21 @@ pub fn summary(
     geo: &foehncraft_mesh::Geometry,
     transient: bool,
 ) -> Result<Option<SpeciesSummary>> {
+    summary_on(fl, mesh, geo, transient, None)
+}
+
+/// [`summary`] of a run on ranks (MPI step W7): `mesh` and `geo` are those
+/// of the whole mesh, every array of this rank's part is gathered into the
+/// order of the whole mesh and summed there by the code of one rank, so
+/// the summary is bitwise that of one rank. Collective on ranks.
+pub(crate) fn summary_on(
+    fl: &mut crate::simplec::Flow,
+    mesh: &foehncraft_mesh::Mesh,
+    geo: &foehncraft_mesh::Geometry,
+    transient: bool,
+    on: Option<&crate::ranks::OnRanks>,
+) -> Result<Option<SpeciesSummary>> {
+    use crate::restart::FieldMap as _;
     let Some(sc) = fl.scalars.as_ref() else {
         return Ok(None);
     };
@@ -1033,15 +1048,47 @@ pub fn summary(
         return Ok(None);
     };
     let res = link.res.clone();
-    let closure_min = link.closure_min;
-    let data = sc.species_host(fl.dev.as_mut())?;
+    let mut closure_min = link.closure_min;
+    let mut closure_y = link.y_cell[res.len() - 1].clone();
+    let mut data = sc.species_host(fl.dev.as_mut())?;
+    // chemistry in the cells is refused on ranks (`ranks::supported`), so
+    // the reaction rates are those of one rank whenever they exist
     let reaction = sc.species_reaction();
-    let old = if transient {
+    let mut old = if transient {
         sc.species_old(fl.dev.as_mut())?
     } else {
         None
     };
-    let m = fl.dev.download(fl.f.mass_flux)?;
+    let mut m = fl.dev.download(fl.f.mass_flux)?;
+    let mut rho_cells = fl.phys.rho_var.as_ref().map(|r| r.0.to_vec());
+    let dgeo = match on {
+        Some(o) => {
+            // the smallest closure value of all ranks (a minimum: the same
+            // in any order)
+            closure_min = o.comm.min(closure_min);
+            let mut g = o.fields();
+            closure_y = g.cells(&closure_y)?;
+            for (phi, a, b, gamma, out) in &mut data {
+                *phi = g.cells(phi)?;
+                *a = g.boundary(a)?;
+                *b = g.boundary(b)?;
+                *gamma = g.faces(gamma)?;
+                out.gather(&mut g)?;
+            }
+            if let Some((_, levels)) = old.as_mut() {
+                for (o1, o2) in levels {
+                    *o1 = g.cells(o1)?;
+                    *o2 = g.cells(o2)?;
+                }
+            }
+            m = g.faces(&m)?;
+            if let Some(r) = rho_cells.as_mut() {
+                *r = g.cells(r)?;
+            }
+            &o.disc.dgeo
+        }
+        None => &fl.disc.dgeo,
+    };
     let nc = mesh.n_cells;
     let ni = mesh.n_interior_faces();
     let nf = mesh.n_faces();
@@ -1060,7 +1107,7 @@ pub fn summary(
         }
     }
     // an evaporating spray (SP5): per spray cell (cell, a, b, S_c); the
-    // vapour receives a − b Y, the mixture S_c
+    // vapour receives a − b Y, the mixture S_c (sprays are refused on ranks)
     let spray: Vec<(usize, f64, f64, f64)> = sc
         .spray_species()
         .map(|s| {
@@ -1071,7 +1118,8 @@ pub fn summary(
         })
         .unwrap_or_default();
     let vapour_field = sc.spray_species().map(|s| s.vapour.clone());
-    let rho = |c: usize| fl.phys.rho_at(c);
+    let rho_const = fl.phys.rho;
+    let rho = |c: usize| rho_cells.as_ref().map_or(rho_const, |r| r[c]);
     let n = res.len();
     let mut flows: Vec<SpeciesFlow> = Vec::with_capacity(n);
     let mut extremes = Vec::with_capacity(n);
@@ -1106,7 +1154,7 @@ pub fn summary(
                     pf
                 };
                 conv.push(-m[f] * v);
-                dif.push(gamma[f] * fl.disc.dgeo[f] * (pf - phi[o]));
+                dif.push(gamma[f] * dgeo[f] * (pf - phi[o]));
             }
             s.boundaries.push((
                 p.name.clone(),
@@ -1153,7 +1201,7 @@ pub fn summary(
     cl.storage = -flows.iter().map(|s| s.storage).exact_sum();
     cl.reaction = -flows.iter().map(|s| s.reaction).exact_sum();
     cl.spray -= flows.iter().map(|s| s.spray).exact_sum();
-    let (lo, hi) = link.y_cell[n - 1][..nc]
+    let (lo, hi) = closure_y[..nc]
         .iter()
         .fold((f64::INFINITY, f64::NEG_INFINITY), |(l, h), &v| {
             (l.min(v), h.max(v))

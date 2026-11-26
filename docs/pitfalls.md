@@ -396,6 +396,26 @@ wall, ν_t/ν max and its cell): gather the arrays with `OnRanks::fields`
 and run the one-rank loop on the whole mesh, since plain `+=` sums in
 another order give other bits even where the set of values is the same.
 
+**Host arrays that faces read need the halo (#303).** `download` of a
+cell buffer on ranks returns the own cells only, so a host loop over
+faces that indexes `owner` and `neighbour` (the face density of the
+variable density, ρ_f = w ρ_O + (1 − w) ρ_N) runs past the end of the
+array at a processor face, whose owner may be the halo cell. Read the
+input with `download_with_halo` (`Flow::fluid_temperature_with_halo`),
+keep per-cell results with their halo, and restrict sums and extremes to
+the first `n_cells` entries (the own cells) before reducing them over the
+ranks. A vertex stencil (the MLP limiter) is the same in another shape:
+the vertices of a processor face are also bounded by the cells of the
+other rank, so the ranks that share a vertex combine their bounds.
+
+**Geometry of a whole boundary is global (#303).** A quantity taken over
+the faces of a boundary (the extent that scales a parabolic inlet
+profile) is that of the rank's own part on a local mesh. It agreed with one
+rank only while the partition left the boundary on one rank. Take such
+extents from the global mesh before the solver is built
+(`bc::global_profile_extents`), and test with a partition that cuts the
+boundary.
+
 <a id="coupling-loops"></a>
 ## Coupling loops: the solid must see the flow's response
 
