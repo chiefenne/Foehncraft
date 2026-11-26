@@ -128,7 +128,7 @@ fn main() -> Result<()> {
         )?;
     }
     std::fs::write(format!("{out}/history.csv"), hist)?;
-    std::fs::write(format!("{out}/rates.csv"), rates)?;
+    std::fs::write(format!("{out}/rates.csv"), &rates)?;
     print!("{rates}");
     Ok(())
 }

@@ -15,4 +15,4 @@ speed = 10.0
 half_angle = 15.0
 mass_flow = 0.001
 size = { distribution = "rosin-rammler", mean = 30e-6, spread = 3.0, min = 10e-6, max = 80e-6 }
-parcels_per_second = 4000.0
+parcels_per_second = 20000.0
