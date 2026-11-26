@@ -1641,8 +1641,9 @@ impl TwoWay<'_> {
 /// The sources of k and of the second variable of the turbulence model per
 /// unit mass (m²/s³; m²/s⁴ for ε, 1/s² for ω) from the work of the parcels'
 /// eddies of a pass (D330, KIVA-II Eqs. 7, 8 and C-4): S_k = W / (ρ V Δt);
-/// ε gets c_s (ε/k) S_k with c_s = 1.5, ω of SST the same length scale,
-/// (c_s − 1)(ω/k) S_k. One value per cell, zero off the spray; `None`
+/// ε gets c_s (ε/k) S_k with c_s = 1.5, ω of SST the same source written
+/// with ε = β* k ω, (c_s − 1)(ω/k) S_k. One value per cell, zero off the
+/// spray; `None`
 /// without a turbulence model.
 pub(crate) fn turbulence_sources(
     src: &foehncraft_particles::CellSources,

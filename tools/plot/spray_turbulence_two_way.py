@@ -113,7 +113,7 @@ def at(series, t):
 
 
 def plot(out, run0, run1):
-    k_lo, k_hi = 1e-1, 1e3
+    k_lo, k_hi = 1e-2, 1e3
     fig = plt.figure(figsize=(12.0, 7.6), constrained_layout=True)
     gs = fig.add_gridspec(3, 2, width_ratios=[1.0, 1.0])
     ax = fig.add_subplot(gs[:, 0])

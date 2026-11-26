@@ -1099,10 +1099,12 @@ pub enum TurbulenceCoupling {
     /// from k (Amsden, O'Rourke and Butler 1989, KIVA-II, LA-11560-MS,
     /// Eqs. 7, 8, 46 and C-4): W = −Σ m_p Δv_p·u′_p / (Δt V) per cell, with
     /// Δv_p the drag change of the parcel's velocity in a sub-step and u′_p
-    /// the fluctuation of its eddy; the dissipation (ε) gets c_s (ε/k) W
-    /// with c_s = 1.5 (the length scale kept, k^{3/2}/ε), and ω of SST the
-    /// same length scale, (c_s − 1)(ω/k) W. Over many parcels W < 0: the
-    /// drops take energy out of the turbulence.
+    /// the fluctuation of its eddy, of which only the part correlated with
+    /// the eddy is booked (the parcel's response to it, [`crate::Eddy::v`]),
+    /// never positive; the dissipation (ε) gets c_s (ε/k) W with c_s = 1.5
+    /// (the length scale k^{3/2}/ε kept), and ω of SST the same source
+    /// written with ε = β* k ω, (c_s − 1)(ω/k) W: the drops take energy
+    /// out of the turbulence.
     DispersionWork,
 }
 
@@ -1153,8 +1155,11 @@ pub struct Coupling {
     /// more than this fraction of max(Re, 1) (D251; default 0.2).
     pub max_reynolds_change: f64,
     /// What the parcels give back to the turbulence of the gas (D330):
-    /// `none` (default) or `dispersion-work` (needs `mode = "two-way"` and
-    /// `[spray] dispersion = "eddy-lifetime"`).
+    /// `none` (default) or `dispersion-work`, the work the eddies of the
+    /// dispersion do on the drops taken out of k with the matching ε or ω
+    /// term of KIVA-II (needs `mode = "two-way"` and `[spray] dispersion =
+    /// "eddy-lifetime"`; not in the steady mode). Drops small next to the
+    /// eddies only damp the turbulence, strongly in a dense spray.
     pub turbulence: TurbulenceCoupling,
 }
 

@@ -487,8 +487,8 @@ Model equations and one model constant; no data set.
   with c_s (ε/k) W^s in ε) and the discrete form C-4; the constant
   c_s = 1.5 as the report gives it. The report's equations are used, not
   its code (D201). Taking only the part of the work correlated with the
-  eddy (the parcel's response v′ to it) and the ω form for SST (the length
-  scale k^{3/2}/ε kept) are our own steps.
+  eddy (the parcel's response v′ to it) and the ω form for SST (the ε
+  source written with ε = β* k ω) are our own steps.
 - That small particles damp the turbulence (a finding quoted in the docs,
   no numbers taken): Skartlien, R., Palmer, K., Skjæraasen, O. (2022), a
   model of turbulence modulation by particles and its comparison with the

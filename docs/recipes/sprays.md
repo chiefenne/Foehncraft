@@ -855,10 +855,12 @@ had already entered 32 in it (`MAX_EDDIES_PER_STEP`): that happens only
 where k is nearly gone, as in a spray that has damped its gas turbulence.
 
 **Expect damping, and a lot of it in a dense spray.** Drops much smaller
-than the eddies take energy from them at about 2k φ/τ, φ the mass loading
-of the liquid and τ the response time of the drops; in the core of a fuel
-spray φ is 10 or more and τ a tenth of a millisecond, so the turbulence
-there is gone within microseconds. Only damping is modelled: the wakes of
+than the eddies take energy from them at a rate of about 2φ/τ times k, φ
+the mass loading of the liquid and τ the response time of the drops. Near
+the nozzle of a fuel spray φ is 1 or more, and k decays there within a
+fraction of a millisecond, before the gas jet builds its turbulence up;
+a two-equation model cannot grow turbulence back from nearly zero k.
+Only damping is modelled: the wakes of
 drops larger than the eddies, which can add turbulence, are not. On ECN
 Spray G (G1) this term makes the spray run further ahead of the
 measurement, so the case leaves it off; see the

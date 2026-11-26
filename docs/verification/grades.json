@@ -1347,7 +1347,7 @@
    ],
    "gaps": [
     "heat exchange is the row sprays.two-way-heat (SP2b)",
-    "turbulent dispersion is the row sprays.dispersion-eddy-lifetime (SP2c); no turbulence modulation by the droplets (in no decision yet)",
+    "turbulent dispersion is the row sprays.dispersion-eddy-lifetime (SP2c); the damping of the gas turbulence by the drops is the row sprays.turbulence-two-way (D330); no turbulence production by drop wakes",
     "first order in time (V28.4); second order (an exponentially fitted weight per cell) is an open point of section 5.7",
     "V28.6 (two neighbour cells) is covered only through the shuffled-storage test; no reference-data case of a dense spray against measurements",
     "the time-step study as a registered tool (D254 (4)) is not built",
@@ -1389,9 +1389,26 @@
     "V28.17 not run: no comparison with the grid-turbulence measurements (Snyder and Lumley 1971; Wells and Stock 1983)",
     "isotropic eddies: the wall-normal fluctuation near walls is overestimated (a known flaw of the model), so wall deposition rates are not reliable",
     "the continuous random walk (second value of the key, D243) is not built",
-    "no turbulence modulation by the droplets",
+    "the drops' damping of the gas turbulence is the row sprays.turbulence-two-way (D330, off by default); no production by drop wakes",
     "one process",
     "`spray_dispersion_injectors` has no run in the verification manual or in CI"
+   ],
+   "range": {}
+  },
+  {
+   "id": "sprays.turbulence-two-way",
+   "title": "The drops damp the gas turbulence: the work of the dispersing eddies taken out of k (D330)",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "on ECN Spray G (G1) the term removes nearly all of the plume turbulence and moves the penetration away from the measurement (liquid 33 % ahead at 1.1 ms on SST instead of 15 %): off by default and in the case",
+    "only damping: no production of turbulence by the wakes of drops larger than the eddies",
+    "the eddies are the isotropic Gaussian eddies of the eddy-lifetime model (D243); the continuous random walk (not built) would need its own form",
+    "the omega form of SST is the eps form written with eps = beta* k omega (our step; KIVA-II gives the eps form only)",
+    "not in the steady spray mode",
+    "one process"
    ],
    "range": {}
   },
@@ -1475,7 +1492,7 @@
     "gaps written"
    ],
    "gaps": [
-    "ECN Spray G (G1): the liquid runs ahead of the measured penetration after 0.4 ms (33 % at 1.2 ms) and the vapour after 0.5 ms (21 % at 1.2 ms), with KH-ACT and KH-RT alike, so not from the breakup; cause open (candidates: the cells of the far field, the constant gas density, the k-eps constants) (D309)",
+    "ECN Spray G (G1) on k-omega SST: the liquid runs ahead of the measured penetration after 0.4 ms (15 % at 1.1 ms, 16 % at 1.2 ms), the vapour less (7 % at 1.1 ms), and the gas on the injector axis returns late after the end of injection; on the k-eps family the lead is twice as large (D309)",
     "KH-ACT drops on ECN Spray G (G1) are about twice the measured size at 15 mm (17 against 9 um; KH-RT 7.4 um): the children of the cavitation (R_CAV from C_a 0.65) and of the integral turbulence scale are large for the short Spray G hole; constants untuned",
     "a gas that diverges in some cells leaves its parcels spending max_substeps each, and their exchange records can fill the memory instead of stopping the run with a message (seen on the sector before the slip core, D309)",
     "drop sizes not validated: the gallery spray has a Sauter mean diameter near 2 um, small next to measured diesel sprays; no collision or coalescence yet",
