@@ -96,6 +96,13 @@ Three parts are new:
   outer iteration per step (PISO) the correction would otherwise lag a
   whole step and the scheme would be first order in time (observed 1.23
   before, 1.98 after).
+  The turbulence quantities (k, ε or ω, ζ) take the same extrapolated
+  start, bounded below by a tenth of φⁿ (the bound of a solve, #334):
+  where a jet front arrives in gas at rest the extrapolation of a falling
+  ζ went to its floor, f₀ turned large and the run diverged within ten
+  steps. The bound acts only where the extrapolation falls by more than
+  90 % in one step: the transient k-ε jet start of the same study
+  changed by up to 4 % near the nozzle, its tip did not move.
 
 **Boundary conditions.** The face value is φ_f = a φ_P + b per boundary
 face: a fixed value (a = 0, b = φ_b) at inlets and walls, a fixed

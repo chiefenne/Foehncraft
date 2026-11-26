@@ -767,3 +767,13 @@ SF7b (#312):
 - **Run `cargo fmt --all` after resolving a conflict in a `mod` list.**
   Keeping both sides of a conflict leaves the module lines out of order,
   and the format check of CI fails on it.
+
+<a id="start-into-rest"></a>
+## Tests that pick the largest value of a decayed field
+
+Found with the start-up bound of the turbulence (#334):
+- **A decayed patch is flat or a ring, and its largest value is a tie.**
+  `sliding::turbulence_is_carried_by_the_rotor` took the place of the
+  largest k on a line; after 16 steps two cells of the ring agreed to the
+  last digits and a change in the last digit moved the "peak" by 0.02 m.
+  Locate a patch by the centroid of the field above its least value.

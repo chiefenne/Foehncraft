@@ -506,13 +506,24 @@ pub fn zeta_f_cell<T: Real>(
     } else {
         pk / k_div
     };
-    let sp_z = i.f.min_of(T::ZERO) / z.max_of(f(ZETA_MIN)) - sink;
     // f: −∇·(L²∇f) + f = (1/T)(C₁ − 1 + C₂′ P_k/ε)(2/3 − ζ)
     // [+ (N_ζ − 1) ζ/T for f₀]
-    let mut rhs_f = inv_t * (f(c.c1 - 1.0) + f(c.c2) * pk / e) * (f(2.0 / 3.0) - z);
+    let g = inv_t * (f(c.c1 - 1.0) + f(c.c2) * pk / e);
+    let mut rhs_f = g * (f(2.0 / 3.0) - z);
     if f0 {
         rhs_f += e_k * n1 * z;
     }
+    // The ζ equation takes f from the previous outer iteration, and f
+    // falls with ζ at the local rate b = −∂(rhs_f)/∂ζ = G − (N_ζ − 1) ε/k
+    // (G = (C₁ − 1 + C₂′ P_k/ε)/T). Where P_k/ε is large (a jet started
+    // into gas at rest), b Δt ≫ 1 and the lagged pair overshoots: ζ jumps
+    // to its cap, f turns large and negative, ζ to its floor, and the run
+    // diverges within a few steps. Linearising the source about ζ*,
+    // f(ζ) ≈ f* − b (ζ − ζ*), puts b on the diagonal (b ζ* into S_u):
+    // implicit in the stiff part and identical at convergence (ζ = ζ*).
+    let b = (g - if f0 { e_k * n1 } else { T::ZERO }).max_of(T::ZERO);
+    let su_z = su_z + b * z;
+    let sp_z = i.f.min_of(T::ZERO) / z.max_of(f(ZETA_MIN)) - sink - b;
     ZetaFCell {
         nu_t,
         t,
