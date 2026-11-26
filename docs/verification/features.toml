@@ -1795,11 +1795,11 @@ evidence = [
   { kind = "exact", test = "crates/foehncraft-flow/tests/spray_coupling.rs::k_loses_the_work_the_eddies_do_on_the_drops", what = "V28.23: a lumped cell on k-eps with drops: k at the end with the term equals k without it less the booked work over rho V within 3 %; the column gas_turbulence_w of spray.csv is never positive, and absent without the key" },
   { kind = "exact", test = "crates/foehncraft-particles/tests/coupling.rs::sources_do_not_depend_on_parcel_order_or_threads", what = "the work is summed with the other sources of a pass: bitwise equal with the storage reversed and on one thread" },
   { kind = "contract", property = "diagnostics", test = "crates/foehncraft-particles/tests/coupling.rs::a_parcel_enters_at_most_a_set_number_of_eddies_in_a_step", what = "in a gas with k = 1e-12 m2/s2 a parcel enters at most 32 eddies in a step and keeps the last one to its end (counted as held_eddies); in developed turbulence none is held" },
-  { kind = "reference-data", run = "spray_g_g1 with turbulence = dispersion-work on k-omega SST and k-epsilon", doc = "docs/gallery/sprays.md#spray-turbulence", what = "ECN Spray G on SST: the median k of the plume cells at 0.6 ms falls from 106 to 0.004 m2/s2 and the turbulence kinetic energy of the gas of the injector from 8.6 to 0.01 mJ (the drops took 0.18 mJ over the run: the seed near the nozzle is gone); the liquid at 1.1 ms 33 % ahead of the measurement instead of 15 %, the vapour 26 % instead of 7 %; on k-epsilon the liquid 52 % ahead instead of 30 % (plume k median 3.9 to 0.05 m2/s2 at 0.3 ms); 65 632 eddies held to the end of their step on SST, 66 969 on k-epsilon" },
+  { kind = "reference-data", run = "spray_g_g1 with turbulence = dispersion-work on k-omega SST and k-epsilon", doc = "docs/gallery/sprays.md#spray-turbulence", what = "measured before the collision model (D331), on the G1 of PR 333 without collisions: ECN Spray G on SST: the median k of the plume cells at 0.6 ms falls from 106 to 0.004 m2/s2 and the turbulence kinetic energy of the gas of the injector from 8.6 to 0.01 mJ (the drops took 0.18 mJ over the run: the seed near the nozzle is gone); the liquid at 1.1 ms 33 % ahead of the measurement instead of 15 %, the vapour 26 % instead of 7 %; on k-epsilon the liquid 52 % ahead instead of 30 % (plume k median 3.9 to 0.05 m2/s2 at 0.3 ms); 65 632 eddies held to the end of their step on SST, 66 969 on k-epsilon" },
 ]
 gaps = [
   "on ECN Spray G (G1) with k-epsilon-zeta-f0 the run with the term stops at step 24 (0.05 ms) in a failed CG solve of the pressure (DIV006, RUN014); the cause is not found; without the term the same case runs",
-  "on ECN Spray G (G1) the term removes nearly all of the plume turbulence and moves the penetration away from the measurement (liquid 33 % ahead at 1.1 ms on SST instead of 15 %): off by default and in the case",
+  "on ECN Spray G (G1) the term removes nearly all of the plume turbulence and moves the penetration away from the measurement (without collisions: liquid 33 % ahead at 1.1 ms on SST instead of 15 %, 52 % on k-epsilon instead of 30 %): off by default and in the case; not re-measured with collisions (D331)",
   "only damping: no production of turbulence by the wakes of drops larger than the eddies",
   "the eddies are the isotropic Gaussian eddies of the eddy-lifetime model (D243); the continuous random walk (not built) would need its own form",
   "the omega form of SST is the eps form written with eps = beta* k omega (our step; KIVA-II gives the eps form only)",
@@ -1934,12 +1934,11 @@ evidence = [
   { kind = "contract", property = "diagnostics", test = "crates/foehncraft-particles/tests/breakup.rs::kh_act_needs_the_nozzle_turbulence", what = "the nozzle keys of KH-ACT are checked (missing turbulence, half a pair, C_d above C_a, no friction left)" },
   { kind = "reference-data", case = "spray_breakup", what = "a diesel-like spray at 60 MPa from a 0.15 mm hole into nitrogen at 15 kg/m3 (KH-ACT, k-eps): 97 % of the liquid at 50.6 mm after 1 ms against 51.1 mm of the correlation of Hiroyasu and Arai (1990), up to 24 % ahead at 0.2 to 0.4 ms; 47.0 mm with kh-rt", doc = "docs/gallery/sprays.md#spray-breakup" },
   { kind = "contract", property = "schema", case = "spray_breakup_injectors", what = "the included injector file of spray_breakup (rate table, hole, nozzle turbulence)", doc = "docs/cases/flow.md#lagrangian-sprays" },
-  { kind = "reference-data", case = "spray_g_g1", what = "ECN Spray G, G1 (D309): iso-octane at 20 MPa into nitrogen at 573 K and 3.5 kg/m3 on a 22.5 deg sector of the 8-hole injector, KH-ACT untuned, k-omega SST, against the liquid (0.2e-3 mm3/mm2) and vapour (0.1 %) penetration the ECN measured: within 2.1 mm up to 0.4 ms (20.7 against 20.4 mm at 0.3 ms, 25.0 against 23.8 mm at 0.4 ms), then ahead, 9 % at 0.6 ms and 15 % at 1.1 ms (43.6 against 37.9 mm); vapour 31.7 against 29.4 mm at 0.6 ms and 42.9 against 40.2 mm at 1.1 ms; the gas velocity on the injector axis at 15 mm within 0.5 m/s of the PIV up to 0.7 ms (-7.8 against -7.6 m/s at 0.3 ms), late to return after the end of injection (-3.6 against -0.4 m/s at 1.1 ms); Sauter mean diameter at 15 mm 16 um with KH-ACT against the measured 9 um", doc = "docs/gallery/sprays.md#spray-g" },
-  { kind = "reference-data", run = "spray_g_g1 with k-epsilon (scalable), k-epsilon-zeta-f0 (compound-2023) and, on k-epsilon, with kh-rt", doc = "docs/gallery/sprays.md#spray-g", what = "the liquid at 1.1 ms 30 % (k-eps) and 34 % (zeta-f0) ahead of the measurement against 15 % with SST, the vapour 22 % and 26 % against 7 %: the plume turbulence, not the breakup (KH-RT with drops of 7.4 um penetrates as far as KH-ACT), the mesh (0.6, 0.4, 0.2 mm), the gas density or the injected momentum, sets the late lead" },
+  { kind = "reference-data", case = "spray_g_g1", what = "ECN Spray G, G1 (D309): iso-octane at 20 MPa into nitrogen at 573 K and 3.5 kg/m3 on a 22.5 deg sector of the 8-hole injector, KH-ACT untuned, without collisions (gallery 323; with them gallery 335), against the liquid (0.2e-3 mm3/mm2) and vapour (0.1 %) penetration the ECN measured: within 1 mm up to 0.4 ms (20.5 against 20.4 mm at 0.3 ms), then ahead, 12 % at 0.6 ms and 33 % at 1.2 ms (51.7 against 38.9 mm); vapour 32.8 against 29.4 mm at 0.6 ms and 50.8 against 42.0 mm at 1.2 ms; the gas velocity on the injector axis at 15 mm within about 1.5 m/s of the PIV (-7.9 against -7.6 m/s at 0.3 ms); Sauter mean diameter at 15 mm 17 um with KH-ACT and 7.4 um with KH-RT against the measured 9 um, both models with the same penetration", doc = "docs/gallery/sprays.md#spray-g" },
   { kind = "contract", property = "schema", case = "spray_g_g1_injectors", what = "the included injector file of spray_g_g1 (library iso-octane, measured rate of injection, plume direction, flow_share 0.5)", doc = "docs/cases/flow.md#lagrangian-sprays" },
 ]
 gaps = [
-  "ECN Spray G (G1) on k-omega SST: the liquid runs ahead of the measured penetration after 0.4 ms (15 % at 1.1 ms, 16 % at 1.2 ms), the vapour less (7 % at 1.1 ms), and the gas on the injector axis returns late after the end of injection; on the k-eps family the lead is twice as large (D309)",
+  "ECN Spray G (G1): the liquid runs ahead of the measured penetration after 0.4 ms (33 % at 1.2 ms) and the vapour after 0.5 ms (21 % at 1.2 ms), with KH-ACT and KH-RT alike, so not from the breakup; cause open (candidates: the cells of the far field, the constant gas density, the k-eps constants) (D309)",
   "KH-ACT drops on ECN Spray G (G1) are about twice the measured size at 15 mm (17 against 9 um; KH-RT 7.4 um): the children of the cavitation (R_CAV from C_a 0.65) and of the integral turbulence scale are large for the short Spray G hole; constants untuned",
   "a gas that diverges in some cells leaves its parcels spending max_substeps each, and their exchange records can fill the memory instead of stopping the run with a message (seen on the sector before the slip core, D309)",
   "drop sizes not validated: the gallery spray has a Sauter mean diameter near 2 um, small next to measured diesel sprays; no collision or coalescence yet",
@@ -2038,6 +2037,28 @@ gaps = [
   "one run per law on a coarse mesh (0.5 mm along the axis, ECN asks for 0.25 mm), no ensemble; the difference between the laws (0.9 mm) lies within the scatter of the Corrected Distortion run (s.d. 1.6 mm)",
   "the correlations of Feng and Michaelides (2001) and of Richter and Nikrityuk (2012) are taken as Nguyen et al. (2022) print them, not yet checked against the originals",
   "SA4 part 2 not done: the liquid volume does not displace the gas and the sources are not spread over a fixed radius; no collisions",
+]
+
+[[feature]]
+id = "sprays.collision"
+area = "Sprays"
+title = "Drop collisions: no-time-counter sampling with O'Rourke's coalescence and grazing separation (D331)"
+switch = "[spray.collision] model = \"ntc\""
+decisions = ["D331"]
+model = true
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-particles/src/collision.rs::ntc_rate_matches_the_pair_rate", what = "the drop collisions of two opposed groups of parcels against the pair rate q_i q_j sigma v dt / V summed over the pairs, within 3 % for equal (1/1) and unequal (10/1000) drop counts" },
+  { kind = "exact", test = "crates/foehncraft-particles/src/collision.rs::collisions_keep_mass_momentum_and_enthalpy", what = "mass, momentum and liquid enthalpy kept to 1e-12 through coalescence and grazing; coalescence off gives none" },
+  { kind = "exact", test = "crates/foehncraft-particles/src/collision.rs::critical_impact_parameter", what = "O'Rourke's critical impact parameter: 1 at small Weber numbers, 2.4 f(1)/We for equal drops" },
+  { kind = "contract", property = "bitwise", test = "crates/foehncraft-particles/src/collision.rs::collisions_do_not_depend_on_the_parcel_order", what = "the same drops (bits) with the parcels in reverse order" },
+  { kind = "contract", property = "diagnostics", test = "crates/foehncraft-particles/src/collision.rs::the_collision_table_is_checked", what = "collisions need the surface tension and the transient spray" },
+  { kind = "reference-data", case = "spray_g_g1", what = "ECN Spray G, G1: with collisions the liquid penetration (0.2e-3 mm3/mm2) is 12 % ahead of the measured one at 0.8 ms (19 % without), the vapour 10 % (17 % without); -2 % at 0.3 ms; the candidate cap 1000 or 20000 per parcel changes it by less than 1 %", doc = "docs/gallery/sprays.md#spray-collisions" },
+]
+gaps = [
+  "only coalescence and grazing separation (O'Rourke); no stretching or reflexive separation (Post and Abraham 2002), no bouncing at high ambient density",
+  "collisions within a cell of the flow mesh only, none with the injected blobs; no collision mesh of its own",
+  "the G1 liquid still runs 12 % ahead at 0.8 ms and its drops at 15 mm are 18 um against the measured 9 um",
+  "transient spray only, CPU only, one process",
 ]
 
 [[feature]]

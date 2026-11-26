@@ -1902,7 +1902,13 @@ impl Turbulence {
             section.sst_constants()?
         };
         let o = section.sst_options(&settings);
-        let zc = section.zeta_f_constants()?;
+        // the ζ-f constants are read only for the ζ-f family: the
+        // overrides of SST (`gamma2`) or k-ε (`a0`) are not ζ-f names
+        let zc = if model.has_zeta() {
+            section.zeta_f_constants()?
+        } else {
+            ZetaFConstants::default()
+        };
         // the wall kernel of the k-ε family serves k-ε-ζ-f with its
         // equilibrium C_μ (compound treatment)
         let ke = if model.has_zeta() {
@@ -3805,7 +3811,20 @@ impl Turbulence {
             dev.copy(v.phi, o1)?;
             if has_old && let Some(w) = extrapolate {
                 dev.lincomb(v.phi, 1.0 + w, o1, -w, o2)?;
-                dev.floor(v.phi, v.floor, f64::INFINITY, None, self.work)?;
+                // The extrapolated start may not fall below a fraction of
+                // the last value (every model, k, ε or ω and ζ). Where a
+                // field more than halves in a step (a run or a jet started
+                // into gas at rest, an injection that starts or ends, a
+                // valve, a schedule) the linear extrapolation turns
+                // negative and the absolute floor would put ε or ω near
+                // zero: ν_t jumps to its cap, and with k-ε-ζ-f T = k/ε,
+                // L ∝ k^{3/2}/ε and P/ε in the source of f blow up before
+                // the first solve of the step (f of ±1e7, ζ between its
+                // bounds, divergence within ten steps). The bound of a
+                // solve of k-ε-ζ-f; inactive where the fields change by
+                // less than this factor per step.
+                let rel = Some((o1, ZETA_F_DROP));
+                dev.floor(v.phi, v.floor, f64::INFINITY, rel, self.work)?;
             }
         }
         Ok(())

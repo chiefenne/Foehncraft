@@ -21,6 +21,7 @@ Part of the [Recipes](../recipes.md): droplets that move with and through the ga
 | 326 | [Let distorted drops drag and evaporate as spheroids](#spray-a-distortion) |
 | 323 | [Model a multi-hole injector on a sector (ECN Spray G)](#spray-g-sector) |
 | 333 | [Let the drops damp the gas turbulence (two-way turbulence)](#spray-turbulence) |
+| 335 | [Let the drops collide](#spray-collisions) |
 
 ---
 
@@ -810,20 +811,15 @@ above 0.1 % vapour.
 
 ```sh
 foehn flow examples/cases/flow/spray_g_g1.toml --out output/spray_g_g1
-foehn flow examples/cases/flow/spray_g_g1.toml --set turbulence.model=k-epsilon \
-    --set turbulence.wall_treatment=scalable --out output/spray_g_g1_keps
-python3 -m tools.plot.spray_g_g1 OUT_DIR output/spray_g_g1 output/spray_g_g1_keps k-ε   # gallery 323
+foehn flow examples/cases/flow/spray_g_g1.toml --set spray.breakup.model=kh-rt --out output/spray_g_g1_khrt
+python3 -m tools.plot.spray_g_g1 OUT_DIR output/spray_g_g1 output/spray_g_g1_khrt   # gallery 323
 ```
-
-**Pick the turbulence model with care.** The plumes are gas jets driven
-by the drops, and how far they reach is set by the turbulence of the gas
-they draw along. The case uses k-ω SST: on k-ε the liquid runs 30 % ahead
-of the measurement at 1.1 ms instead of 15 %, on ζ-f0 34 %. Run a spray
-case on two models (one `--set` each) before tuning the spray.
 
 Case: `examples/cases/flow/spray_g_g1.toml` with its injector file;
 [gallery entry](../gallery/sprays.md#spray-g) for the comparison with the
 measurements.
+
+---
 
 <a id="spray-turbulence"></a>
 ## 333. Let the drops damp the gas turbulence (two-way turbulence)
@@ -862,8 +858,8 @@ fraction of a millisecond, before the gas jet builds its turbulence up;
 a two-equation model cannot grow turbulence back from nearly zero k.
 Only damping is modelled: the wakes of
 drops larger than the eddies, which can add turbulence, are not. On ECN
-Spray G (G1) this term makes the spray run further ahead of the
-measurement, so the case leaves it off; see the
+Spray G (G1, measured before the collision model) this term made the
+spray run further ahead of the measurement, so the case leaves it off; see the
 [gallery entry](../gallery/sprays.md#spray-turbulence) for the numbers.
 
 ```sh
@@ -872,3 +868,45 @@ foehn flow examples/cases/flow/spray_g_g1.toml --set spray.coupling.turbulence=d
     --out output/spray_g_g1_work
 python3 -m tools.plot.spray_turbulence_two_way OUT_DIR output/spray_g_g1 output/spray_g_g1_work   # gallery 333
 ```
+
+---
+
+<a id="spray-collisions"></a>
+## 335. Let the drops collide
+
+Dense sprays near the nozzle hold many drops per cell, and their
+collisions merge drops and slow the core of the spray. Switch them on in
+any transient spray:
+
+```toml
+[spray.liquid]
+surface_tension = 0.02      # N/m; a library liquid brings its own
+
+[spray.collision]
+model = "ntc"               # no-time-counter sampling, O'Rourke's outcomes
+# coalescence = false       # every collision a grazing separation (a check)
+```
+
+The drops of two parcels in one cell meet at the rate q_i q_j σ v Δt / V
+(q the drops of a parcel, σ = π (r_i + r_j)², v their relative speed, V the
+cell volume). Below O'Rourke's critical impact parameter they coalesce,
+above it they separate with their sizes and pull their velocities
+together. Mass, momentum and liquid enthalpy stay exact. The injected blobs
+of the breakup model do not collide.
+
+Watch `spray.csv`: `collisions`, `coalescences`, `drop_collisions`,
+`merged_parcels`, and `collision_capped_cells`, the cell steps whose
+candidate pairs reached the cap of 20000 per parcel. A few capped cells
+near the nozzle are harmless (in G1, raising the cap from 1000 changed the
+penetration by less than 1 %); many mean the cells are too large for the
+spray.
+
+```sh
+foehn flow examples/cases/flow/spray_g_g1.toml --out output/spray_g_g1
+foehn flow examples/cases/flow/spray_g_g1.toml --set spray.collision.model=none --out output/spray_g_g1_nocol
+python3 -m tools.plot.spray_g_g1 OUT_DIR output/spray_g_g1 output/spray_g_g1_nocol \
+    --label "without collisions" --name spray_g_g1_collisions.png   # gallery 335
+```
+
+Case: `examples/cases/flow/spray_g_g1.toml`;
+[gallery entry](../gallery/sprays.md#spray-collisions).

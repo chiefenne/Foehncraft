@@ -207,3 +207,76 @@ fn bad_zeta_f0_input_is_refused() {
     );
     assert!(r.failures.is_empty(), "{:?}", r.failures);
 }
+
+/// A jet started into gas at rest (a coarse quarter of a round jet from a
+/// square nozzle with walls around it, BDF2): the extrapolated start of
+/// k, ε and ζ may not fall below a tenth of the last value. Without that
+/// bound the start of ζ went to its floor where the jet front arrives, f₀
+/// turned large and the run diverged in step 11 (fine box) or earlier.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn zeta_f0_jet_starts_into_gas_at_rest() {
+    let t = r#"case_format = "0.7"
+[mesh.generate]
+type = "hex"
+dimension = 3
+lower = [0.0, 0.0, 0.0]
+upper = [30.0, 10.0, 10.0]
+cells = [40, 18, 18]
+segments = { x = [ { to = 5.0, cells = 15, ratio = 2.0 }, { to = 30.0, cells = 25, ratio = 3.0 } ], y = [ { to = 0.443, cells = 3 }, { to = 10.0, cells = 15, ratio = 20.0 } ], z = [ { to = 0.443, cells = 3 }, { to = 10.0, cells = 15, ratio = 20.0 } ] }
+split = [ { boundary = "xmin", axis = "y", at = 0.443, name = "wall_y" }, { boundary = "xmin", axis = "z", at = 0.443, name = "wall_z" } ]
+[fluid]
+density = 1.0
+viscosity = 1.0e-5
+pressure_values = "gauge"
+[turbulence]
+model = "k-epsilon-zeta-f0"
+wall_treatment = "compound-2023"
+[initial]
+velocity = [0.0, 0.0, 0.0]
+turbulence_intensity = 0.05
+viscosity_ratio = 10.0
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [1.0, 0.0, 0.0]
+turbulence_intensity = 0.05
+viscosity_ratio = 10.0
+[boundary.wall_y]
+type = "wall"
+[boundary.wall_z]
+type = "wall"
+[boundary.ymin]
+type = "symmetry"
+[boundary.zmin]
+type = "symmetry"
+[boundary.ymax]
+type = "total-pressure-inlet"
+total_pressure = 0.0
+turbulence_intensity = 0.01
+viscosity_ratio = 1.0
+[boundary.zmax]
+type = "total-pressure-inlet"
+total_pressure = 0.0
+turbulence_intensity = 0.01
+viscosity_ratio = 1.0
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[time]
+scheme = "bdf2"
+time_step = 0.2
+end_time = 6.0
+[solver]
+tolerance = 1e-6
+max_iterations = 50
+outer_iterations = 3
+corrector = "simplec"
+[output]
+vtkhdf = false
+"#;
+    let dir = out("jet_at_rest");
+    let r = run(&parse(t), "jet_at_rest", &dir, |_| {});
+    let _ = std::fs::remove_dir_all(&dir);
+    let r = r.unwrap_or_else(|e| panic!("{e:#}"));
+    assert!(r.failures.is_empty(), "{:?}", r.failures);
+}

@@ -1404,7 +1404,7 @@
    ],
    "gaps": [
     "on ECN Spray G (G1) with k-epsilon-zeta-f0 the run with the term stops at step 24 (0.05 ms) in a failed CG solve of the pressure (DIV006, RUN014); the cause is not found; without the term the same case runs",
-    "on ECN Spray G (G1) the term removes nearly all of the plume turbulence and moves the penetration away from the measurement (liquid 33 % ahead at 1.1 ms on SST instead of 15 %): off by default and in the case",
+    "on ECN Spray G (G1) the term removes nearly all of the plume turbulence and moves the penetration away from the measurement (without collisions: liquid 33 % ahead at 1.1 ms on SST instead of 15 %, 52 % on k-epsilon instead of 30 %): off by default and in the case; not re-measured with collisions (D331)",
     "only damping: no production of turbulence by the wakes of drops larger than the eddies",
     "the eddies are the isotropic Gaussian eddies of the eddy-lifetime model (D243); the continuous random walk (not built) would need its own form",
     "the omega form of SST is the eps form written with eps = beta* k omega (our step; KIVA-II gives the eps form only)",
@@ -1493,7 +1493,7 @@
     "gaps written"
    ],
    "gaps": [
-    "ECN Spray G (G1) on k-omega SST: the liquid runs ahead of the measured penetration after 0.4 ms (15 % at 1.1 ms, 16 % at 1.2 ms), the vapour less (7 % at 1.1 ms), and the gas on the injector axis returns late after the end of injection; on the k-eps family the lead is twice as large (D309)",
+    "ECN Spray G (G1): the liquid runs ahead of the measured penetration after 0.4 ms (33 % at 1.2 ms) and the vapour after 0.5 ms (21 % at 1.2 ms), with KH-ACT and KH-RT alike, so not from the breakup; cause open (candidates: the cells of the far field, the constant gas density, the k-eps constants) (D309)",
     "KH-ACT drops on ECN Spray G (G1) are about twice the measured size at 15 mm (17 against 9 um; KH-RT 7.4 um): the children of the cavitation (R_CAV from C_a 0.65) and of the integral turbulence scale are large for the short Spray G hole; constants untuned",
     "a gas that diverges in some cells leaves its parcels spending max_substeps each, and their exchange records can fill the memory instead of stopping the run with a message (seen on the sector before the slip core, D309)",
     "drop sizes not validated: the gallery spray has a Sauter mean diameter near 2 um, small next to measured diesel sprays; no collision or coalescence yet",
@@ -1552,6 +1552,21 @@
     "the correlations of Feng and Michaelides (2001) and of Richter and Nikrityuk (2012) are taken as Nguyen et al. (2022) print them, not yet checked against the originals",
     "SA4 part 2 not done: the liquid volume does not displace the gas and the sources are not spread over a fixed radius; no collisions",
     "`spray_a_distortion_injectors` has no run in the verification manual or in CI"
+   ],
+   "range": {}
+  },
+  {
+   "id": "sprays.collision",
+   "title": "Drop collisions: no-time-counter sampling with O'Rourke's coalescence and grazing separation (D331)",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "only coalescence and grazing separation (O'Rourke); no stretching or reflexive separation (Post and Abraham 2002), no bouncing at high ambient density",
+    "collisions within a cell of the flow mesh only, none with the injected blobs; no collision mesh of its own",
+    "the G1 liquid still runs 12 % ahead at 0.8 ms and its drops at 15 mm are 18 um against the measured 9 um",
+    "transient spray only, CPU only, one process"
    ],
    "range": {}
   },

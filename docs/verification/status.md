@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 1.1.0 (b35bc269d4e1)), never typed in. The same as data: [grades.json](grades.json).
 
-**155 features: 50 verified, 102 partial, 3 unverified.**
+**156 features: 50 verified, 103 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -160,6 +160,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Sprays | [High-pressure droplet surface: Peng-Robinson phase equilibrium and latent heat (Spray A, SA1, D311, D312, D314)](#sprays-high-pressure-surface) | partial |
 | Sprays | [Real-fluid gas film of the Peng-Robinson surface: Chung dense-fluid transport, Riazi-Whitson diffusivity, Peng-Robinson density and c_p (Spray A, SA2, D313)](#sprays-high-pressure-film) | partial |
 | Sprays | [Distorted drops: the Corrected Distortion model for drag and evaporation (Spray A, SA4 part 1, D316)](#sprays-corrected-distortion) | partial |
+| Sprays | [Drop collisions: no-time-counter sampling with O'Rourke's coalescence and grazing separation (D331)](#sprays-collision) | partial |
 | Sprays | [ECN liquid length (projected liquid volume) and vapour penetration (Spray A, SA3, D315)](#sprays-ecn-diagnostics) | partial |
 | Flow models | [Porous regions with a direction-dependent Darcy-Forchheimer resistance (D270, PM1)](#porous-darcy-forchheimer) | partial |
 | Flow models | [Gas and matrix temperatures in porous regions, monolithic (D271, D272, PM2)](#porous-two-temperatures) | partial |
@@ -2239,7 +2240,7 @@ Gaps:
 - contract (diagnostics): [`kh_act_needs_the_nozzle_turbulence`](../../crates/foehncraft-particles/tests/breakup.rs): the nozzle keys of KH-ACT are checked (missing turbulence, half a pair, C_d above C_a, no friction left)
 - reference-data: [`spray_breakup`](../../examples/cases/flow/spray_breakup.toml): a diesel-like spray at 60 MPa from a 0.15 mm hole into nitrogen at 15 kg/m3 (KH-ACT, k-eps): 97 % of the liquid at 50.6 mm after 1 ms against 51.1 mm of the correlation of Hiroyasu and Arai (1990), up to 24 % ahead at 0.2 to 0.4 ms; 47.0 mm with kh-rt ([results](../gallery/sprays.md#spray-breakup))
 - contract (schema): [`spray_breakup_injectors`](../../examples/cases/flow/spray_breakup_injectors.toml): the included injector file of spray_breakup (rate table, hole, nozzle turbulence) ([results](../cases/flow.md#lagrangian-sprays)) **missing**
-- reference-data: [`spray_g_g1`](../../examples/cases/flow/spray_g_g1.toml): ECN Spray G, G1 (D309): iso-octane at 20 MPa into nitrogen at 573 K and 3.5 kg/m3 on a 22.5 deg sector of the 8-hole injector, KH-ACT untuned, against the liquid (0.2e-3 mm3/mm2) and vapour (0.1 %) penetration the ECN measured: within 1 mm up to 0.4 ms (20.5 against 20.4 mm at 0.3 ms), then ahead, 12 % at 0.6 ms and 33 % at 1.2 ms (51.7 against 38.9 mm); vapour 32.8 against 29.4 mm at 0.6 ms and 50.8 against 42.0 mm at 1.2 ms; the gas velocity on the injector axis at 15 mm within about 1.5 m/s of the PIV (-7.9 against -7.6 m/s at 0.3 ms); Sauter mean diameter at 15 mm 17 um with KH-ACT and 7.4 um with KH-RT against the measured 9 um, both models with the same penetration ([results](../gallery/sprays.md#spray-g))
+- reference-data: [`spray_g_g1`](../../examples/cases/flow/spray_g_g1.toml): ECN Spray G, G1 (D309): iso-octane at 20 MPa into nitrogen at 573 K and 3.5 kg/m3 on a 22.5 deg sector of the 8-hole injector, KH-ACT untuned, without collisions (gallery 323; with them gallery 335), against the liquid (0.2e-3 mm3/mm2) and vapour (0.1 %) penetration the ECN measured: within 1 mm up to 0.4 ms (20.5 against 20.4 mm at 0.3 ms), then ahead, 12 % at 0.6 ms and 33 % at 1.2 ms (51.7 against 38.9 mm); vapour 32.8 against 29.4 mm at 0.6 ms and 50.8 against 42.0 mm at 1.2 ms; the gas velocity on the injector axis at 15 mm within about 1.5 m/s of the PIV (-7.9 against -7.6 m/s at 0.3 ms); Sauter mean diameter at 15 mm 17 um with KH-ACT and 7.4 um with KH-RT against the measured 9 um, both models with the same penetration ([results](../gallery/sprays.md#spray-g))
 - contract (schema): [`spray_g_g1_injectors`](../../examples/cases/flow/spray_g_g1_injectors.toml): the included injector file of spray_g_g1 (library iso-octane, measured rate of injection, plume direction, flow_share 0.5) ([results](../cases/flow.md#lagrangian-sprays)) **missing**
 
 Gaps:
@@ -2340,6 +2341,26 @@ Gaps:
 - the correlations of Feng and Michaelides (2001) and of Richter and Nikrityuk (2012) are taken as Nguyen et al. (2022) print them, not yet checked against the originals
 - SA4 part 2 not done: the liquid volume does not displace the gas and the sources are not spread over a fixed radius; no collisions
 - `spray_a_distortion_injectors` has no run in the verification manual or in CI
+
+<a id="sprays-collision"></a>
+
+### Drop collisions: no-time-counter sampling with O'Rourke's coalescence and grazing separation (D331)
+
+**partial** (gaps written) · id `sprays.collision` · switch `[spray.collision] model = "ntc"` · decisions D331
+
+- exact: [`ntc_rate_matches_the_pair_rate`](../../crates/foehncraft-particles/src/collision.rs): the drop collisions of two opposed groups of parcels against the pair rate q_i q_j sigma v dt / V summed over the pairs, within 3 % for equal (1/1) and unequal (10/1000) drop counts
+- exact: [`collisions_keep_mass_momentum_and_enthalpy`](../../crates/foehncraft-particles/src/collision.rs): mass, momentum and liquid enthalpy kept to 1e-12 through coalescence and grazing; coalescence off gives none
+- exact: [`critical_impact_parameter`](../../crates/foehncraft-particles/src/collision.rs): O'Rourke's critical impact parameter: 1 at small Weber numbers, 2.4 f(1)/We for equal drops
+- contract (bitwise): [`collisions_do_not_depend_on_the_parcel_order`](../../crates/foehncraft-particles/src/collision.rs): the same drops (bits) with the parcels in reverse order
+- contract (diagnostics): [`the_collision_table_is_checked`](../../crates/foehncraft-particles/src/collision.rs): collisions need the surface tension and the transient spray
+- reference-data: [`spray_g_g1`](../../examples/cases/flow/spray_g_g1.toml): ECN Spray G, G1: with collisions the liquid penetration (0.2e-3 mm3/mm2) is 12 % ahead of the measured one at 0.8 ms (19 % without), the vapour 10 % (17 % without); -2 % at 0.3 ms; the candidate cap 1000 or 20000 per parcel changes it by less than 1 % ([results](../gallery/sprays.md#spray-collisions))
+
+Gaps:
+
+- only coalescence and grazing separation (O'Rourke); no stretching or reflexive separation (Post and Abraham 2002), no bouncing at high ambient density
+- collisions within a cell of the flow mesh only, none with the injected blobs; no collision mesh of its own
+- the G1 liquid still runs 12 % ahead at 0.8 ms and its drops at 15 mm are 18 um against the measured 9 um
+- transient spray only, CPU only, one process
 
 <a id="sprays-ecn-diagnostics"></a>
 

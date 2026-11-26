@@ -492,7 +492,12 @@ pub const CSV_UNITS: &str = "step -; time s; parcels -; injected_kg kg; in_flow_
      (Rayleigh-Taylor breakups of drops since the start); KH-ACT: act_children - (of the child \
      parcels, those the nozzle turbulence or the cavitation stripped); with [spray.coupling] \
      turbulence = \"dispersion-work\" (D330): gas_turbulence_w W (work of the parcels' eddies \
-     on the turbulence of the gas per second, negative: what the drops take out of k)";
+     on the turbulence of the gas per second, negative: what the drops take out of k); \
+     collisions (D331): \
+     collisions - (colliding parcel pairs since the start), coalescences - (of them, \
+     coalescences), drop_collisions - (drop collisions since the start), merged_parcels - \
+     (parcels taken up completely by coalescence), collision_capped_cells - (cell steps whose \
+     candidate pairs were capped)";
 
 /// The header of `spray.csv`.
 pub fn csv_head(sp: &foehncraft_particles::Spray) -> String {
@@ -537,6 +542,11 @@ pub fn csv_head(sp: &foehncraft_particles::Spray) -> String {
     }
     if turbulence_work(sp) {
         h.push_str(",gas_turbulence_w");
+    }
+    if sp.config().collision.on() {
+        h.push_str(
+            ",collisions,coalescences,drop_collisions,merged_parcels,collision_capped_cells",
+        );
     }
     h
 }
@@ -765,6 +775,16 @@ pub fn csv_row(
     }
     if turbulence_work(sp) {
         extra.push_str(&format!(",{:e}", c.map_or(0.0, |c| c.gas_turbulence)));
+    }
+    if sp.config().collision.on() {
+        extra.push_str(&format!(
+            ",{},{},{:e},{},{}",
+            t.collisions,
+            t.coalescences,
+            t.drop_collisions,
+            t.merged_parcels,
+            t.collision_capped_cells
+        ));
     }
     format!(
         "{step},{:e},{},{:e},{:e},{:e},{:e},{:e},{},{},{}{extra}",

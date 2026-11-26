@@ -709,7 +709,8 @@ fn turbulent_spin_up_agrees_with_a_fixed_mesh() {
 /// (all cells turn, the old levels of k, ε and ζ move with the cells) and on
 /// the imprinted one (the patch in the rotor) it arrives at the opposite
 /// side as the same patch decays at rest, and leaves its start empty. The
-/// patch lags the turn by the velocity error of the coarse mesh (3 % here).
+/// patch lags the turn by the velocity error of the coarse mesh (3 % here);
+/// its place on a line is the centroid of k above the line's least value.
 /// The imprinted run takes half the time step (see below).
 #[test]
 #[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
@@ -760,10 +761,17 @@ fn turbulence_is_carried_by_the_rotor() {
             *velocity = foehncraft_flow::expr::vector([0.0; 3]);
         }
     }
+    // the largest k and the centroid of k above its least value on the line:
+    // the decayed patch is a ring (a dip at its centre), so two cells share
+    // the largest k and the place of the largest value is a tie that the last
+    // digit decides; the centroid is the place of the patch
     let peak = |rows: &[std::collections::HashMap<String, f64>]| -> (f64, f64) {
-        rows.iter()
-            .map(|r| (r["s"], r["k"]))
-            .fold((0.0, 0.0), |a, b| if b.1 > a.1 { b } else { a })
+        let low = rows.iter().map(|r| r["k"]).fold(f64::INFINITY, f64::min);
+        let high = rows.iter().map(|r| r["k"]).fold(0.0, f64::max);
+        let (m, w) = rows.iter().fold((0.0, 0.0), |a, r| {
+            (a.0 + r["s"] * (r["k"] - low), a.1 + r["k"] - low)
+        });
+        (if w > 0.0 { m / w } else { 0.0 }, high)
     };
     let (s0, k0) = peak(&line_rows(&rest, "blob_rest", "start"));
     for (name, case) in [

@@ -297,6 +297,31 @@ impl Parcels {
         self.id.is_empty()
     }
 
+    /// Keeps the parcels for which `keep(index)` holds, in their order.
+    pub(crate) fn retain(&mut self, keep: impl Fn(usize) -> bool) {
+        fn sieve<T: Copy>(v: &mut Vec<T>, keep: &dyn Fn(usize) -> bool) {
+            if v.is_empty() {
+                return;
+            }
+            let mut i = 0;
+            v.retain(|_| {
+                let k = keep(i);
+                i += 1;
+                k
+            });
+        }
+        sieve(&mut self.id, &keep);
+        sieve(&mut self.x, &keep);
+        sieve(&mut self.v, &keep);
+        sieve(&mut self.d, &keep);
+        sieve(&mut self.count, &keep);
+        sieve(&mut self.born, &keep);
+        sieve(&mut self.temp, &keep);
+        sieve(&mut self.eddy, &keep);
+        sieve(&mut self.brk, &keep);
+        sieve(&mut self.cell, &keep);
+    }
+
     fn push(&mut self, p: &One) {
         self.id.push(p.id);
         self.x.push(p.x);
@@ -500,6 +525,21 @@ pub struct Tally {
     /// Their liquid mass (kg).
     #[serde(default)]
     pub critical_mass: f64,
+    /// Accepted colliding parcel pairs (D331).
+    #[serde(default)]
+    pub collisions: u64,
+    /// Of them, coalescences.
+    #[serde(default)]
+    pub coalescences: u64,
+    /// Drop collisions (each pair is the drop count of its collector).
+    #[serde(default)]
+    pub drop_collisions: f64,
+    /// Parcels taken up completely by coalescence.
+    #[serde(default)]
+    pub merged_parcels: u64,
+    /// Cell steps whose candidate pairs were capped (a health number).
+    #[serde(default)]
+    pub collision_capped_cells: u64,
 }
 
 /// The parcels released in a step, booked when the pass is committed.
@@ -1342,7 +1382,7 @@ impl Spray {
             mut outcomes,
             sources,
             t1,
-            ..
+            dt: pass_dt,
         } = pass;
         // the release of the step (counters, mass book)
         for (ii, &r) in release.released.iter().enumerate() {
@@ -1510,6 +1550,30 @@ impl Spray {
                     self.tally.evaporated_parcels += 1;
                 }
             }
+        }
+        // the collisions of the drops at the end of the step (D331): mass,
+        // momentum and liquid enthalpy stay, so the books above hold
+        let col = &self.cfg.collision;
+        if col.on() && kept.len() > 1 {
+            let inp = crate::collision::CollisionInput {
+                rho_l: rho_p,
+                sigma: self.cfg.liquid.surface_tension.unwrap_or(f64::NAN),
+                dt: pass_dt,
+                t1,
+                coalescence: col.coalescence,
+            };
+            let brk = kept.brk.clone();
+            let t = crate::collision::collide(
+                &mut kept,
+                &env.geo.cell_volume,
+                &|i| brk.get(i).is_some_and(|b| b.blob),
+                inp,
+            );
+            self.tally.collisions += t.events;
+            self.tally.coalescences += t.coalescences;
+            self.tally.drop_collisions += t.drop_collisions;
+            self.tally.merged_parcels += t.merged_parcels;
+            self.tally.collision_capped_cells += t.capped_cells;
         }
         self.parcels = kept;
         self.time = t1;

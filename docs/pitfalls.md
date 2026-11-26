@@ -750,13 +750,6 @@ Found while adding STL bodies to the cut (L13 stage 2, #322):
   twice the measured size; the obvious reading was "too large drops". KH-RT
   with drops of the measured size ran exactly as far, so the cause is
   elsewhere. Run both models (one `--set`) before tuning breakup constants.
-- **Check the turbulence model before the spray models.** The late lead
-  of G1 (D309) survived the mesh (0.6, 0.4 and 0.2 mm), the breakup model,
-  the gas density and the injected momentum. It came from the turbulence:
-  on the plume axis the k-ε family made a fraction of the eddy viscosity
-  of a developed jet, k-ω SST about the jet's, and SST cut the lead to
-  about a third. Run the case on two turbulence models (one `--set` each)
-  before searching the spray.
 - **A source sampled from random eddies must not carry their zero-mean
   products.** The two-way turbulence term of KIVA-II written as
   u′·Δv (D330), with Δv the drag change of a parcel's velocity, contains
@@ -782,3 +775,13 @@ SF7b (#312):
 - **Run `cargo fmt --all` after resolving a conflict in a `mod` list.**
   Keeping both sides of a conflict leaves the module lines out of order,
   and the format check of CI fails on it.
+
+<a id="start-into-rest"></a>
+## Tests that pick the largest value of a decayed field
+
+Found with the start-up bound of the turbulence (#334):
+- **A decayed patch is flat or a ring, and its largest value is a tie.**
+  `sliding::turbulence_is_carried_by_the_rotor` took the place of the
+  largest k on a line; after 16 steps two cells of the ring agreed to the
+  last digits and a change in the last digit moved the "peak" by 0.02 m.
+  Locate a patch by the centroid of the field above its least value.

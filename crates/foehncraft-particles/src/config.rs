@@ -910,6 +910,51 @@ impl Breakup {
     }
 }
 
+/// The collision model of the drops (D331).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum CollisionModel {
+    /// The drops do not collide (default).
+    #[default]
+    None,
+    /// No-time-counter sampling of the colliding pairs of a cell (Schmidt
+    /// and Rutland 2000, J. Comput. Phys. 164) with the outcomes of
+    /// O'Rourke (1981): coalescence below the critical impact parameter,
+    /// grazing separation above it.
+    Ntc,
+}
+
+/// `[spray.collision]` (D331): collisions of the drops of two parcels in
+/// the same cell, at the end of every time step. Mass, momentum and
+/// enthalpy of the liquid are kept exactly; the injected blobs of the
+/// breakup model do not collide (they stand for the liquid core).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct Collision {
+    /// `none` (default) or `ntc`.
+    pub model: CollisionModel,
+    /// Coalescence: `true` (default) lets the drops below the critical
+    /// impact parameter merge; `false` makes every collision a grazing
+    /// separation (a check of the sampling).
+    pub coalescence: bool,
+}
+
+impl Default for Collision {
+    fn default() -> Self {
+        Self {
+            model: CollisionModel::None,
+            coalescence: true,
+        }
+    }
+}
+
+impl Collision {
+    /// True when the drops collide.
+    pub fn on(&self) -> bool {
+        self.model != CollisionModel::None
+    }
+}
+
 /// `[spray]`: the Lagrangian parcels of the case.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
@@ -965,6 +1010,8 @@ pub struct SpraySection {
     pub evaporation: Evaporation,
     /// The breakup of the drops and the drag of distorted drops (SP6).
     pub breakup: Breakup,
+    /// The collisions of the drops (D331).
+    pub collision: Collision,
     /// The diagnostics of the Engine Combustion Network modelling standard
     /// (D315): liquid length from the projected liquid volume and vapour
     /// penetration, per injector in `spray.csv` and `result.json`; off
@@ -1232,6 +1279,7 @@ impl Default for SpraySection {
             steady: None,
             evaporation: Evaporation::default(),
             breakup: Breakup::default(),
+            collision: Collision::default(),
             ecn: None,
         }
     }
@@ -1430,6 +1478,20 @@ impl SpraySection {
         }
         if !(br.shed_fraction >= 1e-4 && br.shed_fraction < 1.0) {
             bail!("[spray.breakup] shed_fraction must be in [1e-4, 1)");
+        }
+        if self.collision.on() {
+            if !self.liquid.surface_tension.is_some_and(pos) {
+                bail!(
+                    "[spray.collision] needs the surface tension of the liquid (the collision \
+                     Weber number): [spray.liquid] surface_tension = 0.02 (N/m, positive)"
+                );
+            }
+            if self.steady.is_some() {
+                bail!(
+                    "[spray.collision] needs the transient spray: the streams of [spray.steady] \
+                     carry rates, not drops that meet; run the case transient"
+                );
+            }
         }
         if br.needs_properties() {
             let what = if br.on() {
