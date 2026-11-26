@@ -15,10 +15,9 @@
 # intermittency (Hwang et al. 2020, as quoted by Colmenares, Ameen and
 # Patel, ASME J. Eng. Gas Turbines Power, GTP-22-1576). Area contraction
 # C_a = 0.65, in the measured range 0.635 to 0.687 of Payri et al. (SAE
-# 2015-01-1893) as quoted by the same authors. The
-# discharge coefficient 0.51 is ours: the plateau of the measured rate,
-# 13.8 mg/ms over 8 holes, over ρ_l A_hole (2 Δp/ρ_l)^½ at 20 MPa less
-# 0.6 MPa.
+# 2015-01-1893) as quoted by the same authors. The discharge coefficient
+# 0.51 is ours: the plateau of the measured rate, 13.8 mg/ms over 8 holes,
+# over ρ_l A_hole (2 Δp/ρ_l)^½ at 20 MPa less 0.6 MPa.
 #
 # The hole exit (our choice): 1 mm from the injector axis and 0.1 mm into
 # the chamber, on the plume plane φ = −11.25° (moved 2 µm into the domain,

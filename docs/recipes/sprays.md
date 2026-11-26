@@ -527,7 +527,7 @@ checked and what is not.
 
 
 <a id="spray-g-sector"></a>
-## NNN. Model a multi-hole injector on a sector (ECN Spray G)
+## 323. Model a multi-hole injector on a sector (ECN Spray G)
 
 **Mesh one plume's share.** The plumes of an injector of n equal holes
 repeat every 360°/n about its axis, and each plume is mirror-symmetric
@@ -594,7 +594,7 @@ above 0.1 % vapour.
 
 ```sh
 foehn flow examples/cases/flow/spray_g_g1.toml --out output/spray_g_g1
-python3 -m tools.plot.spray_g_g1 OUT_DIR output/spray_g_g1   # the picture of gallery NNN
+python3 -m tools.plot.spray_g_g1 OUT_DIR output/spray_g_g1   # the picture of gallery 323
 ```
 
 Case: `examples/cases/flow/spray_g_g1.toml` with its injector file;

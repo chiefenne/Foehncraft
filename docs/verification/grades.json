@@ -1454,18 +1454,20 @@
   },
   {
    "id": "sprays.breakup",
-   "title": "Spray breakup: KH-ACT and KH-RT with blob injection, TAB distortion and dynamic drag (SP6, D300 to D308)",
+   "title": "Spray breakup: KH-ACT and KH-RT with blob injection, TAB distortion and dynamic drag (SP6, D300 to D309)",
    "grade": "partial",
    "why": [
     "gaps written"
    ],
    "gaps": [
-    "validated against a penetration correlation only; ECN Spray G (G1, measured liquid and vapour penetration) is the next part (D309)",
+    "ECN Spray G (G1): the liquid runs ahead of the measured penetration after 0.4 ms (33 % at 1.2 ms) and the vapour after 0.5 ms (21 % at 1.2 ms), with drops about twice the measured size at 15 mm (17 against 9 um); the children of the cavitation (R_CAV from C_a 0.65) and of the integral turbulence scale are large for the short Spray G hole, KH-ACT constants untuned (D309)",
+    "a gas that diverges in some cells leaves its parcels spending max_substeps each, and their exchange records can fill the memory instead of stopping the run with a message (seen on the sector before the slip core, D309)",
     "drop sizes not validated: the gallery spray has a Sauter mean diameter near 2 um, small next to measured diesel sprays; no collision or coalescence yet",
     "the nozzle turbulence of the Huh-Gosman estimate takes the inlet loss K_c = 0.5 and the area ratio s = 0 as our own choices (the papers give no values)",
     "the k-omega SST model does not build up the turbulence of a thin spray jet in a still chamber (the gallery case uses k-eps)",
     "breakup is refused in the steady spray mode; constant surface tension and viscosity; children leave with the blob's velocity (no radial velocity); no GPU entry of the breakup kernel; one process",
-    "`spray_breakup_injectors` has no run in the verification manual or in CI"
+    "`spray_breakup_injectors` has no run in the verification manual or in CI",
+    "`spray_g_g1_injectors` has no run in the verification manual or in CI"
    ],
    "range": {}
   },

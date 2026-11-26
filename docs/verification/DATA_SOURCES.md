@@ -291,6 +291,14 @@ are not stored.
   method, ASME J. Eng. Gas Turbines Power, paper GTP-22-1576 (OSTI
   2427994; volume and pages **to verify**). Their model settings (B₁ = 80
   and others) are not used (D201).
+- Drop size: the phase-Doppler data of the same data page ("Droplet size
+  and velocity at z = 15 mm", GM, S. Parrish, injector #16, plume 1, file
+  `PDI_distribution.xlsx`): the time-averaged Sauter mean diameter of
+  9 µm, quoted by the plot script. Measurements, D201 accepted class.
+- Turbulence scale of KH-ACT at low gas density (a finding quoted in the
+  gallery text, no numbers taken): Magnotti, G. M. (2017), Modeling the
+  influence of nozzle-generated turbulence on diesel sprays, PhD thesis,
+  Georgia Institute of Technology (OSTI 1785739), section 1.2.3.3.
 
 ## 4. Rules for adding an entry
 

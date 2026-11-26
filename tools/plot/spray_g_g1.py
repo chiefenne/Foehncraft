@@ -10,7 +10,11 @@ plumes seen perpendicular to that plane, as the extinction imaging of the
 ECN sees the spray, with its contour at 0.2e-3 mm³/mm²; right, the liquid
 penetration (projected liquid volume above 0.2e-3 and 2e-3 mm³/mm²) and the
 vapour penetration (vapour mass fraction above 0.1 %) over time against the
-measured ones.
+measured ones. With a second run (the same case with
+`--set spray.breakup.model=kh-rt`) its curves are drawn thin for comparison.
+The script also prints the Sauter mean diameter of the drops 15 mm from the
+tip along the injector axis, 5 to 14 mm from it, averaged over 0.2 to
+1.0 ms, next to the phase-Doppler measurement of the ECN.
 
 The measured penetrations are quoted from the Sandia Spray G data of the
 ECN (https://ecn.sandia.gov/data/sandia-spray-g-data/, iso-octane, G1:
@@ -18,11 +22,14 @@ files liquid_data_2e-4_thr.mat, liquid_data_2e-3_thr.mat, column 16, and
 vapor_data.mat, column 12; high-speed extinction and schlieren imaging by
 J. Hwang and L. M. Pickett, cited as Hwang et al., Fuel 280, 2020, 118359),
 at the frames nearest to the listed times; their uncertainties are below
-0.3 mm before 1 ms.
+0.3 mm before 1 ms. The drop size: the phase-Doppler data of the ECN at
+15 mm from the tip (GM, S. Parrish, injector #16, plume 1; file
+PDI_distribution.xlsx of the Spray G data page), whose time-averaged Sauter
+mean diameter is 9 µm.
 
     pip install matplotlib h5py numpy
     target/release/foehn flow examples/cases/flow/spray_g_g1.toml --out output/spray_g_g1
-    python3 -m tools.plot.spray_g_g1 OUT_DIR output/spray_g_g1
+    python3 -m tools.plot.spray_g_g1 OUT_DIR output/spray_g_g1 [output/spray_g_g1_khrt]
 """
 import glob
 import os
@@ -51,6 +58,7 @@ from tools.plot.vtkhdf import internal  # noqa: E402
 
 VAPOUR = "IC8H18"
 SNAPSHOT = 0.6  # ms, the side view
+PDI_D32 = 9.0  # µm, time-averaged Sauter mean diameter at 15 mm (ECN)
 
 # measured (ECN, see the module text): (time after the start of injection
 # in ms, penetration along the injector axis in mm)
@@ -161,8 +169,25 @@ def nearest(files, t_ms, tmap=None):
     return best
 
 
-def plot(out, run):
+def d32_at_15mm(run):
+    """The Sauter mean diameter (µm) of the drops between 14.5 and 15.5 mm
+    from the tip along the injector axis and 5 to 14 mm from it (the radial
+    scan of the measurement), over the parcel files of 0.2 to 1.0 ms."""
+    s3 = s2 = 0.0
+    for p in parcel_files(run):
+        x, d, n, t = parcels(p)
+        if not 0.19e-3 <= t <= 1.0e-3 or len(d) == 0:
+            continue
+        r = np.hypot(x[:, 1], x[:, 2])
+        k = (np.abs(x[:, 0] - 0.015) < 5e-4) & (r > 5e-3) & (r < 14e-3)
+        s3 += float((n[k] * d[k] ** 3).sum())
+        s2 += float((n[k] * d[k] ** 2).sum())
+    return s3 / s2 * 1e6 if s2 > 0.0 else float("nan")
+
+
+def plot(out, run, run_rt=None):
     liq, vap = penetrations(run)
+    rt = penetrations(run_rt) if run_rt else None
     tmap = times(run)
     ffile = nearest(sorted(glob.glob(os.path.join(run, "fields_*.vtkhdf")), key=step_of), SNAPSHOT, tmap)
     pfile = nearest(parcel_files(run), SNAPSHOT)
@@ -207,6 +232,8 @@ def plot(out, run):
     a.plot(m[:, 0], m[:, 1], "s", color="0.45", mfc="none", ms=4, label="measured, 2e-3 mm³/mm²")
     a.plot(liq[:, 0], liq[:, 1], color="tab:red", lw=2.0, label="Foehncraft, 0.2e-3")
     a.plot(liq[:, 0], liq[:, 2], color="tab:red", lw=1.4, ls="--", label="Foehncraft, 2e-3")
+    if rt is not None:
+        a.plot(rt[0][:, 0], rt[0][:, 1], color="tab:orange", lw=1.2, label="Foehncraft KH-RT, 0.2e-3")
     a.axvline(0.78, color="0.6", lw=0.8, ls=":")
     a.set_ylabel("liquid penetration (mm)")
     a.set_xlim(0.0, 1.25)
@@ -219,6 +246,8 @@ def plot(out, run):
     m = np.array(VAPOUR_PEN)
     b.plot(m[:, 0], m[:, 1], "o", color="k", ms=4, label="measured (schlieren)")
     b.plot(vap[:, 0], vap[:, 1], color="tab:blue", lw=2.0, label="Foehncraft, vapour mass fraction 0.1 %")
+    if rt is not None:
+        b.plot(rt[1][:, 0], rt[1][:, 1], color="tab:cyan", lw=1.2, label="Foehncraft KH-RT")
     b.axvline(0.78, color="0.6", lw=0.8, ls=":")
     b.set_xlabel("time after the start of injection (ms)")
     b.set_ylabel("vapour penetration (mm)")
@@ -236,14 +265,19 @@ def plot(out, run):
         print(f"liquid {t:6.3f} ms  {lo:6.2f} mm (0.2e-3)  {hi:6.2f} mm (2e-3)")
     for t, v in vap:
         print(f"vapour {t:6.3f} ms  {v:6.2f} mm")
+    print(f"D32 at 15 mm, 0.2 to 1.0 ms: {d32_at_15mm(run):.1f} µm (measured {PDI_D32:.0f} µm)")
+    if rt is not None:
+        for (t, lo, _), (_, v) in zip(rt[0], rt[1]):
+            print(f"kh-rt  {t:6.3f} ms  liquid {lo:6.2f} mm  vapour {v:6.2f} mm")
+        print(f"kh-rt D32 at 15 mm: {d32_at_15mm(run_rt):.1f} µm")
 
 
 def main():
-    if len(sys.argv) != 3:
+    if len(sys.argv) not in (3, 4):
         sys.exit(__doc__)
     out, run = sys.argv[1], sys.argv[2]
     os.makedirs(out, exist_ok=True)
-    plot(out, run)
+    plot(out, run, sys.argv[3] if len(sys.argv) == 4 else None)
 
 
 if __name__ == "__main__":

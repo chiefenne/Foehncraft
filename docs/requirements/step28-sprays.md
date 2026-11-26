@@ -33,7 +33,7 @@ viewer (D261 to D268) are in
 | SP4 | Minimal vapour species on the low-Mach density, liquid property set for water first | SP2 |
 | SP5 | Evaporation (Ranz-Marshall, Abramzon-Sirignano), closed-box mass and energy ledger test, the spray-cooling case. Vapour and enthalpy exchange in the relaxation form of D250, parcel integrators of D251, saturation limiter of D253, checks V28.1 to V28.8 | SP4 |
 | SP2s | Steady spray mode (D260): parcel streams through the steady gas field, relaxed sources, checks V28.9 to V28.11. Momentum and sensible heat first; evaporation in the steady mode when SP5 is merged. **Implemented 2026-11-25 (PR #292)** for momentum and sensible heat; see section 6 | SP2 merged and V28.1 to V28.4 passed |
-| SP6 | Breakup (KH-ACT and KH-RT with blob injection, TAB distortion with dynamic drag, rate tables, mirrored eddies; D300 to D308, section 7), then collision | owner request 2026-11-25 (ECN Spray G) |
+| SP6 | Breakup (KH-ACT and KH-RT with blob injection, TAB distortion with dynamic drag, rate tables, mirrored eddies, the ECN Spray G case; D300 to D309, section 7), then collision | owner request 2026-11-25 (ECN Spray G) |
 | SP3 | Parcel migration between ranks | MPI W3 to W5 merged |
 | SP7 | Wall film | 7t2 surface mesh |
 
@@ -600,8 +600,21 @@ area contraction, plume direction and cone) and the distortion of the drops.
   at 1 ms (correlation 51.1 mm), 47.0 mm with KH-RT; up to 24 % ahead at
   0.2 to 0.4 ms. With the SST model of the first runs the turbulence of the
   thin gas jet did not build up in the still chamber (k near its start
-  value) and the tip ran 80 % ahead; the case uses k-ε. ECN Spray G (G1)
-  is the next part (D309).
+  value) and the tip ran 80 % ahead; the case uses k-ε.
+- The sector mesh (D309, `foehncraft-mesh`, module `wedge`): the volume of
+  a 3D sector of hexahedra against the exact volume of the faceted sector
+  to 10⁻¹², closed cells, the side planes as boundaries; tetrahedra and
+  `perturb` refused.
+- ECN Spray G, G1 (D309, gallery 323, KH-ACT with the default constants):
+  the liquid penetration (0.2e-3 mm³/mm²) within 1 mm of the measured one
+  up to 0.4 ms, then ahead, 12 % at 0.6 ms, 19 % at the end of injection,
+  33 % at 1.2 ms (51.7 against 38.9 mm); the vapour 32.8 against 29.4 mm at
+  0.6 ms and 50.8 against 42.0 mm at 1.2 ms; the Sauter mean diameter at
+  15 mm 17 µm against the measured 9 µm. The children of the cavitation
+  (R_CAV = r_hole (1 − C_a)^½ = 49 µm) and of the integral turbulence scale
+  are large for the short Spray G hole; Magnotti (2017) reported KH-ACT
+  little better than KH below 7 kg/m³ and pointed to a smaller turbulence
+  scale. A recorded gap, not calibrated.
 
 ### 7.2 Not yet
 
@@ -610,4 +623,10 @@ mean diameter near 2 µm, small next to measured diesel sprays); a size distribu
 fragment model for slow drops is a candidate); breakup in the steady mode;
 temperature-dependent surface tension and viscosity (with the liquid
 property library); radial velocity of the children (they leave with the
-blob's velocity); GPU entry of the breakup kernel.
+blob's velocity); GPU entry of the breakup kernel. For Spray G (G1): the drop
+size of the KH-ACT children (the liquid and vapour run ahead of the
+measurements after 0.4 ms), a calibration of the constants against G1, the
+gas density of the vapour (the case keeps the ambient density), and a run
+whose gas diverges in some cells can fill the memory with the exchange
+records of parcels that spend `max_substeps` instead of stopping with a
+message.
