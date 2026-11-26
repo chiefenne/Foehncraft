@@ -609,12 +609,15 @@ area contraction, plume direction and cone) and the distortion of the drops.
   the liquid penetration (0.2e-3 mm³/mm²) within 1 mm of the measured one
   up to 0.4 ms, then ahead, 12 % at 0.6 ms, 19 % at the end of injection,
   33 % at 1.2 ms (51.7 against 38.9 mm); the vapour 32.8 against 29.4 mm at
-  0.6 ms and 50.8 against 42.0 mm at 1.2 ms; the Sauter mean diameter at
-  15 mm 17 µm against the measured 9 µm. The children of the cavitation
-  (R_CAV = r_hole (1 − C_a)^½ = 49 µm) and of the integral turbulence scale
-  are large for the short Spray G hole; Magnotti (2017) reported KH-ACT
-  little better than KH below 7 kg/m³ and pointed to a smaller turbulence
-  scale. A recorded gap, not calibrated.
+  0.6 ms and 50.8 against 42.0 mm at 1.2 ms; the gas velocity on the
+  injector axis 15 mm from the tip within about 1.5 m/s of the PIV of the
+  ECN. The Sauter mean diameter at 15 mm is 17 µm against the measured
+  9 µm: the children of the cavitation (R_CAV = r_hole (1 − C_a)^½ =
+  49 µm) and of the integral turbulence scale are large for the short
+  Spray G hole (Magnotti 2017 reported KH-ACT little better than KH below
+  7 kg/m³ and pointed to a smaller turbulence scale). KH-RT gives 7.4 µm
+  and the same penetration, so the late lead is not from the breakup; its
+  cause is open, a recorded gap.
 
 ### 7.2 Not yet
 
@@ -623,10 +626,11 @@ mean diameter near 2 µm, small next to measured diesel sprays); a size distribu
 fragment model for slow drops is a candidate); breakup in the steady mode;
 temperature-dependent surface tension and viscosity (with the liquid
 property library); radial velocity of the children (they leave with the
-blob's velocity); GPU entry of the breakup kernel. For Spray G (G1): the drop
-size of the KH-ACT children (the liquid and vapour run ahead of the
-measurements after 0.4 ms), a calibration of the constants against G1, the
-gas density of the vapour (the case keeps the ambient density), and a run
+blob's velocity); GPU entry of the breakup kernel. For Spray G (G1): the cause
+of the late lead of the liquid and the vapour (the far-field cells, the
+gas density of the cooled plume with its vapour, the k-ε constants), the
+drop size of the KH-ACT children, a calibration of the constants against
+G1, and a run
 whose gas diverges in some cells can fill the memory with the exchange
 records of parcels that spend `max_substeps` instead of stopping with a
 message.

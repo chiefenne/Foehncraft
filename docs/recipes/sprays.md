@@ -594,7 +594,8 @@ above 0.1 % vapour.
 
 ```sh
 foehn flow examples/cases/flow/spray_g_g1.toml --out output/spray_g_g1
-python3 -m tools.plot.spray_g_g1 OUT_DIR output/spray_g_g1   # the picture of gallery 323
+foehn flow examples/cases/flow/spray_g_g1.toml --set spray.breakup.model=kh-rt --out output/spray_g_g1_khrt
+python3 -m tools.plot.spray_g_g1 OUT_DIR output/spray_g_g1 output/spray_g_g1_khrt   # gallery 323
 ```
 
 Case: `examples/cases/flow/spray_g_g1.toml` with its injector file;

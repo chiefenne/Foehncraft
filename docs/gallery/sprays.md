@@ -817,15 +817,16 @@ later stages.
 <a id="spray-g"></a>
 ## 323. ECN Spray G: a gasoline injector against the measurements
 
-<img src="../figures/gallery/spray_g_g1.png" alt="Left: side view of one plume of the Spray G injector at 0.6 ms, the injector tip at the left and its axis horizontal. Above the axis the iso-octane vapour mass fraction on the plane of the plume: a band leaving the tip at about 33 degrees, dark red (more than 10 percent) in its core and orange, yellow and green at its edges, ending in a rounded head about 33 mm along the axis and 20 mm from it, the rest of the plane blue. Below the axis the projected liquid volume of all eight plumes as grey shades, densest near the tip and in two lobes of the plume head, with a red outline at 0.2e-3 cubic millimetres per square millimetre ending at about 33 mm. Right top: liquid penetration over 1.2 ms; the red computed curve lies on the black measured points up to 0.4 ms and then rises almost straight to 52 mm, while the measured points bend over to 39 mm; the measured dense-liquid points (open squares) stop at 27 mm and drop after 1 ms, the computed dense-liquid curve runs with the thin one. Right bottom: vapour penetration; the blue computed curve follows the measured points to 0.4 ms and then runs above them, 51 against 42 mm at 1.2 ms. A dotted line marks the end of injection at 0.78 ms in both charts." width="1200" height="720">
+<img src="../figures/gallery/spray_g_g1.png" alt="Left: side view of one plume of the Spray G injector at 0.6 ms, the injector tip at the left and its axis horizontal. Above the axis the iso-octane vapour mass fraction on the plane of the plume: a band leaving the tip at about 33 degrees, dark red (more than 10 percent) in its core and orange, yellow and green at its edges, ending in a rounded head about 33 mm along the axis and 20 mm from it, the rest of the plane blue. Below the axis the projected liquid volume of all eight plumes as grey shades, densest near the tip and in two lobes of the plume head, with a red outline at 0.2e-3 cubic millimetres per square millimetre ending at about 33 mm. Right top: liquid penetration over 1.2 ms; the red computed curve and the thin orange KH-RT curve lie on the black measured points up to 0.4 ms and then rise almost straight to 51 to 52 mm, while the measured points bend over to 39 mm; the measured dense-liquid points (open squares) stop at 27 mm, the computed dense-liquid curve runs with the thin one. Right middle: vapour penetration; both computed curves follow the measured points to 0.4 ms and then run above them, 51 against 42 mm at 1.2 ms. Right bottom: the gas velocity on the injector axis 15 mm from the tip; the measured points and both computed curves fall from zero to about minus 7 to minus 8 metres per second (towards the injector) at 0.3 ms, stay there to 0.7 ms and return to zero at 1.2 ms, the computed curves within about 1.5 metres per second of the points. A dotted line marks the end of injection at 0.78 ms in all three charts." width="1200" height="840">
 
 `spray_g_g1.toml` is condition G1 of Spray G of the Engine Combustion
 Network: iso-octane at 363 K and 20 MPa from the 8-hole Spray G injector
 (holes of 0.165 mm) into still nitrogen at 573 K and 3.5 kg/m³, for 0.78 ms
 of injection. The measurements are the liquid penetration from extinction
 imaging and the vapour penetration from schlieren imaging at Sandia, both
-along the injector axis (Hwang et al. 2020), and the drop size at 15 mm
-from the tip by phase-Doppler interferometry at GM. The case uses the
+along the injector axis (Hwang et al. 2020), the gas velocity on the axis
+by PIV (Sphicas et al. 2017), and the drop size 15 mm from the tip by
+phase-Doppler interferometry at GM. The case uses the
 breakup model of gallery 318 (KH-ACT, k-ε, two-way coupling) with the
 library liquid iso-octane and the evaporation of Abramzon and Sirignano in
 the 1/3-rule film (gallery 321).
@@ -866,31 +867,42 @@ injection, 33 % at 1.2 ms (51.7 against 38.9 mm). The vapour follows the
 same course: 20.1 against 20.5 mm at 0.3 ms, 32.8 against 29.4 mm at
 0.6 ms, 50.8 against 42.0 mm at 1.2 ms. The computed dense liquid runs with
 the thin liquid, while the measured dense liquid stops at 27 mm and is gone
-after 1 ms: the computed spray reaches its tip still dense.
+after 1 ms.
 
-**Why: the drops are twice as large.** 15 mm from the tip, in the radial
+**The gas the plumes draw in is right.** The 8 plumes draw the gas between
+them towards the injector along its axis. 15 mm from the tip the PIV of
+the ECN measures −7.6 to −8.0 m/s from 0.3 to 0.7 ms and a return to zero
+by 1.1 ms; the run gives −7.9 m/s at 0.3 ms, −6.1 to −6.6 m/s at 0.5 to
+0.7 ms and the same return, within about 1.5 m/s of the measurement.
+
+**The drop size is not the cause.** 15 mm from the tip, in the radial
 range of the phase-Doppler scan, the computed Sauter mean diameter is
-17 µm over 0.2 to 1.0 ms; the measured one is 9 µm. Larger drops keep their
-momentum longer and evaporate more slowly, so the liquid runs ahead and
-carries the vapour with it. In KH-ACT the cavitation and the nozzle
-turbulence strip the blobs here, and their children have the radius of the
-cavity, r_hole (1 − C_a)^½ = 49 µm with C_a = 0.65, and of the integral
-length scale of the turbulence (7 µm at the exit, growing as it decays).
-Both scales are large for the short hole of Spray G (length about one
-diameter). Magnotti (2017) reported the same direction for KH-ACT at gas
-densities below 7 kg/m³, little better than KH alone, and pointed to a
-smaller turbulence scale for the children.
+17 µm over 0.2 to 1.0 ms; the measured one is 9 µm. In KH-ACT the
+cavitation and the nozzle turbulence strip the blobs here, and their
+children have the radius of the cavity, r_hole (1 − C_a)^½ = 49 µm with
+C_a = 0.65, and of the integral length scale of the turbulence (7 µm at the
+exit, growing as it decays). Both are large for the short hole of Spray G
+(length about one diameter); Magnotti (2017) reported KH-ACT little better
+than KH below 7 kg/m³ and pointed to a smaller turbulence scale. The same
+case with `--set spray.breakup.model=kh-rt` (thin curves) has drops of
+7.4 µm at 15 mm, close to the measurement, and still reaches 51.1 mm of
+liquid and 50.8 mm of vapour at 1.2 ms. The cause of the late lead lies in
+the far field of the gas jet or in the evaporation of the dense plume, not
+in the breakup: candidates are the cells, which grow from 0.6 mm to 2.5 mm
+beyond 30 mm and are 2.8° wide, the gas density, which stays that of the
+ambient nitrogen while a cooled plume full of vapour is denser, and the
+constants of the k-ε model. We have not found it yet.
 
 **What is checked.** The sector mesh: its volume against the exact volume
 of the faceted sector to 10⁻¹², closed cells, and the refusal of
 tetrahedra and `perturb` (mesh tests). The run against the measurements
 above. The coupling converges in every step (`max_passes = 8`, about 4
-passes on average). The run takes about 18 minutes on 4 threads; the long
+passes on average). Each run takes about 18 minutes on 4 threads; the long
 CI set runs the first 0.1 ms. The metrics script has no tests of its own.
 
-**What this version does not do.** The KH-ACT constants are not
-calibrated to G1, and the child size of the cavitation and the turbulence
-is a property of the model, so the run is a gap, not a match. The gas
+**What this version does not do.** The penetration after 0.4 ms is a gap,
+not a match, and its cause is open (above). KH-ACT makes drops twice the
+measured size here. The KH-ACT constants are not calibrated to G1. The gas
 density stays that of the ambient nitrogen (the vapour changes the
 properties, not the density). There are no collisions and no wall film,
 and the penetration far from the tip is limited by the cell size (2.5 mm

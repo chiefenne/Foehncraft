@@ -8,9 +8,10 @@ on the plane of plumes 1 and 5 (the sector's plane `zmin`, plume 5 by the
 symmetry of the injector), below it the projected liquid volume of all 8
 plumes seen perpendicular to that plane, as the extinction imaging of the
 ECN sees the spray, with its contour at 0.2e-3 mm³/mm²; right, the liquid
-penetration (projected liquid volume above 0.2e-3 and 2e-3 mm³/mm²) and the
-vapour penetration (vapour mass fraction above 0.1 %) over time against the
-measured ones. With a second run (the same case with
+penetration (projected liquid volume above 0.2e-3 and 2e-3 mm³/mm²), the
+vapour penetration (vapour mass fraction above 0.1 %) and the gas velocity
+on the injector axis 15 mm from the tip over time against the measured
+ones. With a second run (the same case with
 `--set spray.breakup.model=kh-rt`) its curves are drawn thin for comparison.
 The script also prints the Sauter mean diameter of the drops 15 mm from the
 tip along the injector axis, 5 to 14 mm from it, averaged over 0.2 to
@@ -25,7 +26,10 @@ at the frames nearest to the listed times; their uncertainties are below
 0.3 mm before 1 ms. The drop size: the phase-Doppler data of the ECN at
 15 mm from the tip (GM, S. Parrish, injector #16, plume 1; file
 PDI_distribution.xlsx of the Spray G data page), whose time-averaged Sauter
-mean diameter is 9 µm.
+mean diameter is 9 µm. The gas velocity on the axis: the PIV data of the
+same page ("Gas velocity at z = 15 mm, y = 0", Sandia, P. Sphicas, cited as
+Sphicas et al., SAE 2017-01-0837; file gasvel_z15.dat, column Vzt), 12
+points; negative is towards the injector.
 
     pip install matplotlib h5py numpy
     target/release/foehn flow examples/cases/flow/spray_g_g1.toml --out output/spray_g_g1
@@ -59,6 +63,10 @@ from tools.plot.vtkhdf import internal  # noqa: E402
 VAPOUR = "IC8H18"
 SNAPSHOT = 0.6  # ms, the side view
 PDI_D32 = 9.0  # µm, time-averaged Sauter mean diameter at 15 mm (ECN)
+GAS_AXIS = [  # (ms, m/s) gas velocity along the injector axis at 15 mm, PIV
+    (0.11, -1.47), (0.21, -4.86), (0.31, -7.60), (0.41, -7.81), (0.51, -7.68), (0.61, -7.99),
+    (0.71, -7.66), (0.81, -5.36), (0.91, -2.93), (1.01, -1.24), (1.11, -0.44), (1.21, 0.47),
+]
 
 # measured (ECN, see the module text): (time after the start of injection
 # in ms, penetration along the injector axis in mm)
@@ -169,6 +177,20 @@ def nearest(files, t_ms, tmap=None):
     return best
 
 
+def axis_velocity(run):
+    """(t ms, u m/s): the mean axial gas velocity of the cells next to the
+    slip core (within 0.8 mm of the axis) 14.4 to 15.6 mm from the tip."""
+    tmap = times(run)
+    out = [(0.0, 0.0)]
+    for p in sorted(glob.glob(os.path.join(run, "fields_*.vtkhdf")), key=step_of):
+        c, _, d = cells(p)
+        if "velocity_x" not in d:
+            raise SystemExit(f"{p} has no cell field `velocity_x`; it has {', '.join(sorted(d))}")
+        k = (np.abs(c[:, 0] - 0.015) < 6e-4) & (np.hypot(c[:, 1], c[:, 2]) < 8e-4)
+        out.append((tmap[step_of(p)] * 1e3, float(d["velocity_x"][k].mean())))
+    return np.array(out)
+
+
 def d32_at_15mm(run):
     """The Sauter mean diameter (µm) of the drops between 14.5 and 15.5 mm
     from the tip along the injector axis and 5 to 14 mm from it (the radial
@@ -197,8 +219,11 @@ def plot(out, run, run_rt=None):
     x, dp, n, t_p = parcels(pfile)
     img = plv_image(x, dp, n)
 
-    fig = plt.figure(figsize=(12.0, 7.2), constrained_layout=True)
-    gs = fig.add_gridspec(2, 2, width_ratios=[1.0, 1.0])
+    ua = axis_velocity(run)
+    ua_rt = axis_velocity(run_rt) if run_rt else None
+
+    fig = plt.figure(figsize=(12.0, 8.4), constrained_layout=True)
+    gs = fig.add_gridspec(3, 2, width_ratios=[1.0, 1.0])
     ax = fig.add_subplot(gs[:, 0])
     pc = PolyCollection(quads, array=np.maximum(y, 1e-5), cmap=RAINBOW, norm=LogNorm(1e-3, 0.3),
                         edgecolors="face", linewidths=0.2)
@@ -249,13 +274,27 @@ def plot(out, run, run_rt=None):
     if rt is not None:
         b.plot(rt[1][:, 0], rt[1][:, 1], color="tab:cyan", lw=1.2, label="Foehncraft KH-RT")
     b.axvline(0.78, color="0.6", lw=0.8, ls=":")
-    b.set_xlabel("time after the start of injection (ms)")
     b.set_ylabel("vapour penetration (mm)")
     b.set_xlim(0.0, 1.25)
     b.set_ylim(bottom=0.0)
     b.grid(alpha=0.3)
     b.legend(fontsize=8, loc="lower right")
     b.set_title("Vapour, along the injector axis (end of injection dotted)", fontsize=10)
+
+    g = fig.add_subplot(gs[2, 1])
+    m = np.array(GAS_AXIS)
+    g.plot(m[:, 0], m[:, 1], "o", color="k", ms=4, label="measured (PIV)")
+    g.plot(ua[:, 0], ua[:, 1], color="tab:green", lw=2.0, label="Foehncraft")
+    if ua_rt is not None:
+        g.plot(ua_rt[:, 0], ua_rt[:, 1], color="yellowgreen", lw=1.2, label="Foehncraft KH-RT")
+    g.axvline(0.78, color="0.6", lw=0.8, ls=":")
+    g.axhline(0.0, color="0.3", lw=0.6)
+    g.set_xlabel("time after the start of injection (ms)")
+    g.set_ylabel("gas velocity (m/s)")
+    g.set_xlim(0.0, 1.25)
+    g.grid(alpha=0.3)
+    g.legend(fontsize=8, loc="lower right")
+    g.set_title("Gas on the injector axis 15 mm from the tip (towards the injector < 0)", fontsize=10)
 
     path = os.path.join(out, "spray_g_g1.png")
     fig.savefig(path, dpi=100)
@@ -265,6 +304,8 @@ def plot(out, run, run_rt=None):
         print(f"liquid {t:6.3f} ms  {lo:6.2f} mm (0.2e-3)  {hi:6.2f} mm (2e-3)")
     for t, v in vap:
         print(f"vapour {t:6.3f} ms  {v:6.2f} mm")
+    for t, u in ua:
+        print(f"axis   {t:6.3f} ms  {u:6.2f} m/s")
     print(f"D32 at 15 mm, 0.2 to 1.0 ms: {d32_at_15mm(run):.1f} µm (measured {PDI_D32:.0f} µm)")
     if rt is not None:
         for (t, lo, _), (_, v) in zip(rt[0], rt[1]):

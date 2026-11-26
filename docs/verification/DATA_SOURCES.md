@@ -295,6 +295,16 @@ are not stored.
   and velocity at z = 15 mm", GM, S. Parrish, injector #16, plume 1, file
   `PDI_distribution.xlsx`): the time-averaged Sauter mean diameter of
   9 µm, quoted by the plot script. Measurements, D201 accepted class.
+- Gas velocity on the injector axis 15 mm from the tip: the PIV data of
+  the same page ("Gas velocity at z = 15 mm, y = 0", Sandia, P. Sphicas,
+  file `gasvel_z15.dat`, column Vzt), cited as Sphicas, P., Pickett,
+  L. M., Skeen, S., Frank, J., Lucchini, T., Sinoir, D., D'Errico, G.,
+  Saha, K., Som, S. (2017), A comparison of experimental and modeled
+  velocity in gasoline direct-injection sprays with plume interaction and
+  collapse, SAE Int. J. Fuels Lubr. 10(1), 184-201,
+  doi:10.4271/2017-01-0837 (as listed in the references of OSTI 2427994);
+  12 points quoted by the plot script. Their model settings are not used
+  (D201). Measurements, D201 accepted class.
 - Turbulence scale of KH-ACT at low gas density (a finding quoted in the
   gallery text, no numbers taken): Magnotti, G. M. (2017), Modeling the
   influence of nozzle-generated turbulence on diesel sprays, PhD thesis,
