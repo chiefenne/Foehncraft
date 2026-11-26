@@ -479,6 +479,7 @@ jobs:
         run: for n in 1 2 3 4; do mpirun --oversubscribe -n $n target/ci/examples/mpi_scalar; done
       - name: Steady flow on ranks bitwise equal to one rank (W5, 1 to 4 ranks)
         run: for n in 1 2 3 4; do mpirun --oversubscribe -n $n target/ci/examples/mpi_flow; done
+      - run: cargo build --locked --profile ci -p foehncraft-cli --no-default-features --features mpi
       - name: foehn flow on MPI processes writes the files of one rank (W7)
         run: |
           set -e
