@@ -1398,6 +1398,7 @@ fn run_one<F: FnMut(&str)>(
     crate::density::attach(&mut fl, &case)?;
     crate::buoyancy::attach(&mut fl, &case)?;
     crate::porous::attach(&mut fl, &case, smesh)?;
+    crate::vof::attach(&mut fl, &case, smesh, sgeo)?;
     for d in crate::immersed::attach(&mut fl, &case, smesh, sgeo)?.0 {
         if d.severity == crate::diag::Severity::Warning {
             lg.warn(&format!("{}: {}", d.code, d.message));
@@ -1903,6 +1904,18 @@ fn run_one<F: FnMut(&str)>(
         )?)
     } else {
         None
+    };
+    // two fluids by the volume of fluid (L3): `vof.csv`
+    let mut vof_csv = if case.vof.is_empty() {
+        None
+    } else {
+        Some(History::new(
+            out,
+            &suffix_name("vof", desc, last),
+            &crate::case::csv_preamble("vof", name, None, crate::vof::CSV_UNITS),
+            crate::vof::CSV_HEAD,
+            cont,
+        )?)
     };
     let mut chem_csv = match (&chem, &case.species) {
         (Some(_), Some(sp)) => {
@@ -2573,6 +2586,9 @@ fn run_one<F: FnMut(&str)>(
                 steer.record.row(&row);
             }
         }
+        if let (Some(v), Some(csv)) = (fl.vof.as_deref(), vof_csv.as_mut()) {
+            csv.row(&v.csv_row(n, tr.clock.time, &geo.cell_centroid));
+        }
         if let (Some(ch), Some(csv)) = (chem.as_ref(), chem_csv.as_mut())
             && let Some(row) = ch.csv_row(n)
         {
@@ -3147,6 +3163,20 @@ fn run_one<F: FnMut(&str)>(
     balance_csv.flush()?;
     if let Some(f) = spray_csv.as_mut() {
         f.flush()?;
+    }
+    if let Some(f) = vof_csv.as_mut() {
+        f.flush()?;
+    }
+    if let Some(t) = fl.vof.as_deref().map(|v| &v.totals)
+        && t.clipped_volume.abs() > 1e-6 * t.volume_start.abs()
+    {
+        lg.warn(&format!(
+            "{}: {:.3e} m³ of phase 1 clipped over the run ({:.2e} of its volume); \
+             `vof.csv` counts it per step",
+            crate::diag::VOF_CLIPPED,
+            t.clipped_volume,
+            t.clipped_volume / t.volume_start
+        ));
     }
     if let Some(f) = chem_csv.as_mut() {
         f.flush()?;

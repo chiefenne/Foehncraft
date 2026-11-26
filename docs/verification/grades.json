@@ -1489,6 +1489,23 @@
    "range": {}
   },
   {
+   "id": "sprays.high-pressure-film",
+   "title": "Real-fluid gas film of the Peng-Robinson surface: Chung dense-fluid transport, Riazi-Whitson diffusivity, Peng-Robinson density and c_p (Spray A, SA2, D313)",
+   "grade": "partial",
+   "why": [
+    "no exact or manufactured solution",
+    "gaps written"
+   ],
+   "gaps": [
+    "the Chung coefficient tables (E1 to E10, B1 to B7) and the water association factor kappa = 0.076 are transcribed from secondary sources and checked against NIST nitrogen only, not yet against the printed paper (Chung et al. 1988; Poling, Prausnitz, O'Connell 2001, tables 9-6 and 10-3)",
+    "Riazi and Whitson (1993) read from a secondary account; used without their constant 1.07 so that the factor is 1 at low pressure (Takahashi 1975 not built: its correlation is a chart)",
+    "for a liquid-like dense fuel the factors are 9 to 17 % (viscosity) and 40 to 55 % (conductivity) too high; the Spray A film is mostly nitrogen gas, where the method holds",
+    "the film gases are the `ambient` key, not the local gas of the cell; the gas solver stays an ideal gas (D317)",
+    "at Spray A conditions (6 MPa) the effect is small (film 1 to 7 %, droplet life -3 %): no measurement isolates it"
+   ],
+   "range": {}
+  },
+  {
    "id": "sprays.ecn-diagnostics",
    "title": "ECN liquid length (projected liquid volume) and vapour penetration (Spray A, SA3, D315)",
    "grade": "partial",
@@ -1902,6 +1919,22 @@
     "impacts are elastic: no coefficient of restitution; generalised-α with ρ∞ < 1 damps the high frequencies an impact excites, and the penalty contact of a shell node lasts far less than a step",
     "an impact is not resolved in time: no step cut at contact changes (plan 5.4) and no energy-conserving contact scheme; the energy of the reed example decays but is not checked against a balance",
     "the active-set loop refactors the matrix whenever the set changes (1990 factorisations in 2400 steps of the example)"
+   ],
+   "range": {}
+  },
+  {
+   "id": "multiphase.vof",
+   "title": "Two fluids by the volume of fluid: THINC, CICSAM, balanced gravity and surface tension (L3, MP1, D293)",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "the dam-break front runs 5 to 17 % ahead of the measurements on meshes a/16 and a/32 alike (the early part of the gap may be the lifting time of the experiment's gate); the measured points are read from the text of the paper and still to be checked against the scan",
+    "the static drop keeps spurious currents of 0.18 m/s (Ca ~ 3e-3) and a Laplace jump 8 % low: the curvature is from twice-smoothed alpha, no height functions yet",
+    "isothermal and laminar only: no energy, phase change (MP2), turbulence, scalars, sprays, immersed bodies, rotating zones, moving meshes, periodic boundaries or the coupled algorithm (VOF002)",
+    "one process, no restart; the GPU (PTX) entries are built but not yet run on a GPU",
+    "the kinetic-energy balance (BAL003) is not adapted to the variable density of the mixture and may warn"
    ],
    "range": {}
   },

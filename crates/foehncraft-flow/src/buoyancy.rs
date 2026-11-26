@@ -536,6 +536,9 @@ pub struct Arrays {
     pub jump: Vec<f64>,
     /// e_b per boundary face.
     pub pb: Vec<f64>,
+    /// The plain face offsets o_f (the D-weighted Rhie–Chow form of a
+    /// volume-of-fluid case takes them in place of q_f).
+    pub offset: Vec<f64>,
 }
 
 impl Balanced {
@@ -600,6 +603,13 @@ impl Balanced {
     /// The arrays for the cell temperatures `t` (Boussinesq) or the cell
     /// densities `rho` (variable density).
     pub fn arrays(&mut self, t: &[f64], rho: Option<&[f64]>) -> Arrays {
+        self.arrays_with(t, rho, None)
+    }
+
+    /// [`Balanced::arrays`] with an extra offset per face added to the
+    /// face offsets o_f (the surface tension σ κ_f (α_N − α_P) of a
+    /// volume-of-fluid case, L3; zero on boundary faces).
+    pub fn arrays_with(&mut self, t: &[f64], rho: Option<&[f64]>, extra: Option<&[f64]>) -> Arrays {
         let nc = self.volume.len();
         let ni = self.n_interior;
         let nf = self.owner.len();
@@ -627,6 +637,10 @@ impl Balanced {
                 }
             })
             .collect();
+        let o: Vec<f64> = match extra {
+            Some(e) => o.iter().zip(e).map(|(a, b)| a + b).collect(),
+            None => o,
+        };
         // B_P: the least-squares operator on the offsets, the faces in the
         // order of the gradient kernel
         let mut bc = vec![[0.0; 3]; nc];
@@ -676,11 +690,16 @@ impl Balanced {
         let source = std::array::from_fn(|i| (0..nc).map(|c| bc[c][i] * self.volume[c]).collect());
         let lo = t.iter().copied().fold(f64::INFINITY, f64::min);
         let hi = t.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-        if hi >= lo {
+        if !t.is_empty() && hi >= lo {
             self.delta_t = self.delta_t.max(hi - lo);
         }
         self.force = b;
-        Arrays { source, jump, pb }
+        Arrays {
+            source,
+            jump,
+            pb,
+            offset: o,
+        }
     }
 }
 
