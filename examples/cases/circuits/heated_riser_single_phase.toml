@@ -1,0 +1,28 @@
+# One vertical tube heated uniformly, water at 16 MPa stays liquid (SF7b
+# exact check): outlet enthalpy h_in + Q/m, gravity and friction from the
+# IF97 states, wall temperature by Gnielinski.
+
+[circuit]
+name = "heated_riser_single_phase"
+segments = 50
+
+[[nodes]]
+name = "inlet"
+kind = "junction"
+mass_flow = 0.3
+temperature = 520.0
+
+[[nodes]]
+name = "outlet"
+kind = "pressure"
+pressure = 16.0e6
+temperature = 520.0
+
+[[tubes]]
+name = "riser"
+from = "inlet"
+to = "outlet"
+length = 10.0
+rise = 10.0
+diameter = 0.02
+heat_flux = 2.0e5

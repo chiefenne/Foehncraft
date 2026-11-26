@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**147 features: 50 verified, 94 partial, 3 unverified.**
+**148 features: 50 verified, 95 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -94,6 +94,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Energy | [Temperature, heat-flux, heat-flow and convection walls](#energy-wall-conditions) | verified |
 | Energy | [Energy with a turbulence model (thermal wall function, Pr_t)](#energy-turbulent) | partial |
 | Energy | [Water and steam of IAPWS-IF97: states, saturation, transport properties and the if97 material form (SF7a)](#materials-if97-water-steam) | partial |
+| Energy | [One-dimensional water and steam tube circuits of a boiler: two-phase pressure drop, flow boiling, CHF margin and natural circulation (steam furnace SF7b)](#circuits-water-steam) | partial |
 | Conjugate heat transfer | [Solid regions, steady](#cht-steady) | verified |
 | Conjugate heat transfer | [Transient conjugate heat transfer](#cht-transient) | verified |
 | Conjugate heat transfer | [Thermal acceleration of solids (scaled ρ c_p, restored)](#cht-thermal-acceleration) | partial |
@@ -1167,6 +1168,35 @@ Gaps:
 - the property curves are sampled every 0.25 K at the operating pressure: the pressure variation inside a case is not felt (low-Mach)
 - no metastable (subcooled vapour) states and no backward equations; a (p, h) state is a bracketed Newton solve on the forward equations
 - the variable density is not on ranks yet (refused): the steam duct and channel run on one rank
+
+<a id="circuits-water-steam"></a>
+
+### One-dimensional water and steam tube circuits of a boiler: two-phase pressure drop, flow boiling, CHF margin and natural circulation (steam furnace SF7b)
+
+**partial** (gaps written) · id `circuits.water-steam` · switch `circuits.run, [[nodes]] kind = "drum", [circuit] friction, void, boiling, subcooled, chf` · decisions D282, D94
+
+- exact: [`laminar_parallel_tubes_split_as_hagen_poiseuille`](../../crates/foehncraft-circuits/tests/exact.rs): laminar water between two parallel tubes of 2 m and 4 m: the Hagen-Poiseuille split 2:1 and the inlet pressure drop to 1e-6
+- exact: [`heated_tube_meets_the_energy_and_pressure_balances`](../../crates/foehncraft-circuits/tests/exact.rs): water at 16 MPa heated in a riser: outlet enthalpy h_in + Q/m to 1e-6 J/kg, pressure drop = friction + gravity + acceleration, acceleration G^2 (1/rho_out - 1/rho_in) to 2e-3, Gnielinski wall below saturation
+- exact: [`drum_loop_closes_its_mass_energy_and_pressure_balances`](../../crates/foehncraft-circuits/tests/exact.rs): drum boiler loop at 7 MPa with 30 risers: downcomer flow = riser flow to 1e-8, steam flow = heat/(h'' - h_feed) to 1e-6, pressure drops around the loop sum to zero within 1e-3 Pa; circulation ratio 16
+- exact: [`churchill_is_laminar_and_colebrook_like`](../../crates/foehncraft-circuits/src/correlations.rs): Churchill's friction factor is 64/Re in laminar flow to 1e-12 and within 2 % of Colebrook for smooth and rough tubes
+- reference-data: [`chen_and_gungor_winterton_agree_on_the_wall_superheat`](../../crates/foehncraft-circuits/tests/boiling.rs): two independent flow boiling correlations (Chen 1966, Gungor-Winterton 1986, each fitted to measured data) give wall superheats within a factor of two along an evaporator at 7 MPa, 400 kW/m2
+- consistency: [`evaporator_passes_through_the_regimes_in_order`](../../crates/foehncraft-circuits/tests/boiling.rs): regimes in order (liquid, subcooled, saturated boiling), vapour before the bulk saturates (Saha-Zuber, Levy), 0 <= x <= max(x_eq, 0) bound, nucleate superheat below 30 K, outlet enthalpy exact
+- consistency: [`friedel_and_drift_flux_differ_from_homogeneous_as_expected`](../../crates/foehncraft-circuits/tests/boiling.rs): drift flux gives less void and a heavier column than homogeneous in upflow; Friedel friction above the homogeneous model and below three times it
+- consistency: [`a_high_heat_flux_reaches_the_chf_and_warns`](../../crates/foehncraft-circuits/tests/boiling.rs): at 1 MW/m2 and low flow the Bowring CHF is exceeded: CIR004, post-CHF wall more than 50 K above saturation
+- consistency: [`bowring_is_continuous_at_its_reference_pressure_and_falls_with_quality`](../../crates/foehncraft-circuits/src/chf.rs): Bowring's two pressure branches meet at p_R = 1 (6.9 MPa) to 1e-6 and match the closed form there; CHF falls with quality
+- exact: [`table_reads_and_interpolates`](../../crates/foehncraft-circuits/src/chf.rs): a CHF table in the layout of the 2006 table: trilinear interpolation exact on linear data, the diameter factor (0.008/D)^0.5, missing grid points refused
+- contract (diagnostics): [`broken_cases_are_refused`](../../crates/foehncraft-circuits/tests/boiling.rs): CIR001 for a tube to a missing node, a rise above the length, no pressure level, a drum without feedwater, an unknown key, a supercritical drum
+- consistency: [`the_drum_loop_runs_through_the_tool`](../../crates/foehncraft-tools/src/circuits.rs): circuits.run writes result.json and profiles.csv through the registry
+
+Gaps:
+
+- no comparison with measured void or wall temperatures yet (Bartolomei et al. 1982 not reachable from the build environment); the boiling correlations are checked against each other only
+- the CHF look-up table of Groeneveld et al. (2007) is not shipped (the paper was not reachable): chf = "table" reads it from a CSV file the user supplies, Bowring (1972) is the built-in default
+- post-dryout heat transfer is the vapour convection of Dougall-Rohsenow (1963) with no thermal non-equilibrium; no film boiling or rewetting
+- supercritical water takes Gnielinski with bulk properties: no correction for the pseudo-critical region
+- steady only: no density-wave or Ledinegg instability check, no transients (SF18)
+- the drift velocity is scaled by the sine of the tube angle; horizontal tubes have no stratified-flow void model
+- not yet coupled to the 3D furnace walls (SF7c)
 
 ## Conjugate heat transfer
 
