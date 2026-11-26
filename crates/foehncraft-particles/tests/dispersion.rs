@@ -59,6 +59,7 @@ fn tracers_spread_as_the_random_walk_of_the_eddies() {
             start: 0.0,
             end: Some(dt),
             temperature: None,
+            ..Default::default()
         }],
         dispersion: Dispersion::EddyLifetime,
         ..SpraySection::default()
@@ -147,6 +148,7 @@ fn falling_droplets_cross_the_eddies_and_spread_less() {
                 start: 0.0,
                 end: Some(dt),
                 temperature: None,
+                ..Default::default()
             }],
             dispersion: Dispersion::EddyLifetime,
             ..SpraySection::default()

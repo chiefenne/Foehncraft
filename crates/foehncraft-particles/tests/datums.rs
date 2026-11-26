@@ -55,6 +55,7 @@ fn injector(rate: f64) -> Injector {
         start: 0.0,
         end: None,
         temperature: None,
+        ..Default::default()
     }
 }
 

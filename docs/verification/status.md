@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**144 features: 50 verified, 91 partial, 3 unverified.**
+**146 features: 50 verified, 93 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -152,6 +152,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Sprays | [Turbulent dispersion of the sprays, eddy lifetime (SP2c, D243)](#sprays-dispersion-eddy-lifetime) | partial |
 | Sprays | [Steady spray mode: streams through the steady gas with relaxed sources (SP2s, D260)](#sprays-steady-mode) | partial |
 | Sprays | [Evaporating sprays: vapour, mass and enthalpy to the gas (SP4, SP5, D250 to D253)](#sprays-evaporation) | partial |
+| Sprays | [Spray breakup: KH-ACT and KH-RT with blob injection, TAB distortion and dynamic drag (SP6, D300 to D308)](#sprays-breakup) | partial |
 | Sprays | [High-pressure droplet surface: Peng-Robinson phase equilibrium and latent heat (Spray A, SA1, D311, D312, D314)](#sprays-high-pressure-surface) | partial |
 | Flow models | [Porous regions with a direction-dependent Darcy-Forchheimer resistance (D270, PM1)](#porous-darcy-forchheimer) | partial |
 | Flow models | [Gas and matrix temperatures in porous regions, monolithic (D271, D272, PM2)](#porous-two-temperatures) | partial |
@@ -159,6 +160,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Flow models | [Gas-phase chemistry: mechanisms, stiff 0D reactor and chemical equilibrium (L2, steam furnace SF2a)](#chemistry-reactor) | partial |
 | Flow models | [Gas-phase chemistry in the cells of a transient laminar flow with heat release, the 1D premixed flame (L2, steam furnace SF2b)](#chemistry-flow) | partial |
 | Immersed bodies | [Immersed bodies by Brinkman penalisation, primitive shapes (L13 stage 1)](#immersed-penalisation) | partial |
+| Immersed bodies | [Immersed bodies as cut cells, primitive shapes (L13 stage 2a, 2b)](#immersed-cut) | partial |
 | Immersed bodies | [Density-field topology search with the Brinkman penalisation, iso-surface by marching tetrahedra (L13 stage 1)](#immersed-topology) | partial |
 | Structures | [Linear structural solver: Euler–Bernoulli and Timoshenko beams, static and modal analyses (L53, MS5 part 1)](#structure-beams) | partial |
 | Structures | [Clamp springs per length of the clamp line and their fit to a measured frequency (D290)](#structure-clamp) | partial |
@@ -2107,6 +2109,37 @@ Gaps:
 - `spray_evaporation_injectors` has no run in the verification manual or in CI
 - `spray_saturation_injectors` has no run in the verification manual or in CI
 
+<a id="sprays-breakup"></a>
+
+### Spray breakup: KH-ACT and KH-RT with blob injection, TAB distortion and dynamic drag (SP6, D300 to D308)
+
+**partial** (gaps written) · id `sprays.breakup` · switch `[spray.breakup] model = "kh-act" or "kh-rt", drag = "dynamic"; injector hole_diameter, area_contraction, rate, flow_share, hole_length, discharge_coefficient` · decisions D247, D300, D301, D302, D303, D304, D305, D306, D307, D308
+
+- exact: [`kh_fits_match_the_dispersion_relation`](../../crates/foehncraft-kernels/src/breakup.rs): Reitz's KH fits against our own inviscid dispersion relation of a liquid column (Bessel functions): wavelength within 5 % for every We_g, growth rate within 3 % below We_g 0.1 and above 50 (up to 46 % high near We_g 2, a property of the fit)
+- exact: [`tab_step_is_exact`](../../crates/foehncraft-kernels/src/breakup.rs): the TAB oscillator step against fourth-order Runge-Kutta, under-, over- and critically damped
+- exact: [`nozzle_turbulence_decays_as_the_k_eps_equations`](../../crates/foehncraft-kernels/src/breakup.rs): KH-ACT: the exact decay of the nozzle turbulence against RK4 of the k-eps equations without production (k, eps, L_T, tau_T to 1e-9), the integral of sqrt(k) against Simpson's rule, L_T/tau_T = sqrt(k)
+- exact: [`act_strip_picks_the_strongest`](../../crates/foehncraft-kernels/src/breakup.rs): KH-ACT: the mechanism with the largest L/tau strips the blob, the radius stops at the child radius, C_T,CAV scales the rate
+- exact: [`a_blob_strips_as_the_breakup_equation`](../../crates/foehncraft-particles/tests/breakup.rs): the KH radius of a blob follows da/dt = -(a - B0 Lambda)/tau integrated independently by RK4, within 2 % of the stripped part over more than half of its life
+- exact: [`kh_act_turbulence_strips_at_the_root_of_k`](../../crates/foehncraft-particles/tests/breakup.rs): KH-ACT: a blob stripped by the nozzle turbulence alone has the radius a0 - C_T,CAV int sqrt(k) dt to 1e-12 of a0 whatever the sub-steps
+- exact: [`same_bits_on_any_threads_and_order`](../../crates/foehncraft-particles/tests/breakup.rs): D247 with breakup: children, RT breakups and dynamic drag bitwise equal on 1 and 4 threads with the storage reversed
+- exact: [`kh_act_keeps_the_liquid_and_the_bits`](../../crates/foehncraft-particles/tests/breakup.rs): KH-ACT with the Huh-Gosman turbulence and cavities: liquid kept to 1e-13, bitwise equal on 1 and 4 threads with the storage reversed
+- consistency: [`blobs_shed_children_and_keep_the_liquid`](../../crates/foehncraft-particles/tests/breakup.rs): blobs shed children of the KH size, each of one to three shares; liquid in the flow plus out = injected to 1e-13
+- consistency: [`rayleigh_taylor_acts_beyond_the_breakup_length_only`](../../crates/foehncraft-particles/tests/breakup.rs): RT breakup only beyond the breakup length
+- consistency: [`a_rate_table_gives_exact_shares_and_speeds`](../../crates/foehncraft-particles/tests/breakup.rs): a rate table gives each parcel its exact share of the liquid and the speed mdot/(rho_l C_a A)
+- contract (bitwise): [`a_restart_continues_with_the_same_bits`](../../crates/foehncraft-particles/tests/breakup.rs): a restart with breakup continues with the same bits
+- contract (diagnostics): [`kh_act_needs_the_nozzle_turbulence`](../../crates/foehncraft-particles/tests/breakup.rs): the nozzle keys of KH-ACT are checked (missing turbulence, half a pair, C_d above C_a, no friction left)
+- reference-data: [`spray_breakup`](../../examples/cases/flow/spray_breakup.toml): a diesel-like spray at 60 MPa from a 0.15 mm hole into nitrogen at 15 kg/m3 (KH-ACT, k-eps): 97 % of the liquid at 50.6 mm after 1 ms against 51.1 mm of the correlation of Hiroyasu and Arai (1990), up to 24 % ahead at 0.2 to 0.4 ms; 47.0 mm with kh-rt (passes in CI (set long), not yet in the manual) ([results](../gallery/sprays.md#spray-breakup))
+- contract (schema): [`spray_breakup_injectors`](../../examples/cases/flow/spray_breakup_injectors.toml): the included injector file of spray_breakup (rate table, hole, nozzle turbulence) ([results](../cases/flow.md#lagrangian-sprays)) **missing**
+
+Gaps:
+
+- validated against a penetration correlation only; ECN Spray G (G1, measured liquid and vapour penetration) is the next part (D309)
+- drop sizes not validated: the gallery spray has a Sauter mean diameter near 2 um, small next to measured diesel sprays; no collision or coalescence yet
+- the nozzle turbulence of the Huh-Gosman estimate takes the inlet loss K_c = 0.5 and the area ratio s = 0 as our own choices (the papers give no values)
+- the k-omega SST model does not build up the turbulence of a thin spray jet in a still chamber (the gallery case uses k-eps)
+- breakup is refused in the steady spray mode; constant surface tension and viscosity; children leave with the blob's velocity (no radial velocity); no GPU entry of the breakup kernel; one process
+- `spray_breakup_injectors` has no run in the verification manual or in CI
+
 <a id="sprays-high-pressure-surface"></a>
 
 ### High-pressure droplet surface: Peng-Robinson phase equilibrium and latent heat (Spray A, SA1, D311, D312, D314)
@@ -2276,11 +2309,34 @@ Gaps:
 
 - the wall is smeared over about one cell: first order in h, lift 27 % above the benchmark range at h = D/40, wall shear stress and heat flux not accurate (by design of the pre-stage)
 - laminar and isothermal only: turbulence, energy, scalars, gravity, regions, rotating zones and sprays are refused (IMM102)
-- primitive bodies (cylinder, sphere, box) and `field` expressions only; STL bodies need the geometry kernel of stage 0
+- primitive bodies (cylinder, sphere, box) and `field` expressions only; STL bodies need the geometry kernel of stage 0 (sharp walls on cut cells: feature immersed.cut)
 - the coupled solver breaks down from rest when the sink exceeds about 1e5 times the viscous diagonal (K below about 1e-5 h²); SIMPLEC takes any K
 - the drag error depends on K/h²: with K = 0.01 h² the Stokes sphere array is 6.2, 5.5, 3.9, 2.6 % high on 16³ to 48³ (about first order); smaller K smears the body outward (up to +18 % at 1e-3 h² on 16³); in the Poiseuille channel the effective wall stays within half a cell (16 to 256 cells), its sign set by where the wall cuts its cell (sweeps run by tools/verification/immersed_sweeps.py, not in CI)
 - manufactured solution on 2D triangular prisms and the mixed 2D mesh: the velocity error stalls at about 2 % (6 % without the sink, so a gap of the flow discretisation on these meshes, not of the penalisation)
 - one rank only: `foehn run --ranks N` refuses immersed bodies
+
+<a id="immersed-cut"></a>
+
+### Immersed bodies as cut cells, primitive shapes (L13 stage 2a, 2b)
+
+**partial** (gaps written) · id `immersed.cut` · switch `[immersed] method = "cut"` · decisions D227, D228
+
+- exact: [`sphere_closure_volume_and_area_converge`](../../crates/foehncraft-mesh/tests/cut.rs): a sphere cut out of hexahedral, tetrahedral and polyhedral box meshes (8³ to 32³): every cut cell closes to 1e-12 of its largest face, no face with d · S ≤ 0, fluid volume and wall area converge at order above 1.6 (measured 2.0 to 2.2)
+- exact: [`flat_body_is_exact_and_splits_cells`](../../crates/foehncraft-mesh/tests/cut.rs): a slab with flat faces: fluid volume and wall area exact to 1e-12; a cell whose fluid is two corner pieces becomes two cells
+- consistency: [`small_cells_merge`](../../crates/foehncraft-mesh/tests/cut.rs): merging small cells moves no volume and no wall area (1e-12), the merged cells close to round-off
+- consistency: [`cut_is_independent_of_threads`](../../crates/foehncraft-mesh/tests/cut.rs): the cut mesh is bitwise the same on 1 and 4 threads (D93)
+- exact: [`cut_poiseuille_converges_at_second_order`](../../crates/foehncraft-flow/tests/immersed.rs): plane Poiseuille flow between two cut walls off the cell faces: mass flow error 1.24, 0.29, 0.066 % on 16, 32, 64 cells across, order 2.1 (penalised walls: 20.5, 8.5, 2.3 %)
+- reference-data: [`immersed_cut_cylinder_re20`](../../examples/cases/flow/immersed_cut_cylinder_re20.toml): Schäfer & Turek 2D-1 on a plain box mesh (h = D/20) with the cylinder cut out: C_D 5.583 in range, C_L 2.1 % and Δp 1.0 % below the range; the run fails beyond 5 % of the range midpoint (passes in CI (set linux-2), not yet in the manual) ([results](../gallery/immersed.md#cut-cylinder))
+- contract (diagnostics): [`cut_settings_are_refused`](../../crates/foehncraft-flow/tests/immersed.rs): IMM101 for [immersed.cut] without method = "cut", IMM201 for a threshold out of range, IMM202 for regions
+
+Gaps:
+
+- primitive bodies and `field` expressions only; STL bodies need the signed distance and segment-triangle crossings of the stage 0 geometry kernel
+- the body is seen through its node values: features thinner than a cell vanish; the refusal of thin solids (Q4, IMM for D189) is not built yet
+- Δp of the Re 20 cylinder stays about 1 % below the range at D/20 (D/40: C_D 5.592, C_L 0.0105, Δp 0.1171, all within 0.1 % of the range; SIMPLEC stalls at residual 1e-7 there); the lift depends on the merge threshold (0.1: 4 % low, 0.4: 0.4 % low); the default 0.3 is set on this one case
+- wall functions with the exact first-cell distance (2c), conjugate heat transfer through cut cells (2d, refused), named surface patches (2e) and the near-body refinement (2f) are not built
+- the other verification cases of the plan (cut-sphere Poisson MMS, annulus conduction, Taylor-Couette, inclined channel, Stokes sphere, Re 100 cylinder, turbulent plate) are not run yet
+- one rank only: the cut runs on the global mesh, `foehn run --ranks N` with a cut is not tested
 
 <a id="immersed-topology"></a>
 

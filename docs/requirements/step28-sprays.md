@@ -33,7 +33,7 @@ viewer (D261 to D268) are in
 | SP4 | Minimal vapour species on the low-Mach density, liquid property set for water first | SP2 |
 | SP5 | Evaporation (Ranz-Marshall, Abramzon-Sirignano), closed-box mass and energy ledger test, the spray-cooling case. Vapour and enthalpy exchange in the relaxation form of D250, parcel integrators of D251, saturation limiter of D253, checks V28.1 to V28.8 | SP4 |
 | SP2s | Steady spray mode (D260): parcel streams through the steady gas field, relaxed sources, checks V28.9 to V28.11. Momentum and sensible heat first; evaporation in the steady mode when SP5 is merged. **Implemented 2026-11-25 (PR #292)** for momentum and sensible heat; see section 6 | SP2 merged and V28.1 to V28.4 passed |
-| SP6 | Breakup and collision | decision on regime |
+| SP6 | Breakup (KH-ACT and KH-RT with blob injection, TAB distortion with dynamic drag, rate tables, mirrored eddies; D300 to D308, section 7), then collision | owner request 2026-11-25 (ECN Spray G) |
 | SP3 | Parcel migration between ranks | MPI W3 to W5 merged |
 | SP7 | Wall film | 7t2 surface mesh |
 
@@ -55,7 +55,10 @@ stage of each check (V28.12 to V28.21) are in
 ## 4. Open points
 
 - D243 (dispersion model) is answered: both models as one key (2026-11-24).
-- SP6 (which atomisation regime first) is undecided.
+- SP6: aerodynamic breakup of fuel sprays first (owner request 2026-11-25,
+  ECN Spray G and Spray A; section 7). Collision, a nozzle-turbulence and
+  cavitation term and the fragment-size distributions of slow drops are
+  later parts.
 - Turbulence modulation by particles is in no decision yet (see the
   validation page, open points).
 - Liquids beyond water (ethanol, n-heptane, n-dodecane) need source entries
@@ -540,3 +543,70 @@ PR #292). What the code does:
 - Not yet: other liquids, boiling, the GPU entry of the evaporation kernel,
   several processes; the heat balance closes to round-off only with
   `[species] properties = "fluid"`.
+
+## 7. Breakup (SP6, D300 to D308)
+
+The owner asked on 2026-11-25 for the current best breakup model, for the
+ECN Spray G validation (iso-octane, condition G1) and then Spray A. The
+assessment of the 2021 to 2025 literature is
+`foehncraft/assessments/spray-breakup-assessment.md` (project files): the
+Spray G and Spray A studies of Argonne, Sandia and others still use KH-RT
+with blob injection; what moved forward is the injector input (measured rate,
+area contraction, plume direction and cone) and the distortion of the drops.
+
+| No. | Decision |
+|---|---|
+| D300 | **Model family: KH-RT with blob injection and a breakup length, plus TAB distortion with dynamic drag** (Reitz and Diwakar 1987; Reitz 1987; Patterson and Reitz 1998; Beale and Reitz 1999; O'Rourke and Amsden 1987; Liu, Mather and Reitz 1993). Keys `[spray.breakup] model = "kh-rt"`, `drag = "dynamic"`; the constants are case keys with the defaults of the model papers (B₀ = 0.61, B₁ = 10, C_RT = 1, C_τ = 1, C_bl = B₁/2), and a validation case calibrates B₁ against its own measurements, not against other codes' tuned values (D201). The surface tension and viscosity of the liquid are case keys (constant) until the liquid property library takes over. Put to the owner on a card on 2026-11-25 with this option recommended; built on it while the answer was open. **The owner chose KH-ACT** (22:13 UTC): D307 adds the nozzle turbulence and the cavitation on top of this core, which stays as described here and as the model `kh-rt`. |
+| D301 | **Kelvin-Helmholtz stripping, exact per sub-step.** The wave of Reitz's (1987) curve fits (Λ, Ω from We_g, the Ohnesorge number and the Taylor number) sets the child radius r_c = B₀Λ and the time τ = 3.726 B₁ a/(ΛΩ); with the gas frozen over a sub-step, da/dt = −(a − r_c)/τ is solved exactly, a = r_c + (a − r_c) e^(−Δt/τ). Own check of the fits against the inviscid dispersion relation (Bessel functions): the wavelength within 5 % for every We_g; the growth rate within 3 % below We_g = 0.1 and above 50, up to 46 % high around We_g = 2 (the fit is the sum of the two limits). |
+| D302 | **Child parcels from blobs, identities from the parent, mass exact at every split.** A blob keeps its liquid while its KH radius shrinks (the ratio `kh` of the parcel state); when the stripped liquid reaches `shed_fraction` (default 0.03, Patterson and Reitz 1998) of the blob's injected liquid it leaves as a child parcel of drops of radius r_c with the blob's position, velocity, temperature and eddy. A blob strips at most that share in one sub-step (a sub-step limit), so each child carries one to two shares. Children and the drops of other injectors strip in place (smaller drops, more of them). Beyond the breakup length L_b = C_bl (ρ_l/ρ_g)^½ d_hole from the injector the Rayleigh-Taylor wave of the drag deceleration g_t = \|u − v\|/τ_p competes: while C_RT Λ_RT is smaller than the drop it grows, and after C_τ/Ω_RT the drop breaks into drops of the size C_RT Λ_RT (the blob becomes a drop). A child's identity holds the injector (top 16 bits), bit 47, the child index (15 bits) and the parent's injection index (32 bits), so the dispersion and every other keyed random number of a child is its own, and a blob and its children are tracked in the same pure step (D247): the results are the same bits for any thread count and parcel order. |
+| D303 | **TAB distortion and dynamic drag.** Every parcel carries y and ẏ of the Taylor analogy (O'Rourke and Amsden 1987: C_F = 1/3, C_k = 8, C_d = 5, C_b = 1/2), solved exactly per sub-step (under-, critically and over-damped); y is held at 1 once reached (no TAB breakup). With `drag = "dynamic"` the drag coefficient is C_D,sphere (1 + 2.632 y), 0 ≤ y ≤ 1 (Liu, Mather and Reitz 1993), in the drag relaxation, the eddy interaction time and the RT deceleration. The Spray A work adds the corrected distortion of Nguyen, Dahms, Pickett and Tagliante (IJMF 2022) on the same y. |
+| D304 | **The state in the restart file and the output.** The breakup state (y, ẏ, `kh`, the RT time, the children shed, the blob flag, the injected liquid) is part of the parcel state of the restart file (format `foehncraft.spray-state` 1; a file without it starts undistorted drops); the parcel file has the field `distortion` with the dynamic drag; `spray.csv` counts `child_parcels` and `rt_breakups`. |
+| D305 | **Refused in this version:** breakup and dynamic drag in the steady spray mode (a stream cannot shed child streams yet); more than 2³² parcels per injector with breakup (the bits of the identity). |
+| D306 | **Injector keys for nozzles.** `hole_diameter` and `area_contraction` C_a: without `diameter` and `size` the parcels start as blobs of √C_a d_hole, without `speed` they leave at U = ṁ/(ρ_l C_a A_hole); `rate` is the mass flow over time, a table [t, ṁ] linear in between, and each parcel carries the exact integral of the table over its share of the injection time; `flow_share` is the share of the injector's liquid in the domain (a quarter or sector model of a jet), with the speed from the whole flow. |
+| D307 | **KH-ACT: the nozzle turbulence and the cavitation strip the blobs** (Som and Aggarwal, Combust. Flame 157, 2010, eqs. 7 to 19; formulation also in Magnotti's thesis, Georgia Tech 2017, OSTI 1785739, eqs. 1.13 to 1.25). Key `model = "kh-act"`. A blob is stripped by the mechanism with the largest ratio of length to time scale at the start of each sub-step: Kelvin-Helmholtz (a − r_c)/τ_KH as in D301; the turbulence the liquid brings out of the hole, L_T/τ_T with L_T = C_μ k^1.5/ε, τ_T = C_μ k/ε (C_μ = 0.09); the cavitation R_CAV/τ_CAV with R_CAV = r_hole (1 − C_a)^½, τ_CAV the shorter of the Rayleigh collapse time 0.9145 R_CAV (ρ_l/p_v)^½ and the burst time (r_hole − R_CAV)/(2k/3)^½. Turbulence and cavitation take the radius down at da/dt = −C_T,CAV L/τ (key `c_tcav`, default 1) to no less than their child radius (L_T, R_CAV), and the children of the stripped liquid have that radius (KH children keep B₀Λ). The turbulence of a parcel decays without production, convection or diffusion as in the standard k-ε model (C_ε2 = 1.92); our own solution of those two equations is exact, k = k₀ (1 + t/T)^(−1/(C_ε2−1)), T = k₀/((C_ε2 − 1) ε₀), so L_T grows as (1 + t/T)^0.457, τ_T = τ_T0 + 0.0828 t, L_T/τ_T = √k, and the stripped radius over a sub-step is the exact integral of √k (the papers' constants 0.0828 and 0.457 follow). k₀ and ε₀ at the exit: `nozzle_k`, `nozzle_epsilon` (for example from a nozzle flow simulation, as Som and Aggarwal used), or the force balance of Huh and Gosman (1991, as given by Magnotti eqs. 1.22 and 1.23), k₀ = U²/(8 L/d) B, ε₀ = 0.27 U³/(2L) B, B = 1/C_d² − K_c − (1 − s²), from `hole_length`, `discharge_coefficient` and `inlet_loss` K_c (default 0.5, the textbook loss of a sharp-edged entrance; our choice, the papers give no value), with U the blob's speed from the hole and s → 0 (the hole fed from a much larger sac, our reading). `[spray.liquid] vapour_pressure` sets the collapse; without it the cavities only burst. Refused: C_d above C_a, losses that leave no friction (B ≤ 0), half of a pair of keys. Only blobs feel the turbulence and the cavitation (Som and Aggarwal: primary breakup acts on the parent parcels); children and drops follow KH-RT. `spray.csv` counts `act_children`, the children the turbulence or the cavitation stripped. |
+| D308 | **The eddy is mirrored with the parcel.** At a mirror boundary (symmetry plane, slip wall) the normal component of the parcel's eddy fluctuation changes sign with its velocity: the parcel goes on in the mirror image of the flow. Before, the fluctuation drove a small drop back into the plane at once and it bounced in tiny sub-steps for the eddy's life: in the gallery spray, injected on the corner of two symmetry planes, 47 million rebounds in 0.3 ms; with the mirrored eddy 25 thousand, the run 8 times faster and the penetration the same to 0.1 mm. |
+
+### 7.1 Checks
+
+- Kernel (`foehncraft-kernels`, module `breakup`): the KH fits against the
+  dispersion relation (D301); Rayleigh's capillary limit at U = 0; the KH
+  radius relaxation exact (two half steps = one step); the RT wave against
+  its formulae; the TAB solution against fourth-order Runge-Kutta in the
+  under- and over-damped regimes and at critical damping; the steady
+  distortion We_g/12; the dynamic drag factor bounded.
+- Parcels (`foehncraft-particles/tests/breakup.rs`): blobs shed children of
+  the KH size, each of one to three shares, and the liquid in the flow plus
+  out is the injected liquid to 10⁻¹³; bitwise equal on 1 and 4 threads with
+  the storage reversed, with children, RT breakups and dynamic drag; a
+  restart continues with the same bits; the KH radius of a blob follows the
+  breakup equation integrated independently by RK4 within 2 % of the
+  stripped part over more than half of its life; RT only beyond the breakup
+  length; dynamic drag slows the spray; a rate table gives each parcel its
+  exact share and the speed ṁ/(ρ_l C_a A).
+- KH-ACT, kernel: the decay of the nozzle turbulence against RK4 of the k-ε
+  equations without production (k, ε, L_T, τ_T to 10⁻⁹), the integral of
+  √k against Simpson's rule, L_T/τ_T = √k; the Huh-Gosman estimate by hand;
+  the cavity radius, collapse and burst times; the strongest mechanism
+  wins, the radius stops at the child radius, C_T,CAV scales the rate.
+- KH-ACT, parcels: a blob stripped by the turbulence alone has the radius
+  a₀ − C_T,CAV ∫√k dt to 10⁻¹² of a₀ whatever the sub-steps, its children
+  are at least L_T0 and smaller than the blob; with the Huh-Gosman
+  turbulence and cavities the liquid is kept to 10⁻¹³, the results are the
+  same bits on 1 and 4 threads with the storage reversed, and the blobs
+  hold less liquid than with KH-RT; the nozzle keys are checked.
+- The gallery case `spray_breakup` (KH-ACT, k-ε) against the penetration
+  correlation of Hiroyasu and Arai (1990): 97 % of the liquid at 50.6 mm
+  at 1 ms (correlation 51.1 mm), 47.0 mm with KH-RT; up to 24 % ahead at
+  0.2 to 0.4 ms. With the SST model of the first runs the turbulence of the
+  thin gas jet did not build up in the still chamber (k near its start
+  value) and the tip ran 80 % ahead; the case uses k-ε. ECN Spray G (G1)
+  is the next part (D309).
+
+### 7.2 Not yet
+
+Collision and coalescence (the drops of the gallery case have a Sauter
+mean diameter near 2 µm, small next to measured diesel sprays); a size distribution of the children (the Jackiw and Ashgriz
+fragment model for slow drops is a candidate); breakup in the steady mode;
+temperature-dependent surface tension and viscosity (with the liquid
+property library); radial velocity of the children (they leave with the
+blob's velocity); GPU entry of the breakup kernel.

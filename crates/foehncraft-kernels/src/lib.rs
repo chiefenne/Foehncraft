@@ -15,6 +15,9 @@
 //! - [`evaporation`]: droplet evaporation of the sprays (SP5): the d² law
 //!   and the exact temperature relaxation with frozen coefficients, Ranz and
 //!   Marshall and Abramzon and Sirignano, the vapour pressure of water;
+//! - [`breakup`]: droplet breakup of the sprays (SP6): the Kelvin-Helmholtz
+//!   and Rayleigh-Taylor waves of Reitz, the exact TAB oscillator and the
+//!   drag of a distorted drop;
 //! - [`blas`]: vector operations and reproducible block dot products of the
 //!   Krylov solvers;
 //! - [`expr`]: the stack machine of the compiled case-file expressions (D53);
@@ -62,6 +65,7 @@
 pub mod adjoint;
 pub mod amg;
 pub mod blas;
+pub mod breakup;
 pub mod chemistry;
 pub mod entry;
 pub mod evaporation;

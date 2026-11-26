@@ -349,6 +349,7 @@ in volumes, in `datums.csv` and `spray_hist_<datum>.csv`.
 | `flow/spray_evaporation.toml` | generated hex 2D, 100 × 20 cells | evaporation (SP4, SP5): 2 g/s of water at 20 °C (10 to 80 µm, `flow/spray_evaporation_injectors.toml`, vapour `H2O`) sprayed into air at 300 °C and 5 m/s; about 1.2 g/s evaporate (1/3-rule film, D321), the air leaves at 246 °C with 2.4 % vapour; ledger pairs 2801 to 2805 cancel to the bit, 6.8 passes per step with `max_passes = 8` | [gallery 306](../gallery/sprays.md#spray-evaporation), [recipe 306](../recipes/sprays.md#spray-evaporation) |
 | `flow/spray_heptane_evaporation.toml` | generated hex 2D, 100 × 20 cells | an n-heptane spray (D320, D321): 1 g/s of the library liquid `n-heptane` at 300 K (10 to 80 µm, `flow/spray_heptane_evaporation_injectors.toml`, vapour `NC7H16`) into nitrogen at 600 K and 5 m/s, Abramzon-Sirignano with the 1/3-rule film; the droplets evaporate within about 5 cm, the gas leaves at 312 °C with 1.7 % vapour | [gallery 321](../gallery/sprays.md#spray-liquid-library), [recipe 321](../recipes/sprays.md#spray-liquid-library) |
 | `flow/spray_saturation_steady.toml` | generated hex 2D, 60 × 12 cells | V28.11 in the steady spray mode: 2 g/s of water at 310 K from six nozzles (`flow/spray_saturation_injectors.toml`) in 17.6 g/s of air at 400 K, three times what the air can take; the air saturates within 5 cm, the outlet is at 309.3 K and Y = 0.0375 against the exact 310.1 K and 0.0395; the source residual stalls at about 0.12 (SPR008, SPR009; a gap) | [gallery 306b](../gallery/sprays.md#spray-saturation), [recipe 306](../recipes/sprays.md#spray-evaporation) |
+| `flow/spray_breakup.toml` | generated hex 3D, 100 × 16 × 16 cells (a quarter of the chamber, graded to the axis) | breakup (SP6): a diesel-like fuel at 60 MPa through a 0.15 mm hole (`flow/spray_breakup_injectors.toml`: rate table, C_a 0.86, L/d 4, C_d 0.8) into nitrogen at rest at 15 kg/m³, KH-ACT blobs with TAB distortion and dynamic drag, two-way, k-ε; 97 % of the liquid at 50.6 mm after 1 ms (Hiroyasu and Arai: 51.1 mm), 47.0 mm with `kh-rt`; about 4 minutes on 4 threads (long set) | [gallery 318](../gallery/sprays.md#spray-breakup), [recipe 318](../recipes/sprays.md#spray-breakup) |
 
 ## Porous regions
 
@@ -366,9 +367,10 @@ temperatures of their own (D271, PM2). The keys are on the [key page](flow-keys.
 
 ## Immersed bodies
 
-`[immersed]` with `[[immersed.body]]` tables (L13 stage 1, D226): cylinders,
-spheres and boxes put into any mesh by Brinkman penalisation, laminar and
-isothermal only. The keys are on the [key page](../keys.md) (`immersed.*`);
+`[immersed]` with `[[immersed.body]]` tables: cylinders, spheres and boxes
+put into any mesh by Brinkman penalisation (L13 stage 1, D226; laminar and
+isothermal only) or cut out of it as sharp walls (`method = "cut"`, stage 2,
+D227). The keys are on the [key page](../keys.md) (`immersed.*`);
 `result.json` has the force on every body, `derived = ["solid-fraction"]`
 writes χ.
 
@@ -378,6 +380,7 @@ writes χ.
 | `flow/immersed_topology_bend.toml` | generated hex 2D, 60 × 60 cells, split inlet and outlet | topology search of the Borrvall & Petersson pipe bend (Stokes, quarter fluid): 28 design updates, Φ 4.69 → 0.369 W, grey 0.04, `topology.stl` | [gallery 291](../gallery/immersed.md#topology-bend), [recipe 291](../recipes/immersed.md#topology-search) |
 | `flow/immersed_stokes_sphere.toml` | generated hex 3D, 32³ cells, periodic in x, y, z | Stokes flow through a simple cubic array of penalised spheres (c = 0.0335): drag coefficient 3.9 % above the Hasimoto / Sangani & Acrivos series with K = 0.01 h² | [gallery 291](../gallery/immersed.md#topology-bend) |
 | `flow/immersed_mms.toml` | generated hex 2D, 16² to 64² | manufactured solution of the penalised equations (smooth `field` body): velocity order 2.00 (hex), 2.05 (poly); fails outside 1.8 to 2.3 | [gallery 291](../gallery/immersed.md#topology-bend) |
+| `flow/immersed_cut_cylinder_re20.toml` | generated hex 2D, 440 × 82 cells (h = D/20), the cylinder cut out (35 780 cells) | Schäfer & Turek 2D-1 on cut cells (L13 stage 2): C_D 5.583 in range, C_L 2 % and Δp 1 % below the range; fails beyond 5 % of the range midpoint | [gallery 313](../gallery/immersed.md#cut-cylinder), [recipe 313](../recipes/immersed.md#cut-body) |
 
 ## Deforming meshes
 

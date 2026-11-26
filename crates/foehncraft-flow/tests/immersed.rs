@@ -326,3 +326,56 @@ fn stokes_sphere_array_drag_approaches_the_series() {
         "{errs:?}"
     );
 }
+
+/// The channel of [`channel`] with the two walls cut out of the mesh (L13
+/// stage 2, D227): the walls become wall boundaries `lower` and `upper`.
+fn cut_channel(ny: usize) -> String {
+    channel(ny, 1e-8, "").replace(
+        "[immersed]\npermeability = 1e-8\n",
+        "[immersed]\nmethod = \"cut\"\n",
+    ) + "[boundary.lower]\ntype = \"wall\"\n[boundary.upper]\ntype = \"wall\"\n"
+}
+
+/// Plane Poiseuille flow between two cut walls off the cell faces: the
+/// cut cells give a sharp wall, the mass flow converges at second order
+/// (the penalised walls of the same channel: first order), and the wall
+/// forces carry the driving force of the fluid volume exactly.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn cut_poiseuille_converges_at_second_order() {
+    let mut err = Vec::new();
+    for ny in [16, 32, 64] {
+        let r = run_case(&parse(&cut_channel(ny)), &format!("cutpois{ny}"));
+        err.push((mass_flow(&r) - EXACT).abs() / EXACT);
+    }
+    let order = (err[1] / err[2]).log2();
+    eprintln!("cut Poiseuille mass flow errors {err:?}, order {order:.2}");
+    assert!(err[2] < 0.01, "{err:?}");
+    assert!(order > 1.5, "order {order}: {err:?}");
+}
+
+#[test]
+fn cut_settings_are_refused() {
+    let base = cut_channel(8);
+    // a cut is not a penalisation: no permeability needed, but the key
+    // table needs the method
+    assert_eq!(
+        refused(&base.replace(
+            "method = \"cut\"\n",
+            "[immersed.cut]\nmin_volume_fraction = 0.2\n"
+        )),
+        "IMM101"
+    );
+    assert_eq!(
+        refused(&base.replace(
+            "method = \"cut\"\n",
+            "method = \"cut\"\n[immersed.cut]\nmin_volume_fraction = 0.95\n"
+        )),
+        "IMM201"
+    );
+    let regions = base.replace(
+        "[immersed]",
+        "[regions.solid]\nmaterial = \"steel\"\n\n[immersed]",
+    );
+    assert_eq!(refused(&regions), "IMM202");
+}
