@@ -1395,13 +1395,15 @@ vapour 26 % (50.8 against 40.2 mm) instead of 7 %. The coupling passes of
 59 steps end above their tolerance (2 without the term), and the run takes
 19 minutes instead of 16.
 
-**On ζ-f0 the run with the term failed.** On `k-epsilon-zeta-f0` with
+**On ζ-f0 the run with the term failed before #334.** On `k-epsilon-zeta-f0` with
 `compound-2023` the run with the term stopped at step 24 (0.05 ms): the
 conjugate-gradient solve of the pressure broke down (its matrix is not
 positive definite) and the solution diverged in 226 cells. Without the term
-the same case ran. This was before the start-of-step bound of #334; the
-cause is not found; it is a gap, not a result, and the feature row records
-it.
+the same case ran. This was before the start-of-step bound of #334 (the
+start of k, ε and ζ floored at a tenth of the old value): with it, and
+with collisions, the run with the term passes step 24 and runs to 0.1 ms
+(50 steps, re-checked 2026-11-26). The full run on ζ-f0 with the term is
+not done; the feature row records it.
 
 **Short eddies.** With k near zero the eddies of the dispersion become
 tiny, and a parcel with a large slip crosses one in nanoseconds; every
