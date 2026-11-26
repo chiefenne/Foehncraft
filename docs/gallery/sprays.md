@@ -21,6 +21,7 @@ Part of the [Example gallery](../gallery.md): droplets as Lagrangian parcels in 
 | 323 | [ECN Spray G: a gasoline injector against the measurements](#spray-g) | SP6, D309 | `[mesh.generate] wedge` with `dimension = 3` (a sector of the injector), thin slip core on the axis, injector from the measured rate, plume direction and cone, `flow_share`, the ECN liquid and vapour penetration (`tools/plot/spray_g_metrics.py`), library iso-octane, KH-ACT |
 | 324 | [The gas film of a fuel droplet at diesel pressure](#spray-a-film) | SA2 | `[spray.evaporation.peng_robinson] film = "real-fluid"` (default), `critical_volume`: Peng-Robinson density and c_p, the dense-fluid viscosity and conductivity of Chung et al. (1988), the high-pressure diffusivity of Riazi and Whitson (1993) in the droplet film (D313) |
 | 326 | [Flattened drops in ECN Spray A: the Corrected Distortion model](#spray-a-distortion) | SA4 | `[spray.breakup] drag = "corrected-distortion"` (D316): drag and evaporation of the TAB spheroid (Nguyen, Dahms, Pickett and Tagliante 2022), viscous-sphere circulation, ECN liquid length on a quarter domain with mirror images |
+| 335 | [Colliding drops in ECN Spray G](#spray-collisions) | D331 | `[spray.collision] model = "ntc"`: no-time-counter sampling with O'Rourke's coalescence and grazing separation; G1 liquid lead at 0.8 ms from 19 % to 12 % |
 
 ---
 
