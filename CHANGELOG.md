@@ -357,6 +357,14 @@ face centroid on twisted faces (#246). They are listed below with the rest.
 - **Install section in the README.** How to build Foehncraft from source on
   macOS, Linux and Windows (prerequisites, clone, build, where `foehn` lands,
   `cargo install`, update), with a placeholder for release downloads.
+- **Install guide for macOS, Linux and Windows.** `docs/install.md` lists
+  every tool with the install commands per system (Homebrew; apt and dnf;
+  winget and Chocolatey): Rust, the C and C++ compiler, CMake (needed for
+  the HDF5 and METIS builds), Git, Python, the Gmsh pip package for the
+  example mesh scripts with the Linux libraries it needs (`libGLU` and X11),
+  and Open MPI with libclang for `--features mpi`. The README's install
+  section gives the short version per system. A 39 MB Gmsh wheel committed
+  by accident in #196 is removed from the repository root.
 
 ## 1.0.1 (2026-11-24) – patch: three rotors by one sentence, heat exchanger renderings, MPI step W3
 
