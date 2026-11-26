@@ -1615,7 +1615,7 @@
    ],
    "gaps": [
     "the body is seen through its node values: features thinner than a cell vanish; the refusal of thin solids (Q4, IMM for D189) is not built yet",
-    "Δp of the Re 20 cylinder stays about 1 % below the range at D/20 (D/40: C_D 5.592, C_L 0.0105, Δp 0.1171, all within 0.1 % of the range; SIMPLEC stalls at residual 1e-7 there); the lift depends on the merge threshold (0.1: 4 % low, 0.4: 0.4 % low); the default 0.3 is set on this one case; the threshold sweep ran without face points",
+    "Δp of the Re 20 cylinder stays about 1 % below the range at D/20 (D/40: C_D 5.595, C_L 0.0106, Δp 0.1171, all within 0.1 % of the range; SIMPLEC stalls at residual 1e-7 there); the lift depends on the merge threshold (0.1: 4 % low, 0.4: 0.4 % low); the default 0.3 is set on this one case; the threshold sweep ran without face points",
     "the joined faces of merged cells can fold: their fan moves volume from one cell to the other (48 faces on the 32³ STL sphere array, the largest 11.5 % of the smaller cell; on tetrahedra up to half); the merge avoids folds where it has a choice and IMM203 reports the rest; a fix needs two cells to share more than one face (a solver change, owner decision)",
     "wall functions with the exact first-cell distance (2c), conjugate heat transfer through cut cells (2d, refused), named surface patches (2e) and the near-body refinement (2f) are not built",
     "the other verification cases of the plan (cut-sphere Poisson MMS, annulus conduction, Taylor-Couette, inclined channel, Stokes sphere, Re 100 cylinder, turbulent plate) are not run yet",

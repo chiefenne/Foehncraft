@@ -252,14 +252,14 @@ wall area is 0.012 % below 2πr × depth (0.024 % without the face points of
 |---|---|---|---|---|---|
 | box h = D/10, cut | 8 944 | 5.554 | 0.0078 | 0.1140 | 543 |
 | box h = D/20, cut (the case file) | 35 780 | 5.588 | 0.0103 | 0.1160 | 1 627 |
-| box h = D/40, cut | 143 088 | 5.592 | 0.0105 | 0.1171 | 4 000 (residual 1.1·10⁻⁷) |
+| box h = D/40, cut | 143 088 | 5.595 | 0.0106 | 0.1171 | 4 000 (residual 1.1·10⁻⁷) |
 | box h = D/20, penalised ([gallery 270](#penalised-cylinder)) | 36 080 | 5.581 | 0.0147 | 0.1187 | |
 | body-fitted, [gallery 15](flow.md#cylinder) | 24 576 | 5.581 | 0.0104 | 0.1175 | |
 | reference range | | 5.57 – 5.59 | 0.0104 – 0.0110 | 0.1172 – 0.1176 | |
 
 At h = D/20 the drag is in the range, the lift 1.4 % below it (the penalised
 wall: 35 % above), Δp 1 % below. At h = D/40 all three values meet the
-range (C_D 0.04 % above its upper end, Δp 0.06 % below its lower end); the
+range (C_D 0.09 % above its upper end, Δp 0.05 % below its lower end); the
 penalised wall at D/40 still has the lift 27 % high. SIMPLEC stalls at a
 residual of 10⁻⁷ on the D/40 mesh, as the penalised run does; the values do
 not move in the last thousand iterations. The settings of the cut at h = D/20
