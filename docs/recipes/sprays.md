@@ -575,6 +575,7 @@ file:
 [liquid]
 library = "n-heptane"          # "water", "n-heptane", "n-dodecane", "iso-octane"
 temperature = 300.0            # K, the injected liquid
+vapour = "NC7H16"              # its species in [species]: NC7H16, IC8H18, H2O
 vapour = "NC7H16"              # its species in [species]: NC7H16, IC8H18, NC12H26, H2O
 # property_temperature = 330.0 # K of the constant density and c_l (default: temperature)
 ```
@@ -605,6 +606,46 @@ measurements. Case: `examples/cases/flow/spray_heptane_evaporation.toml`;
 checked and what is not.
 
 
+---
+
+<a id="spray-a-film"></a>
+## 324. Give the droplet film real-fluid properties at high pressure
+
+**Nothing to do with the Peng-Robinson surface.** With
+`equilibrium = "peng-robinson"` and the 1/3-rule film (both D321 and D313
+defaults), the film takes the Peng-Robinson density and c_p, Chung's
+dense-fluid viscosity and conductivity, and the Riazi-Whitson diffusivity:
+
+```toml
+[spray.evaporation]
+model = "abramzon-sirignano"
+equilibrium = "peng-robinson"
+# film = "one-third"            # default; the real-fluid film needs it
+
+[spray.evaporation.peng_robinson]
+ambient = { N2 = 1.0 }          # the film's gases
+# film = "real-fluid"           # default; "ideal-gas" for the D321 film
+# critical_volume = 7.52e-4     # m³/mol, for a liquid given by its critical point
+```
+
+At Spray A conditions (6 MPa, 900 K) the real fluid changes the film by 1
+to 7 % and the droplet life by about −3 %. At 15 MPa the change is up to
+14 %. Compare both with `film = "ideal-gas"` when a result depends on it.
+
+For a liquid given by `critical_temperature`, `critical_pressure`,
+`acentric_factor` and `molar_mass`, `critical_volume` sets the molar
+volume of Chung's method. The default is Z_c R T_c/p_c with Z_c = 0.291 −
+0.080 ω (Pitzer et al. 1955): 2 % below the measured value for n-dodecane,
+15 % above it for water. The film properties of one droplet
+are written by the example:
+
+```bash
+cargo run --release -p foehncraft-particles --example spray_a_film -- output/spray_a_film
+python3 -m tools.plot.spray_a_film output/spray_a_film output/spray_a_film
+```
+
+See the [gallery entry](../gallery/sprays.md#spray-a-film) for what is
+checked and what is not.
 <a id="spray-g-sector"></a>
 ## 323. Model a multi-hole injector on a sector (ECN Spray G)
 

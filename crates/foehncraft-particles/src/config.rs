@@ -283,6 +283,32 @@ pub struct PengRobinson {
     /// Spacing of the surface table over the droplet temperature (K,
     /// default 1).
     pub table_step: f64,
+    /// Critical molar volume of the liquid (m³/mol) for the real-fluid
+    /// film, with the four keys above; default Z_c R T_c/p_c with Z_c =
+    /// 0.291 − 0.080 ω (Pitzer et al. 1955).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub critical_volume: Option<f64>,
+    /// The gas film at the 1/3 state (D313): `real-fluid` (default; the
+    /// density and c_p of the Peng-Robinson equation, viscosity and
+    /// conductivity with the dense-fluid factors of Chung et al. 1988, the
+    /// diffusivity with the factor of Riazi and Whitson 1993) or
+    /// `ideal-gas` (the D321 film). Needs `[spray.evaporation] film =
+    /// "one-third"`.
+    pub film: FilmFluid,
+}
+
+/// The fluid model of the gas film with the Peng-Robinson surface (D313).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum FilmFluid {
+    /// The Peng-Robinson density and c_p, the dense-fluid transport factors
+    /// of Chung et al. (1988) on the kinetic-theory viscosity and
+    /// conductivity, the diffusivity with Riazi and Whitson (1993)
+    /// (default).
+    #[default]
+    RealFluid,
+    /// The ideal-gas film of D321.
+    IdealGas,
 }
 
 impl Default for PengRobinson {
@@ -296,6 +322,8 @@ impl Default for PengRobinson {
             ambient: BTreeMap::from([("N2".to_string(), 1.0)]),
             k_ij: BTreeMap::new(),
             table_step: 1.0,
+            critical_volume: None,
+            film: FilmFluid::RealFluid,
         }
     }
 }

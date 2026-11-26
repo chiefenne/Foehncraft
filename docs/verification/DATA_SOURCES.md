@@ -362,6 +362,51 @@ are not stored.
   doi:10.1016/0021-9991(79)90051-2) and the Laplace jump σ/R are exact
   tests; no data are stored.
 
+## 3i. Real-fluid film (Spray A, SA2, D313)
+
+Only the published coefficients and the table points the tests quote are
+in the repository (`crates/foehncraft-kernels/src/realfluid.rs`,
+`crates/foehncraft-particles/tests/dense_film.rs`,
+`crates/foehncraft-particles/examples/spray_a_film.rs`).
+
+- Dense-fluid viscosity and conductivity: Chung, T. H., Ajlan, M., Lee,
+  L. L., Starling, K. E. (1988), Generalized multiparameter correlation for
+  nonpolar and polar fluid transport properties, Ind. Eng. Chem. Res. 27,
+  671-679 (doi 10.1021/ie00076a024), with the dilute-gas form of Chung,
+  T. H., Lee, L. L., Starling, K. E. (1984), Ind. Eng. Chem. Fundam. 23,
+  8-13, and the collision integral of Neufeld, P. D., Janzen, A. R., Aziz,
+  R. A. (1972), J. Chem. Phys. 57, 1100. The coefficient tables E1 to E10
+  (viscosity) and B1 to B7 (conductivity) and the mixing rules are taken
+  as printed in Poling, B. E., Prausnitz, J. M., O'Connell, J. P. (2001),
+  The Properties of Gases and Liquids, 5th ed., tables 9-6 and 10-3 and
+  eqs. 9-6.18 and 10-5.5, as recalled and cross-read in open secondary
+  accounts (the Cantera documentation of its high-pressure Chung transport,
+  read 2026-11-26). **To verify** against the printed tables. The water
+  association factor κ = 0.076 is **to verify** too. The check in the
+  repository is NIST nitrogen (below), which holds.
+- Diffusivity at high pressure: Riazi, M. R., Whitson, C. H. (1993),
+  Estimating diffusion coefficients of dense fluids, Ind. Eng. Chem. Res.
+  32, 3081-3088 (doi 10.1021/ie00024a024): ρD/(ρD)° = 1.07 (μ/μ°)^(b + c
+  p_r), b = −0.27 − 0.38 ω, c = −0.05 + 0.1 ω. Read from secondary accounts,
+  **to verify**. We drop the 1.07 so that the factor is 1 at low pressure.
+  Takahashi, S. (1975), J. Chem. Eng. Japan 7, 417, was not built: its
+  correlation is a chart.
+- Critical volume default: Z_c = 0.291 − 0.080 ω, Pitzer, K. S., Lippmann,
+  D. Z., Curl, R. F., Huggins, C. M., Petersen, D. E. (1955), J. Am. Chem.
+  Soc. 77, 3433. The gases' V_c are the critical densities of their NIST
+  reference equations (NIST WebBook fluid tables); n-dodecane 1/1330
+  m³/mol (critical density 226.5 kg/m³ of Lemmon and Huber 2004).
+- Nitrogen check data: NIST Chemistry WebBook, SRD 69, fluid tables
+  (equation of state of Span, R., Lemmon, E. W., Jacobsen, R. T., Wagner,
+  W., Yokozeki, A. (2000), J. Phys. Chem. Ref. Data 29, 1361; transport of
+  Lemmon, E. W., Jacobsen, R. T. (2004), Int. J. Thermophys. 25, 21), read
+  2026-11-26: density, viscosity, conductivity and c_p at 300, 600, 900 and
+  1200 K and 0.1, 6 and 15 MPa (eleven points, quoted in the test).
+- n-dodecane check data: the same tables (Lemmon, E. W., Huber, M. L.
+  (2004), Energy Fuels 18, 960; Huber, M. L., Laesecke, A., Perkins, R. A.
+  (2004), Energy Fuels 18, 968), viscosity and conductivity at 500, 600 and
+  700 K at 0.1 and 6 MPa.
+
 ## 4. Rules for adding an entry
 
 1. A value goes into the repository only when a test or a validation page

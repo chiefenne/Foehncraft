@@ -142,7 +142,7 @@ numbers are.
 |---|---|---|
 | SA0 | This page | – |
 | SA1 | Real-fluid kernel (Peng-Robinson, mixtures, fugacity, departure functions, surface equilibrium, stability test, mixing line), `equilibrium = "peng-robinson"`, D312 latent heat, D314 critical state; checks VA.1 to VA.4, VA.6, VA.7; gallery example with the equilibrium and mixing-line images. **Part 1 (#314):** kernel, surface table, `[spray.evaporation] equilibrium` and `[spray.evaporation.peng_robinson]` (`fuel`, or `critical_temperature`, `critical_pressure`, `acentric_factor`, `molar_mass`; `ambient`, `k_ij`, `table_step`), critical-state counts; VA.1 to VA.3, VA.6 (closed box, water in nitrogen); gallery 314. **Part 2 (#320):** Michelsen stability test, isothermal flash, the mixing line `realfluid::Streams` (frozen, equilibrium, ideal; Z_sat), the n-dodecane ideal gas (Scott 1974), Siebers' liquid length; VA.4, VA.5 (moved here from SA2: it needs only the mixing line); the same ideal gas as the vapour species NC12H26 of the flow's species data; gallery 320. Still open: VA.7 with the fuel vapour in a flow case (SA6) | the liquid library (#321) |
-| SA2 | High-pressure film properties (D313), VA.5 | SA1, sources read |
+| SA2 | High-pressure film properties (D313); VA.5 moved to SA1 part 2. **Done (#324):** the real-fluid film of the Peng-Robinson surface (`[spray.evaporation.peng_robinson] film`, default `real-fluid`): Peng-Robinson density and c_p, Chung et al. (1988) dense-fluid factors on the kinetic-theory viscosity and conductivity, Riazi and Whitson (1993) on the diffusivity (Takahashi 1975 not built: a chart); NIST nitrogen within 1.3 % and 4.8 % on the factors; the surface table's early "critical" end from a cold start fixed; gallery 324. The coefficient tables are **to verify** against the printed sources | SA1, sources read |
 | SA3 | ECN diagnostics (D315). **Part 1 (#319):** `[spray.ecn]`, liquid length from the projected liquid volume at the two thresholds of the modelling standard and vapour penetration at 0.1 % fuel, per injector and step in `spray.csv` and `result.json`, keyed for bitwise results; gallery 319 (water into still hot air). Still to come: the ECN5 path-averaged liquid volume fraction, the time- and Favre-averaged fields on the ECN output grid, the mixture-fraction profiles. | – |
 | SA4 | Dense-spray effects (D316) | card |
 | SA5 | Real gas in the gas phase if chosen (D317) | card |
@@ -166,7 +166,10 @@ numbers are.
 - Capecelatro, J., Desjardins, O. (2013): as in step28-sprays.md.
 - Chung, T. H., Ajlan, M., Lee, L. L., Starling, K. E. (1988), Generalized
   multiparameter correlation for nonpolar and polar fluid transport
-  properties, Ind. Eng. Chem. Res. 27, 671–679 (not yet read).
+  properties, Ind. Eng. Chem. Res. 27, 671–679 (built in SA2 from the
+  form printed in Poling et al. 2001 and secondary accounts, checked
+  against NIST nitrogen; the printed paper **to verify**, DATA_SOURCES
+  3i).
 - Crua, C., Manin, J., Pickett, L. M. (2017), On the transcritical mixing of
   fuels at diesel engine conditions, Fuel 208, 535–548, doi
   10.1016/j.fuel.2017.06.091 (abstract and data page read).
@@ -210,7 +213,8 @@ numbers are.
 - Perini, F. et al. (2020), An investigation of real-gas and multiphase
   effects on multicomponent diesel sprays, SAE 2020-01-0240 (read).
 - Riazi, M. R., Whitson, C. H. (1993), Estimating diffusion coefficients of
-  dense fluids, Ind. Eng. Chem. Res. 32, 3081–3088 (not yet read).
+  dense fluids, Ind. Eng. Chem. Res. 32, 3081–3088 (built in SA2 from
+  secondary accounts; the printed paper **to verify**, DATA_SOURCES 3i).
 - Schmidt, D. P., Rutland, C. J. (2000), A new droplet collision algorithm,
   J. Comput. Phys. 164 (cited by Torelli et al.).
 - Schmidt, D. P. et al., The Eulerian Lagrangian Mixing-Oriented (ELMO)
@@ -224,7 +228,7 @@ numbers are.
   gas-turbine conditions, AIAA 2025-0742 (read).
 - Takahashi, S. (1975), Preparation of a generalized chart for the diffusion
   coefficients of gases at high pressures, J. Chem. Eng. Japan 7, 417–420
-  (not yet read).
+  (not built: the correlation is a chart; SA2 takes Riazi and Whitson).
 - Torelli, R., D'Errico, G., Lucchini, T., Ikonomou, V., McDavid, R. M.
   (2014), A spherical volume interaction DDM approach for diesel spray
   modeling, Atomization and Sprays (read).
