@@ -175,6 +175,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | <a id="deforming-mesh-ranks"></a>307 | [A breathing channel on three ranks, continued from a restart file](gallery/moving-solids.md#deforming-mesh-ranks) | [Moving meshes and solids](gallery/moving-solids.md) |
 | <a id="heat-sink-hot"></a>308 | [A heat sink warmed by its chip: the flow case's temperatures as the load](gallery/structure.md#heat-sink-hot) | [Structures](gallery/structure.md) |
 | <a id="dirty-stl-winding"></a>310 | [A dirty STL body: surface check, winding number and signed distance](gallery/immersed.md#dirty-stl-winding) | [Immersed bodies](gallery/immersed.md) |
+| <a id="water-steam-circuits"></a>312 | [Flow boiling in an evaporator tube, and the natural circulation of a drum boiler](gallery/circuits.md#water-steam-circuits) | [Water and steam circuits](gallery/circuits.md) |
 | <a id="cut-cylinder"></a>313 | [A cylinder cut out of a box mesh: sharp walls on cut cells](gallery/immersed.md#cut-cylinder) | [Immersed bodies](gallery/immersed.md) |
 | <a id="spray-a-surface"></a>314 | [A fuel droplet's surface at diesel pressure](gallery/sprays.md#spray-a-surface) | [Lagrangian sprays](gallery/sprays.md) |
 | <a id="sdf-benchmark-cut"></a>315 | [Signed distance by three methods, and a sphere cut exactly out of a mesh](gallery/immersed.md#sdf-benchmark-cut) | [Immersed bodies](gallery/immersed.md) |

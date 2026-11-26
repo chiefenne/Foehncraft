@@ -187,6 +187,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="deforming-mesh-ranks"></a>307 | [Run a deforming mesh on ranks and continue it from a restart file](recipes/moving-solids.md#deforming-mesh-ranks) | [Moving meshes and solids](recipes/moving-solids.md) |
 | <a id="structure-temperature-field"></a>308 | [Load a structure with the temperatures of a flow case](recipes/structure.md#structure-temperature-field) | [Structures](recipes/structure.md) |
 | <a id="surface-check"></a>310 | [Check an STL surface before it becomes a body](recipes/immersed.md#surface-check) | [Immersed bodies](recipes/immersed.md) |
+| <a id="water-steam-circuits"></a>312 | [Solve a boiler circuit: an evaporator tube and a drum loop with natural circulation](recipes/circuits.md#water-steam-circuits) | [Water and steam circuits](recipes/circuits.md) |
 | <a id="cut-body"></a>313 | [Cut a body out of a mesh](recipes/immersed.md#cut-body) | [Immersed bodies](recipes/immersed.md) |
 | <a id="spray-a-surface"></a>314 | [Evaporate fuel droplets at high ambient pressure](recipes/sprays.md#spray-a-surface) | [Lagrangian sprays](recipes/sprays.md) |
 | <a id="cut-moments"></a>315 | [Cut a mesh exactly by an STL surface](recipes/immersed.md#cut-moments) | [Immersed bodies](recipes/immersed.md) |
