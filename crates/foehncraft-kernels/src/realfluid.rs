@@ -1394,7 +1394,7 @@ impl Streams<'_> {
 
 /// The coefficients a, b, c, d of E₁ … E₁₀ of the dense-fluid viscosity of
 /// Chung et al. (1988), Eᵢ = aᵢ + bᵢ ω + cᵢ μ_r⁴ + dᵢ κ (D313; see
-/// `docs/verification/DATA_SOURCES.md`, section 3h).
+/// `docs/verification/DATA_SOURCES.md`, section 3i).
 const CHUNG_E: [[f64; 4]; 10] = [
     [6.324_02, 50.411_9, -51.680_1, 1_189.02],
     [0.121_02e-2, -0.115_36e-2, -0.625_71e-2, 0.037_283],
@@ -1628,7 +1628,7 @@ impl Mixture {
 /// `docs/verification/DATA_SOURCES.md`, section 3e). Critical volumes
 /// (the inverse critical densities), the dipole moment of water from the
 /// NIST Chemistry WebBook fluid tables, the association factor of water
-/// from Chung et al. (1988) (D313, section 3h).
+/// from Chung et al. (1988) (D313, section 3i).
 pub mod gases {
     use super::Component;
 

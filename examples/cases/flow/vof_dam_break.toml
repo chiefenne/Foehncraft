@@ -1,0 +1,81 @@
+# The collapse of a water column in air (volume of fluid, L3 stage MP1),
+# against the measurements of Martin & Moyce (1952, Phil. Trans. R. Soc. A
+# 244, 312-324, part IV, n² = 2).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/vof_dam_break.toml
+#
+# A column of water a = 57.15 mm wide (2¼ in) and 2a high stands at the left
+# wall of a closed tank of 0.6 m by 0.16 m filled with air (2D). At t = 0 it
+# collapses under gravity. The surge front z (the right end of the cells with
+# α > 0.5, column x_max of `vof.csv`) is compared as Z = z/a against
+# T = t √(2g/a) with the measured points (tools/plot/vof_dam_break.py).
+#
+# α is advected by THINC (Xiao et al. 2005) with sub-steps at an outflow
+# Courant number of at most 0.25; the mixture density and viscosity follow
+# α; gravity and surface tension (σ = 0.07 N/m) enter as balanced face
+# offsets; the pressure rows are the continuity of the volume. The start
+# field is the water column, not a uniform field.
+
+case_format = "0.7"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [0.6, 0.16, 0.004]
+# h = a/16
+cells = [168, 45, 1]
+
+[fluid]
+density = 1.205
+viscosity = 1.82e-5
+
+[gravity]
+vector = [0.0, -9.81, 0.0]
+
+[vof]
+scheme = "thinc"
+surface_tension = 0.07
+
+[[vof.phase]]
+name = "water"
+density = 998.2
+viscosity = 1.0e-3
+
+[[vof.phase]]
+name = "air"
+density = 1.205
+viscosity = 1.82e-5
+
+[[vof.region]]
+shape = "box"
+lower = [-1.0, -1.0, -1.0]
+upper = [0.05715, 0.1143, 1.0]
+
+[boundary.xmin]
+type = "wall"
+[boundary.xmax]
+type = "wall"
+[boundary.ymin]
+type = "wall"
+[boundary.ymax]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+algorithm = "piso"
+log_every = 100
+
+[time]
+scheme = "bdf1"
+time_step = 2.5e-4
+# T = t √(2g/a) = 5.5
+steps = 1200
+
+[output]
+fields_every = 100
+
+[verification]
+require_convergence = false

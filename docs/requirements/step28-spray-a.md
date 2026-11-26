@@ -169,7 +169,7 @@ numbers are.
   properties, Ind. Eng. Chem. Res. 27, 671–679 (built in SA2 from the
   form printed in Poling et al. 2001 and secondary accounts, checked
   against NIST nitrogen; the printed paper **to verify**, DATA_SOURCES
-  3h).
+  3i).
 - Crua, C., Manin, J., Pickett, L. M. (2017), On the transcritical mixing of
   fuels at diesel engine conditions, Fuel 208, 535–548, doi
   10.1016/j.fuel.2017.06.091 (abstract and data page read).
@@ -183,7 +183,7 @@ numbers are.
   spheres at intermediate and high Reynolds numbers, J. Fluids Eng. 123,
   841-849; (2001b), Heat and mass transfer coefficients of viscous
   spheres, Int. J. Heat Mass Transfer 44, 4445-4454 (as printed by Nguyen
-  et al. 2022; the originals **to verify**, DATA_SOURCES 3i).
+  et al. 2022; the originals **to verify**, DATA_SOURCES 3j).
 - García-Córdova, T. et al. (2011), Vapor-liquid equilibrium data for the
   nitrogen + dodecane system at temperatures from (344 to 593) K and at
   pressures up to 60 MPa, J. Chem. Eng. Data 56, 1555–1564, doi
@@ -221,7 +221,7 @@ numbers are.
   effects on multicomponent diesel sprays, SAE 2020-01-0240 (read).
 - Riazi, M. R., Whitson, C. H. (1993), Estimating diffusion coefficients of
   dense fluids, Ind. Eng. Chem. Res. 32, 3081–3088 (built in SA2 from
-  secondary accounts; the printed paper **to verify**, DATA_SOURCES 3h).
+  secondary accounts; the printed paper **to verify**, DATA_SOURCES 3i).
 - Richter, A., Nikrityuk, P. A. (2012), Drag forces and heat transfer
   coefficients for spherical, cuboidal and ellipsoidal particles in cross
   flow at sub-critical Reynolds numbers, Int. J. Heat Mass Transfer 55,

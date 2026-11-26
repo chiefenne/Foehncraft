@@ -345,7 +345,24 @@ are not stored.
   influence of nozzle-generated turbulence on diesel sprays, PhD thesis,
   Georgia Institute of Technology (OSTI 1785739), section 1.2.3.3.
 
-## 3h. Real-fluid film (Spray A, SA2, D313)
+## 3h. Collapse of a liquid column (Martin & Moyce 1952, L3 MP1)
+
+- Citation: J. C. Martin, W. J. Moyce, *Part IV. An experimental study of
+  the collapse of liquid columns on a rigid horizontal plane*, Philosophical
+  Transactions of the Royal Society of London A 244 (882), 312-324 (1952),
+  JSTOR 91519 (**to verify**: the DOI 10.1098/rsta.1952.0006 is to be checked).
+- Quantities used: table 2, n² = 2 (column height 2a, a = 2¼ in), the surge
+  front Z = z/a at T = n t √(g/a), twelve points from Z = 1.44 to 6.33.
+  They are quoted in `crates/foehncraft-flow/tests/vof.rs` and
+  `tools/plot/vof_dam_break.py`.
+- The points were read from the text layer of the scanned paper, which is
+  partly garbled (**to verify** against the scan before the check is
+  tightened).
+- Zalesak's slotted disk (Zalesak 1979, J. Comput. Phys. 31, 335-362,
+  doi:10.1016/0021-9991(79)90051-2) and the Laplace jump σ/R are exact
+  tests; no data are stored.
+
+## 3i. Real-fluid film (Spray A, SA2, D313)
 
 Only the published coefficients and the table points the tests quote are
 in the repository (`crates/foehncraft-kernels/src/realfluid.rs`,
@@ -390,7 +407,7 @@ in the repository (`crates/foehncraft-kernels/src/realfluid.rs`,
   (2004), Energy Fuels 18, 968), viscosity and conductivity at 500, 600 and
   700 K at 0.1 and 6 MPa.
 
-## 3i. Distorted drops: the Corrected Distortion model (Spray A, SA4, D316)
+## 3j. Distorted drops: the Corrected Distortion model (Spray A, SA4, D316)
 
 Only published correlation coefficients are in the repository
 (`crates/foehncraft-kernels/src/distortion.rs`); no data set.

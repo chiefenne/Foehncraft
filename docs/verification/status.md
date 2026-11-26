@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**150 features: 50 verified, 97 partial, 3 unverified.**
+**151 features: 50 verified, 98 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -175,6 +175,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Structures | [Unilateral contact with rigid seats and stops: exact in statics, penalty at the end of each generalised-α step (L53, MS5 part 4)](#structure-contact) | partial |
 | Structures | [Temperatures of a solid region of a flow case as the thermal load of beams, shells and solids: VTKHDF cell field, linear least-squares fit at the nodes (L53, MS6 part 1)](#structure-temperature-field) | partial |
 | Moving meshes and solids | [Deforming meshes with a prescribed node displacement, and the piston (stage MS0)](#mesh-deforming) | partial |
+| Multiphase | [Two fluids by the volume of fluid: THINC, CICSAM, balanced gravity and surface tension (L3, MP1, D293)](#multiphase-vof) | partial |
 
 ## Meshes
 
@@ -2154,7 +2155,7 @@ Gaps:
 - reference-data: [`the_normal_boiling_points_and_critical_ends`](../../crates/foehncraft-kernels/src/liquids.rs): normal boiling points within 0.5 K of NIST, psat(tb) = 101.325 kPa to 1e-4, the water fit within 0.2 % of the IAPWS-95 auxiliary equation; L and sigma zero at Tc
 - reference-data: [`iso_octane_meets_the_primary_data`](../../crates/foehncraft-kernels/src/liquids.rs): iso-octane: vapour pressure within 0.3 % of Willingham et al. (1945), latent heat within 0.6 % of the calorimetry of Majer and Svoboda, sigma of Mulero et al. (2012), tb within 0.5 K of 372.4 K
 - consistency: [`the_functions_are_smooth_and_monotone_where_they_must_be`](../../crates/foehncraft-kernels/src/liquids.rs): psat rising, density, L and sigma falling with T over the whole range of each liquid
-- reference-data: [`the_spray_vapours_meet_the_nist_data`](../../crates/foehncraft-flow/src/species.rs): NC7H16 and IC8H18 ideal-gas c_p within 0.6 % of the NIST data; heptane vapour viscosity at 371 K within 5 % of NIST
+- reference-data: [`the_spray_vapours_meet_the_nist_data`](../../crates/foehncraft-flow/src/species.rs): NC7H16, IC8H18 and NC12H26 ideal-gas c_p within 0.6 % of the NIST data; heptane vapour viscosity at 371 K and dodecane vapour viscosity at 500 K within 5 % of NIST
 - exact: [`a_given_surface_fraction_replaces_raoults_law`](../../crates/foehncraft-kernels/src/evaporation.rs): a surface fraction given to the kernel (the hook of the high-pressure surface) replaces Raoult's law bit for bit; capped at 0.999
 - reference-data: [`n_heptane_droplets_against_chauveau_2019`](../../crates/foehncraft-flow/tests/droplet_validation.rs): n-heptane droplets of 0.37 mm in N2 at 0.1 MPa, 473 to 748 K, through Spray::evaporation: K with the 1/3 rule +39 to +59 % above the microgravity fit of Chauveau et al. (2019), with far-field properties +93 to +99 %; the 1/3 rule closer at every temperature (a recorded gap, see gaps) ([results](../gallery/sprays.md#spray-liquid-library))
 - contract (diagnostics): [`a_library_liquid_takes_its_properties_and_checks_its_keys`](../../crates/foehncraft-particles/src/config.rs): a library liquid takes its properties, a second application keeps them, water keeps IAPWS-95; an unknown liquid (names listed), a value given beside the library and a property temperature without a library are refused
@@ -2168,7 +2169,6 @@ Gaps:
 - density and specific heat of the liquid constant in a run (at property_temperature): no thermal expansion of a heating droplet
 - iso-octane above about 400 K rests on extrapolated correlations (density, c_l, mu, sigma); not in the NIST fluid system
 - the film carrier is the start composition of the case, not the local gas of the cell
-- no NC12H26 vapour species yet (Spray A stages)
 - `spray_heptane_evaporation_injectors` has no run in the verification manual or in CI
 
 <a id="sprays-breakup"></a>
@@ -2211,7 +2211,7 @@ Gaps:
 
 ### High-pressure droplet surface: Peng-Robinson phase equilibrium and latent heat (Spray A, SA1, D311, D312, D314)
 
-**partial** (gaps written) · id `sprays.high-pressure-surface` · switch `[spray.evaporation] equilibrium = "peng-robinson", [spray.evaporation.peng_robinson]` · decisions D310, D311, D312, D314
+**partial** (gaps written) · id `sprays.high-pressure-surface` · switch `[spray.evaporation] equilibrium = "peng-robinson", [spray.evaporation.peng_robinson]` · decisions D310, D311, D312, D314, D319
 
 - exact: [`the_omegas_are_the_roots_of_the_critical_conditions`](../../crates/foehncraft-kernels/src/realfluid.rs): Omega_a, Omega_b and Z_c give the triple root of the cubic at the critical point (to 1e-15)
 - reference-data: [`va1_the_peng_robinson_vapour_pressure_follows_the_measured_equation`](../../crates/foehncraft-particles/tests/high_pressure.rs): VA.1: n-dodecane vapour pressure with the fitted Mathias-Copeman alpha within 1 % of the Wagner equation of Ambrose and Walton (1989) from 300 to 655 K (the plain 1978 kappa is 16 % off at 300 K)
@@ -2227,13 +2227,22 @@ Gaps:
 - exact: [`the_spray_takes_the_surface_of_the_table_and_closes_its_books`](../../crates/foehncraft-particles/tests/high_pressure.rs): the spray takes y_f p0 and L_lib L_PR/L_PR,sat of the table bit for bit; the gas receives c_l T + L (books close by construction); a droplet evaporates
 - contract (diagnostics): [`parcels_above_the_critical_mixing_temperature_are_counted`](../../crates/foehncraft-particles/tests/high_pressure.rs): D314: parcels above the critical mixing temperature are counted with their mass and get no latent heat
 - contract (diagnostics): [`the_keys_are_checked`](../../crates/foehncraft-particles/tests/high_pressure.rs): unknown fuel, partial critical constants, unknown gas and a k_ij of a gas not in the ambient are refused with the key named
+- exact: [`rachford_rice_finds_the_vapour_fraction_of_a_known_split`](../../crates/foehncraft-kernels/src/realfluid.rs): Rachford-Rice gives beta = 1/2 for K = (2, 1/2), z = (1/2, 1/2) to 1e-15 and no split when all K exceed 1
+- consistency: [`a_binary_flash_gives_the_phases_of_the_surface_equilibrium`](../../crates/foehncraft-kernels/src/realfluid.rs): the flash of N2 + n-dodecane at 500 K, 6 MPa gives the same coexisting phases for three feeds, equal to the droplet surface solution (1e-9), mass balance to 1e-12; a feed outside the two-phase range stays one phase
+- consistency: [`the_stability_test_tells_one_phase_from_two`](../../crates/foehncraft-kernels/src/realfluid.rs): Michelsen's tangent-plane test: pure components and hot gas with a little fuel stable, an equimolar mixture at 450 K, 6 MPa unstable
+- reference-data: [`the_ideal_gas_of_dodecane_follows_its_heat_capacity_table`](../../crates/foehncraft-particles/tests/mixing_line.rs): n-dodecane ideal gas: Scott (1974) c_p by the CH2 increment, NASA-7 fit within 0.3 % (within 0.24 % of Lemmon and Huber 2004 at 300 to 700 K), enthalpy of formation -290.9 kJ/mol
+- consistency: [`the_dodecane_vapour_is_the_kernel_ideal_gas`](../../crates/foehncraft-flow/src/species.rs): the vapour species NC12H26 of the flow's species data is the kernel's n-dodecane ideal gas (same coefficients, range and Lennard-Jones data); its c_p within 0.6 % of Lemmon and Huber (2004) at 500 and 700 K, its kinetic-theory viscosity within 5 % at 500 K (the_spray_vapours_meet_the_nist_data)
+- exact: [`va4_the_mixing_line_closes_the_energy_balance`](../../crates/foehncraft-particles/tests/mixing_line.rs): VA.4: 363 K n-dodecane into 900 K N2 at 6 MPa, frozen, equilibrium and ideal: the enthalpy of the state found equals that of the mixed streams to 1e-13 of the stream difference (found 7e-16), the end points are the streams
+- consistency: [`va4_the_two_phase_region_of_the_mixing_line`](../../crates/foehncraft-particles/tests/mixing_line.rs): VA.4: Z_sat 0.357 (equilibrium) against 0.320 (ideal); the frozen line equals the equilibrium line before Z_sat and fails the stability test where the flash splits (1e-6); equal fugacities and dissolved N2 in the two-phase region
+- reference-data: [`va5_the_siebers_liquid_length_with_our_thermodynamics`](../../crates/foehncraft-particles/tests/mixing_line.rs): VA.5: Siebers (1999) liquid length with our Z_sat at the four measured Spray A conditions (ECN DBI, 210675): 7.2/11.3/4.9/10.7 mm (equilibrium) and 8.2/13.0/5.7/11.3 mm (ideal) against 11.7/16.3/7.4/20.6 mm; the trends with temperature and density right
 
 Gaps:
 
+- VA.5 not met: Siebers' scaling (C_L = 0.62, measured 21.5 deg angle) with our saturation mixture fraction is 30 to 48 % below the measured liquid lengths (equilibrium) and 20 to 45 % (ideal); the real fluid shortens it by 5 to 14 %, away from the measurement; Siebers' own B is not in an open paper
 - above 550 K Peng-Robinson with one k_ij is 3 to 9 % low on the measured bubble pressures (the measured Henry constant falls faster with T); the surface vapour fraction moves by 2 to 6 % between the k_ij of the whole set and of the hot isotherms
 - the dissolved gas shifts the equilibrium but is not booked: the liquid stays pure fuel (D311)
 - the gas solver stays ideal (D317): the departure enthalpy of the dense vapour enters the gas as a sensible-heat deficit
-- no flow case yet: the n-dodecane vapour species data come with the liquid library; VA.4 to VA.9 (mixing line, Siebers liquid length, the Spray A case) are later stages
+- no flow case yet: VA.7 to VA.9 (order independence with a fuel vapour, the Spray A case) are later stages; the vapour species NC12H26 is in the species data
 - built-in high-pressure data for n-dodecane only; other liquids take the plain 1978 kappa (water: 11 % low on its vapour pressure at 320 K)
 
 <a id="sprays-ecn-diagnostics"></a>
@@ -2667,3 +2676,29 @@ Gaps:
 - the closed-volume piston (variable density, stage 7c) neither restarts nor runs on ranks: the variable density has no restart yet
 - turbulence models and passive scalars run on the moving mesh but are not checked against a reference; the GPU backend has a Colab check (tools/notebooks/motion_colab.ipynb) that has not been run on a GPU yet
 - the cooled piston has no reference data (no heat-transfer correlation compared yet)
+
+## Multiphase
+
+<a id="multiphase-vof"></a>
+
+### Two fluids by the volume of fluid: THINC, CICSAM, balanced gravity and surface tension (L3, MP1, D293)
+
+**partial** (gaps written) · id `multiphase.vof` · switch `[vof] with two [[vof.phase]] tables in a transient case` · decisions D154, D293
+
+- exact: [`thinc_matches_quadrature`](../../crates/foehncraft-kernels/src/vof.rs): the time-integrated THINC face value against numerical quadrature to 2e-6, bounded in [0, 1]
+- consistency: [`zalesak_disk_thinc_cicsam_upwind`](../../crates/foehncraft-flow/tests/vof.rs): Zalesak's slotted disk, one revolution on 100 x 100 hex: L1 error THINC 0.048, CICSAM 0.19, upwind 1.10; volume conserved to round-off (the clipped and boundary parts booked); alpha in [0, 1]
+- consistency: [`zalesak_disk_thinc_on_polygons`](../../crates/foehncraft-flow/tests/vof.rs): the disk on a polygon mesh: THINC L1 error 0.09
+- consistency: [`zalesak_disk_level_set_benchmark`](../../crates/foehncraft-flow/tests/vof.rs): the computer-graphics benchmark: a semi-Lagrangian level set (Catmull-Rom, exact back-trace) on the same disk, L1 error 0.27
+- reference-data: [`dam_break_martin_moyce`](../../crates/foehncraft-flow/tests/vof.rs): the collapse of a water column (n^2 = 2, density ratio 828) on h = a/8: surge front within 20 % of Martin & Moyce 1952 at every measured point, water volume conserved to 1e-9
+- exact: [`static_drop_laplace_jump`](../../crates/foehncraft-flow/tests/vof.rs): a 2D water drop in air at rest: Laplace jump 32.2 Pa against sigma/R = 35 Pa, spurious currents 0.18 m/s
+- contract (diagnostics): [`refusals`](../../crates/foehncraft-flow/tests/vof.rs): steady runs, turbulence, one phase, a bad Courant number and an inflow on an unknown boundary are refused with VOF001 and VOF002
+- reference-data: [`vof_dam_break`](../../examples/cases/flow/vof_dam_break.toml): h = a/16: the surge front 5 to 17 % ahead of Martin & Moyce 1952, the same curve on a/32 (passes in CI (set long), not yet in the manual) ([results](../gallery/multiphase.md#vof-dam-break))
+- contract (diagnostics): [`vof_static_drop`](../../examples/cases/flow/vof_static_drop.toml): the static drop of the test as a case (passes in CI (set linux-3), not yet in the manual) ([results](../recipes/multiphase.md#vof-two-fluids))
+
+Gaps:
+
+- the dam-break front runs 5 to 17 % ahead of the measurements on meshes a/16 and a/32 alike (the early part of the gap may be the lifting time of the experiment's gate); the measured points are read from the text of the paper and still to be checked against the scan
+- the static drop keeps spurious currents of 0.18 m/s (Ca ~ 3e-3) and a Laplace jump 8 % low: the curvature is from twice-smoothed alpha, no height functions yet
+- isothermal and laminar only: no energy, phase change (MP2), turbulence, scalars, sprays, immersed bodies, rotating zones, moving meshes, periodic boundaries or the coupled algorithm (VOF002)
+- one process, no restart; the GPU (PTX) entries are built but not yet run on a GPU
+- the kinetic-energy balance (BAL003) is not adapted to the variable density of the mixture and may warn

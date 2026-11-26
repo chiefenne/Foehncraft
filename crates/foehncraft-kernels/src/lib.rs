@@ -87,6 +87,7 @@ pub mod species;
 pub mod spmv;
 pub mod steam;
 pub mod turb;
+pub mod vof;
 pub mod walk;
 
 use foehncraft_core::index::FLAG_BIT;
