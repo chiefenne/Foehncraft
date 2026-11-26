@@ -76,7 +76,7 @@ FLOW = {
         "spray_duct", "spray_datums", "spray_two_way", "spray_cooling", "spray_dispersion",
         "spray_cooling_steady", "spray_evaporation",
         "porous_darcy_block", "porous_honeycomb_channel", "porous_schumann", "porous_storage_charge",
-        "motion_free_stream", "motion_piston_adiabatic",
+        "motion_free_stream", "motion_piston_adiabatic", "motion_channel_ranks",
         "steam_heated_duct", "steam_superheater_channel",
     ],
     "long": [

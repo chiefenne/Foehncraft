@@ -58,14 +58,33 @@
 //! (free-stream preservation, check MS0.1), and a gas compressed slowly
 //! and adiabatically keeps p₀ V^γ (check MS0.2, the L22 piston).
 //!
+//! # Restart, ranks and the GPU (MS0 part 2)
+//!
+//! - **Restart.** The restart file holds the nodes of the current level,
+//!   the cell volumes Vⁿ and Vⁿ⁻¹, the swept volumes δVⁿ of the last step
+//!   and the range of the volume ratios (the optional geometry datasets of
+//!   D91, [`crate::restart::RestartGeometry`]); a run continued from it
+//!   starts on the mesh of the restart time and ends bitwise as the run
+//!   without the interruption (D42).
+//! - **Ranks** (`[run] rank_count`, MPI step W7). Every rank moves the
+//!   whole mesh, as with the sliding mesh by imprinting: the partition of
+//!   the start stays (the cells keep their numbers), the geometry and the
+//!   swept volumes of each rank's part are taken from those of the whole
+//!   mesh, so every rank solves bitwise the cells of the one-rank run and
+//!   rank 0 writes the files of one rank byte for byte (D93). The check
+//!   mode `[run] ranks` still refuses it.
+//! - **GPU.** The grid flux, the relative flux and the old-level densities
+//!   of the time terms are device operations of the flow device: the CPU
+//!   and the GPU run the same kernel bodies (D31).
+//!
 //! # Limits (MS0)
 //!
-//! One process (no ranks yet), no restart, no turning zones, conjugate
-//! regions, sprays, immersed bodies, porous regions, periodic boundaries
-//! or error-controlled time steps; the displacement is prescribed (the
-//! mesh motion solver for moving walls is stage MS1). The solver is built
-//! again in every step, with its multigrid setup: a deforming case costs
-//! about one setup per step more than a fixed one.
+//! No turning zones, conjugate regions, sprays, immersed bodies, porous
+//! regions, periodic boundaries or error-controlled time steps; the
+//! displacement is prescribed (the mesh motion solver for moving walls is
+//! stage MS1). The solver is built again in every step, with its multigrid
+//! setup: a deforming case costs about one setup per step more than a
+//! fixed one.
 
 use crate::case::FlowCase;
 use crate::device::Buf;
@@ -125,6 +144,47 @@ pub struct Grid {
 }
 
 impl Grid {
+    /// The grid of a rank's part (MPI step W7): `cells` the position in the
+    /// whole mesh of every own and halo cell, `faces` that of every local
+    /// face with `true` where the face is stored the other way round (its
+    /// swept volume changes sign).
+    pub fn restricted(&self, cells: &[usize], faces: &[(usize, bool)]) -> Grid {
+        let cv = |v: &Vec<f64>| -> Vec<f64> {
+            if v.is_empty() {
+                Vec::new()
+            } else {
+                cells.iter().map(|&c| v[c]).collect()
+            }
+        };
+        let fv = |v: &Vec<f64>| -> Vec<f64> {
+            if v.is_empty() {
+                Vec::new()
+            } else {
+                faces
+                    .iter()
+                    .map(|&(g, flip)| if flip { -v[g] } else { v[g] })
+                    .collect()
+            }
+        };
+        let at: std::collections::HashMap<usize, usize> = faces
+            .iter()
+            .enumerate()
+            .map(|(l, &(g, _))| (g, l))
+            .collect();
+        let walls = self
+            .walls
+            .iter()
+            .filter_map(|&(g, n, a)| at.get(&g).map(|&l| (l, n, a)))
+            .collect();
+        Grid {
+            vol_old: [cv(&self.vol_old[0]), cv(&self.vol_old[1])],
+            swept: [fv(&self.swept[0]), fv(&self.swept[1])],
+            walls,
+            rate: Vec::new(),
+            flux: None,
+        }
+    }
+
     /// The volume rates Ḟ_f of a step with the coefficients `a` (a₀, −a₁,
     /// −a₂) and the step `dt`.
     pub fn set_step(&mut self, a: [f64; 3], dt: f64) {
@@ -276,10 +336,8 @@ pub fn validate(case: &FlowCase) -> Result<()> {
         Some("immersed bodies")
     } else if case.boundary.values().any(|b| b.is_periodic()) {
         Some("periodic boundaries")
-    } else if case.run.restart.is_some() {
-        Some("a restart")
     } else if !case.run.ranks.is_empty() && case.run.ranks.iter().any(|&r| r > 1) {
-        Some("several ranks")
+        Some("the check of [run] ranks (run it on ranks with [run] rank_count)")
     } else if case
         .time
         .is_some_and(|t| t.error_tolerance.is_some() && t.adaptive)
@@ -471,6 +529,115 @@ impl Deforming {
         self.swept_prev = swept;
         self.time = t1;
         Ok(g)
+    }
+
+    /// The geometry datasets of a restart file (stage MS0 part 2): the
+    /// nodes of the current level, the volumes Vⁿ and Vⁿ⁻¹, the sweep δVⁿ
+    /// of the last step and the range of the volume ratios, in the order
+    /// of the mesh file.
+    pub fn restart_geometry(&self) -> crate::restart::RestartGeometry {
+        let p = &self.mesh.points;
+        let n = self.mesh.n_cells;
+        let mut volumes = vec![self.geo.cell_volume[..n].to_vec()];
+        if !self.vol_prev.is_empty() {
+            volumes.push(self.vol_prev.clone());
+        }
+        let swept = if self.swept_prev.is_empty() {
+            Vec::new()
+        } else {
+            vec![self.swept_prev.clone()]
+        };
+        crate::restart::RestartGeometry {
+            point_id: self.mesh.point_id.clone(),
+            points: foehncraft_fv::disc::Soa3 {
+                x: p.iter().map(|x| x[0]).collect(),
+                y: p.iter().map(|x| x[1]).collect(),
+                z: p.iter().map(|x| x[2]).collect(),
+            },
+            volumes,
+            swept,
+            volume_ratio: Some([self.volume_ratio.0, self.volume_ratio.1]),
+        }
+    }
+
+    /// Puts the mesh at the state of the restart file `r` (read from
+    /// `path`): the nodes, the volumes of the level before and the sweep of
+    /// the last step from its geometry datasets, at the time of its clock.
+    /// A transient file without them (written on a fixed mesh) puts the
+    /// nodes where the displacement has them at that time, and the next
+    /// step starts as a first one; a steady file leaves the mesh at the
+    /// start time. Returns a note for the log.
+    pub fn restore(
+        &mut self,
+        r: &crate::restart::Restart,
+        path: &std::path::Path,
+    ) -> Result<Option<String>> {
+        let Some((_, clock, ..)) = &r.transient else {
+            return Ok(None);
+        };
+        let t = clock.time;
+        let fail = |msg: String| -> anyhow::Error {
+            diag::err(
+                Diagnostic::new(diag::MOTION_CONFIG, format!("{}: {msg}", path.display()))
+                    .key("run.restart"),
+            )
+        };
+        let expected = self.points_at(t);
+        let Some(g) = &r.geometry else {
+            self.mesh.points = expected;
+            self.geo = Geometry::compute(&self.mesh);
+            self.vol_prev.clear();
+            self.swept_prev.clear();
+            self.time = t;
+            self.check_volumes(t)?;
+            return Ok(Some(format!(
+                "the restart file holds no mesh nodes (written on a fixed mesh): the nodes                  are put where [mesh_motion] displacement has them at t = {t:.6e} s, and the                  next step starts the deforming mesh as a first step"
+            )));
+        };
+        let n = self.mesh.n_cells;
+        if g.point_id != self.mesh.point_id
+            || r.cell_id[..] != self.mesh.cell_id[..n]
+            || r.face_id != self.mesh.face_id
+        {
+            return Err(fail(
+                "the restart file of a deforming mesh has another node, cell or face order than                  the mesh of the case: a deforming mesh continues on the mesh it was written on"
+                    .into(),
+            ));
+        }
+        let points: Vec<[f64; 3]> = (0..g.points.x.len())
+            .map(|i| [g.points.x[i], g.points.y[i], g.points.z[i]])
+            .collect();
+        // the nodes must lie where the displacement has them: another
+        // displacement would sweep a jump into the next step
+        let size = self
+            .base
+            .iter()
+            .flat_map(|x| x.iter())
+            .fold(0.0_f64, |m, v| m.max(v.abs()))
+            .max(f64::MIN_POSITIVE);
+        let off = points
+            .iter()
+            .zip(&expected)
+            .map(|(a, b)| {
+                ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt()
+            })
+            .fold(0.0_f64, f64::max);
+        if off > 1e-9 * size {
+            return Err(fail(format!(
+                "the nodes of the restart file lie up to {off:.3e} m away from where                  [mesh_motion] displacement puts them at t = {t:.6e} s: the displacement changed                  since the file was written"
+            )));
+        }
+        self.mesh.points = points;
+        self.geo = Geometry::compute(&self.mesh);
+        self.check_volumes(t)?;
+        self.vol_prev = g.volumes.get(1).cloned().unwrap_or_default();
+        self.swept_prev = g.swept.first().cloned().unwrap_or_default();
+        if let Some([lo, hi]) = g.volume_ratio {
+            self.volume_ratio.0 = self.volume_ratio.0.min(lo);
+            self.volume_ratio.1 = self.volume_ratio.1.max(hi);
+        }
+        self.time = t;
+        Ok(None)
     }
 
     /// The total volume of the current mesh (m³).

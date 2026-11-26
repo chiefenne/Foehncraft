@@ -1,0 +1,107 @@
+# A channel whose mesh breathes, solved on ranks and continued from a
+# restart file (stage MS0 part 2: restart, ranks and the GPU of the
+# deforming mesh, D91).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/motion_channel_ranks.toml
+#
+# runs it on the three ranks of `[run] rank_count` (threads of this
+# process; `--ranks 1` gives the reference, byte for byte the same files).
+# With a build that has the `mpi` feature the ranks may be MPI processes:
+#
+#   cargo build --release -p foehncraft-cli --features mpi
+#   mpirun -n 3 target/release/foehn flow examples/cases/flow/motion_channel_ranks.toml
+#
+# A channel 2 m × 0.5 m between two walls; water-like flow at Re = 100
+# (U h / ν with the height h) enters with a plug profile and a stripe of
+# dye. The inner nodes swing back and forth by up to 3 cm in both
+# directions, six periods in the run; the nodes of the walls and of the
+# inlet and outlet stay (the displacement vanishes there). Every rank
+# moves the whole mesh in every step and keeps the partition of the start;
+# the geometry and the swept volumes of its part are those of the whole
+# mesh, so the files are those of one rank (D93).
+#
+# `restart_at = [75]` writes restart_000075.h5 at the half of the run;
+#
+#   [run]
+#   restart = "out/motion_channel_ranks/restart_000075.h5"
+#
+# continues from it on the mesh of t = 0.75 s (the nodes, the volumes of
+# the level before and the swept volumes of the last step are in the
+# file) and ends bitwise as the run without the interruption (D42).
+
+case_format = "0.7"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [2.0, 0.5, 0.05]
+cells = [48, 16, 1]
+perturb = 0.15
+
+[mesh]
+renumber = "rcm"
+
+[constants]
+amp = 0.03
+freq = 25.132741228718345   # 2π/0.25 s
+
+[mesh_motion]
+displacement = [
+  "amp * sin(pi * x / 2) * sin(4 * pi * y) * sin(freq * t)",
+  "amp * sin(pi * x) * sin(2 * pi * y) * sin(freq * t)",
+  0.0,
+]
+
+[fluid]
+density = 1.0
+viscosity = 0.005
+
+[initial]
+velocity = [1.0, 0.0, 0.0]
+
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [1.0, 0.0, 0.0]
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 101325.0
+[boundary.ymin]
+type = "wall"
+[boundary.ymax]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[boundary.xmin.scalar.dye]
+value = "if(abs(y - 0.25) < 0.08, 1.0, 0.0)"
+
+[scalars.dye]
+diffusivity = 1e-4
+initial = 0.0
+
+[time]
+scheme = "bdf2"
+time_step = 0.01
+end_time = 1.5
+
+[solver]
+outer_iterations = 3
+
+[verification]
+require_convergence = false
+
+[[output.probes]]
+name = "mid"
+point = [1.0, 0.25, 0.025]
+
+[log]
+columns = ["probe.mid.velocity_x", "max.velocity_magnitude"]
+
+[output]
+fields_every = 75
+
+[run]
+rank_count = 3
+restart_at = [75]

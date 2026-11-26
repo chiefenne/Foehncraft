@@ -56,7 +56,11 @@
 //!   parcels (their positions, the injector counters and the tallies);
 //! - optional, for meshes that move (D91, L22): `point_id`,
 //!   `points_x|y|z` and the cell volumes of the time levels `volume_<k>`
-//!   (attribute `volume_levels`); a fixed mesh leaves them out.
+//!   (attribute `volume_levels`), the face swept volumes of the steps
+//!   before `swept_<k>` (attribute `swept_levels`, stage MS0 part 2) and
+//!   the attribute `volume_ratio` (the smallest and largest ratio of a cell
+//!   volume to its volume in the mesh file so far); a fixed mesh leaves
+//!   them out.
 //!
 //! A file whose identities are in another order (another renumbering) is
 //! mapped by identity; the multigrid matrix is then dropped and the
@@ -140,6 +144,13 @@ pub struct RestartGeometry {
     pub points: Soa3,
     /// Cell volumes per time level, the current first (m³).
     pub volumes: Vec<Vec<f64>>,
+    /// The volume δV_f each face swept in the steps before, the last
+    /// first (m³; the second-order time schemes need the sweep of the
+    /// step before, stage MS0 part 2).
+    pub swept: Vec<Vec<f64>>,
+    /// The smallest and the largest ratio of a cell volume to its volume
+    /// in the mesh file so far.
+    pub volume_ratio: Option<[f64; 2]>,
 }
 
 #[cfg(feature = "hdf5")]
@@ -388,6 +399,16 @@ mod io {
                 for (k, v) in geo.volumes.iter().enumerate() {
                     ds(&g, &format!("volume_{k}"), v)?;
                 }
+                attr(&g, "swept_levels", &(geo.swept.len() as u64))?;
+                for (k, v) in geo.swept.iter().enumerate() {
+                    ds(&g, &format!("swept_{k}"), v)?;
+                }
+                if let Some(r) = geo.volume_ratio {
+                    g.new_attr::<f64>()
+                        .shape([2])
+                        .create("volume_ratio")?
+                        .write_raw(&r)?;
+                }
             }
         }
         std::fs::rename(&tmp, path).with_context(|| format!("writing {}", path.display()))?;
@@ -627,6 +648,22 @@ mod io {
                 volumes: (0..n)
                     .map(|k| rd(&g, &format!("volume_{k}")))
                     .collect::<Result<_>>()?,
+                swept: if g.attr("swept_levels").is_ok() {
+                    let n: u64 = rattr(&g, "swept_levels")?;
+                    (0..n)
+                        .map(|k| rd(&g, &format!("swept_{k}")))
+                        .collect::<Result<_>>()?
+                } else {
+                    Vec::new()
+                },
+                volume_ratio: match g.attr("volume_ratio") {
+                    Ok(a) => {
+                        let v = a.read_raw::<f64>()?;
+                        ensure!(v.len() == 2, "volume_ratio has {} values", v.len());
+                        Some([v[0], v[1]])
+                    }
+                    Err(_) => None,
+                },
             })
         } else {
             None
@@ -961,6 +998,11 @@ impl Restart {
                 .volumes
                 .iter()
                 .map(|v| m.cells(v))
+                .collect::<Result<_>>()?;
+            geo.swept = geo
+                .swept
+                .iter()
+                .map(|v| m.faces(v))
                 .collect::<Result<_>>()?;
         }
         self.amg_matrix = opt_matrix(m, &self.amg_matrix)?;
