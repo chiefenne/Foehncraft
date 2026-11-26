@@ -1435,6 +1435,23 @@
    "range": {}
   },
   {
+   "id": "sprays.breakup",
+   "title": "Spray breakup: KH-ACT and KH-RT with blob injection, TAB distortion and dynamic drag (SP6, D300 to D308)",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "validated against a penetration correlation only; ECN Spray G (G1, measured liquid and vapour penetration) is the next part (D309)",
+    "drop sizes not validated: the gallery spray has a Sauter mean diameter near 2 um, small next to measured diesel sprays; no collision or coalescence yet",
+    "the nozzle turbulence of the Huh-Gosman estimate takes the inlet loss K_c = 0.5 and the area ratio s = 0 as our own choices (the papers give no values)",
+    "the k-omega SST model does not build up the turbulence of a thin spray jet in a still chamber (the gallery case uses k-eps)",
+    "breakup is refused in the steady spray mode; constant surface tension and viscosity; children leave with the blob's velocity (no radial velocity); no GPU entry of the breakup kernel; one process",
+    "`spray_breakup_injectors` has no run in the verification manual or in CI"
+   ],
+   "range": {}
+  },
+  {
    "id": "sprays.high-pressure-surface",
    "title": "High-pressure droplet surface: Peng-Robinson phase equilibrium and latent heat (Spray A, SA1, D311, D312, D314)",
    "grade": "partial",

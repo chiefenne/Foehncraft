@@ -21,7 +21,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | [Thermal radiation](gallery/radiation.md) | Monte Carlo radiation of grey gas and grey walls on a prescribed temperature field: the box furnace with cooled tubes, the cases with exact solutions, scrambled Sobol against pseudo-random emission | 259, 281 |
 | [Turbulence models](gallery/turbulence.md) | the RANS turbulence models with their wall treatments (k-ω SST, the k-ε family, k-ε-ζ-f, k-ε-ζ-f₀, elliptic-blending k-ε) on the flat plate, the channel, the backward-facing step and the impinging jet; curvature correction and QCR; manufactured solutions; the internal flows of D45 (pipe, plane diffuser, U-bend) with GCI | 68, 71, 73, 74, 88, 89, 90, 113, 115, 141, 140, 184, 194, 197, 193, 199, 204 |
 | [Boundary conditions](gallery/boundary-conditions.md) | slip walls, axisymmetric wedges, inlet profiles from tables, backflow at pressure outlets, convective outlets, periodic modules, absolute pressure values (D239) | 21, 67, 220 |
-| [Lagrangian sprays](gallery/sprays.md) | droplets as Lagrangian parcels in the gas flow: injectors, drag, gravity, wall behaviour, the mass book | 242, 265, 280, 283, 285, 292, 306, 306b, 314 |
+| [Lagrangian sprays](gallery/sprays.md) | droplets as Lagrangian parcels in the gas flow: injectors, drag, gravity, wall behaviour, the mass book | 242, 265, 280, 283, 285, 292, 306, 306b, 318, 314 |
 | [Porous regions](gallery/porous.md) | flow through porous matrices with a direction-dependent Darcy–Forchheimer resistance: a ceramic honeycomb, the exact pressure drop of a block | 273, 275 |
 | [Structures](gallery/structure.md) | the linear structural solver for reeds and other parts the flow moves: beams, MITC shells and quadratic solids, clamp springs and their fit to a measured frequency, contact with a seat and a stop, static, modal and transient analyses, thermal loads, temperatures mapped from a flow case (MS5, MS6) | 295, 297, 299, 300, 302, 308 |
 | [Immersed bodies](gallery/immersed.md) | bodies in the flow without a body-fitted mesh: Brinkman penalisation of primitive bodies (L13 stage 1) | 270, 291, 313, 310, 315 |
@@ -178,6 +178,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | <a id="spray-a-surface"></a>314 | [A fuel droplet's surface at diesel pressure](gallery/sprays.md#spray-a-surface) | [Lagrangian sprays](gallery/sprays.md) |
 | <a id="sdf-benchmark-cut"></a>315 | [Signed distance by three methods, and a sphere cut exactly out of a mesh](gallery/immersed.md#sdf-benchmark-cut) | [Immersed bodies](gallery/immersed.md) |
 | <a id="spray-cooler-chat"></a>316 | [An assistant sizes a spray cooler from one question](gallery/runs.md#spray-cooler-chat) | [Run control, health and adjoint readiness](gallery/runs.md) |
+| <a id="spray-breakup"></a>318 | [A fuel spray breaks up in dense nitrogen](gallery/sprays.md#spray-breakup) | [Lagrangian sprays](gallery/sprays.md) |
 
 ## Adding a feature
 

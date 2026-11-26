@@ -12,6 +12,7 @@ Part of the [Example gallery](../gallery.md): droplets as Lagrangian parcels in 
 | 292 | [The spray-cooled duct as a steady state](#spray-steady) | SP2s | `[spray.steady]` (D260): parcel streams through the frozen steady gas, sources relaxed between passes, source residual in the convergence test, keyed streams, `spray/streams.vtkhdf` |
 | 306 | [Water droplets evaporating in hot air](#spray-evaporation) | SP4, SP5 | `[spray.evaporation]` (Ranz-Marshall, Abramzon-Sirignano), `[spray.liquid] vapour`, vapour, mass and enthalpy sources in value-plus-slope form with the closing step (D250), vapour ledger pair, saturation limiter (D253) |
 | 306b | [More water than the air can take, steady](#spray-saturation) | SP5, SP2s | evaporation in the steady spray mode, adiabatic saturation against the exact end state (V28.11, partly met) |
+| 318 | [A fuel spray breaks up in dense nitrogen](#spray-breakup) | SP6 | `[spray.breakup]` KH-ACT and KH-RT, blob injection from `hole_diameter`, `area_contraction` and a `rate` table, child parcels, Rayleigh-Taylor beyond the breakup length, TAB distortion and dynamic drag, mirrored eddies |
 | 314 | [A fuel droplet's surface at diesel pressure](#spray-a-surface) | SA1 | `[spray.evaporation] equilibrium = "peng-robinson"`, `[spray.evaporation.peng_robinson]`: Peng-Robinson phase equilibrium of the fuel and the ambient gas at the droplet surface, latent heat from the same equation, the critical mixing state (D311, D312, D314) |
 
 ---
@@ -547,6 +548,98 @@ sub-step boundaries moving with the gas. Water only; one process.
 
 ---
 
+<a id="spray-breakup"></a>
+## 318. A fuel spray breaks up in dense nitrogen
+
+<img src="../figures/gallery/spray_breakup.png" alt="Top: side view of a fuel spray in still nitrogen at 1 ms, the gas speed on the symmetry plane mirrored about the spray axis: a red and yellow jet core of up to 190 m/s along the axis from the nozzle at the left to about 15 mm, widening into green and cyan (50 to 75 m/s) and dark blue at 40 to 50 mm, the still gas around it blue; the drops are small white dots filling a spindle of about plus and minus 6 mm half-width that ends at about 52 mm in a rounded head, with a few grey and black blobs on the axis right at the nozzle. Bottom left: liquid penetration over the first millisecond; the KH-ACT curve for 97 % of the liquid rises with the dashed Hiroyasu-Arai correlation, lags it before 0.15 ms, runs up to a quarter ahead around 0.3 ms and meets it at 51 mm at 1 ms; the KH-RT curve lies below and ends at 47 mm. Bottom right: the Sauter mean diameter along the spray is close to 2 micrometres from 4 mm to the tip for both models, higher only in the first slab at the nozzle." width="1200" height="760">
+
+`spray_breakup.toml` injects a diesel-like fuel (830 kg/m³, 0.027 N/m,
+2.5 mPa s) at 60 MPa through one hole of 0.15 mm into nitrogen at rest at
+15 kg/m³, for 1.5 ms with a measured-style rate of injection (a 50 µs ramp
+to 4.46 g/s). The domain is a quarter of the chamber about the spray axis
+(3D, 100 × 16 × 16 cells graded towards the axis, symmetry planes y = 0 and
+z = 0), so the injector carries `flow_share = 0.25`. The gas is two-way
+coupled and k-ε turbulent, and the eddies disperse the drops.
+
+**How the jet breaks up.** The injector describes the hole, not the drops
+(D306): parcels leave as blobs of √C_a d_hole = 139 µm at
+ṁ/(ρ_l C_a A_hole) = 354 m/s on the plateau. With `model = "kh-act"`
+(Som and Aggarwal 2010, D307) three mechanisms compete for each blob, and the
+one with the largest ratio of length to time scale strips it:
+
+- the **turbulence** the liquid brings out of the hole, here k₀ ≈ 240 m²/s²
+  and ε₀ ≈ 6 × 10⁸ m²/s³ from the force balance of Huh and Gosman for a
+  0.6 mm long hole with C_d = 0.8. It decays as in the k-ε model, so the
+  blob loses radius at C_T,CAV √k and sheds children of the integral length
+  scale (1 to 4 µm);
+- the **cavities** of the contracted jet (C_a = 0.86, R_CAV = 28 µm), which
+  burst at the jet surface;
+- the **Kelvin-Helmholtz waves** of the gas stream (Reitz 1987), which take
+  over once the turbulence has decayed; no blob of more than 50 µm is left
+  4 mm from the nozzle.
+
+Beyond the breakup length the Rayleigh-Taylor waves of the drag deceleration
+break the drops (Beale and Reitz 1999). Every parcel carries the TAB
+distortion, which raises its drag towards that of a disc (`drag =
+"dynamic"`). The stripped liquid leaves as child parcels whose identity
+comes from the blob, so the run gives the same bits on any thread count, and
+the liquid is kept to round-off at every split.
+
+**What the run shows.** After 1 ms, 97 % of the liquid is within 50.6 mm of
+the nozzle. The correlation of Hiroyasu and Arai (1990) for this
+injection pressure, gas density and hole gives 51.1 mm. Over the first
+0.15 ms the spray lags behind the correlation's linear start, because of
+the rate ramp. Between 0.2 and 0.4 ms it runs up to 24 % ahead, and from
+0.8 ms on it is within 5 %. The same case with `--set
+spray.breakup.model=kh-rt` (dashed) reaches 47.0 mm: without the nozzle
+turbulence the blobs carry their momentum farther before the gas takes it.
+In both runs nearly all of the liquid soon sits in drops of about 2 µm that
+follow the gas, so the gas jet carries the tip. The gas on the axis moves
+at 190 m/s 5 mm from the nozzle and at 44 m/s at 40 mm, where the jet has
+a half-width of about 4 mm. The head of
+the spray rolls up into a vortex ring, which pushes the drops at the tip off
+the axis. 20 740 children were shed by 1 ms, 20 651 of them by the nozzle
+turbulence; 1 882 drops broke by Rayleigh-Taylor waves. The coupling takes
+2.9 passes per step on average; 106 of the 500 steps end at `max_passes = 3`
+above the tolerance, mostly in the first 0.26 ms.
+
+**Two findings on the way.** With the k-ω SST model of the first runs, the
+turbulence of the thin gas jet did not build up in the still chamber
+within the injection: k stayed near its start value and ω near 10⁴ 1/s. The
+jet did not spread, and the tip ran 80 % ahead of the correlation. k-ε builds
+it up (k of about 2000 m²/s² near the nozzle after 0.3 ms), so the case uses
+k-ε. The eddy-lifetime dispersion also made the drops on the corner of the
+two symmetry planes bounce millions of times, because the eddy kept pushing
+them back into the plane. The parcel's eddy is now mirrored with it at
+symmetry planes and slip walls (D308): 25 thousand rebounds instead of 47
+million in 0.3 ms, the run 8 times faster, and the same penetration.
+
+**What is checked.** Reitz's KH fits against our own dispersion relation of
+a liquid column: the wavelength within 5 % everywhere, and the growth rate
+within 3 % outside We_g 0.1 to 50 (up to 46 % high near We_g 2). The TAB
+step against RK4. The decay of the nozzle turbulence against RK4 of the k-ε
+equations to 10⁻⁹. A blob stripped by the turbulence alone loses exactly
+C_T,CAV ∫√k dt of radius, to 10⁻¹² of its radius, whatever the sub-steps.
+The KH radius of a blob follows its breakup equation integrated by RK4
+within 2 %. The liquid is kept to 10⁻¹³. Runs give the same bits on 1 and 4
+threads with the storage reversed, and a restart continues with the same
+bits.
+
+**What this version does not do.** The penetration is compared with a
+correlation, not yet with measurements; ECN Spray G is the next part. The
+drop sizes are not validated: a Sauter mean diameter of 2 µm is small next
+to measured diesel sprays, and there are no collisions or coalescence yet.
+The inlet loss K_c = 0.5 and the area ratio s = 0 of the nozzle turbulence
+estimate are our own choices (the papers give no values). Breakup is
+refused in the steady spray mode. Surface tension and viscosity are
+constant, children leave with the blob's velocity, and there is no GPU
+entry of the breakup kernel. One process. The run takes about 4 minutes
+on 4 threads, so the case is in the long CI set.
+
+Files: `spray.csv` (with `child_parcels`, `rt_breakups`, `act_children`,
+`hole.penetration_m`), `spray/parcels_<step>.vtkhdf` (with `distortion`),
+`fields.vtkhdf`. [Recipe 318](../recipes/sprays.md#spray-breakup),
+[case row](../cases/flow.md#lagrangian-sprays).
 <a id="spray-a-surface"></a>
 ## 314. A fuel droplet's surface at diesel pressure
 

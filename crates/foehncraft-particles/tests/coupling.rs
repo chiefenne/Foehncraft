@@ -84,6 +84,7 @@ fn sources_do_not_depend_on_parcel_order_or_threads() {
                 start: 0.0,
                 end: None,
                 temperature: None,
+                ..Default::default()
             }],
             ..SpraySection::default()
         };
@@ -238,6 +239,7 @@ fn a_parcel_on_a_face_pushed_from_both_sides_is_not_lost() {
             start: 0.0,
             end: None,
             temperature: None,
+            ..Default::default()
         }],
         ..SpraySection::default()
     };

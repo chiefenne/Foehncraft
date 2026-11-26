@@ -20,7 +20,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | [Thermal radiation](recipes/radiation.md) | the radiation of a prescribed temperature field by Monte Carlo bundles: walls, noise, threads, ranks and the GPU, the checks against exact solutions | 259, 281 |
 | [Turbulence models](recipes/turbulence.md) | RANS turbulence models: the model, the wall treatment by the mesh, inlet turbulence, roughness, the near-wall checks, curvature correction and QCR on any mesh, the internal flows of D45 (pipe, diffuser, U-bend) | 68, 71, 73, 74, 88, 89, 90, 113, 115, 141, 140, 194, 193, 199, 197, 204 |
 | [Boundary conditions](recipes/boundary-conditions.md) | slip walls, wedges for axisymmetric flow, inlet profiles from tables, backflow at pressure outlets, convective outlets, periodic modules, absolute or gauge pressure values (D239) | 29, 67, 220 |
-| [Lagrangian sprays](recipes/sprays.md) | spray droplets into a flow with an injector file, wall behaviour, the mass book | 242, 265, 280, 283, 285, 292, 306, 314 |
+| [Lagrangian sprays](recipes/sprays.md) | spray droplets into a flow with an injector file, wall behaviour, the mass book | 242, 265, 280, 283, 285, 292, 306, 318, 314 |
 | [Porous regions](recipes/porous.md) | porous blocks and honeycombs in a flow: resistances, axes, the honeycomb shorthand | 273, 275 |
 | [Water and steam circuits](recipes/circuits.md) | a boiler circuit of tubes, headers and a drum: natural circulation, boiling wall temperatures, the CHF margin, the profiles | 312 |
 | [Structures](recipes/structure.md) | a structural case of beams, plates, solids and clamp springs: static and modal analyses, the clamp spring fitted to a measured frequency, runs in time with damping and temperatures, contact with a seat and a stop, temperatures from a flow case, the results | 295, 297, 299, 300, 302, 308 |
@@ -190,6 +190,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="spray-a-surface"></a>314 | [Evaporate fuel droplets at high ambient pressure](recipes/sprays.md#spray-a-surface) | [Lagrangian sprays](recipes/sprays.md) |
 | <a id="cut-moments"></a>315 | [Cut a mesh exactly by an STL surface](recipes/immersed.md#cut-moments) | [Immersed bodies](recipes/immersed.md) |
 | <a id="spray-cooler-chat"></a>316 | [Ask an assistant an engineering question: size a spray cooler](recipes/runs.md#spray-cooler-chat) | [Run control and health](recipes/runs.md) |
+| <a id="spray-breakup"></a>318 | [Break a fuel jet up into drops (KH-ACT, KH-RT)](recipes/sprays.md#spray-breakup) | [Lagrangian sprays](recipes/sprays.md) |
 
 ## Adding a feature
 

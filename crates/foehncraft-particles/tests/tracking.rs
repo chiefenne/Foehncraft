@@ -59,6 +59,7 @@ fn injector(position: [f64; 3], direction: [f64; 3], speed: f64, d: f64) -> Inje
         start: 0.0,
         end: None,
         temperature: None,
+        ..Default::default()
     }
 }
 
