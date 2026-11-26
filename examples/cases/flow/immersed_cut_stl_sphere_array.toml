@@ -17,7 +17,7 @@
 # The drag coefficient K = F/(6π μ a U) of the array is 2.152 from the series
 # of Hasimoto (1959) extended by Sangani & Acrivos (1982).
 #
-# The mesh has 32³ hexahedra (6.4 cells per radius). Gallery 320 has the
+# The mesh has 32³ hexahedra (6.4 cells per radius). Gallery 322 has the
 # result, the same on tetrahedra and polyhedra, and the penalised sphere.
 #
 # immersed_sphere.stl is written by

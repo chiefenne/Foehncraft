@@ -30,8 +30,10 @@
 //! of input cells that make up the cut cells, relative to the body volume;
 //! max relative to the group's uncut volume) and the face apertures (fluid
 //! area of every input face: mean and max of the error over the cut faces,
-//! relative to the face area). Printed as a Markdown table; with an argument
-//! also written as JSON for `tools/plot/immersed_stl.py`.
+//! relative to the face area), the faces left with d · S ≤ 0 and the input
+//! cells the per-cell fallback cut with fewer points. Printed as a Markdown
+//! table; with an argument also written as JSON for
+//! `tools/plot/immersed_stl.py`.
 //!
 //! ```sh
 //! cargo run --release -p foehncraft-mesh --example cut_stl_bench -- output/cut_stl_bench.json

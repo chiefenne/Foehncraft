@@ -106,7 +106,7 @@ slips and the refusals of the action table:
 - **Meshes.** Polyhedral cells in 2D and 3D, read from Gmsh, SU2, CGNS, OpenFOAM, Fluent `.msh`, VTK and VTKHDF.
 - **Flow.** Steady and transient; SIMPLEC, PISO and a coupled solver; RANS from k-ω SST to k-ε-ζ-f₀.
 - **Heat.** The energy equation, conjugate heat transfer with several fluids and solids, buoyancy, low-Mach density, Monte Carlo radiation.
-- **More physics.** Rotating machinery (moving frame, sliding mesh), Lagrangian sprays with evaporation, species and laminar reacting flows, porous regions, immersed bodies, deforming meshes, linear structures.
+- **More physics.** Rotating machinery (moving frame, sliding mesh), Lagrangian sprays with evaporation, species and laminar reacting flows, porous regions, immersed bodies (penalised or cut out of the mesh, primitive shapes and STL surfaces), deforming meshes, linear structures.
 - **Hardware.** CPUs and NVIDIA GPUs in one process; MPI ranks with results bitwise equal to one rank.
 - **Driving it.** TOML case files, the `foehn` command, a Python package, and an MCP server for AI assistants.
 

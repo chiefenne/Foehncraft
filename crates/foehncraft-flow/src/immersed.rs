@@ -838,10 +838,12 @@ pub fn fractions(bodies: &[Body], samples: usize, mesh: &Mesh, geo: &Geometry) -
     for (b, body) in bodies.iter().enumerate() {
         if let Some(s) = body.surface() {
             let m = s.cut_moments(mesh, geo);
-            for c in 0..nc {
-                let v = geo.cell_volume[c];
-                out[b][c] = if v > 0.0 {
-                    (m.cell_inside_volume[c] / v).clamp(0.0, 1.0)
+            for (o, (&vi, &v)) in out[b]
+                .iter_mut()
+                .zip(m.cell_inside_volume.iter().zip(&geo.cell_volume))
+            {
+                *o = if v > 0.0 {
+                    (vi / v).clamp(0.0, 1.0)
                 } else {
                     0.0
                 };

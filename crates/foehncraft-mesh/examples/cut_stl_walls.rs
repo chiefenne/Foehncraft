@@ -1,5 +1,5 @@
 //! The wall faces of a box turned against the mesh and cut out of it (L13
-//! stage 2, gallery 320): with the closest point of the surface as the fan
+//! stage 2, gallery 322): with the closest point of the surface as the fan
 //! point (the edges and corners are rounded off inside the cut cells), and
 //! with the dual-contouring wall point and the face points (kept sharp).
 //! Writes the section of the wall faces with the plane z = `Z0` (and of the

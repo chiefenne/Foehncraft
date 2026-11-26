@@ -1,4 +1,4 @@
-"""STL bodies cut out of a mesh, L13 stage 2 (gallery and recipe 320).
+"""STL bodies cut out of a mesh, L13 stage 2 (gallery and recipe 322).
 
 immersed_stl_benchmark.png: the cut of three triangle surfaces (an
 icosphere, a box turned against the mesh, a torus) out of hexahedral,
@@ -27,7 +27,7 @@ four subdivisions, 5120 triangles, binary):
     python3 -m tools.plot.immersed_stl stl examples/cases/flow/immersed_sphere.stl
     python3 -m tools.plot.immersed_stl bench OUT_DIR BENCH.json
     python3 -m tools.plot.immersed_stl walls OUT_DIR WALLS.json
-    python3 -m tools.plot.immersed_stl fields OUT_DIR RUN
+    python3 -m tools.plot.immersed_stl fields OUT_DIR RUN [SWEEP_RUN ...]
 """
 import json
 import os
@@ -190,6 +190,203 @@ def walls(out, path):
     fig.savefig(path, dpi=100)
     print(path)
 
+# VTK cell types with fixed faces: tetra, hexahedron, wedge, pyramid
+FACES = {
+    10: [[0, 1, 3], [1, 2, 3], [2, 0, 3], [0, 2, 1]],
+    12: [[0, 3, 2, 1], [4, 5, 6, 7], [0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7]],
+    13: [[0, 1, 2], [3, 5, 4], [0, 3, 4, 1], [1, 4, 5, 2], [2, 5, 3, 0]],
+    14: [[0, 3, 2, 1], [0, 1, 4], [1, 2, 4], [2, 3, 4], [3, 0, 4]],
+}
+
+
+def read_run(path):
+    """The cells of a 3D run as rings of point ids per face, the points,
+    the cell data and the wall faces of `sphere` with their owner cell."""
+    import h5py
+    with h5py.File(path, "r") as f:
+        g = f["VTKHDF"]["internal"]
+        pts = g["Points"][:]
+        types = g["Types"][:]
+        off = g["Offsets"][:]
+        conn = g["Connectivity"][:]
+        foff = g["FaceOffsets"][:]
+        fconn = g["FaceConnectivity"][:]
+        poff = g["PolyhedronOffsets"][:]
+        p2f = g["PolyhedronToFaces"][:]
+        data = {k: g["CellData"][k][:] for k in g["CellData"]}
+        w = f["VTKHDF"]["sphere"]
+        wpts = w["Points"][:]
+        woff = w["Polygons"]["Offsets"][:]
+        wconn = w["Polygons"]["Connectivity"][:]
+        owner = w["CellData"]["OwnerCell"][:]
+    wall = [wpts[wconn[woff[i]:woff[i + 1]]] for i in range(len(woff) - 1)]
+
+    def faces(c):
+        if types[c] == 42:
+            return [fconn[foff[k]:foff[k + 1]] for k in p2f[poff[c]:poff[c + 1]]]
+        nodes = conn[off[c]:off[c + 1]]
+        return [nodes[r] for r in FACES[int(types[c])]]
+
+    return pts, faces, data, wall, owner
+
+
+def section(pts, faces, n_cells, axis, x0):
+    """The polygons of the cells in the plane x[axis] = x0, with their
+    cells: the crossings of the face edges, chained around each cell."""
+    lo = np.zeros(n_cells)
+    polys, cells = [], []
+    other = [k for k in range(3) if k != axis]
+    for c in range(n_cells):
+        segs = []
+        for ring in faces(c):
+            z = pts[ring, axis] - x0
+            if z.min() >= 0 or z.max() < 0:
+                continue
+            xs = []
+            for i in range(len(ring)):
+                a, b = ring[i], ring[(i + 1) % len(ring)]
+                da, db = pts[a, axis] - x0, pts[b, axis] - x0
+                if (da < 0) != (db < 0):
+                    t = da / (da - db)
+                    xs.append(((min(a, b), max(a, b)),
+                               pts[a] + t * (pts[b] - pts[a])))
+            if len(xs) >= 2:
+                d = xs[-1][1] - xs[0][1]
+                xs.sort(key=lambda e: e[1] @ d)
+                segs += [(xs[i], xs[i + 1]) for i in range(0, len(xs) - 1, 2)]
+        if len(segs) < 3:
+            continue
+        nb, at = {}, {}
+        for (ka, pa), (kb, pb) in segs:
+            nb.setdefault(ka, []).append(kb)
+            nb.setdefault(kb, []).append(ka)
+            at[ka], at[kb] = pa, pb
+        start = segs[0][0][0]
+        loop, prev, cur = [start], None, start
+        while True:
+            nxt = [k for k in nb[cur] if k != prev]
+            if not nxt or nxt[0] == start:
+                break
+            prev, cur = cur, nxt[0]
+            loop.append(cur)
+            if len(loop) > len(nb):
+                break
+        polys.append(np.array([at[k][other] for k in loop]))
+        cells.append(c)
+    del lo
+    return polys, np.array(cells)
+
+
+def drag(run):
+    """The mesh, its cells per side and the drag coefficient
+    K = F/(6π μ a U) with F = G L³ = 1 N of a run of the sphere array case."""
+    import tomllib
+    r = json.load(open(os.path.join(run, "result.json")))
+    u = r["solves"][0]["periodic"][0]["mass_flow"]
+    with open(os.path.join(run, "case.resolved.toml"), "rb") as f:
+        g = tomllib.load(f)["mesh"]["generate"]
+    return g["type"], g["cells"][0], 1.0 / (6.0 * np.pi * RADIUS * u)
+
+
+def fields(out, run, sweep=()):
+    """Stokes flow through the sphere array: the pressure on the cut wall
+    faces, the speed in the plane y = ½ and the drag coefficient against
+    the cell width."""
+    import matplotlib.pyplot as plt
+    from matplotlib import colormaps
+    from matplotlib.cm import ScalarMappable
+    from matplotlib.collections import PolyCollection
+    from matplotlib.colors import Normalize
+    from matplotlib.patches import Circle
+    from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+
+    from tools.plot.colormaps import RAINBOW, UNIFORM
+
+    pts, faces, d, wall, owner = read_run(os.path.join(run, "fields.vtkhdf"))
+    n_cells = len(d["pressure"])
+    fig = plt.figure(figsize=(15.0, 5.0), constrained_layout=True)
+    gs = fig.add_gridspec(1, 3, width_ratios=[1.0, 1.25, 1.0])
+
+    # the cut wall, coloured by the pressure, lit
+    ax = fig.add_subplot(gs[0], projection="3d")
+    p = d["pressure"][owner]
+    m = np.abs(p).max()
+    norm = Normalize(-m, m)
+    col = colormaps[UNIFORM](norm(p))
+    light = np.array([-0.4, -0.8, 0.6])
+    light /= np.linalg.norm(light)
+    for i, f in enumerate(wall):
+        n = sum(np.cross(f[a], f[(a + 1) % len(f)]) for a in range(len(f)))
+        n = n / max(np.linalg.norm(n), 1e-300)
+        col[i, :3] *= 0.55 + 0.45 * max(n @ light, 0.0)
+    ax.add_collection3d(Poly3DCollection(wall, facecolors=col, edgecolors=(0, 0, 0, 0.25),
+                                         linewidths=0.15))
+    c, r = np.array(CENTRE), RADIUS * 1.05
+    ax.set_xlim(c[0] - r, c[0] + r)
+    ax.set_ylim(c[1] - r, c[1] + r)
+    ax.set_zlim(c[2] - r, c[2] + r)
+    ax.set_box_aspect((1, 1, 1))
+    ax.view_init(elev=22, azim=-62)
+    ax.set_axis_off()
+    ax.set_title(f"pressure on the {len(wall)} cut wall faces\n(flow along +x)", fontsize=11)
+    fig.colorbar(ScalarMappable(norm, colormaps[UNIFORM]), ax=ax, shrink=0.7, pad=0.0,
+                 label="pressure p − p̄ (Pa)")
+
+    # the speed in the plane y = ½, the cut cells outlined
+    ax = fig.add_subplot(gs[1])
+    polys, cells = section(pts, faces, n_cells, 1, CENTRE[1] + 1e-9)
+    speed = d["speed"][cells]
+    pc = PolyCollection(polys, array=speed, cmap=RAINBOW, edgecolors="face", linewidths=0.2)
+    ax.add_collection(pc)
+    near = [q for q in polys
+            if np.min(np.hypot(q[:, 0] - CENTRE[0], q[:, 1] - CENTRE[2])) < RADIUS + 0.06]
+    ax.add_collection(PolyCollection(near, facecolors="none", edgecolors=(0, 0, 0, 0.5),
+                                     linewidths=0.4))
+    ax.add_patch(Circle((CENTRE[0], CENTRE[2]), RADIUS, fill=False, ec="w", lw=1.0, ls="--"))
+    ax.set_xlim(0.0, 1.0)
+    ax.set_ylim(CENTRE[2], 1.0)
+    ax.set_aspect("equal")
+    ax.set_xlabel("x (m)")
+    ax.set_ylabel("z (m)")
+    ax.set_title("speed in the plane y = 0.5 m (upper half), cells near\n"
+                 "the sphere outlined, the exact sphere dashed", fontsize=11)
+    fig.colorbar(pc, ax=ax, shrink=0.9, pad=0.01, label="speed (m/s)")
+
+    # the drag coefficient against the cell width
+    ax = fig.add_subplot(gs[2])
+    k_ref = 2.152
+    runs = [drag(x) for x in sweep] if sweep else [drag(run)]
+    style = {"hex": ("#30638e", "o"), "tet": ("#d1495b", "s"), "poly": ("#66a182", "^")}
+
+    def series(h, e, colr, mk, ls, label):
+        e = np.array(e)
+        ax.loglog(h, np.abs(e), ls, color=colr, marker=mk, ms=7, mew=1.5, label=label)
+        for hi, ei in zip(h, e):
+            if ei > 0:
+                ax.loglog([hi], [ei], mk, color=colr, ms=7, mfc="white", mew=1.5)
+
+    for mesh, (colr, mk) in style.items():
+        rs = sorted((x for x in runs if x[0] == mesh), key=lambda x: x[1])
+        if rs:
+            series([1.0 / x[1] for x in rs], [100 * (x[2] / k_ref - 1) for x in rs], colr, mk,
+                   "-", f"cut, STL sphere, {mesh}")
+    pen = [(16, 6.2), (24, 5.5), (32, 3.9)]
+    series([1 / n for n, _ in pen], [e for _, e in pen], "#edae49", "D", "--",
+           "penalised, hex (gallery 291)")
+    h = np.array([1 / 48, 1 / 16])
+    ax.loglog(h, 0.9 * (h / h[0]) ** 2, "k-", lw=0.8, label="slope 2")
+    ax.loglog(h, 3.9 * (h / (1 / 32)), "k:", lw=0.8, label="slope 1")
+    ax.set_xlabel("cell width h = L / n (m)")
+    ax.set_ylabel("|K / 2.152 − 1| (%): filled below, open above")
+    ax.set_title("drag coefficient against the series\n(Hasimoto 1959, Sangani & Acrivos 1982)",
+                 fontsize=11)
+    ax.grid(True, which="both", alpha=0.3)
+    ax.legend(fontsize=8)
+    path = os.path.join(out, "immersed_stl_sphere_array.png")
+    fig.savefig(path, dpi=100)
+    print(path)
+
+
 def main(argv):
     if len(argv) < 3:
         sys.exit(__doc__)
@@ -207,7 +404,7 @@ def main(argv):
     elif cmd == "walls":
         walls(argv[2], argv[3])
     elif cmd == "fields":
-        fields(argv[2], argv[3])
+        fields(argv[2], argv[3], argv[4:])
     else:
         sys.exit(f"unknown command `{cmd}`: stl, bench, walls or fields")
 
