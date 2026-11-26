@@ -86,7 +86,7 @@ FLOW = {
         "cht_pulsating_channel_skin", "cht_heated_wall_frozen", "cht_pulsating_channel_warmup",
         "natural_convection_cavity_ra1e5", "natural_convection_plate",
         "flame_methane_air_gri30",
-        "immersed_stokes_sphere", "spray_saturation_steady",
+        "immersed_stokes_sphere", "spray_saturation_steady", "spray_breakup",
         "motion_piston_cooled_walls",
     ],
     "quick": [
