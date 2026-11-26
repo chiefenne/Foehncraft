@@ -111,9 +111,10 @@ documentation describing main as it is after the merge. When a pull
 request adds, changes or removes a feature, it updates in the same pull
 request:
 
-- the status line and the list "What works today" in the
-  [README](README.md) (and the commands under "Build and run" and the crate
-  table when they change);
+- the full feature list [docs/features.md](docs/features.md) ("What works
+  today"), and in the [README](README.md) the status line, the six-line
+  summary "What works today" when a whole area changes, the commands under
+  "Build and run" and the crate table when they change;
 - the gallery entry, case files and recipe (above), the verification page
   of the stage, and `docs/keys.md` for new keys;
 - the requirements (`docs/requirements.md`): the "Implemented" note of the

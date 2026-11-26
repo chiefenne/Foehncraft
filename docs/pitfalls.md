@@ -23,6 +23,13 @@ instead.
 - [Coupling loops: the solid must see the flow's response](#coupling-loops)
 - [Limiters on tetrahedra and polyhedra](#limiters)
 - [Porous resistances and the Rhie–Chow factor](#porous-rhie-chow)
+- [Deforming meshes: the grid flux and the old levels](#deforming-mesh)
+- [High-pressure phase equilibrium](#high-pressure-equilibrium)
+- [Property solves and new kernels on ranks](#property-solves)
+- [Spray diagnostics and small test sprays](#spray-diagnostics)
+- [Cut cells: check what the solver takes, cell by cell](#cut-cells)
+- [Sprays on a sector of an injector](#spray-sectors)
+- [Long-lived branches and the one test program per crate](#stale-branches)
 
 <a id="steady-runs"></a>
 ## Steady runs: budget and stopping
@@ -534,3 +541,172 @@ Found with the porous regions of D270 (#273):
   step.** A species at zero (AR in the global mechanisms) with a step
   relative to its value gives a step of zero or round-off size; use
   `1e-6·|z| + 1e-9`.
+- **YAML 1.1 reads the species `NO` as the boolean false.** PyYAML (YAML
+  1.1) turns the unquoted keys `NO`, `ON`, `YES`, `OFF` into booleans, so
+  a species table generated from GRI-Mech 3.0 had `[species."False"]`
+  instead of nitric oxide, and a flow with all 53 species failed to find
+  `NO`. The Rust importer (yaml-rust2) is YAML 1.2 and reads `NO` as a
+  string; `tools/data/gri30_species.py` uses a loader with the YAML 1.2
+  booleans only, and the species test checks that every species of every
+  built-in mechanism is in the data.
+- **Field names come from species names.** `CH2(S)` is not a valid scalar
+  name; the field of a species is `Y_` and the name with every character
+  that is not a letter or digit replaced by `_` (`Y_CH2_S`).
+- **The software square root dominates a mixture of many species.** The
+  in-house `sqrt` (D93) is a correctly rounded integer routine, far
+  slower than the hardware instruction; Wilke's rule called it N² times
+  per cell and face: 10 s per time step for 53 species on 200 cells. The pair
+  factors that depend only on the molar masses are computed once
+  (`wilke_pairs`) and the per-species √μ once per cell: 0.3 s per step.
+
+**A rank does not know the cell zone of its halo cells (turning zones on
+ranks, #301).** `extract` gives the local mesh the zones of the own cells
+only (`cell_zone` has `n_cells` entries), so anything that reads the zone
+of the cell across a face, such as the frame flux of a rotating zone on a
+face between two ranks, must get the zone of the halo cell from its owner:
+upload the own values of a cell array and read it back with
+`download_with_halo`. A per-rank decision like "this part has a pressure
+boundary" must be taken on the global arrays (`OnRanks::arrays`), or ranks
+start from different pressures.
+
+<a id="deforming-mesh"></a>
+## Deforming meshes: the grid flux and the old levels
+
+Found with the deforming mesh of stage MS0 (#296):
+- **Set the grid flux before the first convecting flux of the step.** The
+  transient step computes the convecting flux (ṁ − ρ Ḟ) at its start; with
+  the grid flux of the step uploaded later (in the density step) a uniform
+  flow on a moving mesh lost its uniformity (pressure 4 % of the dynamic
+  pressure, momentum residual 7·10⁻³). `grid_step_start` is the first call
+  of `step_with`; free-stream preservation is the test that catches it.
+- **Mass flows at a moving wall are relative.** The boundary summaries, the
+  balances and the scalar books must subtract the grid flux too; with the
+  absolute flux a piston wall showed a mass flow and the heat book of the
+  closed volume failed (BAL001).
+- **Keep ρⁿ through the rebuild.** The flow is rebuilt on the moved mesh
+  every step; refreshing the density with the new volumes before the step
+  starts overwrote level n. The density keeps (ρⁿ, p₀ⁿ) aside and the step
+  starts from them.
+
+<a id="high-pressure-equilibrium"></a>
+## High-pressure phase equilibrium
+
+- **A bias of a mixture fit is not always the pure-fluid vapour pressure.**
+  Peng-Robinson with one k_ij was 5 to 7 % low on the measured N₂ +
+  n-dodecane bubble points at 562 and 594 K; the pure n-dodecane vapour
+  pressure of the plain κ(ω) is within 1.3 % of the measured equation
+  there, so the bias is the mixture term (the measured Henry constant falls
+  faster with T). Check the pure-fluid vapour pressure against a measured
+  equation that is valid to T_c (Ambrose and Walton 1989) before blaming
+  it, and check the sensitivity of the quantity you use (the surface fuel
+  fraction moves by only 2 to 6 % between the two k_ij).
+- **The plain κ(ω) is far off at low reduced temperature.** For n-dodecane
+  it is 16 % off at 300 K, for water 11 % at 320 K; a liquid injected cold
+  needs a Mathias-Copeman α fitted to its measured vapour pressure.
+- **Raoult's limit is reached only as p → 0.** At 0.1 MPa the
+  Peng-Robinson surface fraction is 2 to 3 % above Raoult's law (Poynting
+  factor and second virial terms, linear in p), so a low-pressure check
+  needs a band that grows with p, not 1 % at 0.1 MPa.
+- **`python3 -m tools.release.changelog` without `--print` moves every
+  fragment into `CHANGELOG.md`.** It is the release step; `--help` is not an
+  option and runs it too. Use `--print` (as CI does), and if it ran by
+  mistake, `git checkout -- CHANGELOG.md changelog.d/` and recreate any
+  untracked fragment of the branch.
+
+<a id="property-solves"></a>
+## Property solves and new kernels on ranks
+
+Found with the IAPWS-IF97 states of SF7a (#277):
+- **Plain Newton inside a bracket can cycle.** T(p, h) just above the
+  critical pressure (h(T) rises steeply at the pseudo-critical
+  temperature) bounced between 611 K and 780 K for 200 iterations while
+  every step stayed inside the bracket, and returned a wrong state. Take a
+  Newton step only when it is at most half the step before the last one,
+  else bisect (the rtsafe rule), and test a fine (p, h) grid around the
+  critical point, not only the verification points.
+- **Run a new model once with `[run] ranks` before claiming it.** A
+  temperature-dependent c_p (any table, not only IF97) crashed on ranks
+  in the h-form correction of the energy equation (halo cells indexed in
+  own-cell arrays), and the variable density of stage 7c crashed as well;
+  W5 had checked only constant properties. The c_p path is fixed; the
+  variable density is refused on ranks until it is ported.
+
+<a id="spray-diagnostics"></a>
+## Spray diagnostics and small test sprays
+
+Found with the ECN diagnostics of SA3 (#319):
+- **A PLV threshold below one parcel measures the farthest parcel.** The
+  projected liquid volume of a bin is the parcels' volume over the bin
+  area; when one parcel alone exceeds the threshold, the "liquid length"
+  is the tip of the spray. Check the volume of one parcel over `bin`²
+  against the smaller threshold (aim for several parcels per bin) before
+  reading a length; raise `parcels_per_second` or the bin, or choose the
+  thresholds for the case.
+- **A planar test spray in still air saturates its own core.** 0.5 g/s of
+  water in a 2D slab 1 cm deep needs more hot air than the jet entrains:
+  the core sat at 326 K and 9 % vapour, the droplets stopped evaporating
+  and the liquid length grew with the tip. Estimate the air the
+  evaporation needs (water mass flow per depth times the air-to-water
+  ratio at saturation) against the entrainment of the jet before choosing
+  the mass flow; 12 mg/s gave a liquid length that settles.
+- **A text replace on a case file also hits its comments.** Inserting a
+  table before `[spray.evaporation]` with a plain `replace` also changed
+  the comment that quotes `[spray.evaporation]`; match the table header on
+  its own line (`"\n[spray.evaporation]\n"`), after turning `"\r\n"` into
+  `"\n"`: a Windows checkout has CRLF line ends, and a match on `"\n[..]\n"`
+  finds nothing there, so the table is silently not inserted.
+<a id="cut-cells"></a>
+## Cut cells: check what the solver takes, cell by cell
+
+Found while adding STL bodies to the cut (L13 stage 2, #322):
+- **Totals hide cell errors.** The fluid volume and wall area of the cut
+  converged at second order while single cells were wrong by half their
+  volume: the joined face of two merged cells, fanned about the mean of
+  its nodes, folds when its parts are not coplanar and moves volume into
+  the neighbour. Compare the volume of every group of input cells a cut
+  cell covers with the exact moments (`Surface::cut_moments`), not only
+  the sums.
+- **A better surface point can make a face the solver refuses.** The
+  dual-contouring point on a sharp edge, and the face points, made concave
+  cut cells whose centroid lies behind a face (d · S ≤ 0): 13 to 861 such
+  faces on a turned box where the closest point had none. Flatness tests
+  and merging the folding neighbour as well made it worse (larger,
+  snake-like groups). What works: pick the merge neighbour by the validity
+  of the union, and cut the cells around a refused face again with fewer
+  points, finest first. Count the refused faces in every benchmark row.
+
+<a id="spray-sectors"></a>
+## Sprays on a sector of an injector
+
+- **Keep the cells on the axis out of a sector that the plumes draw gas
+  into.** The 22.5° sector of ECN Spray G reaching the axis (D309) went
+  unstable at 0.13 ms in every trial: the cells on the axis are prisms
+  whose faces have a skewness of 1/(4Δφ), 5 with 8 angular cells, and they
+  were the first to diverge once the plumes drew gas to the axis (12
+  angular cells failed sooner). The parcels in the diverging gas then spent
+  `max_substeps` each and their exchange records filled the memory, so the
+  run died without a message. A slip core of 0.3 mm (`ymin` symmetry) with
+  three graded cells next to it has no skewed face and runs clean; the gas
+  on the axis of a symmetric injector moves only along it anyway.
+- **Do not blame the breakup before comparing a second model.** G1 ran
+  33 % ahead of the measured liquid at 1.2 ms with KH-ACT, whose drops are
+  twice the measured size; the obvious reading was "too large drops". KH-RT
+  with drops of the measured size ran exactly as far, so the cause is
+  elsewhere. Run both models (one `--set`) before tuning breakup constants.
+- **A string slice can drop the exponent.** `str(x)[:8]` of 1.2345678e-05
+  is `1.234567`: a liquid volume fraction read that way looked above 1 and
+  sent the search the wrong way for a while. Format numbers with `:.3e`.
+
+<a id="stale-branches"></a>
+## Long-lived branches and the one test program per crate
+
+Found when the SF7a branch (#277) was merged with main a day later for
+SF7b (#312):
+- **A test file written before #288 is never compiled after it.** Since
+  #288 every crate builds one test program (`tests/main.rs`); a file in
+  `tests/` without a `mod` line there is silently skipped. Run
+  `python3 -m tools.check.test_modules` after merging main into an old
+  branch.
+- **Run `cargo fmt --all` after resolving a conflict in a `mod` list.**
+  Keeping both sides of a conflict leaves the module lines out of order,
+  and the format check of CI fails on it.

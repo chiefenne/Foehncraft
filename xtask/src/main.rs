@@ -43,8 +43,15 @@ const ALLOWED: &[(&str, &[&str])] = &[
             "foehncraft-mesh",
         ],
     ),
-    // The structural solver (L53): pure numerics on the core crate.
-    ("foehncraft-structure", &["foehncraft-core"]),
+    // The structural solver (L53): numerics on the core crate; the mesh
+    // crate only for its Gmsh reader (second-order solids).
+    (
+        "foehncraft-structure",
+        &["foehncraft-core", "foehncraft-mesh"],
+    ),
+    // The 1D water and steam circuits of a boiler (SF7b): the IF97 states
+    // of the kernel crate only.
+    ("foehncraft-circuits", &["foehncraft-kernels"]),
     // The Lagrangian parcels (L12): the parcel kernel and the tracker on the
     // mesh locator; the gas enters through a trait, so no `foehncraft-fv`.
     (
@@ -87,6 +94,7 @@ const ALLOWED: &[(&str, &[&str])] = &[
             "foehncraft-flow",
             "foehncraft-bench",
             "foehncraft-structure",
+            "foehncraft-circuits",
         ],
     ),
     // The front ends. `foehncraft-flow` for its types (diagnostics, build
@@ -120,6 +128,7 @@ const FORBIDDEN_PATHS: &[&str] = &[
     "foehncraft_kernels::",
     "foehncraft_radiation::",
     "foehncraft_structure::",
+    "foehncraft_circuits::",
 ];
 
 /// Engine entry points that front ends call only through a tool.

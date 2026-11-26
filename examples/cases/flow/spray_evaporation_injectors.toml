@@ -1,0 +1,19 @@
+# The water nozzle of spray_evaporation.toml (D246: the spray lives in its
+# own file). `vapour` names the species the liquid evaporates into (SP4).
+
+[liquid]
+name = "water"
+density = 998.0
+specific_heat = 4181.0
+temperature = 293.15
+vapour = "H2O"
+
+[[injector]]
+name = "nozzle"
+position = [0.1, 0.1, 0.05]
+direction = [1.0, 0.0, 0.0]
+speed = 10.0
+half_angle = 15.0
+mass_flow = 0.002
+size = { distribution = "rosin-rammler", mean = 30e-6, spread = 3.0, min = 10e-6, max = 80e-6 }
+parcels_per_second = 4000.0

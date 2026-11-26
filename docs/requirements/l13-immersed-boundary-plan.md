@@ -135,6 +135,18 @@ surface (two-sided Hausdorff distance, manifold and self-intersection
 check), which also tests the extraction of stage 1 and step 3e on known
 surfaces (owner decision 2026-11-24, graphics-algorithms assessment Q5).
 
+**Status (#310, part 1).** Built in `foehncraft_mesh::surface`: the
+surface check (items 1, IMM001 to IMM009, tool `mesh.surface`), exact
+and fast generalised winding numbers (item 3; three-term far field, 4e-3 at
+β = 2), the signed distance and segment crossings (item 4); the predicates
+(item 2) came with #236. **Part 2 (#315):** the benchmark (default:
+closest point with the winding-number sign, Q11; fast sweeping wins only on
+flipped triangles, the heat method only at holes) and the exact cut of a
+mesh as moments (item 5 as volumes, apertures and wall pieces by Gauss–Green
+per dimension, 40 to 2500 times more accurate than a linear level-set cut
+on a sphere). Open: polygon pieces with implicit points (for a cut that
+builds a mesh) and ties of surfaces lying flat in mesh faces.
+
 Sizing: surface check and predicates 2 PRs, winding numbers 1 PR, SDF 1 PR,
 surface–polygon intersection 2 to 3 PRs; code about 30 to 60 min per PR,
 CI separate. Gallery: none (core), except a **geometry page** with an image
@@ -331,6 +343,17 @@ rule); single bodies or irregular patterns.
 Sizing: 2a 2 PRs, 2b 1, 2c 1, 2d 1, 2e 1, verification runs 2 to 3 hours in
 all; code about 30 to 60 min per PR. Cut robustness on messy surfaces and
 the small-cell statistics on complex CAD are **not sized yet**.
+
+**Status (2a, 2b for primitives #313; STL bodies #322).** Built: the cut of
+primitive, `field` and STL bodies on any polyhedral mesh with exact
+crossings, the closest-point or dual-contouring wall point, face points on
+the clipped faces, the validity-driven merge and the per-cell fallback to
+fewer points; the Re 20 cylinder ([gallery 313](../gallery/immersed.md#cut-cylinder))
+and the Stokes array of STL spheres, second order on hexahedra
+([gallery 322](../gallery/immersed.md#stl-cut)). Open: folded joined faces
+of merged cells (needs several faces between two cells), the force balance
+on tetrahedra, non-planar polyhedral faces, the thin-solid refusal, and 2c
+to 2f.
 
 ## 5. Stage 3 – Layered distance-field boundary (the L13 target, D230–D232)
 

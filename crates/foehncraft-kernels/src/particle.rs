@@ -84,13 +84,21 @@ pub struct ParcelStep<T> {
 /// of the linear relaxation equation (module documentation).
 #[inline]
 pub fn parcel_step<T: Real>(i: &ParcelInput<T>) -> ParcelStep<T> {
+    parcel_step_drag(i, T::ONE)
+}
+
+/// As [`parcel_step`] with the drag coefficient multiplied by `factor` (the
+/// drag of a distorted drop, D303: C_D = C_D,sphere (1 + 2.632 y)); a factor
+/// of one gives the bits of [`parcel_step`].
+#[inline]
+pub fn parcel_step_drag<T: Real>(i: &ParcelInput<T>, factor: T) -> ParcelStep<T> {
     let mut rel2 = T::ZERO;
     for k in 0..3 {
         let w = i.u[k] - i.v[k];
         rel2 += w * w;
     }
     let re = i.rho_g * i.d * rel2.sqrt_of() / i.mu_g;
-    let f = drag_correction(re);
+    let f = drag_correction(re) * factor;
     let tau = i.rho_p * i.d * i.d / (T::from_f64(18.0) * i.mu_g * f);
     let g_eff = T::ONE - i.rho_g / i.rho_p;
     let e = (-(i.dt / tau)).exp_of();

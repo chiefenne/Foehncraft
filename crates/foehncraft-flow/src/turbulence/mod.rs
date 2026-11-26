@@ -3825,9 +3825,8 @@ impl Turbulence {
     }
 
     /// The old levels of the time terms of k, ε or ω and ζ with the data of
-    /// the cells moved as the sliding mesh says (entry i of the moved array
-    /// is entry `perm1[i]` of the old level n, `perm2[i]` of the level n−1;
-    /// D182, as the passive scalars): the time term of a rotor cell sees
+    /// the cells moved as the sliding mesh says (`shift`: by one step for
+    /// the old level n, by two for n−1; D182, as the passive scalars): the time term of a rotor cell sees
     /// what that cell held. The start values of the step, which
     /// [`step_start`](Self::step_start) made from the levels at the places
     /// of the mesh, are made again from the moved levels in the same way
@@ -3838,22 +3837,19 @@ impl Turbulence {
     pub fn shift_old(
         &mut self,
         dev: &mut dyn FlowDevice,
-        perm1: &[usize],
-        perm2: &[usize],
+        shift: &crate::sliding::Shift,
         has_old: bool,
         extrapolate: Option<f64>,
     ) -> Result<()> {
         let nc = self.nc;
         let work = self.work;
-        let moved = |dev: &mut dyn FlowDevice, src: Buf, dst: Buf, perm: &[usize]| -> Result<()> {
-            let x = dev.download(src)?;
-            let m: Vec<f64> = perm.iter().map(|&i| x[i]).collect();
-            dev.upload(dst, &m)
+        let moved = |dev: &mut dyn FlowDevice, src: Buf, dst: Buf, steps: usize| -> Result<()> {
+            shift.moved(dev, src, dst, steps)
         };
         let shift = |dev: &mut dyn FlowDevice, v: &mut Var| -> Result<()> {
             let Some((o1, o2, _)) = v.old else {
                 // (f: the iterate itself)
-                return moved(dev, v.phi, v.phi, perm1);
+                return moved(dev, v.phi, v.phi, 1);
             };
             let (c1, c2) = match v.content {
                 Some(c) => c,
@@ -3863,8 +3859,8 @@ impl Turbulence {
                     c
                 }
             };
-            moved(dev, o1, c1, perm1)?;
-            moved(dev, o2, c2, perm2)?;
+            moved(dev, o1, c1, 1)?;
+            moved(dev, o2, c2, 2)?;
             dev.copy(c1, v.phi)?;
             if has_old && let Some(w) = extrapolate {
                 dev.lincomb(v.phi, 1.0 + w, c1, -w, c2)?;

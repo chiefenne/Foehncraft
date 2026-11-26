@@ -13,7 +13,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | Page | What it covers | Examples |
 |---|---|---|
 | [Kernel benchmarks and GPU runs](gallery/benchmarks.md) | gate G1 on CPUs and GPUs, on box, polyhedral and tetrahedral meshes, and the flow loop on a GPU | 1, 2, 7, 16 |
-| [Meshes](gallery/meshes.md) | the built-in test mesher in 2D and 3D, partitioning, the Gmsh, SU2, OpenFOAM, CGNS, Fluent `.msh` and VTK readers, flow on poor Gmsh meshes with remediation, the operator exactness check, the canonical local mesh and exact reductions over ranks | 3, 4, 5, 6, 26, 127, 129, 134, 138, 189, 200, 219, 230, 231, 234, 244, 262, 279, 290 |
+| [Meshes](gallery/meshes.md) | the built-in test mesher in 2D and 3D, partitioning, the Gmsh, SU2, OpenFOAM, CGNS, Fluent `.msh` and VTK readers, flow on poor Gmsh meshes with remediation, the operator exactness check, the canonical local mesh and exact reductions over ranks | 3, 4, 5, 6, 26, 127, 129, 134, 138, 189, 200, 219, 230, 231, 234, 244, 262, 279, 290, 301, 304, 305 |
 | [Scalar transport and the pressure solver](gallery/scalar-pressure.md) | convection–diffusion order of accuracy, convection schemes and limiters, the pressure multigrid | 8, 9, 10, 11 |
 | [Incompressible flow](gallery/flow.md) | steady and transient laminar verification and benchmarks (cavity, Poiseuille, Taylor–Green, cylinder, time-step control), the coupled algorithm and its multigrids, heat transfer in turbulent flow, rotating machinery (moving reference frame, sliding mesh, stirred vessels, several rotors) and the T-junction mixing study | 12, 13, 14, 15, 20, 78, 80, 81, 83, 85, 86, 87, 94, 95, 96, 98, 99, 100, 101, 102, 225, 103, 196 |
 | [Passive scalars and the wall distance](gallery/scalars.md) | passive scalars carried by the flow, the bounded BDF2, the exact wall distance, the MLP vertex limiter | 63, 211 |
@@ -21,16 +21,18 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | [Thermal radiation](gallery/radiation.md) | Monte Carlo radiation of grey gas and grey walls on a prescribed temperature field: the box furnace with cooled tubes, the cases with exact solutions, scrambled Sobol against pseudo-random emission | 259, 281 |
 | [Turbulence models](gallery/turbulence.md) | the RANS turbulence models with their wall treatments (k-ω SST, the k-ε family, k-ε-ζ-f, k-ε-ζ-f₀, elliptic-blending k-ε) on the flat plate, the channel, the backward-facing step and the impinging jet; curvature correction and QCR; manufactured solutions; the internal flows of D45 (pipe, plane diffuser, U-bend) with GCI | 68, 71, 73, 74, 88, 89, 90, 113, 115, 141, 140, 184, 194, 197, 193, 199, 204 |
 | [Boundary conditions](gallery/boundary-conditions.md) | slip walls, axisymmetric wedges, inlet profiles from tables, backflow at pressure outlets, convective outlets, periodic modules, absolute pressure values (D239) | 21, 67, 220 |
-| [Lagrangian sprays](gallery/sprays.md) | droplets as Lagrangian parcels in the gas flow: injectors, drag, gravity, wall behaviour, the mass book | 242, 265, 280, 283, 285, 292 |
+| [Lagrangian sprays](gallery/sprays.md) | droplets as Lagrangian parcels in the gas flow: injectors, drag, gravity, wall behaviour, the mass book | 242, 265, 280, 283, 285, 292, 306, 306b, 318, 314, 319, 320, 321, 323 |
 | [Porous regions](gallery/porous.md) | flow through porous matrices with a direction-dependent Darcy–Forchheimer resistance: a ceramic honeycomb, the exact pressure drop of a block | 273, 275 |
-| [Structures](gallery/structure.md) | the linear structural solver for reeds and other parts the flow moves: beams, clamp springs and their fit to a measured frequency, static and modal analyses (MS5) | 295 |
-| [Immersed bodies](gallery/immersed.md) | bodies in the flow without a body-fitted mesh: Brinkman penalisation of primitive bodies (L13 stage 1) | 270, 291 |
-| [Species and reacting flows](gallery/species.md) | species transport of ideal-gas mixtures on the variable density: mixture properties from kinetic theory, the closure species, the element ledger (steam furnace path, SF1) | 278, 289 |
-| [Expressions and materials](gallery/properties.md) | boundary values, body forces and viscosities as expressions, the material database, regions, walls with a mass flux | 23 |
+| [Structures](gallery/structure.md) | the linear structural solver for reeds and other parts the flow moves: beams, MITC shells and quadratic solids, clamp springs and their fit to a measured frequency, contact with a seat and a stop, static, modal and transient analyses, thermal loads, temperatures mapped from a flow case (MS5, MS6) | 295, 297, 299, 300, 302, 308 |
+| [Immersed bodies](gallery/immersed.md) | bodies in the flow without a body-fitted mesh: Brinkman penalisation of primitive bodies (L13 stage 1) | 270, 291, 313, 310, 315, 322 |
+| [Moving meshes and solids](gallery/moving-solids.md) | meshes whose nodes move in time: the deforming mesh with swept volumes, a piston compressing a closed gas volume, free-stream preservation (stage MS0, L22) | 296, 307 |
+| [Species and reacting flows](gallery/species.md) | species transport of ideal-gas mixtures on the variable density: mixture properties from kinetic theory, the closure species, the element ledger (steam furnace path, SF1) | 278, 289, 298 |
+| [Water and steam circuits](gallery/circuits.md) | one-dimensional water and steam tube circuits of a boiler on IAPWS-IF97: flow boiling in an evaporator tube, the natural circulation of a drum loop, two-phase pressure drop, wall temperatures and the CHF margin (steam furnace path, SF7b) | 312 |
+| [Expressions and materials](gallery/properties.md) | boundary values, body forces and viscosities as expressions, the material database, regions, walls with a mass flux | 23, 277 |
 | [Python](gallery/python.md) | cases built, run and studied from Python: expressions with Python operators, callbacks, study tables | 24 |
 | [Verification](gallery/verification.md) | the discretisation uncertainty of mesh sweeps (grid convergence index) and the generated verification manual | 25, 170, 271 |
 | [Post-processing](gallery/post-processing.md) | derived fields: vorticity, Q, λ₂, wall shear stress, y⁺, from the run or a restart file | 22, 108, 110 |
-| [Run control, health and adjoint readiness](gallery/runs.md) | adjoint-ready kernels, runs that a program drives, balances and the divergence report, the log, the table columns, scheduled changes, iteration budgets, the tool registry and journal, the MCP server, the control port and an assistant's study | 17, 18, 19, 27, 28, 29, 166, 171, 172, 175, 177, 181 |
+| [Run control, health and adjoint readiness](gallery/runs.md) | adjoint-ready kernels, runs that a program drives, balances and the divergence report, the log, the table columns, scheduled changes, iteration budgets, the tool registry and journal, the MCP server, the control port and an assistant's study | 17, 18, 19, 27, 28, 29, 166, 171, 172, 175, 177, 181, 316 |
 
 ## All examples by number
 
@@ -147,6 +149,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | <a id="natural-convection"></a>272 | [Natural convection benchmarks: a heated square cavity at Ra 10³ to 10⁶, a vertical plate and mixed convection with flow reversal](gallery/energy.md#natural-convection) | [Energy equation and heat transfer](gallery/energy.md) |
 | <a id="porous-flow"></a>273 | [A ceramic honeycomb in an air channel, and a porous block against the exact pressure drop](gallery/porous.md#porous-flow) | [Porous regions](gallery/porous.md) |
 | <a id="porous-two-temperatures"></a>275 | [Charging a honeycomb heat store, and Schumann's bed against the exact solution](gallery/porous.md#porous-two-temperatures) | [Porous regions](gallery/porous.md) |
+| <a id="steam-if97"></a>277 | [Water and steam of IAPWS-IF97: the pressure-enthalpy chart, steam heated in a duct and superheated between hot plates](gallery/properties.md#steam-if97) | [Expressions and materials](gallery/properties.md) |
 | <a id="species-transport"></a>278 | [A methane jet in a coflow of air, and binary diffusion against the exact solution](gallery/species.md#species-transport) | [Species and reacting flows](gallery/species.md) |
 | <a id="run-ranks"></a>279 | [Solved on five ranks, written by one: a run on ranks](gallery/meshes.md#run-ranks) | [Meshes](gallery/meshes.md) |
 | <a id="spray-two-way"></a>280 | [A water spray that drives the air](gallery/sprays.md#spray-two-way) | [Lagrangian sprays](gallery/sprays.md) |
@@ -158,6 +161,31 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | <a id="topology-bend"></a>291 | [Topology search of a pipe bend, and how accurate the penalised wall is](gallery/immersed.md#topology-bend) | [Immersed bodies](gallery/immersed.md) |
 | <a id="spray-steady"></a>292 | [The spray-cooled duct as a steady state](gallery/sprays.md#spray-steady) | [Lagrangian sprays](gallery/sprays.md) |
 | <a id="reed-beam"></a>295 | [A reed valve as a beam: modes, and the clamp spring against the frequency equation](gallery/structure.md#reed-beam) | [Structures](gallery/structure.md) |
+| <a id="deforming-mesh"></a>296 | [A piston compresses a closed gas volume on a deforming mesh](gallery/moving-solids.md#deforming-mesh) | [Moving meshes and solids](gallery/moving-solids.md) |
+| <a id="reed-plate"></a>297 | [A reed petal as a shell: bending and twist on clamp springs](gallery/structure.md#reed-plate) | [Structures](gallery/structure.md) |
+| <a id="reacting-flow-cells"></a>298 | [A laminar methane–air flame burns at the measured speed with GRI-Mech 3.0](gallery/species.md#reacting-flow-cells) | [Species and reacting flows](gallery/species.md) |
+| <a id="reed-dynamics"></a>299 | [A reed struck by a pressure pulse, and a hot reed](gallery/structure.md#reed-dynamics) | [Structures](gallery/structure.md) |
+| <a id="reed-stop"></a>300 | [A curved reed stop as a solid, read from Gmsh](gallery/structure.md#reed-stop) | [Structures](gallery/structure.md) |
+| <a id="run-ranks-mrf"></a>301 | [A stirred vessel on five ranks: rotating zones of MRF on ranks](gallery/meshes.md#run-ranks-mrf) | [Meshes](gallery/meshes.md) |
+| <a id="reed-valve-contact"></a>302 | [A reed valve between its seat and its stop](gallery/structure.md#reed-valve-contact) | [Structures](gallery/structure.md) |
+| <a id="run-ranks-sliding"></a>304 | [A sliding rotor on five ranks: conformal stepping on ranks](gallery/meshes.md#run-ranks-sliding) | [Meshes](gallery/meshes.md) |
+| <a id="run-ranks-imprint"></a>305 | [A five-blade mixer on five ranks: the sliding mesh by imprinting on ranks](gallery/meshes.md#run-ranks-imprint) | [Meshes](gallery/meshes.md) |
+| <a id="spray-evaporation"></a>306 | [Water droplets evaporating in hot air](gallery/sprays.md#spray-evaporation) | [Lagrangian sprays](gallery/sprays.md) |
+| <a id="spray-saturation"></a>306b | [More water than the air can take, steady](gallery/sprays.md#spray-saturation) | [Lagrangian sprays](gallery/sprays.md) |
+| <a id="deforming-mesh-ranks"></a>307 | [A breathing channel on three ranks, continued from a restart file](gallery/moving-solids.md#deforming-mesh-ranks) | [Moving meshes and solids](gallery/moving-solids.md) |
+| <a id="heat-sink-hot"></a>308 | [A heat sink warmed by its chip: the flow case's temperatures as the load](gallery/structure.md#heat-sink-hot) | [Structures](gallery/structure.md) |
+| <a id="dirty-stl-winding"></a>310 | [A dirty STL body: surface check, winding number and signed distance](gallery/immersed.md#dirty-stl-winding) | [Immersed bodies](gallery/immersed.md) |
+| <a id="water-steam-circuits"></a>312 | [Flow boiling in an evaporator tube, and the natural circulation of a drum boiler](gallery/circuits.md#water-steam-circuits) | [Water and steam circuits](gallery/circuits.md) |
+| <a id="cut-cylinder"></a>313 | [A cylinder cut out of a box mesh: sharp walls on cut cells](gallery/immersed.md#cut-cylinder) | [Immersed bodies](gallery/immersed.md) |
+| <a id="spray-a-surface"></a>314 | [A fuel droplet's surface at diesel pressure](gallery/sprays.md#spray-a-surface) | [Lagrangian sprays](gallery/sprays.md) |
+| <a id="sdf-benchmark-cut"></a>315 | [Signed distance by three methods, and a sphere cut exactly out of a mesh](gallery/immersed.md#sdf-benchmark-cut) | [Immersed bodies](gallery/immersed.md) |
+| <a id="spray-cooler-chat"></a>316 | [An assistant sizes a spray cooler from one question](gallery/runs.md#spray-cooler-chat) | [Run control, health and adjoint readiness](gallery/runs.md) |
+| <a id="spray-breakup"></a>318 | [A fuel spray breaks up in dense nitrogen](gallery/sprays.md#spray-breakup) | [Lagrangian sprays](gallery/sprays.md) |
+| <a id="spray-ecn"></a>319 | [Liquid length and vapour penetration as the ECN defines them](gallery/sprays.md#spray-ecn) | [Lagrangian sprays](gallery/sprays.md) |
+| <a id="spray-a-mixing-line"></a>320 | [Where the last liquid evaporates: the Spray A mixing line](gallery/sprays.md#spray-a-mixing-line) | [Lagrangian sprays](gallery/sprays.md) |
+| <a id="spray-liquid-library"></a>321 | [Fuel droplets with real liquid properties and the 1/3-rule film](gallery/sprays.md#spray-liquid-library) | [Lagrangian sprays](gallery/sprays.md) |
+| <a id="stl-cut"></a>322 | [STL bodies cut out of a mesh: sharp edges, face points and the Stokes sphere array](gallery/immersed.md#stl-cut) | [Immersed bodies](gallery/immersed.md) |
+| <a id="spray-g"></a>323 | [ECN Spray G: a gasoline injector against the measurements](gallery/sprays.md#spray-g) | [Lagrangian sprays](gallery/sprays.md) |
 
 ## Adding a feature
 

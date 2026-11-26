@@ -138,6 +138,7 @@ codes! {
     MAT_THERMAL = "MAT007", Error, "A fluid without specific heat or thermal conductivity in a run with the energy equation.";
     MAT_AXES = "MAT008", Error, "An orthotropic thermal conductivity without both axes, or with parallel axes.";
     MAT_FILE = "MAT009", Error, "A user material database file (`[materials] include`, `FOEHN_MATERIALS`) or a property data file (NASA-7 record, table file) that cannot be read or has the wrong format.";
+    MAT_STEAM = "MAT010", Error, "A water or steam state (`materials.steam`, `foehn steam`) outside IAPWS-IF97, or asked with a set of inputs other than (p, T), (p, h), (p, s), (p, x), (T, x), p or T alone.";
     // sprays (L12, D240 to D246)
     SPRAY_CONFIG = "SPR001", Error, "A `[spray]` value that is out of range, an injector outside the mesh, a spray file (`[spray] include`) that cannot be read or defines `injector` or `liquid` twice, or a `[spray.boundary.<name>]` for a boundary the mesh does not have.";
     SPRAY_STEADY = "SPR002", Error, "The steady spray mode (D260): `[spray.steady]` in a case with `[time]`, or an injector with `start` or `end` in a steady case (its mass flow must not change in time).";
@@ -147,11 +148,27 @@ codes! {
     SPRAY_COUPLING = "SPR006", Warning, "Two-way spray coupling (SP2, D252): the parcel passes of a time step ended at `[spray.coupling] max_passes` with the coupling lag above `tolerance` (fix: more passes or a smaller time step; `spray.csv` counts such steps).";
     SPRAY_UNFINISHED = "SPR007", Warning, "Steady spray mode (D260): streams still in the flow after `[spray.steady] max_time` (caught in a recirculation, or a domain the droplets need longer to cross); their mass flow is counted as unfinished in `spray.csv` and `result.json` (fix: a larger `max_time`).";
     SPRAY_SOURCES = "SPR008", Warning, "Steady spray mode (D260 (4)): the source residual of the final stream pass is above `[spray.steady] tolerance`, so the run is not reported as converged (fix: more outer iterations, or a smaller `[spray.steady] relaxation` if the residual swings).";
+    SPRAY_LIMITER = "SPR009", Warning, "The saturation limiter of D253 held vapour back: the evaporation of a spray cell was above what brings the gas the cell holds and the gas that flows in to adiabatic saturation (transient: in a step; steady: in the final stream pass). Counted in `spray.csv` (`limiter_cells`, `limiter_kg_s`) and `result.json` (fix: more passes or a smaller time step; steady, more outer iterations or a smaller `[spray.steady] relaxation`).";
+    // immersed bodies, the surface check (L13 stage 0, D225)
+    IMM_SURFACE_EMPTY = "IMM001", Error, "A triangle surface (STL) with no triangles or with corners whose coordinates are not finite.";
+    IMM_SURFACE_OPEN = "IMM002", Warning, "An open triangle surface: edges with only one triangle (holes, open borders). Inside and outside still come from the generalised winding number, which closes small holes smoothly; nothing is repaired.";
+    IMM_SURFACE_NON_MANIFOLD = "IMM003", Warning, "A triangle surface with edges shared by more than two triangles (non-manifold: touching bodies, duplicate or internal triangles).";
+    IMM_SURFACE_ORIENTATION = "IMM004", Warning, "A triangle surface whose orientation is not consistent: edges whose two triangles run them in the same direction (some triangles flipped).";
+    IMM_SURFACE_INTERSECTING = "IMM005", Warning, "A self-intersecting triangle surface: pairs of triangles that cross or touch away from their shared corners and edges (exact orientation predicates, D225). The winding number still decides inside and outside.";
+    IMM_SURFACE_DEGENERATE = "IMM006", Warning, "Degenerate triangles: corners that are repeated or exactly collinear (zero area).";
+    IMM_SURFACE_DUPLICATE = "IMM007", Warning, "Duplicate triangles: two triangles with the same three corners.";
+    IMM_SURFACE_INVERTED = "IMM008", Warning, "A closed surface whose normals point inward (negative enclosed volume): as given, the body is its complement (fix: flip the triangles in the CAD export).";
+    IMM_SURFACE_UNITS = "IMM009", Note, "A surface hint: a bounding box larger than 20 m (a file in millimetres needs `scale = 1e-3`), or distinct corners closer than 1e-9 of the box diagonal (welding candidates, not welded).";
     // immersed bodies, Brinkman penalisation (L13 stage 1, D226)
-    IMM_CONFIG = "IMM101", Error, "An `[immersed]` value that does not fit: a permeability that is not > 0, a body without the keys of its shape (`centre` and `radius`, `lower` and `upper`), a radius or length that is not > 0, a zero cylinder axis, two bodies with the same name, a `field` body without `fraction`, no body at all, or an `[immersed.topology]` value out of range (an empty design region, a fluid fraction not in (0, 1], a negative filter radius).";
+    IMM_CONFIG = "IMM101", Error, "An `[immersed]` value that does not fit: a permeability that is not > 0, a body without the keys of its shape (`centre` and `radius`, `lower` and `upper`), a radius or length that is not > 0, a zero cylinder axis, two bodies with the same name, a `field` body without `fraction`, an `stl` body without `file` or with a `scale` that is not > 0, `file` or `scale` on a body of another shape, no body at all, or an `[immersed.topology]` value out of range (an empty design region, a fluid fraction not in (0, 1], a negative filter radius).";
     IMM_UNSUPPORTED = "IMM102", Error, "An `[immersed]` body in a case it does not fit (L13 stage 1, D226): a turbulence model (penalised walls are laminar and low-Re only; a wall function on a penalised wall is refused), the energy equation (no penalised conjugate heat transfer, Q9), passive scalars, gravity, regions or several fluids, rotating zones, or sprays; a topology search in a transient run.";
     IMM_RESOLUTION = "IMM103", Warning, "An immersed body that the mesh does not resolve: no cell lies more than half inside it, or its solid volume on the mesh differs from its exact volume inside the mesh by more than 5 %.";
     IMM_BODIES = "IMM104", Note, "The immersed bodies of the case: their solid volume on the mesh against the exact volume, the cells they touch and the sink coefficient μ/K; the design cells of a topology search.";
+    // immersed bodies, cut cells (L13 stage 2, D227 to D229)
+    IMM_CUT = "IMM201", Error, "The cut of `[immersed] method = \"cut\"` failed: the bodies fill the whole mesh, a body has the name of a mesh boundary, the mesh is a rank's part or periodic before the cut, or an `[immersed.cut]` value is out of range (`min_volume_fraction` not in [0, 0.9]).";
+    IMM_CUT_UNSUPPORTED = "IMM202", Error, "Cut cells (L13 stage 2) with a setting they do not have yet: regions or conjugate heat transfer (stage 2d), a topology search (it needs the penalised density field), rotating zones or a moving mesh (rigid motion is stage 5).";
+    IMM_CUT_REPORT = "IMM203", Note, "The cut of the immersed bodies: cells cut, removed, split into pieces and merged, the smallest kept volume fraction, the wall area of every body against its exact area where simple (an STL body: the area of its triangles, when the surface is clean and lies inside the mesh), the closure of the cut cells, the cells cut with fewer wall and face points so that the discretisation takes their faces (the fallback), and the joined faces of merged cells that fold.";
+    IMM_CUT_QUALITY = "IMM204", Warning, "Cut cells the merge could not fix: a small cut cell without a neighbour to merge into, or faces whose normal does not point from the cell centroid to its neighbour (the run refuses them). Fix: refine the mesh near the body, or move the body by a small fraction of a cell.";
     // datums and their reports (SP1b, D262 to D267)
     DATUM_CONFIG = "DAT001", Error, "A `[[datum]]` table that cannot be used: a name used twice or with other characters than letters, digits, `_` and `-`, an unknown type, a missing or invalid key of its type (plane point and normal, bound, boundary, zones, STL file, box corners, cylinder, zone), or bad histogram bins.";
     DATUM_EMPTY = "DAT002", Error, "A `[[datum]]` that meets no face or cell of the mesh (a plane outside the domain, an interface between zones that do not touch, an empty volume).";
@@ -203,6 +220,7 @@ codes! {
     SPECIES_CLOSURE = "SPE003", Warning, "The transported mass fractions summed to more than 1 somewhere by more than 1e-4, so the closure species was held at zero there: the solve is not converged, the tolerance of `[solver.scalar]` is too loose, or the limiter lets extrema pass (`limiter_epsilon`).";
     CHEMISTRY = "CHM001", Error, "An invalid chemistry mechanism or reactor input: an unknown built-in mechanism, a mechanism file that does not parse, a reaction that does not conserve the elements, a species without thermodynamic data, an unsupported rate form (pressure-dependent Arrhenius, Chebyshev, SRI fall-off, a specific collider) or unit, or a reactor input with an invalid composition, temperature, pressure or time.";
     CHEMISTRY_INTEGRATOR = "CHM002", Warning, "The stiff chemistry integrator of a reactor did not reach the end of its interval within `max_steps`, or its step became too small: raise `max_steps`, loosen `rtol`, or check the mechanism and the state.";
+    CHEMISTRY_UNSUPPORTED = "CHM003", Error, "A setting that does not yet work with chemistry in the flow (stage SF2b): a steady case, a turbulence model (SF3), sprays, or ranks.";
     REG_INITIAL_INLET = "REG009", Error, "`temperature = \"inlet\"` in `[regions.<name>.initial]` for a region whose fluid part has no inlet with `[boundary.<name>.energy] temperature`.";
     REG_START = "REG010", Note, "The start values of the regions and fluid parts and where they come from: given, a boundary value, a Laplace solve between the pressure boundaries of a part, or the inlets.";
     // pressure values absolute or gauge (D239)
@@ -221,6 +239,11 @@ codes! {
     SLIDING_ZONE = "SLD004", Error, "The rotor cannot be moved by whole sectors: its cells have no image when it is turned by one sector (it is not a ring of identical sectors about the axis), or a boundary of the rotor is not a wall, slip wall, symmetry plane or wedge.";
     SLIDING_INTERFACE = "SLD005", Error, "The interface of a sliding mesh by imprinting cannot be imprinted: a boundary or cell zone of `[[sliding]]` is missing or wrong, the two interface boundaries are not on one circular cylinder about the axis or do not cover the same surface, rotor and stator cells share a face or a node, a `[boundary]` table names an interface boundary, or a restart is asked for (not yet available).";
     SLIDING_CLOSURE = "SLD006", Warning, "The cells next to the imprinted interface of a sliding mesh do not close (|Σ S|/Σ |S| above 1e-8): the faces of the interface are not those of a mesh extruded along the axis, and the mesh flux of the rigid turn leaves a small mass source.";
+    // the deforming mesh (D91, stage MS0)
+    MOTION_CONFIG = "MOV001", Error, "A `[mesh_motion]` table that cannot be used: a steady case (the mesh moves in time), a displacement expression that does not compile, or a case with what the deforming mesh of stage MS0 does not work with yet (turning zones, regions, sprays, immersed bodies, periodic boundaries, the check of `[run] ranks`, an error-controlled time step, a sweep over levels), or a restart file whose nodes the displacement does not put there or whose node, cell or face order is another.";
+    MOTION_INVERTED = "MOV002", Error, "The prescribed displacement of `[mesh_motion]` turns a cell inside out (its volume is no longer positive); the message gives the time, the cell and its place.";
+    MOTION_BOUNDARY = "MOV003", Error, "The deforming mesh moves a boundary that is not a wall out of its own plane (a face sweeps a volume): only walls move with the mesh; the nodes of symmetry planes, wedges, inlets and outlets may only slide along them.";
+    MOTION_CLOSED = "MOV004", Error, "The deforming mesh changes the volume of a closed domain (no pressure boundary) of constant density: an incompressible fluid cannot be compressed; give it a pressure boundary or the variable density of a closed volume.";
     // torque, shaft power and machine performance (D184)
     ROT_SLIP = "ROT001", Warning, "A wall of a rotor does not turn with its zone (a stationary shroud in a rotating zone): its torque is in that of the rotor, but the shaft power −Ω·T is not its work on the fluid; give the walls of the rotor in `walls` of the `[[mrf]]` or `[[sliding]]` table.";
     ROT_ENTRY = "ROT002", Error, "A `walls` entry of `[[mrf]]` or `[[sliding]]` that is not a wall of the case, or an `[[output.machines]]` table without a turning zone, with a `rotor` that is no turning zone (or none where there are several), without an inlet or an outlet, with a boundary the case does not have, or with a name used twice.";
@@ -303,6 +326,10 @@ codes! {
     STR_SINGULAR = "STR002", Error, "The stiffness of a structural case is singular: the structure can move freely (a missing support or clamp, or a mechanism); the message names the first free unknown. For the modes of a free structure give a negative `shift`.";
     STR_MODES = "STR003", Warning, "A modal analysis may have missed modes: the Sturm count (the inertia of K − σM) finds more eigenvalues in the range than Lanczos returned, or Lanczos stopped above its tolerance.";
     STR_FIT = "STR004", Error, "The clamp fit (D290) cannot reach the measured frequency: it lies at or above the frequency of the rigidly clamped model (the model is too soft), or the mode does not depend on the spring.";
+    CIR_CASE = "CIR001", Error, "A circuit case (SF7b) that is not valid: an unknown key or a wrong value, a tube to a node that does not exist, a circuit without a pressure or drum node, a drum above the critical pressure, a CHF table that is not complete.";
+    CIR_CONVERGENCE = "CIR002", Error, "The Newton solve of a circuit did not converge or stalled: give start flows (`start_flow`) near the expected ones, check that every part of the circuit reaches a pressure or drum node, and that the flow can carry the heat.";
+    CIR_RANGE = "CIR003", Warning, "A state of a circuit left the range of the IAPWS-IF97 properties (the pressure fell below 1 kPa, or the enthalpy of a tube reached 4.1 MJ/kg): too much flow for the pressure level, or too little flow for the heat.";
+    CIR_CHF = "CIR004", Warning, "The critical heat flux ratio q_CHF/q of a tube segment is below the margin of the case (`chf_margin`, default 1.3); below 1 the wall is beyond the CHF and its temperature is that of vapour convection (Dougall-Rohsenow).";
     // anything else
     GENERAL = "GEN001", Error, "An error without a more specific code.";
 }
@@ -557,7 +584,7 @@ mod tests {
                     "CASE", "SCHED", "BC", "SCAL", "RUN", "GEN", "DIV", "BAL", "EXPR", "MAT",
                     "REG", "MESH", "TURB", "MRF", "SLD", "ROT", "STAT", "ENE", "THM", "CHT",
                     "TOOL", "LIM", "MCP", "ACC", "CYC", "BUO", "FRZ", "PRS", "SPR", "DAT", "POR",
-                    "IMM", "SPE", "CHM", "STR"
+                    "IMM", "SPE", "CHM", "STR", "MOV", "CIR"
                 ]
                 .contains(&p),
                 "{}",

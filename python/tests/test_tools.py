@@ -51,10 +51,14 @@ def test_every_tool_through_call(tmp_path):
         "diag.codes": {},
         "materials.list": {"temperature": 320.0},
         "materials.show": {"name": "water"},
+        "materials.steam": {"pressure": 4e6, "temperature": 700.0},
         "expression.eval": {"source": "2*x + t", "points": [[1.0, 0.0, 0.0, 0.5]]},
         "mesh.process": {
             "input": ROOT / "examples/cases/mesh/hex_2d.toml",
             "out": tmp_path / "mesh",
+        },
+        "mesh.surface": {
+            "input": ROOT / "examples/cases/flow/spray_datums_section.stl",
         },
         "flow.run": {"case": case, "out": out},
         "result.read": {"dir": out},
@@ -88,6 +92,11 @@ def test_every_tool_through_call(tmp_path):
         "structure.fitclamp": {
             "case": ROOT / "examples/cases/structure/reed_beam_clamp_springs.toml",
             "frequency": 150.0,
+        },
+        # the water and steam circuits of stage SF7b
+        "circuits.run": {
+            "case": ROOT / "examples/cases/circuits/drum_natural_circulation.toml",
+            "out": tmp_path / "circuits",
         },
         # the 0D reactor and the equilibrium of stage SF2a
         "chemistry.reactor": {
@@ -125,6 +134,7 @@ def test_every_tool_through_call(tmp_path):
     assert results["post.penetration"]["injectors"][0]["name"] == "nozzle"
     assert results["structure.run"]["modal"]["sturm"]["ok"]
     assert abs(results["structure.fitclamp"]["frequency"] - 150.0) < 1e-3
+    assert results["circuits.run"]["format"] == "foehncraft.circuit-result"
     assert results["chemistry.reactor"]["failures"] == []
     assert 2690.0 < results["chemistry.equilibrium"]["state"]["temperature"] < 2705.0
 

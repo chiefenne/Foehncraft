@@ -25,7 +25,17 @@ fn read_case(path: &Path, ctx: &mut Ctx<'_>) -> Result<Case> {
             format!("{}: {e}", path.display()),
         ))
     })?;
-    Case::from_toml(&text).map_err(diagnostic)
+    let mut case = Case::from_toml(&text).map_err(diagnostic)?;
+    // mesh files of solids are read relative to the case file
+    case.base = Some(path.parent().map_or_else(PathBuf::new, Path::to_path_buf));
+    for mesh in case.mesh_paths() {
+        ctx.roots.check_read(&mesh, "the mesh of a solid")?;
+    }
+    for file in case.field_paths() {
+        ctx.roots
+            .check_read(&file, "the flow result of a temperature field")?;
+    }
+    Ok(case)
 }
 
 /// Input of `structure.run`.
@@ -61,7 +71,7 @@ pub struct Run;
 impl Tool for Run {
     const ID: &'static str = "structure.run";
     const VERSION: u32 = 1;
-    const SUMMARY: &'static str = "Run a structural case (beams, clamp springs; static and modal analyses) and write `result.json` and `structure.vtk`; returns the result.";
+    const SUMMARY: &'static str = "Run a structural case (beams, shells, quadratic solids from Gmsh or a block, clamp springs, temperatures given or mapped from a flow result, contact with rigid seats and stops; static, modal and transient analyses) and write `result.json`, `structure.vtk` and, for a transient, `transient.csv`; returns the result.";
     const CATEGORY: Category = Category::Structure;
     const ACTION: Action = Action::StartRun;
     type Input = RunInput;
@@ -79,6 +89,9 @@ impl Tool for Run {
             dir.join("result.json"),
             serde_json::to_string_pretty(&json)? + "\n",
         )?;
+        if let Some(csv) = out.to_csv() {
+            std::fs::write(dir.join("transient.csv"), csv)?;
+        }
         if c.output.vtk {
             std::fs::write(dir.join("structure.vtk"), out.to_vtk(&name))?;
         }
@@ -200,22 +213,62 @@ mod tests {
     fn catalogue_cases_run_and_the_fit_matches() {
         let tmp = std::env::temp_dir().join(format!("foehn-structure-{}", std::process::id()));
         let mut ctx = Ctx::new(BuildInfo::default());
-        for name in ["reed_beam", "reed_beam_clamp_springs"] {
+        for name in [
+            "reed_beam",
+            "reed_beam_clamp_springs",
+            "reed_plate",
+            "reed_plate_pulse",
+            "reed_plate_hot",
+            "reed_stop",
+            "reed_valve_stop",
+        ] {
             let case = root().join(format!("examples/cases/structure/{name}.toml"));
             let out = tmp.join(name);
             let r = call("structure.run", json!({"case": case, "out": out}), &mut ctx);
             assert_eq!(r.status, "finished", "{name}: {:?}", r.diagnostics);
             let res = &r.result;
-            assert_eq!(res["modal"]["sturm"]["ok"], true, "{name}");
+            if !res["modal"].is_null() {
+                assert_eq!(res["modal"]["sturm"]["ok"], true, "{name}");
+            }
             assert!(out.join("structure.vtk").is_file());
+            assert_eq!(
+                out.join("transient.csv").is_file(),
+                name == "reed_plate_pulse" || name == "reed_valve_stop"
+            );
+            if name == "reed_valve_stop" {
+                // the reed reaches its stop and lands on its seat
+                let c = &res["transient"]["contact"];
+                assert!(c["penetration"].as_f64().unwrap() < 1e-8);
+                for p in 0..2 {
+                    let f = c["planes"][p]["force"].as_array().unwrap();
+                    assert!(f.iter().any(|v| v.as_f64().unwrap() > 1.0), "{p}");
+                }
+            }
+            if name == "reed_stop" {
+                // the curved stop read from its Gmsh file next to the case
+                assert_eq!(res["solid_elements"], 160);
+                let vm = res["static"]["max_von_mises"]["value"].as_f64().unwrap();
+                assert!(vm > 2.0e8 && vm < 2.5e8, "{vm}");
+                continue;
+            }
             let rigid = res["clamps"][0]["rotation"]["rigid"].as_bool().unwrap();
-            assert_eq!(rigid, name == "reed_beam");
+            assert_eq!(rigid, name == "reed_beam" || name == "reed_plate_hot");
         }
         // the fit of examples/cases/tools/structure_fit_clamp.json
         let case = root().join("examples/cases/structure/reed_beam_clamp_springs.toml");
         let r = call(
             "structure.fitclamp",
             json!({"case": case, "frequency": 150.0}),
+            &mut ctx,
+        );
+        assert_eq!(r.status, "finished", "{:?}", r.diagnostics);
+        let f = r.result["frequency"].as_f64().unwrap();
+        assert!((f - 150.0).abs() < 1e-6, "{f}");
+        // a clamp along a shell edge fits the same way
+        let plate = root().join("examples/cases/structure/reed_plate.toml");
+        let r = call(
+            "structure.fitclamp",
+            json!({"case": plate, "frequency": 150.0}),
             &mut ctx,
         );
         assert_eq!(r.status, "finished", "{:?}", r.diagnostics);

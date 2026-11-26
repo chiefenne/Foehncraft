@@ -16,6 +16,7 @@ Part of the [Recipes](../recipes.md): restart, stop and steer runs, drive runs f
 | 175 | [Connect an assistant through the MCP server](#mcp) |
 | 177 | [Watch and steer a running case](#control-port) |
 | 181 | [Let an assistant run a parameter study](#heat-sink-study) |
+| 316 | [Ask an assistant an engineering question: size a spray cooler](#spray-cooler-chat) |
 
 ---
 
@@ -656,5 +657,41 @@ with the one of your own run: the files are byte-identical.
 Without a host of your own, `tools/agent/stdio_host.py` keeps `foehn mcp`
 open behind a socket and sends one call per command (its docstring has the
 usage); it is what the recorded session used.
+
+[↑ back to top](#run-control-and-health)
+
+<a id="spray-cooler-chat"></a>
+## 316. Ask an assistant an engineering question: size a spray cooler
+
+Give the assistant a project folder with an action table and an empty
+folder for its runs, then ask the question in your own words; it writes
+the case files into the project folder and calls `foehn mcp` for the rest.
+For the recorded chat ([gallery 316](../gallery/runs.md#spray-cooler-chat)):
+
+```
+mkdir -p ~/cfd/spray-cooler/runs
+cp examples/cases/tools/mcp/spray_cooler/foehn-mcp.toml ~/cfd/spray-cooler/
+cd ~/cfd/spray-cooler
+foehn mcp --read-root ~/cfd/spray-cooler --write-root ~/cfd/spray-cooler/runs
+```
+
+and the question: "How much water do I need to spray to cool 300 °C air to
+150 °C before the filter?" Give it what it needs to know about your duct
+(size, air speed, where the nozzles may sit) or let it choose and say so.
+
+Three things the recorded assistant had to find out, which save a few
+calls:
+
+- a steady spray case writes no `[[datum]]` reports; add the datums to the
+  case and read them from the restart file with `post.datums` (it needs
+  the same `set` overrides as the run);
+- `set` cannot change one injector of an array; keep one nozzle file per
+  variant and switch with `set spray.include="nozzles_3.5.toml"`;
+- a continuation from a restart file counts iterations from the start of
+  the first run: `max_iterations` must be larger than the restart's
+  iteration to run any.
+
+Its case files are in `examples/cases/tools/mcp/spray_cooler/`; start from
+`spray_cooler.toml` for a duct of your own.
 
 [↑ back to top](#run-control-and-health)

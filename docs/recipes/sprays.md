@@ -10,6 +10,11 @@ Part of the [Recipes](../recipes.md): droplets that move with and through the ga
 | 283 | [Cool a gas with droplets (two-way heat)](#spray-cooling) |
 | 285 | [Let the turbulence spread the droplets](#spray-dispersion) |
 | 292 | [Solve a spray in a steady flow (steady spray mode)](#spray-steady) |
+| 306 | [Let the droplets evaporate](#spray-evaporation) |
+| 318 | [Break a fuel jet up into drops (KH-ACT, KH-RT)](#spray-breakup) |
+| 314 | [Evaporate fuel droplets at high ambient pressure](#spray-a-surface) |
+| 320 | [Check the thermodynamics of a high-pressure spray before the CFD](#spray-a-mixing-line) |
+| 319 | [Report the liquid length and the vapour penetration (ECN)](#spray-ecn) |
 
 ---
 
@@ -280,3 +285,398 @@ Strong coupling (health numbers above 1) needs a smaller relaxation. To see
 the statistical error of the streams, run again with another `seed` or more
 `streams`. See the [gallery entry](../gallery/sprays.md#spray-steady) for
 what is checked and how it compares with the transient run.
+
+---
+
+<a id="spray-evaporation"></a>
+## 306. Let the droplets evaporate
+
+**Name the vapour and pick a model.** The liquid file says which species
+of `[species]` the liquid evaporates into; `[spray.evaporation]` switches
+the evaporation on. The case needs `[energy]`, `[species]` with that
+species, and two-way coupling:
+
+```toml
+# spray_evaporation_injectors.toml
+[liquid]
+name = "water"
+density = 998.0
+specific_heat = 4181.0
+temperature = 293.15
+vapour = "H2O"            # a species of [species]
+# saturation = "water"    # IAPWS-95 vapour pressure, the only law so far
+# latent_heat = 2.4417e6  # J/kg at latent_heat_temperature = 298.15 K
+```
+
+```toml
+[species]
+names = ["H2O", "O2", "N2"]
+initial = { mass_fractions = { H2O = 0.005, O2 = 0.2318, N2 = 0.7632 } }
+properties = "fluid"      # the heat balance then closes to round-off
+
+[spray.evaporation]
+model = "ranz-marshall"   # or "abramzon-sirignano" (film thickening by the blowing)
+# max_mass_change = 0.1          # a sub-step ends when d² falls by more than this share
+# max_temperature_change = 2.0   # ... or the droplet temperature changes by more (K)
+# min_diameter = 1e-6            # smaller droplets evaporate in one sub-step at the end of their life
+
+[spray.coupling]
+mode = "two-way"
+passes = "converged"
+max_passes = 8            # evaporation couples more slowly than heat alone
+```
+
+The same keys work in the steady spray mode (`[spray.steady]`,
+[recipe 292](#spray-steady)).
+
+**Run and look.**
+
+```bash
+foehn flow examples/cases/flow/spray_evaporation.toml --out output/spray_evaporation
+python3 -m tools.plot.spray_evaporation OUT_DIR output/spray_evaporation              # the picture of gallery 306
+foehn flow examples/cases/flow/spray_saturation_steady.toml --out output/spray_saturation_steady
+python3 -m tools.plot.spray_saturation_steady OUT_DIR output/spray_saturation_steady  # the picture of gallery 306b
+```
+
+`spray.csv` adds `evaporated_kg` and `evaporated_parcels` (one way and two
+way) and, with two-way coupling, `gas_vapour_kg_s` (the vapour the gas
+receives), `vapour_lag_kg_s`, `coupling_vapour_max` (the vapour slope over
+the gas mass of the cell per step) and the limiter counts `limiter_cells`
+and `limiter_kg_s`. The ledger has the vapour pair 2805 (`spray vapour` on
+the gas mass, `to the gas` on the account `parcel mass`) and `spray
+vapour` in the species summary. `Y_H2O` is a field of `fields.vtkhdf`.
+
+**When the log warns.** SPR006: the passes of a step ended at `max_passes`
+above the tolerance; raise `max_passes` or lower the time step. SPR009: the
+saturation limiter of D253 held vapour back because a cell evaporated more
+than its gas can take; that is a sign of too few passes or too large a
+step (transient) or of a steady run that is not converged. A liquid whose
+`vapour` is not a species of the case is refused. See the
+[gallery entry](../gallery/sprays.md#spray-evaporation) for what is
+checked and what is not.
+
+---
+
+<a id="spray-breakup"></a>
+## 318. Break a fuel jet up into drops (KH-ACT, KH-RT)
+
+**Describe the nozzle, not the drops.** Give the injector its hole instead
+of a drop size and speed: the parcels then leave as blobs of the diameter
+√C_a d_hole at U = ṁ/(ρ_l C_a A_hole), and a measured rate of injection
+replaces the constant mass flow (D306):
+
+```toml
+# spray_breakup_injectors.toml
+[liquid]
+name = "diesel-like fuel"
+density = 830.0
+specific_heat = 2000.0
+temperature = 300.0
+surface_tension = 0.027    # N/m, needed by the breakup and the dynamic drag
+viscosity = 2.5e-3         # Pa s
+# vapour_pressure = 5e4    # Pa: the cavities of kh-act may collapse (else they only burst)
+
+[[injector]]
+name = "hole"
+position = [0.0005, 1e-5, 1e-5]
+direction = [1.0, 0.0, 0.0]
+half_angle = 6.0
+hole_diameter = 1.5e-4
+area_contraction = 0.86    # C_a: the blob is √C_a d_hole, the jet speed ṁ/(ρ C_a A)
+flow_share = 0.25          # a quarter model of the jet takes a quarter of the liquid
+rate = [[0.0, 0.0], [5e-5, 4.46e-3], [1.45e-3, 4.46e-3], [1.5e-3, 0.0]]   # [t, kg/s]
+parcels_per_second = 1e6
+hole_length = 6e-4         # kh-act: the nozzle turbulence from the hole (Huh and Gosman)
+discharge_coefficient = 0.8
+# inlet_loss = 0.5         # K_c of the inlet, 0.5 for a sharp edge
+# nozzle_k = 240.0         # or give k0 and epsilon0 at the exit directly,
+# nozzle_epsilon = 6e8     # for example from a nozzle flow simulation
+```
+
+**Pick the model.** `kh-act` lets the turbulence and the cavities the
+nozzle leaves in the liquid strip the blobs as well as the
+Kelvin-Helmholtz waves, whichever is faster (D307); `kh-rt` is the
+aerodynamic model alone. Both shed child parcels off the blobs and break the
+drops beyond the breakup length by Rayleigh-Taylor waves:
+
+```toml
+[spray.breakup]
+model = "kh-act"       # or "kh-rt"
+drag = "dynamic"       # TAB distortion raises the drag towards a disc's
+# b0 = 0.61            # KH child radius B0 Λ
+# b1 = 10.0            # KH time constant: the one a validation calibrates
+# c_rt = 1.0           # RT drop size C_RT Λ_RT
+# c_tau = 1.0          # RT time C_τ / Ω_RT
+# breakup_length = 5.0 # C_bl: RT beyond C_bl √(ρl/ρg) d_hole (default b1/2)
+# shed_fraction = 0.03 # a blob sheds a child per 3 % of its liquid
+# c_tcav = 1.0         # kh-act: the rate constant of turbulence and cavitation
+```
+
+**Let the gas spread the jet.** In a still chamber use k-ε: the SST model
+does not build up the turbulence of the thin gas jet during the injection,
+and the spray then runs far ahead (D308 notes). Two-way coupling and the
+eddy-lifetime dispersion carry the drops with the gas.
+
+```toml
+[turbulence]
+model = "k-epsilon"
+wall_treatment = "scalable"
+
+[spray]
+include = "spray_breakup_injectors.toml"
+dispersion = "eddy-lifetime"
+penetration_fraction = 0.97    # the penetration in spray.csv: 97 % of the liquid
+
+[spray.coupling]
+mode = "two-way"
+passes = "converged"
+max_passes = 3
+```
+
+**Run and look.**
+
+```bash
+foehn flow examples/cases/flow/spray_breakup.toml --out output/spray_breakup
+foehn flow examples/cases/flow/spray_breakup.toml --out output/spray_breakup_khrt --set spray.breakup.model=kh-rt
+python3 -m tools.plot.spray_breakup OUT_DIR output/spray_breakup output/spray_breakup_khrt   # the picture of gallery 318
+```
+
+`spray.csv` adds `child_parcels` (children the blobs shed), `rt_breakups`
+and, with `kh-act`, `act_children` (the children the turbulence or the
+cavitation stripped); `hole.penetration_m` is the distance that holds
+`penetration_fraction` of the liquid. The parcel files have `distortion`
+with the dynamic drag. A child's `parcel_id` holds its blob's injector and
+injection index. Breakup is refused in the steady spray mode. See the
+[gallery entry](../gallery/sprays.md#spray-breakup) for what is checked and
+what is not.
+<a id="spray-a-surface"></a>
+## 314. Evaporate fuel droplets at high ambient pressure
+
+**Above about 1 MPa, take the Peng-Robinson surface.** Raoult's law gives
+too little fuel vapour at the droplet surface at diesel pressures (1.5 to
+1.9 times less for n-dodecane in nitrogen at 6 MPa). Add to the
+evaporation:
+
+```toml
+[spray.evaporation]
+model = "abramzon-sirignano"
+equilibrium = "peng-robinson"   # default "raoult"
+
+[spray.evaporation.peng_robinson]
+# fuel = "n-dodecane"           # default: [spray.liquid] name
+ambient = { N2 = 1.0 }          # far-field mole fractions of N2, O2, CO2, H2O, AR
+# k_ij = { N2 = 0.205 }         # per gas; built-in for n-dodecane + N2, else 0
+# table_step = 1.0              # K between the nodes of the surface table
+```
+
+For a liquid without built-in data give its critical point, acentric
+factor and molar mass (all four, then with the κ(ω) of Peng and Robinson,
+which can be 10 to 20 % off on the vapour pressure at low temperature):
+
+```toml
+[spray.evaporation.peng_robinson]
+critical_temperature = 647.096  # K
+critical_pressure = 22.064e6    # Pa
+acentric_factor = 0.3443
+molar_mass = 0.018015           # kg/mol
+```
+
+The surface is tabulated once per run at p₀ (open domains; a closed volume
+is refused with evaporation). Droplets hotter than the end of the table
+(the critical mixing temperature above the fuel's critical pressure) take
+no latent heat and are counted in the tally (`critical_parcels`,
+`critical_mass`). See the [gallery entry](../gallery/sprays.md#spray-a-surface)
+for what is checked and what is not.
+
+---
+
+<a id="spray-a-mixing-line"></a>
+## 320. Check the thermodynamics of a high-pressure spray before the CFD
+
+**Run the mixing line of your fuel and gas.** For n-dodecane into
+nitrogen (ECN Spray A) the example writes the line and the liquid lengths:
+
+```bash
+cargo run --release -p foehncraft-particles --example spray_a_mixing_line -- output/spray_a_mixing_line
+python3 -m tools.plot.spray_a_mixing_line output/spray_a_mixing_line output/spray_a_mixing_line
+```
+
+`line.csv` has the mixing temperature, the liquid mass fraction, the
+density and the energy-balance error over the mixture fraction for the
+frozen, the equilibrium and the ideal line; `liquid_length.csv` the
+saturation mixture fraction Z_sat of each model and Siebers' liquid length
+from it at the measured conditions.
+
+**Your own streams.** Build the mixture as for the droplet surface
+(recipe 314), give the ideal-gas enthalpy of every component (the species
+data of the flow, read with `foehncraft_particles::ideal_gas_species`) and
+the two streams:
+
+```rust
+let n2 = ideal_gas_species(&std::fs::read_to_string("crates/foehncraft-flow/data/species-gri30.toml")?, "N2")?;
+let fuel = N_DODECANE.ideal_gas;
+let h_ig = |i: usize, t: f64| R * t * if i == 0 { fuel.h_over_rt(t) } else { n2.h_over_rt(t) };
+let line = Streams { mix: &mix, ideal: &h_ig, p: 6e6, t_fuel: 363.0, t_gas: 900.0, gas };
+let z_sat = line.saturation(Mixing::Equilibrium);
+```
+
+Compare Z_sat of `Mixing::Equilibrium` and `Mixing::Ideal`: when they
+differ by more than a few per cent, the droplet surface needs
+`equilibrium = "peng-robinson"`. A liquid length from
+`siebers_liquid_length` is a scaling estimate (C_L = 0.62); quote it next
+to the measured value, not instead of it. See the
+[gallery entry](../gallery/sprays.md#spray-a-mixing-line) for what is
+checked and what is not.
+<a id="spray-ecn"></a>
+## 319. Report the liquid length and the vapour penetration (ECN)
+
+**Add `[spray.ecn]`.** The Engine Combustion Network compares spray
+simulations by two numbers defined in its modelling standard
+(ecn.sandia.gov, Modeling Standards): the liquid length, the farthest
+axial position where the projected liquid volume PLV = ∫ LVF dy across the
+spray falls to a threshold, and the vapour penetration, the farthest axial
+position where the fuel mass fraction is 0.1 %. With the table, both are
+written for every injector and step:
+
+```toml
+[spray.ecn]
+# plv = [2e-7, 2e-6]          # m: 0.2e-3 and 2e-3 mm³/mm², one liquid length each
+# bin = 2.5e-4                # m: square bins along the axis and across
+# line_of_sight = [0, 0, 1]   # default: the coordinate axis most nearly across the injector
+# vapour_fraction = 1e-3      # fuel mass fraction of the vapour penetration
+```
+
+`spray.csv` gets `<injector>.liquid_length_<k>_m` (k counts the `plv`
+thresholds from 1) and, with `[spray.evaporation]`,
+`<injector>.vapour_penetration_m`; `result.json` lists the same per
+injector (`liquid_length`, `vapour_penetration`). The PLV of a bin is the
+liquid volume of the injector's parcels in the bin, summed along the line
+of sight, over the bin area; the profile along the axis takes the largest
+bin across, and the length is interpolated between bin centres. The sums
+run in the order of the parcel identities, so the lengths are the same
+bits on any number of threads.
+
+The defaults are those of the standard for a round jet such as Spray A.
+For a planar (2D) case the PLV is per metre of depth and the thresholds
+are yours to choose. With few parcels a single parcel can exceed a
+threshold on its own and the length jumps with the farthest parcels: the
+standard assumes enough parcels that a bin holds many (check that one
+parcel's volume over `bin`² is well below the smaller threshold). A
+background of the fuel vapour in the gas counts for the vapour penetration
+(the fraction is absolute). Not with `[spray.steady]`. See the
+[gallery entry](../gallery/sprays.md#spray-ecn).
+<a id="spray-liquid-library"></a>
+## 321. Evaporate a fuel: take a liquid of the library
+
+**Name the liquid instead of typing its properties.** In the injector
+file:
+
+```toml
+[liquid]
+library = "n-heptane"          # "water", "n-heptane", "n-dodecane", "iso-octane"
+temperature = 300.0            # K, the injected liquid
+vapour = "NC7H16"              # its species in [species]: NC7H16, IC8H18, NC12H26, H2O
+# property_temperature = 330.0 # K of the constant density and c_l (default: temperature)
+```
+
+The library sets the vapour pressure law, the density, the specific heat
+and the latent heat; leave `density`, `specific_heat`, `latent_heat` and
+`saturation` out (a value given beside `library` is refused). The droplet
+heats up to its wet-bulb temperature, so for long-lived droplets set
+`property_temperature` near it (n-heptane in hot nitrogen: 330 to 340 K).
+
+**Put the vapour in the gas.** The vapour must be a transported species of
+the case, not the closure species:
+
+```toml
+[species]
+names = ["NC7H16", "N2"]
+initial = { mass_fractions = { NC7H16 = 0.0, N2 = 1.0 } }
+```
+
+**The film.** `[spray.evaporation] film = "one-third"` is the default: the
+gas properties around each droplet are those of the vapour and carrier
+mixture at the 1/3 reference state, from the species data. The carrier is
+the start composition without the vapour. `film = "far-field"` gives the
+first version's behaviour (the gas properties of the cell), which
+overstates the evaporation of fuel droplets by 50 to 100 % against
+measurements. Case: `examples/cases/flow/spray_heptane_evaporation.toml`;
+[gallery entry](../gallery/sprays.md#spray-liquid-library) for what is
+checked and what is not.
+
+
+<a id="spray-g-sector"></a>
+## 323. Model a multi-hole injector on a sector (ECN Spray G)
+
+**Mesh one plume's share.** The plumes of an injector of n equal holes
+repeat every 360°/n about its axis, and each plume is mirror-symmetric
+about its own plane. A sector of 180°/n with the plume on one side plane
+holds half a plume, and both side planes are mirror planes. `wedge` with
+`dimension = 3` revolves a box of hexahedra into such a sector (D309): x is
+the injector axis, y the radius, and the z intervals become the angular
+cells.
+
+```toml
+[mesh.generate]
+type = "hex"
+dimension = 3
+lower = [0.0, 3.0e-4, 0.0]   # a slip core of 0.3 mm on the axis
+upper = [0.06, 0.05, 1.0]    # 60 mm along the axis, 50 mm radius
+cells = [72, 65, 8]          # 8 angular cells
+wedge = 22.5                 # 8 holes: 180°/8
+segments.x = [ { to = 0.03, cells = 50 }, { to = 0.06, cells = 22, ratio = 3.0 } ]
+segments.y = [
+  { to = 0.0012, cells = 3, ratio = 2.0 },   # small cells next to the core: no skewed faces
+  { to = 0.03, cells = 48 },
+  { to = 0.05, cells = 14, ratio = 3.0 },
+]
+
+[boundary.ymin]
+type = "symmetry"    # the core
+[boundary.zmin]
+type = "symmetry"    # the plane of the plume
+[boundary.zmax]
+type = "symmetry"    # half way to the next plume
+```
+
+Keep the thin core. Without it the cells next to the axis are prisms whose
+faces have a skewness of 1/(4Δφ), 5 with 8 angular cells, and in our trials
+they were the first to go unstable once the plumes drew gas to the axis.
+By the symmetry of the plumes the gas on the axis moves only along it, and
+the slip core imposes just that.
+
+**Put the hole on the plume plane.** The angle runs from −wedge/2 at `zmin`
+to +wedge/2 at `zmax`. Put the hole exit a few µm inside the plane
+φ = −wedge/2, point the plume along that plane, and give the sector half of
+the hole's liquid:
+
+```toml
+[[injector]]
+name = "hole1"
+position = [1.0e-4, 9.81175461e-04, -1.93128751e-04]   # r = 1 mm on φ = −11.25°, 2 µm inside
+direction = [0.83867057, 0.53417395, -0.10625380]      # 33° from the axis, in that plane
+half_angle = 12.5
+flow_share = 0.5           # half of the plume is in the sector
+hole_diameter = 1.65e-4
+area_contraction = 0.65
+rate = [ [0.0, 0.0], [2.7e-5, 1.95e-3], [6.5e-4, 1.72e-3], [7.87e-4, 0.0] ]   # [t, kg/s] of one hole
+```
+
+**Measure as the ECN measures.** `tools/plot/spray_g_metrics.py` turns the
+sector's parcels into the whole injector (each parcel mirrored about its
+plume plane and turned to every plume). `liquid_penetration(x, d, n,
+threshold)` projects the liquid volume along the line of sight
+perpendicular to the plane of plumes 1 and 5 and returns the farthest
+distance along the injector axis above the threshold (0.2e-3 or
+2e-3 mm³/mm²). `vapour_penetration(centres, y)` returns the farthest cell
+above 0.1 % vapour.
+
+```sh
+foehn flow examples/cases/flow/spray_g_g1.toml --out output/spray_g_g1
+foehn flow examples/cases/flow/spray_g_g1.toml --set spray.breakup.model=kh-rt --out output/spray_g_g1_khrt
+python3 -m tools.plot.spray_g_g1 OUT_DIR output/spray_g_g1 output/spray_g_g1_khrt   # gallery 323
+```
+
+Case: `examples/cases/flow/spray_g_g1.toml` with its injector file;
+[gallery entry](../gallery/sprays.md#spray-g) for the comparison with the
+measurements.

@@ -23,7 +23,10 @@ Part of the [Recipes](../recipes.md): generate, read (Gmsh, SU2, CGNS, OpenFOAM,
 | 262 | [Write a restart on ranks and continue on another rank count](#restart-ranks) |
 | 279 | [Run a case on ranks](#run-ranks) |
 | 290 | [Run a turbulent, heated or transient case on ranks](#run-ranks-physics) |
+| 301 | [Run a case with rotating zones (MRF) or a closed domain on ranks](#run-ranks-mrf) |
 | 303 | [Run species, a variable density or statistics on ranks](#run-ranks-species) |
+| 304 | [Run a sliding rotor in conformal stepping on ranks](#run-ranks-sliding) |
+| 305 | [Run a sliding rotor by imprinting on ranks](#run-ranks-imprint) |
 
 ---
 
@@ -806,7 +809,7 @@ mpirun -n 5 target/release/foehn flow examples/cases/flow/ranks_run_transient_ss
 
 Every output file is byte for byte that of one rank: `history.csv`,
 `heat.csv` (the heat balance of every step), `probes.csv`, `forces.csv`,
-`balance.csv`, `boundaries.csv`, the wall files, `fields_NNNNNN.vtkhdf`,
+`balance.csv`, `boundaries.csv`, the wall files, `fields_297297.vtkhdf`,
 `fields.vtkhdf`, `restart.h5`, and in `result.json` the scalar summaries
 with the heat balance and the turbulence summary. Check it:
 
@@ -828,6 +831,41 @@ sprays, immersed bodies, a `[[schedule]]`, a closed volume). A
 summary that would read the part of one rank (orthotropic solids, porous
 matrices, heat-flux periodic pairs) stops the run with an error rather
 than write a wrong number.
+
+[↑ back to top](#meshes)
+
+---
+
+<a id="run-ranks-mrf"></a>
+## 301. Run a case with rotating zones (MRF) or a closed domain on ranks
+
+The rotating zones of `[[mrf]]`, steady or as the transient frozen rotor
+(D185), run on ranks like any other case (recipe 279):
+
+```
+target/release/foehn flow examples/cases/flow/ranks_run_mrf_couette.toml --ranks 5
+mpirun -n 5 target/release/foehn flow examples/cases/flow/ranks_run_mrf_couette.toml   # mpi feature
+```
+
+Every output file is byte for byte that of one rank, the log columns
+`rotor.<zone>.torque` and `rotor.<zone>.power`, the wall files and the
+ledger with the shaft power included. Check it:
+
+```
+target/release/foehn flow examples/cases/flow/ranks_run_mrf_couette.toml --ranks 1 --out output/one
+for f in residuals.csv balance.csv boundaries.csv wall_inner.csv fields.vtkhdf restart.h5; do
+  cmp output/one/$f output/ranks_run_mrf_couette/$f
+done
+```
+
+A domain without a pressure boundary (a closed vessel, a cavity) runs on
+ranks too: the reference cell of the pressure (`[pressure]
+reference_point`, or the corner of the bounding box) lies on one rank,
+which fixes the level there and hands its value to the others. The
+five-blade stirred vessel of gallery 301 is
+`examples/studies/mixer/mrf_turbulent_ranks.toml` (mesh from
+`python3 examples/meshes/mixer.py --blades 5 --baffles 3`). The sliding
+mesh in conformal stepping: recipe 304.
 
 [↑ back to top](#meshes)
 
@@ -869,5 +907,66 @@ flows wait for gravity on ranks. A transient run on a variable density in
 an open domain reports `RUN007` on one rank and on ranks alike (its mass
 check books no storage, a gap of stage 7c); the files still agree byte for
 byte.
+<a id="run-ranks-sliding"></a>
+## 304. Run a sliding rotor in conformal stepping on ranks
+
+A `[[sliding]]` rotor whose mesh is a ring of identical sectors and that
+turns by whole sectors per time step (D182, conformal stepping) runs on
+ranks like any transient case (recipe 290):
+
+```
+target/release/foehn flow examples/cases/flow/ranks_run_sliding_couette.toml --ranks 5
+mpirun -n 5 target/release/foehn flow examples/cases/flow/ranks_run_sliding_couette.toml   # mpi feature
+```
+
+Every output file is byte for byte that of one rank. Check it:
+
+```
+target/release/foehn flow examples/cases/flow/ranks_run_sliding_couette.toml --ranks 1 --out output/one
+for f in history.csv probes.csv forces.csv balance.csv fields.vtkhdf restart.h5; do
+  cmp output/one/$f output/ranks_run_sliding_couette/$f
+done
+```
+
+Each step gathers the old levels of all ranks into the order of the whole
+mesh, which costs time on small meshes (gallery 304: 10 s on five thread
+ranks against 3 s on one). The `[run] ranks` check of `foehn flow` refuses
+any sliding mesh (use `--ranks N` and compare with `--ranks 1` as above).
+The sliding mesh by imprinting: recipe 305.
+
+[↑ back to top](#meshes)
+
+---
+
+<a id="run-ranks-imprint"></a>
+## 305. Run a sliding rotor by imprinting on ranks
+
+A `[[sliding]]` rotor whose mesh meets the stator mesh at a non-matching
+interface (`rotor_interface`, `stator_interface`, D182 variant B,
+[recipe 96](flow.md#sliding-mesh-imprint)) runs on ranks like any transient
+case:
+
+```
+target/release/foehn flow examples/cases/flow/ranks_run_imprint_couette.toml --ranks 5
+mpirun -n 5 target/release/foehn flow examples/cases/flow/ranks_run_imprint_couette.toml   # mpi feature
+```
+
+Every output file is byte for byte that of one rank. Check it:
+
+```
+target/release/foehn flow examples/cases/flow/ranks_run_imprint_couette.toml --ranks 1 --out output/one
+for f in history.csv probes.csv forces.csv balance.csv boundaries.csv fields.vtkhdf; do
+  cmp output/one/$f output/ranks_run_imprint_couette/$f
+done
+```
+
+In every step every rank imprints the interface at the rotor angle on the
+whole mesh and builds its part again; the partition of the first step
+stays, so `ranks.vtkhdf` shows the parts for the whole run. The state is
+gathered and handed back every step, which costs time and the memory of the
+whole mesh on every rank. A moving mesh writes no restart file yet (on one
+rank as on ranks). The five-blade stirred vessel of gallery 305 is
+`examples/studies/mixer/sliding_ranks.toml` (mesh from
+`python3 examples/meshes/mixer.py --blades 5 --baffles 3`).
 
 [↑ back to top](#meshes)

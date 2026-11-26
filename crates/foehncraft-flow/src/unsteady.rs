@@ -156,6 +156,9 @@ pub struct TransientSummary {
     /// The frozen-flow march of a transient conjugate case (D118).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub frozen_flow: Option<crate::frozen::FrozenSummary>,
+    /// The deforming mesh (D91, stage MS0).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mesh_motion: Option<crate::motion::MotionSummary>,
 }
 
 /// The heat balance of one time step (stage 7d6): the balance of the
@@ -698,6 +701,9 @@ pub fn run(
                 s.mesh, s.mass_imbalance
             ));
         }
+        if let Some(f) = s.chemistry.as_ref().and_then(|c| c.failure()) {
+            rep.failures.push(format!("{}: {f}", s.mesh));
+        }
         if let (Some(tol), Some(r)) = (v.reference_tolerance, &s.reference)
             && r.u_max_dev.max(r.v_max_dev) > tol
         {
@@ -913,35 +919,32 @@ fn restart_part(
 /// rotor angle with a sliding mesh by imprinting, the base mesh otherwise.
 fn current<'a>(
     work: &'a Option<crate::sliding::Working>,
+    deform: &'a Option<crate::motion::Deforming>,
     mesh: &'a foehncraft_mesh::Mesh,
     geo: &'a foehncraft_mesh::Geometry,
 ) -> (&'a foehncraft_mesh::Mesh, &'a foehncraft_mesh::Geometry) {
-    match work {
-        Some(w) => (&w.mesh, &w.geo),
-        None => (mesh, geo),
+    match (work, deform) {
+        (Some(w), _) => (&w.mesh, &w.geo),
+        (None, Some(d)) => (&d.mesh, &d.geo),
+        (None, None) => (mesh, geo),
     }
 }
 
-/// The flow solver on the mesh of the next rotor angle (sliding mesh by
-/// imprinting, D182 variant B): built again on `next` as at the start of
-/// the run, with the cell fields, the old time levels and the fluxes of the
-/// faces that stay taken over from `fl` and `tr` (the faces that the
-/// imprint made new start from the interpolated flux). `t` is the time of
-/// the end of the step.
+/// A new flow solver on `mesh` built as at the start of the run, with the
+/// settings of `fl` (its fields not yet loaded) and the density of the
+/// fluid.
 #[allow(clippy::too_many_arguments)]
-fn rebuild_flow(
+fn new_flow(
     case: &FlowCase,
     tv: &TimeValues,
     target: &Target,
     reference_cell: Option<usize>,
-    next: &crate::sliding::Working,
-    map: &crate::sliding::FaceMap,
+    (mesh, geo): (&foehncraft_mesh::Mesh, &foehncraft_mesh::Geometry),
     t: f64,
-    fl: &mut Flow,
+    fl: &Flow,
     tr: &Transient,
     wall_distance: Option<Vec<f64>>,
-) -> Result<(Flow, Transient)> {
-    let (mesh, geo) = (&next.mesh, &next.geo);
+) -> Result<(Flow, Transient, f64)> {
     let phys = crate::case::physics(case)?;
     let phys = crate::case::physics_on(case, &phys, mesh, geo)?;
     let rho = phys.rho;
@@ -978,21 +981,205 @@ fn rebuild_flow(
     crate::turbulence::attach_with(&mut nfl, case, mesh, geo, wall_distance)?;
     crate::frame::attach(&mut nfl, case, mesh, geo)?;
     let scheme = case.time.context("[time]")?.scheme;
-    let mut ntr = Transient::new(&mut nfl, scheme, tr.clock.time)?;
+    let ntr = Transient::new(&mut nfl, scheme, tr.clock.time)?;
+    Ok((nfl, ntr, rho))
+}
+
+/// The flow solver on the mesh of the next rotor angle (sliding mesh by
+/// imprinting, D182 variant B), or on the deformed mesh (no `map`): built
+/// again on `next` as at the start of the run, with the cell fields, the
+/// old time levels and the fluxes of the faces that stay taken over from
+/// `fl` and `tr` (the faces that the imprint made new start from the
+/// interpolated flux). `t` is the time of the end of the step.
+///
+/// A deforming mesh (stage MS0) passes no `map`: the faces are the same,
+/// and the variable density goes along with its mass and old levels.
+#[allow(clippy::too_many_arguments)]
+fn rebuild_flow(
+    case: &FlowCase,
+    tv: &TimeValues,
+    target: &Target,
+    reference_cell: Option<usize>,
+    (mesh, geo): (&foehncraft_mesh::Mesh, &foehncraft_mesh::Geometry),
+    map: Option<&crate::sliding::FaceMap>,
+    t: f64,
+    fl: &mut Flow,
+    tr: &Transient,
+    wall_distance: Option<Vec<f64>>,
+) -> Result<(Flow, Transient)> {
+    let (mut nfl, mut ntr, rho) = new_flow(
+        case,
+        tv,
+        target,
+        reference_cell,
+        (mesh, geo),
+        t,
+        fl,
+        tr,
+        wall_distance,
+    )?;
     let state = fl.state()?;
     let old = tr.old_levels(fl)?;
-    let (state, old) = crate::sliding::carry(state, old, map, &nfl.disc, rho, nfl.phys.mu);
-    nfl.load(&state)?;
+    let (state, old) = match map {
+        Some(map) => crate::sliding::carry(state, old, map, &nfl.disc, rho, nfl.phys.mu),
+        None => (state, old),
+    };
+    take_over(fl, tr, &mut nfl, &mut ntr, &state, &old, map.is_none())?;
+    Ok((nfl, ntr))
+}
+
+/// The sliding mesh by imprinting on ranks (MPI step W7): the solver of
+/// this rank on its part of `next`, the mesh of the next rotor angle, and
+/// the part itself. The partition stays that of the start (the cells keep
+/// their numbers); the state and the old levels are gathered into the
+/// global order, carried onto the faces of `next` there by the code of
+/// one rank (bitwise its result) and handed back to the ranks. Collective.
+#[allow(clippy::too_many_arguments)]
+fn rebuild_on_ranks(
+    case: &FlowCase,
+    tv: &TimeValues,
+    target: &Target,
+    reference_cell: Option<usize>,
+    next: &crate::sliding::Working,
+    map: &crate::sliding::FaceMap,
+    t: f64,
+    fl: &mut Flow,
+    tr: &Transient,
+    wall_distance: Option<Vec<f64>>,
+    o: &crate::ranks::OnRanks,
+) -> Result<(crate::ranks::OnRanks, Flow, Transient)> {
+    let (mesh, geo) = (&next.mesh, &next.geo);
+    // the boundary arrays of the whole mesh, for the output and the carry
+    let phys = crate::case::physics(case)?;
+    let gphys = crate::case::physics_on(case, &phys, mesh, geo)?;
+    let analytic = case.analytic_at(t);
+    let at = bc::At {
+        analytic: analytic.as_ref(),
+        values: &tv.values,
+        t,
+        turning: &case.turning(),
+        hydrostatic: crate::buoyancy::hydrostatic(case),
+    };
+    let garrays = bc::arrays(mesh, geo, &case.boundary, &gphys, at)?;
+    let no =
+        crate::ranks::OnRanks::imprinted(o.comm.clone(), mesh, geo, garrays, Some(o.part.clone()))?;
+    let (mut nfl, mut ntr, rho) = new_flow(
+        case,
+        tv,
+        &no.target(target),
+        reference_cell,
+        (&no.local.mesh, &no.geo),
+        t,
+        fl,
+        tr,
+        wall_distance.map(|d| no.own(&d)),
+    )?;
+    // the state and the old levels of the whole mesh (collective)
+    let mut r = restart_part(fl, tr, &o.local.mesh, "", 0.0, None, None)?;
+    r.amg_matrix = None;
+    let mut r = o.restart(r)?;
+    let (old, clock, dt_next, scheme) = r.transient.take().context("the old levels")?;
+    let (state, old) = crate::sliding::carry(r.state.clone(), old, map, &no.disc, rho, nfl.phys.mu);
+    r.state = state;
+    r.transient = Some((old, clock, dt_next, scheme));
+    r.cell_id = mesh.cell_id[..mesh.n_cells].to_vec();
+    r.face_id = mesh.face_id.clone();
+    // this rank's part of them
+    let mut r = no.scatter(r)?;
+    let (old, ..) = r.transient.take().context("the old levels")?;
+    take_over(fl, tr, &mut nfl, &mut ntr, &r.state, &old, false)?;
+    Ok((no, nfl, ntr))
+}
+
+/// The deforming mesh on ranks (stage MS0 part 2): the solver of this
+/// rank on its part of the moved whole mesh `(mesh, geo)`, the part itself
+/// and the rank's part of the grid `grid` of the step. The partition stays
+/// that of the start (the cells keep their numbers) and the faces are the
+/// same, so the state and the old levels stay on their rank; the geometry
+/// and the swept volumes of the part are those of the whole mesh, so every
+/// rank solves bitwise the cells of the one-rank run. Collective.
+#[allow(clippy::too_many_arguments)]
+fn rebuild_deformed_on_ranks(
+    case: &FlowCase,
+    tv: &TimeValues,
+    target: &Target,
+    reference_cell: Option<usize>,
+    (mesh, geo): (&foehncraft_mesh::Mesh, &foehncraft_mesh::Geometry),
+    grid: &crate::motion::Grid,
+    t: f64,
+    fl: &mut Flow,
+    tr: &Transient,
+    o: &crate::ranks::OnRanks,
+) -> Result<(crate::ranks::OnRanks, Flow, Transient, crate::motion::Grid)> {
+    // the boundary arrays of the whole mesh, for the output
+    let phys = crate::case::physics(case)?;
+    let gphys = crate::case::physics_on(case, &phys, mesh, geo)?;
+    let analytic = case.analytic_at(t);
+    let at = bc::At {
+        analytic: analytic.as_ref(),
+        values: &tv.values,
+        t,
+        turning: &case.turning(),
+        hydrostatic: crate::buoyancy::hydrostatic(case),
+    };
+    let garrays = bc::arrays(mesh, geo, &case.boundary, &gphys, at)?;
+    let no =
+        crate::ranks::OnRanks::imprinted(o.comm.clone(), mesh, geo, garrays, Some(o.part.clone()))?;
+    // the wall distance of the whole moved mesh, each rank its cells
+    let wall_distance = if case.turbulence.is_laminar() {
+        None
+    } else {
+        Some(no.own(&crate::derived::wall_distance(case, mesh, geo)?))
+    };
+    let (mut nfl, mut ntr, _) = new_flow(
+        case,
+        tv,
+        &no.target(target),
+        reference_cell,
+        (&no.local.mesh, &no.geo),
+        t,
+        fl,
+        tr,
+        wall_distance,
+    )?;
+    let state = fl.state()?;
+    let old = tr.old_levels(fl)?;
+    take_over(fl, tr, &mut nfl, &mut ntr, &state, &old, true)?;
+    let (cells, faces) = no.grid_map(mesh);
+    let grid = grid.restricted(&cells, &faces);
+    Ok((no, nfl, ntr, grid))
+}
+
+/// Loads the carried `state` and old levels `old` into the new solver and
+/// takes over what goes on from the old one (`density`: the variable
+/// density goes along, a deforming mesh).
+fn take_over(
+    fl: &mut Flow,
+    tr: &Transient,
+    nfl: &mut Flow,
+    ntr: &mut Transient,
+    state: &crate::simplec::State,
+    old: &crate::transient::OldLevels,
+    density: bool,
+) -> Result<()> {
+    nfl.load(state)?;
+    if density && let Some(mut d) = fl.density.take() {
+        let tc = nfl.fluid_temperature()?.context("the temperature")?;
+        let tb = nfl.fluid_boundary_temperature(&tc)?;
+        d.set_geometry(&nfl.disc, &tc, &tb);
+        nfl.density = Some(d);
+        nfl.refresh_density()?;
+    }
     // (the floor and cap counts of the turbulence model go on, D69)
     if let (Some(a), Some(b)) = (fl.turbulence.as_ref(), nfl.turbulence.as_mut()) {
         b.health = a.health.clone();
     }
-    ntr.restore(&mut nfl, &old, tr.clock)?;
+    ntr.restore(nfl, old, tr.clock)?;
     nfl.iteration = fl.iteration;
     // (the multigrid setups restart with the new matrix: run_one adds up the
     // setups of the solvers it replaces)
     nfl.timings = fl.timings.clone();
-    Ok((nfl, ntr))
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1044,7 +1231,30 @@ fn run_one<F: FnMut(&str)>(
         }
         None => None,
     };
-    let (mesh, geo) = current(&work, mesh0, geo0);
+    // the deforming mesh (D91, stage MS0): the nodes at the start time; the
+    // mesh of the end of each step replaces it before the step
+    let mut deform = crate::motion::Deforming::new(&case, mesh0, time0.start_time)?;
+    // a continued run starts on the mesh of the restart time (MS0 part 2)
+    if let Some(d) = deform.as_mut()
+        && single
+        && restart::AVAILABLE
+        && let Some(path) = &case.run.restart
+    {
+        let r = restart::read(path)?;
+        if let Some(note) = d.restore(&r, path)? {
+            lg.note(&note);
+        }
+    }
+    let moving = imprint.is_some() || deform.is_some();
+    if let Some(d) = &deform {
+        lg.line(&format!(
+            "deforming mesh (D91, stage MS0): the nodes move by [mesh_motion] displacement; volume \
+             {:.6e} m³ at t = {:.6e} s; the solver is built again on the moved mesh in every step",
+            d.volume(),
+            d.time
+        ));
+    }
+    let (mesh, geo) = current(&work, &deform, mesh0, geo0);
     let phys = crate::case::physics(&case)?;
     let phys = crate::case::physics_on(&case, &phys, mesh, geo)?;
     let analytic0 = case.analytic_at(time0.start_time);
@@ -1064,11 +1274,18 @@ fn run_one<F: FnMut(&str)>(
     )?;
     // a run on ranks (MPI step W7): this rank's part, its own arrays and
     // physics; the global ones stay for the output
-    let on = match steer.ranks.clone() {
+    let mut on = match steer.ranks.clone() {
         Some(c) => {
             crate::ranks::supported_mesh(&case, mesh)?;
             bc::global_profile_extents(&mut case.boundary, mesh);
-            Some(crate::ranks::OnRanks::new(c, mesh, geo, arrays.clone())?)
+            Some(if work.is_some() || deform.is_some() {
+                // the geometry of the rotor angle (rigid turn of the base
+                // mesh) or of the deformed mesh (every rank moves the whole
+                // mesh), the partition kept for the whole run
+                crate::ranks::OnRanks::imprinted(c, mesh, geo, arrays.clone(), None)?
+            } else {
+                crate::ranks::OnRanks::new(c, mesh, geo, arrays.clone())?
+            })
         }
         None => None,
     };
@@ -1131,12 +1348,17 @@ fn run_one<F: FnMut(&str)>(
     // point inside a sliding rotor is a limit of variant B)
     let loc = Locator::new(mesh0, geo0);
     let mut spray = crate::spray::create(&case, mesh0, geo0, &loc)?;
+    // chemistry in the cells (SF2b): the reaction step of each time step
+    let mut chem = crate::chemistry::flow::Chemistry::of(&case, &geo0.cell_volume)?;
     // the datums of the reports (SP1b, D262): the parcels see the same ones
     let datum_built = crate::datum::build(&case, mesh0, geo0)?;
     if let Some(sp) = spray.as_mut() {
         sp.set_datums(datum_built.iter().map(|b| b.parcels.clone()).collect());
     }
-    let reference_cell = if arrays.has_pressure() {
+    let reference_cell = if on
+        .as_ref()
+        .map_or(arrays.has_pressure(), |o| o.arrays.has_pressure())
+    {
         None
     } else {
         let x = case.pressure.reference_point.unwrap_or_else(|| {
@@ -1206,7 +1428,10 @@ fn run_one<F: FnMut(&str)>(
     match &on {
         // the wall distance of the whole mesh, each rank its cells (W5)
         Some(o) if !case.turbulence.is_laminar() => {
-            let d = crate::derived::wall_distance(&case, mesh, geo)?;
+            let d = match turning_distance.as_mut() {
+                Some((_, d)) => std::mem::take(d),
+                None => crate::derived::wall_distance(&case, mesh, geo)?,
+            };
             crate::turbulence::attach_with(&mut fl, &case, smesh, sgeo, Some(o.own(&d)))?;
         }
         _ => crate::turbulence::attach_with(
@@ -1218,11 +1443,14 @@ fn run_one<F: FnMut(&str)>(
         )?,
     }
     // the sliding mesh (D182): the rotating zone and the shift of its data
-    let slide = crate::sliding::attach(&case, mesh, &fl.disc, dt0)?;
+    // (on ranks the plan of the whole mesh)
+    let slide =
+        crate::sliding::attach(&case, mesh, on.as_ref().map_or(&fl.disc, |o| &o.disc), dt0)?;
     // the rotating zones: the frames of `[[mrf]]` (a transient frozen rotor,
-    // D185) and the grid flux of the sliding rotors (D182)
-    if (slide.is_some() || !case.mrf.is_empty())
-        && let Some(notes) = crate::frame::attach(&mut fl, &case, mesh, geo)?
+    // D185), the grid flux of the sliding rotors (D182) and the rotating
+    // frame of the whole domain (`flow.frame_rotation`)
+    if (slide.is_some() || !case.mrf.is_empty() || case.flow.frame_rotation != [0.0; 3])
+        && let Some(notes) = crate::frame::attach(&mut fl, &case, smesh, sgeo)?
     {
         for l in &notes.lines {
             lg.line(l);
@@ -1237,7 +1465,7 @@ fn run_one<F: FnMut(&str)>(
     });
     let mut tr = Transient::new(&mut fl, time0.scheme, time0.start_time)?;
     if let Some(sl) = &slide {
-        sl.install(&mut fl, &mut tr)?;
+        sl.install(&mut fl, &mut tr, on.as_ref())?;
     }
     let mut af = AnalyticFaces::new(&case, smesh, &ub0);
     let mut dt = dt0;
@@ -1251,7 +1479,11 @@ fn run_one<F: FnMut(&str)>(
         None
     };
     if let Some(path) = &restart_file {
-        let r = restart::read(path)?;
+        let mut r = restart::read(path)?;
+        // the deforming mesh took its geometry at the start (MS0 part 2)
+        if deform.is_some() {
+            r.geometry = None;
+        }
         let (r, same) = match &on {
             // every rank its part, by global identity (W6)
             Some(o) => (o.scatter(r)?, true),
@@ -1494,6 +1726,10 @@ fn run_one<F: FnMut(&str)>(
         );
         hhead.push_str(",p0,mass,rho_min,rho_max");
     }
+    if deform.is_some() {
+        hunits.push_str(", volume m³ (of the deforming mesh, stage MS0)");
+        hhead.push_str(",volume");
+    }
     let mut history = History::new(
         hist_dir,
         &suffix_name("history", desc, last),
@@ -1668,11 +1904,30 @@ fn run_one<F: FnMut(&str)>(
     } else {
         None
     };
+    let mut chem_csv = match (&chem, &case.species) {
+        (Some(_), Some(sp)) => {
+            let names = crate::species::Resolved::of(sp)?.names;
+            Some(History::new(
+                out,
+                &suffix_name("chemistry", desc, last),
+                &crate::case::csv_preamble(
+                    "chemistry",
+                    name,
+                    None,
+                    crate::chemistry::flow::Chemistry::CSV_UNITS,
+                ),
+                &crate::chemistry::flow::Chemistry::csv_head(&names),
+                cont,
+            )?)
+        }
+        _ => None,
+    };
     let mut spray_lost_warned = false;
     // the two-way coupling over the run and of the last step (SP2)
     let mut spray_coupling: Option<crate::spray::CouplingSummary> = None;
     let mut spray_step: Option<crate::spray::StepCoupling> = None;
     let mut coupling_warned = false;
+    let mut limiter_warned = false;
     let mut reports = (last && !datum_built.is_empty())
         .then(|| crate::datum::Reports::new(datum_built, out, name, cont));
     let mut series = last.then(|| crate::series::Series::new(out, name, cont));
@@ -1760,6 +2015,8 @@ fn run_one<F: FnMut(&str)>(
     let (mut dt_min, mut dt_max, mut cfl_max) = (f64::INFINITY, 0.0f64, 0.0f64);
     let (mut outer_sum, mut cg_sum, mut nsteps) = (0usize, 0usize, 0usize);
     let mut rejected = 0usize;
+    // the largest closure of the space conservation law of a step (MS0)
+    let mut gcl_worst = 0.0_f64;
     let mut last_rep = StepReport::default();
     let mut sched = crate::schedule::Runner::default();
     // the thermal acceleration of the solids (D213)
@@ -1897,25 +2154,88 @@ fn run_one<F: FnMut(&str)>(
             let d = turning_distance.as_mut().map(|(twd, _)| {
                 twd.at_angles(&next.angles, &next.geo.cell_centroid[..next.mesh.n_cells])
             });
-            let (nfl, ntr) = rebuild_flow(
-                &case,
-                &tv,
-                &target,
-                reference_cell,
-                &next,
-                &map,
-                t0 + h,
-                &mut fl,
-                &tr,
-                d,
-            )?;
+            let (nfl, ntr) = match on.as_ref() {
+                None => rebuild_flow(
+                    &case,
+                    &tv,
+                    &target,
+                    reference_cell,
+                    (&next.mesh, &next.geo),
+                    Some(&map),
+                    t0 + h,
+                    &mut fl,
+                    &tr,
+                    d,
+                )?,
+                Some(o) => {
+                    let (no, nfl, ntr) = rebuild_on_ranks(
+                        &case,
+                        &tv,
+                        &target,
+                        reference_cell,
+                        &next,
+                        &map,
+                        t0 + h,
+                        &mut fl,
+                        &tr,
+                        d,
+                        o,
+                    )?;
+                    on = Some(no);
+                    (nfl, ntr)
+                }
+            };
             setups_past.0 += fl.amg_setups;
             setups_past.1 += fl.sweep_setups;
             fl = nfl;
             tr = ntr;
             work = Some(next);
         }
-        let (mesh, geo) = current(&work, mesh0, geo0);
+        // D91 (stage MS0): the deforming mesh at the end of the step, the
+        // solver built on it, the grid of the step attached
+        if let Some(d) = deform.as_mut() {
+            let grid = d.advance(t0 + h)?;
+            gcl_worst = gcl_worst.max(d.closure(&grid));
+            let (nfl, ntr, grid) = match on.as_ref() {
+                None => {
+                    let (nfl, ntr) = rebuild_flow(
+                        &case,
+                        &tv,
+                        &target,
+                        reference_cell,
+                        (&d.mesh, &d.geo),
+                        None,
+                        t0 + h,
+                        &mut fl,
+                        &tr,
+                        None,
+                    )?;
+                    (nfl, ntr, grid)
+                }
+                Some(o) => {
+                    let (no, nfl, ntr, grid) = rebuild_deformed_on_ranks(
+                        &case,
+                        &tv,
+                        &target,
+                        reference_cell,
+                        (&d.mesh, &d.geo),
+                        &grid,
+                        t0 + h,
+                        &mut fl,
+                        &tr,
+                        o,
+                    )?;
+                    on = Some(no);
+                    (nfl, ntr, grid)
+                }
+            };
+            setups_past.0 += fl.amg_setups;
+            setups_past.1 += fl.sweep_setups;
+            fl = nfl;
+            tr = ntr;
+            fl.attach_grid(grid)?;
+        }
+        let (mesh, geo) = current(&work, &deform, mesh0, geo0);
         let (smesh, sgeo) = match &on {
             Some(o) => (&o.local.mesh, &o.geo),
             None => (mesh, geo),
@@ -1948,11 +2268,24 @@ fn run_one<F: FnMut(&str)>(
                         geo,
                         loc: &loc,
                     };
-                    let mut hk = crate::spray::TwoWay::new(sp, env, geo, t0, h);
+                    let mut hk = crate::spray::TwoWay::new(
+                        sp,
+                        env,
+                        geo,
+                        t0,
+                        h,
+                        crate::spray::VapourLink::of(&case),
+                    );
                     let r = tr.step_with(&mut fl, h, Some(&mut hk));
                     fl.spray_momentum = None;
                     spray_passes = Some(hk.finish());
                     r
+                }
+                // the reaction step of the cells (SF2b)
+                _ if chem.is_some() => {
+                    let ch = chem.as_mut().context("chemistry")?;
+                    let mut hk = crate::chemistry::flow::Step::new(ch, h, t0 + h);
+                    tr.step_with(&mut fl, h, Some(&mut hk))
                 }
                 _ => tr.step(&mut fl, h),
             };
@@ -2039,6 +2372,12 @@ fn run_one<F: FnMut(&str)>(
                             on.as_ref(),
                         )?;
                         rs.spray = crate::spray::state(spray.as_ref())?;
+                        rs.geometry = deform
+                            .as_ref()
+                            .map(crate::motion::Deforming::restart_geometry);
+                        rs.geometry = deform
+                            .as_ref()
+                            .map(crate::motion::Deforming::restart_geometry);
                         if lead {
                             restart::write(&out.join("restart.h5"), &rs)?;
                         }
@@ -2195,6 +2534,9 @@ fn run_one<F: FnMut(&str)>(
                 let [p0, mass, lo, hi] = d.history_values(on.as_ref());
                 let _ = write!(sc, ",{p0:e},{mass:e},{lo:e},{hi:e}");
             }
+            if let Some(d) = &deform {
+                let _ = write!(sc, ",{:e}", d.volume());
+            }
             history.row(&format!(
                 "{n},{:e},{:e},{:e},{:e},{:e},{:e},{:e},{},{}{sc}",
                 rp.time,
@@ -2231,6 +2573,11 @@ fn run_one<F: FnMut(&str)>(
                 steer.record.row(&row);
             }
         }
+        if let (Some(ch), Some(csv)) = (chem.as_ref(), chem_csv.as_mut())
+            && let Some(row) = ch.csv_row(n)
+        {
+            csv.row(&row);
+        }
         if let (Some(sp), Some(csv)) = (spray.as_mut(), spray_csv.as_mut()) {
             let sol = out_sol!();
             let (lost, file) = match spray_passes.take() {
@@ -2253,6 +2600,17 @@ fn run_one<F: FnMut(&str)>(
                         lg.warn(&format!("{}: {m}", crate::diag::SPRAY_COUPLING));
                         steer.event(crate::diag::SPRAY_COUPLING, n, &m);
                     }
+                    if c.limiter_cells > 0 && !limiter_warned {
+                        limiter_warned = true;
+                        let m = format!(
+                            "step {n}: the saturation limiter (D253) held back {:.3e} kg/s of \
+                             vapour in {} spray cells (more passes or a smaller step; \
+                             `spray.csv` counts every step)",
+                            c.limiter_mass, c.limiter_cells
+                        );
+                        lg.warn(&format!("{}: {m}", crate::diag::SPRAY_LIMITER));
+                        steer.event(crate::diag::SPRAY_LIMITER, n, &m);
+                    }
                     spray_step = Some(c);
                     (lost, file)
                 }
@@ -2262,6 +2620,18 @@ fn run_one<F: FnMut(&str)>(
                             .energy_gas(fl.dev.as_mut())?
                             .map(|(t, cp, k)| crate::spray::GasHeat { t, cp, k }),
                         None => None,
+                    };
+                    // the vapour the parcels evaporate into (SP4)
+                    let vapour = match (crate::spray::VapourLink::of(&case), fl.scalars.as_ref()) {
+                        (Some(l), Some(sc)) => crate::spray::GasVapour::from_parts(
+                            sc,
+                            fl.dev.as_mut(),
+                            &sol.phys,
+                            fl.density.as_deref(),
+                            &l,
+                            heat.as_ref(),
+                        )?,
+                        _ => None,
                     };
                     crate::spray::step(
                         &case,
@@ -2277,6 +2647,7 @@ fn run_one<F: FnMut(&str)>(
                         name,
                         csv,
                         heat.as_ref(),
+                        vapour.as_ref(),
                     )?
                 }
             };
@@ -2328,7 +2699,7 @@ fn run_one<F: FnMut(&str)>(
                 m.add(h, &x);
             }
             if let Some(ser) = stat_series.as_mut() {
-                let here = imprint.is_some().then(|| probes.relocated(mesh, geo));
+                let here = moving.then(|| probes.relocated(mesh, geo));
                 let pr = here.as_ref().unwrap_or(&probes);
                 let mut row = Vec::with_capacity(ser.names.len());
                 for (u, p) in pr.values(&sol, geo) {
@@ -2623,7 +2994,7 @@ fn run_one<F: FnMut(&str)>(
                 if let Some(fh) = forces.as_mut() {
                     fh.row(&row);
                 }
-                let here = imprint.is_some().then(|| probes.relocated(mesh, geo));
+                let here = moving.then(|| probes.relocated(mesh, geo));
                 let pr = here.as_ref().unwrap_or(&probes);
                 let (vals, temps) = match (&full_probes, &full_fields) {
                     (Some((fp, v)), Some(st)) => (fp.values(st, &v.geo), fp.temperatures(st)),
@@ -2719,6 +3090,9 @@ fn run_one<F: FnMut(&str)>(
                 on.as_ref(),
             )?;
             rs.spray = crate::spray::state(spray.as_ref())?;
+            rs.geometry = deform
+                .as_ref()
+                .map(crate::motion::Deforming::restart_geometry);
             if lead {
                 restart::write(&out.join("restart.h5"), &rs)?;
             }
@@ -2768,10 +3142,13 @@ fn run_one<F: FnMut(&str)>(
         }
     }
     // the mesh of the last rotor angle (D182 variant B)
-    let (mesh, geo) = current(&work, mesh0, geo0);
+    let (mesh, geo) = current(&work, &deform, mesh0, geo0);
     history.flush()?;
     balance_csv.flush()?;
     if let Some(f) = spray_csv.as_mut() {
+        f.flush()?;
+    }
+    if let Some(f) = chem_csv.as_mut() {
         f.flush()?;
     }
     if let Some(sp) = spray.as_ref() {
@@ -3034,7 +3411,7 @@ fn run_one<F: FnMut(&str)>(
     }
     // the imprinted sliding mesh (D182): the cells of the rotor have moved,
     // points are found on the mesh of the end of the run
-    let loc_end = imprint.is_some().then(|| Locator::new(mesh, geo));
+    let loc_end = moving.then(|| Locator::new(mesh, geo));
     let loc_end = loc_end.as_ref().unwrap_or(&loc);
     let reference = case
         .verification
@@ -3056,13 +3433,27 @@ fn run_one<F: FnMut(&str)>(
     let rotor_values = crate::case::rotor_report(&sol, mesh, geo, &case, lg, warnings);
     let wall_probe_values = crate::case::wall_probes(&case, mesh, geo, &sol);
     let wall_crossing_values = crate::case::wall_crossings(&case, mesh, geo, &sol);
-    let total: f64 = boundaries.iter().map(|p| p.mass_flow).exact_sum();
+    let total: f64 = boundaries.iter().map(|p| p.mass_flow).exact_sum()
+        // less the mass an evaporating spray gives the gas (SP4)
+        - fl
+            .spray_mass
+            .as_ref()
+            .map_or(0.0, |r| r.iter().map(|x| x.1).exact_sum());
     let umax = (0..nc).map(|c| norm(sol.u.get(c))).fold(0.0f64, f64::max);
     let big = boundaries
         .iter()
         .map(|p| p.mass_flow.abs().max(case.rho() * umax * p.area))
         .fold(0.0f64, f64::max);
-    let mass_imbalance = if big > 0.0 { total / big } else { 0.0 };
+    // in a reacting flow the mass in the domain keeps changing (a flame
+    // turns dense fresh gas into light burnt gas): the check is then the
+    // mass account of the last step, outflow plus storage (D119); other
+    // variable-density cases keep the net outflow (a closed box has no
+    // flow to scale the account by)
+    let mass_imbalance = match (&last_balance, case.chemistry.is_some()) {
+        (Some(b), true) => b.mass.relative,
+        _ if big > 0.0 => total / big,
+        _ => 0.0,
+    };
     let coefficients = monitor::coefficients(&case, &boundaries);
     if let Some([cd, cl]) = coefficients {
         verification.push_kv("Force coefficients", format!("C_D {cd:.5}, C_L {cl:.5}"));
@@ -3073,7 +3464,7 @@ fn run_one<F: FnMut(&str)>(
     let benchmark = match bench {
         Some(b @ Benchmark::SchaferTurek2d1) => {
             benchmark_coefficients(&case, &boundaries, &[], mesh).map(|[cd, cl]| {
-                let vals = if imprint.is_some() {
+                let vals = if moving {
                     probes.relocated(mesh, geo).values(&sol, geo)
                 } else {
                     probes.values(&sol, geo)
@@ -3285,7 +3676,30 @@ fn run_one<F: FnMut(&str)>(
             ),
         };
     let immersed = crate::immersed::forces(&case, mesh, geo, &sol.u, &sol.phys)?;
+    let chemistry = match chem.as_ref() {
+        Some(ch) => {
+            let s = ch.summary(&case, &boundaries)?;
+            match s.flame_speed {
+                Some(v) => {
+                    let w = s.flame_speed_window.unwrap_or_default();
+                    lg.line(&format!(
+                        "chemistry {}: flame speed {v:.5} m/s (fuel consumption, mean over \
+                         {:.4e} … {:.4e} s), heat release {:.4e} W",
+                        s.mechanism, w[0], w[1], s.heat_release
+                    ));
+                    verification.push_kv("Flame speed", format!("{v:.5} m/s"));
+                }
+                None => lg.line(&format!(
+                    "chemistry {}: heat release {:.4e} W",
+                    s.mechanism, s.heat_release
+                )),
+            }
+            Some(s)
+        }
+        None => None,
+    };
     let solve = Solve {
+        chemistry,
         immersed,
         topology: None,
         density,
@@ -3334,6 +3748,12 @@ fn run_one<F: FnMut(&str)>(
             acceleration: accel_summary,
             cycle_coupling: cycle_summary,
             frozen_flow: frozen_summary,
+            mesh_motion: deform.as_ref().map(|d| crate::motion::MotionSummary {
+                volume: d.volume(),
+                volume_ratio_min: d.volume_ratio.0,
+                volume_ratio_max: d.volume_ratio.1,
+                closure_max: gcl_worst,
+            }),
         }),
         datums: datum_summary,
         spray: spray_summary,

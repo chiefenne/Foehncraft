@@ -47,6 +47,7 @@ use crate::scalar::{ScalarBoundary, ScalarSection, ThermalWallFunction};
 use anyhow::Result;
 use foehncraft_core::exact::ExactSumIter as _;
 use foehncraft_kernels::species as ks;
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
@@ -54,14 +55,27 @@ use std::sync::OnceLock;
 /// The prefix of the scalar field of a transported species (`Y_CH4`).
 pub const PREFIX: &str = "Y_";
 
-/// The scalar field name of species `s`.
+/// The scalar field name of species `s`: `Y_` and the name with every
+/// character other than a letter or a digit as `_` (`CH2(S)`: `Y_CH2_S`).
 pub fn field_name(s: &str) -> String {
-    format!("{PREFIX}{s}")
+    let n: String = s
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+        .collect();
+    format!("{PREFIX}{}", n.trim_end_matches('_'))
 }
 
 /// The species data file (GRI-Mech 3.0, written by
 /// `tools/data/gri30_species.py`).
 pub const DATA: &str = include_str!("../data/species-gri30.toml");
+
+/// The vapours of the spray liquids (D320, written by
+/// `tools/data/vapour_species.py`): NASA-7 fits to the NIST WebBook
+/// ideal-gas heat capacities and Lennard-Jones data of Tee, Gotoh and
+/// Stewart (1966). The entropy constant is set only where NIST lists a
+/// standard entropy (n-dodecane); the other vapours are not for chemical
+/// equilibrium. NC12H26 is the kernel's `fuels::N_DODECANE.ideal_gas`.
+pub const DATA_VAPOURS: &str = include_str!("../data/species-vapours.toml");
 
 /// One species of the data file.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -103,9 +117,13 @@ pub fn database() -> &'static BTreeMap<String, Record> {
     DB.get_or_init(|| {
         // the file is part of the build; a test reads it (an error here is
         // a broken data file, reported by `Resolved::of`)
-        toml::from_str::<DataFile>(DATA)
+        let mut db = toml::from_str::<DataFile>(DATA)
             .map(|d| d.species)
-            .unwrap_or_default()
+            .unwrap_or_default();
+        if let Ok(v) = toml::from_str::<DataFile>(DATA_VAPOURS) {
+            db.extend(v.species);
+        }
+        db
     })
 }
 
@@ -194,7 +212,8 @@ pub enum PerSpecies {
 }
 
 impl PerSpecies {
-    fn of(&self, s: &str, default: f64) -> f64 {
+    /// The value of species `s` (`default` where a table leaves it out).
+    pub fn of(&self, s: &str, default: f64) -> f64 {
         match self {
             Self::All(v) => *v,
             Self::Each(m) => m.get(s).copied().unwrap_or(default),
@@ -719,6 +738,8 @@ pub struct Link {
     /// The smallest closure fraction before it is held at zero (the sum of
     /// the transported fractions above 1 by this much).
     pub closure_min: f64,
+    /// The factors of Wilke's rule per pair of species.
+    pairs: Vec<f64>,
 }
 
 impl Link {
@@ -746,6 +767,7 @@ impl Link {
             cell: Vec::new(),
             face: Vec::new(),
             closure_min: 0.0,
+            pairs: Vec::new(),
         }
     }
 
@@ -787,32 +809,44 @@ impl Link {
         self.closure_min = min;
         let tf = self.t_fluid;
         let tc = |c: usize| t.map_or(tf, |(t, _)| t[c]);
-        let mut yy = [0.0; ks::MAX_SPECIES];
         let sp = &self.res.data;
+        if self.pairs.len() != n * n {
+            self.pairs = vec![0.0; n * n];
+            ks::wilke_pairs(sp, &mut self.pairs);
+        }
+        let pairs = &self.pairs;
+        let y_cell = &self.y_cell;
+        // every point on its own: the same bits on any number of threads
         self.cell = (0..nc)
+            .into_par_iter()
             .map(|c| {
-                for (v, y) in yy.iter_mut().zip(&self.y_cell) {
+                let mut yy = [0.0; ks::MAX_SPECIES];
+                for (v, y) in yy.iter_mut().zip(y_cell) {
                     *v = y[c];
                 }
-                ks::mixture(sp, &yy[..n], tc(c))
+                ks::mixture_with(sp, pairs, &yy[..n], tc(c))
             })
             .collect();
+        let (owner, neighbour, weight, y_bface) =
+            (&self.owner, &self.neighbour, &self.weight, &self.y_bface);
         self.face = (0..nf)
+            .into_par_iter()
             .map(|f| {
+                let mut yy = [0.0; ks::MAX_SPECIES];
                 let tfv = if f < ni {
-                    let (o, nn) = (self.owner[f] as usize, self.neighbour[f] as usize);
-                    let w = self.weight[f];
-                    for (v, y) in yy.iter_mut().zip(&self.y_cell) {
+                    let (o, nn) = (owner[f] as usize, neighbour[f] as usize);
+                    let w = weight[f];
+                    for (v, y) in yy.iter_mut().zip(y_cell) {
                         *v = w * y[o] + (1.0 - w) * y[nn];
                     }
                     w * tc(o) + (1.0 - w) * tc(nn)
                 } else {
-                    for (v, y) in yy.iter_mut().zip(&self.y_bface) {
+                    for (v, y) in yy.iter_mut().zip(y_bface) {
                         *v = y[f - ni];
                     }
                     t.map_or(tf, |(_, tb)| tb[f - ni])
                 };
-                ks::mixture(sp, &yy[..n], tfv)
+                ks::mixture_with(sp, pairs, &yy[..n], tfv)
             })
             .collect();
     }
@@ -868,6 +902,18 @@ pub struct SpeciesFlow {
     pub defect: f64,
     /// The storage Σ ρ V ∂Y/∂t of a time step (kg/s), 0 steady.
     pub storage: f64,
+    /// The net production by the reactions Σ ρ V S (kg/s) of the last
+    /// reaction step (SF2b), 0 without chemistry.
+    pub reaction: f64,
+    /// The mass an evaporating spray gives the species (kg/s, SP5): the
+    /// vapour S_v, the mixture the continuity source S_c; the continuity
+    /// defect is then taken against S_c.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub spray: f64,
+}
+
+fn is_zero(x: &f64) -> bool {
+    *x == 0.0
 }
 
 /// The ledger accounts of the species and of the elements (D119): one
@@ -900,6 +946,23 @@ pub fn accounts(flows: &[SpeciesFlow], res: &Resolved) -> Vec<crate::balance::Ac
             .exact_sum();
         a.terms
             .push(Term::volume("continuity defect", TermKind::Source, defect));
+        if flows.iter().any(|s| s.reaction != 0.0) {
+            let r: f64 = flows
+                .iter()
+                .enumerate()
+                .map(|(i, s)| weights(i) * s.reaction)
+                .exact_sum();
+            a.terms.push(Term::volume("reaction", TermKind::Source, r));
+        }
+        if flows.iter().any(|s| s.spray != 0.0) {
+            let spray: f64 = flows
+                .iter()
+                .enumerate()
+                .map(|(i, s)| weights(i) * s.spray)
+                .exact_sum();
+            a.terms
+                .push(Term::volume("spray vapour", TermKind::Source, spray));
+        }
         a.storage = Some(
             flows
                 .iter()
@@ -988,6 +1051,9 @@ pub(crate) fn summary_on(
     let mut closure_min = link.closure_min;
     let mut closure_y = link.y_cell[res.len() - 1].clone();
     let mut data = sc.species_host(fl.dev.as_mut())?;
+    // chemistry in the cells is refused on ranks (`ranks::supported`), so
+    // the reaction rates are those of one rank whenever they exist
+    let reaction = sc.species_reaction();
     let mut old = if transient {
         sc.species_old(fl.dev.as_mut())?
     } else {
@@ -1040,6 +1106,18 @@ pub(crate) fn summary_on(
             }
         }
     }
+    // an evaporating spray (SP5): per spray cell (cell, a, b, S_c); the
+    // vapour receives a − b Y, the mixture S_c (sprays are refused on ranks)
+    let spray: Vec<(usize, f64, f64, f64)> = sc
+        .spray_species()
+        .map(|s| {
+            s.rows
+                .iter()
+                .map(|&(c, a, b, m, _)| (c as usize, a, b, m))
+                .collect()
+        })
+        .unwrap_or_default();
+    let vapour_field = sc.spray_species().map(|s| s.vapour.clone());
     let rho_const = fl.phys.rho;
     let rho = |c: usize| rho_cells.as_ref().map_or(rho_const, |r| r[c]);
     let n = res.len();
@@ -1055,6 +1133,10 @@ pub(crate) fn summary_on(
         total.boundaries.push((p.name.clone(), conv, 0.0));
     }
     total.defect = div.iter().exact_sum();
+    if !spray.is_empty() {
+        total.defect -= spray.iter().map(|r| r.3).exact_sum();
+        total.spray = spray.iter().map(|r| r.3).exact_sum();
+    }
     for (k, (phi, a, b, gamma, out)) in data.iter().enumerate() {
         let mut s = SpeciesFlow {
             species: res.names[k].clone(),
@@ -1081,6 +1163,17 @@ pub(crate) fn summary_on(
             ));
         }
         s.defect = (0..nc).map(|c| phi[c] * div[c]).exact_sum();
+        if let Some(r) = reaction.as_ref().map(|r| r[k]) {
+            s.reaction = (0..nc)
+                .map(|c| rho(c) * geo.cell_volume[c] * r[c])
+                .exact_sum();
+        }
+        if !spray.is_empty() {
+            s.defect -= spray.iter().map(|r| phi[r.0] * r.3).exact_sum();
+            if vapour_field.as_deref() == Some(field_name(&res.names[k]).as_str()) {
+                s.spray = spray.iter().map(|r| r.1 - r.2 * phi[r.0]).exact_sum();
+            }
+        }
         if let Some((st, levels)) = &old {
             let (o1, o2) = &levels[k];
             s.storage = (0..nc)
@@ -1106,6 +1199,8 @@ pub(crate) fn summary_on(
     }
     cl.defect -= flows.iter().map(|s| s.defect).exact_sum();
     cl.storage = -flows.iter().map(|s| s.storage).exact_sum();
+    cl.reaction = -flows.iter().map(|s| s.reaction).exact_sum();
+    cl.spray -= flows.iter().map(|s| s.spray).exact_sum();
     let (lo, hi) = closure_y[..nc]
         .iter()
         .fold((f64::INFINITY, f64::NEG_INFINITY), |(l, h), &v| {
@@ -1167,9 +1262,56 @@ mod tests {
     #[test]
     fn the_data_file_has_the_53_species_of_gri_mech() {
         let d = database();
-        assert_eq!(d.len(), 53);
+        assert_eq!(d.len(), 53 + 3, "GRI-Mech 3.0 and the three spray vapours");
         assert!((d["CH4"].molar_mass - 0.01604246).abs() < 1e-8);
         assert!((d["N2"].molar_mass - 0.0280134).abs() < 1e-8);
+        // NO, not the boolean `false` of a YAML 1.1 reader
+        assert!(d.contains_key("NO") && !d.contains_key("False"));
+        // the same species as the mechanism
+        let m = crate::chemistry::Mechanism::load("gri30", None).unwrap();
+        for s in &m.species {
+            assert!(d.contains_key(s), "{s}");
+        }
+    }
+
+    /// The spray vapours (D320): c_p of the fits against the NIST WebBook
+    /// ideal-gas values (Scott 1974; for n-dodecane the reference equation
+    /// of Lemmon and Huber (2004) at 1 Pa) and the kinetic-theory viscosity
+    /// of n-heptane vapour against the NIST fluid table (7.209e-6 Pa s at
+    /// 371.2 K, 0.1 MPa) and of n-dodecane vapour (7.660e-6 Pa s at 500 K,
+    /// 1 Pa) within 5 %.
+    #[test]
+    fn the_spray_vapours_meet_the_nist_data() {
+        for (n, t, cp) in [
+            ("NC7H16", 400.0, 210.66),
+            ("NC7H16", 800.0, 342.25),
+            ("IC8H18", 500.0, 293.42),
+            ("IC8H18", 1200.0, 494.55),
+            ("NC12H26", 500.0, 426.12),
+            ("NC12H26", 700.0, 532.92),
+        ] {
+            let s = db(n);
+            let c = s.cp(t) * s.molar_mass;
+            assert!((c / cp - 1.0).abs() < 6e-3, "{n} {t}: {c} against {cp}");
+        }
+        let mu = db("NC7H16").viscosity(371.208);
+        assert!((mu / 7.20901e-6 - 1.0).abs() < 0.05, "{mu}");
+        let mu = db("NC12H26").viscosity(500.0);
+        assert!((mu / 7.65991e-6 - 1.0).abs() < 0.05, "{mu}");
+    }
+
+    /// The n-dodecane vapour of the data file is the ideal gas of the
+    /// real-fluid kernel (both written from `tools/data/dodecane_ideal_gas.py`
+    /// data), so that the spray's vapour and the flow's species agree.
+    #[test]
+    fn the_dodecane_vapour_is_the_kernel_ideal_gas() {
+        let a = db("NC12H26");
+        let b = foehncraft_kernels::realfluid::fuels::N_DODECANE.ideal_gas;
+        assert_eq!(a.t_range, b.t_range);
+        assert_eq!(a.low, b.low);
+        assert_eq!(a.high, b.high);
+        assert_eq!((a.well_depth, a.diameter), (b.well_depth, b.diameter));
+        assert!((a.molar_mass / b.molar_mass - 1.0).abs() < 1e-5);
     }
 
     /// Pure-gas viscosities and conductivities at 300 K against measured

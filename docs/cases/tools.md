@@ -21,8 +21,16 @@ envelope is on standard output ([gallery 171](../gallery/runs.md#tool-registry),
 | `equilibrium_methane_air.json` | `chemistry.equilibrium` | the adiabatic flame state of stoichiometric methane and air from 298.15 K with GRI-Mech 3.0 (T = 2224.9 K, SF2) |
 | `reactor_methane_air.json` | `chemistry.reactor` | the constant-pressure reactor of `reactor_methane_air_gri30.toml`: ignition after 3.4 ms and the end state at the equilibrium, the trace in `output/tools/reactor/reactor.csv` |
 | `page_cavity.json` | `result.page` | the first 100 rows of the residual history of that run; the answer's `next_cursor` gives the next page |
+| `circuits_evaporator.json` | `circuits.run` | the once-through evaporator tube at 7 MPa into `output/evaporator_tube` ([gallery 312](../gallery/circuits.md#water-steam-circuits)) |
+| `circuits_drum_loop.json` | `circuits.run` | the natural circulation loop of a drum boiler into `output/drum_natural_circulation` ([gallery 312](../gallery/circuits.md#water-steam-circuits)) |
 | `structure_reed_beam.json` | `structure.run` | the reed valve beam with a rigid clamp: static deflection and eight modes into `output/reed_beam` ([gallery 295](../gallery/structure.md#reed-beam)) |
 | `structure_reed_beam_clamp_springs.json` | `structure.run` | the same reed on clamp springs (D290) into `output/reed_beam_clamp_springs` |
+| `structure_reed_plate.json` | `structure.run` | the reed petal as MITC4 shells on clamp springs along its edge into `output/reed_plate` ([gallery 297](../gallery/structure.md#reed-plate)) |
+| `structure_reed_plate_pulse.json` | `structure.run` | the reed petal struck by a pressure pulse, in time, into `output/reed_plate_pulse` ([gallery 299](../gallery/structure.md#reed-dynamics)) |
+| `structure_reed_plate_hot.json` | `structure.run` | the hot reed petal: thermal bending into `output/reed_plate_hot` |
+| `structure_reed_stop.json` | `structure.run` | the curved reed stop as twenty-node hexahedra read from Gmsh into `output/reed_stop` ([gallery 300](../gallery/structure.md#reed-stop)) |
+| `structure_reed_valve_stop.json` | `structure.run` | the reed petal between its seat and its stop, lifted by a pressure pulse, into `output/reed_valve_stop` ([gallery 302](../gallery/structure.md#reed-valve-contact)) |
+| `structure_heat_sink_hot.json` | `structure.run` | the heat sink loaded by the temperatures of the turbulent CHT case (run that first) into `output/heat_sink_hot` ([gallery 308](../gallery/structure.md#heat-sink-hot)) |
 | `structure_fit_clamp.json` | `structure.fitclamp` | the rotational clamp spring that puts the reed's first mode at a measured 150 Hz |
 
 The folder `mcp/` holds what an assistant session through `foehn mcp`
@@ -57,3 +65,17 @@ The folder `mcp/heat_sink_study/` holds the recorded study of an assistant
 | `mcp/heat_sink_study/journal.jsonl` | the session as `foehn mcp` journaled it: two checks, three refused runs, two live status calls, four sweep runs, the reads; `foehn run --script` replays it |
 | `mcp/heat_sink_study/results.csv` | what the assistant read from each run: iterations, the mean and maximum temperature of the base top, the pressure drop, the cell-hours spent |
 | `mcp/heat_sink_study/session.csv` | the 27 calls of the session with start, duration, outcome and refusal code; `tools/plot/heat_sink_agent.py` draws the timeline from it |
+
+The folder `mcp/spray_cooler/` holds the recorded chat of an assistant
+that sizes a spray cooler from one question
+([gallery 316](../gallery/runs.md#spray-cooler-chat),
+[recipe 316](../recipes/runs.md#spray-cooler-chat),
+[agents.md](../agents.md#a-recorded-chat-sizing-a-spray-cooler)):
+
+| File | Shows |
+|---|---|
+| `mcp/spray_cooler/foehn-mcp.toml` | the action table of the chat: start runs allowed, everything else refused, a cap of 40 000 cells |
+| `mcp/spray_cooler/spray_cooler.toml` | the case the assistant wrote: a duct 3 m by 0.2 m (2D), air at 300 °C and 5 m/s, k-ω SST, evaporating water as steady spray streams, outlet and mid-duct datums |
+| `mcp/spray_cooler/spray_cooler_nozzles.toml`, `_3.5.toml`, `_3.55.toml` | the three nozzles with 3, 3.5 and 3.55 g/s of water in all, switched with `set spray.include=…` |
+| `mcp/spray_cooler/journal.jsonl` | the session as `foehn mcp` journaled it, refusals and slips included; `foehn run --script` replays it |
+| `mcp/spray_cooler/results.csv` | what the assistant read from each run: the mass-flow mean outlet temperature, the vapour, the water evaporated |

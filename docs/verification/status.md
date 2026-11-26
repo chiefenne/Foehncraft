@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07)), never typed in. The same as data: [grades.json](grades.json).
 
-**132 features: 50 verified, 79 partial, 3 unverified.**
+**150 features: 50 verified, 97 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -93,6 +93,8 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Energy | [c_p(T), k(T) and μ(T) from the material database](#energy-temperature-dependent) | verified |
 | Energy | [Temperature, heat-flux, heat-flow and convection walls](#energy-wall-conditions) | verified |
 | Energy | [Energy with a turbulence model (thermal wall function, Pr_t)](#energy-turbulent) | partial |
+| Energy | [Water and steam of IAPWS-IF97: states, saturation, transport properties and the if97 material form (SF7a)](#materials-if97-water-steam) | partial |
+| Energy | [One-dimensional water and steam tube circuits of a boiler: two-phase pressure drop, flow boiling, CHF margin and natural circulation (steam furnace SF7b)](#circuits-water-steam) | partial |
 | Conjugate heat transfer | [Solid regions, steady](#cht-steady) | verified |
 | Conjugate heat transfer | [Transient conjugate heat transfer](#cht-transient) | verified |
 | Conjugate heat transfer | [Thermal acceleration of solids (scaled ρ c_p, restored)](#cht-thermal-acceleration) | partial |
@@ -143,20 +145,36 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Backends and interfaces | [Restart files on ranks: gathered byte for byte the one-rank file, read on any rank count (MPI step W6)](#parallel-restart-ranks) | partial |
 | Backends and interfaces | [Steady runs on ranks: rank 0 writes the output of one rank (MPI step W7 part 1)](#parallel-run-ranks) | partial |
 | Backends and interfaces | [Turbulent, heated and transient runs on ranks with the output of one rank (MPI step W7 part 2)](#parallel-run-ranks-physics) | partial |
+| Backends and interfaces | [Rotating zones (MRF), the sliding mesh (conformal stepping and imprinting) and closed domains on ranks with the output of one rank (MPI step W7, turning zones)](#parallel-run-ranks-turning) | partial |
 | Sprays | [Lagrangian spray parcels, one way (L12, SP1)](#sprays-one-way) | partial |
 | Sprays | [Datums, liquid flow through them and droplet statistics (SP1b)](#sprays-datums-statistics) | partial |
 | Sprays | [Two-way momentum coupling of the sprays (SP2a, D247 to D252)](#sprays-two-way-momentum) | partial |
 | Sprays | [Two-way sensible heat coupling of the sprays (SP2b, D247 to D252)](#sprays-two-way-heat) | partial |
 | Sprays | [Turbulent dispersion of the sprays, eddy lifetime (SP2c, D243)](#sprays-dispersion-eddy-lifetime) | partial |
 | Sprays | [Steady spray mode: streams through the steady gas with relaxed sources (SP2s, D260)](#sprays-steady-mode) | partial |
+| Sprays | [Evaporating sprays: vapour, mass and enthalpy to the gas (SP4, SP5, D250 to D253)](#sprays-evaporation) | partial |
+| Sprays | [Liquid property library and the 1/3-rule film state of the evaporation (D320, D321)](#sprays-liquid-library) | partial |
+| Sprays | [Spray breakup: KH-ACT and KH-RT with blob injection, TAB distortion and dynamic drag (SP6, D300 to D309)](#sprays-breakup) | partial |
+| Sprays | [High-pressure droplet surface: Peng-Robinson phase equilibrium and latent heat (Spray A, SA1, D311, D312, D314)](#sprays-high-pressure-surface) | partial |
+| Sprays | [ECN liquid length (projected liquid volume) and vapour penetration (Spray A, SA3, D315)](#sprays-ecn-diagnostics) | partial |
 | Flow models | [Porous regions with a direction-dependent Darcy-Forchheimer resistance (D270, PM1)](#porous-darcy-forchheimer) | partial |
 | Flow models | [Gas and matrix temperatures in porous regions, monolithic (D271, D272, PM2)](#porous-two-temperatures) | partial |
 | Flow models | [Species transport of an ideal-gas mixture with mixture properties (L2, steam furnace SF1)](#species-transport) | partial |
 | Flow models | [Gas-phase chemistry: mechanisms, stiff 0D reactor and chemical equilibrium (L2, steam furnace SF2a)](#chemistry-reactor) | partial |
+| Flow models | [Gas-phase chemistry in the cells of a transient laminar flow with heat release, the 1D premixed flame (L2, steam furnace SF2b)](#chemistry-flow) | partial |
 | Immersed bodies | [Immersed bodies by Brinkman penalisation, primitive shapes (L13 stage 1)](#immersed-penalisation) | partial |
+| Immersed bodies | [Immersed bodies as cut cells, primitive shapes (L13 stage 2a, 2b)](#immersed-cut) | partial |
+| Immersed bodies | [STL bodies, cut out of the mesh or penalised, with sharp edges and face points (L13 stage 2)](#immersed-stl) | partial |
 | Immersed bodies | [Density-field topology search with the Brinkman penalisation, iso-surface by marching tetrahedra (L13 stage 1)](#immersed-topology) | partial |
 | Structures | [Linear structural solver: Euler–Bernoulli and Timoshenko beams, static and modal analyses (L53, MS5 part 1)](#structure-beams) | partial |
 | Structures | [Clamp springs per length of the clamp line and their fit to a measured frequency (D290)](#structure-clamp) | partial |
+| Structures | [MITC4 and MITC3+ Reissner–Mindlin shells, plates clamped along an edge (L53, MS5 part 2)](#structure-shells) | partial |
+| Structures | [Structural dynamics: generalised-α, mode superposition, Rayleigh and modal damping, Craig–Bampton reduction (L53, MS5 part 3)](#structure-dynamics) | partial |
+| Structures | [Thermal strain loads on beams and shells from a temperature change and a difference across the thickness (L53, MS5 part 3)](#structure-thermal) | partial |
+| Structures | [Quadratic solids: ten-node tetrahedra and twenty-node hexahedra from a second-order Gmsh file or a block (L53, MS5 part 3b)](#structure-solids) | partial |
+| Structures | [Unilateral contact with rigid seats and stops: exact in statics, penalty at the end of each generalised-α step (L53, MS5 part 4)](#structure-contact) | partial |
+| Structures | [Temperatures of a solid region of a flow case as the thermal load of beams, shells and solids: VTKHDF cell field, linear least-squares fit at the nodes (L53, MS6 part 1)](#structure-temperature-field) | partial |
+| Moving meshes and solids | [Deforming meshes with a prescribed node displacement, and the piston (stage MS0)](#mesh-deforming) | partial |
 
 ## Meshes
 
@@ -170,6 +188,8 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 - consistency: [`golden_values_of_mesher_and_partitioner`](../../crates/foehncraft-mesh/tests/golden.rs): golden values of the mesher and the partitioner
 - exact: [`poiseuille_poly`](../../examples/cases/flow/poiseuille_poly.toml): second order of the flow solver on generated polyhedra (manual: observed order in space (finest pair) 1.8 – 2.2) ([results](stage4.md#couette-and-poiseuille-flow))
 - exact: [`mms_mixed_box`](../../examples/cases/scalar/mms_mixed_box.toml): second order of convection-diffusion on mixed cells (manual: observed order (finest pair) 1.8 – 2.2) ([results](stage2.md#order-of-accuracy))
+- exact: [`sectors_of_hexahedra`](../../crates/foehncraft-mesh/src/wedge.rs): D309: a 3D box revolved into a 22.5 deg sector of hexahedra has the exact volume of its polygonal sector to 1e-12, closed cells and the side planes zmin and zmax with their normals
+- contract (diagnostics): [`a_perturbed_or_tetrahedral_sector_is_refused`](../../crates/foehncraft-mesh/src/wedge.rs): D309: a sector of tetrahedra or with perturb is refused
 
 <a id="mesh-gmsh"></a>
 
@@ -1120,6 +1140,68 @@ Gaps:
 
 - no reference-data case of the energy equation with turbulence (the passive-scalar path has them; the energy path is checked against it)
 
+<a id="materials-if97-water-steam"></a>
+
+### Water and steam of IAPWS-IF97: states, saturation, transport properties and the if97 material form (SF7a)
+
+**partial** (a model without reference data; gaps written) · id `materials.if97-water-steam` · switch `foehn steam, materials.steam, form = "if97", materials steam and water-if97` · decisions D94, D97, D102
+
+- exact: [`region1_table5`](../../crates/foehncraft-kernels/tests/steam_if97.rs): IF97 Table 5: v, h, u, s, c_p, w of region 1 at three points to 5e-9 (the rounding of the table)
+- exact: [`region2_table15`](../../crates/foehncraft-kernels/tests/steam_if97.rs): IF97 Table 15: region 2 at three points to 5e-9
+- exact: [`region3_table33`](../../crates/foehncraft-kernels/tests/steam_if97.rs): IF97 Table 33: region 3 at three (rho, T) points to 5e-9, and rho back from (p, T) to 1e-12
+- exact: [`region5_table42`](../../crates/foehncraft-kernels/tests/steam_if97.rs): IF97 Table 42 (2007 revision of region 5): three points to 5e-9
+- exact: [`region4_tables35_36_and_b23`](../../crates/foehncraft-kernels/tests/steam_if97.rs): IF97 Tables 35 and 36 (saturation pressure and temperature) and the B23 values to 5e-9
+- exact: [`viscosity_r12_08_table4`](../../crates/foehncraft-kernels/tests/steam_if97.rs): IAPWS R12-08 Table 4: eleven viscosities to the last printed digit
+- exact: [`conductivity_r15_11_table4`](../../crates/foehncraft-kernels/tests/steam_if97.rs): IAPWS R15-11 Table 4: the dilute gas at 298.15 K and 873.15 K and liquid water at 998 kg/m3 to 1e-6
+- exact: [`surface_tension_r1_76`](../../crates/foehncraft-kernels/tests/steam_if97.rs): IAPWS R1-76(2014): 0.01, 100 and 300 degC to 1e-3
+- consistency: [`ph_ps_px_round_trips`](../../crates/foehncraft-kernels/tests/steam_if97.rs): (p, h), (p, s), (p, x) states round-trip to 1e-10, including a 60 x 60 grid around the critical point
+- consistency: [`saturation_states_and_phase_equilibrium`](../../crates/foehncraft-kernels/tests/steam_if97.rs): the Gibbs energies of the saturated phases agree to the consistency of IF97 (|dg|/RT below 1e-4)
+- consistency: [`batch_entry_is_bitwise_the_state_outputs`](../../crates/foehncraft-kernels/src/steam.rs): the device path of the GPU entry steam_state run on the CPU gives bitwise the plain call
+- exact: [`steam_duct_meets_the_if97_balances`](../../crates/foehncraft-flow/tests/steam.rs): superheated steam heated in a duct: outlet T of the IF97 enthalpy balance to 0.01 K, mass flux to 1e-7, inlet pressure G^2 (1/rho_out - 1/rho_in) to 1e-4
+- exact: [`steam_heated_duct`](../../examples/cases/flow/steam_heated_duct.toml): the same duct as a case: outlet 750.002 K against 750 K (passes in CI (set linux-3), not yet in the manual) ([results](../cases/flow.md#water-and-steam-iapws-if97))
+- consistency: [`steam_superheater_channel`](../../examples/cases/flow/steam_superheater_channel.toml): steam superheated between plates at 760 K with the IF97 variable density, heat balance closed to 4e-8 (passes in CI (set linux-3), not yet in the manual) ([results](../cases/flow.md#water-and-steam-iapws-if97))
+- consistency: [`ranks_water_if97_channel`](../../examples/cases/flow/ranks_water_if97_channel.toml): IF97 water with c_p, mu, k following T on 2, 3 and 4 ranks, bitwise one rank (passes in CI (set linux-2), not yet in the manual) ([results](../cases/flow.md#water-and-steam-iapws-if97))
+
+Gaps:
+
+- the CPU = GPU check of steam_state on a GPU has not run (no GPU in this session); the PTX entry is built in CI and the device path is checked on the CPU
+- the viscosity has no critical enhancement (mu2 = 1, the industrial form of R12-08); near the critical point it differs by up to 2 % from the full formulation
+- the conductivity near the critical point takes the IF97 derivatives: up to 2.4 % from R15-11 with IAPWS-95 within 15 K and 4 MPa of the critical point, below 0.31 % elsewhere (a one-off comparison, not in the tests)
+- zeta at the reference temperature of the critical enhancement is a table of IAPWS-95 (CoolProp 8.1), not the release's own fit
+- single-phase property curves only in the flow: a fluid that crosses the saturation temperature takes the saturated state of its branch (MAT003); boiling comes with SF7b (1D circuits) and SF10
+- the property curves are sampled every 0.25 K at the operating pressure: the pressure variation inside a case is not felt (low-Mach)
+- no metastable (subcooled vapour) states and no backward equations; a (p, h) state is a bracketed Newton solve on the forward equations
+- the variable density is not on ranks yet (refused): the steam duct and channel run on one rank
+
+<a id="circuits-water-steam"></a>
+
+### One-dimensional water and steam tube circuits of a boiler: two-phase pressure drop, flow boiling, CHF margin and natural circulation (steam furnace SF7b)
+
+**partial** (gaps written) · id `circuits.water-steam` · switch `circuits.run, [[nodes]] kind = "drum", [circuit] friction, void, boiling, subcooled, chf` · decisions D282, D94
+
+- exact: [`laminar_parallel_tubes_split_as_hagen_poiseuille`](../../crates/foehncraft-circuits/tests/exact.rs): laminar water between two parallel tubes of 2 m and 4 m: the Hagen-Poiseuille split 2:1 and the inlet pressure drop to 1e-6
+- exact: [`heated_tube_meets_the_energy_and_pressure_balances`](../../crates/foehncraft-circuits/tests/exact.rs): water at 16 MPa heated in a riser: outlet enthalpy h_in + Q/m to 1e-6 J/kg, pressure drop = friction + gravity + acceleration, acceleration G^2 (1/rho_out - 1/rho_in) to 2e-3, Gnielinski wall below saturation
+- exact: [`drum_loop_closes_its_mass_energy_and_pressure_balances`](../../crates/foehncraft-circuits/tests/exact.rs): drum boiler loop at 7 MPa with 30 risers: downcomer flow = riser flow to 1e-8, steam flow = heat/(h'' - h_feed) to 1e-6, pressure drops around the loop sum to zero within 1e-3 Pa; circulation ratio 16
+- exact: [`churchill_is_laminar_and_colebrook_like`](../../crates/foehncraft-circuits/src/correlations.rs): Churchill's friction factor is 64/Re in laminar flow to 1e-12 and within 2 % of Colebrook for smooth and rough tubes
+- reference-data: [`chen_and_gungor_winterton_agree_on_the_wall_superheat`](../../crates/foehncraft-circuits/tests/boiling.rs): two independent flow boiling correlations (Chen 1966, Gungor-Winterton 1986, each fitted to measured data) give wall superheats within a factor of two along an evaporator at 7 MPa, 400 kW/m2
+- consistency: [`evaporator_passes_through_the_regimes_in_order`](../../crates/foehncraft-circuits/tests/boiling.rs): regimes in order (liquid, subcooled, saturated boiling), vapour before the bulk saturates (Saha-Zuber, Levy), 0 <= x <= max(x_eq, 0) bound, nucleate superheat below 30 K, outlet enthalpy exact
+- consistency: [`friedel_and_drift_flux_differ_from_homogeneous_as_expected`](../../crates/foehncraft-circuits/tests/boiling.rs): drift flux gives less void and a heavier column than homogeneous in upflow; Friedel friction above the homogeneous model and below three times it
+- consistency: [`a_high_heat_flux_reaches_the_chf_and_warns`](../../crates/foehncraft-circuits/tests/boiling.rs): at 1 MW/m2 and low flow the Bowring CHF is exceeded: CIR004, post-CHF wall more than 50 K above saturation
+- consistency: [`bowring_is_continuous_at_its_reference_pressure_and_falls_with_quality`](../../crates/foehncraft-circuits/src/chf.rs): Bowring's two pressure branches meet at p_R = 1 (6.9 MPa) to 1e-6 and match the closed form there; CHF falls with quality
+- exact: [`table_reads_and_interpolates`](../../crates/foehncraft-circuits/src/chf.rs): a CHF table in the layout of the 2006 table: trilinear interpolation exact on linear data, the diameter factor (0.008/D)^0.5, missing grid points refused
+- contract (diagnostics): [`broken_cases_are_refused`](../../crates/foehncraft-circuits/tests/boiling.rs): CIR001 for a tube to a missing node, a rise above the length, no pressure level, a drum without feedwater, an unknown key, a supercritical drum
+- consistency: [`the_drum_loop_runs_through_the_tool`](../../crates/foehncraft-tools/src/circuits.rs): circuits.run writes result.json and profiles.csv through the registry
+
+Gaps:
+
+- no comparison with measured void or wall temperatures yet (Bartolomei et al. 1982 not reachable from the build environment); the boiling correlations are checked against each other only
+- the CHF look-up table of Groeneveld et al. (2007) is not shipped (the paper was not reachable): chf = "table" reads it from a CSV file the user supplies, Bowring (1972) is the built-in default
+- post-dryout heat transfer is the vapour convection of Dougall-Rohsenow (1963) with no thermal non-equilibrium; no film boiling or rewetting
+- supercritical water takes Gnielinski with bulk properties: no correction for the pseudo-critical region
+- steady only: no density-wave or Ledinegg instability check, no transients (SF18)
+- the drift velocity is scaled by the sine of the tube angle; horizontal tubes have no stratified-flow void model
+- not yet coupled to the 3D furnace walls (SF7c)
+
 ## Conjugate heat transfer
 
 <a id="cht-steady"></a>
@@ -1790,7 +1872,7 @@ Contracts: `bitwise`.
 
 Gaps:
 
-- not on ranks yet (refused with an error): zeta-f and elliptic blending, curvature correction and QCR, the MLP limiter and quadratic gradients, gravity, turning zones, solid regions, schedules and level sweeps (restarts: parallel.restart-ranks)
+- not on ranks yet (refused with an error): zeta-f and elliptic blending, curvature correction and QCR, the MLP limiter and quadratic gradients, gravity, solid regions, schedules and level sweeps (restarts: parallel.restart-ranks; MRF zones and sliding meshes: parallel.run-ranks-turning)
 - monitors, probes and balances of a run on ranks: parallel.run-ranks (W7 part 1, steady laminar)
 - transient runs are checked with the fixed time step, not the adaptive one
 - 1M cells on 4 cores split into 1, 2, 4 ranks (example ranks_scaling): +2, +10, +28 % time per iteration against threads only, bitwise; strong scaling over more cores is W9
@@ -1850,6 +1932,33 @@ Gaps:
 - the scalar summary stops with an error on ranks for orthotropic solids, porous matrices, heat-flux periodic pairs, sprays and a variable density (all refused before the run by the rules above)
 - Crank-Nicolson and PISO without outer iterations are not tested on ranks in this step (the solver on ranks is, W5)
 - MPI processes are run in CI with the steady laminar case only; the threads tests cover the same code
+
+Contracts: `bitwise`.
+
+<a id="parallel-run-ranks-turning"></a>
+
+### Rotating zones (MRF), the sliding mesh (conformal stepping and imprinting) and closed domains on ranks with the output of one rank (MPI step W7, turning zones)
+
+**partial** (gaps written) · id `parallel.run-ranks-turning` · switch `[run] rank_count, foehn flow --ranks N, mpirun -n N foehn flow; with [[mrf]] (steady or with [time]), [[sliding]] in conformal stepping or by imprinting, or without a pressure boundary` · decisions D55, D84, D93, D182, D185
+
+- contract (bitwise): [`steady_mrf_zone_on_ranks_writes_the_files_of_one_rank`](../../crates/foehncraft-flow/tests/run_ranks.rs): steady laminar Taylor-Couette gap with energy, the inner half a moving reference frame, a closed domain (reference cell), on 2, 3 and 4 ranks: residuals, ledger, boundaries, wall files, fields.vtkhdf, restart.h5 byte for byte one rank, the rotor torque and power log rows of run.jsonl equal
+- contract (bitwise): [`transient_frozen_rotor_with_sst_on_ranks_writes_the_files_of_one_rank`](../../crates/foehncraft-flow/tests/run_ranks.rs): the transient frozen rotor (MRF with BDF2, D185) with k-omega SST and energy on 2 and 3 ranks: history, ledger, probes, boundaries, field files and restart byte for byte one rank
+- contract (bitwise): [`flow_on_ranks_is_bitwise_one_rank`](../../crates/foehncraft-flow/tests/ranks.rs): an annulus with an outlet and a rotating zone among the check cases of the solver on 1 to 4 ranks
+- contract (bitwise): [`ranks_run_mrf_couette`](../../examples/cases/flow/ranks_run_mrf_couette.toml): the Taylor-Couette gap with a rotating zone on 5 ranks to convergence (366 iterations); every output file compared with --ranks 1 when the case was made (passes in CI (set linux-2), not yet in the manual)
+- contract (bitwise): [`sliding_mesh_in_conformal_stepping_on_ranks_writes_the_files_of_one_rank`](../../crates/foehncraft-flow/tests/run_ranks.rs): a sliding rotor in conformal stepping (32 sectors, one per step) with a passive scalar on 2, 3 and 4 ranks: history, ledger, probes, boundaries, field files and restart byte for byte one rank
+- contract (bitwise): [`turbulent_sliding_mesh_on_ranks_writes_the_files_of_one_rank`](../../crates/foehncraft-flow/tests/run_ranks.rs): the same with k-omega SST (the shifted old levels of k and omega) on 3 ranks
+- contract (bitwise): [`ranks_run_sliding_couette`](../../examples/cases/flow/ranks_run_sliding_couette.toml): spin-up with a dye blob, rotor of 128 sectors, one turn on 5 ranks; every output file compared with --ranks 1 when the case was made (passes in CI (set linux-2), not yet in the manual)
+- contract (bitwise): [`sliding_mesh_by_imprinting_on_ranks_writes_the_files_of_one_rank`](../../crates/foehncraft-flow/tests/run_ranks.rs): a sliding rotor by imprinting (rotor of 32 sectors, stator of 48, the mesh built again every step) with a passive scalar on 2 and 3 ranks: history, ledger, probes, boundaries, forces, wall and field files byte for byte one rank
+- contract (bitwise): [`turbulent_sliding_mesh_by_imprinting_on_ranks_writes_the_files_of_one_rank`](../../crates/foehncraft-flow/tests/run_ranks.rs): the same with k-omega SST (the carried k, omega and wall distance of the turning rotor) on 4 ranks
+- contract (bitwise): [`ranks_run_imprint_couette`](../../examples/cases/flow/ranks_run_imprint_couette.toml): spin-up with a dye blob through a non-matching interface (32 against 48 sectors) on 5 ranks; every output file compared with --ranks 1 when the case was made (passes in CI (set linux-2), not yet in the manual)
+
+Gaps:
+
+- the [run] ranks check refuses any sliding mesh (compare --ranks N with --ranks 1 instead)
+- imprinting on ranks: every rank imprints the whole mesh and builds its part again every step, and the state is gathered and handed back every step (memory and time of the whole mesh per rank); a moving mesh writes no restart file yet, on one rank or on ranks
+- conformal stepping gathers the whole old levels on every rank every step (memory and time of the whole field per rank); only the rotor cells at the cuts would need to move
+- the five-blade stirred vessel of gallery 301 (16 848 cells, SST, coupled solver) was compared with --ranks 1 by hand, not in CI (its mesh needs Gmsh)
+- the reference cell's value is handed to all ranks with one all-gather per pressure solve
 
 Contracts: `bitwise`.
 
@@ -1997,11 +2106,166 @@ Gaps:
 Gaps:
 
 - V28.9 not met strictly: the steady duct takes 2.9 % less heat from the air than the time mean of the transient run, more than the sampling and step errors of the transient run; the transient flow does not come to rest behind the nozzle
-- no evaporation (SP5); V28.11 (duct with more water than the gas can take) waits for it
+- evaporation in the steady mode is the row sprays.evaporation (V28.11 there)
 - the statistical error of the streams is estimated by hand with other seeds, not by a study tool (D196)
-- the health numbers of D254 are reported only; no limiter acts in the steady mode
+- the health numbers of D254 are reported only; the saturation limiter of D253 acts only with evaporation
 - datums report no liquid in the steady mode
 - not with solid regions (CHT) or two-way with the coupled algorithm (SPR003); one process
+
+<a id="sprays-evaporation"></a>
+
+### Evaporating sprays: vapour, mass and enthalpy to the gas (SP4, SP5, D250 to D253)
+
+**partial** (a model without reference data; gaps written) · id `sprays.evaporation` · switch `[spray.evaporation] model = "ranz-marshall" or "abramzon-sirignano", [spray.liquid] vapour` · decisions D247, D249, D250, D251, D252, D253, D254, D260
+
+- exact: [`saturation_pressure_of_water_at_its_anchor_points`](../../crates/foehncraft-kernels/src/evaporation.rs): the IAPWS-95 auxiliary vapour-pressure equation (Wagner and Pruss 1993) at the triple point and at 373.124 K / 101.325 kPa
+- exact: [`the_temperature_relaxes_to_the_wet_bulb_state_without_overshoot`](../../crates/foehncraft-kernels/src/evaporation.rs): the droplet temperature of the frozen-coefficient step relaxes to the wet-bulb balance and never passes it
+- exact: [`saturated_gas_neither_evaporates_nor_condenses_at_the_droplet_temperature`](../../crates/foehncraft-kernels/src/evaporation.rs): a droplet at the saturation state of the gas keeps its mass
+- exact: [`a_single_droplet_follows_the_d2_law_at_the_wet_bulb`](../../crates/foehncraft-particles/tests/evaporation.rs): a 100 um water droplet at 300 K in still dry air at 500 K: d^2 falls linearly (local K within 1 %), at the wet-bulb temperature within 0.05 K, life within 20 % of d0^2/K plus the heat-up (Godsave 1953, Spalding 1953)
+- exact: [`a_closed_box_ends_at_the_adiabatic_saturation`](../../crates/foehncraft-particles/tests/evaporation.rs): V28.2 with evaporation: 1e-7 kg of water in a closed cell of air at 400 K, 3000 steps: water and energy of gas plus parcels kept to 1e-12; gas at the exact adiabatic saturation within 0.01 K (found 0.003 K), liquid mean within 0.1 K, vapour within 1e-3 of saturation
+- exact: [`many_parcels_in_one_cell_near_saturation`](../../crates/foehncraft-particles/tests/evaporation.rs): 4000 parcels evaporating in one cell at 95 % saturation (D247 to D250): the vapour never passes the droplet saturation and never falls below zero, the water book closes to 1e-13, sources and parcels bitwise equal on 1 and 4 threads with the storage reversed
+- consistency: [`the_evaporating_duct_closes_its_books`](../../crates/foehncraft-flow/tests/spray_evaporation.rs): a transient evaporating duct: ledger pairs 2801 to 2805 zero to the bit, parcel mass, momentum and enthalpy accounts close to 1e-12, the gas mass account to 1e-9, vapour to the gas = liquid lost by the parcels
+- exact: [`evaporation_gives_the_same_bits_on_any_number_of_threads`](../../crates/foehncraft-flow/tests/spray_evaporation.rs): V28.1 with evaporation in a flow run: spray.csv bitwise equal on 1 and 4 threads
+- contract (diagnostics): [`evaporation_needs_a_vapour_species_of_the_case`](../../crates/foehncraft-flow/tests/spray_evaporation.rs): a liquid whose vapour is not a species of the case is refused
+- contract (diagnostics): [`spray_evaporation`](../../examples/cases/flow/spray_evaporation.toml): 2 g/s of water droplets of 10 to 80 um in air at 300 C: about 1.3 g/s evaporate within the duct, the air leaves about 55 K cooler and 2 % wetter; ledger pairs zero to the bit (passes in CI (set linux-3), not yet in the manual) ([results](../gallery/sprays.md#spray-evaporation))
+- contract (schema): [`spray_evaporation_injectors`](../../examples/cases/flow/spray_evaporation_injectors.toml): the included injector file of spray_evaporation, with the vapour species ([results](../cases/flow.md#lagrangian-sprays)) **missing**
+- consistency: [`spray_saturation_steady`](../../examples/cases/flow/spray_saturation_steady.toml): V28.11 (partly met, see gaps): 2 g/s of water in 17.6 g/s of air at 400 K, steady mode: the air saturates within 5 cm and stays flat to the outlet; outlet 309.3 K and Y = 0.0375 against the exact adiabatic saturation 310.1 K and 0.0395; the source residual falls from 1 to 0.12 (passes in CI (set long), not yet in the manual) ([results](../gallery/sprays.md#spray-saturation))
+- contract (schema): [`spray_saturation_injectors`](../../examples/cases/flow/spray_saturation_injectors.toml): the six nozzles of spray_saturation_steady ([results](../cases/flow.md#lagrangian-sprays)) **missing**
+
+Gaps:
+
+- V28.11 partly met: in the steady mode the source residual falls from 1 to about 0.1 and stalls (also with relaxation 0.1 and 0.03), so the run ends with SPR008; the outlet is 0.8 K and 5 % in vapour below the exact adiabatic saturation, and the limiter of D253 still acts in the final pass (SPR009)
+- the heat balance closes to round-off only with [species] properties = "fluid"; with the mixture properties the energy account keeps a few parts in a thousand (the T-form of the energy equation against the material enthalpy of the balance)
+- the transient domain mass check fails for heated cases with variable density even without evaporation; the examples use constant density
+- the momentum equation does not book the momentum the vapour brings separately (it comes with the parcel impulse) nor the dilution term u S_c
+- single-component liquids of the library only (water, n-heptane, n-dodecane, iso-octane, sprays.liquid-library); no boiling, no multicomponent liquids
+- no GPU (PTX) entry for the evaporation kernel; one process
+- V28.5 to V28.8 of section 5 not all run as named checks (the closed box and the crowded cell cover the bounds)
+- `spray_evaporation_injectors` has no run in the verification manual or in CI
+- `spray_saturation_injectors` has no run in the verification manual or in CI
+
+<a id="sprays-liquid-library"></a>
+
+### Liquid property library and the 1/3-rule film state of the evaporation (D320, D321)
+
+**partial** (gaps written) · id `sprays.liquid-library` · switch `[spray.liquid] library, property_temperature; [spray.evaporation] film = "one-third" (default) or "far-field"` · decisions D320, D321
+
+- reference-data: [`the_fits_meet_the_nist_tables`](../../crates/foehncraft-kernels/src/liquids.rs): water, n-heptane and n-dodecane: vapour pressure, density, specific heat, latent heat, surface tension and viscosity at points of the NIST WebBook saturation tables (SRD 69), within the fit errors of the generator (psat 0.3 %, density 0.1 %, c_l and L 1.5 %, sigma 1 % (n-dodecane 3.6 %), mu 1.4 % up to 0.9 Tc)
+- reference-data: [`the_normal_boiling_points_and_critical_ends`](../../crates/foehncraft-kernels/src/liquids.rs): normal boiling points within 0.5 K of NIST, psat(tb) = 101.325 kPa to 1e-4, the water fit within 0.2 % of the IAPWS-95 auxiliary equation; L and sigma zero at Tc
+- reference-data: [`iso_octane_meets_the_primary_data`](../../crates/foehncraft-kernels/src/liquids.rs): iso-octane: vapour pressure within 0.3 % of Willingham et al. (1945), latent heat within 0.6 % of the calorimetry of Majer and Svoboda, sigma of Mulero et al. (2012), tb within 0.5 K of 372.4 K
+- consistency: [`the_functions_are_smooth_and_monotone_where_they_must_be`](../../crates/foehncraft-kernels/src/liquids.rs): psat rising, density, L and sigma falling with T over the whole range of each liquid
+- reference-data: [`the_spray_vapours_meet_the_nist_data`](../../crates/foehncraft-flow/src/species.rs): NC7H16, IC8H18 and NC12H26 ideal-gas c_p within 0.6 % of the NIST data; heptane vapour viscosity at 371 K and dodecane vapour viscosity at 500 K within 5 % of NIST
+- exact: [`a_given_surface_fraction_replaces_raoults_law`](../../crates/foehncraft-kernels/src/evaporation.rs): a surface fraction given to the kernel (the hook of the high-pressure surface) replaces Raoult's law bit for bit; capped at 0.999
+- reference-data: [`n_heptane_droplets_against_chauveau_2019`](../../crates/foehncraft-flow/tests/droplet_validation.rs): n-heptane droplets of 0.37 mm in N2 at 0.1 MPa, 473 to 748 K, through Spray::evaporation: K with the 1/3 rule +39 to +59 % above the microgravity fit of Chauveau et al. (2019), with far-field properties +93 to +99 %; the 1/3 rule closer at every temperature (a recorded gap, see gaps) ([results](../gallery/sprays.md#spray-liquid-library))
+- contract (diagnostics): [`a_library_liquid_takes_its_properties_and_checks_its_keys`](../../crates/foehncraft-particles/src/config.rs): a library liquid takes its properties, a second application keeps them, water keeps IAPWS-95; an unknown liquid (names listed), a value given beside the library and a property temperature without a library are refused
+- contract (diagnostics): [`spray_heptane_evaporation`](../../examples/cases/flow/spray_heptane_evaporation.toml): 1 g/s of n-heptane at 300 K in N2 at 600 K: evaporates within about 5 cm, the gas takes 1 g/s of vapour and leaves at 312 C with 1.7 % vapour (passes in CI (set linux-3), not yet in the manual) ([results](../gallery/sprays.md#spray-liquid-library))
+- contract (schema): [`spray_heptane_evaporation_injectors`](../../examples/cases/flow/spray_heptane_evaporation_injectors.toml): the included injector file with the library liquid n-heptane ([results](../cases/flow.md#lagrangian-sprays)) **missing**
+
+Gaps:
+
+- single n-heptane droplets: K with the 1/3 rule +39 to +59 % above the microgravity data and +16 to +38 % above the fibre-free extrapolation of Chauveau et al.; the same gap is reported for this model class (Both, Mira, Lehmkuhl 2022) and the microgravity data lie below quasi-steady theory (vapour accumulation); not closed
+- no spray-scale evaporation case against measurements yet (CORIA n-heptane data on request; the Brno PDA data are a dispersion case)
+- density and specific heat of the liquid constant in a run (at property_temperature): no thermal expansion of a heating droplet
+- iso-octane above about 400 K rests on extrapolated correlations (density, c_l, mu, sigma); not in the NIST fluid system
+- the film carrier is the start composition of the case, not the local gas of the cell
+- `spray_heptane_evaporation_injectors` has no run in the verification manual or in CI
+
+<a id="sprays-breakup"></a>
+
+### Spray breakup: KH-ACT and KH-RT with blob injection, TAB distortion and dynamic drag (SP6, D300 to D309)
+
+**partial** (gaps written) · id `sprays.breakup` · switch `[spray.breakup] model = "kh-act" or "kh-rt", drag = "dynamic"; injector hole_diameter, area_contraction, rate, flow_share, hole_length, discharge_coefficient` · decisions D247, D300, D301, D302, D303, D304, D305, D306, D307, D308, D309
+
+- exact: [`kh_fits_match_the_dispersion_relation`](../../crates/foehncraft-kernels/src/breakup.rs): Reitz's KH fits against our own inviscid dispersion relation of a liquid column (Bessel functions): wavelength within 5 % for every We_g, growth rate within 3 % below We_g 0.1 and above 50 (up to 46 % high near We_g 2, a property of the fit)
+- exact: [`tab_step_is_exact`](../../crates/foehncraft-kernels/src/breakup.rs): the TAB oscillator step against fourth-order Runge-Kutta, under-, over- and critically damped
+- exact: [`nozzle_turbulence_decays_as_the_k_eps_equations`](../../crates/foehncraft-kernels/src/breakup.rs): KH-ACT: the exact decay of the nozzle turbulence against RK4 of the k-eps equations without production (k, eps, L_T, tau_T to 1e-9), the integral of sqrt(k) against Simpson's rule, L_T/tau_T = sqrt(k)
+- exact: [`act_strip_picks_the_strongest`](../../crates/foehncraft-kernels/src/breakup.rs): KH-ACT: the mechanism with the largest L/tau strips the blob, the radius stops at the child radius, C_T,CAV scales the rate
+- exact: [`a_blob_strips_as_the_breakup_equation`](../../crates/foehncraft-particles/tests/breakup.rs): the KH radius of a blob follows da/dt = -(a - B0 Lambda)/tau integrated independently by RK4, within 2 % of the stripped part over more than half of its life
+- exact: [`kh_act_turbulence_strips_at_the_root_of_k`](../../crates/foehncraft-particles/tests/breakup.rs): KH-ACT: a blob stripped by the nozzle turbulence alone has the radius a0 - C_T,CAV int sqrt(k) dt to 1e-12 of a0 whatever the sub-steps
+- exact: [`same_bits_on_any_threads_and_order`](../../crates/foehncraft-particles/tests/breakup.rs): D247 with breakup: children, RT breakups and dynamic drag bitwise equal on 1 and 4 threads with the storage reversed
+- exact: [`kh_act_keeps_the_liquid_and_the_bits`](../../crates/foehncraft-particles/tests/breakup.rs): KH-ACT with the Huh-Gosman turbulence and cavities: liquid kept to 1e-13, bitwise equal on 1 and 4 threads with the storage reversed
+- consistency: [`blobs_shed_children_and_keep_the_liquid`](../../crates/foehncraft-particles/tests/breakup.rs): blobs shed children of the KH size, each of one to three shares; liquid in the flow plus out = injected to 1e-13
+- consistency: [`rayleigh_taylor_acts_beyond_the_breakup_length_only`](../../crates/foehncraft-particles/tests/breakup.rs): RT breakup only beyond the breakup length
+- consistency: [`a_rate_table_gives_exact_shares_and_speeds`](../../crates/foehncraft-particles/tests/breakup.rs): a rate table gives each parcel its exact share of the liquid and the speed mdot/(rho_l C_a A)
+- contract (bitwise): [`a_restart_continues_with_the_same_bits`](../../crates/foehncraft-particles/tests/breakup.rs): a restart with breakup continues with the same bits
+- contract (diagnostics): [`kh_act_needs_the_nozzle_turbulence`](../../crates/foehncraft-particles/tests/breakup.rs): the nozzle keys of KH-ACT are checked (missing turbulence, half a pair, C_d above C_a, no friction left)
+- reference-data: [`spray_breakup`](../../examples/cases/flow/spray_breakup.toml): a diesel-like spray at 60 MPa from a 0.15 mm hole into nitrogen at 15 kg/m3 (KH-ACT, k-eps): 97 % of the liquid at 50.6 mm after 1 ms against 51.1 mm of the correlation of Hiroyasu and Arai (1990), up to 24 % ahead at 0.2 to 0.4 ms; 47.0 mm with kh-rt (passes in CI (set long), not yet in the manual) ([results](../gallery/sprays.md#spray-breakup))
+- contract (schema): [`spray_breakup_injectors`](../../examples/cases/flow/spray_breakup_injectors.toml): the included injector file of spray_breakup (rate table, hole, nozzle turbulence) ([results](../cases/flow.md#lagrangian-sprays)) **missing**
+- reference-data: [`spray_g_g1`](../../examples/cases/flow/spray_g_g1.toml): ECN Spray G, G1 (D309): iso-octane at 20 MPa into nitrogen at 573 K and 3.5 kg/m3 on a 22.5 deg sector of the 8-hole injector, KH-ACT untuned, against the liquid (0.2e-3 mm3/mm2) and vapour (0.1 %) penetration the ECN measured: within 1 mm up to 0.4 ms (20.5 against 20.4 mm at 0.3 ms), then ahead, 12 % at 0.6 ms and 33 % at 1.2 ms (51.7 against 38.9 mm); vapour 32.8 against 29.4 mm at 0.6 ms and 50.8 against 42.0 mm at 1.2 ms; the gas velocity on the injector axis at 15 mm within about 1.5 m/s of the PIV (-7.9 against -7.6 m/s at 0.3 ms); Sauter mean diameter at 15 mm 17 um with KH-ACT and 7.4 um with KH-RT against the measured 9 um, both models with the same penetration (passes in CI (set long), not yet in the manual) ([results](../gallery/sprays.md#spray-g))
+- contract (schema): [`spray_g_g1_injectors`](../../examples/cases/flow/spray_g_g1_injectors.toml): the included injector file of spray_g_g1 (library iso-octane, measured rate of injection, plume direction, flow_share 0.5) ([results](../cases/flow.md#lagrangian-sprays)) **missing**
+
+Gaps:
+
+- ECN Spray G (G1): the liquid runs ahead of the measured penetration after 0.4 ms (33 % at 1.2 ms) and the vapour after 0.5 ms (21 % at 1.2 ms), with KH-ACT and KH-RT alike, so not from the breakup; cause open (candidates: the cells of the far field, the constant gas density, the k-eps constants) (D309)
+- KH-ACT drops on ECN Spray G (G1) are about twice the measured size at 15 mm (17 against 9 um; KH-RT 7.4 um): the children of the cavitation (R_CAV from C_a 0.65) and of the integral turbulence scale are large for the short Spray G hole; constants untuned
+- a gas that diverges in some cells leaves its parcels spending max_substeps each, and their exchange records can fill the memory instead of stopping the run with a message (seen on the sector before the slip core, D309)
+- drop sizes not validated: the gallery spray has a Sauter mean diameter near 2 um, small next to measured diesel sprays; no collision or coalescence yet
+- the nozzle turbulence of the Huh-Gosman estimate takes the inlet loss K_c = 0.5 and the area ratio s = 0 as our own choices (the papers give no values)
+- the k-omega SST model does not build up the turbulence of a thin spray jet in a still chamber (the gallery case uses k-eps)
+- breakup is refused in the steady spray mode; constant surface tension and viscosity; children leave with the blob's velocity (no radial velocity); no GPU entry of the breakup kernel; one process
+- `spray_breakup_injectors` has no run in the verification manual or in CI
+- `spray_g_g1_injectors` has no run in the verification manual or in CI
+
+<a id="sprays-high-pressure-surface"></a>
+
+### High-pressure droplet surface: Peng-Robinson phase equilibrium and latent heat (Spray A, SA1, D311, D312, D314)
+
+**partial** (gaps written) · id `sprays.high-pressure-surface` · switch `[spray.evaporation] equilibrium = "peng-robinson", [spray.evaporation.peng_robinson]` · decisions D310, D311, D312, D314, D319
+
+- exact: [`the_omegas_are_the_roots_of_the_critical_conditions`](../../crates/foehncraft-kernels/src/realfluid.rs): Omega_a, Omega_b and Z_c give the triple root of the cubic at the critical point (to 1e-15)
+- reference-data: [`va1_the_peng_robinson_vapour_pressure_follows_the_measured_equation`](../../crates/foehncraft-particles/tests/high_pressure.rs): VA.1: n-dodecane vapour pressure with the fitted Mathias-Copeman alpha within 1 % of the Wagner equation of Ambrose and Walton (1989) from 300 to 655 K (the plain 1978 kappa is 16 % off at 300 K)
+- reference-data: [`va2_bubble_pressures_of_nitrogen_in_dodecane`](../../crates/foehncraft-particles/tests/high_pressure.rs): VA.2: 21 measured bubble points of N2 + n-dodecane (Garcia-Cordova et al. 2011, 344 to 594 K, 1.4 to 13 MPa): mean deviation below 4 %, at most 10 %; k_ij = 0.205 fitted by us to the 75 points up to 20 MPa (mean 2.7 %, at most 9.1 %)
+- exact: [`the_wagner_equation_gives_the_normal_boiling_point`](../../crates/foehncraft-particles/tests/high_pressure.rs): the transcribed Ambrose and Walton coefficients give 101.325 kPa at the normal boiling point 489.439 K of Lemmon and Goodwin (2000) within 0.2 %
+- exact: [`fit_mathias_copeman_reproduces_the_dodecane_coefficients`](../../crates/foehncraft-particles/tests/high_pressure.rs): the built-in alpha coefficients are reproduced by the fit routine to 2e-3
+- consistency: [`va3_low_pressure_limit_is_raoult`](../../crates/foehncraft-particles/tests/high_pressure.rs): VA.3: the surface vapour fraction tends to Raoult's law as p -> 0 (0.3 % above at 10 kPa, below 3 % at 0.1 MPa, growing with p)
+- consistency: [`the_surface_at_six_megapascal_is_richer_than_raoult_and_ends_critical`](../../crates/foehncraft-particles/tests/high_pressure.rs): at 6 MPa: 1.5 to 1.9 times Raoult from 450 to 600 K, 8 to 20 mol % N2 dissolved, latent heat ratio 0.8 to 0.92 falling monotonically to zero at the critical mixing temperature 651.3 K
+- consistency: [`the_critical_mixing_temperature_falls_with_pressure`](../../crates/foehncraft-particles/tests/high_pressure.rs): the critical end follows the critical locus of the binary: 656.6 K at 3 MPa down to 647.8 K at 8 MPa
+- consistency: [`below_the_critical_pressure_the_table_ends_boiling`](../../crates/foehncraft-particles/tests/high_pressure.rs): at 1 MPa the table ends at the boiling point, within 5 K of the pure fuel's
+- exact: [`the_table_is_a_pure_function_of_its_inputs`](../../crates/foehncraft-particles/tests/high_pressure.rs): two builds give the same bits (D247)
+- exact: [`a_closed_box_with_the_peng_robinson_surface_closes_its_books`](../../crates/foehncraft-particles/tests/evaporation.rs): VA.6: the closed box of V28.2 with the Peng-Robinson surface of water in nitrogen, 3000 steps: water and energy of gas plus parcels kept to 1e-12; gas within 0.01 K of the adiabatic saturation of the spray's own surface fraction and latent heat (found 0.007 K)
+- exact: [`the_spray_takes_the_surface_of_the_table_and_closes_its_books`](../../crates/foehncraft-particles/tests/high_pressure.rs): the spray takes y_f p0 and L_lib L_PR/L_PR,sat of the table bit for bit; the gas receives c_l T + L (books close by construction); a droplet evaporates
+- contract (diagnostics): [`parcels_above_the_critical_mixing_temperature_are_counted`](../../crates/foehncraft-particles/tests/high_pressure.rs): D314: parcels above the critical mixing temperature are counted with their mass and get no latent heat
+- contract (diagnostics): [`the_keys_are_checked`](../../crates/foehncraft-particles/tests/high_pressure.rs): unknown fuel, partial critical constants, unknown gas and a k_ij of a gas not in the ambient are refused with the key named
+- exact: [`rachford_rice_finds_the_vapour_fraction_of_a_known_split`](../../crates/foehncraft-kernels/src/realfluid.rs): Rachford-Rice gives beta = 1/2 for K = (2, 1/2), z = (1/2, 1/2) to 1e-15 and no split when all K exceed 1
+- consistency: [`a_binary_flash_gives_the_phases_of_the_surface_equilibrium`](../../crates/foehncraft-kernels/src/realfluid.rs): the flash of N2 + n-dodecane at 500 K, 6 MPa gives the same coexisting phases for three feeds, equal to the droplet surface solution (1e-9), mass balance to 1e-12; a feed outside the two-phase range stays one phase
+- consistency: [`the_stability_test_tells_one_phase_from_two`](../../crates/foehncraft-kernels/src/realfluid.rs): Michelsen's tangent-plane test: pure components and hot gas with a little fuel stable, an equimolar mixture at 450 K, 6 MPa unstable
+- reference-data: [`the_ideal_gas_of_dodecane_follows_its_heat_capacity_table`](../../crates/foehncraft-particles/tests/mixing_line.rs): n-dodecane ideal gas: Scott (1974) c_p by the CH2 increment, NASA-7 fit within 0.3 % (within 0.24 % of Lemmon and Huber 2004 at 300 to 700 K), enthalpy of formation -290.9 kJ/mol
+- consistency: [`the_dodecane_vapour_is_the_kernel_ideal_gas`](../../crates/foehncraft-flow/src/species.rs): the vapour species NC12H26 of the flow's species data is the kernel's n-dodecane ideal gas (same coefficients, range and Lennard-Jones data); its c_p within 0.6 % of Lemmon and Huber (2004) at 500 and 700 K, its kinetic-theory viscosity within 5 % at 500 K (the_spray_vapours_meet_the_nist_data)
+- exact: [`va4_the_mixing_line_closes_the_energy_balance`](../../crates/foehncraft-particles/tests/mixing_line.rs): VA.4: 363 K n-dodecane into 900 K N2 at 6 MPa, frozen, equilibrium and ideal: the enthalpy of the state found equals that of the mixed streams to 1e-13 of the stream difference (found 7e-16), the end points are the streams
+- consistency: [`va4_the_two_phase_region_of_the_mixing_line`](../../crates/foehncraft-particles/tests/mixing_line.rs): VA.4: Z_sat 0.357 (equilibrium) against 0.320 (ideal); the frozen line equals the equilibrium line before Z_sat and fails the stability test where the flash splits (1e-6); equal fugacities and dissolved N2 in the two-phase region
+- reference-data: [`va5_the_siebers_liquid_length_with_our_thermodynamics`](../../crates/foehncraft-particles/tests/mixing_line.rs): VA.5: Siebers (1999) liquid length with our Z_sat at the four measured Spray A conditions (ECN DBI, 210675): 7.2/11.3/4.9/10.7 mm (equilibrium) and 8.2/13.0/5.7/11.3 mm (ideal) against 11.7/16.3/7.4/20.6 mm; the trends with temperature and density right
+
+Gaps:
+
+- VA.5 not met: Siebers' scaling (C_L = 0.62, measured 21.5 deg angle) with our saturation mixture fraction is 30 to 48 % below the measured liquid lengths (equilibrium) and 20 to 45 % (ideal); the real fluid shortens it by 5 to 14 %, away from the measurement; Siebers' own B is not in an open paper
+- above 550 K Peng-Robinson with one k_ij is 3 to 9 % low on the measured bubble pressures (the measured Henry constant falls faster with T); the surface vapour fraction moves by 2 to 6 % between the k_ij of the whole set and of the hot isotherms
+- the dissolved gas shifts the equilibrium but is not booked: the liquid stays pure fuel (D311)
+- the gas solver stays ideal (D317): the departure enthalpy of the dense vapour enters the gas as a sensible-heat deficit
+- no flow case yet: VA.7 to VA.9 (order independence with a fuel vapour, the Spray A case) are later stages; the vapour species NC12H26 is in the species data
+- built-in high-pressure data for n-dodecane only; other liquids take the plain 1978 kappa (water: 11 % low on its vapour pressure at 320 K)
+
+<a id="sprays-ecn-diagnostics"></a>
+
+### ECN liquid length (projected liquid volume) and vapour penetration (Spray A, SA3, D315)
+
+**partial** (gaps written) · id `sprays.ecn-diagnostics` · switch `[spray.ecn]` · decisions D315
+
+- exact: [`the_liquid_length_of_a_linear_plv_profile_is_exact`](../../crates/foehncraft-particles/tests/ecn.rs): parcels with a linearly falling liquid volume: the PLV of every bin to 1e-12 and both liquid lengths (0.95 and 0.5 of the line) to 1e-12 m
+- exact: [`the_volume_along_the_line_of_sight_is_summed_and_across_it_is_not`](../../crates/foehncraft-particles/tests/ecn.rs): two parcels along the line of sight add in one bin, two across it fall in two; the threshold is reached at the summed bin
+- exact: [`the_default_line_of_sight_is_across_the_axis`](../../crates/foehncraft-particles/tests/ecn.rs): the default and a given line of sight are unit vectors across the axis (to 1e-15)
+- exact: [`the_vapour_penetration_is_the_farthest_cell_at_the_threshold`](../../crates/foehncraft-particles/tests/ecn.rs): the vapour penetration is the farthest axial distance of a cell at or above 0.1 % on a slanted axis (to 1e-15), behind the nozzle and off threshold ignored
+- contract (bitwise): [`the_liquid_length_does_not_depend_on_the_parcel_order`](../../crates/foehncraft-particles/tests/ecn.rs): the parcels in reverse order give the same bits; without [spray.ecn] no length is written
+- contract (diagnostics): [`the_ecn_table_is_checked`](../../crates/foehncraft-particles/tests/ecn.rs): negative thresholds, a line of sight along an injector, a vapour fraction outside (0, 1) and the steady spray mode are refused with the key named
+- consistency: [`the_ecn_diagnostics_are_written_per_step`](../../crates/foehncraft-flow/tests/spray_evaporation.rs): the evaporating duct writes both liquid lengths and the vapour penetration per step; the smaller threshold lies farther out, within the farthest parcel, and the vapour inside the duct
+- consistency: [`spray_chamber_ecn`](../../examples/cases/flow/spray_chamber_ecn.toml): water sprayed into still air at 300 C: the liquid lengths settle while the vapour penetration keeps growing (passes in CI (set long), not yet in the manual) ([results](../gallery/sprays.md#spray-ecn))
+- contract (schema): [`spray_chamber_ecn_injectors`](../../examples/cases/flow/spray_chamber_ecn_injectors.toml): the included injector file of spray_chamber_ecn ([results](../cases/flow.md#lagrangian-sprays)) **missing**
+
+Gaps:
+
+- the PLV definition of the modelling standard only: the ECN5 path-averaged liquid volume fraction (0.15 % on 0.5 x 0.5 mm paths) and the time- and Favre-averaged fields on the ECN output grid are not built
+- instantaneous values per step: an average over the quasi-steady period is the user's (the CSV has every step)
+- no Spray A comparison yet (VA.8, stage SA6)
+- `spray_chamber_ecn_injectors` has no run in the verification manual or in CI
 
 ## Flow models
 
@@ -2096,11 +2360,32 @@ Gaps:
 
 Gaps:
 
-- 0D only: no chemistry in the flow cells and no heat release in the energy equation yet (SF2b)
-- no ignition delay or flame speed against measurements yet (the 1D laminar flame is SF2b); the reactor cases check the equilibrium and an ignition delay band of the code itself
-- the kernel is single-source no_std but not yet compiled to PTX or run on a GPU; no ranks (a 0D reactor has no mesh) until SF2b
+- no ignition delay against shock-tube measurements; the reactor cases check the equilibrium and an ignition delay band of the code itself (chemistry in the flow cells and the flame speed: chemistry.flow)
 - the Westbrook-Dryer 2-step mechanism overshoots its own equilibrium by 277 K from 1400 K: its CO2 dissociation is an explicit reaction, not the reverse of the CO oxidation (a flaw of the published mechanism, kept as published)
 - PLOG, Chebyshev and SRI rates, surface and electrochemical reactions are refused
+
+<a id="chemistry-flow"></a>
+
+### Gas-phase chemistry in the cells of a transient laminar flow with heat release, the 1D premixed flame (L2, steam furnace SF2b)
+
+**partial** (gaps written) · id `chemistry.flow` · switch `[chemistry] mechanism, min_temperature, [chemistry.integrator], [chemistry.flame_speed]` · decisions D120, D93, D31
+
+- reference-data: [`flame_methane_air_gri30`](../../examples/cases/flow/flame_methane_air_gri30.toml): stoichiometric CH4-air at 300 K, 1 atm, GRI-Mech 3.0 with species Lewis numbers, 50 um cells: burning velocity from the fuel consumption 0.348 m/s (mean over 3 to 6 ms; elements conserved to 3e-13) against the measured 0.360 +- 0.017 m/s (experimental target compiled for FFCM-1, Smith, Tao and Wang 2016); band of the case [0.30, 0.42] m/s (passes in CI (set long), not yet in the manual)
+- consistency: [`flame_methane_air_jl4`](../../examples/cases/flow/flame_methane_air_jl4.toml): the 4-step mechanism of Jones & Lindstedt in the same tube with Lewis number 1: 0.430 m/s (the global mechanism burns faster than the measured 0.36 m/s), peak temperature 2250 K, its own adiabatic flame temperature; band [0.38, 0.48] m/s (passes in CI (set linux-3), not yet in the manual)
+- exact: [`the_entry_gives_the_bits_of_the_cell_body`](../../crates/foehncraft-kernels/src/chemistry.rs): the argument block and rows of the PTX entry chemistry_react give bitwise the states and step counts of the per-cell body that the CPU threads run; cells below min_temperature are left untouched
+- contract (diagnostics): [`flow_case_reader_survives_the_corpus`](../../crates/foehncraft-flow/tests/broken_inputs.rs): flow cases with a broken [chemistry] table end in a coded error (CHM001, CHM003), never a panic
+- consistency: recorded run (Tesla T4 (sm_75), tools/notebooks/sf2_chemistry_colab.ipynb, 2026-11-25): example chemistry_gpu: 4096 methane-air cells (900 to 2400 K, fresh, half and fully burnt) over one flow step, end states and step counts bitwise equal on CPU and GPU for GRI-Mech 3.0 and Jones-Lindstedt; GPU 1.7x (GRI) and 8.5x (Jones-Lindstedt) faster per cell than the 2 Colab CPU cores ([results](../gallery/species.md#reacting-flow-cells))
+
+Gaps:
+
+- first-order Lie splitting at the first outer iteration of each step: on 100 um cells halving the time step from 10 to 5 us raises the GRI-Mech flame speed at 4 ms from 0.264 to 0.285 m/s; no Strang splitting yet
+- species diffusion is Fickian with constant Lewis numbers per species (no mixture-averaged or multicomponent diffusion, no thermal diffusion); on 100 um cells Lewis 1 for every species gives 0.29 m/s for the GRI-Mech flame, the species Lewis numbers 0.33 m/s
+- the first steps after the start fields are out of mass balance by up to 6e-4 (BAL001 warning) while the flow adjusts to the expansion; 1e-7 later
+- the energy balance books the convected enthalpy with the fluid's c_p, not the mixture's: its imbalance shows about 26 % in a flame although the temperature equation uses the mixture c_p
+- transient only (CHM003 for steady runs), laminar only (turbulence-chemistry interaction is SF3), no sprays with chemistry
+- not on ranks: the variable density it needs (stage 7c) is not on ranks yet
+- GPU checked on one device only, the Tesla T4 (sm_75); one thread per cell with a dense Jacobian makes GRI-Mech 3.0 only 1.7x faster than 2 CPU cores (register spill; a block per cell or a sparse Jacobian would be needed); the flame cases themselves have not run with backend = "cuda"
+- the burning velocity oscillates by a few per cent as the flame crosses cells (period dx/(S_L - u_inlet)); the case averages over the second half of the run
 
 ## Immersed bodies
 
@@ -2122,11 +2407,58 @@ Gaps:
 
 - the wall is smeared over about one cell: first order in h, lift 27 % above the benchmark range at h = D/40, wall shear stress and heat flux not accurate (by design of the pre-stage)
 - laminar and isothermal only: turbulence, energy, scalars, gravity, regions, rotating zones and sprays are refused (IMM102)
-- primitive bodies (cylinder, sphere, box) and `field` expressions only; STL bodies need the geometry kernel of stage 0
+- STL bodies (feature immersed.stl) take the exact cut volumes as solid fractions; the penalised wall of an STL body is as smeared as that of a primitive one
 - the coupled solver breaks down from rest when the sink exceeds about 1e5 times the viscous diagonal (K below about 1e-5 h²); SIMPLEC takes any K
 - the drag error depends on K/h²: with K = 0.01 h² the Stokes sphere array is 6.2, 5.5, 3.9, 2.6 % high on 16³ to 48³ (about first order); smaller K smears the body outward (up to +18 % at 1e-3 h² on 16³); in the Poiseuille channel the effective wall stays within half a cell (16 to 256 cells), its sign set by where the wall cuts its cell (sweeps run by tools/verification/immersed_sweeps.py, not in CI)
 - manufactured solution on 2D triangular prisms and the mixed 2D mesh: the velocity error stalls at about 2 % (6 % without the sink, so a gap of the flow discretisation on these meshes, not of the penalisation)
 - one rank only: `foehn run --ranks N` refuses immersed bodies
+
+<a id="immersed-cut"></a>
+
+### Immersed bodies as cut cells, primitive shapes (L13 stage 2a, 2b)
+
+**partial** (gaps written) · id `immersed.cut` · switch `[immersed] method = "cut"` · decisions D227, D228
+
+- exact: [`sphere_closure_volume_and_area_converge`](../../crates/foehncraft-mesh/tests/cut.rs): a sphere cut out of hexahedral, tetrahedral and polyhedral box meshes (8³ to 32³): every cut cell closes to 1e-12 of its largest face, no face with d · S ≤ 0, fluid volume and wall area converge at order above 1.6 (measured 2.0 to 2.2)
+- exact: [`flat_body_is_exact_and_splits_cells`](../../crates/foehncraft-mesh/tests/cut.rs): a slab with flat faces: fluid volume and wall area exact to 1e-12; a cell whose fluid is two corner pieces becomes two cells
+- consistency: [`small_cells_merge`](../../crates/foehncraft-mesh/tests/cut.rs): merging small cells moves no volume and no wall area (1e-12), the merged cells close to round-off
+- consistency: [`cut_is_independent_of_threads`](../../crates/foehncraft-mesh/tests/cut.rs): the cut mesh is bitwise the same on 1 and 4 threads (D93)
+- exact: [`cut_poiseuille_converges_at_second_order`](../../crates/foehncraft-flow/tests/immersed.rs): plane Poiseuille flow between two cut walls off the cell faces: mass flow error 1.24, 0.29, 0.066 % on 16, 32, 64 cells across, order 2.1 (penalised walls: 20.5, 8.5, 2.3 %)
+- reference-data: [`immersed_cut_cylinder_re20`](../../examples/cases/flow/immersed_cut_cylinder_re20.toml): Schäfer & Turek 2D-1 on a plain box mesh (h = D/20) with the cylinder cut out: C_D 5.588 in range, C_L 1.4 % and Δp 1.0 % below the range (with face points; without: C_D 5.583, C_L 2.1 % below); the run fails beyond 5 % of the range midpoint (passes in CI (set linux-2), not yet in the manual) ([results](../gallery/immersed.md#cut-cylinder))
+- contract (diagnostics): [`cut_settings_are_refused`](../../crates/foehncraft-flow/tests/immersed.rs): IMM101 for [immersed.cut] without method = "cut", IMM201 for a threshold out of range, IMM202 for regions
+
+Gaps:
+
+- the body is seen through its node values: features thinner than a cell vanish; the refusal of thin solids (Q4, IMM for D189) is not built yet
+- Δp of the Re 20 cylinder stays about 1 % below the range at D/20 (D/40: C_D 5.595, C_L 0.0106, Δp 0.1171, all within 0.1 % of the range; SIMPLEC stalls at residual 1e-7 there); the lift depends on the merge threshold (0.1: 4 % low, 0.4: 0.4 % low); the default 0.3 is set on this one case; the threshold sweep ran without face points
+- the joined faces of merged cells can fold: their fan moves volume from one cell to the other (48 faces on the 32³ STL sphere array, the largest 11.5 % of the smaller cell; on tetrahedra up to half); the merge avoids folds where it has a choice and IMM203 reports the rest; a fix needs two cells to share more than one face (a solver change, owner decision)
+- wall functions with the exact first-cell distance (2c), conjugate heat transfer through cut cells (2d, refused), named surface patches (2e) and the near-body refinement (2f) are not built
+- the other verification cases of the plan (cut-sphere Poisson MMS, annulus conduction, Taylor-Couette, inclined channel, Stokes sphere, Re 100 cylinder, turbulent plate) are not run yet
+- one rank only: the cut runs on the global mesh, `foehn run --ranks N` with a cut is not tested
+
+<a id="immersed-stl"></a>
+
+### STL bodies, cut out of the mesh or penalised, with sharp edges and face points (L13 stage 2)
+
+**partial** (gaps written) · id `immersed.stl` · switch `[[immersed.body]] shape = "stl"` · decisions D225, D227, D228
+
+- exact: [`stl_sphere_cut_matches_the_exact_moments`](../../crates/foehncraft-mesh/tests/stl_cut.rs): an icosphere cut out of hexahedral, tetrahedral and polyhedral meshes against the exact moments of its triangles: fluid volume order above 1.6 from 8³ to 16³, volume and wall area within 1e-2 on 16³, the fluid volume of every group of input cells a merged cell covers within 5e-2 of the body volume (L1), the face apertures within 6e-3 (hexahedra, tetrahedra); face points lower the volume error by more than a fifth and the aperture error; no face with d · S ≤ 0
+- exact: [`stl_box_edges_and_corners_are_kept`](../../crates/foehncraft-mesh/tests/stl_cut.rs): a box turned against a hexahedral mesh: with the dual-contouring wall point and face points the wall area and volume errors are below half those of the closest point on 16³ and 32³, the wall area converges at order above 1.5 (the closest point: first order)
+- consistency: [`fallback_keeps_every_face_usable`](../../crates/foehncraft-mesh/tests/stl_cut.rs): the turned box on hexahedra, tetrahedra and polyhedra with all points: the fallback leaves no face with d · S ≤ 0, simplifies fewer than a quarter of the cut cells and stays more accurate than the cut without wall and face points
+- consistency: [`stl_cut_is_independent_of_threads`](../../crates/foehncraft-mesh/tests/stl_cut.rs): the cut of an STL box is bitwise the same on 1 and 4 threads, its report too (D93)
+- reference-data: [`immersed_cut_stl_sphere_array`](../../examples/cases/flow/immersed_cut_stl_sphere_array.toml), [`stl_sphere_array_cut_converges_to_the_series`](../../crates/foehncraft-flow/tests/immersed.rs): Stokes flow through a simple cubic array of STL spheres cut out of the mesh: drag coefficient against the Hasimoto (1959) / Sangani & Acrivos (1982) series 2.152, −9.0 and −3.6 % on 16³ and 24³ hexahedra (test: below 4.5 % and halving), −2.3 % on 32³ and −0.9 % on 48³ (order 2.1); the wall carries G L³ to 6 % ([results](../gallery/immersed.md#stl-cut))
+- consistency: [`penalised_stl_sphere_matches_the_primitive`](../../crates/foehncraft-flow/tests/immersed.rs): the penalised STL sphere (exact cut volumes as solid fractions) gives the drag of the penalised primitive sphere within 1 % on 16³
+- contract (diagnostics): [`stl_body_settings_are_refused`](../../crates/foehncraft-flow/tests/immersed.rs): IMM101 for an stl body without `file`, a `scale` not > 0, `file` on another shape; CASE006 for a missing file, a file without triangles or with a corner that is not a number
+
+Gaps:
+
+- on tetrahedra the sphere array is +1.7 % on 16³ and −1.8 % on 24³, and the wall carries G L³ only to 5 % (0.949 on 24³, a side force of 2 % on 16³): the cut tetrahedra need a closer look
+- on polyhedral meshes the faces are not planar: the fan of a clipped face is not that of the input face, so the face apertures (4.7e-2) and the cell-by-cell volumes do not converge (the totals do); the sphere array is −5.6 and −4.0 % on 17³ and 25³ polyhedra
+- on sharp bodies the cell-by-cell volume error with the dual-contouring point is about twice that of the closest point (1.4e-2 against 7.3e-3 on 32³ hexahedra) while the total is better: the feature point serves the whole loop, not each cell's share of the edge
+- the fallback cuts the whole mesh again per round (the turned box on 196 608 tetrahedra: three rounds, 18 s against 1.4 s without wall and face points); a local re-cut is not built
+- the cut reaches only the totals and the drag of the sphere array: the other cases of the plan (cut-sphere Poisson MMS, Taylor-Couette, Re 100 cylinder) are not run with STL bodies
+- a surface feature thinner than a cell vanishes between the nodes; the thin-solid refusal (Q4) is not built
+- one rank only
 
 <a id="immersed-topology"></a>
 
@@ -2166,7 +2498,7 @@ Gaps:
 
 Gaps:
 
-- beams only: MITC4/MITC3+ shells, quadratic solids, generalised-α, mode superposition, Craig–Bampton, damping and contact come in MS5 parts 2 to 4
+- beams and shells (structure.shells) only: quadratic solids, generalised-α, mode superposition, Craig–Bampton, damping and contact come in MS5 parts 3 and 4
 - the Timoshenko element's consistent mass converges at second order in the frequency of thick beams (7e-6 on 120 elements at L/d = 10)
 - no comparison with measured reed frequencies yet (MS6: Gasche et al. via González et al. 2017, Lemke et al. 2016)
 - the ordering is reverse Cuthill–McKee: the fill is an envelope, fine for slender reeds, large for compact 3D parts (no minimum-degree ordering yet)
@@ -2182,10 +2514,164 @@ Gaps:
 - exact: [`clamp_springs_static_is_exact`](../../crates/foehncraft-structure/tests/beams.rs): tip deflection on rotational and translational clamp springs PL³/(3EI) + PL²/k_r + P/k_t within 1e-10; a clamp without springs is reported rigid
 - exact: [`clamp_spring_frequency_against_the_frequency_equation`](../../crates/foehncraft-structure/tests/beams.rs): first frequency on a rotational root spring, kL/EI = 0.3 to 300, against the frequency equation: within 1e-8
 - exact: [`clamp_fit_recovers_the_spring`](../../crates/foehncraft-structure/tests/beams.rs): the fit recovers the spring of the frequency equation within 1e-5 in fewer than 40 modal solves; STR004 above the rigid clamp
-- consistency: [`catalogue_cases_run_and_the_fit_matches`](../../crates/foehncraft-tools/src/structure.rs): the catalogue cases run through the registry, the fit of the tool input hits 150 Hz
+- consistency: [`catalogue_cases_run_and_the_fit_matches`](../../crates/foehncraft-tools/src/structure.rs): the catalogue cases (beams and the plate) run through the registry; the fit hits 150 Hz on the beam clamp and on the clamp along the plate edge
+- exact: [`plate_on_clamp_springs_against_beam_theory`](../../crates/foehncraft-structure/tests/shells.rs): a plate (ν = 0) clamped along an edge on springs per length shared over its nodes: tip lift against beam theory within 1e-3; the spring forces balance the load within 1e-9
 
 Gaps:
 
-- springs on a single node of a beam model: shells with the springs spread along the clamp edge come with MS5 part 2
 - clamp parts as solids in frictionless contact (the second way of D290) are not built
 - no measured reed with a known clamp to calibrate against yet (MS6)
+
+<a id="structure-shells"></a>
+
+### MITC4 and MITC3+ Reissner–Mindlin shells, plates clamped along an edge (L53, MS5 part 2)
+
+**partial** (gaps written) · id `structure.shells` · switch `structure.run with [[plates]] (element = "mitc4" or "mitc3+"), [[pressures]], along` · decisions D289, D290
+
+- exact: [`membrane_patch_test`](../../crates/foehncraft-structure/tests/shells.rs): MacNeal–Harder membrane patch test on the distorted mesh, both elements: the constant strain field to rounding
+- exact: [`bending_patch_test`](../../crates/foehncraft-structure/tests/shells.rs): MacNeal–Harder bending patch test, both elements: the constant curvature field to rounding
+- exact: [`simply_supported_plate_converges_to_navier`](../../crates/foehncraft-structure/tests/shells.rs): simply supported square plate, a/t = 100 and 1e4, against the Navier series with the Mindlin shear term: MITC4 within 4e-4, MITC3+ within 4e-3, second order, no shear locking
+- exact: [`cantilever_square_plate_modes_against_leissa`](../../crates/foehncraft-structure/tests/shells.rs): square plate clamped on one edge, first five modes within 1 % of Leissa (1969) table 4.30 on 24 × 24, both elements
+- reference-data: [`scordelis_lo_roof_converges`](../../crates/foehncraft-structure/tests/shells.rs): Scordelis–Lo roof: MITC4 within 2 % of 0.3024 on 16 × 16; MITC3+ within 3 % of the published MITC3+ values (Ko, Lee, Lee & Bathe 2017, table 10), monotone
+- consistency: [`reed_plate_catalogue_case`](../../crates/foehncraft-structure/tests/shells.rs): the reed petal case: Sturm check, the clamp springs carry the whole pressure, first mode between the beam's and the beam's times sqrt(1/(1 − ν²)), VTK polygons
+- contract (diagnostics): [`plate_case_errors_carry_the_case_code`](../../crates/foehncraft-structure/tests/shells.rs): STR001 for a clamp along an edge with a width, a pressure on a missing plate, a segment off the mesh, both at and along
+
+Gaps:
+
+- flat parallelogram plates from the case file only: no Gmsh reader for curved shell meshes yet (the roof test builds its mesh in code)
+- no stresses or strains in the output yet (displacements, rotations and modes only)
+- MITC3+ converges more slowly than MITC4 on curved shells (0.96 of the roof's lift on 16 × 16), as published
+- beams and plates in one case share nodes but no eccentric (offset) connection
+- linear (small rotations): large deflections need the corotational formulation of MS9
+
+<a id="structure-dynamics"></a>
+
+### Structural dynamics: generalised-α, mode superposition, Rayleigh and modal damping, Craig–Bampton reduction (L53, MS5 part 3)
+
+**partial** (a model without reference data; gaps written) · id `structure.dynamics` · switch `structure.run with [transient], [damping], [histories]; dynamics::craig_bampton (library)` · decisions D289
+
+- exact: [`generalised_alpha_converges_at_second_order_to_the_damped_step_response`](../../crates/foehncraft-structure/tests/dynamics.rs): damped oscillator under a step force against the closed form, ρ∞ = 1, 0.8, 0.5, 0: observed order 2.00 to 2.02
+- exact: [`generalised_alpha_damps_high_frequencies_to_rho_infinity`](../../crates/foehncraft-structure/tests/dynamics.rs): amplification matrix at Δt = 10⁴ periods: characteristic polynomial (λ + ρ∞)³ within 1e-3 (Chung & Hulbert 1993)
+- exact: [`trapezoidal_rule_conserves_the_energy`](../../crates/foehncraft-structure/tests/dynamics.rs): ρ∞ = 1, undamped cantilever, constant force: ½vᵀMv + ½uᵀKu − fᵀu within 1e-10 of the largest strain energy over 2000 steps
+- exact: [`mode_superposition_is_exact_per_mode_and_meets_the_direct_method`](../../crates/foehncraft-structure/tests/dynamics.rs): modal step exact for the oscillator (1e-12) and for a ramp (1 vs 1000 steps 1e-10); with every mode the direct method converges to it at second order
+- exact: [`rayleigh_factors_from_two_ratios`](../../crates/foehncraft-structure/tests/dynamics.rs): Rayleigh factors give both ratios to rounding; logarithmic decrement of the damped oscillator within 0.2 %; STR001 for ratios no αM + βK can give
+- exact: [`craig_bampton_is_exact_with_every_mode_and_a_ritz_bound_with_few`](../../crates/foehncraft-structure/tests/dynamics.rs): with every interior mode the eigenvalues of the full model within 1e-8; with 2, 4, 8 modes Ritz upper bounds converging; static boundary response exact (1e-10)
+- consistency: [`transient_case_direct_and_modal_agree_on_a_ramped_load`](../../crates/foehncraft-structure/tests/thermal.rs): the case keys: a ramped tip force with Rayleigh damping, direct and modal (8 modes) within 0.2 %; CSV and kept times
+
+Gaps:
+
+- starts from rest only: no start from a static state or from given displacements and velocities in the case file
+- no prescribed motion in time (base excitation) yet: it comes with the coupling of MS6
+- Craig–Bampton is a library function: no case keys or tool for reduced models yet
+- mode superposition without a static (mode-acceleration) correction for the modes left out
+- linear: no geometric nonlinearity (MS9) and no contact (MS5 part 4)
+
+<a id="structure-thermal"></a>
+
+### Thermal strain loads on beams and shells from a temperature change and a difference across the thickness (L53, MS5 part 3)
+
+**partial** (a model without reference data; gaps written) · id `structure.thermal` · switch `structure.run with [[temperatures]] and the material's expansion` · decisions D289
+
+- exact: [`free_beam_expands_and_bends_without_stress`](../../crates/foehncraft-structure/tests/thermal.rs): cantilever, both theories: tip α ΔT L and −(α ΔT/h) L²/2 with slope (α ΔT/h) L within 1e-9; no reaction
+- exact: [`held_bar_carries_the_thermal_force`](../../crates/foehncraft-structure/tests/thermal.rs): bar held at both ends: reaction E A α ΔT within 1e-9
+- exact: [`free_plate_expands_and_bends_into_a_sphere`](../../crates/foehncraft-structure/tests/thermal.rs): free plate, MITC4 and MITC3+: in-plane α ΔT x within 1e-8, the sphere −(α ΔT/h)(x² + y²)/2 within 1e-6
+- contract (diagnostics): [`thermal_case_errors`](../../crates/foehncraft-structure/tests/thermal.rs): STR001 for a material without expansion, an unknown part or history, a bad table, modal without modes, both Rayleigh inputs
+
+Gaps:
+
+- temperatures given per part are uniform with a linear difference across the thickness; a field from a flow case is `structure.temperature-field` (MS6)
+- the moduli do not depend on temperature: give E at the operating temperature
+- no thermal stresses of beams and shells in the output (the solids give the von Mises stress)
+
+<a id="structure-solids"></a>
+
+### Quadratic solids: ten-node tetrahedra and twenty-node hexahedra from a second-order Gmsh file or a block (L53, MS5 part 3b)
+
+**partial** (a model without reference data; gaps written) · id `structure.solids` · switch `structure.run with [[solids]]` · decisions D289
+
+- exact: [`quadrature_and_shape_functions`](../../crates/foehncraft-structure/tests/solids.rs): 14-point rule exact for every monomial of degree ≤ 5 on the tetrahedron; shape functions interpolate, sum to one, derivatives match differences; element faces point outward
+- exact: [`face_loads_are_the_textbook_values`](../../crates/foehncraft-structure/tests/solids.rs): uniform load on a six-node triangle (0, A/3) and an eight-node quadrilateral (−A/12, A/3) to rounding
+- exact: [`rigid_motions_are_free_and_the_mass_is_exact`](../../crates/foehncraft-structure/tests/solids.rs): curved elements: six rigid motions free of force (1e-11 of the largest entry), mass ρV (1e-13); an inverted element is refused
+- exact: [`patch_test_on_distorted_meshes`](../../crates/foehncraft-structure/tests/solids.rs): uniform tension on blocks with moved inner nodes, both elements: the linear displacement to rounding (Irons & Razzaque 1972)
+- exact: [`cantilever_against_beam_theory`](../../crates/foehncraft-structure/tests/solids.rs): cantilever 100 × 10 × 10 mm, ν = 0: tip within 0.3 % of Timoshenko beam theory (hex20 −0.12 %, tet10 −0.01 %); first frequency within 0.3 % of the Timoshenko beam; reaction equals the load
+- exact: [`thick_cylinder_against_lame`](../../crates/foehncraft-structure/tests/solids.rs): thick-walled cylinder under internal pressure, plane strain: u_r against Lamé, ν = 0.3 hex20 7e-5 and tet10 1.5e-3, ν = 0.49 (MacNeal & Harder 1985) 1.0e-3 and 7.8e-3
+- exact: [`thermal_expansion_free_and_held`](../../crates/foehncraft-structure/tests/solids.rs): free block: α ΔT x without stress to rounding; fully held block: reaction E α ΔT A/(1 − 2ν) within 1e-10
+- consistency: [`gmsh_file_gives_the_same_answer_as_the_block`](../../crates/foehncraft-structure/tests/solids.rs): a block written as a second-order Gmsh file (Gmsh node order, faces reversed) gives the generated block's tip deflection to 1e-12; linear meshes, unknown volumes and surfaces refused with STR001
+- contract (diagnostics): [`broken_second_order_gmsh_files_end_in_errors`](../../crates/foehncraft-structure/tests/solids.rs): second-order Gmsh files truncated, with damaged numbers, dropped and repeated lines and flipped bytes end in an error message or a valid mesh, never a panic (D202)
+- contract (diagnostics): [`solid_case_errors`](../../crates/foehncraft-structure/tests/solids.rs): STR001 for a temperature difference on a solid, a support with part but no surface, a pressure with plate and surface, zero divisions, both mesh and block
+
+Gaps:
+
+- a solid shares no nodes with beams and shells: no solid–shell or solid–beam connection yet
+- the von Mises stress at the nodes (averaged over the elements around each) only; no stress components or principal stresses in the output
+- Gmsh's complete second-order elements (27-node hexahedra, 9-node quadrilaterals), prisms and pyramids are refused
+- `[[temperatures]]` gives a uniform change per part; a field per node from a flow case is `structure.temperature-field`
+- nearly incompressible materials (ν → 0.5) lock with full integration: ν = 0.49 is 1e-3 to 8e-3 off on the Lamé cylinder; no mixed or reduced-integration formulation
+
+<a id="structure-contact"></a>
+
+### Unilateral contact with rigid seats and stops: exact in statics, penalty at the end of each generalised-α step (L53, MS5 part 4)
+
+**partial** (a model without reference data; gaps written) · id `structure.contact` · switch `structure.run with [[contacts]]` · decisions D289
+
+- exact: [`cantilever_pressed_onto_a_seat_is_the_propped_cantilever`](../../crates/foehncraft-structure/tests/contact.rs): cantilever pressed onto a seat 1 mm below its tip: the propped cantilever with a settled support, R = P − 3EIg/L³ (Timoshenko & Gere) within 1e-6, the tip on the seat to 1e-9 L, the clamp reaction P − R; short of the seat and pulled away, the free answer
+- exact: [`block_on_a_seat_is_the_block_held_where_it_touches`](../../crates/foehncraft-structure/tests/contact.rs): hex20 block on a seat under a uniform pressure: the block on rollers at the 22 mid-side nodes that touch (the corners of the quad8 faces lift off) to 1e-6 of the largest displacement, every roller pushing; total force equals the load to 1e-9; a node starting inside is refused
+- exact: [`impact_on_a_stop_converges_to_the_elastic_bounce`](../../crates/foehncraft-structure/tests/contact.rs): mass on a spring driven against a stop, trapezoidal: back at rest at the start after 2t₁ + τ of the penalty model in continuous time, 5.9e-3 to 5.5e-5 of the gap over 200 to 1600 steps (monotone); penetration within 5 % of the penalty model's for penalties 1e2 to 1e6, falling as 1/√penalty
+- consistency: [`reed_hits_its_stop_and_falls_back_on_its_seat`](../../crates/foehncraft-structure/tests/contact.rs): plate reed lifted by a pressure pulse against a stop, falling back on its seat: tip between the planes within the penetration (< 2e-5 m), both planes carry force, CSV columns contact_seat and contact_stop; the modal method with contact refused
+- consistency: [`catalogue_cases_run_and_the_fit_matches`](../../crates/foehncraft-tools/src/structure.rs): the reed valve example through the registry: both planes carry force, penetration below 1e-8 m
+
+Gaps:
+
+- frictionless only; no stick or slip
+- rigid planes only: no curved seats or stops and no contact between deformable parts (the clamp parts of section 6.3 of the plan)
+- node to plane: the corners of quadratic serendipity faces take a pulling share of a uniform pressure and lift off a flat seat; no mortar or face-based contact
+- impacts are elastic: no coefficient of restitution; generalised-α with ρ∞ < 1 damps the high frequencies an impact excites, and the penalty contact of a shell node lasts far less than a step
+- an impact is not resolved in time: no step cut at contact changes (plan 5.4) and no energy-conserving contact scheme; the energy of the reed example decays but is not checked against a balance
+- the active-set loop refactors the matrix whenever the set changes (1990 factorisations in 2400 steps of the example)
+
+<a id="structure-temperature-field"></a>
+
+### Temperatures of a solid region of a flow case as the thermal load of beams, shells and solids: VTKHDF cell field, linear least-squares fit at the nodes (L53, MS6 part 1)
+
+**partial** (a model without reference data; gaps written) · id `structure.temperature-field` · switch `structure.run with [[temperature_fields]]` · decisions D289
+
+- exact: [`linear_field_is_mapped_exactly_and_a_free_solid_expands_without_stress`](../../crates/foehncraft-structure/tests/mapping.rs): linear field on hexahedral, tetrahedral and polyhedral flow cells, hex20 and tet10 blocks: node values within 1e-9; displacement minus α[(T − T₀) x − ½ g |x|²] rigid within 1e-9 of α ΔT; von Mises below 1e-8 E α ΔT (Timoshenko & Goodier 1970)
+- exact: [`plates_and_beams_take_the_value_and_the_slope_across_the_section`](../../crates/foehncraft-structure/tests/mapping.rs): T₀ + 40 + 3000 z on MITC4, MITC3+ plates and a beam: every unknown within 1e-9 of [[temperatures]] change 40, difference 3000 h
+- exact: [`smooth_field_converges_at_second_order`](../../crates/foehncraft-structure/tests/mapping.rs): 400 + 50 sin πx cos πy eᶻ on 8, 16, 32 hexahedra: largest node error falls at order 1.9 and 2.2 (above 1.8), 0.28 K at 32 cells (below 0.4 K)
+- exact: [`a_two_dimensional_case_maps_a_field_linear_in_x_and_y`](../../crates/foehncraft-structure/tests/mapping.rs): one layer of hexahedra or prisms: a field linear in x and y within 1e-9, constant across the layer
+- contract (diagnostics): [`temperature_field_errors`](../../crates/foehncraft-structure/tests/mapping.rs): STR001 for a missing zone, field or file, an unknown part, no expansion, a structure outside the zones, bad neighbours or max_distance; offset moves the structure into the zone
+
+Gaps:
+
+- one result file per field, constant in time (a history scales T − reference): no series of results in a transient
+- VTKHDF results only (no .vtu or other formats)
+- the mapping is one way: the structure's motion and the fluid forces (the two-way FSI of MS6) are not coupled yet
+- the moduli do not depend on temperature
+- no check against a measured thermal deformation of a part in a flow
+
+## Moving meshes and solids
+
+<a id="mesh-deforming"></a>
+
+### Deforming meshes with a prescribed node displacement, and the piston (stage MS0)
+
+**partial** (gaps written) · id `mesh.deforming` · switch `[mesh_motion] displacement` · decisions D91
+
+- exact: [`swept_volumes_close_every_cell`](../../crates/foehncraft-mesh/src/geometry.rs): the swept volumes of the faces of every cell sum to the change of its volume to 1e-12 (relative) on hex, tet, poly and mixed meshes perturbed by 20 % under a smooth nonlinear motion; a translation sweeps d·S exactly
+- exact: [`motion_free_stream`](../../examples/cases/flow/motion_free_stream.toml), [`uniform_flow_on_a_deforming_mesh_stays_uniform`](../../crates/foehncraft-flow/tests/mesh_motion.rs): check MS0.1: a uniform flow on a swinging mesh stays uniform to round-off (velocity 1e-15, residuals below 1e-12, closure below 1e-13) on hex, tet and poly meshes with BDF1, BDF2 and Crank–Nicolson ([results](../gallery/moving-solids.md#deforming-mesh))
+- exact: [`motion_piston_adiabatic`](../../examples/cases/flow/motion_piston_adiabatic.toml), [`piston_compression_keeps_p_v_gamma`](../../crates/foehncraft-flow/tests/mesh_motion.rs): check MS0.2: a closed gas volume compressed by four with adiabatic walls follows p₀V^γ: error 6.6e-4 at the top dead centre with Δt = 0.01 s, observed order 1.8 to 2.2 in Δt, back to p₀(0) within 1e-4 after the period; mass to 1e-13, T uniform, heat book to 1e-8 ([results](../gallery/moving-solids.md#deforming-mesh))
+- consistency: [`motion_piston_cooled_walls`](../../examples/cases/flow/motion_piston_cooled_walls.toml): walls at 300 K: p₀ below the isentrope (572 kPa at the top dead centre), the expansion ends at 90.4 kPa, mass and heat book closed every step (passes in CI (set long), not yet in the manual) ([results](../gallery/moving-solids.md#deforming-mesh))
+- contract (diagnostics): [`deforming_mesh_settings_are_checked`](../../crates/foehncraft-flow/tests/mesh_motion.rs): MOV001 for a steady case, MOV002 for a folding displacement, MOV003 for an inlet moved out of its plane, MOV004 for a closed volume of constant density that is compressed
+- contract (bitwise): [`deforming_mesh_restart_continues_bit_identically`](../../crates/foehncraft-flow/tests/mesh_motion.rs): MS0 part 2: the restart file holds the nodes, Vⁿ, Vⁿ⁻¹ and the swept volumes of the last step; a BDF2 run continued from it writes restart.h5 and fields.vtkhdf byte for byte as the unbroken run; a changed displacement is refused (MOV001) ([results](../gallery/moving-solids.md#deforming-mesh-ranks))
+- contract (bitwise): [`motion_channel_ranks`](../../examples/cases/flow/motion_channel_ranks.toml), [`deforming_mesh_on_ranks_writes_the_files_of_one_rank`](../../crates/foehncraft-flow/tests/run_ranks.rs): MS0 part 2: a breathing channel with walls and a dye on 2 and 3 ranks writes history, balance, probes, boundaries, forces, wall, field and restart files byte for byte as one rank ([results](../gallery/moving-solids.md#deforming-mesh-ranks))
+- contract (bitwise): [`deforming_mesh_restart_on_ranks_continues_bit_identically`](../../crates/foehncraft-flow/tests/run_ranks.rs): a restart file of the deforming mesh written on 3 ranks continues on 2 and on 1 rank to the bytes of the unbroken run ([results](../gallery/moving-solids.md#deforming-mesh-ranks))
+
+Gaps:
+
+- the motion is prescribed by an expression only: no mesh-motion solver, no cell layering, no bodies moved by the fluid (MS1, MS2)
+- the geometry and the solver setup (an AMG setup) are rebuilt every step
+- refused with MOV001: turning zones, regions, sprays, immersed bodies, periodic boundaries, an error-controlled time step, level sweeps, the check mode [run] ranks
+- on ranks every rank moves the whole mesh and rebuilds its part every step (3 ranks about 5 times slower than 1 on 768 cells)
+- the closed-volume piston (variable density, stage 7c) neither restarts nor runs on ranks: the variable density has no restart yet
+- turbulence models and passive scalars run on the moving mesh but are not checked against a reference; the GPU backend has a Colab check (tools/notebooks/motion_colab.ipynb) that has not been run on a GPU yet
+- the cooled piston has no reference data (no heat-transfer correlation compared yet)

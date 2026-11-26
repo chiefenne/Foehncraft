@@ -516,8 +516,121 @@ impl Ids {
     }
 }
 
-/// Reads a VTKHDF file as a mesh.
-pub fn read_file(path: &Path, options: &ReadOptions) -> Result<MeshFile, String> {
+/// Where each owned volume cell (in file order) goes in the mesh: by its
+/// original number when every cell has one, else in file order.
+fn cell_order(original: &[i64], n: usize) -> Vec<usize> {
+    if original.len() == n {
+        let mut seen = vec![false; n];
+        let permutation = original.iter().all(|&o| {
+            usize::try_from(o)
+                .ok()
+                .filter(|&o| o < n)
+                .is_some_and(|o| !std::mem::replace(&mut seen[o], true))
+        });
+        if permutation {
+            original.iter().map(|&o| o as usize).collect()
+        } else {
+            let mut by: Vec<usize> = (0..n).collect();
+            by.sort_by_key(|&i| (original[i], i));
+            let mut at = vec![0; n];
+            for (k, &i) in by.iter().enumerate() {
+                at[i] = k;
+            }
+            at
+        }
+    } else {
+        (0..n).collect()
+    }
+}
+
+/// Reads cell arrays (`CellData/<name>`, any number type, one value per
+/// cell) of a VTKHDF file, in the cell order of the mesh that
+/// [`read_file`] gives: ghost cells and boundary faces left out. A result
+/// file of the solver (its fields beside the mesh) reads this way, so that
+/// a field and the mesh's cells match one to one.
+pub fn read_cell_fields(path: &Path, names: &[&str]) -> Result<Vec<Vec<f64>>, String> {
+    let grid = open_grid(path)?.grid;
+    let cd = grid
+        .g
+        .group("CellData")
+        .map_err(|_| "the grid has no CellData".to_string())?;
+    let members = cd.member_names().map_err(e)?;
+    let sets = names
+        .iter()
+        .map(|&name| {
+            if members.iter().any(|m| m == name) {
+                cd.dataset(name).map_err(e)
+            } else {
+                let mut have: Vec<&String> = members
+                    .iter()
+                    .filter(|m| {
+                        !matches!(
+                            m.as_str(),
+                            "vtkGhostType" | "OriginalCellIds" | "GlobalCellIds"
+                        )
+                    })
+                    .collect();
+                have.sort();
+                Err(format!(
+                    "no cell field `{name}` in the file; it has {}",
+                    have.iter()
+                        .map(|m| format!("`{m}`"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ))
+            }
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let mut values: Vec<Vec<f64>> = vec![Vec::new(); names.len()];
+    let mut original: Vec<i64> = Vec::new();
+    for p in 0..grid.partitions() {
+        let part = grid.read(p, Pass::Sizes)?;
+        let (c0, nc) = (grid.cell0[p], grid.n_cells[p]);
+        let read: Vec<Vec<f64>> = sets
+            .iter()
+            .zip(names)
+            .map(|(d, n)| rows::<f64>(d, c0, c0 + nc, n))
+            .collect::<Result<_, _>>()?;
+        for i in 0..nc {
+            if !part.owned(i) || kind(part.types[i])?.is_none() {
+                continue;
+            }
+            for (v, r) in values.iter_mut().zip(&read) {
+                v.push(r[i]);
+            }
+            if let Some(&o) = part.original.get(i) {
+                original.push(o);
+            }
+        }
+    }
+    let n = values.first().map_or(0, Vec::len);
+    let at = cell_order(&original, n);
+    Ok(values
+        .into_iter()
+        .map(|v| {
+            let mut out = vec![0.0; n];
+            for (i, x) in v.into_iter().enumerate() {
+                out[at[i]] = x;
+            }
+            out
+        })
+        .collect())
+}
+
+/// An opened VTKHDF file: its grid, its boundary patches (name and
+/// group) and what the report gives.
+struct Opened {
+    grid: Grid,
+    patches: Vec<(String, h5::Group)>,
+    len: usize,
+    major: i64,
+    minor: i64,
+    root: h5::Group,
+    _file: h5::File,
+}
+
+/// Opens the unstructured grid of a VTKHDF file, with its patches.
+fn open_grid(path: &Path) -> Result<Opened, String> {
     let len = std::fs::metadata(path)
         .map_err(|x| format!("{}: {x}", path.display()))?
         .len() as usize;
@@ -553,7 +666,28 @@ pub fn read_file(path: &Path, options: &ReadOptions) -> Result<MeshFile, String>
     if grid.link_exists("Steps") {
         return Err("a time-dependent VTKHDF file (group Steps) is not read as a mesh".into());
     }
-    let grid = Grid::open(grid, len)?;
+    Ok(Opened {
+        grid: Grid::open(grid, len)?,
+        patches,
+        len,
+        major,
+        minor,
+        root,
+        _file: file,
+    })
+}
+
+/// Reads a VTKHDF file as a mesh.
+pub fn read_file(path: &Path, options: &ReadOptions) -> Result<MeshFile, String> {
+    let Opened {
+        grid,
+        patches,
+        len,
+        major,
+        minor,
+        root,
+        _file,
+    } = open_grid(path)?;
     let np = grid.partitions();
     let mut warnings = Vec::new();
 
@@ -646,28 +780,7 @@ pub fn read_file(path: &Path, options: &ReadOptions) -> Result<MeshFile, String>
     };
 
     // the order of the cells: their original numbers, else the file
-    let at: Vec<usize> = if original.len() == n {
-        let mut seen = vec![false; n];
-        let permutation = original.iter().all(|&o| {
-            usize::try_from(o)
-                .ok()
-                .filter(|&o| o < n)
-                .is_some_and(|o| !std::mem::replace(&mut seen[o], true))
-        });
-        if permutation {
-            original.iter().map(|&o| o as usize).collect()
-        } else {
-            let mut by: Vec<usize> = (0..n).collect();
-            by.sort_by_key(|&i| (original[i], i));
-            let mut at = vec![0; n];
-            for (k, &i) in by.iter().enumerate() {
-                at[i] = k;
-            }
-            at
-        }
-    } else {
-        (0..n).collect()
-    };
+    let at = cell_order(&original, n);
     drop(original);
 
     // where each cell's nodes go

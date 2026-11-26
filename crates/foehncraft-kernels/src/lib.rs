@@ -12,6 +12,12 @@
 //! - [`particle`]: the parcel step of the Lagrangian sprays (L12): exact
 //!   relaxation of the parcel velocity to the gas velocity with the drag of
 //!   Schiller and Naumann, gravity and buoyancy;
+//! - [`evaporation`]: droplet evaporation of the sprays (SP5): the d² law
+//!   and the exact temperature relaxation with frozen coefficients, Ranz and
+//!   Marshall and Abramzon and Sirignano, the vapour pressure of water;
+//! - [`breakup`]: droplet breakup of the sprays (SP6): the Kelvin-Helmholtz
+//!   and Rayleigh-Taylor waves of Reitz, the exact TAB oscillator and the
+//!   drag of a distorted drop;
 //! - [`blas`]: vector operations and reproducible block dot products of the
 //!   Krylov solvers;
 //! - [`expr`]: the stack machine of the compiled case-file expressions (D53);
@@ -27,6 +33,9 @@
 //!   integer tallies;
 //! - [`chemistry`]: gas-phase reaction rates, their analytic Jacobian and
 //!   the stiff RODAS3 integrator of the reactor of a cell (stage SF2);
+//! - [`realfluid`]: the Peng-Robinson equation of state of a mixture, its
+//!   fugacities and departure enthalpies and the phase equilibrium at a
+//!   droplet surface at high pressure (ECN Spray A, SA1);
 //! - [`species`]: the properties of an ideal-gas mixture (stage SF1):
 //!   NASA-7 specific heat, Chapman–Enskog viscosity, Wilke and Mathur rules.
 //!
@@ -56,18 +65,23 @@
 pub mod adjoint;
 pub mod amg;
 pub mod blas;
+pub mod breakup;
 pub mod chemistry;
 pub mod entry;
+pub mod evaporation;
 pub mod expr;
 pub mod face;
 pub mod flow;
 pub mod fv;
+pub mod liquids;
 pub mod particle;
 pub mod radiation;
+pub mod realfluid;
 pub mod reverse;
 pub mod scalar;
 pub mod species;
 pub mod spmv;
+pub mod steam;
 pub mod turb;
 pub mod walk;
 

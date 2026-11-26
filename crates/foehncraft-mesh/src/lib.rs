@@ -11,9 +11,13 @@
 //! - [`annulus`]: the built-in annulus (Taylor–Couette, rotor–stator);
 //! - [`revolved`]: the built-in mesh of revolution (rotor and stator with an
 //!   interface of cylinders, discs and cones, D186);
+//! - [`cut`]: conservative cut cells, a body cut out of any mesh (L13
+//!   stage 2, D227–D229);
 //! - [`imprint`]: the sliding interface of a rotor and a stator with different
 //!   pitch, imprinted at the current rotor angle (D58, D182);
 //! - [`wedge`]: axisymmetric wedge meshes revolved from a 2D mesh;
+//! - [`surface`]: triangle surfaces of immersed bodies (L13 stage 0, D225):
+//!   check, winding numbers, signed distance, crossings;
 //! - [`format`](mod@format): the mesh file formats behind one reader interface (D33,
 //!   D187): [`gmsh`] (Gmsh `.msh` 4.1) and [`format::su2`] (SU2 `.su2`),
 //!   [`format::fluent_msh`] (the face-based `.msh`), [`format::vtk`] (VTK
@@ -30,6 +34,7 @@ pub mod annulus;
 pub mod builder;
 pub mod case;
 pub mod case_format;
+pub mod cut;
 pub mod cylinder;
 pub mod decompose;
 pub mod format;
@@ -46,6 +51,7 @@ pub mod quality;
 pub mod query;
 pub mod renumber;
 pub mod revolved;
+pub mod surface;
 pub mod wedge;
 
 pub use format::gmsh;

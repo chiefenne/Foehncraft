@@ -1,19 +1,31 @@
 [package]
 name = "foehncraft-structure"
-description = "Foehncraft structure: a small linear structural finite element solver (beams first; shells, solids, dynamics and contact follow), for reed valves and other parts moved by the flow (L53, MS5)"
+description = "Foehncraft structure: a small linear structural finite element solver (beams, shells, quadratic solids, dynamics; contact follows), for reed valves and other parts moved by the flow (L53, MS5)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
+# The integration tests are one program (tests/main.rs): see its header.
+autotests = false
+
+[features]
+default = ["hdf5"]
+# Temperature fields from VTKHDF result files of the flow solver (MS6).
+hdf5 = ["foehncraft-mesh/hdf5"]
 
 [dependencies]
 foehncraft-core.workspace = true
+foehncraft-mesh.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 toml.workspace = true
 schemars.workspace = true
+
+[[test]]
+name = "structure"
+path = "tests/main.rs"
 
 [lints]
 workspace = true

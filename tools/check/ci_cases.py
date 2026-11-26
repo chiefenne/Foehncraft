@@ -43,11 +43,15 @@ FLOW = {
         "poiseuille_hex", "poiseuille_poly", "tmr_plate_sst", "tmr_plate_keps",
         "tmr_plate_zeta_f0", "diffuser_sst_sharp", "ubend_sst_sharp", "ranks_channel_poly",
         "ranks_heated_channel_sst", "ranks_restart_channel", "ranks_run_channel",
-        "ranks_run_transient_sst",
+        "ranks_run_transient_sst", "ranks_run_mrf_couette",
+        "ranks_run_sliding_couette",
+        "ranks_run_imprint_couette",
         "immersed_cylinder_re20", "immersed_topology_bend", "immersed_mms",
+        "immersed_cut_cylinder_re20",
+        "ranks_water_if97_channel",
     ],
     "linux-3": [
-        "species_binary_diffusion", "species_coaxial_jet",
+        "species_binary_diffusion", "species_coaxial_jet", "flame_methane_air_jl4",
         "taylor_green_error", "adjoint_residual_cavity", "cylinder_potential", "cavity_re100_budget", "taylor_green_bdf2",
         "taylor_green_cn", "poiseuille_mixed", "cavity_re100_transient", "taylor_green_space",
         "cavity_re100_poly3d", "cavity_re100_tet3d", "pipe_wedge", "poiseuille_expression",
@@ -70,8 +74,10 @@ FLOW = {
         "vd_heated_duct", "vd_closed_box_heating", "vd_closed_box_side_heated", "vd_mms_steady",
         "mixed_convection_channel",
         "spray_duct", "spray_datums", "spray_two_way", "spray_cooling", "spray_dispersion",
-        "spray_cooling_steady",
+        "spray_cooling_steady", "spray_evaporation", "spray_heptane_evaporation",
         "porous_darcy_block", "porous_honeycomb_channel", "porous_schumann", "porous_storage_charge",
+        "motion_free_stream", "motion_piston_adiabatic", "motion_channel_ranks",
+        "steam_heated_duct", "steam_superheater_channel",
     ],
     "long": [
         "cylinder_re100", "cylinder_re100_short", "cylinder_re100_statistics", "cylinder_re100_convective", "cylinder_re20_gci",
@@ -79,7 +85,10 @@ FLOW = {
         "cht_heat_sink_turbulent", "cylinder_steady_diagnosis", "vd_cavity_large_dt",
         "cht_pulsating_channel_skin", "cht_heated_wall_frozen", "cht_pulsating_channel_warmup",
         "natural_convection_cavity_ra1e5", "natural_convection_plate",
-        "immersed_stokes_sphere", "ranks_cylinder_species_statistics",
+        "flame_methane_air_gri30",
+        "immersed_stokes_sphere", "immersed_cut_stl_sphere_array", "spray_saturation_steady",
+        "spray_breakup", "spray_chamber_ecn", "motion_piston_cooled_walls", "spray_g_g1",
+        "ranks_cylinder_species_statistics",
     ],
     "quick": [
         "cavity_re100_budget", "couette_hex", "couette_mixed", "couette_poly", "couette_tet",
@@ -96,6 +105,10 @@ LINUX = ("linux-1", "linux-2", "linux-3", "long")
 # Cases whose expected exit code is not 0: the steady cylinder that sheds is
 # stopped by its diagnosis on purpose (D198, exit code 3 = stopped).
 EXPECTED_EXIT = {F + "cylinder_steady_diagnosis.toml": 3}
+# Extra arguments of a case in CI: the ECN Spray G run (1.2 ms, about 30
+# minutes on 4 threads) runs its first 0.1 ms there; the gallery has the
+# whole run.
+ARGS = {F + "spray_g_g1.toml": ["--set", "time.end_time=1e-4"]}
 
 
 def _files(pattern: str) -> list[str]:
@@ -152,7 +165,7 @@ def run(name: str, foehn: str) -> int:
     for cmd, f in cases(name):
         print(f"::group::{cmd} {f}", flush=True)
         start = time.monotonic()
-        code = subprocess.run([foehn, *cmd.split(), f], cwd=ROOT).returncode
+        code = subprocess.run([foehn, *cmd.split(), f, *ARGS.get(f, [])], cwd=ROOT).returncode
         if code != EXPECTED_EXIT.get(f, 0):
             print(f"::error::{cmd} {f} failed (exit code {code})", flush=True)
             status = 1
@@ -169,7 +182,7 @@ def main(argv: list[str]) -> int:
         return check()
     if argv[0] == "--list":
         for cmd, f in cases(argv[1]):
-            print(cmd, f)
+            print(cmd, f, *ARGS.get(f, []))
         return 0
     foehn = argv[1] if len(argv) > 1 else "target/release/foehn"
     for name in (foehn, foehn + ".exe"):  # Windows: foehn.exe

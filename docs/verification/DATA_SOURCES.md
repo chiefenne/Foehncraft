@@ -135,6 +135,216 @@ data (D201, rule 5 below). The numbering of 1.3 is kept.
   Wall & Afacan 2002, Chem. Eng. Res. Des. 80): **to verify** before a test
   quotes it.
 
+## 3d. Spray evaporation (SP4, SP5)
+
+Published correlations, property formulations and analytic solutions; no
+measured data set is stored. Each is quoted by the code or a test next to
+its use.
+
+- Saturation pressure of water: the auxiliary equation of the IAPWS-95
+  formulation, Wagner, W., Pruss, A. (1993), International equations for
+  the saturation properties of ordinary water substance, J. Phys. Chem. Ref.
+  Data 22, 783-787, doi:10.1063/1.555926; the same equation as eq. (2.5) of
+  Wagner, W., Pruss, A. (2002), The IAPWS formulation 1995 for the
+  thermodynamic properties of ordinary water substance, J. Phys. Chem. Ref.
+  Data 31, 387-535, doi:10.1063/1.1461829. The kernel test checks it at the
+  triple point, 373.124 K and 101.325 kPa (values of the IAPWS-95 tables).
+- Latent heat of water at 298.15 K, 2.4417 MJ/kg (IAPWS-95 tables, Wagner
+  and Pruss 2002); at other temperatures from Kirchhoff's law with the
+  vapour enthalpy of the NASA-7 data of GRI-Mech 3.0 (`H2O`, the species
+  data the flow already uses) and h_l = c_l T.
+- Droplet heat and mass transfer: Ranz, W. E., Marshall, W. R. (1952),
+  Evaporation from drops, Chem. Eng. Prog. 48, 141-146 and 173-180
+  (Nu = 2 + 0.6 Re^1/2 Pr^1/3, Sh = 2 + 0.6 Re^1/2 Sc^1/3); Abramzon, B.,
+  Sirignano, W. A. (1989), Droplet vaporization model for spray combustion
+  calculations, Int. J. Heat Mass Transfer 32, 1605-1618,
+  doi:10.1016/0017-9310(89)90043-4 (film model with Spalding numbers B_M and
+  B_T).
+- d-squared law: Godsave, G. A. E. (1953), Studies of the combustion of
+  drops in a fuel spray: the burning of single drops of fuel, Proc. 4th
+  Symp. (Int.) on Combustion, 818-830, doi:10.1016/S0082-0784(53)80107-4;
+  Spalding, D. B. (1953), The combustion of liquid fuels, Proc. 4th Symp.
+  (Int.) on Combustion, 847-864, doi:10.1016/S0082-0784(53)80110-4. Used as
+  the analytic solution of the single-droplet test (K = 8 ρ_g D ln(1 + B_M)
+  / ρ_l at rest) and of the wet-bulb balance.
+- Adiabatic saturation (closed box and V28.11): an exact energy and mass
+  balance of the case itself, no external number.
+
+## 3e. High-pressure droplet surface (Spray A, SA1)
+
+Published measurements and equations, quoted by
+`crates/foehncraft-particles/tests/high_pressure.rs` and the constants of
+`foehncraft_kernels::realfluid`; no data set is stored.
+
+- Vapour pressure of n-dodecane up to its critical point: eq. (3) and
+  table 1 of Ambrose, D., Walton, J. (1989), Vapour pressures up to their
+  critical temperatures of normal alkanes and 1-alkanols, Pure Appl. Chem.
+  61, 1395-1403, doi:10.1351/pac198961081395 (T_c = 658.65 K, p_c =
+  1.83 MPa, ω = 0.573, a = −9.08593, b = 2.77846, c = −5.1985,
+  d = −4.173). The coefficients were read from the text layer of the open
+  PDF; the test checks them against the normal boiling point 489.439 K of
+  Lemmon, E. W., Goodwin, A. R. H. (2000), J. Phys. Chem. Ref. Data 29,
+  1-39, doi:10.1063/1.556054, table 2 (0.1 % at 101.325 kPa). The
+  Mathias-Copeman coefficients of `fuels::N_DODECANE` are our fit to this
+  equation (300 to 655 K, every 5 K; reproduced by a test).
+- Bubble points of nitrogen + n-dodecane: García-Córdova, T.,
+  Justo-García, D. N., García-Flores, B. E., García-Sánchez, F. (2011),
+  Vapor-liquid equilibrium data for the nitrogen + dodecane system at
+  temperatures from (344 to 593) K and at pressures up to 60 MPa, J. Chem.
+  Eng. Data 56, 1555-1564, doi:10.1021/je1012372 (record read through NIST
+  ThermoML). The test quotes 21 of the points (three per isotherm, near 2,
+  5 and 12 MPa); k_ij = 0.205 is our fit to all 75 points up to 20 MPa
+  (mean deviation 2.7 %, at most 9.1 %).
+- Critical points of the ambient gases from their reference equations of
+  state (N₂: Span, Lemmon, Jacobsen, Wagner, Yokozeki 2000; O₂: Schmidt and
+  Wagner 1985; CO₂: Span and Wagner 1996; H₂O: Wagner and Pruss 2002; Ar:
+  Tegeler, Span, Wagner 1999); acentric factors from Poling, B. E.,
+  Prausnitz, J. M., O'Connell, J. P. (2001), The Properties of Gases and
+  Liquids, 5th ed., appendix A (**to verify** against the printed table).
+- The Peng-Robinson constants Ω_a, Ω_b and Z_c are the roots of the
+  critical conditions of the equation (Peng, D.-Y., Robinson, D. B. (1976),
+  Ind. Eng. Chem. Fundam. 15, 59-64, doi:10.1021/i160057a011), recomputed
+  to 19 digits by us; a test checks the triple root.
+- Ideal gas of n-dodecane (`fuels::N_DODECANE.ideal_gas`, written by
+  `tools/data/dodecane_ideal_gas.py`): the recommended c_p of n-nonane and
+  n-decane of Scott, D. W. (1974), Correlation of the chemical
+  thermodynamic properties of alkane hydrocarbons, J. Chem. Phys. 60,
+  3144-3165, doi:10.1063/1.1681500, as the NIST Chemistry WebBook lists them
+  (gas phase thermochemistry, 200 to 1500 K); Scott's scheme adds the same
+  c_p per CH₂ group (the C7 to C10 differences agree to 0.01 J/(mol K)), so
+  n-dodecane is n-decane plus two increments. Checked against the c_p of
+  the reference equation of state of Lemmon, E. W., Huber, M. L. (2004),
+  Energy Fuels 18, 960-967, doi:10.1021/ef0341062, at 1 Pa (NIST WebBook
+  fluid tables): within 0.11 % at 300 to 700 K. Enthalpy of formation of
+  the gas −290.9 kJ/mol (Prosen and Rossini 1945) and standard entropy
+  622.50 J/(mol K) (Stull 1969), both NIST WebBook.
+- Mixing line and liquid length (VA.4, VA.5,
+  `crates/foehncraft-particles/tests/mixing_line.rs`): liquid density of
+  n-dodecane at 363.15 K and 6 MPa, 703.71 kg/m³ (Lemmon and Huber 2004,
+  NIST WebBook fluid tables). Measured Spray A liquid lengths by diffused
+  back-illumination, injector 210675, 150 MPa, 0 % O₂: 11.7 mm at 900 K,
+  16.3 mm at 700 K, 7.4 mm at 1200 K (22.8 kg/m³), 20.6 mm at 900 K and
+  7.6 kg/m³ (Engine Combustion Network, ecn.sandia.gov/data/dbi675/, read
+  2026-11-25; no uncertainty on the page). Nozzle: d = 90 µm, C_a = 0.95,
+  full spreading angle 21.5° (and 18.7°), Pickett, L. M. et al. (2011),
+  SAE 2011-01-0901 (OSTI 1121363). The scaling law and C_L = 0.62 of
+  Siebers, D. L. (1999), SAE 1999-01-0528, as Yue, Z., Reitz, R. D. (2019),
+  arXiv:1811.03714, eq. 4, give them.
+
+## 3f. Liquid property library and single droplets (D320, D321)
+
+Only our fitted coefficients are in the repository
+(`crates/foehncraft-kernels/src/liquids.rs`, `crates/foehncraft-flow/data/species-vapours.toml`);
+the tables they are fitted to are not stored. Generators:
+`tools/data/liquid_properties.py`, `tools/data/isooctane_table.py`,
+`tools/data/vapour_species.py`.
+
+- Water, n-heptane, n-dodecane: saturation tables of the NIST Chemistry
+  WebBook, SRD 69, "Thermophysical Properties of Fluid Systems" (Lemmon,
+  E. W., McLinden, M. O., Friend, D. G.), https://webbook.nist.gov/chemistry/fluid/,
+  1 K steps from the triple point region to T_c (URLs printed by
+  `liquid_properties.py --urls`). The tests quote single table points.
+- Iso-octane (not in the NIST fluid system): vapour pressure, Wagner 3-6
+  form of McGarry, J. (1983), Ind. Eng. Chem. Process Des. Dev. 22, 313
+  (T_c 543.96 K, p_c 2.56155 MPa), checked against the Antoine law of
+  Willingham, C. B., Taylor, W. J., Pignocco, J. M., Rossini, F. D. (1945),
+  J. Res. NBS 35, 219 (297.5 to 373.3 K); density, specific heat, latent
+  heat and viscosity: the DIPPR correlations printed in Perry's Chemical
+  Engineers' Handbook, 8th ed. (2008), tables 2-32, 2-153, 2-150 and 2-313
+  (published coefficients, transcribed through the `chemicals` Python
+  package data files and **to verify** against the printed tables); latent
+  heat checked against the calorimetric values of Majer, V., Svoboda, V.
+  et al. (1979, 1982, 1985) quoted on the NIST WebBook (±0.1 kJ/mol);
+  surface tension: Mulero, A., Cachadiña, I., Parra, M. I. (2012), J. Phys.
+  Chem. Ref. Data 41, 043105 (σ0 = 0.04794 N/m, n0 = 1.209, 273 to 373 K);
+  normal boiling point 372.4 K (NIST WebBook).
+- Vapour species NC7H16 and IC8H18: ideal-gas heat capacities of the NIST
+  WebBook gas-phase data (n-heptane and 2,2,4-trimethylpentane pages) and
+  their enthalpies of formation (−187.8 and −224.1 kJ/mol); Lennard-Jones
+  parameters from the critical point and acentric factor by Tee, L. S.,
+  Gotoh, S., Stewart, W. E. (1966), Ind. Eng. Chem. Fundam. 5, 356-363.
+- Vapour species NC12H26 (#320): the n-dodecane ideal gas of the real-fluid
+  kernel (section 3e: Scott 1974 by the CH₂ increment, NIST WebBook
+  enthalpy of formation −290.9 kJ/mol and standard entropy 622.50 J/(mol K),
+  critical point of Ambrose and Walton 1989), written by
+  `tools/data/vapour_species.py DIR NC12H26` from the table of
+  `tools/data/dodecane_ideal_gas.py --csv`. The test quotes the c_p of the
+  reference equation of Lemmon, E. W., Huber, M. L. (2004), Energy Fuels
+  18, 960-967, at 1 Pa (NIST fluid tables: 426.12 and 532.92 J/(mol K) at
+  500 and 700 K) and the dilute-gas viscosity of the same tables,
+  7.660e-6 Pa s at 500 K.
+- Single droplets: Chauveau, C., Birouk, M., Halter, F., Gökalp, I. (2019),
+  Int. J. Heat Mass Transfer (title, volume and pages **to verify**; the
+  rates are those of its eq. (4) as read in this work) (microgravity
+  K0 = 3.6552e-4 T − 0.1078 mm²/s, 473 to 748 K, n-heptane in N2 at
+  0.1 MPa, 14 µm cross fibres, d0 about 0.37 mm); Chauveau, C., Halter, F.,
+  Lalonde, A., Gökalp, I. (2008), ILASS-Europe, Como (fibre-free
+  extrapolation K0 = 4.485e-4 T − 0.1369 mm²/s). Measurements, D201
+  accepted class. The model results of Both, A., Mira, D., Lehmkuhl, O.
+  (2022), Int. J. Heat Mass Transfer, arXiv:2201.02818, are quoted only as
+  context for the gap, not as targets (D201).
+- Film reference state: Hubbard, G. L., Denny, V. E., Mills, A. F. (1975),
+  Int. J. Heat Mass Transfer 18, 1003-1008; Yuen, M. C., Chen, L. W. (1976),
+  Combust. Sci. Technol. 14, 147-154.
+
+## 3g. ECN Spray G, condition G1 (D309)
+
+Measurements of the Engine Combustion Network, quoted by
+`tools/plot/spray_g_g1.py` (the penetrations) and
+`examples/cases/flow/spray_g_g1_injectors.toml` (the injector); the files
+are not stored.
+
+- Liquid and vapour penetration along the injector axis, iso-octane, G1
+  (573 K, 3.5 kg/m³, 20 MPa): the Sandia Spray G data of the ECN,
+  https://ecn.sandia.gov/data/sandia-spray-g-data/ (files
+  `liquid_data_2e-4_thr.mat`, `liquid_data_2e-3_thr.mat`, column 16, and
+  `vapor_data.mat`, column 12; high-speed extinction imaging evaluated as
+  projected liquid volume above 0.2e-3 and 2e-3 mm³/mm², and schlieren
+  imaging, by J. Hwang and L. M. Pickett), cited as the data page asks:
+  Hwang, J., Weiss, L., Karathanassis, I. K., Koukouvinis, P., Pickett,
+  L. M., Skeen, S. A. (2020), Spatio-temporal identification of plume
+  dynamics by 3D computed tomography using engine combustion network
+  spray G injector and various fuels, Fuel 280, 118359,
+  doi:10.1016/j.fuel.2020.118359. The script quotes 12, 10 and 12 points
+  (the frames nearest to 0.05 to 1.2 ms). Measurements, D201 accepted
+  class.
+- Plume direction 33°: our mean of `plume_angles.mat` of the G1 3D
+  computed tomography of the same data page and paper (0.3 to 0.7 ms,
+  planes 2 to 15 mm from the tip: 32.9° to 33.7°).
+- Rate of injection: the ECN file `roi_20MPa_680us.csv` (20 MPa, 680 µs
+  energising, 10.16 mg); the injector file holds our 17-point
+  least-squares fit to it, not the file.
+- Nozzle: ECN Spray G specification (8 holes of 0.165 mm, orifice length
+  0.16 to 0.18 mm, drill angle 37°), the ECN page "Spray G geometry".
+  Area contraction 0.635 to 0.687 measured by Payri, R., Gimeno, J.,
+  Martí-Aldaraví, P., Vaquerizo, D. (2015), Momentum flux measurements on
+  an ECN GDi injector, SAE 2015-01-1893, doi:10.4271/2015-01-1893, and the
+  full plume cone of 25° from the tomography and the schlieren boundary
+  at 50 % intermittency, both as quoted by Colmenares F., J. D., Ameen,
+  M. M., Patel, S. S., Large eddy simulation of gasoline sprays in a
+  Lagrangian-Eulerian framework using the high-order spectral element
+  method, ASME J. Eng. Gas Turbines Power, paper GTP-22-1576 (OSTI
+  2427994; volume and pages **to verify**). Their model settings (B₁ = 80
+  and others) are not used (D201).
+- Drop size: the phase-Doppler data of the same data page ("Droplet size
+  and velocity at z = 15 mm", GM, S. Parrish, injector #16, plume 1, file
+  `PDI_distribution.xlsx`): the time-averaged Sauter mean diameter of
+  9 µm, quoted by the plot script. Measurements, D201 accepted class.
+- Gas velocity on the injector axis 15 mm from the tip: the PIV data of
+  the same page ("Gas velocity at z = 15 mm, y = 0", Sandia, P. Sphicas,
+  file `gasvel_z15.dat`, column Vzt), cited as Sphicas, P., Pickett,
+  L. M., Skeen, S., Frank, J., Lucchini, T., Sinoir, D., D'Errico, G.,
+  Saha, K., Som, S. (2017), A comparison of experimental and modeled
+  velocity in gasoline direct-injection sprays with plume interaction and
+  collapse, SAE Int. J. Fuels Lubr. 10(1), 184-201,
+  doi:10.4271/2017-01-0837 (as listed in the references of OSTI 2427994);
+  12 points quoted by the plot script. Their model settings are not used
+  (D201). Measurements, D201 accepted class.
+- Turbulence scale of KH-ACT at low gas density (a finding quoted in the
+  gallery text, no numbers taken): Magnotti, G. M. (2017), Modeling the
+  influence of nozzle-generated turbulence on diesel sprays, PhD thesis,
+  Georgia Institute of Technology (OSTI 1785739), section 1.2.3.3.
+
 ## 4. Rules for adding an entry
 
 1. A value goes into the repository only when a test or a validation page

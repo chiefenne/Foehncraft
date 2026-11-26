@@ -17,6 +17,7 @@ On this page:
 - [Lagrangian sprays](#lagrangian-sprays)
 - [Porous regions](#porous-regions)
 - [Immersed bodies](#immersed-bodies)
+- [Deforming meshes](#deforming-meshes)
 - [Species](#species)
 
 Stage 4: steady incompressible laminar flow, SIMPLEC with the Rhie–Chow
@@ -102,6 +103,9 @@ Couette and Poiseuille flow, the lid-driven cavity and the steady cylinder.
 | `flow/ranks_restart_channel.toml` | generated poly 2D, 2 821 cells, perturbed by 10 % | the channel of `ranks_channel_poly` marched 40 time steps with BDF2, solved again on 2, 3 and 5 ranks; the restart gathered from five ranks must have the bytes of the one-rank restart, and a run continued from it with `--restart` reads it on any rank count (MPI step W6) | [gallery 262](../gallery/meshes.md#restart-ranks), [recipe 262](../recipes/meshes.md#restart-ranks) |
 | `flow/ranks_run_channel.toml` | generated poly 2D, 2 821 cells, perturbed by 10 % | the channel of `ranks_channel_poly` solved on 5 ranks as the run itself (`[run] rank_count`, `--ranks N`); rank 0 writes every output file byte for byte as one rank does, plus `ranks.vtkhdf` with the rank of every cell (MPI step W7) | [gallery 279](../gallery/meshes.md#run-ranks), [recipe 279](../recipes/meshes.md#run-ranks) |
 | `flow/ranks_run_transient_sst.toml` | generated poly 2D, 2 821 cells, perturbed by 10 % | a heated turbulent channel (k-ω SST, energy, a passive dye) with the upper wall moving against the inflow, marched 180 BDF2 steps on 5 ranks as the run itself; every output file, the heat balance of every step and the turbulence summary byte for byte one rank (MPI step W7 part 2) | [gallery 290](../gallery/meshes.md#run-ranks-physics), [recipe 290](../recipes/meshes.md#run-ranks-physics) |
+| `flow/ranks_run_mrf_couette.toml` | generated annulus, 1 024 cells, rotor zone in the inner half of the gap | laminar Taylor–Couette flow (Re = 50) with the inner half of the gap a moving reference frame, a closed domain with a pressure reference cell, solved on 5 ranks as the run itself; every output file byte for byte one rank, rotor torque and shaft power as log columns, L2 error of the velocity below 1 % (MPI step W7, turning zones) | [gallery 301](../gallery/meshes.md#run-ranks-mrf), [recipe 301](../recipes/meshes.md#run-ranks-mrf) |
+| `flow/ranks_run_sliding_couette.toml` | generated annulus, 4 096 cells, rotor of 128 identical sectors in the inner half of the gap | Taylor–Couette spin-up from rest with the inner half of the gap a sliding rotor in conformal stepping (one sector per step) and a blob of dye in the rotor, one turn on 5 ranks as the run itself; the old levels of the moved rotor cells come from other ranks, every output file byte for byte one rank (MPI step W7, turning zones) | [gallery 304](../gallery/meshes.md#run-ranks-sliding), [recipe 304](../recipes/meshes.md#run-ranks-sliding) |
+| `flow/ranks_run_imprint_couette.toml` | generated annulus, 640 cells, rotor ring of 32 sectors and stator ring of 48 meeting at a non-matching interface | Taylor–Couette spin-up from rest with the inner half of the gap a sliding rotor by imprinting (the interface imprinted at the rotor angle every step, D182 variant B) and a blob of dye in the rotor, a third of a turn on 5 ranks as the run itself; every rank imprints the whole mesh and takes its part, the state carried onto the new faces in the global order, every output file byte for byte one rank (MPI step W7, turning zones) | [gallery 305](../gallery/meshes.md#run-ranks-imprint), [recipe 305](../recipes/meshes.md#run-ranks-imprint) |
 | `flow/ranks_cylinder_species_statistics.toml` | built-in cylinder mesh of the 2D-2 benchmark (`[mesh.cylinder]`) | the vortex street at Re 100 with methane evaporating from the cylinder surface (CH4, O2, N2, MLP limiter), statistics of the fields from t = 5 s with phase averages over the shedding period, on 4 ranks; every output file byte for byte one rank (MPI step W7) | [gallery 303](../gallery/meshes.md#run-ranks-species), [recipe 303](../recipes/meshes.md#run-ranks-species) |
 
 ## Transient flow
@@ -309,6 +313,19 @@ on the [key page](../keys.md) and in [recipe
 | `flow/vd_closed_box_side_heated.toml` | generated hex 2D, 32 × 32 cells | check V7c.3: a closed box of air heated through one wall at 400 K for 2 s: p₀ rises to 117 630 Pa, the gas far from the wall is compressed to 321 K, the mass stays to round-off (10⁻¹⁵) | [gallery 195](../gallery/energy.md#variable-density), [recipe 195](../recipes/energy.md#variable-density) |
 | `flow/vd_mms_steady.toml` | generated hex 2D, 16² to 64² cells (3 levels) | check V7c.4: manufactured solution with ρ = 1/T, a divergence-free mass flux, the full stress and a closed volume (`tools/verification/vd_mms.py`); observed orders 2.22 and 1.92 (velocity), 1.86 and 1.90 (temperature), 1.8–2.2 required | [recipe 195](../recipes/energy.md#variable-density) |
 
+## Water and steam (IAPWS-IF97)
+
+The database materials `steam` and `water-if97` and the property form
+`if97` (stage SF7a): density, c_p, μ and k of IAPWS-IF97, IAPWS R12-08
+and R15-11 at the operating pressure, following the temperature. The
+states themselves come from `foehn steam` (tool `materials.steam`).
+
+| Case file | Mesh | Shows | Where |
+|---|---|---|---|
+| `flow/steam_heated_duct.toml` | generated hex 2D, 100 × 4 cells | superheated steam at 4 MPa heated from 600 K in a duct with slip walls: the outlet 750.002 K against the exact 750 K of the IF97 enthalpy balance, the inlet pressure 20.55465 Pa against G²(1/ρ_out − 1/ρ_in) = 20.55466 Pa | [gallery 277](../gallery/properties.md#steam-if97), [recipe 277](../recipes/properties.md#steam-if97) |
+| `flow/steam_superheater_channel.toml` | generated hex 2D, 240 × 40 cells | steam at 4 MPa and 540 K between plates at 760 K with the IF97 variable density: the boundary layers meet after a third of the length, ρ falls from 18.8 to 11.8 kg/m³, outlet mixed mean 681 K; converged in 416 iterations | [gallery 277](../gallery/properties.md#steam-if97), [recipe 277](../recipes/properties.md#steam-if97) |
+| `flow/ranks_water_if97_channel.toml` | generated hex 2D, 120 × 24 cells | water of `water-if97` at 10 MPa heated from 450 K by walls at 560 K, c_p, μ, k from IF97 in every iteration, solved on 2, 3 and 4 ranks and bitwise the one-rank solution | [gallery 277](../gallery/properties.md#steam-if97) |
+
 ## Lagrangian sprays
 
 `[spray]` with an included injector file (L12, SP1, D246): droplets as
@@ -317,7 +334,7 @@ parcels in a transient flow, one way or, with `[spray.coupling] mode =
 gas and, with `[energy]`, the heat as a source of the gas energy;
 `[spray] dispersion = "eddy-lifetime"` (SP2c, D243) lets the turbulence
 spread the parcels. In a steady case `[spray.steady]` (SP2s, D260) runs the
-spray as streams through the steady gas, with relaxed sources. The keys are on the [key page](flow-keys.md); the run writes `spray.csv` and
+spray as streams through the steady gas, with relaxed sources. `[spray.evaporation]` (SP4, SP5) lets the droplets evaporate into a species of `[species]`. The keys are on the [key page](flow-keys.md); the run writes `spray.csv` and
 `spray/parcels_<step>.vtkhdf`. `[[datum]]` tables (SP1b, D262) report the
 liquid and the gas through planes, surfaces and boundaries and the droplets
 in volumes, in `datums.csv` and `spray_hist_<datum>.csv`.
@@ -330,6 +347,12 @@ in volumes, in `datums.csv` and `spray_hist_<datum>.csv`.
 | `flow/spray_cooling.toml` | generated hex 2D, 100 × 20 cells | two-way heat: 10 g/s of water at 20 °C (20 to 200 µm, `flow/spray_cooling_injectors.toml`) sprayed into air at 300 °C and 5 m/s; the droplets take about 6.6 kW from the air, which leaves about 50 K cooler; the enthalpy pair cancels to the bit, 3.7 passes per step with `max_passes = 4` | [gallery 283](../gallery/sprays.md#spray-cooling), [recipe 283](../recipes/sprays.md#spray-cooling) |
 | `flow/spray_dispersion.toml` | generated hex 2D, 150 × 30 cells | eddy-lifetime dispersion: water droplets of 20 to 300 µm (`flow/spray_dispersion_injectors.toml`) shot along the axis of a duct with 10 % turbulence spread by the eddies alone (no gravity, no cone); after 1 m the small droplets spread 5.4 cm, the large ones 2.9 cm; no parcel lost | [gallery 285](../gallery/sprays.md#spray-dispersion), [recipe 285](../recipes/sprays.md#spray-dispersion) |
 | `flow/spray_cooling_steady.toml` | generated hex 2D, 100 × 20 cells | the duct of `spray_cooling` as a steady state in the steady spray mode (`[spray.steady]`, D260): 400 water streams through the frozen gas, sources relaxed every 10 iterations; converges in 526 iterations and 58 passes, 6.39 kW from the air (the transient run: 6.58 kW), source residual 1e-4, all liquid leaves through the outlet | [gallery 292](../gallery/sprays.md#spray-steady), [recipe 292](../recipes/sprays.md#spray-steady) |
+| `flow/spray_evaporation.toml` | generated hex 2D, 100 × 20 cells | evaporation (SP4, SP5): 2 g/s of water at 20 °C (10 to 80 µm, `flow/spray_evaporation_injectors.toml`, vapour `H2O`) sprayed into air at 300 °C and 5 m/s; about 1.2 g/s evaporate (1/3-rule film, D321), the air leaves at 246 °C with 2.4 % vapour; ledger pairs 2801 to 2805 cancel to the bit, 6.8 passes per step with `max_passes = 8` | [gallery 306](../gallery/sprays.md#spray-evaporation), [recipe 306](../recipes/sprays.md#spray-evaporation) |
+| `flow/spray_heptane_evaporation.toml` | generated hex 2D, 100 × 20 cells | an n-heptane spray (D320, D321): 1 g/s of the library liquid `n-heptane` at 300 K (10 to 80 µm, `flow/spray_heptane_evaporation_injectors.toml`, vapour `NC7H16`) into nitrogen at 600 K and 5 m/s, Abramzon-Sirignano with the 1/3-rule film; the droplets evaporate within about 5 cm, the gas leaves at 312 °C with 1.7 % vapour | [gallery 321](../gallery/sprays.md#spray-liquid-library), [recipe 321](../recipes/sprays.md#spray-liquid-library) |
+| `flow/spray_saturation_steady.toml` | generated hex 2D, 60 × 12 cells | V28.11 in the steady spray mode: 2 g/s of water at 310 K from six nozzles (`flow/spray_saturation_injectors.toml`) in 17.6 g/s of air at 400 K, three times what the air can take; the air saturates within 5 cm, the outlet is at 309.3 K and Y = 0.0375 against the exact 310.1 K and 0.0395; the source residual stalls at about 0.12 (SPR008, SPR009; a gap) | [gallery 306b](../gallery/sprays.md#spray-saturation), [recipe 306](../recipes/sprays.md#spray-evaporation) |
+| `flow/spray_breakup.toml` | generated hex 3D, 100 × 16 × 16 cells (a quarter of the chamber, graded to the axis) | breakup (SP6): a diesel-like fuel at 60 MPa through a 0.15 mm hole (`flow/spray_breakup_injectors.toml`: rate table, C_a 0.86, L/d 4, C_d 0.8) into nitrogen at rest at 15 kg/m³, KH-ACT blobs with TAB distortion and dynamic drag, two-way, k-ε; 97 % of the liquid at 50.6 mm after 1 ms (Hiroyasu and Arai: 51.1 mm), 47.0 mm with `kh-rt`; about 4 minutes on 4 threads (long set) | [gallery 318](../gallery/sprays.md#spray-breakup), [recipe 318](../recipes/sprays.md#spray-breakup) |
+| `flow/spray_chamber_ecn.toml` | generated hex 2D, 100 × 64 cells | ECN diagnostics (SA3, `[spray.ecn]`, D315): 12 mg/s of water at 40 m/s (4 to 30 µm, `flow/spray_chamber_ecn_injectors.toml`) into still dry air at 300 °C; after 100 ms the liquid lengths at PLV 3e-7 and 3e-8 m stay between 48 and 64 mm and between 83 and 107 mm while the vapour penetration (0.1 %) grows to 163 mm at 200 ms; 97 % of the water evaporated | [gallery 319](../gallery/sprays.md#spray-ecn), [recipe 319](../recipes/sprays.md#spray-ecn) |
+| `flow/spray_g_g1.toml` | generated hex 3D, 72 × 65 × 8 cells, a 22.5° sector about the injector axis (`wedge` with `dimension = 3`, D309) with a 0.3 mm slip core on the axis | ECN Spray G, condition G1: iso-octane (library liquid) at 363 K and 20 MPa from the 8-hole injector (`flow/spray_g_g1_injectors.toml`: the measured rate of injection, plume at 33°, cone 25°, C_a 0.65, `flow_share = 0.5`) into nitrogen at 573 K and 3.5 kg/m³, KH-ACT untuned, Abramzon-Sirignano evaporation, two-way, k-ε; the liquid and vapour penetration along the injector axis by the ECN definitions against the measurements: on them to 0.4 ms, then ahead, 33 % (liquid) and 21 % (vapour) at 1.2 ms, the same with `kh-rt`; the axis gas velocity within 1.5 m/s of the PIV; about 18 minutes on 4 threads (long set, to 0.1 ms) | [gallery 323](../gallery/sprays.md#spray-g), [recipe 323](../recipes/sprays.md#spray-g-sector) |
 
 ## Porous regions
 
@@ -347,9 +370,10 @@ temperatures of their own (D271, PM2). The keys are on the [key page](flow-keys.
 
 ## Immersed bodies
 
-`[immersed]` with `[[immersed.body]]` tables (L13 stage 1, D226): cylinders,
-spheres and boxes put into any mesh by Brinkman penalisation, laminar and
-isothermal only. The keys are on the [key page](../keys.md) (`immersed.*`);
+`[immersed]` with `[[immersed.body]]` tables: cylinders, spheres, boxes and STL surfaces
+put into any mesh by Brinkman penalisation (L13 stage 1, D226; laminar and
+isothermal only) or cut out of it as sharp walls (`method = "cut"`, stage 2,
+D227). The keys are on the [key page](../keys.md) (`immersed.*`);
 `result.json` has the force on every body, `derived = ["solid-fraction"]`
 writes χ.
 
@@ -359,6 +383,24 @@ writes χ.
 | `flow/immersed_topology_bend.toml` | generated hex 2D, 60 × 60 cells, split inlet and outlet | topology search of the Borrvall & Petersson pipe bend (Stokes, quarter fluid): 28 design updates, Φ 4.69 → 0.369 W, grey 0.04, `topology.stl` | [gallery 291](../gallery/immersed.md#topology-bend), [recipe 291](../recipes/immersed.md#topology-search) |
 | `flow/immersed_stokes_sphere.toml` | generated hex 3D, 32³ cells, periodic in x, y, z | Stokes flow through a simple cubic array of penalised spheres (c = 0.0335): drag coefficient 3.9 % above the Hasimoto / Sangani & Acrivos series with K = 0.01 h² | [gallery 291](../gallery/immersed.md#topology-bend) |
 | `flow/immersed_mms.toml` | generated hex 2D, 16² to 64² | manufactured solution of the penalised equations (smooth `field` body): velocity order 2.00 (hex), 2.05 (poly); fails outside 1.8 to 2.3 | [gallery 291](../gallery/immersed.md#topology-bend) |
+| `flow/immersed_cut_cylinder_re20.toml` | generated hex 2D, 440 × 82 cells (h = D/20), the cylinder cut out (35 780 cells) | Schäfer & Turek 2D-1 on cut cells (L13 stage 2): C_D 5.588 in range, C_L 1.4 % and Δp 1 % below the range; fails beyond 5 % of the range midpoint | [gallery 313](../gallery/immersed.md#cut-cylinder), [recipe 313](../recipes/immersed.md#cut-body) |
+| `flow/immersed_cut_stl_sphere_array.toml` | generated hex 3D, 32³ cells, periodic in x, y, z, the STL sphere `immersed_sphere.stl` (5120 triangles) cut out (31 752 cells) | Stokes flow through a simple cubic array of STL spheres on cut cells: drag coefficient 2.3 % below the Hasimoto / Sangani & Acrivos series (0.9 % on 48³, second order) | [gallery 322](../gallery/immersed.md#stl-cut), [recipe 322](../recipes/immersed.md#stl-body) |
+
+## Deforming meshes
+
+`[mesh_motion] displacement`: the nodes of the mesh move by an expression of
+their place in the mesh file and of time (D91, L22, stage MS0); every face
+gets its swept volume, walls move with their nodes, other boundaries may only
+slide in their plane. The keys are on the [key page](../keys.md)
+(`mesh_motion.*`); `history.csv` gets a column `volume`, `result.json` the
+block `transient.mesh_motion`.
+
+| Case file | Mesh | Shows | Where |
+|---|---|---|---|
+| `flow/motion_channel_ranks.toml` | generated hex 2D, 48 × 16 cells perturbed by 15 %, inner nodes swinging by up to 3 cm | MS0 part 2: a channel at Re = 100 with a dye stripe on a breathing mesh, solved on 3 ranks: every file byte for byte that of one rank; `restart_000075.h5` continues on 1 or 2 ranks to bitwise the unbroken run (tests/run_ranks.rs) | [gallery 307](../gallery/moving-solids.md#deforming-mesh-ranks), [recipe 307](../recipes/moving-solids.md#deforming-mesh-ranks) |
+| `flow/motion_free_stream.toml` | generated hex 2D, 20 × 10 cells perturbed by 20 %, inner nodes swinging by up to 3 cm | check MS0.1: a uniform flow of 1 m/s stays uniform on the moving mesh to 1.3·10⁻¹⁵ m/s, the space conservation law closes to 10⁻¹⁵ (tests/mesh_motion.rs: also tet and poly meshes, BDF1 and Crank–Nicolson) | [gallery 296](../gallery/moving-solids.md#deforming-mesh), [recipe 296](../recipes/moving-solids.md#deforming-mesh) |
+| `flow/motion_piston_adiabatic.toml` | generated hex 2D, 10 × 20 cells, compressed evenly to a quarter | check MS0.2: a piston compresses a closed gas volume with adiabatic walls by a crank (ratio 4, 1 s): p₀ = 705.03 kPa at the top dead centre (isentrope 705.50 kPa), 101.323 kPa after the period; error second order in Δt, mass to 10⁻¹⁵ | [gallery 296](../gallery/moving-solids.md#deforming-mesh), [recipe 296](../recipes/moving-solids.md#deforming-mesh) |
+| `flow/motion_piston_cooled_walls.toml` | generated hex 2D, 40 × 80 cells | the same piston with all walls at 300 K: thermal boundary layers, p₀ = 572 kPa at the top dead centre and 90.4 kPa after the period (an open p–V loop), heat book closed every step; 30 s | [gallery 296](../gallery/moving-solids.md#deforming-mesh) |
 
 ## Species
 
@@ -366,8 +408,12 @@ Mixtures of ideal gases (steam furnace stage SF1): `[species]` with the
 GRI-Mech 3.0 species, N − 1 mass fractions transported and the closure
 species by 1 − Σ; with the variable density ρ = p₀ M/(R T) of the mixture
 and its c_p, λ and μ. The keys are on the [key page](flow-keys.md#species).
+With `[chemistry]` (stage SF2b) the species react in the cells and release
+heat (key page: [chemistry](flow-keys.md#chemistry)).
 
 | Case file | Mesh | Shows | Where |
 |---|---|---|---|
 | `flow/species_binary_diffusion.toml` | generated hex 2D, 100 × 2 cells | CH₄ diffusing in N₂ at rest: the exact decay of a cosine mode, BDF2 to t = 50 s; L2 error 9.5·10⁻⁶, species and element accounts closed to round-off | [gallery 278](../gallery/species.md#species-transport), [recipe 278](../recipes/species.md#species-transport) |
+| `flow/flame_methane_air_gri30.toml` | generated hex 2D, 200 × 1 cells (50 µm) | a laminar premixed stoichiometric methane–air flame in a tube with GRI-Mech 3.0 (53 species, 325 reactions) and species Lewis numbers, 1200 steps of 5 µs: burning velocity 0.348 m/s from the fuel consumption, measured 0.360 ± 0.017 m/s; band [0.33, 0.39] m/s; about 10 minutes (CI set `long`) | [gallery 298](../gallery/species.md#reacting-flow-cells), [recipe 298](../recipes/species.md#reacting-flow-cells) |
+| `flow/flame_methane_air_jl4.toml` | generated hex 2D, 200 × 1 cells (50 µm) | the same flame with the 4-step global mechanism of Jones & Lindstedt, Lewis number 1, 2 ms: 0.430 m/s, peak 2250 K; band [0.38, 0.48] m/s; 18 s | [gallery 298](../gallery/species.md#reacting-flow-cells), [recipe 298](../recipes/species.md#reacting-flow-cells) |
 | `flow/species_coaxial_jet.toml` | generated hex 2D wedge, 90 × 40 cells | a laminar methane jet (r = 5 mm, 1 m/s) in a coflow of air at 0.2 m/s, isothermal, density from the mixture's molar mass (0.65 to 1.17 kg/m³), mixture properties from kinetic theory; 154 iterations, element accounts closed to 6.4·10⁻⁹ | [gallery 278](../gallery/species.md#species-transport), [recipe 278](../recipes/species.md#species-transport) |

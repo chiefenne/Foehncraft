@@ -1,0 +1,43 @@
+# The reed petal of reed_plate.toml warmed by the gas (MS5 part 3): 80 K
+# above its stress-free state at the clamp, and 6 K hotter on the side the
+# gas comes from (top, +z) than on the seat side. The thermal strain
+# α ΔT of spring steel (α = 1.2e-5 1/K) bends it away from the hot side; the
+# temperatures would come from the energy equation of a solid region of
+# the flow case (mapping in MS6).
+#
+#   foehn call structure.run --input examples/cases/tools/structure_reed_plate_hot.json
+
+[structure]
+name = "reed_plate_hot"
+
+[analysis]
+static = true
+
+[materials.spring_steel]
+young = 206e9
+poisson = 0.3
+density = 7850.0
+expansion = 1.2e-5
+
+[[plates]]
+name = "reed"
+origin = [0.0, -6e-3, 0.0]
+edge_a = [0.03, 0.0, 0.0]
+edge_b = [0.0, 12e-3, 0.0]
+divisions = [40, 16]
+thickness = 0.2e-3
+material = "spring_steel"
+
+[[clamps]]
+along = [[0.0, -6e-3, 0.0], [0.0, 6e-3, 0.0]]
+normal = "z"
+line = "y"
+
+[[temperatures]]
+part = "reed"
+change = 80.0
+difference = 6.0
+
+[points]
+tip = [0.03, 0.0, 0.0]
+tip_corner = [0.03, 6e-3, 0.0]
