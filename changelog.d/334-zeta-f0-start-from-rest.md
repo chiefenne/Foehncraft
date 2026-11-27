@@ -1,1 +1,0 @@
-- **Turbulence start-up into gas at rest.** The extrapolated start of a BDF2 step may no longer drop k, ε, ω or ζ below a tenth of the last value (all models, the same bound as after a solve), and the f/f₀ equation of the ζ-f models takes its ζ dependence implicitly. A zeta-f0 jet started into gas at rest no longer diverges within ten steps.

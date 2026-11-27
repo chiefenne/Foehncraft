@@ -1,1 +1,0 @@
-- **README hero image of ECN Spray G.** The spray picture of the README is now one plume of the ECN Spray G injector, its drops drawn as spheres sized by their diameter; the same render joins gallery 323.
