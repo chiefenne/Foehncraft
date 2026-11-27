@@ -3215,6 +3215,7 @@ pub fn run_steered(
             &loc,
             case.run.restart.is_some(),
         )?;
+        crate::spray::device_warnings(&case, &mut lg, &mut rep.warnings);
         let spray_env = foehncraft_particles::Env {
             mesh: &mesh,
             geo: &geo,

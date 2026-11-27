@@ -36,6 +36,7 @@ pub mod materials;
 pub mod mesh;
 pub mod mpi;
 pub mod post;
+pub mod spray;
 pub mod structure;
 pub mod study;
 pub mod system;
@@ -81,6 +82,8 @@ pub enum Category {
     Chemistry,
     /// Journals of tool calls and their replay (D197).
     Journal,
+    /// Sprays: injectors and their devices (D346).
+    Spray,
 }
 
 impl Category {
@@ -102,6 +105,7 @@ impl Category {
             Self::Circuits => "circuits",
             Self::Chemistry => "chemistry",
             Self::Journal => "journal",
+            Self::Spray => "spray",
         }
     }
 }
@@ -411,6 +415,7 @@ pub fn registry() -> Vec<Entry> {
         entry::<post::DatumReport>(),
         entry::<post::SprayStatistics>(),
         entry::<post::SprayPenetration>(),
+        entry::<spray::Devices>(),
         entry::<structure::Run>(),
         entry::<structure::FitClamp>(),
         entry::<circuits::Run>(),
