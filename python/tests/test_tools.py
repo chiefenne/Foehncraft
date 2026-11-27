@@ -71,6 +71,8 @@ def test_every_tool_through_call(tmp_path):
         "post.datums": {"case": spray, "out": spray_out, "datums": ["x06", "outlet"]},
         "post.droplets": {"case": spray, "file": parcels, "datum": "nozzle_box"},
         "post.penetration": {"case": spray, "file": parcels},
+        # injector devices (D346)
+        "spray.devices": {"file": flow / "spray_multihole_device_injectors.toml"},
         "study.scalar": {
             "case": ROOT / "examples/cases/scalar/mms_poly_2d.toml",
             "out": tmp_path / "scalar",
@@ -132,6 +134,7 @@ def test_every_tool_through_call(tmp_path):
     assert results["case.estimate"]["cells"] == results["case.check"]["estimate"]["cells"]
     assert {d["name"] for d in results["post.datums"]["datums"]} == {"x06", "outlet"}
     assert results["post.penetration"]["injectors"][0]["name"] == "nozzle"
+    assert len(results["spray.devices"]["injectors"]) == 5
     assert results["structure.run"]["modal"]["sturm"]["ok"]
     assert abs(results["structure.fitclamp"]["frequency"] - 150.0) < 1e-3
     assert results["circuits.run"]["format"] == "foehncraft.circuit-result"
