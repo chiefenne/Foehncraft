@@ -161,9 +161,34 @@ turbulence.
 
 ### Download a release
 
-*Coming soon.* Ready-to-run programs for macOS, Linux and Windows will be
-attached to the [releases](https://github.com/chiefenne/Foehncraft/releases)
-with checksums. Until then, build Foehncraft from source as below.
+Ready-to-run programs are attached to each
+[release](https://github.com/chiefenne/Foehncraft/releases/latest), with
+`SHA256SUMS.txt` to check them:
+
+| System | File | Then |
+|---|---|---|
+| macOS 11 or newer, Apple silicon and Intel | `foehncraft-<version>-macos-universal.tar.gz` | unpack, run `./foehn info` |
+| Linux x86-64 (glibc 2.39 or newer: Ubuntu 24.04, Debian 13, Fedora 40) | `foehncraft-<version>-linux-x86_64.tar.gz` | unpack, run `./foehn info` |
+| Windows 10 or 11, x86-64 | `foehncraft-<version>-windows-x86_64.zip` | unpack, run `foehn.exe info` |
+
+Each one holds `foehn`, built with HDF5, METIS and BLAKE3 (no MPI and no GPU
+backend: for those, build from source as below). To call it by name, put the
+unpacked folder on your `PATH` or copy the programs into a folder that is
+on it, such as `~/.local/bin` or `~/.cargo/bin`.
+
+The Mac programs are not signed with an Apple Developer ID, so macOS stops
+them the first time ("cannot be opened" or "cannot verify the developer").
+Clear the download mark once, in the unpacked folder:
+
+```sh
+xattr -dr com.apple.quarantine .
+```
+
+(or try to start it, then System Settings ▸ Privacy & Security ▸ **Open
+Anyway**). Windows SmartScreen may warn the same way: **More info** ▸
+**Run anyway**. To check a download: `shasum -a 256 -c SHA256SUMS.txt
+--ignore-missing` (macOS), `sha256sum -c SHA256SUMS.txt --ignore-missing`
+(Linux), `certutil -hashfile <file> SHA256` (Windows).
 
 ### Build from source
 

@@ -202,8 +202,9 @@ fn own_stl_is_placed_and_checked() {
     };
     let a = SpraySection::from_file(&write("std.toml", &dev("geometry = \"standard-gasoline\"")))
         .unwrap();
+    // a TOML literal string ('...'): a Windows path has backslashes
     let own = dev(&format!(
-        "geometry = \"stl\"\nfile = \"{}\"\nscale = 1e-3\n\n[[device.pattern]]\ncount = 3\npolar = 30.0\nradius = 1e-3",
+        "geometry = \"stl\"\nfile = '{}'\nscale = 1e-3\n\n[[device.pattern]]\ncount = 3\npolar = 30.0\nradius = 1e-3",
         stl.display()
     ));
     let b = SpraySection::from_file(&write("own.toml", &own)).unwrap();
