@@ -101,7 +101,7 @@ type = "symmetry"
 
 [time]
 scheme = "bdf2"
-time_step = 2e-6
+time_step = 1e-6  # as spray_g_g1.toml since D348 (2 µs diverges near 0.1 ms)
 end_time = 1.2e-3
 
 [output]
@@ -110,7 +110,7 @@ fields_interval = 5e-5
 [spray]
 include = "spray_g_g1_injectors.toml"
 wall_mode = "stick"
-write_every = 25
+write_every = 50
 dispersion = "eddy-lifetime"
 penetration_fraction = 0.97
 

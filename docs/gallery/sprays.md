@@ -565,7 +565,7 @@ sub-step boundaries moving with the gas. Water only; one process.
 <a id="spray-breakup"></a>
 ## 318. A fuel spray breaks up in dense nitrogen
 
-<img src="../figures/gallery/spray_breakup.png" alt="Top: side view of a fuel spray in still nitrogen at 1 ms, the gas speed on the symmetry plane mirrored about the spray axis: a red and yellow jet core of up to 190 m/s along the axis from the nozzle at the left to about 15 mm, widening into green and cyan (50 to 75 m/s) and dark blue at 40 to 50 mm, the still gas around it blue; the drops are small white dots filling a spindle of about plus and minus 6 mm half-width that ends at about 52 mm in a rounded head, with a few grey and black blobs on the axis right at the nozzle. Bottom left: liquid penetration over the first millisecond; the KH-ACT curve for 97 % of the liquid rises with the dashed Hiroyasu-Arai correlation, lags it before 0.15 ms, runs up to a quarter ahead around 0.3 ms and meets it at 51 mm at 1 ms; the KH-RT curve lies below and ends at 47 mm. Bottom right: the Sauter mean diameter along the spray is close to 2 micrometres from 4 mm to the tip for both models, higher only in the first slab at the nozzle." width="1200" height="760">
+<img src="../figures/gallery/spray_breakup.png" alt="Top: side view of a fuel spray in still nitrogen at 1 ms, the gas speed on the symmetry plane mirrored about the spray axis: a red and yellow jet core of up to 190 m/s along the axis from the nozzle at the left to about 15 mm, widening into green and cyan (50 to 75 m/s) and dark blue at 40 to 50 mm, the still gas around it blue; the drops are small white dots filling a spindle of about plus and minus 6 mm half-width that ends at about 52 mm in a rounded head, with a few grey and black blobs on the axis right at the nozzle. Bottom left: liquid penetration over the first millisecond; the KH-ACT curve for 97 % of the liquid rises with the dashed Hiroyasu-Arai correlation, lags it before 0.15 ms, runs up to a quarter ahead around 0.3 ms and ends at 50 mm at 1 ms, just short of the correlation's 51 mm; the KH-RT curve lies below and ends at 46.5 mm. Bottom right: the Sauter mean diameter along the spray is flat near 1.65 micrometres for KH-ACT and near 2 micrometres for KH-RT, which starts at 3.2 micrometres in the first slab at the nozzle." width="1200" height="760">
 
 `spray_breakup.toml` injects a diesel-like fuel (830 kg/m³, 0.027 N/m,
 2.5 mPa s) at 60 MPa through one hole of 0.15 mm into nitrogen at rest at
@@ -584,8 +584,9 @@ one with the largest ratio of length to time scale strips it:
 - the **turbulence** the liquid brings out of the hole, here k₀ ≈ 240 m²/s²
   and ε₀ ≈ 6 × 10⁸ m²/s³ from the force balance of Huh and Gosman for a
   0.6 mm long hole with C_d = 0.8. It decays as in the k-ε model, so the
-  blob loses radius at C_T,CAV √k and sheds children of the integral length
-  scale (1 to 4 µm);
+  blob loses radius at C_T,CAV √k and sheds children of the
+  Kelvin-Helmholtz size B₀Λ, as every mechanism does (Som and Aggarwal's
+  eq. 1, D348; before PR #344 they had the integral length scale, 1 to 4 µm);
 - the **cavities** of the contracted jet (C_a = 0.86, R_CAV = 28 µm), which
   burst at the jet surface;
 - the **Kelvin-Helmholtz waves** of the gas stream (Reitz 1987), which take
@@ -599,23 +600,25 @@ distortion, which raises its drag towards that of a disc (`drag =
 comes from the blob, so the run gives the same bits on any thread count, and
 the liquid is kept to round-off at every split.
 
-**What the run shows.** After 1 ms, 97 % of the liquid is within 50.6 mm of
+**What the run shows.** After 1 ms, 97 % of the liquid is within 50.3 mm of
 the nozzle. The correlation of Hiroyasu and Arai (1990) for this
 injection pressure, gas density and hole gives 51.1 mm. Over the first
 0.15 ms the spray lags behind the correlation's linear start, because of
 the rate ramp. Between 0.2 and 0.4 ms it runs up to 24 % ahead, and from
 0.8 ms on it is within 5 %. The same case with `--set
-spray.breakup.model=kh-rt` (dashed) reaches 47.0 mm: without the nozzle
+spray.breakup.model=kh-rt` (dashed) reaches 46.5 mm: without the nozzle
 turbulence the blobs carry their momentum farther before the gas takes it.
-In both runs nearly all of the liquid soon sits in drops of about 2 µm that
+In both runs nearly all of the liquid soon sits in drops of 1.6 to 2 µm that
 follow the gas, so the gas jet carries the tip. The gas on the axis moves
 at 190 m/s 5 mm from the nozzle and at 44 m/s at 40 mm, where the jet has
 a half-width of about 4 mm. The head of
 the spray rolls up into a vortex ring, which pushes the drops at the tip off
-the axis. 20 740 children were shed by 1 ms, 20 651 of them by the nozzle
-turbulence; 1 882 drops broke by Rayleigh-Taylor waves. The coupling takes
-2.9 passes per step on average; 106 of the 500 steps end at `max_passes = 3`
-above the tolerance, mostly in the first 0.26 ms.
+the axis. 20 666 children were shed by 1 ms, 20 550 of them by the nozzle
+turbulence; 1 932 drops broke by Rayleigh-Taylor waves. The coupling takes
+3.0 passes per step on average; 135 of the 500 steps end at `max_passes = 3`
+above the tolerance. With the child size of D348 (PR #344) the run moved
+from 50.6 to 50.3 mm and from about 2 to 1.7 µm: the children of the
+turbulence here were small before as well.
 
 **Two findings on the way.** With the k-ω SST model of the first runs, the
 turbulence of the thin gas jet did not build up in the still chamber
@@ -641,7 +644,7 @@ bits.
 
 **What this version does not do.** The penetration is compared with a
 correlation here; ECN Spray G (gallery 323) compares it with measurements.
-The drop sizes are not validated here: a Sauter mean diameter of 2 µm is
+The drop sizes are not validated here: a Sauter mean diameter of 1.7 µm is
 small next to measured diesel sprays, and there are no collisions or
 coalescence yet.
 The inlet loss K_c = 0.5 and the area ratio s = 0 of the nozzle turbulence
