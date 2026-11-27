@@ -694,7 +694,12 @@ pub struct DeviceHole {
     pub exit: [f64; 3],
     /// Unit direction of the hole axis.
     pub direction: [f64; 3],
-    /// The injectors that name this hole.
+    /// Angle of the hole axis from the device axis (degrees).
+    pub polar: f64,
+    /// Azimuth of the hole axis about the device axis, from e₁ (degrees).
+    pub azimuth: f64,
+    /// The injectors that name this hole; empty for a hole that is not in
+    /// the domain (the other holes of a sector model).
     pub injectors: Vec<String>,
 }
 
@@ -727,6 +732,8 @@ fn placed_devices(
                     name: h.name.clone(),
                     exit: h.exit,
                     direction: h.direction,
+                    polar: h.polar,
+                    azimuth: h.azimuth,
                     injectors: sp
                         .injectors
                         .iter()
@@ -804,7 +811,11 @@ pub fn write_devices(
                     continue;
                 }
                 let r = len * a.tan().min(10.0);
-                let mut u = if n[0].abs() < 0.9 { [1.0, 0.0, 0.0] } else { [0.0, 1.0, 0.0] };
+                let mut u = if n[0].abs() < 0.9 {
+                    [1.0, 0.0, 0.0]
+                } else {
+                    [0.0, 1.0, 0.0]
+                };
                 let d = u[0] * n[0] + u[1] * n[1] + u[2] * n[2];
                 u = [u[0] - d * n[0], u[1] - d * n[1], u[2] - d * n[2]];
                 let un = (u[0] * u[0] + u[1] * u[1] + u[2] * u[2]).sqrt();
@@ -835,7 +846,9 @@ pub fn write_devices(
         pts.len(),
         types.len()
     );
-    x.push_str("<Points>\n<DataArray type=\"Float64\" NumberOfComponents=\"3\" format=\"ascii\">\n");
+    x.push_str(
+        "<Points>\n<DataArray type=\"Float64\" NumberOfComponents=\"3\" format=\"ascii\">\n",
+    );
     for p in &pts {
         let _ = writeln!(x, "{:e} {:e} {:e}", p[0], p[1], p[2]);
     }
@@ -849,12 +862,28 @@ pub fn write_devices(
         s.push_str("\n</DataArray>\n");
         s
     };
-    x.push_str(&list("connectivity", "Int64", &mut conn.iter().map(|c| c.to_string())));
-    x.push_str(&list("offsets", "Int64", &mut offsets.iter().map(|c| c.to_string())));
-    x.push_str(&list("types", "UInt8", &mut types.iter().map(|c| c.to_string())));
+    x.push_str(&list(
+        "connectivity",
+        "Int64",
+        &mut conn.iter().map(|c| c.to_string()),
+    ));
+    x.push_str(&list(
+        "offsets",
+        "Int64",
+        &mut offsets.iter().map(|c| c.to_string()),
+    ));
+    x.push_str(&list(
+        "types",
+        "UInt8",
+        &mut types.iter().map(|c| c.to_string()),
+    ));
     x.push_str("</Cells>\n<CellData>\n");
     for (k, name) in ["device", "part", "hole", "injector"].iter().enumerate() {
-        x.push_str(&list(name, "Int32", &mut fields[k].iter().map(|c| c.to_string())));
+        x.push_str(&list(
+            name,
+            "Int32",
+            &mut fields[k].iter().map(|c| c.to_string()),
+        ));
     }
     x.push_str("</CellData>\n</Piece>\n</UnstructuredGrid>\n</VTKFile>\n");
     let dir = out.join("spray");

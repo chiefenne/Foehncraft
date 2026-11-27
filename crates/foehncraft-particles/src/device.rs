@@ -457,7 +457,9 @@ impl Device {
             }
             g => {
                 if self.file.is_some() {
-                    bail!("[[device]] {n}: file needs geometry = \"stl\" (a standard tip has its own)");
+                    bail!(
+                        "[[device]] {n}: file needs geometry = \"stl\" (a standard tip has its own)"
+                    );
                 }
                 let st = standard(g).expect("a standard tip");
                 let t = foehncraft_mesh::format::stl::parse(st.stl)
@@ -482,7 +484,9 @@ impl Device {
             .then(|| unit(normal).filter(|_| dot(normal, normal).sqrt() > 1e-3 * rn))
             .flatten()
         else {
-            bail!("[[device]] {n}: stl_origin and stl_reference must be finite, stl_reference not along stl_axis");
+            bail!(
+                "[[device]] {n}: stl_origin and stl_reference must be finite, stl_reference not along stl_axis"
+            );
         };
         let g2 = cross(g3, g1);
         let place = |p: [f64; 3]| {
@@ -603,7 +607,9 @@ mod tests {
         assert!(dot(off, off).sqrt() < 1e-12);
         // the same file written in another frame: origin (5, 6, 7) mm,
         // axis -y, reference +z, scale 1
-        let raw = foehncraft_mesh::format::stl::parse(standard(Geometry::StandardGasoline).unwrap().stl).unwrap();
+        let raw =
+            foehncraft_mesh::format::stl::parse(standard(Geometry::StandardGasoline).unwrap().stl)
+                .unwrap();
         let moved: Vec<[[f64; 3]; 3]> = raw
             .iter()
             .map(|t| t.map(|p| [5.0 - p[1], 6.0 - p[2], 7.0 + p[0]]))

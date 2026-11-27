@@ -23,6 +23,7 @@ Part of the [Recipes](../recipes.md): droplets that move with and through the ga
 | 333 | [Let the drops damp the gas turbulence (two-way turbulence)](#spray-turbulence) |
 | 335 | [Let the drops collide](#spray-collisions) |
 | 341 | [Describe a multi-hole injector by its holes](#spray-device) |
+| PRNUM | [Show your own injector STL](#spray-device-surface) |
 
 ---
 
@@ -966,3 +967,54 @@ python3 -m tools.plot.spray_multihole_device OUT_DIR output/spray_multihole_devi
 Case: `examples/cases/flow/spray_multihole_device.toml`;
 [gallery entry](../gallery/sprays.md#spray-device).
 
+---
+
+<a id="spray-device-surface"></a>
+## PRNUM. Show your own injector STL
+
+Give the device a surface, and every run draws it with the spray
+(`spray/devices.vtu`, listed in `series.json` under `static`):
+
+```toml
+[[device]]
+name = "gdi"
+mount = [0.0, 0.0, 0.0]
+axis = [1.0, 0.0, 0.0]
+geometry = "standard-gasoline"   # or "standard-diesel"; no holes given:
+                                 # the tip brings its own (8 at 37°, 7 at 77.5°)
+```
+
+Your own tip:
+
+```toml
+geometry = "stl"
+file = "my_tip.stl"        # relative to this file; ASCII or binary
+scale = 1e-3               # the file is in millimetres
+# the frame of the file, when it is not tip at the origin, axis +z into
+# the chamber, azimuth zero along +x (in the file's own coordinates):
+stl_origin = [0.0, 0.0, 12.5]
+stl_axis = [0.0, 0.0, -1.0]
+stl_reference = [1.0, 0.0, 0.0]
+glyph_length = 2e-3        # length of the hole lines (m)
+```
+
+- The drawn bores are those of the file; the holes the spray uses are the
+  device's `[[device.hole]]` or `[[device.pattern]]` (or the default ones
+  of a standard tip; a file of your own needs its holes given). Draw both
+  from the same numbers.
+- The surface is checked (turned-over, degenerate and duplicate triangles:
+  SPR010, drawn as it is); an open surface is fine, it is a picture and
+  the flow does not see it (D344).
+
+Look at it before a run:
+
+```sh
+foehn call spray.place --input - <<< '{"file": "examples/cases/flow/spray_g_device_injectors.toml", "out": "output/spray_g_device"}'
+foehn flow examples/cases/flow/spray_g_g1.toml --set time.end_time=6e-4 --out output/spray_g_g1
+python3 -m tools.plot.spray_g_device OUT_DIR output/spray_g_g1   # gallery PRNUM
+```
+
+Open `output/spray_g_device/spray/devices.vtu` in ParaView and colour it
+by `part` (0 surface, 1 hole axis, 2 cone). Files: `spray_g_device_injectors.toml`,
+`assets/injectors/` (README with frame, units, sources);
+[gallery entry](../gallery/sprays.md#spray-device-surface).

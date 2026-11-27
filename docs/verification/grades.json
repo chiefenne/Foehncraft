@@ -1578,10 +1578,24 @@
     "gaps written"
    ],
    "gaps": [
-    "the device is not drawn yet: its surface (standard or user STL) and the devices file of the output come with stage ID2 (D343, D345)",
     "picture only: the device is never a wall in the flow (D344, stage ID4 needs its own go)",
     "straight holes only (polar and azimuth); no swirl or needle lift",
     "`spray_multihole_device_injectors` has no run in the verification manual or in CI"
+   ],
+   "range": {}
+  },
+  {
+   "id": "sprays.injector-device-surfaces",
+   "title": "Injector device surfaces: standard gasoline and diesel tips or the user's STL, placed and written with the spray (D343 to D345)",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "picture only: the device is never a wall in the flow (D344, stage ID4 needs its own go)",
+    "the standard tips are our own drawings from published sizes, not measured nozzle geometries",
+    "MurmelCraft's time player does not draw static.devices yet (ID2m)",
+    "`spray_g_device_injectors` has no run in the verification manual or in CI"
    ],
    "range": {}
   },

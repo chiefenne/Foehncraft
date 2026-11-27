@@ -2079,9 +2079,30 @@ evidence = [
   { kind = "contract", property = "schema", case = "spray_multihole_device_injectors", what = "the included injector file of spray_multihole_device with a device and a pattern of holes", doc = "docs/cases/flow.md#lagrangian-sprays" },
 ]
 gaps = [
-  "the device is not drawn yet: its surface (standard or user STL) and the devices file of the output come with stage ID2 (D343, D345)",
   "picture only: the device is never a wall in the flow (D344, stage ID4 needs its own go)",
   "straight holes only (polar and azimuth); no swirl or needle lift",
+]
+
+[[feature]]
+id = "sprays.injector-device-surfaces"
+area = "Sprays"
+title = "Injector device surfaces: standard gasoline and diesel tips or the user's STL, placed and written with the spray (D343 to D345)"
+switch = "[[spray.device]] geometry, file, stl_origin, stl_axis, stl_reference"
+decisions = ["D343", "D344", "D345"]
+model = false
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-particles/src/device.rs::placement_of_the_surface", what = "a triangle in the file's own frame (stl_origin, stl_axis, stl_reference, scale) lands where the proper rotation into the device frame puts it" },
+  { kind = "exact", test = "crates/foehncraft-particles/src/device.rs::standard_tip_brings_its_holes", what = "a standard tip without holes of its own gets its default pattern (8 at 37 degrees, 7 at 77.5 degrees)" },
+  { kind = "exact", test = "crates/foehncraft-particles/tests/devices.rs::spray_g_device_file_matches_the_hand_written_one", what = "the device form of the Spray G G1 injector gives the hand-written position to 1e-11 m and direction to 1e-8, every other key the same" },
+  { kind = "contract", property = "equivalence", test = "crates/foehncraft-particles/tests/devices.rs::own_stl_is_placed_and_checked", what = "the standard gasoline tip given as the user's STL is placed as the standard one to 1e-12 m" },
+  { kind = "contract", property = "diagnostics", test = "crates/foehncraft-particles/tests/devices.rs::own_stl_is_placed_and_checked", what = "an STL with one triangle turned over gives SPR010 and is drawn as it is" },
+  { kind = "contract", property = "equivalence", test = "crates/foehncraft-flow/src/series.rs::devices_are_written_and_listed_as_static", what = "devices.vtu holds the triangles of the tip, the 8 hole axes and the one cone, and series.json lists it under static" },
+  { kind = "contract", property = "schema", case = "spray_g_device_injectors", what = "the Spray G injector as a device on the standard gasoline tip", doc = "docs/gallery/sprays.md#spray-device-surface" },
+]
+gaps = [
+  "picture only: the device is never a wall in the flow (D344, stage ID4 needs its own go)",
+  "the standard tips are our own drawings from published sizes, not measured nozzle geometries",
+  "MurmelCraft's time player does not draw static.devices yet (ID2m)",
 ]
 
 [[feature]]

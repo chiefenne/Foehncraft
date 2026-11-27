@@ -153,12 +153,14 @@ fn section(a: &DevicesInput, ctx: &Ctx<'_>) -> Result<SpraySection> {
     roots.check_read(&a.file, "the case or injector file")?;
     let text = std::fs::read_to_string(&a.file)?;
     let table: toml::Table = toml::from_str(&text)?;
-    Ok(if table.contains_key("spray") || table.contains_key("mesh") {
-        engine::load(&a.file, &a.set, &roots)?.spray
-    } else {
-        anyhow::ensure!(a.set.is_empty(), "set applies to case files only");
-        SpraySection::from_file(&a.file)?
-    })
+    Ok(
+        if table.contains_key("spray") || table.contains_key("mesh") {
+            engine::load(&a.file, &a.set, &roots)?.spray
+        } else {
+            anyhow::ensure!(a.set.is_empty(), "set applies to case files only");
+            SpraySection::from_file(&a.file)?
+        },
+    )
 }
 
 /// Input of `spray.place`.
