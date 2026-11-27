@@ -22,7 +22,7 @@ pub struct DeriveInput {
     #[serde(default = "latest")]
     pub restart: PathBuf,
     /// Derived fields (default: `output.derived` of the case, or every
-    /// field when that is empty).
+    /// field the case allows when that is empty).
     #[serde(default)]
     pub fields: Option<Vec<String>>,
     /// File to write (default: `derived.vtkhdf` for `restart.h5`,
@@ -99,13 +99,12 @@ impl Tool for Derive {
                 })
                 .collect::<Result<_>>()?,
             None if !case.output.derived.is_empty() => case.output.derived.clone(),
-            // every field; the pressure coefficient only with a reference
+            // every field the case allows: the pressure coefficient only
+            // with a reference, the turbulence fields with a model, the
+            // wall heat values with the energy equation
             None => Derived::ALL
                 .into_iter()
-                .filter(|d| {
-                    *d != Derived::PressureCoefficient
-                        || derived::validate_list(&case, &[*d]).is_ok()
-                })
+                .filter(|d| derived::validate_list(&case, &[*d]).is_ok())
                 .collect(),
         };
         let file = a.file.clone().unwrap_or_else(|| {

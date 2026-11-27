@@ -19,6 +19,7 @@ Part of the [Example gallery](../gallery.md): the energy equation of the fluid (
 | 186 | [A warm strip in a closed air enclosure, and a stratified box that stays at rest](#buoyancy) | 7 | `[gravity]`, `[buoyancy] model = "boussinesq"`, `expansion_coefficient`, `static_pressure` |
 | 195 | [Air between walls at 960 K and 240 K, a heated duct and two closed boxes](#variable-density) | 7 | `[energy] density = "variable"`, `thermodynamic_pressure`, `pressure_work`, `[buoyancy] model = "variable-density"`, `density` |
 | 272 | [Natural convection benchmarks: a heated square cavity at Ra 10³ to 10⁶, a vertical plate and mixed convection with flow reversal](#natural-convection) | 7 | `[buoyancy] model = "boussinesq"`, `[analytic] type = "buoyant-slot"` `mean_velocity`, periodic `mass_flow` with gravity, `wall_probes` heat flux |
+| 346 | [Wall heat flux, heat transfer coefficient and Nusselt number on a laminar flat plate](#wall-heat) | 7 | `[output] derived` `wall-heat-flux`, `heat-transfer-coefficient`, `nusselt-number`, `[output.reference] length`, `foehn post derive` |
 
 ---
 
@@ -994,3 +995,61 @@ target/release/foehn flow examples/cases/flow/cavity_heated.toml --out output/ca
 pip install matplotlib
 python3 -m tools.plot.ledger_chart docs/figures/gallery output/cavity_heated
 ```
+
+---
+
+<a id="wall-heat"></a>
+## 346. Wall heat flux, heat transfer coefficient and Nusselt number on a laminar flat plate
+
+<img src="../figures/gallery/wall_heat_plate.png" alt="Left: the temperature above a flat plate 1 m long, 6 times stretched across: a thin warm layer grows from the leading edge at x = 0 and is about 3 cm thick at the trailing edge. Middle: the local Nusselt number along the plate rising like the square root of x, the computed curve on top of the dashed similarity solution and the dotted correlation; an inset shows the difference to the similarity solution, 1 % near the leading edge falling to 0 at the trailing edge. Right: on logarithmic axes the heat transfer coefficient of the wall cell, a flat line near 1400 W/(m² K), and the heat flux over the temperature difference to the free stream, falling from above 100 near the leading edge to 4 at the trailing edge" width="800" height="288">
+
+**Heat on the walls as fields.** With the energy equation, three names
+of `[output] derived` write the heat exchange of the walls to the
+boundary blocks of `fields.vtkhdf` (and `foehn post derive` writes them
+from a restart file, byte for byte the same file):
+`wall-heat-flux` gives q_w, the heat conducted from the wall into the
+fluid (positive where the wall heats the fluid, the sign of `heat_flux` in
+`[boundary.<name>.energy]`), and the wall temperature T_w;
+`heat-transfer-coefficient` gives h = q_w/(T_w − T_P) with the
+temperature T_P of the wall cell; `nusselt-number` gives Nu = h L/k(T_w)
+with `[output.reference] length`. The reference T_P is the owner's choice
+(2026-11-27): it needs no free-stream or bulk temperature, and on a
+turbulent wall h is the coefficient of the thermal wall function; on a
+laminar wall it is k/d_n, which the mesh sets, not the flow (the flat blue
+line on the right). For the Nusselt number of a correlation divide q_w by
+the temperature difference that correlation uses.
+
+**The laminar flat plate.** `plate_heated_laminar.toml` holds a plate
+1 m long 1 K above a free stream of 1 m/s, Re_L = 10⁴, Pr 0.71, with
+constant properties; the boundary layer of Blasius carries the
+temperature of Pohlhausen (1921). `tools/verification/pohlhausen.py`
+solves both similarity equations (Blasius f″(0) = 0.332057 by bisection,
+the energy equation by its integral), giving Nu_x = 0.294165 Re_x^½ at
+Pr 0.71; Pohlhausen's correlation 0.332 Re_x^½ Pr^⅓ is 0.7 % above it.
+Three meshes graded to the wall and to the leading edge (80 × 40 to
+320 × 160 cells) give q_w at x = 0.25, 0.5 and 0.75 m with GCI 0.12 %,
+0.04 % and 0.02 %; the extrapolated values are 0.81 %, 0.42 % and 0.21 %
+above the similarity solution, inside the band of 1 %. As for the
+vertical plate of [gallery 272](#natural-convection) the gap is the
+boundary-layer approximation of the theory and shrinks like Re_x^(−½)
+along the plate. Summed over the plate, q_w is the heat flow of the
+plate in the run summary to 10⁻⁹. The run needs a tolerance of 10⁻¹¹: at
+10⁻⁸ the temperature downstream had not settled and Nu_x was 6 % high at
+the trailing edge on the finest mesh
+([pitfalls](../pitfalls.md#steady-runs)). The three meshes run in 3 minutes.
+
+**Exact on Couette flow.** In the Couette flow heated by its friction
+([gallery 154](#energy-fluid)) all of the dissipation μU²/h² leaves
+through the two walls, so q_w = −μU²/(2h) = −0.05 W/m² on each, which
+`tests/wall_heat.rs` finds to 10⁻⁷ with h = k/d_n and Nu = L/d_n.
+
+```
+cargo build --release -p foehncraft-cli
+target/release/foehn flow examples/cases/flow/plate_heated_laminar.toml --out output/plate_heat
+python3 tools/verification/pohlhausen.py
+pip install matplotlib h5py numpy
+python3 -m tools.plot.wall_heat docs/figures/gallery/wall_heat_plate.png output/plate_heat
+```
+
+How to use them: [recipe 346](../recipes/energy.md#wall-heat).
+

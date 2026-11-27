@@ -35,7 +35,21 @@
 //! |---|---|---|---|
 //! | `wall-shear-stress` | `wall_shear_stress_x`, `_y`, `_z`, `wall_shear_stress_magnitude` | the tangential viscous stress of the fluid on the wall | Pa |
 //! | `y-plus` | `y_plus` | y⁺ = d u_τ / ν with u_τ = √(τ_w / ρ) and d the wall distance of the cell centroid | - |
+//! | `wall-heat-flux` | `wall_heat_flux`, `wall_temperature` | q_w, the heat conducted from the wall into the fluid (positive where the wall heats the fluid, the sign of `heat_flux` in `[boundary.<name>.energy]`), and T_w; needs `[energy]` | W/m², K |
+//! | `heat-transfer-coefficient` | `heat_transfer_coefficient` | h = q_w / (T_w − T_P) with T_P the temperature of the wall cell (0 where T_w = T_P): k_f/d_n of a laminar wall, which depends on the mesh only, the coefficient of the thermal wall function of a turbulent one; needs `[energy]` | W/(m² K) |
+//! | `nusselt-number` | `nusselt_number` | Nu = h L_ref / k(T_w), with L_ref = `[output.reference] length` and k of the `[fluid]` at the wall temperature; needs `[energy]` | - |
 //! | `turbulence-wall` | `friction_velocity`, `y_star`, `blending` | u_τ of the wall treatment, y* = d C_μ^¼ k_P^½ / ν of the wall-adjacent cell (β* for SST), and the viscous weight of the wall treatment (spec 2.3): 1 where the wall is resolved (`low-re`, the sublayer of `standard`), 1 − tanh((y⁺/5)²) of `automatic`, e^{−Γ} of `compound`, Γ = dU⁺/dy⁺ of `compound-2023`, 0 in the log layer and for `scalable`; needs a turbulence model | m/s, -, - |
+//!
+//! The wall heat values come from the boundary coefficients of the last
+//! energy solve, T_w = a T_P + b and q_w = k_f (T_w − T_P)/d_n with the
+//! face conductivity k_f (the thermal wall function of a turbulent flow
+//! included) and d_n = d·S/|S|² the normal distance of the cell centroid, the
+//! orthogonal part of the conduction (as `wall_<boundary>.csv`). The heat
+//! transfer coefficient and the Nusselt number take the temperature of the
+//! wall cell as their reference (owner decision 2026-11-27): no free-stream
+//! or bulk temperature is needed, but in a laminar flow h = k/d_n and
+//! Nu = L_ref/d_n follow from the mesh alone; for a Nusselt number against
+//! a free stream or a bulk temperature divide q_w by that difference.
 //!
 //! The fields of rotating machinery (D183) need an `[[mrf]]` or a
 //! `[[sliding]]` table and use the notation of turbomachinery: **c** is
@@ -139,6 +153,14 @@ pub enum Derived {
     WallShearStress,
     /// y⁺ of the wall-adjacent cells, on the walls (-).
     YPlus,
+    /// q_w, the conducted heat flux from the wall into the fluid, and the
+    /// wall temperature T_w, on the walls (W/m², K; stage 7).
+    WallHeatFlux,
+    /// h = q_w / (T_w − T_P), the coefficient of the wall cell, on the
+    /// walls (W/(m² K); stage 7).
+    HeatTransferCoefficient,
+    /// Nu = h L_ref / k(T_w), on the walls (-; stage 7).
+    NusseltNumber,
     /// The invariant features of D166 (-).
     TurbulenceFeatures,
     /// ε, ω, the time and length scales and ν_t/ν of the turbulence
@@ -159,7 +181,7 @@ pub enum Derived {
 
 impl Derived {
     /// Every derived field, in the order they are written.
-    pub const ALL: [Derived; 22] = [
+    pub const ALL: [Derived; 25] = [
         Derived::Vorticity,
         Derived::QCriterion,
         Derived::Lambda2,
@@ -175,6 +197,9 @@ impl Derived {
         Derived::WallDistance,
         Derived::WallShearStress,
         Derived::YPlus,
+        Derived::WallHeatFlux,
+        Derived::HeatTransferCoefficient,
+        Derived::NusseltNumber,
         Derived::TurbulenceFeatures,
         Derived::TurbulenceScales,
         Derived::ReynoldsStress,
@@ -202,6 +227,9 @@ impl Derived {
             Derived::WallDistance => "wall-distance",
             Derived::WallShearStress => "wall-shear-stress",
             Derived::YPlus => "y-plus",
+            Derived::WallHeatFlux => "wall-heat-flux",
+            Derived::HeatTransferCoefficient => "heat-transfer-coefficient",
+            Derived::NusseltNumber => "nusselt-number",
             Derived::TurbulenceFeatures => "turbulence-features",
             Derived::TurbulenceScales => "turbulence-scales",
             Derived::ReynoldsStress => "reynolds-stress",
@@ -263,6 +291,9 @@ impl Derived {
                 ("wall_shear_stress_magnitude", "Pa"),
             ],
             Derived::YPlus => &[("y_plus", "-")],
+            Derived::WallHeatFlux => &[("wall_heat_flux", "W/m²"), ("wall_temperature", "K")],
+            Derived::HeatTransferCoefficient => &[("heat_transfer_coefficient", "W/(m² K)")],
+            Derived::NusseltNumber => &[("nusselt_number", "-")],
             Derived::TurbulenceFeatures => &[
                 ("feature_lambda1", "-"),
                 ("feature_lambda2", "-"),
@@ -311,7 +342,21 @@ impl Derived {
     pub fn on_faces(self) -> bool {
         matches!(
             self,
-            Derived::WallShearStress | Derived::YPlus | Derived::TurbulenceWall
+            Derived::WallShearStress
+                | Derived::YPlus
+                | Derived::TurbulenceWall
+                | Derived::WallHeatFlux
+                | Derived::HeatTransferCoefficient
+                | Derived::NusseltNumber
+        )
+    }
+
+    /// True for the fields of the energy equation (stage 7), which need
+    /// `[energy]`.
+    pub fn of_energy(self) -> bool {
+        matches!(
+            self,
+            Derived::WallHeatFlux | Derived::HeatTransferCoefficient | Derived::NusseltNumber
         )
     }
 
@@ -446,7 +491,8 @@ impl Frames {
     }
 }
 
-/// `[output.reference]`: the reference state of the pressure coefficient.
+/// `[output.reference]`: the reference state of the pressure coefficient
+/// and the reference length of the Nusselt number.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct ReferenceValues {
@@ -457,6 +503,8 @@ pub struct ReferenceValues {
     pub pressure: f64,
     /// Reference density ρ_ref (kg/m³); default `[fluid] density`.
     pub density: Option<f64>,
+    /// Reference length L_ref of the Nusselt number (m).
+    pub length: Option<f64>,
 }
 
 /// The reference dynamic pressure ½ ρ_ref U_ref² of `case` and p_ref.
@@ -491,6 +539,13 @@ pub fn validate(case: &FlowCase) -> Result<()> {
         CASE_RANGE,
         "[output.reference] pressure must be finite (Pa)"
     );
+    if let Some(l) = r.length {
+        crate::need!(
+            l > 0.0 && l.is_finite(),
+            CASE_RANGE,
+            "[output.reference] length must be > 0 (m)"
+        );
+    }
     if let Some(f) = &case.output.frame {
         let zones: Vec<&str> = case
             .mrf
@@ -513,6 +568,30 @@ pub fn validate(case: &FlowCase) -> Result<()> {
 /// Checks a list of derived fields against `case` (also for
 /// `foehn post derive --fields`).
 pub fn validate_list(case: &FlowCase, list: &[Derived]) -> Result<()> {
+    if let Some(d) = list.iter().find(|d| d.of_energy()) {
+        crate::need!(
+            case.energy.is_some(),
+            CASE_INCONSISTENT,
+            "derived field `{}` needs the energy equation ([energy])",
+            d.name()
+        );
+        crate::need!(
+            case.boundary
+                .values()
+                .any(|b| matches!(b, BoundaryCondition::Wall { .. })),
+            CASE_INCONSISTENT,
+            "derived field `{}` needs at least one wall boundary",
+            d.name()
+        );
+    }
+    if list.contains(&Derived::NusseltNumber) {
+        crate::need!(
+            case.output.reference.length.is_some(),
+            CASE_INCONSISTENT,
+            "derived field `nusselt-number` needs a reference length: set [output.reference] \
+             length (m)"
+        );
+    }
     if list.contains(&Derived::WallDistance) {
         crate::need!(
             case.boundary
@@ -811,6 +890,10 @@ pub fn compute(
     let nb = mesh.n_boundary_faces();
     let walls = (list.contains(&Derived::WallShearStress) || list.contains(&Derived::YPlus))
         .then(|| wall_values(case, mesh, geo, fl));
+    let heat = match list.iter().any(|d| d.of_energy()) {
+        true => Some(wall_heat(case, mesh, geo, fl)?),
+        false => None,
+    };
     for d in list {
         match d {
             Derived::Vorticity => {
@@ -946,6 +1029,34 @@ pub fn compute(
             Derived::YPlus => {
                 let w = walls.as_ref().expect("computed above");
                 out.faces.push(("y_plus", w.iter().map(|v| v.1).collect()));
+            }
+            Derived::WallHeatFlux => {
+                let w = heat.as_ref().expect("computed above");
+                out.faces.push(("wall_heat_flux", w.flux.clone()));
+                out.faces.push(("wall_temperature", w.temperature.clone()));
+            }
+            Derived::HeatTransferCoefficient => {
+                let w = heat.as_ref().expect("computed above");
+                out.faces
+                    .push(("heat_transfer_coefficient", w.coefficient()));
+            }
+            Derived::NusseltNumber => {
+                let w = heat.as_ref().expect("computed above");
+                let l = case.output.reference.length.ok_or_else(|| {
+                    crate::diag::err(crate::diag::Diagnostic::new(
+                        crate::diag::CASE_INCONSISTENT,
+                        "derived field `nusselt-number` needs [output.reference] length",
+                    ))
+                })?;
+                let k = w.conductivity();
+                out.faces.push((
+                    "nusselt_number",
+                    w.coefficient()
+                        .iter()
+                        .zip(&k)
+                        .map(|(h, k)| if *k > 0.0 { h * l / k } else { 0.0 })
+                        .collect(),
+                ));
             }
             Derived::TurbulenceFeatures => {
                 let t = fl.turbulence.as_ref().ok_or_else(|| {
@@ -1499,7 +1610,129 @@ pub fn wall_exchange(case: &FlowCase, mesh: &Mesh, geo: &Geometry, fl: &Solution
             w.momentum.push(fl.mu_eff_at(f) / dn);
         }
     }
+    // the energy equation: k_f (|S|/d_n)/|S| of its last solve, with the
+    // thermal wall function of a turbulent flow
+    w.heat = fl
+        .state
+        .scalars
+        .iter()
+        .find(|s| s.name == crate::energy::FIELD)
+        .and_then(|s| s.wall.as_ref())
+        .map(|sw| {
+            w.faces
+                .iter()
+                .map(|&f| sw.gamma[f - ni] * fl.disc.dgeo[f] / norm(geo.face_area[f]))
+                .collect()
+        });
     w
+}
+
+/// The wall heat values of the energy equation (stage 7) per boundary face,
+/// zero off the walls: the conducted heat flux from the wall into the fluid
+/// q_w = k_f (T_w − T_P) / d_n of the last energy solve (with the thermal
+/// wall function of a turbulent flow in k_f), the wall temperature
+/// T_w = a T_P + b and the temperature T_P of the wall cell.
+#[derive(Debug, Clone, PartialEq)]
+pub struct WallHeat {
+    /// q_w per boundary face (W/m², positive into the fluid).
+    pub flux: Vec<f64>,
+    /// T_w per boundary face (K).
+    pub temperature: Vec<f64>,
+    /// T_P of the wall cell per boundary face (K).
+    pub cell_temperature: Vec<f64>,
+    /// True on the faces of the walls.
+    pub wall: Vec<bool>,
+    /// k(T) of the `[fluid]`, for k(T_w) of the Nusselt number.
+    fluid_conductivity: crate::materials::Curve,
+}
+
+impl WallHeat {
+    /// h = q_w / (T_w − T_P) per boundary face, the coefficient of the wall
+    /// cell (W/(m² K)): k_f/d_n of a laminar wall, the coefficient of the
+    /// thermal wall function of a turbulent one; zero off the walls and
+    /// where T_w = T_P.
+    pub fn coefficient(&self) -> Vec<f64> {
+        self.flux
+            .iter()
+            .zip(&self.temperature)
+            .zip(&self.cell_temperature)
+            .zip(&self.wall)
+            .map(|(((&q, &t), &tp), &w)| {
+                let dt = t - tp;
+                if w && dt != 0.0 { q / dt } else { 0.0 }
+            })
+            .collect()
+    }
+
+    /// k(T_w) of the `[fluid]` per boundary face (W/(m K)), zero off the
+    /// walls.
+    pub fn conductivity(&self) -> Vec<f64> {
+        self.temperature
+            .iter()
+            .zip(&self.wall)
+            .map(|(&t, &w)| {
+                if w {
+                    self.fluid_conductivity.at(t)
+                } else {
+                    0.0
+                }
+            })
+            .collect()
+    }
+}
+
+/// The [`WallHeat`] of the solution `fl` (stage 7).
+pub fn wall_heat(case: &FlowCase, mesh: &Mesh, geo: &Geometry, fl: &Solution) -> Result<WallHeat> {
+    let fail = |m: &str| {
+        crate::diag::err(crate::diag::Diagnostic::new(
+            crate::diag::CASE_INCONSISTENT,
+            m,
+        ))
+    };
+    let st = fl
+        .state
+        .scalars
+        .iter()
+        .find(|s| s.name == crate::energy::FIELD)
+        .ok_or_else(|| {
+            fail("the wall heat flux needs the temperature of the energy equation ([energy])")
+        })?;
+    let w = st.wall.as_ref().ok_or_else(|| {
+        fail(
+            "the wall heat flux: the restart file has no boundary coefficients of the energy \
+             equation (`scalar_wall_a_temperature` …, written since 1.3); continue the run for \
+             one iteration to write them",
+        )
+    })?;
+    let ni = mesh.n_interior_faces();
+    let nb = mesh.n_boundary_faces();
+    let mut out = WallHeat {
+        flux: vec![0.0; nb],
+        temperature: vec![0.0; nb],
+        cell_temperature: vec![0.0; nb],
+        wall: vec![false; nb],
+        fluid_conductivity: crate::energy::fluid(case, &case.env()?)?.k,
+    };
+    for p in &mesh.boundaries {
+        if !matches!(
+            case.boundary.get(&p.name),
+            Some(BoundaryCondition::Wall { .. })
+        ) {
+            continue;
+        }
+        for f in p.range() {
+            let fb = f - ni;
+            let c = fl.disc.owner[f] as usize;
+            let tp = st.phi[c];
+            let tb = w.a[fb] * tp + w.b[fb];
+            let ex = w.gamma[fb] * fl.disc.dgeo[f] / norm(geo.face_area[f]);
+            out.flux[fb] = ex * (tb - tp);
+            out.temperature[fb] = tb;
+            out.cell_temperature[fb] = tp;
+            out.wall[fb] = true;
+        }
+    }
+    Ok(out)
 }
 
 /// Wall shear stress and y⁺ per boundary face (zero off the walls).

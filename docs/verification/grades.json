@@ -801,6 +801,22 @@
    "range": {}
   },
   {
+   "id": "energy.wall-heat",
+   "title": "Wall heat flux, heat transfer coefficient and Nusselt number (derived fields)",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "h and Nu take the temperature of the wall cell as their reference (owner decision 2026-11-27): in a laminar flow h = k/d_n and Nu = L/d_n depend on the mesh only; a free-stream or bulk reference is not offered (take q_w)",
+    "q_w is the orthogonal part of the conduction (as wall_<boundary>.csv): on non-orthogonal wall cells the correction (1 − a) k ∇T_P·k_f of the heat balance is left out",
+    "no turbulent case: the thermal wall-function coefficient on the walls is not checked against reference data",
+    "the interfaces of conjugate cases (fluid–solid) are not wall boundaries and carry no wall heat values",
+    "restart files written before 1.3 hold no boundary coefficients of the energy equation; post derive asks for one more iteration"
+   ],
+   "range": {}
+  },
+  {
    "id": "energy.turbulent",
    "title": "Energy with a turbulence model (thermal wall function, Pr_t)",
    "grade": "partial",

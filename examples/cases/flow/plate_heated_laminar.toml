@@ -1,0 +1,98 @@
+# Laminar forced convection along an isothermal flat plate (stage 7, the
+# wall heat quantities of `[output] derived`): the boundary layer of
+# Blasius (1908) with the temperature of Pohlhausen (1921), against the
+# similarity solution of tools/verification/pohlhausen.py.
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/plate_heated_laminar.toml
+#
+# The plate is the lower boundary from its leading edge x = 0 to
+# x = 1 m, 1 K warmer than the free stream (301 K against 300 K); ahead of
+# the leading edge the lower boundary is an adiabatic slip wall. The free
+# stream U = 1 m/s at 300 K enters on the left and leaves on the right and
+# through the top (the displacement of the layer). Dimensionless set-up:
+# ρ = 1 kg/m³, ν = 1e-4 m²/s, Pr = 0.71, so Re_L = U L/ν = 1e4 (laminar).
+# Constant properties and no buoyancy: the temperature is passive, and the
+# results scale with ΔT.
+#
+# Similarity theory: Nu_x = h x/k = 0.294165 Re_x^(1/2) at Pr 0.71
+# (−θ'(0) of tools/verification/pohlhausen.py; Pohlhausen's correlation
+# 0.332 Re_x^(1/2) Pr^(1/3) gives 0.296181, 0.7 % above). With
+# `[output.reference] length = 1.0` the field `nusselt_number` is h L/k, so
+# Nu_x = nusselt_number · x. At x = 0.25, 0.5, 0.75 m: Nu_x = 14.71,
+# 20.80, 25.48, h = 8.29, 5.86, 4.78 W/(m² K). The wall probes give the
+# heat flux there; the heat transfer coefficient and the Nusselt number
+# are on the boundary block `plate` of fields.vtkhdf. tools/plot/
+# wall_heat.py compares Nu_x along the plate with the similarity solution.
+
+case_format = "0.7"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+lower = [-0.2, 0.0, 0.0]
+upper = [1.0, 0.3, 0.01]
+cells = [80, 40, 1]
+segments = { x = [ { to = 0.0, cells = 16, ratio = 0.1 }, { to = 1.0, cells = 64, ratio = 10.0 } ], y = [ { to = 0.3, cells = 40, ratio = 30.0 } ] }
+split = [ { boundary = "ymin", axis = "x", at = 0.0, name = "plate" } ]
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+pressure_values = "gauge"
+density = 1.0
+viscosity = 1e-4
+specific_heat = 1000.0
+conductivity = 0.14084507042253522   # μ c_p / 0.71
+
+[energy]
+initial = 300.0
+
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [1.0, 0.0, 0.0]
+[boundary.xmin.energy]
+temperature = 300.0
+[boundary.ymin]
+type = "slip-wall"            # ahead of the leading edge
+[boundary.ymin.energy]
+heat_flux = 0.0
+[boundary.plate]
+type = "wall"
+[boundary.plate.energy]
+temperature = 301.0
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+algorithm = "coupled"
+tolerance = 1e-11               # the temperature settles after the flow (1e-8 left Nu_x 6 % high near the outlet on the finest mesh)
+max_iterations = 3000
+
+[solver.energy]
+tolerance = 1e-12
+max_iter = 200
+
+[verification]
+levels = [0, 1, 2]
+require_convergence = true
+
+[output]
+wall_csv = true
+derived = ["wall-heat-flux", "heat-transfer-coefficient", "nusselt-number"]
+wall_probes = [
+  { name = "x025", boundary = "plate", point = [0.25, 0.0, 0.005] },
+  { name = "x050", boundary = "plate", point = [0.50, 0.0, 0.005] },
+  { name = "x075", boundary = "plate", point = [0.75, 0.0, 0.005] },
+]
+
+[output.reference]
+length = 1.0                  # Nu = h L/k; T_ref is the inflow, 300 K

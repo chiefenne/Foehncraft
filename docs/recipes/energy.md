@@ -19,6 +19,7 @@ Part of the [Recipes](../recipes.md): the energy equation of the fluid (stage 7,
 | 186 | [Switch on gravity and buoyancy; which pressure do my boundary values mean](#buoyancy) |
 | 195 | [Let the density of a gas follow its temperature (low-Mach variable density)](#variable-density) |
 | 272 | [Set up a natural convection case and check it: a closed cavity, an open plate, a channel with a net flow](#natural-convection) |
+| 346 | [Write the wall heat flux, the heat transfer coefficient and the Nusselt number on the walls](#wall-heat) |
 
 ---
 
@@ -1126,3 +1127,59 @@ region, otherwise it is an account of its own (give it `region` and
 `content`; the storage of a step is the change of the content). Book the
 same terms in the same order at every state. The partner of a pair books
 the same sum with the opposite sign in its own account.
+
+---
+
+<a id="wall-heat"></a>
+## 346. Write the wall heat flux, the heat transfer coefficient and the Nusselt number on the walls
+
+**When.** A case with the energy equation and you want the heat that
+crosses each wall face as a field (hot spots, the share of each wall), or
+the heat transfer coefficient and the Nusselt number to colour the walls
+by.
+
+**With the output.** List them in `[output] derived`; the Nusselt number
+needs a reference length:
+
+```toml
+[output]
+derived = ["wall-heat-flux", "heat-transfer-coefficient", "nusselt-number"]
+
+[output.reference]
+length = 1.0      # L_ref of Nu (m)
+```
+
+They go to the boundary blocks of `fields.vtkhdf` (zero on boundaries that
+are not walls): `wall_heat_flux` and `wall_temperature`,
+`heat_transfer_coefficient`, `nusselt_number`.
+
+**After the run.** From a restart file, with the same numbers:
+
+```
+target/release/foehn flow examples/cases/flow/plate_heated_laminar.toml --set run.restart_final=true
+target/release/foehn post derive examples/cases/flow/plate_heated_laminar.toml \
+    --fields wall-heat-flux,heat-transfer-coefficient,nusselt-number
+```
+
+A restart file of FoehnCraft 1.2 or older holds no boundary coefficients
+of the energy equation; continue the run from it (`foehn flow CASE
+--restart latest --set run.restart_final=true`) and derive from the new
+file.
+
+**What they mean.** q_w is the heat conducted from the wall into the
+fluid, positive where the wall heats the fluid (the sign of `heat_flux` in
+`[boundary.<name>.energy]` and of the heat flows in the run summary); with
+a turbulence model it is the heat of the thermal wall function. The heat
+transfer coefficient is h = q_w/(T_w − T_P), with T_P the temperature of
+the wall cell: on a turbulent wall that is the coefficient of the thermal
+wall function, on a laminar wall it is k/d_n, which follows from the mesh
+(d_n the distance of the cell centre from the wall) and not from the flow.
+Nu = h L_ref/k(T_w). For the Nusselt number of a correlation, against a
+free stream or a bulk temperature T_ref, take Nu = q_w L/(k (T_w − T_ref))
+from `wall_heat_flux`, as [gallery 346](../gallery/energy.md#wall-heat)
+does for the flat plate:
+
+```
+python3 -m tools.plot.wall_heat wall_heat.png output/plate_heated_laminar
+```
+
