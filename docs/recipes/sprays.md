@@ -24,6 +24,7 @@ Part of the [Recipes](../recipes.md): droplets that move with and through the ga
 | 335 | [Let the drops collide](#spray-collisions) |
 | 341 | [Describe a multi-hole injector by its holes](#spray-device) |
 | 343 | [Show your own injector STL](#spray-device-surface) |
+| 338 | [Turn the grid against a jet](#spray-g-grid) |
 
 ---
 
@@ -1018,3 +1019,40 @@ Open `output/spray_g_device/spray/devices.vtu` in ParaView and colour it
 by `part` (0 surface, 1 hole axis, 2 cone). Files: `spray_g_device_injectors.toml`,
 `assets/injectors/` (README with frame, units, sources);
 [gallery entry](../gallery/sprays.md#spray-device-surface).
+<a id="spray-g-grid"></a>
+## 338. Turn the grid against a jet
+
+A jet that runs along the cell lines of the grid is carried farther than
+one that crosses them. To measure it for your case, run the case twice on
+a box mesh whose lines you turn with `grid_angle`:
+
+```toml
+[mesh.generate]
+type = "hex"
+dimension = 3
+lower = [0.0, 3.0e-4, 0.0]
+upper = [0.06, 0.05, 1.0]
+cells = [100, 83, 8]
+wedge = 22.5          # a sector about the x axis, as for Spray G
+grid_angle = 33.0     # the cell lines at 33° in the (x, r) plane; -12 turns them 45° away
+```
+
+The cells are uniform with the spacings `(upper − lower)/cells`, cut by
+the sides of the box; a cut piece of less than 0.3 of a cell joins its
+neighbour and becomes a polyhedron. It needs hexahedra, no grading,
+segments, `refine`, `perturb`, `split`, `remove` or `zones`. The injector
+cannot be turned inside a sector (its axis is the sector's axis and its
+side planes are the mirror planes of the plumes), so turn the grid, not
+the injector. Choose the angle from the plume direction: the plume of
+Spray G leaves at 33° from the axis, so 33° puts one family of lines along
+it and −12° puts both 45° across it.
+
+```sh
+foehn flow examples/cases/flow/spray_g_g1_grid_aligned.toml --out output/spray_g_grid_aligned
+foehn flow examples/cases/flow/spray_g_g1_grid_turned.toml --out output/spray_g_grid_turned
+foehn flow examples/cases/flow/spray_g_g1.toml --out output/spray_g_g1        # the third curve
+python3 -m tools.plot.spray_g_grid OUT_DIR output/spray_g_grid_aligned output/spray_g_grid_turned output/spray_g_g1
+```
+
+Cases: `examples/cases/flow/spray_g_g1_grid_aligned.toml` and
+`spray_g_g1_grid_turned.toml`; [gallery entry](../gallery/sprays.md#spray-g-grid).

@@ -41,6 +41,13 @@ evidence = [
   { kind = "exact", case = "mms_mixed_box", what = "second order of convection-diffusion on mixed cells", doc = "docs/verification/stage2.md#order-of-accuracy" },
   { kind = "exact", test = "crates/foehncraft-mesh/src/wedge.rs::sectors_of_hexahedra", what = "D309: a 3D box revolved into a 22.5 deg sector of hexahedra has the exact volume of its polygonal sector to 1e-12, closed cells and the side planes zmin and zmax with their normals" },
   { kind = "contract", property = "diagnostics", test = "crates/foehncraft-mesh/src/wedge.rs::a_perturbed_or_tetrahedral_sector_is_refused", what = "D309: a sector of tetrahedra or with perturb is refused" },
+  { kind = "exact", test = "crates/foehncraft-mesh/src/rotated_grid.rs::turned_grids_fill_the_box", what = "D337: a box meshed with its cell lines turned by 0, 17, 33, 45, 78 and 90 deg has the volume of the box to 1e-12, no cell under 0.2 of a whole one and all six boundaries" },
+  { kind = "exact", test = "crates/foehncraft-mesh/src/rotated_grid.rs::a_turned_sector_has_the_volume_of_the_ring", what = "D337: a turned grid revolved into a 22.5 deg sector of 4 angular cells has the volume of the polygonal ring (planar faces) to 1e-3" },
+  { kind = "reference-data", case = "spray_g_g1_grid_aligned", what = "D337: ECN Spray G G1 on a turned uniform 0.6 mm grid, the lines along the plume (33 deg): liquid and vapour penetration 49.5 and 49.0 mm at 1.2 ms against the measured 38.9 and 42.0 mm; same drop size as the other grid (19.4 um against 9 um measured)", doc = "docs/gallery/sprays.md#spray-g-grid" },
+  { kind = "reference-data", case = "spray_g_g1_grid_turned", what = "D337: the same with the lines 45 deg to the plume (grid_angle -12): 46.5 and 45.8 mm at 1.2 ms, 6 % shorter than along the plume", doc = "docs/gallery/sprays.md#spray-g-grid" },
+]
+gaps = [
+  "grid_angle (D337) is for hexahedral boxes and sectors without grading, segments, refine, perturb, split, remove or zones; the cut pieces under 0.3 of a cell are merged into polyhedra; grid-orientation effect measured for Spray G on one cell size (0.6 mm) and one turbulence model (k-epsilon) only",
 ]
 
 [[feature]]

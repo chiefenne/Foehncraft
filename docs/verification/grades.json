@@ -5,9 +5,13 @@
   {
    "id": "mesh.generated",
    "title": "Built-in test mesher (hexahedra, tetrahedra, prisms, polyhedra)",
-   "grade": "verified",
-   "why": [],
-   "gaps": [],
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "grid_angle (D337) is for hexahedral boxes and sectors without grading, segments, refine, perturb, split, remove or zones; the cut pieces under 0.3 of a cell are merged into polyhedra; grid-orientation effect measured for Spray G on one cell size (0.6 mm) and one turbulence model (k-epsilon) only"
+   ],
    "range": {}
   },
   {

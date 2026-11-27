@@ -192,6 +192,14 @@ pub struct BoxSpec {
     /// example symmetry planes; a sector is of hexahedra, not perturbed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wedge: Option<f64>,
+    /// Turns the cell lines by this angle (degrees) in the x–y plane
+    /// (D337, [`crate::rotated_grid`]): uniform square-cornered cells cut
+    /// by the box sides, small cut pieces joined to a neighbour. Hex only,
+    /// without grading, segments, refinement, perturbation, splits,
+    /// removals and zones; with `wedge` the grid is revolved into the
+    /// sector. For the grid orientation test of a jet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grid_angle: Option<f64>,
     /// Directions whose two boundaries form a periodic pair (set by the
     /// flow case from its periodic boundaries, D29): the perturbation of
     /// the nodes on the two boundaries is then the same, so their faces
@@ -383,6 +391,7 @@ impl Default for BoxSpec {
             perturb: 0.0,
             seed: default_seed(),
             wedge: None,
+            grid_angle: None,
             periodic: [false; 3],
             segments: SegmentSpec::default(),
             split: Vec::new(),
@@ -553,6 +562,28 @@ impl BoxSpec {
                 ));
             }
         }
+        if let Some(g) = self.grid_angle {
+            if !g.is_finite() {
+                return Err("grid_angle must be a number".into());
+            }
+            if self.kind != Kind::Hex
+                || self.refine != 0
+                || self.perturb != 0.0
+                || !self.segments.is_empty()
+                || !self.split.is_empty()
+                || !self.remove.is_empty()
+                || !self.zones.is_empty()
+                || self.grading != GradingSpec::default()
+            {
+                return Err(
+                    "grid_angle: hex cells only, without grading, segments, refine, perturb, split, remove or zones"
+                        .into(),
+                );
+            }
+            if self.lower[1] < 0.0 && self.wedge.is_some() {
+                return Err("a wedge needs lower[1] >= 0".into());
+            }
+        }
         if let Some(a) = self.wedge {
             if self.lower[1] < 0.0 {
                 return Err(format!(
@@ -603,6 +634,19 @@ impl BoxSpec {
     /// Generates the mesh.
     pub fn generate(&self) -> Result<Mesh, String> {
         self.validate()?;
+        if let Some(g) = self.grid_angle {
+            let mut n = self.cells;
+            if self.dimension == 2 {
+                n[2] = 1;
+            }
+            let (mut lo, mut hi) = (self.lower, self.upper);
+            if self.dimension == 2 && self.wedge.is_none() {
+                // one layer, as the structured generator makes it
+                lo[2] = self.lower[2];
+                hi[2] = self.upper[2];
+            }
+            return crate::rotated_grid::generate(lo, hi, n, g, self.wedge);
+        }
         let m = match (self.kind, self.dimension) {
             (Kind::Poly, 3) => self.poly3d(),
             (Kind::Poly, _) => self.poly2d(),
