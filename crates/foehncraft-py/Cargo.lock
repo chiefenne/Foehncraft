@@ -335,6 +335,7 @@ dependencies = [
  "foehncraft-fv",
  "foehncraft-mesh",
  "foehncraft-parallel",
+ "foehncraft-particles",
  "foehncraft-structure",
  "rayon",
  "schemars",
