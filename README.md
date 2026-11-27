@@ -43,7 +43,7 @@
   <tr>
     <td><a href="docs/gallery/flow.md#curved-blades"><img src="assets/readme/hero_curved_rotor.jpg" alt="Vorticity around a rotor with seven curved blades on a sliding mesh, with the polyhedral cells and the imprinted interface circle" width="300" height="300"></a></td>
     <td><a href="docs/gallery/radiation.md#furnace-paths"><img src="assets/readme/hero_furnace_radiation.jpg" alt="Box furnace in 3D with seven cooled tubes under the roof: the walls coloured by the net radiative flux, and Monte Carlo bundle paths crossing the chamber" width="300" height="300"></a></td>
-    <td><a href="docs/gallery/sprays.md#spray-two-way"><img src="assets/readme/hero_spray_two_way.jpg" alt="A falling water spray pulls the air of a room into a jet that spreads over the floor and rises in two large eddies; droplets as dots coloured by their diameter" width="300" height="300"></a></td>
+    <td><a href="docs/gallery/sprays.md#spray-g"><img src="assets/readme/hero_spray_g.jpg" alt="One plume of the ECN Spray G gasoline injector: the drops as spheres sized by their diameter, coloured from dark blue through light blue to orange, large near the nozzle at the top left and breaking up into a widening cloud of small drops that rolls up into a rounded head at the bottom right" width="300" height="300"></a></td>
   </tr>
   <tr>
     <td colspan="3"><a href="docs/gallery/energy.md#cht-turbulent"><img src="assets/readme/hero_heat_sink.jpg" alt="Temperature and streamlines around a finned aluminium heat sink in a turbulent air channel: warm air trapped in the vortices between the fins and a long recirculation behind the last fin" width="900" height="213"></a></td>
@@ -53,9 +53,9 @@
 <sub>Real results of Foehncraft, each linked to its entry: a shell and tube
 heat exchanger with hot air, water and steel in one conjugate case; a rotor
 with seven curved blades on a sliding mesh; Monte Carlo radiation in a box
-furnace with cooled tubes; a water spray that drives the air of a room
-(two-way coupled Lagrangian parcels); a finned heat sink in turbulent air
-(conjugate heat transfer, k-ω SST).</sub>
+furnace with cooled tubes; one plume of the ECN Spray G gasoline injector
+(Lagrangian parcels with KH-ACT breakup, drops sized by their diameter); a
+finned heat sink in turbulent air (conjugate heat transfer, k-ω SST).</sub>
 
 ## From one sentence to a moving rotor
 
