@@ -16,7 +16,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | [GPU runs](recipes/gpu.md) | scalar operators, pressure solver and flow cases on an NVIDIA GPU (also a free Colab T4) | 14, 16, 24 |
 | [Incompressible flow](recipes/flow.md) | Couette, Poiseuille, cavity and cylinder runs, boundary conditions, transient runs, time-step control, the coupled algorithm, heat transfer in turbulent flow, rotating machinery, the T-junction mixing study | 18, 19, 20, 21, 23, 28, 78, 80, 81, 83, 85, 86, 87, 94, 95, 96, 98, 99, 100, 101, 102, 225, 103, 196 |
 | [Passive scalars and the wall distance](recipes/scalars.md) | passive scalars with their boundary conditions, bounds, exact solutions, the Nusselt number of a heated channel, the wall distance | 63, 211 |
-| [Energy equation and heat transfer](recipes/energy.md) | the temperature of a flow: properties of T, thermal wall conditions, viscous heating, the heat balance, solid regions and conjugate heat transfer, laminar, turbulent and transient, thermal acceleration, the cycle loop and the frozen-flow march, several fluids, start values per region, buoyancy and variable density | 154, 156, 158, 159, 160, 180, 190, 202, 208, 206, 186, 195, 272, 221, 238 |
+| [Energy equation and heat transfer](recipes/energy.md) | the temperature of a flow: properties of T, thermal wall conditions, viscous heating, the heat balance, solid regions and conjugate heat transfer, laminar, turbulent and transient, thermal acceleration, the cycle loop and the frozen-flow march, several fluids, start values per region, buoyancy and variable density | 154, 156, 158, 159, 160, 180, 190, 202, 208, 206, 186, 195, 272, 221, 238, 346 |
 | [Thermal radiation](recipes/radiation.md) | the radiation of a prescribed temperature field by Monte Carlo bundles: walls, noise, threads, ranks and the GPU, the checks against exact solutions | 259, 281 |
 | [Turbulence models](recipes/turbulence.md) | RANS turbulence models: the model, the wall treatment by the mesh, inlet turbulence, roughness, the near-wall checks, curvature correction and QCR on any mesh, the internal flows of D45 (pipe, diffuser, U-bend) | 68, 71, 73, 74, 88, 89, 90, 113, 115, 141, 140, 194, 193, 199, 197, 204 |
 | [Boundary conditions](recipes/boundary-conditions.md) | slip walls, wedges for axisymmetric flow, inlet profiles from tables, backflow at pressure outlets, convective outlets, periodic modules, absolute or gauge pressure values (D239) | 29, 67, 220 |
@@ -209,6 +209,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="spray-g-grid"></a>338 | [Turn the grid against a jet](recipes/sprays.md#spray-g-grid) | [Lagrangian sprays](recipes/sprays.md) |
 | <a id="spray-device"></a>341 | [Describe a multi-hole injector by its holes](recipes/sprays.md#spray-device) | [Lagrangian sprays](recipes/sprays.md) |
 | <a id="spray-device-surface"></a>343 | [Show your own injector STL](recipes/sprays.md#spray-device-surface) | [Lagrangian sprays](recipes/sprays.md) |
+| <a id="wall-heat"></a>346 | [Write the wall heat flux, the heat transfer coefficient and the Nusselt number on the walls](recipes/energy.md#wall-heat) | [Energy equation and heat transfer](recipes/energy.md) |
 
 ## Adding a feature
 

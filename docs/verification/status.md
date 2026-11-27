@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 1.1.0 (b35bc269d4e1)), never typed in. The same as data: [grades.json](grades.json).
 
-**159 features: 49 verified, 107 partial, 3 unverified.**
+**160 features: 49 verified, 108 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -92,6 +92,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Energy | [Energy equation of the fluid](#energy-fluid) | verified |
 | Energy | [c_p(T), k(T) and μ(T) from the material database](#energy-temperature-dependent) | verified |
 | Energy | [Temperature, heat-flux, heat-flow and convection walls](#energy-wall-conditions) | verified |
+| Energy | [Wall heat flux, heat transfer coefficient and Nusselt number (derived fields)](#energy-wall-heat) | partial |
 | Energy | [Energy with a turbulence model (thermal wall function, Pr_t)](#energy-turbulent) | partial |
 | Energy | [Water and steam of IAPWS-IF97: states, saturation, transport properties and the if97 material form (SF7a)](#materials-if97-water-steam) | partial |
 | Energy | [One-dimensional water and steam tube circuits of a boiler: two-phase pressure drop, flow boiling, CHF margin and natural circulation (steam furnace SF7b)](#circuits-water-steam) | partial |
@@ -1143,6 +1144,25 @@ Range: y_plus_first 11.06 … 300, prandtl 0.01 … 100.
 
 - exact: [`convection_condition_is_the_series_resistance`](../../crates/foehncraft-flow/tests/energy.rs): the convection condition is the series resistance
 - exact: [`heat_flow_is_spread_over_the_boundary`](../../crates/foehncraft-flow/tests/energy.rs): a heat flow is spread over the boundary
+
+<a id="energy-wall-heat"></a>
+
+### Wall heat flux, heat transfer coefficient and Nusselt number (derived fields)
+
+**partial** (gaps written) · id `energy.wall-heat` · switch `output.derived` · decisions D72
+
+- exact: [`couette_wall_heat_values_are_exact`](../../crates/foehncraft-flow/tests/wall_heat.rs): Couette flow heated by its friction: q_w = −μU²/(2h) on both walls, T_w, h = k/d_n and Nu = L/d_n to 1e-7; post derive writes the file of the run byte for byte
+- reference-data: [`plate_heated_laminar`](../../examples/cases/flow/plate_heated_laminar.toml): laminar isothermal flat plate, Re_L = 1e4, Pr 0.71: Nu_x = q_w x/(k ΔT) within 1 % of the similarity solution of Pohlhausen (1921) from x = 0.05 to 0.9 L on every level (passes in CI (set long), not yet in the manual) ([results](../gallery/energy.md#wall-heat))
+- reference-data: [`heated_plate_meets_the_similarity_solution`](../../crates/foehncraft-flow/tests/wall_heat.rs): the plate on the coarsest mesh: Nu_x within 1 % of the similarity solution, h = k/d_n, Nu = L/d_n, Σ q_w A the heat flow of the plate to 1e-9
+- consistency: [`checks_of_the_wall_heat_keys`](../../crates/foehncraft-flow/tests/wall_heat.rs): the energy equation and a reference length are required (CASE005, CASE004)
+
+Gaps:
+
+- h and Nu take the temperature of the wall cell as their reference (owner decision 2026-11-27): in a laminar flow h = k/d_n and Nu = L/d_n depend on the mesh only; a free-stream or bulk reference is not offered (take q_w)
+- q_w is the orthogonal part of the conduction (as wall_<boundary>.csv): on non-orthogonal wall cells the correction (1 − a) k ∇T_P·k_f of the heat balance is left out
+- no turbulent case: the thermal wall-function coefficient on the walls is not checked against reference data
+- the interfaces of conjugate cases (fluid–solid) are not wall boundaries and carry no wall heat values
+- restart files written before 1.3 hold no boundary coefficients of the energy equation; post derive asks for one more iteration
 
 <a id="energy-turbulent"></a>
 
