@@ -1763,7 +1763,7 @@ impl OnRanks {
     pub fn solution(&self, fl: &mut Flow) -> Result<crate::simplec::Solution<'_>> {
         let state = fl.state()?;
         let mut m = GatherFields(&self.layout);
-        let state = crate::restart::map_state(&state, &mut m, true)?;
+        let state = crate::restart::map_state(&state, &mut m)?;
         let mut phys = fl.physics();
         use crate::restart::FieldMap as _;
         if let Some(mu) = &phys.mu_face {

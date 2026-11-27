@@ -20,7 +20,11 @@
 //! - the passive scalars (D51): attribute `scalars` (the names), per cell
 //!   `scalar_<name>` and, transient, `scalar_old_<name>` (the level before),
 //!   with `limiter = "mlp"` also `scalar_psi_<name>`, the limiter value
-//!   that its relaxation carries between outer iterations (D237);
+//!   that its relaxation carries between outer iterations (D237), and per
+//!   boundary face `scalar_wall_a_<name>`, `scalar_wall_b_<name>`,
+//!   `scalar_wall_gamma_<name>`, the boundary coefficients φ_b = a φ_P + b
+//!   and the face diffusivity of the last solve (output only, for the wall
+//!   heat flux of `foehn post derive`; written since 1.3);
 //! - the periodic pairs (D29): `periodic_force`, the driving force per
 //!   pair;
 //! - the turbulence model (stage 6): attribute `turbulence` (the family:
@@ -265,6 +269,13 @@ mod io {
                     if let Some(p) = &x.psi {
                         ds(&g, &format!("scalar_psi_{}", x.name), p)?;
                     }
+                    // the boundary coefficients of the last solve (output
+                    // only: the wall heat flux of `foehn post derive`)
+                    if let Some(w) = &x.wall {
+                        ds(&g, &format!("scalar_wall_a_{}", x.name), &w.a)?;
+                        ds(&g, &format!("scalar_wall_b_{}", x.name), &w.b)?;
+                        ds(&g, &format!("scalar_wall_gamma_{}", x.name), &w.gamma)?;
+                    }
                 }
             }
             if !s.periodic_force.is_empty() {
@@ -434,6 +445,7 @@ mod io {
             .map(|n| {
                 let old = format!("scalar_old_{n}");
                 let psi = format!("scalar_psi_{n}");
+                let wall = ["a", "b", "gamma"].map(|k| format!("scalar_wall_{k}_{n}"));
                 Ok(crate::scalar::ScalarState {
                     name: n.to_string(),
                     phi: rd(g, &format!("scalar_{n}"))?,
@@ -447,7 +459,15 @@ mod io {
                     } else {
                         None
                     },
-                    wall: None,
+                    wall: if g.link_exists(&wall[2]) {
+                        Some(crate::scalar::ScalarWall {
+                            a: rd(g, &wall[0])?,
+                            b: rd(g, &wall[1])?,
+                            gamma: rd(g, &wall[2])?,
+                        })
+                    } else {
+                        None
+                    },
                 })
             })
             .collect()
@@ -835,10 +855,10 @@ impl FieldMap for Reorder {
     }
 }
 
-/// The fields of `s` mapped by `m`; with `wall` the boundary coefficients
-/// of the scalars too (the output of a run on ranks needs them, a restart
-/// file does not keep them).
-pub(crate) fn map_state(s: &State, m: &mut dyn FieldMap, wall: bool) -> Result<State> {
+/// The fields of `s` mapped by `m`, with the boundary coefficients of the
+/// scalars (the output of a run on ranks and the wall heat flux of
+/// `foehn post derive` need them).
+pub(crate) fn map_state(s: &State, m: &mut dyn FieldMap) -> Result<State> {
     let opt = |m: &mut dyn FieldMap,
                v: &Option<Vec<f64>>,
                f: fn(&mut dyn FieldMap, &[f64]) -> Result<Vec<f64>>|
@@ -878,13 +898,13 @@ pub(crate) fn map_state(s: &State, m: &mut dyn FieldMap, wall: bool) -> Result<S
                     phi: m.cells(&x.phi)?,
                     old: opt(m, &x.old, cells)?,
                     psi: opt(m, &x.psi, cells)?,
-                    wall: match (&x.wall, wall) {
-                        (Some(w), true) => Some(crate::scalar::ScalarWall {
+                    wall: match &x.wall {
+                        Some(w) => Some(crate::scalar::ScalarWall {
                             a: m.boundary(&w.a)?,
                             b: m.boundary(&w.b)?,
                             gamma: m.boundary(&w.gamma)?,
                         }),
-                        _ => None,
+                        None => None,
                     },
                 })
             })
@@ -974,7 +994,7 @@ impl Restart {
         cell_id: &[u64],
         face_id: &[u64],
     ) -> Result<Self> {
-        let state = map_state(&self.state, m, false)?;
+        let state = map_state(&self.state, m)?;
         self.state = state;
         if let Some((o, ..)) = &mut self.transient {
             let c3a = |m: &mut dyn FieldMap, u: &[Vec<f64>; 3]| -> Result<[Vec<f64>; 3]> {

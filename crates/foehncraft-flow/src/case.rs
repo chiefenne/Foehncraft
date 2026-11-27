@@ -49,6 +49,7 @@
 //! derived = ["vorticity", "q-criterion"]  # derived fields (D72), crate::derived
 //! [output.reference]             # reference values of pressure-coefficient
 //! velocity = 1.0
+//! # length = 0.1                 # m: L_ref of nusselt-number
 //! [[output.lines]]               # velocity and pressure along a line
 //! name = "vertical"
 //! from = [0.5, 0.0, 0.0]
