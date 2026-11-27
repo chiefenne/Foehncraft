@@ -79,15 +79,18 @@ type = "wall"
 [boundary.zmax.energy]
 heat_flux = 0.0
 
+# 0.5 µs, the step of the PoliMi set-up of the ECN (ECN1 Spray A summary):
+# with the KH-ACT children of B₀Λ (D348) 2 µs diverges at step 23 and
+# 1 µs at step 53
 [time]
 scheme = "bdf2"
-time_step = 2e-6
+time_step = 5e-7
 end_time = 6e-4
 
 [spray]
 include = "spray_a_distortion_injectors.toml"
 wall_mode = "stick"
-write_every = 50
+write_every = 200
 dispersion = "eddy-lifetime"
 
 [spray.ecn]
