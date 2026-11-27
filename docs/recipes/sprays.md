@@ -23,7 +23,7 @@ Part of the [Recipes](../recipes.md): droplets that move with and through the ga
 | 333 | [Let the drops damp the gas turbulence (two-way turbulence)](#spray-turbulence) |
 | 335 | [Let the drops collide](#spray-collisions) |
 | 341 | [Describe a multi-hole injector by its holes](#spray-device) |
-| PRNUM | [Show your own injector STL](#spray-device-surface) |
+| 343 | [Show your own injector STL](#spray-device-surface) |
 
 ---
 
@@ -970,7 +970,7 @@ Case: `examples/cases/flow/spray_multihole_device.toml`;
 ---
 
 <a id="spray-device-surface"></a>
-## PRNUM. Show your own injector STL
+## 343. Show your own injector STL
 
 Give the device a surface, and every run draws it with the spray
 (`spray/devices.vtu`, listed in `series.json` under `static`):
@@ -1011,7 +1011,7 @@ Look at it before a run:
 ```sh
 foehn call spray.place --input - <<< '{"file": "examples/cases/flow/spray_g_device_injectors.toml", "out": "output/spray_g_device"}'
 foehn flow examples/cases/flow/spray_g_g1.toml --set time.end_time=6e-4 --out output/spray_g_g1
-python3 -m tools.plot.spray_g_device OUT_DIR output/spray_g_g1   # gallery PRNUM
+python3 -m tools.plot.spray_g_device OUT_DIR output/spray_g_g1   # gallery 343
 ```
 
 Open `output/spray_g_device/spray/devices.vtu` in ParaView and colour it

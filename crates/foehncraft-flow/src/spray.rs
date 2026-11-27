@@ -703,16 +703,16 @@ pub struct DeviceHole {
     pub injectors: Vec<String>,
 }
 
+/// A device placed in case coordinates: its summary, its surface and its
+/// holes with the length of their lines.
+type Placed = (
+    DeviceSummary,
+    Vec<[[f64; 3]; 3]>,
+    Vec<(foehncraft_particles::PlacedHole, f64)>,
+);
+
 /// The devices of a case with their placed surfaces.
-fn placed_devices(
-    sp: &foehncraft_particles::SpraySection,
-) -> Result<
-    Vec<(
-        DeviceSummary,
-        Vec<[[f64; 3]; 3]>,
-        Vec<(foehncraft_particles::PlacedHole, f64)>,
-    )>,
-> {
+fn placed_devices(sp: &foehncraft_particles::SpraySection) -> Result<Vec<Placed>> {
     let mut out = Vec::new();
     for d in &sp.devices {
         let f = d.frame()?;

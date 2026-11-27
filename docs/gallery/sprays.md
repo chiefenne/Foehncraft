@@ -24,7 +24,7 @@ Part of the [Example gallery](../gallery.md): droplets as Lagrangian parcels in 
 | 333 | [The drops take turbulence energy from the gas](#spray-turbulence) | D330 | `[spray.coupling] turbulence = "dispersion-work"`: the work of the dispersing eddies on the drops taken out of k with the ε or ω term of KIVA-II, booked from the part of the drop motion that follows the eddy; `gas_turbulence_w` in `spray.csv`; at most 32 eddies per parcel and step |
 | 335 | [Colliding drops in ECN Spray G](#spray-collisions) | D331 | `[spray.collision] model = "ntc"`: no-time-counter sampling with O'Rourke's coalescence and grazing separation; G1 liquid lead at 0.8 ms from 19 % to 12 % |
 | 341 | [A five-hole nozzle described by its device](#spray-device) | ID1, D340 to D342 | `[[spray.device]]` (mount, axis, reference, clocking), `[[device.hole]]`, `[[device.pattern]]`, `[[injector]] device`, `hole`, `hole = "all"`, `offset`, SPR010, tool `spray.devices` |
-| PRNUM | [Spray G under its injector tip](#spray-device-surface) | ID2, ID3, D343 to D345 | `[[spray.device]] geometry` (`standard-gasoline`, `standard-diesel`, `stl`), `file`, `scale`, `stl_origin`, `stl_axis`, `stl_reference`, `glyph_length`, `spray/devices.vtu`, `series.json` `static`, `result.json` `spray.devices`, tool `spray.place` |
+| 343 | [Spray G under its injector tip](#spray-device-surface) | ID2, ID3, D343 to D345 | `[[spray.device]] geometry` (`standard-gasoline`, `standard-diesel`, `stl`), `file`, `scale`, `stl_origin`, `stl_axis`, `stl_reference`, `glyph_length`, `spray/devices.vtu`, `series.json` `static`, `result.json` `spray.devices`, tool `spray.place` |
 
 ---
 
@@ -1570,7 +1570,7 @@ injectors without running the flow (D346).
 
 **The device in the picture.** The surface of the device (a standard
 tip or the user's own STL) and the device in the output files are
-[gallery PRNUM](#spray-device-surface); the device is never a wall in this
+[gallery 343](#spray-device-surface); the device is never a wall in this
 version (D344).
 
 Files: `spray/parcels_<step>.vtkhdf` (field `injector`), `spray.csv` (per
@@ -1581,7 +1581,7 @@ injector `water/1` to `water/5`).
 ---
 
 <a id="spray-device-surface"></a>
-## PRNUM. Spray G under its injector tip
+## 343. Spray G under its injector tip
 
 <img src="../figures/gallery/spray_g_device.png" alt="Left: an oblique view of a grey cylindrical injector tip pointing down with eight plumes of fuel drops fanning out below it into a wide bell about 35 mm long, coloured by drop speed: yellow, fast, near the tip, dark blue, slow, at the bell edge. Right: a close-up of the first 5 mm with the domed tip, short black hole axes and the eight young plumes leaving the holes." width="1300" height="640">
 
@@ -1653,5 +1653,5 @@ time player does not yet draw `static.devices` (ID2m).
 
 Files: `spray/devices.vtu`, `series.json` (`static`), `result.json`
 (`spray.devices`).
-[Recipe PRNUM](../recipes/sprays.md#spray-device-surface),
+[Recipe 343](../recipes/sprays.md#spray-device-surface),
 [case row](../cases/flow.md#lagrangian-sprays).
