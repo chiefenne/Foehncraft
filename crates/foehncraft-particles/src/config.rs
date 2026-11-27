@@ -411,12 +411,12 @@ pub struct Injector {
     /// `device` and `hole` it may be left out: it is then the hole exit
     /// (plus `offset`, D342).
     #[serde(default = "unset3")]
-    #[schemars(default = "zero3")]
+    #[schemars(required, transform = no_default)]
     pub position: [f64; 3],
     /// Axis of the spray (any length, it is normalised). With `device` and
     /// `hole` it may be left out: it is then the hole axis (D342).
     #[serde(default = "unset3")]
-    #[schemars(default = "zero3")]
+    #[schemars(required, transform = no_default)]
     pub direction: [f64; 3],
     /// The `[[device]]` whose hole this injector is (D342). With `position`
     /// and `direction` given as well, the device is only checked against
@@ -675,8 +675,9 @@ fn unset3() -> [f64; 3] {
     [f64::NAN; 3]
 }
 
-fn zero3() -> [f64; 3] {
-    [0.0; 3]
+/// Required in the key reference (an injector without a device needs it).
+fn no_default(s: &mut schemars::Schema) {
+    s.remove("default");
 }
 
 fn one() -> f64 {

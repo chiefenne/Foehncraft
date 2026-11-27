@@ -22,6 +22,7 @@ Part of the [Recipes](../recipes.md): droplets that move with and through the ga
 | 323 | [Model a multi-hole injector on a sector (ECN Spray G)](#spray-g-sector) |
 | 333 | [Let the drops damp the gas turbulence (two-way turbulence)](#spray-turbulence) |
 | 335 | [Let the drops collide](#spray-collisions) |
+| 341 | [Describe a multi-hole injector by its holes](#spray-device) |
 
 ---
 
@@ -910,3 +911,58 @@ python3 -m tools.plot.spray_g_g1 OUT_DIR output/spray_g_g1 output/spray_g_g1_noc
 
 Case: `examples/cases/flow/spray_g_g1.toml`;
 [gallery entry](../gallery/sprays.md#spray-collisions).
+
+---
+
+<a id="spray-device"></a>
+## 341. Describe a multi-hole injector by its holes
+
+Give the injector as it is mounted and drilled, and let the solver work out
+where each plume starts and where it points. In the injector file (or in
+`[spray]` of the case):
+
+```toml
+[[device]]
+name = "gdi"
+mount = [0.0, 0.0, 0.0]        # the tip (m)
+axis = [1.0, 0.0, 0.0]         # into the chamber
+reference = [0.0, 1.0, 0.0]    # zero of the azimuth (default: the global
+                               # axis least aligned with `axis`)
+
+[[device.pattern]]             # a ring of equal holes
+count = 8
+polar = 33.0                   # degrees from the axis
+radius = 1.0e-3                # exit circle (m)
+setback = 1.0e-4               # exits this far into the chamber (m)
+first_azimuth = -11.25
+
+[[device.hole]]                # or holes one by one
+name = "centre"
+polar = 0.0
+
+[[injector]]
+name = "g"
+device = "gdi"
+hole = "all"                   # one injector per hole: g/1 ... g/8, g/centre
+# speed, rate, hole_diameter, ... as for any injector (per hole)
+```
+
+- `hole = "<name>"` takes one hole (a sector model); `offset` (m) moves
+  its start, for example a few µm into the domain off a symmetry plane.
+- Keep `position` and `direction` beside `device` and `hole` to check a
+  hand-written injector against the drawing: SPR010 warns when they
+  disagree.
+- `clocking` turns the whole ring about the axis, so one file serves
+  several mountings.
+
+Check the result before meshing:
+
+```sh
+foehn call spray.devices --input - <<< '{"file": "examples/cases/flow/spray_multihole_device_injectors.toml"}'
+foehn flow examples/cases/flow/spray_multihole_device.toml --out output/spray_multihole_device
+python3 -m tools.plot.spray_multihole_device OUT_DIR output/spray_multihole_device   # gallery 341
+```
+
+Case: `examples/cases/flow/spray_multihole_device.toml`;
+[gallery entry](../gallery/sprays.md#spray-device).
+

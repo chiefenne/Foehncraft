@@ -3,15 +3,16 @@
 #
 #   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/spray_multihole_device.toml
 #
-# A box of still air, 0.12 m by 0.1 m by 0.1 m. A nozzle at the top of the
-# box, tilted 20° from straight down, sprays water through five holes 30°
+# A box of air, 0.12 m by 0.1 m by 0.1 m, that flows down at 0.3 m/s
+# (laminar, from the top to the open bottom). A nozzle in the middle of the
+# top, tilted 20° from straight down, sprays water through five holes 30°
 # from its axis, each at 8 m/s in a cone of 4°, as droplets of 80 µm. The
 # injector file `spray_multihole_device_injectors.toml` gives the nozzle as
 # a `[[device]]` (mounting point, axis, a reference for the azimuth, a ring
 # of five holes) and one `[[injector]]` with `hole = "all"`; the five
 # injectors and their positions and directions follow from the device.
-# One-way coupling: the air stays at rest, the droplets slow down and fall.
-# Droplets stick to the walls.
+# One-way coupling: the air does not feel the droplets; they slow down,
+# fall and leave through the bottom or stick to the side walls.
 
 case_format = "0.7"
 
@@ -24,22 +25,24 @@ cells = [24, 20, 20]
 [fluid]
 density = 1.2
 viscosity = 1.8e-5
+pressure_values = "gauge"
 
 [gravity]
 vector = [0.0, -9.81, 0.0]
 
 [initial]
-velocity = [0.0, 0.0, 0.0]
+velocity = [0.0, -0.3, 0.0]
 
 [boundary.xmin]
 type = "wall"
 [boundary.xmax]
 type = "wall"
 [boundary.ymin]
-type = "wall"
-[boundary.ymax]
 type = "static-pressure-outlet"
 pressure = 0.0
+[boundary.ymax]
+type = "velocity-inlet"
+velocity = [0.0, -0.3, 0.0]
 [boundary.zmin]
 type = "wall"
 [boundary.zmax]
@@ -48,7 +51,7 @@ type = "wall"
 [time]
 scheme = "bdf2"
 time_step = 2e-3
-end_time = 0.06
+end_time = 0.08
 
 [spray]
 include = "spray_multihole_device_injectors.toml"

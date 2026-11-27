@@ -2062,6 +2062,29 @@ gaps = [
 ]
 
 [[feature]]
+id = "sprays.injector-devices"
+area = "Sprays"
+title = "Injector and nozzle devices: a mounted frame with its holes; injectors that name a hole (D340 to D342)"
+switch = "[[spray.device]], [[injector]] device and hole"
+decisions = ["D340", "D341", "D342", "D346"]
+model = false
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-particles/src/device.rs::frame_is_right_handed_and_orthonormal", what = "the device frame (axis, reference, clocking) is orthonormal and right-handed to 1e-15" },
+  { kind = "exact", test = "crates/foehncraft-particles/src/device.rs::pattern_turns_by_equal_steps", what = "the holes of a pattern are hole 1 turned by k 360/count about the axis, to 1e-14" },
+  { kind = "exact", test = "crates/foehncraft-particles/tests/devices.rs::spray_g_hole_one_from_the_device", what = "ECN Spray G hole 1 from the device with the 2 um nudge as offset is the hand-written injector to 1e-11 m and 1e-8 in the direction; the hand-written values beside the device give no SPR010, against the wrong hole they do" },
+  { kind = "contract", property = "equivalence", test = "crates/foehncraft-particles/tests/devices.rs::existing_injector_files_are_unchanged", what = "every injector file of the examples reads to the same positions and directions, with no device" },
+  { kind = "contract", property = "equivalence", test = "crates/foehncraft-particles/tests/devices.rs::all_holes_expand_in_order", what = "hole = \"all\" gives the same injectors as the hand-written list of the holes in the same order" },
+  { kind = "contract", property = "diagnostics", test = "crates/foehncraft-particles/tests/devices.rs::refusals", what = "device without hole, unknown hole or device, hole without device, missing position, hole = \"all\" with a position: refused" },
+  { kind = "consistency", case = "spray_multihole_device", what = "a five-hole nozzle tilted 20 degrees, five plumes 72 degrees apart from one injector with hole = \"all\"; the mass book closes", doc = "docs/gallery/sprays.md#spray-device" },
+  { kind = "contract", property = "schema", case = "spray_multihole_device_injectors", what = "the included injector file of spray_multihole_device with a device and a pattern of holes", doc = "docs/cases/flow.md#lagrangian-sprays" },
+]
+gaps = [
+  "the device is not drawn yet: its surface (standard or user STL) and the devices file of the output come with stage ID2 (D343, D345)",
+  "picture only: the device is never a wall in the flow (D344, stage ID4 needs its own go)",
+  "straight holes only (polar and azimuth); no swirl or needle lift",
+]
+
+[[feature]]
 id = "sprays.ecn-diagnostics"
 area = "Sprays"
 title = "ECN liquid length (projected liquid volume) and vapour penetration (Spray A, SA3, D315)"
