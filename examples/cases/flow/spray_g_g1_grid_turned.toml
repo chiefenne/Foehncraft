@@ -1,0 +1,147 @@
+# ECN Spray G, condition G1 (D309), grid orientation test (D337): the cell lines of the grid at 45° to the plume (the lines at -12° and 78°, the plume at 33°),
+# on uniform 0.6 mm cells; otherwise the case of spray_g_g1.toml.
+# G1 (D309): iso-octane at 363 K and 20 MPa from the
+# 8-hole Spray G injector into still nitrogen at 573 K and 3.5 kg/m³
+# (6.0 bar), against the liquid and vapour penetration the Engine Combustion
+# Network measured, both along the injector axis from the injector tip.
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/spray_g_g1_grid_turned.toml
+#
+# One eighth of the injector: a sector of 22.5° about the injector axis x
+# (`wedge` with `dimension = 3`, D309) with the plume of hole 1 on its side
+# plane `zmin` (half of the plume, `flow_share = 0.5`) and the plane half
+# way to the next plume as `zmax`. Both are mirror planes of the 8 plumes,
+# so the sector holds the flow of the whole injector. A thin slip core of
+# 0.3 mm along the axis (`ymin`, symmetry): by the symmetry of the plumes
+# the gas on the axis moves only along it, which the core imposes, and the
+# prisms that would meet on the axis (with faces of skewness 5, and in our
+# trials the first cells to go unstable once the plumes draw gas to the
+# axis) are not there. The cells next to the core are graded so that no
+# face is skewed.
+#
+# The injector (spray_g_g1_injectors.toml) describes the hole, the measured
+# rate of injection and the plume direction; KH-ACT strips the blobs
+# (D307), TAB distortion with the dynamic drag (D303), the drops collide
+# (D331), and the drops
+# evaporate with Abramzon and Sirignano in the 1/3-rule film (D321). The
+# vapour IC8H18 is a species of the gas; the gas density stays that of the
+# ambient (3.5 kg/m³), the gas properties come from the mixture.
+#
+# The ECN metrics (tools/plot/spray_g_metrics.py): the liquid penetration
+# is the farthest distance along the injector axis where the projected
+# liquid volume of the 8 plumes, seen perpendicular to the plane of plumes
+# 1 and 5, exceeds 0.2e-3 mm³/mm² (and 2e-3); the vapour penetration is the
+# farthest distance where the vapour mass fraction exceeds 0.1 %.
+case_format = "0.7"
+
+[mesh.generate]
+type = "hex"
+dimension = 3
+lower = [0.0, 3.0e-4, 0.0]
+upper = [0.06, 0.05, 1.0]
+cells = [100, 83, 8]
+wedge = 22.5
+grid_angle = -12.0
+
+[mesh]
+renumber = "rcm"
+
+# nitrogen at 573 K: the ambient density of the ECN; μ, c_p and k are our
+# values from the species data (Chapman-Enskog with the Neufeld collision
+# integral, NASA-7 c_p, the mean of the Eucken relations, as the species
+# module computes them); the mixture properties of the species take over
+# in the run
+[fluid]
+density = 3.5
+viscosity = 2.87e-5
+specific_heat = 1069.0
+conductivity = 0.0429
+pressure_values = "gauge"
+operating_pressure = 6.0e5
+
+# k-ε: in a still chamber the SST model does not build up turbulence in the
+# thin gas jets within the injection (case spray_breakup)
+[turbulence]
+model = "k-epsilon"
+wall_treatment = "scalable"
+
+[initial]
+velocity = [0.0, 0.0, 0.0]
+turbulence_intensity = 0.05
+viscosity_ratio = 10.0
+
+[energy]
+initial = 573.0
+
+# Schmidt number of IC8H18 in N2 at 573 K: μ/(ρ D) = 2.25 with the
+# Chapman-Enskog diffusivity of the species file's Lennard-Jones data (our
+# value; independent of the pressure, since ρ D is)
+[species]
+names = ["IC8H18", "N2"]
+initial = { mass_fractions = { IC8H18 = 0.0, N2 = 1.0 } }
+diffusion = "schmidt"
+schmidt = { IC8H18 = 2.25, N2 = 0.7 }
+
+[boundary.xmin]
+type = "wall"
+[boundary.xmin.energy]
+heat_flux = 0.0
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymax]
+type = "total-pressure-outlet"
+total_pressure = 0.0
+[boundary.ymin]
+type = "symmetry"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[time]
+scheme = "bdf2"
+time_step = 2e-6
+end_time = 1.2e-3
+
+[output]
+fields_interval = 5e-5
+
+[spray]
+include = "spray_g_g1_injectors.toml"
+wall_mode = "stick"
+write_every = 25
+dispersion = "eddy-lifetime"
+penetration_fraction = 0.97
+
+[spray.evaporation]
+model = "abramzon-sirignano"
+
+# up to 8 passes: with 3 most steps ended above the tolerance (lag about
+# 2e-3); with 8 every step converges, about 4 passes on average
+[spray.coupling]
+mode = "two-way"
+passes = "converged"
+tolerance = 1e-3
+max_passes = 8
+
+# the drops of two parcels in one cell collide (D331): no-time-counter
+# sampling (Schmidt and Rutland 2000) with the outcomes of O'Rourke (1981),
+# as in the reference set-ups of the ECN (Bestel et al., Fuel 2024); with
+# it the liquid lead at 0.8 ms falls from 19 % to 12 %
+[spray.collision]
+model = "ntc"
+
+[spray.breakup]
+model = "kh-act"
+drag = "dynamic"
+
+[solver]
+tolerance = 1e-6
+max_iterations = 300
+
+[solver.scalar]
+limiter = "mlp"
+
+[verification]
+require_convergence = false
