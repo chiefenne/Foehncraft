@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 1.1.0 (b35bc269d4e1)), never typed in. The same as data: [grades.json](grades.json).
 
-**158 features: 49 verified, 106 partial, 3 unverified.**
+**159 features: 49 verified, 107 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -163,6 +163,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Sprays | [Distorted drops: the Corrected Distortion model for drag and evaporation (Spray A, SA4 part 1, D316)](#sprays-corrected-distortion) | partial |
 | Sprays | [Drop collisions: no-time-counter sampling with O'Rourke's coalescence and grazing separation (D331)](#sprays-collision) | partial |
 | Sprays | [Injector and nozzle devices: a mounted frame with its holes; injectors that name a hole (D340 to D342)](#sprays-injector-devices) | partial |
+| Sprays | [Injector device surfaces: standard gasoline and diesel tips or the user's STL, placed and written with the spray (D343 to D345)](#sprays-injector-device-surfaces) | partial |
 | Sprays | [ECN liquid length (projected liquid volume) and vapour penetration (Spray A, SA3, D315)](#sprays-ecn-diagnostics) | partial |
 | Flow models | [Porous regions with a direction-dependent Darcy-Forchheimer resistance (D270, PM1)](#porous-darcy-forchheimer) | partial |
 | Flow models | [Gas and matrix temperatures in porous regions, monolithic (D271, D272, PM2)](#porous-two-temperatures) | partial |
@@ -2411,10 +2412,30 @@ Gaps:
 
 Gaps:
 
-- the device is not drawn yet: its surface (standard or user STL) and the devices file of the output come with stage ID2 (D343, D345)
 - picture only: the device is never a wall in the flow (D344, stage ID4 needs its own go)
 - straight holes only (polar and azimuth); no swirl or needle lift
 - `spray_multihole_device_injectors` has no run in the verification manual or in CI
+
+<a id="sprays-injector-device-surfaces"></a>
+
+### Injector device surfaces: standard gasoline and diesel tips or the user's STL, placed and written with the spray (D343 to D345)
+
+**partial** (gaps written) · id `sprays.injector-device-surfaces` · switch `[[spray.device]] geometry, file, stl_origin, stl_axis, stl_reference` · decisions D343, D344, D345
+
+- exact: [`placement_of_the_surface`](../../crates/foehncraft-particles/src/device.rs): a triangle in the file's own frame (stl_origin, stl_axis, stl_reference, scale) lands where the proper rotation into the device frame puts it
+- exact: [`standard_tip_brings_its_holes`](../../crates/foehncraft-particles/src/device.rs): a standard tip without holes of its own gets its default pattern (8 at 37 degrees, 7 at 77.5 degrees)
+- exact: [`spray_g_device_file_matches_the_hand_written_one`](../../crates/foehncraft-particles/tests/devices.rs): the device form of the Spray G G1 injector gives the hand-written position to 1e-11 m and direction to 1e-8, every other key the same
+- contract (equivalence): [`own_stl_is_placed_and_checked`](../../crates/foehncraft-particles/tests/devices.rs): the standard gasoline tip given as the user's STL is placed as the standard one to 1e-12 m
+- contract (diagnostics): [`own_stl_is_placed_and_checked`](../../crates/foehncraft-particles/tests/devices.rs): an STL with one triangle turned over gives SPR010 and is drawn as it is
+- contract (equivalence): [`devices_are_written_and_listed_as_static`](../../crates/foehncraft-flow/src/series.rs): devices.vtu holds the triangles of the tip, the 8 hole axes and the one cone, and series.json lists it under static
+- contract (schema): [`spray_g_device_injectors`](../../examples/cases/flow/spray_g_device_injectors.toml): the Spray G injector as a device on the standard gasoline tip ([results](../gallery/sprays.md#spray-device-surface)) **missing**
+
+Gaps:
+
+- picture only: the device is never a wall in the flow (D344, stage ID4 needs its own go)
+- the standard tips are our own drawings from published sizes, not measured nozzle geometries
+- MurmelCraft's time player does not draw static.devices yet (ID2m)
+- `spray_g_device_injectors` has no run in the verification manual or in CI
 
 <a id="sprays-ecn-diagnostics"></a>
 
