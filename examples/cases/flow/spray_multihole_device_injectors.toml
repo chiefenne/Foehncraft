@@ -1,0 +1,42 @@
+# The five-hole nozzle of spray_multihole_device.toml, described by its
+# device (D340 to D342): the nozzle is mounted at the top of the box,
+# tilted 20° from straight down towards +x, and its five holes are a ring
+# of equal holes 30° from the nozzle axis. One `[[injector]]` with
+# `hole = "all"` becomes five injectors, `water/1` to `water/5`, whose
+# positions and directions follow from the device: nothing is worked out
+# by hand. The tool `spray.devices` prints them:
+#
+#   cargo run --release -p foehncraft-cli -- call spray.devices \
+#     '{"file": "examples/cases/flow/spray_multihole_device_injectors.toml"}'
+#
+# The device frame: e3 = axis (into the box), e1 = the part of `reference`
+# normal to the axis (the zero of the azimuth), e2 = e3 x e1; `clocking`
+# turns the ring about the axis.
+
+[liquid]
+name = "water"
+density = 998.0
+
+[[device]]
+name = "nozzle"
+mount = [0.06, 0.1, 0.05]
+axis = [0.34202014, -0.93969262, 0.0]
+reference = [0.0, 0.0, 1.0]
+clocking = 10.0
+
+[[device.pattern]]
+count = 5
+polar = 30.0
+radius = 1.5e-3
+setback = 2e-3
+diameter = 0.3e-3
+
+[[injector]]
+name = "water"
+device = "nozzle"
+hole = "all"
+speed = 8.0
+half_angle = 4.0
+mass_flow = 2e-3
+diameter = 80e-6
+parcels_per_second = 4000.0

@@ -5,6 +5,8 @@
 //! - [`config`]: the `[spray]` table and its `include` file;
 //! - [`equilibrium`]: the high-pressure phase equilibrium at the droplet
 //!   surface, tabulated over the droplet temperature (Spray A, SA1, D311);
+//! - [`device`]: injector and nozzle devices, their frames and holes
+//!   (D340 to D342);
 //! - [`datum`]: the datums of the sprays, the crossing records and the
 //!   droplet statistics from moment sums (SP1b, D262 to D265);
 //! - [`sizes`]: the droplet size distributions of the injectors (D242);
@@ -28,6 +30,7 @@ pub mod collision;
 pub mod config;
 pub mod coupling;
 pub mod datum;
+pub mod device;
 pub mod equilibrium;
 pub mod sizes;
 pub mod spray;
@@ -40,6 +43,7 @@ pub use config::{
 };
 pub use coupling::{CellSources, Delta, Record, StepBooks, limiter_factor};
 pub use datum::{Bound, Datum, DatumTally, HistSpec, Moments, Shape, Stats, Surface, Volume};
+pub use device::{Device, Frame, Hole, Pattern, PlacedHole};
 pub use equilibrium::{
     SurfacePoint, SurfaceTable, TableEnd, fit_mathias_copeman, ideal_gas_species,
     siebers_liquid_length,

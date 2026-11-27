@@ -1348,6 +1348,7 @@ fn run_one<F: FnMut(&str)>(
     // point inside a sliding rotor is a limit of variant B)
     let loc = Locator::new(mesh0, geo0);
     let mut spray = crate::spray::create(&case, mesh0, geo0, &loc)?;
+    crate::spray::device_warnings(&case, lg, warnings);
     // chemistry in the cells (SF2b): the reaction step of each time step
     let mut chem = crate::chemistry::flow::Chemistry::of(&case, &geo0.cell_volume)?;
     // the datums of the reports (SP1b, D262): the parcels see the same ones

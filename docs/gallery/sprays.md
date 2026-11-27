@@ -23,6 +23,7 @@ Part of the [Example gallery](../gallery.md): droplets as Lagrangian parcels in 
 | 326 | [Flattened drops in ECN Spray A: the Corrected Distortion model](#spray-a-distortion) | SA4 | `[spray.breakup] drag = "corrected-distortion"` (D316): drag and evaporation of the TAB spheroid (Nguyen, Dahms, Pickett and Tagliante 2022), viscous-sphere circulation, ECN liquid length on a quarter domain with mirror images |
 | 333 | [The drops take turbulence energy from the gas](#spray-turbulence) | D330 | `[spray.coupling] turbulence = "dispersion-work"`: the work of the dispersing eddies on the drops taken out of k with the ε or ω term of KIVA-II, booked from the part of the drop motion that follows the eddy; `gas_turbulence_w` in `spray.csv`; at most 32 eddies per parcel and step |
 | 335 | [Colliding drops in ECN Spray G](#spray-collisions) | D331 | `[spray.collision] model = "ntc"`: no-time-counter sampling with O'Rourke's coalescence and grazing separation; G1 liquid lead at 0.8 ms from 19 % to 12 % |
+| 341 | [A five-hole nozzle described by its device](#spray-device) | ID1, D340 to D342 | `[[spray.device]]` (mount, axis, reference, clocking), `[[device.hole]]`, `[[device.pattern]]`, `[[injector]] device`, `hole`, `hole = "all"`, `offset`, SPR010, tool `spray.devices` |
 | 338 | [Grid orientation in ECN Spray G](#spray-g-grid) | D337 | `[mesh.generate] grid_angle`: the same G1 case on a grid with its lines along the plume and at 45° to it; liquid lead at 1.2 ms 27 % and 20 %, vapour 17 % and 9 % |
 
 ---
@@ -1508,6 +1509,73 @@ Files: `spray.csv` (with `collisions`, `coalescences`, `drop_collisions`,
 
 ---
 
+<a id="spray-device"></a>
+## 341. A five-hole nozzle described by its device
+
+<img src="../figures/gallery/spray_multihole_device.png" alt="Left: an oblique view of a box with a nozzle at the top centre, its axis tilted 20 degrees from straight down, and five plumes of water droplets in five colours bending down from it. Right: the same parcels seen along the nozzle axis: five plumes 72 degrees apart, each labelled with its hole, and the hole axes as short black lines from the centre." width="1300" height="600">
+
+`spray_multihole_device.toml` sprays water from a five-hole nozzle at the
+top of a box of air that flows down at 0.3 m/s. The injector file does not
+give five positions and five directions: it gives the nozzle as a device
+(D340 to D342), the way it is mounted and drilled.
+
+```toml
+[[device]]
+name = "nozzle"
+mount = [0.06, 0.1, 0.05]                 # the tip
+axis = [0.34202014, -0.93969262, 0.0]      # 20° from straight down
+reference = [0.0, 0.0, 1.0]               # zero of the azimuth
+clocking = 10.0                           # turn the ring by 10°
+
+[[device.pattern]]
+count = 5
+polar = 30.0          # every hole 30° from the axis
+radius = 1.5e-3       # exits on a circle of 1.5 mm
+setback = 2e-3        # 2 mm below the tip point
+
+[[injector]]
+name = "water"
+device = "nozzle"
+hole = "all"          # five injectors, water/1 to water/5
+speed = 8.0
+# ...
+```
+
+The frame of the device is e₃ along the axis, e₁ the part of `reference`
+normal to the axis and e₂ = e₃ × e₁; `clocking` turns e₁ and e₂ about the
+axis. A hole at polar angle θ and azimuth φ leaves the exit
+mount + setback e₃ + radius (cos φ e₁ + sin φ e₂) along
+cos θ e₃ + sin θ (cos φ e₁ + sin φ e₂). The right picture looks along the
+axis: the five plumes leave 72° apart, as drilled, and bend down with the
+air and gravity. Each plume is one injector of the expanded list, and the
+parcel files carry its index (`injector`).
+
+**Old files are untouched.** An injector without `device` reads exactly as
+before; its `position` and `direction` stay required. An injector may also
+name a hole and keep its own position and direction: the device is then
+only checked against them, and SPR010 warns when they are more than 5 % of
+the exit radius plus 10 µm or 0.5° apart. The ECN Spray G file passes
+that check against its device; its hole 1 from the device lands 2 µm from
+the hand-written position, which is the nudge of the file into the
+sector, and with that nudge as `offset` it matches to round-off.
+
+**What is checked.** Every injector file of the examples reads to the
+same positions and directions as before and has no device; the frame is
+orthonormal and right-handed; a pattern turns its holes by equal steps;
+`hole = "all"` gives the same injectors as the hand-written list of the
+holes; refused: a device without holes, a reference along the axis, a
+hole named twice, a hole that does not exist, `hole = "all"` with a
+position. The tool `spray.devices` prints the frame, the holes and the
+injectors without running the flow (D346).
+
+**Not yet.** The picture of the device itself (its STL, standard or the
+user's own) and the device in the output files come with the next stage
+(ID2, D343, D345); the device is never a wall in this version (D344).
+
+Files: `spray/parcels_<step>.vtkhdf` (field `injector`), `spray.csv` (per
+injector `water/1` to `water/5`).
+[Recipe 341](../recipes/sprays.md#spray-device),
+[case row](../cases/flow.md#lagrangian-sprays).
 <a id="spray-g-grid"></a>
 ## 338. Grid orientation in ECN Spray G
 

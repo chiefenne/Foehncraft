@@ -644,6 +644,20 @@ fn carrier(case: &FlowCase, v: &str) -> Result<Vec<(foehncraft_kernels::species:
     Ok(out)
 }
 
+/// The warnings SPR010 of injectors far from the device hole they name
+/// (D342).
+pub(crate) fn device_warnings<F: FnMut(&str)>(
+    case: &FlowCase,
+    lg: &mut crate::case::Log<F>,
+    warnings: &mut Vec<Diagnostic>,
+) {
+    for m in &case.spray.device_warnings {
+        let d = Diagnostic::new(diag::SPRAY_DEVICE, m.clone());
+        lg.warn(&format!("{}: {}", d.code, d.message));
+        warnings.push(d);
+    }
+}
+
 /// The sprays of a run, or `None` without `[spray]`.
 pub fn create(
     case: &FlowCase,

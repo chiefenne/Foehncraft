@@ -28,6 +28,7 @@ checked-indexing = ["foehncraft-bench/checked-indexing"]
 foehncraft-core.workspace = true
 foehncraft-bench.workspace = true
 foehncraft-flow.workspace = true
+foehncraft-particles.workspace = true
 foehncraft-mesh.workspace = true
 foehncraft-fv.workspace = true
 foehncraft-parallel.workspace = true

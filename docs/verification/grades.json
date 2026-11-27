@@ -1575,6 +1575,21 @@
    "range": {}
   },
   {
+   "id": "sprays.injector-devices",
+   "title": "Injector and nozzle devices: a mounted frame with its holes; injectors that name a hole (D340 to D342)",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "the device is not drawn yet: its surface (standard or user STL) and the devices file of the output come with stage ID2 (D343, D345)",
+    "picture only: the device is never a wall in the flow (D344, stage ID4 needs its own go)",
+    "straight holes only (polar and azimuth); no swirl or needle lift",
+    "`spray_multihole_device_injectors` has no run in the verification manual or in CI"
+   ],
+   "range": {}
+  },
+  {
    "id": "sprays.ecn-diagnostics",
    "title": "ECN liquid length (projected liquid volume) and vapour penetration (Spray A, SA3, D315)",
    "grade": "partial",

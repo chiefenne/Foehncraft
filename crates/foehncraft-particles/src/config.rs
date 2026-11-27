@@ -407,10 +407,31 @@ impl Evaporation {
 pub struct Injector {
     /// Name (in the log and the output).
     pub name: String,
-    /// Where the parcels start (m). It must lie inside the mesh.
+    /// Where the parcels start (m). It must lie inside the mesh. With
+    /// `device` and `hole` it may be left out: it is then the hole exit
+    /// (plus `offset`, D342).
+    #[serde(default = "unset3")]
+    #[schemars(required, transform = no_default)]
     pub position: [f64; 3],
-    /// Axis of the spray (any length, it is normalised).
+    /// Axis of the spray (any length, it is normalised). With `device` and
+    /// `hole` it may be left out: it is then the hole axis (D342).
+    #[serde(default = "unset3")]
+    #[schemars(required, transform = no_default)]
     pub direction: [f64; 3],
+    /// The `[[device]]` whose hole this injector is (D342). With `position`
+    /// and `direction` given as well, the device is only checked against
+    /// them (warning SPR010) and drawn.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device: Option<String>,
+    /// The hole of `device` (its name), or `"all"`: one injector per hole of
+    /// the device, named `<name>/<hole>`, each with the same keys (the mass
+    /// flow and the rate are per hole).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hole: Option<String>,
+    /// Added to the hole exit when `position` is computed from the device
+    /// (m, case coordinates; for example a nudge into a sector domain).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offset: Option<[f64; 3]>,
     /// Speed of the droplets at the injector (m/s). With `hole_diameter`
     /// it may be left out: the speed then follows from the mass flow,
     /// U = ṁ/(ρ_l C_a A_hole) (D306).
@@ -649,6 +670,16 @@ fn is_full_turn(x: &f64) -> bool {
     *x == 360.0
 }
 
+/// An injector key left out: computed from a device (D342) or refused.
+fn unset3() -> [f64; 3] {
+    [f64::NAN; 3]
+}
+
+/// Required in the key reference (an injector without a device needs it).
+fn no_default(s: &mut schemars::Schema) {
+    s.remove("default");
+}
+
 fn one() -> f64 {
     1.0
 }
@@ -680,6 +711,9 @@ impl Default for Injector {
             name: String::new(),
             position: [0.0; 3],
             direction: [1.0, 0.0, 0.0],
+            device: None,
+            hole: None,
+            offset: None,
             speed: 0.0,
             half_angle: 0.0,
             mass_flow: 0.0,
@@ -971,6 +1005,15 @@ pub struct SpraySection {
     /// The injectors.
     #[serde(rename = "injector", skip_serializing_if = "Vec::is_empty")]
     pub injectors: Vec<Injector>,
+    /// The injector and nozzle devices (D340): mounted frames with their
+    /// holes, which injectors may name.
+    #[serde(rename = "device", skip_serializing_if = "Vec::is_empty")]
+    pub devices: Vec<crate::device::Device>,
+    /// Injectors whose own position or direction is far from the device
+    /// hole they name (D342), for the warning SPR010 of the run.
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub device_warnings: Vec<String>,
     /// What a parcel does at a wall (default `stick`).
     pub wall_mode: BoundaryMode,
     /// Restitution of the normal velocity at `rebound` boundaries.
@@ -1257,6 +1300,8 @@ struct SprayFile {
     liquid: Option<Liquid>,
     #[serde(rename = "injector")]
     injectors: Vec<Injector>,
+    #[serde(rename = "device")]
+    devices: Vec<crate::device::Device>,
 }
 
 impl Default for SpraySection {
@@ -1265,6 +1310,8 @@ impl Default for SpraySection {
             include: None,
             liquid: Liquid::default(),
             injectors: Vec::new(),
+            devices: Vec::new(),
+            device_warnings: Vec::new(),
             wall_mode: BoundaryMode::Stick,
             restitution_normal: 1.0,
             restitution_tangential: 1.0,
@@ -1303,6 +1350,18 @@ impl SpraySection {
         }
     }
 
+    /// The section of an injector file alone (the file of `include`:
+    /// `[liquid]`, `[[injector]]`, `[[device]]`), loaded and checked as in
+    /// a case; for the tool `spray.devices`.
+    pub fn from_file(path: &Path) -> Result<Self> {
+        let mut s = Self {
+            include: Some(path.to_path_buf()),
+            ..Self::default()
+        };
+        s.load()?;
+        Ok(s)
+    }
+
     /// Reads the include file into the section (D246) and checks the values.
     pub fn load(&mut self) -> Result<()> {
         if let Some(path) = self.include.take() {
@@ -1316,6 +1375,13 @@ impl SpraySection {
                     path.display()
                 );
             }
+            if !f.devices.is_empty() && !self.devices.is_empty() {
+                bail!(
+                    "[spray] device is defined in the case and in {} (a key defined twice is an error, D114)",
+                    path.display()
+                );
+            }
+            self.devices.extend(f.devices);
             if f.liquid.is_some() && self.liquid != Liquid::default() {
                 bail!(
                     "[spray.liquid] is defined in the case and in {} (a key defined twice is an error, D114)",
@@ -1334,6 +1400,7 @@ impl SpraySection {
                 i
             }));
         }
+        self.place_devices()?;
         for i in &mut self.injectors {
             if let Some(p) = &i.samples {
                 let data = Samples::read(p)
@@ -1343,6 +1410,96 @@ impl SpraySection {
         }
         self.liquid.apply_library()?;
         self.validate()
+    }
+
+    /// The injectors that name a device hole (D342): `hole = "all"`
+    /// expanded, `position` and `direction` computed where left out, and the
+    /// ones given checked against the hole. Injectors without `device` are
+    /// left as they are.
+    fn place_devices(&mut self) -> Result<()> {
+        let mut placed = BTreeMap::new();
+        for d in &self.devices {
+            if placed.contains_key(&d.name) {
+                bail!("[[spray.device]] {}: the name is used twice", d.name);
+            }
+            placed.insert(d.name.clone(), (d.frame()?, d.placed_holes()?));
+        }
+        self.device_warnings.clear();
+        let mut out = Vec::with_capacity(self.injectors.len());
+        for inj in std::mem::take(&mut self.injectors) {
+            let n = inj.name.clone();
+            let given_pos = inj.position.iter().all(|x| !x.is_nan());
+            let given_dir = inj.direction.iter().all(|x| !x.is_nan());
+            let Some(dn) = inj.device.clone() else {
+                if inj.hole.is_some() || inj.offset.is_some() {
+                    bail!("[[spray.injector]] {n}: hole and offset need device (D342)");
+                }
+                if !given_pos {
+                    bail!(
+                        "[[spray.injector]] {n}: position is required (or give device and hole, D342)"
+                    );
+                }
+                if !given_dir {
+                    bail!(
+                        "[[spray.injector]] {n}: direction is required (or give device and hole, D342)"
+                    );
+                }
+                out.push(inj);
+                continue;
+            };
+            let Some((frame, holes)) = placed.get(&dn) else {
+                bail!("[[spray.injector]] {n}: device {dn} is not a [[spray.device]]");
+            };
+            let Some(hn) = inj.hole.clone() else {
+                bail!("[[spray.injector]] {n}: device needs hole (a hole name or \"all\")");
+            };
+            if let Some(o) = inj.offset
+                && !o.iter().all(|x| x.is_finite())
+            {
+                bail!("[[spray.injector]] {n}: offset must be finite");
+            }
+            let chosen: Vec<&crate::device::PlacedHole> = if hn == "all" {
+                if given_pos || given_dir {
+                    bail!(
+                        "[[spray.injector]] {n}: hole = \"all\" computes position and direction; leave them out"
+                    );
+                }
+                holes.iter().collect()
+            } else {
+                match holes.iter().find(|h| h.name == hn) {
+                    Some(h) => vec![h],
+                    None => bail!("[[spray.injector]] {n}: device {dn} has no hole {hn}"),
+                }
+            };
+            for h in chosen {
+                let mut i = inj.clone();
+                let off = inj.offset.unwrap_or([0.0; 3]);
+                if hn == "all" {
+                    i.name = format!("{n}/{}", h.name);
+                    i.hole = Some(h.name.clone());
+                }
+                let want = [h.exit[0] + off[0], h.exit[1] + off[1], h.exit[2] + off[2]];
+                if given_pos && given_dir {
+                    let r = crate::device::exit_radius(frame, h);
+                    if let Some(m) = crate::device::mismatch(h, r, off, inj.position, inj.direction)
+                    {
+                        self.device_warnings.push(format!(
+                            "[[spray.injector]] {n}: {m} of device {dn}; the injector's own \
+                             position and direction are used"
+                        ));
+                    }
+                }
+                if !given_pos {
+                    i.position = want;
+                }
+                if !given_dir {
+                    i.direction = h.direction;
+                }
+                out.push(i);
+            }
+        }
+        self.injectors = out;
+        Ok(())
     }
 
     /// The nozzle keys of the KH-ACT breakup of injector `i` named `n`

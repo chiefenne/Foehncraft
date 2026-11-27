@@ -95,6 +95,8 @@ const ALLOWED: &[(&str, &[&str])] = &[
             "foehncraft-bench",
             "foehncraft-structure",
             "foehncraft-circuits",
+            // the spray configuration for the device tools (D346)
+            "foehncraft-particles",
         ],
     ),
     // The front ends. `foehncraft-flow` for its types (diagnostics, build

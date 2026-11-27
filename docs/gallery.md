@@ -21,7 +21,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | [Thermal radiation](gallery/radiation.md) | Monte Carlo radiation of grey gas and grey walls on a prescribed temperature field: the box furnace with cooled tubes, the cases with exact solutions, scrambled Sobol against pseudo-random emission | 259, 281 |
 | [Turbulence models](gallery/turbulence.md) | the RANS turbulence models with their wall treatments (k-ω SST, the k-ε family, k-ε-ζ-f, k-ε-ζ-f₀, elliptic-blending k-ε) on the flat plate, the channel, the backward-facing step and the impinging jet; curvature correction and QCR; manufactured solutions; the internal flows of D45 (pipe, plane diffuser, U-bend) with GCI | 68, 71, 73, 74, 88, 89, 90, 113, 115, 141, 140, 184, 194, 197, 193, 199, 204 |
 | [Boundary conditions](gallery/boundary-conditions.md) | slip walls, axisymmetric wedges, inlet profiles from tables, backflow at pressure outlets, convective outlets, periodic modules, absolute pressure values (D239) | 21, 67, 220 |
-| [Lagrangian sprays](gallery/sprays.md) | droplets as Lagrangian parcels in the gas flow: injectors, drag, gravity, wall behaviour, the mass book | 242, 265, 280, 283, 285, 292, 306, 306b, 318, 314, 319, 320, 321, 325, 324, 323, 326, 333, 335, 338 |
+| [Lagrangian sprays](gallery/sprays.md) | droplets as Lagrangian parcels in the gas flow: injectors, drag, gravity, wall behaviour, the mass book | 242, 265, 280, 283, 285, 292, 306, 306b, 318, 314, 319, 320, 321, 325, 324, 323, 326, 333, 335, 341, 338 |
 | [Porous regions](gallery/porous.md) | flow through porous matrices with a direction-dependent Darcy–Forchheimer resistance: a ceramic honeycomb, the exact pressure drop of a block | 273, 275 |
 | [Two fluids (volume of fluid)](gallery/multiphase.md) | water and air with a sharp interface: a water column collapsing against Martin & Moyce, Zalesak's disk, a static drop | 317 |
 | [Structures](gallery/structure.md) | the linear structural solver for reeds and other parts the flow moves: beams, MITC shells and quadratic solids, clamp springs and their fit to a measured frequency, contact with a seat and a stop, static, modal and transient analyses, thermal loads, temperatures mapped from a flow case (MS5, MS6) | 295, 297, 299, 300, 302, 308 |
@@ -195,6 +195,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | <a id="spray-turbulence"></a>333 | [The drops take turbulence energy from the gas](gallery/sprays.md#spray-turbulence) | [Lagrangian sprays](gallery/sprays.md) |
 | <a id="spray-collisions"></a>335 | [Colliding drops in ECN Spray G](gallery/sprays.md#spray-collisions) | [Lagrangian sprays](gallery/sprays.md) |
 | <a id="spray-g-grid"></a>338 | [Grid orientation in ECN Spray G](gallery/sprays.md#spray-g-grid) | [Lagrangian sprays](gallery/sprays.md) |
+| <a id="spray-device"></a>341 | [A five-hole nozzle described by its device](gallery/sprays.md#spray-device) | [Lagrangian sprays](gallery/sprays.md) |
 
 ## Adding a feature
 
