@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 1.1.0 (b35bc269d4e1)), never typed in. The same as data: [grades.json](grades.json).
 
-**157 features: 49 verified, 105 partial, 3 unverified.**
+**158 features: 49 verified, 106 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -162,6 +162,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Sprays | [Real-fluid gas film of the Peng-Robinson surface: Chung dense-fluid transport, Riazi-Whitson diffusivity, Peng-Robinson density and c_p (Spray A, SA2, D313)](#sprays-high-pressure-film) | partial |
 | Sprays | [Distorted drops: the Corrected Distortion model for drag and evaporation (Spray A, SA4 part 1, D316)](#sprays-corrected-distortion) | partial |
 | Sprays | [Drop collisions: no-time-counter sampling with O'Rourke's coalescence and grazing separation (D331)](#sprays-collision) | partial |
+| Sprays | [Injector and nozzle devices: a mounted frame with its holes; injectors that name a hole (D340 to D342)](#sprays-injector-devices) | partial |
 | Sprays | [ECN liquid length (projected liquid volume) and vapour penetration (Spray A, SA3, D315)](#sprays-ecn-diagnostics) | partial |
 | Flow models | [Porous regions with a direction-dependent Darcy-Forchheimer resistance (D270, PM1)](#porous-darcy-forchheimer) | partial |
 | Flow models | [Gas and matrix temperatures in porous regions, monolithic (D271, D272, PM2)](#porous-two-temperatures) | partial |
@@ -2392,6 +2393,28 @@ Gaps:
 - collisions within a cell of the flow mesh only, none with the injected blobs; no collision mesh of its own
 - the G1 liquid still runs 12 % ahead at 0.8 ms and its drops at 15 mm are 18 um against the measured 9 um
 - transient spray only, CPU only, one process
+
+<a id="sprays-injector-devices"></a>
+
+### Injector and nozzle devices: a mounted frame with its holes; injectors that name a hole (D340 to D342)
+
+**partial** (gaps written) · id `sprays.injector-devices` · switch `[[spray.device]], [[injector]] device and hole` · decisions D340, D341, D342, D346
+
+- exact: [`frame_is_right_handed_and_orthonormal`](../../crates/foehncraft-particles/src/device.rs): the device frame (axis, reference, clocking) is orthonormal and right-handed to 1e-15
+- exact: [`pattern_turns_by_equal_steps`](../../crates/foehncraft-particles/src/device.rs): the holes of a pattern are hole 1 turned by k 360/count about the axis, to 1e-14
+- exact: [`spray_g_hole_one_from_the_device`](../../crates/foehncraft-particles/tests/devices.rs): ECN Spray G hole 1 from the device with the 2 um nudge as offset is the hand-written injector to 1e-11 m and 1e-8 in the direction; the hand-written values beside the device give no SPR010, against the wrong hole they do
+- contract (equivalence): [`existing_injector_files_are_unchanged`](../../crates/foehncraft-particles/tests/devices.rs): every injector file of the examples reads to the same positions and directions, with no device
+- contract (equivalence): [`all_holes_expand_in_order`](../../crates/foehncraft-particles/tests/devices.rs): hole = "all" gives the same injectors as the hand-written list of the holes in the same order
+- contract (diagnostics): [`refusals`](../../crates/foehncraft-particles/tests/devices.rs): device without hole, unknown hole or device, hole without device, missing position, hole = "all" with a position: refused
+- consistency: [`spray_multihole_device`](../../examples/cases/flow/spray_multihole_device.toml): a five-hole nozzle tilted 20 degrees, five plumes 72 degrees apart from one injector with hole = "all"; the mass book closes (passes in CI (set linux-3), not yet in the manual) ([results](../gallery/sprays.md#spray-device))
+- contract (schema): [`spray_multihole_device_injectors`](../../examples/cases/flow/spray_multihole_device_injectors.toml): the included injector file of spray_multihole_device with a device and a pattern of holes ([results](../cases/flow.md#lagrangian-sprays)) **missing**
+
+Gaps:
+
+- the device is not drawn yet: its surface (standard or user STL) and the devices file of the output come with stage ID2 (D343, D345)
+- picture only: the device is never a wall in the flow (D344, stage ID4 needs its own go)
+- straight holes only (polar and azimuth); no swirl or needle lift
+- `spray_multihole_device_injectors` has no run in the verification manual or in CI
 
 <a id="sprays-ecn-diagnostics"></a>
 
