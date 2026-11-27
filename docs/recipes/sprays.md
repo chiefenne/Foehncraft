@@ -405,7 +405,8 @@ discharge_coefficient = 0.8
 
 **Pick the model.** `kh-act` lets the turbulence and the cavities the
 nozzle leaves in the liquid strip the blobs as well as the
-Kelvin-Helmholtz waves, whichever is faster (D307); `kh-rt` is the
+Kelvin-Helmholtz waves, whichever is faster (D307); the children have
+the Kelvin-Helmholtz size B₀Λ in either case (D348); `kh-rt` is the
 aerodynamic model alone. Both shed child parcels off the blobs and break the
 drops beyond the breakup length by Rayleigh-Taylor waves:
 

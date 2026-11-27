@@ -377,8 +377,11 @@ pub enum Mechanism {
 /// τ_KH, the ratio (a − r_c)/τ_KH), the turbulence (L_T/τ_T = √k) or the
 /// cavitation (R_CAV/τ_CAV). The turbulence and the cavitation take the
 /// radius down at C_T,CAV L/τ (eq. 19), exactly over the sub-step with
-/// the decaying k, to no less than their child radius L_T or R_CAV; a
-/// mechanism whose child radius is not below `a` does not act.
+/// the decaying k. The children have the KH radius r_c = B₀Λ whatever the
+/// mechanism (eq. 1, the only child size of the paper): L_T and R_CAV only
+/// pick the mechanism and set the rate. The radius falls to no less than
+/// r_c; without KH children smaller than `a` (no `kh`) nothing acts, and
+/// a mechanism whose length scale is not below `a` does not act.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Stripping {
     /// The mechanism.
@@ -419,6 +422,10 @@ pub fn act_strip(
             rate: (a - rc) / tau,
         });
     }
+    // the child radius of every mechanism: the KH one (eq. 1)
+    let Some((rc_kh, _)) = kh.filter(|&(rc, _)| rc < a) else {
+        return best;
+    };
     let k = turb.map_or(0.0, |t| t.k(t0));
     if let Some(t) = turb {
         let lt = t.length(t0);
@@ -426,8 +433,8 @@ pub fn act_strip(
             let da = c_tcav * t.sqrt_k_integral(t0, t1);
             take(Stripping {
                 by: Mechanism::Turbulence,
-                a: if a - da > lt { a - da } else { lt },
-                rc: lt,
+                a: if a - da > rc_kh { a - da } else { rc_kh },
+                rc: rc_kh,
                 rate: math::sqrt(k),
             });
         }
@@ -453,8 +460,8 @@ pub fn act_strip(
         if let Some((by, da, tau)) = strip {
             take(Stripping {
                 by,
-                a: if a - da > c.radius { a - da } else { c.radius },
-                rc: c.radius,
+                a: if a - da > rc_kh { a - da } else { rc_kh },
+                rc: rc_kh,
                 rate: c.radius / tau,
             });
         }
@@ -813,9 +820,10 @@ mod tests {
         );
     }
 
-    /// The largest ratio L/τ wins, the radius never falls below the child
-    /// radius, and a mechanism whose children would not be smaller than
-    /// the blob does not act.
+    /// The largest ratio L/τ wins, the children of every mechanism have the
+    /// KH radius B₀Λ (Som and Aggarwal 2010, eq. 1), the radius never falls
+    /// below it, and a mechanism whose length scale is not below the blob
+    /// does not act.
     #[test]
     fn act_strip_picks_the_strongest() {
         let t = NozzleTurbulence {
@@ -830,7 +838,7 @@ mod tests {
         assert_eq!(s.by, Mechanism::Turbulence);
         assert!((s.rate - 20.0).abs() < 1e-12);
         assert!((a - s.a - t.sqrt_k_integral(0.0, 1e-8)).abs() < 1e-15);
-        assert_eq!(s.rc, t.length(0.0));
+        assert_eq!(s.rc, 1e-6, "the children have the KH radius");
         // old: the decayed turbulence loses to KH
         let old = 1e3 * t.decay_time();
         let s = act_strip(
@@ -851,12 +859,21 @@ mod tests {
         let cp = Cavitation::of(75e-6, 0.84, 700.0, Some(7e4)).unwrap();
         let s = act_strip(a, Some((1e-6, 1e-3)), None, Some(&cp), 1.0, 0.0, 1e-4).unwrap();
         assert_eq!(s.by, Mechanism::Collapse);
-        assert_eq!(s.a, cp.radius, "a long step stops at the child radius");
+        assert_eq!(s.rc, 1e-6, "the children have the KH radius");
+        // a long step stops at the KH child radius
+        let s = act_strip(a, Some((1e-6, 1e-3)), None, Some(&cp), 1.0, 0.0, 1.0).unwrap();
+        assert_eq!(s.by, Mechanism::Collapse);
+        assert_eq!(s.a, 1e-6, "a long step stops at the child radius");
         // a blob no larger than the cavity is not stripped by it
         assert!(act_strip(25e-6, None, None, Some(&cp), 1.0, 0.0, 1e-6).is_none());
+        let s = act_strip(25e-6, Some((1e-6, 1e-3)), None, Some(&cp), 1.0, 0.0, 1e-6).unwrap();
+        assert_eq!(s.by, Mechanism::Aerodynamic);
+        // without KH children smaller than the blob nothing acts
+        assert!(act_strip(a, None, Some(&t), Some(&cp), 1.0, 0.0, 1e-6).is_none());
+        assert!(act_strip(a, Some((70e-6, 1e-3)), Some(&t), Some(&cp), 1.0, 0.0, 1e-6).is_none());
         // C_T,CAV scales the rate of the turbulence
-        let s1 = act_strip(a, None, Some(&t), None, 1.0, 0.0, 1e-9).unwrap();
-        let s2 = act_strip(a, None, Some(&t), None, 0.5, 0.0, 1e-9).unwrap();
+        let s1 = act_strip(a, Some((1e-6, 1e3)), Some(&t), None, 1.0, 0.0, 1e-9).unwrap();
+        let s2 = act_strip(a, Some((1e-6, 1e3)), Some(&t), None, 0.5, 0.0, 1e-9).unwrap();
         assert!(((a - s2.a) - 0.5 * (a - s1.a)).abs() < 1e-18);
     }
 }
