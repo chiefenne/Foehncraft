@@ -183,7 +183,10 @@ fn checks_of_the_wall_heat_keys() {
     .unwrap_err();
     assert_eq!(code(e), "CASE005");
     // the Couette flow heated by its friction
-    let heated = std::fs::read_to_string(cases().join("couette_viscous_heating.toml")).unwrap();
+    // line ends as on Linux (a Windows checkout has CRLF)
+    let heated = std::fs::read_to_string(cases().join("couette_viscous_heating.toml"))
+        .unwrap()
+        .replace("\r\n", "\n");
     let with = |reference: &str, derived: &str| {
         let t = heated.replace(
             "[output]\n",
