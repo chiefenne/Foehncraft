@@ -8,6 +8,7 @@ Nothing yet.
 
 | Version | Stage | Highlights |
 |---|---|---|
+| 1.2.0 (2026-11-27) | 8 (part), sprays | Drop collisions (NTC + O'Rourke, D331) and the turbulence the drops take from the gas (D330, off by default); ECN Spray G G1 with collisions and a grid orientation test (`grid_angle`); turbulence start-up into gas at rest bounded for all models; SST and k-ε constant overrides reach the run; plan for injector and nozzle devices (D340 to D347). **Collisions cut the G1 liquid lead at 0.8 ms from 19 % to 12 % and the vapour lead from 17 % to 10 %; the grid orientation moves the penetration by about 6 %.** Gallery and recipes 333, 335, 338 |
 | 1.1.0 (2026-11-26) | 7 and 8 (parts), first multiphysics modules | Runs on several MPI ranks with every output file byte for byte that of one rank (W5 to W7, with species, statistics, MRF and sliding meshes); Lagrangian sprays from injection to breakup and evaporation with the ECN Spray A and Spray G cases; species, gas-phase chemistry and laminar reacting flows; IAPWS-IF97 water and steam and 1D boiler circuits; Monte Carlo radiation on CPU and GPU; two fluids by the volume of fluid; porous regions with two temperatures; laminar natural convection benchmarks; deforming meshes; a structural solver (beams, shells, solids, contact, dynamics, thermal loads); immersed walls by penalisation and cut cells on STL bodies; adjoint stage A0; blocked VTKHDF, binary Fluent `.msh`, BLAKE3 hashes. **Ranks bitwise one rank on 1 to 4 ranks; radiation GPU bitwise the CPU; laminar methane flame 0.348 m/s against the measured 0.360 ± 0.017; diesel-like spray within 1 % of Hiroyasu–Arai; STL sphere array within 0.9 % of the series; heated cavity GCI ≤ 0.12 %; dam break within 5 to 17 % of Martin & Moyce.** Gallery and recipes 242–329 |
 | 1.0.1 (2026-11-24) | 8 (part) Milestone 1, patch | From one sentence to a moving rotor: a vessel with three stirrers (seven curved blades, gallery 225) built and turned through `foehn mcp`, the movie script for several rotors and vector fields, and the README section that shows it; renderings of the shell-and-tube heat exchanger (application 203); multi-rank MPI steps W3 and W4 (scalar solver and multigrid on ranks, bitwise equal to one rank; groundwork for 1.1, inert on a normal run); a faster point search by a bounding volume hierarchy (D108) and exact orientation predicates (D225); the ledger as data with module rows and the thermal account in `result.json` (D119); specification of the Lagrangian sprays, the spray prerequisites and the graphics-algorithms assessment. **No change to the results of a single-process run.** Gallery 225, 230, 231 and 238, recipes 225, 230, 231 and 238 |
 | 1.0.0 (2026-11-23) | 8 (part) Milestone 1 | The internal-flow cases of D45 (pipe, plane diffuser, U-bend, T-junction on polyhedra) with grid convergence, several fluids in one conjugate case (D194), gravity, Boussinesq buoyancy and the low-Mach variable density (7b1, 7c), absolute pressure values and per-region start values (D239, D238; case format 0.7 stable), the cycle-averaged loop and the frozen-flow march for slow thermal transients (D204, D118), the operator exactness check with quadratic fits (D236), the MLP vertex limiter (D237), exact CPU reductions (MPI W1, W2). **Pipe u_τ +4.5 % from DNS (GCI 0.2 %); diffuser reattachment GCI 0.36 %; U-bend separation GCI 0.19 %; stratified box at rest to 10⁻¹⁵ m/s; closed box p₀(t) exact; warm-ups in a tenth of the steps within 0.06 K.** Gallery 186–221, recipes up to 221 |
@@ -19,6 +20,12 @@ Nothing yet.
 | 0.2 (2026-11-14) | 2 Operators on a scalar equation | Finite-volume operators on a scalar transport equation, one source for the CPU and the NVIDIA GPU: least-squares gradients (exact for linear fields, error 6e-15 on all mesh types), linear upwind with Venkatakrishnan and Venkatakrishnan–Wang limiters (no new extrema at K = 0), over-relaxed non-orthogonal diffusion, reproducible gather-based assembly into sliced ELL, BiCGStab. Observed order 1.87–2.08 on hex, tet, poly and mixed meshes in 2D and 3D. **GPU and CPU results bitwise equal on a Tesla T4** (912 673 polyhedra, 311 ns per cell and iteration). New command `cfdcraft scalar`, seven case files, gallery 8–9, recipes 12–14 |
 | 0.1 (2026-11-14) | 1 Mesh | Polyhedral face-based mesh with exact geometry (every cell closed to 1e-15, volumes exact), Gmsh 4.1 reader, built-in test mesher (hex, tet, poly, mixed; 2D and 3D; graded, refined, perturbed), quality report, VTKHDF output for ParaView, METIS and RCB partitioning with a solver-ready halo layout and multi-field halo exchange (tested over MPI on 2–4 ranks), particle point location on all mesh types, golden-value test matrix, `cfdcraft mesh` command. G1 rerun on polyhedral and shuffled meshes: bitwise equal; quiet-machine verdict open (O15) |
 | 0.0 (2026-11-14) | 0 Foundations and gate G1 | Cargo workspace, CI on Linux, macOS and Windows with MPI runs on 4 ranks, the G1 kernel benchmark. **G1 GPU verdict passed on a Tesla T4: single-source Rust kernels within 1.0 % of hand-written CUDA C, bitwise equal results**; **CPU verdict passed on an i9-9900K: single-source bodies within 1.8 % of hand-written loops, in two runs** |
+
+Release 1.2.0 adds drop collisions and the turbulence the drops take from
+the gas to the sprays of 1.1.0, and fixes the start-up of turbulence into
+gas at rest for all models. Case files and machine formats of 1.1 read
+unchanged. The Cargo version of the crates and of the Python package is now
+1.2.0; the release is the Git tag `v1.2.0` (D46).
 
 Release 1.1.0 is the first feature release after milestone 1: runs on
 several MPI ranks with the output of one rank, and the first version of
@@ -101,6 +108,38 @@ the crates is now 0.1.0; the release is the Git tag `v0.1` (D46).
 Release 0.0 closes stage 0: both verdicts of gate G1 are in (GPU: Tesla T4,
 CPU: i9-9900K, 2026-11-14, both PASS; O13 closed). The Cargo version of the
 crates stays 0.0.0; the release is the Git tag `v0.0` (D46).
+
+---
+
+## 1.2.0 (2026-11-27) – spray collisions, turbulence taken by the drops, turbulence start-up fix
+
+**In one paragraph.** Foehncraft 1.2.0 extends the Lagrangian sprays of 1.1.0: drops of two parcels now collide and coalesce or separate (NTC with O'Rourke, D331), and the drops can take their dispersion work out of the gas turbulence (D330, off by default). The ECN Spray G case G1 runs with collisions and has a grid orientation test. Two fixes reach every turbulent run: the extrapolated start of a BDF2 step no longer drives k, ε, ω or ζ towards zero (a ζ-f₀ jet into gas at rest diverged before), and the SST and k-ε constant overrides of `[turbulence.constants]` are accepted. The plan for injector and nozzle devices (D340 to D347) is written down; its coding follows.
+
+### Upgrading from 1.1
+
+- Case files of 1.1 read unchanged; the new keys `[spray.collision]`, `[spray.coupling] turbulence` and `[mesh.generate] grid_angle` are optional, and only the ECN Spray G case G1 switches collisions on.
+- Transient turbulent runs whose extrapolated start dropped k, ε, ω or ζ below a tenth of the last value can give slightly different results; all other runs are unchanged.
+- The known limits of 1.1.0 stand. The verification manual was not regenerated for this release; the status page is current.
+
+### All changes
+
+### Lagrangian sprays
+
+- **Drop collisions.** `[spray.collision] model = "ntc"`: the drops of two parcels in one cell collide, sampled by the no-time-counter method of Schmidt and Rutland with O'Rourke's coalescence and grazing separation; counts in `spray.csv`. The ECN Spray G case G1 uses it: the liquid lead at 0.8 ms falls from 19 % to 12 %, the vapour lead from 17 % to 10 %.
+- **The drops damp the gas turbulence (D330).** `[spray.coupling] turbulence = "dispersion-work"` takes the work the eddies of the dispersion do on the drops out of k, with the ε (or ω) term of KIVA-II (c_s = 1.5). Only the part of the drop's motion that follows its eddy is booked, so the term is never positive and free of the noise of the mean slip, which broke the first runs. `spray.csv` gets `gas_turbulence_w`, `result.json` `gas_turbulence_work`. Checks: drops born in turbulent gas take 0.88 of −2k times their mass from their first eddies; in a lumped cell k loses the booked work over ρV within 3 %. On ECN Spray G, measured before the collision model, it removes nearly all of the plume turbulence and the liquid runs further ahead of the measurement (33 % at 1.1 ms instead of 15 % on SST, 52 % instead of 30 % on k-ε), so it is off by default and in the case. Gallery 333, recipe 333.
+- **At most 32 eddies per parcel and step.** Where k is nearly zero the eddies of the dispersion become so short that every eddy ended a sub-step and the parcels filled the memory. Beyond `MAX_EDDIES_PER_STEP` the eddy now lasts to the end of the step, counted as `held_eddies` in `result.json`; runs in developed turbulence never reach it.
+- **Grid orientation test of ECN Spray G.** `[mesh.generate] grid_angle` turns the cell lines of a generated hex box (also a 22.5° sector) so a jet can run along or across them. G1 on a uniform 0.6 mm grid with the lines along the plume gives a liquid lead of 27 % at 1.2 ms, with the lines at 45° to it 20 % (vapour 17 % and 9 %): the grid orientation moves the penetration by about 6 %. Cases `spray_g_g1_grid_aligned` and `spray_g_g1_grid_turned`, plot `tools.plot.spray_g_grid`, gallery and recipe 338.
+
+### Turbulence
+
+- **Turbulence start-up into gas at rest.** The extrapolated start of a BDF2 step may no longer drop k, ε, ω or ζ below a tenth of the last value (all models, the same bound as after a solve), and the f/f₀ equation of the ζ-f models takes its ζ dependence implicitly. A zeta-f0 jet started into gas at rest no longer diverges within ten steps.
+- **SST and k-ε constant overrides.** `[turbulence.constants]` of the SST model (for example `gamma2`) and of k-ε (`a0`) were refused at the start of the run because they were checked against the ζ-f names; they now reach the run.
+
+### Documentation
+
+- **Plan for injector and nozzle devices (D340 to D347).** New page `docs/requirements/step28-injector-devices.md`: a device frame (mounting point, axis, azimuth reference) with its holes given by angle from the axis and azimuth, injectors that may name a hole instead of absolute coordinates, standard gasoline and diesel STLs and the user's own STL placed by that frame, shown in a new `spray/devices.vtkhdf` file, and the device as a wall later. Existing injector files are unchanged. Stages ID1 to ID4; coding waits for the maintainer's go.
+- **README hero image of ECN Spray G.** The spray picture of the README is now one plume of the ECN Spray G injector, its drops drawn as spheres sized by their diameter; the same render joins gallery 323.
+- **README and feature list.** The crate table lists `foehncraft-particles`, and the feature list has the injection from measured droplets and the Brno spray.
 
 ---
 

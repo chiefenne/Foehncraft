@@ -10,7 +10,7 @@
 
 ---
 
-> **Status: release 1.1.0.** Incompressible and low-Mach flow, laminar and
+> **Status: release 1.2.0.** Incompressible and low-Mach flow, laminar and
 > RANS, the energy equation, conjugate heat transfer with several fluids and
 > solids, buoyancy and rotating machinery, on CPUs and NVIDIA GPUs and on
 > several MPI ranks, with the first multiphysics modules: Lagrangian sprays,
@@ -150,8 +150,9 @@ internal-flow cases of stage 8, on NVIDIA GPUs and CPUs in one process.
 Version 1.1: runs on several MPI ranks with the output of one rank, and the
 first version of each multiphysics module (sprays, species and laminar
 reacting flows, water and steam, radiation, the volume of fluid, porous
-regions, deforming meshes, structures, immersed walls). Everything after
-that follows the roadmap in the [requirements](docs/requirements.md):
+regions, deforming meshes, structures, immersed walls). Version 1.2 adds
+drop collisions and the turbulence the drops take from the gas to the
+sprays. Everything after that follows the roadmap in the [requirements](docs/requirements.md):
 turbulent reacting flows, the steam furnace, boiling, fluid–structure
 coupling, radiation coupled to the energy equation and scale-resolving
 turbulence.
@@ -319,7 +320,7 @@ Innsbruck since the early twentieth century. The command is `foehn`.
 
 ## Contributing
 
-The project is at release 1.1.0 and has one maintainer. Comments on the
+The project is at release 1.2.0 and has one maintainer. Comments on the
 requirements are welcome as GitHub issues. [CONTRIBUTING.md](CONTRIBUTING.md)
 has the rules every pull request follows, among them that it keeps this
 README and the documentation up to date with what it changes.
