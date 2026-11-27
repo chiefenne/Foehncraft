@@ -49,6 +49,14 @@ instead.
   Grid-convergence studies of wall-resolved steady runs need tolerance
   1e-9, or a check of the monitored quantity. An earlier study at 1e-6 was
   wrong by up to 3 %.
+- **The temperature settles after the flow.** On the laminar flat plate
+  (gallery 346, coupled algorithm, 320 × 160 cells) the run stopped at a
+  tolerance of 1e-8 after 331 iterations with the energy residual at 1e-8,
+  but the thermal layer downstream had not settled: Nu_x was 2 % high at
+  x = 0.75 L and 6 % at the trailing edge, and the heat balance closed only
+  to 2e-4. At 1e-11 (617 iterations) Nu_x is within 0.4 % and the balance
+  closes to 1e-7. Check the heat balance line and the wall heat flux of a
+  heat-transfer study, not only the flow residuals.
 - **Judge settling by a monitored value** (reattachment length, torque,
   bulk velocity, Nusselt number), read from monitors or intermediate
   results.

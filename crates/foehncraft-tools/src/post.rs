@@ -22,7 +22,7 @@ pub struct DeriveInput {
     #[serde(default = "latest")]
     pub restart: PathBuf,
     /// Derived fields (default: `output.derived` of the case, or every
-    /// field when that is empty).
+    /// field the case allows when that is empty).
     #[serde(default)]
     pub fields: Option<Vec<String>>,
     /// File to write (default: `derived.vtkhdf` for `restart.h5`,

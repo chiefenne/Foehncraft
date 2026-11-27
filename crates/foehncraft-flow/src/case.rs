@@ -789,10 +789,12 @@ pub struct OutputSection {
     /// pressure-coefficient, total-pressure, relative-velocity,
     /// frame-velocity, turbomachinery, relative-total-pressure, rothalpy
     /// (with `[[mrf]]` or `[[sliding]]`: the fields of rotating machinery,
-    /// D183), wall-distance, wall-shear-stress, y-plus, turbulence-features
-    /// (with a turbulence model: the invariant features of D166).
+    /// D183), wall-distance, wall-shear-stress, y-plus, wall-heat-flux,
+    /// heat-transfer-coefficient, nusselt-number (with `[energy]`: the wall
+    /// heat values, stage 7), turbulence-features (with a turbulence model:
+    /// the invariant features of D166).
     pub derived: Vec<crate::derived::Derived>,
-    /// Reference values of the pressure coefficient.
+    /// Reference values of the pressure coefficient and the Nusselt number.
     pub reference: crate::derived::ReferenceValues,
     /// The turning zone (`zone` of an `[[mrf]]` or `[[sliding]]` table) whose
     /// frame the relative velocity of every cell is taken in (D183); default:

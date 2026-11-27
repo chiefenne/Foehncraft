@@ -576,7 +576,7 @@ Category `post`, action `write-files`, version 1.
 |---|---|---|---|
 | `case` | string | required | Flow case file (TOML) of the run. |
 | `restart` | string | `"latest"` | Restart file, or `latest` for the newest one of the output directory. |
-| `fields` | array of string | – | Derived fields (default: `output.derived` of the case, or every field when that is empty). |
+| `fields` | array of string | – | Derived fields (default: `output.derived` of the case, or every field the case allows when that is empty). |
 | `file` | string | – | File to write (default: `derived.vtkhdf` for `restart.h5`, `derived_<N>.vtkhdf` for `restart_<N>.h5`, next to the restart file). |
 | `set` | array of string | `[]` | Case keys to override, `key=value` (D62). |
 | `out` | string | – | Output directory of the run (overrides `output.directory`), where `latest` looks. |

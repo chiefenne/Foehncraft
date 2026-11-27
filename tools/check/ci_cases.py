@@ -93,7 +93,7 @@ FLOW = {
         "tmr_plate_zeta_f", "backstep_zeta_f0", "tmr_plate_eb", "backstep_eb", "impinging_jet",
         "cht_heat_sink_turbulent", "cylinder_steady_diagnosis", "vd_cavity_large_dt",
         "cht_pulsating_channel_skin", "cht_heated_wall_frozen", "cht_pulsating_channel_warmup",
-        "natural_convection_cavity_ra1e5", "natural_convection_plate",
+        "natural_convection_cavity_ra1e5", "natural_convection_plate", "plate_heated_laminar",
         "flame_methane_air_gri30",
         "immersed_stokes_sphere", "immersed_cut_stl_sphere_array", "spray_saturation_steady",
         "spray_breakup", "spray_brno", "spray_chamber_ecn", "motion_piston_cooled_walls", "spray_g_g1",

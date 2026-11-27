@@ -55,8 +55,9 @@ target/release/foehn --json post derive CASE.toml   # summary as JSON
 ```
 
 Without `--fields` it writes `[output] derived` of the case, or every
-field when that list is empty (the pressure coefficient only with a
-reference velocity). `--restart` defaults to `latest`, the newest restart
+field the case allows when that list is empty (the pressure coefficient
+only with a reference velocity, the turbulence fields with a model, the
+wall heat values with `[energy]`, [recipe 346](energy.md#wall-heat)). `--restart` defaults to `latest`, the newest restart
 file of the output directory; the file is `derived.vtkhdf` for
 `restart.h5` and `derived_<N>.vtkhdf` for `restart_<N>.h5`. A run keeps
 its restart file with `[run] restart_final = true` (or

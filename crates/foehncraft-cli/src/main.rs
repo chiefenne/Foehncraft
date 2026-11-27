@@ -290,8 +290,9 @@ struct UpgradeArgs {
 enum Post {
     /// Write the fields with derived fields (D72: vorticity, q-criterion,
     /// lambda2, enstrophy, strain-rate, pressure-coefficient,
-    /// total-pressure, wall-shear-stress, y-plus) from a restart file of
-    /// the case, the same numbers as `[output] derived` at write time.
+    /// total-pressure, wall-shear-stress, y-plus, the wall heat values, the
+    /// fields of rotors and turbulence models) from a restart file of the
+    /// case, the same numbers as `[output] derived` at write time.
     Derive(DeriveArgs),
 }
 
@@ -304,7 +305,7 @@ struct DeriveArgs {
     #[arg(long, default_value = "latest")]
     restart: PathBuf,
     /// Derived fields, comma-separated (default: `output.derived` of the
-    /// case, or every field when that is empty).
+    /// case, or every field the case allows when that is empty).
     #[arg(long, value_delimiter = ',')]
     fields: Option<Vec<String>>,
     /// File to write (default: `derived.vtkhdf` for `restart.h5`,

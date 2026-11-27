@@ -259,7 +259,7 @@ validated range, one mesh only, …) in its report and its JSON result.
   steady result), control files (`.stop`, `.result_N`, `.read_toml_N`),
   settings that change on a schedule (also the momentum scheme, from a
   first-order start to linear upwind), probes, forces,
-  derived fields (vorticity, Q, λ₂, wall shear stress, y⁺, and the Reynolds stress, scales and wall values of the turbulence models),
+  derived fields (vorticity, Q, λ₂, wall shear stress, y⁺, the wall heat flux, heat transfer coefficient and Nusselt number of the energy equation, and the Reynolds stress, scales and wall values of the turbulence models),
   statistics of transient runs (time mean, RMS, covariance, phase averages,
   a confidence interval that says whether the window is long enough), mass and
   kinetic-energy ledgers (named terms per quantity, ready for further quantities), a divergence report, a log that can be

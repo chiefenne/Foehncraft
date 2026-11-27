@@ -14,7 +14,10 @@ fn cases() -> PathBuf {
 }
 
 fn out(name: &str) -> PathBuf {
-    std::env::temp_dir().join(format!("foehncraft_wall_heat_{name}_{}", std::process::id()))
+    std::env::temp_dir().join(format!(
+        "foehncraft_wall_heat_{name}_{}",
+        std::process::id()
+    ))
 }
 
 fn load(file: &str, sets: &[&str]) -> FlowCase {
@@ -126,7 +129,11 @@ fn heated_plate_meets_the_similarity_solution() {
         }
         let exact = 0.294165 * (1e4 * x[0]).sqrt();
         let nu = q * x[0] / k;
-        assert!((nu / exact - 1.0).abs() < 1e-2, "Nu_x at x = {}: {nu} against {exact}", x[0]);
+        assert!(
+            (nu / exact - 1.0).abs() < 1e-2,
+            "Nu_x at x = {}: {nu} against {exact}",
+            x[0]
+        );
         checked += 1;
     }
     assert!(checked > 40, "{checked} faces");
@@ -157,7 +164,10 @@ fn heated_plate_meets_the_similarity_solution() {
         .find(|b| b.boundary == "plate")
         .and_then(|b| b.heat_flow)
         .unwrap();
-    assert!((total / flow - 1.0).abs() < 1e-9, "Σ q_w A {total}, heat flow {flow}");
+    assert!(
+        (total / flow - 1.0).abs() < 1e-9,
+        "Σ q_w A {total}, heat flow {flow}"
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -175,7 +185,10 @@ fn checks_of_the_wall_heat_keys() {
     // the Couette flow heated by its friction
     let heated = std::fs::read_to_string(cases().join("couette_viscous_heating.toml")).unwrap();
     let with = |reference: &str, derived: &str| {
-        let t = heated.replace("[output]\n", &format!("{reference}\n\n[output]\nderived = {derived}\n"));
+        let t = heated.replace(
+            "[output]\n",
+            &format!("{reference}\n\n[output]\nderived = {derived}\n"),
+        );
         FlowCase::from_toml(&t, &cases())
     };
     with("", r#"["wall-heat-flux", "heat-transfer-coefficient"]"#).unwrap();

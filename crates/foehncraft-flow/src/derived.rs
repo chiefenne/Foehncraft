@@ -491,7 +491,8 @@ impl Frames {
     }
 }
 
-/// `[output.reference]`: the reference state of the pressure coefficient.
+/// `[output.reference]`: the reference state of the pressure coefficient
+/// and the reference length of the Nusselt number.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct ReferenceValues {
