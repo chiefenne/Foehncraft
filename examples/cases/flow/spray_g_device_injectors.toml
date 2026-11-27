@@ -1,0 +1,69 @@
+# The Spray G injector of spray_g_g1.toml as a device (D340 to D345): the
+# same hole 1 as `spray_g_g1_injectors.toml`, but given by the injector's
+# mounting (tip at the origin, axis along x, azimuth zero along y) and its
+# ring of 8 holes, 33° from the axis (the plume direction of D309, not the
+# 37° drill angle), exits 1 mm from the axis and 0.1 mm into the chamber.
+# `offset` is the 2 µm of the hand-written file into the sector, normal to
+# the plume plane φ = −11.25°. The tip is drawn by the standard gasoline
+# tip of assets/injectors/ (our drawing; its own holes are drilled at 37°)
+# in `spray/devices.vtu`, with all 8 hole axes, although the sector
+# computes hole 1 only.
+#
+#   foehn flow examples/cases/flow/spray_g_g1.toml --set spray.include=spray_g_device_injectors.toml
+#   foehn call spray.place --input - <<< '{"file": "examples/cases/flow/spray_g_device_injectors.toml", "out": "output/spray_g_device"}'
+#
+# Everything else as in spray_g_g1_injectors.toml (the measured rate, cone,
+# C_a, C_d; see the comments there).
+
+[liquid]
+library = "iso-octane"
+temperature = 363.0
+vapour = "IC8H18"
+
+[[device]]
+name = "spray-g"
+geometry = "standard-gasoline"
+mount = [0.0, 0.0, 0.0]
+axis = [1.0, 0.0, 0.0]
+reference = [0.0, 1.0, 0.0]
+
+[[device.pattern]]
+count = 8
+polar = 33.0
+radius = 1.0e-3
+setback = 1.0e-4
+first_azimuth = -11.25
+diameter = 1.65e-4
+
+[[injector]]
+name = "hole1"
+device = "spray-g"
+hole = "1"
+offset = [0.0, 3.90181e-7, 1.96157e-6]
+half_angle = 12.5
+hole_diameter = 1.65e-4
+area_contraction = 0.65
+hole_length = 1.7e-4
+discharge_coefficient = 0.51
+flow_share = 0.5
+parcels_per_second = 4e6
+start = 0.0
+rate = [
+  [0.000e+00, 0.0000e+00],
+  [7.000e-06, 2.3126e-04],
+  [2.700e-05, 1.9515e-03],
+  [4.700e-05, 1.7192e-03],
+  [7.700e-05, 1.8837e-03],
+  [1.070e-04, 1.5721e-03],
+  [1.270e-04, 1.5577e-03],
+  [1.570e-04, 1.6783e-03],
+  [2.500e-04, 1.7430e-03],
+  [4.500e-04, 1.7293e-03],
+  [6.500e-04, 1.7166e-03],
+  [6.870e-04, 1.6571e-03],
+  [7.070e-04, 1.5838e-03],
+  [7.270e-04, 1.4658e-03],
+  [7.470e-04, 1.3067e-03],
+  [7.670e-04, 4.6475e-04],
+  [7.870e-04, 0.0000e+00],
+]

@@ -1945,6 +1945,13 @@ fn run_one<F: FnMut(&str)>(
     let mut reports = (last && !datum_built.is_empty())
         .then(|| crate::datum::Reports::new(datum_built, out, name, cont));
     let mut series = last.then(|| crate::series::Series::new(out, name, cont));
+    // the injector devices (D345): written once, listed as static
+    if last && let Some(p) = crate::spray::write_devices(&case.spray, out)? {
+        lg.note(&format!("injector devices: {}", p.display()));
+        if let Some(s) = series.as_mut() {
+            s.set_static("devices", &p)?;
+        }
+    }
     // the statistics of D71 (the final solve of a sweep only)
     let stat_cfg = case.output.statistics.clone().filter(|_| last);
     let stat_start = stat_cfg
@@ -3195,8 +3202,10 @@ fn run_one<F: FnMut(&str)>(
     let datum_summary = reports
         .as_ref()
         .map(|r| r.summary(spray.as_ref(), &mesh.cell_zone));
+    let devices = crate::spray::device_summary(&case.spray)?;
     let spray_summary = spray.as_ref().map(|sp| crate::spray::SpraySummary {
         coupling: spray_coupling.clone(),
+        devices: devices.clone(),
         ..crate::spray::summary(sp, &mesh.cell_zone)
     });
     if let Some(f) = heat_csv.as_mut() {

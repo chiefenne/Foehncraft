@@ -3216,6 +3216,11 @@ pub fn run_steered(
             case.run.restart.is_some(),
         )?;
         crate::spray::device_warnings(&case, &mut lg, &mut rep.warnings);
+        if steady_spray.is_some()
+            && let Some(p) = crate::spray::write_devices(&case.spray, out)?
+        {
+            lg.note(&format!("injector devices: {}", p.display()));
+        }
         let spray_env = foehncraft_particles::Env {
             mesh: &mesh,
             geo: &geo,

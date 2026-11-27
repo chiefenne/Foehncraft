@@ -163,3 +163,26 @@ fn refusals() {
         .contains("leave them out")
     );
 }
+
+/// The Spray G device file gives the injector of the hand-written file to
+/// 1e-11 m and 1e-8 in the direction (D342), with the standard tip.
+#[test]
+fn spray_g_device_file_matches_the_hand_written_one() {
+    let a = SpraySection::from_file(&cases().join("spray_g_device_injectors.toml")).unwrap();
+    let b = SpraySection::from_file(&cases().join("spray_g_g1_injectors.toml")).unwrap();
+    assert_eq!(a.injectors.len(), 1);
+    let (i, j) = (&a.injectors[0], &b.injectors[0]);
+    for k in 0..3 {
+        assert!((i.position[k] - j.position[k]).abs() < 1e-11);
+        assert!((i.direction[k] - j.direction[k]).abs() < 1e-8);
+    }
+    assert!(a.device_warnings.is_empty());
+    let mut ii = i.clone();
+    ii.position = j.position;
+    ii.direction = j.direction;
+    ii.device = None;
+    ii.hole = None;
+    ii.offset = None;
+    assert_eq!(&ii, j, "every other key the same");
+}
+

@@ -416,6 +416,7 @@ pub fn registry() -> Vec<Entry> {
         entry::<post::SprayStatistics>(),
         entry::<post::SprayPenetration>(),
         entry::<spray::Devices>(),
+        entry::<spray::Place>(),
         entry::<structure::Run>(),
         entry::<structure::FitClamp>(),
         entry::<circuits::Run>(),

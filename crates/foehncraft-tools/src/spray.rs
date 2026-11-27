@@ -46,6 +46,10 @@ pub struct HoleOut {
 pub struct DeviceOut {
     /// Name of the device.
     pub name: String,
+    /// The surface (`none`, `standard-gasoline`, `standard-diesel`, `stl`).
+    pub geometry: String,
+    /// Triangles of the placed surface.
+    pub triangles: usize,
     /// The mounting point (m).
     pub mount: [f64; 3],
     /// Zero of the azimuth (unit).
@@ -114,6 +118,11 @@ pub fn describe(sp: &SpraySection) -> Result<DevicesOutput> {
             .collect();
         devices.push(DeviceOut {
             name: d.name.clone(),
+            geometry: serde_json::to_value(d.geometry)?
+                .as_str()
+                .unwrap_or("none")
+                .to_string(),
+            triangles: d.surface()?.len(),
             mount: f.origin,
             e1: f.e1,
             e2: f.e2,
@@ -139,6 +148,63 @@ pub fn describe(sp: &SpraySection) -> Result<DevicesOutput> {
     })
 }
 
+fn section(a: &DevicesInput, ctx: &Ctx<'_>) -> Result<SpraySection> {
+    let roots = ctx.roots.clone();
+    roots.check_read(&a.file, "the case or injector file")?;
+    let text = std::fs::read_to_string(&a.file)?;
+    let table: toml::Table = toml::from_str(&text)?;
+    Ok(if table.contains_key("spray") || table.contains_key("mesh") {
+        engine::load(&a.file, &a.set, &roots)?.spray
+    } else {
+        anyhow::ensure!(a.set.is_empty(), "set applies to case files only");
+        SpraySection::from_file(&a.file)?
+    })
+}
+
+/// Input of `spray.place`.
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PlaceInput {
+    /// A flow case file (TOML) with `[spray]`, or an injector file.
+    pub file: PathBuf,
+    /// Folder to write `spray/devices.vtu` into (as a run would).
+    pub out: PathBuf,
+    /// Case keys to override, `key=value` (D62; case files only).
+    #[serde(default)]
+    pub set: Vec<String>,
+}
+
+/// `spray.place`.
+pub struct Place;
+
+impl Tool for Place {
+    const ID: &'static str = "spray.place";
+    const VERSION: u32 = 1;
+    const SUMMARY: &'static str = "Write the injector devices of a case or an injector file as a run would, `<out>/spray/devices.vtu` (placed surfaces, hole axes, injector cones; D343, D345), to look at a mounting before meshing or running; returns the devices as `spray.devices` does.";
+    const CATEGORY: Category = Category::Spray;
+    const ACTION: Action = Action::WriteFiles;
+    type Input = PlaceInput;
+    type Output = serde_json::Value;
+
+    fn call(a: PlaceInput, ctx: &mut Ctx<'_>) -> Result<serde_json::Value> {
+        let d = DevicesInput {
+            file: a.file.clone(),
+            set: a.set.clone(),
+        };
+        let sp = section(&d, ctx)?;
+        ctx.roots.check_write(&a.out)?;
+        let path = foehncraft_flow::spray::write_devices(&sp, &a.out)?;
+        let out = describe(&sp)?;
+        match &path {
+            Some(p) => ctx.line(&format!("wrote {}", p.display())),
+            None => ctx.line("no [[device]]: nothing written"),
+        }
+        let mut v = serde_json::to_value(&out)?;
+        v["file"] = serde_json::to_value(&path)?;
+        Ok(v)
+    }
+}
+
 /// `spray.devices`.
 pub struct Devices;
 
@@ -152,16 +218,7 @@ impl Tool for Devices {
     type Output = DevicesOutput;
 
     fn call(a: DevicesInput, ctx: &mut Ctx<'_>) -> Result<DevicesOutput> {
-        let roots = ctx.roots.clone();
-        roots.check_read(&a.file, "the case or injector file")?;
-        let text = std::fs::read_to_string(&a.file)?;
-        let table: toml::Table = toml::from_str(&text)?;
-        let sp = if table.contains_key("spray") || table.contains_key("mesh") {
-            engine::load(&a.file, &a.set, &roots)?.spray
-        } else {
-            anyhow::ensure!(a.set.is_empty(), "set applies to case files only");
-            SpraySection::from_file(&a.file)?
-        };
+        let sp = section(&a, ctx)?;
         let out = describe(&sp)?;
         for d in &out.devices {
             ctx.line(&format!(
