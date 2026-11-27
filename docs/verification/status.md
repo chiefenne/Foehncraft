@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 1.1.0 (b35bc269d4e1)), never typed in. The same as data: [grades.json](grades.json).
 
-**157 features: 50 verified, 104 partial, 3 unverified.**
+**157 features: 49 verified, 105 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -25,7 +25,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 
 | Area | Feature | Grade |
 |---|---|---|
-| Meshes | [Built-in test mesher (hexahedra, tetrahedra, prisms, polyhedra)](#mesh-generated) | verified |
+| Meshes | [Built-in test mesher (hexahedra, tetrahedra, prisms, polyhedra)](#mesh-generated) | partial |
 | Meshes | [Gmsh v4 reader](#mesh-gmsh) | partial |
 | Meshes | [SU2 reader (2D extruded, multi-zone)](#mesh-su2) | verified |
 | Meshes | [CGNS (HDF5) reader](#mesh-cgns) | partial |
@@ -189,7 +189,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 
 ### Built-in test mesher (hexahedra, tetrahedra, prisms, polyhedra)
 
-**verified** · id `mesh.generated` · switch `[mesh.generate] type`
+**partial** (gaps written) · id `mesh.generated` · switch `[mesh.generate] type`
 
 - consistency: [`generated_meshes_are_closed_and_fill_the_box`](../../crates/foehncraft-mesh/tests/generated.rs): every cell type closed, the volumes fill the box
 - consistency: [`golden_values_of_mesher_and_partitioner`](../../crates/foehncraft-mesh/tests/golden.rs): golden values of the mesher and the partitioner
@@ -197,6 +197,14 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 - exact: [`mms_mixed_box`](../../examples/cases/scalar/mms_mixed_box.toml): second order of convection-diffusion on mixed cells (manual: observed order (finest pair) 1.8 – 2.2) ([results](stage2.md#order-of-accuracy))
 - exact: [`sectors_of_hexahedra`](../../crates/foehncraft-mesh/src/wedge.rs): D309: a 3D box revolved into a 22.5 deg sector of hexahedra has the exact volume of its polygonal sector to 1e-12, closed cells and the side planes zmin and zmax with their normals
 - contract (diagnostics): [`a_perturbed_or_tetrahedral_sector_is_refused`](../../crates/foehncraft-mesh/src/wedge.rs): D309: a sector of tetrahedra or with perturb is refused
+- exact: [`turned_grids_fill_the_box`](../../crates/foehncraft-mesh/src/rotated_grid.rs): D337: a box meshed with its cell lines turned by 0, 17, 33, 45, 78 and 90 deg has the volume of the box to 1e-12, no cell under 0.2 of a whole one and all six boundaries
+- exact: [`a_turned_sector_has_the_volume_of_the_ring`](../../crates/foehncraft-mesh/src/rotated_grid.rs): D337: a turned grid revolved into a 22.5 deg sector of 4 angular cells has the volume of the polygonal ring (planar faces) to 1e-3
+- reference-data: [`spray_g_g1_grid_aligned`](../../examples/cases/flow/spray_g_g1_grid_aligned.toml): D337: ECN Spray G G1 on a turned uniform 0.6 mm grid, the lines along the plume (33 deg): liquid and vapour penetration 49.5 and 49.0 mm at 1.2 ms against the measured 38.9 and 42.0 mm; same drop size as the other grid (19.4 um against 9 um measured) (passes in CI (set long), not yet in the manual) ([results](../gallery/sprays.md#spray-g-grid))
+- reference-data: [`spray_g_g1_grid_turned`](../../examples/cases/flow/spray_g_g1_grid_turned.toml): D337: the same with the lines 45 deg to the plume (grid_angle -12): 46.5 and 45.8 mm at 1.2 ms, 6 % shorter than along the plume (passes in CI (set long), not yet in the manual) ([results](../gallery/sprays.md#spray-g-grid))
+
+Gaps:
+
+- grid_angle (D337) is for hexahedral boxes and sectors without grading, segments, refine, perturb, split, remove or zones; the cut pieces under 0.3 of a cell are merged into polyhedra; grid-orientation effect measured for Spray G on one cell size (0.6 mm) and one turbulence model (k-epsilon) only
 
 <a id="mesh-gmsh"></a>
 

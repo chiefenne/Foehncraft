@@ -20,7 +20,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | [Thermal radiation](recipes/radiation.md) | the radiation of a prescribed temperature field by Monte Carlo bundles: walls, noise, threads, ranks and the GPU, the checks against exact solutions | 259, 281 |
 | [Turbulence models](recipes/turbulence.md) | RANS turbulence models: the model, the wall treatment by the mesh, inlet turbulence, roughness, the near-wall checks, curvature correction and QCR on any mesh, the internal flows of D45 (pipe, diffuser, U-bend) | 68, 71, 73, 74, 88, 89, 90, 113, 115, 141, 140, 194, 193, 199, 197, 204 |
 | [Boundary conditions](recipes/boundary-conditions.md) | slip walls, wedges for axisymmetric flow, inlet profiles from tables, backflow at pressure outlets, convective outlets, periodic modules, absolute or gauge pressure values (D239) | 29, 67, 220 |
-| [Lagrangian sprays](recipes/sprays.md) | spray droplets into a flow with an injector file, wall behaviour, the mass book | 242, 265, 280, 283, 285, 292, 306, 318, 314, 320, 319, 321, 325, 324, 326, 323, 333, 335, 341 |
+| [Lagrangian sprays](recipes/sprays.md) | spray droplets into a flow with an injector file, wall behaviour, the mass book | 242, 265, 280, 283, 285, 292, 306, 318, 314, 320, 319, 321, 325, 324, 326, 323, 333, 335, 341, 338 |
 | [Porous regions](recipes/porous.md) | porous blocks and honeycombs in a flow: resistances, axes, the honeycomb shorthand | 273, 275 |
 | [Two fluids (volume of fluid)](recipes/multiphase.md) | water and air in one case: phases, start regions, inflow, `vof.csv` | 317 |
 | [Water and steam circuits](recipes/circuits.md) | a boiler circuit of tubes, headers and a drum: natural circulation, boiling wall temperatures, the CHF margin, the profiles | 312 |
@@ -206,6 +206,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="spray-a-distortion"></a>326 | [Let distorted drops drag and evaporate as spheroids](recipes/sprays.md#spray-a-distortion) | [Lagrangian sprays](recipes/sprays.md) |
 | <a id="spray-turbulence"></a>333 | [Let the drops damp the gas turbulence (two-way turbulence)](recipes/sprays.md#spray-turbulence) | [Lagrangian sprays](recipes/sprays.md) |
 | <a id="spray-collisions"></a>335 | [Let the drops collide](recipes/sprays.md#spray-collisions) | [Lagrangian sprays](recipes/sprays.md) |
+| <a id="spray-g-grid"></a>338 | [Turn the grid against a jet](recipes/sprays.md#spray-g-grid) | [Lagrangian sprays](recipes/sprays.md) |
 | <a id="spray-device"></a>341 | [Describe a multi-hole injector by its holes](recipes/sprays.md#spray-device) | [Lagrangian sprays](recipes/sprays.md) |
 
 ## Adding a feature

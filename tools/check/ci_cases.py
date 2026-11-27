@@ -97,6 +97,7 @@ FLOW = {
         "flame_methane_air_gri30",
         "immersed_stokes_sphere", "immersed_cut_stl_sphere_array", "spray_saturation_steady",
         "spray_breakup", "spray_brno", "spray_chamber_ecn", "motion_piston_cooled_walls", "spray_g_g1",
+        "spray_g_g1_grid_aligned", "spray_g_g1_grid_turned",
         "ranks_cylinder_species_statistics", "spray_a_distortion",
     ],
     "quick": [
@@ -119,6 +120,8 @@ EXPECTED_EXIT = {F + "cylinder_steady_diagnosis.toml": 3}
 # threads) run their first 0.1 ms there; the gallery has the whole runs.
 ARGS = {
     F + "spray_g_g1.toml": ["--set", "time.end_time=1e-4"],
+    F + "spray_g_g1_grid_aligned.toml": ["--set", "time.end_time=1e-4"],
+    F + "spray_g_g1_grid_turned.toml": ["--set", "time.end_time=1e-4"],
     F + "spray_a_distortion.toml": ["--set", "time.end_time=1e-4"],
 }
 

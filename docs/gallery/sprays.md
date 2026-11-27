@@ -24,6 +24,7 @@ Part of the [Example gallery](../gallery.md): droplets as Lagrangian parcels in 
 | 333 | [The drops take turbulence energy from the gas](#spray-turbulence) | D330 | `[spray.coupling] turbulence = "dispersion-work"`: the work of the dispersing eddies on the drops taken out of k with the ε or ω term of KIVA-II, booked from the part of the drop motion that follows the eddy; `gas_turbulence_w` in `spray.csv`; at most 32 eddies per parcel and step |
 | 335 | [Colliding drops in ECN Spray G](#spray-collisions) | D331 | `[spray.collision] model = "ntc"`: no-time-counter sampling with O'Rourke's coalescence and grazing separation; G1 liquid lead at 0.8 ms from 19 % to 12 % |
 | 341 | [A five-hole nozzle described by its device](#spray-device) | ID1, D340 to D342 | `[[spray.device]]` (mount, axis, reference, clocking), `[[device.hole]]`, `[[device.pattern]]`, `[[injector]] device`, `hole`, `hole = "all"`, `offset`, SPR010, tool `spray.devices` |
+| 338 | [Grid orientation in ECN Spray G](#spray-g-grid) | D337 | `[mesh.generate] grid_angle`: the same G1 case on a grid with its lines along the plume and at 45° to it; liquid lead at 1.2 ms 27 % and 20 %, vapour 17 % and 9 % |
 
 ---
 
@@ -1575,3 +1576,58 @@ Files: `spray/parcels_<step>.vtkhdf` (field `injector`), `spray.csv` (per
 injector `water/1` to `water/5`).
 [Recipe 341](../recipes/sprays.md#spray-device),
 [case row](../cases/flow.md#lagrangian-sprays).
+<a id="spray-g-grid"></a>
+## 338. Grid orientation in ECN Spray G
+
+<img src="../figures/gallery/spray_g_grid.png" alt="Left: the iso-octane vapour mass fraction on the plane of the plume of ECN Spray G at 0.6 ms with the cell edges drawn, above with the cell lines along the plume and across it, below with the lines turned 45° to it; in both a band leaves the tip at about 33 degrees from the horizontal injector axis, dark red in its core, and ends in a rounded head about 30 mm along the axis. Right: the liquid and the vapour penetration over 1.2 ms against the measured points; the two curves agree to 0.4 ms, then the curve of the grid along the plume runs higher, ending at 49.5 and 49.0 mm, the curve of the turned grid at 46.5 and 45.8 mm, the measured points at 38.9 and 42.0 mm." width="1200" height="720">
+
+The case of [gallery 335](#spray-collisions), ECN Spray G condition G1, run
+twice on a grid whose lines are turned against the plume, to see how much
+of the late liquid lead comes from the grid orientation. The plume leaves
+the tip at 33° from the injector axis; the grid of `spray_g_g1.toml` has
+its lines along and across the axis, so the plume crosses them at 33°.
+
+**How the grid is turned.** The injector cannot be turned inside the
+sector: the sector's axis is the injector axis, and its two side planes
+are the mirror planes that let one plume stand for all eight. So the grid
+is turned instead (`[mesh.generate] grid_angle`, D337): uniform square
+cells of 0.6 mm (the size of the core of G1) with their lines at the given
+angle in the plane of the axis and the radius, cut by the sides of the
+box and revolved into the same 22.5° sector. A piece that a side cuts off
+smaller than 0.3 of a cell joins a neighbour, which makes it a polyhedron
+(1584 of the 66 880 cells in the aligned grid, 1136 of 66 992 in the turned one). Domain, injector, physics and 8 angular cells
+are those of G1. Two cases: `spray_g_g1_grid_aligned.toml` (lines at 33°
+and 123°, one family along the plume) and `spray_g_g1_grid_turned.toml`
+(lines at −12° and 78°, both 45° to the plume).
+
+**What the grid does.**
+
+| | 0.4 ms | 0.8 ms | 1.2 ms |
+|---|---|---|---|
+| liquid, measured (mm) | 23.8 | 33.8 | 38.9 |
+| grid along the plume | 24.6 (+3 %) | 39.3 (+16 %) | 49.5 (+27 %) |
+| grid at 45° to the plume | 23.5 (−1 %) | 36.6 (+8 %) | 46.5 (+20 %) |
+| G1 grid (lines along the axis) | 24.0 (+1 %) | 37.9 (+12 %) | 48.5 (+25 %) |
+| vapour, measured (mm) | 23.9 | 34.4 | 42.0 |
+| grid along the plume | 24.5 (+2 %) | 38.7 (+13 %) | 49.0 (+17 %) |
+| grid at 45° to the plume | 23.1 (−3 %) | 35.9 (+4 %) | 45.8 (+9 %) |
+| G1 grid (lines along the axis) | 23.7 (−1 %) | 37.8 (+10 %) | 49.0 (+17 %) |
+
+Up to 0.4 ms the grids agree within 1.5 mm. Later the penetration with the
+lines across the plume is shorter by 2.7 mm at 0.8 ms and 3 mm at 1.2 ms
+(6 %): a jet that runs along the cell lines is carried farther. The
+Sauter mean diameter 15 mm from the tip is 19.4 µm on both (measured 9
+µm). The grid orientation explains about 7 points of the +27 % liquid lead
+at 1.2 ms, not most of it. The penetrations are read from cells and
+parcels at the spacing of the output (0.05 ms) and the pixel of the
+projection (0.3 mm), so differences below 1 mm are noise.
+
+**What this version does not do.** One grid size (0.6 mm; 0.3 mm cells
+with the same set-up would show whether the orientation effect shrinks
+with the cell), one plume direction, one turbulence model (k-ε). A
+turned grid of this kind is for hexahedral sectors and boxes only. 30 to
+60 minutes per run on 2 threads.
+
+Files: `spray.csv`, `spray/parcels_<step>.vtkhdf`, `fields_<step>.vtkhdf`.
+[Recipe 338](../recipes/sprays.md#spray-g-grid),
+[case rows](../cases/flow.md#lagrangian-sprays).

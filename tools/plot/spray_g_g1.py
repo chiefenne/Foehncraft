@@ -127,9 +127,12 @@ def cells(path):
         pts = g["Points"][:]
         conn = g["Connectivity"][:]
         off = g["Offsets"][:]
-        if not np.all(np.diff(off) == 8):
-            raise SystemExit(f"{path}: hexahedra only")
         data = {k: g["CellData"][k][:] for k in g["CellData"]}
+    if not np.all(np.diff(off) == 8):
+        # polyhedra among the hexahedra (the merged cut cells of a turned
+        # grid, D337): the nodes of each cell as a list
+        xyz = [pts[conn[a:b]] for a, b in zip(off[:-1], off[1:])]
+        return np.array([c.mean(axis=0) for c in xyz]), xyz, data
     xyz = pts[conn.reshape(-1, 8)]
     return xyz.mean(axis=1), xyz, data
 
@@ -145,6 +148,17 @@ def plume_plane(xyz):
     """The cells with a face on the plume plane φ = −SECTOR/2 (`zmin`): their
     (x, r) quads in mm and a mask of those cells."""
     phi0 = -0.5 * np.radians(SECTOR)
+    if isinstance(xyz, list):  # polyhedra among the hexahedra
+        quads, keep = [], np.zeros(len(xyz), dtype=bool)
+        for i, c in enumerate(xyz):
+            on = np.abs(np.arctan2(c[:, 2], c[:, 1]) - phi0) < 1e-9
+            if on.sum() < 3:
+                continue
+            q = np.column_stack([c[on, 0], np.hypot(c[on, 1], c[on, 2])]) * 1e3
+            m = q.mean(axis=0)
+            quads.append(q[np.argsort(np.arctan2(q[:, 1] - m[1], q[:, 0] - m[0]))])
+            keep[i] = True
+        return quads, keep
     phi = np.arctan2(xyz[:, :, 2], xyz[:, :, 1])
     on = np.abs(phi - phi0) < 1e-9
     keep = on.sum(axis=1) == 4
