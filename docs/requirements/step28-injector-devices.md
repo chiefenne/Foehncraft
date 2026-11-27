@@ -12,9 +12,9 @@ user the possibility to specify their specific stl."
 Companion of the [spray specification](step28-sprays.md) (D240 to D260,
 D300 to D309, D320 to D331) and of the [Spray A page](step28-spray-a.md)
 (D310 to D319). This page is a plan: nothing here is built yet, and coding
-starts only on the maintainer's go. The decisions marked *open (card)* wait
-for the maintainer's answer on the decision cards of the thread; the text
-describes the recommended option.
+starts only on the maintainer's go. The four open points were answered by
+the maintainer on decision cards on 2026-11-27 (section 7); the text follows
+the answers.
 
 ## 1. What exists today (read on main, bebdb83)
 
@@ -71,9 +71,9 @@ for the picture only.
 |---|---|
 | D340 | **Device frame.** New optional table `[[device]]`, allowed in the case's `[spray]` section (`[[spray.device]]`) and in the injector include file (a new optional key of `SprayFile`, beside `[liquid]` and `[[injector]]`). Keys: `name`; `mount` (m, the tip point of the injector in the case coordinates, the origin of the frame); `axis` (the injector axis pointing from the body into the chamber, any length, normalised); `reference` (a direction not along `axis`; its part normal to the axis is the zero of the azimuth, default: the global axis least aligned with `axis`, the same rule as `sector` of D322). The frame is e₃ = axis, e₁ = reference made normal to the axis, e₂ = e₃ × e₁; an azimuth φ turns from e₁ towards e₂. Optional `clocking` (degrees, default 0) turns the whole device about its axis, so one file serves several mounting positions. Refused: zero or non-finite vectors, a reference along the axis, a name used twice. |
 | D341 | **Holes in the device frame.** `[[device.hole]]` with `name`, `polar` (degrees, angle of the hole axis from the device axis), `azimuth` (degrees), `radius` (m, distance of the hole exit centre from the axis, default 0), `setback` (m, along the axis from `mount` into the chamber, default 0; negative is inside the body) and optional `exit_azimuth` (degrees) when the exit lies on another plane than the hole axis (default: `azimuth`). Hole exit x = mount + setback e₃ + radius (cos φₑ e₁ + sin φₑ e₂); hole direction n = cos θ e₃ + sin θ (cos φ e₁ + sin φ e₂). A ring of equal holes is `[[device.pattern]]` with `count`, `polar`, `radius`, `setback`, `first_azimuth` (default 0) and optional `names` (default `1`…`count`), which expands to `count` holes at first_azimuth + k·360°/count. Optional per-hole `diameter` (m) only for the picture and the consistency check (the flow keys stay on the injector). |
-| D342 | **An injector names a hole** *(open, card 1)*. `[[injector]]` gets two optional keys, `device` and `hole`. With them, `position` and `direction` may be left out and are computed from D341; with them **and** `position`/`direction` the absolute values win and the hole is used for the picture and a check (warning SPR0xx when the position is more than 5 % of the exit radius plus 10 µm from the hole exit, or the direction more than 0.5° from the hole axis; the Spray G file's 2 µm sector nudge passes). Optional `offset` (m, a vector in the case coordinates added to the computed exit) carries such nudges in the device form. `hole = "all"` expands one injector into one per hole of the device, each with the same keys and named `<injector>/<hole>`; `mass_flow` and `rate` are then per hole, as today. Without `device` nothing changes: `position` and `direction` stay required and mean what they mean today. The parcel file's `injector` index and every keyed random number (D121) are those of the expanded list, in the order of the file then the holes, so a case written either way gives the same bits when the list is the same. |
-| D343 | **The surface of the device** *(STL source and frame: open, cards 3 and 4)*. `geometry` = `"none"` (default: the frame and the holes only, drawn as glyphs), `"standard-gasoline"`, `"standard-diesel"` or `"stl"` with `file` (relative to the file that names it, ASCII or binary) and `scale` (default 1, as the other STL keys). The STL is given in its own device frame: **tip at the origin, injector axis along +z into the chamber, azimuth zero along +x**, so the solver places it by the rotation [e₁ e₂ e₃] and the translation to `mount`. A file drawn in another frame gives `stl_origin`, `stl_axis` and `stl_reference` (in the file's own coordinates) instead of being re-exported. The standard files live in `assets/injectors/` with their frame, units and holes in a README; `"standard-*"` also gives default holes (`[[device.pattern]]`) which a case may replace. The surface is checked with D225 (open edges, flipped triangles: reported, not repaired) and must contain no hole exit inside the solid (warning). |
-| D344 | **Visualisation only by default; the device as a wall later** *(open, card 2)*. The device never changes the mesh or the flow unless `role = "wall"` is set. `role = "wall"` (later stage ID4) hands the placed surface to the cut-cell layer of L13 as an `[[immersed.body]] shape = "stl"` (which then needs no placement keys of its own) or to the mesh generator; it requires cells of a tenth of the tip size near the tip and is refused while the mesh cannot resolve the tip (checked with the cut-cell volume fractions). |
+| D342 | **An injector names a hole** *(maintainer, card 1, 2026-11-27)*. `[[injector]]` gets two optional keys, `device` and `hole`. With them, `position` and `direction` may be left out and are computed from D341; with them **and** `position`/`direction` the absolute values win and the hole is used for the picture and a check (warning SPR0xx when the position is more than 5 % of the exit radius plus 10 µm from the hole exit, or the direction more than 0.5° from the hole axis; the Spray G file's 2 µm sector nudge passes). Optional `offset` (m, a vector in the case coordinates added to the computed exit) carries such nudges in the device form. `hole = "all"` expands one injector into one per hole of the device, each with the same keys and named `<injector>/<hole>`; `mass_flow` and `rate` are then per hole, as today. Without `device` nothing changes: `position` and `direction` stay required and mean what they mean today. The parcel file's `injector` index and every keyed random number (D121) are those of the expanded list, in the order of the file then the holes, so a case written either way gives the same bits when the list is the same. |
+| D343 | **The surface of the device** *(frame: maintainer, card 4; source: card 3, section 6)*. `geometry` = `"none"` (default: the frame and the holes only, drawn as glyphs), `"standard-gasoline"`, `"standard-diesel"` or `"stl"` with `file` (relative to the file that names it, ASCII or binary) and `scale` (default 1, as the other STL keys). The STL is given in its own device frame: **tip at the origin, injector axis along +z into the chamber, azimuth zero along +x**, so the solver places it by the rotation [e₁ e₂ e₃] and the translation to `mount`. A file drawn in another frame gives `stl_origin`, `stl_axis` and `stl_reference` (in the file's own coordinates) instead of being re-exported. The standard files live in `assets/injectors/` with their frame, units and holes in a README; `"standard-*"` also gives default holes (`[[device.pattern]]`) which a case may replace. The surface is checked with D225 (open edges, flipped triangles: reported, not repaired) and must contain no hole exit inside the solid (warning). |
+| D344 | **Visualisation only by default; the device as a wall later** *(maintainer, card 2, 2026-11-27)*. The device never changes the mesh or the flow unless `role = "wall"` is set. `role = "wall"` (later stage ID4) hands the placed surface to the cut-cell layer of L13 as an `[[immersed.body]] shape = "stl"` (which then needs no placement keys of its own) or to the mesh generator; it requires cells of a tenth of the tip size near the tip and is refused while the mesh cannot resolve the tip (checked with the cut-cell volume fractions). |
 | D345 | **Output.** At the first output of a run, `spray/devices.vtkhdf` (and, without HDF5, `spray/devices.vtu`) with the placed surfaces (triangles, cell fields `device`, `part`), one line per hole from the exit along its axis (length `glyph_length`, default 5 hole diameters or 1 mm; fields `device`, `hole`, `injector`, `polar`, `azimuth`) and the cone of each injector's `half_angle` as an outline. The file is written once (the device does not move in this version) and listed in `series.json` under a new top-level key `"static": {"devices": "spray/devices.vtkhdf"}`; readers that do not know the key ignore it (D80), so the format stays version 1. `result.json` gets `spray.devices[]` with the frame and every computed hole exit and direction, so an agent reads the geometry back without parsing TOML. A sector or quarter model writes the whole device (all holes) and marks the holes whose injectors are in the domain (`in_domain`). |
 | D346 | **Scriptable (D77 to D87).** Tool `spray.devices` of the registry (D196) and the MCP server (L18): given a case or an injector file, returns the frame, the expanded holes (exit, direction, injector names) and writes the placed surface and glyphs without running the flow (preview of a mounting before meshing). Same numbers as the run, same code path. `foehn check` lists the devices and the expanded injectors. Every new key is in `docs/keys.md` and the JSON schema; no interactive-only path. |
 | D347 | **Not in this version.** Moving or needle-lifting devices (needle lift as a time table could later feed `rate` and the visualisation; mesh motion of MS0 would be needed for a wall); devices in the steady spray mode are allowed for the picture and the hole computation (no change to D260); nozzle-internal flow (the D307 `nozzle_k`/`nozzle_epsilon` stay the coupling point); radial-ring or swirl nozzles other than "polar and azimuth of a straight hole" (a hollow-cone swirl atomiser is one axial hole with a `half_angle` today and stays so). |
@@ -166,25 +166,38 @@ numbers.
 | ID1 | D340 to D342 and D346: `[[device]]`, `[[device.hole]]`, `[[device.pattern]]`, injector `device`/`hole`/`offset`, `hole = "all"`, the check warning, `foehn check` listing, tool `spray.devices` (JSON only), keys.md and schema. Tests: every existing spray case parses and runs to the same bits (the regression set of the spray tests unchanged); the device form of Spray G hole 1 gives the hand-written position within 2 µm (without `offset`) and to round-off with `offset`, the direction to 1e-8; a pattern of 8 holes reproduces the k·45° turns of `spray_g_metrics.py`; frames with a reference along the axis, zero vectors and unknown holes refused. Case: `spray_g_device` (all 8 holes on a full 360° coarse mesh, short run). Gallery: hole glyphs on the parcels. Recipe: "describe a multi-hole injector by its holes". | 30 to 45 min |
 | ID2 | D343 (frame of the STL, placement, `stl_*` keys, D225 check) and D345 output (`spray/devices.vtkhdf`/`.vtu`, `series.json` `static`, `result.json` `spray.devices`), the tool writing the placed surface; ParaView script and `tools/plot` script that draw device + parcels (scripts list the available fields when one is missing). Gallery with 1-3 images: Spray G device with the 8 plumes, Spray A device with its plume; images looked at before merging (no four-fold or symbol-like patterns: the gasoline device shows 8 holes, so the picture is taken obliquely with the plumes coloured by speed, not end-on). Recipe: "show your own injector STL". | 45 to 60 min |
 | ID2m | MurmelCraft: read `static.devices` from `series.json` and draw the device under the parcels in the time player (separate PR in MurmelCraft, after ID2 is merged). | 30 min |
-| ID3 | The two standard STLs in `assets/injectors/` with README (frame, units, holes, source and licence) and `geometry = "standard-gasoline"` / `"standard-diesel"` with their default patterns. Depends on card 3 (who makes them). | 15 to 30 min after the files exist |
+| ID3 | The two standard STLs in `assets/injectors/` with README (frame, units, holes, source and licence) and `geometry = "standard-gasoline"` / `"standard-diesel"` with their default patterns, drawn by our script `tools/data/injector_standard.py` from published sizes (card 3, section 6). | 30 to 45 min |
 | ID4 | D344 `role = "wall"`: the device surface as an immersed STL body (cut cells, L13 stage 2) or into the mesh generator; tip resolution check; a case with the plume next to the tip. Only with its own go. | not sized yet |
 
-Order: ID1, ID2, ID3 (ID3 can come before ID2 if the STLs arrive first),
-ID2m, ID4 last and separately decided.
+Order: ID1, ID2, ID3 (ID3 can come before ID2: the files do not depend on
+the output), ID2m, ID4 last and separately decided.
 
-## 6. Where the standard STLs come from *(open, card 3)*
+## 6. Where the standard STLs come from *(maintainer, card 3, 2026-11-27)*
 
-Recommended: the maintainer provides the two standard files ("standard
-gasoline": a multi-hole direct-injection tip; "standard diesel": a
-common-rail tip with a sac and a ring of holes) exported in the frame of
-D343 (tip at the origin, +z into the chamber, azimuth zero along +x, in
-millimetres with `scale = 1e-3` or in metres), and states their licence (the
-repository is open; the files are published with it). Until they arrive, ID1
-and ID2 are built and tested on a small generated stand-in
-(`tools/data/injector_standin.py`: a cylinder body with a cone tip and
-drilled holes from the pattern, our own geometry from nothing but the hole
-pattern), which is replaced by the maintainer's files without any change of
-keys. The stand-in is not called "standard" in the output.
+The maintainer chose: **we generate both standard files from published
+sizes**, and the maintainer may replace them later with their own drawings
+without any change of keys. The script `tools/data/injector_standard.py`
+(our own geometry, parametric, in the repository with its output) draws:
+
+- **standard gasoline**: a multi-hole direct-injection tip, a cylindrical
+  body with a domed tip and a ring of straight holes. Default pattern from
+  the published Spray G nozzle numbers quoted in D309: 8 holes of 0.165 mm,
+  orifice length 0.17 mm, drill angle 37° (the plume angle 33° stays a case
+  value of the injector), exit radius about 1 mm, with the body diameter and
+  dome taken from published drawings of such tips (each number on the
+  README with its citation, `not yet read` until checked).
+- **standard diesel**: a common-rail tip with a sac and a ring of holes.
+  Default pattern from published numbers of a multi-hole diesel nozzle (for
+  example the ECN Spray B three-hole nozzle or a typical seven-hole
+  passenger-car nozzle; the source is chosen and cited when ID3 is built);
+  the single axial hole of Spray A (0.09 mm) is a pattern of `count = 1,
+  polar = 0` on the same body.
+
+Both are exported in the frame of D343 (tip at the origin, +z into the
+chamber, azimuth zero along +x, metres) with a README in
+`assets/injectors/` giving the frame, units, holes, every published number
+with its citation and the MIT licence of the repository (the files are our
+own work). A user's own STL replaces them with `geometry = "stl"`.
 
 Not used as shipped files: the ECN nozzle geometries of Spray G and Spray A
 (X-ray tomography by Argonne, published on the ECN pages). The pages state
@@ -195,23 +208,24 @@ stored in the repository; a user who downloads one gives it as
 published hole numbers (count, 33° plume angle, hole diameter) are quoted
 with their citation as today (D309). Clean-room rule D201: the device is
 geometry and placement, no numbers from another code are involved; the
-standard tips are the maintainer's drawings or our own stand-in, not copies
+standard tips are our own drawings from published sizes, not copies
 of a commercial code's injector library.
 
-## 7. Open questions put on cards (thread of 2026-11-27)
+## 7. Answers of the maintainer (cards, 2026-11-27)
 
 1. **How the holes reach the injection** (D342): injectors may name a
-   device hole and get their position and direction from it, with the old
-   absolute form kept as is (recommended); or the device is a picture only
-   and injectors always keep absolute coordinates.
-2. **Device in the flow** (D344): picture only now, wall (cut cells) later
-   with its own go (recommended); or the wall option in the first build.
-3. **Who makes the standard STLs** (section 6): the maintainer provides
-   them, a generated stand-in until then (recommended); we generate both
-   from published dimensions; or nothing standard until the files arrive.
-4. **Frame of an STL** (D343): one fixed convention plus optional
-   `stl_origin`/`stl_axis`/`stl_reference` keys for other CAD frames
-   (recommended); or the fixed convention only.
+   device hole and get their position and direction from it; the old
+   absolute form stays as is. *Chosen as recommended.*
+2. **Device in the flow** (D344): picture only now; the wall (cut cells)
+   later, with its own go. *Chosen as recommended.*
+3. **Who makes the standard STLs** (section 6): we generate both from
+   published sizes. *The maintainer chose this instead of the recommended
+   "the maintainer provides them, a stand-in until then".*
+4. **Frame of an STL** (D343): one fixed convention plus the optional keys
+   `stl_origin`, `stl_axis`, `stl_reference` for other CAD frames. *Chosen as
+   recommended.*
+
+Coding of ID1 to ID3 starts on the maintainer's go.
 
 ## 8. Checks (to be met by ID1 and ID2)
 
