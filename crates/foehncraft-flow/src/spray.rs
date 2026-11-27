@@ -576,6 +576,9 @@ pub struct SpraySummary {
     /// The two-way coupling over the run (SP2), if any.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub coupling: Option<CouplingSummary>,
+    /// The injector devices (D345): frames, holes and their injectors.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub devices: Vec<DeviceSummary>,
 }
 
 /// The definitions written with the statistics (D265).
@@ -601,6 +604,7 @@ pub fn summary(sp: &foehncraft_particles::Spray, zone: &[u32]) -> SpraySummary {
         in_flow: sp.moments(None, zone).stats(&spec),
         definitions: DEFINITIONS,
         coupling: None,
+        devices: Vec::new(),
     }
 }
 
@@ -656,6 +660,237 @@ pub(crate) fn device_warnings<F: FnMut(&str)>(
         lg.warn(&format!("{}: {}", d.code, d.message));
         warnings.push(d);
     }
+}
+
+/// One device in `result.json` (D345): its frame and holes in case
+/// coordinates, and the injectors of each hole.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct DeviceSummary {
+    /// Name of the device.
+    pub name: String,
+    /// The mounting point (m).
+    pub mount: [f64; 3],
+    /// Zero of the azimuth.
+    pub e1: [f64; 3],
+    /// e₃ × e₁.
+    pub e2: [f64; 3],
+    /// The injector axis.
+    pub axis: [f64; 3],
+    /// The surface drawn (`none`, `standard-gasoline`, `standard-diesel`,
+    /// `stl`).
+    pub geometry: foehncraft_particles::Geometry,
+    /// Triangles of the placed surface.
+    pub triangles: usize,
+    /// The holes.
+    pub holes: Vec<DeviceHole>,
+}
+
+/// One hole of a [`DeviceSummary`].
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct DeviceHole {
+    /// Name of the hole.
+    pub name: String,
+    /// Centre of the exit (m).
+    pub exit: [f64; 3],
+    /// Unit direction of the hole axis.
+    pub direction: [f64; 3],
+    /// Angle of the hole axis from the device axis (degrees).
+    pub polar: f64,
+    /// Azimuth of the hole axis about the device axis, from e₁ (degrees).
+    pub azimuth: f64,
+    /// The injectors that name this hole; empty for a hole that is not in
+    /// the domain (the other holes of a sector model).
+    pub injectors: Vec<String>,
+}
+
+/// A device placed in case coordinates: its summary, its surface and its
+/// holes with the length of their lines.
+type Placed = (
+    DeviceSummary,
+    Vec<[[f64; 3]; 3]>,
+    Vec<(foehncraft_particles::PlacedHole, f64)>,
+);
+
+/// The devices of a case with their placed surfaces.
+fn placed_devices(sp: &foehncraft_particles::SpraySection) -> Result<Vec<Placed>> {
+    let mut out = Vec::new();
+    for d in &sp.devices {
+        let f = d.frame()?;
+        let holes = d.placed_holes()?;
+        let surface = d.surface()?;
+        let summary = DeviceSummary {
+            name: d.name.clone(),
+            mount: f.origin,
+            e1: f.e1,
+            e2: f.e2,
+            axis: f.e3,
+            geometry: d.geometry,
+            triangles: surface.len(),
+            holes: holes
+                .iter()
+                .map(|h| DeviceHole {
+                    name: h.name.clone(),
+                    exit: h.exit,
+                    direction: h.direction,
+                    polar: h.polar,
+                    azimuth: h.azimuth,
+                    injectors: sp
+                        .injectors
+                        .iter()
+                        .filter(|i| {
+                            i.device.as_deref() == Some(&d.name)
+                                && i.hole.as_deref() == Some(&h.name)
+                        })
+                        .map(|i| i.name.clone())
+                        .collect(),
+                })
+                .collect(),
+        };
+        let glyphs = holes.into_iter().map(|h| {
+            let g = d.glyph(&h);
+            (h, g)
+        });
+        out.push((summary, surface, glyphs.collect()));
+    }
+    Ok(out)
+}
+
+/// The devices of `result.json` (D345); empty without devices.
+pub fn device_summary(sp: &foehncraft_particles::SpraySection) -> Result<Vec<DeviceSummary>> {
+    Ok(placed_devices(sp)?.into_iter().map(|d| d.0).collect())
+}
+
+/// Writes `spray/devices.vtu` (D345): the placed surfaces of the devices
+/// (triangles), one line per hole along its axis and, per injector that
+/// names a hole, the outline of its cone at the end of that line; cell
+/// fields `device`, `part` (0 surface, 1 hole axis, 2 cone), `hole` and
+/// `injector` (-1 where they do not apply). Returns its path, or `None`
+/// without devices. Written once: the devices do not move.
+pub fn write_devices(
+    sp: &foehncraft_particles::SpraySection,
+    out: &std::path::Path,
+) -> Result<Option<std::path::PathBuf>> {
+    use std::fmt::Write as _;
+    let devs = placed_devices(sp)?;
+    if devs.is_empty() {
+        return Ok(None);
+    }
+    let mut pts: Vec<[f64; 3]> = Vec::new();
+    let mut conn: Vec<usize> = Vec::new();
+    let mut offsets: Vec<usize> = Vec::new();
+    let mut types: Vec<u8> = Vec::new();
+    let mut fields: [Vec<i64>; 4] = Default::default();
+    let mut cell = |pts_of: &[[f64; 3]], ty: u8, f: [i64; 4], pts: &mut Vec<[f64; 3]>| {
+        for p in pts_of {
+            conn.push(pts.len());
+            pts.push(*p);
+        }
+        offsets.push(conn.len());
+        types.push(ty);
+        for k in 0..4 {
+            fields[k].push(f[k]);
+        }
+    };
+    for (di, (s, surface, holes)) in devs.iter().enumerate() {
+        let di = di as i64;
+        for t in surface {
+            cell(t, 5, [di, 0, -1, -1], &mut pts);
+        }
+        for (hi, (h, len)) in holes.iter().enumerate() {
+            let e = h.exit;
+            let n = h.direction;
+            let tip = [e[0] + len * n[0], e[1] + len * n[1], e[2] + len * n[2]];
+            cell(&[e, tip], 3, [di, 1, hi as i64, -1], &mut pts);
+            for (ii, inj) in sp.injectors.iter().enumerate() {
+                if inj.device.as_deref() != Some(&s.name) || inj.hole.as_deref() != Some(&h.name) {
+                    continue;
+                }
+                // the cone of the injector's half angle about the hole axis
+                let a = inj.half_angle.to_radians();
+                if a <= 0.0 {
+                    continue;
+                }
+                let r = len * a.tan().min(10.0);
+                let mut u = if n[0].abs() < 0.9 {
+                    [1.0, 0.0, 0.0]
+                } else {
+                    [0.0, 1.0, 0.0]
+                };
+                let d = u[0] * n[0] + u[1] * n[1] + u[2] * n[2];
+                u = [u[0] - d * n[0], u[1] - d * n[1], u[2] - d * n[2]];
+                let un = (u[0] * u[0] + u[1] * u[1] + u[2] * u[2]).sqrt();
+                u = [u[0] / un, u[1] / un, u[2] / un];
+                let w = [
+                    n[1] * u[2] - n[2] * u[1],
+                    n[2] * u[0] - n[0] * u[2],
+                    n[0] * u[1] - n[1] * u[0],
+                ];
+                let ring: Vec<[f64; 3]> = (0..=36)
+                    .map(|k| {
+                        let (sn, cs) = (k as f64 * 10f64.to_radians()).sin_cos();
+                        [
+                            tip[0] + r * (cs * u[0] + sn * w[0]),
+                            tip[1] + r * (cs * u[1] + sn * w[1]),
+                            tip[2] + r * (cs * u[2] + sn * w[2]),
+                        ]
+                    })
+                    .collect();
+                cell(&ring, 4, [di, 2, hi as i64, ii as i64], &mut pts);
+            }
+        }
+    }
+    let mut x = String::new();
+    let _ = writeln!(
+        x,
+        "<?xml version=\"1.0\"?>\n<VTKFile type=\"UnstructuredGrid\" version=\"1.0\" byte_order=\"LittleEndian\">\n<UnstructuredGrid>\n<Piece NumberOfPoints=\"{}\" NumberOfCells=\"{}\">",
+        pts.len(),
+        types.len()
+    );
+    x.push_str(
+        "<Points>\n<DataArray type=\"Float64\" NumberOfComponents=\"3\" format=\"ascii\">\n",
+    );
+    for p in &pts {
+        let _ = writeln!(x, "{:e} {:e} {:e}", p[0], p[1], p[2]);
+    }
+    x.push_str("</DataArray>\n</Points>\n<Cells>\n");
+    let list = |name: &str, ty: &str, v: &mut dyn Iterator<Item = String>| {
+        let mut s = format!("<DataArray type=\"{ty}\" Name=\"{name}\" format=\"ascii\">\n");
+        for (k, e) in v.enumerate() {
+            s.push_str(&e);
+            s.push(if k % 16 == 15 { '\n' } else { ' ' });
+        }
+        s.push_str("\n</DataArray>\n");
+        s
+    };
+    x.push_str(&list(
+        "connectivity",
+        "Int64",
+        &mut conn.iter().map(|c| c.to_string()),
+    ));
+    x.push_str(&list(
+        "offsets",
+        "Int64",
+        &mut offsets.iter().map(|c| c.to_string()),
+    ));
+    x.push_str(&list(
+        "types",
+        "UInt8",
+        &mut types.iter().map(|c| c.to_string()),
+    ));
+    x.push_str("</Cells>\n<CellData>\n");
+    for (k, name) in ["device", "part", "hole", "injector"].iter().enumerate() {
+        x.push_str(&list(
+            name,
+            "Int32",
+            &mut fields[k].iter().map(|c| c.to_string()),
+        ));
+    }
+    x.push_str("</CellData>\n</Piece>\n</UnstructuredGrid>\n</VTKFile>\n");
+    let dir = out.join("spray");
+    std::fs::create_dir_all(&dir)?;
+    let path = dir.join("devices.vtu");
+    std::fs::write(&path, x)?;
+    Ok(Some(path))
 }
 
 /// The sprays of a run, or `None` without `[spray]`.

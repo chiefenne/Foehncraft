@@ -21,6 +21,63 @@
 use anyhow::{Result, bail};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
+
+/// The surface of a device (D343).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum Geometry {
+    /// No surface: the frame and the holes only, drawn as lines.
+    #[default]
+    None,
+    /// The standard gasoline tip of `assets/injectors/` (8 holes, 37°,
+    /// 0.165 mm; ECN Spray G numbers, our drawing). Without holes of its
+    /// own the device takes these.
+    StandardGasoline,
+    /// The standard diesel tip of `assets/injectors/` (7 holes, 77.5°,
+    /// 0.11 mm on a sac cone; our drawing).
+    StandardDiesel,
+    /// The user's own STL, `file`.
+    Stl,
+}
+
+/// The two standard tips: their STL (millimetres, the frame of D343) and
+/// their holes. Keep in step with `tools/data/injector_standard.py`.
+struct Standard {
+    stl: &'static [u8],
+    count: usize,
+    polar: f64,
+    /// Exit circle radius (mm).
+    exit: f64,
+    /// Exit z on the tip (mm, negative: behind the tip point).
+    exit_z: f64,
+    /// Hole diameter (mm).
+    hole: f64,
+}
+
+fn standard(g: Geometry) -> Option<Standard> {
+    match g {
+        // dome of radius 4 mm through the tip: z(1 mm) = -(4 - √15)
+        Geometry::StandardGasoline => Some(Standard {
+            stl: include_bytes!("../../../assets/injectors/standard-gasoline.stl"),
+            count: 8,
+            polar: 37.0,
+            exit: 1.0,
+            exit_z: -(4.0 - 15f64.sqrt()),
+            hole: 0.165,
+        }),
+        // sac dome of radius 1.2 mm: z(0.65 mm) = -(1.2 - √(1.44 - 0.4225))
+        Geometry::StandardDiesel => Some(Standard {
+            stl: include_bytes!("../../../assets/injectors/standard-diesel.stl"),
+            count: 7,
+            polar: 77.5,
+            exit: 0.65,
+            exit_z: -(1.2 - (1.44f64 - 0.4225).sqrt()),
+            hole: 0.11,
+        }),
+        _ => None,
+    }
+}
 
 /// One hole of a device, `[[device.hole]]` (D341).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -106,6 +163,46 @@ pub struct Device {
     /// Rings of equal holes.
     #[serde(default, rename = "pattern", skip_serializing_if = "Vec::is_empty")]
     pub patterns: Vec<Pattern>,
+    /// The surface drawn in the output (D343): `none` (default),
+    /// `standard-gasoline`, `standard-diesel` or `stl` with `file`. A
+    /// standard tip without holes of its own brings its holes.
+    #[serde(default, skip_serializing_if = "is_none_geometry")]
+    pub geometry: Geometry,
+    /// The STL of `geometry = "stl"` (ASCII or binary), relative to the file
+    /// that names it. Drawn in its own frame: the tip at the origin, the
+    /// injector axis along +z into the chamber, the azimuth zero along +x
+    /// (or as `stl_origin`, `stl_axis`, `stl_reference` say).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file: Option<PathBuf>,
+    /// Factor on the coordinates of `file` (default 1; 1e-3 for a file in
+    /// millimetres).
+    #[serde(default = "one", skip_serializing_if = "is_one")]
+    pub scale: f64,
+    /// The tip point in the coordinates of `file` (default the origin).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stl_origin: Option<[f64; 3]>,
+    /// The injector axis in the coordinates of `file` (default +z).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stl_axis: Option<[f64; 3]>,
+    /// The zero of the azimuth in the coordinates of `file` (default +x).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stl_reference: Option<[f64; 3]>,
+    /// Length of the lines that show the hole axes in the output (m;
+    /// default five hole diameters where the hole has one, else 1 mm).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub glyph_length: Option<f64>,
+}
+
+fn is_none_geometry(g: &Geometry) -> bool {
+    *g == Geometry::None
+}
+
+fn one() -> f64 {
+    1.0
+}
+
+fn is_one(x: &f64) -> bool {
+    *x == 1.0
 }
 
 fn is_zero(x: &f64) -> bool {
@@ -232,7 +329,27 @@ impl Device {
         let f = self.frame()?;
         let n = &self.name;
         let mut list: Vec<Hole> = self.holes.clone();
-        for (p_i, p) in self.patterns.iter().enumerate() {
+        let std_pattern;
+        let patterns = if self.holes.is_empty() && self.patterns.is_empty() {
+            match standard(self.geometry) {
+                Some(st) => {
+                    std_pattern = [Pattern {
+                        count: st.count,
+                        polar: st.polar,
+                        radius: st.exit * 1e-3,
+                        setback: st.exit_z * 1e-3,
+                        first_azimuth: 0.0,
+                        names: Vec::new(),
+                        diameter: Some(st.hole * 1e-3),
+                    }];
+                    &std_pattern[..]
+                }
+                None => &self.patterns[..],
+            }
+        } else {
+            &self.patterns[..]
+        };
+        for (p_i, p) in patterns.iter().enumerate() {
             if p.count == 0 {
                 bail!("[[device]] {n}: pattern {} has count 0", p_i + 1);
             }
@@ -316,6 +433,77 @@ impl Device {
     }
 }
 
+impl Device {
+    /// The surface of the device placed in case coordinates (D343): the
+    /// triangles of the standard tip or of `file`, moved from their own
+    /// frame into the device frame. Empty with `geometry = "none"`.
+    pub fn surface(&self) -> Result<Vec<[[f64; 3]; 3]>> {
+        let n = &self.name;
+        let f = self.frame()?;
+        let (tris, scale) = match self.geometry {
+            Geometry::None => {
+                if self.file.is_some() {
+                    bail!("[[device]] {n}: file needs geometry = \"stl\"");
+                }
+                return Ok(Vec::new());
+            }
+            Geometry::Stl => {
+                let Some(p) = &self.file else {
+                    bail!("[[device]] {n}: geometry = \"stl\" needs file");
+                };
+                let t = foehncraft_mesh::format::stl::read(p)
+                    .map_err(|e| anyhow::anyhow!("[[device]] {n}: {e}"))?;
+                (t, self.scale)
+            }
+            g => {
+                if self.file.is_some() {
+                    bail!(
+                        "[[device]] {n}: file needs geometry = \"stl\" (a standard tip has its own)"
+                    );
+                }
+                let st = standard(g).expect("a standard tip");
+                let t = foehncraft_mesh::format::stl::parse(st.stl)
+                    .map_err(|e| anyhow::anyhow!("[[device]] {n}: standard tip: {e}"))?;
+                // the standard files are in millimetres
+                (t, 1e-3 * self.scale)
+            }
+        };
+        if !(scale.is_finite() && scale > 0.0) {
+            bail!("[[device]] {n}: scale must be positive and finite");
+        }
+        // the frame of the file
+        let o = self.stl_origin.unwrap_or([0.0; 3]);
+        let a = self.stl_axis.unwrap_or([0.0, 0.0, 1.0]);
+        let r = self.stl_reference.unwrap_or([1.0, 0.0, 0.0]);
+        let Some(g3) = finite(a).then(|| unit(a)).flatten() else {
+            bail!("[[device]] {n}: stl_axis must be finite and not zero");
+        };
+        let rn = dot(r, r).sqrt();
+        let normal = combo(r, &[(-dot(r, g3), g3)]);
+        let Some(g1) = (finite(o) && finite(r))
+            .then(|| unit(normal).filter(|_| dot(normal, normal).sqrt() > 1e-3 * rn))
+            .flatten()
+        else {
+            bail!(
+                "[[device]] {n}: stl_origin and stl_reference must be finite, stl_reference not along stl_axis"
+            );
+        };
+        let g2 = cross(g3, g1);
+        let place = |p: [f64; 3]| {
+            let d = combo(p, &[(-1.0, o)]);
+            let (x1, x2, x3) = (dot(d, g1) * scale, dot(d, g2) * scale, dot(d, g3) * scale);
+            combo(f.origin, &[(x1, f.e1), (x2, f.e2), (x3, f.e3)])
+        };
+        Ok(tris.iter().map(|t| t.map(place)).collect())
+    }
+
+    /// The length of the line that shows hole `h` in the output.
+    pub fn glyph(&self, h: &PlacedHole) -> f64 {
+        self.glyph_length
+            .unwrap_or_else(|| h.diameter.map_or(1e-3, |d| 5.0 * d))
+    }
+}
+
 /// How far an injector's own `position` and `direction` lie from its hole
 /// (D342): Some(message) when the position is more than 5 % of the exit
 /// radius plus 10 µm from the exit (plus `offset`), or the direction more
@@ -380,7 +568,98 @@ mod tests {
                 names: vec![],
                 diameter: Some(1.65e-4),
             }],
+            geometry: Geometry::None,
+            file: None,
+            scale: 1.0,
+            stl_origin: None,
+            stl_axis: None,
+            stl_reference: None,
+            glyph_length: None,
         }
+    }
+
+    /// VD.4: a placed standard tip has its tip point at `mount` and its +z
+    /// along the axis; a file in another frame given by `stl_*` places to
+    /// the same triangles.
+    #[test]
+    fn placement_of_the_surface() {
+        let mut d = spray_g();
+        d.mount = [0.01, -0.02, 0.03];
+        d.axis = [0.2, 0.3, -0.9];
+        d.reference = None;
+        d.clocking = 25.0;
+        d.geometry = Geometry::StandardGasoline;
+        let f = d.frame().unwrap();
+        let t = d.surface().unwrap();
+        assert!(t.len() > 1000);
+        // the tip: the point of the largest height along the axis
+        let mut top = f64::NEG_INFINITY;
+        let mut at = [0.0; 3];
+        for p in t.iter().flatten() {
+            let h = dot(combo(*p, &[(-1.0, d.mount)]), f.e3);
+            if h > top {
+                top = h;
+                at = *p;
+            }
+        }
+        assert!(top.abs() < 1e-12, "{top}");
+        let off = combo(at, &[(-1.0, d.mount)]);
+        assert!(dot(off, off).sqrt() < 1e-12);
+        // the same file written in another frame: origin (5, 6, 7) mm,
+        // axis -y, reference +z, scale 1
+        let raw =
+            foehncraft_mesh::format::stl::parse(standard(Geometry::StandardGasoline).unwrap().stl)
+                .unwrap();
+        let moved: Vec<[[f64; 3]; 3]> = raw
+            .iter()
+            .map(|t| t.map(|p| [5.0 - p[1], 6.0 - p[2], 7.0 + p[0]]))
+            .collect();
+        let dir = std::env::temp_dir().join(format!("device_stl_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("moved.stl");
+        let mut text = String::from("solid moved\n");
+        for t in &moved {
+            text.push_str("facet normal 0 0 0\nouter loop\n");
+            for p in t {
+                text.push_str(&format!("vertex {:e} {:e} {:e}\n", p[0], p[1], p[2]));
+            }
+            text.push_str("endloop\nendfacet\n");
+        }
+        text.push_str("endsolid moved\n");
+        std::fs::write(&path, text).unwrap();
+        let mut e = d.clone();
+        e.geometry = Geometry::Stl;
+        e.file = Some(path);
+        e.scale = 1e-3;
+        e.stl_origin = Some([5.0, 6.0, 7.0]);
+        e.stl_axis = Some([0.0, -1.0, 0.0]);
+        e.stl_reference = Some([0.0, 0.0, 1.0]);
+        let u = e.surface().unwrap();
+        assert_eq!(u.len(), t.len());
+        for (a, b) in t.iter().zip(&u) {
+            for k in 0..3 {
+                for i in 0..3 {
+                    assert!((a[k][i] - b[k][i]).abs() < 1e-12);
+                }
+            }
+        }
+    }
+
+    /// A standard tip without holes brings its own: 8 holes 37° from the
+    /// axis on the exit circle of 1 mm, the exits on the tip's dome.
+    #[test]
+    fn standard_tip_brings_its_holes() {
+        let mut d = spray_g();
+        d.patterns.clear();
+        d.geometry = Geometry::StandardGasoline;
+        let hs = d.placed_holes().unwrap();
+        assert_eq!(hs.len(), 8);
+        assert!((hs[0].polar - 37.0).abs() < 1e-12);
+        assert!((hs[0].exit[0] + (4.0 - 15f64.sqrt()) * 1e-3).abs() < 1e-15);
+        d.geometry = Geometry::StandardDiesel;
+        assert_eq!(d.placed_holes().unwrap().len(), 7);
+        d.geometry = Geometry::None;
+        assert!(d.placed_holes().is_err());
     }
 
     #[test]

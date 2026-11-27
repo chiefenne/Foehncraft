@@ -24,6 +24,7 @@ Part of the [Example gallery](../gallery.md): droplets as Lagrangian parcels in 
 | 333 | [The drops take turbulence energy from the gas](#spray-turbulence) | D330 | `[spray.coupling] turbulence = "dispersion-work"`: the work of the dispersing eddies on the drops taken out of k with the ε or ω term of KIVA-II, booked from the part of the drop motion that follows the eddy; `gas_turbulence_w` in `spray.csv`; at most 32 eddies per parcel and step |
 | 335 | [Colliding drops in ECN Spray G](#spray-collisions) | D331 | `[spray.collision] model = "ntc"`: no-time-counter sampling with O'Rourke's coalescence and grazing separation; G1 liquid lead at 0.8 ms from 19 % to 12 % |
 | 341 | [A five-hole nozzle described by its device](#spray-device) | ID1, D340 to D342 | `[[spray.device]]` (mount, axis, reference, clocking), `[[device.hole]]`, `[[device.pattern]]`, `[[injector]] device`, `hole`, `hole = "all"`, `offset`, SPR010, tool `spray.devices` |
+| 343 | [Spray G under its injector tip](#spray-device-surface) | ID2, ID3, D343 to D345 | `[[spray.device]] geometry` (`standard-gasoline`, `standard-diesel`, `stl`), `file`, `scale`, `stl_origin`, `stl_axis`, `stl_reference`, `glyph_length`, `spray/devices.vtu`, `series.json` `static`, `result.json` `spray.devices`, tool `spray.place` |
 | 338 | [Grid orientation in ECN Spray G](#spray-g-grid) | D337 | `[mesh.generate] grid_angle`: the same G1 case on a grid with its lines along the plume and at 45° to it; liquid lead at 1.2 ms 27 % and 20 %, vapour 17 % and 9 % |
 
 ---
@@ -1568,13 +1569,92 @@ hole named twice, a hole that does not exist, `hole = "all"` with a
 position. The tool `spray.devices` prints the frame, the holes and the
 injectors without running the flow (D346).
 
-**Not yet.** The picture of the device itself (its STL, standard or the
-user's own) and the device in the output files come with the next stage
-(ID2, D343, D345); the device is never a wall in this version (D344).
+**The device in the picture.** The surface of the device (a standard
+tip or the user's own STL) and the device in the output files are
+[gallery 343](#spray-device-surface); the device is never a wall in this
+version (D344).
 
 Files: `spray/parcels_<step>.vtkhdf` (field `injector`), `spray.csv` (per
 injector `water/1` to `water/5`).
 [Recipe 341](../recipes/sprays.md#spray-device),
+[case row](../cases/flow.md#lagrangian-sprays).
+
+---
+
+<a id="spray-device-surface"></a>
+## 343. Spray G under its injector tip
+
+<img src="../figures/gallery/spray_g_device.png" alt="Left: an oblique view of a grey cylindrical injector tip pointing down with eight plumes of fuel drops fanning out below it into a wide bell about 35 mm long, coloured by drop speed: yellow, fast, near the tip, dark blue, slow, at the bell edge. Right: a close-up of the first 5 mm with the domed tip, short black hole axes and the eight young plumes leaving the holes." width="1300" height="640">
+
+The ECN Spray G case (gallery 323) computes one eighth of the injector, a
+22.5° sector with half a plume. Its injector file has a twin,
+`spray_g_device_injectors.toml`, that gives the same injector as a device:
+the 8-hole ring of D309 on the standard gasoline tip, and the one injector
+of the sector as hole 1 of that ring.
+
+```toml
+[[device]]
+name = "spray-g"
+mount = [0.0, 0.0, 0.0]
+axis = [1.0, 0.0, 0.0]
+reference = [0.0, 1.0, 0.0]
+geometry = "standard-gasoline"   # assets/injectors/standard-gasoline.stl
+
+[[device.pattern]]
+count = 8
+polar = 33.0          # the plume angle of the case, not the 37° drill angle
+radius = 1.0e-3
+setback = 1.0e-4
+first_azimuth = -11.25
+diameter = 1.65e-4
+
+[[injector]]
+name = "hole1"
+device = "spray-g"
+hole = "1"
+offset = [0.0, 3.90181e-7, 1.96157e-6]   # 2 µm into the sector
+# the rest as spray_g_g1_injectors.toml
+```
+
+Every run with a device writes `spray/devices.vtu` once at its start: the
+placed surface (triangles), one line per hole along its axis and the cone
+of every injector's `half_angle`, with the cell fields `device`, `part`
+(0 surface, 1 hole axis, 2 cone), `hole` and `injector`. `series.json`
+lists it under `"static": {"devices": "spray/devices.vtu"}` (readers that
+do not know the key skip it), and `result.json` has `spray.devices` with
+the frame and every hole exit and direction. The picture: the parcels of
+the sector at 0.6 ms mirrored and turned into all 8 plumes, coloured by
+their speed, under the tip that the tool `spray.place` placed from the
+same file (the same numbers as a run); right, the first 5 mm with the hole
+axes.
+
+<img src="../figures/gallery/standard_injector_tips.png" alt="Two grey injector tips seen obliquely from the chamber side. Left: a wide gently domed gasoline tip with a ring of eight small holes and black hole axes leaning 37 degrees out from the centre. Right: a narrower diesel tip with a cone up to a small dome and seven holes whose axes point almost sideways." width="1200" height="560">
+
+**The two standard tips** are our own drawings from published sizes
+(`tools/data/injector_standard.py`, README in `assets/injectors/`): the
+gasoline tip has the 8 holes of 0.165 mm drilled 37° from the axis of the
+ECN Spray G nozzle; the diesel tip, a sac with 7 holes of 0.11 mm at 155°
+included angle, is our choice of a typical passenger-car nozzle. A device
+with a standard tip and no holes of its own gets these holes. Each hole is
+a short bore whose mouth is cut out of the dome, so it shows as an
+opening.
+
+**What is checked.** The device form of the G1 injector gives the
+hand-written position to 1e-11 m and direction to 1e-8, every other key
+the same; the surface is placed by the proper rotation (tip to `mount`,
++z to `axis`, +x to e₁) with the file's own frame from `stl_origin`,
+`stl_axis`, `stl_reference`; the standard tip given as the user's own
+STL (`scale = 1e-3`) is placed to round-off as the standard one, and a
+file with one triangle turned over is reported (SPR010, not repaired);
+`devices.vtu` holds the triangles of the tip, the 8 hole axes and the one
+cone, and `series.json` lists it.
+
+**Not yet.** The device is a picture, not a wall (D344); MurmelCraft's
+time player does not yet draw `static.devices` (ID2m).
+
+Files: `spray/devices.vtu`, `series.json` (`static`), `result.json`
+(`spray.devices`).
+[Recipe 343](../recipes/sprays.md#spray-device-surface),
 [case row](../cases/flow.md#lagrangian-sprays).
 <a id="spray-g-grid"></a>
 ## 338. Grid orientation in ECN Spray G

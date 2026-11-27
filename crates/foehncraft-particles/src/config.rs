@@ -1348,6 +1348,11 @@ impl SpraySection {
                 *f = dir.join(&*f);
             }
         }
+        for d in &mut self.devices {
+            if let Some(f) = &mut d.file {
+                *f = dir.join(&*f);
+            }
+        }
     }
 
     /// The section of an injector file alone (the file of `include`:
@@ -1381,7 +1386,14 @@ impl SpraySection {
                     path.display()
                 );
             }
-            self.devices.extend(f.devices);
+            // the STL of a device lies next to the file that names it (D343)
+            let fdir = path.parent().unwrap_or(Path::new("")).to_path_buf();
+            self.devices.extend(f.devices.into_iter().map(|mut d| {
+                if let Some(p) = &mut d.file {
+                    *p = fdir.join(&*p);
+                }
+                d
+            }));
             if f.liquid.is_some() && self.liquid != Liquid::default() {
                 bail!(
                     "[spray.liquid] is defined in the case and in {} (a key defined twice is an error, D114)",
@@ -1423,6 +1435,36 @@ impl SpraySection {
                 bail!("[[spray.device]] {}: the name is used twice", d.name);
             }
             placed.insert(d.name.clone(), (d.frame()?, d.placed_holes()?));
+            match (d.geometry, &d.file) {
+                (crate::device::Geometry::Stl, None) => {
+                    bail!("[[spray.device]] {}: geometry = \"stl\" needs file", d.name)
+                }
+                (crate::device::Geometry::Stl, Some(p)) if !p.is_file() => {
+                    bail!(
+                        "[[spray.device]] {}: file {} not found",
+                        d.name,
+                        p.display()
+                    )
+                }
+                (g, Some(_)) if g != crate::device::Geometry::Stl => {
+                    bail!("[[spray.device]] {}: file needs geometry = \"stl\"", d.name)
+                }
+                _ => {}
+            }
+            if !(d.scale.is_finite() && d.scale > 0.0) {
+                bail!(
+                    "[[spray.device]] {}: scale must be positive and finite",
+                    d.name
+                );
+            }
+            if let Some(g) = d.glyph_length
+                && !(g.is_finite() && g > 0.0)
+            {
+                bail!(
+                    "[[spray.device]] {}: glyph_length must be positive (m)",
+                    d.name
+                );
+            }
         }
         self.device_warnings.clear();
         let mut out = Vec::with_capacity(self.injectors.len());
@@ -1499,6 +1541,35 @@ impl SpraySection {
             }
         }
         self.injectors = out;
+        // the surface check of a user STL (D343 with D225): reported, not
+        // repaired; an open surface is fine for a picture (D344)
+        for d in &self.devices {
+            if d.geometry != crate::device::Geometry::Stl {
+                continue;
+            }
+            let t = d.surface()?;
+            let r = foehncraft_mesh::surface::check(&foehncraft_mesh::surface::Surface::new(&t));
+            let mut bad = Vec::new();
+            if r.flipped_edges > 0 {
+                bad.push(format!(
+                    "{} edges between triangles of opposite orientation",
+                    r.flipped_edges
+                ));
+            }
+            if r.n_degenerate > 0 {
+                bad.push(format!("{} degenerate triangles", r.n_degenerate));
+            }
+            if r.n_duplicates > 0 {
+                bad.push(format!("{} duplicate triangles", r.n_duplicates));
+            }
+            if !bad.is_empty() {
+                self.device_warnings.push(format!(
+                    "[[spray.device]] {}: the surface has {} (drawn as it is, not repaired)",
+                    d.name,
+                    bad.join(", ")
+                ));
+            }
+        }
         Ok(())
     }
 

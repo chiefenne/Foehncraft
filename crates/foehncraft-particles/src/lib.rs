@@ -43,7 +43,7 @@ pub use config::{
 };
 pub use coupling::{CellSources, Delta, Record, StepBooks, limiter_factor};
 pub use datum::{Bound, Datum, DatumTally, HistSpec, Moments, Shape, Stats, Surface, Volume};
-pub use device::{Device, Frame, Hole, Pattern, PlacedHole};
+pub use device::{Device, Frame, Geometry, Hole, Pattern, PlacedHole};
 pub use equilibrium::{
     SurfacePoint, SurfaceTable, TableEnd, fit_mathias_copeman, ideal_gas_species,
     siebers_liquid_length,

@@ -163,3 +163,82 @@ fn refusals() {
         .contains("leave them out")
     );
 }
+
+/// The Spray G device file gives the injector of the hand-written file to
+/// 1e-11 m and 1e-8 in the direction (D342), with the standard tip.
+#[test]
+fn spray_g_device_file_matches_the_hand_written_one() {
+    let a = SpraySection::from_file(&cases().join("spray_g_device_injectors.toml")).unwrap();
+    let b = SpraySection::from_file(&cases().join("spray_g_g1_injectors.toml")).unwrap();
+    assert_eq!(a.injectors.len(), 1);
+    let (i, j) = (&a.injectors[0], &b.injectors[0]);
+    for k in 0..3 {
+        assert!((i.position[k] - j.position[k]).abs() < 1e-11);
+        assert!((i.direction[k] - j.direction[k]).abs() < 1e-8);
+    }
+    assert!(a.device_warnings.is_empty());
+    let mut ii = i.clone();
+    ii.position = j.position;
+    ii.direction = j.direction;
+    ii.device = None;
+    ii.hole = None;
+    ii.offset = None;
+    assert_eq!(&ii, j, "every other key the same");
+}
+
+/// D343: the standard gasoline tip given as the user's own STL (in mm,
+/// `scale = 1e-3`) is placed as the standard one and passes the surface
+/// check; the same file with one triangle turned over is reported. A file
+/// of one's own gives its holes (here 3).
+#[test]
+fn own_stl_is_placed_and_checked() {
+    let stl =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/injectors/standard-gasoline.stl");
+    let dev = |geom: &str| {
+        format!(
+            "[liquid]\nname = \"water\"\ndensity = 998.0\n\n[[device]]\nname = \"g\"\n\
+             mount = [0.01, 0.02, 0.03]\naxis = [0.0, -1.0, 0.0]\nreference = [1.0, 0.0, 0.0]\n{geom}\n"
+        )
+    };
+    let a = SpraySection::from_file(&write("std.toml", &dev("geometry = \"standard-gasoline\"")))
+        .unwrap();
+    let own = dev(&format!(
+        "geometry = \"stl\"\nfile = \"{}\"\nscale = 1e-3\n\n[[device.pattern]]\ncount = 3\npolar = 30.0\nradius = 1e-3",
+        stl.display()
+    ));
+    let b = SpraySection::from_file(&write("own.toml", &own)).unwrap();
+    assert!(b.device_warnings.is_empty(), "{:?}", b.device_warnings);
+    let (sa, sb) = (
+        a.devices[0].surface().unwrap(),
+        b.devices[0].surface().unwrap(),
+    );
+    assert_eq!(sa.len(), sb.len());
+    for (ta, tb) in sa.iter().zip(&sb) {
+        for k in 0..3 {
+            for c in 0..3 {
+                assert!((ta[k][c] - tb[k][c]).abs() < 1e-12);
+            }
+        }
+    }
+    // the standard tip has its 8 default holes, the own file its 3
+    assert_eq!(a.devices[0].placed_holes().unwrap().len(), 8);
+    assert_eq!(b.devices[0].placed_holes().unwrap().len(), 3);
+    // one triangle turned over: reported, not repaired
+    let mut bytes = std::fs::read(&stl).unwrap();
+    let t0 = 84 + 12; // first corner of the first triangle
+    let (p, q) = (
+        bytes[t0..t0 + 12].to_vec(),
+        bytes[t0 + 12..t0 + 24].to_vec(),
+    );
+    bytes[t0..t0 + 12].copy_from_slice(&q);
+    bytes[t0 + 12..t0 + 24].copy_from_slice(&p);
+    let bad = write("flipped.stl", "");
+    std::fs::write(&bad, bytes).unwrap();
+    let c = SpraySection::from_file(&write(
+        "own_bad.toml",
+        &own.replace(&stl.display().to_string(), &bad.display().to_string()),
+    ))
+    .unwrap();
+    assert_eq!(c.device_warnings.len(), 1, "{:?}", c.device_warnings);
+    assert!(c.device_warnings[0].contains("opposite orientation"));
+}
