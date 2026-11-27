@@ -54,7 +54,7 @@ def side_view(ax, run, title):
     quads, keep = plume_plane(xyz)
     y = vapour_field(d, f)[keep]
     pc = PolyCollection(quads, array=np.maximum(y, 1e-5), cmap=RAINBOW, norm=LogNorm(1e-3, 0.3),
-                        edgecolors="0.35", linewidths=0.15)
+                        edgecolors="0.6", linewidths=0.1)
     ax.add_collection(pc)
     ax.set_xlim(0.0, 45.0)
     ax.set_ylim(0.0, 36.0)
@@ -86,7 +86,7 @@ def main():
     ax1.set_ylabel("distance from the axis (mm)")
     ax2.set_ylabel("distance from the axis (mm)")
     fig.colorbar(pc, ax=[ax1, ax2], label="IC8H18 vapour mass fraction, plane of the plume", shrink=0.8,
-                 pad=0.01, aspect=40)
+                 pad=0.01, aspect=40, location="bottom")
 
     a = fig.add_subplot(gs[0, 1])
     m = np.array(LIQUID_LOW)

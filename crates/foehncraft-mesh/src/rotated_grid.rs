@@ -69,7 +69,12 @@ pub fn generate(
     let mut polys: Vec<Vec<u32>> = Vec::new();
     for i in -iu..iu {
         for j in -iv..iv {
-            let sq = [node(i, j), node(i + 1, j), node(i + 1, j + 1), node(i, j + 1)];
+            let sq = [
+                node(i, j),
+                node(i + 1, j),
+                node(i + 1, j + 1),
+                node(i, j + 1),
+            ];
             let cut = clip(&sq, x0, y0, x1, y1);
             if cut.len() < 3 || area(&cut) < 1e-9 * full {
                 continue;
@@ -147,12 +152,13 @@ pub fn generate(
         }
     }
     let mut cell_of_group: HashMap<usize, u32> = HashMap::new();
-    let mut cell2d = vec![0u32; np];
-    for c in 0..np {
-        let r = root(&mut group, c);
-        let k = cell_of_group.len() as u32;
-        cell2d[c] = *cell_of_group.entry(r).or_insert(k);
-    }
+    let cell2d: Vec<u32> = (0..np)
+        .map(|c| {
+            let r = root(&mut group, c);
+            let k = cell_of_group.len() as u32;
+            *cell_of_group.entry(r).or_insert(k)
+        })
+        .collect();
     let nc2 = cell_of_group.len();
 
     // the nodes of the layers and the 3D cells (layer-major)
@@ -224,7 +230,9 @@ pub fn generate(
                 ];
                 let i = (0..4).min_by(|&i, &j| d[i].total_cmp(&d[j])).unwrap();
                 if d[i] > 1e-6 * len {
-                    return Err(format!("rotated grid: an open edge inside the box at {m:?}"));
+                    return Err(format!(
+                        "rotated grid: an open edge inside the box at {m:?}"
+                    ));
                 }
                 ["xmin", "xmax", "ymin", "ymax"][i]
             }
@@ -246,7 +254,12 @@ pub fn generate(
 fn clip(p: &[[f64; 2]], x0: f64, y0: f64, x1: f64, y1: f64) -> Vec<[f64; 2]> {
     let mut out: Vec<[f64; 2]> = p.to_vec();
     // (axis, value, keep the side above)
-    for (d, c, above) in [(0usize, x0, true), (0, x1, false), (1, y0, true), (1, y1, false)] {
+    for (d, c, above) in [
+        (0usize, x0, true),
+        (0, x1, false),
+        (1, y0, true),
+        (1, y1, false),
+    ] {
         let inside = |v: &[f64; 2]| if above { v[d] >= c } else { v[d] <= c };
         let input = std::mem::take(&mut out);
         if input.is_empty() {
@@ -255,7 +268,11 @@ fn clip(p: &[[f64; 2]], x0: f64, y0: f64, x1: f64, y1: f64) -> Vec<[f64; 2]> {
         for k in 0..input.len() {
             let (s, e) = (input[(k + input.len() - 1) % input.len()], input[k]);
             let cross = |s: [f64; 2], e: [f64; 2]| {
-                let (lo, hi) = if (s[0], s[1]) <= (e[0], e[1]) { (s, e) } else { (e, s) };
+                let (lo, hi) = if (s[0], s[1]) <= (e[0], e[1]) {
+                    (s, e)
+                } else {
+                    (e, s)
+                };
                 let t = (c - lo[d]) / (hi[d] - lo[d]);
                 let mut r = [lo[0] + t * (hi[0] - lo[0]), lo[1] + t * (hi[1] - lo[1])];
                 r[d] = c;
@@ -306,7 +323,11 @@ mod tests {
             let min = g.cell_volume.iter().copied().fold(f64::INFINITY, f64::min);
             assert!(min > 0.2 * 0.01 * 0.1, "angle {angle}: smallest cell {min}");
             for name in ["xmin", "xmax", "ymin", "ymax", "zmin", "zmax"] {
-                assert!(m.boundaries.iter().any(|b| b.name == name && !b.range().is_empty()));
+                assert!(
+                    m.boundaries
+                        .iter()
+                        .any(|b| b.name == name && !b.range().is_empty())
+                );
             }
             // the whole cells are rotated squares of the spacing
             let n = m.n_cells as f64;
@@ -324,6 +345,10 @@ mod tests {
         let d = th.to_radians() / 4.0;
         let chord = 4.0 * 0.5 * d.sin() * (1.0 - 0.01) * 2.0;
         let exact = chord;
-        assert!((total_volume(&m) - chord).abs() < 1e-3 * exact, "{} vs {chord}", total_volume(&m));
+        assert!(
+            (total_volume(&m) - chord).abs() < 1e-3 * exact,
+            "{} vs {chord}",
+            total_volume(&m)
+        );
     }
 }

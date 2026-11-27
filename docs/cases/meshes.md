@@ -50,6 +50,7 @@ Every key is optional; a case needs either `mesh.file` or a
 | `mesh.generate.refine` | 0 | halve every interval this many times (nested meshes for grid-convergence tests) |
 | `mesh.generate.perturb` | 0 | random node displacement as a fraction of the local interval, 0 to 0.3; boundary nodes stay on their faces |
 | `mesh.generate.wedge` | none | revolve the 2D mesh (`dimension = 2`, `lower[1] ≥ 0`) into an axisymmetric wedge of this angle (degrees, up to 90) about the x axis; `zmin` and `zmax` become the wedge planes, `ymin` disappears on the axis |
+| `mesh.generate.grid_angle` | none | turn the cell lines of a hex box by this angle (degrees) in the x–y plane (D337): uniform cells of the spacings `(upper − lower)/cells` along and across the turned direction, cut by the box sides (cut pieces under 0.3 of a cell join a neighbour, so two cells can share more than one face); with `wedge` the turned grid is revolved into the sector. Hex only, without grading, segments, refine, perturb, split, remove or zones; for the grid orientation test of a jet ([gallery 338](../gallery/sprays.md#spray-g-grid)) |
 | `mesh.generate.remove` | none | boxes cut out of the hex, tet or mixed mesh, `[{ lower = [...], upper = [...], name = "step" }]`: the cells inside are removed and the exposed faces form the boundary `name` (z ignored in 2D; a backward-facing step, gallery 74); not with `poly` |
 | `mesh.generate.seed` | 2026 | seed of the perturbation (counter-based, the same on every machine) |
 | `partition.parts` | 1 | number of parts (1: no decomposition) |

@@ -51,8 +51,8 @@ pub mod quality;
 pub mod query;
 pub mod renumber;
 pub mod revolved;
-pub mod surface;
 pub mod rotated_grid;
+pub mod surface;
 pub mod wedge;
 
 pub use format::gmsh;
