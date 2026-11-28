@@ -114,6 +114,21 @@ end_time = 1.2e-3
 [output]
 fields_interval = 5e-5
 
+# 2 µs from 0.9 ms on: the injection ends at 0.787 ms, and with no new
+# blobs at the nozzle the coupling passes settle at the larger step
+# (checked from the restart below against a run at 1 µs throughout: the
+# same penetrations at 1.0, 1.1 and 1.2 ms, the liquid mass within
+# 0.2 %); published runs vary the step the same way (Bestel et al., Fuel
+# 2024: variable step of at most 0.5 µs during the injection)
+# a numbered restart file at the step-up (D66): a check of
+# the late part starts there instead of from the beginning
+[run]
+restart_times = [9e-4]
+
+[[schedule]]
+at_time = 9e-4
+set = { time.time_step = 2e-6 }
+
 [spray]
 include = "spray_g_g1_injectors.toml"
 wall_mode = "stick"
