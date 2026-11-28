@@ -29,6 +29,31 @@
 //! (and the same with 1 and 2 swapped). Mass, momentum and liquid enthalpy
 //! (constant c_p) are kept exactly; coalescence lowers the kinetic energy.
 //!
+//! Outcomes of Post and Abraham (2002, *Modeling the outcome of drop-drop
+//! collisions in Diesel sprays*, Int. J. Multiphase Flow 28, 997-1019;
+//! D349), with `post`: with Δ = r_s/r_l ≤ 1, B = b/(r_s + r_l) and the
+//! Weber number of the small diameter We_d = 2 We,
+//!
+//! 1. bouncing (Estrade et al. 1999, Int. J. Heat Fluid Flow 20) when
+//!    We_d < Δ (1 + Δ²)(4φ′ − 12)/(χ (1 − B²)), φ′ = 3.351, τ = (1 − B)(1 + Δ),
+//!    χ = 1 − (2 − τ)²(1 + τ)/4 for τ > 1, χ = τ²(3 − τ)/4 otherwise;
+//! 2. else, below O'Rourke's b_cr, reflexive separation (Ashgriz and Poo
+//!    1990, J. Fluid Mech. 221) when
+//!    We_d > 3 [7 (1 + Δ³)^{2/3} − 4 (1 + Δ²)] Δ (1 + Δ³)²/(Δ⁶ η₁ + η₂),
+//!    η₁ = 2 (1 − ξ)² √(1 − ξ²) − 1, η₂ = 2 (Δ − ξ)² √(Δ² − ξ²) − Δ³,
+//!    ξ = B (1 + Δ)/2 (the root taken as 0 where ξ > Δ), and coalescence
+//!    otherwise;
+//! 3. else stretching separation as O'Rourke's grazing.
+//!
+//! The criteria and the order are restated in Sommerfeld and Kuschel
+//! (2016, Exp. Fluids 57:187, eqs. 16-20) and Magnotti (2017, thesis,
+//! OSTI 1785739, eqs. 2.23-2.26). The velocities after a bounce and a
+//! reflexive separation are ours (the paper was not open to us): the drops
+//! keep their sizes and take the grazing velocities with the share s = B,
+//! as the grazing of `coalescence = false` (a head-on one leaves both with
+//! the common velocity, mass and momentum kept, energy lost).
+//! No satellite drops form.
+//!
 //! The random numbers are keyed by the smallest parcel identity of the
 //! cell, the time at the end of the step and the candidate (stream
 //! `SPRAY_COLLISION`, D121); the parcels of a cell are taken in the order of
@@ -57,6 +82,10 @@ pub struct CollisionTally {
     pub merged_parcels: u64,
     /// Cells whose candidate count was capped.
     pub capped_cells: u64,
+    /// Of the events, bounces (Post outcomes, D349).
+    pub bounces: u64,
+    /// Of the events, reflexive separations (Post outcomes, D349).
+    pub reflexive: u64,
 }
 
 /// The liquid and step data the collisions need.
@@ -72,6 +101,8 @@ pub struct CollisionInput {
     pub t1: f64,
     /// Coalescence on (otherwise every collision is a grazing separation).
     pub coalescence: bool,
+    /// The outcomes of Post and Abraham (D349) in place of O'Rourke's.
+    pub post: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -91,6 +122,43 @@ pub fn critical_impact(we: f64, gamma: f64) -> f64 {
         1.0
     } else {
         (2.4 * f / we).min(1.0)
+    }
+}
+
+/// The Weber number of the small diameter below which two drops bounce
+/// (Estrade et al. 1999), size ratio `delta` = r_s/r_l ≤ 1, impact
+/// parameter `b` = b/(r_s + r_l) in [0, 1].
+pub fn bounce_weber(delta: f64, b: f64) -> f64 {
+    const PHI: f64 = 3.351;
+    let tau = (1.0 - b) * (1.0 + delta);
+    let chi = if tau > 1.0 {
+        1.0 - 0.25 * (2.0 - tau).powi(2) * (1.0 + tau)
+    } else {
+        0.25 * tau * tau * (3.0 - tau)
+    };
+    let den = chi * (1.0 - b * b);
+    if den <= 0.0 {
+        return 0.0;
+    }
+    delta * (1.0 + delta * delta) * (4.0 * PHI - 12.0) / den
+}
+
+/// The Weber number of the small diameter above which two drops separate
+/// reflexively (Ashgriz and Poo 1990); arguments as [`bounce_weber`].
+/// Infinite where the formula has no positive value (no reflexive
+/// separation).
+pub fn reflexive_weber(delta: f64, b: f64) -> f64 {
+    let xi = 0.5 * b * (1.0 + delta);
+    let eta1 = 2.0 * (1.0 - xi).powi(2) * (1.0 - xi * xi).max(0.0).sqrt() - 1.0;
+    let eta2 =
+        2.0 * (delta - xi).powi(2) * (delta * delta - xi * xi).max(0.0).sqrt() - delta.powi(3);
+    let d3 = 1.0 + delta.powi(3);
+    let num = 3.0 * (7.0 * d3.powf(2.0 / 3.0) - 4.0 * (1.0 + delta * delta)) * delta * d3 * d3;
+    let den = delta.powi(6) * eta1 + eta2;
+    if den > 0.0 && num > 0.0 {
+        num / den
+    } else {
+        f64::INFINITY
     }
 }
 
@@ -148,6 +216,8 @@ pub fn collide(
         tally.drop_collisions += t.drop_collisions;
         tally.merged_parcels += t.merged_parcels;
         tally.capped_cells += t.capped_cells;
+        tally.bounces += t.bounces;
+        tally.reflexive += t.reflexive;
         for d in drops {
             let i = d.i;
             if d.q <= 0.0 {
@@ -244,7 +314,21 @@ fn cell(drops: &mut [Drop], vol: f64, key: u64, inp: CollisionInput) -> Collisio
         let mb = cb.r * cb.r * cb.r;
         t.events += 1;
         t.drop_collisions += qa;
-        if inp.coalescence && xi < bcr2 {
+        // Post and Abraham (D349): bouncing first, reflexive separation of
+        // the collisions that O'Rourke would merge
+        let mut bounce_or_reflex = false;
+        if inp.post {
+            let (delta, bb) = (r_s / r_l, xi.sqrt());
+            let we_d = 2.0 * we;
+            if we_d < bounce_weber(delta, bb) {
+                t.bounces += 1;
+                bounce_or_reflex = true;
+            } else if xi < bcr2 && we_d > reflexive_weber(delta, bb) {
+                t.reflexive += 1;
+                bounce_or_reflex = true;
+            }
+        }
+        if inp.coalescence && xi < bcr2 && !bounce_or_reflex {
             t.coalescences += 1;
             let mt = ma + mb;
             let v: [f64; 3] = std::array::from_fn(|k| (ma * ca.v[k] + mb * cb.v[k]) / mt);
@@ -264,7 +348,9 @@ fn cell(drops: &mut [Drop], vol: f64, key: u64, inp: CollisionInput) -> Collisio
             // toward the common one by the share 1 − s
             let b = xi.sqrt();
             let bc = bcr2.sqrt();
-            let s = if inp.coalescence && bc < 1.0 {
+            let s = if bounce_or_reflex {
+                b
+            } else if inp.coalescence && bc < 1.0 {
                 ((b - bc) / (1.0 - bc)).clamp(0.0, 1.0)
             } else {
                 b
@@ -332,6 +418,7 @@ mod tests {
             dt: 1e-5,
             t1,
             coalescence,
+            post: false,
         }
     }
 
@@ -455,6 +542,76 @@ mod tests {
     fn critical_impact_parameter() {
         assert_eq!(critical_impact(0.1, 1.0), 1.0);
         assert!((critical_impact(31.2, 1.0) - 0.1).abs() < 1e-12);
+    }
+
+    /// The Post criteria (D349) at known points: equal drops head-on bounce
+    /// below We_d = 2 (4φ′ − 12) = 2.808 (τ = 2, χ = 1) and separate
+    /// reflexively above 6 (7 · 2^{2/3} − 8) = 18.68 (η₁ = η₂ = 1), the
+    /// value of Ashgriz and Poo for water; the bounce limit rises towards
+    /// grazing impacts; at large impact parameters there is no reflexive
+    /// separation.
+    #[test]
+    fn post_criteria() {
+        assert!((bounce_weber(1.0, 0.0) - 2.808).abs() < 1e-9);
+        let r = 6.0 * (7.0 * 2f64.powf(2.0 / 3.0) - 8.0);
+        assert!(
+            (reflexive_weber(1.0, 0.0) - r).abs() < 1e-9 * r,
+            "{}",
+            reflexive_weber(1.0, 0.0)
+        );
+        assert!((18.6..18.8).contains(&r));
+        assert!(bounce_weber(1.0, 0.8) > bounce_weber(1.0, 0.3));
+        assert!(bounce_weber(1.0, 0.3) > bounce_weber(1.0, 0.0));
+        assert_eq!(reflexive_weber(1.0, 0.9), f64::INFINITY);
+        assert!(reflexive_weber(0.5, 0.0).is_finite());
+    }
+
+    /// With the Post outcomes slow drops bounce instead of merging (O'Rourke
+    /// merges every collision at We → 0), and mass, momentum and enthalpy
+    /// still stay; fast head-on drops of the same set separate reflexively
+    /// or graze, never all merge.
+    #[test]
+    fn post_outcomes_bounce_slow_drops() {
+        for (speed, want_bounce) in [(0.05, true), (40.0, false)] {
+            let list: Vec<_> = (0..30u64)
+                .map(|i| {
+                    let a = i as f64;
+                    let sign = if i % 2 == 0 { 1.0 } else { -1.0 };
+                    (
+                        i,
+                        10e-6,
+                        50.0,
+                        [sign * speed * (1.0 + 0.1 * (a * 0.7).sin()), 0.0, 0.0],
+                    )
+                })
+                .collect();
+            let mut p = parcels(&list);
+            let before = totals(&p);
+            let mut tally = CollisionTally::default();
+            for s in 0..200 {
+                let mut inp = input(s as f64, true);
+                inp.post = true;
+                let t = collide(&mut p, &[1e-12], &|_| false, inp);
+                tally.events += t.events;
+                tally.coalescences += t.coalescences;
+                tally.bounces += t.bounces;
+                tally.reflexive += t.reflexive;
+            }
+            let after = totals(&p);
+            assert!(tally.events > 10, "{tally:?}");
+            if want_bounce {
+                assert_eq!(tally.bounces, tally.events, "{tally:?}");
+                assert_eq!(tally.coalescences, 0);
+            } else {
+                assert!(tally.reflexive > 0, "{tally:?}");
+                assert!(tally.coalescences < tally.events, "{tally:?}");
+            }
+            let rel = |a: f64, b: f64| (a - b).abs() / b.abs().max(1e-300);
+            assert!(rel(after.0, before.0) < 1e-12);
+            assert!(rel(after.2, before.2) < 1e-12);
+            let scale = before.1.iter().map(|x| x.abs()).fold(0.0, f64::max) + before.0 * speed;
+            assert!((after.1[0] - before.1[0]).abs() < 1e-12 * scale);
+        }
     }
 }
 

@@ -958,6 +958,22 @@ pub enum CollisionModel {
     Ntc,
 }
 
+/// What a collision of two drops gives (D349).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+pub enum CollisionOutcomes {
+    /// O'Rourke (1981): coalescence below the critical impact parameter,
+    /// grazing separation above it (default).
+    #[default]
+    #[serde(rename = "orourke")]
+    ORourke,
+    /// Post and Abraham (2002, Int. J. Multiphase Flow 28): bouncing below
+    /// the Weber number of Estrade et al. (1999), reflexive separation of
+    /// near head-on collisions above that of Ashgriz and Poo (1990),
+    /// otherwise O'Rourke.
+    #[serde(rename = "post")]
+    Post,
+}
+
 /// `[spray.collision]` (D331): collisions of the drops of two parcels in
 /// the same cell, at the end of every time step. Mass, momentum and
 /// enthalpy of the liquid are kept exactly; the injected blobs of the
@@ -971,6 +987,9 @@ pub struct Collision {
     /// impact parameter merge; `false` makes every collision a grazing
     /// separation (a check of the sampling).
     pub coalescence: bool,
+    /// The outcomes (D349): `orourke` (default) or `post` (with bouncing
+    /// and reflexive separation).
+    pub outcomes: CollisionOutcomes,
 }
 
 impl Default for Collision {
@@ -978,6 +997,7 @@ impl Default for Collision {
         Self {
             model: CollisionModel::None,
             coalescence: true,
+            outcomes: CollisionOutcomes::ORourke,
         }
     }
 }
