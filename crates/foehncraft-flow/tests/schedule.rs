@@ -611,7 +611,8 @@ fn spray_g_takes_a_scheduled_time_step() {
     let text = std::fs::read_to_string(dir.join("spray_g_g1.toml"))
         .unwrap()
         .replace("\r\n", "\n");
-    let text = format!("{text}\n[[schedule]]\nat_time = 1.0e-3\nset = {{ time.time_step = 2.0e-6 }}\n");
+    let text =
+        format!("{text}\n[[schedule]]\nat_time = 1.0e-3\nset = {{ time.time_step = 2.0e-6 }}\n");
     let c = FlowCase::from_toml(&text, &dir).unwrap();
     assert!(!c.boundary_energy.is_empty());
     let want = subtables(&c);
