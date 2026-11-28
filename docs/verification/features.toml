@@ -2773,9 +2773,9 @@ gaps = [
 [[feature]]
 id = "multiphase.vof-phase-change"
 area = "Multiphase"
-title = "Energy and phase change in the volume of fluid: mixture energy, interface cells held at T_sat, volume source in the continuity (L3, MP2, SF14, D349)"
+title = "Energy and phase change in the volume of fluid: mixture energy, interface cells held at T_sat, volume source in the continuity (L3, MP2, SF14, D351)"
 switch = "[energy] with specific_heat and conductivity per [[vof.phase]], [vof.phase_change]"
-decisions = ["D293", "D349"]
+decisions = ["D293", "D351"]
 model = true
 evidence = [
   { kind = "exact", test = "crates/foehncraft-flow/tests/vof.rs::phase_change_stefan", what = "the Stefan problem (water at 1 atm, wall 10 K above T_sat, density ratio 1604): the vapour layer within 2 % of 2 lambda sqrt(alpha_v t) (about 1 % after the start); liquid volume account to 1e-6, outflow against the volume made to 1e-9" },
@@ -2793,7 +2793,7 @@ gaps = [
   "heat.csv does not close in a phase-change case: its boundary enthalpy and storage use the h_s of the [fluid] material (D194), not the two phases; the volume and mass accounts (vof.csv, the check of the run) close",
   "T_sat is fixed: no Clausius-Clapeyron shift with the pressure or the curvature, no interface resistance (Schrage); the sensible heat difference (c_p,l - c_p,v) Delta T of Scriven's original is left out",
   "film boiling is one 2D run on one mesh (Delta x = lambda_d/80); no mesh study",
-  "with a phase change the pressure force of a cell heavier than its face is not amplified by rho_P/rho_f (D349 (5)); without one the rows of MP1 are unchanged",
+  "with a phase change the pressure force of a cell heavier than its face is not amplified by rho_P/rho_f (D351 (5)); without one the rows of MP1 are unchanged",
 ]
 
 [[feature]]

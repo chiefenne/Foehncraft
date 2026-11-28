@@ -376,7 +376,7 @@ temperatures of their own (D271, PM2). The keys are on the [key page](flow-keys.
 
 ## Two fluids (volume of fluid)
 
-`[vof]` with two `[[vof.phase]]` tables (L3, stage MP1, D293): two immiscible fluids with a sharp interface, α of phase 1 advected by THINC, CICSAM or upwind, gravity and surface tension as balanced face forces. Transient and laminar only. With `[energy]` and `[vof.phase_change]` (stage MP2, D349) the liquid evaporates or the vapour condenses at the interface. The keys are on the [key page](flow-keys.md), and the run writes `vof.csv` (with the evaporated mass, the rate and the interface cells under a phase change).
+`[vof]` with two `[[vof.phase]]` tables (L3, stage MP1, D293): two immiscible fluids with a sharp interface, α of phase 1 advected by THINC, CICSAM or upwind, gravity and surface tension as balanced face forces. Transient and laminar only. With `[energy]` and `[vof.phase_change]` (stage MP2, D351) the liquid evaporates or the vapour condenses at the interface. The keys are on the [key page](flow-keys.md), and the run writes `vof.csv` (with the evaporated mass, the rate and the interface cells under a phase change).
 
 | Case file | Mesh | Shows | Where |
 |---|---|---|---|

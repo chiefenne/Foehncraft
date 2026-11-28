@@ -55,7 +55,7 @@ Three problems with exact solutions check the evaporation of water at 1 atm, whe
 - **The sucking problem** (`vof_sucking.toml`): the layer is at T_sat and the water 2 K superheated gives its heat to the interface, δ = 2β√(α_l t). The water carries its thermal layer, only 40 to 90 μm thick, towards the interface: the test of the energy convection across it.
 - **Scriven's bubble** (`vof_scriven.toml`): a bubble grows in water 1.25 K superheated, R = 2β√(α_l t). The mesh is a 2° sector of the sphere with 1 μm cells, whose side planes pass through the centre.
 
-How the phase change works: the interface cells are held at T_sat by an implicit sink, and the heat the sink takes, over the latent heat, is the rate. The vapour volume goes into the vapour cells beside the interface and the liquid sink into the liquid ones, so the continuity makes room for the vapour (D349).
+How the phase change works: the interface cells are held at T_sat by an implicit sink, and the heat the sink takes, over the latent heat, is the rate. The vapour volume goes into the vapour cells beside the interface and the liquid sink into the liquid ones, so the continuity makes room for the vapour (D351).
 
 What the runs give:
 - **Stefan:** within 1.1 % of the exact layer after the start; the liquid volume closes with the outflow and the evaporated mass to 10⁻⁶.

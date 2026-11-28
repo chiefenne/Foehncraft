@@ -2053,7 +2053,7 @@
   },
   {
    "id": "multiphase.vof-phase-change",
-   "title": "Energy and phase change in the volume of fluid: mixture energy, interface cells held at T_sat, volume source in the continuity (L3, MP2, SF14, D349)",
+   "title": "Energy and phase change in the volume of fluid: mixture energy, interface cells held at T_sat, volume source in the continuity (L3, MP2, SF14, D351)",
    "grade": "partial",
    "why": [
     "a model without reference data",
@@ -2066,7 +2066,7 @@
     "heat.csv does not close in a phase-change case: its boundary enthalpy and storage use the h_s of the [fluid] material (D194), not the two phases; the volume and mass accounts (vof.csv, the check of the run) close",
     "T_sat is fixed: no Clausius-Clapeyron shift with the pressure or the curvature, no interface resistance (Schrage); the sensible heat difference (c_p,l - c_p,v) Delta T of Scriven's original is left out",
     "film boiling is one 2D run on one mesh (Delta x = lambda_d/80); no mesh study",
-    "with a phase change the pressure force of a cell heavier than its face is not amplified by rho_P/rho_f (D349 (5)); without one the rows of MP1 are unchanged"
+    "with a phase change the pressure force of a cell heavier than its face is not amplified by rho_P/rho_f (D351 (5)); without one the rows of MP1 are unchanged"
    ],
    "range": {}
   },
