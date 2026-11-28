@@ -342,6 +342,6 @@ type = "wall"                   # no `velocity`: omega gives it
 
 The boundary summary of every wall of the body (`result.json`, the log) then has its `torque` about the axis; give `omega = 0` for the torque of a body at rest. The body itself does not move: this is exact for a body of revolution about its axis (a shaft, a disc, a cylinder) and for a body at rest. A wall `velocity` of your own and `omega` on the same body are refused (IMM101).
 
-**Keep the fluid inside.** `invert = true` turns a cylinder, sphere or box inside out: the fluid inside, the solid outside. A pipe or the outer wall of a gap then needs no fitted mesh. Boundaries of the mesh that lie wholly in the solid are left out and need no condition.
+**Keep the fluid inside.** `invert = true` turns a cylinder, sphere or box inside out: the fluid inside, the solid outside. A pipe or the outer wall of a gap then needs no fitted mesh. Boundaries of the mesh that lie wholly in the solid are left out and need no condition (a condition the case gives them anyway is kept, on an empty boundary).
 
 **Limits.** A wall face of a cut cell is not split along a patch edge: patch edges are resolved to the cell size. Solid regions (recipe 359) cannot turn or have patches. One rank only.

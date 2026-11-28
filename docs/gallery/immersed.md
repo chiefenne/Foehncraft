@@ -881,7 +881,8 @@ condition of D29. L13 stage 2e gives it three things:
 - **Inverted bodies.** `invert = true` keeps the fluid inside a cylinder,
   sphere or box and cuts away the rest: a pipe or the outer cylinder of a
   gap in a box mesh. Mesh boundaries that end up inside the solid are left
-  out (they need no condition).
+  out (they need no condition; one the case gives a condition stays,
+  empty).
 
 **A cylinder that blows through a slot** (`immersed_cut_blown_cylinder.toml`,
 top): the Schäfer–Turek channel of [gallery 313](#cut-cylinder) (Re 20, the
