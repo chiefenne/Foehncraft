@@ -1,0 +1,85 @@
+# Flow around a cylinder at Re = 20 on a box mesh refined near the
+# cylinder: the benchmark 2D-1 of Schäfer & Turek (1996) with the cut
+# cylinder of immersed_cut_cylinder_re20.toml (L13 stage 2f, D57).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/immersed_refine_cylinder_re20.toml
+#
+# The plain box mesh of 220 x 41 hexahedra (h = D/10) with
+# `[immersed.refine] levels = 2, distance = 0.08`: the cells within 0.08 m
+# (0.8 D) of the cylinder are halved twice (h = D/40), those within 0.16 m
+# once (D/20), 2:1 balanced; the faces between levels have hanging nodes.
+# Then the cylinder is cut out of the refined mesh. 20 372 cells before
+# the cut, a seventh of the uniform D/40 mesh of gallery 313 (143 088).
+#
+# C_D 5.593, C_L 0.01063, Δp 0.1171 Pa (uniform D/40: 5.595, 0.0106,
+# 0.1171; uniform D/10: 5.554, 0.0078, 0.1140), SIMPLEC, 1 334 iterations.
+# The run fails if any value lies further from its range than 5 % of the
+# range midpoint. Result: see gallery entry "refine".
+
+case_format = "0.7"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [2.2, 0.41, 0.01]
+cells = [220, 41, 1]
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 1e-3
+pressure_values = "gauge"
+
+[flow]
+convection = true
+
+[immersed]
+method = "cut"
+
+[immersed.cut]
+min_volume_fraction = 0.3
+
+[immersed.refine]
+levels = 2
+distance = 0.08
+
+[[immersed.body]]
+name = "cylinder"
+shape = "cylinder"
+centre = [0.2, 0.2, 0.0]
+radius = 0.05
+
+[boundary.xmin]
+type = "velocity-inlet"
+profile = "parabolic"
+max_velocity = 0.3
+profile_axes = ["y"]
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymin]
+type = "wall"
+[boundary.ymax]
+type = "wall"
+[boundary.cylinder]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+max_iterations = 3000
+tolerance = 1e-8
+log_every = 200
+
+[verification]
+benchmark = "schafer-turek-2d1"
+benchmark_tolerance = 0.05
+require_convergence = true
+
+[output]
+derived = ["vorticity"]
+wall_csv = false

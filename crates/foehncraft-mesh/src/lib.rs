@@ -49,6 +49,7 @@ pub mod partition;
 pub mod periodic;
 pub mod quality;
 pub mod query;
+pub mod refine;
 pub mod renumber;
 pub mod revolved;
 pub mod rotated_grid;

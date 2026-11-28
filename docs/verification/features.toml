@@ -2504,6 +2504,29 @@ gaps = [
 ]
 
 [[feature]]
+id = "immersed.refine"
+area = "Immersed bodies"
+title = "Near-body refinement of hexahedra with hanging-node faces (L13 stage 2f)"
+switch = "[immersed.refine] levels, layers | distance"
+decisions = ["D57", "D93", "D229"]
+model = true
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-mesh/tests/refine.rs::a_band_around_a_sphere_keeps_volume_and_area", what = "a band around a sphere refined twice in an 8^3 box mesh: every cell closed (validate, closure below 1e-13), no inverted face or negative volume, the cells of each input cell fill it to 1e-13, the boundary faces of every boundary add up to its area vector to 1e-12, 2:1 across faces and around every node, the same nodes and faces on a second run" },
+  { kind = "exact", test = "crates/foehncraft-mesh/tests/refine.rs::perturbed_hexahedra_are_refined_into_closed_cells", what = "the same checks on warped hexahedra (nodes moved by up to 20 %), three levels: the parts fill each input cell to 1e-12 (measured 2e-15)" },
+  { kind = "exact", test = "crates/foehncraft-mesh/tests/refine.rs::a_planar_mesh_is_refined_in_its_plane", what = "a planar mesh refined three times in its plane: every node on the two z planes, every cell with one face on each" },
+  { kind = "exact", test = "crates/foehncraft-mesh/tests/refine.rs::one_point_refined_three_times_is_balanced", what = "a point next to an input face refined three times: the 2:1 balance refines 20 more cells, across the face too" },
+  { kind = "exact", case = "immersed_refine_mms", test = "crates/foehncraft-flow/tests/immersed.rs::refined_mms_converges_at_second_order", what = "heat conduction with a manufactured solution on perturbed hexahedra refined twice near a circle (faces between levels on both sides): L2 error 5.54e-2, 1.46e-2, 3.76e-3 K on 16, 32, 64 input cells across, order 2.04 and 1.99 from the cell counts (1.93, 1.95 from the input width); test band 1.85 to 2.3; the same mesh hash on a second run", doc = "docs/gallery/immersed.md#refine" },
+  { kind = "reference-data", case = "immersed_refine_cylinder_re20", test = "crates/foehncraft-flow/tests/immersed.rs::refined_cylinder_reaches_the_reference", what = "the Schaefer-Turek cylinder at Re 20 on the D/10 box mesh refined to D/40 within 0.08 m of the cylinder (19 140 cells): C_D 5.593, C_L 0.01063, dp 0.1171 Pa (uniform D/40 cut, 143 088 cells: 5.595, 0.0106, 0.1171); test: C_L in its range, C_D and dp within 0.2 % of theirs", doc = "docs/gallery/immersed.md#refine" },
+  { kind = "contract", property = "diagnostics", test = "crates/foehncraft-flow/tests/immersed.rs::refine_settings_are_refused", what = "IMM101 for levels outside 1 to 6, a negative distance, layers below 1, layers and distance together; the mesh operation refuses a 3D mesh with a direction to keep (other_cells_are_kept_and_bad_settings_refused)" },
+]
+gaps = [
+  "only hexahedra are refined; tetrahedra, prisms, pyramids and polyhedra are kept whole (and may then meet cells two levels finer)",
+  "static: marked by the distance to the bodies only, before the run; no coarsening, no solution-driven marking, no repartitioning (L14 on this kernel)",
+  "the lift of the cylinder needs a fine band of about 0.8 D; with 0.2 D it is 5 % below the reference range",
+  "one rank only, like the cut; the GPU path is not checked on refined meshes",
+]
+
+[[feature]]
 id = "immersed.stl"
 area = "Immersed bodies"
 title = "STL bodies, cut out of the mesh or penalised, with sharp edges and face points (L13 stage 2)"

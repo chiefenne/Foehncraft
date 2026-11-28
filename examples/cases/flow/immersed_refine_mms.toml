@@ -1,0 +1,109 @@
+# Heat conduction across hanging-node faces: a manufactured solution on a
+# box mesh refined near a cut body (L13 stage 2f, D57).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/immersed_refine_mms.toml
+#
+# The unit square in 16 × 16 perturbed hexahedra (every node moved by up
+# to 15 % of a cell, so the cells are not parallelograms). A cylinder of
+# radius 0.28 about (0.45, 0.55) is cut out of the mesh and kept as a solid region of the same
+# material as the fluid (k = 1 W/(m K)): the cut leaves the field alone,
+# the body only steers the refinement. `[immersed.refine]` halves the cells
+# near its surface twice, 2:1 balanced (`distance = 0.0625`: the cells
+# within 0.0625 m of the surface reach a quarter of the width, those within
+# 0.125 m half of it), with faces between levels (a coarse face meets two
+# fine faces) on both sides of the surface. The exact
+# T = T0 + A sin(πx) sin(πy) and its source 2π² A sin(πx) sin(πy) are
+# smooth through the levels, the interface and the cut. The run reports
+# the L2 error and, over three levels (16, 32, 64 cells across, the same
+# refined region in metres on each), its order: 2.04 and 1.99 from the
+# cell counts (1.93 and 1.95 from the width of the input cells); L2 error
+# 5.54e-2, 1.46e-2, 3.76e-3 K (without the refinement 1.08e-1, 2.41e-2,
+# 5.86e-3 K).
+#
+# Result: see gallery entry "refine".
+
+case_format = "0.7"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [1.0, 1.0, 0.05]
+cells = [16, 16, 1]
+perturb = 0.15
+
+[mesh]
+renumber = "rcm"
+
+[constants]
+T0 = 300.0
+A = 50.0
+
+[fluid]
+density = 1.0
+viscosity = 1.0
+specific_heat = 1000.0
+conductivity = 1.0
+
+[materials.same]
+kind = "solid"
+density = 1.0
+specific_heat = 1000.0
+conductivity = 1.0
+
+[immersed]
+method = "cut"
+
+[[immersed.body]]
+name = "core"
+shape = "cylinder"
+centre = [0.45, 0.55, 0.0]
+radius = 0.28
+
+[immersed.refine]
+levels = 2
+distance = 0.0625
+
+[regions.core]
+kind = "solid"
+zones = ["core"]
+material = "same"
+
+[energy]
+initial = 300.0
+source = "2 * pi^2 * A * sin(pi * x) * sin(pi * y)"
+exact = "T0 + A * sin(pi * x) * sin(pi * y)"
+
+[boundary.xmin]
+type = "wall"
+[boundary.xmin.energy]
+temperature = 300.0
+[boundary.xmax]
+type = "wall"
+[boundary.xmax.energy]
+temperature = 300.0
+[boundary.ymin]
+type = "wall"
+[boundary.ymin.energy]
+temperature = 300.0
+[boundary.ymax]
+type = "wall"
+[boundary.ymax.energy]
+temperature = 300.0
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-9
+max_iterations = 400
+
+[solver.energy]
+relaxation = 1.0
+tolerance = 1e-12
+max_iter = 1000
+
+[verification]
+levels = [0, 1, 2]
+scalar_order = [1.8, 2.2]
+require_convergence = true

@@ -277,6 +277,138 @@ pub struct ImmersedSection {
     /// A density-field topology search (D226): `[immersed.topology]`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub topology: Option<crate::topology::TopologySection>,
+    /// Refinement of the hexahedra near the bodies before the cut (L13
+    /// stage 2f), `[immersed.refine]`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refine: Option<RefineSection>,
+}
+
+/// `[immersed.refine]`: the hexahedra of the mesh near the surfaces of the
+/// bodies are halved, up to `levels` times, into hexahedra with
+/// hanging-node faces (L13 stage 2f, D57); 2:1 balanced. In a planar mesh
+/// (one cell thick) the cells are halved in the plane only.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RefineSection {
+    /// Halvings of a cell next to a surface (1 to 6).
+    pub levels: u32,
+    /// Width of each level around the surfaces, in cells of that level
+    /// (default 4): a cell is halved while it comes closer to a surface
+    /// than `layers` times the size of its halves.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layers: Option<f64>,
+    /// Width (m) of the finest level around the surfaces, instead of
+    /// `layers`: a cell of level l is halved while it comes closer to a
+    /// surface than distance · 2^(levels − 1 − l), so every level is twice
+    /// as wide as the next finer one, the same in metres on any mesh (a
+    /// convergence study refines the same region).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub distance: Option<f64>,
+}
+
+/// Refines the hexahedra near the bodies (L13 stage 2f): a cell is halved
+/// while the distance of its centre to the nearest body surface, less its
+/// radius, is below the width of its level (`layers` times half its size,
+/// or from `distance`).
+pub fn refine_mesh(case: &crate::case::FlowCase, mesh: &Mesh) -> Result<(Mesh, Vec<Diagnostic>)> {
+    let Some(rs) = &case.immersed.refine else {
+        return Ok((mesh.clone(), Vec::new()));
+    };
+    if rs.layers.is_some() && rs.distance.is_some() {
+        return Err(bad(
+            "immersed.refine".into(),
+            "give `layers` or `distance`, not both".into(),
+        ));
+    }
+    if let Some(d) = rs.distance
+        && !(d.is_finite() && d > 0.0)
+    {
+        return Err(bad(
+            "immersed.refine.distance".into(),
+            format!("`distance` must be positive, not {d}"),
+        ));
+    }
+    let layers = rs.layers.unwrap_or(4.0);
+    if !(1..=foehncraft_mesh::refine::MAX_LEVELS).contains(&rs.levels) {
+        return Err(bad(
+            "immersed.refine.levels".into(),
+            format!(
+                "`levels` must be 1 to {}, not {}",
+                foehncraft_mesh::refine::MAX_LEVELS,
+                rs.levels
+            ),
+        ));
+    }
+    if !(layers.is_finite() && layers >= 1.0) {
+        return Err(bad(
+            "immersed.refine.layers".into(),
+            format!("`layers` must be at least 1, not {layers}"),
+        ));
+    }
+    let bs = bodies_of(case)?;
+    if bs.is_empty() {
+        return Err(bad(
+            "immersed.refine".into(),
+            "near-body refinement needs `[[immersed.body]]` bodies".into(),
+        ));
+    }
+    // a planar mesh: every node on one of two planes z = const
+    let (lo, hi) = mesh.bounding_box();
+    let tol = 1e-9 * norm(sub(hi, lo));
+    let planar = mesh
+        .points
+        .iter()
+        .all(|p| (p[2] - lo[2]).abs() <= tol || (p[2] - hi[2]).abs() <= tol);
+    let opt = foehncraft_mesh::refine::RefineOptions {
+        levels: rs.levels,
+        keep_direction: planar.then_some([0.0, 0.0, 1.0]),
+    };
+    let r = foehncraft_mesh::refine::refine(mesh, &opt, |c| {
+        let d = bs
+            .iter()
+            .map(|b| b.distance(c.centre).abs())
+            .fold(f64::INFINITY, f64::min);
+        let band = match rs.distance {
+            Some(w) => w * f64::powi(2.0, rs.levels as i32 - 1 - c.level as i32),
+            None => layers * 0.5 * c.size,
+        };
+        d - c.radius < band
+    })
+    .map_err(|e| {
+        bad(
+            "immersed.refine".into(),
+            format!("near-body refinement: {e}"),
+        )
+    })?;
+    let geo = foehncraft_mesh::Geometry::compute(&r.mesh);
+    let (q, _) = foehncraft_mesh::quality::QualityReport::compute(&r.mesh, &geo);
+    let rep = &r.report;
+    let levels: Vec<String> = rep
+        .per_level
+        .iter()
+        .enumerate()
+        .map(|(l, n)| format!("level {l}: {n}"))
+        .collect();
+    let note = Diagnostic::new(
+        diag::IMM_REFINE_REPORT,
+        format!(
+            "near-body refinement: {} cells into {} ({}; {} input cells refined, {} more by the \
+             2:1 balance, {} not hexahedra kept whole), {} faces between levels, {} faces with \
+             hanging nodes; max non-orthogonality {:.1}°, max skewness {:.3}, max closure {:.2e}",
+            rep.cells_in,
+            rep.cells_out,
+            levels.join(", "),
+            rep.refined,
+            rep.balance,
+            rep.not_hexahedra,
+            rep.hanging_faces,
+            rep.faces_with_hanging_nodes,
+            q.non_orthogonality.max,
+            q.skewness.max,
+            q.closure.max,
+        ),
+    );
+    Ok((r.mesh, vec![note]))
 }
 
 /// Resolves the STL files of the bodies against the case directory.
@@ -2152,6 +2284,7 @@ mod tests {
             cut: None,
             permeability: Some(1e-8),
             samples: None,
+            refine: None,
             body: vec![BodySection {
                 name: "c".into(),
                 shape: Shape::Cylinder,

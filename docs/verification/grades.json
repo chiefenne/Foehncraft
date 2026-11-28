@@ -1877,6 +1877,21 @@
    "range": {}
   },
   {
+   "id": "immersed.refine",
+   "title": "Near-body refinement of hexahedra with hanging-node faces (L13 stage 2f)",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "only hexahedra are refined; tetrahedra, prisms, pyramids and polyhedra are kept whole (and may then meet cells two levels finer)",
+    "static: marked by the distance to the bodies only, before the run; no coarsening, no solution-driven marking, no repartitioning (L14 on this kernel)",
+    "the lift of the cylinder needs a fine band of about 0.8 D; with 0.2 D it is 5 % below the reference range",
+    "one rank only, like the cut; the GPU path is not checked on refined meshes"
+   ],
+   "range": {}
+  },
+  {
    "id": "immersed.stl",
    "title": "STL bodies, cut out of the mesh or penalised, with sharp edges and face points (L13 stage 2)",
    "grade": "partial",
