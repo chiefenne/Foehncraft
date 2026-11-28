@@ -1118,6 +1118,76 @@ pub fn apply_set(v: &mut toml::Table, set: &str) -> Result<()> {
 }
 
 impl FlowCase {
+    /// Copies from `from` what the reader set outside the keys of the case
+    /// file: the boundary sub-tables of the scalars, species and energy, the
+    /// fluid view of a conjugate case, the pressure convention, the source
+    /// path, the overrides and the reading notes. These fields are
+    /// `#[serde(skip)]`, so every change of a setting that goes through the
+    /// TOML of the case (a re-read, a `[[schedule]]` entry, `run.set` of the
+    /// live control port) drops them; before this was one place, each of
+    /// them kept its own list and the lists missed fields (an inlet of an
+    /// energy, scalar or species case then failed its validation).
+    ///
+    /// The pattern names every field, so a new field does not compile until
+    /// it is sorted into one of the two groups.
+    pub fn keep_reader_fields(&mut self, from: &FlowCase) {
+        let FlowCase {
+            // set by the reader, dropped by the round trip through TOML
+            notes,
+            boundary_scalar,
+            boundary_species,
+            boundary_energy,
+            fluid_view,
+            source,
+            overrides,
+            pressure_frame,
+            // keys of the case file: carried by the TOML itself
+            case_format: _,
+            mesh: _,
+            fluid: _,
+            materials: _,
+            regions: _,
+            interfaces: _,
+            constants: _,
+            tables: _,
+            flow: _,
+            initial: _,
+            pressure: _,
+            turbulence: _,
+            boundary: _,
+            scalars: _,
+            species: _,
+            chemistry: _,
+            energy: _,
+            gravity: _,
+            buoyancy: _,
+            immersed: _,
+            vof: _,
+            spray: _,
+            datums: _,
+            solver: _,
+            analytic: _,
+            verification: _,
+            run: _,
+            output: _,
+            time: _,
+            balance: _,
+            log: _,
+            schedule: _,
+            mrf: _,
+            sliding: _,
+            mesh_motion: _,
+        } = from;
+        self.notes = notes.clone();
+        self.boundary_scalar = boundary_scalar.clone();
+        self.boundary_species = boundary_species.clone();
+        self.boundary_energy = boundary_energy.clone();
+        self.fluid_view = fluid_view.clone();
+        self.source = source.clone();
+        self.overrides = overrides.clone();
+        self.pressure_frame = pressure_frame.clone();
+    }
+
     /// Reads and validates a case file; relative paths are taken from its
     /// directory.
     pub fn from_file(path: &Path) -> Result<Self> {

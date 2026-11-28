@@ -476,3 +476,146 @@ fn the_momentum_scheme_switches_from_upwind_to_linear_upwind() {
     ));
     assert!(m.contains("only between"), "{m}");
 }
+
+/// An open channel whose inlet carries all three kinds of boundary
+/// sub-tables the reader keeps outside the TOML of the case: the energy
+/// condition, the condition of a passive scalar and the species
+/// composition.
+const SUBTABLES: &str = r#"
+case_format = "0.7"
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [1.0, 0.1, 0.01]
+cells = [10, 2, 1]
+[fluid]
+density = 1.0
+viscosity = 1.0e-3
+specific_heat = 1000.0
+conductivity = 0.1
+pressure_values = "gauge"
+[energy]
+initial = 300.0
+[scalars.theta]
+diffusivity = 1.0e-3
+[species]
+names = ["CH4", "N2"]
+properties = "fluid"
+initial = { mole_fractions = { N2 = 1.0 } }
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [1.0, 0.0, 0.0]
+[boundary.xmin.energy]
+temperature = 300.0
+[boundary.xmin.scalar.theta]
+value = 1.0
+[boundary.xmin.species]
+mole_fractions = { CH4 = 1.0 }
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymin]
+type = "slip-wall"
+[boundary.ymax]
+type = "slip-wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+[solver]
+max_iterations = 50
+[[schedule]]
+at_iteration = 10
+set = { solver.momentum.relaxation = 0.8 }
+"#;
+
+/// The boundary sub-tables of `c` as text, to compare two cases.
+fn subtables(c: &FlowCase) -> String {
+    format!(
+        "{:?}\n{:?}\n{:?}",
+        c.boundary_energy, c.boundary_scalar, c.boundary_species
+    )
+}
+
+/// Every change of a setting through the TOML of the case keeps the energy,
+/// scalar and species conditions of the boundaries: a `[[schedule]]` entry,
+/// a re-read of the case file and `run.set` of the live control port.
+/// Before the fix each of them restored its own list of these fields; the
+/// species composition was missing from all three and the energy and scalar
+/// conditions from `run.set`, so the inlet failed its validation.
+#[test]
+fn every_setting_change_keeps_the_boundary_subtables() {
+    let c = parse(SUBTABLES).unwrap();
+    assert_eq!(c.boundary_energy.len(), 1);
+    assert_eq!(c.boundary_scalar.len(), 1);
+    assert_eq!(c.boundary_species.len(), 1);
+    let want = subtables(&c);
+
+    // [[schedule]]
+    let e = foehncraft_flow::schedule::apply_entry(&c, &c.schedule[0], None).unwrap();
+    assert_eq!(subtables(&e), want);
+    assert_eq!(e.solver.momentum.relaxation, Some(0.8));
+    let f = foehncraft_flow::schedule::apply_fired(&c, &c, 1).unwrap();
+    assert_eq!(subtables(&f), want);
+
+    // run.set of the live control port
+    let (s, old, new) =
+        control::with_setting(&c, "solver.max_iterations", &toml::Value::Integer(80)).unwrap();
+    assert_eq!(subtables(&s), want);
+    assert_eq!((old.as_str(), new.as_str()), ("50", "80"));
+
+    // a re-read of the file, with a fired schedule entry and without
+    let d = out("reread_subtables");
+    std::fs::create_dir_all(&d).unwrap();
+    let p = d.join("case.toml");
+    std::fs::write(&p, SUBTABLES).unwrap();
+    let c = FlowCase::from_file(&p).unwrap();
+    std::fs::write(
+        &p,
+        SUBTABLES.replace("max_iterations = 50", "max_iterations = 60"),
+    )
+    .unwrap();
+    for fired in [0, 1] {
+        let rr = control::reread(&p, &c, fired).unwrap();
+        assert_eq!(subtables(&rr.case), want, "fired {fired}");
+        assert_eq!(rr.case.solver.max_iterations, 60);
+        assert!(rr.not_applied.is_empty(), "{:?}", rr.not_applied);
+    }
+    // a new inlet composition is reported, not applied
+    std::fs::write(
+        &p,
+        SUBTABLES.replace(
+            "mole_fractions = { CH4 = 1.0 }",
+            "mole_fractions = { CH4 = 0.5, N2 = 0.5 }",
+        ),
+    )
+    .unwrap();
+    let rr = control::reread(&p, &c, 0).unwrap();
+    assert!(
+        rr.not_applied
+            .iter()
+            .any(|l| l.starts_with("boundary species")),
+        "{:?}",
+        rr.not_applied
+    );
+    assert_eq!(subtables(&rr.case), want);
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+/// The Spray G case G1 (energy condition on its walls, species of the
+/// gas) takes a `[[schedule]]` entry that raises the time step after the
+/// injection: the entry is read, applied and the case still validates.
+#[test]
+fn spray_g_takes_a_scheduled_time_step() {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/cases/flow");
+    let text = std::fs::read_to_string(dir.join("spray_g_g1.toml"))
+        .unwrap()
+        .replace("\r\n", "\n");
+    let text = format!("{text}\n[[schedule]]\nat_time = 1.0e-3\nset = {{ time.time_step = 2.0e-6 }}\n");
+    let c = FlowCase::from_toml(&text, &dir).unwrap();
+    assert!(!c.boundary_energy.is_empty());
+    let want = subtables(&c);
+    let e = foehncraft_flow::schedule::apply_entry(&c, &c.schedule[0], None).unwrap();
+    assert_eq!(subtables(&e), want);
+    assert_eq!(e.time.unwrap().time_step, 2.0e-6);
+}
