@@ -377,11 +377,13 @@ fn cut_settings_are_refused() {
         )),
         "IMM201"
     );
+    // a body kept as a solid region needs the energy equation (the region
+    // check comes first: REG001)
     let regions = base.replace(
         "[immersed]",
-        "[regions.solid]\nmaterial = \"steel\"\n\n[immersed]",
+        "[regions.lower]\nkind = \"solid\"\nzones = [\"lower\"]\nmaterial = \"steel\"\n\n[immersed]",
     );
-    assert_eq!(refused(&regions), "IMM202");
+    assert_eq!(refused(&regions), "REG001");
 }
 
 /// K = F/(6π μ a U) of the sphere array (a = 0.2 m, μ = 1 Pa s, ρ = 1,
@@ -572,4 +574,67 @@ fn cut_plate_wall_function_samples_one_layer_out() {
     );
     assert!(mean_s.abs() < 0.08, "{mean_s}");
     assert!(sd_s < 0.6 * sd_c, "{sd_s} {sd_c}");
+}
+
+/// The concentric-cylinder case of L13 stage 2d with the conductivity of
+/// the solid `ks`, on `levels` (20, 40, 80 cells across).
+fn cut_cylinder_cht(ks: f64, extra: &str) -> String {
+    text("immersed_cut_cylinder_cht.toml")
+        .replace("ks = 90.0", &format!("ks = {ks:?}"))
+        .replace("conductivity = 90.0", &format!("conductivity = {ks:?}"))
+        .replace("[verification]\n", &format!("[verification]\n{extra}"))
+        .replace("[output]\n", "[output]\nvtkhdf = false\n")
+}
+
+/// A heated solid cylinder cut out of a box mesh and kept as a solid
+/// region (L13 stage 2d, D229): the cut cells of both sides share each cut
+/// face, the interface carries the series conductance, and the temperature
+/// converges at second order to the concentric-cylinder solution for the
+/// conductivity ratios 9 and 900 (measured 2.17 and 1.97 on both); the heat
+/// made in the solid leaves through the box walls to round-off (one flux
+/// per interface face, so the interface passes the flux unchanged).
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn cut_cylinder_cht_converges_at_second_order() {
+    // q π R² × depth
+    let power = 1000.0 * std::f64::consts::PI * 0.25 * 0.25 * 0.05;
+    for ks in [9.0, 900.0] {
+        let rep = run_case(
+            &parse(&cut_cylinder_cht(ks, "levels = [0, 1, 2]\n")),
+            &format!("cutcht{ks}"),
+        );
+        assert!(rep.failures.is_empty(), "{:?}", rep.failures);
+        let (_, orders) = &rep.scalar_orders[0];
+        let l2: Vec<f64> = rep
+            .solves
+            .iter()
+            .map(|s| s.scalars[0].l2.unwrap())
+            .collect();
+        eprintln!("cut cylinder CHT, k ratio {ks}: L2 {l2:?}, orders {orders:?}");
+        for o in orders {
+            assert!((1.85..=2.3).contains(o), "k ratio {ks}: orders {orders:?}");
+        }
+        assert!(l2[2] < 0.008, "k ratio {ks}: {l2:?}");
+        for s in &rep.solves {
+            let e = s.scalars[0].energy.as_ref().unwrap();
+            let imbalance = e.source + e.conduction + e.convection;
+            assert!(imbalance.abs() < 1e-9 * e.source, "{e:?}");
+        }
+        let e = rep.solves[2].scalars[0].energy.as_ref().unwrap();
+        // the solid volume of the cut: -0.01 % on 80 cells across
+        assert!(
+            (e.source / power - 1.0).abs() < 1e-3,
+            "{} {power}",
+            e.source
+        );
+    }
+}
+
+/// A body kept as a solid region must be about two cells thick (owner
+/// decision Q4): a pin of 2.4 cells across is refused with IMM205, which
+/// points to the thin wall of D189.
+#[test]
+fn thin_cut_solids_are_refused() {
+    let t = cut_cylinder_cht(90.0, "").replace("radius = 0.25", "radius = 0.06");
+    assert_eq!(refused(&t), "IMM205");
 }

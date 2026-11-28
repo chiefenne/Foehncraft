@@ -450,6 +450,19 @@ pub struct CutReport {
     pub simplified: usize,
     /// Rounds of the cut (one, plus one per fallback step).
     pub rounds: usize,
+    /// Solid cells kept ([`cut_both`]), after the merge.
+    pub solid_cells: usize,
+    /// Small solid cells merged into a solid neighbour.
+    pub solid_merged: usize,
+    /// Small solid cells with no solid neighbour to merge into (kept): the
+    /// body is thinner than about a cell there.
+    pub solid_merge_failed: usize,
+    /// Smallest volume fraction (of its uncut cell) among the cut solid
+    /// cells that were not merged (1 without solid bodies).
+    pub solid_min_fraction: f64,
+    /// Volume of the solid cells per body (m³), in the order of the names
+    /// (zero for a body cut out).
+    pub solid_volume: Vec<f64>,
 }
 
 /// The mesh with the bodies cut out and their report; the cells of the cut
@@ -457,8 +470,12 @@ pub struct CutReport {
 #[derive(Debug, Clone)]
 pub struct CutMesh {
     /// The cut mesh: the input boundaries first, then one wall boundary per
-    /// body (named by `names`, empty ones included).
+    /// body (named by `names`, empty ones included) that is cut out; a
+    /// body kept as solid cells ([`cut_both`]) has none.
     pub mesh: Mesh,
+    /// The fluid cells come first, `0..n_fluid`; the solid cells of
+    /// [`cut_both`] follow, in the zone named by their body.
+    pub n_fluid: usize,
     /// Input cell of each cut-mesh cell (for a merged cell, the cell it
     /// was merged into).
     pub parent: Vec<u32>,
@@ -497,6 +514,29 @@ pub fn cut(
     names: &[String],
     opt: &CutOptions,
 ) -> Result<CutMesh, String> {
+    cut_both(mesh, body, names, &[], opt)
+}
+
+/// [`cut`] both ways (L13 stage 2d, D229): the bodies with `solid[k]` keep
+/// their inside as cells of their own zone, named by the body, after the
+/// fluid cells ([`CutMesh::n_fluid`]). The solid part of every cut cell is
+/// a cell too, made of the solid parts of its faces (the same crossing and
+/// face points as the fluid part) and the wall faces of the fluid part
+/// turned round; the wall faces between the two become interior faces (a
+/// region interface, D160), so the body has no wall boundary. Small solid
+/// cells merge into solid neighbours as the fluid ones into fluid
+/// neighbours; a solid cell that finds none counts in
+/// [`CutReport::solid_merge_failed`] (a body thinner than about a cell).
+pub fn cut_both(
+    mesh: &Mesh,
+    body: &dyn ImplicitBody,
+    names: &[String],
+    solid: &[bool],
+    opt: &CutOptions,
+) -> Result<CutMesh, String> {
+    if !solid.is_empty() && solid.len() != names.len() {
+        return Err("one solid flag per body".into());
+    }
     if mesh.n_halo != 0 {
         return Err("the cut runs on the global mesh, not on a rank's part".into());
     }
@@ -523,7 +563,7 @@ pub fn cut(
     let mut edges: HashMap<(u32, u32), [f64; 3]> = HashMap::new();
     let mut rounds = 0;
     loop {
-        let mut out = cut_with(mesh, body, names, opt, &prep, &level, &mut edges)?;
+        let mut out = cut_with(mesh, body, names, solid, opt, &prep, &level, &mut edges)?;
         rounds += 1;
         let mut raised = false;
         if out.report.bad_faces > 0 && rounds < MAX_ROUNDS {
@@ -619,10 +659,12 @@ impl Prep {
 /// points, 2 the projected wall point only, 3 whole wall faces; a face
 /// takes face points only when both its cells are at level 0. `edges`
 /// keeps the crossing point of every edge between the rounds.
+#[allow(clippy::too_many_arguments)]
 fn cut_with(
     mesh: &Mesh,
     body: &dyn ImplicitBody,
     names: &[String],
+    solid: &[bool],
     opt: &CutOptions,
     prep: &Prep,
     level: &[u8],
@@ -630,6 +672,7 @@ fn cut_with(
 ) -> Result<CutMesh, String> {
     let geo0 = &prep.geo0;
     let phi = &prep.phi;
+    let any_solid = solid.iter().any(|&s| s);
     let fluid = |n: u32| phi[n as usize] > 0.0;
     let mut points = mesh.points.clone();
     let mut crossing: HashMap<(u32, u32), u32> = HashMap::new();
@@ -656,6 +699,9 @@ fn cut_with(
     let ni = mesh.n_interior_faces();
     let nf = mesh.n_faces();
     let mut faces: Vec<Option<(Vec<u32>, Vec<bool>)>> = Vec::with_capacity(nf);
+    // the solid parts of every face (cut both ways): one ring per stretch
+    // of solid nodes, closed by the chord back to its start
+    let mut sfaces: Vec<Vec<Vec<u32>>> = vec![Vec::new(); if any_solid { nf } else { 0 }];
     for f in 0..nf {
         let nodes = mesh.face(f);
         let nfl = nodes.iter().filter(|&&n| fluid(n)).count();
@@ -664,10 +710,39 @@ fn cut_with(
             continue;
         }
         if nfl == 0 {
+            if any_solid {
+                sfaces[f].push(nodes.to_vec());
+            }
             faces.push(None);
             continue;
         }
         let k = nodes.len();
+        // (ring, the chord's end, its start): the chord of the fluid ring
+        // runs start → end, the solid ring closes end → start
+        let mut solid_rings: Vec<(Vec<u32>, u32, u32)> = Vec::new();
+        if any_solid {
+            let s0 = (0..k).find(|&i| fluid(nodes[i])).expect("a fluid node");
+            let mut cur: Vec<u32> = Vec::new();
+            let mut start = u32::MAX;
+            for j in 0..k {
+                let i = (s0 + j) % k;
+                let (a, b) = (nodes[i], nodes[(i + 1) % k]);
+                match (fluid(a), fluid(b)) {
+                    (true, false) => {
+                        start = cross_pt(a, b, &mut points);
+                        cur = vec![start];
+                    }
+                    (false, false) => cur.push(a),
+                    (false, true) => {
+                        cur.push(a);
+                        let end = cross_pt(b, a, &mut points);
+                        cur.push(end);
+                        solid_rings.push((std::mem::take(&mut cur), end, start));
+                    }
+                    (true, true) => {}
+                }
+            }
+        }
         // (point, the ring edge leaving it is a chord)
         let mut ring: Vec<(u32, bool)> = Vec::with_capacity(k + 2);
         for i in 0..k {
@@ -688,6 +763,11 @@ fn cut_with(
         }
         dedupe(&mut ring);
         if ring.len() < 3 {
+            if any_solid {
+                for (r, _, _) in solid_rings {
+                    push_ring(&mut sfaces[f], r);
+                }
+            }
             faces.push(None);
             continue;
         }
@@ -697,6 +777,25 @@ fn cut_with(
             && (f >= ni || level[mesh.neighbour[f] as usize] == 0)
         {
             bend_chords(&mut ring, nodes, &mut points, body);
+        }
+        // the solid rings close along the same (bent) chords, backwards
+        for (mut r, end, start) in solid_rings {
+            if let Some(i) = ring.iter().position(|e| e.0 == start && e.1) {
+                let mut mids = Vec::new();
+                let mut found = false;
+                for j in 1..ring.len() {
+                    let p = ring[(i + j) % ring.len()].0;
+                    if p == end {
+                        found = true;
+                        break;
+                    }
+                    mids.push(p);
+                }
+                if found {
+                    r.extend(mids.into_iter().rev());
+                }
+            }
+            push_ring(&mut sfaces[f], r);
         }
         let (r, c) = ring.into_iter().unzip();
         faces.push(Some((r, c)));
@@ -798,6 +897,127 @@ fn cut_with(
             }
         }
     }
+    // 2b. the solid cells (cut both ways): the pieces of the solid rings
+    // and wall loops of every input cell, kept where their body is solid
+    let mut s_parent: Vec<u32> = Vec::new();
+    let mut s_cut: Vec<bool> = Vec::new();
+    let mut s_pid: Vec<usize> = Vec::new();
+    let mut s_face_cell: Vec<Vec<[u32; 2]>> = sfaces
+        .iter()
+        .map(|r| vec![[u32::MAX; 2]; r.len()])
+        .collect();
+    let mut wall_scell = vec![u32::MAX; walls.len()];
+    if any_solid {
+        let mut walls_of: Vec<Vec<usize>> = vec![Vec::new(); mesh.n_cells];
+        for (w, (c, _)) in walls.iter().enumerate() {
+            walls_of[parent[*c as usize] as usize].push(w);
+        }
+        for c in 0..mesh.n_cells {
+            let mut uf = LocalUf::default();
+            let mut any = false;
+            for (f, _) in mesh.cell_face_iter(c) {
+                for r in &sfaces[f] {
+                    any = true;
+                    for w in r.windows(2) {
+                        uf.union(w[0], w[1]);
+                    }
+                    uf.find(r[0]);
+                }
+            }
+            for &w in &walls_of[c] {
+                let l = &walls[w].1;
+                for i in 0..l.len() {
+                    uf.union(l[i], l[(i + 1) % l.len()]);
+                }
+            }
+            if !any && walls_of[c].is_empty() {
+                continue;
+            }
+            // the pieces and the mean of their points (which body)
+            let mut roots: Vec<u32> = Vec::new();
+            let mut sums: Vec<([f64; 3], f64)> = Vec::new();
+            let mut piece = |p: u32, uf: &mut LocalUf| -> usize {
+                let r = uf.find(p);
+                let k = match roots.iter().position(|&x| x == r) {
+                    Some(i) => i,
+                    None => {
+                        roots.push(r);
+                        sums.push(([0.0; 3], 0.0));
+                        roots.len() - 1
+                    }
+                };
+                sums[k].0 = add(sums[k].0, points[p as usize]);
+                sums[k].1 += 1.0;
+                k
+            };
+            let mut ring_piece: Vec<(usize, usize, bool, usize)> = Vec::new();
+            for (f, is_nb) in mesh.cell_face_iter(c) {
+                for (ri, r) in sfaces[f].iter().enumerate() {
+                    let mut k = 0;
+                    for &p in r {
+                        k = piece(p, &mut uf);
+                    }
+                    ring_piece.push((f, ri, is_nb, k));
+                }
+            }
+            let mut wall_piece = Vec::with_capacity(walls_of[c].len());
+            for &w in &walls_of[c] {
+                let mut k = 0;
+                for &p in &walls[w].1 {
+                    k = piece(p, &mut uf);
+                }
+                wall_piece.push((w, k));
+            }
+            let cell_of: Vec<u32> = sums
+                .iter()
+                .map(|&(x, n)| {
+                    let pid = body.patch(scale(x, 1.0 / n)).min(names.len() - 1);
+                    if !solid[pid] {
+                        return u32::MAX;
+                    }
+                    s_parent.push(c as u32);
+                    s_cut.push(prep.cut[c]);
+                    s_pid.push(pid);
+                    (s_parent.len() - 1) as u32
+                })
+                .collect();
+            for (f, ri, is_nb, k) in ring_piece {
+                s_face_cell[f][ri][usize::from(is_nb)] = cell_of[k];
+            }
+            for (w, k) in wall_piece {
+                wall_scell[w] = cell_of[k];
+            }
+        }
+    }
+    let mut s_faces: Vec<Face> = Vec::new();
+    for (f, rings) in sfaces.into_iter().enumerate() {
+        for (ri, ring) in rings.into_iter().enumerate() {
+            let [a, b] = s_face_cell[f][ri];
+            if f < ni {
+                match (a != u32::MAX, b != u32::MAX) {
+                    (true, true) => s_faces.push(Face {
+                        ring,
+                        a,
+                        b: b as i64,
+                    }),
+                    (false, false) => {}
+                    _ => {
+                        return Err(format!(
+                            "the inside of a solid body touches a body that is cut out (at {:?})",
+                            mesh.points[mesh.face(f)[0] as usize]
+                        ));
+                    }
+                }
+            } else if a != u32::MAX {
+                let p = mesh.boundary_of(f).expect("boundary face");
+                s_faces.push(Face {
+                    ring,
+                    a,
+                    b: -(p as i64) - 1,
+                });
+            }
+        }
+    }
     for f in 0..nf {
         let Some((ring, _)) = faces[f].take() else {
             continue;
@@ -820,8 +1040,9 @@ fn cut_with(
         }
     }
     let nb0 = mesh.boundaries.len();
-    for (c, l) in walls {
+    for (w, (c, l)) in walls.into_iter().enumerate() {
         let (_, x) = polygon_area_centroid(&points, &l);
+        let sc = wall_scell[w];
         let pc = parent[c as usize] as usize;
         let centre = if opt.wall_point && level[pc] <= 2 {
             // the fan stays inside the uncut cell: a point outside it (a
@@ -849,8 +1070,22 @@ fn cut_with(
                     a: c,
                     b: -((nb0 + pid) as i64) - 1,
                 });
+                if sc != u32::MAX {
+                    s_faces.push(Face {
+                        ring: vec![l[(i + 1) % k], l[i], mi],
+                        a: sc,
+                        b: -((nb0 + pid) as i64) - 1,
+                    });
+                }
             }
         } else {
+            if sc != u32::MAX {
+                s_faces.push(Face {
+                    ring: reversed(&l),
+                    a: sc,
+                    b: -((nb0 + pid) as i64) - 1,
+                });
+            }
             out_faces.push(Face {
                 ring: l,
                 a: c,
@@ -865,49 +1100,124 @@ fn cut_with(
     let mut bnames: Vec<String> = mesh.boundaries.iter().map(|b| b.name.clone()).collect();
     bnames.extend(names.iter().cloned());
 
-    // 3. small cells: merge, again while a merged cell is ill-shaped
-    let mut covers: Vec<Vec<u32>> = parent.iter().map(|&p| vec![p]).collect();
-    let mut min_fraction = opt.min_fraction;
-    for _ in 0..10 {
-        let (f, p, c, had_bad, gid) = merge_pass(
-            mesh,
-            &points,
-            &out_faces,
-            &parent,
-            &cut_cell,
-            geo0,
-            &bnames,
-            min_fraction,
-            &mut report.cells_merged,
-            &mut report.merge_failed,
-            &mut report.shared_pairs,
-        )?;
-        let changed = p.len() != parent.len();
-        let mut next: Vec<Vec<u32>> = vec![Vec::new(); p.len()];
-        for (old, g) in gid.iter().enumerate() {
-            next[*g as usize].extend_from_slice(&covers[old]);
-        }
-        for v in &mut next {
-            v.sort_unstable();
-            v.dedup();
-        }
-        covers = next;
-        out_faces = f;
-        parent = p;
-        cut_cell = c;
-        // later passes merge only the cells the discretisation cannot take
-        min_fraction = 0.0;
-        if !had_bad && !changed {
-            break;
-        }
-    }
-    let final_parent = parent;
-    let nfin = final_parent.len();
-    let mut fin_faces = out_faces;
-    let fzone: Vec<u32> = final_parent
+    // 3. small cells: merge, again while a merged cell is ill-shaped; the
+    // solid cells among themselves
+    let mut counts = [0usize; 3];
+    let (out_faces, parent, covers, cut_cell, _) = merge_all(
+        mesh,
+        &points,
+        out_faces,
+        parent,
+        cut_cell,
+        geo0,
+        &bnames,
+        opt.min_fraction,
+        &mut counts,
+    )?;
+    report.cells_merged = counts[0];
+    report.merge_failed = counts[1];
+    report.shared_pairs = counts[2];
+    let n_fluid = parent.len();
+    let mut final_parent = parent;
+    let mut covers = covers;
+    let mut cut_all = cut_cell;
+    let mut fzone: Vec<u32> = final_parent
         .iter()
         .map(|&p| mesh.cell_zone[p as usize])
         .collect();
+    let mut zones = mesh.zones.clone();
+    let mut fin_faces = out_faces;
+    let mut skip = vec![false; bnames.len()];
+    let mut solid_area = vec![0.0; names.len()];
+    let mut s_body: Vec<usize> = Vec::new();
+    if any_solid {
+        let mut zone_of = vec![u32::MAX; names.len()];
+        for (k, n) in names.iter().enumerate() {
+            if solid[k] {
+                if zones.contains(n) {
+                    return Err(format!(
+                        "the mesh already has a cell zone named `{n}`, the name of a solid body"
+                    ));
+                }
+                zone_of[k] = zones.len() as u32;
+                zones.push(n.clone());
+                skip[nb0 + k] = true;
+            }
+        }
+        let mut sc = [0usize; 3];
+        let (sf, sp, scov, scut, sgid) = merge_all(
+            mesh,
+            &points,
+            s_faces,
+            s_parent,
+            s_cut,
+            geo0,
+            &bnames,
+            opt.min_fraction,
+            &mut sc,
+        )?;
+        report.solid_merged = sc[0];
+        report.solid_merge_failed = sc[1];
+        report.shared_pairs += sc[2];
+        s_body = vec![0; sp.len()];
+        for (old, &g) in sgid.iter().enumerate() {
+            s_body[g as usize] = s_pid[old];
+        }
+        // the wall faces of a solid body and their solid twins become one
+        // interior face
+        let key = |r: &[u32]| {
+            let mut v = r.to_vec();
+            v.sort_unstable();
+            v
+        };
+        // (a wall face can appear twice on the same points, in two cells of a
+        // coarse polyhedral cut: the twins are paired in order)
+        let mut twin: HashMap<Vec<u32>, std::collections::VecDeque<u32>> = HashMap::new();
+        let mut rest = Vec::new();
+        let nfl = n_fluid as u32;
+        for f in sf {
+            match f.boundary() {
+                Some(p) if p >= nb0 && solid[p - nb0] => {
+                    twin.entry(key(&f.ring)).or_default().push_back(f.a);
+                }
+                _ => rest.push(Face {
+                    a: f.a + nfl,
+                    b: if f.b >= 0 { f.b + i64::from(nfl) } else { f.b },
+                    ring: f.ring,
+                }),
+            }
+        }
+        for f in &mut fin_faces {
+            let Some(p) = f.boundary() else { continue };
+            if p < nb0 || !solid[p - nb0] {
+                continue;
+            }
+            let Some(c) = twin.get_mut(&key(&f.ring)).and_then(|q| q.pop_front()) else {
+                return Err(format!(
+                    "the cut of the solid body `{}` does not close: a wall face of the fluid \
+                     without its solid twin",
+                    names[p - nb0]
+                ));
+            };
+            solid_area[p - nb0] += norm(polygon_area_centroid(&points, &f.ring).0);
+            f.b = i64::from(c + nfl);
+        }
+        let left: usize = twin.values().map(|q| q.len()).sum();
+        if left > 0 {
+            return Err(format!(
+                "the cut of a solid body does not close: {left} solid wall faces without a fluid twin"
+            ));
+        }
+        fin_faces.extend(rest);
+        report.solid_cells = sp.len();
+        for &b in &s_body {
+            fzone.push(zone_of[b]);
+        }
+        final_parent.extend(sp);
+        covers.extend(scov);
+        cut_all.extend(scut);
+    }
+    let nfin = final_parent.len();
     // drop unused points
     let mut used = vec![u32::MAX; points.len()];
     let mut fpoints = Vec::new();
@@ -920,19 +1230,38 @@ fn cut_with(
             *n = used[*n as usize];
         }
     }
-    let out = build(&fpoints, nfin, &fin_faces, &bnames, &mesh.zones, &fzone)?;
+    let declared: Vec<String> = bnames
+        .iter()
+        .zip(&skip)
+        .filter(|(_, s)| !**s)
+        .map(|(n, _)| n.clone())
+        .collect();
+    let out = build_named(
+        &fpoints, nfin, &fin_faces, &bnames, &declared, &zones, &fzone,
+    )?;
     let geo = Geometry::compute(&out);
     report.cells_out = out.n_cells;
-    report.fluid_volume = geo.cell_volume.iter().sum();
-    report.bad_faces = bad_faces(&out, &geo);
-    for (k, _) in names.iter().enumerate() {
-        let b = &out.boundaries[nb0 + k];
-        report.wall_area[k] = b.range().map(|f| norm(geo.face_area[f])).sum();
+    report.fluid_volume = geo.cell_volume[..n_fluid].iter().sum();
+    report.solid_volume = vec![0.0; names.len()];
+    for (c, &b) in s_body.iter().enumerate() {
+        report.solid_volume[b] += geo.cell_volume[n_fluid + c];
     }
-    let mut minf = f64::INFINITY;
+    report.bad_faces = bad_faces(&out, &geo);
+    for (k, n) in names.iter().enumerate() {
+        report.wall_area[k] = match out.boundary(n) {
+            Some(b) if !skip[nb0 + k] => b.range().map(|f| norm(geo.face_area[f])).sum(),
+            _ => solid_area[k],
+        };
+    }
+    let (mut minf, mut mins) = (f64::INFINITY, f64::INFINITY);
     for c in 0..nfin {
-        if cut_cell[c] {
-            minf = minf.min(geo.cell_volume[c] / geo0.cell_volume[final_parent[c] as usize]);
+        if cut_all[c] {
+            let fr = geo.cell_volume[c] / geo0.cell_volume[final_parent[c] as usize];
+            if c < n_fluid {
+                minf = minf.min(fr);
+            } else {
+                mins = mins.min(fr);
+            }
         }
         let mut amax = 0.0f64;
         for (f, _) in out.cell_face_iter(c) {
@@ -941,13 +1270,77 @@ fn cut_with(
         report.max_closure = report.max_closure.max(norm(geo.closure(&out, c)) / amax);
     }
     report.min_fraction = if minf.is_finite() { minf } else { 1.0 };
+    report.solid_min_fraction = if mins.is_finite() { mins } else { 1.0 };
     Ok(CutMesh {
         mesh: out,
+        n_fluid,
         parent: final_parent,
         covers,
         face_fluid_area,
         report,
     })
+}
+
+/// The small-cell merge of one side (the fluid cells, or the solid cells
+/// of [`cut_both`]) until no merged cell is ill-shaped: the faces, the
+/// parents, the input cells each cell covers, the cut flags and the new
+/// cell of every old one. `counts`: merged, failed, shared pairs.
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+fn merge_all(
+    mesh: &Mesh,
+    points: &[[f64; 3]],
+    mut faces: Vec<Face>,
+    mut parent: Vec<u32>,
+    mut cut_cell: Vec<bool>,
+    geo0: &Geometry,
+    bnames: &[String],
+    min_fraction: f64,
+    counts: &mut [usize; 3],
+) -> Result<(Vec<Face>, Vec<u32>, Vec<Vec<u32>>, Vec<bool>, Vec<u32>), String> {
+    let mut covers: Vec<Vec<u32>> = parent.iter().map(|&p| vec![p]).collect();
+    let mut total: Vec<u32> = (0..parent.len() as u32).collect();
+    if parent.is_empty() {
+        return Ok((faces, parent, covers, cut_cell, total));
+    }
+    let mut min_fraction = min_fraction;
+    let [merged, failed, shared] = counts;
+    for _ in 0..10 {
+        let (f, p, c, had_bad, gid) = merge_pass(
+            mesh,
+            points,
+            &faces,
+            &parent,
+            &cut_cell,
+            geo0,
+            bnames,
+            min_fraction,
+            merged,
+            failed,
+            shared,
+        )?;
+        let changed = p.len() != parent.len();
+        let mut next: Vec<Vec<u32>> = vec![Vec::new(); p.len()];
+        for (old, g) in gid.iter().enumerate() {
+            next[*g as usize].extend_from_slice(&covers[old]);
+        }
+        for v in &mut next {
+            v.sort_unstable();
+            v.dedup();
+        }
+        for t in &mut total {
+            *t = gid[*t as usize];
+        }
+        covers = next;
+        faces = f;
+        parent = p;
+        cut_cell = c;
+        // later passes merge only the cells the discretisation cannot take
+        min_fraction = 0.0;
+        if !had_bad && !changed {
+            break;
+        }
+    }
+    Ok((faces, parent, covers, cut_cell, total))
 }
 
 fn build(
@@ -958,9 +1351,22 @@ fn build(
     zones: &[String],
     zone: &[u32],
 ) -> Result<Mesh, String> {
+    build_named(points, n_cells, faces, bnames, bnames, zones, zone)
+}
+
+/// [`build`] declaring only the boundaries `declared` (in that order).
+fn build_named(
+    points: &[[f64; 3]],
+    n_cells: usize,
+    faces: &[Face],
+    bnames: &[String],
+    declared: &[String],
+    zones: &[String],
+    zone: &[u32],
+) -> Result<Mesh, String> {
     let mut b = MeshBuilder::new(points.to_vec(), n_cells);
     b.allow_shared_pairs();
-    for n in bnames {
+    for n in declared {
         b.declare_boundary(n);
     }
     b.set_zones(zones.to_vec(), zone.to_vec());
@@ -1181,6 +1587,24 @@ fn dedupe(ring: &mut Vec<(u32, bool)>) {
     }
 }
 
+/// Adds a solid ring without repeated neighbouring points, if it still
+/// has three points.
+fn push_ring(to: &mut Vec<Vec<u32>>, mut r: Vec<u32>) {
+    loop {
+        let k = r.len();
+        if k < 2 {
+            break;
+        }
+        let Some(i) = (0..k).find(|&i| r[i] == r[(i + 1) % k]) else {
+            break;
+        };
+        r.remove(i);
+    }
+    if r.len() >= 3 {
+        to.push(r);
+    }
+}
+
 /// Closed loops from directed edges whose points have as many edges in as
 /// out; the first unused edge starts a loop, at a point with several edges
 /// out the first given is taken.
@@ -1373,6 +1797,26 @@ fn union_score(
     };
     let x = centroid(un);
     let mut worst = f64::INFINITY;
+    // a union whose members touch only along an edge is pinched there: the
+    // edge is used twice in one direction, the cell is not a polyhedron
+    let mut directed: std::collections::HashSet<(u32, u32)> = std::collections::HashSet::new();
+    for &m in un {
+        for &fi in &cell_faces[m] {
+            let f = &faces[fi];
+            let other = if f.a as usize == m { f.b } else { f.a as i64 };
+            if other >= 0 && un.contains(&(other as usize)) {
+                continue;
+            }
+            let k = f.ring.len();
+            for i in 0..k {
+                let (p, q) = (f.ring[i], f.ring[(i + 1) % k]);
+                let e = if f.a as usize == m { (p, q) } else { (q, p) };
+                if !directed.insert(e) {
+                    return (f64::NEG_INFINITY, f64::INFINITY);
+                }
+            }
+        }
+    }
     // the faces to each neighbour group: (group, its centroid, Σ S, the
     // pieces' S and centroids)
     let mut pairs: Vec<NeighbourFaces> = Vec::new();
@@ -1684,7 +2128,7 @@ fn merge_pass(
                 if tier == 0 {
                     break;
                 }
-            } else {
+            } else if score > f64::NEG_INFINITY {
                 let fb = &mut fallback[usize::from(level == 2)];
                 if fb.as_ref().is_none_or(|f| score > f.0) {
                     *fb = Some((score, vec![g, h]));

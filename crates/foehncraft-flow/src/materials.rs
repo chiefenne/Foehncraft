@@ -782,7 +782,9 @@ pub enum RegionKind {
 pub struct RegionSection {
     /// Fluid, solid or porous.
     pub kind: RegionKind,
-    /// The cell zones of the region (mesh zone names).
+    /// The cell zones of the region (mesh zone names). A solid region may
+    /// name a cut body of `[immersed] method = "cut"` instead: the cut keeps
+    /// the inside of the body as the cells of the region (L13 stage 2d).
     pub zones: Vec<String>,
     /// The material; default the material of `[fluid]`.
     #[serde(skip_serializing_if = "Option::is_none")]

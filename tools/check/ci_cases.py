@@ -99,7 +99,7 @@ FLOW = {
         "spray_breakup", "spray_brno", "spray_chamber_ecn", "motion_piston_cooled_walls", "spray_g_g1",
         "spray_g_g1_grid_aligned", "spray_g_g1_grid_turned",
         "ranks_cylinder_species_statistics", "spray_a_distortion",
-        "immersed_cut_plate_keps", "immersed_cut_plate_fitted",
+        "immersed_cut_plate_keps", "immersed_cut_plate_fitted", "immersed_cut_pin_cht",
     ],
     "quick": [
         "cavity_re100_budget", "couette_hex", "couette_mixed", "couette_poly", "couette_tet",
@@ -107,7 +107,7 @@ FLOW = {
         "taylor_green_space", "channel_slip", "poiseuille_table", "pipe_wedge", "couette_derived",
         "couette_viscosity", "poiseuille_water", "pipe_gmsh_raw", "scalar_front_bdf2",
         "poiseuille_periodic", "taylor_couette_mrf", "taylor_couette_sliding",
-        "taylor_couette_imprint",
+        "taylor_couette_imprint", "immersed_cut_cylinder_cht",
     ],
 }
 LINUX = ("linux-1", "linux-2", "linux-3", "long")

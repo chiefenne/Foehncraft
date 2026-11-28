@@ -1799,7 +1799,7 @@
     "gaps written"
    ],
    "gaps": [
-    "the body is seen through its node values: features thinner than a cell vanish; the refusal of thin solids (Q4, IMM for D189) is not built yet",
+    "the body is seen through its node values: features thinner than a cell vanish (a body kept as a solid region is refused below about two cells, IMM205; a body cut out is not checked)",
     "Δp of the Re 20 cylinder stays about 1 % below the range at D/20 (D/40: C_D 5.595, C_L 0.0106, Δp 0.1171, all within 0.1 % of the range; SIMPLEC stalls at residual 1e-7 there); the lift depends on the merge threshold (0.1: 4 % low, 0.4: 0.4 % low, without face points); the default 0.3 is set on this case and the STL sphere array and kept by the maintainer after measuring again with face points and several faces per cell pair (2026-11-26): 0.4 puts the cylinder's lift into the range, 0.01047, and its drag 0.06 % above it, 5.593; on the 32³ sphere array 0.3 is closer, −1.9 against −2.3 %",
     "conjugate heat transfer through cut cells (2d, refused), named surface patches (2e) and the near-body refinement (2f) are not built (wall functions on cut bodies: feature immersed.cut-wall-functions)",
     "the other verification cases of the plan (cut-sphere Poisson MMS, annulus conduction, Taylor-Couette, inclined channel, Stokes sphere, Re 100 cylinder, turbulent plate) are not run yet",
@@ -1825,6 +1825,22 @@
    "range": {}
   },
   {
+   "id": "immersed.cut-cht",
+   "title": "Conjugate heat transfer through cut cells: a cut body kept as a solid region (L13 stage 2d)",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "on polyhedral meshes the solid side keeps a few flat three-face slivers the merge does not remove (non-planar cut faces); the poly mesh test does not check the solid merge or positive solid volumes",
+    "the heat transfer of the pin has no reference (no published Nusselt number of a heated pin in this confined channel); the verification is the concentric-cylinder solution",
+    "a `field` body (topology search) is not checked for thin parts; the thin-wall model of D189 is not available on a cut interface",
+    "the stiff energy solve of a solid with k_s ≫ k_f needs its own [solver.energy] tolerance and linear iterations (default settings stalled the pin at a 33 % heat imbalance)",
+    "rigid motion of the solid (stage 5) is not built; one rank only"
+   ],
+   "range": {}
+  },
+  {
    "id": "immersed.stl",
    "title": "STL bodies, cut out of the mesh or penalised, with sharp edges and face points (L13 stage 2)",
    "grade": "partial",
@@ -1836,7 +1852,7 @@
     "on polyhedral meshes the faces are not planar: the fan of a clipped face is not that of the input face, so the face apertures do not converge (4.6e-2; the cell-by-cell volumes converge at order 1.6 to 1.8, up to 1.9 times the total); the sphere array is −6.1 and −4.0 % on 17³ and 25³ polyhedra",
     "the fallback cuts the whole mesh again per round (the turned box on 196 608 tetrahedra: three rounds, 16 s against 1.6 s with the exact crossings alone); a local re-cut is not built",
     "the cut reaches only the totals and the drag of the sphere array: the other cases of the plan (cut-sphere Poisson MMS, Taylor-Couette, Re 100 cylinder) are not run with STL bodies",
-    "a surface feature thinner than a cell vanishes between the nodes; the thin-solid refusal (Q4) is not built",
+    "a surface feature thinner than a cell vanishes between the nodes; only a body kept as a solid region is refused when thin (IMM205)",
     "one rank only"
    ],
    "range": {}
