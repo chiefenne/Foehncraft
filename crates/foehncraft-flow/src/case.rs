@@ -2557,6 +2557,14 @@ pub(crate) fn mesh_for(case: &FlowCase, level: Option<u32>) -> Result<(Mesh, Geo
     }
     let (mut mesh, source, _) = build_mesh(&sec)?;
     let mut desc = format!("{source}: {} cells", mesh.n_cells);
+    // near-body refinement (L13 stage 2f): before the cut
+    if case.immersed.refine.is_some() {
+        let (m, notes) = crate::immersed::refine_mesh(case, &mesh)?;
+        mesh = m;
+        for n in notes {
+            let _ = write!(desc, "; {}", n.message);
+        }
+    }
     // cut cells (L13 stage 2, D227): before the renumbering and the pairing
     if case.immersed.is_cut() {
         crate::immersed::check_case(case)?;

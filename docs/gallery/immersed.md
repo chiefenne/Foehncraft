@@ -13,6 +13,7 @@ Part of the [Example gallery](../gallery.md): bodies in the flow without a body-
 | 357 | [A turbulent plate tilted against the mesh: wall functions on cut cells](#cut-plate) | L13 stage 2c | `shape = "plane"` (`normal`), wall functions with the exact first-cell distance, `[immersed.cut] wall_sample`, y⁺ per body (LIM011) |
 | 359 | [A heated pin cut out of a box mesh: conjugate heat transfer through cut cells](#cut-cht) | L13 stage 2d | `[regions.<name>] zones = ["<body>"]` on a cut body, solid cut cells, the cut faces as region interface, thin solids refused (IMM205) |
 | 360 | [A cylinder that blows through a slot, and Taylor–Couette flow cut out of a box: conditions on cut bodies](#cut-patches) | L13 stage 2e | `patches` of an STL body (ASCII solids, binary attribute tags), `[boundary.<body>-<patch>]`, `omega` (turning wall, torque), `invert` |
+| 361 | [A cylinder on a box mesh refined near it: hanging-node faces](#refine) | L13 stage 2f | `[immersed.refine]` (`levels`, `layers` or `distance`), refinement of hexahedra with hanging-node faces, 2:1 balance (IMM206) |
 
 ---
 
@@ -950,3 +951,107 @@ examples/cases/flow/immersed_blown_cylinder.stl`. Recipe:
 [360](../recipes/immersed.md#cut-patches). Case files:
 `examples/cases/flow/immersed_cut_blown_cylinder.toml`,
 `examples/cases/flow/immersed_cut_taylor_couette.toml`.
+
+---
+
+<a id="refine"></a>
+## 361. A cylinder on a box mesh refined near it: hanging-node faces
+
+<img src="../figures/gallery/immersed_refine.png" alt="Four panels. Top left: the speed around a grey cylinder in a channel, blue in the wake and red beside the cylinder, the cells outlined: large square cells far away, cells half and a quarter as wide in two bands around the cylinder. Top right: a close-up of a perturbed mesh with a dashed circular arc, the cells a quarter as wide along the arc and half as wide further out, coloured by the temperature error, pale near the arc and dark red in the coarse cells in the middle of the circle, with no jump where the cell size changes. Bottom left: the lift coefficient against the number of cells on a log axis: blue points for uniform meshes rise from 0.0078 to 0.0106, a red square for the refined mesh at about 19 000 cells lies inside the grey reference band. Bottom right: the temperature error against the width of the input cells on log axes, two falling lines parallel to a dashed second-order line, the refined one below." width="1400" height="900">
+
+Cut cells resolve a body only as well as the cells it crosses; a box mesh
+fine enough everywhere wastes cells far from the body. `[immersed.refine]`
+(L13 stage 2f, owner decision Q7) halves the hexahedra near the bodies
+before the cut, up to `levels` times, into hexahedra with **hanging-node
+faces** (D57): where a cell meets two (2D) or four (3D) cells of the next
+level, its face is split into their faces and the corners of the small
+faces are added to the edges of every face that passes through them, so
+each cell stays a closed polyhedron of D23 and the solver sees an ordinary
+polyhedral mesh. The refinement is the first piece of the refinement kernel
+of L14:
+
+- **2:1 balanced** across faces, edges and corners: neighbouring cells
+  differ by one level at most.
+- **Conservative geometry.** The faces of an input face add up to its area
+  vector, the cells of an input cell to its volume, to round-off (measured
+  2·10⁻¹⁵ also on warped hexahedra); Σ S = 0 on every cell.
+- **Deterministic and serial**, before the cut and the partition: every new
+  node is named by the entity of the input mesh it lies on (edge, face or
+  cell, with its position in a frame fixed by the node numbers), and its
+  coordinates come from that entity alone, so both sides of a face compute
+  it bit for bit and the result is the same on every run (D93).
+- **Planar meshes** (one cell thick) are refined in the plane only; cells
+  that are not hexahedra are kept whole. The log (IMM206) lists the cells per
+  level, the faces between levels and the largest non-orthogonality,
+  skewness and closure.
+
+A cell is halved while its distance to the nearest body surface, less its
+own radius, is below the width of its level: `layers` cells of that level
+(default 4), or with `distance = w` the width w · 2^(levels − 1 − level) in
+metres, the same region on every mesh of a convergence study.
+
+**The cylinder at Re 20** (`immersed_refine_cylinder_re20.toml`, top left
+and bottom left): the Schäfer–Turek channel of [gallery 313](#cut-cylinder)
+on the plain D/10 box mesh (220 × 41) refined twice within 0.08 m of the
+cylinder (D/40 there, D/20 out to 0.16 m): 20 372 cells, 19 140 after the
+cut.
+
+| Mesh | Cells | C_D | C_L | Δp (Pa) |
+|---|---|---|---|---|
+| uniform box, h = D/10, cut | 8 944 | 5.554 | 0.0078 | 0.1140 |
+| uniform box, h = D/40, cut | 143 088 | 5.595 | 0.0106 | 0.1171 |
+| D/10 refined to D/40 near the cylinder | 19 140 | 5.593 | 0.01063 | 0.1171 |
+| reference range | | 5.57 – 5.59 | 0.0104 – 0.0110 | 0.1172 – 0.1176 |
+
+The refined mesh gives the values of the uniform D/40 mesh with a seventh
+of its cells (1 334 SIMPLEC iterations instead of more than 4 000).
+
+**Second order across the faces between levels** (`immersed_refine_mms.toml`,
+top right and bottom right): heat conduction with the manufactured
+T = T0 + A sin(πx) sin(πy) on the unit square in perturbed hexahedra (nodes
+moved by up to 15 % of a cell), refined twice near a circle cut out and kept
+as a solid of the fluid's own conductivity (it only steers the
+refinement):
+
+| Input cells across | 16 | 32 | 64 |
+|---|---|---|---|
+| Cells, refined | 1 762 | 6 628 | 25 978 |
+| L2 error, refined (K) | 5.54·10⁻² | 1.46·10⁻² | 3.76·10⁻³ |
+| L2 error, without refinement (K) | 1.08·10⁻¹ | 2.41·10⁻² | 5.86·10⁻³ |
+
+The order is 1.93 and 1.95 from the width of the input cells (2.04 and 1.99
+from the cell counts); the error field shows no jump at the faces between
+levels: the non-orthogonal correction carries the offset of the cell
+centres across a hanging face.
+
+**Benchmark with the computer-graphics methods (maintainer rule).** The
+tree is the octree of mesh generators and of adaptive codes (a forest of
+octrees, one per input hexahedron, as p4est); the 2:1 balance by corners is
+the standard ripple propagation. The node names replace the hash of
+coordinates that octree meshers often use: a hash of floating-point
+coordinates merges or splits nodes by tolerance, the names do not need one.
+Splitting the coarse face into the faces of the fine side (the "conformal
+polyhedral" approach) keeps a plain finite-volume face loop; the alternative
+of hanging-node interpolation (a constraint on the coarse side) is not
+conservative.
+
+**What is not here yet.** Only hexahedra are refined (prisms, tetrahedra and
+polyhedra are kept whole); no coarsening and no refinement driven by the
+solution (that is L14 on this kernel); the refined cells near the body have
+the faces of trilinear hexahedra, the body surface is still the cut. One
+rank only, like the cut.
+
+Reproduce (each run under a minute on 4 cores):
+
+```sh
+cargo build --release -p foehncraft-cli
+target/release/foehn flow examples/cases/flow/immersed_refine_cylinder_re20.toml --out output/ref_cyl
+target/release/foehn flow examples/cases/flow/immersed_refine_mms.toml --out output/ref_mms
+target/release/foehn flow examples/cases/flow/immersed_refine_mms.toml --out output/ref_mms1 --set 'verification.levels=[1]'
+pip install matplotlib h5py numpy
+python3 -m tools.plot.immersed_refine docs/figures/gallery output/ref_cyl output/ref_mms1
+```
+
+Recipe: [361](../recipes/immersed.md#refine). Case files:
+`examples/cases/flow/immersed_refine_cylinder_re20.toml`,
+`examples/cases/flow/immersed_refine_mms.toml`.

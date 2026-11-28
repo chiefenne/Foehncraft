@@ -13,6 +13,7 @@ Part of the [Recipes](../recipes.md): put bodies into the flow without meshing t
 | 357 | [Run a turbulent flow with wall functions on a cut body](#cut-wall-functions) |
 | 359 | [Keep a cut body as a solid region (conjugate heat transfer)](#cut-cht) |
 | 360 | [Give a cut body inlets, outlets and a turning wall](#cut-patches) |
+| 361 | [Refine the mesh near a body](#refine) |
 
 ---
 
@@ -345,3 +346,40 @@ The boundary summary of every wall of the body (`result.json`, the log) then has
 **Keep the fluid inside.** `invert = true` turns a cylinder, sphere or box inside out: the fluid inside, the solid outside. A pipe or the outer wall of a gap then needs no fitted mesh. Boundaries of the mesh that lie wholly in the solid are left out and need no condition (a condition the case gives them anyway is kept, on an empty boundary).
 
 **Limits.** A wall face of a cut cell is not split along a patch edge: patch edges are resolved to the cell size. Solid regions (recipe 359) cannot turn or have patches. One rank only.
+**Limits.** A wall face of a cut cell is not split along a patch edge: patch edges are resolved to the cell size. Solid regions (recipe 359) cannot turn or have patches. One rank only.
+
+---
+
+<a id="refine"></a>
+## 361. Refine the mesh near a body
+
+**Start from a coarse box mesh and let the bodies refine it.** Add `[immersed.refine]` to a case with `[[immersed.body]]` bodies (cut or penalised):
+
+```toml
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [2.2, 0.41, 0.01]
+cells = [220, 41, 1]           # h = D/10 away from the body
+
+[immersed]
+method = "cut"
+
+[immersed.refine]
+levels = 2                     # halve the cells near the bodies twice: D/40
+distance = 0.08                # the finest level within 0.08 m of a surface,
+                               # the next one within 0.16 m, ...
+# layers = 4                   # or: each level 4 of its own cells wide (default)
+
+[[immersed.body]]
+name = "cylinder"
+shape = "cylinder"
+centre = [0.2, 0.2, 0.0]
+radius = 0.05
+```
+
+The hexahedra of the mesh near the surfaces are halved before the cut, 2:1 balanced, into hexahedra with hanging-node faces; a planar mesh (one cell thick) is refined in its plane. The log (IMM206) gives the cells per level, the faces between levels and the largest non-orthogonality and skewness.
+
+**Choose the widths.** Make the finest band wide enough for the flow features at the body: the lift of the Schäfer–Turek cylinder ([gallery 361](../gallery/immersed.md#refine)) is 5 % below the reference range with the finest band 0.02 m (0.2 D) wide and inside it at 0.08 m (0.8 D); drag and pressure difference were within 0.2 % of their ranges already at 0.02 m. Use `distance` for a convergence study (`[verification] levels`): the refined region is then the same in metres on every level, while `layers` narrows it with the cells.
+
+**Limits.** Only hexahedra are refined; tetrahedra, prisms and polyhedra are kept whole. The refinement follows the distance to the bodies only, not the solution, and never coarsens. A mesh with periodic pairs is refined before the pairing. One rank only.

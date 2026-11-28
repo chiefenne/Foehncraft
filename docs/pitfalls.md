@@ -34,6 +34,7 @@ instead.
 - [Natural circulation loops behind a coupled wall](#circuit-branches)
 - [Conjugate heat transfer on cut cells](#cut-cht)
 - [Conditions on cut bodies](#cut-patches)
+- [Near-body refinement](#refine)
 
 <a id="steady-runs"></a>
 ## Steady runs: budget and stopping
@@ -880,4 +881,25 @@ Found with the circuits behind the walls (SF7c, #356):
   with it the inner torque converges at second order (#360).
 - **A boundary inside the solid has no faces.** The box around an inverted
   cylinder lost all its faces in the cut and still asked for a condition
-  (BC001); the cut now leaves such boundaries out.
+  (BC001); the cut now leaves such boundaries out, except those the case
+  gives a condition (older cases list conditions for them, and BC002 then
+  refused the missing boundary).
+
+<a id="refine"></a>
+## Near-body refinement
+
+- **Refine a region fixed in metres for a convergence study.** With the
+  band of each level given in cells (`layers`), the refined region narrows
+  as the input cells shrink, and the order from the cell counts of a
+  manufactured solution came out 2.3 to 2.4 on three levels (the share of
+  fine cells changes). `distance` keeps the region in metres; the order is
+  then 2.04 and 1.99 (#361).
+- **Merged cut cells may share several faces with a neighbour in every
+  view of the mesh.** A refined mesh gave more merged cut cells, and the
+  fluid view of a conjugate case refused two cells with two shared faces
+  (GEN001), which the full mesh allows (D228). The fluid view now allows
+  them too.
+- **The lift needs a wide fine band.** On the Schäfer–Turek cylinder the
+  drag reached its range with a fine band of 0.2 D, the lift stayed 5 %
+  below it until the band was 0.8 D wide: the lift comes from the whole
+  near field, not from the wall cells.

@@ -369,7 +369,14 @@ across) and a cylinder blowing through a slot
 ([gallery 360](../gallery/immersed.md#cut-patches)). Open: the force balance
 on tetrahedra, non-planar polyhedral faces (flat solid slivers on
 polyhedra), the k overproduction of the first cut layer, patch edges inside
-a wall face, and 2f.
+a wall face. 2f (#361): near-body refinement of hexahedra with hanging-node
+faces (`[immersed.refine]`, `levels` with `layers` or `distance`), 2:1
+balanced across faces, edges and corners, volume and face areas kept to
+round-off, deterministic and serial; a conduction MMS across the faces
+between levels second order, the Schäfer–Turek cylinder on a D/10 box
+refined to D/40 near the body matching the uniform D/40 mesh with a seventh
+of its cells ([gallery 361](../gallery/immersed.md#refine)). Only
+hexahedra are refined; coarsening and solution-driven refinement are L14.
 
 ## 5. Stage 3 – Layered distance-field boundary (the L13 target, D230–D232)
 

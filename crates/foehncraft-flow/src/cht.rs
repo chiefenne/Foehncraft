@@ -373,6 +373,8 @@ pub fn view(case: &FlowCase, mesh: Mesh, geo: Geometry) -> Result<(FlowCase, Mes
     }
     let points: Vec<[f64; 3]> = used.iter().map(|&v| mesh.points[v as usize]).collect();
     let mut b = MeshBuilder::new(points, cell.len());
+    // merged cut cells may share several faces with a neighbour (D228)
+    b.allow_shared_pairs();
     b.set_zones(
         mesh.zones.clone(),
         cell.iter().map(|&c| mesh.cell_zone[c as usize]).collect(),

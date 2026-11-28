@@ -789,3 +789,67 @@ fn patch_and_motion_settings_are_refused() {
         "IMM202"
     );
 }
+
+/// Heat conduction across hanging-node faces (L13 stage 2f): the
+/// manufactured solution on a perturbed box mesh refined twice near a cut
+/// body of the fluid's own material converges at second order (measured
+/// 2.04 and 1.99 from the cell counts), the refined region the same in
+/// metres on every level.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn refined_mms_converges_at_second_order() {
+    let t = text("immersed_refine_mms.toml");
+    let rep = run_case(&parse(&t), "refmms");
+    assert!(rep.failures.is_empty(), "{:?}", rep.failures);
+    let (_, orders) = &rep.scalar_orders[0];
+    eprintln!("refined MMS: orders {orders:?}");
+    for o in orders {
+        assert!((1.85..2.3).contains(o), "{orders:?}");
+    }
+    for s in &rep.solves {
+        assert!(s.mesh.contains("near-body refinement"), "{}", s.mesh);
+        assert!(s.mesh.contains("2:1 balance"), "{}", s.mesh);
+    }
+    // the refinement is the same on every run
+    let again = run_case(&parse(&t), "refmms2");
+    for (a, b) in rep.solves.iter().zip(&again.solves) {
+        assert_eq!(a.mesh_hash, b.mesh_hash);
+    }
+}
+
+/// The Schäfer–Turek cylinder on a D/10 box mesh refined twice near the
+/// cylinder (L13 stage 2f): drag, lift and pressure difference in the
+/// reference ranges with a seventh of the cells of the uniform D/40 mesh.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn refined_cylinder_reaches_the_reference() {
+    let t = text("immersed_refine_cylinder_re20.toml")
+        .replace("[output]\n", "[output]\nvtkhdf = false\n");
+    let rep = run_case(&parse(&t), "refcyl");
+    // the case fails beyond 5 % of the range midpoint from any range
+    assert!(rep.failures.is_empty(), "{:?}", rep.failures);
+    let s = &rep.solves[0];
+    let b = s.benchmark.as_ref().unwrap();
+    let v: Vec<f64> = b.values.iter().map(|x| x.value).collect();
+    eprintln!("refined cylinder: {} cells, C_D, C_L, Δp {v:?}", s.cells);
+    assert!(s.cells < 25_000, "{}", s.cells);
+    // measured 5.593, 0.01063, 0.1171: C_L in its range, C_D 0.06 % above
+    // and Δp 0.08 % below theirs
+    assert!(b.values[0].deviation < 0.002, "C_D {}", v[0]);
+    assert_eq!(b.values[1].deviation, 0.0, "C_L {}", v[1]);
+    assert!(b.values[2].deviation < 0.002, "Δp {}", v[2]);
+}
+
+#[test]
+fn refine_settings_are_refused() {
+    let t = text("immersed_refine_mms.toml");
+    for (from, to) in [
+        ("levels = 2\n", "levels = 0\n"),
+        ("levels = 2\n", "levels = 7\n"),
+        ("distance = 0.0625\n", "distance = -1.0\n"),
+        ("distance = 0.0625\n", "distance = 0.0625\nlayers = 4\n"),
+        ("distance = 0.0625\n", "layers = 0.5\n"),
+    ] {
+        assert_eq!(refused(&t.replace(from, to)), "IMM101", "{to}");
+    }
+}
