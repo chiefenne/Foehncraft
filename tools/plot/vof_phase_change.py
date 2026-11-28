@@ -5,7 +5,7 @@ checks: vof_phase_change_checks.png, the vapour layer of the Stefan and the
 sucking problem and the radius of Scriven's bubble against the exact
 solutions (Welch & Wilson 2000; Scriven 1959), one panel each.
 
-film: vof_film_boiling.png, the temperature with the interface (α = 0.5)
+film: vof_film_boiling.png, the speed with the interface (α = 0.5)
 of a film boiling run at four times, and the Nusselt number of the wall
 (heat.csv) over time against the correlation of Berenson (1961).
 
@@ -148,15 +148,17 @@ def film(out, run):
     pick = [snaps[i] for i in np.linspace(len(snaps) // 4, len(snaps) - 1, 4).round().astype(int)]
     fig = plt.figure(figsize=(14.0, 8.4), constrained_layout=True)
     gs = fig.add_gridspec(2, 4, height_ratios=[3.0, 1.0])
+    # one colour scale for the four times
+    top = max(np.percentile(field(read(p)[2], "speed"), 99.5) for p in pick)
     pc = None
     for i, path in enumerate(pick):
         quads, _, d = read(path)
         with h5py.File(path, "r") as h:
             time = float(h.attrs["time"]) if "time" in h.attrs else float("nan")
         ax = fig.add_subplot(gs[0, i])
-        pc = PolyCollection(quads, array=field(d, "temperature"), cmap=RAINBOW, edgecolors="face",
-                            linewidths=0.1)
-        pc.set_clim(500.0, 505.0)
+        speed = field(d, "speed")
+        pc = PolyCollection(quads, array=speed, cmap=RAINBOW, edgecolors="face", linewidths=0.1)
+        pc.set_clim(0.0, top)
         ax.add_collection(pc)
         cx = quads[:, :, 0].mean(axis=1)
         cy = quads[:, :, 1].mean(axis=1)
@@ -174,20 +176,21 @@ def film(out, run):
             ax.set_ylabel("y (m)")
         else:
             ax.set_yticklabels([])
-    fig.colorbar(pc, ax=fig.axes[:4], location="right", label="temperature (K), interface white",
+    fig.colorbar(pc, ax=fig.axes[:4], location="right", label="speed (m/s), interface (α = 0.5) white",
                  shrink=0.8, pad=0.01)
     b = fig.add_subplot(gs[1, :])
     t, nu = wall_nusselt(run)
     b.plot(t, nu, color="tab:red", lw=1.4, label="Foehncraft, wall mean")
-    late = t > 0.25 * t[-1]
+    # after the first bubbles have left the film
+    late = t > 0.4 * t[-1]
     if late.any():
         b.axhline(nu[late].mean(), color="tab:red", ls="--", lw=1.2,
-                  label=f"time mean after {0.25 * t[-1]:.2f} s: {nu[late].mean():.2f}")
+                  label=f"time mean after {0.4 * t[-1]:.2f} s: {nu[late].mean():.2f}")
     nb = berenson()
     b.axhline(nb, color="black", lw=1.6, label=f"Berenson 1961: {nb:.2f}")
     b.set_xlabel("t (s)")
     b.set_ylabel("Nu = q λ₀/(λ_v ΔT)")
-    b.set_ylim(0.0, max(4.0 * nb, 1.2 * np.percentile(nu, 95)))
+    b.set_ylim(0.0, max(1.6 * nb, 1.15 * nu.max()))
     b.grid(alpha=0.3)
     b.legend(fontsize=9, loc="upper right")
     fig.suptitle("Film boiling on a horizontal wall 5 K above T_sat (volume of fluid, near-critical fluid)",

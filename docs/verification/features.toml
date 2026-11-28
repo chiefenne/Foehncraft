@@ -2784,7 +2784,7 @@ evidence = [
   { kind = "exact", case = "vof_stefan", what = "the whole run, delta 0.1 to 0.5 mm: within 1.1 % after the start", doc = "docs/gallery/multiphase.md#vof-phase-change" },
   { kind = "exact", case = "vof_sucking", what = "delta 0.28 to 0.62 mm: within 1.8 %", doc = "docs/gallery/multiphase.md#vof-phase-change" },
   { kind = "exact", case = "vof_scriven", what = "the bubble from R = 0.1 to 0.3 mm: 3.2 % ahead at 2 ms, 1.9 % at 8 ms", doc = "docs/gallery/multiphase.md#vof-phase-change" },
-  { kind = "consistency", case = "vof_film_boiling", what = "film boiling on a horizontal wall (Welch & Wilson set-up): the wall Nusselt number against Berenson 1961", doc = "docs/gallery/multiphase.md#vof-phase-change" },
+  { kind = "consistency", case = "vof_film_boiling", what = "film boiling on a horizontal wall (Welch & Wilson set-up, 80 x 240 cells, 1 s): bubbles released about every 0.22 s; wall Nusselt number 2.25 (time mean after 0.4 s) against Berenson 1961, 2.62 (-14 %)", doc = "docs/gallery/multiphase.md#vof-phase-change" },
 ]
 gaps = [
   "the volume source of the phase change is put into the pure cells beside the interface (a local form of Hardt & Wondra 2008), so the vapour next to an evaporating interface moves at about m/rho_v although it is at rest in the exact solutions; the layer and the radius still follow them within 1 to 3 %",

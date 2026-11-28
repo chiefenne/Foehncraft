@@ -64,7 +64,15 @@ What the runs give:
 
 The tests `phase_change_stefan`, `phase_change_sucking` and `phase_change_scriven` run shorter versions and hold 2 %, 2.5 % and 4 %.
 
-FILM_BOILING_SECTION
+<img src="../figures/gallery/vof_film_boiling.png" alt="Top: the speed around a boiling vapour film at four times, in a domain 79 mm wide and 236 mm high, with the interface as a white line. At 0.30 s the film on the wall is still thin with a wave that is thick at the two side walls. At 0.55 s two half bubbles rise from the film at the side walls with liquid flowing around them at up to 0.5 m/s. At 0.75 s and 1.00 s the first bubbles have pinched off and rise, a second pair follows, and a liquid jet runs up the middle between them. Bottom: the wall Nusselt number over the second of boiling: 3.9 at the start, a dip to 1.1 while the film thickens, then oscillating between 1.7 and 3.0 with each bubble release, mean 2.25 after 0.4 s, against the Berenson value of 2.62." width="1400" height="840">
+
+`vof_film_boiling.toml` is film boiling on a horizontal wall 5 K above T_sat, in the set-up of Welch & Wilson (2000) with the near-critical fluid of the film boiling literature (density ratio 40, σ = 0.1 N/m, h_lv = 10 kJ/kg). The domain is one most dangerous Taylor wavelength wide, λ_d = 78.7 mm, and three high, with symmetry at the sides. The film starts with a cosine wave and the conduction profile across it.
+
+What the run gives (80 × 240 cells, 1 s in 5000 steps of 0.2 ms, about 85 minutes on one core):
+- **The instability:** the film thickens for 0.35 s, then the crests at the side walls rise as half bubbles, pinch off and leave; a new pair follows about every 0.22 s.
+- **Heat transfer:** the wall Nusselt number Nu = q λ₀/(λ_v ΔT), λ₀ = √(σ/(g Δρ)), oscillates between 1.7 and 3.0 with the releases. Its mean after 0.4 s is 2.25, 14 % below the correlation of Berenson (1961), 2.62. One mesh only: no mesh study yet.
+
+The colours are the speed, as the liquid and the vapour sit at T_sat outside the thin film.
 
 ```sh
 target/release/foehn flow examples/cases/flow/vof_stefan.toml --out output/vof_stefan
