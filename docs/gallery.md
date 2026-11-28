@@ -23,7 +23,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | [Boundary conditions](gallery/boundary-conditions.md) | slip walls, axisymmetric wedges, inlet profiles from tables, backflow at pressure outlets, convective outlets, periodic modules, absolute pressure values (D239) | 21, 67, 220 |
 | [Lagrangian sprays](gallery/sprays.md) | droplets as Lagrangian parcels in the gas flow: injectors, drag, gravity, wall behaviour, the mass book | 242, 265, 280, 283, 285, 292, 306, 306b, 318, 314, 319, 320, 321, 325, 324, 323, 326, 333, 335, 341, 343, 338, 344, 363, 369 |
 | [Porous regions](gallery/porous.md) | flow through porous matrices with a direction-dependent Darcy–Forchheimer resistance: a ceramic honeycomb, the exact pressure drop of a block | 273, 275 |
-| [Two fluids (volume of fluid)](gallery/multiphase.md) | water and air with a sharp interface: a water column collapsing against Martin & Moyce, Zalesak's disk, a static drop | 317, 358 |
+| [Two fluids (volume of fluid)](gallery/multiphase.md) | water and air with a sharp interface: a water column collapsing against Martin & Moyce, Zalesak's disk, a static drop | 317, 358, 368 |
 | [Structures](gallery/structure.md) | the linear structural solver for reeds and other parts the flow moves: beams, MITC shells and quadratic solids, clamp springs and their fit to a measured frequency, contact with a seat and a stop, static, modal and transient analyses, thermal loads, temperatures mapped from a flow case (MS5, MS6) | 295, 297, 299, 300, 302, 308 |
 | [Immersed bodies](gallery/immersed.md) | bodies in the flow without a body-fitted mesh: Brinkman penalisation of primitive bodies (L13 stage 1) | 270, 291, 313, 310, 315, 322, 357, 359, 360, 361 |
 | [Moving meshes and solids](gallery/moving-solids.md) | meshes whose nodes move in time: the deforming mesh with swept volumes, a piston compressing a closed gas volume, free-stream preservation (stage MS0, L22) | 296, 307 |
@@ -207,6 +207,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | <a id="cut-patches"></a>360 | [A cylinder that blows through a slot, and Taylor–Couette flow cut out of a box: conditions on cut bodies](gallery/immersed.md#cut-patches) | [Immersed bodies](gallery/immersed.md) |
 | <a id="refine"></a>361 | [A cylinder on a box mesh refined near it: hanging-node faces](gallery/immersed.md#refine) | [Immersed bodies](gallery/immersed.md) |
 | <a id="spray-collision-post"></a>363 | [Bouncing drops in ECN Spray G (Post collision outcomes)](gallery/sprays.md#spray-collision-post) | [Lagrangian sprays](gallery/sprays.md) |
+| <a id="two-fluid-pipe"></a>368 | [Bubbly up-flow in a pipe with the two-fluid model, against Wang et al. (1987)](gallery/multiphase.md#two-fluid-pipe) | [Two fluids (volume of fluid)](gallery/multiphase.md) |
 | <a id="spray-collision-cells"></a>369 | [Collision cells of their own in ECN Spray G](gallery/sprays.md#spray-collision-cells) | [Lagrangian sprays](gallery/sprays.md) |
 
 ## Adding a feature

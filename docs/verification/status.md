@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 1.1.0 (b35bc269d4e1)), never typed in. The same as data: [grades.json](grades.json).
 
-**167 features: 49 verified, 115 partial, 3 unverified.**
+**168 features: 49 verified, 116 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -192,6 +192,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Moving meshes and solids | [Deforming meshes with a prescribed node displacement, and the piston (stage MS0)](#mesh-deforming) | partial |
 | Multiphase | [Two fluids by the volume of fluid: THINC, CICSAM, balanced gravity and surface tension (L3, MP1, D293)](#multiphase-vof) | partial |
 | Multiphase | [Energy and phase change in the volume of fluid: mixture energy, interface cells held at T_sat, volume source in the continuity (L3, MP2, SF14, D351)](#multiphase-vof-phase-change) | partial |
+| Multiphase | [Two-fluid (Euler-Euler) model of dispersed bubbles: two momentum equations, one volume-continuity pressure, drag by partial elimination, lift, wall lubrication, dispersion, bubble-induced viscosity (L3, MP3, D352 to D356)](#multiphase-two-fluid) | partial |
 
 ## Meshes
 
@@ -3083,3 +3084,27 @@ Gaps:
 - T_sat is fixed: no Clausius-Clapeyron shift with the pressure or the curvature, no interface resistance (Schrage); the sensible heat difference (c_p,l - c_p,v) Delta T of Scriven's original is left out
 - film boiling is one 2D run on one mesh (Delta x = lambda_d/80); no mesh study
 - with a phase change the pressure force of a cell heavier than its face is not amplified by rho_P/rho_f (D351 (5)); without one the rows of MP1 are unchanged
+
+<a id="multiphase-two-fluid"></a>
+
+### Two-fluid (Euler-Euler) model of dispersed bubbles: two momentum equations, one volume-continuity pressure, drag by partial elimination, lift, wall lubrication, dispersion, bubble-induced viscosity (L3, MP3, D352 to D356)
+
+**partial** (gaps written) · id `multiphase.two-fluid` · switch `[two_fluid] with [two_fluid.gas]` · decisions D352, D353, D354, D355, D356
+
+- exact: [`bubble_column_drag_balance`](../../crates/foehncraft-flow/tests/twofluid.rs): a uniform bubble column (4 mm air bubbles in water, alpha 0.05): the slip within 0.2 % of the Ishii-Zuber drag balance U_T sqrt(1 - alpha) = 0.2247 m/s in every row, alpha within 1 % of j_G/u_g, at most 3 outer iterations per step
+- contract (diagnostics): [`refusals`](../../crates/foehncraft-flow/tests/twofluid.rs): TWF002 for steady runs, BDF2 and VOF; TWF001 for a gas without a size and a constant lift without its coefficient
+- exact: [`elimination_solves_the_drag_pair`](../../crates/foehncraft-flow/src/twofluid.rs): the partial elimination gives the exact solution of the 2 x 2 drag pair and its D coefficients
+- exact: [`terminal_speed_of_a_distorted_bubble`](../../crates/foehncraft-flow/src/twofluid.rs): the drag balance of one bubble gives U_T = sqrt(2) (g drho sigma)^(1/4)/sqrt(rho_l) of Ishii & Zuber; drag tends to Stokes, the Tomiyama lift changes sign near 5.8 mm, the lift damping of Shaver & Podowski
+- exact: [`two_fluid_column`](../../examples/cases/flow/two_fluid_column.toml): slip 0.2247 m/s, alpha 0.0504, two outer iterations per step (passes in CI (set linux-3), not yet in the manual) ([results](../gallery/multiphase.md#two-fluid-pipe))
+- reference-data: [`bubbly_pipe_wang_jg01`](../../examples/cases/flow/bubbly_pipe_wang_jg01.toml): Wang et al. 1987, j_L 1.08, j_G 0.1 m/s, 3 mm bubbles, L/D 35: core 0.022 against 0.036 (-39 %), wall peak 0.32 against 0.16 at r/R 0.965 (measured 0.96) (passes in CI (set long), not yet in the manual) ([results](../gallery/multiphase.md#two-fluid-pipe))
+- reference-data: [`bubbly_pipe_wang_jg04`](../../examples/cases/flow/bubbly_pipe_wang_jg04.toml): the same at j_G 0.4 m/s: core 0.114 against 0.118 (-3 %), wall peak 0.93 against 0.42 at r/R 0.965 (measured 0.953) (passes in CI (set long), not yet in the manual) ([results](../gallery/multiphase.md#two-fluid-pipe))
+
+Gaps:
+
+- the wall peaks of the Wang pipes are about twice the measured ones (0.32 against 0.16, 0.93 against 0.42) and the core at j_G 0.1 is 39 % low: too much gas held in the wall layer; one bubble size, no bubble-induced source in k and omega; one mesh per case, no mesh study
+- the averaged model needs cells of about half a bubble or more: on a pipe mesh graded to 0.3 mm wall cells (d = 3 mm) the gas piles into the wall cells; the wall lubrication takes y at least d/2 (D353)
+- one bubble size, isothermal, no mass transfer; N phases and size groups follow in MP5 to MP8 (D373 to D376)
+- transient BDF1 only, one process; no VOF, energy, scalars, sprays, immersed bodies, regions, moving meshes, periodic boundaries or restart (TWF002); the GPU (PTX) entries are built but not yet run on a GPU
+- the dispersion limiter alpha* = max(alpha_g, h |grad alpha_g|) (D354) is a grid-scale device, not a closure
+- the [balance] ledger (BAL001, BAL003) accounts the liquid as a single phase and warns in a two-fluid run; the check of the run is the boundary volume account of both phases
+- the turbulence is the liquid's model with the Sato viscosity only: no bubble-induced source in k and omega (Rzehak & Krepper 2013)
