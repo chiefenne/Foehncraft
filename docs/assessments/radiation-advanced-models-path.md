@@ -143,7 +143,7 @@ float32 traversal stays the later item P9.
 
 | # | Question | Options | Recommended | Answer |
 |---|---|---|---|---|
-| Q1 (D366) | What comes first: speed or accuracy? | (a) RA0 speed foundation first, then R1b; (b) R1b coupling first as specified, speed after; (c) spectral models (RA2) first | (a): at 448 µs per bundle the coupled furnace is not affordable, and RA0 changes no result | open |
+| Q1 (D366) | What comes first: speed or accuracy? | (a) RA0 speed foundation first, then R1b; (b) R1b coupling first as specified, speed after; (c) spectral models (RA2) first | (a): at 448 µs per bundle the coupled furnace is not affordable, and RA0 changes no result | **Answered 2026-11-28 (D366): (a) speed first.** RA0 (profiling, face-plane walk, renumbering, Colab GPU check) before R1b |
 | Q2 (D367) | Spectral model ladder | (a) WSGG default now (RA2), FSCK/SLW as the accurate option (RA4); (b) FSCK as default from the start; (c) WSGG only | (a): WSGG is enough for SF4 and cheap to verify; FSCK follows once RA3 gives our own tables | open |
 | Q3 (D368) | Spectral reference data | (a) own line-by-line tool from HITEMP, own WSGG/FSCK tables; (b) published line-by-line results and coefficient sets only; (c) both | (c): published sets give the first WSGG at once; our own tables remove the dependence on external fits | open |
 | Q4 (D369) | Deterministic solvers | (a) P1 and FV-DOM with random-ordinate ray-effect fix as options, MC default; (b) MC only; (c) DOM default for speed | (a): users expect them, they cross-check MC, and P1 is the cheap option for thick sooty and coal flames | open |
