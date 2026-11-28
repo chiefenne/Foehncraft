@@ -212,6 +212,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="spray-child-size"></a>344 | [Pick the time step of a spray that atomizes at the nozzle](recipes/sprays.md#spray-child-size) | [Lagrangian sprays](recipes/sprays.md) |
 | <a id="wall-heat"></a>346 | [Write the wall heat flux, the heat transfer coefficient and the Nusselt number on the walls](recipes/energy.md#wall-heat) | [Energy equation and heat transfer](recipes/energy.md) |
 | <a id="shared-install"></a>350 | [Install for all users of a Linux machine, several versions side by side](recipes/development.md#shared-install) | [Development: tests, CI and releases](recipes/development.md) |
+| <a id="circuit-walls"></a>356 | [Put a circuit behind the walls of a flow case](recipes/circuits.md#circuit-walls) | [Water and steam circuits](recipes/circuits.md) |
 
 ## Adding a feature
 

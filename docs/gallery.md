@@ -199,6 +199,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | <a id="spray-device-surface"></a>343 | [Spray G under its injector tip](gallery/sprays.md#spray-device-surface) | [Lagrangian sprays](gallery/sprays.md) |
 | <a id="spray-child-size"></a>344 | [KH-ACT children of the right size in ECN Spray G](gallery/sprays.md#spray-child-size) | [Lagrangian sprays](gallery/sprays.md) |
 | <a id="wall-heat"></a>346 | [Wall heat flux, heat transfer coefficient and Nusselt number on a laminar flat plate](gallery/energy.md#wall-heat) | [Energy equation and heat transfer](gallery/energy.md) |
+| <a id="circuit-walls"></a>356 | [A convective evaporator pass on a drum loop: the circuit behind the 3D walls](gallery/circuits.md#circuit-walls) | [Water and steam circuits](gallery/circuits.md) |
 
 ## Adding a feature
 
