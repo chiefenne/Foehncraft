@@ -27,6 +27,7 @@ Part of the [Example gallery](../gallery.md): droplets as Lagrangian parcels in 
 | 343 | [Spray G under its injector tip](#spray-device-surface) | ID2, ID3, D343 to D345 | `[[spray.device]] geometry` (`standard-gasoline`, `standard-diesel`, `stl`), `file`, `scale`, `stl_origin`, `stl_axis`, `stl_reference`, `glyph_length`, `spray/devices.vtu`, `series.json` `static`, `result.json` `spray.devices`, tool `spray.place` |
 | 338 | [Grid orientation in ECN Spray G](#spray-g-grid) | D337 | `[mesh.generate] grid_angle`: the same G1 case on a grid with its lines along the plume and at 45° to it; liquid lead at 1.2 ms 27 % and 20 %, vapour 17 % and 9 % |
 | 344 | [KH-ACT children of the right size in ECN Spray G](#spray-child-size) | D348 | the children of every KH-ACT mechanism have the KH radius B₀Λ (Som and Aggarwal 2010, eq. 1); G1 at 1 µs: liquid +8 % and vapour −1 % at 1.2 ms (was +25 % and +17 %), D32 at 15 mm 14.5 µm (was 18) |
+| 363 | [Bouncing drops in ECN Spray G (Post collision outcomes)](#spray-collision-post) | D349 | `outcomes = "post"`: bouncing (Estrade) and reflexive separation (Ashgriz-Poo) before O'Rourke; G1 to 0.9 ms: D32 at 15 mm 13.0 µm (O'Rourke 14.5, no collisions 9.6, measured 7 to 10), liquid +20 % at 0.3 ms and +4 % at 0.8 ms (O'Rourke +23 % and +9 %) |
 
 ---
 
@@ -1818,4 +1819,66 @@ minutes at 2 µs, so a check of the late spray restarts from
 
 Files: `spray.csv`, `spray/parcels_<step>.vtkhdf`, `fields_<step>.vtkhdf`.
 [Recipe 344](../recipes/sprays.md#spray-child-size),
+[case row](../cases/flow.md#lagrangian-sprays).
+
+---
+
+<a id="spray-collision-post"></a>
+## 363. Bouncing drops in ECN Spray G (Post collision outcomes)
+
+<img src="../figures/gallery/spray_collision_post.png" alt="Left: side view of one plume of ECN Spray G at 0.6 ms with the Post collision outcomes, the iso-octane vapour mass fraction on the plane of the plume above the injector axis, a band at about 33 degrees ending near 30 mm, and the projected liquid volume of the eight plumes below it in grey with a red outline. Right top: liquid penetration to 0.9 ms; the thick red curve with the Post outcomes runs 3 to 4 mm above the measured points from 0.3 ms and ends at 36.6 mm, the thin orange curve with O'Rourke's outcomes lies about 1.5 mm above it. Right middle: vapour penetration; both curves are close, the Post one slightly lower and on the measured points from 0.6 ms. Right bottom: gas velocity on the injector axis 15 mm from the tip; both runs fall to about minus 7 metres per second and lie on top of each other." width="1200" height="840">
+
+With O'Rourke's outcomes (D331) two colliding drops either merge or
+graze. In the dense core of the Spray G plume that merges too many: with
+collisions the drops 15 mm from the tip are 14.5 µm (Sauter mean on the
+line of the phase-Doppler measurement through the plume centre), without
+them 9.6 µm, against 7 to 10 µm measured. The leading set-up of the ECN
+for Spray G (Argonne's LES at ECN4) uses the outcomes of Post and Abraham
+(2002) instead, and so can we now (D349):
+
+```toml
+[spray.collision]
+model = "ntc"
+outcomes = "post"
+```
+
+With the Weber number of the small diameter We_d, the size ratio Δ and the
+impact parameter B, a pair **bounces** below the limit of Estrade et al.
+(1999), about 2.8 for equal drops head-on and higher for grazing impacts;
+of the rest, a pair that O'Rourke would merge **separates reflexively**
+above the limit of Ashgriz and Poo (1990), 18.7 for equal drops head-on;
+the others merge or graze as before.
+
+| G1 to 0.9 ms, 1 µs | D32, line at 15 mm | liquid 0.3 ms | liquid 0.8 ms | vapour 0.8 ms |
+|---|---|---|---|---|
+| measured (ECN) | 7 to 10 µm | 20.4 mm | 33.8 mm | |
+| O'Rourke outcomes | 14.5 µm | 25.1 mm (+23 %) | 36.7 mm (+9 %) | 36.7 mm |
+| **Post outcomes (the case now)** | **13.0 µm** | 24.5 mm (+20 %) | 35.2 mm (+4 %) | 34.6 mm |
+| no collisions | 9.6 µm | 21.7 mm (+6 %) | 38.9 mm (+15 %) | 38.9 mm |
+
+The Post outcomes move every number the right way: smaller drops in the
+core (radial profile 6 to 13 µm from the edge to the centre, against 4 to
+15 with O'Rourke) and a smaller lead early and late. They close about a
+third of the gap in drop size. Without collisions the drops are right but
+the late liquid runs 15 % ahead, so the collisions are needed and too
+many of them still merge.
+
+**What is checked.** The criteria at their known points (bouncing below
+We_d = 2.808 and reflexive separation above 18.68 for equal drops
+head-on, the bounce limit rising with the impact parameter, no reflexive
+separation at B = 0.9); slow drops with the Post outcomes all bounce and
+none merge, fast head-on ones separate reflexively, mass, momentum and
+enthalpy kept to 10⁻¹². G1 as above.
+
+**What this version does not do.** The velocities after a bounce or a
+reflexive separation are ours (the drops keep their sizes and take the
+grazing velocities with the share B), since the paper of Post and Abraham
+was not open to us; no satellite drops; no gas pressure in the criteria,
+although measurements show the bouncing range growing with it. The drops
+still meet in the gas cells (as in D331), which the literature names as a
+source of mesh dependence; the core drops stay 3 to 6 µm too large and the
+early lead stays, both open gaps. About 40 minutes on 4 threads to 0.9 ms.
+
+Files: `spray.csv`, `spray/parcels_<step>.vtkhdf`, `fields_<step>.vtkhdf`.
+[Recipe 363](../recipes/sprays.md#spray-collision-post),
 [case row](../cases/flow.md#lagrangian-sprays).

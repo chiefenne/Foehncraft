@@ -163,7 +163,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Sprays | [High-pressure droplet surface: Peng-Robinson phase equilibrium and latent heat (Spray A, SA1, D311, D312, D314)](#sprays-high-pressure-surface) | partial |
 | Sprays | [Real-fluid gas film of the Peng-Robinson surface: Chung dense-fluid transport, Riazi-Whitson diffusivity, Peng-Robinson density and c_p (Spray A, SA2, D313)](#sprays-high-pressure-film) | partial |
 | Sprays | [Distorted drops: the Corrected Distortion model for drag and evaporation (Spray A, SA4 part 1, D316)](#sprays-corrected-distortion) | partial |
-| Sprays | [Drop collisions: no-time-counter sampling with O'Rourke's coalescence and grazing separation (D331)](#sprays-collision) | partial |
+| Sprays | [Drop collisions: no-time-counter sampling with O'Rourke's coalescence and grazing separation (D331), optionally with the bouncing and reflexive separation of Post and Abraham (D349)](#sprays-collision) | partial |
 | Sprays | [Injector and nozzle devices: a mounted frame with its holes; injectors that name a hole (D340 to D342)](#sprays-injector-devices) | partial |
 | Sprays | [Injector device surfaces: standard gasoline and diesel tips or the user's STL, placed and written with the spray (D343 to D345)](#sprays-injector-device-surfaces) | partial |
 | Sprays | [ECN liquid length (projected liquid volume) and vapour penetration (Spray A, SA3, D315)](#sprays-ecn-diagnostics) | partial |
@@ -2329,7 +2329,7 @@ Gaps:
 Gaps:
 
 - ECN Spray G (G1) since D348: the spray runs ahead early (liquid +23 %, vapour +19 % at 0.3 ms) and the liquid stays 8 to 10 % ahead from 0.6 ms (vapour on the measurement from 0.8 ms); the early lead is new with the fine children at the nozzle; cause open
-- ECN Spray G (G1): the Sauter mean diameter at 15 mm is 14.5 um against 7 to 10 um measured, 15 um in the plume core where the drops coalesce, 4 to 8 um at the edges; KH-ACT constants untuned
+- ECN Spray G (G1): the Sauter mean diameter at 15 mm is 13.0 um with the Post collision outcomes (D349; 14.5 with O'Rourke) against 7 to 10 um measured, 13 um in the plume core where the drops coalesce, 6 to 9 um at the edges; KH-ACT constants untuned
 - spray cases with KH-ACT need small time steps during the injection since D348 (G1 1 us, Spray A 0.5 us; 2 us diverges); G1 steps up to 2 us after the injection by a schedule (#347), not by an adaptive spray-limited step
 - a gas that diverges in some cells leaves its parcels spending max_substeps each, and their exchange records can fill the memory instead of stopping the run with a message (seen on the sector before the slip core, D309)
 - drop sizes not validated: the gallery spray has a Sauter mean diameter near 2 um, small next to measured diesel sprays; no collision or coalescence yet
@@ -2428,22 +2428,25 @@ Gaps:
 
 <a id="sprays-collision"></a>
 
-### Drop collisions: no-time-counter sampling with O'Rourke's coalescence and grazing separation (D331)
+### Drop collisions: no-time-counter sampling with O'Rourke's coalescence and grazing separation (D331), optionally with the bouncing and reflexive separation of Post and Abraham (D349)
 
-**partial** (gaps written) · id `sprays.collision` · switch `[spray.collision] model = "ntc"` · decisions D331
+**partial** (gaps written) · id `sprays.collision` · switch `[spray.collision] model = "ntc", outcomes = "post"` · decisions D331, D349
 
 - exact: [`ntc_rate_matches_the_pair_rate`](../../crates/foehncraft-particles/src/collision.rs): the drop collisions of two opposed groups of parcels against the pair rate q_i q_j sigma v dt / V summed over the pairs, within 3 % for equal (1/1) and unequal (10/1000) drop counts
 - exact: [`collisions_keep_mass_momentum_and_enthalpy`](../../crates/foehncraft-particles/src/collision.rs): mass, momentum and liquid enthalpy kept to 1e-12 through coalescence and grazing; coalescence off gives none
 - exact: [`critical_impact_parameter`](../../crates/foehncraft-particles/src/collision.rs): O'Rourke's critical impact parameter: 1 at small Weber numbers, 2.4 f(1)/We for equal drops
 - contract (bitwise): [`collisions_do_not_depend_on_the_parcel_order`](../../crates/foehncraft-particles/src/collision.rs): the same drops (bits) with the parcels in reverse order
+- exact: [`post_criteria`](../../crates/foehncraft-particles/src/collision.rs): Post outcomes (D349): equal drops head-on bounce below We_d 2.808 (Estrade, phi' 3.351) and separate reflexively above 18.68 (Ashgriz and Poo); the bounce limit rises with the impact parameter; no reflexive separation at B 0.9
+- exact: [`post_outcomes_bounce_slow_drops`](../../crates/foehncraft-particles/src/collision.rs): with the Post outcomes slow drops all bounce and none merge, fast head-on drops separate reflexively; mass, momentum and enthalpy kept to 1e-12
+- reference-data: [`spray_g_g1`](../../examples/cases/flow/spray_g_g1.toml): D349 Post outcomes, G1 to 0.9 ms at 1 us: Sauter mean diameter on the line through the plume centre at 15 mm 13.0 um (O'Rourke 14.5, no collisions 9.6, measured 7 to 10); liquid 24.5 against 20.4 mm at 0.3 ms (+20 %, O'Rourke +23 %) and 35.2 against 33.8 mm at 0.8 ms (+4 %, O'Rourke +9 %) ([results](../gallery/sprays.md#spray-collision-post))
 - contract (diagnostics): [`the_collision_table_is_checked`](../../crates/foehncraft-particles/src/collision.rs): collisions need the surface tension and the transient spray
 - reference-data: [`spray_g_g1`](../../examples/cases/flow/spray_g_g1.toml): ECN Spray G, G1: with collisions the liquid penetration (0.2e-3 mm3/mm2) is 12 % ahead of the measured one at 0.8 ms (19 % without), the vapour 10 % (17 % without); -2 % at 0.3 ms; the candidate cap 1000 or 20000 per parcel changes it by less than 1 % ([results](../gallery/sprays.md#spray-collisions))
 
 Gaps:
 
-- only coalescence and grazing separation (O'Rourke); no stretching or reflexive separation (Post and Abraham 2002), no bouncing at high ambient density
+- Post outcomes (D349): the velocities after a bounce or a reflexive separation are ours (grazing form with the share B), no satellite drops, no gas pressure in the criteria; the paper itself was not open to us
 - collisions within a cell of the flow mesh only, none with the injected blobs; no collision mesh of its own
-- the G1 liquid still runs 12 % ahead at 0.8 ms and its drops at 15 mm are 18 um against the measured 9 um
+- with the Post outcomes the G1 drops at 15 mm are still 13.0 um against 7 to 10 um measured (9.6 um without collisions): too many drops still merge in the plume core
 - transient spray only, CPU only, one process
 
 <a id="sprays-injector-devices"></a>

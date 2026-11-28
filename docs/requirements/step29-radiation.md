@@ -42,6 +42,9 @@ specification of step 28 (the particle layer that radiation shares, D107 (1)).
 Later, outside version 1: FV-P1 and FV-DOM references (L15 (4)),
 full-spectrum k-distributions, the sphere steps of L15 (2), soot and particle
 radiation with sprays.
+The upgrade path for these (accuracy and speed, stages RA0 to RA11,
+decisions D366 to D372, answered 2026-11-28) is the
+[advanced radiation plan](../assessments/radiation-advanced-models-path.md) of 2026-11-28.
 
 ## 3. Validation list (exact or open literature)
 
