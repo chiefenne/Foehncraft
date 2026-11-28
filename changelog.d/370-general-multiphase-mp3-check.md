@@ -1,0 +1,1 @@
+- **General multiphase plan checked against MP3 (docs).** `docs/assessments/general-multiphase-n-phases.md` section 4.2 now follows the MP3 two-fluid code. The N-phase core widens MP3's exact 2 × 2 drag elimination per cell to N × N. The continuous phase stays the remainder of the phase fractions so that two phases stay bit for bit (D373), and its own advection becomes a check.
