@@ -855,6 +855,8 @@ pub struct TwoFluidBufs {
     pub off_g: Option<Buf>,
     /// Offsets of the liquid.
     pub off_l: Option<Buf>,
+    /// The dispersion conductance of the α equation per face.
+    pub td: Option<Buf>,
 }
 
 /// The device buffers that the momentum, flux and pressure operations read

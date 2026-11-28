@@ -389,6 +389,16 @@ temperatures of their own (D271, PM2). The keys are on the [key page](flow-keys.
 | `flow/vof_scriven.toml` | `meshes/sphere_sector.su2`, 500 hexahedra on a 2° sector of the sphere | Scriven's bubble in water 1.25 K superheated, R from 0.1 to 0.3 mm: 3.2 % ahead at 2 ms, 1.9 % at 8 ms; about 100 s | [gallery 358](../gallery/multiphase.md#vof-phase-change), [recipe 358](../recipes/multiphase.md#vof-phase-change) |
 | `flow/vof_film_boiling.toml` | generated hex 2D, 80 × 240 cells | film boiling on a horizontal wall 5 K above T_sat (near-critical fluid of Welch & Wilson 2000): the film breaks up into bubbles, released about every 0.22 s; wall Nusselt number 2.25 (mean after 0.4 s) against Berenson's 2.62 (−14 %); about 85 min (CI runs its first 200 steps) | [gallery 358](../gallery/multiphase.md#vof-phase-change), [recipe 358](../recipes/multiphase.md#vof-phase-change) |
 
+## Two fluids (two-fluid model)
+
+`[two_fluid]` with `[two_fluid.gas]` (L3, stage MP3, D352 to D356): a dispersed gas of one bubble size in the liquid of `[fluid]`, one momentum equation per phase and one pressure from the volume continuity of both. Drag (Ishii & Zuber) implicit by partial elimination, Tomiyama lift with near-wall damping, Hosokawa wall lubrication, Burns dispersion (implicit in the α equation), Sato viscosity. Transient BDF1 only. The fields carry `volume_fraction` (α_g) and `gas_velocity_x/y/z`, line files `alpha_gas`, `u_gas`, `v_gas`, `w_gas`.
+
+| Case file | Mesh | Shows | Where |
+|---|---|---|---|
+| `flow/two_fluid_column.toml` | generated hex 2D, 4 × 40 cells | a uniform bubble column: 4 mm air bubbles rise with water at 0.5 m/s, α = 0.05; the slip is the drag balance U_T √(1 − α) = 0.2247 m/s in every row and α = j_G/u_g; two outer iterations per step; about 10 s | [gallery 368](../gallery/multiphase.md#two-fluid-pipe), [recipe 368](../recipes/multiphase.md#two-fluid) |
+| `flow/bubbly_pipe_wang_jg01.toml` | generated hex wedge 2°, 240 × 24 cells (1.2 mm across) | bubbly up-flow in a 57 mm pipe, j_L = 1.08 m/s, j_G = 0.1 m/s, 3 mm bubbles, k-ω SST, against the measured void profile of Wang et al. (1987) at L/D = 35: core 0.022 against 0.036, wall peak 0.32 against 0.16 at the measured position; about 11 min | [gallery 368](../gallery/multiphase.md#two-fluid-pipe), [study](../../examples/studies/bubbly_pipe/data/README.md) |
+| `flow/bubbly_pipe_wang_jg04.toml` | generated hex wedge 2°, 240 × 24 cells (1.2 mm across) | the same at j_G = 0.4 m/s: core 0.114 against 0.118, wall peak 0.93 against 0.42 at the measured position; about 11 min | [gallery 368](../gallery/multiphase.md#two-fluid-pipe), [study](../../examples/studies/bubbly_pipe/data/README.md) |
+
 ## Immersed bodies
 
 `[immersed]` with `[[immersed.body]]` tables: cylinders, spheres, boxes and STL surfaces

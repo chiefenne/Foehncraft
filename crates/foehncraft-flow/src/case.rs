@@ -941,7 +941,10 @@ pub struct FlowCase {
     pub vof: crate::vof::VofSection,
     /// Gas bubbles dispersed in the liquid of `[fluid]` by the two-fluid
     /// model (L3, MP3): `[two_fluid]` with `[two_fluid.gas]`.
-    #[serde(default, skip_serializing_if = "crate::twofluid::TwoFluidSection::is_empty")]
+    #[serde(
+        default,
+        skip_serializing_if = "crate::twofluid::TwoFluidSection::is_empty"
+    )]
     pub two_fluid: crate::twofluid::TwoFluidSection,
     /// Lagrangian parcels of the sprays (L12): `[spray]`.
     #[serde(skip_serializing_if = "foehncraft_particles::SpraySection::is_empty")]

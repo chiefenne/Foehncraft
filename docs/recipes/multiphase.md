@@ -6,6 +6,7 @@ Part of the [Recipes](../recipes.md): two immiscible fluids with a sharp interfa
 |---|---|
 | 317 | [Put water and air into one case](#vof-two-fluids) |
 | 358 | [Let a liquid evaporate or boil](#vof-phase-change) |
+| 368 | [Put dispersed bubbles into a liquid (two-fluid model)](#two-fluid) |
 
 ---
 
@@ -131,3 +132,68 @@ outer_iterations = 10      # the volume source and the density jump need them
 **For spherical problems** `examples/meshes/sphere_sector.py` writes a thin sector of the sphere (planar side faces through the centre, `symmetry`), as `vof_scriven.toml` uses it.
 
 **Not yet:** T_sat is fixed (no shift with the pressure or the curvature, no interface resistance), and the heat account of `heat.csv` does not close in a phase-change case (the volume and mass accounts do).
+
+---
+
+<a id="two-fluid"></a>
+## 368. Put dispersed bubbles into a liquid (two-fluid model)
+
+The two-fluid (Euler–Euler) model solves a momentum equation for the liquid and one for the gas, with one pressure (L3, MP3, D352 to D356). It is for bubbly flow, where the bubbles are smaller than the cells; for a resolved interface use `[vof]` (recipe 317).
+
+**1. The liquid is the `[fluid]` of the case; add the gas and its bubble size.** Gravity comes from `[gravity]`.
+
+```toml
+[fluid]
+density = 998.2
+viscosity = 1.0e-3
+
+[gravity]
+vector = [-9.81, 0.0, 0.0]   # the pipe axis points up
+
+[two_fluid]
+surface_tension = 0.072      # N/m: Eötvös number of drag and lift
+[two_fluid.gas]
+name = "air"
+density = 1.2
+viscosity = 1.8e-5
+diameter = 3.0e-3            # m, one bubble size
+```
+
+**2. Say where the gas enters.** The gas velocity defaults to the liquid's plus the terminal speed of the bubbles against gravity; give `velocity` to set it. The liquid inlet velocity is that of the liquid phase, so a superficial velocity j_L becomes j_L/(1 − α).
+
+```toml
+[two_fluid.inflow.xmin]
+alpha = 0.0717               # gas fraction at the inlet
+
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [1.1635, 0.0, 0.0]   # j_L/(1 − α) for j_L = 1.08 m/s
+```
+
+**3. Choose the forces (defaults shown).** Drag is always Ishii & Zuber. With a turbulence model the dispersion and the bubble-induced viscosity are on.
+
+```toml
+lift = "tomiyama"            # or "constant" with lift_coefficient, or "none"
+lift_wall_damping = true     # no lift within a bubble radius of the wall
+wall_lubrication = "hosokawa"   # or "none"
+turbulent_dispersion = 1.0   # C_TD of Burns et al. (0: off)
+bubble_viscosity = 0.6       # C_mu,b of Sato (0: off)
+```
+
+**4. Run it transient, with BDF1 and PISO.** Steady runs, BDF2 and an adaptive step are refused (TWF002), as are VOF, energy, scalars, sprays, regions, moving meshes and periodic boundaries in this version.
+
+```toml
+[solver]
+algorithm = "piso"
+outer_iterations = 10
+
+[time]
+scheme = "bdf1"
+time_step = 2.0e-3
+steps = 2000
+```
+
+**5. Read the results.** The field files carry `volume_fraction` (the gas fraction α_g) and `gas_velocity_x/y/z` next to the liquid `velocity`. A line in `[[output.lines]]` adds the columns `alpha_gas`, `u_gas`, `v_gas`, `w_gas`.
+
+
+**Mesh and inlet.** The model averages over the bubbles, so keep the cells at about half a bubble or larger: 1.2 mm cells for 3 mm bubbles in the pipe of [gallery 368](../gallery/multiphase.md#two-fluid-pipe). A mesh graded to cells ten times smaller than the bubbles piles the gas into the wall cells. Give a pipe inlet the turbulence of a developed flow (`viscosity_ratio = 100` at Re ≈ 60 000), or the core stays laminar over tens of diameters and the dispersion is too weak.

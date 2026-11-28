@@ -3522,6 +3522,8 @@ pub struct TwoFluidArgs {
     pub off_g: Raw<f64>,
     /// The offsets of the liquid (output).
     pub off_l: Raw<f64>,
+    /// The dispersion conductance of the α equation per face (output).
+    pub td: Raw<f64>,
 }
 
 /// The interphase forces of cell `c` ([`crate::twofluid::cell_forces`])
@@ -3600,12 +3602,14 @@ impl Entry for TwoFluidFaces {
                 mu_bit: a.mu_bit.get(),
                 disp: a.disp.get(),
                 inflow: a.inflow.get(),
+                dgeo: a.m.dgeo.get(),
             };
             let r = crate::twofluid::face_arrays(f, &inp, &a.k);
             *a.mu_g.out().add(f) = r.mu_g;
             *a.mu_l.out().add(f) = r.mu_l;
             *a.off_g.out().add(f) = r.off_g;
             *a.off_l.out().add(f) = r.off_l;
+            *a.td.out().add(f) = r.td;
         }
     }
 }

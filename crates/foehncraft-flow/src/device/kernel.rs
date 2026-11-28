@@ -13,8 +13,8 @@
 use super::{
     BoundaryArgs, Buf, Buf3, CurvatureOps, Eps2, FlowDevice, FluxArgs, KepsCellOps, Lsq, Mask,
     MlpOps, MomentumFaceArgs, MomentumRowArgs, ScalarFaceArgs, ScalarRowArgs, ScalarTurbOps,
-    ScalarWallOps, Setup, SstCellOps, TurbFaceOps, TwoFluidBufs, TwoFluidOp, VertexStencil, VofBufs,
-    VofOp, WallCellOps, WallFaceOps, WallStatic, ZetaFCellOps,
+    ScalarWallOps, Setup, SstCellOps, TurbFaceOps, TwoFluidBufs, TwoFluidOp, VertexStencil,
+    VofBufs, VofOp, WallCellOps, WallFaceOps, WallStatic, ZetaFCellOps,
 };
 use anyhow::{Result, ensure};
 use foehncraft_core::repro::{BLOCK, combine_block_sums};
@@ -1463,7 +1463,11 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             }
             TwoFluidOp::Faces => {
                 ins.extend([b.mu_bit, b.disp].into_iter().flatten());
-                outs.extend([b.mu_g, b.mu_l, b.off_g, b.off_l].into_iter().flatten());
+                outs.extend(
+                    [b.mu_g, b.mu_l, b.off_g, b.off_l, b.td]
+                        .into_iter()
+                        .flatten(),
+                );
             }
         }
         check(&outs, &ins)?;
@@ -1498,9 +1502,13 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             mu_l: o(b.mu_l),
             off_g: o(b.off_g),
             off_l: o(b.off_l),
+            td: o(b.td),
         };
         let need = |x: bool, what: &str| -> Result<()> {
-            ensure!(x, "flow device: the two-fluid operation {op:?} needs {what}");
+            ensure!(
+                x,
+                "flow device: the two-fluid operation {op:?} needs {what}"
+            );
             Ok(())
         };
         match op {
@@ -1538,12 +1546,17 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
                     "alpha, alpha_gf, alpha_lf, mu_eff, mu_bit, disp",
                 )?;
                 need(
-                    self.nb == 0 || (b.alpha_b.is_some() && self.two_fluid_inflow.len as usize == self.nb),
+                    self.nb == 0
+                        || (b.alpha_b.is_some() && self.two_fluid_inflow.len as usize == self.nb),
                     "alpha_b and two_fluid_inflow first",
                 )?;
                 need(
-                    b.mu_g.is_some() && b.mu_l.is_some() && b.off_g.is_some() && b.off_l.is_some(),
-                    "mu_g, mu_l, off_g, off_l",
+                    b.mu_g.is_some()
+                        && b.mu_l.is_some()
+                        && b.off_g.is_some()
+                        && b.off_l.is_some()
+                        && b.td.is_some(),
+                    "mu_g, mu_l, off_g, off_l, td",
                 )?;
                 self.go::<e::TwoFluidFaces>(self.nf, &args)
             }
@@ -1552,14 +1565,13 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
 
     fn two_fluid_eliminate(&mut self, b: &super::EliminateBufs) -> Result<()> {
         self.not_on_ranks("the two-fluid model")?;
-        let outs: Vec<Buf> = b
-            .ug
-            .all()
-            .into_iter()
-            .chain(b.ul.all())
-            .chain(b.d_g)
-            .chain(b.d_l)
-            .collect();
+        let outs: Vec<Buf> =
+            b.ug.all()
+                .into_iter()
+                .chain(b.ul.all())
+                .chain(b.d_g)
+                .chain(b.d_l)
+                .collect();
         let ins: Vec<Buf> = [b.alpha, b.kv]
             .into_iter()
             .chain(b.diag_g.all())

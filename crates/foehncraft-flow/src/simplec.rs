@@ -829,6 +829,11 @@ pub struct Physics {
     /// of the current step (m³/s, MP2): the volume account of the run
     /// checks the net boundary volume flow against it.
     pub vof_volume_made: Option<f64>,
+    /// The net boundary volume flow of both phases of a two-fluid case
+    /// (MP3) relative to half the boundary throughflow, as last stepped:
+    /// the mass check of the run (the mass of each phase in the domain
+    /// changes while the gas spreads, their volume does not).
+    pub two_fluid_volume: Option<f64>,
     /// The gas velocity per cell of a two-fluid case (MP3), as last
     /// stepped, for the field output (`vof_alpha` holds α_g).
     pub gas_velocity: Option<std::sync::Arc<[Vec<f64>; 3]>>,
@@ -857,6 +862,7 @@ impl Physics {
             vof_alpha: None,
             vof_phase_change: None,
             vof_volume_made: None,
+            two_fluid_volume: None,
             gas_velocity: None,
             reaction_fields: None,
         }

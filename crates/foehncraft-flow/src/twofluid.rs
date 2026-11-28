@@ -46,7 +46,9 @@
 //! The time step is backward Euler; the outer iterations of
 //! `[solver] outer_iterations` couple the phases.
 
-use crate::device::{Buf, Buf3, EliminateBufs, Lsq, Mask, MaterialBufs, TwoFluidBufs, TwoFluidOp, VofBufs, VofOp};
+use crate::device::{
+    Buf, Buf3, EliminateBufs, Lsq, Mask, MaterialBufs, TwoFluidBufs, TwoFluidOp, VofBufs, VofOp,
+};
 use crate::diag::{self, Diagnostic};
 use crate::simplec::{Fields, Flow, Residuals, Work};
 use anyhow::{Context, Result};
@@ -216,13 +218,18 @@ pub fn validate(case: &crate::case::FlowCase) -> Result<()> {
         if !(0.0..1.0).contains(&i.alpha) {
             return Err(bad(
                 "two_fluid.inflow",
-                format!("[two_fluid.inflow.{name}] alpha {} must be in [0, 1)", i.alpha),
+                format!(
+                    "[two_fluid.inflow.{name}] alpha {} must be in [0, 1)",
+                    i.alpha
+                ),
             ));
         }
         if !case.boundary.contains_key(name) {
             return Err(bad(
                 "two_fluid.inflow",
-                format!("[two_fluid.inflow] names the boundary `{name}`, which the case does not have"),
+                format!(
+                    "[two_fluid.inflow] names the boundary `{name}`, which the case does not have"
+                ),
             ));
         }
     }
@@ -367,12 +374,17 @@ pub struct Totals {
     pub clipped_volume: f64,
     /// Sub-steps of α in the last step.
     pub substeps: usize,
+    /// Iterations of the implicit dispersion of α in the last step.
+    pub dispersion_iterations: usize,
     /// Smallest and largest α_g after the last step.
     pub alpha_range: [f64; 2],
     /// The largest momentum residual of the gas in the last outer
     /// iteration.
     pub gas_residual: f64,
 }
+
+/// Iterations of the implicit dispersion of α at most (D354).
+const DISPERSION_MAX_ITER: usize = 2000;
 
 /// The two-fluid state of a flow.
 #[derive(Debug)]
@@ -413,6 +425,12 @@ pub struct TwoFluid {
     u_lag: Buf3,
     cv: Buf,
     mv: Buf,
+    /// The dispersion conductance of the α equation per face (D354).
+    td: Buf,
+    /// The cell volumes, α_g of the step start and the change of the step.
+    vol: Buf,
+    alpha_n: Buf,
+    delta: Buf,
     volume: Vec<f64>,
     /// The totals.
     pub totals: Totals,
@@ -522,7 +540,10 @@ impl TwoFluid {
     fn face_fractions(&self, fl: &mut Flow) -> Result<()> {
         let (ml, mg) = (fl.f.mass_flux, self.gas_f.mass_flux);
         let dev = fl.dev.as_mut();
-        for (ph, m, ab) in [(&self.gas, mg, self.alpha_b), (&self.liq, ml, self.alpha_lb)] {
+        for (ph, m, ab) in [
+            (&self.gas, mg, self.alpha_b),
+            (&self.liq, ml, self.alpha_lb),
+        ] {
             dev.lincomb(self.flux, 1.0 / ph.rho, m, 0.0, m)?;
             dev.vof(
                 VofOp::Faces,
@@ -546,6 +567,7 @@ impl TwoFluid {
     fn advance(&mut self, fl: &mut Flow, dt: f64) -> Result<()> {
         let ni = fl.disc.n_interior;
         let mg = self.gas_f.mass_flux;
+        let w = fl.w;
         let dev = fl.dev.as_mut();
         dev.lincomb(self.flux, 1.0 / self.gas.rho, mg, 0.0, mg)?;
         dev.vof(
@@ -571,6 +593,7 @@ impl TwoFluid {
         let h = dt / n as f64;
         let fl_host = dev.download(self.flux)?;
         let mut clip = 0.0;
+        dev.copy(self.gas.alpha, self.alpha_n)?;
         for _ in 0..n {
             dev.vof(
                 VofOp::Faces,
@@ -606,6 +629,54 @@ impl TwoFluid {
                 .map(|f| fl_host[f] * af[f] * h)
                 .exact_sum();
         }
+        // the dispersion implicit (D354): the drift of the step start
+        // drives the whole step, which is stable only for Γ Δt/h² < ½ with
+        // Γ = C_TD (ν_t/σ_TD)/α_l (a near-wall layer of α_g ≈ 0.7 in a pipe
+        // reached 4, and α and the gas velocity alternated from cell to
+        // cell); the backward-Euler correction (V/Δt + Σ_f c_f) δ − Σ_f c_f
+        // δ_N = V/Δt δ* of the change δ* = α* − α^n makes the dispersion
+        // implicit, keeps the volume and leaves a steady state unchanged
+        if self.k.c_td > 0.0 && fl.turbulence.is_some() {
+            dev.lincomb(self.delta, 1.0, self.gas.alpha, -1.0, self.alpha_n)?;
+            dev.pressure_rows(self.td, w.zero_face, w.pval, w.prhs)?;
+            dev.throughflow(self.td, self.work)?;
+            dev.lincomb(self.work, 1.0, self.work, 1.0 / dt, self.vol)?;
+            dev.set_diagonal(w.pval, self.work)?;
+            dev.product(w.prhs, 1.0 / dt, self.vol, self.delta)?;
+            dev.copy(self.delta, w.pc)?;
+            let (it, _) = dev.solve(
+                w.pval,
+                w.prhs,
+                w.pc,
+                foehncraft_fv::solver::Preconditioner::Jacobi,
+                true,
+                1e-10,
+                DISPERSION_MAX_ITER,
+            )?;
+            self.totals.dispersion_iterations = it;
+            // (a solve that did not converge keeps the explicit α*)
+            if it >= DISPERSION_MAX_ITER {
+                self.totals.clipped_volume += clip;
+                self.totals.substeps = n;
+                return Ok(());
+            }
+            dev.lincomb(self.alpha_new, 1.0, self.alpha_n, 1.0, w.pc)?;
+            // (bounded to [0, 1] as the advection: the update without flux)
+            dev.vof(
+                VofOp::Update,
+                &VofBufs {
+                    flux: Some(w.zero_face),
+                    alpha_f: Some(self.gas.alpha_f),
+                    alpha: Some(self.alpha_new),
+                    dt,
+                    out: Some(self.gas.alpha),
+                    out2: Some(self.clipped),
+                    ..Default::default()
+                },
+            )?;
+            let c = dev.download(self.clipped)?;
+            clip += c.iter().copied().exact_sum();
+        }
         self.totals.clipped_volume += clip;
         self.totals.substeps = n;
         Ok(())
@@ -613,41 +684,52 @@ impl TwoFluid {
 
     /// The interphase arrays of the current fields: K V, the lift and wall
     /// forces, μ_BIT, D, the cell forces b_k and the face arrays.
-    fn interphase(&self, fl: &mut Flow) -> Result<()> {
+    ///
+    /// The cell arrays (K V, the lift and wall forces, μ_BIT, D, b_k) are
+    /// those of the first outer iteration of the step (`first`), with the
+    /// slip of the last step: K grows about 25-fold from the Stokes value
+    /// at zero slip to the distorted regime, and renewed in every
+    /// iteration it made the outer iterations swing at the inlet corner of
+    /// a pipe (gas radial velocity ±7 m/s from one iteration to the next).
+    /// With the drag linear in the step the partial elimination is exact.
+    /// The face arrays follow μ_t in every iteration.
+    fn interphase(&self, fl: &mut Flow, first: bool) -> Result<()> {
         let nu_t = fl.turbulence.as_ref().map(|t| t.nu_t_buf());
         let (lf, gf) = (fl.f, self.gas_f);
         let dev = fl.dev.as_mut();
-        dev.vof(
-            VofOp::Gradient,
-            &VofBufs {
-                alpha: Some(self.gas.alpha),
-                out: Some(self.gnorm),
-                out3: Some(self.grad_alpha),
-                ..Default::default()
-            },
-        )?;
-        dev.two_fluid(
-            TwoFluidOp::Cells,
-            &TwoFluidBufs {
-                alpha: Some(self.gas.alpha),
-                ul: Some(lf.u),
-                ug: Some(gf.u),
-                grad_ul: Some(lf.grad_u),
-                wall_y: Some(self.wall_y),
-                wall_n: Some(self.wall_n),
-                nu_t,
-                grad_alpha: Some(self.grad_alpha),
-                cell_h: Some(self.cell_h),
-                kv: Some(self.kv),
-                fv: Some(self.fv),
-                mu_bit: Some(self.mu_bit),
-                disp: Some(self.disp),
-                body_g: Some(self.gas.mat.body),
-                body_l: Some(self.liq.mat.body),
-                ..Default::default()
-            },
-            &self.k,
-        )?;
+        if first {
+            dev.vof(
+                VofOp::Gradient,
+                &VofBufs {
+                    alpha: Some(self.gas.alpha),
+                    out: Some(self.gnorm),
+                    out3: Some(self.grad_alpha),
+                    ..Default::default()
+                },
+            )?;
+            dev.two_fluid(
+                TwoFluidOp::Cells,
+                &TwoFluidBufs {
+                    alpha: Some(self.gas.alpha),
+                    ul: Some(lf.u),
+                    ug: Some(gf.u),
+                    grad_ul: Some(lf.grad_u),
+                    wall_y: Some(self.wall_y),
+                    wall_n: Some(self.wall_n),
+                    nu_t,
+                    grad_alpha: Some(self.grad_alpha),
+                    cell_h: Some(self.cell_h),
+                    kv: Some(self.kv),
+                    fv: Some(self.fv),
+                    mu_bit: Some(self.mu_bit),
+                    disp: Some(self.disp),
+                    body_g: Some(self.gas.mat.body),
+                    body_l: Some(self.liq.mat.body),
+                    ..Default::default()
+                },
+                &self.k,
+            )?;
+        }
         dev.two_fluid(
             TwoFluidOp::Faces,
             &TwoFluidBufs {
@@ -662,6 +744,7 @@ impl TwoFluid {
                 mu_l: Some(self.liq.mat.mu),
                 off_g: Some(self.gas.mat.jump),
                 off_l: Some(self.liq.mat.jump),
+                td: Some(self.td),
                 ..Default::default()
             },
             &self.k,
@@ -806,6 +889,19 @@ impl TwoFluid {
             hi = hi.max(a);
         }
         self.totals.alpha_range = [lo, hi];
+        // the volume account of both phases on the boundary
+        let (g, l) = (&self.gas, &self.liq);
+        dev.product(self.mv, 1.0 / l.rho, l.alpha_f, fl.f.mass_flux)?;
+        dev.product(self.flux, 1.0 / g.rho, g.alpha_f, self.gas_f.mass_flux)?;
+        dev.lincomb(self.mv, 1.0, self.mv, 1.0, self.flux)?;
+        let q = dev.download(self.mv)?;
+        let qb = &q[fl.disc.n_interior..];
+        let big = 0.5 * qb.iter().map(|x| x.abs()).exact_sum();
+        fl.phys.two_fluid_volume = Some(if big > 0.0 {
+            qb.iter().copied().exact_sum() / big
+        } else {
+            0.0
+        });
         fl.phys.vof_alpha = Some(std::sync::Arc::new(self.alpha_host.clone()));
         fl.phys.gas_velocity = Some(std::sync::Arc::new(self.gas_velocity.clone()));
         Ok(())
@@ -814,7 +910,12 @@ impl TwoFluid {
 
 /// Attaches `[two_fluid]` of `case` to the flow (after the start fields
 /// and the turbulence model; nothing without `[two_fluid]`).
-pub fn attach(fl: &mut Flow, case: &crate::case::FlowCase, mesh: &Mesh, geo: &Geometry) -> Result<()> {
+pub fn attach(
+    fl: &mut Flow,
+    case: &crate::case::FlowCase,
+    mesh: &Mesh,
+    geo: &Geometry,
+) -> Result<()> {
     if case.two_fluid.is_empty() {
         return Ok(());
     }
@@ -974,6 +1075,12 @@ pub fn attach(fl: &mut Flow, case: &crate::case::FlowCase, mesh: &Mesh, geo: &Ge
     for (b, v) in wall_n.all().into_iter().zip(&wn) {
         dev.upload(b, v)?;
     }
+    // the dispersion conductance (none until the first face arrays) and
+    // the cell volumes
+    let td = face(dev)?;
+    dev.fill(td, 0.0)?;
+    let vol = cell(dev)?;
+    dev.upload(vol, &fl.disc.cell_volume[..nc])?;
     // μ_l on every face until the turbulence model sets μ_l + μ_t
     let mu_eff = face(dev)?;
     dev.fill(mu_eff, kc.mu_l)?;
@@ -1027,6 +1134,10 @@ pub fn attach(fl: &mut Flow, case: &crate::case::FlowCase, mesh: &Mesh, geo: &Ge
         u_lag: cell3(dev)?,
         cv: face(dev)?,
         mv: face(dev)?,
+        td,
+        vol,
+        alpha_n: cell(dev)?,
+        delta: cell(dev)?,
         volume,
         totals: Totals::default(),
         alpha_host: vec![a0; nc],
@@ -1058,36 +1169,6 @@ pub fn attach(fl: &mut Flow, case: &crate::case::FlowCase, mesh: &Mesh, geo: &Ge
     Ok(())
 }
 
-/// Debug: cell 80 of several buffers (FOEHN_TF_DEBUG).
-fn probe(fl: &mut Flow, tag: &str, bufs: &[(&str, Buf)]) {
-    if std::env::var_os("FOEHN_TF_DEBUG").is_none() {
-        return;
-    }
-    let mut line = format!("  @{tag}");
-    for (n, b) in bufs {
-        if let Ok(v) = fl.dev.download(*b) {
-            line += &format!(" {n}={:.4e}", v[80.min(v.len() - 1)]);
-        }
-    }
-    eprintln!("{line}");
-}
-
-/// Debug: the finiteness and range of a buffer (FOEHN_TF_DEBUG).
-fn chk(fl: &mut Flow, name: &str, b: Buf) {
-    if std::env::var_os("FOEHN_TF_DEBUG").is_none() {
-        return;
-    }
-    if let Ok(v) = fl.dev.download(b) {
-        let bad = v.iter().filter(|x| !x.is_finite()).count();
-        let (mut lo, mut hi) = (f64::INFINITY, f64::NEG_INFINITY);
-        for &x in v.iter().filter(|x| x.is_finite()) {
-            lo = lo.min(x);
-            hi = hi.max(x);
-        }
-        eprintln!("  {name:<14} n {:6} bad {bad:6} [{lo:.4e}, {hi:.4e}]", v.len());
-    }
-}
-
 /// One backward-Euler time step of size `dt` of a two-fluid flow.
 pub fn step(
     tr: &mut crate::transient::Transient,
@@ -1096,11 +1177,6 @@ pub fn step(
 ) -> Result<crate::transient::StepReport> {
     let mut tf = fl.two_fluid.take().context("a two-fluid flow")?;
     let r = step_inner(tr, fl, &mut tf, dt);
-    if let Err(e) = &r {
-        if std::env::var_os("FOEHN_TF_DEBUG").is_some() {
-            eprintln!("two-fluid step: {e:#}");
-        }
-    }
     fl.two_fluid = Some(tf);
     r
 }
@@ -1150,16 +1226,7 @@ fn step_inner(
         TwoFluid::select(fl, &tf.liq.mat, &d)?;
         fl.update_boundaries()?;
         fl.gradients()?;
-        tf.interphase(fl)?;
-        for (n, b) in [
-            ("alpha_g", tf.gas.alpha), ("alpha_gf", tf.gas.alpha_f), ("alpha_lf", tf.liq.alpha_f),
-            ("rho_g", tf.gas.mat.rho), ("kv", tf.kv), ("fv.y", tf.fv.y), ("mu_bit", tf.mu_bit),
-            ("disp", tf.disp), ("body_g.y", tf.gas.mat.body.y), ("mu_g", tf.gas.mat.mu),
-            ("mu_l", tf.liq.mat.mu), ("off_g", tf.gas.mat.jump), ("off_l", tf.liq.mat.jump),
-            ("ug.y", tf.gas_f.u.y), ("mg", tf.gas_f.mass_flux), ("ml", fl.f.mass_flux),
-        ] {
-            chk(fl, n, b);
-        }
+        tf.interphase(fl, kk == 1)?;
         // the gas
         let mut rg = Residuals::default();
         tf.swap(fl);
@@ -1168,9 +1235,6 @@ fn step_inner(
         r?;
         for (a, b) in fl.f.u.all().into_iter().zip(tf.u_lag.all()) {
             fl.dev.copy(a, b)?;
-        }
-        for (n, b) in [("g d", tf.gas_w.d), ("g dc", tf.gas_w.dc), ("g m", tf.gas_w.m), ("g cf", tf.gas.cf), ("g u.y", tf.gas_f.u.y)] {
-            chk(fl, n, b);
         }
         // the liquid
         tf.momentum(fl, false, dt, alpha, &d, &mut res)?;
@@ -1193,9 +1257,6 @@ fn step_inner(
         tf.swap(fl);
         r?;
         TwoFluid::phase_flux(fl, &l, &d, alpha)?;
-        for (n, b) in [("l d", fl.w.d), ("l dc", fl.w.dc), ("l m", fl.w.m), ("l cf", tf.liq.cf), ("l u.y", fl.f.u.y)] {
-            chk(fl, n, b);
-        }
         tf.totals.gas_residual = rg.momentum.iter().copied().fold(0.0, f64::max);
         // the pressure correction of the volume continuity
         let t = Instant::now();
@@ -1215,9 +1276,6 @@ fn step_inner(
             let tt = dev.sum_sq(w.through)?.sqrt();
             res.continuity = dd / tt.max(f64::MIN_POSITIVE);
             dev.pressure_rows(tf.cv, tf.mv, w.pval, w.prhs)?;
-        }
-        for (n, b) in [("cv", tf.cv), ("mv", tf.mv), ("pval", fl.w.pval), ("prhs", fl.w.prhs)] {
-            chk(fl, n, b);
         }
         if let Some(r) = fl.reference_cell {
             let pos = fl.disc.sell.pos(r, 0);
@@ -1286,9 +1344,6 @@ fn step_inner(
                     res.continuity
                 ),
             )));
-        }
-        if std::env::var_os("FOEHN_TF_DEBUG").is_some() {
-            eprintln!("  #it {kk} liq {:?} gas {:?} cont {:.3e}", res.momentum, rg.momentum, res.continuity);
         }
         for (a, b) in res.momentum.iter_mut().zip(rg.momentum) {
             *a = a.max(b);

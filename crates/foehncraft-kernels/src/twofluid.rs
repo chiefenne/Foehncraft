@@ -21,7 +21,8 @@
 //!   Eo^0.757)^⅓ (Wellek et al. 1966); or a constant C_L;
 //! - wall lubrication of Hosokawa et al. (2002) in the form of Rzehak et al.
 //!   (2012): (2/d) C_W α_g ρ_l |u_r,∥|² n̂_w with C_W = f(Eo) (d/(2y))²,
-//!   f = max(7/Re^1.9, 0.0217 Eo), u_r,∥ the slip along the wall;
+//!   f = max(7/Re^1.9, 0.0217 Eo), u_r,∥ the slip along the wall, y at
+//!   least d/2;
 //! - turbulent dispersion of Burns et al. (2004, the Favre-averaged drag):
 //!   −C_TD K (ν_t/σ_TD) (1/α_g + 1/α_l) ∇α_g, σ_TD = 0.9, a gradient force
 //!   that the face offsets carry (below), like gravity;
@@ -164,9 +165,9 @@ pub fn lift_tomiyama<T: Real>(c: &Constants<T>, re: T) -> T {
     let eo = eotvos(c, c.d);
     let dh = c.d * pow(T::ONE + T::from_f64(0.163) * pow(eo, 0.757), 1.0 / 3.0);
     let e = eotvos(c, dh);
-    let f = T::from_f64(0.00105) * e * e * e - T::from_f64(0.0159) * e * e
-        - T::from_f64(0.0204) * e
-        + T::from_f64(0.474);
+    let f =
+        T::from_f64(0.00105) * e * e * e - T::from_f64(0.0159) * e * e - T::from_f64(0.0204) * e
+            + T::from_f64(0.474);
     if e < T::from_f64(4.0) {
         (T::from_f64(0.288) * (T::from_f64(0.121) * re).tanh_of()).min_of(f)
     } else if e <= T::from_f64(10.0) {
@@ -293,7 +294,11 @@ pub unsafe fn cell_forces<T: Real>(c: usize, inp: &CellIn<T>, k: &Constants<T>) 
         }
         // wall lubrication
         if k.wall == WALL_HOSOKAWA {
-            let y = ld(inp.wall_y, c);
+            // (a bubble centre is at least d/2 from the wall: closer cell
+            // centres take the force at y = d/2, where (d/2y)² = 1; the
+            // force of the formula there grows as 1/y² and drove the gas
+            // of the wall cells at tens of m/s at a pipe inlet, D353)
+            let y = ld(inp.wall_y, c).max_of(T::from_f64(0.5) * k.d);
             if y > T::ZERO && y.to_f64().is_finite() {
                 let n = inp.wall_n.at(c);
                 let un = dot(ur, n);
@@ -343,7 +348,7 @@ pub unsafe fn cell_forces<T: Real>(c: usize, inp: &CellIn<T>, k: &Constants<T>) 
 #[inline(always)]
 pub fn eliminate<T: Real>(kv: T, ag: T, al: T, ug: T, ul: T, ul_lag: T) -> (T, T) {
     let det = ag * al - kv * kv;
-    if !(det > T::ZERO) || kv == T::ZERO {
+    if det.partial_cmp(&T::ZERO) != Some(core::cmp::Ordering::Greater) || kv == T::ZERO {
         return (ug, ul);
     }
     let hg = ag * ug - kv * ul_lag;
@@ -363,7 +368,7 @@ pub fn eliminate_d<T: Real>(v: T, kv: T, alpha_g: T, dg: T, dl: T) -> (T, T) {
     let al_ = T::ONE - alpha_g;
     let (ag, al) = (v / dg, v / dl);
     let det = ag * al - kv * kv;
-    if !(det > T::ZERO) || kv == T::ZERO {
+    if det.partial_cmp(&T::ZERO) != Some(core::cmp::Ordering::Greater) || kv == T::ZERO {
         return (alpha_g * dg, al_ * dl);
     }
     (
@@ -404,6 +409,11 @@ pub struct FaceArrays<T> {
     pub off_g: T,
     /// The offset o_l,f/α_l,f of the liquid.
     pub off_l: T,
+    /// The conductance C_TD (ν_t/σ_TD)/α_l,f |S|²/(d·S) of the dispersion
+    /// in the α equation (interior faces; 0 on the boundary and without
+    /// dispersion): the drift −C_TD (ν_t/σ_TD)(1/α_g + 1/α_l) ∇α_g of the
+    /// gas carries the volume C_TD (ν_t/σ_TD) ∇α_g/α_l (D354).
+    pub td: T,
 }
 
 /// Inputs of [`face_arrays`].
@@ -437,6 +447,8 @@ pub struct FaceIn<'a, T> {
     /// 1 per boundary face of an inflow (α_b given), 0 elsewhere (α_b =
     /// α_P).
     pub inflow: &'a [u32],
+    /// |S|²/(d·S) per face.
+    pub dgeo: &'a [T],
 }
 
 /// The face arrays of face `f`.
@@ -483,11 +495,19 @@ pub unsafe fn face_arrays<T: Real>(f: usize, inp: &FaceIn<T>, k: &Constants<T>) 
         let ag_td = ag.max_of(jump.abs());
         let al = alf.max_of(k.alpha_min);
         let r = k.rho_g - k.rho_l;
+        let td = if nb.is_some() && k.c_td > T::ZERO {
+            // (1/α_l at most 10: the conductance only damps the step)
+            let al = al.max_of(T::from_f64(0.1));
+            k.c_td * mu_t / (k.rho_l * T::from_f64(SIGMA_TD) * al) * ld(inp.dgeo, f)
+        } else {
+            T::ZERO
+        };
         FaceArrays {
             mu_g: ag * (k.mu_g + mu_t * k.rho_g / k.rho_l),
             mu_l: al * (mu_eff + bit),
             off_g: r * dot(k.g, d) - disp / ag_td * jump,
             off_l: disp / al * jump,
+            td,
         }
     }
 }

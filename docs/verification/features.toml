@@ -2914,6 +2914,32 @@ gaps = [
 ]
 
 [[feature]]
+id = "multiphase.two-fluid"
+area = "Multiphase"
+title = "Two-fluid (Euler-Euler) model of dispersed bubbles: two momentum equations, one volume-continuity pressure, drag by partial elimination, lift, wall lubrication, dispersion, bubble-induced viscosity (L3, MP3, D352 to D356)"
+switch = "[two_fluid] with [two_fluid.gas]"
+decisions = ["D352", "D353", "D354", "D355", "D356"]
+model = true
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-flow/tests/twofluid.rs::bubble_column_drag_balance", what = "a uniform bubble column (4 mm air bubbles in water, alpha 0.05): the slip within 0.2 % of the Ishii-Zuber drag balance U_T sqrt(1 - alpha) = 0.2247 m/s in every row, alpha within 1 % of j_G/u_g, at most 3 outer iterations per step" },
+  { kind = "contract", property = "diagnostics", test = "crates/foehncraft-flow/tests/twofluid.rs::refusals", what = "TWF002 for steady runs, BDF2 and VOF; TWF001 for a gas without a size and a constant lift without its coefficient" },
+  { kind = "exact", test = "crates/foehncraft-flow/src/twofluid.rs::elimination_solves_the_drag_pair", what = "the partial elimination gives the exact solution of the 2 x 2 drag pair and its D coefficients" },
+  { kind = "exact", test = "crates/foehncraft-flow/src/twofluid.rs::terminal_speed_of_a_distorted_bubble", what = "the drag balance of one bubble gives U_T = sqrt(2) (g drho sigma)^(1/4)/sqrt(rho_l) of Ishii & Zuber; drag tends to Stokes, the Tomiyama lift changes sign near 5.8 mm, the lift damping of Shaver & Podowski" },
+  { kind = "exact", case = "two_fluid_column", what = "slip 0.2247 m/s, alpha 0.0504, two outer iterations per step", doc = "docs/gallery/multiphase.md#two-fluid-pipe" },
+  { kind = "reference-data", case = "bubbly_pipe_wang_jg01", what = "Wang et al. 1987, j_L 1.08, j_G 0.1 m/s, 3 mm bubbles, L/D 35: core 0.022 against 0.036 (-39 %), wall peak 0.32 against 0.16 at r/R 0.965 (measured 0.96)", doc = "docs/gallery/multiphase.md#two-fluid-pipe" },
+  { kind = "reference-data", case = "bubbly_pipe_wang_jg04", what = "the same at j_G 0.4 m/s: core 0.114 against 0.118 (-3 %), wall peak 0.93 against 0.42 at r/R 0.965 (measured 0.953)", doc = "docs/gallery/multiphase.md#two-fluid-pipe" },
+]
+gaps = [
+  "the wall peaks of the Wang pipes are about twice the measured ones (0.32 against 0.16, 0.93 against 0.42) and the core at j_G 0.1 is 39 % low: too much gas held in the wall layer; one bubble size, no bubble-induced source in k and omega; one mesh per case, no mesh study",
+  "the averaged model needs cells of about half a bubble or more: on a pipe mesh graded to 0.3 mm wall cells (d = 3 mm) the gas piles into the wall cells; the wall lubrication takes y at least d/2 (D353)",
+  "one bubble size, isothermal, no mass transfer; N phases and size groups follow in MP5 to MP8 (D373 to D376)",
+  "transient BDF1 only, one process; no VOF, energy, scalars, sprays, immersed bodies, regions, moving meshes, periodic boundaries or restart (TWF002); the GPU (PTX) entries are built but not yet run on a GPU",
+  "the dispersion limiter alpha* = max(alpha_g, h |grad alpha_g|) (D354) is a grid-scale device, not a closure",
+  "the [balance] ledger (BAL001, BAL003) accounts the liquid as a single phase and warns in a two-fluid run; the check of the run is the boundary volume account of both phases",
+  "the turbulence is the liquid's model with the Sato viscosity only: no bubble-induced source in k and omega (Rzehak & Krepper 2013)",
+]
+
+[[feature]]
 id = "structure.temperature-field"
 area = "Structures"
 title = "Temperatures of a solid region of a flow case as the thermal load of beams, shells and solids: VTKHDF cell field, linear least-squares fit at the nodes (L53, MS6 part 1)"

@@ -18,7 +18,12 @@ fn out(name: &str) -> PathBuf {
 fn table(path: &Path) -> (Vec<String>, Vec<Vec<f64>>) {
     let text = std::fs::read_to_string(path).unwrap();
     let mut lines = text.lines().filter(|l| !l.starts_with('#'));
-    let head = lines.next().unwrap().split(',').map(str::to_string).collect();
+    let head = lines
+        .next()
+        .unwrap()
+        .split(',')
+        .map(str::to_string)
+        .collect();
     let rows = lines
         .map(|l| {
             l.split(',')
@@ -36,7 +41,6 @@ fn table(path: &Path) -> (Vec<String>, Vec<Vec<f64>>) {
 #[test]
 fn bubble_column_drag_balance() {
     let text = std::fs::read_to_string(cases().join("two_fluid_column.toml")).unwrap();
-    let text = text.replace("steps = 200", "steps = 150");
     let case = FlowCase::from_toml(&text, &cases()).unwrap();
     let dir = out("column");
     run(&case, "column", &dir, |_| {}).unwrap();
@@ -45,9 +49,9 @@ fn bubble_column_drag_balance() {
     let (cy, cv, ca, cg) = (col("y"), col("v"), col("alpha_gas"), col("v_gas"));
     let (rho_l, rho_g, sigma, g) = (998.2_f64, 1.2_f64, 0.072_f64, 9.81_f64);
     let ut = 2.0_f64.sqrt() * (g * (rho_l - rho_g) * sigma).powf(0.25) / rho_l.sqrt();
-    // the lower part, filled after 0.3 s (the front rises at 0.72 m/s)
+    // the column, filled after 0.28 s (the front rises at 0.72 m/s)
     let mut n = 0;
-    for r in rows.iter().filter(|r| r[cy] > 0.02 && r[cy] < 0.15) {
+    for r in rows.iter().filter(|r| r[cy] > 0.02 && r[cy] < 0.18) {
         let a = r[ca];
         let slip = r[cg] - r[cv];
         let exact = ut * (1.0 - a).sqrt();
@@ -58,14 +62,21 @@ fn bubble_column_drag_balance() {
         );
         // α = j_G/u_g with j_G = 0.05 (0.5 + U_T) of the inflow
         let ag = 0.05 * (0.5 + ut) / r[cg];
-        assert!((a - ag).abs() < 0.01 * ag, "alpha {a:.5} against j_G/u_g {ag:.5}");
+        assert!(
+            (a - ag).abs() < 0.01 * ag,
+            "alpha {a:.5} against j_G/u_g {ag:.5}"
+        );
         n += 1;
     }
     assert!(n > 20, "too few points in the filled column ({n})");
     let (head, rows) = table(&dir.join("history.csv"));
     let outer = head.iter().position(|h| h == "outer").unwrap();
     let last = rows.last().unwrap();
-    assert!(last[outer] <= 3.0, "the steps take {} outer iterations", last[outer]);
+    assert!(
+        last[outer] <= 3.0,
+        "the steps take {} outer iterations",
+        last[outer]
+    );
 }
 
 fn refused(text: &str) -> String {
@@ -83,7 +94,10 @@ fn refused(text: &str) -> String {
 fn refusals() {
     let base = std::fs::read_to_string(cases().join("two_fluid_column.toml")).unwrap();
     // steady runs, BDF2 and an adaptive step are not supported
-    let steady = base.replace("[time]\nscheme = \"bdf1\"\ntime_step = 2.0e-3\nsteps = 200\n", "");
+    let steady = base.replace(
+        "[time]\nscheme = \"bdf1\"\ntime_step = 2.0e-3\nsteps = 200\n",
+        "",
+    );
     assert_eq!(refused(&steady), "TWF002");
     let bdf2 = base.replace("scheme = \"bdf1\"", "scheme = \"bdf2\"");
     assert_eq!(refused(&bdf2), "TWF002");

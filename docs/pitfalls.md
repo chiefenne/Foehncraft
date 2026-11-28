@@ -903,3 +903,35 @@ Found with the circuits behind the walls (SF7c, #356):
   drag reached its range with a fine band of 0.2 D, the lift stayed 5 %
   below it until the band was 0.8 D wide: the lift comes from the whole
   near field, not from the wall cells.
+
+## Two-fluid bubbly flow
+
+- **The drag partner of each phase is the other phase.** The gas row took
+  its own velocity as the liquid's in the drag source and the slip of a
+  bubble column came out at 1.8 m/s instead of 0.22 m/s (#368).
+- **Drag that is renewed in every outer iteration swings.** K changes about
+  25-fold between the Stokes value at zero slip and the distorted regime;
+  renewed per iteration, the gas at a pipe inlet corner swung by ±7 m/s
+  between iterations. The interphase arrays are taken once per step and
+  the drag pair is eliminated exactly per cell (D353).
+- **Explicit dispersion has a diffusion limit.** The Burns dispersion
+  drifts the gas by C_TD (ν_t/σ_TD)/α_l ∇α. Held for a whole step it is
+  stable only below Γ Δt/h² = ½; a near-wall layer of α_g ≈ 0.7 reached 4
+  and α alternated from cell to cell. Halving the step did not help, no
+  dispersion diverged; the dispersion is now implicit in α (D354).
+- **The wall force grows as 1/y² below a bubble radius.** In 0.3 mm wall
+  cells with 3 mm bubbles the Hosokawa force drove the gas at 60 m/s at
+  the inlet corner and the run diverged; y is taken at least d/2 (D353).
+- **Cells smaller than the bubbles pile the gas into the wall cells.** On a
+  pipe mesh graded to 0.3 mm the gas filled the two wall cells (0.88);
+  1.2 mm cells, about d/2.5, put the peak where it was measured.
+- **Give the inlet the turbulence of a developed pipe.** With ν_t/ν = 10 the
+  core of a 42 D pipe at Re 62 000 stayed nearly laminar (ν_t ≈ 10⁻⁵ m²/s),
+  the dispersion was weak and k-ω broke down near the axis; ν_t/ν = 100 is
+  about u_τ R/15.
+- **The run's mass check of a two-fluid case is the volume of both
+  phases.** The liquid mass alone changes while the gas spreads; the check
+  is the boundary volume account (`phys.two_fluid_volume`). The `[balance]`
+  ledger still accounts the liquid only and warns (BAL001, BAL003).
+- **Wedge meshes have prisms at the axis.** A plot tool that reshaped the
+  VTKHDF connectivity to eight nodes per cell failed; use `Offsets`.

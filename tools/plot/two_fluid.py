@@ -37,9 +37,12 @@ def cells(path):
     with h5py.File(path, "r") as f:
         g = f["VTKHDF/internal"] if "internal" in f["VTKHDF"] else f["VTKHDF"]
         pts = g["Points"][:]
-        conn = g["Connectivity"][:].reshape(-1, 8)
+        conn = g["Connectivity"][:]
+        offs = g["Offsets"][:]
         data = {k: g["CellData"][k][:] for k in g["CellData"]}
-    c = pts[conn].mean(axis=1)
+    # hexahedra and the prisms at the axis of the wedge
+    n = np.diff(offs)
+    c = np.add.reduceat(pts[conn], offs[:-1], axis=0) / n[:, None]
     order = np.argsort(data["OriginalCellIds"]) if "OriginalCellIds" in data else np.arange(len(c))
     r = np.hypot(c[:, 1], c[:, 2])
     return c[order, 0], r[order], {k: v[order] for k, v in data.items()}

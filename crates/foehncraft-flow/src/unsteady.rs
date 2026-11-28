@@ -3514,6 +3514,8 @@ fn run_one<F: FnMut(&str)>(
         });
     let mass_imbalance = match (&last_balance, case.chemistry.is_some()) {
         _ if vof_volume.is_some() => vof_volume.unwrap_or(0.0),
+        // two phases (MP3): the volume account of both
+        _ if sol.phys.two_fluid_volume.is_some() => sol.phys.two_fluid_volume.unwrap_or(0.0),
         (Some(b), true) => b.mass.relative,
         _ if big > 0.0 => total / big,
         _ => 0.0,
