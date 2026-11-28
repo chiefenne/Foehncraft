@@ -1,0 +1,83 @@
+# Taylor-Couette flow with both cylinders cut out of a plain box mesh: a
+# turning cut body and an inverted one (L13 stage 2e, D227, D229).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/immersed_cut_taylor_couette.toml
+#
+# The gap of taylor_couette_mrf.toml (r1 = 0.05 m turning at 10 rad/s,
+# r2 = 0.10 m at rest, Re = ω r1 (r2 − r1) / ν = 50) without a mesh that
+# knows it: a square box of 0.22 m in 44 × 44 hexahedra (10 cells across
+# the gap), the inner cylinder a cut body that turns (`omega`: its wall
+# moves with ω × r), the outer one a cut body with `invert = true` (the
+# fluid inside, the solid outside, so the corners of the box are solid).
+# Both walls cross the cells at every angle. The exact solution is
+# u_θ = A r + B / r; the run reports the L2 error of the velocity and, over
+# three levels (44, 88, 176 cells across), its order, and the torque of
+# the fluid on each cylinder about the axis against the exact
+# 4π μ ω r1² r2² L / (r2² − r1²) = 2.0944e-6 N m (per 0.01 m of depth).
+
+case_format = "0.7"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+lower = [-0.11, -0.11, 0.0]
+upper = [0.11, 0.11, 0.01]
+cells = [44, 44, 1]
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 5e-4
+pressure_values = "gauge"
+
+[flow]
+convection = true
+
+[immersed]
+method = "cut"
+
+[[immersed.body]]
+name = "inner"
+shape = "cylinder"
+centre = [0.0, 0.0, 0.0]
+radius = 0.05
+omega = 10.0
+
+[[immersed.body]]
+name = "outer"
+shape = "cylinder"
+centre = [0.0, 0.0, 0.0]
+radius = 0.10
+invert = true
+omega = 0.0
+
+[boundary.inner]
+type = "wall"
+[boundary.outer]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-10
+max_iterations = 4000
+
+[solver.momentum]
+relaxation = 0.8
+
+[analytic]
+type = "taylor-couette"
+inner_radius = 0.05
+outer_radius = 0.10
+inner_omega = 10.0
+
+[verification]
+levels = [0, 1, 2]
+require_convergence = true
+
+[output]
+wall_csv = false

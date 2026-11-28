@@ -33,6 +33,7 @@ instead.
 - [Wall functions on cut cells](#cut-wall-functions)
 - [Natural circulation loops behind a coupled wall](#circuit-branches)
 - [Conjugate heat transfer on cut cells](#cut-cht)
+- [Conditions on cut bodies](#cut-patches)
 
 <a id="steady-runs"></a>
 ## Steady runs: budget and stopping
@@ -866,3 +867,17 @@ Found with the circuits behind the walls (SF7c, #356):
   works on a fluid view of the case; the sweep built the meshes of levels
   1 and 2 from that view and lost the solid zone (REG002). Build every
   level's mesh from the full case.
+
+<a id="cut-patches"></a>
+## Conditions on cut bodies
+
+- **The torque of a turning cut wall needs the exact transposed stress.**
+  The torque takes the full stress μ(∇u + ∇uᵀ) (D184); on a turning
+  cylinder the transposed part is a third of the wall stress, and from the
+  gradient of the cut cells it came out 2.8 % off on every mesh of the
+  Taylor–Couette case while the outer wall converged. On a no-slip wall in
+  rigid motion the transposed part is that of the rigid motion, μ ω × S;
+  with it the inner torque converges at second order (#360).
+- **A boundary inside the solid has no faces.** The box around an inverted
+  cylinder lost all its faces in the cut and still asked for a condition
+  (BC001); the cut now leaves such boundaries out.

@@ -362,9 +362,14 @@ heat transfer cut both ways (the solid part of each cut cell a cell of the
 solid region, shared cut faces as the D160 interface), thin solids refused
 with IMM205; concentric cylinders second order for k ratios 9 to 900 and a
 heated pin in the Schäfer–Turek channel ([gallery 359](../gallery/immersed.md#cut-cht)).
-Open: the force balance on tetrahedra, non-planar polyhedral faces (flat
-solid slivers on polyhedra), the k overproduction of the first cut layer,
-and 2e to 2f.
+2e (#360): named surface patches of STL bodies with their own conditions,
+turning walls with `omega` and their torque, inverted bodies; Taylor–Couette
+with both cylinders cut (velocity second order, torque 0.23 % on 176 cells
+across) and a cylinder blowing through a slot
+([gallery 360](../gallery/immersed.md#cut-patches)). Open: the force balance
+on tetrahedra, non-planar polyhedral faces (flat solid slivers on
+polyhedra), the k overproduction of the first cut layer, patch edges inside
+a wall face, and 2f.
 
 ## 5. Stage 3 – Layered distance-field boundary (the L13 target, D230–D232)
 

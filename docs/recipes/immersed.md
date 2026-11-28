@@ -12,6 +12,7 @@ Part of the [Recipes](../recipes.md): put bodies into the flow without meshing t
 | 322 | [Put an STL body into the flow](#stl-body) |
 | 357 | [Run a turbulent flow with wall functions on a cut body](#cut-wall-functions) |
 | 359 | [Keep a cut body as a solid region (conjugate heat transfer)](#cut-cht) |
+| 360 | [Give a cut body inlets, outlets and a turning wall](#cut-patches) |
 
 ---
 
@@ -297,3 +298,50 @@ Without it the pin of [gallery 359](../gallery/immersed.md#cut-cht) stalled with
 **Two cells across, or a thin wall.** A solid body must be about two cells thick where it is thinnest; a thinner one is refused with IMM205. Refine the mesh in the body, or model the wall as a thin wall on a region interface (`[interfaces.<name>] thin_wall`, D189), which carries its conduction without cells.
 
 **Limits.** Hexahedra and tetrahedra are the best checked; on polyhedra a few flat solid slivers stay. Solids that move (stage 5) and the thin-wall model on a cut interface are not built. One rank only.
+
+---
+
+<a id="cut-patches"></a>
+## 360. Give a cut body inlets, outlets and a turning wall
+
+**Name the patches in the STL file.** Write the surface as an ASCII STL file with one `solid <name>` per patch (most CAD tools export the faces of a part as named solids), or tag the triangles of a binary file with their 16-bit attribute. Then:
+
+```toml
+[immersed]
+method = "cut"
+
+[[immersed.body]]
+name = "cylinder"
+shape = "stl"
+file = "blown_cylinder.stl"
+patches = "solids"              # ASCII: one patch per solid
+# patches = { slot = 1, wall = 2 }   # binary: patch = attribute
+
+[boundary.cylinder-slot]        # <body>-<patch>
+type = "velocity-inlet"
+normal_velocity = 0.4
+[boundary.cylinder-wall]
+type = "wall"
+```
+
+Any condition goes on a patch: inlets, outlets, walls with their own wall velocity, roughness or energy condition. Faces of triangles without a listed tag stay in the boundary `<body>`. The log lists the faces and area of every patch.
+
+**Turn the wall.** `omega` (rad/s) turns the wall of a body about its `axis` through its `centre` (a box: its middle):
+
+```toml
+[[immersed.body]]
+name = "rotor"
+shape = "cylinder"
+centre = [0.0, 0.0, 0.0]
+radius = 0.05
+omega = 10.0                    # the wall moves with ω × (x − centre)
+
+[boundary.rotor]
+type = "wall"                   # no `velocity`: omega gives it
+```
+
+The boundary summary of every wall of the body (`result.json`, the log) then has its `torque` about the axis; give `omega = 0` for the torque of a body at rest. The body itself does not move: this is exact for a body of revolution about its axis (a shaft, a disc, a cylinder) and for a body at rest. A wall `velocity` of your own and `omega` on the same body are refused (IMM101).
+
+**Keep the fluid inside.** `invert = true` turns a cylinder, sphere or box inside out: the fluid inside, the solid outside. A pipe or the outer wall of a gap then needs no fitted mesh. Boundaries of the mesh that lie wholly in the solid are left out and need no condition (a condition the case gives them anyway is kept, on an empty boundary).
+
+**Limits.** A wall face of a cut cell is not split along a patch edge: patch edges are resolved to the cell size. Solid regions (recipe 359) cannot turn or have patches. One rank only.

@@ -1,0 +1,81 @@
+# A cylinder that blows through a slot, cut out of a box mesh: named surface
+# patches of an STL body with their own conditions (L13 stage 2e, D227).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/immersed_cut_blown_cylinder.toml
+#
+# The channel and flow of the Schäfer & Turek benchmark 2D-1 (gallery 313,
+# Re = 20 on the plain box mesh of 440 × 82 hexahedra). The cylinder is the
+# STL file immersed_blown_cylinder.stl (tools/mesh/blown_cylinder_stl.py)
+# in two named solids: `slot`, the mantle from 45° to 75° (upper rear), and
+# `wall`, the rest. `patches = "solids"` makes the cut wall faces two
+# boundaries, `cylinder-slot` and `cylinder-wall`: the slot is a velocity
+# inlet that blows 0.4 m/s normal to the surface into the channel, the rest
+# a no-slip wall. Every cut face takes the solid of the triangle closest to
+# its centroid.
+#
+# The flow through the slot leaves through the outlet with the channel
+# flow: the mass balance of the report closes to round-off.
+#
+# Result: see gallery entry "cut-patches".
+
+case_format = "0.7"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [2.2, 0.41, 0.01]
+cells = [440, 82, 1]
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 1e-3
+pressure_values = "gauge"
+
+[flow]
+convection = true
+
+[immersed]
+method = "cut"
+
+[[immersed.body]]
+name = "cylinder"
+shape = "stl"
+file = "immersed_blown_cylinder.stl"
+patches = "solids"
+
+[boundary.xmin]
+type = "velocity-inlet"
+profile = "parabolic"
+max_velocity = 0.3
+profile_axes = ["y"]
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymin]
+type = "wall"
+[boundary.ymax]
+type = "wall"
+[boundary.cylinder-wall]
+type = "wall"
+[boundary.cylinder-slot]
+type = "velocity-inlet"
+normal_velocity = 0.4
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+max_iterations = 3000
+tolerance = 1e-8
+log_every = 200
+
+[verification]
+require_convergence = true
+
+[output]
+derived = ["vorticity"]
+wall_csv = true
