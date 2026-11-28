@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 1.1.0 (b35bc269d4e1)), never typed in. The same as data: [grades.json](grades.json).
 
-**166 features: 49 verified, 114 partial, 3 unverified.**
+**167 features: 49 verified, 115 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -191,6 +191,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Structures | [Temperatures of a solid region of a flow case as the thermal load of beams, shells and solids: VTKHDF cell field, linear least-squares fit at the nodes (L53, MS6 part 1)](#structure-temperature-field) | partial |
 | Moving meshes and solids | [Deforming meshes with a prescribed node displacement, and the piston (stage MS0)](#mesh-deforming) | partial |
 | Multiphase | [Two fluids by the volume of fluid: THINC, CICSAM, balanced gravity and surface tension (L3, MP1, D293)](#multiphase-vof) | partial |
+| Multiphase | [Energy and phase change in the volume of fluid: mixture energy, interface cells held at T_sat, volume source in the continuity (L3, MP2, SF14, D351)](#multiphase-vof-phase-change) | partial |
 
 ## Meshes
 
@@ -3047,6 +3048,30 @@ Gaps:
 
 - the dam-break front runs 5 to 17 % ahead of the measurements on meshes a/16 and a/32 alike (the early part of the gap may be the lifting time of the experiment's gate); the measured points are read from the text of the paper and still to be checked against the scan
 - the static drop keeps spurious currents of 0.18 m/s (Ca ~ 3e-3) and a Laplace jump 8 % low: the curvature is from twice-smoothed alpha, no height functions yet
-- isothermal and laminar only: no energy, phase change (MP2), turbulence, scalars, sprays, immersed bodies, rotating zones, moving meshes, periodic boundaries or the coupled algorithm (VOF002)
+- laminar only: no turbulence, scalars, sprays, immersed bodies, rotating zones, moving meshes, periodic boundaries or the coupled algorithm (VOF002)
 - one process, no restart; the GPU (PTX) entries are built but not yet run on a GPU
 - the kinetic-energy balance (BAL003) is not adapted to the variable density of the mixture and may warn
+
+<a id="multiphase-vof-phase-change"></a>
+
+### Energy and phase change in the volume of fluid: mixture energy, interface cells held at T_sat, volume source in the continuity (L3, MP2, SF14, D351)
+
+**partial** (a model without reference data; gaps written) · id `multiphase.vof-phase-change` · switch `[energy] with specific_heat and conductivity per [[vof.phase]], [vof.phase_change]` · decisions D293, D351
+
+- exact: [`phase_change_stefan`](../../crates/foehncraft-flow/tests/vof.rs): the Stefan problem (water at 1 atm, wall 10 K above T_sat, density ratio 1604): the vapour layer within 2 % of 2 lambda sqrt(alpha_v t) (about 1 % after the start); liquid volume account to 1e-6, outflow against the volume made to 1e-9
+- exact: [`phase_change_sucking`](../../crates/foehncraft-flow/tests/vof.rs): the sucking problem (liquid 2 K superheated, the thermal layer carried across the interface): the vapour layer within 2.5 % of 2 beta sqrt(alpha_l t)
+- exact: [`phase_change_scriven`](../../crates/foehncraft-flow/tests/vof.rs): Scriven's bubble on a sector of the sphere (water 1.25 K superheated, R 0.1 to 0.2 mm): the radius within 4 % of 2 beta sqrt(alpha_l t)
+- exact: [`vof_stefan`](../../examples/cases/flow/vof_stefan.toml): the whole run, delta 0.1 to 0.5 mm: within 1.1 % after the start (passes in CI (set linux-3), not yet in the manual) ([results](../gallery/multiphase.md#vof-phase-change))
+- exact: [`vof_sucking`](../../examples/cases/flow/vof_sucking.toml): delta 0.28 to 0.62 mm: within 1.8 % (passes in CI (set linux-2), not yet in the manual) ([results](../gallery/multiphase.md#vof-phase-change))
+- exact: [`vof_scriven`](../../examples/cases/flow/vof_scriven.toml): the bubble from R = 0.1 to 0.3 mm: 3.2 % ahead at 2 ms, 1.9 % at 8 ms (passes in CI (set long), not yet in the manual) ([results](../gallery/multiphase.md#vof-phase-change))
+- consistency: [`vof_film_boiling`](../../examples/cases/flow/vof_film_boiling.toml): film boiling on a horizontal wall (Welch & Wilson set-up, 80 x 240 cells, 1 s): bubbles released about every 0.22 s; wall Nusselt number 2.25 (time mean after 0.4 s) against Berenson 1961, 2.62 (-14 %) (passes in CI (set long), not yet in the manual) ([results](../gallery/multiphase.md#vof-phase-change))
+
+Gaps:
+
+- the volume source of the phase change is put into the pure cells beside the interface (a local form of Hardt & Wondra 2008), so the vapour next to an evaporating interface moves at about m/rho_v although it is at rest in the exact solutions; the layer and the radius still follow them within 1 to 3 %
+- a start-up deviation of the first steps (to 3.4 %) while the interface cell takes its temperature; then the deviations fall with time
+- the rate is from the energy of the interface cells one step back (the continuity of step n uses the rate of step n - 1); the per-step rate is noisy where cells change from interface to pure
+- heat.csv does not close in a phase-change case: its boundary enthalpy and storage use the h_s of the [fluid] material (D194), not the two phases; the volume and mass accounts (vof.csv, the check of the run) close
+- T_sat is fixed: no Clausius-Clapeyron shift with the pressure or the curvature, no interface resistance (Schrage); the sensible heat difference (c_p,l - c_p,v) Delta T of Scriven's original is left out
+- film boiling is one 2D run on one mesh (Delta x = lambda_d/80); no mesh study
+- with a phase change the pressure force of a cell heavier than its face is not amplified by rho_P/rho_f (D351 (5)); without one the rows of MP1 are unchanged
