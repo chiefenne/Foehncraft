@@ -175,7 +175,15 @@ Ready-to-run programs are attached to each
 |---|---|---|
 | macOS 11 or newer, Apple silicon and Intel | `foehncraft-<version>-macos-universal.tar.gz` | unpack, run `./foehn info` |
 | Linux x86-64 (glibc 2.28 or newer: RHEL/Rocky/Alma 8 and 9, Debian 11-13, Ubuntu 20.04 and newer; v1.2.0 needs 2.39) | `foehncraft-<version>-linux-x86_64.tar.gz` | unpack, run `./foehn info` |
+| Linux aarch64, 64-bit ARM (glibc 2.28 or newer; from the next release on) | `foehncraft-<version>-linux-aarch64.tar.gz` | unpack, run `./foehn info` |
 | Windows 10 or 11, x86-64 | `foehncraft-<version>-windows-x86_64.zip` | unpack, run `foehn.exe info` |
+
+From the next release on, each release also carries **Kraxn**, a window
+that installs FoehnCraft, MurmelCraft and KoflCraft for you or for every
+user, with versions side by side, the PATH, Python and Gmsh, the examples
+and the AI assistants' MCP servers: `kraxn-<v>-macos-universal.dmg`,
+`kraxn-<v>-windows-x86_64.exe` or `kraxn-<v>-linux-<x86_64|aarch64>.tar.gz`
+([Kraxn's guide](https://github.com/chiefenne/MurmelCraft/blob/main/docs/kraxn.md)).
 
 Each one holds `foehn`, built with HDF5, METIS and BLAKE3 (no MPI and no GPU
 backend: for those, build from source as below). To call it by name, put the
