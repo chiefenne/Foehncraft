@@ -395,12 +395,10 @@ fn phase_run(
     }
     let case = FlowCase::from_toml(&text, &cases()).unwrap();
     let dir = out(name);
-    run(&case, name, &dir, |_| {}).unwrap();
-    let result = std::fs::read_to_string(dir.join("result.json")).unwrap();
-    assert!(
-        !result.contains("\"failed-checks\""),
-        "{name}: failed checks (the volume account)"
-    );
+    let rep = run(&case, name, &dir, |_| {}).unwrap();
+    // the volume account of the run (net boundary volume flow against the
+    // volume made) is one of its checks
+    assert!(rep.failures.is_empty(), "{name}: {:?}", rep.failures);
     let (head, rows) = vof_rows(&dir);
     let col = |n: &str| head.iter().position(|h| h == n).unwrap();
     let (ct, cv) = (col("time"), col("volume"));
