@@ -25,6 +25,7 @@ mod statistics;
 mod steam;
 mod thermal;
 mod turbulence_derived;
+mod twofluid;
 mod uncertainty;
 mod wall_crossing;
 mod wall_heat;
