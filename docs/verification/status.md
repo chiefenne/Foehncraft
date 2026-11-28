@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 1.1.0 (b35bc269d4e1)), never typed in. The same as data: [grades.json](grades.json).
 
-**164 features: 49 verified, 112 partial, 3 unverified.**
+**165 features: 49 verified, 113 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -177,6 +177,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Immersed bodies | [Immersed bodies as cut cells, primitive shapes (L13 stage 2a, 2b)](#immersed-cut) | partial |
 | Immersed bodies | [Wall functions on cut bodies: exact first-cell distance, sampled wall function, y⁺ per body (L13 stage 2c)](#immersed-cut-wall-functions) | partial |
 | Immersed bodies | [Conjugate heat transfer through cut cells: a cut body kept as a solid region (L13 stage 2d)](#immersed-cut-cht) | partial |
+| Immersed bodies | [Boundary conditions on cut bodies: named STL patches, turning walls, inverted bodies (L13 stage 2e)](#immersed-cut-boundary-conditions) | partial |
 | Immersed bodies | [STL bodies, cut out of the mesh or penalised, with sharp edges and face points (L13 stage 2)](#immersed-stl) | partial |
 | Immersed bodies | [Density-field topology search with the Brinkman penalisation, iso-surface by marching tetrahedra (L13 stage 1)](#immersed-topology) | partial |
 | Structures | [Linear structural solver: Euler–Bernoulli and Timoshenko beams, static and modal analyses (L53, MS5 part 1)](#structure-beams) | partial |
@@ -2744,6 +2745,24 @@ Gaps:
 - a `field` body (topology search) is not checked for thin parts; the thin-wall model of D189 is not available on a cut interface
 - the stiff energy solve of a solid with k_s ≫ k_f needs its own [solver.energy] tolerance and linear iterations (default settings stalled the pin at a 33 % heat imbalance)
 - rigid motion of the solid (stage 5) is not built; one rank only
+
+<a id="immersed-cut-boundary-conditions"></a>
+
+### Boundary conditions on cut bodies: named STL patches, turning walls, inverted bodies (L13 stage 2e)
+
+**partial** (a model without reference data; gaps written) · id `immersed.cut-boundary-conditions` · switch `[[immersed.body]] patches = "solids" | { <patch> = <tag> }, omega, invert; [boundary.<body>-<patch>]` · decisions D29, D55, D227
+
+- exact: [`immersed_cut_taylor_couette`](../../examples/cases/flow/immersed_cut_taylor_couette.toml), [`cut_taylor_couette_converges_with_the_torque`](../../crates/foehncraft-flow/tests/immersed.rs): Taylor-Couette flow (Re 50) with the turning inner cylinder and the inverted outer cylinder both cut out of a square box mesh: velocity L2 error 1.36e-2, 3.22e-3, 7.16e-4 on 44, 88, 176 cells across, orders 2.11 and 2.19; the torque about the axis +5.1, +0.97, +0.23 % (inner) and -0.73, -0.11, -0.036 % (outer) against 4 pi mu omega r1^2 r2^2 L / (r2^2 - r1^2); test: order above 1.8 on 44 and 88, inner torque within 1.5 %, outer within 0.5 % on 88 ([results](../gallery/immersed.md#cut-patches))
+- exact: [`immersed_cut_blown_cylinder`](../../examples/cases/flow/immersed_cut_blown_cylinder.toml), [`stl_patches_carry_their_own_conditions`](../../crates/foehncraft-flow/tests/immersed.rs): an STL cylinder in two ASCII solids (a slot from 45 to 75 degrees and the rest) cut out of the Schaefer-Turek box mesh: the slot patch area within 10 % of the exact arc (+1.6 % on 440 x 82 cells), slot and wall together within 1 % of the circumference, the slot mass flow 0.4 m/s times its area, the net mass flow below 1e-9 of the outflow (measured 7e-17 kg/s) ([results](../gallery/immersed.md#cut-patches))
+- exact: [`solids_and_attributes_tag_the_triangles`](../../crates/foehncraft-mesh/src/format/stl.rs): the triangles of an ASCII STL file take the index of their solid and its name, those of a binary file their 16-bit attribute
+- contract (diagnostics): [`patch_and_motion_settings_are_refused`](../../crates/foehncraft-flow/tests/immersed.rs): IMM101 for patches of a primitive body, `solids` of a binary file, attribute tags of an ASCII file, two patches with one tag, invert of an STL body, omega on a penalised body and a turning wall with a velocity of its own; IMM202 for omega on a body kept as a solid region
+
+Gaps:
+
+- a cut wall face is not split along a patch edge: the cells a patch edge crosses go whole to one patch (the slot area of the blown cylinder +1.6 %)
+- the patch of a face is the closest triangle to its centroid; the area-majority transfer of mesh-processing tools is not measured against it
+- omega turns the wall, not the body: exact for bodies of revolution about their axis; rigid motion of the body is stage 5 (L4)
+- a body kept as a solid region cannot turn or have patches; invert only for cylinder, sphere and box; one rank only
 
 <a id="immersed-stl"></a>
 
