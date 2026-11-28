@@ -26,6 +26,7 @@ Part of the [Recipes](../recipes.md): droplets that move with and through the ga
 | 343 | [Show your own injector STL](#spray-device-surface) |
 | 338 | [Turn the grid against a jet](#spray-g-grid) |
 | 344 | [Pick the time step of a spray that atomizes at the nozzle](#spray-child-size) |
+| 363 | [Let colliding drops bounce (Post outcomes)](#spray-collision-post) |
 
 ---
 
@@ -1112,3 +1113,34 @@ python3 -m tools.plot.spray_g_g1 OUT_DIR output/spray_g_g1
 
 Case: `examples/cases/flow/spray_g_g1.toml`;
 [gallery entry](../gallery/sprays.md#spray-child-size).
+
+---
+
+<a id="spray-collision-post"></a>
+## 363. Let colliding drops bounce (Post outcomes)
+
+In a dense spray O'Rourke's outcomes (D331) merge most slow collisions.
+The outcomes of Post and Abraham (D349) let drops bounce at small Weber
+numbers and separate reflexively in fast head-on collisions:
+
+```toml
+[spray.collision]
+model = "ntc"
+outcomes = "post"    # default "orourke"
+```
+
+Use it for sprays into a gas at elevated pressure with many fine drops,
+as in Spray G (6 bar): it brought the drops 15 mm from the tip from 14.5
+to 13.0 µm and the liquid lead at 0.8 ms from 9 to 4 %. The bounces and
+reflexive separations are counted in the step tally; `spray.csv` keeps
+its columns. Compare with the run without collisions
+(`--set spray.collision.model=none`) to see how much the collisions do.
+
+```sh
+foehn flow examples/cases/flow/spray_g_g1.toml --out output/spray_g_g1 --end-time 9e-4
+python3 -m tools.plot.spray_g_g1 OUT_DIR output/spray_g_g1 output/spray_g_g1_orourke \
+    --label "O'Rourke outcomes" --name spray_collision_post.png
+```
+
+Case: `examples/cases/flow/spray_g_g1.toml`;
+[gallery entry](../gallery/sprays.md#spray-collision-post).
