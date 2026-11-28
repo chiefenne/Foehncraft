@@ -1,0 +1,27 @@
+# The boiling water side of the coupled slab (SF7c, `tests/water_walls.rs`):
+# the tube of `wall_slab_tube.toml` at 7 MPa with 0.02 kg/s entering 5 K
+# below saturation (553.9 K, T_sat = 558.98 K). The slab heat boils it to
+# wet steam; the wall of flow boiling is Chen's.
+
+[circuit]
+name = "wall_slab_boiling"
+segments = 40
+
+[[nodes]]
+name = "inlet"
+kind = "pressure"
+pressure = 7.0e6
+temperature = 553.98
+
+[[nodes]]
+name = "outlet"
+kind = "junction"
+mass_flow = -0.02
+
+[[tubes]]
+name = "tube"
+from = "inlet"
+to = "outlet"
+length = 2.0
+diameter = 0.02
+start_flow = 0.02

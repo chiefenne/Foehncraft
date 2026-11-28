@@ -1,0 +1,108 @@
+# A convective evaporator pass of a boiler (steam furnace stage SF7c,
+# D349): hot flue gas rises between two water walls whose tubes belong to
+# the drum loop of `../circuits/evaporator_pass_drum.toml`.
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/circuit_evaporator_pass.toml
+#
+# The pass is 0.2 m wide, 6 m high and 1 m deep (2D). Flue gas enters at
+# the bottom with 20 m/s, hotter on the left (1600 K) than on the right
+# (1200 K), as behind a burner that fires off the middle; constant
+# properties of flue gas near 1200 K (ρ = 0.29 kg/m³, μ = 4.6·10⁻⁵ Pa s,
+# c_p = 1250 J/(kg K), k = 0.08 W/(m K)), k-ε with scalable wall functions
+# and the thermal wall function of Kader. Each wall is the outer face of a
+# bank of 12 risers per metre (40 mm bore) of one drum loop at 7 MPa: the
+# left wall on `risers_left`, the right wall on `risers_right`, each tube
+# from the bottom (its `from` end, the lower header) to the top. The
+# membrane wall between the gas and the water is 6 mm of steel
+# (`wall_resistance` 1.5·10⁻⁴ m² K/W) with a thin scale inside (`fouling`
+# 5·10⁻⁵ m² K/W). The two banks share one downcomer, so the hotter left bank
+# takes more of the circulation: the split of the flow is a result of the
+# coupled solve, as is the steam of the drum.
+#
+# The radiation of the gas (SF4) is not in this case: the pass shows the
+# coupling on convection alone, about 20 kW/m², where a furnace wall
+# sees 100 to 300 kW/m².
+
+case_format = "0.7"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [0.2, 6.0, 1.0]
+cells = [32, 150, 1]
+
+[fluid]
+density = 0.29
+viscosity = 4.6e-5
+specific_heat = 1250.0
+conductivity = 0.08
+
+[turbulence]
+model = "k-epsilon"
+wall_treatment = "scalable"
+
+[energy]
+initial = "1600.0 - 2000.0 * x - 20.0 * y"
+turbulent_prandtl = 0.85
+wall_function = "kader"
+
+[initial]
+potential_flow = true
+k = 1.5
+epsilon = 9.5
+
+[boundary.ymin]
+type = "velocity-inlet"
+velocity = [0.0, 20.0, 0.0]
+k = 1.5                              # 5 % intensity
+epsilon = 9.5
+[boundary.ymin.energy]
+temperature = "1600.0 - 2000.0 * x"  # 1600 K left, 1200 K right
+[boundary.ymax]
+type = "static-pressure-outlet"
+pressure = 1.0e5                     # atmospheric
+[boundary.xmin]
+type = "wall"                        # the left water wall
+[boundary.xmax]
+type = "wall"                        # the right water wall
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[circuits]
+file = "../circuits/evaporator_pass_drum.toml"
+every = 20
+tolerance = 1e-4
+
+[[circuits.walls]]
+boundary = "xmin"
+tube = "risers_left"
+start = [0.0, 0.0, 0.5]
+end = [0.0, 6.0, 0.5]
+wall_resistance = 1.5e-4
+fouling = 5.0e-5
+
+[[circuits.walls]]
+boundary = "xmax"
+tube = "risers_right"
+start = [0.2, 0.0, 0.5]
+end = [0.2, 6.0, 0.5]
+wall_resistance = 1.5e-4
+fouling = 5.0e-5
+
+[solver]
+tolerance = 1e-6
+max_iterations = 2500
+log_every = 250
+
+[solver.energy]
+relaxation = 0.95
+tolerance = 1e-10
+max_iter = 300
+
+[output]
+wall_csv = false
+lines = [
+  { name = "across", from = [0.0, 4.5, 0.5], to = [0.2, 4.5, 0.5], points = 81 },
+]
