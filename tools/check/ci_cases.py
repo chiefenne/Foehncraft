@@ -53,7 +53,7 @@ FLOW = {
         "ranks_run_sliding_couette",
         "ranks_run_imprint_couette",
         "immersed_cylinder_re20", "immersed_topology_bend", "immersed_mms",
-        "immersed_cut_cylinder_re20",
+        "immersed_cut_cylinder_re20", "immersed_cut_cylinder_cht",
         "ranks_water_if97_channel",
         # moved from linux-3 to balance the sets (2026-11-26)
         "channel_heated_periodic", "spray_two_way",
