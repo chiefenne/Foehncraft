@@ -195,6 +195,7 @@ pub unsafe fn face_alpha<T: Real>(f: usize, a: &FaceIn<'_, T>) -> T {
 /// # Safety
 /// As [`face_alpha`]; `c` is a local cell.
 #[inline(always)]
+#[allow(clippy::too_many_arguments)]
 pub unsafe fn update<T: Real>(
     c: usize,
     topo: &Topology<'_>,

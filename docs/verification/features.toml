@@ -2778,7 +2778,7 @@ switch = "[energy] with specific_heat and conductivity per [[vof.phase]], [vof.p
 decisions = ["D293", "D349"]
 model = true
 evidence = [
-  { kind = "exact", test = "crates/foehncraft-flow/tests/vof.rs::phase_change_stefan", what = "the Stefan problem (water at 1 atm, wall 10 K above T_sat, density ratio 1604): the vapour layer within 2 % of 2 lambda sqrt(alpha_v t) (about 1 % after the start); liquid volume account to 1e-6, outflow against the volume made to 1e-3" },
+  { kind = "exact", test = "crates/foehncraft-flow/tests/vof.rs::phase_change_stefan", what = "the Stefan problem (water at 1 atm, wall 10 K above T_sat, density ratio 1604): the vapour layer within 2 % of 2 lambda sqrt(alpha_v t) (about 1 % after the start); liquid volume account to 1e-6, outflow against the volume made to 1e-9" },
   { kind = "exact", test = "crates/foehncraft-flow/tests/vof.rs::phase_change_sucking", what = "the sucking problem (liquid 2 K superheated, the thermal layer carried across the interface): the vapour layer within 2.5 % of 2 beta sqrt(alpha_l t)" },
   { kind = "exact", test = "crates/foehncraft-flow/tests/vof.rs::phase_change_scriven", what = "Scriven's bubble on a sector of the sphere (water 1.25 K superheated, R 0.1 to 0.2 mm): the radius within 4 % of 2 beta sqrt(alpha_l t)" },
   { kind = "exact", case = "vof_stefan", what = "the whole run, delta 0.1 to 0.5 mm: within 1.1 % after the start", doc = "docs/gallery/multiphase.md#vof-phase-change" },

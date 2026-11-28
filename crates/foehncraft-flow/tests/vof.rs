@@ -450,7 +450,7 @@ fn phase_change_stefan() {
     eprintln!("stefan: liquid account {liquid:e}, volume made {made:e}");
     assert!(liquid.abs() < 1e-6, "liquid volume account {liquid:e}");
     assert!(
-        made.abs() < 1e-3,
+        made.abs() < 1e-9,
         "outflow against the volume made {made:e}"
     );
 }
