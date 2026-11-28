@@ -3116,7 +3116,8 @@ pub fn run_steered(
             Some(o) => (&o.local.mesh, &o.geo),
             None => (&mesh, &geo),
         };
-        let disc = simplec::discretisation(smesh, sgeo, &arrays)?;
+        let mut disc = simplec::discretisation(smesh, sgeo, &arrays)?;
+        crate::immersed::wall_function_faces(&case, smesh, sgeo, &mut disc.0)?;
         let operators = crate::operators::report(
             &case,
             &mesh,

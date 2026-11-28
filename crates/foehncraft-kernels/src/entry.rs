@@ -2880,6 +2880,29 @@ pub struct WallFaceArgs {
     /// Pressure gradient per cell (treatment `COMPOUND_2023`; empty: no
     /// pressure part of C_U).
     pub grad_p: Raw3,
+    /// The sample cell of each wall face (cut-cell walls, L13 stage 2c),
+    /// `u32::MAX` for none, or [`Raw::EMPTY`]: the wall function takes the
+    /// tangential velocity, k and distance of the sample cell for the wall
+    /// shear stress, the near-wall cell keeps its own ε or ω.
+    pub sample: Raw<u32>,
+    /// The exact wall distance of the sample cell's centroid per wall face
+    /// (with `sample`).
+    pub y_sample: Raw<f64>,
+}
+
+/// The tangential speed of cell `c` relative to the wall face `fb` with the
+/// unit normal `n`.
+#[inline(always)]
+unsafe fn wall_tangential(a: &WallFaceArgs, c: usize, fb: usize, n: [f64; 3]) -> f64 {
+    // SAFETY: guaranteed by the caller.
+    unsafe {
+        let up = a.u.v().at(c);
+        let uw = a.ub.v().at(fb);
+        let du = [up[0] - uw[0], up[1] - uw[1], up[2] - uw[2]];
+        let dn = du[0] * n[0] + du[1] * n[1] + du[2] * n[2];
+        let t = [du[0] - dn * n[0], du[1] - dn * n[1], du[2] - dn * n[2]];
+        foehncraft_core::math::sqrt(t[0] * t[0] + t[1] * t[1] + t[2] * t[2])
+    }
 }
 
 /// The wall treatment per wall face ([`crate::turb::wall::wall_face`]).
@@ -2971,7 +2994,34 @@ impl Entry for WallFaces {
                     cs: ld(a.cs.get(), i),
                     cu,
                 };
-                let r = crate::turb::wall::keps_wall_face(&inp, &a.ke, a.treatment);
+                let mut r = crate::turb::wall::keps_wall_face(&inp, &a.ke, a.treatment);
+                if a.sample.len > 0 {
+                    let q = ld(a.sample.get(), i);
+                    if q != u32::MAX {
+                        // the wall shear stress from the sample cell one
+                        // layer out (L13 stage 2c); ε, the production and the
+                        // wall viscosity stay those of this cell
+                        let q = q as usize;
+                        let mut si = inp;
+                        si.ut = wall_tangential(a, q, fb, n);
+                        si.y = ld(a.y_sample.get(), i);
+                        si.k = ld(a.k.get(), q);
+                        si.cu = 0.0;
+                        if a.nu_cell.len > 0 {
+                            si.nu = ld(a.nu_cell.get(), q);
+                        }
+                        let rs = crate::turb::wall::keps_wall_face(&si, &a.ke, a.treatment);
+                        let (tau_s, tau_p) = (rs.u_tau * rs.u_tau, r.u_tau * r.u_tau);
+                        if tau_p > 1e-300 {
+                            r.pk_wall *= tau_s / tau_p;
+                        }
+                        if ut > 1e-300 {
+                            r.nu_wall = tau_s * inp.y / ut;
+                        }
+                        r.u_tau = rs.u_tau;
+                        r.y_plus = rs.u_tau * inp.y / nu_p;
+                    }
+                }
                 *a.u_tau.out().add(i) = r.u_tau;
                 *a.y_plus.out().add(i) = r.y_plus;
                 *a.y_star.out().add(i) = r.y_star;
@@ -3008,7 +3058,31 @@ impl Entry for WallFaces {
                 ks: ld(a.ks.get(), i),
                 u_tau_old: a.u_tau_old.read(i),
             };
-            let r = crate::turb::wall::wall_face(&inp, &a.c, a.treatment);
+            let mut r = crate::turb::wall::wall_face(&inp, &a.c, a.treatment);
+            if a.sample.len > 0 && a.treatment != crate::turb::wall::LOW_RE {
+                let q = ld(a.sample.get(), i);
+                if q != u32::MAX {
+                    // the wall shear stress from the sample cell (L13
+                    // stage 2c); ω and the wall values stay this cell's
+                    let q = q as usize;
+                    let mut si = inp;
+                    si.ut = wall_tangential(a, q, fb, n);
+                    si.y = ld(a.y_sample.get(), i);
+                    if a.nu_cell.len > 0 {
+                        si.nu = ld(a.nu_cell.get(), q);
+                    }
+                    let rs = crate::turb::wall::wall_face(&si, &a.c, a.treatment);
+                    let (tau_s, tau_p) = (rs.u_tau * rs.u_tau, r.u_tau * r.u_tau);
+                    if tau_p > 1e-300 {
+                        r.pk_wall *= tau_s / tau_p;
+                    }
+                    if ut > 1e-300 {
+                        r.nu_wall = tau_s * inp.y / ut;
+                    }
+                    r.u_tau = rs.u_tau;
+                    r.y_plus = rs.u_tau * inp.y / nu_p;
+                }
+            }
             let m = r.prod_weight;
             *a.u_tau.out().add(i) = r.u_tau;
             *a.y_plus.out().add(i) = r.y_plus;

@@ -962,7 +962,8 @@ fn new_flow(
             hydrostatic: crate::buoyancy::hydrostatic(case),
         },
     )?;
-    let disc = simplec::discretisation(mesh, geo, &arrays)?;
+    let mut disc = simplec::discretisation(mesh, geo, &arrays)?;
+    crate::immersed::wall_function_faces(case, mesh, geo, &mut disc.0)?;
     let mut nfl = Flow::on(
         disc,
         arrays,
@@ -1334,7 +1335,8 @@ fn run_one<F: FnMut(&str)>(
         .as_ref()
         .map_or_else(|| arrays.mom_kind.clone(), |o| o.arrays.mom_kind.clone());
     let ub0 = arrays.ub.clone();
-    let disc = simplec::discretisation(smesh, sgeo, &arrays)?;
+    let mut disc = simplec::discretisation(smesh, sgeo, &arrays)?;
+    crate::immersed::wall_function_faces(&case, smesh, sgeo, &mut disc.0)?;
     let operators = crate::operators::report(
         &case,
         mesh,
