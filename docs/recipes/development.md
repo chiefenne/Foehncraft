@@ -124,18 +124,27 @@ index tables; pull requests commit only `features.toml` and `grades.json`.
 <a id="release"></a>
 ## 6. Make a release (tag and GitHub release)
 
-A release is a Git tag `v<version>` (D46; `v0.1` to `v0.7`, then `v1.0.0`, `v1.0.1`, `v1.1.0` and `v1.2.0`) plus a GitHub release. Steps:
+A release is a Git tag `v<version>` (D46; `v0.1` to `v0.7`, then `v1.0.0`, `v1.0.1`, `v1.1.0`, `v1.2.0` and `v1.3.0`) plus a GitHub release. Steps:
 
 1. A pull request runs `python -m tools.release.changelog` (moves the
    fragments of `changelog.d/` into `## Unreleased`), then moves that section to
    `## <version> (YYYY-MM-DD) – ...` and adds a row to the summary table
    (`## Summary`, at the top of `CHANGELOG.md` below `## Unreleased`).
 2. After the merge: GitHub, Actions, **Release**, *Run workflow*, version
-   `1.2.0` (the number without the `v`), first with *dry run* checked (prints the notes), then without.
+   `1.3.0` (the number without the `v`), first with *dry run* checked (prints the notes), then without.
 
 The workflow refuses a version without a changelog section, and creates
 only the release if the tag already exists. The assistant starts it through
 the GitHub API in the same way.
+
+To publish at a set time, give *publish_at* a UTC time up to 8.5 hours
+ahead, for example `2026-11-28T09:00:00Z` (10:00 in Vienna in winter). The
+workflow then creates the release as a draft at the current `main`, the
+Executables job attaches the programs to the draft, and the job *publish*
+waits until that second, pushes the tag and publishes the release. Cancel
+the run before then to call the release off; the draft stays and can be
+deleted by hand. A second run waits behind a running one, so cancel the
+first before starting it again.
 
 The release badge of the README updates by itself: the last step of the
 workflow waits until img.shields.io reports the new tag and then purges

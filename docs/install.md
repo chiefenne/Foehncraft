@@ -1,8 +1,9 @@
 # Install and update
 
-Foehncraft is built from source, also release 1.2.0 (tag `v1.2.0`). Release binaries for Linux, macOS and
-Windows with `SHA256SUMS.txt` and `foehn doctor` are planned (D203) but not
-part of a release yet. This page lists every tool to install on macOS,
+Each release (now 1.3.0, tag `v1.3.0`) carries ready-to-run `foehn`
+programs for macOS, Linux and Windows with `SHA256SUMS.txt` (README,
+"Download a release"; default features, no MPI or CUDA); `foehn doctor` is
+planned (D203). To build from source, this page lists every tool to install on macOS,
 Linux and Windows, with the commands, so that a fresh machine gets to a
 working `foehn` in one pass. See also [Connect an assistant](agents.md) and
 [Troubleshooting](troubleshooting.md).
@@ -144,7 +145,7 @@ On all three systems, in a terminal (PowerShell on Windows):
 ```
 git clone https://github.com/chiefenne/Foehncraft.git
 cd Foehncraft
-git checkout v1.2.0          # optional: the release instead of main
+git checkout v1.3.0          # optional: the release instead of main
 cargo build --release --locked -p foehncraft-cli
 target/release/foehn info
 ```
