@@ -20,8 +20,8 @@ they appear in a table). Results of other CFD or radiation codes are not
 reference numbers.
 
 Stage ids use the prefix **RA** (radiation, advanced). Decision numbers
-D366 to D372 are proposed (section 7, one card each); they are provisional
-and checked against `main` again before this page is merged.
+D366 to D372 were all answered by the maintainer on 2026-11-28 (section 7,
+one card each); the numbers are checked against `main` again before merge.
 
 ## 1. Answer in short
 
@@ -144,12 +144,12 @@ float32 traversal stays the later item P9.
 | # | Question | Options | Recommended | Answer |
 |---|---|---|---|---|
 | Q1 (D366) | What comes first: speed or accuracy? | (a) RA0 speed foundation first, then R1b; (b) R1b coupling first as specified, speed after; (c) spectral models (RA2) first | (a): at 448 µs per bundle the coupled furnace is not affordable, and RA0 changes no result | **Answered 2026-11-28 (D366): (a) speed first.** RA0 (profiling, face-plane walk, renumbering, Colab GPU check) before R1b |
-| Q2 (D367) | Spectral model ladder | (a) WSGG default now (RA2), FSCK/SLW as the accurate option (RA4); (b) FSCK as default from the start; (c) WSGG only | (a): WSGG is enough for SF4 and cheap to verify; FSCK follows once RA3 gives our own tables | open |
-| Q3 (D368) | Spectral reference data | (a) own line-by-line tool from HITEMP, own WSGG/FSCK tables; (b) published line-by-line results and coefficient sets only; (c) both | (c): published sets give the first WSGG at once; our own tables remove the dependence on external fits | open |
-| Q4 (D369) | Deterministic solvers | (a) P1 and FV-DOM with random-ordinate ray-effect fix as options, MC default; (b) MC only; (c) DOM default for speed | (a): users expect them, they cross-check MC, and P1 is the cheap option for thick sooty and coal flames | open |
-| Q5 (D370) | Turbulence–radiation interaction | (a) RANS emission TRI from temperature variance first, full TRI with stochastic fields or PDF later; (b) full PDF Monte Carlo TRI from the start; (c) none | (a): most of the effect for little code; the full form comes with D361 stochastic fields | open |
-| Q6 (D371) | Lead validation set | (a) Bordbar/Goutière/Coelho non-grey benchmarks, Sandia Flame D radiant fraction, Chalmers 100 kW unit; (b) add IFRF furnaces now; (c) analytic cases only until SF5 | (a): open data that covers spectra, TRI and a real furnace | open |
-| Q7 (D372) | Scope of the GPU and graphics benchmarks | (a) wavefront, cell sorting, null-collision, path guiding; RT cores stay out (float64); (b) also a float32 RT-core traversal option (amends D107 (6), brings P9 forward) | (a): float64 and bitwise tallies are design rules; RT cores would break both | open |
+| Q2 (D367) | Spectral model ladder | (a) WSGG default now (RA2), FSCK/SLW as the accurate option (RA4); (b) FSCK as default from the start; (c) WSGG only | (a): WSGG is enough for SF4 and cheap to verify; FSCK follows once RA3 gives our own tables | **Answered 2026-11-28 (D367): (a) WSGG now (RA2), FSCK and SLW later (RA4)** |
+| Q3 (D368) | Spectral reference data | (a) own line-by-line tool from HITEMP, own WSGG/FSCK tables; (b) published line-by-line results and coefficient sets only; (c) both | (c): published sets give the first WSGG at once; our own tables remove the dependence on external fits | **Answered 2026-11-28 (D368): (c) both** |
+| Q4 (D369) | Deterministic solvers | (a) P1 and FV-DOM with random-ordinate ray-effect fix as options, MC default; (b) MC only; (c) DOM default for speed | (a): users expect them, they cross-check MC, and P1 is the cheap option for thick sooty and coal flames | **Answered 2026-11-28 (D369): (a) options, MC default** |
+| Q5 (D370) | Turbulence–radiation interaction | (a) RANS emission TRI from temperature variance first, full TRI with stochastic fields or PDF later; (b) full PDF Monte Carlo TRI from the start; (c) none | (a): most of the effect for little code; the full form comes with D361 stochastic fields | **Answered 2026-11-28 (D370): (a) RANS emission TRI first** |
+| Q6 (D371) | Lead validation set | (a) Bordbar/Goutière/Coelho non-grey benchmarks, Sandia Flame D radiant fraction, Chalmers 100 kW unit; (b) add IFRF furnaces now; (c) analytic cases only until SF5 | (a): open data that covers spectra, TRI and a real furnace | **Answered 2026-11-28 (D371): (b) the set of (a) plus the IFRF natural gas furnaces now** (D201 entries and data terms for each source first) |
+| Q7 (D372) | Scope of the GPU and graphics benchmarks | (a) wavefront, cell sorting, null-collision, path guiding; RT cores stay out (float64); (b) also a float32 RT-core traversal option (amends D107 (6), brings P9 forward) | (a): float64 and bitwise tallies are design rules; RT cores would break both | **Answered 2026-11-28 (D372): (a) float64 methods only, no RT cores** |
 
 ## 8. Sizing
 
