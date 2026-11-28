@@ -31,7 +31,7 @@
   <b><a href="docs/features.md">What works today</a></b> ·
   <b><a href="docs/gallery.md">Example gallery</a></b> ·
   <b><a href="docs/applications.md">Engineering gallery</a></b> ·
-  <b><a href="docs/agents.md">Connect an assistant</a></b> ·
+  <b><a href="#connect-an-ai-assistant-claude-chatgpt-others">Connect an assistant</a></b> ·
   <b><a href="docs/tutorial.md">Tutorial</a></b> ·
   <b><a href="#documentation">Documentation</a></b>
 </p>
@@ -270,6 +270,56 @@ target/release/foehn flow examples/cases/flow/backstep_zeta_f0.toml
 target/release/foehn flow examples/cases/flow/impinging_jet.toml
 target/release/foehn flow examples/cases/flow/taylor_couette_mrf.toml
 ```
+
+## Connect an AI assistant (Claude, ChatGPT, others)
+
+The chats above come from an AI assistant on your own
+computer that starts Foehncraft's MCP server (`foehn mcp`) and calls its
+tools: the same tools as `foehn commands`, to check a case, see what a run
+will cost, start it and read the result. Any assistant that can start a
+local MCP server (a "stdio" server) can do it; the server is the same for
+all of them. The recorded chats were made with Claude; the entries below
+start the same command and have not all been tested yet. ChatGPT and
+Claude in a web browser or on a phone cannot start a program on your
+computer, so they cannot connect. The full guide, with the action table,
+replay and safety advice, is [docs/agents.md](docs/agents.md).
+
+**1. A folder of its own.** The server reads only below its read roots,
+writes only below its write roots and refuses to start without one of
+each. Relative paths in the calls start in the folder the server starts
+in. `foehn` is `target/release/foehn` after a build from source, or
+`foehn` (`foehn.exe`) in the unpacked release; the assistant needs its
+full path. In a terminal **in the Foehncraft folder**:
+
+```sh
+FOEHN="$PWD/target/release/foehn"            # or the path of the unpacked release
+mkdir -p ~/cfd/heatsink/runs
+cp examples/cases/flow/cht_heat_sink_turbulent.toml examples/cases/tools/mcp/foehn-mcp.toml ~/cfd/heatsink/
+cd ~/cfd/heatsink
+"$FOEHN" mcp --read-root ~/cfd/heatsink --write-root ~/cfd/heatsink/runs   # one line on stderr, then waits; Ctrl + D ends it
+```
+
+`foehn-mcp.toml` is the action table: whether a run starts, asks you first
+or is refused. Assistants that support MCP elicitation ask you in the chat
+before a run; with the others, a run is refused (`MCP005`) until you set
+`start-run = "allow"` in the table ([the action table](docs/agents.md#4-the-action-table)).
+
+**2. Register it with your assistant**, from `~/cfd/heatsink`, with full
+paths:
+
+| Assistant | How |
+|---|---|
+| Claude Code (`claude`) | `claude mcp add foehn -- "$FOEHN" mcp --read-root ~/cfd/heatsink --write-root ~/cfd/heatsink/runs --policy ~/cfd/heatsink/foehn-mcp.toml` |
+| ChatGPT (OpenAI's Codex: the `codex` command, the ChatGPT desktop app and the Codex IDE extension share one list) | `codex mcp add foehn -- "$FOEHN" mcp --read-root ~/cfd/heatsink --write-root ~/cfd/heatsink/runs --policy ~/cfd/heatsink/foehn-mcp.toml`, or `[mcp_servers.foehn]` with `command`, `args` and `cwd` in `~/.codex/config.toml` |
+| Gemini CLI (`gemini`) | `gemini mcp add foehn "$FOEHN" -- mcp --read-root ~/cfd/heatsink --write-root ~/cfd/heatsink/runs --policy ~/cfd/heatsink/foehn-mcp.toml` |
+| Claude Desktop, Cursor, VS Code, LM Studio and others | the `"mcpServers"` JSON entry of [docs/agents.md](docs/agents.md#3-register-it-with-the-assistant) in the app's MCP settings (Claude Desktop: Settings ▸ Developer ▸ **Edit Config**, then restart the app); full paths, no `~` |
+
+`claude mcp list` (or `codex mcp list`, `gemini mcp list`) shows the
+server; the assistant then lists about two dozen tools whose names start
+with `case.`, `flow.`, `result.` and so on. A host that refuses dots in
+tool names needs `--names underscore`. A first session is
+[step 5 of the guide](docs/agents.md#5-a-first-session); when the tools
+do not show up, see [troubleshooting](docs/troubleshooting.md#the-mcp-server).
 
 ## Documentation
 
