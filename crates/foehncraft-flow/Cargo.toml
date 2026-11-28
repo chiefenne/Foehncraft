@@ -27,6 +27,7 @@ foehncraft-kernels.workspace = true
 foehncraft-mesh.workspace = true
 foehncraft-fv.workspace = true
 foehncraft-particles.workspace = true
+foehncraft-circuits.workspace = true
 foehncraft-parallel.workspace = true
 rayon.workspace = true
 serde.workspace = true

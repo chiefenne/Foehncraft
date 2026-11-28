@@ -1665,8 +1665,11 @@ file with one triangle turned over is reported (SPR010, not repaired);
 `devices.vtu` holds the triangles of the tip, the 8 hole axes and the one
 cone, and `series.json` lists it.
 
-**Not yet.** The device is a picture, not a wall (D344); MurmelCraft's
-time player does not yet draw `static.devices` (ID2m).
+**Not yet.** The device is a picture, not a wall (D344; the wall stage
+ID4 was dropped, a user models the tip in the geometry when needed).
+MurmelCraft's time player draws `static.devices` under the parcels
+(ID2m, MurmelCraft PR #130: `series.open` opens them, `devices.open`,
+`devices.set`).
 
 Files: `spray/devices.vtu`, `series.json` (`static`), `result.json`
 (`spray.devices`).
@@ -1801,9 +1804,17 @@ spray_breakup as above.
 
 **What this version does not do.** The early lead and the drop size in the
 plume core (14.5 against 7 to 10 µm) are open gaps. The KH-ACT constants
-are the defaults of the papers. The time step is fixed; a step that grows
-after the end of injection is not set up. G1 takes about 30 minutes on
-4 threads at 1 µs.
+are the defaults of the papers. G1 takes about 40 minutes on 4 threads.
+
+**After the injection (#347).** The injection ends at 0.787 ms; from
+0.9 ms on G1 runs at 2 µs (`[[schedule]]`) and writes a restart file
+there. From that restart the run to 1.2 ms at 2 µs gives the same liquid
+and vapour penetrations as the run at 1 µs throughout, on every written
+frame (1.0, 1.1, 1.2 ms), the liquid in the flow at 1.2 ms within 0.2 %
+and the Sauter mean diameter of all drops within 0.03 %; no step ends
+above the coupling tolerance. The part after 0.9 ms takes about 2
+minutes at 2 µs, so a check of the late spray restarts from
+`restart_000900.h5` instead of running the injection again.
 
 Files: `spray.csv`, `spray/parcels_<step>.vtkhdf`, `fields_<step>.vtkhdf`.
 [Recipe 344](../recipes/sprays.md#spray-child-size),

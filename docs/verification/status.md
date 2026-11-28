@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 1.1.0 (b35bc269d4e1)), never typed in. The same as data: [grades.json](grades.json).
 
-**160 features: 49 verified, 108 partial, 3 unverified.**
+**161 features: 49 verified, 109 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -96,6 +96,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Energy | [Energy with a turbulence model (thermal wall function, Pr_t)](#energy-turbulent) | partial |
 | Energy | [Water and steam of IAPWS-IF97: states, saturation, transport properties and the if97 material form (SF7a)](#materials-if97-water-steam) | partial |
 | Energy | [One-dimensional water and steam tube circuits of a boiler: two-phase pressure drop, flow boiling, CHF margin and natural circulation (steam furnace SF7b)](#circuits-water-steam) | partial |
+| Energy | [Water and steam circuits behind the walls of a steady flow, coupled implicitly by a Robin condition per face (steam furnace SF7c)](#circuits-walls) | partial |
 | Conjugate heat transfer | [Solid regions, steady](#cht-steady) | verified |
 | Conjugate heat transfer | [Transient conjugate heat transfer](#cht-transient) | verified |
 | Conjugate heat transfer | [Thermal acceleration of solids (scaled ρ c_p, restored)](#cht-thermal-acceleration) | partial |
@@ -1237,7 +1238,29 @@ Gaps:
 - supercritical water takes Gnielinski with bulk properties: no correction for the pseudo-critical region
 - steady only: no density-wave or Ledinegg instability check, no transients (SF18)
 - the drift velocity is scaled by the sine of the tube angle; horizontal tubes have no stratified-flow void model
-- not yet coupled to the 3D furnace walls (SF7c)
+- coupled to the 3D walls of steady flows by SF7c (feature circuits.walls)
+
+<a id="circuits-walls"></a>
+
+### Water and steam circuits behind the walls of a steady flow, coupled implicitly by a Robin condition per face (steam furnace SF7c)
+
+**partial** (a model without reference data; gaps written) · id `circuits.walls` · switch `[circuits], [[circuits.walls]] boundary, tube, start, end, wall_resistance, fouling` · decisions D350, D282, D160
+
+- exact: [`slab_cooled_by_a_tube_meets_the_heat_balance_march`](../../crates/foehncraft-flow/tests/water_walls.rs): a slab at 700 K on a water tube at 10 MPa: outlet 519.3815 K against 519.3816 K of an independent RK4 march of the heat balance with IF97 and Gnielinski (within 0.01 K), every face on the series resistance of slab and water side to 3e-4 away from the adiabatic ends, circuit energy closure 1e-10, ledger pair = coupling residual
+- consistency: [`slab_on_a_boiling_tube_converges`](../../crates/foehncraft-flow/tests/water_walls.rs): the same slab on a tube boiling at 7 MPa (Chen wall, nonlinear in q): converges, x_out > 0.05, the water at saturation over most of the tube, faces on the series resistance to 1e-3
+- contract (diagnostics): [`circuits_table_is_checked`](../../crates/foehncraft-flow/tests/water_walls.rs): CIR005 for an unknown tube or boundary, a boundary that is not a wall or has its own energy table, two tubes on one boundary, an axis of zero length, a negative resistance, relaxation outside (0, 1], every = 0, a missing circuit file, a transient case
+- consistency: [`circuit_wall_slab`](../../examples/cases/flow/circuit_wall_slab.toml): the slab on a water tube converges with the coupling residual below 1e-6 (CI catalogue case) (passes in CI (set linux-3), not yet in the manual) ([results](../gallery/circuits.md#circuit-walls))
+- consistency: [`circuit_evaporator_pass`](../../examples/cases/flow/circuit_evaporator_pass.toml): a convective evaporator pass whose two water walls share one drum loop: converges in 143 iterations, 8 circuit solves, coupling residual 2e-7, ledger pair 0.05 W of 220 kW; the hotter bank takes more heat and flow (passes in CI (set linux-3), not yet in the manual) ([results](../gallery/circuits.md#circuit-walls))
+- contract (diagnostics): [`tube_axis_must_span_the_wall`](../../crates/foehncraft-flow/tests/water_walls.rs): faces that do not project onto the tube axis between start and end are refused when the run maps them
+
+Gaps:
+
+- steady runs only: transient circuits with a transient gas side (drum level, swell and shrink) are SF18
+- not on ranks yet (refused): the segment heats need an exact sum across the ranks
+- no measured furnace or boiler wall data yet: the evaporator pass is our own design on convection only, without the radiation of the gas (SF4)
+- one tube per wall boundary: several tube groups on one wall need the boundary split in the mesh
+- the water side is the steady 1D circuit of SF7b with its gaps (no measured void or wall temperature, Bowring CHF built in)
+- at small heat a natural-circulation loop can also converge to a reversed-flow steady state; the start flows of the circuit file pick the branch
 
 ## Conjugate heat transfer
 
@@ -2301,7 +2324,7 @@ Gaps:
 
 - ECN Spray G (G1) since D348: the spray runs ahead early (liquid +23 %, vapour +19 % at 0.3 ms) and the liquid stays 8 to 10 % ahead from 0.6 ms (vapour on the measurement from 0.8 ms); the early lead is new with the fine children at the nozzle; cause open
 - ECN Spray G (G1): the Sauter mean diameter at 15 mm is 14.5 um against 7 to 10 um measured, 15 um in the plume core where the drops coalesce, 4 to 8 um at the edges; KH-ACT constants untuned
-- spray cases with KH-ACT need small fixed time steps since D348 (G1 1 us, Spray A 0.5 us; 2 us diverges): no time step that grows after the end of injection is set up
+- spray cases with KH-ACT need small time steps during the injection since D348 (G1 1 us, Spray A 0.5 us; 2 us diverges); G1 steps up to 2 us after the injection by a schedule (#347), not by an adaptive spray-limited step
 - a gas that diverges in some cells leaves its parcels spending max_substeps each, and their exchange records can fill the memory instead of stopping the run with a message (seen on the sector before the slip core, D309)
 - drop sizes not validated: the gallery spray has a Sauter mean diameter near 2 um, small next to measured diesel sprays; no collision or coalescence yet
 - the nozzle turbulence of the Huh-Gosman estimate takes the inlet loss K_c = 0.5 and the area ratio s = 0 as our own choices (the papers give no values)

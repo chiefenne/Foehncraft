@@ -220,6 +220,7 @@ version = "1.2.0"
 dependencies = [
  "anyhow",
  "blake3",
+ "foehncraft-circuits",
  "foehncraft-core",
  "foehncraft-fv",
  "foehncraft-kernels",

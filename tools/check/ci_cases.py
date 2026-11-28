@@ -85,7 +85,7 @@ FLOW = {
         # two fluids (L3, MP1)
         "vof_static_drop",
         "porous_darcy_block", "porous_schumann",         "motion_free_stream", "motion_piston_adiabatic", "motion_channel_ranks",
-        "steam_heated_duct", "steam_superheater_channel", "spray_multihole_device",
+        "steam_heated_duct", "steam_superheater_channel", "circuit_wall_slab", "circuit_evaporator_pass", "spray_multihole_device",
     ],
     "long": [
         # two fluids (L3, MP1)

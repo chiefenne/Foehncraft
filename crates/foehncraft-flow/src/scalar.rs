@@ -2822,6 +2822,18 @@ impl Scalars {
         Ok(())
     }
 
+    /// Sets the convection condition h (T_amb − T_b) of single boundary
+    /// faces of the energy equation, `(boundary face, h, T_amb)`: the water
+    /// side of walls coupled to a circuit (SF7c). It acts from the next
+    /// energy solve, implicit in the matrix like any convection condition.
+    pub fn set_energy_convection(&mut self, faces: &[(usize, f64, f64)]) {
+        if let Some(e) = self.fields.iter_mut().find_map(|f| f.energy.as_deref_mut()) {
+            for &(fb, h, t) in faces {
+                e.conds[fb] = ECond::Convection(Value::Number(h), Value::Number(t));
+            }
+        }
+    }
+
     /// The number of interface faces (slots) of the energy equation.
     pub fn energy_interface_slots(&self) -> usize {
         self.fields

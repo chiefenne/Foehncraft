@@ -3809,6 +3809,7 @@ fn run_one<F: FnMut(&str)>(
         datums: datum_summary,
         spray: spray_summary,
         spray_steady: None,
+        circuits: None,
         benchmark,
     };
     let volume = geo.cell_volume.clone();

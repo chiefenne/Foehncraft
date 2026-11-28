@@ -153,7 +153,7 @@ yet.
 | 3D Eulerian two-fluid flow boiling (wall boiling) | SF10 | L3 core, SF7a |
 | Soot model and soot radiation | SF11 | SF3, R1c, R1f |
 | Thermal stress of tubes | SF12 | L36 |
-| Flamelet or progress-variable tables (non-adiabatic) | SF13 | SF2 |
+| Flamelet or progress-variable tables (non-adiabatic); survey of 2026-11-28 in [reacting-flow-models-survey.md](reacting-flow-models-survey.md) | SF13 | SF2 |
 | Resolved bubbles (VOF with phase change) | SF14 | L3 VOF |
 
 ## 5. Decisions for the maintainer (cards, one at a time)
@@ -183,7 +183,7 @@ waits are separate. "Not sized yet" means there is no basis.
 | SF6 | **Emission post-steps** on the frozen flow (D118): NOx thermal (extended Zeldovich with equilibrium O and OH), prompt (De Soete), fuel NO for oil and coal (D284), SO₂/SO₃ from fuel sulphur, CO burnout and unburnt carbon in ash; assumed β-PDF in temperature; ppm at 3 % O₂ (or 6 % for solid fuels) as output | SF5 | 60 to 90 min | minutes |
 | SF7a | **Water and steam states.** IAPWS-IF97 regions 1, 2, 4 (and 3 if needed above 16.5 MPa) for h, s, ρ, c_p, T_sat(p), with the IAPWS formulations for μ and k; quality and two-phase mixture properties; checks against the IF97 verification tables | D94 | 45 to 60 min | — |
 | SF7b | **1D tube circuits.** Graphs of tubes, headers and a drum: mass, momentum (friction, gravity, acceleration; Friedel two-phase multiplier; homogeneous or drift-flux slip), energy in h; heat transfer by Gnielinski (single phase), Chen or Gungor–Winterton (flow boiling), critical heat flux by the Groeneveld look-up table (2006) with margin as output; natural circulation by a fixed-point on the drum loop. Checks: exact single-phase cases, Bartolomei subcooled boiling (void and wall temperature), circulation ratio. **Implemented 2026-11-25 (#312)** with Bowring as the built-in CHF and the 2006 table read from a user file; Bartolomei still open (data not reachable) | SF7a | 2 to 3 h (2 PRs) | minutes |
-| SF7c | **1D–3D coupling.** Each tube segment maps to its wall faces on the 3D mesh; the coupling is implicit through a conductance (h, T_fluid per face as a Robin condition, the interface pattern of D160 and D274), iterated to a common tolerance with the outer iterations; ledger pair between the 3D wall and the 1D circuit | SF7b, CHT | 60 to 90 min | 1 h |
+| SF7c | **1D–3D coupling.** Each tube segment maps to its wall faces on the 3D mesh; the coupling is implicit through a conductance (h, T_fluid per face as a Robin condition, the interface pattern of D160 and D274), iterated to a common tolerance with the outer iterations; ledger pair between the 3D wall and the 1D circuit. **Implemented 2026-11-28 (#356, D350)** for steady runs on one rank; see section 6b | SF7b, CHT | 60 to 90 min | 1 h |
 | SF8 | **Tube banks as porous zones.** Porous zones (PM1 to PM3) with inline and staggered bank correlations (Žukauskas for heat transfer, Žukauskas or Gaddis–Gnielinski for pressure drop), anisotropic resistance in the bank axes (L48), gas-side h·a and the tube side from SF7b per cell (dual-cell coupling), cavity radiation through the gas (SF4); calibration from a resolved bank section by the PM4 pipeline. Gallery: superheater bank | PM1 to PM3, SF7b, SF4 | 2 to 3 h (2 PRs) | 1 to 2 h |
 | SF8r | **Resolved tube banks as a first-class option.** Mesh generation for inline and staggered banks by script (Gmsh, thousands of tubes, periodic sections), tube-side 1D circuits on resolved tube walls through SF7c, local metal temperatures; checks against the same correlations and measurements as SF8; the porous zones read their tables from these runs | SF7c, SF8 | 90 to 120 min | 2 to 4 h (large meshes, ranks) |
 | SF9 | **Package boiler application** on ranks: burner, furnace, water walls, superheater and economizer banks, drum circuit; steam output, efficiency, metal temperatures, critical heat flux margin, NOx. Application page, gallery images | SF5 to SF8, W6 to W9 | 60 to 90 min plus meshing | 2 to 4 h |
@@ -219,6 +219,31 @@ specification and follow R1a part 4.
 GPU: SF1 to SF3 kernels are cell-local (chemistry per cell, no reductions),
 so they go to the GPU like the existing cell kernels; the integrator must keep
 a fixed elimination order to give CPU = GPU. GPU with ranks is v1.1.
+
+## 6b. SF7c as built (D350)
+
+**D350 (2026-11-28, maintainer's go for SF7c): the circuit behind the
+walls.** `[circuits]` names a circuit file of SF7b, and each
+`[[circuits.walls]]` entry maps one wall boundary to one tube. A face goes
+to a segment by the projection of its centroid on the tube axis from
+`start` (the `from` end) to `end`. The water side is a Robin condition
+per face in the energy matrix, q″ = U (T_water − T_b) with 1/U =
+`wall_resistance` + φ (`fouling` + 1/h_in), and φ the 3D face area of the
+segment over the inner area of its tubes. U and T_water are linear
+between the segment midpoints, so the wall sees no steps. Every `every`
+outer iterations the face heats are summed per segment (exact sums in
+face order), relaxed by `relaxation` and handed to the circuit, whose
+Newton solve starts from its last solution (from the case's start flows
+when that fails). The coupling residual Σ|Q_3D − Q_circuit|/Σ|Q_3D| must
+meet `tolerance` together with the flow residuals; when the flow converges
+first, the circuit is solved at once and the iterations go on. The
+circuit books its own thermal account (region `circuit`), and its
+exchange pair 2901 with the conduction of the coupled walls is the
+coupling residual in watts. Only U and T_water lag behind the flow: the
+wall temperature and heat follow the gas within each outer iteration.
+Refused: transient cases (SF18), runs on ranks, a coupled boundary with
+its own energy table, several tubes on one boundary. Gallery and recipe
+356.
 
 ## 7. Validation list (open literature or exact)
 

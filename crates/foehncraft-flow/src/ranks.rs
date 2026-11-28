@@ -735,6 +735,10 @@ fn supported_solver(case: &FlowCase) -> Result<()> {
         (!case.immersed.is_empty(), "immersed bodies"),
         (case.chemistry.is_some(), "chemistry in the cells (SF2b)"),
         (
+            case.circuits.is_some(),
+            "water and steam circuits behind the walls (SF7c)",
+        ),
+        (
             case.energy.as_ref().is_some_and(|e| {
                 e.thermodynamic_pressure == crate::density::ThermodynamicPressure::ClosedVolume
             }),

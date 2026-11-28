@@ -7,6 +7,9 @@ Part of the [Case catalogue](../cases.md): one-dimensional water and steam tube 
 | `parallel_tubes_laminar.toml` | cold water split between two unheated tubes of 2 m and 4 m in laminar flow: the Hagen–Poiseuille split 2:1 (exact) | [gallery 312](../gallery/circuits.md#water-steam-circuits) |
 | `heated_riser_single_phase.toml` | water at 16 MPa heated by 200 kW/m² in a 10 m riser: the heat balance, the liquid column and the acceleration (exact) | [gallery 312](../gallery/circuits.md#water-steam-circuits) |
 | `evaporator_tube.toml` | a once-through evaporator tube at 7 MPa, 400 kW/m², subcooled inlet to x = 0.47: subcooled and saturated boiling, Chen, Friedel, drift flux, Bowring CHF | [gallery 312](../gallery/circuits.md#water-steam-circuits), [recipe 312](../recipes/circuits.md#water-steam-circuits) |
+| `wall_slab_tube.toml` | the water side of `flow/circuit_wall_slab.toml`: one tube at 10 MPa, 450 K inlet, 0.05 kg/s, heated by the slab above it (SF7c) | [gallery 356](../gallery/circuits.md#circuit-walls) |
+| `wall_slab_boiling.toml` | the same tube at 7 MPa with 0.02 kg/s, 5 K subcooled: boiled by the slab to x = 0.43 (SF7c) | [gallery 356](../gallery/circuits.md#circuit-walls) |
+| `evaporator_pass_drum.toml` | the drum loop at 7 MPa behind the two walls of `flow/circuit_evaporator_pass.toml`: two riser banks of 12 tubes per metre on one downcomer (SF7c) | [gallery 356](../gallery/circuits.md#circuit-walls), [recipe 356](../recipes/circuits.md#circuit-walls) |
 | `drum_natural_circulation.toml` | a drum boiler loop at 7 MPa: downcomer, 30 heated risers, relief pipe; natural circulation ratio 16 | [gallery 312](../gallery/circuits.md#water-steam-circuits), [recipe 312](../recipes/circuits.md#water-steam-circuits) |
 
 <a id="circuit-case-file-keys"></a>
