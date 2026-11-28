@@ -540,6 +540,8 @@ A code keeps its meaning; a retired code stays in the table.
 | `CIR002` | error | The Newton solve of a circuit did not converge or stalled: give start flows (`start_flow`) near the expected ones, check that every part of the circuit reaches a pressure or drum node, and that the flow can carry the heat. |
 | `CIR003` | warning | A state of a circuit left the range of the IAPWS-IF97 properties (the pressure fell below 1 kPa, or the enthalpy of a tube reached 4.1 MJ/kg): too much flow for the pressure level, or too little flow for the heat. |
 | `CIR004` | warning | The critical heat flux ratio q_CHF/q of a tube segment is below the margin of the case (`chf_margin`, default 1.3); below 1 the wall is beyond the CHF and its temperature is that of vapour convection (Dougall-Rohsenow). |
+| `CIR005` | error | A `[circuits]` table (SF7c) that is not valid: no energy equation, a transient case (SF18), a boundary that is not a wall or carries its own energy table, a tube that is not in the circuit file, a tube axis that does not span the faces of its boundary. |
+| `CIR006` | warning | The water and steam circuit behind the walls (SF7c) is not converged with the flow: the coupling residual is above `[circuits] tolerance` at the end, or a circuit solve failed during the run and the water side of the solve before was kept. |
 | `GEN001` | error | An error without a more specific code. |
 
 ## Engine API (D86)

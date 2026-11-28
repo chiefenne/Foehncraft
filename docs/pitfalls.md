@@ -31,6 +31,7 @@ instead.
 - [Sprays on a sector of an injector](#spray-sectors)
 - [Long-lived branches and the one test program per crate](#stale-branches)
 - [Wall functions on cut cells](#cut-wall-functions)
+- [Natural circulation loops behind a coupled wall](#circuit-branches)
 
 <a id="steady-runs"></a>
 ## Steady runs: budget and stopping
@@ -814,3 +815,28 @@ Found with the start-up bound of the turbulence (#334):
   cut cells and the pressure CG broke down in iteration 1 (the SIMPLEC
   coefficient floor); the laminar case and a plate along the mesh were
   fine. Start with the velocity along the body.
+
+<a id="circuit-branches"></a>
+## Natural circulation loops behind a coupled wall
+
+Found with the circuits behind the walls (SF7c, #356):
+- **A loop without heat stands still, and its Newton solve cannot be
+  warm-started from that.** The start solve of a coupled circuit takes the
+  heat of the circuit file. When the risers have none, the drum loop
+  converges to a flow near zero, and the next solve, started from it, has
+  a singular Jacobian. The coupling therefore falls back to the start
+  flows of the case when a warm start fails. Give the coupled tubes a
+  `heat_flux` near the expected one as the start of the coupling.
+- **At small heat a drum loop has a second steady state with the flow
+  reversed.** Below about 15 kW/m² on the risers of the evaporator pass
+  the Newton solve found the risers flowing down and wet steam rising in
+  the downcomer (2.5 % quality there), at heat that is a fifth of the
+  normal one. That is a physical branch (flow reversal of a thermosiphon),
+  not a bug, but it is not the boiler one wants. Start flows near the
+  solution keep the solve on the normal branch. Check the sign of the
+  riser flows in the summary of every new loop.
+- **Piecewise-constant water temperatures make a sawtooth in the wall heat
+  flux.** With one T_water per segment, the faces at each segment end see
+  a step of the water temperature, and the slab conducts across it (±0.2 %
+  on the slab check). U and T_water are now linear between the segment
+  midpoints. The heat of each face still goes to its own segment.

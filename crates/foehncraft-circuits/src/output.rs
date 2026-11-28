@@ -47,44 +47,51 @@ pub struct DrumBalance {
 pub fn run(case: &Case) -> Result<Solution, Error> {
     let model = Model::new(case)?;
     let (x, marches, history) = model.solve()?;
-    let mut warnings = Vec::new();
-    for (t, m) in model.tubes.iter().zip(&marches) {
-        if m.clipped {
-            warnings.push(Warning {
+    Ok(Solution::of(model, x, marches, history))
+}
+
+impl Solution {
+    /// The solution of a solved model, with its warnings.
+    pub fn of(model: Model, x: Vec<f64>, marches: Vec<March>, history: Vec<f64>) -> Self {
+        let mut warnings = Vec::new();
+        for (t, m) in model.tubes.iter().zip(&marches) {
+            if m.clipped {
+                warnings.push(Warning {
                 code: codes::RANGE,
                 message: format!(
                     "tube `{}`: the enthalpy reached its limit of 4.1 MJ/kg: the flow is too small for the heat",
                     t.name
                 ),
             });
-        }
-        if let Some((s, r)) = min_chf(m)
-            && r < model.chf_margin
-        {
+            }
+            if let Some((s, r)) = min_chf(m)
+                && r < model.chf_margin
             {
-                warnings.push(Warning {
-                    code: codes::CHF,
-                    message: format!(
-                        "tube `{}`: CHF ratio {r:.3} at s = {s:.3} m, below the margin {:.2}{}",
-                        t.name,
-                        model.chf_margin,
-                        if r < 1.0 {
-                            " (the wall is beyond the critical heat flux there)"
-                        } else {
-                            ""
-                        }
-                    ),
-                });
+                {
+                    warnings.push(Warning {
+                        code: codes::CHF,
+                        message: format!(
+                            "tube `{}`: CHF ratio {r:.3} at s = {s:.3} m, below the margin {:.2}{}",
+                            t.name,
+                            model.chf_margin,
+                            if r < 1.0 {
+                                " (the wall is beyond the critical heat flux there)"
+                            } else {
+                                ""
+                            }
+                        ),
+                    });
+                }
             }
         }
+        Solution {
+            model,
+            x,
+            marches,
+            history,
+            warnings,
+        }
     }
-    Ok(Solution {
-        model,
-        x,
-        marches,
-        history,
-        warnings,
-    })
 }
 
 /// The smallest CHF ratio of a tube and its position.
@@ -162,6 +169,45 @@ impl Solution {
             },
             h_downcomer: self.model.h(&self.x, k),
         })
+    }
+
+    /// The enthalpy flows (W) that enter and leave the circuit: the water
+    /// of the pressure nodes and of the junction sources, the feedwater
+    /// and the steam of the drums. With the heat of the tubes they close
+    /// the energy balance of the circuit: in + heat − out = 0 to the
+    /// Newton tolerance (the ledger account of SF7c).
+    pub fn enthalpy_flows(&self) -> (f64, f64) {
+        let m = &self.model;
+        let (mut inflow, mut outflow) = (0.0, 0.0);
+        for (t, mr) in m.tubes.iter().zip(&self.marches) {
+            let flow = self.x[t.im] * t.count;
+            let (up, down) = if flow >= 0.0 {
+                (t.from, t.to)
+            } else {
+                (t.to, t.from)
+            };
+            if m.nodes[up].kind == NodeKind::Pressure {
+                inflow += flow.abs() * m.h(&self.x, up);
+            }
+            if m.nodes[down].kind == NodeKind::Pressure {
+                outflow += flow.abs() * mr.h_end;
+            }
+        }
+        for (k, n) in m.nodes.iter().enumerate() {
+            if n.m_source > 0.0 {
+                inflow += n.m_source * n.h_given.unwrap_or(0.0);
+            } else if n.m_source < 0.0 {
+                outflow -= n.m_source * m.h(&self.x, k);
+            }
+            if n.kind == NodeKind::Drum
+                && let Some(d) = self.drum(&n.name)
+                && let Some(sat) = foehncraft_kernels::steam::saturation_p(m.p(&self.x, k))
+            {
+                inflow += d.steam * n.h_feed;
+                outflow += d.steam * sat.vapour.h;
+            }
+        }
+        (inflow, outflow)
     }
 
     /// The result as JSON (format `foehncraft.circuit-result` 1.0).

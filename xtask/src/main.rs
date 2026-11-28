@@ -67,6 +67,8 @@ const ALLOWED: &[(&str, &[&str])] = &[
             "foehncraft-mesh",
             "foehncraft-fv",
             "foehncraft-particles",
+            // the water and steam circuits behind the walls (SF7c)
+            "foehncraft-circuits",
         ],
     ),
     (
