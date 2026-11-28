@@ -769,6 +769,115 @@ pub enum VofOp {
     Reconstruct,
 }
 
+/// The buffers of [`FlowDevice::two_fluid_eliminate`].
+#[derive(Clone, Copy, Debug)]
+pub struct EliminateBufs {
+    /// α_g per cell.
+    pub alpha: Buf,
+    /// K V per cell.
+    pub kv: Buf,
+    /// The diagonals of the gas rows.
+    pub diag_g: Buf3,
+    /// The diagonals of the liquid rows.
+    pub diag_l: Buf3,
+    /// The solved gas velocity (in and out).
+    pub ug: Buf3,
+    /// The solved liquid velocity (in and out).
+    pub ul: Buf3,
+    /// The liquid velocity of the gas rows.
+    pub ul_lag: Buf3,
+    /// d, d^s, d^C of the gas (in and out).
+    pub d_g: [Buf; 3],
+    /// d, d^s, d^C of the liquid (in and out).
+    pub d_l: [Buf; 3],
+}
+
+/// The two-fluid operations (L3, stage MP3): which body of
+/// `foehncraft_kernels::twofluid` [`FlowDevice::two_fluid`] runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TwoFluidOp {
+    /// Per cell: K V → `kv`, (lift + wall) V → `fv`, μ_BIT → `mu_bit`, D →
+    /// `disp`, b_g → `body_g`, b_l → `body_l` from `alpha`, `ul`, `ug`,
+    /// `grad_ul`, `wall_y`, `wall_n`, `nu_t`, `grad_alpha`.
+    Cells,
+    /// Per face: the face viscosities → `mu_g`, `mu_l` and the offsets →
+    /// `off_g`, `off_l` from `alpha`, `alpha_b`, `alpha_gf`, `alpha_lf`,
+    /// `mu_eff`, `mu_bit`, `disp`.
+    Faces,
+}
+
+/// The buffers of [`FlowDevice::two_fluid`] (unused ones `None`).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct TwoFluidBufs {
+    /// α_g per cell.
+    pub alpha: Option<Buf>,
+    /// Liquid velocity.
+    pub ul: Option<Buf3>,
+    /// Gas velocity.
+    pub ug: Option<Buf3>,
+    /// The liquid velocity gradient.
+    pub grad_ul: Option<[Buf3; 3]>,
+    /// Wall distance per cell.
+    pub wall_y: Option<Buf>,
+    /// Unit wall normal per cell.
+    pub wall_n: Option<Buf3>,
+    /// ν_t per cell (laminar: `None`).
+    pub nu_t: Option<Buf>,
+    /// ∇α_g per cell.
+    pub grad_alpha: Option<Buf3>,
+    /// The cell size h per cell (the dispersion limiter, D354).
+    pub cell_h: Option<Buf>,
+    /// α_g of the inflow per boundary face.
+    pub alpha_b: Option<Buf>,
+    /// α_g per face.
+    pub alpha_gf: Option<Buf>,
+    /// α_l per face.
+    pub alpha_lf: Option<Buf>,
+    /// μ_l + μ_t per face.
+    pub mu_eff: Option<Buf>,
+    /// μ_BIT per cell.
+    pub mu_bit: Option<Buf>,
+    /// D per cell.
+    pub disp: Option<Buf>,
+    /// K V per cell.
+    pub kv: Option<Buf>,
+    /// (lift + wall) V per cell.
+    pub fv: Option<Buf3>,
+    /// b_g per cell.
+    pub body_g: Option<Buf3>,
+    /// b_l per cell.
+    pub body_l: Option<Buf3>,
+    /// Face viscosity of the gas.
+    pub mu_g: Option<Buf>,
+    /// Face viscosity of the liquid.
+    pub mu_l: Option<Buf>,
+    /// Offsets of the gas.
+    pub off_g: Option<Buf>,
+    /// Offsets of the liquid.
+    pub off_l: Option<Buf>,
+    /// The dispersion conductance of the α equation per face.
+    pub td: Option<Buf>,
+}
+
+/// The device buffers that the momentum, flux and pressure operations read
+/// as the properties of the fluid; a two-fluid case (MP3) copies the
+/// arrays of one phase into them before that phase's operations.
+#[derive(Debug, Clone, Copy)]
+pub struct MaterialBufs {
+    /// ρ per cell.
+    pub rho: Buf,
+    /// ρ per face.
+    pub rho_face: Buf,
+    /// μ per face.
+    pub mu: Buf,
+    /// The cell body force of the D-weighted Rhie–Chow flux (after
+    /// [`FlowDevice::set_body_force`]).
+    pub body: Option<Buf3>,
+    /// The face offsets of the jump (after
+    /// [`FlowDevice::set_balanced_force`]).
+    pub jump: Option<Buf>,
+}
+
 /// The buffers and numbers of [`FlowDevice::vof`] (unused ones `None`).
 #[derive(Debug, Clone, Copy, Default)]
 pub struct VofBufs {
@@ -972,6 +1081,24 @@ pub trait FlowDevice {
     fn set_body_force(&mut self, b: &[Vec<f64>; 3]) -> Result<()>;
     /// One volume-of-fluid operation (L3, stage MP1).
     fn vof(&mut self, op: VofOp, b: &VofBufs) -> Result<()>;
+    /// Uploads the inflow flags (1 per boundary face of an inflow) of the
+    /// two-fluid face arrays (MP3).
+    fn two_fluid_inflow(&mut self, inflow: &[u32]) -> Result<()>;
+    /// A two-fluid operation (MP3) with the constants `k`.
+    fn two_fluid(
+        &mut self,
+        op: TwoFluidOp,
+        b: &TwoFluidBufs,
+        k: &foehncraft_kernels::twofluid::Constants<f64>,
+    ) -> Result<()>;
+    /// The partial elimination of the drag (MP3, D353): per cell the solved
+    /// velocities `ug`, `ul` of both phases are replaced by the exact
+    /// solution of the cell's drag pair, and `d_g`, `d_l` (d, d^s, d^C as
+    /// V/a of the separate rows in, the phase coefficients D out, see
+    /// `foehncraft_kernels::twofluid::eliminate_d`).
+    fn two_fluid_eliminate(&mut self, b: &EliminateBufs) -> Result<()>;
+    /// The material buffers of the device (MP3).
+    fn material_bufs(&self) -> MaterialBufs;
     /// Corrected fluxes ṁ − c_f (p'_N − p'_P).
     fn correct_fluxes(&mut self, cf: Buf, m: Buf, pc: Buf, out: Buf) -> Result<()>;
     /// u_i −= D^C ∇p'_i.

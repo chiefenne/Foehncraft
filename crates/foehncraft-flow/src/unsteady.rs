@@ -1446,6 +1446,8 @@ fn run_one<F: FnMut(&str)>(
             turning_distance.as_mut().map(|(_, d)| std::mem::take(d)),
         )?,
     }
+    // gas bubbles by the two-fluid model (MP3), after the turbulence model
+    crate::twofluid::attach(&mut fl, &case, smesh, sgeo)?;
     // the sliding mesh (D182): the rotating zone and the shift of its data
     // (on ranks the plan of the whole mesh)
     let slide =
@@ -3512,6 +3514,8 @@ fn run_one<F: FnMut(&str)>(
         });
     let mass_imbalance = match (&last_balance, case.chemistry.is_some()) {
         _ if vof_volume.is_some() => vof_volume.unwrap_or(0.0),
+        // two phases (MP3): the volume account of both
+        _ if sol.phys.two_fluid_volume.is_some() => sol.phys.two_fluid_volume.unwrap_or(0.0),
         (Some(b), true) => b.mass.relative,
         _ if big > 0.0 => total / big,
         _ => 0.0,

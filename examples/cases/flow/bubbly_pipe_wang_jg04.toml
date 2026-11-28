@@ -1,0 +1,92 @@
+# Bubbly up-flow of air and water in a vertical pipe against the measured
+# void profiles of Wang et al. (1987), j_G = 0.4 m/s (L3, stage MP3, D356).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/bubbly_pipe_wang_jg04.toml --out output/bubbly_pipe/jg04
+#   python3 examples/studies/bubbly_pipe/compare.py output/bubbly_pipe
+#
+# Pipe D = 57.15 mm, 2.4 m long (L/D = 42), on an axisymmetric wedge of
+# 2° with 24 equal cells of 1.2 mm across the radius and 240 along: the
+# cells are not smaller than about half a bubble, as the averaged model
+# needs (a mesh graded to 0.3 mm wall cells piles the gas into them).
+# Water at j_L = 1.08 m/s with air at j_G = 0.4 m/s enters
+# uniform; the inlet gas fraction 0.2417 and the liquid velocity j_L/(1 − α)
+# = 1.4243 m/s follow from α (j_L/(1 − α) + U_T) = j_G. Bubbles of 3 mm
+# (Colombo & Fairweather 2015 for these experiments), all forces at their
+# defaults (Ishii–Zuber drag, Tomiyama lift with near-wall damping,
+# Hosokawa wall lubrication, Burns dispersion, Sato viscosity), k-ω SST
+# for the liquid with the turbulence of a developed pipe flow at the
+# inlet (intensity 5 %, ν_t/ν = 100, about u_τ R/15 at Re 62 000; with 10
+# the core stays nearly laminar over the 42 D). The profile line `ld35`
+# runs from the axis to the wall at x = 35 D, where Wang et al. measured
+# (examples/studies/bubbly_pipe/data/wang1987_void.csv).
+case_format = "0.7"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [2.4, 0.028575, 0.001]
+cells = [240, 24, 1]
+wedge = 2.0
+
+[fluid]
+density = 998.2
+viscosity = 1.0e-3
+
+[gravity]
+vector = [-9.81, 0.0, 0.0]
+
+[turbulence]
+model = "k-omega-sst"
+
+[initial]
+velocity = [1.4243, 0.0, 0.0]
+turbulence_intensity = 0.05
+viscosity_ratio = 100.0
+
+[two_fluid]
+surface_tension = 0.072
+[two_fluid.gas]
+name = "air"
+density = 1.2
+viscosity = 1.8e-5
+diameter = 3.0e-3
+[two_fluid.inflow.xmin]
+alpha = 0.2417
+
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [1.4243, 0.0, 0.0]
+turbulence_intensity = 0.05
+viscosity_ratio = 100.0
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 101325.0
+[boundary.ymax]
+type = "wall"
+[boundary.zmin]
+type = "wedge"
+[boundary.zmax]
+type = "wedge"
+
+[solver]
+algorithm = "piso"
+outer_iterations = 10
+outer_tolerance = 1.0e-5
+log_every = 100
+
+[time]
+scheme = "bdf1"
+time_step = 2.0e-3
+steps = 2000
+
+[output]
+fields_every = 1000
+
+[[output.lines]]
+name = "ld35"
+from = [2.0, 0.0, 0.0]
+to = [2.0, 0.028575, 0.0]
+points = 58
+
+[verification]
+require_convergence = false

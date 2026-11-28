@@ -1,11 +1,12 @@
 # Two fluids (volume of fluid)
 
-Part of the [Example gallery](../gallery.md): two immiscible fluids such as water and air, separated by a sharp interface that moves with the flow (L3, volume of fluid). The volume fraction α of the first fluid is advected by THINC (default), CICSAM or upwind. Gravity and surface tension act as balanced face forces, and the pressure rows enforce the continuity of the volume. With the energy equation the liquid can evaporate and the vapour condense at the interface (MP2).
+Part of the [Example gallery](../gallery.md): two immiscible fluids such as water and air, separated by a sharp interface that moves with the flow (L3, volume of fluid). The volume fraction α of the first fluid is advected by THINC (default), CICSAM or upwind. Gravity and surface tension act as balanced face forces, and the pressure rows enforce the continuity of the volume. With the energy equation the liquid can evaporate and the vapour condense at the interface (MP2). Dispersed bubbles smaller than the cells take the two-fluid (Euler–Euler) model instead, with a momentum equation per phase (MP3).
 
 | # | Example | Stage | Feature |
 |---|---|---|---|
 | 317 | [A water column collapses in air, against Martin & Moyce](#vof-dam-break) | MP1 | `[vof]`, `[[vof.phase]]`, `[[vof.region]]`, `scheme = "thinc"`, `surface_tension`, `vof.csv` |
 | 358 | [Water evaporates and a vapour film boils, against exact solutions and Berenson](#vof-phase-change) | MP2 | `[energy]` with two phases, `[vof.phase_change]`, `phase_change_rate`, `examples/meshes/sphere_sector.py` |
+| 368 | [Bubbly up-flow in a pipe with the two-fluid model, against Wang et al. (1987)](#two-fluid-pipe) | MP3 | `[two_fluid]`, `[two_fluid.gas]`, `[two_fluid.inflow.<boundary>]`, `volume_fraction`, `gas_velocity_x/y/z`, line columns `alpha_gas` |
 
 ---
 
@@ -82,3 +83,31 @@ target/release/foehn flow examples/cases/flow/vof_film_boiling.toml --out output
 python3 -m tools.plot.vof_phase_change checks docs/figures/gallery output/vof_stefan output/vof_sucking output/vof_scriven
 python3 -m tools.plot.vof_phase_change film docs/figures/gallery output/vof_film_boiling
 ```
+
+---
+
+<a id="two-fluid-pipe"></a>
+## 368. Bubbly up-flow in a pipe with the two-fluid model, against Wang et al. (1987)
+
+<img src="../figures/gallery/two_fluid_pipe.png" alt="Left, two strips of the gas fraction in a vertical pipe 42 diameters long, the radius stretched and mirrored about the axis, flow from left to right. Top, j_G = 0.1 m/s: the gas enters uniform at 0.07, leaves the core within 7 diameters and gathers in a red band at the wall with up to 0.32; the core stays dark blue at about 0.02. Bottom, j_G = 0.4 m/s: the gas enters at 0.24, the core settles at about 0.11 after 25 diameters with a light wave on the way, and the wall band reaches 0.9. Right, the profiles at L/D = 35 from the axis to the wall against the measured points: at j_G = 0.4 the core lies on the measured 0.12 and the wall peak sits at the measured position but reaches 0.93 against 0.42; at j_G = 0.1 the core is 0.02 against 0.04 and the wall peak 0.32 against 0.16." width="1303" height="675">
+
+Air bubbles of 3 mm rise with water in a vertical pipe of 57.15 mm (Wang, Lee, Jones & Lahey 1987): j_L = 1.08 m/s, j_G = 0.1 and 0.4 m/s, gas fraction measured across the radius at L/D = 35 (`bubbly_pipe_wang_jg01.toml`, `bubbly_pipe_wang_jg04.toml`). The two-fluid model solves one momentum equation for the water and one for the gas; Ishii–Zuber drag, Tomiyama lift, Hosokawa wall lubrication, Burns dispersion and Sato viscosity with k-ω SST for the water. The pipe is a 2° wedge, 240 × 24 cells with 1.2 mm across, both phases enter uniform with the turbulence of a developed pipe flow.
+
+The lift drives the small bubbles towards the wall, where the wall force holds them about a bubble radius off: the wall peak of bubbly up-flow.
+
+What the runs give (2000 steps of 2 ms, 4 s, about 11 minutes each on two cores):
+- **j_G = 0.4 m/s:** core 0.114 against the measured 0.118 (−3 %); the wall peak at r/R = 0.965 where it was measured (0.953), but 0.93 against 0.42.
+- **j_G = 0.1 m/s:** core 0.022 against 0.036 (−39 %); the wall peak at r/R = 0.965 (measured 0.96), 0.32 against 0.16.
+- The steps converge in 7 to 9 outer iterations; the gas and water volume close with the boundaries.
+
+The wall peaks are twice as high as measured: too much gas is held in the wall layer. The closures are the common set of one bubble size; the bubble-induced turbulence acts only as Sato's viscosity, with no source in k and ω, and the measured flows carry a spread of sizes. Size groups follow in MP5 to MP8 (D373 to D376). On a mesh graded to 0.3 mm wall cells, ten times smaller than a bubble, the gas piles into the wall cells: the averaged model wants cells of about half a bubble or more.
+
+`two_fluid_column.toml` checks the drag exactly: in a uniform bubble column the slip is U_T √(1 − α) = 0.2247 m/s in every row (Ishii & Zuber, distorted regime), and each step converges in two outer iterations.
+
+```sh
+target/release/foehn flow examples/cases/flow/bubbly_pipe_wang_jg01.toml --out output/bubbly_pipe/jg01
+target/release/foehn flow examples/cases/flow/bubbly_pipe_wang_jg04.toml --out output/bubbly_pipe/jg04
+python3 examples/studies/bubbly_pipe/compare.py output/bubbly_pipe
+python3 -m tools.plot.two_fluid pipe docs/figures/gallery output/bubbly_pipe
+```
+

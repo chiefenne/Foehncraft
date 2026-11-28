@@ -939,6 +939,13 @@ pub struct FlowCase {
     /// `[vof]` with two `[[vof.phase]]` tables.
     #[serde(default, skip_serializing_if = "crate::vof::VofSection::is_empty")]
     pub vof: crate::vof::VofSection,
+    /// Gas bubbles dispersed in the liquid of `[fluid]` by the two-fluid
+    /// model (L3, MP3): `[two_fluid]` with `[two_fluid.gas]`.
+    #[serde(
+        default,
+        skip_serializing_if = "crate::twofluid::TwoFluidSection::is_empty"
+    )]
+    pub two_fluid: crate::twofluid::TwoFluidSection,
     /// Lagrangian parcels of the sprays (L12): `[spray]`.
     #[serde(skip_serializing_if = "foehncraft_particles::SpraySection::is_empty")]
     pub spray: foehncraft_particles::SpraySection,
@@ -1167,6 +1174,7 @@ impl FlowCase {
             buoyancy: _,
             immersed: _,
             vof: _,
+            two_fluid: _,
             spray: _,
             datums: _,
             solver: _,
@@ -1627,6 +1635,7 @@ impl FlowCase {
         crate::rotor::validate(self)?;
         crate::spray::validate(self)?;
         crate::vof::validate(self)?;
+        crate::twofluid::validate(self)?;
         crate::immersed::check_case(self)?;
         crate::datum::validate(self)?;
         if let Some(d) = &self.fluid.density
@@ -5216,6 +5225,15 @@ pub(crate) fn write_outputs(
             let _ = write!(units, ", {} (cell value)", st.name);
             let _ = write!(head, ",{}", st.name);
         }
+        // the two-fluid model (MP3): α_g and the gas velocity
+        let two_fluid = match (&fl.phys.vof_alpha, &fl.phys.gas_velocity) {
+            (Some(a), Some(g)) if !case.two_fluid.is_empty() => Some((a.clone(), g.clone())),
+            _ => None,
+        };
+        if two_fluid.is_some() {
+            units.push_str(", alpha_gas -, u_gas v_gas w_gas m/s (cell values)");
+            head.push_str(",alpha_gas,u_gas,v_gas,w_gas");
+        }
         // rotating machinery (D183): the relative velocity and the
         // cylindrical components about the axis of the zone
         let frames = crate::derived::Frames::new(case);
@@ -5260,6 +5278,9 @@ pub(crate) fn write_outputs(
             }
             for st in &fl.state.scalars {
                 let _ = write!(csv, ",{:e}", st.phi[c]);
+            }
+            if let Some((a, g)) = &two_fluid {
+                let _ = write!(csv, ",{:e},{:e},{:e},{:e}", a[c], g[0][c], g[1][c], g[2][c]);
             }
             if let Some(fr) = &frames {
                 let t = fr.at(mesh, c, x, u);
@@ -5417,6 +5438,15 @@ pub(crate) fn write_fields(
             name: "volume_fraction",
             values: a,
         });
+    }
+    // the gas velocity of a two-fluid case (MP3)
+    if let Some(g) = &fl.phys.gas_velocity {
+        for (name, values) in ["gas_velocity_x", "gas_velocity_y", "gas_velocity_z"]
+            .into_iter()
+            .zip(g.iter())
+        {
+            fields.push(CellField { name, values });
+        }
     }
     // and its phase-change rate (MP2)
     if let Some(a) = &fl.phys.vof_phase_change {

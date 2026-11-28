@@ -829,6 +829,14 @@ pub struct Physics {
     /// of the current step (m³/s, MP2): the volume account of the run
     /// checks the net boundary volume flow against it.
     pub vof_volume_made: Option<f64>,
+    /// The net boundary volume flow of both phases of a two-fluid case
+    /// (MP3) relative to half the boundary throughflow, as last stepped:
+    /// the mass check of the run (the mass of each phase in the domain
+    /// changes while the gas spreads, their volume does not).
+    pub two_fluid_volume: Option<f64>,
+    /// The gas velocity per cell of a two-fluid case (MP3), as last
+    /// stepped, for the field output (`vof_alpha` holds α_g).
+    pub gas_velocity: Option<std::sync::Arc<[Vec<f64>; 3]>>,
     /// The cell fields of the reactions (SF3: the heat release, the
     /// fine-structure fraction and residence time of the eddy dissipation
     /// concept), as last set, for the output.
@@ -854,6 +862,8 @@ impl Physics {
             vof_alpha: None,
             vof_phase_change: None,
             vof_volume_made: None,
+            two_fluid_volume: None,
+            gas_velocity: None,
             reaction_fields: None,
         }
     }
@@ -1197,6 +1207,8 @@ pub struct Flow {
     pub density: Option<Box<crate::density::Variable>>,
     /// Two fluids by the volume-of-fluid method (L3, MP1).
     pub vof: Option<Box<crate::vof::Vof>>,
+    /// Gas bubbles in a liquid by the two-fluid model (L3, MP3).
+    pub two_fluid: Option<Box<crate::twofluid::TwoFluid>>,
     /// The backward-difference coefficients (a₀, −a₁, −a₂, as the
     /// momentum time terms) and Δt of the current time step (`None` in a
     /// steady run): the mass source V ∂ρ/∂t of the continuity.
@@ -1727,6 +1739,7 @@ impl Flow {
             buoyancy_source: None,
             density: None,
             vof: None,
+            two_fluid: None,
             density_time: None,
             grid: None,
             density_source: None,
@@ -3214,6 +3227,88 @@ impl Flow {
             &self.bc.p_zero_gradient,
         )));
         self.apply_vof(true, false)
+    }
+
+    /// A second set of the velocity fields and the work buffers of one
+    /// outer iteration (the gas of a two-fluid case, MP3): its own
+    /// velocity, mass flux, boundary values, gradients and limiters, the
+    /// pressure, its boundary values and gradient shared with this flow's.
+    pub(crate) fn phase_slot(&mut self) -> Result<(Fields, Work)> {
+        let (nc, nf) = (self.disc.n_cells, self.disc.n_faces);
+        let nb = nf - self.disc.n_interior;
+        let stored = self.disc.sell.stored();
+        let dev = self.dev.as_mut();
+        let mut cell3 = || -> Result<Buf3> {
+            Ok(Buf3 {
+                x: dev.alloc(nc)?,
+                y: dev.alloc(nc)?,
+                z: dev.alloc(nc)?,
+            })
+        };
+        let u = cell3()?;
+        let grad_u = [cell3()?, cell3()?, cell3()?];
+        let psi = cell3()?;
+        let rhs = cell3()?;
+        let diag = cell3()?;
+        let gpc = cell3()?;
+        for (a, b) in self.f.u.all().into_iter().zip(u.all()) {
+            dev.copy(a, b)?;
+        }
+        for b in psi.all() {
+            dev.fill(b, 1.0)?;
+        }
+        let bnd3 = |dev: &mut dyn FlowDevice| -> Result<Buf3> {
+            Ok(Buf3 {
+                x: dev.alloc(nb)?,
+                y: dev.alloc(nb)?,
+                z: dev.alloc(nb)?,
+            })
+        };
+        let ub = bnd3(dev)?;
+        let ub_set = bnd3(dev)?;
+        let f = Fields {
+            u,
+            p: self.f.p,
+            mass_flux: dev.alloc(nf)?,
+            ub,
+            ub_set,
+            pb: self.f.pb,
+            grad_u,
+            grad_p: self.f.grad_p,
+            psi,
+        };
+        let zero_face = dev.alloc(nf)?;
+        dev.fill(zero_face, 0.0)?;
+        let zero_boundary = dev.alloc(nb)?;
+        dev.fill(zero_boundary, 0.0)?;
+        let w = Work {
+            zero_face,
+            relax: dev.alloc(nf)?,
+            cp: dev.alloc(nf)?,
+            cn: dev.alloc(nf)?,
+            bf: Buf3 {
+                x: dev.alloc(nf)?,
+                y: dev.alloc(nf)?,
+                z: dev.alloc(nf)?,
+            },
+            val: dev.alloc(stored)?,
+            rhs,
+            diag,
+            d: dev.alloc(nc)?,
+            ds: dev.alloc(nc)?,
+            dc: dev.alloc(nc)?,
+            m: dev.alloc(nf)?,
+            defect: dev.alloc(nc)?,
+            through: dev.alloc(nc)?,
+            cf: dev.alloc(nf)?,
+            pval: self.w.pval,
+            prhs: self.w.prhs,
+            pc: self.w.pc,
+            mc: dev.alloc(nf)?,
+            gpc,
+            zero_boundary,
+        };
+        Ok((f, w))
     }
 
     /// Uploads the mixture of the last advection: ρ per cell and face, the

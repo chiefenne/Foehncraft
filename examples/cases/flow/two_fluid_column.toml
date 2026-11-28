@@ -1,0 +1,82 @@
+# Bubble column check of the two-fluid model (L3, stage MP3, D352 to D356).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/two_fluid_column.toml
+#
+# Air bubbles of 4 mm rise with water in a vertical channel 20 mm wide and
+# 200 mm high with slip side walls; no lift, no wall force, laminar, so
+# that the flow stays uniform across. The water enters at 0.5 m/s with a
+# gas fraction of 0.05; the gas enters at the water speed plus the terminal
+# speed of an isolated distorted bubble (Ishii & Zuber 1979),
+# U_T = √2 (g Δρ σ)^¼ / √ρ_l = 0.2306 m/s. The channel starts with water
+# only, so the gas front rises through it in the first 0.25 s.
+#
+# Check (exact for this drag law): in the uniform column the pressure
+# gradient carries the mixture weight, the drag balances the buoyancy
+# α(1 − α) Δρ g, and the slip is U_T √(1 − α) = 0.2247 m/s at α = 0.0504;
+# the gas fraction at the outlet is j_G/u_g. Result after 0.4 s: slip
+# 0.2247 m/s in every row, α = 0.0504; each step converges in two outer
+# iterations (partial elimination of the drag, D353). About 10 s.
+case_format = "0.7"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [0.02, 0.2, 0.001]
+cells = [4, 40, 1]
+
+[fluid]
+density = 998.2
+viscosity = 1.0e-3
+
+[gravity]
+vector = [0.0, -9.81, 0.0]
+
+[initial]
+velocity = [0.0, 0.5, 0.0]
+
+[two_fluid]
+surface_tension = 0.072
+lift = "none"
+wall_lubrication = "none"
+[two_fluid.gas]
+name = "air"
+density = 1.2
+viscosity = 1.8e-5
+diameter = 4.0e-3
+[two_fluid.inflow.ymin]
+alpha = 0.05
+
+[boundary.ymin]
+type = "velocity-inlet"
+velocity = [0.0, 0.5, 0.0]
+[boundary.ymax]
+type = "static-pressure-outlet"
+pressure = 101325.0
+[boundary.xmin]
+type = "symmetry"
+[boundary.xmax]
+type = "symmetry"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+algorithm = "piso"
+outer_iterations = 10
+outer_tolerance = 1.0e-6
+log_every = 20
+
+[time]
+scheme = "bdf1"
+time_step = 2.0e-3
+steps = 200
+
+[[output.lines]]
+name = "axis"
+from = [0.01, 0.0, 0.0005]
+to = [0.01, 0.2, 0.0005]
+points = 41
+
+[verification]
+require_convergence = false

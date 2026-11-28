@@ -84,14 +84,15 @@ FLOW = {
         "mixed_convection_channel",
         "spray_duct", "spray_datums", "spray_dispersion",
         "spray_cooling_steady", "spray_heptane_evaporation",
-        # two fluids (L3, MP1); evaporation (MP2)
-        "vof_static_drop", "vof_stefan",
+        # two fluids (L3, MP1); evaporation (MP2); the two-fluid column (MP3)
+        "vof_static_drop", "vof_stefan", "two_fluid_column",
         "porous_darcy_block", "porous_schumann",         "motion_free_stream", "motion_piston_adiabatic", "motion_channel_ranks",
         "steam_heated_duct", "steam_superheater_channel", "circuit_wall_slab", "circuit_evaporator_pass", "spray_multihole_device",
     ],
     "long": [
-        # two fluids (L3, MP1); evaporation and film boiling (MP2)
+        # two fluids (L3, MP1); evaporation and film boiling (MP2); bubbly pipes (MP3)
         "vof_dam_break", "vof_scriven", "vof_film_boiling",
+        "bubbly_pipe_wang_jg01", "bubbly_pipe_wang_jg04",
         "cylinder_re100", "cylinder_re100_short", "cylinder_re100_statistics", "cylinder_re100_convective", "cylinder_re20_gci",
         "tmr_plate_zeta_f", "backstep_zeta_f0", "tmr_plate_eb", "backstep_eb", "impinging_jet",
         "cht_heat_sink_turbulent", "cylinder_steady_diagnosis", "vd_cavity_large_dt",
@@ -133,6 +134,9 @@ ARGS = {
     F + "jet_flame_edc_jl4.toml": ["--set", "solver.max_iterations=300"],
     # film boiling (MP2): 1 s of boiling in the gallery, its first 0.04 s here
     F + "vof_film_boiling.toml": ["--set", "time.steps=200"],
+    # bubbly pipes (MP3): 4 s of flow in the gallery, the first 0.4 s here
+    F + "bubbly_pipe_wang_jg01.toml": ["--set", "time.steps=200"],
+    F + "bubbly_pipe_wang_jg04.toml": ["--set", "time.steps=200"],
 }
 
 

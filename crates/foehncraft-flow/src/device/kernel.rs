@@ -13,8 +13,8 @@
 use super::{
     BoundaryArgs, Buf, Buf3, CurvatureOps, Eps2, FlowDevice, FluxArgs, KepsCellOps, Lsq, Mask,
     MlpOps, MomentumFaceArgs, MomentumRowArgs, ScalarFaceArgs, ScalarRowArgs, ScalarTurbOps,
-    ScalarWallOps, Setup, SstCellOps, TurbFaceOps, VertexStencil, VofBufs, VofOp, WallCellOps,
-    WallFaceOps, WallStatic, ZetaFCellOps,
+    ScalarWallOps, Setup, SstCellOps, TurbFaceOps, TwoFluidBufs, TwoFluidOp, VertexStencil,
+    VofBufs, VofOp, WallCellOps, WallFaceOps, WallStatic, ZetaFCellOps,
 };
 use anyhow::{Result, ensure};
 use foehncraft_core::repro::{BLOCK, combine_block_sums};
@@ -162,6 +162,8 @@ pub struct KernelFlow<E: Exec> {
     vof_open: Raw<u32>,
     /// The cell body force of the D-weighted Rhie–Chow flux.
     body: Option<[Buf; 3]>,
+    /// The inflow flags of the two-fluid face arrays (MP3).
+    two_fluid_inflow: Raw<u32>,
 }
 
 /// The vertices a rank shares with other ranks (on their processor faces)
@@ -330,6 +332,7 @@ impl<E: Exec> KernelFlow<E> {
             vert: Vec::new(),
             vert_shared: Vec::new(),
             vof_open: Raw::EMPTY,
+            two_fluid_inflow: Raw::EMPTY,
             body: None,
             lsq_u,
             lsq_p,
@@ -1412,6 +1415,196 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
                 )?;
                 self.go::<e::VofTension>(self.nf, &args)
             }
+        }
+    }
+
+    fn two_fluid_inflow(&mut self, inflow: &[u32]) -> Result<()> {
+        self.not_on_ranks("the two-fluid model")?;
+        ensure!(
+            inflow.len() == self.nb,
+            "flow device: {} two-fluid inflow flags expected",
+            self.nb
+        );
+        self.two_fluid_inflow = if inflow.is_empty() {
+            Raw::EMPTY
+        } else {
+            self.x.alloc_u32(inflow)?
+        };
+        Ok(())
+    }
+
+    fn two_fluid(
+        &mut self,
+        op: TwoFluidOp,
+        b: &TwoFluidBufs,
+        kc: &foehncraft_kernels::twofluid::Constants<f64>,
+    ) -> Result<()> {
+        self.not_on_ranks("the two-fluid model")?;
+        let one = [
+            b.alpha, b.wall_y, b.nu_t, b.alpha_b, b.alpha_gf, b.alpha_lf, b.mu_eff, b.cell_h,
+        ];
+        let three = [b.ul, b.ug, b.wall_n, b.grad_alpha];
+        let mut ins: Vec<Buf> = one
+            .into_iter()
+            .flatten()
+            .chain(three.into_iter().flatten().flat_map(|g| g.all()))
+            .chain(b.grad_ul.into_iter().flatten().flat_map(|g| g.all()))
+            .collect();
+        let mut outs: Vec<Buf> = Vec::new();
+        match op {
+            TwoFluidOp::Cells => {
+                outs.extend([b.kv, b.mu_bit, b.disp].into_iter().flatten());
+                outs.extend(
+                    [b.fv, b.body_g, b.body_l]
+                        .into_iter()
+                        .flatten()
+                        .flat_map(|g| g.all()),
+                );
+            }
+            TwoFluidOp::Faces => {
+                ins.extend([b.mu_bit, b.disp].into_iter().flatten());
+                outs.extend(
+                    [b.mu_g, b.mu_l, b.off_g, b.off_l, b.td]
+                        .into_iter()
+                        .flatten(),
+                );
+            }
+        }
+        check(&outs, &ins)?;
+        let o = |x: Option<Buf>| x.map_or(Raw::EMPTY, |x| self.r(x));
+        let o3 = |x: Option<Buf3>| x.map_or(Raw3::default(), |x| self.r3(x));
+        let args = e::TwoFluidArgs {
+            m: self.m,
+            k: *kc,
+            alpha: o(b.alpha),
+            ul: o3(b.ul),
+            ug: o3(b.ug),
+            grad_ul: b.grad_ul.map_or(RawGrad::default(), |g| RawGrad {
+                g: [self.r3(g[0]), self.r3(g[1]), self.r3(g[2])],
+            }),
+            wall_y: o(b.wall_y),
+            wall_n: o3(b.wall_n),
+            nu_t: o(b.nu_t),
+            grad_alpha: o3(b.grad_alpha),
+            cell_h: o(b.cell_h),
+            alpha_b: o(b.alpha_b),
+            inflow: self.two_fluid_inflow,
+            alpha_gf: o(b.alpha_gf),
+            alpha_lf: o(b.alpha_lf),
+            mu_eff: o(b.mu_eff),
+            mu_bit: o(b.mu_bit),
+            disp: o(b.disp),
+            kv: o(b.kv),
+            fv: o3(b.fv),
+            body_g: o3(b.body_g),
+            body_l: o3(b.body_l),
+            mu_g: o(b.mu_g),
+            mu_l: o(b.mu_l),
+            off_g: o(b.off_g),
+            off_l: o(b.off_l),
+            td: o(b.td),
+        };
+        let need = |x: bool, what: &str| -> Result<()> {
+            ensure!(
+                x,
+                "flow device: the two-fluid operation {op:?} needs {what}"
+            );
+            Ok(())
+        };
+        match op {
+            TwoFluidOp::Cells => {
+                need(
+                    b.alpha.is_some()
+                        && b.ul.is_some()
+                        && b.ug.is_some()
+                        && b.grad_ul.is_some()
+                        && b.wall_y.is_some()
+                        && b.wall_n.is_some()
+                        && b.grad_alpha.is_some()
+                        && b.cell_h.is_some(),
+                    "alpha, ul, ug, grad_ul, wall_y, wall_n, grad_alpha, cell_h",
+                )?;
+                need(
+                    b.kv.is_some()
+                        && b.fv.is_some()
+                        && b.mu_bit.is_some()
+                        && b.disp.is_some()
+                        && b.body_g.is_some()
+                        && b.body_l.is_some(),
+                    "kv, fv, mu_bit, disp, body_g, body_l",
+                )?;
+                self.go::<e::TwoFluidCells>(self.nc, &args)
+            }
+            TwoFluidOp::Faces => {
+                need(
+                    b.alpha.is_some()
+                        && b.alpha_gf.is_some()
+                        && b.alpha_lf.is_some()
+                        && b.mu_eff.is_some()
+                        && b.mu_bit.is_some()
+                        && b.disp.is_some(),
+                    "alpha, alpha_gf, alpha_lf, mu_eff, mu_bit, disp",
+                )?;
+                need(
+                    self.nb == 0
+                        || (b.alpha_b.is_some() && self.two_fluid_inflow.len as usize == self.nb),
+                    "alpha_b and two_fluid_inflow first",
+                )?;
+                need(
+                    b.mu_g.is_some()
+                        && b.mu_l.is_some()
+                        && b.off_g.is_some()
+                        && b.off_l.is_some()
+                        && b.td.is_some(),
+                    "mu_g, mu_l, off_g, off_l, td",
+                )?;
+                self.go::<e::TwoFluidFaces>(self.nf, &args)
+            }
+        }
+    }
+
+    fn two_fluid_eliminate(&mut self, b: &super::EliminateBufs) -> Result<()> {
+        self.not_on_ranks("the two-fluid model")?;
+        let outs: Vec<Buf> =
+            b.ug.all()
+                .into_iter()
+                .chain(b.ul.all())
+                .chain(b.d_g)
+                .chain(b.d_l)
+                .collect();
+        let ins: Vec<Buf> = [b.alpha, b.kv]
+            .into_iter()
+            .chain(b.diag_g.all())
+            .chain(b.diag_l.all())
+            .chain(b.ul_lag.all())
+            .collect();
+        check(&outs, &ins)?;
+        let args = e::TwoFluidElimArgs {
+            m: self.m,
+            alpha: self.r(b.alpha),
+            kv: self.r(b.kv),
+            diag_g: self.r3(b.diag_g),
+            diag_l: self.r3(b.diag_l),
+            ug: self.r3(b.ug),
+            ul: self.r3(b.ul),
+            ul_lag: self.r3(b.ul_lag),
+            d_g: b.d_g.map(|x| self.r(x)),
+            d_l: b.d_l.map(|x| self.r(x)),
+        };
+        self.go::<e::TwoFluidEliminate>(self.nc, &args)
+    }
+
+    fn material_bufs(&self) -> super::MaterialBufs {
+        super::MaterialBufs {
+            rho: self.rho_buf,
+            rho_face: self.rho_face_buf,
+            mu: self.mu_buf,
+            body: self.body.map(|b| Buf3 {
+                x: b[0],
+                y: b[1],
+                z: b[2],
+            }),
+            jump: self.balanced.map(|b| b.0),
         }
     }
 

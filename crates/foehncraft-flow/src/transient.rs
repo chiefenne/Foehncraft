@@ -642,6 +642,10 @@ impl Transient {
         mut hook: Option<&mut dyn OuterHook>,
     ) -> Result<StepReport> {
         ensure!(dt > 0.0 && dt.is_finite(), "time step {dt} must be > 0");
+        // gas bubbles by the two-fluid model (MP3): its own step
+        if fl.two_fluid.is_some() {
+            return crate::twofluid::step(self, fl, dt);
+        }
         let s = fl.settings.clone();
         let (l, w, f) = (self.l, fl.w, fl.f);
         let second = self.scheme != TimeScheme::Bdf1 && self.clock.levels >= 1;

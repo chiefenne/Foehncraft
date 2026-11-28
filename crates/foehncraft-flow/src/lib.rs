@@ -92,6 +92,7 @@ pub mod steam;
 pub mod topology;
 pub mod transient;
 pub mod turbulence;
+pub mod twofluid;
 pub mod uncertainty;
 pub mod unsteady;
 pub mod vof;

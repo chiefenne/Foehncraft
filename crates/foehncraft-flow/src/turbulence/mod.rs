@@ -2683,6 +2683,11 @@ impl Turbulence {
         Ok(wall::poisson_distance(&p, [&gx, &gy, &gz]))
     }
 
+    /// The device buffer of ν_t per cell.
+    pub fn nu_t_buf(&self) -> Buf {
+        self.nu_t
+    }
+
     /// Sets the wall distance (verification: a manufactured solution with
     /// its own distance field).
     pub fn set_wall_distance(&mut self, dev: &mut dyn FlowDevice, d: &[f64]) -> Result<()> {
