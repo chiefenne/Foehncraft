@@ -21,7 +21,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | [Thermal radiation](gallery/radiation.md) | Monte Carlo radiation of grey gas and grey walls on a prescribed temperature field: the box furnace with cooled tubes, the cases with exact solutions, scrambled Sobol against pseudo-random emission | 259, 281 |
 | [Turbulence models](gallery/turbulence.md) | the RANS turbulence models with their wall treatments (k-ω SST, the k-ε family, k-ε-ζ-f, k-ε-ζ-f₀, elliptic-blending k-ε) on the flat plate, the channel, the backward-facing step and the impinging jet; curvature correction and QCR; manufactured solutions; the internal flows of D45 (pipe, plane diffuser, U-bend) with GCI | 68, 71, 73, 74, 88, 89, 90, 113, 115, 141, 140, 184, 194, 197, 193, 199, 204 |
 | [Boundary conditions](gallery/boundary-conditions.md) | slip walls, axisymmetric wedges, inlet profiles from tables, backflow at pressure outlets, convective outlets, periodic modules, absolute pressure values (D239) | 21, 67, 220 |
-| [Lagrangian sprays](gallery/sprays.md) | droplets as Lagrangian parcels in the gas flow: injectors, drag, gravity, wall behaviour, the mass book | 242, 265, 280, 283, 285, 292, 306, 306b, 318, 314, 319, 320, 321, 325, 324, 323, 326, 333, 335, 341, 343, 338, 344 |
+| [Lagrangian sprays](gallery/sprays.md) | droplets as Lagrangian parcels in the gas flow: injectors, drag, gravity, wall behaviour, the mass book | 242, 265, 280, 283, 285, 292, 306, 306b, 318, 314, 319, 320, 321, 325, 324, 323, 326, 333, 335, 341, 343, 338, 344, 363 |
 | [Porous regions](gallery/porous.md) | flow through porous matrices with a direction-dependent Darcy–Forchheimer resistance: a ceramic honeycomb, the exact pressure drop of a block | 273, 275 |
 | [Two fluids (volume of fluid)](gallery/multiphase.md) | water and air with a sharp interface: a water column collapsing against Martin & Moyce, Zalesak's disk, a static drop | 317, 358 |
 | [Structures](gallery/structure.md) | the linear structural solver for reeds and other parts the flow moves: beams, MITC shells and quadratic solids, clamp springs and their fit to a measured frequency, contact with a seat and a stop, static, modal and transient analyses, thermal loads, temperatures mapped from a flow case (MS5, MS6) | 295, 297, 299, 300, 302, 308 |
@@ -206,6 +206,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | <a id="cut-cht"></a>359 | [A heated pin cut out of a box mesh: conjugate heat transfer through cut cells](gallery/immersed.md#cut-cht) | [Immersed bodies](gallery/immersed.md) |
 | <a id="cut-patches"></a>360 | [A cylinder that blows through a slot, and Taylor–Couette flow cut out of a box: conditions on cut bodies](gallery/immersed.md#cut-patches) | [Immersed bodies](gallery/immersed.md) |
 | <a id="refine"></a>361 | [A cylinder on a box mesh refined near it: hanging-node faces](gallery/immersed.md#refine) | [Immersed bodies](gallery/immersed.md) |
+| <a id="spray-collision-post"></a>363 | [Bouncing drops in ECN Spray G (Post collision outcomes)](gallery/sprays.md#spray-collision-post) | [Lagrangian sprays](gallery/sprays.md) |
 
 ## Adding a feature
 
