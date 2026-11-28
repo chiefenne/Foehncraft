@@ -41,9 +41,11 @@
     <td colspan="3"><a href="docs/applications/heat-exchangers.md#shell-tube-hx"><img src="assets/readme/heat_exchanger_renderings.webp" alt="Shell and tube heat exchanger on about a million cells, two views that alternate: the steel housing cut open with the tube bundle coloured by its temperature and air streamlines coloured by speed, then the housing as glass with the air winding around the baffles from the inlet to the outlet nozzle" width="900" height="563"></a></td>
   </tr>
   <tr>
-    <td><a href="docs/gallery/flow.md#curved-blades"><img src="assets/readme/hero_curved_rotor.jpg" alt="Vorticity around a rotor with seven curved blades on a sliding mesh, with the polyhedral cells and the imprinted interface circle" width="300" height="300"></a></td>
-    <td><a href="docs/gallery/radiation.md#furnace-paths"><img src="assets/readme/hero_furnace_radiation.jpg" alt="Box furnace in 3D with seven cooled tubes under the roof: the walls coloured by the net radiative flux, and Monte Carlo bundle paths crossing the chamber" width="300" height="300"></a></td>
-    <td><a href="docs/gallery/sprays.md#spray-g"><img src="assets/readme/hero_spray_g.jpg" alt="One plume of the ECN Spray G gasoline injector: the drops as spheres sized by their diameter, coloured from dark blue through light blue to orange, large near the nozzle at the top left and breaking up into a widening cloud of small drops that rolls up into a rounded head at the bottom right" width="300" height="300"></a></td>
+    <td colspan="2"><a href="docs/gallery/sprays.md#spray-device-surface"><img src="assets/readme/hero_spray_g_flyby.webp" alt="Animation of all eight plumes of the ECN Spray G injector from 0 to 1.2 ms: the camera comes down beside the injector tip looking with the flow, the plumes open like petals around it, then the camera swings down and pulls back while the drops, spheres sized by their diameter and coloured by their speed from orange near the nozzle to dark blue, break up and spread into eight rounded clouds" width="576" height="324"></a></td>
+    <td><a href="docs/gallery/sprays.md#spray-g"><img src="assets/readme/hero_spray_g.jpg" alt="One plume of the ECN Spray G gasoline injector: the drops as spheres sized by their diameter, coloured from dark blue through light blue to orange, large near the nozzle at the top left and breaking up into a widening cloud of small drops that rolls up into a rounded head at the bottom right" width="324" height="324"></a></td>
+  </tr>
+  <tr>
+    <td colspan="3" align="center"><a href="docs/gallery/flow.md#curved-blades"><img src="assets/readme/hero_curved_rotor.jpg" alt="Vorticity around a rotor with seven curved blades on a sliding mesh, with the polyhedral cells and the imprinted interface circle" width="446" height="446"></a> <a href="docs/gallery/radiation.md#furnace-paths"><img src="assets/readme/hero_furnace_radiation.jpg" alt="Box furnace in 3D with seven cooled tubes under the roof: the walls coloured by the net radiative flux, and Monte Carlo bundle paths crossing the chamber" width="446" height="446"></a></td>
   </tr>
   <tr>
     <td colspan="3"><a href="docs/gallery/energy.md#cht-turbulent"><img src="assets/readme/hero_heat_sink.jpg" alt="Temperature and streamlines around a finned aluminium heat sink in a turbulent air channel: warm air trapped in the vortices between the fins and a long recirculation behind the last fin" width="900" height="213"></a></td>
@@ -51,11 +53,13 @@
 </table>
 
 <sub>Real results of Foehncraft, each linked to its entry: a shell and tube
-heat exchanger with hot air, water and steel in one conjugate case; a rotor
-with seven curved blades on a sliding mesh; Monte Carlo radiation in a box
-furnace with cooled tubes; one plume of the ECN Spray G gasoline injector
-(Lagrangian parcels with KH-ACT breakup, drops sized by their diameter); a
-finned heat sink in turbulent air (conjugate heat transfer, k-ω SST).</sub>
+heat exchanger with hot air, water and steel in one conjugate case; the
+eight plumes of the ECN Spray G gasoline injector under its drawn tip, from
+the first drops to 1.2 ms, and one plume up close (Lagrangian parcels with
+KH-ACT breakup and collisions, drops sized by their diameter and coloured by
+their speed); a rotor with seven curved blades on a sliding mesh; Monte Carlo
+radiation in a box furnace with cooled tubes; a finned heat sink in turbulent
+air (conjugate heat transfer, k-ω SST).</sub>
 
 ## From one sentence to a moving rotor
 
