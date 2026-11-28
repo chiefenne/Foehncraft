@@ -818,6 +818,10 @@ pub struct Physics {
     /// The volume fraction α of phase 1 per cell of a volume-of-fluid case
     /// (L3, MP1), as last advanced.
     pub vof_alpha: Option<std::sync::Arc<Vec<f64>>>,
+    /// The cell fields of the reactions (SF3: the heat release, the
+    /// fine-structure fraction and residence time of the eddy dissipation
+    /// concept), as last set, for the output.
+    pub reaction_fields: Option<std::sync::Arc<Vec<(String, Vec<f64>)>>>,
 }
 
 impl Physics {
@@ -837,6 +841,7 @@ impl Physics {
             zones: false,
             grid_flux: None,
             vof_alpha: None,
+            reaction_fields: None,
         }
     }
 

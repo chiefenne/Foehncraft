@@ -23,7 +23,35 @@
 //! the ledger books them as the term `reaction` of each species account
 //! (zero in each element account). Cells below `min_temperature` are not
 //! integrated (no source).
+//!
+//! # Turbulent flames (SF3, D349)
+//!
+//! With a turbulence model `interaction` is `"edc"` or `"edm"` (see
+//! [`super::edc`]) and the mean rate of a cell is R_i = ρ κ (Y*_i − Y_i)
+//! (EDC, the fine structures integrated over their residence time τ* from
+//! the mean state) or the rates of the eddy dissipation model. Steady and
+//! transient cases:
+//!
+//! - **transient**: at the first outer iteration of each step the rates of
+//!   the old level are held over the step, as for a laminar flame. The EDC
+//!   increment is the exact solution of dY/dt = κ (Y* − Y) with Y* held,
+//!   ΔY = (1 − e^(−κ Δt)) (Y* − Y): bounded by Y* for any Δt, one factor for
+//!   all species of a cell, so every element is conserved exactly. The EDM
+//!   rates of a cell are scaled down together when a species would become
+//!   negative within the step (also exact in the elements);
+//! - **steady**: every `update_every` outer iterations the sources are
+//!   renewed in value-plus-slope form, S_i = S_u,i + S_p,i Y_i with
+//!   S_p ≤ 0 on the diagonal of the species rows (EDC: S_u = κ Y*,
+//!   S_p = −κ; EDM: a net sink as S_p = S/Y at the iterate), relaxed with
+//!   `relaxation` between renewals; the heat release is held from the
+//!   renewal. The rows conserve the elements at the converged state (where
+//!   Y is the state of the renewal), and the ledger books S_u + S_p Y.
+//!
+//! Cells where the fine-structure reactor fails (too many steps, a step too
+//! small) get no source in that renewal and are counted (CHM004), as are the
+//! cells where γ* is held at its guard.
 
+use super::edc::{EdcSection, EdmSection, Interaction};
 use super::mechanism::{Mechanism, bad};
 use super::reactor::IntegratorSection;
 use crate::diag;
@@ -52,6 +80,32 @@ pub struct ChemistrySection {
     /// report and its check.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub flame_speed: Option<FlameSpeedSection>,
+    /// The turbulence–chemistry interaction (SF3): `"laminar"` (the rates
+    /// of the mean state; laminar flows only), `"edc"` (eddy dissipation
+    /// concept) or `"edm"` (eddy dissipation model, global mechanisms).
+    #[serde(default)]
+    pub interaction: Interaction,
+    /// The constants of the eddy dissipation concept.
+    #[serde(default)]
+    pub edc: EdcSection,
+    /// The constants of the eddy dissipation model.
+    #[serde(default)]
+    pub edm: EdmSection,
+    /// Steady cases: the outer iterations between renewals of the
+    /// reaction sources.
+    #[serde(default = "one")]
+    pub update_every: usize,
+    /// Steady cases: the relaxation of the reaction sources between
+    /// renewals, S ← S + α (S_new − S).
+    #[serde(default = "unit")]
+    pub relaxation: f64,
+}
+
+fn one() -> usize {
+    1
+}
+fn unit() -> f64 {
+    1.0
 }
 
 /// `[chemistry.flame_speed]`: the burning speed of a premixed flame from
@@ -98,6 +152,26 @@ pub struct Summary {
     /// The time window of the average (s).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub flame_speed_window: Option<[f64; 2]>,
+    /// The turbulence–chemistry interaction.
+    pub interaction: &'static str,
+    /// The fine structures of the last renewal (EDC).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fine_structures: Option<FineStats>,
+    /// Cells whose fine-structure reactor failed, summed over the renewals.
+    pub failed_cells: u64,
+}
+
+/// The fine structures of a renewal (EDC).
+#[derive(Debug, Clone, Copy, Default, Serialize, PartialEq)]
+pub struct FineStats {
+    /// Cells with fine structures (turbulent and hot enough).
+    pub cells: usize,
+    /// Cells with γ* held at `max_fine_fraction`.
+    pub clipped: usize,
+    /// The smallest and the largest residence time τ* (s).
+    pub tau: [f64; 2],
+    /// The largest fine-structure fraction γ*.
+    pub fraction_max: f64,
 }
 
 impl Summary {
@@ -122,7 +196,7 @@ impl ChemistrySection {
 }
 
 /// What a reacting flow does not have yet (CHM003).
-fn unsupported(key: &str, what: &str) -> anyhow::Error {
+fn unsupported(key: &str, what: impl std::fmt::Display) -> anyhow::Error {
     diag::err(
         diag::Diagnostic::new(diag::CHEMISTRY_UNSUPPORTED, format!("[chemistry] {what}"))
             .key(key.to_string()),
@@ -154,19 +228,42 @@ pub fn validate(case: &crate::case::FlowCase) -> Result<()> {
              density follows the heat release",
         ));
     }
-    if case.time.is_none() {
+    let laminar = case.turbulence.model == crate::turbulence::TurbulenceModel::Laminar;
+    match (ch.interaction, laminar) {
+        (Interaction::Laminar, false) => {
+            return Err(unsupported(
+                "chemistry.interaction",
+                "with a turbulence model needs a turbulence–chemistry interaction: \
+                 interaction = \"edc\" (eddy dissipation concept) or \"edm\" (eddy \
+                 dissipation model)",
+            ));
+        }
+        (Interaction::Edc | Interaction::Edm, true) => {
+            return Err(unsupported(
+                "chemistry.interaction",
+                format!(
+                    "\"{}\" needs a turbulence model ([turbulence] model): laminar flames take \
+                     interaction = \"laminar\"",
+                    ch.interaction.name()
+                ),
+            ));
+        }
+        _ => {}
+    }
+    if case.time.is_none() && laminar {
         return Err(unsupported(
             "chemistry",
-            "runs in transient cases only (a time step splits transport and chemistry); \
-             steady reacting flows come with the turbulence–chemistry interaction (SF3)",
+            "in a steady laminar case: a laminar flame runs in a transient case (a time step \
+             splits transport and chemistry); steady reacting flows take a turbulence model \
+             and interaction = \"edc\" or \"edm\"",
         ));
     }
-    if case.turbulence.model != crate::turbulence::TurbulenceModel::Laminar {
-        return Err(unsupported(
-            "chemistry",
-            "with a turbulence model: the mean reaction rates of turbulent flames come with \
-             SF3 (eddy dissipation concept)",
-        ));
+    ch.edc.check()?;
+    if ch.update_every == 0 {
+        return Err(bad("chemistry.update_every", "must be ≥ 1"));
+    }
+    if !(ch.relaxation > 0.0 && ch.relaxation <= 1.0) {
+        return Err(bad("chemistry.relaxation", "must lie in (0, 1]"));
     }
     if !case.spray.is_empty() {
         return Err(unsupported(
@@ -204,6 +301,15 @@ pub fn validate(case: &crate::case::FlowCase) -> Result<()> {
         }
     }
     let m = Mechanism::load(&ch.mechanism, None)?;
+    if ch.interaction == Interaction::Edm {
+        ch.edm.check(&m.program(), &m.name)?;
+    }
+    if ch.flame_speed.is_some() && case.time.is_none() {
+        return Err(bad(
+            "chemistry.flame_speed",
+            "the flame speed is an average over the time of a transient run",
+        ));
+    }
     let names = crate::species::Resolved::of(sp)?.names;
     let missing: Vec<&str> = m
         .species
@@ -257,6 +363,15 @@ pub struct Chemistry {
     min_temperature: f64,
     pressure: f64,
     volume: Vec<f64>,
+    /// The turbulence–chemistry interaction (SF3).
+    interaction: Interaction,
+    edc: EdcSection,
+    edm: EdmSection,
+    update_every: usize,
+    relaxation: f64,
+    /// Steady: the sources held between renewals (S_u, S_p per
+    /// transported species, the heat release).
+    held: Option<Held>,
     /// The reaction of the last step (a rejected step is overwritten by
     /// its repetition).
     pub last: Option<Row>,
@@ -266,15 +381,25 @@ pub struct Chemistry {
     fuel_index: Option<usize>,
     /// Integrator steps of the run.
     steps: [u64; 2],
+    /// Cells whose fine-structure reactor failed, over the run.
+    failed: u64,
     /// The GPU that integrates the cells (`[run] backend` other than
     /// `cpu`); none: the CPU threads.
     gpu: Option<Box<dyn super::device::Device>>,
 }
 
+/// The sources of a steady run held between renewals.
+#[derive(Debug, Clone)]
+struct Held {
+    su: Vec<Vec<f64>>,
+    sp: Vec<Vec<f64>>,
+    heat: Vec<f64>,
+}
+
 /// One row of the reaction log.
 #[derive(Debug, Clone, Serialize)]
 pub struct Row {
-    /// The time at the end of the step (s).
+    /// The time at the end of the step (s); 0 in a steady run.
     pub time: f64,
     /// The heat release Σ q V (W).
     pub heat_release: f64,
@@ -284,6 +409,24 @@ pub struct Row {
     pub steps: [u64; 2],
     /// Cells integrated.
     pub cells: usize,
+    /// Cells whose fine-structure reactor failed (EDC).
+    pub failed: usize,
+    /// The fine structures (EDC).
+    pub fine: Option<FineStats>,
+}
+
+/// The result of the reactions of one cell.
+#[derive(Debug, Clone, Default)]
+struct CellOut {
+    /// S_u per species of the case (1/s); empty: no reaction.
+    su: Vec<f64>,
+    /// S_p (≤ 0) per species of the case (1/s), steady runs.
+    sp: Vec<f64>,
+    /// The heat release per unit density (W/kg).
+    heat: f64,
+    steps: u32,
+    rejected: u32,
+    failed: bool,
 }
 
 impl Chemistry {
@@ -295,7 +438,9 @@ impl Chemistry {
         };
         validate(case)?;
         let mech = Mechanism::load(&ch.mechanism, None)?;
-        let gpu = if case.run.backend == "cpu" {
+        // the eddy dissipation model runs on the CPU threads (no stiff
+        // integration)
+        let gpu = if case.run.backend == "cpu" || ch.interaction == Interaction::Edm {
             None
         } else {
             Some(super::device::create_gpu(
@@ -319,6 +464,12 @@ impl Chemistry {
             min_temperature: ch.min_temperature,
             pressure: case.fluid.conditions().pressure,
             volume: volume.to_vec(),
+            interaction: ch.interaction,
+            edc: ch.edc.clone(),
+            edm: ch.edm.clone(),
+            update_every: ch.update_every,
+            relaxation: ch.relaxation,
+            held: None,
             last: None,
             fuel: Vec::new(),
             fuel_index: ch
@@ -326,6 +477,7 @@ impl Chemistry {
                 .as_ref()
                 .and_then(|f| names.iter().position(|n| *n == f.fuel)),
             steps: [0, 0],
+            failed: 0,
             gpu,
         }))
     }
@@ -335,9 +487,393 @@ impl Chemistry {
         &self.mech
     }
 
+    /// The interaction.
+    pub fn interaction(&self) -> Interaction {
+        self.interaction
+    }
+
+    /// Steady runs: renews the reaction sources before outer iteration
+    /// `it` (every `update_every` iterations after `first`, the iteration
+    /// the run starts from); true when it renewed them.
+    pub fn before_iteration(
+        &mut self,
+        fl: &mut crate::simplec::Flow,
+        it: usize,
+        first: usize,
+    ) -> Result<bool> {
+        if self.held.is_some() && (it.saturating_sub(first + 1)) % self.update_every != 0 {
+            return Ok(false);
+        }
+        self.react_turbulent(fl, None, 0.0)?;
+        Ok(true)
+    }
+
     /// Integrates every cell over `dt` from the current fields and sets
     /// the sources of the step; `time` is the time at the end of the step.
     pub fn react(&mut self, fl: &mut crate::simplec::Flow, dt: f64, time: f64) -> Result<()> {
+        if self.interaction != Interaction::Laminar {
+            return self.react_turbulent(fl, Some(dt), time);
+        }
+        self.react_laminar(fl, dt, time)
+    }
+
+    /// The finding of the cells whose fine-structure reactor failed.
+    pub fn finding(&self) -> Option<diag::Diagnostic> {
+        (self.failed > 0).then(|| {
+            diag::Diagnostic::new(
+                diag::CHEMISTRY_FINE_STRUCTURES,
+                format!(
+                    "the fine-structure reactor failed {} times over the run (cells × renewals); \
+                     those cells got no reaction source in that renewal",
+                    self.failed
+                ),
+            )
+            .key("chemistry.integrator")
+        })
+    }
+
+    /// The reactions of a turbulent flame (SF3) from the current fields:
+    /// over the step `dt` of a transient run, or the renewal of the held
+    /// sources of a steady one (`dt` none, `time` the outer iteration).
+    fn react_turbulent(
+        &mut self,
+        fl: &mut crate::simplec::Flow,
+        dt: Option<f64>,
+        time: f64,
+    ) -> Result<()> {
+        let p = fl.density.as_ref().map_or(self.pressure, |d| d.p0);
+        let sc = fl.scalars.as_ref().context("scalars")?;
+        let link = sc.species().context("species")?;
+        let t = sc.temperature(fl.dev.as_mut())?.context("energy")?;
+        let (k, eps) = fl
+            .turbulence
+            .as_ref()
+            .context("turbulence")?
+            .k_and_epsilon(fl.dev.as_mut())?;
+        let n = self.mech.len();
+        let nflow = link.res.names.len();
+        let transported = nflow - 1;
+        let nc = self.volume.len();
+        let y = &link.y_cell;
+        let h_flow: Vec<&foehncraft_kernels::species::Species> = link.res.data.iter().collect();
+        let rho: Vec<f64> = (0..nc).map(|c| fl.phys.rho_at(c)).collect();
+        // the viscosity of a cell: the mean of its faces
+        let mu: Vec<f64> = match fl.phys.mu_face.as_deref() {
+            Some(mf) => {
+                let d = &fl.disc;
+                let (mut sum, mut cnt) = (vec![0.0; nc], vec![0u32; nc]);
+                for (f, &m) in mf.iter().enumerate().take(d.n_faces) {
+                    let o = d.owner[f] as usize;
+                    if o < nc {
+                        sum[o] += m;
+                        cnt[o] += 1;
+                    }
+                    if f < d.n_interior {
+                        let nb = d.neighbour[f] as usize;
+                        if nb < nc {
+                            sum[nb] += m;
+                            cnt[nb] += 1;
+                        }
+                    }
+                }
+                sum.iter()
+                    .zip(&cnt)
+                    .map(|(s, &c)| s / f64::from(c.max(1)))
+                    .collect()
+            }
+            None => vec![fl.phys.mu; nc],
+        };
+        let tmin = self.min_temperature;
+        let map = &self.to_flow;
+        let nz = n + 1;
+        let mut state = vec![0.0; nc * nz];
+        for (c, z) in state.chunks_mut(nz).enumerate() {
+            for (kk, &j) in map.iter().enumerate() {
+                z[kk] = y[j][c].max(0.0);
+            }
+            z[n] = t[c];
+        }
+        let hot = |c: usize| t[c] >= tmin && t[c] > 0.0;
+        // h_i(T) per kg of species j of the case at the temperature of c
+        let h_of = |j: usize, c: usize| {
+            let sp = h_flow[j];
+            sp.h_over_rt(t[c]) * foehncraft_kernels::species::R * t[c] / sp.molar_mass
+        };
+        let mut fine = None;
+        let mut fields: Vec<(String, Vec<f64>)> = Vec::new();
+        let out: Vec<CellOut> = match self.interaction {
+            Interaction::Edc => {
+                let fs: Vec<Option<super::edc::FineStructure>> = (0..nc)
+                    .map(|c| {
+                        hot(c)
+                            .then(|| {
+                                super::edc::fine_structure(&self.edc, mu[c] / rho[c], k[c], eps[c])
+                            })
+                            .flatten()
+                    })
+                    .collect();
+                let taus: Vec<f64> = fs.iter().map(|f| f.map_or(0.0, |f| f.tau)).collect();
+                let mut stats = vec![kc::Stats::default(); nc];
+                let set = self.settings;
+                match self.gpu.as_mut() {
+                    Some(g) => g.react(p, 0.0, Some(&taus), tmin, &set, &mut state, &mut stats)?,
+                    None => super::device::react_cpu(
+                        &self.mech.program(),
+                        p,
+                        0.0,
+                        Some(&taus),
+                        tmin,
+                        &set,
+                        &mut state,
+                        &mut stats,
+                    ),
+                }
+                let mut st = FineStats {
+                    tau: [f64::INFINITY, 0.0],
+                    ..FineStats::default()
+                };
+                for f in fs.iter().flatten() {
+                    st.cells += 1;
+                    st.clipped += usize::from(f.clipped);
+                    st.tau = [st.tau[0].min(f.tau), st.tau[1].max(f.tau)];
+                    st.fraction_max = st.fraction_max.max(f.fraction);
+                }
+                if st.cells == 0 {
+                    st.tau = [0.0, 0.0];
+                }
+                fine = Some(st);
+                fields.push((
+                    "fine_structure_fraction".into(),
+                    fs.iter().map(|f| f.map_or(0.0, |f| f.fraction)).collect(),
+                ));
+                fields.push(("fine_structure_time".into(), taus.clone()));
+                (0..nc)
+                    .into_par_iter()
+                    .map(|c| {
+                        let Some(f) = fs[c] else {
+                            return CellOut::default();
+                        };
+                        let s = stats[c];
+                        if s.status != 0 {
+                            return CellOut {
+                                steps: s.steps,
+                                rejected: s.rejected,
+                                failed: true,
+                                ..CellOut::default()
+                            };
+                        }
+                        let z = &state[c * nz..(c + 1) * nz];
+                        // Y* per species of the case, and Y* − Y
+                        let mut ys = vec![0.0; nflow];
+                        let mut dy = vec![0.0; nflow];
+                        for (kk, &j) in map.iter().enumerate() {
+                            ys[j] = z[kk];
+                            dy[j] = z[kk] - y[j][c].max(0.0);
+                        }
+                        let (su, sp, heat) = match dt {
+                            // the exact increment of dY/dt = κ (Y* − Y) over
+                            // the step with Y* held
+                            Some(dt) => {
+                                let g = -(-f.kappa * dt).exp_m1();
+                                let inc: Vec<f64> = dy.iter().map(|d| g * d).collect();
+                                let dh: f64 = (0..nflow).map(|j| -h_of(j, c) * inc[j]).exact_sum();
+                                (inc.iter().map(|d| d / dt).collect(), Vec::new(), dh / dt)
+                            }
+                            None => {
+                                let dh: f64 = (0..nflow).map(|j| -h_of(j, c) * dy[j]).exact_sum();
+                                (
+                                    ys.iter().map(|v| f.kappa * v).collect(),
+                                    vec![-f.kappa; nflow],
+                                    f.kappa * dh,
+                                )
+                            }
+                        };
+                        CellOut {
+                            su,
+                            sp,
+                            heat,
+                            steps: s.steps,
+                            rejected: s.rejected,
+                            failed: false,
+                        }
+                    })
+                    .collect()
+            }
+            Interaction::Edm => {
+                let prog = self.mech.program();
+                let edm = &self.edm;
+                let wk: Vec<f64> = self
+                    .mech
+                    .program()
+                    .species
+                    .iter()
+                    .map(|s| s.molar_mass)
+                    .collect();
+                (0..nc)
+                    .into_par_iter()
+                    .map_init(
+                        || {
+                            (
+                                vec![0.0; n],
+                                vec![0.0; super::edc::edm_work_len(n)],
+                                vec![0.0; n],
+                            )
+                        },
+                        |(w, work, conc), c| {
+                            if !hot(c) || !(k[c] > 0.0 && eps[c] > 0.0) {
+                                return CellOut::default();
+                            }
+                            let z = &state[c * nz..(c + 1) * nz];
+                            super::edc::edm_rates(
+                                &prog,
+                                edm,
+                                p,
+                                t[c],
+                                &z[..n],
+                                eps[c] / k[c],
+                                w,
+                                work,
+                            );
+                            let (rk, _) = kc::concentrations(prog.species, p, t[c], &z[..n], conc);
+                            // dY/dt per species of the case
+                            let mut s = vec![0.0; nflow];
+                            for (kk, &j) in map.iter().enumerate() {
+                                s[j] = wk[kk] * w[kk] / rk;
+                            }
+                            match dt {
+                                Some(dt) => {
+                                    // one factor for the cell: no species
+                                    // below zero within the step
+                                    let mut f: f64 = 1.0;
+                                    for kk in 0..n {
+                                        if w[kk] < 0.0 {
+                                            f = f.min(conc[kk] / (-w[kk] * dt));
+                                        }
+                                    }
+                                    let f = f.max(0.0);
+                                    let su: Vec<f64> = s.iter().map(|v| f * v).collect();
+                                    let dh: f64 =
+                                        (0..nflow).map(|j| -h_of(j, c) * su[j]).exact_sum();
+                                    CellOut {
+                                        su,
+                                        heat: dh,
+                                        ..CellOut::default()
+                                    }
+                                }
+                                None => {
+                                    let dh: f64 =
+                                        (0..nflow).map(|j| -h_of(j, c) * s[j]).exact_sum();
+                                    let mut su = vec![0.0; nflow];
+                                    let mut sp = vec![0.0; nflow];
+                                    for j in 0..nflow {
+                                        if s[j] >= 0.0 {
+                                            su[j] = s[j];
+                                        } else {
+                                            sp[j] = s[j] / y[j][c].max(1e-12);
+                                        }
+                                    }
+                                    CellOut {
+                                        su,
+                                        sp,
+                                        heat: dh,
+                                        ..CellOut::default()
+                                    }
+                                }
+                            }
+                        },
+                    )
+                    .collect()
+            }
+            Interaction::Laminar => unreachable!("laminar flames take react_laminar"),
+        };
+        // the sources of the transported species and the heat (W/m³)
+        let mut su = vec![vec![0.0; nc]; transported];
+        let mut sp = vec![vec![0.0; nc]; transported];
+        let mut heat = vec![0.0; nc];
+        let (mut steps, mut rejected, mut cells, mut failed) = (0u64, 0u64, 0usize, 0usize);
+        for (c, o) in out.iter().enumerate() {
+            steps += u64::from(o.steps);
+            rejected += u64::from(o.rejected);
+            if o.failed {
+                failed += 1;
+            }
+            if o.su.is_empty() {
+                continue;
+            }
+            cells += 1;
+            for j in 0..transported {
+                su[j][c] = o.su[j];
+                if !o.sp.is_empty() {
+                    sp[j][c] = o.sp[j];
+                }
+            }
+            heat[c] = rho[c] * o.heat;
+        }
+        // steady: relaxed against the sources held
+        if dt.is_none() {
+            if let Some(h) = self.held.as_ref() {
+                let a = self.relaxation;
+                let mix = |old: &[f64], new: &mut [f64]| {
+                    for (n, o) in new.iter_mut().zip(old) {
+                        *n = o + a * (*n - o);
+                    }
+                };
+                for j in 0..transported {
+                    mix(&h.su[j], &mut su[j]);
+                    mix(&h.sp[j], &mut sp[j]);
+                }
+                mix(&h.heat, &mut heat);
+            }
+            self.held = Some(Held {
+                su: su.clone(),
+                sp: sp.clone(),
+                heat: heat.clone(),
+            });
+        }
+        // the net production at the state of the renewal, S_u + S_p Y; the
+        // closure species takes the rest
+        let mut production: Vec<f64> = (0..transported)
+            .map(|j| {
+                (0..nc)
+                    .map(|c| rho[c] * self.volume[c] * (su[j][c] + sp[j][c] * y[j][c]))
+                    .exact_sum()
+            })
+            .collect();
+        production.push(-production.iter().exact_sum());
+        let heat_release = (0..nc).map(|c| heat[c] * self.volume[c]).exact_sum();
+        if let Some(t) = dt {
+            let start = time - t;
+            while self.fuel.last().is_some_and(|r| r.0 > start + 1e-9 * t) {
+                self.fuel.pop();
+            }
+            if let Some(i) = self.fuel_index {
+                self.fuel.push((time, t, production[i]));
+            }
+        }
+        self.steps[0] += steps;
+        self.steps[1] += rejected;
+        self.failed += failed as u64;
+        self.last = Some(Row {
+            time,
+            heat_release,
+            production,
+            steps: [steps, rejected],
+            cells,
+            failed,
+            fine,
+        });
+        fields.insert(0, ("heat_release_rate".into(), heat.clone()));
+        fl.phys.reaction_fields = Some(std::sync::Arc::new(fields));
+        let sc = fl.scalars.as_mut().context("scalars")?;
+        match dt {
+            Some(_) => sc.set_reaction(fl.dev.as_mut(), su, heat),
+            None => sc.set_reaction_with(fl.dev.as_mut(), su, Some(sp), heat),
+        }
+    }
+
+    /// A laminar flame (SF2b): every cell integrated over `dt` from the
+    /// current fields, the sources of the step.
+    fn react_laminar(&mut self, fl: &mut crate::simplec::Flow, dt: f64, time: f64) -> Result<()> {
         let p = fl.density.as_ref().map_or(self.pressure, |d| d.p0);
         let sc = fl.scalars.as_ref().context("scalars")?;
         let link = sc.species().context("species")?;
@@ -361,11 +897,12 @@ impl Chemistry {
         }
         let mut stats = vec![kc::Stats::default(); nc];
         match self.gpu.as_mut() {
-            Some(g) => g.react(p, dt, tmin, &set, &mut state, &mut stats)?,
+            Some(g) => g.react(p, dt, None, tmin, &set, &mut state, &mut stats)?,
             None => super::device::react_cpu(
                 &self.mech.program(),
                 p,
                 dt,
+                None,
                 tmin,
                 &set,
                 &mut state,
@@ -460,7 +997,13 @@ impl Chemistry {
             production,
             steps: [steps, rejected],
             cells,
+            failed: 0,
+            fine: None,
         });
+        fl.phys.reaction_fields = Some(std::sync::Arc::new(vec![(
+            "heat_release_rate".into(),
+            heat.clone(),
+        )]));
         let sc = fl.scalars.as_mut().context("scalars")?;
         sc.set_reaction(fl.dev.as_mut(), src, heat)
     }
@@ -537,13 +1080,19 @@ impl Chemistry {
             flame_speed: speed,
             flame_speed_range: fs.and_then(|f| f.range),
             flame_speed_window: window,
+            interaction: self.interaction.name(),
+            fine_structures: self.last.as_ref().and_then(|r| r.fine),
+            failed_cells: self.failed,
         })
     }
 
     /// The units line of `chemistry.csv`.
-    pub const CSV_UNITS: &'static str = "step -; time s; heat_release W; production_<species> kg/s \
-         (net production by the reactions, ρ V dY/dt summed over the cells); steps, rejected \
-         (integrator steps over all cells); cells (cells integrated)";
+    pub const CSV_UNITS: &'static str = "step - (the outer iteration in a steady run); time s; \
+         heat_release W; production_<species> kg/s (net production by the reactions, ρ V dY/dt \
+         summed over the cells); steps, rejected (integrator steps over all cells); cells (cells \
+         that reacted); failed (cells whose fine-structure reactor failed, EDC); clipped (cells \
+         with γ* at max_fine_fraction, EDC); tau_min s, tau_max s (the range of the \
+         fine-structure residence time τ*, EDC); fraction_max - (the largest γ*, EDC)";
 
     /// The header of `chemistry.csv`.
     pub fn csv_head(names: &[String]) -> String {
@@ -551,7 +1100,7 @@ impl Chemistry {
         for n in names {
             s.push_str(&format!(",production_{n}"));
         }
-        s.push_str(",steps,rejected,cells");
+        s.push_str(",steps,rejected,cells,failed,clipped,tau_min,tau_max,fraction_max");
         s
     }
 
@@ -562,7 +1111,18 @@ impl Chemistry {
         for v in &r.production {
             s.push_str(&format!(",{v:.9e}"));
         }
-        s.push_str(&format!(",{},{},{}", r.steps[0], r.steps[1], r.cells));
+        let f = r.fine.unwrap_or_default();
+        s.push_str(&format!(
+            ",{},{},{},{},{},{:.6e},{:.6e},{:.6e}",
+            r.steps[0],
+            r.steps[1],
+            r.cells,
+            r.failed,
+            f.clipped,
+            f.tau[0],
+            f.tau[1],
+            f.fraction_max
+        ));
         Some(s)
     }
 }
@@ -629,6 +1189,37 @@ mod tests {
         assert_eq!(code(&steady).as_deref(), Some("CHM003"));
         let turbulent = format!("{case}\n[turbulence]\nmodel = \"k-omega-sst\"\n");
         assert_eq!(code(&turbulent).as_deref(), Some("CHM003"));
+        // SF3: an interaction needs a turbulence model, the eddy
+        // dissipation model a mechanism in one direction, and the
+        // constants are checked
+        let with = |extra: &str| {
+            case.replace(
+                "min_temperature = 400.0",
+                &format!("min_temperature = 400.0\n{extra}"),
+            )
+        };
+        assert_eq!(
+            code(&with("interaction = \"edc\"")).as_deref(),
+            Some("CHM003")
+        );
+        let edc = with("interaction = \"edc\"");
+        let edc_turb = format!("{edc}\n[turbulence]\nmodel = \"k-omega-sst\"\n");
+        assert_eq!(code(&edc_turb), None);
+        let edm = format!(
+            "{}\n[turbulence]\nmodel = \"k-epsilon\"\n",
+            with("interaction = \"edm\"")
+        );
+        assert_eq!(code(&edm).as_deref(), Some("CHM001"));
+        let guard = format!(
+            "{}\n[turbulence]\nmodel = \"k-epsilon\"\n",
+            with("interaction = \"edc\"\nedc = { max_fine_fraction = 1.0 }")
+        );
+        assert_eq!(code(&guard).as_deref(), Some("CHM001"));
+        let every = format!(
+            "{}\n[turbulence]\nmodel = \"k-epsilon\"\n",
+            with("interaction = \"edc\"\nupdate_every = 0")
+        );
+        assert_eq!(code(&every).as_deref(), Some("CHM001"));
         let constant = case.replace("density = \"variable\"", "density = \"constant\"");
         assert_ne!(constant, case);
         assert!(code(&constant).is_some());

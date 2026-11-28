@@ -901,8 +901,13 @@ pub struct ReactArgs {
     pub settings: Settings,
     /// The pressure (Pa).
     pub pressure: f64,
-    /// The time step (s).
+    /// The time step (s), the interval of every cell when `dt_cell` is
+    /// empty.
     pub dt: f64,
+    /// The interval of each cell of the launch (s), when the cells have
+    /// their own (the fine structures of the eddy dissipation concept,
+    /// SF3, integrate over their residence time τ*); empty: `dt`.
+    pub dt_cell: Raw<f64>,
     /// Cells colder than this (K) do not react.
     pub min_temperature: f64,
     /// Cells of this launch.
@@ -934,15 +939,12 @@ pub unsafe fn react_entry(i: usize, a: &ReactArgs) {
         let wl = work_len(prog.n());
         let z = core::slice::from_raw_parts_mut(a.state.out().add(i * nz), nz);
         let w = core::slice::from_raw_parts_mut(a.work.out().add(i * wl), wl);
-        let st = react_cell(
-            &prog,
-            a.pressure,
-            z,
-            a.dt,
-            &a.settings,
-            a.min_temperature,
-            w,
-        );
+        let dt = if a.dt_cell.len == 0 {
+            a.dt
+        } else {
+            a.dt_cell.read(i)
+        };
+        let st = react_cell(&prog, a.pressure, z, dt, &a.settings, a.min_temperature, w);
         *a.stats.out().add(i) = st;
     }
 }
@@ -1157,6 +1159,7 @@ mod tests {
             settings: set,
             pressure: p,
             dt,
+            dt_cell: Raw::EMPTY,
             min_temperature: tmin,
             n_cells: nc as u64,
             state: raw(&mut rows),
@@ -1177,5 +1180,41 @@ mod tests {
         assert_eq!(st_body[1].steps, 0);
         assert_eq!(rows[nz..2 * nz], start[nz..2 * nz]);
         assert!(st_body[5].steps > 0 && rows[5 * nz + 2] > 1200.0);
+        // each cell its own interval (the fine structures of SF3): the
+        // entry gives the bits of the body over that interval
+        let dts: [f64; 6] = core::array::from_fn(|c| 1e-4 * (1 + c) as f64);
+        let mut body = start;
+        let st_body: [Stats; 6] = core::array::from_fn(|c| {
+            react_cell(
+                &prog,
+                p,
+                &mut body[c * nz..(c + 1) * nz],
+                dts[c],
+                &set,
+                tmin,
+                &mut work,
+            )
+        });
+        let mut rows = start;
+        let mut st_rows = [Stats::default(); 6];
+        let a = ReactArgs {
+            dt: 0.0,
+            dt_cell: Raw::new(dts.as_ptr() as u64, nc),
+            state: raw(&mut rows),
+            stats: Raw::new(st_rows.as_mut_ptr() as u64, nc),
+            ..a
+        };
+        for i in 0..nc {
+            // SAFETY: the arrays have nc rows; one index at a time.
+            unsafe { react_entry(i, &a) };
+        }
+        assert!(
+            body.iter()
+                .zip(&rows)
+                .all(|(x, y)| x.to_bits() == y.to_bits())
+        );
+        assert_eq!(st_body, st_rows);
+        // a longer interval burns further
+        assert!(rows[5 * nz] < rows[4 * nz] && rows[4 * nz] < rows[3 * nz]);
     }
 }
