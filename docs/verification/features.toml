@@ -2407,9 +2407,32 @@ evidence = [
 gaps = [
   "the body is seen through its node values: features thinner than a cell vanish; the refusal of thin solids (Q4, IMM for D189) is not built yet",
   "Δp of the Re 20 cylinder stays about 1 % below the range at D/20 (D/40: C_D 5.595, C_L 0.0106, Δp 0.1171, all within 0.1 % of the range; SIMPLEC stalls at residual 1e-7 there); the lift depends on the merge threshold (0.1: 4 % low, 0.4: 0.4 % low, without face points); the default 0.3 is set on this case and the STL sphere array and kept by the maintainer after measuring again with face points and several faces per cell pair (2026-11-26): 0.4 puts the cylinder's lift into the range, 0.01047, and its drag 0.06 % above it, 5.593; on the 32³ sphere array 0.3 is closer, −1.9 against −2.3 %",
-  "wall functions with the exact first-cell distance (2c), conjugate heat transfer through cut cells (2d, refused), named surface patches (2e) and the near-body refinement (2f) are not built",
+  "conjugate heat transfer through cut cells (2d, refused), named surface patches (2e) and the near-body refinement (2f) are not built (wall functions on cut bodies: feature immersed.cut-wall-functions)",
   "the other verification cases of the plan (cut-sphere Poisson MMS, annulus conduction, Taylor-Couette, inclined channel, Stokes sphere, Re 100 cylinder, turbulent plate) are not run yet",
   "one rank only: the cut runs on the global mesh, `foehn run --ranks N` with a cut is not tested",
+]
+
+[[feature]]
+id = "immersed.cut-wall-functions"
+area = "Immersed bodies"
+title = "Wall functions on cut bodies: exact first-cell distance, sampled wall function, y⁺ per body (L13 stage 2c)"
+switch = "[immersed] method = \"cut\" with a turbulence model and wall functions; [immersed.cut] wall_sample"
+decisions = ["D108", "D199", "D229"]
+model = true
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-flow/src/turbulence/wall.rs::cut_walls_take_the_exact_first_cell_distance", what = "a cylinder cut out of a 2D hex mesh: the wall distance of every cut and merged wall cell is the exact |r_P − R| to 1e-12 R, one distance per cell, where the distance to the facet plane is off by more than 1e-3 and differs between the faces of one cell" },
+  { kind = "reference-data", test = "crates/foehncraft-flow/tests/immersed.rs::cut_plate_wall_function_samples_one_layer_out", what = "a flat plate tilted by 2° against a hex mesh (75 × 115 cells), k-ε scalable: C_f of the sampled wall function −4.4 % from White's correlation over 0.8 < s < 1.15 with 9.9 % scatter; from the cut cell itself −3.9 % with 38 % scatter; fails beyond 8 % mean or above 0.6 of the unsampled scatter" },
+  { kind = "reference-data", case = "immersed_cut_plate_keps", what = "the tilted plate on 150 × 130 cells, Re_L 6·10⁶: C_f +1.2 % at s = 0.7, +3.6 % at 0.97, +6.7 % at 1.15 from White's correlation (the same plate fitted to the mesh: +0.8, −1.4, −2.3 %); single faces scatter −16 to +12 % at s = 0.97 (without sampling −46 to +50 %)", doc = "docs/gallery/immersed.md#cut-plate" },
+  { kind = "reference-data", case = "immersed_cut_plate_fitted", what = "the reference of the cut plate: the same plate body-fitted on the same cells, C_f +0.8, −1.4, −2.3 % from White at s = 0.7, 0.97, 1.15 after a laminar start to s ≈ 0.2", doc = "docs/gallery/immersed.md#cut-plate" },
+  { kind = "contract", property = "diagnostics", test = "crates/foehncraft-flow/tests/immersed.rs::cut_plate_wall_function_samples_one_layer_out", what = "LIM011 lists the smallest, mean and largest y⁺ of every cut body; the y⁺ map is the y_plus column of the wall output" },
+]
+gaps = [
+  "the first layer of cut cells overproduces k (30 to 60 % above equilibrium in the first 2 mm of the plate) and its velocity is 10 to 20 % below the log law; single wall faces scatter about ±15 % in C_f even with sampling",
+  "near the leading edge the cut plate is turbulent at once (C_f 18 % above White at s = 0.3) while the fitted plate has a short laminar run; neither has a transition model",
+  "the sampled cell has to lie in the log layer: on a mesh with 2 mm first cells the sample sits at y/δ ≈ 0.25 and C_f comes out 17 % high (measured on 75 × 65 cells); refine the wall rows or set wall_sample = false",
+  "on planar bodies the exact distance equals the facet distance; its benefit is on curved and merged cells (unit test only, no curved turbulent case yet)",
+  "a uniform start velocity across a cut plate at high Re diverges in the first iteration (net inflow into the cut cells, SIMPLEC dc floor); the case starts with the velocity along the plate",
+  "low-Re treatments (resolved walls) use the exact distance but no sampling; one rank only",
 ]
 
 [[feature]]

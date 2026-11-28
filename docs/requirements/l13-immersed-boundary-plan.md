@@ -353,9 +353,13 @@ joined only where they lie in one plane, otherwise kept apart: two cells
 may share several faces, owner decision 2026-11-26) and the per-cell
 fallback to fewer points; the Re 20 cylinder ([gallery 313](../gallery/immersed.md#cut-cylinder))
 and the Stokes array of STL spheres, second order on hexahedra
-([gallery 322](../gallery/immersed.md#stl-cut)). Open: the force balance
-on tetrahedra, non-planar polyhedral faces, the thin-solid refusal, and 2c
-to 2f.
+([gallery 322](../gallery/immersed.md#stl-cut)). 2c (#357): wall functions
+on cut bodies with the exact first-cell distance, sampled one layer out
+along the wall normal, y⁺ per body in LIM011, the half-space body `shape =
+"plane"`; the 2° plate against White's correlation and the body-fitted plate
+([gallery 357](../gallery/immersed.md#cut-plate)). Open: the force balance
+on tetrahedra, non-planar polyhedral faces, the thin-solid refusal, the k
+overproduction of the first cut layer, and 2d to 2f.
 
 ## 5. Stage 3 – Layered distance-field boundary (the L13 target, D230–D232)
 

@@ -488,3 +488,88 @@ fn stl_body_settings_are_refused() {
     assert_eq!(empty, "CASE006");
     assert_eq!(nan, "CASE006");
 }
+
+/// The tilted turbulent plate of `immersed_cut_plate_keps.toml` on cells
+/// twice as large (2 mm at the wall, 75 × 65), with and without the sample
+/// cell of the wall function (L13 stage 2c): the cut cells along the plate
+/// take every fraction, so their own velocities scatter the wall shear
+/// stress; the sampled wall function stays close to White's correlation
+/// and scatters much less. Returns the mean of C_f/C_f,White − 1 over
+/// 0.8 < s < 1.15 and the relative standard deviation of C_f there.
+fn cut_plate(sample: bool) -> (f64, f64) {
+    let text = text("immersed_cut_plate_keps.toml")
+        .replace("cells = [150, 130, 1]", "cells = [75, 115, 1]")
+        .replace(
+            "{ to = 1.0, cells = 30, ratio = 142.27 }",
+            "{ to = 1.0, cells = 15, ratio = 302.14 }",
+        )
+        .replace("max_iterations = 2000", "max_iterations = 1500")
+        .replace("vtkhdf = true", "vtkhdf = false")
+        .replace(
+            "method = \"cut\"\n",
+            &format!("method = \"cut\"\n[immersed.cut]\nwall_sample = {sample}\n"),
+        );
+    let case = parse(&text);
+    let name = format!("cutplate{sample}");
+    let dir = out(&name);
+    let rep = run(&case, &name, &dir, |_| {}).unwrap();
+    // the k residual stalls near 1e-3 at the leading edge (the inlet), the
+    // skin friction downstream is settled: judged by C_f, not by residuals
+    assert!(
+        rep.failures.iter().all(|f| f.contains("not converged")),
+        "{:?}",
+        rep.failures
+    );
+    // LIM011: the y+ range of the cut wall
+    let lim = foehncraft_flow::limitations::of_run(&case, &rep);
+    let y = lim
+        .iter()
+        .find(|l| l.code == diag::LIM_CUT_WALL)
+        .expect("LIM011");
+    assert!(
+        y.message.contains("`plate`") && y.message.contains("y⁺"),
+        "{}",
+        y.message
+    );
+    let csv = std::fs::read_to_string(dir.join("wall_plate.csv")).unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+    let mut lines = csv.lines().filter(|l| !l.starts_with('#'));
+    let head: Vec<&str> = lines.next().unwrap().split(',').collect();
+    let col = |n: &str| head.iter().position(|h| *h == n).unwrap();
+    let (cx, cu) = (col("x"), col("u_tau"));
+    let cos = 2f64.to_radians().cos();
+    let (mut rel, mut cf) = (Vec::new(), Vec::new());
+    for l in lines {
+        let v: Vec<f64> = l.split(',').map(|x| x.parse().unwrap()).collect();
+        let s = v[cx] / cos;
+        if !(0.8..1.15).contains(&s) {
+            continue;
+        }
+        let c = 2.0 * v[cu] * v[cu];
+        let white = 0.455 / (0.06 * s / 2e-7f64).ln().powi(2);
+        rel.push(c / white - 1.0);
+        cf.push(c);
+    }
+    let n = rel.len() as f64;
+    let mean = rel.iter().sum::<f64>() / n;
+    let m = cf.iter().sum::<f64>() / n;
+    let sd = (cf.iter().map(|c| (c - m) * (c - m)).sum::<f64>() / n).sqrt() / m;
+    (mean, sd)
+}
+
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn cut_plate_wall_function_samples_one_layer_out() {
+    let (mean_s, sd_s) = cut_plate(true);
+    let (mean_c, sd_c) = cut_plate(false);
+    eprintln!(
+        "tilted cut plate: sampled C_f {:+.1} % (scatter {:.1} %), cut cell itself {:+.1} % \
+         (scatter {:.1} %)",
+        100.0 * mean_s,
+        100.0 * sd_s,
+        100.0 * mean_c,
+        100.0 * sd_c
+    );
+    assert!(mean_s.abs() < 0.08, "{mean_s}");
+    assert!(sd_s < 0.6 * sd_c, "{sd_s} {sd_c}");
+}

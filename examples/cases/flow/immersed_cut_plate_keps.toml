@@ -1,0 +1,98 @@
+# Turbulent flat plate tilted by 2° against the mesh, cut out of a plain
+# box mesh, standard k-ε with scalable wall functions (L13 stage 2c, D229).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/immersed_cut_plate_keps.toml
+#
+# The free stream of tmr_plate_keps.toml (U = 1 m/s, ν = 2·10⁻⁷ m²/s,
+# Re = 5·10⁶ per metre, the sustaining terms hold k and ε), but the plate is
+# the half-space below the plane through (0, 0.02) rising at 2° (shape =
+# "plane"), cut out of a 150 × 130 box mesh whose cells are 1 mm high near
+# the wall: the plate crosses one cell row every 28.6 mm, so the cut cells
+# along it take every volume fraction from 0.3 (smaller ones are merged) to
+# 1, and their first-cell y⁺ varies with it (LIM011 gives its spread). The
+# plate starts at the inlet (x = 0), so the reference is White's correlation
+# C_f = 0.455/ln²(0.06 Re_x) with x from the inlet, and the same plate
+# along the mesh, body-fitted on the same cells (immersed_cut_plate_fitted.toml).
+#
+# The wall function of every cut or merged cell takes the exact distance of
+# its centroid to the plane (stage 2c), not the distance to the plane of
+# each wall facet, and its velocity from the cell one layer out along the
+# wall normal (`[immersed.cut] wall_sample`, default true).
+#
+# The inlet and start velocity run along the plate: a uniform start along
+# x pushes fluid into the cut cells and diverges in the first iteration.
+# The k residual stalls near 2·10⁻³ at the leading edge (the inlet corner),
+# so the run is judged by its skin friction, not by convergence.
+#
+# Result (2000 iterations, about a minute on 4 cores): C_f against White
+# +1.2 % at s = 0.7, +3.6 % at 0.97, +6.7 % at 1.15 (body-fitted: +0.8,
+# −1.4, −2.3 %); y⁺ of the cut wall 4 to 148, mean 83 (LIM011). Gallery
+# entry 357 (docs/gallery/immersed.md#cut-plate).
+
+case_format = "0.7"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+lower = [0.0, 0.0, 0.0]
+upper = [1.2, 1.0, 1.0]
+cells = [150, 130, 1]
+segments = { y = [ { to = 0.1, cells = 100, ratio = 1.0 }, { to = 1.0, cells = 30, ratio = 142.27 } ] }
+
+[fluid]
+density = 1.0
+viscosity = 2.0e-7
+pressure_values = "gauge"
+
+[turbulence]
+model = "k-epsilon"
+wall_treatment = "scalable"
+ambient = { k = 2.25e-7, epsilon = 2.53125e-6 }
+
+[initial]
+velocity = [0.9993908270190958, 0.03489949670250097, 0.0]
+k = 2.25e-7
+epsilon = 2.53125e-6
+
+[immersed]
+method = "cut"
+
+[[immersed.body]]
+name = "plate"
+shape = "plane"
+centre = [0.0, 0.02, 0.0]
+normal = [-0.03489949670250097, 0.9993908270190958, 0.0]
+
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [0.9993908270190958, 0.03489949670250097, 0.0]
+k = 2.25e-7
+epsilon = 2.53125e-6
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymin]
+type = "wall"
+[boundary.plate]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-7
+max_iterations = 2000
+log_every = 200
+
+[verification]
+require_convergence = false
+
+[output]
+vtkhdf = true
+wall_csv = true
+wall_probes = [ { name = "x097", boundary = "plate", point = [0.97, 0.053873146406995295, 0.5] } ]
+reference = { velocity = 1.0 }

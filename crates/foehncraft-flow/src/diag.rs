@@ -310,6 +310,7 @@ codes! {
     LIM_OPERATORS = "LIM008", Note, "An operator a feature in use needs is not exact on some cells (MESH005, MESH006, D236): the feature does not converge with the mesh there.";
     LIM_CYCLE = "LIM009", Note, "A cycle-averaged conjugate run (D204): the solids carry the steady temperatures of the cycle-mean heat transfer (with `solid = \"transient\"` a history under it, marched in large steps), and each fluid phase ran with the wall temperatures held: the swing of the wall temperature over a cycle is in the result only as the estimate of `skin` or from `resolved_cycles`.";
     LIM_FROZEN = "LIM010", Note, "A frozen-flow run (D118): the flow was held during the march, so its history is that of the settled flow at the temperatures of the last freeze or refresh; exact for a flow that does not depend on the temperature.";
+    LIM_CUT_WALL = "LIM011", Note, "Wall functions on the walls of cut bodies (L13 stage 2c, D229): the first-cell distance is the exact distance of each cut or merged cell to the body, so the first-cell y⁺ varies with the cut fraction from cell to cell along the wall; the message gives the smallest, mean and largest y⁺ of every body (the map is the `y_plus` of the wall output).";
     LIM_REMEDIATION = "LIM006", Note, "Automatic mesh remediation (D50, MESH002) changed the schemes on poor faces: first order there.";
     // the tool registry (D196)
     TOOL_UNKNOWN = "TOOL001", Error, "A tool id that the registry does not have (with the nearest id as a hint); `foehn commands` lists them.";
