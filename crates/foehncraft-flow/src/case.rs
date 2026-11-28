@@ -1793,6 +1793,7 @@ impl FlowCase {
                 .flat_map(|e| [e.rotor_interface.clone(), e.stator_interface.clone()])
                 .flatten()
                 .collect(),
+            volume_source: self.vof.phase_change.is_some(),
         }
     }
 
@@ -5159,6 +5160,13 @@ pub(crate) fn write_fields(
     if let Some(a) = &fl.phys.vof_alpha {
         fields.push(CellField {
             name: "volume_fraction",
+            values: a,
+        });
+    }
+    // and its phase-change rate (MP2)
+    if let Some(a) = &fl.phys.vof_phase_change {
+        fields.push(CellField {
+            name: "phase_change_rate",
             values: a,
         });
     }

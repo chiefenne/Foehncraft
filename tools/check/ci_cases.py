@@ -45,6 +45,8 @@ FLOW = {
         "backstep_validation", "spray_cooling", "cht_heated_wall_periodic_accelerated",
     ],
     "linux-2": [
+        # evaporation (L3, MP2)
+        "vof_sucking",
         "cylinder_re20", "cavity_re1000", "taylor_green_cfl10", "poiseuille_tet",
         "poiseuille_hex", "poiseuille_poly", "tmr_plate_sst", "tmr_plate_keps",
         "tmr_plate_zeta_f0", "diffuser_sst_sharp", "ubend_sst_sharp", "ranks_channel_poly",
@@ -81,14 +83,14 @@ FLOW = {
         "mixed_convection_channel",
         "spray_duct", "spray_datums", "spray_dispersion",
         "spray_cooling_steady", "spray_heptane_evaporation",
-        # two fluids (L3, MP1)
-        "vof_static_drop",
+        # two fluids (L3, MP1); evaporation (MP2)
+        "vof_static_drop", "vof_stefan",
         "porous_darcy_block", "porous_schumann",         "motion_free_stream", "motion_piston_adiabatic", "motion_channel_ranks",
         "steam_heated_duct", "steam_superheater_channel", "spray_multihole_device",
     ],
     "long": [
-        # two fluids (L3, MP1)
-        "vof_dam_break",
+        # two fluids (L3, MP1); evaporation and film boiling (MP2)
+        "vof_dam_break", "vof_scriven", "vof_film_boiling",
         "cylinder_re100", "cylinder_re100_short", "cylinder_re100_statistics", "cylinder_re100_convective", "cylinder_re20_gci",
         "tmr_plate_zeta_f", "backstep_zeta_f0", "tmr_plate_eb", "backstep_eb", "impinging_jet",
         "cht_heat_sink_turbulent", "cylinder_steady_diagnosis", "vd_cavity_large_dt",
@@ -123,6 +125,8 @@ ARGS = {
     F + "spray_g_g1_grid_aligned.toml": ["--set", "time.end_time=1e-4"],
     F + "spray_g_g1_grid_turned.toml": ["--set", "time.end_time=1e-4"],
     F + "spray_a_distortion.toml": ["--set", "time.end_time=1e-4"],
+    # film boiling (MP2): 1 s of boiling in the gallery, its first 0.04 s here
+    F + "vof_film_boiling.toml": ["--set", "time.steps=200"],
 }
 
 

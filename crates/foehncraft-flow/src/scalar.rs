@@ -800,6 +800,10 @@ struct EnergyField {
     /// The heat of a two-way coupled spray (SP2b, D250), per spray cell
     /// (cell, Q + G T*, G): S = Q − G (T − T*) in W, G on the diagonal.
     spray_heat: Option<Vec<(u32, f64, f64)>>,
+    /// The latent heat of the phase change of a volume-of-fluid case (MP2):
+    /// per interface cell (cell, Q + G T_sat, G) in W and W/K, the cell held
+    /// near T_sat by S = Q − G (T − T_sat).
+    phase_heat: Option<Vec<(u32, f64, f64)>>,
     /// The heat release of a reacting flow per cell (SF2b, W/m³).
     reaction_heat: Option<Vec<f64>>,
 }
@@ -1514,7 +1518,9 @@ impl Scalars {
                 .energy
                 .as_deref()
                 .filter(|e| {
-                    e.cond.as_ref().is_some_and(|c| c.robin.is_some()) || e.spray_heat.is_some()
+                    e.cond.as_ref().is_some_and(|c| c.robin.is_some())
+                        || e.spray_heat.is_some()
+                        || e.phase_heat.is_some()
                 })
                 .and_then(|e| e.robin_sp);
             let mut mus = turb.map(|tc| (tc.mu, tc.mu_eff));
@@ -2552,6 +2558,51 @@ impl Scalars {
         Ok(())
     }
 
+    /// Sets or clears the latent heat of the phase change of a
+    /// volume-of-fluid case (MP2): per interface cell (cell, Q + G T_sat,
+    /// G) in W and W/K.
+    pub(crate) fn set_energy_phase(
+        &mut self,
+        dev: &mut dyn FlowDevice,
+        rows: Option<Vec<(u32, f64, f64)>>,
+    ) -> Result<()> {
+        let nc = self.nc;
+        let Some(e) = self.fields.iter_mut().find_map(|f| f.energy.as_deref_mut()) else {
+            return Ok(());
+        };
+        if rows.is_some() && e.robin_sp.is_none() {
+            e.robin_sp = Some(dev.alloc(nc)?);
+        }
+        e.phase_heat = rows;
+        Ok(())
+    }
+
+    /// Sets the two-fluid mixture of a volume-of-fluid case (MP2): ρ per
+    /// cell and c_p per cell and face, λ and μ per face, in place of the
+    /// fluid's.
+    pub(crate) fn set_energy_vof(&mut self, rho: Vec<f64>, mix: MixtureProps) {
+        if let Some(e) = self.fields.iter_mut().find_map(|f| f.energy.as_deref_mut()) {
+            e.var_rho = Some(VarRho {
+                rho,
+                drho_dt: Vec::new(),
+                pressure_work: 0.0,
+            });
+            e.mixture = Some(mix);
+        }
+    }
+
+    /// The heat the phase change takes from the fluid at the temperature
+    /// `t` (W, negative for evaporation), Σ (Q + G T_sat − G T), if set.
+    pub(crate) fn energy_phase_total(&self, t: &[f64]) -> Option<f64> {
+        let e = self.fields.iter().find_map(|f| f.energy.as_deref())?;
+        let rows = e.phase_heat.as_ref()?;
+        Some(
+            rows.iter()
+                .map(|&(c, q, g)| q - g * t[c as usize])
+                .exact_sum(),
+        )
+    }
+
     /// Sets the reaction sources of a reacting flow (SF2b): per transported
     /// species of the mixture (in the order of [`crate::species::Link`])
     /// the source dY/dt per cell (1/s), and the heat release per cell
@@ -3237,6 +3288,7 @@ impl Scalars {
             || crate::density::wanted(case)
             || case.spray.coupling.two_way()
             || case.chemistry.is_some()
+            || case.vof.phase_change.is_some()
         {
             Some(put(&vec![0.0; nc])?)
         } else {
@@ -3403,6 +3455,7 @@ impl Scalars {
             robin_sp: None,
             extra_heat: None,
             spray_heat: None,
+            phase_heat: None,
             reaction_heat: None,
             var_rho: None,
             porous,
@@ -3883,11 +3936,14 @@ fn refresh_energy(
         // and the heat of a two-way coupled spray (SP2b) in the same
         // value-plus-slope form
         if let Some(spb) = e.robin_sp
-            && (robin.is_some() || e.spray_heat.is_some())
+            && (robin.is_some() || e.spray_heat.is_some() || e.phase_heat.is_some())
         {
             let mut sp = vec![0.0; nc];
             let rows = robin.iter().flat_map(|(_, rs)| rs.iter());
-            for &(c, q, g) in rows.chain(e.spray_heat.iter().flatten()) {
+            for &(c, q, g) in rows
+                .chain(e.spray_heat.iter().flatten())
+                .chain(e.phase_heat.iter().flatten())
+            {
                 let c = c as usize;
                 let w = e.volume[c] * cap[c];
                 v[c] += q / w;
@@ -4302,6 +4358,11 @@ pub struct EnergyBalance {
     /// balance.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub spray: Option<f64>,
+    /// The heat of the phase change of a volume-of-fluid case (W, MP2;
+    /// negative where liquid evaporates): the latent heat the interface
+    /// cells give up.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phase_change: Option<f64>,
     /// conduction + convection + source − storage (W): zero in a
     /// converged steady run and in every converged time step.
     pub imbalance: f64,
@@ -4614,6 +4675,12 @@ pub(crate) fn summaries_on(
             // the heat of a two-way coupled spray (SP2b)
             if let Some(x) = sc.energy_spray_total(&phi) {
                 bal.spray = Some(x);
+                largest = largest.max(x.abs());
+                out -= x;
+            }
+            // the latent heat of a volume-of-fluid case (MP2)
+            if let Some(x) = sc.energy_phase_total(&phi) {
+                bal.phase_change = Some(x);
                 largest = largest.max(x.abs());
                 out -= x;
             }

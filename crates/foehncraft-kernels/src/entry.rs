@@ -3240,6 +3240,7 @@ impl Entry for VofUpdate {
                 a.flux.get(),
                 a.alpha_f.get(),
                 a.alpha.get(),
+                a.kappa.get(),
                 a.dt,
             );
             *a.out.out().add(c) = v;
@@ -3336,7 +3337,7 @@ impl Entry for VofCurvature {
 /// The balanced pressure-force reconstruction of cell `c`
 /// ([`crate::vof::reconstruct`]): φ = `alpha`, offsets = `alpha_f`, ρ_f =
 /// `flux`, ρ = `kappa`, boundary values = `alpha_b`, added vector = `grad`,
-/// into `out3`.
+/// cap = `s`, into `out3`.
 pub struct VofReconstruct;
 impl Entry for VofReconstruct {
     type Args = VofArgs;
@@ -3358,6 +3359,7 @@ impl Entry for VofReconstruct {
                 a.open.get(),
                 a.alpha_b.get(),
                 &a.grad.v(),
+                a.s,
             );
             let o = &a.out3;
             *o.x.out().add(c) = v[0];

@@ -1,0 +1,108 @@
+# The sucking problem of evaporation (volume of fluid with phase change, L3
+# stage MP2): a vapour layer at T_sat beside a wall at T_sat grows into a
+# superheated liquid, which gives its heat to the interface. The liquid
+# moves away from the wall and carries its temperature profile with it:
+# the test of the energy convection across the interface. Exact solution
+# (Welch & Wilson 2000, J. Comput. Phys. 160, 662-682, section 4.2):
+#
+#   δ(t) = 2 β √(α_l t),
+#   β exp(β² r²) erfc(β r) = ρ_l c_p,l (T∞ − T_sat)/(√π ρ_v h_lv),
+#   T = T∞ − (T∞ − T_sat) erfc(x/(2√(α_l t)) − (1 − r) β)/erfc(β r)
+#
+# in the liquid, r = ρ_v/ρ_l. Water at 1 atm (IAPWS-IF97, `foehn steam
+# --pressure 101325`), superheat T∞ − T_sat = 2 K: β = 3.38936,
+# α_l = 1.67580e-7 m²/s.
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/vof_sucking.toml
+#
+# The run starts at t₀ = 0.01 s with the exact fields (δ = 0.2775 mm), not a
+# uniform field, and ends at t = 0.05 s (δ = 0.6205 mm exact). The thermal
+# layer of the liquid is only √(α_l t) = 41-92 μm thick: 3 μm cells.
+# `vof.csv` gives the vapour volume (δ = volume of the vapour/A) per step;
+# tools/plot/vof_phase_change.py compares it with δ(t).
+
+case_format = "0.7"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [1.2e-3, 3.0e-6, 3.0e-6]
+cells = [400, 1, 1]
+
+[fluid]
+density = 0.597623116
+viscosity = 1.22312654e-5
+specific_heat = 2077.39017
+conductivity = 2.45677073e-2
+
+[energy]
+# the exact profile at t₀ = 0.01 s, δ₀ = 2.774977e-4 m
+initial = "if(x < 2.774976852442253e-4, 373.1243, 375.1243 - 2.004781145999323 * erfc(x / (2.0 * sqrt(1.6758045748921316e-7 * 0.01)) - 3.3872463306179874))"
+
+[vof]
+scheme = "thinc"
+
+[[vof.phase]]
+name = "water"
+density = 958.372729
+viscosity = 2.81660968e-4
+specific_heat = 4216.61269
+conductivity = 0.677207143
+
+[[vof.phase]]
+name = "vapour"
+density = 0.597623116
+viscosity = 1.22312654e-5
+specific_heat = 2077.39017
+conductivity = 2.45677073e-2
+
+[vof.phase_change]
+liquid = "water"
+saturation_temperature = 373.1243
+latent_heat = 2.25654075e6
+
+[[vof.region]]
+shape = "box"
+lower = [2.774976852442253e-4, -1.0, -1.0]
+upper = [1.0, 1.0, 1.0]
+
+[boundary.xmin]
+type = "wall"
+[boundary.xmin.energy]
+temperature = 373.1243
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 101325.0
+[boundary.ymin]
+type = "symmetry"
+[boundary.ymax]
+type = "symmetry"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[vof.inflow]
+xmax = 1.0
+
+[solver]
+algorithm = "piso"
+outer_iterations = 10
+outer_tolerance = 1.0e-6
+log_every = 100
+
+[solver.energy]
+tolerance = 1e-12
+max_iter = 300
+
+[time]
+scheme = "bdf1"
+start_time = 0.01
+time_step = 5.0e-5
+steps = 800
+
+[output]
+fields_every = 200
+
+[verification]
+require_convergence = false

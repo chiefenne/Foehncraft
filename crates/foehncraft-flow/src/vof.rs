@@ -65,6 +65,45 @@
 //! [vof.inflow]                 # α of the inflow per boundary (default 0)
 //! inlet = 1.0
 //! ```
+//!
+//! **Energy and phase change (stage MP2, SF14).** With `[energy]` each
+//! phase gives `specific_heat` and `conductivity`; the energy equation of
+//! the run (in T, D150) then takes the mixture ρ c_p = α ρ₁c₁ + (1 − α)
+//! ρ₂c₂ per cell, (ρ c_p)_f of the advected face α in the heat-capacity
+//! flux Ċ_f = F_f (ρ c_p)_f, and the conductivity in series, 1/λ = α/λ₁ +
+//! (1 − α)/λ₂ per cell and the harmonic mean of the two cells per face
+//! (the resistance of a layered interface).
+//!
+//! `[vof.phase_change]` adds evaporation and condensation by the energy
+//! of the interface (after Rattner & Garimella 2014): the interface cells
+//! (0 < α < 1, and the cell on the side of a sharp face that can change
+//! phase: liquid when it is above T_sat, vapour below) are held at the
+//! saturation temperature by the implicit sink S = −G (T − T_sat),
+//! G = `relaxation` ρ c_p V/Δt, and the heat G (T − T_sat) of a step
+//! turns into the mass rate ṁ = G (T − T_sat)/h_lv of the cell (positive:
+//! evaporation), limited to the liquid (vapour) the cell holds; the heat
+//! that the limit leaves is given back to the cell in the next step. The
+//! rate ṁ then (one step later) adds the volume ṁ (1/ρ_v − 1/ρ_l) to the
+//! continuity rows of the volume and takes ṁ/ρ_l of liquid out of α in
+//! the next advance (or adds ṁ/ρ_v of vapour, if phase 1 is the vapour),
+//! so that the volume source the fluxes carry is the one α loses: the
+//! phase masses change by the evaporated mass alone.
+//!
+//! ```toml
+//! [[vof.phase]]
+//! name = "water"
+//! density = 958.4
+//! viscosity = 2.82e-4
+//! specific_heat = 4216.0
+//! conductivity = 0.679
+//!
+//! [vof.phase_change]
+//! liquid = "water"                # the liquid phase (default: the denser)
+//! saturation_temperature = 373.15 # T_sat (K)
+//! latent_heat = 2.257e6           # h_lv (J/kg)
+//! # pressure = 7.0e6              # or water: T_sat and h_lv of IAPWS-IF97
+//! relaxation = 100.0              # G in units of ρ c_p V/Δt
+//! ```
 
 use crate::device::{Buf, Buf3, FlowDevice, VofBufs, VofOp};
 use crate::diag::{self, Diagnostic};
@@ -119,6 +158,55 @@ pub struct PhaseSection {
     pub density: f64,
     /// Dynamic viscosity μ (Pa s).
     pub viscosity: f64,
+    /// Specific heat c_p (J/(kg K)); needed with `[energy]` (MP2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub specific_heat: Option<f64>,
+    /// Thermal conductivity λ (W/(m K)); needed with `[energy]` (MP2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub conductivity: Option<f64>,
+}
+
+/// `[vof.phase_change]`: evaporation and condensation at the interface
+/// (stage MP2, SF14).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PhaseChangeSection {
+    /// The name of the liquid phase (default: the denser phase).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub liquid: Option<String>,
+    /// Saturation temperature T_sat (K).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub saturation_temperature: Option<f64>,
+    /// Latent heat h_lv (J/kg).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub latent_heat: Option<f64>,
+    /// Water at this pressure (Pa): T_sat and h_lv of IAPWS-IF97 (stage
+    /// SF7a), where they are not given; also σ(T_sat) where `[vof]
+    /// surface_tension` is not given.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pressure: Option<f64>,
+    /// The sink G that holds the interface cells at T_sat, in units of
+    /// ρ c_p V/Δt (default 100: T − T_sat ends at about 1 % of what one
+    /// step of heating would give).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub relaxation: Option<f64>,
+}
+
+impl PhaseChangeSection {
+    /// T_sat and h_lv: given, or of IAPWS-IF97 water at `pressure`.
+    pub fn saturation(&self) -> Option<(f64, f64)> {
+        let sat = self
+            .pressure
+            .and_then(foehncraft_kernels::steam::saturation_p);
+        let t = self.saturation_temperature.or(sat.as_ref().map(|s| s.t))?;
+        let h = self.latent_heat.or(sat.as_ref().map(|s| s.h_fg()))?;
+        Some((t, h))
+    }
+
+    /// The relaxation of the sink.
+    pub fn relax(&self) -> f64 {
+        self.relaxation.unwrap_or(100.0)
+    }
 }
 
 /// One `[[vof.region]]`: α = `alpha` inside the shape (cell fractions by
@@ -191,6 +279,9 @@ pub struct VofSection {
     /// α of the inflow per boundary (default 0).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub inflow: BTreeMap<String, f64>,
+    /// Evaporation and condensation (MP2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phase_change: Option<PhaseChangeSection>,
 }
 
 impl VofSection {
@@ -199,9 +290,34 @@ impl VofSection {
         self.phase.is_empty()
     }
 
-    /// σ (N/m).
+    /// σ (N/m): given, or of IAPWS-IF97 water at T_sat when the phase
+    /// change names a pressure.
     pub fn sigma(&self) -> f64 {
-        self.surface_tension.unwrap_or(0.0)
+        if let Some(s) = self.surface_tension {
+            return s;
+        }
+        match self.phase_change.as_ref().filter(|p| p.pressure.is_some()) {
+            Some(p) => p
+                .saturation()
+                .map_or(0.0, |(t, _)| foehncraft_kernels::steam::surface_tension(t)),
+            None => 0.0,
+        }
+    }
+
+    /// The index of the liquid phase of the phase change.
+    pub fn liquid(&self) -> usize {
+        let named = self
+            .phase_change
+            .as_ref()
+            .and_then(|p| p.liquid.as_ref())
+            .and_then(|n| self.phase.iter().position(|p| &p.name == n));
+        named.unwrap_or(
+            if self.phase.len() == 2 && self.phase[1].density > self.phase[0].density {
+                1
+            } else {
+                0
+            },
+        )
     }
 
     /// β of THINC.
@@ -328,8 +444,75 @@ pub fn validate(case: &crate::case::FlowCase) -> Result<()> {
     if case.turbulence.model != crate::turbulence::TurbulenceModel::Laminar {
         no.push("a turbulence model");
     }
-    if case.energy.is_some() {
-        no.push("the energy equation (stage MP2)");
+    if let Some(e) = &case.energy {
+        for (i, p) in v.phase.iter().enumerate() {
+            let ok = |x: Option<f64>| x.is_some_and(|x| x > 0.0 && x.is_finite());
+            if !(ok(p.specific_heat) && ok(p.conductivity)) {
+                return Err(bad(
+                    "vof.phase",
+                    format!(
+                        "[[vof.phase]] {} (`{}`): with [energy] each phase needs \
+                         specific_heat and conductivity > 0",
+                        i + 1,
+                        p.name
+                    ),
+                ));
+            }
+        }
+        if e.density != crate::density::DensityModel::Constant {
+            no.push("[energy] density = \"variable\" (the phases have their own densities)");
+        }
+    }
+    if let Some(pc) = &v.phase_change {
+        if case.energy.is_none() {
+            return Err(bad(
+                "vof.phase_change",
+                "[vof.phase_change] needs the energy equation ([energy])".into(),
+            ));
+        }
+        if let Some(n) = &pc.liquid
+            && !v.phase.iter().any(|p| &p.name == n)
+        {
+            return Err(bad(
+                "vof.phase_change.liquid",
+                format!("[vof.phase_change] liquid = `{n}` is not the name of a [[vof.phase]]"),
+            ));
+        }
+        if let Some(p) = pc.pressure
+            && foehncraft_kernels::steam::saturation_p(p).is_none()
+        {
+            return Err(bad(
+                "vof.phase_change.pressure",
+                format!(
+                    "[vof.phase_change] pressure {p} Pa is outside the saturation line of \
+                     IAPWS-IF97 (611.2 Pa to 22.064 MPa)"
+                ),
+            ));
+        }
+        match pc.saturation() {
+            Some((t, h)) if t > 0.0 && t.is_finite() && h > 0.0 && h.is_finite() => {}
+            Some(_) => {
+                return Err(bad(
+                    "vof.phase_change",
+                    "[vof.phase_change] saturation_temperature and latent_heat must be > 0".into(),
+                ));
+            }
+            None => {
+                return Err(bad(
+                    "vof.phase_change",
+                    "[vof.phase_change] needs saturation_temperature and latent_heat, or the \
+                     pressure of water"
+                        .into(),
+                ));
+            }
+        }
+        let r = pc.relax();
+        if !(r > 0.0 && r.is_finite()) {
+            return Err(bad(
+                "vof.phase_change.relaxation",
+                format!("[vof.phase_change] relaxation {r} must be > 0"),
+            ));
+        }
     }
     if !case.scalars.is_empty() {
         no.push("passive scalars or species");
@@ -421,6 +604,45 @@ pub struct Vof {
     /// The totals of the run.
     pub totals: Totals,
     volume: Vec<f64>,
+    /// c_p and λ of the two phases, with `[energy]` (MP2).
+    thermal: Option<([f64; 2], [f64; 2])>,
+    /// The phase change (MP2).
+    pub pc: Option<PhaseChange>,
+    /// The sink rate of α per cell (1/s) of the phase change (device).
+    sink: Buf,
+    /// Host copies of the connectivity: owner, neighbour, weight.
+    owner: Vec<u32>,
+    neighbour: Vec<u32>,
+    weight: Vec<f64>,
+}
+
+/// The state of the phase change (MP2).
+#[derive(Debug, Clone)]
+pub struct PhaseChange {
+    /// T_sat (K).
+    pub t_sat: f64,
+    /// h_lv (J/kg).
+    pub h_lv: f64,
+    /// The index of the liquid phase.
+    pub liquid: usize,
+    relax: f64,
+    /// The interface cells of the current step and their G (W/K).
+    rows: Vec<(u32, f64)>,
+    /// The heat per cell (W) the limit of the last conversion left, given
+    /// back in the current step.
+    carry: Vec<f64>,
+    /// The mass rate per cell (kg/s, evaporation positive) of the
+    /// continuity rows of the current step; it leaves α in the next
+    /// advance.
+    pub used: Vec<f64>,
+    /// `used` moved into the pure vapour cells beside the interface (kg/s
+    /// per cell): where the vapour volume appears.
+    vap: Vec<f64>,
+    /// `used` moved into the pure liquid cells beside the interface: where
+    /// the liquid volume vanishes.
+    liq: Vec<f64>,
+    /// Δt of the current step.
+    dt: f64,
 }
 
 /// What [`Vof::step_back`] restores.
@@ -432,6 +654,7 @@ struct Saved {
     alpha: Vec<f64>,
     alpha_face: Vec<f64>,
     totals: Totals,
+    pc: Option<PhaseChange>,
 }
 
 /// The totals of a run (for `result.json` and `vof.csv`).
@@ -451,6 +674,18 @@ pub struct Totals {
     pub max_substeps: usize,
     /// Smallest and largest α after the last step.
     pub alpha_range: [f64; 2],
+    /// Volume of phase 1 the phase change took out (m³, net; MP2).
+    #[serde(default)]
+    pub volume_phase_change: f64,
+    /// The mass evaporated over the run (kg, net; condensation negative).
+    #[serde(default)]
+    pub evaporated: f64,
+    /// The evaporation rate of the current step (kg/s, net).
+    #[serde(default)]
+    pub phase_rate: f64,
+    /// The interface cells held at T_sat in the current step.
+    #[serde(default)]
+    pub interface_cells: usize,
 }
 
 /// The start field of α from `[vof] initial` and the regions.
@@ -522,7 +757,7 @@ impl Vof {
         let ab = dev.alloc(nf - disc.n_interior)?;
         dev.upload(ab, alpha_b)?;
         dev.vof_open(open)?;
-        let p = &section.phase;
+        let p = section.phase.clone();
         let rho = [p[0].density, p[1].density];
         let mu = [p[0].viscosity, p[1].viscosity];
         let mut v = Self {
@@ -562,8 +797,36 @@ impl Vof {
             tension_offset: vec![0.0; nf],
             totals: Totals::default(),
             volume: disc.cell_volume[..nc].to_vec(),
+            thermal: None,
+            pc: None,
+            sink: cell(dev)?,
+            owner: disc.owner[..nf].to_vec(),
+            neighbour: disc.neighbour[..disc.n_interior].to_vec(),
+            weight: disc.weight[..nf].to_vec(),
             section,
         };
+        if p.iter()
+            .all(|x| x.specific_heat.is_some() && x.conductivity.is_some())
+        {
+            let c = |i: usize| p[i].specific_heat.unwrap_or(1.0);
+            let k = |i: usize| p[i].conductivity.unwrap_or(1.0);
+            v.thermal = Some(([c(0), c(1)], [k(0), k(1)]));
+        }
+        if let Some((t_sat, h_lv)) = v.section.phase_change.as_ref().and_then(|q| q.saturation()) {
+            let q = v.section.phase_change.as_ref().expect("phase change");
+            v.pc = Some(PhaseChange {
+                t_sat,
+                h_lv,
+                liquid: v.section.liquid(),
+                relax: q.relax(),
+                rows: Vec::new(),
+                carry: vec![0.0; nc],
+                used: vec![0.0; nc],
+                vap: vec![0.0; nc],
+                liq: vec![0.0; nc],
+                dt: 0.0,
+            });
+        }
         // the start face values: linear between the cells
         let af = linear_faces(disc, alpha);
         dev.upload(v.alpha_f_mean, &af)?;
@@ -644,6 +907,30 @@ impl Vof {
         boundary_start: usize,
     ) -> Result<Vec<f64>> {
         dev.copy(self.alpha, self.alpha_start)?;
+        // the phase change of the step before (MP2): ṁ/ρ_l of liquid leaves
+        // α (or ṁ/ρ_v of vapour joins it, if phase 1 is the vapour)
+        if let Some(pc) = &self.pc {
+            // (the liquid leaves in the pure liquid cells beside the
+            // interface, the vapour joins in the pure vapour cells: the
+            // rates moved off the interface, `spread`)
+            let l = pc.liquid;
+            let (r, m) = if l == 0 {
+                (self.rho[0], &pc.liq)
+            } else {
+                (-self.rho[1], &pc.vap)
+            };
+            let s: Vec<f64> = m
+                .iter()
+                .zip(&self.volume)
+                .map(|(m, v)| m / (r * v))
+                .collect();
+            dev.upload(self.sink, &s)?;
+            let removed: f64 = s.iter().zip(&self.volume).map(|(s, v)| s * v).exact_sum();
+            self.totals.volume_phase_change += removed * dt;
+            let net: f64 = pc.used.iter().copied().exact_sum();
+            self.totals.evaporated += net * dt;
+            self.totals.phase_rate = net;
+        }
         dev.vof(
             VofOp::OutflowRate,
             &VofBufs {
@@ -697,6 +984,7 @@ impl Vof {
                     flux: Some(self.flux),
                     alpha_f: Some(self.alpha_f),
                     alpha: Some(self.alpha),
+                    kappa: self.pc.as_ref().map(|_| self.sink),
                     dt: h,
                     out: Some(self.alpha_new),
                     out2: Some(self.clipped),
@@ -742,6 +1030,7 @@ impl Vof {
             alpha: self.alpha_host.clone(),
             alpha_face: self.alpha_face.clone(),
             totals: self.totals.clone(),
+            pc: self.pc.clone(),
         });
         let n1 = match prev {
             Some([n, _]) => n,
@@ -765,6 +1054,7 @@ impl Vof {
             self.alpha_host = sv.alpha;
             self.alpha_face = sv.alpha_face;
             self.totals = sv.totals;
+            self.pc = sv.pc;
             dev.copy(self.alpha_start, self.alpha)?;
             // the volume fluxes of the start of the step (ṁ/ρ_f of the
             // restored densities follow in `upload_faces`)
@@ -844,6 +1134,282 @@ impl Vof {
     pub fn curvature(&self, dev: &mut dyn FlowDevice) -> Result<Vec<f64>> {
         dev.download(self.kappa)
     }
+}
+
+impl Vof {
+    /// The thermal mixture of the last mix (MP2), with `[energy]`: ρ per
+    /// cell and the mixture of the energy rows: c_p per cell
+    /// ((ρ c_p)/ρ) and per face (of the advected face α, so that ṁ_f c_p,f
+    /// = F_f (ρ c_p)_f), λ per face (the harmonic mean of the cells' series
+    /// conductivities) and μ per face.
+    pub fn thermal_mixture(&self) -> Option<(Vec<f64>, crate::scalar::MixtureProps)> {
+        let (cp, k) = self.thermal?;
+        let [r1, r2] = self.rho;
+        let rc = |a: f64| a * r1 * cp[0] + (1.0 - a) * r2 * cp[1];
+        let cp_cell: Vec<f64> = self
+            .alpha_host
+            .iter()
+            .zip(&self.rho_cell)
+            .map(|(&a, r)| rc(a) / r)
+            .collect();
+        let cp_face: Vec<f64> = self
+            .alpha_face
+            .iter()
+            .zip(&self.rho_face)
+            .map(|(&a, r)| rc(a) / r)
+            .collect();
+        let kc: Vec<f64> = self
+            .alpha_host
+            .iter()
+            .map(|&a| 1.0 / (a / k[0] + (1.0 - a) / k[1]))
+            .collect();
+        let ni = self.neighbour.len();
+        let k_face: Vec<f64> = (0..self.owner.len())
+            .map(|f| {
+                let o = self.owner[f] as usize;
+                if f < ni {
+                    let n = self.neighbour[f] as usize;
+                    let w = self.weight[f];
+                    1.0 / (w / kc[o] + (1.0 - w) / kc[n])
+                } else {
+                    kc[o]
+                }
+            })
+            .collect();
+        let mu_face = self.mu_face(&self.alpha_face);
+        Some((
+            self.rho_cell.clone(),
+            crate::scalar::MixtureProps {
+                cp_cell,
+                cp_face,
+                k_face,
+                mu_face,
+            },
+        ))
+    }
+
+    /// ρ c_p per cell of the last mix (MP2).
+    fn capacity(&self) -> Option<Vec<f64>> {
+        let (cp, _) = self.thermal?;
+        let [r1, r2] = self.rho;
+        Some(
+            self.alpha_host
+                .iter()
+                .map(|&a| a * r1 * cp[0] + (1.0 - a) * r2 * cp[1])
+                .collect(),
+        )
+    }
+
+    /// The liquid fraction per cell of the last mix.
+    fn liquid_fraction(&self, liquid: usize) -> Vec<f64> {
+        self.alpha_host
+            .iter()
+            .map(|&a| if liquid == 0 { a } else { 1.0 - a })
+            .collect()
+    }
+
+    /// The start of a step `dt` with the phase change (MP2), before the
+    /// advance: the heat G (T − T_sat) the interface cells gave up in the
+    /// last step at the temperature `t` (per cell) becomes the mass rate
+    /// ṁ = G (T − T_sat)/h_lv, limited to the liquid (evaporation) or
+    /// vapour (condensation) the cell holds over `dt`; the heat the limit
+    /// leaves is carried into this step. Returns the rates (kg/s per cell)
+    /// of this step's continuity rows.
+    pub fn phase_convert(&mut self, t: &[f64], dt: f64) -> Option<Vec<f64>> {
+        let liquid = self.pc.as_ref()?.liquid;
+        let al = self.liquid_fraction(liquid);
+        let (rl, rv) = (self.rho[liquid], self.rho[1 - liquid]);
+        let pc = self.pc.as_mut()?;
+        let nc = self.volume.len();
+        let mut next = vec![0.0; nc];
+        let mut carry = vec![0.0; nc];
+        let scale = if pc.dt > 0.0 { pc.dt / dt } else { 1.0 };
+        for &(c, g) in &pc.rows {
+            let c = c as usize;
+            let heat = g * (t[c] - pc.t_sat);
+            let m = heat / pc.h_lv;
+            let v = self.volume[c];
+            let hi = al[c] * rl * v / dt;
+            let lo = -(1.0 - al[c]) * rv * v / dt;
+            let ml = m.clamp(lo, hi);
+            next[c] = ml;
+            // the heat of the last step over this one's duration
+            carry[c] = (heat - ml * pc.h_lv) * scale;
+        }
+        pc.carry = carry;
+        Some(next)
+    }
+
+    /// After the advance of a step `dt` (MP2): the rates `next` become those
+    /// of the continuity rows, and the interface cells of the new α at the
+    /// temperature `t` (per cell) take G = `relaxation` ρ c_p V/Δt.
+    pub fn phase_rows(&mut self, t: &[f64], next: Vec<f64>, dt: f64) {
+        let Some(liquid) = self.pc.as_ref().map(|p| p.liquid) else {
+            return;
+        };
+        let al = self.liquid_fraction(liquid);
+        let cap = self.capacity().unwrap_or_else(|| vec![0.0; al.len()]);
+        let Some(pc) = self.pc.as_mut() else {
+            return;
+        };
+        const EPS: f64 = 1e-3;
+        let nc = al.len();
+        let mut on = vec![false; nc];
+        for (c, &a) in al.iter().enumerate() {
+            on[c] = a > EPS && a < 1.0 - EPS;
+        }
+        // a sharp face: the liquid side when it is above T_sat, the vapour
+        // side below (the side that can change phase)
+        for f in 0..self.neighbour.len() {
+            let (o, n) = (self.owner[f] as usize, self.neighbour[f] as usize);
+            let (lo, vn) = (al[o] >= 0.5, al[n] >= 0.5);
+            if lo == vn {
+                continue;
+            }
+            let (l, v) = if lo { (o, n) } else { (n, o) };
+            if t[l] >= pc.t_sat {
+                on[l] = true;
+            }
+            if t[v] < pc.t_sat {
+                on[v] = true;
+            }
+        }
+        pc.rows = (0..nc)
+            .filter(|&c| on[c])
+            .map(|c| (c as u32, pc.relax * cap[c] * self.volume[c] / dt))
+            .collect();
+        // carried heat of cells that are no interface cells any more
+        for (c, q) in pc.carry.iter().enumerate() {
+            if *q != 0.0 && !on[c] {
+                pc.rows.push((c as u32, 0.0));
+            }
+        }
+        pc.rows.sort_unstable_by_key(|r| r.0);
+        pc.rows.dedup_by_key(|r| r.0);
+        pc.vap = spread(&next, &al, false, &self.owner, &self.neighbour);
+        pc.liq = spread(&next, &al, true, &self.owner, &self.neighbour);
+        pc.used = next;
+        pc.dt = dt;
+        self.totals.interface_cells = on.iter().filter(|&&x| x).count();
+    }
+
+    /// The energy rows of the phase change (MP2): per interface cell (cell,
+    /// Q + G T_sat, G) in W and W/K, Q the carried heat.
+    pub fn energy_rows(&self) -> Option<Vec<(u32, f64, f64)>> {
+        let pc = self.pc.as_ref()?;
+        Some(
+            pc.rows
+                .iter()
+                .map(|&(c, g)| (c, pc.carry[c as usize] + g * pc.t_sat, g))
+                .collect(),
+        )
+    }
+
+    /// The source of the continuity rows of the volume (m³/s per cell, in
+    /// the form V ∂ρ/∂t − S of the variable density): −(ṁ_v/ρ_v − ṁ_l/ρ_l)
+    /// with the rates moved off the interface ([`spread`]).
+    pub fn volume_source(&self) -> Option<Vec<f64>> {
+        let pc = self.pc.as_ref()?;
+        let (rl, rv) = (self.rho[pc.liquid], self.rho[1 - pc.liquid]);
+        Some(
+            pc.vap
+                .iter()
+                .zip(&pc.liq)
+                .map(|(v, l)| -(v / rv - l / rl))
+                .collect(),
+        )
+    }
+
+    /// The cap of the pressure reconstruction ([`crate::device::VofOp::
+    /// Reconstruct`]): 1 with a phase change (MP2), 0 without (MP1 rows
+    /// unchanged).
+    pub fn reconstruct_cap(&self) -> f64 {
+        if self.pc.is_some() { 1.0 } else { 0.0 }
+    }
+
+    /// The phase-change rate per cell of the current step (kg/(m³ s),
+    /// evaporation positive), for the field output.
+    pub fn phase_rate_density(&self) -> Option<Vec<f64>> {
+        let pc = self.pc.as_ref()?;
+        Some(
+            pc.used
+                .iter()
+                .zip(&self.volume)
+                .map(|(m, v)| m / v)
+                .collect(),
+        )
+    }
+}
+
+/// Moves the phase-change rates `m` (per cell) off the interface into the
+/// pure cells of one phase beside it (MP2): the liquid (`liquid`, α_l >
+/// 0.99) or the vapour (α_l < 0.01), with the liquid fraction `al` per cell.
+/// A cell that holds a rate and is not pure passes it on to its face
+/// neighbours in proportion to their fraction of the phase, up to eight
+/// times; what finds no pure cell stays where it is. The sum is kept to
+/// round-off. With the volume sources in pure cells, the pressure rows
+/// see no source inside the jump of the density (a source in the
+/// interface cell of a water–steam interface drives a checkerboard of the
+/// velocity), and α stays at 0 and 1 there; the interface moves by the
+/// flux of the vapour into it. The shift is that of the smeared sources
+/// of Hardt & Wondra (2008, J. Comput. Phys. 227, 5871–5895), local here
+/// instead of normalised over the domain.
+pub fn spread(m: &[f64], al: &[f64], liquid: bool, owner: &[u32], neighbour: &[u32]) -> Vec<f64> {
+    let nc = m.len();
+    let frac = |c: usize| if liquid { al[c] } else { 1.0 - al[c] };
+    let pure = |c: usize| frac(c) > 0.99;
+    let mut a = m.to_vec();
+    if a.iter().all(|&x| x == 0.0) {
+        return a;
+    }
+    // the face neighbours of each cell
+    let mut ptr = vec![0usize; nc + 1];
+    for f in 0..neighbour.len() {
+        ptr[owner[f] as usize + 1] += 1;
+        ptr[neighbour[f] as usize + 1] += 1;
+    }
+    for c in 0..nc {
+        ptr[c + 1] += ptr[c];
+    }
+    let mut nb = vec![0u32; ptr[nc]];
+    let mut fill = ptr.clone();
+    for f in 0..neighbour.len() {
+        let (o, n) = (owner[f] as usize, neighbour[f] as usize);
+        nb[fill[o]] = n as u32;
+        fill[o] += 1;
+        nb[fill[n]] = o as u32;
+        fill[n] += 1;
+    }
+    for _ in 0..8 {
+        let mut b = vec![0.0; nc];
+        let mut moved = false;
+        for c in 0..nc {
+            if a[c] == 0.0 {
+                continue;
+            }
+            if pure(c) {
+                b[c] += a[c];
+                continue;
+            }
+            let w: f64 = nb[ptr[c]..ptr[c + 1]]
+                .iter()
+                .map(|&n| frac(n as usize))
+                .sum();
+            if w <= 0.0 {
+                b[c] += a[c];
+                continue;
+            }
+            for &n in &nb[ptr[c]..ptr[c + 1]] {
+                b[n as usize] += a[c] * frac(n as usize) / w;
+            }
+            moved = true;
+        }
+        a = b;
+        if !moved {
+            break;
+        }
+    }
+    a
 }
 
 fn range(a: &[f64]) -> [f64; 2] {
@@ -999,11 +1565,11 @@ pub fn advect(
 /// Units of `vof.csv`.
 pub const CSV_UNITS: &str = "step -, time s, volume m3 (phase 1), volume_out m3 (net through the \
     boundaries), clipped m3, substeps -, alpha_min alpha_max -, x_min..z_max m (extent of the \
-    cells with alpha > 0.5)";
+    cells with alpha > 0.5), evaporated kg (net, MP2), phase_rate kg/s, interface_cells -";
 
 /// The header of `vof.csv`.
 pub const CSV_HEAD: &str = "step,time,volume,volume_out,clipped,substeps,alpha_min,alpha_max,\
-    x_min,x_max,y_min,y_max,z_min,z_max";
+    x_min,x_max,y_min,y_max,z_min,z_max,evaporated,phase_rate,interface_cells";
 
 impl Vof {
     /// One row of `vof.csv` after step `n` at `time`, with the cell
@@ -1021,7 +1587,7 @@ impl Vof {
             }
         }
         format!(
-            "{n},{time:e},{:e},{:e},{:e},{},{:e},{:e},{:e},{:e},{:e},{:e},{:e},{:e}",
+            "{n},{time:e},{:e},{:e},{:e},{},{:e},{:e},{:e},{:e},{:e},{:e},{:e},{:e},{:e},{:e},{}",
             t.volume,
             t.volume_out,
             t.clipped_volume,
@@ -1033,7 +1599,10 @@ impl Vof {
             lo[1],
             hi[1],
             lo[2],
-            hi[2]
+            hi[2],
+            t.evaporated,
+            t.phase_rate,
+            t.interface_cells
         )
     }
 }

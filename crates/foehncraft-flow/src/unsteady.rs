@@ -3489,7 +3489,27 @@ fn run_one<F: FnMut(&str)>(
     // mass account of the last step, outflow plus storage (D119); other
     // variable-density cases keep the net outflow (a closed box has no
     // flow to scale the account by)
+    // a phase change (MP2) turns dense liquid into light vapour, the mass
+    // in the domain changes: the check is the volume account of the
+    // continuity rows, net boundary volume flow against the volume made
+    let vof_volume = sol
+        .phys
+        .vof_volume_made
+        .zip(sol.phys.rho_var.as_ref())
+        .map(|(made, r)| {
+            let ni = mesh.n_interior_faces();
+            let q: Vec<f64> = (ni..mesh.n_faces())
+                .map(|f| (sol.mass_flux[f] - sol.phys.grid_flux_at(f)) / r.1[f])
+                .collect();
+            let big = q.iter().map(|x| x.abs()).exact_sum().max(made.abs());
+            if big > 0.0 {
+                (q.iter().copied().exact_sum() - made) / big
+            } else {
+                0.0
+            }
+        });
     let mass_imbalance = match (&last_balance, case.chemistry.is_some()) {
+        _ if vof_volume.is_some() => vof_volume.unwrap_or(0.0),
         (Some(b), true) => b.mass.relative,
         _ if big > 0.0 => total / big,
         _ => 0.0,

@@ -360,3 +360,143 @@ fn static_drop_laplace_jump() {
     assert!((dp - 35.0).abs() < 0.15 * 35.0, "Laplace jump {dp}");
     assert!(umax < 0.3, "spurious currents {umax}");
 }
+
+/// The columns of `vof.csv` by name, one row per step.
+fn vof_rows(dir: &Path) -> (Vec<String>, Vec<Vec<f64>>) {
+    let csv = std::fs::read_to_string(dir.join("vof.csv")).unwrap();
+    let mut lines = csv.lines().filter(|l| !l.starts_with('#'));
+    let head: Vec<String> = lines
+        .next()
+        .unwrap()
+        .split(',')
+        .map(str::to_string)
+        .collect();
+    let rows = lines
+        .map(|l| {
+            l.split(',')
+                .map(|v| v.parse::<f64>().unwrap_or(f64::NAN))
+                .collect()
+        })
+        .collect();
+    (head, rows)
+}
+
+/// Runs a phase-change example with `edits` and returns the time and the
+/// liquid volume per step, and the last row by column name.
+fn phase_run(
+    file: &str,
+    name: &str,
+    edits: &[(&str, &str)],
+) -> (Vec<(f64, f64)>, std::collections::BTreeMap<String, f64>) {
+    let mut text = std::fs::read_to_string(cases().join(file)).unwrap();
+    for (a, b) in edits {
+        assert!(text.contains(a), "{file}: no `{a}`");
+        text = text.replace(a, b);
+    }
+    let case = FlowCase::from_toml(&text, &cases()).unwrap();
+    let dir = out(name);
+    run(&case, name, &dir, |_| {}).unwrap();
+    let result = std::fs::read_to_string(dir.join("result.json")).unwrap();
+    assert!(
+        !result.contains("\"failed-checks\""),
+        "{name}: failed checks (the volume account)"
+    );
+    let (head, rows) = vof_rows(&dir);
+    let col = |n: &str| head.iter().position(|h| h == n).unwrap();
+    let (ct, cv) = (col("time"), col("volume"));
+    let series = rows.iter().map(|r| (r[ct], r[cv])).collect();
+    let last = rows.last().unwrap();
+    let named = head.iter().cloned().zip(last.iter().copied()).collect();
+    (series, named)
+}
+
+/// The worst relative deviation of a computed length from the exact one
+/// over the rows after the first `skip`.
+fn worst(
+    series: &[(f64, f64)],
+    skip: usize,
+    len: impl Fn(f64) -> f64,
+    exact: impl Fn(f64) -> f64,
+) -> f64 {
+    series
+        .iter()
+        .skip(skip)
+        .map(|&(t, v)| (len(v) / exact(t) - 1.0).abs())
+        .fold(0.0, f64::max)
+}
+
+/// The Stefan problem (MP2): the vapour layer on a wall 10 K above T_sat
+/// grows as δ = 2λ√(α_v t) (water at 1 atm); the liquid volume closes
+/// with the outflow and the evaporated mass.
+#[test]
+fn phase_change_stefan() {
+    let (s, last) = phase_run(
+        "vof_stefan.toml",
+        "stefan",
+        &[
+            ("steps = 661", "steps = 300"),
+            ("fields_every = 100", "fields_every = 0"),
+        ],
+    );
+    let (l, a) = (1.0e-3, 4.0e-10);
+    let (lam, av) = (0.067_741_985_626_831_74, 1.978_878_679_494_709e-5);
+    let w = worst(&s, 20, |v| l - v / a, |t| 2.0 * lam * (av * t).sqrt());
+    eprintln!("stefan: worst deviation of δ {:.2} %", 100.0 * w);
+    assert!(w < 0.02, "vapour layer off the exact δ by {w:.4}");
+    // V₀ = V + V_out + m/ρ_l, V_out = m (1/ρ_v − 1/ρ_l) (the continuity
+    // takes the volume the phase change makes)
+    let (rl, rv) = (958.372729, 0.597623116);
+    let (v0, m) = (9.0e-4 * a, last["evaporated"]);
+    let liquid = (last["volume"] + last["volume_out"] + m / rl - v0) / v0;
+    let made = last["volume_out"] / (m * (1.0 / rv - 1.0 / rl)) - 1.0;
+    eprintln!("stefan: liquid account {liquid:e}, volume made {made:e}");
+    assert!(liquid.abs() < 1e-6, "liquid volume account {liquid:e}");
+    assert!(
+        made.abs() < 1e-3,
+        "outflow against the volume made {made:e}"
+    );
+}
+
+/// The sucking problem (MP2): the vapour layer grows into a liquid 2 K
+/// superheated, δ = 2β√(α_l t); the liquid carries its thermal layer.
+#[test]
+fn phase_change_sucking() {
+    let (s, _) = phase_run(
+        "vof_sucking.toml",
+        "sucking",
+        &[
+            ("steps = 800", "steps = 400"),
+            ("fields_every = 200", "fields_every = 0"),
+        ],
+    );
+    let (l, a) = (1.2e-3, 9.0e-12);
+    let (beta, al) = (3.389_359_871_358_738_7, 1.675_804_574_892_131_6e-7);
+    let w = worst(&s, 0, |v| l - v / a, |t| 2.0 * beta * (al * t).sqrt());
+    eprintln!("sucking: worst deviation of δ {:.2} %", 100.0 * w);
+    assert!(w < 0.025, "vapour layer off the exact δ by {w:.4}");
+}
+
+/// Scriven's bubble (MP2) on a thin sector of the sphere: R = 2β√(α_l t)
+/// in water 1.25 K superheated, from 0.1 mm to 0.2 mm.
+#[test]
+fn phase_change_scriven() {
+    let (s, _) = phase_run(
+        "vof_scriven.toml",
+        "scriven",
+        &[
+            ("steps = 1447", "steps = 540"),
+            ("fields_every = 250", "fields_every = 0"),
+        ],
+    );
+    // the sector (examples/meshes/sphere_sector.py): a square pyramid of
+    // half angle 2°, solid angle 4 tan²θ/n³, n = √(1 + 2 tan²θ)
+    let t2 = 2.0f64.to_radians().tan();
+    let om = 4.0 * t2 * t2 / (1.0 + 2.0 * t2 * t2).powf(1.5);
+    let (r0, r1) = (2.0e-6f64, 5.0e-4f64);
+    let total = om * (r1.powi(3) - r0.powi(3)) / 3.0;
+    let radius = |v: f64| (3.0 * (total - v + om * r0.powi(3) / 3.0) / om).cbrt();
+    let (beta, al) = (4.066_930_541_557_649_5, 1.675_804_574_892_131_6e-7);
+    let w = worst(&s, 0, radius, |t| 2.0 * beta * (al * t).sqrt());
+    eprintln!("scriven: worst deviation of R {:.2} %", 100.0 * w);
+    assert!(w < 0.04, "bubble radius off the exact R by {w:.4}");
+}
