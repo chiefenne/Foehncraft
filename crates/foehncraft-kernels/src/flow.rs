@@ -789,7 +789,13 @@ pub unsafe fn face_mass_flux<T: Real>(f: usize, inp: &FluxInputs<T>) -> T {
             let m = ld(inp.rho_face, f) * (dot(uf, s) - df * dgeo * jump) + ld(inp.relax, f);
             if inp.transient {
                 let dsf = w * ld(inp.ds, p) + wn * ld(inp.ds, n);
-                m + inp.alpha * (T::ONE - df / dsf) * ld(inp.time, f)
+                // (D̄^s = 0 only for an absent phase of a two-fluid flow,
+                // D352: no time-step term)
+                if dsf > T::ZERO {
+                    m + inp.alpha * (T::ONE - df / dsf) * ld(inp.time, f)
+                } else {
+                    m
+                }
             } else {
                 m
             }
@@ -823,7 +829,12 @@ pub unsafe fn face_mass_flux<T: Real>(f: usize, inp: &FluxInputs<T>) -> T {
                 let dp = ld(inp.d, p);
                 let m = ld(inp.rho_face, f) * (dot(uf, s) - dp * dgeo * jump) + ld(inp.relax, f);
                 if inp.transient {
-                    m + inp.alpha * (T::ONE - dp / ld(inp.ds, p)) * ld(inp.time, f)
+                    let dsp = ld(inp.ds, p);
+                    if dsp > T::ZERO {
+                        m + inp.alpha * (T::ONE - dp / dsp) * ld(inp.time, f)
+                    } else {
+                        m
+                    }
                 } else {
                     m
                 }

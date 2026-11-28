@@ -1446,6 +1446,8 @@ fn run_one<F: FnMut(&str)>(
             turning_distance.as_mut().map(|(_, d)| std::mem::take(d)),
         )?,
     }
+    // gas bubbles by the two-fluid model (MP3), after the turbulence model
+    crate::twofluid::attach(&mut fl, &case, smesh, sgeo)?;
     // the sliding mesh (D182): the rotating zone and the shift of its data
     // (on ranks the plan of the whole mesh)
     let slide =

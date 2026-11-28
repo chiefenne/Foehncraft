@@ -3465,9 +3465,221 @@ impl Entry for VofTension {
     }
 }
 
+/// Arguments of the two-fluid entries (L3 MP3, [`crate::twofluid`]).
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct TwoFluidArgs {
+    /// Mesh.
+    pub m: Mesh,
+    /// The constants of the mixture.
+    pub k: crate::twofluid::Constants<f64>,
+    /// α_g per cell.
+    pub alpha: Raw<f64>,
+    /// Liquid velocity.
+    pub ul: Raw3,
+    /// Gas velocity.
+    pub ug: Raw3,
+    /// The liquid velocity gradient.
+    pub grad_ul: RawGrad,
+    /// Wall distance per cell.
+    pub wall_y: Raw<f64>,
+    /// Unit wall normal per cell.
+    pub wall_n: Raw3,
+    /// ν_t of the liquid per cell (empty: laminar).
+    pub nu_t: Raw<f64>,
+    /// ∇α_g per cell.
+    pub grad_alpha: Raw3,
+    /// The cell size h per cell (the dispersion limiter).
+    pub cell_h: Raw<f64>,
+    /// α_g of the inflow per boundary face.
+    pub alpha_b: Raw<f64>,
+    /// 1 per inflow boundary face.
+    pub inflow: Raw<u32>,
+    /// α_g per face.
+    pub alpha_gf: Raw<f64>,
+    /// α_l per face.
+    pub alpha_lf: Raw<f64>,
+    /// μ_l + μ_t per face.
+    pub mu_eff: Raw<f64>,
+    /// μ_BIT per cell (output of [`TwoFluidCells`], input of
+    /// [`TwoFluidFaces`]).
+    pub mu_bit: Raw<f64>,
+    /// D per cell (as `mu_bit`).
+    pub disp: Raw<f64>,
+    /// K V per cell (output).
+    pub kv: Raw<f64>,
+    /// (lift + wall) V per cell (output).
+    pub fv: Raw3,
+    /// b_g per cell (output).
+    pub body_g: Raw3,
+    /// b_l per cell (output).
+    pub body_l: Raw3,
+    /// The face viscosity of the gas (output).
+    pub mu_g: Raw<f64>,
+    /// The face viscosity of the liquid (output).
+    pub mu_l: Raw<f64>,
+    /// The offsets of the gas (output).
+    pub off_g: Raw<f64>,
+    /// The offsets of the liquid (output).
+    pub off_l: Raw<f64>,
+}
+
+/// The interphase forces of cell `c` ([`crate::twofluid::cell_forces`])
+/// and the cell forces b_g, b_l ([`crate::twofluid::cell_body`]).
+pub struct TwoFluidCells;
+impl Entry for TwoFluidCells {
+    type Args = TwoFluidArgs;
+    const NAME: &'static str = "two_fluid_cells";
+    #[inline(always)]
+    unsafe fn run(c: usize, a: &TwoFluidArgs) {
+        // SAFETY: guaranteed by the caller.
+        unsafe {
+            let g = a.grad_ul.g;
+            let inp = crate::twofluid::CellIn {
+                volume: a.m.volume.get(),
+                alpha: a.alpha.get(),
+                ul: a.ul.v(),
+                ug: a.ug.v(),
+                grad_ul: [g[0].v(), g[1].v(), g[2].v()],
+                wall_y: a.wall_y.get(),
+                wall_n: a.wall_n.v(),
+                nu_t: a.nu_t.get(),
+                h: a.cell_h.get(),
+                grad_alpha: a.grad_alpha.v(),
+            };
+            let r = crate::twofluid::cell_forces(c, &inp, &a.k);
+            *a.kv.out().add(c) = r.kv;
+            *a.fv.x.out().add(c) = r.fv[0];
+            *a.fv.y.out().add(c) = r.fv[1];
+            *a.fv.z.out().add(c) = r.fv[2];
+            *a.mu_bit.out().add(c) = r.mu_bit;
+            *a.disp.out().add(c) = r.disp;
+            let al = a.alpha.read(c);
+            let ga = [
+                a.grad_alpha.x.read(c),
+                a.grad_alpha.y.read(c),
+                a.grad_alpha.z.read(c),
+            ];
+            let bg = crate::twofluid::cell_body(&a.k, true, r.alpha_td, r.disp, ga);
+            let bl = crate::twofluid::cell_body(&a.k, false, al, r.disp, ga);
+            *a.body_g.x.out().add(c) = bg[0];
+            *a.body_g.y.out().add(c) = bg[1];
+            *a.body_g.z.out().add(c) = bg[2];
+            *a.body_l.x.out().add(c) = bl[0];
+            *a.body_l.y.out().add(c) = bl[1];
+            *a.body_l.z.out().add(c) = bl[2];
+        }
+    }
+}
+
+/// The face viscosities and offsets of face `f`
+/// ([`crate::twofluid::face_arrays`]).
+pub struct TwoFluidFaces;
+impl Entry for TwoFluidFaces {
+    type Args = TwoFluidArgs;
+    const NAME: &'static str = "two_fluid_faces";
+    #[inline(always)]
+    unsafe fn run(f: usize, a: &TwoFluidArgs) {
+        // SAFETY: guaranteed by the caller.
+        unsafe {
+            let topo = a.m.topo();
+            let cc = a.m.cell_centroid.v();
+            let fc = a.m.face_centroid.v();
+            let sh = a.m.shift.v();
+            let inp = crate::twofluid::FaceIn {
+                topo: &topo,
+                weight: a.m.weight.get(),
+                cell_centroid: &cc,
+                face_centroid: &fc,
+                shift: &sh,
+                alpha: a.alpha.get(),
+                alpha_b: a.alpha_b.get(),
+                alpha_gf: a.alpha_gf.get(),
+                alpha_lf: a.alpha_lf.get(),
+                mu_eff: a.mu_eff.get(),
+                mu_bit: a.mu_bit.get(),
+                disp: a.disp.get(),
+                inflow: a.inflow.get(),
+            };
+            let r = crate::twofluid::face_arrays(f, &inp, &a.k);
+            *a.mu_g.out().add(f) = r.mu_g;
+            *a.mu_l.out().add(f) = r.mu_l;
+            *a.off_g.out().add(f) = r.off_g;
+            *a.off_l.out().add(f) = r.off_l;
+        }
+    }
+}
+
+/// Arguments of [`TwoFluidEliminate`].
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct TwoFluidElimArgs {
+    /// Mesh.
+    pub m: Mesh,
+    /// α_g per cell.
+    pub alpha: Raw<f64>,
+    /// K V per cell.
+    pub kv: Raw<f64>,
+    /// The diagonals of the gas rows.
+    pub diag_g: Raw3,
+    /// The diagonals of the liquid rows.
+    pub diag_l: Raw3,
+    /// The solved gas velocity (in and out).
+    pub ug: Raw3,
+    /// The solved liquid velocity (in and out).
+    pub ul: Raw3,
+    /// The liquid velocity of the gas rows.
+    pub ul_lag: Raw3,
+    /// d, d^s, d^C of the gas (V/a without α in, D out).
+    pub d_g: [Raw<f64>; 3],
+    /// d, d^s, d^C of the liquid (as `d_g`).
+    pub d_l: [Raw<f64>; 3],
+}
+
+/// The partial elimination of the drag of cell `c`
+/// ([`crate::twofluid::eliminate`], [`crate::twofluid::eliminate_d`]).
+pub struct TwoFluidEliminate;
+impl Entry for TwoFluidEliminate {
+    type Args = TwoFluidElimArgs;
+    const NAME: &'static str = "two_fluid_eliminate";
+    #[inline(always)]
+    unsafe fn run(c: usize, a: &TwoFluidElimArgs) {
+        // SAFETY: guaranteed by the caller.
+        unsafe {
+            let kv = a.kv.read(c);
+            let alpha = a.alpha.read(c);
+            let v = a.m.volume.read(c);
+            let comps = [
+                (a.diag_g.x, a.diag_l.x, a.ug.x, a.ul.x, a.ul_lag.x),
+                (a.diag_g.y, a.diag_l.y, a.ug.y, a.ul.y, a.ul_lag.y),
+                (a.diag_g.z, a.diag_l.z, a.ug.z, a.ul.z, a.ul_lag.z),
+            ];
+            for (dg, dl, ug, ul, lag) in comps {
+                let (g, l) = crate::twofluid::eliminate(
+                    kv,
+                    dg.read(c),
+                    dl.read(c),
+                    ug.read(c),
+                    ul.read(c),
+                    lag.read(c),
+                );
+                *ug.out().add(c) = g;
+                *ul.out().add(c) = l;
+            }
+            for (g, l) in a.d_g.into_iter().zip(a.d_l) {
+                let (x, y) = crate::twofluid::eliminate_d(v, kv, alpha, g.read(c), l.read(c));
+                *g.out().add(c) = x;
+                *l.out().add(c) = y;
+            }
+        }
+    }
+}
+
 send_sync!(
     LinArgs,
     VofArgs,
+    TwoFluidArgs,
+    TwoFluidElimArgs,
     VecArgs,
     PseudoArgs,
     BlockArgs,
@@ -3506,7 +3718,7 @@ send_sync!(
 );
 
 /// Names of all entries (the PTX module has `flow_<name>` for each).
-pub const NAMES: [&str; 66] = [
+pub const NAMES: [&str; 69] = [
     Lincomb::NAME,
     ScaledDifference::NAME,
     SquaresAdd::NAME,
@@ -3573,6 +3785,9 @@ pub const NAMES: [&str; 66] = [
     VofCurvature::NAME,
     VofTension::NAME,
     VofReconstruct::NAME,
+    TwoFluidCells::NAME,
+    TwoFluidFaces::NAME,
+    TwoFluidEliminate::NAME,
 ];
 
 #[cfg(test)]
@@ -3620,6 +3835,9 @@ mod tests {
             size_of::<FloorArgs>(),
             size_of::<QcrArgs>(),
             size_of::<QuadGradArgs>(),
+            size_of::<TwoFluidArgs>(),
+            size_of::<TwoFluidElimArgs>(),
+            size_of::<VofArgs>(),
         ];
         for s in sizes {
             assert!(s + 8 <= 4096, "argument block of {s} bytes");
@@ -3695,7 +3913,7 @@ mod tests {
             unsafe { Product::run(i, &a) };
         }
         assert_eq!(z, [-4.0, -16.0, -36.0]);
-        assert_eq!(NAMES.len(), 66);
+        assert_eq!(NAMES.len(), 69);
         // the elliptic-blending helpers: out += |v|², out3 = s v
         let (vx, vy, vz) = ([1.0, 0.0], [2.0, -3.0], [2.0, 4.0]);
         let s = [0.5, -2.0];

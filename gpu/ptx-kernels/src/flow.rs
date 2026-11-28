@@ -90,4 +90,7 @@ entries! {
     flow_vof_curvature => e::VofCurvature,
     flow_vof_tension => e::VofTension,
     flow_vof_reconstruct => e::VofReconstruct,
+    flow_two_fluid_cells => e::TwoFluidCells,
+    flow_two_fluid_faces => e::TwoFluidFaces,
+    flow_two_fluid_eliminate => e::TwoFluidEliminate,
 }

@@ -94,5 +94,6 @@ pub mod transient;
 pub mod turbulence;
 pub mod uncertainty;
 pub mod unsteady;
+pub mod twofluid;
 pub mod vof;
 pub mod water_walls;

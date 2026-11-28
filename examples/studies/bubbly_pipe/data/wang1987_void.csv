@@ -1,0 +1,29 @@
+# Wang, Lee, Jones and Lahey (1987), vertical up-flow of air and water,
+# D = 57.15 mm, jL = 1.08 m/s, profiles at L/D = 35: measured void
+# fraction alpha against r/R, digitised from Fig. 2 (left panel) of
+# In and Chun (2002), KAERI report FR0200356 (see README.md); reading
+# uncertainty about +-0.005 in alpha and +-0.01 in r/R
+jg,r_over_R,alpha
+0.4,0.000,0.120
+0.4,0.087,0.118
+0.4,0.175,0.118
+0.4,0.355,0.117
+0.4,0.442,0.117
+0.4,0.530,0.115
+0.4,0.622,0.112
+0.4,0.710,0.125
+0.4,0.797,0.121
+0.4,0.843,0.142
+0.4,0.886,0.162
+0.4,0.931,0.367
+0.4,0.953,0.415
+0.1,0.006,0.040
+0.1,0.450,0.037
+0.1,0.536,0.030
+0.1,0.622,0.058
+0.1,0.710,0.051
+0.1,0.801,0.050
+0.1,0.843,0.049
+0.1,0.888,0.079
+0.1,0.930,0.150
+0.1,0.960,0.160
