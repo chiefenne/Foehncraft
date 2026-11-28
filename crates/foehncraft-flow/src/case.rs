@@ -1181,6 +1181,7 @@ impl FlowCase {
             mrf: _,
             sliding: _,
             mesh_motion: _,
+            circuits: _,
         } = from;
         self.notes = notes.clone();
         self.boundary_scalar = boundary_scalar.clone();
