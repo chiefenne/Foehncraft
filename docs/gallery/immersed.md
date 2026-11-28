@@ -11,7 +11,7 @@ Part of the [Example gallery](../gallery.md): bodies in the flow without a body-
 | 315 | [Signed distance by three methods, and a sphere cut exactly out of a mesh](#sdf-benchmark-cut) | L13 stage 0 | signed-distance benchmark (ours, fast sweeping, heat method), `Surface::cut_moments` (volume fractions, apertures, wall pieces) |
 | 322 | [STL bodies cut out of a mesh: sharp edges, face points and the Stokes sphere array](#stl-cut) | L13 stage 2 | `shape = "stl"` (`file`, `scale`), `[immersed.cut] face_point`, dual-contouring wall points on sharp edges, the per-cell fallback, STL cut benchmark against the exact moments |
 | 357 | [A turbulent plate tilted against the mesh: wall functions on cut cells](#cut-plate) | L13 stage 2c | `shape = "plane"` (`normal`), wall functions with the exact first-cell distance, `[immersed.cut] wall_sample`, y⁺ per body (LIM011) |
-| NNN | [A heated pin cut out of a box mesh: conjugate heat transfer through cut cells](#cut-cht) | L13 stage 2d | `[regions.<name>] zones = ["<body>"]` on a cut body, solid cut cells, the cut faces as region interface, thin solids refused (IMM205) |
+| 359 | [A heated pin cut out of a box mesh: conjugate heat transfer through cut cells](#cut-cht) | L13 stage 2d | `[regions.<name>] zones = ["<body>"]` on a cut body, solid cut cells, the cut faces as region interface, thin solids refused (IMM205) |
 
 ---
 
@@ -299,7 +299,7 @@ they are the default. On the cylinder the wall point moves the drag from
 
 **What is not here yet.** STL bodies followed in [gallery 322](#stl-cut), wall functions
 on cut bodies in [gallery 357](#cut-plate), conjugate heat transfer through cut
-cells in [gallery NNN](#cut-cht). Named surface patches with other conditions
+cells in [gallery 359](#cut-cht). Named surface patches with other conditions
 (2e) and the near-body refinement (2f) follow. One rank only.
 
 Reproduce (about a minute and a half for the case, ten minutes for D/40):
@@ -632,7 +632,7 @@ on 16³ to +4.8 % on 24³ and the wall carries G L³ to 5 % on 16³ (1.3 % on
 24³; the −1.8 % of #322 on 24³ ran with the cell-quality remediation on): the
 cut cells of tetrahedra need a closer look (features.toml). A feature thinner than a cell can vanish between the
 nodes. Wall functions on cut bodies followed in [gallery 357](#cut-plate),
-conjugate heat transfer through cut cells in [gallery NNN](#cut-cht); named
+conjugate heat transfer through cut cells in [gallery 359](#cut-cht); named
 surface patches (2e) and the near-body refinement (2f) follow. One rank only.
 
 Reproduce (about a minute for the case, two for the benchmark):
@@ -755,7 +755,7 @@ Recipe: [357](../recipes/immersed.md#cut-wall-functions). Case files:
 ---
 
 <a id="cut-cht"></a>
-## NNN. A heated pin cut out of a box mesh: conjugate heat transfer through cut cells
+## 359. A heated pin cut out of a box mesh: conjugate heat transfer through cut cells
 
 <img src="../figures/gallery/immersed_cut_cht.png" alt="Four panels. Top left: the temperature in the first metre of a channel, blue at 300 kelvin, with a dark red round pin at 440 kelvin near the inlet and a warm wake, yellow and green, then cyan, drifting downstream along the centre of the pin. Top right: a zoom on the front of the pin, square fluid cells coloured from yellow to dark red, the dotted exact circle crossing them, and the cells on the circle split by short straight cut faces into a fluid part and a red pin part. Bottom left: the temperature against the radius for three conductivity ratios of the concentric-cylinder case, flat in the solid up to the interface at 0.25 metres, then falling with the logarithm of the radius; the dots of every cell lie on the exact lines. Bottom right: the L2 error of the temperature against the cells across the box on log axes, three nearly coincident straight lines from 0.12 to 0.007 parallel to the dashed second-order line." width="1400" height="900">
 
@@ -851,6 +851,6 @@ pip install matplotlib h5py numpy
 python3 -m tools.plot.immersed_cut_cht docs/figures/gallery output/cut_pin output/cut_cyl_9 output/cut_cyl_90 output/cut_cyl_900
 ```
 
-Recipe: [NNN](../recipes/immersed.md#cut-cht). Case files:
+Recipe: [359](../recipes/immersed.md#cut-cht). Case files:
 `examples/cases/flow/immersed_cut_pin_cht.toml`,
 `examples/cases/flow/immersed_cut_cylinder_cht.toml`.

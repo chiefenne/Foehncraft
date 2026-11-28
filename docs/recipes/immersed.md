@@ -11,7 +11,7 @@ Part of the [Recipes](../recipes.md): put bodies into the flow without meshing t
 | 315 | [Cut a mesh exactly by an STL surface](#cut-moments) |
 | 322 | [Put an STL body into the flow](#stl-body) |
 | 357 | [Run a turbulent flow with wall functions on a cut body](#cut-wall-functions) |
-| NNN | [Keep a cut body as a solid region (conjugate heat transfer)](#cut-cht) |
+| 359 | [Keep a cut body as a solid region (conjugate heat transfer)](#cut-cht) |
 
 ---
 
@@ -205,7 +205,7 @@ type = "wall"
 
 **Resolution.** About 6 cells per radius give the drag of a sphere array within 2.3 %, 10 cells within 0.9 % (hexahedra, second order). A part of the surface thinner than a cell can vanish; put two or more cells across thin walls.
 
-**Limits.** Hexahedral meshes are the best checked; on tetrahedra the force balance of the wall is within 5 %, on polyhedra the cut is less accurate (the faces are not planar). Merged cells keep faces that do not lie in one plane apart, so two cells can share several faces (IMM203 counts them). Wall functions: [recipe 357](#cut-wall-functions), conjugate heat transfer: [recipe NNN](#cut-cht). Other wall conditions per surface patch and near-body refinement follow (stages 2e and 2f). One rank only.
+**Limits.** Hexahedral meshes are the best checked; on tetrahedra the force balance of the wall is within 5 %, on polyhedra the cut is less accurate (the faces are not planar). Merged cells keep faces that do not lie in one plane apart, so two cells can share several faces (IMM203 counts them). Wall functions: [recipe 357](#cut-wall-functions), conjugate heat transfer: [recipe 359](#cut-cht). Other wall conditions per surface patch and near-body refinement follow (stages 2e and 2f). One rank only.
 
 ---
 
@@ -246,7 +246,7 @@ wall_treatment = "scalable"
 ---
 
 <a id="cut-cht"></a>
-## NNN. Keep a cut body as a solid region (conjugate heat transfer)
+## 359. Keep a cut body as a solid region (conjugate heat transfer)
 
 **Name the body as the zone of a solid region.** The cut then keeps the inside of the body as the cells of that region; the cut faces become the region interface (D160), the flow sees the wall `interface-<region>`:
 
@@ -292,7 +292,7 @@ tolerance = 1e-10
 max_iter = 300
 ```
 
-Without it the pin of [gallery NNN](../gallery/immersed.md#cut-cht) stalled with a heat imbalance of 33 %.
+Without it the pin of [gallery 359](../gallery/immersed.md#cut-cht) stalled with a heat imbalance of 33 %.
 
 **Two cells across, or a thin wall.** A solid body must be about two cells thick where it is thinnest; a thinner one is refused with IMM205. Refine the mesh in the body, or model the wall as a thin wall on a region interface (`[interfaces.<name>] thin_wall`, D189), which carries its conduction without cells.
 

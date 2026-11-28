@@ -849,7 +849,7 @@ Found with the circuits behind the walls (SF7c, #356):
   complement of the body in a second pass gives cut faces that meet only
   as well as two root finds agree. Take the solid rings from the same
   crossing points and bent chords as the fluid, and match the fluid wall
-  faces of a cell to their solid twins by the node set (#NNN).
+  faces of a cell to their solid twins by the node set (#359).
 - **Merged pieces can pinch.** On tetrahedra a union of small pieces
   used one directed edge twice (two pieces touching along an edge only);
   the union score now refuses non-manifold unions, the fluid cut did not
