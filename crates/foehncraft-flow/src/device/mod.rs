@@ -748,7 +748,8 @@ pub enum VofOp {
     /// α_f per face from `flux`, `alpha`, `grad`, `alpha_b` → `out`.
     Faces,
     /// α per cell from `flux`, `alpha_f`, `alpha` → `out`, clipped volume
-    /// → `out2`.
+    /// → `out2`; `kappa` (optional) the α sink rate of a phase change
+    /// (1/s, MP2).
     Update,
     /// Σ_out |F|/V per cell from `flux` → `out`.
     OutflowRate,
@@ -763,7 +764,8 @@ pub enum VofOp {
     Tension,
     /// The balanced pressure force ρ_P R_P[g_f/ρ_f] + `grad` per cell of φ =
     /// `alpha` with the face offsets `alpha_f`, ρ_f = `flux`, ρ = `kappa`
-    /// and the boundary values `alpha_b` → `out3`.
+    /// and the boundary values `alpha_b` → `out3`; `s` > 0 (a phase
+    /// change, MP2) caps ρ_P/ρ_f at 1.
     Reconstruct,
 }
 

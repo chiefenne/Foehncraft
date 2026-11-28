@@ -378,12 +378,16 @@ temperatures of their own (D271, PM2). The keys are on the [key page](flow-keys.
 
 ## Two fluids (volume of fluid)
 
-`[vof]` with two `[[vof.phase]]` tables (L3, stage MP1, D293): two immiscible fluids with a sharp interface, α of phase 1 advected by THINC, CICSAM or upwind, gravity and surface tension as balanced face forces. Transient and laminar only. The keys are on the [key page](flow-keys.md), and the run writes `vof.csv`.
+`[vof]` with two `[[vof.phase]]` tables (L3, stage MP1, D293): two immiscible fluids with a sharp interface, α of phase 1 advected by THINC, CICSAM or upwind, gravity and surface tension as balanced face forces. Transient and laminar only. With `[energy]` and `[vof.phase_change]` (stage MP2, D351) the liquid evaporates or the vapour condenses at the interface. The keys are on the [key page](flow-keys.md), and the run writes `vof.csv` (with the evaporated mass, the rate and the interface cells under a phase change).
 
 | Case file | Mesh | Shows | Where |
 |---|---|---|---|
 | `flow/vof_dam_break.toml` | generated hex 2D, 168 × 45 cells | the collapse of a water column a = 57.15 mm wide and 2a high in air (Martin & Moyce 1952, n² = 2); the surge front runs 5 to 17 % ahead of the measured points, and a/32 gives the same curve; the water volume is conserved to 10⁻¹⁴; about 70 s | [gallery 317](../gallery/multiphase.md#vof-dam-break), [recipe 317](../recipes/multiphase.md#vof-two-fluids) |
 | `flow/vof_static_drop.toml` | generated hex 2D, 40 × 40 cells | a water drop of R = 2 mm at rest in air, σ = 0.07 N/m: Laplace jump 32.2 Pa against the exact 35 Pa, spurious currents 0.18 m/s | [gallery 317](../gallery/multiphase.md#vof-dam-break), [recipe 317](../recipes/multiphase.md#vof-two-fluids) |
+| `flow/vof_stefan.toml` | generated hex 2D, 200 × 1 cells | the Stefan problem: water at 1 atm, a wall 10 K above T_sat, the vapour layer from 0.1 to 0.5 mm within 1.1 % of the exact δ = 2λ√(α_v t) after the start (3.4 % in the first steps); about 20 s | [gallery 358](../gallery/multiphase.md#vof-phase-change), [recipe 358](../recipes/multiphase.md#vof-phase-change) |
+| `flow/vof_sucking.toml` | generated hex 2D, 400 × 1 cells | the sucking problem: the vapour layer grows into water 2 K superheated, which carries its 40-90 μm thermal layer to the interface; within 1.8 % of δ = 2β√(α_l t); about 35 s | [gallery 358](../gallery/multiphase.md#vof-phase-change), [recipe 358](../recipes/multiphase.md#vof-phase-change) |
+| `flow/vof_scriven.toml` | `meshes/sphere_sector.su2`, 500 hexahedra on a 2° sector of the sphere | Scriven's bubble in water 1.25 K superheated, R from 0.1 to 0.3 mm: 3.2 % ahead at 2 ms, 1.9 % at 8 ms; about 100 s | [gallery 358](../gallery/multiphase.md#vof-phase-change), [recipe 358](../recipes/multiphase.md#vof-phase-change) |
+| `flow/vof_film_boiling.toml` | generated hex 2D, 80 × 240 cells | film boiling on a horizontal wall 5 K above T_sat (near-critical fluid of Welch & Wilson 2000): the film breaks up into bubbles, released about every 0.22 s; wall Nusselt number 2.25 (mean after 0.4 s) against Berenson's 2.62 (−14 %); about 85 min (CI runs its first 200 steps) | [gallery 358](../gallery/multiphase.md#vof-phase-change), [recipe 358](../recipes/multiphase.md#vof-phase-change) |
 
 ## Immersed bodies
 

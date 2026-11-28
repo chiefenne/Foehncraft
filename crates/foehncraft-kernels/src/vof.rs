@@ -187,12 +187,15 @@ pub unsafe fn face_alpha<T: Real>(f: usize, a: &FaceIn<'_, T>) -> T {
     }
 }
 
-/// The explicit update of cell `c`: α* = α − Δt/V Σ ±F_f α_f; returns
-/// (α clipped to [0, 1], the clipped part (α* − α_clipped) V in m³).
+/// The explicit update of cell `c`: α* = α − Δt (1/V Σ ±F_f α_f + s_c)
+/// with the sink rate s_c of the phase change (1/s, MP2; empty: none);
+/// returns (α clipped to [0, 1], the clipped part (α* − α_clipped) V in
+/// m³).
 ///
 /// # Safety
 /// As [`face_alpha`]; `c` is a local cell.
 #[inline(always)]
+#[allow(clippy::too_many_arguments)]
 pub unsafe fn update<T: Real>(
     c: usize,
     topo: &Topology<'_>,
@@ -200,6 +203,7 @@ pub unsafe fn update<T: Real>(
     flux: &[T],
     alpha_f: &[T],
     alpha: &[T],
+    sink: &[T],
     dt: T,
 ) -> (T, T) {
     // SAFETY: guaranteed by the caller.
@@ -219,7 +223,10 @@ pub unsafe fn update<T: Real>(
             k += 1;
         }
         let v = ld(volume, c);
-        let a = ld(alpha, c) - dt * s / v;
+        let mut a = ld(alpha, c) - dt * s / v;
+        if !sink.is_empty() {
+            a -= dt * ld(sink, c);
+        }
         let ac = clamp01(a);
         (ac, (a - ac) * v)
     }
@@ -436,7 +443,9 @@ pub unsafe fn tension<T: Real>(
 /// pressure force of its own faces divided by their own density, not the
 /// cell gradient of the heavy side. Boundary faces with `open` set take
 /// g = (value_b − φ_P − o_f)/(r·n̂) (value_b empty: 0); the others (walls,
-/// symmetry) g = 0: no normal force beyond the offset.
+/// symmetry) g = 0: no normal force beyond the offset. With `cap` > 0 (a
+/// phase change, MP2) a cell heavier than a face divides by its own ρ_P
+/// there: the jump is not amplified by ρ_P/ρ_f.
 ///
 /// # Safety
 /// The arrays have the lengths of the mesh (`open`, `value_b` one entry
@@ -456,6 +465,7 @@ pub unsafe fn reconstruct<T: Real>(
     open: &[u32],
     value_b: &[T],
     add: &Vec3<'_, T>,
+    cap: T,
 ) -> [T; 3] {
     // SAFETY: guaranteed by the caller.
     unsafe {
@@ -494,7 +504,17 @@ pub unsafe fn reconstruct<T: Real>(
             } else {
                 T::ZERO
             };
-            let w = g / ld(rho_f, f) * a;
+            // with `cap` (a phase change, MP2) ρ_P/max(ρ_f, ρ_P) ≤ 1: a
+            // light cell beside a heavy face takes its share ρ_P/ρ_f, a
+            // heavy cell beside a light face the plain jump, not amplified
+            // by ρ_P/ρ_f (the vapour face of an evaporating interface cell
+            // carries the jump that drives the vapour made in it)
+            let rf = if cap > T::ZERO {
+                ld(rho_f, f).max_of(ld(rho, c))
+            } else {
+                ld(rho_f, f)
+            };
+            let w = g / rf * a;
             b[0] += n[0] * w;
             b[1] += n[1] * w;
             b[2] += n[2] * w;

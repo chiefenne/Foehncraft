@@ -1631,6 +1631,9 @@ pub struct CheckContext {
     /// of a sliding interface that is imprinted in every step (D182, variant
     /// B). They need no condition.
     pub interface: Vec<String>,
+    /// A volume source drives a flow: the phase change of a
+    /// volume-of-fluid case (MP2) pushes the fluid out of an outlet.
+    pub volume_source: bool,
 }
 
 /// How the flow through a periodic pair is driven (D29).
@@ -2514,7 +2517,7 @@ pub fn check<'a>(
             matches!(b, BoundaryCondition::Wall { velocity, .. }
                 if velocity.iter().any(|v| v.number() != Some(0.0)))
         });
-        if inlets.is_empty() && outlets.len() == 1 && !moving {
+        if inlets.is_empty() && outlets.len() == 1 && !moving && !ctx.volume_source {
             push(
                 Level::Warning,
                 diag::BC_FLUID_AT_REST,

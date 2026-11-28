@@ -822,6 +822,13 @@ pub struct Physics {
     /// The volume fraction α of phase 1 per cell of a volume-of-fluid case
     /// (L3, MP1), as last advanced.
     pub vof_alpha: Option<std::sync::Arc<Vec<f64>>>,
+    /// The phase-change rate per cell of a volume-of-fluid case (MP2,
+    /// kg/(m³ s), evaporation positive), for the field output.
+    pub vof_phase_change: Option<std::sync::Arc<Vec<f64>>>,
+    /// The volume the phase change adds per second in the continuity rows
+    /// of the current step (m³/s, MP2): the volume account of the run
+    /// checks the net boundary volume flow against it.
+    pub vof_volume_made: Option<f64>,
     /// The cell fields of the reactions (SF3: the heat release, the
     /// fine-structure fraction and residence time of the eddy dissipation
     /// concept), as last set, for the output.
@@ -845,6 +852,8 @@ impl Physics {
             zones: false,
             grid_flux: None,
             vof_alpha: None,
+            vof_phase_change: None,
+            vof_volume_made: None,
             reaction_fields: None,
         }
     }
@@ -1195,6 +1204,8 @@ pub struct Flow {
     /// The mass source V ∂ρ/∂t per cell on the device (the continuity
     /// residual adds it).
     density_source: Option<Buf>,
+    /// The continuity rows hold the volume of a phase change (MP2).
+    vof_mass_source: bool,
     /// The grid of a deforming mesh in the current step (D91, stage MS0).
     pub(crate) grid: Option<Box<crate::motion::Grid>>,
 }
@@ -1719,6 +1730,7 @@ impl Flow {
             density_time: None,
             grid: None,
             density_source: None,
+            vof_mass_source: false,
         })
     }
 
@@ -2370,6 +2382,7 @@ impl Flow {
                     alpha_b: Some(f.pb),
                     grad: Some(v.body),
                     out3: Some(f.grad_p),
+                    s: v.reconstruct_cap(),
                     ..Default::default()
                 },
             )?;
@@ -2559,7 +2572,7 @@ impl Flow {
         self.dev.net_outflow(m, w.defect)?;
         if let (Some(src), true) = (
             self.density_source,
-            self.density_time.is_some() || self.spray_mass.is_some(),
+            self.density_time.is_some() || self.spray_mass.is_some() || self.vof_mass_source,
         ) {
             // the mass source V ∂ρ/∂t of a variable density (stage 7c)
             self.dev.lincomb(w.defect, 1.0, w.defect, 1.0, src)?;
@@ -2689,6 +2702,7 @@ impl Flow {
                     flux: Some(v.rho_f),
                     kappa: Some(v.rho_c),
                     out3: Some(w.gpc),
+                    s: v.reconstruct_cap(),
                     ..Default::default()
                 },
             )?;
@@ -3135,6 +3149,11 @@ impl Flow {
 
     /// The continuity source −S_m of a spray with a constant density.
     fn upload_spray_mass(&mut self) -> Result<()> {
+        // (a volume-of-fluid case keeps the continuity source of its phase
+        // change, MP2; it has no spray)
+        if self.vof.is_some() {
+            return Ok(());
+        }
         let Some(rows) = &self.spray_mass else {
             if self.density_source.is_some() && self.density.is_none() {
                 self.dev.set_variable_density(None, None, None)?;
@@ -3214,17 +3233,46 @@ impl Flow {
             v.rho_face.clone(),
         )));
         let old = v.old_levels().filter(|_| in_step);
+        // the volume the phase change adds (MP2) in the continuity rows
+        let src = v.volume_source();
         self.dev.set_variable_density(
-            None,
+            src.as_deref(),
             old.map(|o| o[0].as_slice()),
             old.map(|o| o[1].as_slice()),
         )?;
         let af = v.face_alpha();
         let mu = v.mu_face(&af);
         self.phys.vof_alpha = Some(std::sync::Arc::new(v.alpha_host.clone()));
+        self.phys.vof_phase_change = v.phase_rate_density().map(std::sync::Arc::new);
+        self.phys.vof_volume_made = src.as_ref().map(|x| -foehncraft_core::exact::exact_sum(x));
+        let mix = v.thermal_mixture();
+        let rows = v.energy_rows();
         let target = self.dev.face_viscosity();
         self.dev.upload(target, &mu)?;
         self.phys.mu_face = Some(std::sync::Arc::new(mu));
+        match &src {
+            Some(x) => {
+                let b = match self.density_source {
+                    Some(b) => b,
+                    None => {
+                        let b = self.dev.alloc(self.disc.n_cells)?;
+                        self.density_source = Some(b);
+                        b
+                    }
+                };
+                self.dev.upload(b, x)?;
+                self.vof_mass_source = true;
+            }
+            None => self.vof_mass_source = false,
+        }
+        // the energy equation of the two fluids (MP2): the mixture and the
+        // latent heat of the interface cells
+        if let Some(sc) = self.scalars.as_mut() {
+            if let Some((rho, m)) = mix {
+                sc.set_energy_vof(rho, m);
+            }
+            sc.set_energy_phase(self.dev.as_mut(), rows)?;
+        }
         self.refresh_vof_forces()
     }
 
@@ -3284,12 +3332,24 @@ impl Flow {
     pub(crate) fn vof_step_start(&mut self, dt: f64) -> Result<Option<Buf>> {
         let ni = self.disc.n_interior;
         let m = self.f.mass_flux;
+        if self.vof.is_none() {
+            return Ok(None);
+        }
+        // the temperature of the end of the last step (phase change, MP2)
+        let t = match self.vof.as_deref().and_then(|v| v.pc.as_ref()) {
+            Some(_) => self.fluid_temperature()?,
+            None => None,
+        };
         let Some(v) = self.vof.as_deref_mut() else {
             return Ok(None);
         };
         v.start_step();
+        let next = t.as_ref().and_then(|t| v.phase_convert(t, dt));
         let before = v.rho_face.clone();
         v.advance(self.dev.as_mut(), m, dt, ni)?;
+        if let (Some(t), Some(n)) = (&t, next) {
+            v.phase_rows(t, n, dt);
+        }
         let ratio: Vec<f64> = before.iter().zip(&v.rho_face).map(|(a, b)| a / b).collect();
         let r = v.ratio_buf();
         self.dev.upload(r, &ratio)?;

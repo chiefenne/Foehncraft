@@ -1,0 +1,113 @@
+# Film boiling on a horizontal wall (volume of fluid with phase change, L3
+# stage MP2): a vapour film under a liquid grows by the heat of the wall,
+# the Rayleigh-Taylor instability lifts it into bubbles that leave the film
+# in turn. The set-up of Welch & Wilson 2000 (J. Comput. Phys. 160,
+# 662-682) with the near-critical fluid of the film boiling literature:
+#
+#   liquid  ρ 200 kg/m³, μ 0.1 Pa s, c_p 400 J/(kg K), λ 40 W/(m K)
+#   vapour  ρ 5 kg/m³, μ 0.005 Pa s, c_p 200 J/(kg K), λ 1 W/(m K)
+#   σ 0.1 N/m, h_lv 1e4 J/kg, T_sat 500 K, wall T_sat + 5 K, g 9.81 m/s²
+#
+# Width λ_d = 2π √3 λ₀ = 0.07868 m (the most dangerous Taylor wavelength,
+# λ₀ = √(σ/(g Δρ)) = 7.230 mm), height 3 λ_d. The film starts at
+# y = λ_d/128 (4 + cos(2π x/λ_d)) with the linear conduction profile across
+# it, not a uniform field. Check: the space and time mean Nusselt number
+# Nu = q λ₀/(λ_v ΔT) of the wall against the correlation of Berenson 1961
+# (J. Heat Transfer 83, 351-358), Nu = 0.425 (ρ_v Δρ g h_lv λ₀³/(λ_v μ_v
+# ΔT))^¼ = 2.62.
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/vof_film_boiling.toml
+#
+# 80 × 240 cells (Δx = λ_d/80), 1 s of boiling in 5000 steps (about 85 min on
+# one core): Nu = 2.25 after 0.4 s, 14 % below Berenson; the wall
+# heat flux is in heat.csv, the vapour volume in vof.csv;
+# tools/plot/vof_phase_change.py renders the bubbles.
+
+case_format = "0.7"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [0.07868440885009152, 0.23605322655027455, 9.83555110626144e-4]
+cells = [80, 240, 1]
+
+[fluid]
+density = 5.0
+viscosity = 0.005
+specific_heat = 200.0
+conductivity = 1.0
+
+[gravity]
+vector = [0.0, -9.81, 0.0]
+
+[energy]
+# the conduction profile across the film
+initial = "if(y < 6.1472194414134e-4 * (4.0 + cos(79.85298992523698 * x)), 505.0 - 5.0 * y / (6.1472194414134e-4 * (4.0 + cos(79.85298992523698 * x))), 500.0)"
+
+[vof]
+scheme = "thinc"
+surface_tension = 0.1
+
+[[vof.phase]]
+name = "liquid"
+density = 200.0
+viscosity = 0.1
+specific_heat = 400.0
+conductivity = 40.0
+
+[[vof.phase]]
+name = "vapour"
+density = 5.0
+viscosity = 0.005
+specific_heat = 200.0
+conductivity = 1.0
+
+[vof.phase_change]
+liquid = "liquid"
+saturation_temperature = 500.0
+latent_heat = 1.0e4
+
+# the film: the liquid fraction of each cell (Δy = 9.8356e-4 m)
+[[vof.region]]
+shape = "field"
+fraction = "min(1.0, max(0.0, (y + 4.91777555313072e-4 - 6.1472194414134e-4 * (4.0 + cos(79.85298992523698 * x))) / 9.83555110626144e-4))"
+
+[boundary.xmin]
+type = "symmetry"
+[boundary.xmax]
+type = "symmetry"
+[boundary.ymin]
+type = "wall"
+[boundary.ymin.energy]
+temperature = 505.0
+[boundary.ymax]
+type = "static-pressure-outlet"
+pressure = 101325.0
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[vof.inflow]
+ymax = 1.0
+
+[solver]
+algorithm = "piso"
+outer_iterations = 10
+outer_tolerance = 1.0e-6
+log_every = 100
+
+[solver.energy]
+tolerance = 1e-12
+max_iter = 300
+
+[time]
+scheme = "bdf1"
+time_step = 2.0e-4
+steps = 5000
+
+[output]
+fields_every = 250
+
+[verification]
+require_convergence = false

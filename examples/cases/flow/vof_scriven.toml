@@ -1,0 +1,111 @@
+# Scriven's bubble (volume of fluid with phase change, L3 stage MP2): a
+# vapour bubble grows in a uniformly superheated liquid, fed by the heat of
+# the thermal layer around it. Exact solution (Scriven 1959, Chem. Eng. Sci.
+# 10, 1-13):
+#
+#   R(t) = 2 β √(α_l t),
+#   ρ_l c_p,l ΔT/(ρ_v h_lv) = 2 β² ∫₀¹ exp(−β² ((1 − ξ)⁻² − 2 ε ξ − 1)) dξ,
+#   T(r) = T∞ − 2 β² ρ_v h_lv/(ρ_l c_p,l) ∫ from 1 − R/r to 1 of the same,
+#
+# ε = 1 − ρ_v/ρ_l (the sensible heat difference (c_p,l − c_p,v) ΔT of the
+# original is left out, as the model does). Water at 1 atm (IAPWS-IF97,
+# `foehn steam --pressure 101325`), ΔT = T∞ − T_sat = 1.25 K: β = 4.06693.
+#
+#   python3 examples/meshes/sphere_sector.py examples/meshes/sphere_sector.su2 --r0 2e-6 --r1 5e-4 --cells 500   (committed)
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/vof_scriven.toml
+#
+# The mesh is a thin sector of the sphere (half angle 2°, 1 μm cells): its
+# side planes pass through the centre, so `symmetry` there is exact for the
+# radial flow. The run starts at t₀ = 0.902 ms with the exact fields (R =
+# 0.1 mm; T from the table, not a uniform field) and ends at t = 8.1 ms (R
+# = 0.3 mm exact). The bubble volume is the vapour volume of vof.csv over the
+# solid angle of the sector; tools/plot/vof_phase_change.py compares R(t).
+
+case_format = "0.7"
+
+[mesh]
+file = "../../meshes/sphere_sector.su2"
+
+[fluid]
+density = 0.597623116
+viscosity = 1.22312654e-5
+specific_heat = 2077.39017
+conductivity = 2.45677073e-2
+
+# the exact temperature at t₀ over the radius (m → K)
+[tables.scriven]
+x = [1.0000000000e-04, 1.0020000000e-04, 1.0021596021e-04, 1.0023319405e-04, 1.0025180318e-04, 1.0027189733e-04, 1.0029359502e-04, 1.0031702420e-04, 1.0034232306e-04, 1.0036964079e-04, 1.0039913851e-04, 1.0043099017e-04, 1.0046538363e-04, 1.0050252173e-04, 1.0054262348e-04, 1.0058592539e-04, 1.0063268284e-04, 1.0068317158e-04, 1.0073768938e-04, 1.0079655775e-04, 1.0086012388e-04, 1.0092876265e-04, 1.0100287887e-04, 1.0108290963e-04, 1.0116932694e-04, 1.0126264043e-04, 1.0136340044e-04, 1.0147220120e-04, 1.0158968437e-04, 1.0171654282e-04, 1.0185352470e-04, 1.0200143788e-04, 1.0216115469e-04, 1.0233361706e-04, 1.0251984210e-04, 1.0272092809e-04, 1.0293806096e-04, 1.0317252125e-04, 1.0342569171e-04, 1.0369906544e-04, 1.0399425467e-04, 1.0431300031e-04, 1.0465718217e-04, 1.0502883010e-04, 1.0543013593e-04, 1.0586346636e-04, 1.0633137702e-04, 1.0683662742e-04, 1.0738219733e-04, 1.0797130428e-04, 1.0860742257e-04, 1.0929430376e-04, 1.1003599877e-04, 1.1083688181e-04, 1.1170167614e-04, 1.1263548194e-04, 1.1364380642e-04, 1.1473259622e-04, 1.1590827257e-04, 1.1717776910e-04, 1.1854857277e-04, 1.2002876798e-04, 1.2162708429e-04, 1.2335294788e-04, 1.2521653717e-04, 1.2722884281e-04, 1.2940173251e-04, 1.3174802104e-04, 1.3428154581e-04, 1.3701724847e-04, 1.3997126302e-04, 1.4316101098e-04, 1.4660530410e-04, 1.5032445536e-04, 1.5434039873e-04, 1.5867681850e-04, 1.6335928905e-04, 1.6841542556e-04, 1.7387504698e-04, 1.7977035181e-04, 1.8613610803e-04, 1.9300985816e-04, 2.0043214062e-04, 2.0844672887e-04, 2.1710088952e-04, 2.2644566109e-04, 2.3653615506e-04, 2.4743188085e-04, 2.5919709677e-04, 2.7190118904e-04, 2.8561908095e-04, 3.0043167476e-04, 3.1642632882e-04, 3.3369737274e-04, 3.5234666375e-04, 3.7248418739e-04, 3.9422870616e-04, 4.1770845991e-04, 4.4306192220e-04, 4.7043861689e-04, 5.0000000000e-04]
+y = [373.1243000, 373.1463323, 373.1480865, 373.1499798, 373.1520235, 373.1542293, 373.1566100, 373.1591793, 373.1619521, 373.1649443, 373.1681730, 373.1716569, 373.1754158, 373.1794710, 373.1838456, 373.1885643, 373.1936536, 373.1991420, 373.2050601, 373.2114405, 373.2183183, 373.2257311, 373.2337187, 373.2423238, 373.2515921, 373.2615717, 373.2723138, 373.2838729, 373.2963059, 373.3096731, 373.3240374, 373.3394645, 373.3560222, 373.3737804, 373.3928105, 373.4131843, 373.4349733, 373.4582474, 373.4830734, 373.5095128, 373.5376196, 373.5674373, 373.5989954, 373.6323055, 373.6673564, 373.7041088, 373.7424897, 373.7823854, 373.8236359, 373.8660279, 373.9092896, 373.9530862, 373.9970188, 374.0406260, 374.0833902, 374.1247510, 374.1641246, 374.2009309, 374.2346280, 374.2647516, 374.2909556, 374.3130492, 374.3310240, 374.3450634, 374.3555299, 374.3629287, 374.3678514, 374.3709079, 374.3726620, 374.3735824, 374.3740186, 374.3742027, 374.3742709, 374.3742926, 374.3742984, 374.3742997, 374.3743000, 374.3743000, 374.3743000, 374.3743000, 374.3743000, 374.3743000, 374.3743000, 374.3743000, 374.3743000, 374.3743000, 374.3743000, 374.3743000, 374.3743000, 374.3743000, 374.3743000, 374.3743000, 374.3743000, 374.3743000, 374.3743000, 374.3743000, 374.3743000, 374.3743000, 374.3743000, 374.3743000, 374.3743000]
+
+[energy]
+initial = "scriven(sqrt(x * x + y * y + z * z))"
+
+[vof]
+scheme = "thinc"
+# no surface tension: the exact solution has none (the Laplace pressure of
+# R = 0.1 mm would only shift T_sat by 0.02 K)
+surface_tension = 0.0
+
+[[vof.phase]]
+name = "water"
+density = 958.372729
+viscosity = 2.81660968e-4
+specific_heat = 4216.61269
+conductivity = 0.677207143
+
+[[vof.phase]]
+name = "vapour"
+density = 0.597623116
+viscosity = 1.22312654e-5
+specific_heat = 2077.39017
+conductivity = 2.45677073e-2
+
+[vof.phase_change]
+liquid = "water"
+saturation_temperature = 373.1243
+latent_heat = 2.25654075e6
+
+# water everywhere, then the bubble
+[[vof.region]]
+shape = "box"
+lower = [-1.0, -1.0, -1.0]
+upper = [1.0, 1.0, 1.0]
+
+[[vof.region]]
+shape = "sphere"
+centre = [0.0, 0.0, 0.0]
+radius = 1.0e-4
+alpha = 0.0
+
+[boundary.centre]
+type = "wall"
+[boundary.outer]
+type = "static-pressure-outlet"
+pressure = 101325.0
+[boundary.side]
+type = "symmetry"
+
+[vof.inflow]
+outer = 1.0
+
+[solver]
+algorithm = "piso"
+outer_iterations = 10
+outer_tolerance = 1.0e-6
+log_every = 100
+
+[solver.energy]
+tolerance = 1e-12
+max_iter = 300
+
+[time]
+scheme = "bdf1"
+start_time = 0.0009019513782345319
+time_step = 5.0e-6
+steps = 1447
+
+[output]
+fields_every = 250
+
+[verification]
+require_convergence = false

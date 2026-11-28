@@ -1,10 +1,11 @@
 # Two fluids (volume of fluid)
 
-Part of the [Example gallery](../gallery.md): two immiscible fluids such as water and air, separated by a sharp interface that moves with the flow (L3, volume of fluid). The volume fraction α of the first fluid is advected by THINC (default), CICSAM or upwind. Gravity and surface tension act as balanced face forces, and the pressure rows enforce the continuity of the volume.
+Part of the [Example gallery](../gallery.md): two immiscible fluids such as water and air, separated by a sharp interface that moves with the flow (L3, volume of fluid). The volume fraction α of the first fluid is advected by THINC (default), CICSAM or upwind. Gravity and surface tension act as balanced face forces, and the pressure rows enforce the continuity of the volume. With the energy equation the liquid can evaporate and the vapour condense at the interface (MP2).
 
 | # | Example | Stage | Feature |
 |---|---|---|---|
 | 317 | [A water column collapses in air, against Martin & Moyce](#vof-dam-break) | MP1 | `[vof]`, `[[vof.phase]]`, `[[vof.region]]`, `scheme = "thinc"`, `surface_tension`, `vof.csv` |
+| 358 | [Water evaporates and a vapour film boils, against exact solutions and Berenson](#vof-phase-change) | MP2 | `[energy]` with two phases, `[vof.phase_change]`, `phase_change_rate`, `examples/meshes/sphere_sector.py` |
 
 ---
 
@@ -40,4 +41,44 @@ The test `dam_break_martin_moyce` repeats the run on h = a/8 and holds the front
 ```sh
 target/release/foehn flow examples/cases/flow/vof_dam_break.toml --out output/vof_dam_break
 python3 -m tools.plot.vof_dam_break docs/figures/gallery output/vof_dam_break
+```
+
+---
+
+<a id="vof-phase-change"></a>
+## 358. Water evaporates and a vapour film boils, against exact solutions and Berenson
+
+<img src="../figures/gallery/vof_phase_change_checks.png" alt="Three panels against time, each with the exact curve as a black line and the computed values as red circles on it, and the deviation below. Left, the Stefan problem: the vapour layer on a wall 10 K above saturation grows from 0.1 to 0.5 mm in 0.69 s, within 1 % of the exact layer after a dip of 3.4 % in the first steps. Middle, the sucking problem: the layer grows from 0.28 to 0.62 mm into water 2 K superheated, 1.4 to 1.8 % ahead. Right, Scriven's bubble: the radius grows from 0.1 to 0.3 mm in 8 ms in water 1.25 K superheated, 3.2 % ahead at 2 ms and 1.9 % at 8 ms." width="1400" height="680">
+
+Three problems with exact solutions check the evaporation of water at 1 atm, where the vapour is 1604 times lighter than the liquid:
+- **The Stefan problem** (`vof_stefan.toml`): a vapour layer between a wall 10 K above T_sat and saturated water grows by the heat it conducts, δ = 2λ√(α_v t). The vapour is at rest, the water leaves through the outlet.
+- **The sucking problem** (`vof_sucking.toml`): the layer is at T_sat and the water 2 K superheated gives its heat to the interface, δ = 2β√(α_l t). The water carries its thermal layer, only 40 to 90 μm thick, towards the interface: the test of the energy convection across it.
+- **Scriven's bubble** (`vof_scriven.toml`): a bubble grows in water 1.25 K superheated, R = 2β√(α_l t). The mesh is a 2° sector of the sphere with 1 μm cells, whose side planes pass through the centre.
+
+How the phase change works: the interface cells are held at T_sat by an implicit sink, and the heat the sink takes, over the latent heat, is the rate. The vapour volume goes into the vapour cells beside the interface and the liquid sink into the liquid ones, so the continuity makes room for the vapour (D351).
+
+What the runs give:
+- **Stefan:** within 1.1 % of the exact layer after the start; the liquid volume closes with the outflow and the evaporated mass to 10⁻⁶.
+- **Sucking:** 1.4 to 1.8 % ahead.
+- **Scriven:** 3.2 % ahead at 2 ms, 1.9 % at 8 ms. The first steps, while the interface cells take their temperature, carry most of the lead.
+
+The tests `phase_change_stefan`, `phase_change_sucking` and `phase_change_scriven` run shorter versions and hold 2 %, 2.5 % and 4 %.
+
+<img src="../figures/gallery/vof_film_boiling.png" alt="Top: the speed around a boiling vapour film at four times, in a domain 79 mm wide and 236 mm high, with the interface as a white line. At 0.30 s the film on the wall is still thin with a wave that is thick at the two side walls. At 0.55 s two half bubbles rise from the film at the side walls with liquid flowing around them at up to 0.5 m/s. At 0.75 s and 1.00 s the first bubbles have pinched off and rise, a second pair follows, and a liquid jet runs up the middle between them. Bottom: the wall Nusselt number over the second of boiling: 3.9 at the start, a dip to 1.1 while the film thickens, then oscillating between 1.7 and 3.0 with each bubble release, mean 2.25 after 0.4 s, against the Berenson value of 2.62." width="1400" height="840">
+
+`vof_film_boiling.toml` is film boiling on a horizontal wall 5 K above T_sat, in the set-up of Welch & Wilson (2000) with the near-critical fluid of the film boiling literature (density ratio 40, σ = 0.1 N/m, h_lv = 10 kJ/kg). The domain is one most dangerous Taylor wavelength wide, λ_d = 78.7 mm, and three high, with symmetry at the sides. The film starts with a cosine wave and the conduction profile across it.
+
+What the run gives (80 × 240 cells, 1 s in 5000 steps of 0.2 ms, about 85 minutes on one core):
+- **The instability:** the film thickens for 0.35 s, then the crests at the side walls rise as half bubbles, pinch off and leave; a new pair follows about every 0.22 s.
+- **Heat transfer:** the wall Nusselt number Nu = q λ₀/(λ_v ΔT), λ₀ = √(σ/(g Δρ)), oscillates between 1.7 and 3.0 with the releases. Its mean after 0.4 s is 2.25, 14 % below the correlation of Berenson (1961), 2.62. One mesh only: no mesh study yet.
+
+The colours are the speed, as the liquid and the vapour sit at T_sat outside the thin film.
+
+```sh
+target/release/foehn flow examples/cases/flow/vof_stefan.toml --out output/vof_stefan
+target/release/foehn flow examples/cases/flow/vof_sucking.toml --out output/vof_sucking
+target/release/foehn flow examples/cases/flow/vof_scriven.toml --out output/vof_scriven
+target/release/foehn flow examples/cases/flow/vof_film_boiling.toml --out output/vof_film_boiling
+python3 -m tools.plot.vof_phase_change checks docs/figures/gallery output/vof_stefan output/vof_sucking output/vof_scriven
+python3 -m tools.plot.vof_phase_change film docs/figures/gallery output/vof_film_boiling
 ```
