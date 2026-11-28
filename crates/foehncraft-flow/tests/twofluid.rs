@@ -92,7 +92,11 @@ fn refused(text: &str) -> String {
 
 #[test]
 fn refusals() {
-    let base = std::fs::read_to_string(cases().join("two_fluid_column.toml")).unwrap();
+    // (the line ends of a Windows checkout are CRLF; the edits below
+    // match LF)
+    let base = std::fs::read_to_string(cases().join("two_fluid_column.toml"))
+        .unwrap()
+        .replace("\r\n", "\n");
     // steady runs, BDF2 and an adaptive step are not supported
     let steady = base.replace(
         "[time]\nscheme = \"bdf1\"\ntime_step = 2.0e-3\nsteps = 200\n",
