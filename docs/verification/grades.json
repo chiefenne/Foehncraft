@@ -2082,7 +2082,25 @@
     "supercritical water takes Gnielinski with bulk properties: no correction for the pseudo-critical region",
     "steady only: no density-wave or Ledinegg instability check, no transients (SF18)",
     "the drift velocity is scaled by the sine of the tube angle; horizontal tubes have no stratified-flow void model",
-    "not yet coupled to the 3D furnace walls (SF7c)"
+    "coupled to the 3D walls of steady flows by SF7c (feature circuits.walls)"
+   ],
+   "range": {}
+  },
+  {
+   "id": "circuits.walls",
+   "title": "Water and steam circuits behind the walls of a steady flow, coupled implicitly by a Robin condition per face (steam furnace SF7c)",
+   "grade": "partial",
+   "why": [
+    "a model without reference data",
+    "gaps written"
+   ],
+   "gaps": [
+    "steady runs only: transient circuits with a transient gas side (drum level, swell and shrink) are SF18",
+    "not on ranks yet (refused): the segment heats need an exact sum across the ranks",
+    "no measured furnace or boiler wall data yet: the evaporator pass is our own design on convection only, without the radiation of the gas (SF4)",
+    "one tube per wall boundary: several tube groups on one wall need the boundary split in the mesh",
+    "the water side is the steady 1D circuit of SF7b with its gaps (no measured void or wall temperature, Bowring CHF built in)",
+    "at small heat a natural-circulation loop can also converge to a reversed-flow steady state; the start flows of the circuit file pick the branch"
    ],
    "range": {}
   }

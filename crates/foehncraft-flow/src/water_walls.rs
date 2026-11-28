@@ -66,7 +66,7 @@ pub const PAIR_WALLS: u32 = 2901;
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CircuitsSection {
-    /// The circuit case file (SF7b, `foehn circuits run` format), relative
+    /// The circuit case file (SF7b, the format of the tool `circuits.run`), relative
     /// to the flow case. The heat of a coupled tube in it is the start
     /// value of the coupling; the walls replace it at the first update.
     pub file: PathBuf,
@@ -222,7 +222,7 @@ pub fn validate(case: &FlowCase) -> Result<()> {
             ));
         }
         let d: [f64; 3] = std::array::from_fn(|k| w.end[k] - w.start[k]);
-        if !(d.iter().map(|v| v * v).sum::<f64>() > 0.0)
+        if d.iter().map(|v| v * v).sum::<f64>() <= 0.0
             || w.start.iter().chain(&w.end).any(|v| !v.is_finite())
         {
             return Err(bad(
@@ -628,7 +628,7 @@ impl Walls {
     /// iterations.
     pub fn before_iteration(&mut self, fl: &mut crate::simplec::Flow, next: usize) -> Result<()> {
         let done = next.saturating_sub(self.first + 1);
-        if done > 0 && done % self.sec.every == 0 {
+        if done > 0 && done.is_multiple_of(self.sec.every) {
             let (heat, _) = self.heats(fl)?;
             self.update(fl, next, heat, false)?;
         }

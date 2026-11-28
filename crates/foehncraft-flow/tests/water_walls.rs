@@ -74,7 +74,7 @@ fn slab_reference() -> f64 {
 /// (t/k + 1/U), with the face's own U and T_water (the slab is a straight
 /// conduction path: only the axial conduction of the slab, under 10⁻³,
 /// separates them away from the adiabatic ends); the outlet temperature is that of the independent march
-/// to 0.05 K (40 segments, midpoint water temperature per segment); the
+/// to 0.01 K (40 segments; measured 1.2·10⁻⁴ K); the
 /// circuit closes its energy to round-off and the exchange pair of the
 /// ledger is the coupling residual.
 #[test]
@@ -91,8 +91,12 @@ fn slab_cooled_by_a_tube_meets_the_heat_balance_march() {
     assert!(c.circuit_closure.abs() < 1e-10, "{c:?}");
     let t_out = c.tubes[0].outlet_temperature;
     let t_ref = slab_reference();
+    eprintln!(
+        "slab: outlet {t_out} K, march {t_ref} K, {} solves",
+        c.solves
+    );
     assert!(
-        (t_out - t_ref).abs() < 0.05,
+        (t_out - t_ref).abs() < 0.01,
         "outlet {t_out} K, reference {t_ref} K"
     );
     assert!(t_out - 450.0 > 60.0, "the water warms: {t_out}");

@@ -71,3 +71,6 @@ max_iter = 500
 
 [output]
 wall_csv = false
+
+[verification]
+require_convergence = true

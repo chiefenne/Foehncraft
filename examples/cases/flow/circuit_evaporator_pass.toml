@@ -106,3 +106,6 @@ wall_csv = false
 lines = [
   { name = "across", from = [0.0, 4.5, 0.5], to = [0.2, 4.5, 0.5], points = 81 },
 ]
+
+[verification]
+require_convergence = true
