@@ -25,7 +25,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | [Two fluids (volume of fluid)](recipes/multiphase.md) | water and air in one case: phases, start regions, inflow, `vof.csv` | 317 |
 | [Water and steam circuits](recipes/circuits.md) | a boiler circuit of tubes, headers and a drum: natural circulation, boiling wall temperatures, the CHF margin, the profiles; the circuit behind the walls of a flow case | 312, 356 |
 | [Structures](recipes/structure.md) | a structural case of beams, plates, solids and clamp springs: static and modal analyses, the clamp spring fitted to a measured frequency, runs in time with damping and temperatures, contact with a seat and a stop, temperatures from a flow case, the results | 295, 297, 299, 300, 302, 308 |
-| [Immersed bodies](recipes/immersed.md) | put a body in the flow without meshing it: `[immersed]`, the permeability, forces | 270, 291, 313, 310, 315, 322, 357, 359, 360 |
+| [Immersed bodies](recipes/immersed.md) | put a body in the flow without meshing it: `[immersed]`, the permeability, forces | 270, 291, 313, 310, 315, 322, 357, 359, 360, 361 |
 | [Moving meshes and solids](recipes/moving-solids.md) | move the mesh with a prescribed displacement: `[mesh_motion]`, moving walls, a piston on a closed volume | 296, 307 |
 | [Species and reacting flows](recipes/species.md) | species of an ideal-gas mixture: names, compositions in mole or mass fractions, diffusion by Schmidt or Lewis numbers, mixture properties, the element ledger | 278, 289, 298, 351 |
 | [Expressions and materials](recipes/properties.md) | values as expressions of x, y, z and t, constants and tables, wall mass flux, the material database, regions | 31, 32, 277 |
@@ -217,6 +217,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="cut-wall-functions"></a>357 | [Run a turbulent flow with wall functions on a cut body](recipes/immersed.md#cut-wall-functions) | [Immersed bodies](recipes/immersed.md) |
 | <a id="cut-cht"></a>359 | [Keep a cut body as a solid region (conjugate heat transfer)](recipes/immersed.md#cut-cht) | [Immersed bodies](recipes/immersed.md) |
 | <a id="cut-patches"></a>360 | [Give a cut body inlets, outlets and a turning wall](recipes/immersed.md#cut-patches) | [Immersed bodies](recipes/immersed.md) |
+| <a id="refine"></a>361 | [Refine the mesh near a body](recipes/immersed.md#refine) | [Immersed bodies](recipes/immersed.md) |
 
 ## Adding a feature
 

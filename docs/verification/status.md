@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 1.1.0 (b35bc269d4e1)), never typed in. The same as data: [grades.json](grades.json).
 
-**165 features: 49 verified, 113 partial, 3 unverified.**
+**166 features: 49 verified, 114 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -178,6 +178,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Immersed bodies | [Wall functions on cut bodies: exact first-cell distance, sampled wall function, y⁺ per body (L13 stage 2c)](#immersed-cut-wall-functions) | partial |
 | Immersed bodies | [Conjugate heat transfer through cut cells: a cut body kept as a solid region (L13 stage 2d)](#immersed-cut-cht) | partial |
 | Immersed bodies | [Boundary conditions on cut bodies: named STL patches, turning walls, inverted bodies (L13 stage 2e)](#immersed-cut-boundary-conditions) | partial |
+| Immersed bodies | [Near-body refinement of hexahedra with hanging-node faces (L13 stage 2f)](#immersed-refine) | partial |
 | Immersed bodies | [STL bodies, cut out of the mesh or penalised, with sharp edges and face points (L13 stage 2)](#immersed-stl) | partial |
 | Immersed bodies | [Density-field topology search with the Brinkman penalisation, iso-surface by marching tetrahedra (L13 stage 1)](#immersed-topology) | partial |
 | Structures | [Linear structural solver: Euler–Bernoulli and Timoshenko beams, static and modal analyses (L53, MS5 part 1)](#structure-beams) | partial |
@@ -2763,6 +2764,27 @@ Gaps:
 - the patch of a face is the closest triangle to its centroid; the area-majority transfer of mesh-processing tools is not measured against it
 - omega turns the wall, not the body: exact for bodies of revolution about their axis; rigid motion of the body is stage 5 (L4)
 - a body kept as a solid region cannot turn or have patches; invert only for cylinder, sphere and box; one rank only
+
+<a id="immersed-refine"></a>
+
+### Near-body refinement of hexahedra with hanging-node faces (L13 stage 2f)
+
+**partial** (gaps written) · id `immersed.refine` · switch `[immersed.refine] levels, layers | distance` · decisions D57, D93, D229
+
+- exact: [`a_band_around_a_sphere_keeps_volume_and_area`](../../crates/foehncraft-mesh/tests/refine.rs): a band around a sphere refined twice in an 8^3 box mesh: every cell closed (validate, closure below 1e-13), no inverted face or negative volume, the cells of each input cell fill it to 1e-13, the boundary faces of every boundary add up to its area vector to 1e-12, 2:1 across faces and around every node, the same nodes and faces on a second run
+- exact: [`perturbed_hexahedra_are_refined_into_closed_cells`](../../crates/foehncraft-mesh/tests/refine.rs): the same checks on warped hexahedra (nodes moved by up to 20 %), three levels: the parts fill each input cell to 1e-12 (measured 2e-15)
+- exact: [`a_planar_mesh_is_refined_in_its_plane`](../../crates/foehncraft-mesh/tests/refine.rs): a planar mesh refined three times in its plane: every node on the two z planes, every cell with one face on each
+- exact: [`one_point_refined_three_times_is_balanced`](../../crates/foehncraft-mesh/tests/refine.rs): a point next to an input face refined three times: the 2:1 balance refines 20 more cells, across the face too
+- exact: [`immersed_refine_mms`](../../examples/cases/flow/immersed_refine_mms.toml), [`refined_mms_converges_at_second_order`](../../crates/foehncraft-flow/tests/immersed.rs): heat conduction with a manufactured solution on perturbed hexahedra refined twice near a circle (faces between levels on both sides): L2 error 5.54e-2, 1.46e-2, 3.76e-3 K on 16, 32, 64 input cells across, order 2.04 and 1.99 from the cell counts (1.93, 1.95 from the input width); test band 1.85 to 2.3; the same mesh hash on a second run ([results](../gallery/immersed.md#refine))
+- reference-data: [`immersed_refine_cylinder_re20`](../../examples/cases/flow/immersed_refine_cylinder_re20.toml), [`refined_cylinder_reaches_the_reference`](../../crates/foehncraft-flow/tests/immersed.rs): the Schaefer-Turek cylinder at Re 20 on the D/10 box mesh refined to D/40 within 0.08 m of the cylinder (19 140 cells): C_D 5.593, C_L 0.01063, dp 0.1171 Pa (uniform D/40 cut, 143 088 cells: 5.595, 0.0106, 0.1171); test: C_L in its range, C_D and dp within 0.2 % of theirs ([results](../gallery/immersed.md#refine))
+- contract (diagnostics): [`refine_settings_are_refused`](../../crates/foehncraft-flow/tests/immersed.rs): IMM101 for levels outside 1 to 6, a negative distance, layers below 1, layers and distance together; the mesh operation refuses a 3D mesh with a direction to keep (other_cells_are_kept_and_bad_settings_refused)
+
+Gaps:
+
+- only hexahedra are refined; tetrahedra, prisms, pyramids and polyhedra are kept whole (and may then meet cells two levels finer)
+- static: marked by the distance to the bodies only, before the run; no coarsening, no solution-driven marking, no repartitioning (L14 on this kernel)
+- the lift of the cylinder needs a fine band of about 0.8 D; with 0.2 D it is 5 % below the reference range
+- one rank only, like the cut; the GPU path is not checked on refined meshes
 
 <a id="immersed-stl"></a>
 

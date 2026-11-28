@@ -25,7 +25,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | [Porous regions](gallery/porous.md) | flow through porous matrices with a direction-dependent Darcy–Forchheimer resistance: a ceramic honeycomb, the exact pressure drop of a block | 273, 275 |
 | [Two fluids (volume of fluid)](gallery/multiphase.md) | water and air with a sharp interface: a water column collapsing against Martin & Moyce, Zalesak's disk, a static drop | 317 |
 | [Structures](gallery/structure.md) | the linear structural solver for reeds and other parts the flow moves: beams, MITC shells and quadratic solids, clamp springs and their fit to a measured frequency, contact with a seat and a stop, static, modal and transient analyses, thermal loads, temperatures mapped from a flow case (MS5, MS6) | 295, 297, 299, 300, 302, 308 |
-| [Immersed bodies](gallery/immersed.md) | bodies in the flow without a body-fitted mesh: Brinkman penalisation of primitive bodies (L13 stage 1) | 270, 291, 313, 310, 315, 322, 357, 359, 360 |
+| [Immersed bodies](gallery/immersed.md) | bodies in the flow without a body-fitted mesh: Brinkman penalisation of primitive bodies (L13 stage 1) | 270, 291, 313, 310, 315, 322, 357, 359, 360, 361 |
 | [Moving meshes and solids](gallery/moving-solids.md) | meshes whose nodes move in time: the deforming mesh with swept volumes, a piston compressing a closed gas volume, free-stream preservation (stage MS0, L22) | 296, 307 |
 | [Species and reacting flows](gallery/species.md) | species transport of ideal-gas mixtures on the variable density: mixture properties from kinetic theory, the closure species, the element ledger (steam furnace path, SF1) | 278, 289, 298, 351 |
 | [Water and steam circuits](gallery/circuits.md) | one-dimensional water and steam tube circuits of a boiler on IAPWS-IF97: flow boiling in an evaporator tube, the natural circulation of a drum loop, two-phase pressure drop, wall temperatures and the CHF margin (steam furnace path, SF7b); the circuit behind the walls of a 3D flow, coupled implicitly (SF7c) | 312, 356 |
@@ -204,6 +204,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | <a id="cut-plate"></a>357 | [A turbulent plate tilted against the mesh: wall functions on cut cells](gallery/immersed.md#cut-plate) | [Immersed bodies](gallery/immersed.md) |
 | <a id="cut-cht"></a>359 | [A heated pin cut out of a box mesh: conjugate heat transfer through cut cells](gallery/immersed.md#cut-cht) | [Immersed bodies](gallery/immersed.md) |
 | <a id="cut-patches"></a>360 | [A cylinder that blows through a slot, and Taylor–Couette flow cut out of a box: conditions on cut bodies](gallery/immersed.md#cut-patches) | [Immersed bodies](gallery/immersed.md) |
+| <a id="refine"></a>361 | [A cylinder on a box mesh refined near it: hanging-node faces](gallery/immersed.md#refine) | [Immersed bodies](gallery/immersed.md) |
 
 ## Adding a feature
 
