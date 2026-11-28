@@ -151,7 +151,7 @@ max_passes = 8
 # sampling (Schmidt and Rutland 2000) with the outcomes of O'Rourke (1981),
 # as in the reference set-ups of the ECN (Bestel et al., Fuel 2024); with
 # it the liquid lead at 0.8 ms falls from 19 % to 12 %; the outcomes of
-# Post and Abraham (2002, D349), as in Argonne's Spray G LES of ECN4:
+# Post and Abraham (2002, D378), as in Argonne's Spray G LES of ECN4:
 # drops bounce below the Weber number of Estrade et al. and separate
 # reflexively above that of Ashgriz and Poo, so fewer merge than with
 # O'Rourke alone (the drops at 15 mm 13.0 instead of 14.5 µm)

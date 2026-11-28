@@ -27,7 +27,7 @@ Part of the [Example gallery](../gallery.md): droplets as Lagrangian parcels in 
 | 343 | [Spray G under its injector tip](#spray-device-surface) | ID2, ID3, D343 to D345 | `[[spray.device]] geometry` (`standard-gasoline`, `standard-diesel`, `stl`), `file`, `scale`, `stl_origin`, `stl_axis`, `stl_reference`, `glyph_length`, `spray/devices.vtu`, `series.json` `static`, `result.json` `spray.devices`, tool `spray.place` |
 | 338 | [Grid orientation in ECN Spray G](#spray-g-grid) | D337 | `[mesh.generate] grid_angle`: the same G1 case on a grid with its lines along the plume and at 45° to it; liquid lead at 1.2 ms 27 % and 20 %, vapour 17 % and 9 % |
 | 344 | [KH-ACT children of the right size in ECN Spray G](#spray-child-size) | D348 | the children of every KH-ACT mechanism have the KH radius B₀Λ (Som and Aggarwal 2010, eq. 1); G1 at 1 µs: liquid +8 % and vapour −1 % at 1.2 ms (was +25 % and +17 %), D32 at 15 mm 14.5 µm (was 18) |
-| 363 | [Bouncing drops in ECN Spray G (Post collision outcomes)](#spray-collision-post) | D349 | `outcomes = "post"`: bouncing (Estrade) and reflexive separation (Ashgriz-Poo) before O'Rourke; G1 to 0.9 ms: D32 at 15 mm 13.0 µm (O'Rourke 14.5, no collisions 9.6, measured 7 to 10), liquid +20 % at 0.3 ms and +4 % at 0.8 ms (O'Rourke +23 % and +9 %) |
+| 363 | [Bouncing drops in ECN Spray G (Post collision outcomes)](#spray-collision-post) | D378 | `outcomes = "post"`: bouncing (Estrade) and reflexive separation (Ashgriz-Poo) before O'Rourke; G1 to 0.9 ms: D32 at 15 mm 13.0 µm (O'Rourke 14.5, no collisions 9.6, measured 7 to 10), liquid +20 % at 0.3 ms and +4 % at 0.8 ms (O'Rourke +23 % and +9 %) |
 
 ---
 
@@ -1834,7 +1834,7 @@ collisions the drops 15 mm from the tip are 14.5 µm (Sauter mean on the
 line of the phase-Doppler measurement through the plume centre), without
 them 9.6 µm, against 7 to 10 µm measured. The leading set-up of the ECN
 for Spray G (Argonne's LES at ECN4) uses the outcomes of Post and Abraham
-(2002) instead, and so can we now (D349):
+(2002) instead, and so can we now (D378):
 
 ```toml
 [spray.collision]

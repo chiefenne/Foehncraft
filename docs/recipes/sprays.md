@@ -1120,7 +1120,7 @@ Case: `examples/cases/flow/spray_g_g1.toml`;
 ## 363. Let colliding drops bounce (Post outcomes)
 
 In a dense spray O'Rourke's outcomes (D331) merge most slow collisions.
-The outcomes of Post and Abraham (D349) let drops bounce at small Weber
+The outcomes of Post and Abraham (D378) let drops bounce at small Weber
 numbers and separate reflexively in fast head-on collisions:
 
 ```toml

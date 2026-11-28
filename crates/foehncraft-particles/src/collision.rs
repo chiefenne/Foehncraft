@@ -31,7 +31,7 @@
 //!
 //! Outcomes of Post and Abraham (2002, *Modeling the outcome of drop-drop
 //! collisions in Diesel sprays*, Int. J. Multiphase Flow 28, 997-1019;
-//! D349), with `post`: with Δ = r_s/r_l ≤ 1, B = b/(r_s + r_l) and the
+//! D378), with `post`: with Δ = r_s/r_l ≤ 1, B = b/(r_s + r_l) and the
 //! Weber number of the small diameter We_d = 2 We,
 //!
 //! 1. bouncing (Estrade et al. 1999, Int. J. Heat Fluid Flow 20) when
@@ -54,7 +54,7 @@
 //! the common velocity, mass and momentum kept, energy lost).
 //! No satellite drops form.
 //!
-//! Collision cells of their own (D350, `cell = h`): instead of the cells
+//! Collision cells of their own (D379, `cell = h`): instead of the cells
 //! of the flow mesh the drops meet in cubes of edge h, with V = h³. Every
 //! step the cube lattice is turned by a random rotation (uniform over the
 //! rotations, from a random unit quaternion, Shoemake 1992) and shifted by
@@ -92,9 +92,9 @@ pub struct CollisionTally {
     pub merged_parcels: u64,
     /// Cells whose candidate count was capped.
     pub capped_cells: u64,
-    /// Of the events, bounces (Post outcomes, D349).
+    /// Of the events, bounces (Post outcomes, D378).
     pub bounces: u64,
-    /// Of the events, reflexive separations (Post outcomes, D349).
+    /// Of the events, reflexive separations (Post outcomes, D378).
     pub reflexive: u64,
 }
 
@@ -111,9 +111,9 @@ pub struct CollisionInput {
     pub t1: f64,
     /// Coalescence on (otherwise every collision is a grazing separation).
     pub coalescence: bool,
-    /// The outcomes of Post and Abraham (D349) in place of O'Rourke's.
+    /// The outcomes of Post and Abraham (D378) in place of O'Rourke's.
     pub post: bool,
-    /// The edge of the collision cells (D350); `None`: the flow cells.
+    /// The edge of the collision cells (D379); `None`: the flow cells.
     pub cell: Option<f64>,
 }
 
@@ -175,7 +175,7 @@ pub fn reflexive_weber(delta: f64, b: f64) -> f64 {
 }
 
 /// The rotation (rows) and the shift (in cells, [0, 1)³) of the collision
-/// lattice of the step ending at `t1` (D350): a uniform random rotation
+/// lattice of the step ending at `t1` (D379): a uniform random rotation
 /// from a unit quaternion of three uniform numbers (Shoemake 1992).
 pub fn lattice_frame(t1: f64) -> ([[f64; 3]; 3], [f64; 3]) {
     let tw = t1.to_bits();
@@ -379,7 +379,7 @@ fn cell(drops: &mut [Drop], vol: f64, key: u64, inp: CollisionInput) -> Collisio
         let mb = cb.r * cb.r * cb.r;
         t.events += 1;
         t.drop_collisions += qa;
-        // Post and Abraham (D349): bouncing first, reflexive separation of
+        // Post and Abraham (D378): bouncing first, reflexive separation of
         // the collisions that O'Rourke would merge
         let mut bounce_or_reflex = false;
         if inp.post {
@@ -610,7 +610,7 @@ mod tests {
         assert!((critical_impact(31.2, 1.0) - 0.1).abs() < 1e-12);
     }
 
-    /// The collision lattice (D350): a proper rotation (orthonormal rows,
+    /// The collision lattice (D379): a proper rotation (orthonormal rows,
     /// determinant 1), a shift in [0, 1)³, a new frame every step.
     #[test]
     fn lattice_frame_is_a_rotation() {
@@ -631,7 +631,7 @@ mod tests {
         assert_ne!(lattice_frame(1e-6).0, lattice_frame(2e-6).0);
     }
 
-    /// On the collision lattice (D350) the drop collisions of parcels
+    /// On the collision lattice (D379) the drop collisions of parcels
     /// spread uniformly over a box of edge L = 40 h match the pair rate of
     /// the box, N² q² σ v Δt/(2 L³), as on the flow cells (within the few
     /// per cent that the cubes cut by the box sides lose, about 3 h/(2 L));
@@ -686,7 +686,7 @@ mod tests {
         );
     }
 
-    /// The Post criteria (D349) at known points: equal drops head-on bounce
+    /// The Post criteria (D378) at known points: equal drops head-on bounce
     /// below We_d = 2 (4φ′ − 12) = 2.808 (τ = 2, χ = 1) and separate
     /// reflexively above 6 (7 · 2^{2/3} − 8) = 18.68 (η₁ = η₂ = 1), the
     /// value of Ashgriz and Poo for water; the bounce limit rises towards
