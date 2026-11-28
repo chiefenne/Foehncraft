@@ -321,15 +321,9 @@ pub fn apply_entry(
     let mut c: FlowCase = merged
         .try_into()
         .map_err(|err: toml::de::Error| bad(format!("a value does not fit its key: {err}"), 0))?;
-    c.source = case.source.clone();
-    c.overrides = case.overrides.clone();
-    c.notes = case.notes.clone();
-    // the fields the round trip through TOML drops: the scalar and energy
-    // sub-tables of the boundaries and the fluid view of a conjugate case
-    c.boundary_scalar = case.boundary_scalar.clone();
-    c.boundary_energy = case.boundary_energy.clone();
-    c.fluid_view = case.fluid_view.clone();
-    c.pressure_frame = case.pressure_frame.clone();
+    // the fields the round trip through TOML drops: the boundary
+    // sub-tables, the fluid view, the pressure convention, ...
+    c.keep_reader_fields(case);
     // the schedule was checked with the case; validating the setting values
     // must not check it again
     let sched = std::mem::take(&mut c.schedule);

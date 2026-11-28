@@ -1665,8 +1665,11 @@ file with one triangle turned over is reported (SPR010, not repaired);
 `devices.vtu` holds the triangles of the tip, the 8 hole axes and the one
 cone, and `series.json` lists it.
 
-**Not yet.** The device is a picture, not a wall (D344); MurmelCraft's
-time player does not yet draw `static.devices` (ID2m).
+**Not yet.** The device is a picture, not a wall (D344; the wall stage
+ID4 was dropped, a user models the tip in the geometry when needed).
+MurmelCraft's time player draws `static.devices` under the parcels
+(ID2m, MurmelCraft PR #130: `series.open` opens them, `devices.open`,
+`devices.set`).
 
 Files: `spray/devices.vtu`, `series.json` (`static`), `result.json`
 (`spray.devices`).
