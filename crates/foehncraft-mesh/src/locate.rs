@@ -35,7 +35,7 @@
 //! boxes is kept as [`Locator::locate_search_grid`], the reference of the
 //! tests and of the benchmark `examples/locate_bench.rs`.
 
-use crate::geometry::{Geometry, add, node_average, scale, sub};
+use crate::geometry::{Geometry, add, node_average, norm, scale, sub};
 use crate::mesh::Mesh;
 use crate::query::CellTree;
 pub use foehncraft_kernels::walk::{Walk, WalkEnd, WalkMesh};
@@ -101,6 +101,9 @@ pub struct Locator<'a> {
     mesh: &'a Mesh,
     apex: Vec<[f64; 3]>,
     fan: Vec<[f64; 3]>,
+    plane: Vec<[f64; 4]>,
+    convex: Vec<u8>,
+    use_planes: bool,
     tree: OnceLock<CellTree>,
     bins: OnceLock<Bins>,
 }
@@ -117,16 +120,20 @@ impl<'a> Locator<'a> {
     /// Prepares the decomposition (the fan points of the faces and the
     /// apexes of the local cells).
     pub fn new(mesh: &'a Mesh, geo: &Geometry) -> Self {
-        let fan = (0..mesh.n_faces())
+        let fan: Vec<[f64; 3]> = (0..mesh.n_faces())
             .map(|f| node_average(&mesh.points, mesh.face(f)))
             .collect();
-        let apex = (0..mesh.n_cells)
+        let apex: Vec<[f64; 3]> = (0..mesh.n_cells)
             .map(|c| crate::geometry::cell_apex(mesh, &geo.face_centroid, c))
             .collect();
+        let (plane, convex) = planes(mesh, &fan, &apex);
         Self {
             mesh,
             apex,
             fan,
+            plane,
+            convex,
+            use_planes: std::env::var_os("FOEHN_NO_PLANE_WALK").is_none(),
             tree: OnceLock::new(),
             bins: OnceLock::new(),
         }
@@ -135,6 +142,19 @@ impl<'a> Locator<'a> {
     /// The mesh.
     pub fn mesh(&self) -> &Mesh {
         self.mesh
+    }
+
+    /// Switches the walk through convex cells by the planes of their faces
+    /// (RA0, on by default) on or off; off walks every cell by its
+    /// tetrahedra, as before. The environment variable
+    /// `FOEHN_NO_PLANE_WALK` sets the default to off.
+    pub fn set_plane_walk(&mut self, on: bool) {
+        self.use_planes = on;
+    }
+
+    /// Number of local cells that a walk crosses by planes.
+    pub fn convex_cells(&self) -> usize {
+        self.convex.iter().filter(|&&c| c != 0).count()
     }
 
     /// The arrays of the walk body: the mesh and its tetrahedral
@@ -153,6 +173,8 @@ impl<'a> Locator<'a> {
             fan: &self.fan,
             n_cells: m.n_cells,
             periodic_start: m.periodic_start(),
+            plane: if self.use_planes { &self.plane } else { &[] },
+            convex: if self.use_planes { &self.convex } else { &[] },
         }
     }
 
@@ -390,4 +412,80 @@ impl Bins {
             cells: pairs.into_iter().map(|p| p.1).collect(),
         }
     }
+}
+
+/// The plane of every face (unit normal out of the owner, offset through the
+/// fan point) and the convex flag of every local cell (RA0): 1 where all
+/// faces are planar and every node and the apex of the cell lie inside the
+/// planes of all its faces, to a relative tolerance of 1e-9 of the cell's
+/// size; the cells with 0 are walked by their tetrahedra.
+fn planes(mesh: &Mesh, fan: &[[f64; 3]], apex: &[[f64; 3]]) -> (Vec<[f64; 4]>, Vec<u8>) {
+    let n_faces = mesh.n_faces();
+    let mut plane = Vec::with_capacity(n_faces);
+    let mut planar = vec![false; n_faces];
+    for f in 0..n_faces {
+        let nodes = mesh.face(f);
+        let k = nodes.len();
+        // Newell normal
+        let mut n = [0.0f64; 3];
+        for i in 0..k {
+            let a = mesh.points[nodes[i] as usize];
+            let b = mesh.points[nodes[(i + 1) % k] as usize];
+            n[0] += (a[1] - b[1]) * (a[2] + b[2]);
+            n[1] += (a[2] - b[2]) * (a[0] + b[0]);
+            n[2] += (a[0] - b[0]) * (a[1] + b[1]);
+        }
+        let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+        if len > 0.0 {
+            n = [n[0] / len, n[1] / len, n[2] / len];
+        }
+        let d = n[0] * fan[f][0] + n[1] * fan[f][1] + n[2] * fan[f][2];
+        plane.push([n[0], n[1], n[2], d]);
+        let mut size = 0.0f64;
+        let mut off = 0.0f64;
+        for &i in nodes {
+            let p = mesh.points[i as usize];
+            let r = sub(p, fan[f]);
+            size = size.max(norm(r));
+            off = off.max((n[0] * p[0] + n[1] * p[1] + n[2] * p[2] - d).abs());
+        }
+        planar[f] = len > 0.0 && off <= 1e-9 * size;
+    }
+    let convex = (0..mesh.n_cells)
+        .map(|c| {
+            let mut size = 0.0f64;
+            let mut ok = true;
+            for (f, _) in mesh.cell_face_iter(c) {
+                if !planar[f] {
+                    ok = false;
+                    break;
+                }
+                for &i in mesh.face(f) {
+                    size = size.max(norm(sub(mesh.points[i as usize], apex[c])));
+                }
+            }
+            if !ok {
+                return 0u8;
+            }
+            let tol = 1e-9 * size;
+            for (f, nb) in mesh.cell_face_iter(c) {
+                let sg = if nb { -1.0 } else { 1.0 };
+                let [nx, ny, nz, d] = plane[f];
+                let inside = |p: [f64; 3]| sg * (d - (nx * p[0] + ny * p[1] + nz * p[2]));
+                // the apex strictly inside also checks the orientation
+                if inside(apex[c]) <= 0.0 {
+                    return 0;
+                }
+                for (g, _) in mesh.cell_face_iter(c) {
+                    for &i in mesh.face(g) {
+                        if inside(mesh.points[i as usize]) < -tol {
+                            return 0;
+                        }
+                    }
+                }
+            }
+            1
+        })
+        .collect();
+    (plane, convex)
 }

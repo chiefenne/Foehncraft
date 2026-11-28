@@ -156,6 +156,16 @@ Status of R1a (coding started on the maintainer's go, 2026-11-24):
    to their power; gallery and recipe 281 show 60 bundles of the call of
    16 million over the net flux into the walls and over the flame.
 
+6. **RA0, speed of the walk (maintainer's go 2026-11-28, D366, D377; #367).**
+   The tetrahedron walk evaluates the distance of the current point only for
+   the faces it can leave through (bitwise equal, 16 % faster); convex cells
+   with planar faces are crossed by the planes of their faces (plane walk,
+   warped cells keep the tetrahedron walk). Box furnace, 4 threads, time per
+   bundle: 25.3 µs before, 10.7 µs after on 112k tetrahedra; 80 µs before, 37
+   µs after on 858k tetrahedra. The cost per bundle grows about with the cube
+   root of the cell count (the ray crosses more cells), so the remaining
+   levers are fewer bundles for the same error (RA7) and the GPU (RA9).
+
 R1b to R1g: not sized yet.
 
 ## 6. References

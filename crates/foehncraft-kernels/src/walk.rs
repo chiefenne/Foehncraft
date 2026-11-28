@@ -34,6 +34,10 @@ use crate::unpack_face;
 /// Tetrahedron face index meaning "none" for [`Walk::entered`].
 pub const NONE: u32 = 4;
 
+/// Edge index meaning "not found yet" while a walk crosses convex cells by
+/// their planes (set again before a tetrahedron step or the end of a walk).
+const NO_EDGE: u32 = u32::MAX;
+
 /// The arrays a walk reads: one (local) mesh and its tetrahedral
 /// decomposition.
 #[derive(Clone, Copy)]
@@ -61,6 +65,13 @@ pub struct WalkMesh<'a> {
     /// First periodic face (`neighbour.len()` without periodic faces); a
     /// periodic face ends a walk like a boundary face.
     pub periodic_start: usize,
+    /// Plane of each face (RA0): the unit normal out of the owner and the
+    /// offset, `n · x = d`; empty switches the plane walk off.
+    pub plane: &'a [[f64; 4]],
+    /// Per local cell: 1 where the cell is convex with planar faces (a
+    /// walk crosses it by the planes of its faces, with no tetrahedra), 0
+    /// elsewhere; empty switches the plane walk off.
+    pub convex: &'a [u8],
 }
 
 /// The state of a walk: where it is and where it goes.
@@ -186,6 +197,68 @@ pub fn sides(t: &[[f64; 3]; 4], x: [f64; 3]) -> [f64; 4] {
     ]
 }
 
+/// One entry of [`sides`]: the signed inner distance of `x` to face `j`
+/// of the tetrahedron `t`, the same operations as in `sides`.
+#[inline(always)]
+pub fn side(t: &[[f64; 3]; 4], j: u32, x: [f64; 3]) -> f64 {
+    let [a, m, p, q] = *t;
+    match j {
+        0 => inner(m, p, q, x),
+        1 => inner(a, p, m, x),
+        2 => inner(a, m, q, x),
+        _ => inner(a, q, p, x),
+    }
+}
+
+/// Edge of the fan triangle of face `g` that contains the point `x` on the
+/// face (the one with the largest smallest barycentric coordinate).
+fn fan_edge(m: &WalkMesh<'_>, g: usize, x: [f64; 3]) -> u32 {
+    let nodes = m.face(g);
+    let k = nodes.len();
+    let f = m.fan[g];
+    let mut best = (f64::NEG_INFINITY, 0usize);
+    for e in 0..k {
+        let p = m.points[nodes[e] as usize];
+        let q = m.points[nodes[if e + 1 == k { 0 } else { e + 1 }] as usize];
+        let n = cross(sub(p, f), sub(q, f));
+        let w0 = dot(cross(sub(p, x), sub(q, x)), n);
+        let w1 = dot(cross(sub(q, x), sub(f, x)), n);
+        let w2 = dot(cross(sub(f, x), sub(p, x)), n);
+        let w = w0.min(w1).min(w2) / dot(n, n).max(f64::MIN_POSITIVE);
+        if w > best.0 {
+            best = (w, e);
+        }
+    }
+    best.1 as u32
+}
+
+/// Puts the tetrahedron state of `w` on the tetrahedron of its cell that
+/// holds `w.x` (after steps through the planes of a convex cell, which keep
+/// none).
+fn settle(m: &WalkMesh<'_>, w: &mut Walk) {
+    let cell = w.cell as usize;
+    if cell >= m.n_cells {
+        return;
+    }
+    let cf = m.cell_ptr[cell] as usize..m.cell_ptr[cell + 1] as usize;
+    let mut best = (f64::NEG_INFINITY, w.face, w.edge);
+    for &entry in &m.cell_faces[cf] {
+        let (g, _) = unpack_face(entry);
+        for e in 0..m.face(g).len() {
+            let t = m.tet(cell, g, e);
+            let s = sides(&t, w.x);
+            let vol = inner(t[1], t[2], t[3], t[0]).abs().max(f64::MIN_POSITIVE);
+            let r = s[0].min(s[1]).min(s[2]).min(s[3]) / vol;
+            if r > best.0 {
+                best = (r, g as u32, e as u32);
+            }
+        }
+    }
+    w.face = best.1;
+    w.edge = best.2;
+    w.entered = NONE;
+}
+
 impl WalkMesh<'_> {
     /// Nodes of face `f`.
     #[inline(always)]
@@ -200,7 +273,7 @@ impl WalkMesh<'_> {
         let nodes = self.face(face);
         let k = nodes.len();
         let mut p = self.points[nodes[edge] as usize];
-        let mut q = self.points[nodes[(edge + 1) % k] as usize];
+        let mut q = self.points[nodes[if edge + 1 == k { 0 } else { edge + 1 }] as usize];
         if self.owner[face] as usize != cell {
             core::mem::swap(&mut p, &mut q);
         }
@@ -228,18 +301,105 @@ pub fn walk<F: FnMut(u32, f64, f64) -> bool>(
     // where the segment entered the current cell
     let mut start = w.lambda;
     while w.steps < max_steps {
+        if (w.cell as usize) < m.convex.len() && m.convex[w.cell as usize] != 0 {
+            // a convex cell with planar faces (RA0): the exit is the first
+            // plane the segment passes, no tetrahedra
+            w.steps += 1;
+            let cell = w.cell as usize;
+            let cf = m.cell_ptr[cell] as usize..m.cell_ptr[cell + 1] as usize;
+            let mut best = (f64::INFINITY, usize::MAX);
+            for &entry in &m.cell_faces[cf] {
+                let (g, neighbour_side) = unpack_face(entry);
+                let pl = m.plane[g];
+                let sg = if neighbour_side { -1.0 } else { 1.0 };
+                let n = [pl[0] * sg, pl[1] * sg, pl[2] * sg];
+                let off = pl[3] * sg;
+                // inner distances (positive inside) of the target and of
+                // the current point
+                let st = off - dot(n, w.target);
+                if st < 0.0 {
+                    let sx = off - dot(n, w.x);
+                    if sx > st {
+                        let s0 = sx.max(0.0);
+                        let l = s0 / (s0 - st);
+                        if l < best.0 {
+                            best = (l, g);
+                        }
+                    }
+                }
+            }
+            if best.1 == usize::MAX {
+                w.x = w.target;
+                w.lambda = 1.0;
+                settle(m, w);
+                return if visit(w.cell, start, 1.0) {
+                    WalkEnd::Reached
+                } else {
+                    WalkEnd::Stopped
+                };
+            }
+            let g = best.1;
+            let rest = 1.0 - w.lambda;
+            w.lambda += best.0.clamp(0.0, 1.0) * rest;
+            w.x = add(w.origin, scale(d, w.lambda));
+            if g >= n_interior || g >= m.periodic_start {
+                w.face = g as u32;
+                w.edge = fan_edge(m, g, w.x);
+                w.entered = 0;
+                return if visit(w.cell, start, w.lambda) {
+                    WalkEnd::Boundary { face: w.face }
+                } else {
+                    WalkEnd::Stopped
+                };
+            }
+            if !visit(w.cell, start, w.lambda) {
+                settle(m, w);
+                return WalkEnd::Stopped;
+            }
+            let (p, q) = (m.owner[g], m.neighbour[g]);
+            let other = if p as usize == cell { q } else { p };
+            start = w.lambda;
+            w.cell = other;
+            w.crossed += 1;
+            w.face = g as u32;
+            // the edge of the fan triangle is found only when a tetrahedron
+            // step needs it (or the walk ends)
+            w.edge = NO_EDGE;
+            w.entered = 0;
+            if other as usize >= m.n_cells {
+                w.edge = fan_edge(m, g, w.x);
+                return WalkEnd::Processor { face: w.face };
+            }
+            if w.lambda >= 1.0 {
+                w.x = w.target;
+                w.lambda = 1.0;
+                settle(m, w);
+                return if visit(w.cell, start, 1.0) {
+                    WalkEnd::Reached
+                } else {
+                    WalkEnd::Stopped
+                };
+            }
+            continue;
+        }
         w.steps += 1;
         let cell = w.cell as usize;
         let face = w.face as usize;
+        if w.edge == NO_EDGE {
+            w.edge = fan_edge(m, face, w.x);
+        }
         let t = m.tet(cell, face, w.edge as usize);
-        let sa = sides(&t, w.x);
         let sb = sides(&t, w.target);
         // exit face: smallest crossing parameter among the faces the
-        // target lies behind
+        // target lies behind; the distance of the current point is
+        // computed only for those faces (RA0: most tetrahedra have one
+        // or none), with the same expression, so the result is bitwise
+        // the one that evaluated all four
         let mut best = (f64::INFINITY, NONE);
         for j in 0..4u32 {
-            let (a, b) = (sa[j as usize], sb[j as usize]);
+            let b = sb[j as usize];
             if b < 0.0 && j != w.entered {
+                let a = side(&t, j, w.x);
                 let s = a.max(0.0);
                 let l = s / (s - b);
                 if l < best.0 {
@@ -292,9 +452,9 @@ pub fn walk<F: FnMut(u32, f64, f64) -> bool>(
                 let towards_p = (j == 1) == owner;
                 let e = w.edge as usize;
                 w.edge = if towards_p {
-                    ((e + k - 1) % k) as u32
+                    (if e == 0 { k - 1 } else { e - 1 }) as u32
                 } else {
-                    ((e + 1) % k) as u32
+                    (if e + 1 == k { 0 } else { e + 1 }) as u32
                 };
                 w.entered = 3 - j; // the shared face has the other index
             }

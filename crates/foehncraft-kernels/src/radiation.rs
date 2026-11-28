@@ -577,6 +577,10 @@ pub struct TransportArgs {
     pub apex: Raw<[f64; 3]>,
     /// Fan point of each face.
     pub fan: Raw<[f64; 3]>,
+    /// Plane of each face (`[n, d]`, RA0), empty: no plane walk.
+    pub plane: Raw<[f64; 4]>,
+    /// Convex-cell flag of each local cell (RA0), empty: no plane walk.
+    pub convex: Raw<u8>,
     /// Number of local cells.
     pub n_cells: u64,
     /// First periodic face.
@@ -636,6 +640,8 @@ pub unsafe fn transport_entry<T: Tally>(i: usize, a: &TransportArgs, tally: &T) 
             fan: a.fan.get(),
             n_cells: a.n_cells as usize,
             periodic_start: a.periodic_start as usize,
+            plane: a.plane.get(),
+            convex: a.convex.get(),
         };
         let wall = if a.wall.len == 0 {
             &[]
