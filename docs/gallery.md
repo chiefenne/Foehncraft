@@ -25,7 +25,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | [Porous regions](gallery/porous.md) | flow through porous matrices with a direction-dependent Darcy–Forchheimer resistance: a ceramic honeycomb, the exact pressure drop of a block | 273, 275 |
 | [Two fluids (volume of fluid)](gallery/multiphase.md) | water and air with a sharp interface: a water column collapsing against Martin & Moyce, Zalesak's disk, a static drop | 317 |
 | [Structures](gallery/structure.md) | the linear structural solver for reeds and other parts the flow moves: beams, MITC shells and quadratic solids, clamp springs and their fit to a measured frequency, contact with a seat and a stop, static, modal and transient analyses, thermal loads, temperatures mapped from a flow case (MS5, MS6) | 295, 297, 299, 300, 302, 308 |
-| [Immersed bodies](gallery/immersed.md) | bodies in the flow without a body-fitted mesh: Brinkman penalisation of primitive bodies (L13 stage 1) | 270, 291, 313, 310, 315, 322 |
+| [Immersed bodies](gallery/immersed.md) | bodies in the flow without a body-fitted mesh: Brinkman penalisation of primitive bodies (L13 stage 1) | 270, 291, 313, 310, 315, 322, 357 |
 | [Moving meshes and solids](gallery/moving-solids.md) | meshes whose nodes move in time: the deforming mesh with swept volumes, a piston compressing a closed gas volume, free-stream preservation (stage MS0, L22) | 296, 307 |
 | [Species and reacting flows](gallery/species.md) | species transport of ideal-gas mixtures on the variable density: mixture properties from kinetic theory, the closure species, the element ledger (steam furnace path, SF1) | 278, 289, 298 |
 | [Water and steam circuits](gallery/circuits.md) | one-dimensional water and steam tube circuits of a boiler on IAPWS-IF97: flow boiling in an evaporator tube, the natural circulation of a drum loop, two-phase pressure drop, wall temperatures and the CHF margin (steam furnace path, SF7b); the circuit behind the walls of a 3D flow, coupled implicitly (SF7c) | 312, 356 |
@@ -200,6 +200,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | <a id="spray-child-size"></a>344 | [KH-ACT children of the right size in ECN Spray G](gallery/sprays.md#spray-child-size) | [Lagrangian sprays](gallery/sprays.md) |
 | <a id="wall-heat"></a>346 | [Wall heat flux, heat transfer coefficient and Nusselt number on a laminar flat plate](gallery/energy.md#wall-heat) | [Energy equation and heat transfer](gallery/energy.md) |
 | <a id="circuit-walls"></a>356 | [A convective evaporator pass on a drum loop: the circuit behind the 3D walls](gallery/circuits.md#circuit-walls) | [Water and steam circuits](gallery/circuits.md) |
+| <a id="cut-plate"></a>357 | [A turbulent plate tilted against the mesh: wall functions on cut cells](gallery/immersed.md#cut-plate) | [Immersed bodies](gallery/immersed.md) |
 
 ## Adding a feature
 

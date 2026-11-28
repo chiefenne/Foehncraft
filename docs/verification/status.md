@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 1.1.0 (b35bc269d4e1)), never typed in. The same as data: [grades.json](grades.json).
 
-**161 features: 49 verified, 109 partial, 3 unverified.**
+**162 features: 49 verified, 110 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -174,6 +174,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Flow models | [Gas-phase chemistry in the cells of a transient laminar flow with heat release, the 1D premixed flame (L2, steam furnace SF2b)](#chemistry-flow) | partial |
 | Immersed bodies | [Immersed bodies by Brinkman penalisation, primitive shapes (L13 stage 1)](#immersed-penalisation) | partial |
 | Immersed bodies | [Immersed bodies as cut cells, primitive shapes (L13 stage 2a, 2b)](#immersed-cut) | partial |
+| Immersed bodies | [Wall functions on cut bodies: exact first-cell distance, sampled wall function, y⁺ per body (L13 stage 2c)](#immersed-cut-wall-functions) | partial |
 | Immersed bodies | [STL bodies, cut out of the mesh or penalised, with sharp edges and face points (L13 stage 2)](#immersed-stl) | partial |
 | Immersed bodies | [Density-field topology search with the Brinkman penalisation, iso-surface by marching tetrahedra (L13 stage 1)](#immersed-topology) | partial |
 | Structures | [Linear structural solver: Euler–Bernoulli and Timoshenko beams, static and modal analyses (L53, MS5 part 1)](#structure-beams) | partial |
@@ -2673,9 +2674,30 @@ Gaps:
 
 - the body is seen through its node values: features thinner than a cell vanish; the refusal of thin solids (Q4, IMM for D189) is not built yet
 - Δp of the Re 20 cylinder stays about 1 % below the range at D/20 (D/40: C_D 5.595, C_L 0.0106, Δp 0.1171, all within 0.1 % of the range; SIMPLEC stalls at residual 1e-7 there); the lift depends on the merge threshold (0.1: 4 % low, 0.4: 0.4 % low, without face points); the default 0.3 is set on this case and the STL sphere array and kept by the maintainer after measuring again with face points and several faces per cell pair (2026-11-26): 0.4 puts the cylinder's lift into the range, 0.01047, and its drag 0.06 % above it, 5.593; on the 32³ sphere array 0.3 is closer, −1.9 against −2.3 %
-- wall functions with the exact first-cell distance (2c), conjugate heat transfer through cut cells (2d, refused), named surface patches (2e) and the near-body refinement (2f) are not built
+- conjugate heat transfer through cut cells (2d, refused), named surface patches (2e) and the near-body refinement (2f) are not built (wall functions on cut bodies: feature immersed.cut-wall-functions)
 - the other verification cases of the plan (cut-sphere Poisson MMS, annulus conduction, Taylor-Couette, inclined channel, Stokes sphere, Re 100 cylinder, turbulent plate) are not run yet
 - one rank only: the cut runs on the global mesh, `foehn run --ranks N` with a cut is not tested
+
+<a id="immersed-cut-wall-functions"></a>
+
+### Wall functions on cut bodies: exact first-cell distance, sampled wall function, y⁺ per body (L13 stage 2c)
+
+**partial** (gaps written) · id `immersed.cut-wall-functions` · switch `[immersed] method = "cut" with a turbulence model and wall functions; [immersed.cut] wall_sample` · decisions D108, D199, D229
+
+- exact: [`cut_walls_take_the_exact_first_cell_distance`](../../crates/foehncraft-flow/src/turbulence/wall.rs): a cylinder cut out of a 2D hex mesh: the wall distance of every cut and merged wall cell is the exact |r_P − R| to 1e-12 R, one distance per cell, where the distance to the facet plane is off by more than 1e-3 and differs between the faces of one cell
+- reference-data: [`cut_plate_wall_function_samples_one_layer_out`](../../crates/foehncraft-flow/tests/immersed.rs): a flat plate tilted by 2° against a hex mesh (75 × 115 cells), k-ε scalable: C_f of the sampled wall function −4.4 % from White's correlation over 0.8 < s < 1.15 with 9.9 % scatter; from the cut cell itself −3.9 % with 38 % scatter; fails beyond 8 % mean or above 0.6 of the unsampled scatter
+- reference-data: [`immersed_cut_plate_keps`](../../examples/cases/flow/immersed_cut_plate_keps.toml): the tilted plate on 150 × 130 cells, Re_L 6·10⁶: C_f +1.2 % at s = 0.7, +3.6 % at 0.97, +6.7 % at 1.15 from White's correlation (the same plate fitted to the mesh: +0.8, −1.4, −2.3 %); single faces scatter −16 to +12 % at s = 0.97 (without sampling −46 to +50 %) (passes in CI (set long), not yet in the manual) ([results](../gallery/immersed.md#cut-plate))
+- reference-data: [`immersed_cut_plate_fitted`](../../examples/cases/flow/immersed_cut_plate_fitted.toml): the reference of the cut plate: the same plate body-fitted on the same cells, C_f +0.8, −1.4, −2.3 % from White at s = 0.7, 0.97, 1.15 after a laminar start to s ≈ 0.2 (passes in CI (set long), not yet in the manual) ([results](../gallery/immersed.md#cut-plate))
+- contract (diagnostics): [`cut_plate_wall_function_samples_one_layer_out`](../../crates/foehncraft-flow/tests/immersed.rs): LIM011 lists the smallest, mean and largest y⁺ of every cut body; the y⁺ map is the y_plus column of the wall output
+
+Gaps:
+
+- the first layer of cut cells overproduces k (30 to 60 % above equilibrium in the first 2 mm of the plate) and its velocity is 10 to 20 % below the log law; single wall faces scatter about ±15 % in C_f even with sampling
+- near the leading edge the cut plate is turbulent at once (C_f 18 % above White at s = 0.3) while the fitted plate has a short laminar run; neither has a transition model
+- the sampled cell has to lie in the log layer: on a mesh with 2 mm first cells the sample sits at y/δ ≈ 0.25 and C_f comes out 17 % high (measured on 75 × 65 cells); refine the wall rows or set wall_sample = false
+- on planar bodies the exact distance equals the facet distance; its benefit is on curved and merged cells (unit test only, no curved turbulent case yet)
+- a uniform start velocity across a cut plate at high Re diverges in the first iteration (net inflow into the cut cells, SIMPLEC dc floor); the case starts with the velocity along the plate
+- low-Re treatments (resolved walls) use the exact distance but no sampling; one rank only
 
 <a id="immersed-stl"></a>
 
