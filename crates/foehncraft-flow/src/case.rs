@@ -5461,6 +5461,12 @@ pub(crate) fn write_fields(
             fields.push(CellField { name, values });
         }
     }
+    // the fields of the wall boiling (MP4)
+    if let Some(r) = &fl.phys.boiling_fields {
+        for (name, values) in r.iter() {
+            fields.push(CellField { name, values });
+        }
+    }
     let err: Vec<f64>;
     if let Some(a) = analytic {
         err = (0..mesh.n_cells)

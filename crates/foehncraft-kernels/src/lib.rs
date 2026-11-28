@@ -68,6 +68,7 @@
 pub mod adjoint;
 pub mod amg;
 pub mod blas;
+pub mod boiling;
 pub mod breakup;
 pub mod chemistry;
 pub mod distortion;

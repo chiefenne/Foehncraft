@@ -841,6 +841,10 @@ pub struct Physics {
     /// fine-structure fraction and residence time of the eddy dissipation
     /// concept), as last set, for the output.
     pub reaction_fields: Option<ReactionFields>,
+    /// The cell fields of the wall boiling of a two-fluid case (MP4: both
+    /// temperatures, the bubble diameter, the vapour generation), as last
+    /// stepped, for the output.
+    pub boiling_fields: Option<ReactionFields>,
 }
 
 impl Physics {
@@ -865,6 +869,7 @@ impl Physics {
             two_fluid_volume: None,
             gas_velocity: None,
             reaction_fields: None,
+            boiling_fields: None,
         }
     }
 

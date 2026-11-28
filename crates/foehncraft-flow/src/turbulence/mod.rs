@@ -2688,6 +2688,11 @@ impl Turbulence {
         self.nu_t
     }
 
+    /// The device buffer of k per cell.
+    pub fn k_buf(&self) -> Buf {
+        self.k.phi
+    }
+
     /// Sets the wall distance (verification: a manufactured solution with
     /// its own distance field).
     pub fn set_wall_distance(&mut self, dev: &mut dyn FlowDevice, d: &[f64]) -> Result<()> {

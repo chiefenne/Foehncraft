@@ -152,18 +152,30 @@ pub fn drag_cd_re<T: Real>(re: T, eo: T, alpha: T) -> T {
 /// the residual fraction) and slip `ur` (m/s).
 #[inline(always)]
 pub fn drag_k<T: Real>(c: &Constants<T>, alpha: T, ur: T) -> T {
+    drag_k_d(c, alpha, ur, c.d)
+}
+
+/// [`drag_k`] of bubbles of the diameter `d` (m).
+#[inline(always)]
+pub fn drag_k_d<T: Real>(c: &Constants<T>, alpha: T, ur: T, d: T) -> T {
     let a = alpha.max_of(c.alpha_min).min_of(T::ONE - c.alpha_min);
     let mu_m = c.mu_l / (T::ONE - a);
-    let re = c.rho_l * ur * c.d / mu_m;
-    let eo = eotvos(c, c.d);
-    T::from_f64(0.75) * drag_cd_re(re, eo, a) * mu_m * a / (c.d * c.d)
+    let re = c.rho_l * ur * d / mu_m;
+    let eo = eotvos(c, d);
+    T::from_f64(0.75) * drag_cd_re(re, eo, a) * mu_m * a / (d * d)
 }
 
 /// C_L of Tomiyama et al. (2002) at the bubble Reynolds number `re`.
 #[inline(always)]
 pub fn lift_tomiyama<T: Real>(c: &Constants<T>, re: T) -> T {
-    let eo = eotvos(c, c.d);
-    let dh = c.d * pow(T::ONE + T::from_f64(0.163) * pow(eo, 0.757), 1.0 / 3.0);
+    lift_tomiyama_d(c, re, c.d)
+}
+
+/// [`lift_tomiyama`] of bubbles of the diameter `d` (m).
+#[inline(always)]
+pub fn lift_tomiyama_d<T: Real>(c: &Constants<T>, re: T, d: T) -> T {
+    let eo = eotvos(c, d);
+    let dh = d * pow(T::ONE + T::from_f64(0.163) * pow(eo, 0.757), 1.0 / 3.0);
     let e = eotvos(c, dh);
     let f =
         T::from_f64(0.00105) * e * e * e - T::from_f64(0.0159) * e * e - T::from_f64(0.0204) * e
@@ -237,6 +249,9 @@ pub struct CellIn<'a, T> {
     pub h: &'a [T],
     /// ∇α_g per cell.
     pub grad_alpha: Vec3<'a, T>,
+    /// The bubble diameter per cell (m; MP4, the size of the local
+    /// subcooling); empty: the constant d.
+    pub diam: &'a [T],
 }
 
 /// The gas fraction α* of the turbulent dispersion of a cell: α_g, but at
@@ -266,17 +281,22 @@ pub unsafe fn cell_forces<T: Real>(c: usize, inp: &CellIn<T>, k: &Constants<T>) 
         let ug = inp.ug.at(c);
         let ur = sub(ug, ul);
         let urm = dot(ur, ur).sqrt_of();
-        let kk = drag_k(k, a, urm);
-        let re = k.rho_l * urm * k.d / k.mu_l;
+        let dd = if inp.diam.is_empty() {
+            k.d
+        } else {
+            ld(inp.diam, c)
+        };
+        let kk = drag_k_d(k, a, urm, dd);
+        let re = k.rho_l * urm * dd / k.mu_l;
         let mut f = [T::ZERO; 3];
         // lift
         let cl = match k.lift {
-            LIFT_TOMIYAMA => lift_tomiyama(k, re),
+            LIFT_TOMIYAMA => lift_tomiyama_d(k, re, dd),
             LIFT_CONSTANT => k.c_lift,
             _ => T::ZERO,
         };
         let cl = if k.lift_damping != 0 {
-            cl * lift_wall_damping(ld(inp.wall_y, c) / k.d)
+            cl * lift_wall_damping(ld(inp.wall_y, c) / dd)
         } else {
             cl
         };
@@ -298,24 +318,24 @@ pub unsafe fn cell_forces<T: Real>(c: usize, inp: &CellIn<T>, k: &Constants<T>) 
             // centres take the force at y = d/2, where (d/2y)² = 1; the
             // force of the formula there grows as 1/y² and drove the gas
             // of the wall cells at tens of m/s at a pipe inlet, D353)
-            let y = ld(inp.wall_y, c).max_of(T::from_f64(0.5) * k.d);
+            let y = ld(inp.wall_y, c).max_of(T::from_f64(0.5) * dd);
             if y > T::ZERO && y.to_f64().is_finite() {
                 let n = inp.wall_n.at(c);
                 let un = dot(ur, n);
                 let par = [ur[0] - un * n[0], ur[1] - un * n[1], ur[2] - un * n[2]];
                 let u2 = dot(par, par);
-                let eo = eotvos(k, k.d);
+                let eo = eotvos(k, dd);
                 let fw = if re > T::ZERO {
                     (T::from_f64(7.0) / pow(re, 1.9)).max_of(T::from_f64(0.0217) * eo)
                 } else {
                     T::from_f64(0.0217) * eo
                 };
                 // (2/d) f (d/2y)² = f d/(2 y²)
-                let s = fw * k.d / (T::from_f64(2.0) * y * y) * a * k.rho_l * u2;
+                let s = fw * dd / (T::from_f64(2.0) * y * y) * a * k.rho_l * u2;
                 f = [f[0] + s * n[0], f[1] + s * n[1], f[2] + s * n[2]];
             }
         }
-        let mu_bit = k.sato * k.rho_l * a * k.d * urm;
+        let mu_bit = k.sato * k.rho_l * a * dd * urm;
         let a_td = alpha_dispersion(a, ld(inp.h, c), inp.grad_alpha.at(c), k.alpha_min);
         let disp = if k.c_td > T::ZERO && !inp.nu_t.is_empty() {
             let ag = a_td;

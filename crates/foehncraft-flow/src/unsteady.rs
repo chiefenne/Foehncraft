@@ -1922,6 +1922,17 @@ fn run_one<F: FnMut(&str)>(
             cont,
         )?)
     };
+    let mut two_fluid_csv = if case.two_fluid.is_empty() {
+        None
+    } else {
+        Some(History::new(
+            out,
+            &suffix_name("two_fluid", desc, last),
+            &crate::case::csv_preamble("two_fluid", name, None, crate::twofluid::CSV_UNITS),
+            &crate::twofluid::csv_head(case.two_fluid.boiling.is_some()),
+            cont,
+        )?)
+    };
     let mut chem_csv = match (&chem, &case.species) {
         (Some(_), Some(sp)) => {
             let names = crate::species::Resolved::of(sp)?.names;
@@ -2445,6 +2456,9 @@ fn run_one<F: FnMut(&str)>(
                 if let Some(f) = heat_csv.as_mut() {
                     f.flush()?;
                 }
+                if let Some(f) = two_fluid_csv.as_mut() {
+                    f.flush()?;
+                }
                 lg.sync(&mut steer.record);
                 steer.record.flush();
                 std::fs::write(out.join("flow.log"), &lg.text)?;
@@ -2600,6 +2614,9 @@ fn run_one<F: FnMut(&str)>(
         }
         if let (Some(v), Some(csv)) = (fl.vof.as_deref(), vof_csv.as_mut()) {
             csv.row(&v.csv_row(n, tr.clock.time, &geo.cell_centroid));
+        }
+        if let (Some(t), Some(csv)) = (fl.two_fluid.as_deref(), two_fluid_csv.as_mut()) {
+            csv.row(&t.csv_row(n, tr.clock.time));
         }
         if let (Some(ch), Some(csv)) = (chem.as_ref(), chem_csv.as_mut())
             && let Some(row) = ch.csv_row(n)
@@ -2890,6 +2907,9 @@ fn run_one<F: FnMut(&str)>(
             if let Some(f) = heat_csv.as_mut() {
                 f.flush()?;
             }
+            if let Some(f) = two_fluid_csv.as_mut() {
+                f.flush()?;
+            }
             if let Some(f) = forces.as_mut() {
                 f.flush()?;
             }
@@ -3177,6 +3197,9 @@ fn run_one<F: FnMut(&str)>(
         f.flush()?;
     }
     if let Some(f) = vof_csv.as_mut() {
+        f.flush()?;
+    }
+    if let Some(f) = two_fluid_csv.as_mut() {
         f.flush()?;
     }
     if let Some(t) = fl.vof.as_deref().map(|v| &v.totals)

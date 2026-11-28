@@ -93,4 +93,7 @@ entries! {
     flow_two_fluid_cells => e::TwoFluidCells,
     flow_two_fluid_faces => e::TwoFluidFaces,
     flow_two_fluid_eliminate => e::TwoFluidEliminate,
+    flow_boiling_wall => e::BoilingWall,
+    flow_boiling_wall_cells => e::BoilingWallCells,
+    flow_boiling_cells => e::BoilingCells,
 }

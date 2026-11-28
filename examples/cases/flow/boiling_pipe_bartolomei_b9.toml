@@ -1,0 +1,83 @@
+# Subcooled boiling of water in a heated vertical tube against the measured
+# void of Bartolomei et al. (1982), case B-9 of Zou, Zhao & Zhang (INL
+# 2018, OSTI 1480427): p = 7.01 MPa, G = 996 kg/(m² s), q = 1.98 MW/m²,
+# T_in = 434 K (L3, stage MP4, D357 to D359).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/boiling_pipe_bartolomei_b9.toml --out output/boiling_pipe/b9
+#   python3 examples/studies/boiling_pipe/compare.py output/boiling_pipe
+#
+# Same tube, mesh, models and closures as boiling_pipe_bartolomei_b7.toml
+# (its header explains the choices). Liquid: IAPWS-IF97 density, viscosity
+# and conductivity at T_sat − 10 K and the mean specific heat between T_in
+# and saturation; vapour: saturated steam at 7.01 MPa (T_sat 559.08 K).
+case_format = "0.7"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [1.5, 0.006, 0.001]
+cells = [300, 12, 1]
+wedge = 2.0
+
+[fluid]
+density = 758.94
+viscosity = 9.5500e-05
+
+[gravity]
+vector = [-9.81, 0.0, 0.0]
+
+[turbulence]
+model = "k-omega-sst"
+
+[initial]
+velocity = [1.3124, 0.0, 0.0]
+turbulence_intensity = 0.05
+viscosity_ratio = 100.0
+
+[two_fluid]
+[two_fluid.gas]
+name = "steam"
+density = 36.582
+viscosity = 1.8894e-05
+diameter = 1.0e-3
+
+[two_fluid.boiling]
+pressure = 7.0100e+06
+liquid_specific_heat = 4676.7
+liquid_conductivity = 0.5877
+[two_fluid.boiling.inflow_temperature]
+xmin = 434.0
+[two_fluid.boiling.heat_flux]
+ymax = 1.980e+06
+
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [1.3124, 0.0, 0.0]
+turbulence_intensity = 0.05
+viscosity_ratio = 100.0
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 7.0100e+06
+[boundary.ymax]
+type = "wall"
+[boundary.zmin]
+type = "wedge"
+[boundary.zmax]
+type = "wedge"
+
+[solver]
+algorithm = "piso"
+outer_iterations = 10
+outer_tolerance = 1.0e-5
+log_every = 100
+
+[time]
+scheme = "bdf1"
+time_step = 1.0e-3
+steps = 2000
+
+[output]
+fields_every = 500
+
+[verification]
+require_convergence = false
