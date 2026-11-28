@@ -25,6 +25,7 @@ Part of the [Recipes](../recipes.md): droplets that move with and through the ga
 | 341 | [Describe a multi-hole injector by its holes](#spray-device) |
 | 343 | [Show your own injector STL](#spray-device-surface) |
 | 338 | [Turn the grid against a jet](#spray-g-grid) |
+| 344 | [Pick the time step of a spray that atomizes at the nozzle](#spray-child-size) |
 
 ---
 
@@ -405,7 +406,8 @@ discharge_coefficient = 0.8
 
 **Pick the model.** `kh-act` lets the turbulence and the cavities the
 nozzle leaves in the liquid strip the blobs as well as the
-Kelvin-Helmholtz waves, whichever is faster (D307); `kh-rt` is the
+Kelvin-Helmholtz waves, whichever is faster (D307); the children have
+the Kelvin-Helmholtz size B₀Λ in either case (D348); `kh-rt` is the
 aerodynamic model alone. Both shed child parcels off the blobs and break the
 drops beyond the breakup length by Rayleigh-Taylor waves:
 
@@ -1056,3 +1058,36 @@ python3 -m tools.plot.spray_g_grid OUT_DIR output/spray_g_grid_aligned output/sp
 
 Cases: `examples/cases/flow/spray_g_g1_grid_aligned.toml` and
 `spray_g_g1_grid_turned.toml`; [gallery entry](../gallery/sprays.md#spray-g-grid).
+
+<a id="spray-child-size"></a>
+## 344. Pick the time step of a spray that atomizes at the nozzle
+
+With `model = "kh-act"` the nozzle turbulence can strip a blob within a few
+microseconds into children of the Kelvin-Helmholtz size B₀Λ (D348), drops
+of a few µm right at the nozzle. Such drops follow the gas within a
+microsecond, and the passes of the two-way coupling then need a small time
+step: G1 of Spray G diverges near 0.1 ms at 2 µs and runs at 1 µs; Spray A
+(150 MPa, 22.8 kg/m³) needs 0.5 µs, the step of published set-ups.
+
+```toml
+[time]
+scheme = "bdf2"
+time_step = 1e-6     # Spray G G1; 5e-7 for Spray A
+
+[spray]
+write_every = 50     # keep the parcel output at 50 µs when the step halves
+```
+
+Signs that the step is too large, before the run diverges: in the log the
+residuals of the passes alternate between two values instead of falling,
+and the Courant number climbs step by step (from 0.3 to 1.7 in 20 steps on
+G1 at 2 µs). Check the first 0.1 ms with `--set time.end_time=1e-4` before
+a long run.
+
+```sh
+foehn flow examples/cases/flow/spray_g_g1.toml --out output/spray_g_g1
+python3 -m tools.plot.spray_g_g1 OUT_DIR output/spray_g_g1
+```
+
+Case: `examples/cases/flow/spray_g_g1.toml`;
+[gallery entry](../gallery/sprays.md#spray-child-size).

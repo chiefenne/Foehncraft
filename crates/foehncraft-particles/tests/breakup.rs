@@ -14,7 +14,8 @@
 //! - a rate table gives each parcel its exact share of the liquid and the
 //!   speed ṁ/(ρ_l C_a A_hole) (D306);
 //! - KH-ACT (D307): the nozzle turbulence strips a young blob at
-//!   C_T,CAV √k exactly, the liquid and the bits are kept, and the
+//!   C_T,CAV √k exactly into children of the KH radius B₀Λ, the liquid
+//!   and the bits are kept, and the
 //!   nozzle keys are checked.
 
 use foehncraft_kernels::breakup as brk;
@@ -439,7 +440,7 @@ fn act_cfg() -> SpraySection {
 }
 
 /// KH-ACT (D307): a young blob is stripped by the nozzle turbulence at
-/// C_T,CAV √k = C_T,CAV L_T/τ_T, and the sum of the exact sub-step
+/// C_T,CAV √k = C_T,CAV L_T/τ_T into children of the KH radius, and the sum of the exact sub-step
 /// integrals is the exact integral, whatever the sub-steps: the stripped
 /// radius is a₀ − C_T,CAV ∫₀^age √k dt to round-off (Kelvin-Helmholtz made
 /// slow by a large B₁, no cavity at C_a = 1, no Rayleigh-Taylor).
@@ -496,12 +497,15 @@ fn kh_act_turbulence_strips_at_the_root_of_k() {
     assert!(checked > 5, "only {checked} steps checked");
     assert!(sp.tally.act_children > 0);
     assert_eq!(sp.tally.act_children, sp.tally.child_parcels);
-    // every child has the integral length scale of the turbulence at the
-    // age of its blob when it was shed: at least L_T0, at most the blob
+    // every child has the KH radius B₀Λ (Som and Aggarwal 2010, eq. 1),
+    // not the length scale of the turbulence that stripped it: here the KH
+    // children (0.7 to 1.7 µm) are smaller than 2 L_T0 = 2.25 µm, the
+    // smallest child the integral scale would give
     let p = &sp.parcels;
-    for i in (0..p.len()).filter(|&i| p.id[i] & (1 << 47) != 0) {
-        assert!(p.d[i] >= 2.0 * turb.length(0.0) * (1.0 - 1e-12));
-        assert!(p.d[i] < 2.0 * a0);
+    let kids: Vec<usize> = (0..p.len()).filter(|&i| p.id[i] & (1 << 47) != 0).collect();
+    assert!(kids.len() > 5);
+    for &i in &kids {
+        assert!(p.d[i] < 2.0 * turb.length(0.0), "child {} m", p.d[i]);
     }
 }
 
