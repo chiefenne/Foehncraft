@@ -155,9 +155,14 @@ max_passes = 8
 # drops bounce below the Weber number of Estrade et al. and separate
 # reflexively above that of Ashgriz and Poo, so fewer merge than with
 # O'Rourke alone (the drops at 15 mm 13.0 instead of 14.5 µm)
+# The drops meet in cubes of 0.6 mm (the size of the flow cells), turned
+# and shifted at random every step (D379, Hou and Schmidt 2006): on the
+# fixed flow cells 13.0 µm and +20 % at 0.3 ms; with the turned cubes
+# 10.8 µm and -1 %; smaller cubes merge more (0.2 mm: 14.0 µm)
 [spray.collision]
 model = "ntc"
 outcomes = "post"
+cell = 6e-4
 
 [spray.breakup]
 model = "kh-act"
