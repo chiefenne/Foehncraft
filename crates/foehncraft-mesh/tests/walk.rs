@@ -271,3 +271,69 @@ fn walks_handed_over_between_ranks_are_the_walks_of_one_rank() {
         }
     }
 }
+
+#[test]
+fn the_plane_walk_gives_the_chords_of_the_tetrahedron_walk() {
+    // RA0: convex cells with planar faces are crossed by their planes; the
+    // cells and their chords are those of the tetrahedron walk (to round-off),
+    // on meshes where all, some or no cell is convex
+    for (kind, perturb, all_convex) in [
+        (Kind::Tet, 0.25, true),
+        (Kind::Hex, 0.0, true),
+        (Kind::Hex, 0.25, false),
+        (Kind::Poly, 0.25, false),
+        (Kind::Mixed, 0.25, false),
+    ] {
+        let mut m = mesh(kind, [7, 5, 4], perturb);
+        rotate(&mut m);
+        let g = Geometry::compute(&m);
+        let mut loc = Locator::new(&m, &g);
+        let n_convex = loc.convex_cells();
+        if all_convex {
+            assert_eq!(n_convex, m.n_cells, "{kind:?}");
+        } else {
+            assert!(
+                n_convex < m.n_cells,
+                "{kind:?}: {n_convex} of {}",
+                m.n_cells
+            );
+        }
+        let limit = step_limit(m.n_cells);
+        for i in 0..300u64 {
+            let c = (i as usize * 7919) % m.n_cells;
+            let from = loc.start(c);
+            let d = direction(i + 1000);
+            let to: [f64; 3] = std::array::from_fn(|k| from.x[k] + 10.0 * d[k]);
+            let run = |loc: &mut Locator, planes: bool| {
+                loc.set_plane_walk(planes);
+                let mut w = loc.start_walk(from, to);
+                let mut seen: Vec<(u32, f64)> = Vec::new();
+                let end = loc.walk(&mut w, limit, |cell, a, b| {
+                    if b > a {
+                        match seen.last_mut() {
+                            Some(l) if l.0 == cell => l.1 += (b - a) * 10.0,
+                            _ => seen.push((cell, (b - a) * 10.0)),
+                        }
+                    }
+                    true
+                });
+                (seen, end, w.x)
+            };
+            let (tet, end_t, x_t) = run(&mut loc, false);
+            let (pl, end_p, x_p) = run(&mut loc, true);
+            assert!(matches!(end_t, WalkEnd::Boundary { .. }), "{kind:?} {i}");
+            assert!(matches!(end_p, WalkEnd::Boundary { .. }), "{kind:?} {i}");
+            assert!(norm(sub(x_t, x_p)) < 1e-10, "{kind:?} ray {i}");
+            // chords shorter than round-off may be missing in one of the walks
+            let big = |v: &[(u32, f64)]| -> Vec<(u32, f64)> {
+                v.iter().copied().filter(|p| p.1 > 1e-9).collect()
+            };
+            let (a, b) = (big(&tet), big(&pl));
+            assert_eq!(a.len(), b.len(), "{kind:?} ray {i}");
+            for (p, q) in a.iter().zip(&b) {
+                assert_eq!(p.0, q.0, "{kind:?} ray {i}");
+                assert!((p.1 - q.1).abs() < 1e-10, "{kind:?} ray {i}: {p:?} {q:?}");
+            }
+        }
+    }
+}

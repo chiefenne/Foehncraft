@@ -62,6 +62,11 @@ fn raw3(u: &Up<f64>) -> Raw<[f64; 3]> {
     Raw::new(u.raw.ptr, u.raw.len as usize / 3)
 }
 
+/// Reinterprets the address of a flat f64 array as one of 4-vectors.
+fn raw4(u: &Up<f64>) -> Raw<[f64; 4]> {
+    Raw::new(u.raw.ptr, u.raw.len as usize / 4)
+}
+
 /// The radiation transport on one GPU.
 pub struct CudaRadiation {
     ctx: Arc<CudaContext>,
@@ -70,6 +75,7 @@ pub struct CudaRadiation {
     /// The walk mesh on the device (kept alive for the addresses in `mesh`).
     _f64: Vec<Up<f64>>,
     _u32: Vec<Up<u32>>,
+    _u8: Vec<Up<u8>>,
     /// The argument block with the walk mesh filled in.
     mesh: TransportArgs,
 }
@@ -100,6 +106,9 @@ impl CudaRadiation {
         let neighbour = up(&s, m.neighbour)?;
         let cell_ptr = up(&s, m.cell_ptr)?;
         let cell_faces = up(&s, m.cell_faces)?;
+        let plane_flat: Vec<f64> = m.plane.iter().flatten().copied().collect();
+        let plane = up(&s, &plane_flat)?;
+        let convex = up(&s, m.convex)?;
         let mesh = TransportArgs {
             points: raw3(&points),
             face_ptr: face_ptr.raw,
@@ -110,6 +119,8 @@ impl CudaRadiation {
             cell_faces: cell_faces.raw,
             apex: raw3(&apex),
             fan: raw3(&fan),
+            plane: raw4(&plane),
+            convex: convex.raw,
             n_cells: m.n_cells as u64,
             periodic_start: m.periodic_start as u64,
             ..TransportArgs::default()
@@ -118,8 +129,9 @@ impl CudaRadiation {
             ctx,
             stream: s,
             f,
-            _f64: vec![points, apex, fan],
+            _f64: vec![points, apex, fan, plane],
             _u32: vec![face_ptr, face_nodes, owner, neighbour, cell_ptr, cell_faces],
+            _u8: vec![convex],
             mesh,
         })
     }
