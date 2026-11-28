@@ -1163,9 +1163,9 @@ pub(crate) fn summary_on(
             ));
         }
         s.defect = (0..nc).map(|c| phi[c] * div[c]).exact_sum();
-        if let Some(r) = reaction.as_ref().map(|r| r[k]) {
+        if let Some((r, sp)) = reaction.as_ref().map(|r| r[k]) {
             s.reaction = (0..nc)
-                .map(|c| rho(c) * geo.cell_volume[c] * r[c])
+                .map(|c| rho(c) * geo.cell_volume[c] * (r[c] + sp.map_or(0.0, |p| p[c] * phi[c])))
                 .exact_sum();
         }
         if !spray.is_empty() {

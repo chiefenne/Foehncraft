@@ -3316,6 +3316,24 @@ pub fn run_steered(
             w.start(&mut fl)?;
         }
         crate::spray::device_warnings(&case, &mut lg, &mut rep.warnings);
+        // steady turbulent flames (SF3): the reaction sources renewed every
+        // `update_every` outer iterations
+        let mut chem = crate::chemistry::flow::Chemistry::of(&case, &geo.cell_volume)?;
+        let mut chem_csv = match (&chem, &case.species) {
+            (Some(_), Some(sp)) => {
+                let names = crate::species::Resolved::of(sp)?.names;
+                let mut c = csv_preamble(
+                    "chemistry",
+                    name,
+                    None,
+                    crate::chemistry::flow::Chemistry::CSV_UNITS,
+                );
+                c.push_str(&crate::chemistry::flow::Chemistry::csv_head(&names));
+                c.push('\n');
+                Some(c)
+            }
+            _ => None,
+        };
         if steady_spray.is_some()
             && let Some(p) = crate::spray::write_devices(&case.spray, out)?
         {
@@ -3440,6 +3458,11 @@ pub fn run_steered(
                     lg.warn(&n);
                 }
             }
+            let next = fl.iteration() + 1;
+            let renewed = match chem.as_mut() {
+                Some(ch) => ch.before_iteration(&mut fl, next, first)?,
+                None => false,
+            };
             fl.keep_valid()?;
             res = match fl.iterate() {
                 Ok(r) => r,
@@ -3530,6 +3553,13 @@ pub fn run_steered(
                 lg.warn(&m);
             }
             let it = fl.iteration();
+            if renewed
+                && let (Some(ch), Some(c)) = (chem.as_ref(), chem_csv.as_mut())
+                && let Some(row) = ch.csv_row(it)
+            {
+                c.push_str(&row);
+                c.push('\n');
+            }
             let gas_done = res.max() < case.solver.tolerance;
             // the spray's source residual is part of the test (D260 (4))
             let mut done = gas_done
@@ -4030,6 +4060,29 @@ pub fn run_steered(
             verification.push_kv("Force coefficients", format!("C_D {cd:.5}, C_L {cl:.5}"));
         }
         let immersed = crate::immersed::forces(&case, &mesh, &geo, &sol.u, &sol.phys)?;
+        // the steady turbulent flame (SF3)
+        let chemistry_summary = match chem.as_ref() {
+            Some(ch) => {
+                let s = ch.summary(&case, &boundaries)?;
+                lg.line(&format!(
+                    "chemistry {} ({}): heat release {:.4e} W",
+                    s.mechanism, s.interaction, s.heat_release
+                ));
+                if let Some(f) = &s.fine_structures {
+                    lg.line(&format!(
+                        "fine structures: {} cells, tau* {:.3e} … {:.3e} s, largest gamma* {:.3}, \
+                         {} cells at max_fine_fraction",
+                        f.cells, f.tau[0], f.tau[1], f.fraction_max, f.clipped
+                    ));
+                }
+                if let Some(d) = ch.finding() {
+                    lg.warn(&format!("{}: {}", d.code, d.message));
+                    rep.warnings.push(d);
+                }
+                Some(s)
+            }
+            None => None,
+        };
         let topology = match &topo {
             Some(t) => {
                 let surface = foehncraft_mesh::isosurface::extract(&mesh, &geo, &t.solid(), 0.5);
@@ -4117,6 +4170,9 @@ pub fn run_steered(
             steer.record.row(&balance::record_row(&bal));
         }
         std::fs::write(out.join(format!("balance{suffix}.csv")), &bcsv)?;
+        if let Some(c) = &chem_csv {
+            std::fs::write(out.join(format!("chemistry{suffix}.csv")), c)?;
+        }
         let mut summary = BalanceSummary {
             largest_mass_relative: bal.mass.relative.abs(),
             last: bal,
@@ -4274,7 +4330,7 @@ pub fn run_steered(
             statistics: None,
             density,
             immersed,
-            chemistry: None,
+            chemistry: chemistry_summary,
             topology,
         });
         if stopped {
@@ -5324,6 +5380,12 @@ pub(crate) fn write_fields(
             name: "volume_fraction",
             values: a,
         });
+    }
+    // the fields of the reactions (SF3)
+    if let Some(r) = &fl.phys.reaction_fields {
+        for (name, values) in r.iter() {
+            fields.push(CellField { name, values });
+        }
     }
     let err: Vec<f64>;
     if let Some(a) = analytic {
