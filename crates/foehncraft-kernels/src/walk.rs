@@ -186,6 +186,19 @@ pub fn sides(t: &[[f64; 3]; 4], x: [f64; 3]) -> [f64; 4] {
     ]
 }
 
+/// One entry of [`sides`]: the signed inner distance of `x` to face `j`
+/// of the tetrahedron `t`, the same operations as in `sides`.
+#[inline(always)]
+pub fn side(t: &[[f64; 3]; 4], j: u32, x: [f64; 3]) -> f64 {
+    let [a, m, p, q] = *t;
+    match j {
+        0 => inner(m, p, q, x),
+        1 => inner(a, p, m, x),
+        2 => inner(a, m, q, x),
+        _ => inner(a, q, p, x),
+    }
+}
+
 impl WalkMesh<'_> {
     /// Nodes of face `f`.
     #[inline(always)]
@@ -200,7 +213,7 @@ impl WalkMesh<'_> {
         let nodes = self.face(face);
         let k = nodes.len();
         let mut p = self.points[nodes[edge] as usize];
-        let mut q = self.points[nodes[(edge + 1) % k] as usize];
+        let mut q = self.points[nodes[if edge + 1 == k { 0 } else { edge + 1 }] as usize];
         if self.owner[face] as usize != cell {
             core::mem::swap(&mut p, &mut q);
         }
@@ -232,14 +245,17 @@ pub fn walk<F: FnMut(u32, f64, f64) -> bool>(
         let cell = w.cell as usize;
         let face = w.face as usize;
         let t = m.tet(cell, face, w.edge as usize);
-        let sa = sides(&t, w.x);
         let sb = sides(&t, w.target);
         // exit face: smallest crossing parameter among the faces the
-        // target lies behind
+        // target lies behind; the distance of the current point is
+        // computed only for those faces (RA0: most tetrahedra have one
+        // or none), with the same expression, so the result is bitwise
+        // the one that evaluated all four
         let mut best = (f64::INFINITY, NONE);
         for j in 0..4u32 {
-            let (a, b) = (sa[j as usize], sb[j as usize]);
+            let b = sb[j as usize];
             if b < 0.0 && j != w.entered {
+                let a = side(&t, j, w.x);
                 let s = a.max(0.0);
                 let l = s / (s - b);
                 if l < best.0 {
@@ -292,9 +308,9 @@ pub fn walk<F: FnMut(u32, f64, f64) -> bool>(
                 let towards_p = (j == 1) == owner;
                 let e = w.edge as usize;
                 w.edge = if towards_p {
-                    ((e + k - 1) % k) as u32
+                    (if e == 0 { k - 1 } else { e - 1 }) as u32
                 } else {
-                    ((e + 1) % k) as u32
+                    (if e + 1 == k { 0 } else { e + 1 }) as u32
                 };
                 w.entered = 3 - j; // the shared face has the other index
             }
