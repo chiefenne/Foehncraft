@@ -774,6 +774,10 @@ impl Settings {
     }
 }
 
+/// The fields of a reacting flow written with the results (SF3): name and
+/// value per cell.
+pub type ReactionFields = std::sync::Arc<Vec<(String, Vec<f64>)>>;
+
 /// Physical inputs.
 #[derive(Debug, Clone)]
 pub struct Physics {
@@ -821,7 +825,7 @@ pub struct Physics {
     /// The cell fields of the reactions (SF3: the heat release, the
     /// fine-structure fraction and residence time of the eddy dissipation
     /// concept), as last set, for the output.
-    pub reaction_fields: Option<std::sync::Arc<Vec<(String, Vec<f64>)>>>,
+    pub reaction_fields: Option<ReactionFields>,
 }
 
 impl Physics {

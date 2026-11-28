@@ -992,6 +992,10 @@ pub struct StepTime {
     pub a: [f64; 3],
 }
 
+/// The reaction source of one species per cell, S_u, and its implicit part
+/// S_p (SF3: the source is S_u + S_p Y).
+pub type SpeciesReaction<'a> = (&'a [f64], Option<&'a [f64]>);
+
 /// The passive scalars of a flow on its device.
 pub struct Scalars {
     fields: Vec<Field>,
@@ -2673,7 +2677,7 @@ impl Scalars {
     /// of a reacting flow (SF2b), in the order of the mixture, with their
     /// implicit parts S_p (SF3: the source is S_u + S_p Y); `None` before
     /// the first reaction step.
-    pub fn species_reaction(&self) -> Option<Vec<(&[f64], Option<&[f64]>)>> {
+    pub fn species_reaction(&self) -> Option<Vec<SpeciesReaction<'_>>> {
         let sp = self.species.as_deref()?;
         sp.fields
             .iter()

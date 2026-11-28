@@ -509,7 +509,10 @@ impl Chemistry {
         it: usize,
         first: usize,
     ) -> Result<bool> {
-        let due = self.held.is_none() || (it.saturating_sub(first + 1)) % self.update_every == 0;
+        let due = self.held.is_none()
+            || it
+                .saturating_sub(first + 1)
+                .is_multiple_of(self.update_every);
         if due {
             self.react_turbulent(fl, None, 0.0)?;
         }
