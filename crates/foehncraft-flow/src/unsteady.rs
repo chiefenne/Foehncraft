@@ -3732,9 +3732,20 @@ fn run_one<F: FnMut(&str)>(
                     verification.push_kv("Flame speed", format!("{v:.5} m/s"));
                 }
                 None => lg.line(&format!(
-                    "chemistry {}: heat release {:.4e} W",
-                    s.mechanism, s.heat_release
+                    "chemistry {} ({}): heat release {:.4e} W",
+                    s.mechanism, s.interaction, s.heat_release
                 )),
+            }
+            if let Some(f) = &s.fine_structures {
+                lg.line(&format!(
+                    "fine structures: {} cells, tau* {:.3e} … {:.3e} s, largest gamma* {:.3}, {} \
+                     cells at max_fine_fraction",
+                    f.cells, f.tau[0], f.tau[1], f.fraction_max, f.clipped
+                ));
+            }
+            if let Some(d) = ch.finding() {
+                lg.warn(&format!("{}: {}", d.code, d.message));
+                warnings.push(d);
             }
             Some(s)
         }

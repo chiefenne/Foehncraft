@@ -14,7 +14,7 @@
 > RANS, the energy equation, conjugate heat transfer with several fluids and
 > solids, buoyancy and rotating machinery, on CPUs and NVIDIA GPUs and on
 > several MPI ranks, with the first multiphysics modules: Lagrangian sprays,
-> species and laminar reacting flows, water and steam with boiler circuits,
+> species and laminar and turbulent reacting flows, water and steam with boiler circuits,
 > Monte Carlo radiation, two fluids by the volume of fluid, porous regions,
 > deforming meshes, a structural solver and immersed walls. The stage plan
 > and every decision are in [docs/requirements.md](docs/requirements.md);
@@ -110,7 +110,7 @@ slips and the refusals of the action table:
 - **Meshes.** Polyhedral cells in 2D and 3D, read from Gmsh, SU2, CGNS, OpenFOAM, Fluent `.msh`, VTK and VTKHDF.
 - **Flow.** Steady and transient; SIMPLEC, PISO and a coupled solver; RANS from k-ω SST to k-ε-ζ-f₀.
 - **Heat.** The energy equation, conjugate heat transfer with several fluids and solids, buoyancy, low-Mach density, Monte Carlo radiation.
-- **More physics.** Rotating machinery (moving frame, sliding mesh), Lagrangian sprays with evaporation (water and fuel liquids, 1/3-rule film, high-pressure droplet surface), breakup and drop collisions, multi-hole injectors described by their mounting and holes and drawn as standard or own tips, species and laminar reacting flows, water and steam (IAPWS-IF97) with boiler tube circuits coupled to the walls of a 3D flow, two fluids by the volume of fluid, porous regions, immersed bodies (penalised or cut out of the mesh, primitive shapes and STL surfaces, wall functions on cut walls), deforming meshes, linear structures.
+- **More physics.** Rotating machinery (moving frame, sliding mesh), Lagrangian sprays with evaporation (water and fuel liquids, 1/3-rule film, high-pressure droplet surface), breakup and drop collisions, multi-hole injectors described by their mounting and holes and drawn as standard or own tips, species and reacting flows (laminar, and turbulent with the eddy dissipation concept or model), water and steam (IAPWS-IF97) with boiler tube circuits coupled to the walls of a 3D flow, two fluids by the volume of fluid, porous regions, immersed bodies (penalised or cut out of the mesh, primitive shapes and STL surfaces, wall functions on cut walls), deforming meshes, linear structures.
 - **Hardware.** CPUs and NVIDIA GPUs in one process; MPI ranks with results bitwise equal to one rank.
 - **Driving it.** TOML case files, the `foehn` command, a Python package, and an MCP server for AI assistants.
 
@@ -153,7 +153,7 @@ reacting flows, water and steam, radiation, the volume of fluid, porous
 regions, deforming meshes, structures, immersed walls). Version 1.2 adds
 drop collisions and the turbulence the drops take from the gas to the
 sprays. Everything after that follows the roadmap in the [requirements](docs/requirements.md):
-turbulent reacting flows, the steam furnace, boiling, fluid–structure
+the steam furnace (its turbulent flames started on `main`), boiling, fluid–structure
 coupling, radiation coupled to the energy equation and scale-resolving
 turbulence.
 

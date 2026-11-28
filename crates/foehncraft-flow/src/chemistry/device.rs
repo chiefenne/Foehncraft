@@ -18,12 +18,16 @@ pub trait Device: Send {
 
     /// Integrates every cell of `state` (species + 1 values per cell: the
     /// mass fractions, then the temperature) at the pressure `p` over `dt`
-    /// with the mechanism the device was created with; writes the
-    /// statistics of each cell into `stats`.
+    /// (or over its own interval `dt_cell[c]`, the residence time of the
+    /// fine structures of the eddy dissipation concept, SF3) with the
+    /// mechanism the device was created with; writes the statistics of
+    /// each cell into `stats`.
+    #[allow(clippy::too_many_arguments)]
     fn react(
         &mut self,
         p: f64,
         dt: f64,
+        dt_cell: Option<&[f64]>,
         min_temperature: f64,
         set: &Settings,
         state: &mut [f64],
@@ -64,11 +68,13 @@ pub fn create_gpu(
 }
 
 /// The CPU threads: each cell on its own (any number of threads gives the
-/// same bits).
+/// same bits); `dt_cell` as in [`Device::react`].
+#[allow(clippy::too_many_arguments)]
 pub fn react_cpu(
     prog: &Program<'_>,
     p: f64,
     dt: f64,
+    dt_cell: Option<&[f64]>,
     min_temperature: f64,
     set: &Settings,
     state: &mut [f64],
@@ -78,10 +84,12 @@ pub fn react_cpu(
     state
         .par_chunks_mut(n + 1)
         .zip(stats.par_iter_mut())
+        .enumerate()
         .for_each_init(
             || vec![0.0; kc::work_len(n)],
-            |work, (z, st)| {
-                *st = kc::react_cell(prog, p, z, dt, set, min_temperature, work);
+            |work, (c, (z, st))| {
+                let d = dt_cell.map_or(dt, |d| d[c]);
+                *st = kc::react_cell(prog, p, z, d, set, min_temperature, work);
             },
         );
 }

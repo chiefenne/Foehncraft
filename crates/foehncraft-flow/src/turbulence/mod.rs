@@ -3950,6 +3950,20 @@ impl Turbulence {
 
     /// Host copy of the state; `p`, `pb` are the solver's p̂ (cells and
     /// boundary faces).
+    /// k and the dissipation ε per cell (the eddy dissipation concept,
+    /// SF3): ε of the k-ε family, β* k ω of SST.
+    pub(crate) fn k_and_epsilon(&self, dev: &mut dyn FlowDevice) -> Result<(Vec<f64>, Vec<f64>)> {
+        let k = dev.download(self.k.phi)?;
+        let mut e = dev.download(self.w.phi)?;
+        if !self.eps {
+            let bs = self.section.sst_constants()?.beta_star;
+            for (e, k) in e.iter_mut().zip(&k) {
+                *e *= bs * k.max(0.0);
+            }
+        }
+        Ok((k, e))
+    }
+
     pub(crate) fn state(
         &self,
         dev: &mut dyn FlowDevice,

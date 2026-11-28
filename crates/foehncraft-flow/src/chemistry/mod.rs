@@ -8,8 +8,10 @@
 //!   T and p or h and p;
 //! - [`reactor`]: the 0D constant-pressure adiabatic reactor, run by the
 //!   tool `chemistry.reactor` (`foehn chemistry reactor`);
-//! - [`flow`]: chemistry in the cells of a transient laminar flow
-//!   (`[chemistry]`, SF2b);
+//! - [`flow`]: chemistry in the cells of a flow (`[chemistry]`): laminar
+//!   flames (SF2b) and turbulent flames, steady or transient (SF3);
+//! - [`edc`]: the turbulence–chemistry interaction of SF3, the eddy
+//!   dissipation concept and the eddy dissipation model;
 //! - [`device`]: the cells on the CPU threads or on a GPU (PTX entry
 //!   `chemistry_react`), the same kernel body.
 //!
@@ -22,6 +24,7 @@
 #![allow(clippy::neg_cmp_op_on_partial_ord, clippy::manual_clamp)]
 
 pub mod device;
+pub mod edc;
 pub mod equilibrium;
 pub mod flow;
 pub mod mechanism;

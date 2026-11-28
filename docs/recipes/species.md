@@ -7,6 +7,7 @@ Part of the [Recipes](../recipes.md): mixtures of ideal gases carried by the flo
 | 278 | [Carry the species of a gas mixture with the flow](#species-transport) |
 | 289 | [Run a mechanism in a constant-pressure reactor and find the equilibrium](#gas-chemistry) |
 | 298 | [Let the species react in the cells of a laminar flow](#reacting-flow-cells) |
+| 351 | [Model a turbulent flame with the eddy dissipation concept or model](#turbulent-flames) |
 
 ---
 
@@ -232,11 +233,86 @@ Colab T4 (`python3 -m tools.bench.chemistry_cloud` on any GPU machine).
 
 **If it stops.** CHM002: a cell did not reach the end of the time step;
 raise `[chemistry.integrator] max_steps`, loosen `rtol` or shorten the
-time step. CHM003: steady runs, turbulence models and sprays are not
-supported with chemistry yet. The images of the gallery:
+time step. CHM003: steady laminar runs and sprays are not supported
+with chemistry, and a turbulence model needs an `interaction`
+([recipe 351](#turbulent-flames)). The images of the gallery:
 
     target/release/foehn flow examples/cases/flow/flame_methane_air_gri30.toml --out output/gri
     target/release/foehn flow examples/cases/flow/flame_methane_air_jl4.toml --out output/jl4
     python3 -m tools.plot.flame_profiles output/img output/gri output/jl4
 
 [Gallery 298](../gallery/species.md#reacting-flow-cells).
+
+<a id="turbulent-flames"></a>
+## 351. Model a turbulent flame with the eddy dissipation concept or model
+
+**Start from a reacting case.** A turbulent flame is a reacting case
+([recipe 298](#reacting-flow-cells)) with a turbulence model and one more
+key in `[chemistry]`; it runs steady or transient:
+
+```toml
+[turbulence]
+model = "k-epsilon"                # any RANS model; SST gives ε = β* k ω
+[turbulence.constants]
+c_epsilon1 = 1.60                  # the round-jet correction of Pope (1978)
+
+[chemistry]
+mechanism = "jones-lindstedt-4"    # or gri30, or a YAML file
+interaction = "edc"                # eddy dissipation concept
+min_temperature = 500.0            # colder cells do not react
+relaxation = 0.5                   # steady: relax the rates between renewals
+update_every = 1                   # steady: renew the rates every N iterations
+```
+
+With `edc` every hot cell gets its fine structures: the fraction
+γ* = (2.1377 (ν ε/k²)^¼)² and the residence time τ* = 0.4083 (ν/ε)^½
+(Magnussen 2005; `edc.version = "1981"` takes γ* = γ_λ³). The stiff
+integrator burns the mean state of the cell over τ* to Y*, and the mean
+rate is ρ κ (Y* − Y) with κ = γ*/(τ* (1 − γ*)). The constants are keys
+(`edc.c_gamma`, `edc.c_tau`) and γ* is held at `edc.max_fine_fraction`
+(0.75). With `interaction = "edm"` the eddy dissipation model of
+Magnussen & Hjertager (1977) burns every reaction at the mixing rate
+A ε/k min(reactants, B · products), A = 4, B = 0.5 (`edm.a`, `edm.b`),
+capped by its Arrhenius rate (`edm.kinetic_limit`); it needs a mechanism
+whose reactions run one way, such as `westbrook-dryer-2`.
+
+**Run it.**
+
+    target/release/foehn flow examples/cases/flow/jet_flame_edc_jl4.toml --out output/jet_flame
+
+The log ends with the reacting-flow summary and the fine structures:
+
+```
+chemistry jones-lindstedt-4 (edc): heat release … W
+fine structures: … cells, … at the γ* guard, τ* … to … s
+```
+
+`chemistry.csv` has a row per renewal with the heat release, the net
+production of every species, the failed cells and the range of τ*;
+`fields.vtkhdf` has `heat_release_rate`, `fine_structure_fraction` and
+`fine_structure_time` next to the mass fractions.
+
+**Light it.** A steady flame needs a hot start: give `[energy] initial`
+and the mass fractions as expressions with a layer of burnt gas where the
+flame will sit (the case puts the pilot's products around r = 6.5 mm over
+the first 0.3 m), and k and ε of a shear layer. Start fields at rest and
+cold do not light.
+
+**If it does not converge.** Lower `relaxation` (0.3), or renew the rates
+less often (`update_every = 5`) when the chemistry dominates the cost (it
+does with GRI-Mech 3.0). CHM004 warns when the fine-structure reactor
+fails in some cells; raise `[chemistry.integrator] max_steps`. Judge the
+run by the temperature on the axis and the heat release, not the residuals
+alone.
+
+**What to expect.** The standard constants overpredict the temperature of
+jet flames with strong mixing (Flame D: several hundred kelvin at x/D = 15
+in the literature, see the [gallery](../gallery/species.md#turbulent-flames));
+local constants and partially stirred reactor variants are not in this
+version. The images of the gallery:
+
+    target/release/foehn flow examples/cases/flow/jet_flame_edc_jl4.toml --out output/jet_flame
+    target/release/foehn flow examples/cases/flow/jet_flame_edm_wd2.toml --out output/jet_flame_edm
+    python3 -m tools.plot.jet_flame_fields output/img output/jet_flame output/jet_flame_edm
+
+[Gallery 351](../gallery/species.md#turbulent-flames).

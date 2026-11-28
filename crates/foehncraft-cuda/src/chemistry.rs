@@ -108,6 +108,7 @@ impl CudaChemistry {
             settings: Settings::default(),
             pressure: 0.0,
             dt: 0.0,
+            dt_cell: Raw::EMPTY,
             min_temperature: 0.0,
             n_cells: 0,
             state: Raw::EMPTY,
@@ -144,12 +145,19 @@ impl Device for CudaChemistry {
         &mut self,
         p: f64,
         dt: f64,
+        dt_cell: Option<&[f64]>,
         min_temperature: f64,
         set: &Settings,
         state: &mut [f64],
         stats: &mut [Stats],
     ) -> Result<()> {
         let nz = self.n + 1;
+        ensure!(
+            dt_cell.is_none_or(|d| d.len() == stats.len()),
+            "chemistry launch: intervals for {} cells, {} cells",
+            dt_cell.map_or(0, <[f64]>::len),
+            stats.len()
+        );
         let wl = work_len(self.n);
         ensure!(
             state.len() == stats.len() * nz,
@@ -159,15 +167,25 @@ impl Device for CudaChemistry {
         );
         let batch = (WORK_BYTES / (8 * wl)).max(1);
         let s = self.stream.clone();
-        for (zs, ss) in state.chunks_mut(batch * nz).zip(stats.chunks_mut(batch)) {
+        for (b, (zs, ss)) in state
+            .chunks_mut(batch * nz)
+            .zip(stats.chunks_mut(batch))
+            .enumerate()
+        {
             let m = ss.len();
             let z = up(&s, zs)?;
+            // the interval of each cell of the batch (SF3), if they differ
+            let ds = up(
+                &s,
+                dt_cell.map_or(&[][..], |d| &d[b * batch..b * batch + m]),
+            )?;
             let work = s.alloc_zeros::<f64>(m * wl)?;
             let st = up(&s, ss)?;
             let a = ReactArgs {
                 settings: *set,
                 pressure: p,
                 dt,
+                dt_cell: ds.raw,
                 min_temperature,
                 n_cells: m as u64,
                 state: z.raw,
@@ -198,6 +216,7 @@ impl Device for CudaChemistry {
                 *d = b.0;
             }
             drop(work);
+            drop(ds);
         }
         Ok(())
     }

@@ -60,6 +60,7 @@ FLOW = {
     ],
     "linux-3": [
         "species_binary_diffusion", "species_coaxial_jet", "flame_methane_air_jl4",
+        "jet_flame_edm_wd2",
         "taylor_green_error", "adjoint_residual_cavity", "cylinder_potential", "cavity_re100_budget", "taylor_green_bdf2",
         "taylor_green_cn", "poiseuille_mixed", "cavity_re100_transient", "taylor_green_space",
         "cavity_re100_poly3d", "cavity_re100_tet3d", "pipe_wedge", "poiseuille_expression",
@@ -94,7 +95,7 @@ FLOW = {
         "cht_heat_sink_turbulent", "cylinder_steady_diagnosis", "vd_cavity_large_dt",
         "cht_pulsating_channel_skin", "cht_heated_wall_frozen", "cht_pulsating_channel_warmup",
         "natural_convection_cavity_ra1e5", "natural_convection_plate", "plate_heated_laminar",
-        "flame_methane_air_gri30",
+        "flame_methane_air_gri30", "jet_flame_edc_jl4",
         "immersed_stokes_sphere", "immersed_cut_stl_sphere_array", "spray_saturation_steady",
         "spray_breakup", "spray_brno", "spray_chamber_ecn", "motion_piston_cooled_walls", "spray_g_g1",
         "spray_g_g1_grid_aligned", "spray_g_g1_grid_turned",
@@ -124,6 +125,8 @@ ARGS = {
     F + "spray_g_g1_grid_aligned.toml": ["--set", "time.end_time=1e-4"],
     F + "spray_g_g1_grid_turned.toml": ["--set", "time.end_time=1e-4"],
     F + "spray_a_distortion.toml": ["--set", "time.end_time=1e-4"],
+    # the turbulent jet flame (SF3): 300 of its 1500 iterations, 3 minutes
+    F + "jet_flame_edc_jl4.toml": ["--set", "solver.max_iterations=300"],
 }
 
 

@@ -1,0 +1,156 @@
+# The piloted methane jet flame of jet_flame_edc_jl4.toml (geometry and
+# inlets of Sandia Flame D, Barlow & Frank 1998) with the eddy dissipation
+# model of Magnussen & Hjertager (1977), the fallback of stage SF3: each
+# global step of the two-step mechanism of Westbrook & Dryer (1981) burns
+# at the mixing rate A (eps/k) min(the smallest reactant [R]/nu'_R,
+# B rho sum Y_P / sum nu''_P W_P), A = 4, B = 0.5, capped by its Arrhenius
+# rate (`kinetic_limit`). Steady RANS, k-epsilon with C_eps1 = 1.60.
+# About 2.5 min on 4 cores.
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/jet_flame_edm_wd2.toml
+#
+# The eddy dissipation model needs reactions in one direction: the
+# mechanism of Westbrook & Dryer has its CO2 dissociation as a reaction of
+# its own, and the model caps the net rate of the CO/CO2 pair by mixing.
+# No H2 in this mechanism: the pilot carries CO, CO2, H2O and the rest of
+# the air.
+
+case_format = "0.7"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [0.5, 0.08, 0.01]
+cells = [120, 54, 1]
+segments = { x = [ { to = 0.5, cells = 120, ratio = 8.0 } ], y = [ { to = 0.0036, cells = 12, ratio = 1.0 }, { to = 0.00385, cells = 1, ratio = 1.0 }, { to = 0.0091, cells = 10, ratio = 1.0 }, { to = 0.00945, cells = 1, ratio = 1.0 }, { to = 0.08, cells = 30, ratio = 12.0 } ] }
+split = [
+  { boundary = "xmin", axis = "y", at = 0.00945, name = "coflow" },
+  { boundary = "xmin", axis = "y", at = 0.0091, name = "pilot_lip" },
+  { boundary = "xmin", axis = "y", at = 0.00385, name = "pilot" },
+  { boundary = "xmin", axis = "y", at = 0.0036, name = "jet_lip" },
+]
+wedge = 2.0
+
+[materials.gas]
+kind = "gas"
+description = "the start values of an ideal gas with the molar mass of air; the mixture replaces c_p, k and mu"
+molar_mass = 0.0289647
+density = { form = "ideal-gas", source = "ideal gas, rho = p M / (R T)" }
+specific_heat = 1005.0
+conductivity = 0.0263
+viscosity = 1.85e-5
+
+[fluid]
+material = "gas"
+temperature = 291.0
+operating_pressure = 101325.0
+pressure_values = "gauge"
+
+[turbulence]
+model = "k-epsilon"
+[turbulence.constants]
+c_epsilon1 = 1.60
+
+# the hot layer of the start: burnt gas around the pilot radius over the
+# first 0.3 m
+[energy]
+initial = "291 + 1590*exp(-((y - 0.0065)/(0.004 + 0.06*x))^2)*0.5*(1 - tanh((x - 0.3)/0.03))"
+density = "variable"
+
+[species]
+names = ["CH4", "O2", "CO", "CO2", "H2O", "AR", "N2"]
+initial = { mass_fractions = { O2 = "0.2329 - 0.181*exp(-((y - 0.0065)/(0.004 + 0.06*x))^2)*0.5*(1 - tanh((x - 0.3)/0.03))", CO2 = "0.1175*exp(-((y - 0.0065)/(0.004 + 0.06*x))^2)*0.5*(1 - tanh((x - 0.3)/0.03))", H2O = "0.0965*exp(-((y - 0.0065)/(0.004 + 0.06*x))^2)*0.5*(1 - tanh((x - 0.3)/0.03))" } }
+diffusion = "schmidt"
+schmidt = 0.7
+turbulent_schmidt = 0.7
+
+[chemistry]
+mechanism = "westbrook-dryer-2"
+interaction = "edm"
+min_temperature = 500.0
+update_every = 1
+relaxation = 0.2
+
+# the potential flow of the inlets to start, with k and epsilon of a
+# spreading shear layer
+[initial]
+velocity = [0.9, 0.0, 0.0]
+potential_flow = true
+k = "0.01 + 30*exp(-((y - 0.0036)/(0.002 + 0.08*x))^2)/(1 + 30*x)"
+epsilon = "1 + 3e5*exp(-((y - 0.0036)/(0.002 + 0.08*x))^2)/(1 + 30*x)^3"
+
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [49.6, 0.0, 0.0]
+turbulence_intensity = 0.05
+turbulence_length_scale = 0.0005
+[boundary.xmin.energy]
+temperature = 294.0
+[boundary.xmin.species]
+mass_fractions = { CH4 = 0.1563, O2 = 0.1965 }
+
+[boundary.jet_lip]
+type = "wall"
+[boundary.jet_lip.energy]
+heat_flux = 0.0
+
+[boundary.pilot]
+type = "velocity-inlet"
+velocity = [11.4, 0.0, 0.0]
+turbulence_intensity = 0.05
+turbulence_length_scale = 0.0005
+[boundary.pilot.energy]
+temperature = 1880.0
+[boundary.pilot.species]
+mass_fractions = { O2 = 0.0515, CO = 0.00034, CO2 = 0.1175, H2O = 0.0965 }
+
+[boundary.pilot_lip]
+type = "wall"
+[boundary.pilot_lip.energy]
+heat_flux = 0.0
+
+[boundary.coflow]
+type = "velocity-inlet"
+velocity = [0.9, 0.0, 0.0]
+turbulence_intensity = 0.01
+turbulence_length_scale = 0.005
+[boundary.coflow.energy]
+temperature = 291.0
+[boundary.coflow.species]
+mass_fractions = { O2 = 0.2329 }
+
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+
+[boundary.ymax]
+type = "slip-wall"
+[boundary.ymax.energy]
+heat_flux = 0.0
+
+[boundary.zmin]
+type = "wedge"
+[boundary.zmax]
+type = "wedge"
+
+# the residuals swing about 2e-4 from iteration 1500 on; the temperatures
+# of iterations 2000 and 3000 agree to 3 K, the heat release to 2e-3
+[solver]
+tolerance = 1e-6
+max_iterations = 2000
+log_every = 100
+
+[verification]
+require_convergence = false
+
+[solver.scalar]
+limiter = "mlp"
+
+[output]
+wall_csv = false
+lines = [
+  { name = "axis", from = [0.0, 0.0, 0.0], to = [0.5, 0.0, 0.0], points = 501 },
+  { name = "x15D", from = [0.108, 0.0, 0.0], to = [0.108, 0.04, 0.0], points = 201 },
+  { name = "x30D", from = [0.216, 0.0, 0.0], to = [0.216, 0.04, 0.0], points = 201 },
+  { name = "x45D", from = [0.324, 0.0, 0.0], to = [0.324, 0.04, 0.0], points = 201 },
+]
