@@ -31,7 +31,7 @@
 //!
 //! Outcomes of Post and Abraham (2002, *Modeling the outcome of drop-drop
 //! collisions in Diesel sprays*, Int. J. Multiphase Flow 28, 997-1019;
-//! D349), with `post`: with Δ = r_s/r_l ≤ 1, B = b/(r_s + r_l) and the
+//! D378), with `post`: with Δ = r_s/r_l ≤ 1, B = b/(r_s + r_l) and the
 //! Weber number of the small diameter We_d = 2 We,
 //!
 //! 1. bouncing (Estrade et al. 1999, Int. J. Heat Fluid Flow 20) when
@@ -53,6 +53,16 @@
 //! as the grazing of `coalescence = false` (a head-on one leaves both with
 //! the common velocity, mass and momentum kept, energy lost).
 //! No satellite drops form.
+//!
+//! Collision cells of their own (D379, `cell = h`): instead of the cells
+//! of the flow mesh the drops meet in cubes of edge h, with V = h³. Every
+//! step the cube lattice is turned by a random rotation (uniform over the
+//! rotations, from a random unit quaternion, Shoemake 1992) and shifted by
+//! a random vector in [0, h)³, so no lattice line stays in place and the
+//! rate does not follow the flow mesh (Hou and Schmidt 2006, Int. J.
+//! Multiphase Flow 32; the uniform rotated collision mesh as described by
+//! Lanfaloni, MSc thesis, Politecnico di Torino 2020, p. 15). A cube cut
+//! by a wall or a mirror plane is counted with its full volume (ours).
 //!
 //! The random numbers are keyed by the smallest parcel identity of the
 //! cell, the time at the end of the step and the candidate (stream
@@ -82,9 +92,9 @@ pub struct CollisionTally {
     pub merged_parcels: u64,
     /// Cells whose candidate count was capped.
     pub capped_cells: u64,
-    /// Of the events, bounces (Post outcomes, D349).
+    /// Of the events, bounces (Post outcomes, D378).
     pub bounces: u64,
-    /// Of the events, reflexive separations (Post outcomes, D349).
+    /// Of the events, reflexive separations (Post outcomes, D378).
     pub reflexive: u64,
 }
 
@@ -101,8 +111,10 @@ pub struct CollisionInput {
     pub t1: f64,
     /// Coalescence on (otherwise every collision is a grazing separation).
     pub coalescence: bool,
-    /// The outcomes of Post and Abraham (D349) in place of O'Rourke's.
+    /// The outcomes of Post and Abraham (D378) in place of O'Rourke's.
     pub post: bool,
+    /// The edge of the collision cells (D379); `None`: the flow cells.
+    pub cell: Option<f64>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -162,6 +174,41 @@ pub fn reflexive_weber(delta: f64, b: f64) -> f64 {
     }
 }
 
+/// The rotation (rows) and the shift (in cells, [0, 1)³) of the collision
+/// lattice of the step ending at `t1` (D379): a uniform random rotation
+/// from a unit quaternion of three uniform numbers (Shoemake 1992).
+pub fn lattice_frame(t1: f64) -> ([[f64; 3]; 3], [f64; 3]) {
+    let tw = t1.to_bits();
+    let u = |e: u64| rng::uniform_keyed([stream::SPRAY_COLLISION, u64::MAX, tw, e]);
+    let (u1, u2, u3) = (u(0), u(1), u(2));
+    let tau = 2.0 * std::f64::consts::PI;
+    let (a, b) = ((1.0 - u1).sqrt(), u1.sqrt());
+    let (w, x, y, z) = (
+        a * (tau * u2).sin(),
+        a * (tau * u2).cos(),
+        b * (tau * u3).sin(),
+        b * (tau * u3).cos(),
+    );
+    let rot = [
+        [
+            1.0 - 2.0 * (y * y + z * z),
+            2.0 * (x * y - z * w),
+            2.0 * (x * z + y * w),
+        ],
+        [
+            2.0 * (x * y + z * w),
+            1.0 - 2.0 * (x * x + z * z),
+            2.0 * (y * z - x * w),
+        ],
+        [
+            2.0 * (x * z - y * w),
+            2.0 * (y * z + x * w),
+            1.0 - 2.0 * (x * x + y * y),
+        ],
+    ];
+    (rot, [u(3), u(4), u(5)])
+}
+
 /// Collides the drops of the parcels `p` in place (the cells of `p.cell`
 /// with the volumes `volume`); parcels flagged in `skip` (the injected
 /// blobs) take no part. Parcels left with no drops are removed.
@@ -171,13 +218,27 @@ pub fn collide(
     skip: &dyn Fn(usize) -> bool,
     inp: CollisionInput,
 ) -> CollisionTally {
-    // the members of each cell in the order of their identities
-    let mut members: Vec<(u32, u64, usize)> = (0..p.len())
+    // the members of each cell in the order of their identities: the flow
+    // cell, or the cube of the turned and shifted collision lattice
+    let lattice = inp.cell.map(|h| (h, lattice_frame(inp.t1)));
+    let key_of = |i: usize| -> [i64; 3] {
+        match lattice {
+            None => [p.cell[i] as i64, 0, 0],
+            Some((h, (rot, shift))) => {
+                let x = p.x[i];
+                std::array::from_fn(|a| {
+                    let y = rot[a][0] * x[0] + rot[a][1] * x[1] + rot[a][2] * x[2];
+                    (y / h + shift[a]).floor() as i64
+                })
+            }
+        }
+    };
+    let mut members: Vec<([i64; 3], u64, usize)> = (0..p.len())
         .filter(|&i| !skip(i) && p.count[i] > 0.0 && p.d[i] > 0.0)
-        .map(|i| (p.cell[i], p.id[i], i))
+        .map(|i| (key_of(i), p.id[i], i))
         .collect();
     members.sort_unstable_by_key(|&(c, id, _)| (c, id));
-    let mut groups: Vec<&[(u32, u64, usize)]> = Vec::new();
+    let mut groups: Vec<&[([i64; 3], u64, usize)]> = Vec::new();
     let mut a = 0;
     while a < members.len() {
         let mut b = a + 1;
@@ -204,7 +265,11 @@ pub fn collide(
                     merged: false,
                 })
                 .collect();
-            let t = cell(&mut drops, volume[g[0].0 as usize], g[0].1, inp);
+            let vol = match lattice {
+                None => volume[g[0].0[0] as usize],
+                Some((h, _)) => h * h * h,
+            };
+            let t = cell(&mut drops, vol, g[0].1, inp);
             (drops, t)
         })
         .collect();
@@ -314,7 +379,7 @@ fn cell(drops: &mut [Drop], vol: f64, key: u64, inp: CollisionInput) -> Collisio
         let mb = cb.r * cb.r * cb.r;
         t.events += 1;
         t.drop_collisions += qa;
-        // Post and Abraham (D349): bouncing first, reflexive separation of
+        // Post and Abraham (D378): bouncing first, reflexive separation of
         // the collisions that O'Rourke would merge
         let mut bounce_or_reflex = false;
         if inp.post {
@@ -419,6 +484,7 @@ mod tests {
             t1,
             coalescence,
             post: false,
+            cell: None,
         }
     }
 
@@ -544,7 +610,83 @@ mod tests {
         assert!((critical_impact(31.2, 1.0) - 0.1).abs() < 1e-12);
     }
 
-    /// The Post criteria (D349) at known points: equal drops head-on bounce
+    /// The collision lattice (D379): a proper rotation (orthonormal rows,
+    /// determinant 1), a shift in [0, 1)³, a new frame every step.
+    #[test]
+    fn lattice_frame_is_a_rotation() {
+        for s in 0..50 {
+            let (r, sh) = lattice_frame(s as f64 * 1e-6);
+            for a in 0..3 {
+                for b in 0..3 {
+                    let d: f64 = (0..3).map(|k| r[a][k] * r[b][k]).sum();
+                    assert!((d - if a == b { 1.0 } else { 0.0 }).abs() < 1e-12);
+                }
+                assert!((0.0..1.0).contains(&sh[a]));
+            }
+            let det = r[0][0] * (r[1][1] * r[2][2] - r[1][2] * r[2][1])
+                - r[0][1] * (r[1][0] * r[2][2] - r[1][2] * r[2][0])
+                + r[0][2] * (r[1][0] * r[2][1] - r[1][1] * r[2][0]);
+            assert!((det - 1.0).abs() < 1e-12);
+        }
+        assert_ne!(lattice_frame(1e-6).0, lattice_frame(2e-6).0);
+    }
+
+    /// On the collision lattice (D379) the drop collisions of parcels
+    /// spread uniformly over a box of edge L = 40 h match the pair rate of
+    /// the box, N² q² σ v Δt/(2 L³), as on the flow cells (within the few
+    /// per cent that the cubes cut by the box sides lose, about 3 h/(2 L));
+    /// parcels in one point meet in one cube at the rate of V = h³.
+    #[test]
+    fn lattice_rate_matches_the_pair_rate() {
+        let (r, v, q) = (10e-6, 10.0, 1.0);
+        let run = |n: usize, h: f64, spread: f64, steps: usize| {
+            let mut sum = 0.0;
+            for s in 0..steps {
+                let mut p = Parcels::default();
+                for i in 0..n {
+                    let w = |e: u64| rng::uniform_keyed([99, i as u64, s as u64, e]);
+                    let sign = if i % 2 == 0 { 1.0 } else { -1.0 };
+                    p.id.push(i as u64);
+                    p.x.push([spread * w(0), spread * w(1), spread * w(2)]);
+                    p.v.push([sign * v, 0.0, 0.0]);
+                    p.d.push(2.0 * r);
+                    p.count.push(q);
+                    p.born.push(0.0);
+                    p.temp.push(300.0);
+                    p.eddy.push(Eddy::default());
+                    p.brk.push(BreakupState::default());
+                    p.cell.push(0);
+                }
+                let mut inp = input(s as f64 * 1e-5, false);
+                inp.cell = Some(h);
+                sum += collide(&mut p, &[1.0], &|_| false, inp).drop_collisions;
+            }
+            let half = (n / 2) as f64;
+            let rate =
+                half * half * q * q * std::f64::consts::PI * (2.0 * r).powi(2) * (2.0 * v) * 1e-5;
+            (sum, rate * steps as f64)
+        };
+        let h = 1e-4;
+        let l = 40.0 * h;
+        let (got, rate) = run(400, h, l, 400);
+        let want = rate / (l * l * l);
+        let ratio = got / want;
+        assert!(
+            (0.92..1.03).contains(&ratio),
+            "uniform: {got} vs {want}: {ratio}"
+        );
+        // few drops a step, so a changed velocity hardly meets again
+        let h = 1e-3;
+        let (got, rate) = run(20, h, 0.0, 40_000);
+        let want = rate / (h * h * h);
+        let ratio = got / want;
+        assert!(
+            (ratio - 1.0).abs() < 0.06,
+            "point: {got} vs {want}: {ratio}"
+        );
+    }
+
+    /// The Post criteria (D378) at known points: equal drops head-on bounce
     /// below We_d = 2 (4φ′ − 12) = 2.808 (τ = 2, χ = 1) and separate
     /// reflexively above 6 (7 · 2^{2/3} − 8) = 18.68 (η₁ = η₂ = 1), the
     /// value of Ashgriz and Poo for water; the bounce limit rises towards

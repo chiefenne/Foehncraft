@@ -1514,7 +1514,7 @@
    ],
    "gaps": [
     "ECN Spray G (G1) since D348: the spray runs ahead early (liquid +23 %, vapour +19 % at 0.3 ms) and the liquid stays 8 to 10 % ahead from 0.6 ms (vapour on the measurement from 0.8 ms); the early lead is new with the fine children at the nozzle; cause open",
-    "ECN Spray G (G1): the Sauter mean diameter at 15 mm is 13.0 um with the Post collision outcomes (D349; 14.5 with O'Rourke) against 7 to 10 um measured, 13 um in the plume core where the drops coalesce, 6 to 9 um at the edges; KH-ACT constants untuned",
+    "ECN Spray G (G1): the Sauter mean diameter at 15 mm is 10.8 um with the Post collision outcomes in cubes of 0.6 mm (D378, D379; 13.0 in the flow cells, 14.5 with O'Rourke) against 7 to 10 um measured, 13 um in the plume core where the drops coalesce, 6 to 9 um at the edges; KH-ACT constants untuned",
     "spray cases with KH-ACT need small time steps during the injection since D348 (G1 1 us, Spray A 0.5 us; 2 us diverges); G1 steps up to 2 us after the injection by a schedule (#347), not by an adaptive spray-limited step",
     "a gas that diverges in some cells leaves its parcels spending max_substeps each, and their exchange records can fill the memory instead of stopping the run with a message (seen on the sector before the slip core, D309)",
     "drop sizes not validated: the gallery spray has a Sauter mean diameter near 2 um, small next to measured diesel sprays; no collision or coalescence yet",
@@ -1578,15 +1578,17 @@
   },
   {
    "id": "sprays.collision",
-   "title": "Drop collisions: no-time-counter sampling with O'Rourke's coalescence and grazing separation (D331), optionally with the bouncing and reflexive separation of Post and Abraham (D349)",
+   "title": "Drop collisions: no-time-counter sampling with O'Rourke's coalescence and grazing separation (D331), optionally with the bouncing and reflexive separation of Post and Abraham (D378) and collision cells of their own, turned and shifted at random every step (D379)",
    "grade": "partial",
    "why": [
     "gaps written"
    ],
    "gaps": [
-    "Post outcomes (D349): the velocities after a bounce or a reflexive separation are ours (grazing form with the share B), no satellite drops, no gas pressure in the criteria; the paper itself was not open to us",
-    "collisions within a cell of the flow mesh only, none with the injected blobs; no collision mesh of its own",
-    "with the Post outcomes the G1 drops at 15 mm are still 13.0 um against 7 to 10 um measured (9.6 um without collisions): too many drops still merge in the plume core",
+    "Post outcomes (D378): the velocities after a bounce or a reflexive separation are ours (grazing form with the share B), no satellite drops, no gas pressure in the criteria; the paper itself was not open to us",
+    "no collisions with the injected blobs; collision cubes (D379): no adaptive splitting of crowded cubes, a cube cut by a wall or mirror plane counts with its full volume",
+    "collision cubes (D379): the drop size depends on the cube edge (G1 10.8 um with 0.6 mm, 14.0 um with 0.2 mm); 0.6 mm is matched to the G1 flow mesh, not converged",
+    "with cubes of 0.6 mm the G1 liquid is 10 % ahead of the measured one at 0.8 ms (+4 % on the flow cells)",
+    "the G1 drops at 15 mm are 10.8 um against 7 to 10 um measured (9.6 um without collisions), just above the band",
     "transient spray only, CPU only, one process"
    ],
    "range": {}

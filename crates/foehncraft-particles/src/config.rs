@@ -958,7 +958,7 @@ pub enum CollisionModel {
     Ntc,
 }
 
-/// What a collision of two drops gives (D349).
+/// What a collision of two drops gives (D378).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 pub enum CollisionOutcomes {
     /// O'Rourke (1981): coalescence below the critical impact parameter,
@@ -987,9 +987,15 @@ pub struct Collision {
     /// impact parameter merge; `false` makes every collision a grazing
     /// separation (a check of the sampling).
     pub coalescence: bool,
-    /// The outcomes (D349): `orourke` (default) or `post` (with bouncing
+    /// The outcomes (D378): `orourke` (default) or `post` (with bouncing
     /// and reflexive separation).
     pub outcomes: CollisionOutcomes,
+    /// The edge of the collision cells (m, D379): the drops meet in cubes
+    /// of this size, turned and shifted at random every step (Hou and
+    /// Schmidt 2006), instead of in the cells of the flow mesh (unset,
+    /// default).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cell: Option<f64>,
 }
 
 impl Default for Collision {
@@ -998,6 +1004,7 @@ impl Default for Collision {
             model: CollisionModel::None,
             coalescence: true,
             outcomes: CollisionOutcomes::ORourke,
+            cell: None,
         }
     }
 }
@@ -1733,6 +1740,11 @@ impl SpraySection {
                     "[spray.collision] needs the surface tension of the liquid (the collision \
                      Weber number): [spray.liquid] surface_tension = 0.02 (N/m, positive)"
                 );
+            }
+            if let Some(h) = self.collision.cell
+                && !(h.is_finite() && h > 0.0)
+            {
+                bail!("[spray.collision] cell must be a positive length (m), got {h}");
             }
             if self.steady.is_some() {
                 bail!(

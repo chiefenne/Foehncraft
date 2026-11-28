@@ -27,7 +27,8 @@ Part of the [Example gallery](../gallery.md): droplets as Lagrangian parcels in 
 | 343 | [Spray G under its injector tip](#spray-device-surface) | ID2, ID3, D343 to D345 | `[[spray.device]] geometry` (`standard-gasoline`, `standard-diesel`, `stl`), `file`, `scale`, `stl_origin`, `stl_axis`, `stl_reference`, `glyph_length`, `spray/devices.vtu`, `series.json` `static`, `result.json` `spray.devices`, tool `spray.place` |
 | 338 | [Grid orientation in ECN Spray G](#spray-g-grid) | D337 | `[mesh.generate] grid_angle`: the same G1 case on a grid with its lines along the plume and at 45° to it; liquid lead at 1.2 ms 27 % and 20 %, vapour 17 % and 9 % |
 | 344 | [KH-ACT children of the right size in ECN Spray G](#spray-child-size) | D348 | the children of every KH-ACT mechanism have the KH radius B₀Λ (Som and Aggarwal 2010, eq. 1); G1 at 1 µs: liquid +8 % and vapour −1 % at 1.2 ms (was +25 % and +17 %), D32 at 15 mm 14.5 µm (was 18) |
-| 363 | [Bouncing drops in ECN Spray G (Post collision outcomes)](#spray-collision-post) | D349 | `outcomes = "post"`: bouncing (Estrade) and reflexive separation (Ashgriz-Poo) before O'Rourke; G1 to 0.9 ms: D32 at 15 mm 13.0 µm (O'Rourke 14.5, no collisions 9.6, measured 7 to 10), liquid +20 % at 0.3 ms and +4 % at 0.8 ms (O'Rourke +23 % and +9 %) |
+| 363 | [Bouncing drops in ECN Spray G (Post collision outcomes)](#spray-collision-post) | D378 | `outcomes = "post"`: bouncing (Estrade) and reflexive separation (Ashgriz-Poo) before O'Rourke; G1 to 0.9 ms: D32 at 15 mm 13.0 µm (O'Rourke 14.5, no collisions 9.6, measured 7 to 10), liquid +20 % at 0.3 ms and +4 % at 0.8 ms (O'Rourke +23 % and +9 %) |
+| 369 | [Collision cells of their own in ECN Spray G](#spray-collision-cells) | D379 | `cell = 6e-4`: drops meet in cubes of 0.6 mm turned and shifted at random every step instead of the gas cells; G1 to 0.9 ms: D32 at 15 mm 10.8 µm (gas cells 13.0, measured 7 to 10), liquid -1 % at 0.3 ms and +10 % at 0.8 ms; smaller cubes merge more (0.2 mm: 14.0 µm) |
 
 ---
 
@@ -1834,7 +1835,7 @@ collisions the drops 15 mm from the tip are 14.5 µm (Sauter mean on the
 line of the phase-Doppler measurement through the plume centre), without
 them 9.6 µm, against 7 to 10 µm measured. The leading set-up of the ECN
 for Spray G (Argonne's LES at ECN4) uses the outcomes of Post and Abraham
-(2002) instead, and so can we now (D349):
+(2002) instead, and so can we now (D378):
 
 ```toml
 [spray.collision]
@@ -1881,4 +1882,67 @@ early lead stays, both open gaps. About 40 minutes on 4 threads to 0.9 ms.
 
 Files: `spray.csv`, `spray/parcels_<step>.vtkhdf`, `fields_<step>.vtkhdf`.
 [Recipe 363](../recipes/sprays.md#spray-collision-post),
+[case row](../cases/flow.md#lagrangian-sprays).
+
+---
+
+<a id="spray-collision-cells"></a>
+## 369. Collision cells of their own in ECN Spray G
+
+<img src="../figures/gallery/spray_collision_cells.png" alt="Left: side view of one plume of ECN Spray G at 0.6 ms with the drops meeting in turned cubes of 0.6 mm, the iso-octane vapour mass fraction on the plane of the plume above the injector axis, a band at about 33 degrees ending near 31 mm, and the projected liquid volume of the eight plumes below it in grey with a red outline. Right top: liquid penetration to 0.9 ms; the thick red curve with the turned cubes lies on the measured points to 0.4 ms and runs 3 to 4 mm above them at 0.8 ms, the thin orange curve with the gas cells runs ahead early and below it late. Right middle: vapour penetration; both curves close to the measured points, the turned-cube one slightly longer late. Right bottom: gas velocity on the injector axis 15 mm from the tip; both runs fall to about minus 7 metres per second." width="1200" height="840">
+
+With NTC sampling two parcels can only collide when they share a
+collision cell. Until now that was the gas cell (D331, D378), so the
+collisions follow the mesh: in the Spray G mesh the cells are long along
+the plume and graded towards the axis, and the drops near the tip meet
+far too often. Hou and Schmidt (2006) let the drops meet in a lattice of
+their own that is turned and shifted at random every step, so that no
+direction of the mesh is preferred; we do the same (D379):
+
+```toml
+[spray.collision]
+model = "ntc"
+outcomes = "post"
+cell = 6e-4      # edge of the collision cubes in m; leave out for the gas cells
+```
+
+Every step a rotation (uniform over all rotations) and a shift of up to
+one cube are drawn from the keyed random stream of the collisions, so a
+run repeats bit for bit on any number of threads. The pair rate uses the
+cube volume h³.
+
+| G1 to 0.9 ms, 1 µs | D32, line at 15 mm | liquid 0.3 ms | liquid 0.8 ms | vapour 0.8 ms |
+|---|---|---|---|---|
+| measured (ECN) | 7 to 10 µm | 20.4 mm | 33.8 mm | |
+| gas cells (#363) | 13.0 µm | 24.5 mm (+20 %) | 35.2 mm (+4 %) | 34.6 mm |
+| **cubes of 0.6 mm (the case now)** | **10.8 µm** | 20.1 mm (-1 %) | 37.3 mm (+10 %) | 36.7 mm |
+| cubes of 0.2 mm | 14.0 µm | 25.7 mm (+26 %) | 36.3 mm (+7 %) | 35.6 mm |
+| no collisions | 9.6 µm | 21.7 mm (+6 %) | 38.9 mm (+15 %) | 38.9 mm |
+
+With cubes of 0.6 mm, about the size of the gas cells in the plume, the
+drops in the core are 10.8 µm, just above the measured band, and the
+early lead of 20 % is gone. The late lead grows from 4 to 10 %: fewer
+merged drops are lighter and stay in front of the measured tip.
+
+**The cube size matters.** Smaller cubes give more pairs per cube volume
+in the dense core and merge more (0.2 mm: 14.0 µm, worse than the gas
+cells). This is the mesh dependence of NTC that the literature reports
+(Schmidt and Rutland 2000, Hou and Schmidt 2006), moved from the gas mesh
+to a number in the case file. 0.6 mm is a choice, matched to the gas
+mesh of G1, not a converged value; it is an open gap.
+
+**What is checked.** The frame is a rotation (orthonormal, determinant
+1) for many draws; on uniform parcels in a box of 40 cubes the collision
+count with the lattice matches the count with the gas cells within
+-8 to +3 %; for two parcels on a point the rate matches the analytic
+pair rate within 6 % over 40 000 steps. G1 as above.
+
+**What this version does not do.** Cubes cut by a wall or a mirror plane
+count with their full volume, so drops near walls collide a little too
+rarely; no adaptive cube size (Hou and Schmidt split the cubes by parcel
+count); the size dependence above. About 40 minutes on 4 threads to
+0.9 ms.
+
+Files: `spray.csv`, `spray/parcels_<step>.vtkhdf`, `fields_<step>.vtkhdf`.
+[Recipe 369](../recipes/sprays.md#spray-collision-cells),
 [case row](../cases/flow.md#lagrangian-sprays).

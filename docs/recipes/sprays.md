@@ -27,6 +27,7 @@ Part of the [Recipes](../recipes.md): droplets that move with and through the ga
 | 338 | [Turn the grid against a jet](#spray-g-grid) |
 | 344 | [Pick the time step of a spray that atomizes at the nozzle](#spray-child-size) |
 | 363 | [Let colliding drops bounce (Post outcomes)](#spray-collision-post) |
+| 369 | [Let the drops meet in collision cells of their own](#spray-collision-cells) |
 
 ---
 
@@ -1120,7 +1121,7 @@ Case: `examples/cases/flow/spray_g_g1.toml`;
 ## 363. Let colliding drops bounce (Post outcomes)
 
 In a dense spray O'Rourke's outcomes (D331) merge most slow collisions.
-The outcomes of Post and Abraham (D349) let drops bounce at small Weber
+The outcomes of Post and Abraham (D378) let drops bounce at small Weber
 numbers and separate reflexively in fast head-on collisions:
 
 ```toml
@@ -1144,3 +1145,36 @@ python3 -m tools.plot.spray_g_g1 OUT_DIR output/spray_g_g1 output/spray_g_g1_oro
 
 Case: `examples/cases/flow/spray_g_g1.toml`;
 [gallery entry](../gallery/sprays.md#spray-collision-post).
+
+---
+
+<a id="spray-collision-cells"></a>
+## 369. Let the drops meet in collision cells of their own
+
+By default drops collide when they share a gas cell, so the collisions
+depend on the mesh. Give the collisions a lattice of their own, turned
+and shifted at random every step (D379):
+
+```toml
+[spray.collision]
+model = "ntc"
+outcomes = "post"
+cell = 6e-4    # cube edge in m; leave out to use the gas cells
+```
+
+Start with a cube about the size of the gas cells in the dense part of
+the spray. Smaller cubes merge more drops; compare two sizes before you
+trust a drop size (in Spray G 0.6 mm gave 10.8 µm 15 mm from the tip,
+0.2 mm gave 14.0 µm). The run stays bitwise reproducible on any thread
+count.
+
+```sh
+foehn flow examples/cases/flow/spray_g_g1.toml --out output/spray_g_g1 --end-time 9e-4
+# the comparison: a copy of the case without the cell line
+foehn flow spray_g_g1_gas.toml --out output/spray_g_g1_gas --end-time 9e-4
+python3 -m tools.plot.spray_g_g1 OUT_DIR output/spray_g_g1 output/spray_g_g1_gas \
+    --label "flow cells" --name spray_collision_cells.png
+```
+
+Case: `examples/cases/flow/spray_g_g1.toml`;
+[gallery entry](../gallery/sprays.md#spray-collision-cells).
