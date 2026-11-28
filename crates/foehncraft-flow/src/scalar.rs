@@ -688,6 +688,10 @@ struct Field {
     /// The reaction source per cell of a species of a reacting flow
     /// (SF2b, [φ]/s), added to `source`.
     reaction: Option<Vec<f64>>,
+    /// The implicit part S_p ≤ 0 of the reaction source per cell (1/s;
+    /// SF3, steady turbulent flames): the source is S_u + S_p φ, with
+    /// `reaction` the part S_u; on the device and on the host.
+    reaction_sp: Option<(Buf, Vec<f64>)>,
     /// The values of `source` per cell of the last upload (empty: none).
     source_cells: Vec<f64>,
 }
@@ -806,6 +810,19 @@ struct EnergyField {
     phase_heat: Option<Vec<(u32, f64, f64)>>,
     /// The heat release of a reacting flow per cell (SF2b, W/m³).
     reaction_heat: Option<Vec<f64>>,
+    /// The heat release of a steady turbulent flame (SF3) linear in the
+    /// species: q = A + Σ B_j Y_j per cell (W/m³), with Y_j the current
+    /// mass fractions of the species fields `phi` (replaces
+    /// `reaction_heat` in the energy rows).
+    reaction_linear: Option<ReactionLinear>,
+}
+
+/// The heat release q = A + Σ_j B_j Y_j of a steady turbulent flame (SF3).
+#[derive(Debug, Clone)]
+struct ReactionLinear {
+    a: Vec<f64>,
+    b: Vec<Vec<f64>>,
+    phi: Vec<Buf>,
 }
 
 /// The variable density of the fluid in the energy equation (stage 7c):
@@ -978,6 +995,10 @@ pub struct StepTime {
     /// a₀, a₁, a₂.
     pub a: [f64; 3],
 }
+
+/// The reaction source of one species per cell, S_u, and its implicit part
+/// S_p (SF3: the source is S_u + S_p Y).
+pub type SpeciesReaction<'a> = (&'a [f64], Option<&'a [f64]>);
 
 /// The passive scalars of a flow on its device.
 pub struct Scalars {
@@ -1347,6 +1368,7 @@ impl Scalars {
                 settings: settings.clone(),
                 energy: None,
                 reaction: None,
+                reaction_sp: None,
                 source_cells: Vec::new(),
             });
         }
@@ -1722,7 +1744,7 @@ impl Scalars {
                         dev.upload(bp, &p)?;
                         (Some(bu), Some(bp))
                     }
-                    _ => (f.su, robin_sp),
+                    _ => (f.su, robin_sp.or(f.reaction_sp.as_ref().map(|r| r.0))),
                 };
                 dev.scalar_rows(&ScalarRowArgs {
                     cp: w_cp,
@@ -2613,6 +2635,19 @@ impl Scalars {
         species: Vec<Vec<f64>>,
         heat: Vec<f64>,
     ) -> Result<()> {
+        self.set_reaction_with(dev, species, None, heat)
+    }
+
+    /// [`set_reaction`](Self::set_reaction) with the implicit parts
+    /// S_p ≤ 0 (1/s) per transported species (SF3): the source of species
+    /// i is S_u,i + S_p,i Y_i, the slope on the diagonal of its rows.
+    pub(crate) fn set_reaction_with(
+        &mut self,
+        dev: &mut dyn FlowDevice,
+        species: Vec<Vec<f64>>,
+        implicit: Option<Vec<Vec<f64>>>,
+        heat: Vec<f64>,
+    ) -> Result<()> {
         let nc = self.nc;
         let idx: Vec<usize> = self
             .species
@@ -2643,20 +2678,66 @@ impl Scalars {
             }
             f.reaction = Some(r);
         }
+        match implicit {
+            Some(sp) => {
+                anyhow::ensure!(sp.len() == idx.len(), "implicit reaction sources");
+                for (&i, p) in idx.iter().zip(sp) {
+                    let f = &mut self.fields[i];
+                    let b = match &f.reaction_sp {
+                        Some((b, _)) => *b,
+                        None => dev.alloc(nc)?,
+                    };
+                    dev.upload(b, &p)?;
+                    f.reaction_sp = Some((b, p));
+                }
+            }
+            None => {
+                // (a run keeps one form; the buffer of a switch is left)
+                for &i in &idx {
+                    self.fields[i].reaction_sp = None;
+                }
+            }
+        }
         if let Some(e) = self.fields.iter_mut().find_map(|f| f.energy.as_deref_mut()) {
             e.reaction_heat = Some(heat);
+            e.reaction_linear = None;
+        }
+        Ok(())
+    }
+
+    /// Makes the heat release of the energy rows linear in the transported
+    /// species (SF3, steady): q = A + Σ_j B_j Y_j per cell (W/m³), taken
+    /// with the mass fractions of the fields at each refresh of the energy,
+    /// so that the energy gets the enthalpy of the conversion the implicit
+    /// species rows make (and not that of the state of the renewal).
+    pub(crate) fn set_reaction_heat_linear(&mut self, a: Vec<f64>, b: Vec<Vec<f64>>) -> Result<()> {
+        let idx: Vec<usize> = self
+            .species
+            .as_deref()
+            .map(|s| s.fields.clone())
+            .unwrap_or_default();
+        anyhow::ensure!(idx.len() == b.len(), "linear heat release per species");
+        let phi: Vec<Buf> = idx.iter().map(|&i| self.fields[i].phi).collect();
+        if let Some(e) = self.fields.iter_mut().find_map(|f| f.energy.as_deref_mut()) {
+            e.reaction_linear = Some(ReactionLinear { a, b, phi });
         }
         Ok(())
     }
 
     /// The reaction sources dY/dt per cell (1/s) of the transported species
-    /// of a reacting flow (SF2b), in the order of the mixture; `None`
-    /// before the first reaction step.
-    pub fn species_reaction(&self) -> Option<Vec<&[f64]>> {
+    /// of a reacting flow (SF2b), in the order of the mixture, with their
+    /// implicit parts S_p (SF3: the source is S_u + S_p Y); `None` before
+    /// the first reaction step.
+    pub fn species_reaction(&self) -> Option<Vec<SpeciesReaction<'_>>> {
         let sp = self.species.as_deref()?;
         sp.fields
             .iter()
-            .map(|&i| self.fields[i].reaction.as_deref())
+            .map(|&i| {
+                let f = &self.fields[i];
+                f.reaction
+                    .as_deref()
+                    .map(|r| (r, f.reaction_sp.as_ref().map(|p| p.1.as_slice())))
+            })
             .collect()
     }
 
@@ -2790,6 +2871,18 @@ impl Scalars {
             }
         }
         Ok(())
+    }
+
+    /// Sets the convection condition h (T_amb − T_b) of single boundary
+    /// faces of the energy equation, `(boundary face, h, T_amb)`: the water
+    /// side of walls coupled to a circuit (SF7c). It acts from the next
+    /// energy solve, implicit in the matrix like any convection condition.
+    pub fn set_energy_convection(&mut self, faces: &[(usize, f64, f64)]) {
+        if let Some(e) = self.fields.iter_mut().find_map(|f| f.energy.as_deref_mut()) {
+            for &(fb, h, t) in faces {
+                e.conds[fb] = ECond::Convection(Value::Number(h), Value::Number(t));
+            }
+        }
     }
 
     /// The number of interface faces (slots) of the energy equation.
@@ -3457,6 +3550,7 @@ impl Scalars {
             spray_heat: None,
             phase_heat: None,
             reaction_heat: None,
+            reaction_linear: None,
             var_rho: None,
             porous,
             mats,
@@ -3493,6 +3587,7 @@ impl Scalars {
             settings,
             energy: Some(Box::new(energy)),
             reaction: None,
+            reaction_sp: None,
             source_cells: Vec::new(),
         });
         Ok(())
@@ -3827,7 +3922,18 @@ fn refresh_energy(
             }
         }
         // the heat release of a reacting flow (SF2b)
-        if let Some(r) = &e.reaction_heat {
+        if let Some(l) = &e.reaction_linear {
+            // (SF3, steady) with the current mass fractions
+            for (h, a) in heat.iter_mut().zip(&l.a) {
+                *h += a;
+            }
+            for (b, &f) in l.b.iter().zip(&l.phi) {
+                let y = dev.download(f)?;
+                for ((h, b), y) in heat.iter_mut().zip(b).zip(&y) {
+                    *h += b * y;
+                }
+            }
+        } else if let Some(r) = &e.reaction_heat {
             for (h, q) in heat.iter_mut().zip(r) {
                 *h += q;
             }

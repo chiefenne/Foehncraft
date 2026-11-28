@@ -1078,6 +1078,27 @@ time_step = 1e-6     # Spray G G1; 5e-7 for Spray A
 write_every = 50     # keep the parcel output at 50 µs when the step halves
 ```
 
+Once the injector stops, no new blobs atomize at the nozzle and the step
+can grow again. G1 steps up after the end of injection (0.787 ms) and
+saves a restart there, so the late spray can be rerun on its own:
+
+```toml
+[run]
+restart_times = [9e-4]
+
+[[schedule]]
+at_time = 9e-4
+set = { time.time_step = 2e-6 }
+```
+
+```sh
+foehn flow examples/cases/flow/spray_g_g1.toml --out output/g1_late \
+  --restart output/spray_g_g1/restart_000900.h5
+```
+
+On G1 the 2 µs leg from 0.9 to 1.2 ms matches the run at 1 µs throughout
+(same penetrations, liquid mass within 0.2 %) and takes about 2 minutes.
+
 Signs that the step is too large, before the run diverges: in the log the
 residuals of the passes alternate between two values instead of falling,
 and the Courant number climbs step by step (from 0.3 to 1.7 in 20 steps on

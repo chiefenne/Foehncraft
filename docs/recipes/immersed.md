@@ -10,6 +10,10 @@ Part of the [Recipes](../recipes.md): put bodies into the flow without meshing t
 | 310 | [Check an STL surface before it becomes a body](#surface-check) |
 | 315 | [Cut a mesh exactly by an STL surface](#cut-moments) |
 | 322 | [Put an STL body into the flow](#stl-body) |
+| 357 | [Run a turbulent flow with wall functions on a cut body](#cut-wall-functions) |
+| 359 | [Keep a cut body as a solid region (conjugate heat transfer)](#cut-cht) |
+| 360 | [Give a cut body inlets, outlets and a turning wall](#cut-patches) |
+| 361 | [Refine the mesh near a body](#refine) |
 
 ---
 
@@ -203,4 +207,179 @@ type = "wall"
 
 **Resolution.** About 6 cells per radius give the drag of a sphere array within 2.3 %, 10 cells within 0.9 % (hexahedra, second order). A part of the surface thinner than a cell can vanish; put two or more cells across thin walls.
 
-**Limits.** Hexahedral meshes are the best checked; on tetrahedra the force balance of the wall is within 5 %, on polyhedra the cut is less accurate (the faces are not planar). Merged cells keep faces that do not lie in one plane apart, so two cells can share several faces (IMM203 counts them). Wall functions, conjugate heat transfer, other wall conditions per surface patch and near-body refinement follow (stages 2c to 2f). One rank only.
+**Limits.** Hexahedral meshes are the best checked; on tetrahedra the force balance of the wall is within 5 %, on polyhedra the cut is less accurate (the faces are not planar). Merged cells keep faces that do not lie in one plane apart, so two cells can share several faces (IMM203 counts them). Wall functions: [recipe 357](#cut-wall-functions), conjugate heat transfer: [recipe 359](#cut-cht). Other wall conditions per surface patch and near-body refinement follow (stages 2e and 2f). One rank only.
+
+---
+
+<a id="cut-wall-functions"></a>
+## 357. Run a turbulent flow with wall functions on a cut body
+
+**Nothing extra to set.** A cut body (`method = "cut"`) in a turbulent case with wall functions (any k-ε treatment but the low-Re ones, SST with its automatic wall treatment) gets them on its wall: every cut or merged wall cell takes the exact distance of its centroid to the body, and its wall function takes the velocity from the cell one layer out along the wall normal.
+
+```toml
+[immersed]
+method = "cut"
+
+[immersed.cut]
+# wall_sample = true        # sample one layer out (default); false: the cut cell itself
+
+[[immersed.body]]
+name = "plate"
+shape = "plane"             # a half-space: an inclined wall across the mesh
+centre = [0.0, 0.02, 0.0]   # a point on the plane
+normal = [-0.0349, 0.9994, 0.0]   # out of the solid into the fluid
+
+[boundary.plate]
+type = "wall"
+
+[turbulence]
+model = "k-epsilon"
+wall_treatment = "scalable"
+```
+
+**Read the y⁺ of the body.** LIM011 in the log and in `result.json` gives the smallest, mean and largest first-cell y⁺ of every cut body; `[output] wall_csv = true` writes the `y_plus` of every wall face (`wall_<body>.csv`), the y⁺ map. The y⁺ of a cut wall spreads more than on a fitted wall (a plate crossing cell rows: 30 to 140 where the fitted plate has 100), because the cut cells have every height between a fifth and one and a half cells.
+
+**Mesh for the sample.** The sampled cell has to lie in the log layer: keep the first two or three cell rows near the body below y/δ ≈ 0.15. With 2 mm cells on a plate with a 16 mm boundary layer the skin friction came out 17 % high; with 1 mm cells within 7 % ([gallery 357](../gallery/immersed.md#cut-plate)). Where the mesh is too coarse for that, `wall_sample = false` takes the cut cell itself: the mean is then right but single faces scatter by ±40 % or more.
+
+**Start the flow along the wall.** A uniform start velocity that points into a cut body at high Reynolds numbers can diverge in the first iteration (net inflow into the cut cells): start with the velocity along the body or from a coarser run.
+
+**Limits.** Resolved walls (low-Re treatments, ζ-f to the wall) take the exact distance but no sample. Single wall faces scatter about ±15 % in C_f even with sampling; integrated forces and the mean along the body are closer. One rank only.
+
+---
+
+<a id="cut-cht"></a>
+## 359. Keep a cut body as a solid region (conjugate heat transfer)
+
+**Name the body as the zone of a solid region.** The cut then keeps the inside of the body as the cells of that region; the cut faces become the region interface (D160), the flow sees the wall `interface-<region>`:
+
+```toml
+[immersed]
+method = "cut"
+
+[[immersed.body]]
+name = "pin"
+shape = "cylinder"          # any shape, an STL body too
+centre = [0.2, 0.2, 0.0]
+radius = 0.05
+
+[materials.aluminium]
+kind = "solid"
+density = 2700.0
+specific_heat = 900.0
+conductivity = 200.0
+
+[regions.pin]
+kind = "solid"
+zones = ["pin"]             # the body, not a mesh zone
+material = "aluminium"
+
+[energy]
+initial = 300.0
+
+[[energy.sources]]
+region = "pin"
+power_density = 2e5         # W/m³
+```
+
+The body needs no `[boundary.<body>]`: its wall is the interface. A body without a region is cut out as before (a wall); both kinds can be in one case. The energy equation is required (IMM202 otherwise).
+
+**Read the cut.** The log's mesh line gives, per solid body, the interface area and the solid volume against the exact ones (`cut body pin (solid region pin): interface area …, solid volume …`) and the solid cells, the small ones merged and the smallest kept fraction (`cut cells both ways`). The heat balance of the energy line closes to round-off when the energy solve has converged.
+
+**Converge the energy equation.** The solid with k_s ≫ k_f is stiff in one matrix with the fluid; give the energy solve its own tolerance and enough linear iterations:
+
+```toml
+[solver.energy]
+relaxation = 1.0
+tolerance = 1e-10
+max_iter = 300
+```
+
+Without it the pin of [gallery 359](../gallery/immersed.md#cut-cht) stalled with a heat imbalance of 33 %.
+
+**Two cells across, or a thin wall.** A solid body must be about two cells thick where it is thinnest; a thinner one is refused with IMM205. Refine the mesh in the body, or model the wall as a thin wall on a region interface (`[interfaces.<name>] thin_wall`, D189), which carries its conduction without cells.
+
+**Limits.** Hexahedra and tetrahedra are the best checked; on polyhedra a few flat solid slivers stay. Solids that move (stage 5) and the thin-wall model on a cut interface are not built. One rank only.
+
+---
+
+<a id="cut-patches"></a>
+## 360. Give a cut body inlets, outlets and a turning wall
+
+**Name the patches in the STL file.** Write the surface as an ASCII STL file with one `solid <name>` per patch (most CAD tools export the faces of a part as named solids), or tag the triangles of a binary file with their 16-bit attribute. Then:
+
+```toml
+[immersed]
+method = "cut"
+
+[[immersed.body]]
+name = "cylinder"
+shape = "stl"
+file = "blown_cylinder.stl"
+patches = "solids"              # ASCII: one patch per solid
+# patches = { slot = 1, wall = 2 }   # binary: patch = attribute
+
+[boundary.cylinder-slot]        # <body>-<patch>
+type = "velocity-inlet"
+normal_velocity = 0.4
+[boundary.cylinder-wall]
+type = "wall"
+```
+
+Any condition goes on a patch: inlets, outlets, walls with their own wall velocity, roughness or energy condition. Faces of triangles without a listed tag stay in the boundary `<body>`. The log lists the faces and area of every patch.
+
+**Turn the wall.** `omega` (rad/s) turns the wall of a body about its `axis` through its `centre` (a box: its middle):
+
+```toml
+[[immersed.body]]
+name = "rotor"
+shape = "cylinder"
+centre = [0.0, 0.0, 0.0]
+radius = 0.05
+omega = 10.0                    # the wall moves with ω × (x − centre)
+
+[boundary.rotor]
+type = "wall"                   # no `velocity`: omega gives it
+```
+
+The boundary summary of every wall of the body (`result.json`, the log) then has its `torque` about the axis; give `omega = 0` for the torque of a body at rest. The body itself does not move: this is exact for a body of revolution about its axis (a shaft, a disc, a cylinder) and for a body at rest. A wall `velocity` of your own and `omega` on the same body are refused (IMM101).
+
+**Keep the fluid inside.** `invert = true` turns a cylinder, sphere or box inside out: the fluid inside, the solid outside. A pipe or the outer wall of a gap then needs no fitted mesh. Boundaries of the mesh that lie wholly in the solid are left out and need no condition (a condition the case gives them anyway is kept, on an empty boundary).
+
+**Limits.** A wall face of a cut cell is not split along a patch edge: patch edges are resolved to the cell size. Solid regions (recipe 359) cannot turn or have patches. One rank only.
+**Limits.** A wall face of a cut cell is not split along a patch edge: patch edges are resolved to the cell size. Solid regions (recipe 359) cannot turn or have patches. One rank only.
+
+---
+
+<a id="refine"></a>
+## 361. Refine the mesh near a body
+
+**Start from a coarse box mesh and let the bodies refine it.** Add `[immersed.refine]` to a case with `[[immersed.body]]` bodies (cut or penalised):
+
+```toml
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [2.2, 0.41, 0.01]
+cells = [220, 41, 1]           # h = D/10 away from the body
+
+[immersed]
+method = "cut"
+
+[immersed.refine]
+levels = 2                     # halve the cells near the bodies twice: D/40
+distance = 0.08                # the finest level within 0.08 m of a surface,
+                               # the next one within 0.16 m, ...
+# layers = 4                   # or: each level 4 of its own cells wide (default)
+
+[[immersed.body]]
+name = "cylinder"
+shape = "cylinder"
+centre = [0.2, 0.2, 0.0]
+radius = 0.05
+```
+
+The hexahedra of the mesh near the surfaces are halved before the cut, 2:1 balanced, into hexahedra with hanging-node faces; a planar mesh (one cell thick) is refined in its plane. The log (IMM206) gives the cells per level, the faces between levels and the largest non-orthogonality and skewness.
+
+**Choose the widths.** Make the finest band wide enough for the flow features at the body: the lift of the Schäfer–Turek cylinder ([gallery 361](../gallery/immersed.md#refine)) is 5 % below the reference range with the finest band 0.02 m (0.2 D) wide and inside it at 0.08 m (0.8 D); drag and pressure difference were within 0.2 % of their ranges already at 0.02 m. Use `distance` for a convergence study (`[verification] levels`): the refined region is then the same in metres on every level, while `layers` narrows it with the cells.
+
+**Limits.** Only hexahedra are refined; tetrahedra, prisms and polyhedra are kept whole. The refinement follows the distance to the bodies only, not the solution, and never coarsens. A mesh with periodic pairs is refined before the pairing. One rank only.

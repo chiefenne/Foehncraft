@@ -5,6 +5,7 @@ Part of the [Example gallery](../gallery.md): the one-dimensional water and stea
 | # | Example | Stage | Feature |
 |---|---|---|---|
 | 312 | [Flow boiling in an evaporator tube, and the natural circulation of a drum boiler](#water-steam-circuits) | SF7b | `circuits.run`, `[[nodes]] kind = "drum"`, `[circuit] boiling`, `friction`, `void`, `subcooled`, `chf` |
+| 356 | [A convective evaporator pass on a drum loop: the circuit behind the 3D walls](#circuit-walls) | SF7c | `[circuits]`, `[[circuits.walls]]`, `wall_resistance`, `fouling` |
 
 ---
 
@@ -76,3 +77,60 @@ non-equilibrium. Supercritical water uses Gnielinski with bulk
 properties, with no correction for the pseudo-critical region. The
 circuit is steady, with no flow instabilities or transients (SF18). The
 coupling to the 3D furnace walls is SF7c.
+
+---
+
+<a id="circuit-walls"></a>
+## 356. A convective evaporator pass on a drum loop: the circuit behind the 3D walls
+
+<img src="../figures/gallery/circuit_evaporator_pass.png" alt="Left: a vertical gas pass 0.2 m wide and 6 m high, drawn eight times wider than its scale, coloured by the gas temperature: yellow-white (1600 K) at the bottom left where the hotter gas enters, orange (1400 to 1450 K) in the core all the way up, dark purple thermal boundary layers (1000 to 1100 K) along both walls. Beside each wall a bar for its bank of risers, coloured by the void fraction from blue (zero) at the bottom through cyan, green and yellow to red (0.09) at the top. Second panel: the heat flux into the water along the height, peaking at 36 kW/m² on the left wall and 23 kW/m² on the right wall near the inlet and falling to 16 and 14 kW/m² at the top. Third panel: the gas-side wall temperature from 568 K (left) and 565 K (right) at the bottom to 563 K at the top, the inner walls at 560 to 561.5 K, and the water at 559 to 559.4 K. Fourth panel: the void fraction rises from zero near 0.3 m to 0.095 (left) and 0.086 (right) at the top; ten times the equilibrium quality rises from -0.02 at the bottom through zero near 1.3 m. Title: steam 0.142 kg/s, circulation ratio 144; left bank 125 kW and 11.2 kg/s, right bank 95 kW and 9.2 kg/s; 8 circuit solves, coupling residual 2.1e-07" width="1430" height="836">
+
+**The case.** `circuit_evaporator_pass.toml` is a convective pass of a
+boiler: flue gas rises at 20 m/s between two water walls, 0.2 m apart and
+6 m high (2D, 1 m deep, k-ε with the thermal wall function of Kader).
+The gas enters hotter on the left (1600 K) than on the right (1200 K), as
+behind a burner that fires off the middle. Each wall is the outer face of
+a bank of 12 risers per metre (40 mm bore) of one drum loop at 7 MPa
+(`../circuits/evaporator_pass_drum.toml`): a drum, a downcomer, a lower
+and an upper header, the two banks and a relief pipe. Between the gas and
+the water lie 6 mm of steel (`wall_resistance = 1.5e-4` m² K/W) and a thin
+scale (`fouling = 5e-5` m² K/W).
+
+**The coupling.** Every wall face is mapped to the segment of its tube by
+its height. The water side enters the 3D energy equation as a Robin
+condition q″ = U (T_water − T_b) on each face, inside the energy matrix
+(D350). U is the series of the wall, the scale and the inner heat transfer
+coefficient of the segment (Gnielinski, Chen), with the ratio of the gas
+side to the inner area of the tubes. Every 20 outer iterations the heat of
+the faces is summed per segment and handed to the circuit. Its Newton
+solve starts from the last solution and takes one or two iterations. The
+run converges in 143 outer iterations with 8 circuit solves, and the
+coupling residual Σ|Q_3D − Q_circuit|/Σ|Q_3D| is 2·10⁻⁷. Explicit
+exchange of a heat flux or a wall temperature, lagged by a solve, would
+oscillate or need heavy relaxation (the flaw the [development
+path](../assessments/steam-furnace-development-path.md) section 8 names).
+
+**The result.** Neither bank's flow is prescribed. The two banks share
+one downcomer, and each takes the flow that its heat drives: the hotter
+left bank gets 125 kW and 11.2 kg/s, the right bank 95 kW and 9.2 kg/s.
+The drum makes 0.142 kg/s of steam at a circulation ratio of 144. The
+heat flux into the water peaks just above the inlet, where the thermal
+boundary layers are thin (36 kW/m² left, 23 kW/m² right), and falls to
+about 15 kW/m² at the top. Without the radiation of the gas (SF4) these
+heat fluxes are those of convection alone, a tenth of what a furnace wall
+sees, so the circulation ratio is high. The ledger books the circuit's
+own thermal account: heat from the walls, feedwater in and steam out. It
+closes to 5·10⁻¹² of the heat, and its exchange pair with the conduction
+of the two walls leaves 0.05 W of 220 kW, the coupling residual.
+
+**Exact check.** `circuit_wall_slab.toml` is a slab 2 m long and 50 mm
+thick, held at 700 K on top, on a tube of water at 10 MPa that enters at
+450 K. The coupled run converges in 12 iterations and 7 circuit solves.
+The outlet is 519.3815 K. An independent march of the same heat balance
+(RK4 on 4000 steps with the IF97 states and Gnielinski,
+`tests/water_walls.rs`) gives 519.3816 K. Every face sends the heat flux
+of the series resistance of the slab and the water side to 3·10⁻⁴; only
+the axial conduction near the adiabatic ends of the slab departs from it.
+On a boiling tube at 7 MPa (`../circuits/wall_slab_boiling.toml`) the
+same slab boils water to x = 0.43 in 12 iterations. Most of the tube is
+then at the saturation temperature, and the wall is that of Chen.

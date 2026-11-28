@@ -10,7 +10,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | Page | What it covers | Recipes |
 |---|---|---|
 | [Kernel benchmark G1](recipes/benchmarks.md) | build and run gate G1 on a CPU, on Windows and on an NVIDIA GPU, and rerun it on unstructured meshes | 1, 2, 3, 10 |
-| [Development: tests, CI and releases](recipes/development.md) | MPI tests, checking a change the way CI does, releases, derivative checks of the kernels, manufactured solutions of the turbulence models | 4, 5, 6, 25, 184 |
+| [Development: tests, CI and releases](recipes/development.md) | MPI tests, checking a change the way CI does, releases, derivative checks of the kernels, manufactured solutions of the turbulence models | 4, 5, 6, 25, 184, 350 |
 | [Meshes](recipes/meshes.md) | generate, read, convert and partition meshes, update the mesher's golden values, run flows on poor Gmsh meshes, the operator exactness check, the canonical local mesh and exact reductions | 7, 8, 9, 11, 36, 127, 129, 134, 138, 189, 200, 219, 230, 231, 234, 244, 262, 279, 290, 301, 303, 304, 305 |
 | [Scalar transport and the pressure solver](recipes/scalar-pressure.md) | order of accuracy of the scalar operators, convection schemes, pressure-solver studies, hypre | 12, 13, 15, 17 |
 | [GPU runs](recipes/gpu.md) | scalar operators, pressure solver and flow cases on an NVIDIA GPU (also a free Colab T4) | 14, 16, 24 |
@@ -23,11 +23,11 @@ The recipes are split by topic; each page has its own table of contents. The num
 | [Lagrangian sprays](recipes/sprays.md) | spray droplets into a flow with an injector file, wall behaviour, the mass book | 242, 265, 280, 283, 285, 292, 306, 318, 314, 320, 319, 321, 325, 324, 326, 323, 333, 335, 341, 343, 338, 344 |
 | [Porous regions](recipes/porous.md) | porous blocks and honeycombs in a flow: resistances, axes, the honeycomb shorthand | 273, 275 |
 | [Two fluids (volume of fluid)](recipes/multiphase.md) | water and air in one case: phases, start regions, inflow, `vof.csv` | 317 |
-| [Water and steam circuits](recipes/circuits.md) | a boiler circuit of tubes, headers and a drum: natural circulation, boiling wall temperatures, the CHF margin, the profiles | 312 |
+| [Water and steam circuits](recipes/circuits.md) | a boiler circuit of tubes, headers and a drum: natural circulation, boiling wall temperatures, the CHF margin, the profiles; the circuit behind the walls of a flow case | 312, 356 |
 | [Structures](recipes/structure.md) | a structural case of beams, plates, solids and clamp springs: static and modal analyses, the clamp spring fitted to a measured frequency, runs in time with damping and temperatures, contact with a seat and a stop, temperatures from a flow case, the results | 295, 297, 299, 300, 302, 308 |
-| [Immersed bodies](recipes/immersed.md) | put a body in the flow without meshing it: `[immersed]`, the permeability, forces | 270, 291, 313, 310, 315, 322 |
+| [Immersed bodies](recipes/immersed.md) | put a body in the flow without meshing it: `[immersed]`, the permeability, forces | 270, 291, 313, 310, 315, 322, 357, 359, 360, 361 |
 | [Moving meshes and solids](recipes/moving-solids.md) | move the mesh with a prescribed displacement: `[mesh_motion]`, moving walls, a piston on a closed volume | 296, 307 |
-| [Species and reacting flows](recipes/species.md) | species of an ideal-gas mixture: names, compositions in mole or mass fractions, diffusion by Schmidt or Lewis numbers, mixture properties, the element ledger | 278, 289, 298 |
+| [Species and reacting flows](recipes/species.md) | species of an ideal-gas mixture: names, compositions in mole or mass fractions, diffusion by Schmidt or Lewis numbers, mixture properties, the element ledger | 278, 289, 298, 351 |
 | [Expressions and materials](recipes/properties.md) | values as expressions of x, y, z and t, constants and tables, wall mass flux, the material database, regions | 31, 32, 277 |
 | [Python](recipes/python.md) | the `foehncraft` package: cases, expressions, runs with callbacks, results, materials, studies | 33 |
 | [Verification](recipes/verification.md) | the discretisation uncertainty of a sweep (GCI), the generated verification manual | 34, 35, 165, 170, 271 |
@@ -211,6 +211,13 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="spray-device-surface"></a>343 | [Show your own injector STL](recipes/sprays.md#spray-device-surface) | [Lagrangian sprays](recipes/sprays.md) |
 | <a id="spray-child-size"></a>344 | [Pick the time step of a spray that atomizes at the nozzle](recipes/sprays.md#spray-child-size) | [Lagrangian sprays](recipes/sprays.md) |
 | <a id="wall-heat"></a>346 | [Write the wall heat flux, the heat transfer coefficient and the Nusselt number on the walls](recipes/energy.md#wall-heat) | [Energy equation and heat transfer](recipes/energy.md) |
+| <a id="shared-install"></a>350 | [Install for all users of a Linux machine, several versions side by side](recipes/development.md#shared-install) | [Development: tests, CI and releases](recipes/development.md) |
+| <a id="turbulent-flames"></a>351 | [Model a turbulent flame with the eddy dissipation concept or model](recipes/species.md#turbulent-flames) | [Species and reacting flows](recipes/species.md) |
+| <a id="circuit-walls"></a>356 | [Put a circuit behind the walls of a flow case](recipes/circuits.md#circuit-walls) | [Water and steam circuits](recipes/circuits.md) |
+| <a id="cut-wall-functions"></a>357 | [Run a turbulent flow with wall functions on a cut body](recipes/immersed.md#cut-wall-functions) | [Immersed bodies](recipes/immersed.md) |
+| <a id="cut-cht"></a>359 | [Keep a cut body as a solid region (conjugate heat transfer)](recipes/immersed.md#cut-cht) | [Immersed bodies](recipes/immersed.md) |
+| <a id="cut-patches"></a>360 | [Give a cut body inlets, outlets and a turning wall](recipes/immersed.md#cut-patches) | [Immersed bodies](recipes/immersed.md) |
+| <a id="refine"></a>361 | [Refine the mesh near a body](recipes/immersed.md#refine) | [Immersed bodies](recipes/immersed.md) |
 
 ## Adding a feature
 

@@ -19,6 +19,7 @@
 pub mod case;
 pub mod chf;
 pub mod correlations;
+pub mod coupling;
 pub mod fluid;
 pub mod linalg;
 pub mod network;

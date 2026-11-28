@@ -30,6 +30,11 @@ instead.
 - [Cut cells: check what the solver takes, cell by cell](#cut-cells)
 - [Sprays on a sector of an injector](#spray-sectors)
 - [Long-lived branches and the one test program per crate](#stale-branches)
+- [Wall functions on cut cells](#cut-wall-functions)
+- [Natural circulation loops behind a coupled wall](#circuit-branches)
+- [Conjugate heat transfer on cut cells](#cut-cht)
+- [Conditions on cut bodies](#cut-patches)
+- [Near-body refinement](#refine)
 
 <a id="steady-runs"></a>
 ## Steady runs: budget and stopping
@@ -793,3 +798,108 @@ Found with the start-up bound of the turbulence (#334):
   largest k on a line; after 16 steps two cells of the ring agreed to the
   last digits and a change in the last digit moved the "peak" by 0.02 m.
   Locate a patch by the centroid of the field above its least value.
+
+<a id="cut-wall-functions"></a>
+## Wall functions on cut cells
+
+- **A cut wall cell's own velocity is not a wall-function input.** Its
+  centroid distance runs from a fifth to one and a half cells with the cut
+  fraction, and its velocity does not follow the log law (10 to 40 % low in
+  the first rows of a tilted plate), so the skin friction of single faces
+  scattered ±45 %. Sample one layer out along the wall normal (the default)
+  and give the cut wall faces the exact A / y_P without a non-orthogonal
+  correction, or the momentum equation sees a different wall stress than
+  the wall function computed (#357).
+- **The sample has to sit in the log layer.** On a plate with 2 mm first
+  cells the sample landed at y/δ ≈ 0.25, in the wake, and C_f came out 17 %
+  high; a test case on too coarse a mesh measures the mesh, not the method.
+- **A uniform start velocity across a cut body diverges at high Re.** A
+  start along x across a 2° plate at ν = 2·10⁻⁷ pushed net inflow into the
+  cut cells and the pressure CG broke down in iteration 1 (the SIMPLEC
+  coefficient floor); the laminar case and a plate along the mesh were
+  fine. Start with the velocity along the body.
+
+<a id="circuit-branches"></a>
+## Natural circulation loops behind a coupled wall
+
+Found with the circuits behind the walls (SF7c, #356):
+- **A loop without heat stands still, and its Newton solve cannot be
+  warm-started from that.** The start solve of a coupled circuit takes the
+  heat of the circuit file. When the risers have none, the drum loop
+  converges to a flow near zero, and the next solve, started from it, has
+  a singular Jacobian. The coupling therefore falls back to the start
+  flows of the case when a warm start fails. Give the coupled tubes a
+  `heat_flux` near the expected one as the start of the coupling.
+- **At small heat a drum loop has a second steady state with the flow
+  reversed.** Below about 15 kW/m² on the risers of the evaporator pass
+  the Newton solve found the risers flowing down and wet steam rising in
+  the downcomer (2.5 % quality there), at heat that is a fifth of the
+  normal one. That is a physical branch (flow reversal of a thermosiphon),
+  not a bug, but it is not the boiler one wants. Start flows near the
+  solution keep the solve on the normal branch. Check the sign of the
+  riser flows in the summary of every new loop.
+- **Piecewise-constant water temperatures make a sawtooth in the wall heat
+  flux.** With one T_water per segment, the faces at each segment end see
+  a step of the water temperature, and the slab conducts across it (±0.2 %
+  on the slab check). U and T_water are now linear between the segment
+  midpoints. The heat of each face still goes to its own segment.
+
+<a id="cut-cht"></a>
+## Conjugate heat transfer on cut cells
+
+- **Cut both sides from one set of crossings.** Cutting the solid with the
+  complement of the body in a second pass gives cut faces that meet only
+  as well as two root finds agree. Take the solid rings from the same
+  crossing points and bent chords as the fluid, and match the fluid wall
+  faces of a cell to their solid twins by the node set (#359).
+- **Merged pieces can pinch.** On tetrahedra a union of small pieces
+  used one directed edge twice (two pieces touching along an edge only);
+  the union score now refuses non-manifold unions, the fluid cut did not
+  change.
+- **Polyhedral cut faces are not planar**, so the solid side of a poly
+  mesh keeps a few flat three-face slivers; the poly test does not check
+  the solid merge.
+- **The energy solve of a stiff solid needs its own settings.** With k_s /
+  k_f = 200 in one matrix the pin of the channel stalled at an energy
+  residual of 7·10⁻⁶ and a heat imbalance of 33 % with the default
+  `[solver.energy]`; relaxation 1, tolerance 10⁻¹⁰ and 300 linear
+  iterations closed it to 10⁻¹² W.
+- **A level sweep needs the full case for the mesh.** With regions the run
+  works on a fluid view of the case; the sweep built the meshes of levels
+  1 and 2 from that view and lost the solid zone (REG002). Build every
+  level's mesh from the full case.
+
+<a id="cut-patches"></a>
+## Conditions on cut bodies
+
+- **The torque of a turning cut wall needs the exact transposed stress.**
+  The torque takes the full stress μ(∇u + ∇uᵀ) (D184); on a turning
+  cylinder the transposed part is a third of the wall stress, and from the
+  gradient of the cut cells it came out 2.8 % off on every mesh of the
+  Taylor–Couette case while the outer wall converged. On a no-slip wall in
+  rigid motion the transposed part is that of the rigid motion, μ ω × S;
+  with it the inner torque converges at second order (#360).
+- **A boundary inside the solid has no faces.** The box around an inverted
+  cylinder lost all its faces in the cut and still asked for a condition
+  (BC001); the cut now leaves such boundaries out, except those the case
+  gives a condition (older cases list conditions for them, and BC002 then
+  refused the missing boundary).
+
+<a id="refine"></a>
+## Near-body refinement
+
+- **Refine a region fixed in metres for a convergence study.** With the
+  band of each level given in cells (`layers`), the refined region narrows
+  as the input cells shrink, and the order from the cell counts of a
+  manufactured solution came out 2.3 to 2.4 on three levels (the share of
+  fine cells changes). `distance` keeps the region in metres; the order is
+  then 2.04 and 1.99 (#361).
+- **Merged cut cells may share several faces with a neighbour in every
+  view of the mesh.** A refined mesh gave more merged cut cells, and the
+  fluid view of a conjugate case refused two cells with two shared faces
+  (GEN001), which the full mesh allows (D228). The fluid view now allows
+  them too.
+- **The lift needs a wide fine band.** On the Schäfer–Turek cylinder the
+  drag reached its range with a fine band of 0.2 D, the lift stayed 5 %
+  below it until the band was 0.8 D wide: the lift comes from the whole
+  near field, not from the wall cells.

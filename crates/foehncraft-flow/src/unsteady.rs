@@ -962,7 +962,8 @@ fn new_flow(
             hydrostatic: crate::buoyancy::hydrostatic(case),
         },
     )?;
-    let disc = simplec::discretisation(mesh, geo, &arrays)?;
+    let mut disc = simplec::discretisation(mesh, geo, &arrays)?;
+    crate::immersed::wall_function_faces(case, mesh, geo, &mut disc.0)?;
     let mut nfl = Flow::on(
         disc,
         arrays,
@@ -1334,7 +1335,8 @@ fn run_one<F: FnMut(&str)>(
         .as_ref()
         .map_or_else(|| arrays.mom_kind.clone(), |o| o.arrays.mom_kind.clone());
     let ub0 = arrays.ub.clone();
-    let disc = simplec::discretisation(smesh, sgeo, &arrays)?;
+    let mut disc = simplec::discretisation(smesh, sgeo, &arrays)?;
+    crate::immersed::wall_function_faces(&case, smesh, sgeo, &mut disc.0)?;
     let operators = crate::operators::report(
         &case,
         mesh,
@@ -3750,9 +3752,20 @@ fn run_one<F: FnMut(&str)>(
                     verification.push_kv("Flame speed", format!("{v:.5} m/s"));
                 }
                 None => lg.line(&format!(
-                    "chemistry {}: heat release {:.4e} W",
-                    s.mechanism, s.heat_release
+                    "chemistry {} ({}): heat release {:.4e} W",
+                    s.mechanism, s.interaction, s.heat_release
                 )),
+            }
+            if let Some(f) = &s.fine_structures {
+                lg.line(&format!(
+                    "fine structures: {} cells, tau* {:.3e} … {:.3e} s, largest gamma* {:.3}, {} \
+                     cells at max_fine_fraction",
+                    f.cells, f.tau[0], f.tau[1], f.fraction_max, f.clipped
+                ));
+            }
+            if let Some(d) = ch.finding() {
+                lg.warn(&format!("{}: {}", d.code, d.message));
+                warnings.push(d);
             }
             Some(s)
         }
@@ -3818,6 +3831,7 @@ fn run_one<F: FnMut(&str)>(
         datums: datum_summary,
         spray: spray_summary,
         spray_steady: None,
+        circuits: None,
         benchmark,
     };
     let volume = geo.cell_volume.clone();

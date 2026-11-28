@@ -16,6 +16,8 @@
 //! | LIM007 | thermal acceleration of the solids | the history before `physical_from` is not physical (D213) |
 //! | LIM008 | an operator of a feature in use is not exact | the operator check of D236 (MESH005, MESH006) |
 //! | LIM009 | cycle-averaged coupling (D204) | the solids carry the cycle-mean state, no swing over a cycle |
+//! | LIM010 | frozen-flow march (D118) | the flow was held during the march |
+//! | LIM011 | wall functions on cut-cell walls (D229) | the first-cell y⁺ of every cut body (smallest, mean, largest) |
 //!
 //! The list never changes a result or the exit code (D199 Q1, Q2): a run
 //! with limitations keeps `"status": "finished"` and exit code 0, and the
@@ -291,6 +293,25 @@ pub fn features_in_use(case: &FlowCase) -> Vec<&'static str> {
         .any(|i| i.contact_resistance.is_some() || i.thin_wall.is_some())
     {
         f.push("cht.contact-thin-wall");
+    }
+    // immersed bodies (L13)
+    if !case.immersed.is_empty() {
+        if case.immersed.is_cut() {
+            f.push("immersed.cut");
+            if !t.is_laminar() {
+                f.push("immersed.cut-wall-functions");
+            }
+        } else {
+            f.push("immersed.penalisation");
+        }
+        if case
+            .immersed
+            .body
+            .iter()
+            .any(|b| b.shape == crate::immersed::Shape::Stl)
+        {
+            f.push("immersed.stl");
+        }
     }
     // rotating machinery
     if !case.mrf.is_empty() {
@@ -694,6 +715,32 @@ pub fn of_run(case: &FlowCase, rep: &FlowReport) -> Vec<Limitation> {
                 }
             ),
         ));
+    }
+    // LIM011: wall functions on the walls of cut bodies
+    if case.immersed.is_cut()
+        && let Some(t) = rep.solves.last().and_then(|s| s.turbulence.as_ref())
+    {
+        for b in &case.immersed.body {
+            let Some(w) = t.walls.iter().find(|w| w.boundary == b.name) else {
+                continue;
+            };
+            if !(w.mean.is_finite() && w.max > 0.0) {
+                continue;
+            }
+            out.push(Limitation::new(
+                diag::LIM_CUT_WALL,
+                Some("immersed.cut-wall-functions"),
+                format!(
+                    "wall functions on the cut wall `{}`: first-cell y⁺ {} to {} (mean {}), it \
+                     varies with the cut fraction of the cells along the wall (the map: `y_plus` \
+                     of the wall output)",
+                    b.name,
+                    fmt(w.min),
+                    fmt(w.max),
+                    fmt(w.mean)
+                ),
+            ));
+        }
     }
     // LIM006: remediation
     if let Some(r) = rep

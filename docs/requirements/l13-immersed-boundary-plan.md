@@ -353,9 +353,30 @@ joined only where they lie in one plane, otherwise kept apart: two cells
 may share several faces, owner decision 2026-11-26) and the per-cell
 fallback to fewer points; the Re 20 cylinder ([gallery 313](../gallery/immersed.md#cut-cylinder))
 and the Stokes array of STL spheres, second order on hexahedra
-([gallery 322](../gallery/immersed.md#stl-cut)). Open: the force balance
-on tetrahedra, non-planar polyhedral faces, the thin-solid refusal, and 2c
-to 2f.
+([gallery 322](../gallery/immersed.md#stl-cut)). 2c (#357): wall functions
+on cut bodies with the exact first-cell distance, sampled one layer out
+along the wall normal, y⁺ per body in LIM011, the half-space body `shape =
+"plane"`; the 2° plate against White's correlation and the body-fitted plate
+([gallery 357](../gallery/immersed.md#cut-plate)). 2d (#359): conjugate
+heat transfer cut both ways (the solid part of each cut cell a cell of the
+solid region, shared cut faces as the D160 interface), thin solids refused
+with IMM205; concentric cylinders second order for k ratios 9 to 900 and a
+heated pin in the Schäfer–Turek channel ([gallery 359](../gallery/immersed.md#cut-cht)).
+2e (#360): named surface patches of STL bodies with their own conditions,
+turning walls with `omega` and their torque, inverted bodies; Taylor–Couette
+with both cylinders cut (velocity second order, torque 0.23 % on 176 cells
+across) and a cylinder blowing through a slot
+([gallery 360](../gallery/immersed.md#cut-patches)). Open: the force balance
+on tetrahedra, non-planar polyhedral faces (flat solid slivers on
+polyhedra), the k overproduction of the first cut layer, patch edges inside
+a wall face. 2f (#361): near-body refinement of hexahedra with hanging-node
+faces (`[immersed.refine]`, `levels` with `layers` or `distance`), 2:1
+balanced across faces, edges and corners, volume and face areas kept to
+round-off, deterministic and serial; a conduction MMS across the faces
+between levels second order, the Schäfer–Turek cylinder on a D/10 box
+refined to D/40 near the body matching the uniform D/40 mesh with a seventh
+of its cells ([gallery 361](../gallery/immersed.md#refine)). Only
+hexahedra are refined; coarsening and solution-driven refinement are L14.
 
 ## 5. Stage 3 – Layered distance-field boundary (the L13 target, D230–D232)
 

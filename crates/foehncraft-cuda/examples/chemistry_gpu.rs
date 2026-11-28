@@ -3,7 +3,9 @@
 //! fresh, half and fully burnt) integrated over one flow time step on the
 //! CPU threads and on the GPU, the end states and step counts compared bit
 //! for bit, with the time per cell on both, for GRI-Mech 3.0 and the
-//! global mechanism of Jones & Lindstedt.
+//! global mechanism of Jones & Lindstedt. A second row of each mechanism
+//! gives every cell its own interval (the fine-structure residence times
+//! τ* of the eddy dissipation concept, SF3: 10 µs to 1 ms over the row).
 //!
 //! ```text
 //! python3 gpu/ptx-kernels/build.py
@@ -52,24 +54,34 @@ fn main() {
     foehncraft_cuda::register();
     let set = Settings::default();
     let (p, dt, tmin, cells) = (101_325.0, 1e-5, 400.0, 4096);
-    println!("| mechanism | cells | CPU µs/cell | GPU µs/cell | bitwise |");
-    println!("|---|---|---|---|---|");
+    println!("| mechanism | interval | cells | CPU µs/cell | GPU µs/cell | bitwise |");
+    println!("|---|---|---|---|---|---|");
     let mut ok = true;
-    for name in ["gri30", "jones-lindstedt-4"] {
+    // the residence times of the fine structures (SF3), per cell
+    let taus: Vec<f64> = (0..cells)
+        .map(|c| 1e-5 * 100f64.powf(c as f64 / (cells - 1) as f64))
+        .collect();
+    for (name, per_cell) in [
+        ("gri30", false),
+        ("jones-lindstedt-4", false),
+        ("gri30", true),
+        ("jones-lindstedt-4", true),
+    ] {
+        let dt_cell = per_cell.then_some(&taus[..]);
         let m = Mechanism::load(name, None).expect("mechanism");
         let prog = m.program();
         let start = states(&m, cells);
         let mut cpu = start.clone();
         let mut st_cpu = vec![Stats::default(); cells];
         let t0 = Instant::now();
-        react_cpu(&prog, p, dt, tmin, &set, &mut cpu, &mut st_cpu);
+        react_cpu(&prog, p, dt, dt_cell, tmin, &set, &mut cpu, &mut st_cpu);
         let t_cpu = t0.elapsed().as_secs_f64();
         let mut gpu = start.clone();
         let mut st_gpu = vec![Stats::default(); cells];
         let mut dev = foehncraft_flow::chemistry::device::create_gpu("cuda", &prog, 0, &ptx)
             .expect("GPU device");
         let t0 = Instant::now();
-        dev.react(p, dt, tmin, &set, &mut gpu, &mut st_gpu)
+        dev.react(p, dt, dt_cell, tmin, &set, &mut gpu, &mut st_gpu)
             .expect("GPU launch");
         let t_gpu = t0.elapsed().as_secs_f64();
         let same = cpu
@@ -87,7 +99,8 @@ fn main() {
         }
         ok &= same;
         println!(
-            "| {name} | {cells} | {:.1} | {:.1} | {} |",
+            "| {name} | {} | {cells} | {:.1} | {:.1} | {} |",
+            if per_cell { "τ* per cell" } else { "Δt" },
             1e6 * t_cpu / cells as f64,
             1e6 * t_gpu / cells as f64,
             if same { "yes" } else { "**no**" }

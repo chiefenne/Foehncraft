@@ -583,6 +583,27 @@ impl Model {
         Ok(out)
     }
 
+    /// The wall of segment `i` of tube `ti` at the pressure p and enthalpy
+    /// h of its middle with the flow m of one tube (kg/s), for the heat
+    /// flux q (W/m²) in place of the segment's own: the heat transfer
+    /// coefficient of a wall coupled to a 3D mesh (SF7c) where the heat
+    /// of the last solve was zero or small.
+    pub fn wall_at(
+        &self,
+        ti: usize,
+        i: usize,
+        p: f64,
+        h: f64,
+        m: f64,
+        q: f64,
+    ) -> Result<Segment, Error> {
+        let t = &self.tubes[ti];
+        let g = m.abs().max(1e-12) / t.area;
+        let sin_up = if m >= 0.0 { t.sin } else { -t.sin };
+        let l = self.local(t, p, h, g, q, sin_up)?;
+        Ok(self.segment(t, &l, g, q, (i as f64 + 0.5) * t.dz()))
+    }
+
     /// The wall temperature, regime and CHF of a segment.
     fn segment(&self, t: &TubeModel, l: &Local, g: f64, q: f64, s: f64) -> Segment {
         let tb = l.point.t();
@@ -769,7 +790,12 @@ impl Model {
     /// difference Jacobian; returns the unknowns, the marches (recorded)
     /// and the Newton history (largest scaled residual per iteration).
     pub fn solve(&self) -> Result<Solved, Error> {
-        let mut x = self.start();
+        self.solve_from(self.start())
+    }
+
+    /// [`Model::solve`] from the unknowns `x` (a warm start: the solution
+    /// of a circuit whose heat changed a little, SF7c).
+    pub fn solve_from(&self, mut x: Vec<f64>) -> Result<Solved, Error> {
         let norm = |r: &[f64]| r.iter().fold(0.0_f64, |m, v| m.max(v.abs()));
         let (mut r, _) = self.residual(&x, false)?;
         let mut history = vec![norm(&r)];

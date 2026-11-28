@@ -10,6 +10,10 @@ Part of the [Example gallery](../gallery.md): bodies in the flow without a body-
 | 310 | [A dirty STL body: surface check, winding number and signed distance](#dirty-stl-winding) | L13 stage 0 | `mesh.surface`, IMM001 to IMM009, `foehncraft_mesh::surface` (winding number, signed distance, crossings) |
 | 315 | [Signed distance by three methods, and a sphere cut exactly out of a mesh](#sdf-benchmark-cut) | L13 stage 0 | signed-distance benchmark (ours, fast sweeping, heat method), `Surface::cut_moments` (volume fractions, apertures, wall pieces) |
 | 322 | [STL bodies cut out of a mesh: sharp edges, face points and the Stokes sphere array](#stl-cut) | L13 stage 2 | `shape = "stl"` (`file`, `scale`), `[immersed.cut] face_point`, dual-contouring wall points on sharp edges, the per-cell fallback, STL cut benchmark against the exact moments |
+| 357 | [A turbulent plate tilted against the mesh: wall functions on cut cells](#cut-plate) | L13 stage 2c | `shape = "plane"` (`normal`), wall functions with the exact first-cell distance, `[immersed.cut] wall_sample`, y⁺ per body (LIM011) |
+| 359 | [A heated pin cut out of a box mesh: conjugate heat transfer through cut cells](#cut-cht) | L13 stage 2d | `[regions.<name>] zones = ["<body>"]` on a cut body, solid cut cells, the cut faces as region interface, thin solids refused (IMM205) |
+| 360 | [A cylinder that blows through a slot, and Taylor–Couette flow cut out of a box: conditions on cut bodies](#cut-patches) | L13 stage 2e | `patches` of an STL body (ASCII solids, binary attribute tags), `[boundary.<body>-<patch>]`, `omega` (turning wall, torque), `invert` |
+| 361 | [A cylinder on a box mesh refined near it: hanging-node faces](#refine) | L13 stage 2f | `[immersed.refine]` (`levels`, `layers` or `distance`), refinement of hexahedra with hanging-node faces, 2:1 balance (IMM206) |
 
 ---
 
@@ -295,9 +299,9 @@ hexahedra, tetrahedra and polyhedra; exact crossings with the wall point are
 they are the default. On the cylinder the wall point moves the drag from
 0.3 % below the range into it. Cutting 33 000 polyhedra takes 1.7 s.
 
-**What is not here yet.** STL bodies followed in [gallery 322](#stl-cut). Wall functions
-with the exact first-cell distance (2c), conjugate heat transfer through cut
-cells (2d, refused with IMM202), named surface patches with other conditions
+**What is not here yet.** STL bodies followed in [gallery 322](#stl-cut), wall functions
+on cut bodies in [gallery 357](#cut-plate), conjugate heat transfer through cut
+cells in [gallery 359](#cut-cht). Named surface patches with other conditions
 (2e) and the near-body refinement (2f) follow. One rank only.
 
 Reproduce (about a minute and a half for the case, ten minutes for D/40):
@@ -629,9 +633,9 @@ cell-by-cell volumes now do). On tetrahedra the drag error grows from +1.7 %
 on 16³ to +4.8 % on 24³ and the wall carries G L³ to 5 % on 16³ (1.3 % on
 24³; the −1.8 % of #322 on 24³ ran with the cell-quality remediation on): the
 cut cells of tetrahedra need a closer look (features.toml). A feature thinner than a cell can vanish between the
-nodes. Wall functions with the exact first-cell distance (2c), conjugate
-heat transfer through cut cells (2d), named surface patches (2e) and the
-near-body refinement (2f) follow. One rank only.
+nodes. Wall functions on cut bodies followed in [gallery 357](#cut-plate),
+conjugate heat transfer through cut cells in [gallery 359](#cut-cht); named
+surface patches (2e) and the near-body refinement (2f) follow. One rank only.
 
 Reproduce (about a minute for the case, two for the benchmark):
 
@@ -651,3 +655,403 @@ The tetrahedral and polyhedral runs take `--set 'mesh.generate.type="tet"'`
 (or `"poly"`) and are added to the `fields` call. Recipe:
 [322](../recipes/immersed.md#stl-body). Case file:
 `examples/cases/flow/immersed_cut_stl_sphere_array.toml`.
+
+---
+
+<a id="cut-plate"></a>
+## 357. A turbulent plate tilted against the mesh: wall functions on cut cells
+
+<img src="../figures/gallery/immersed_cut_plate.png" alt="Three panels of a turbulent flat plate tilted by 2 degrees and cut out of a box mesh. Left: the speed near the trailing part of the plate, rows of square cells above a grey plate whose dashed edge rises across the cell rows, the first cells along the plate cut to different heights, slow (green and cyan) next to the wall and red in the free stream. Middle: the skin friction of every wall face along the plate; the black correlation of White falls from 5 to 2.8 thousandths, the blue body-fitted line follows it after a short laminar start, the red dots of the sampled cut cells stay close to it, the orange dots of the unsampled cut cells scatter about twice as wide. Right: the first-cell y plus of every wall face of the cut plate, coloured from blue to red, a band from about 30 to 140 that repeats every few centimetres as the plate crosses a cell row, against the smooth blue line of the body-fitted plate near 100." width="1500" height="520">
+
+`immersed_cut_plate_keps.toml` is a turbulent flat plate (k-ε, scalable
+wall functions, the free stream of the TMR plate of
+[gallery 71](turbulence.md#k-epsilon), Re = 5·10⁶ per metre) that the mesh does not
+know: the plate is the half-space below a plane rising at 2° (`shape =
+"plane"`, `normal`), cut out of a 150 × 130 box mesh with 1 mm cells near
+the wall (L13 stage 2c, D229). The plate crosses one cell row every 28.6 mm,
+so the wall cells take every cut fraction between 0.3 (smaller ones are
+merged into their neighbour) and 1, and their centroids every distance from
+the wall between a fifth and one and a half cells. This is the hard case for
+a wall function: on a body-fitted mesh all first cells along the plate have
+the same height.
+
+Three things make the wall functions of a cut body work:
+
+- **The exact first-cell distance (D108).** The distance y_P of a cut or
+  merged wall cell is the distance of its centroid to the body itself
+  (closest point on the plane, cylinder, sphere, box or STL triangles, the
+  same signed distance the cut uses), one value per cell, not the distance
+  to the plane of each wall facet. On a cylinder cut out of a 2D mesh the
+  facet distance is off by more than 10⁻³ R and differs between the facets
+  of one cell; the exact distance is |r_P − R| to 10⁻¹² R (unit test). The
+  wall distance of the turbulence models (`derived` `wall-distance`, SST,
+  ζ-f) takes the same exact distance.
+- **The sampled wall function** (`[immersed.cut] wall_sample = true`, the
+  default). A cut cell's own velocity depends on how it was cut: a sliver
+  of fluid next to the wall and a nearly whole cell both see the same
+  outer flow. The wall function of each cut wall face takes its velocity,
+  k and distance from the cell one layer out along the wall normal (the
+  first cell whose centroid lies further from the body than the wall
+  cell), whose distance does not depend on the cut, and solves the same
+  log law there; the wall shear stress and the log-law production of k in
+  the wall cell use that u_τ (Capizzano 2011, Tamaki, Harada & Imamura
+  2017, Berger & Aftosmis 2012 sample the same way).
+- **No non-orthogonal correction on the cut wall faces.** The wall
+  diffusion of a cut face takes A / y_P with the exact distance, so the
+  wall shear stress the momentum equation sees is the one the wall
+  function computed.
+
+| s along the plate (m) | 0.3 | 0.5 | 0.7 | 0.97 | 1.15 |
+|---|---|---|---|---|---|
+| White, c_f × 10³ (turbulent from the edge) | 3.496 | 3.203 | 3.030 | 2.875 | 2.798 |
+| body-fitted plate, same cells | −3.5 % | +6.1 % | +0.8 % | −1.4 % | −2.3 % |
+| cut, sampled (default), mean | +18.2 % | +7.5 % | +1.2 % | +3.6 % | +6.7 % |
+| cut, sampled, single faces | +13 … +22 % | +4 … +13 % | −4 … +6 % | −16 … +12 % | −15 … +20 % |
+| cut, wall cell itself (`wall_sample = false`), single faces | −26 … +58 % | −25 … +40 % | −25 … +25 % | −46 … +50 % | −44 … +6 % |
+
+Sampling narrows the scatter of the skin friction of single faces to
+between a tenth and a third of the unsampled one; the mean is within 7 % of White's correlation from s = 0.5 on.
+LIM011 in the log and in `result.json` gives the y⁺ range of every cut body
+(here 4 to 148, mean 83), the map is the `y_plus` column of `wall_plate.csv`
+(right panel). A coarser test of the same plate (75 × 115 cells,
+`cut_plate_wall_function_samples_one_layer_out`) gives −4.4 % with 9.9 %
+scatter sampled and −3.9 % with 38 % scatter unsampled over 0.8 < s < 1.15.
+
+**Benchmark with the computer-graphics methods (maintainer rule).** The wall
+distance can be taken as the distance to the plane of the cell's wall
+facets (what a mesh-only code has), or as the exact closest point on the
+body through its bounding-volume hierarchy (the STL bodies) or its closed
+form (the primitives). The closest point costs one BVH query per wall cell
+and is exact; the facet plane is exact only on planar bodies and differs
+between the facets of a curved cell. The heat method and fast sweeping
+distances of [gallery 315](#sdf-benchmark-cut) are first order near the
+surface and not used here.
+
+**What is not here yet.** The first layer of cut cells makes about 30 to
+60 % more k than the equilibrium in the first 2 mm and its velocity is 10 to
+20 % below the log law; near the leading edge the cut plate is turbulent at
+once (+18 % at s = 0.3) while the fitted plate has a short laminar run. The
+sample has to lie in the log layer: with 2 mm first cells (75 × 65) it sits
+at y/δ ≈ 0.25 and C_f comes out 17 % high. A uniform start along x pushes
+fluid into the cut cells and diverges in the first iteration, so the case
+starts with the velocity along the plate. The k residual stalls near
+2·10⁻³ at the leading edge (the inlet corner) for both the cut and the
+fitted plate. Resolved walls (low-Re treatments) take the exact distance
+but no sample. One rank only.
+
+Reproduce (about a minute per run on 4 cores):
+
+```sh
+cargo build --release -p foehncraft-cli
+target/release/foehn flow examples/cases/flow/immersed_cut_plate_keps.toml --out output/cut_plate
+target/release/foehn flow examples/cases/flow/immersed_cut_plate_keps.toml --out output/cut_plate_cell --set immersed.cut.wall_sample=false
+target/release/foehn flow examples/cases/flow/immersed_cut_plate_fitted.toml --out output/cut_plate_fit
+pip install matplotlib h5py numpy
+python3 -m tools.plot.immersed_cut_plate docs/figures/gallery output/cut_plate output/cut_plate_fit output/cut_plate_cell
+```
+
+Recipe: [357](../recipes/immersed.md#cut-wall-functions). Case files:
+`examples/cases/flow/immersed_cut_plate_keps.toml`,
+`examples/cases/flow/immersed_cut_plate_fitted.toml`.
+
+---
+
+<a id="cut-cht"></a>
+## 359. A heated pin cut out of a box mesh: conjugate heat transfer through cut cells
+
+<img src="../figures/gallery/immersed_cut_cht.png" alt="Four panels. Top left: the temperature in the first metre of a channel, blue at 300 kelvin, with a dark red round pin at 440 kelvin near the inlet and a warm wake, yellow and green, then cyan, drifting downstream along the centre of the pin. Top right: a zoom on the front of the pin, square fluid cells coloured from yellow to dark red, the dotted exact circle crossing them, and the cells on the circle split by short straight cut faces into a fluid part and a red pin part. Bottom left: the temperature against the radius for three conductivity ratios of the concentric-cylinder case, flat in the solid up to the interface at 0.25 metres, then falling with the logarithm of the radius; the dots of every cell lie on the exact lines. Bottom right: the L2 error of the temperature against the cells across the box on log axes, three nearly coincident straight lines from 0.12 to 0.007 parallel to the dashed second-order line." width="1400" height="900">
+
+A cut body can be a solid region of a conjugate run (L13 stage 2d, D229,
+D112): `[regions.<name>] kind = "solid"` names the body as its zone, and the
+cut keeps the inside of every cut cell as a cell of that region instead of
+throwing it away. The fluid and the solid part of a cut cell come from the
+same crossing points of the cell edges and the same cut faces, so every cut
+face has exactly one twin on the other side; the twins become interior
+faces between a fluid and a solid cell, the region interface of D160, with
+the series conductance of the energy equation (D117). The flow sees a no-slip
+wall `interface-<region>`, the energy equation one matrix over fluid and
+solid. Small solid pieces are merged into a solid neighbour as small fluid
+pieces into a fluid one.
+
+**A heated pin in a channel** (`immersed_cut_pin_cht.toml`, top): the
+channel of the Schäfer–Turek benchmark 2D-1 (Re = 20) on the plain box mesh
+of [gallery 313](#cut-cylinder) (440 × 82, h = D/20), the pin an aluminium
+heater (k = 200 W/(m K), 2·10⁵ W/m³, 15.7 W in the 1 cm slice) in a fluid of
+Pr = 1 entering at 300 K, adiabatic channel walls. The cut keeps 332 solid
+cells (12 small ones merged); the interface area is 0.012 % below the
+circumference, the solid volume 0.047 % below πR². The flow converges in
+1 627 iterations, the heat made in the pin leaves with the flow to
+8.6·10⁻¹² W (5·10⁻¹³ of the flow). The drag of the pin, now an interface
+wall, is C_D = 5.588 (reference range 5.57–5.59), C_L = 0.0103 (0.0104–0.0110),
+as for the cut cylinder of gallery 313. The pin is at 438 to 440 K.
+
+**Verification: concentric cylinders** (`immersed_cut_cylinder_cht.toml`,
+bottom). A solid cylinder of radius R = 0.25 m makes q = 1000 W/m³ in a box
+of fluid at rest whose walls hold the exact temperature
+
+    r ≤ R:  T = T_R + q (R² − r²) / (4 k_s)
+    r ≥ R:  T = T_R − q R² / (2 k_f) ln(r / R)
+
+so the solution has a kink at the interface that the cut cells have to
+carry: the interface is crossed by the cut, not by cell faces.
+
+| Conductivity ratio k_s / k_f | L2 error, 20 cells across | 40 | 80 | Order |
+|---|---|---|---|---|
+| 9 | 0.1210 K | 0.02717 K | 0.006960 K | 2.17, 1.98 |
+| 90 | 0.1223 K | 0.02754 K | 0.007105 K | 2.17, 1.97 |
+| 900 | 0.1225 K | 0.02758 K | 0.007117 K | 2.17, 1.97 |
+
+The temperature converges at second order for every ratio, and the heat
+balance closes to 10⁻¹¹ W on every mesh: the interface passes one flux per
+face, so the flux leaving the solid is the flux entering the fluid to
+round-off. The source on 80 cells across is 0.01 % below q π R² (the solid
+volume of the cut).
+
+**Thin solids are refused (owner decision Q4).** A body kept as solid cells
+must be about two cells thick: the cut measures the depth of the body (the
+largest distance of a solid cell centroid to the surface) against the width
+of its cut cells (their uncut volume over the interface area in them) and
+refuses the body with IMM205 when the depth is below one cell width, or when
+small solid pieces find no solid neighbour to merge into. IMM205 points to
+the thin wall of a region interface (`[interfaces.<name>] thin_wall`, D189),
+the right model for a wall a cell or less thick.
+
+**Benchmark with the computer-graphics methods (maintainer rule).** Cutting
+both ways is a mesh boolean in the sense of computer graphics: the
+intersection and the difference of every cell with the body. A two-pass
+cut (the fluid with the body, the solid with its complement) gives two sets
+of cut faces that meet only as well as two root finds agree and leaves gaps
+or overlaps where they do not; the boolean here takes one set of crossing
+points and bent chords for both sides, as exact mesh booleans do (one
+classification of the intersection points, Zhou et al. 2016, "Mesh arrangements
+for solid geometry", ACM Trans. Graph. 35(4)). The mesh tests check it as a boolean is
+checked: fluid and solid volumes add up to the box to 10⁻¹¹, every cell
+closes, every cut face has exactly one twin, the interface area of the
+solid equals the wall area of the fluid (sphere and slab on hexahedra,
+tetrahedra and polyhedra).
+
+**What is not here yet.** On polyhedral meshes the solid side keeps a few
+flat three-face slivers that the merge does not remove (the cut faces of
+the polyhedra are not planar), so the poly mesh test skips the merge check
+there. The heat transfer of the pin has no reference here (the
+concentric cylinders are the verification). A `field` body (the density of
+a topology search) is not checked for thin parts. Rigid motion of the solid
+(stage 5) and the thin-wall model on a cut interface are not built. One rank
+only.
+
+Reproduce (the pin: about 15 minutes on 4 cores; the cylinders: seconds):
+
+```sh
+cargo build --release -p foehncraft-cli
+target/release/foehn flow examples/cases/flow/immersed_cut_pin_cht.toml --out output/cut_pin
+for k in 9 90 900; do
+  target/release/foehn flow examples/cases/flow/immersed_cut_cylinder_cht.toml --out output/cut_cyl_$k \
+    --set "verification.levels=[0,1,2]" --set constants.ks=$k \
+    --set materials.core-solid.conductivity=$k
+done
+pip install matplotlib h5py numpy
+python3 -m tools.plot.immersed_cut_cht docs/figures/gallery output/cut_pin output/cut_cyl_9 output/cut_cyl_90 output/cut_cyl_900
+```
+
+Recipe: [359](../recipes/immersed.md#cut-cht). Case files:
+`examples/cases/flow/immersed_cut_pin_cht.toml`,
+`examples/cases/flow/immersed_cut_cylinder_cht.toml`.
+
+---
+
+<a id="cut-patches"></a>
+## 360. A cylinder that blows through a slot, and Taylor–Couette flow cut out of a box: conditions on cut bodies
+
+<img src="../figures/gallery/immersed_cut_patches.png" alt="Four panels. Top left: the speed in the first metre of a channel, blue at the walls and red in the middle, around a grey cylinder near the inlet; a short red arc on its upper rear side marks the blowing slot, from which a thin jet bends downstream, and the wake behind the cylinder is wide and blue. Top right: a zoom on the upper rear quarter of the cylinder, square cells coloured by speed ending at the curved wall, the wall drawn black and the slot part of it drawn red. Bottom left: the azimuthal velocity over the inner cylinder speed against the radius from 0.05 to 0.1 metres, red dots of every cell on the falling black exact curve. Bottom right: relative errors against the cells across the box on log axes: the velocity error falls parallel to a dashed second-order line, the torque errors of the inner and the outer cylinder fall below it." width="1400" height="900">
+
+The wall of a cut body is an ordinary boundary (D227), so it takes every
+condition of D29. L13 stage 2e gives it three things:
+
+- **Named surface patches.** `patches = "solids"` splits the wall of an STL
+  body by the solids of its ASCII file, `patches = { inlet = 1, … }` by the
+  16-bit attribute of the triangles of a binary file. Each patch becomes a
+  boundary `<body>-<patch>` with its own `[boundary.<body>-<patch>]`; every
+  cut face takes the patch of the triangle closest to its centroid, so a
+  patch edge is resolved to the cell size.
+- **A turning wall.** `omega` turns the wall of a body rigidly about its
+  axis: every face moves with ω × (x − centre), and the summary of every
+  wall of the body gives its torque about the axis (`omega = 0` for a body
+  at rest). The torque takes the transposed viscous stress of the rigid
+  motion, μ ω × S, exactly: from the gradient of the cut cells the torque
+  of the turning cylinder below stayed 2.8 % off on every mesh.
+- **Inverted bodies.** `invert = true` keeps the fluid inside a cylinder,
+  sphere or box and cuts away the rest: a pipe or the outer cylinder of a
+  gap in a box mesh. Mesh boundaries that end up inside the solid are left
+  out (they need no condition; one the case gives a condition stays,
+  empty).
+
+**A cylinder that blows through a slot** (`immersed_cut_blown_cylinder.toml`,
+top): the Schäfer–Turek channel of [gallery 313](#cut-cylinder) (Re 20, the
+plain box mesh of 440 × 82 cells), the cylinder an STL file in two solids,
+`slot` (the mantle from 45° to 75°) and `wall`. The slot is a velocity inlet
+of 0.4 m/s normal to the surface, the rest a no-slip wall. The cut gives the
+slot 40 faces of 2.661·10⁻⁴ m² (+1.6 % on the exact arc: the cells at its
+two edges go whole to one patch), the wall 400 faces; the flow converges in
+1 572 iterations and the 1.064·10⁻⁴ kg/s blown in leave through the outlet
+with the channel flow to 7·10⁻¹⁷ kg/s. The jet bends with the flow and
+lifts the wake: C_D = 6.71 and C_L = −2.70 (the same cut cylinder without
+the slot: 5.59 and 0.010).
+
+**Taylor–Couette flow with both cylinders cut** (`immersed_cut_taylor_couette.toml`,
+bottom): the gap of `taylor_couette_mrf.toml` (r₁ = 0.05 m turning at
+10 rad/s, r₂ = 0.10 m at rest, Re = 50) in a square box mesh that knows
+neither cylinder: the inner one a body with `omega = 10`, the outer one a
+cylinder with `invert = true` and `omega = 0` (for its torque). Both walls
+cross the cells at every angle.
+
+| Cells across the box | 44 | 88 | 176 |
+|---|---|---|---|
+| Velocity L2 error (relative) | 1.36·10⁻² | 3.22·10⁻³ | 7.16·10⁻⁴ |
+| Order | | 2.11 | 2.19 |
+| Torque on the inner cylinder | +5.1 % | +0.97 % | +0.23 % |
+| Torque on the outer cylinder | −0.73 % | −0.11 % | −0.036 % |
+
+against the exact u_θ = A r + B / r and the exact torque
+4π μ ω r₁² r₂² L / (r₂² − r₁²) = 2.094·10⁻⁶ N m. The velocity is second
+order, the torques converge at second order and to each other (the angular
+momentum of the gap balances).
+
+**Benchmark with the computer-graphics methods (maintainer rule).** The
+patch of a cut face is a closest-point query on the triangle hierarchy of
+the surface (D108), the same query as the exact wall distance of
+[gallery 357](#cut-plate); the alternative of mesh-processing tools,
+transferring the triangle labels by the majority area of the clipped
+surface in each cell, gives the same faces wherever a cell sees one patch
+and differs only in the cells a patch edge crosses (not measured here: the
+two choices differ in a few faces per patch edge). Those cells hold one
+face per cell and body in 2D (the wall loop is one face), so the patch edge
+is resolved to the cell size either way; splitting the wall face of a cell
+along the patch edge would make it exact and is not built.
+
+**What is not here yet.** A wall face of a cut cell is not split along a
+patch edge (the slot area is 1.6 % off here). `omega` turns the wall, not the
+body: the cut stays where it is, which is exact for bodies of revolution
+about their axis; rigid motion of the body itself is stage 5 (L4). A body
+kept as a solid region (stage 2d) cannot turn or have patches. `invert` is
+for the primitive shapes; an STL surface is inverted in its file. One rank
+only.
+
+Reproduce (each run a few minutes on 4 cores):
+
+```sh
+cargo build --release -p foehncraft-cli
+target/release/foehn flow examples/cases/flow/immersed_cut_blown_cylinder.toml --out output/cut_blown
+target/release/foehn flow examples/cases/flow/immersed_cut_taylor_couette.toml --out output/cut_tc
+pip install matplotlib h5py numpy
+python3 -m tools.plot.immersed_cut_patches docs/figures/gallery output/cut_blown output/cut_tc
+```
+
+The STL file is written by `python3 -m tools.mesh.blown_cylinder_stl
+examples/cases/flow/immersed_blown_cylinder.stl`. Recipe:
+[360](../recipes/immersed.md#cut-patches). Case files:
+`examples/cases/flow/immersed_cut_blown_cylinder.toml`,
+`examples/cases/flow/immersed_cut_taylor_couette.toml`.
+
+---
+
+<a id="refine"></a>
+## 361. A cylinder on a box mesh refined near it: hanging-node faces
+
+<img src="../figures/gallery/immersed_refine.png" alt="Four panels. Top left: the speed around a grey cylinder in a channel, blue in the wake and red beside the cylinder, the cells outlined: large square cells far away, cells half and a quarter as wide in two bands around the cylinder. Top right: a close-up of a perturbed mesh with a dashed circular arc, the cells a quarter as wide along the arc and half as wide further out, coloured by the temperature error, pale near the arc and dark red in the coarse cells in the middle of the circle, with no jump where the cell size changes. Bottom left: the lift coefficient against the number of cells on a log axis: blue points for uniform meshes rise from 0.0078 to 0.0106, a red square for the refined mesh at about 19 000 cells lies inside the grey reference band. Bottom right: the temperature error against the width of the input cells on log axes, two falling lines parallel to a dashed second-order line, the refined one below." width="1400" height="900">
+
+Cut cells resolve a body only as well as the cells it crosses; a box mesh
+fine enough everywhere wastes cells far from the body. `[immersed.refine]`
+(L13 stage 2f, owner decision Q7) halves the hexahedra near the bodies
+before the cut, up to `levels` times, into hexahedra with **hanging-node
+faces** (D57): where a cell meets two (2D) or four (3D) cells of the next
+level, its face is split into their faces and the corners of the small
+faces are added to the edges of every face that passes through them, so
+each cell stays a closed polyhedron of D23 and the solver sees an ordinary
+polyhedral mesh. The refinement is the first piece of the refinement kernel
+of L14:
+
+- **2:1 balanced** across faces, edges and corners: neighbouring cells
+  differ by one level at most.
+- **Conservative geometry.** The faces of an input face add up to its area
+  vector, the cells of an input cell to its volume, to round-off (measured
+  2·10⁻¹⁵ also on warped hexahedra); Σ S = 0 on every cell.
+- **Deterministic and serial**, before the cut and the partition: every new
+  node is named by the entity of the input mesh it lies on (edge, face or
+  cell, with its position in a frame fixed by the node numbers), and its
+  coordinates come from that entity alone, so both sides of a face compute
+  it bit for bit and the result is the same on every run (D93).
+- **Planar meshes** (one cell thick) are refined in the plane only; cells
+  that are not hexahedra are kept whole. The log (IMM206) lists the cells per
+  level, the faces between levels and the largest non-orthogonality,
+  skewness and closure.
+
+A cell is halved while its distance to the nearest body surface, less its
+own radius, is below the width of its level: `layers` cells of that level
+(default 4), or with `distance = w` the width w · 2^(levels − 1 − level) in
+metres, the same region on every mesh of a convergence study.
+
+**The cylinder at Re 20** (`immersed_refine_cylinder_re20.toml`, top left
+and bottom left): the Schäfer–Turek channel of [gallery 313](#cut-cylinder)
+on the plain D/10 box mesh (220 × 41) refined twice within 0.08 m of the
+cylinder (D/40 there, D/20 out to 0.16 m): 20 372 cells, 19 140 after the
+cut.
+
+| Mesh | Cells | C_D | C_L | Δp (Pa) |
+|---|---|---|---|---|
+| uniform box, h = D/10, cut | 8 944 | 5.554 | 0.0078 | 0.1140 |
+| uniform box, h = D/40, cut | 143 088 | 5.595 | 0.0106 | 0.1171 |
+| D/10 refined to D/40 near the cylinder | 19 140 | 5.593 | 0.01063 | 0.1171 |
+| reference range | | 5.57 – 5.59 | 0.0104 – 0.0110 | 0.1172 – 0.1176 |
+
+The refined mesh gives the values of the uniform D/40 mesh with a seventh
+of its cells (1 334 SIMPLEC iterations instead of more than 4 000).
+
+**Second order across the faces between levels** (`immersed_refine_mms.toml`,
+top right and bottom right): heat conduction with the manufactured
+T = T0 + A sin(πx) sin(πy) on the unit square in perturbed hexahedra (nodes
+moved by up to 15 % of a cell), refined twice near a circle cut out and kept
+as a solid of the fluid's own conductivity (it only steers the
+refinement):
+
+| Input cells across | 16 | 32 | 64 |
+|---|---|---|---|
+| Cells, refined | 1 762 | 6 628 | 25 978 |
+| L2 error, refined (K) | 5.54·10⁻² | 1.46·10⁻² | 3.76·10⁻³ |
+| L2 error, without refinement (K) | 1.08·10⁻¹ | 2.41·10⁻² | 5.86·10⁻³ |
+
+The order is 1.93 and 1.95 from the width of the input cells (2.04 and 1.99
+from the cell counts); the error field shows no jump at the faces between
+levels: the non-orthogonal correction carries the offset of the cell
+centres across a hanging face.
+
+**Benchmark with the computer-graphics methods (maintainer rule).** The
+tree is the octree of mesh generators and of adaptive codes (a forest of
+octrees, one per input hexahedron, as p4est); the 2:1 balance by corners is
+the standard ripple propagation. The node names replace the hash of
+coordinates that octree meshers often use: a hash of floating-point
+coordinates merges or splits nodes by tolerance, the names do not need one.
+Splitting the coarse face into the faces of the fine side (the "conformal
+polyhedral" approach) keeps a plain finite-volume face loop; the alternative
+of hanging-node interpolation (a constraint on the coarse side) is not
+conservative.
+
+**What is not here yet.** Only hexahedra are refined (prisms, tetrahedra and
+polyhedra are kept whole); no coarsening and no refinement driven by the
+solution (that is L14 on this kernel); the refined cells near the body have
+the faces of trilinear hexahedra, the body surface is still the cut. One
+rank only, like the cut.
+
+Reproduce (each run under a minute on 4 cores):
+
+```sh
+cargo build --release -p foehncraft-cli
+target/release/foehn flow examples/cases/flow/immersed_refine_cylinder_re20.toml --out output/ref_cyl
+target/release/foehn flow examples/cases/flow/immersed_refine_mms.toml --out output/ref_mms
+target/release/foehn flow examples/cases/flow/immersed_refine_mms.toml --out output/ref_mms1 --set 'verification.levels=[1]'
+pip install matplotlib h5py numpy
+python3 -m tools.plot.immersed_refine docs/figures/gallery output/ref_cyl output/ref_mms1
+```
+
+Recipe: [361](../recipes/immersed.md#refine). Case files:
+`examples/cases/flow/immersed_refine_cylinder_re20.toml`,
+`examples/cases/flow/immersed_refine_mms.toml`.

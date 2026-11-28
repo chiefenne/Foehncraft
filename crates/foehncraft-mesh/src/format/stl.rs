@@ -18,8 +18,28 @@
 /// A triangle: three corners (m, after the scale of the caller).
 pub type Triangle = [[f64; 3]; 3];
 
+/// The triangles of an STL file with the tag of every triangle: the index
+/// of its `solid` in an ASCII file (named in `solids`), the 16-bit
+/// attribute of a binary file (`solids` empty). The tags name the surface
+/// patches of an immersed body (L13 stage 2e).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Tagged {
+    /// The triangles, in file order.
+    pub triangles: Vec<Triangle>,
+    /// The tag of every triangle.
+    pub tags: Vec<u32>,
+    /// The names of the solids of an ASCII file, in file order (an unnamed
+    /// solid has an empty name); empty for a binary file.
+    pub solids: Vec<String>,
+}
+
 /// Reads the triangles of an STL file's bytes.
 pub fn parse(bytes: &[u8]) -> Result<Vec<Triangle>, String> {
+    parse_tagged(bytes).map(|t| t.triangles)
+}
+
+/// Reads the triangles of an STL file's bytes with their tags.
+pub fn parse_tagged(bytes: &[u8]) -> Result<Tagged, String> {
     if bytes.len() >= 84 {
         let n = u32::from_le_bytes([bytes[80], bytes[81], bytes[82], bytes[83]]) as usize;
         let size = n.checked_mul(50).and_then(|x| x.checked_add(84));
@@ -35,16 +55,22 @@ pub fn parse(bytes: &[u8]) -> Result<Vec<Triangle>, String> {
 
 /// Reads an STL file.
 pub fn read(path: &std::path::Path) -> Result<Vec<Triangle>, String> {
-    let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    parse(&bytes).map_err(|e| format!("{}: {e}", path.display()))
+    read_tagged(path).map(|t| t.triangles)
 }
 
-fn binary(bytes: &[u8], n: usize) -> Result<Vec<Triangle>, String> {
+/// Reads an STL file with the tags of its triangles.
+pub fn read_tagged(path: &std::path::Path) -> Result<Tagged, String> {
+    let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    parse_tagged(&bytes).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+fn binary(bytes: &[u8], n: usize) -> Result<Tagged, String> {
     let n = super::declared(n, bytes.len(), "STL triangles")?;
     if n == 0 {
         return Err("STL: the file holds no triangle".into());
     }
     let mut out = Vec::with_capacity(n);
+    let mut tags = Vec::with_capacity(n);
     for i in 0..n {
         let rec = 84 + 50 * i;
         let f = |k: usize| -> Result<f64, String> {
@@ -68,32 +94,63 @@ fn binary(bytes: &[u8], n: usize) -> Result<Vec<Triangle>, String> {
             }
         }
         out.push(t);
+        let a = bytes
+            .get(rec + 48..rec + 50)
+            .ok_or_else(|| format!("STL: triangle {i} is cut off"))?;
+        tags.push(u16::from_le_bytes([a[0], a[1]]) as u32);
     }
-    Ok(out)
+    Ok(Tagged {
+        triangles: out,
+        tags,
+        solids: Vec::new(),
+    })
 }
 
-fn ascii(text: &str) -> Result<Vec<Triangle>, String> {
-    let mut words = text.split_ascii_whitespace();
+/// The name of a solid: the words after `solid` up to its first facet (or
+/// its end).
+fn solid_name<'a>(words: &mut std::iter::Peekable<impl Iterator<Item = &'a str>>) -> String {
+    let mut name: Vec<&str> = Vec::new();
+    while let Some(w) = words.peek() {
+        if w.eq_ignore_ascii_case("facet") || w.eq_ignore_ascii_case("endsolid") {
+            break;
+        }
+        name.push(w);
+        words.next();
+    }
+    name.join(" ")
+}
+
+fn ascii(text: &str) -> Result<Tagged, String> {
+    let mut words = text.split_ascii_whitespace().peekable();
     match words.next() {
         Some(w) if w.eq_ignore_ascii_case("solid") => {}
         _ => return Err("STL: an ASCII file must begin with `solid`".into()),
     }
+    let mut solids = vec![solid_name(&mut words)];
     let mut out = Vec::new();
+    let mut tags = Vec::new();
     let mut corners: Vec<[f64; 3]> = Vec::with_capacity(3);
     let mut in_loop = false;
     let mut ended = false;
     while let Some(w) = words.next() {
         match w.to_ascii_lowercase().as_str() {
-            "facet" | "normal" | "endsolid" => {
-                if w.eq_ignore_ascii_case("endsolid") {
-                    ended = true;
-                    // the name after endsolid, and possibly further solids
-                    if let Some(next) = words.next()
-                        && next.eq_ignore_ascii_case("solid")
-                    {
-                        ended = false;
-                    }
+            "facet" | "normal" => {}
+            "endsolid" => {
+                if in_loop {
+                    return Err("STL: `endsolid` inside a loop".into());
                 }
+                ended = true;
+                // the name after endsolid, up to a further solid
+                while let Some(n) = words.peek() {
+                    if n.eq_ignore_ascii_case("solid") {
+                        break;
+                    }
+                    words.next();
+                }
+            }
+            "solid" if ended && !in_loop => {
+                ended = false;
+                solids.push(solid_name(&mut words));
             }
             "outer" => {
                 if words.next().map(|x| x.to_ascii_lowercase()) != Some("loop".into()) {
@@ -131,6 +188,7 @@ fn ascii(text: &str) -> Result<Vec<Triangle>, String> {
                 }
                 in_loop = false;
                 out.push([corners[0], corners[1], corners[2]]);
+                tags.push((solids.len() - 1) as u32);
             }
             "endfacet" => {
                 if in_loop {
@@ -154,7 +212,11 @@ fn ascii(text: &str) -> Result<Vec<Triangle>, String> {
     if out.is_empty() {
         return Err("STL: the file holds no triangle".into());
     }
-    Ok(out)
+    Ok(Tagged {
+        triangles: out,
+        tags,
+        solids,
+    })
 }
 
 /// The ASCII STL text of `tris` (for tests and examples).
@@ -233,5 +295,26 @@ mod tests {
         let mut b = to_binary(&square());
         b[80] = 200; // a count the file cannot hold
         assert!(parse(&b).is_err());
+    }
+
+    #[test]
+    fn solids_and_attributes_tag_the_triangles() {
+        let t = square();
+        // three solids, the last one unnamed, with and without names after
+        // endsolid
+        let text = to_ascii("inlet face", &t[..1])
+            + &to_ascii("wall", &t[1..]).replace("endsolid wall", "endsolid")
+            + &to_ascii("", &t);
+        let g = parse_tagged(text.as_bytes()).unwrap();
+        assert_eq!(g.solids, ["inlet face", "wall", ""]);
+        assert_eq!(g.tags, [0, 1, 2, 2]);
+        assert_eq!(g.triangles.len(), 4);
+        // the 16-bit attribute of a binary file
+        let mut b = to_binary(&t);
+        b[84 + 48] = 7;
+        b[84 + 50 + 49] = 1;
+        let g = parse_tagged(&b).unwrap();
+        assert!(g.solids.is_empty());
+        assert_eq!(g.tags, [7, 256]);
     }
 }

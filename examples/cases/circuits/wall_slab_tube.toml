@@ -1,0 +1,28 @@
+# The water side of the coupled slab (SF7c, `flow/circuit_wall_slab.toml`):
+# one tube of 20 mm bore along the slab, 2 m long and level, water at
+# 10 MPa entering at 450 K with 0.05 kg/s from a pressure node, leaving to
+# a second pressure node. The tube has no heat of its own: the slab
+# gives it, segment by segment.
+
+[circuit]
+name = "wall_slab_tube"
+segments = 40
+
+[[nodes]]
+name = "inlet"
+kind = "pressure"
+pressure = 10.02e6
+temperature = 450.0
+
+[[nodes]]
+name = "outlet"
+kind = "junction"
+mass_flow = -0.05
+
+[[tubes]]
+name = "tube"
+from = "inlet"
+to = "outlet"
+length = 2.0
+diameter = 0.02
+start_flow = 0.05

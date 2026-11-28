@@ -42,6 +42,9 @@ pub(crate) struct Walls {
     pub boundary: Vec<usize>,
     /// 1 on the wall faces, per boundary face.
     pub mask_b: Vec<f64>,
+    /// The exact wall distance of the sample cell per wall face (with
+    /// `stat.sample`, cut-cell walls).
+    pub y_sample: Vec<f64>,
 }
 
 impl Walls {
@@ -124,6 +127,117 @@ impl Walls {
         w
     }
 
+    /// The walls of cut bodies (L13 stage 2c, D229).
+    ///
+    /// **Exact first-cell distance.** y_P of every face of a body's wall
+    /// boundary is the distance of the cell centroid to the true surface
+    /// (the closest point, D108), the same for all wall faces of a cut or
+    /// merged cell, instead of the distance to the plane of each facet; the
+    /// floor stays.
+    ///
+    /// **Sample cell** (`[immersed.cut] wall_sample`, default true). The
+    /// cut cells along a wall are cut anywhere from a sliver to the whole
+    /// cell, so their centroids lie at any distance from 0.15 to 1.5 cell
+    /// widths, and their velocities follow the log law poorly (the ragged
+    /// first layer: ν_t, the production and the momentum fluxes of cells at
+    /// unequal heights). The wall function of each cut wall face then
+    /// takes its velocity, k and distance from the cell one layer out (the
+    /// cell holding the point just above the cut cell along the wall
+    /// normal), whose centroid lies between one and two cell widths from
+    /// the wall, and applies the wall shear stress it gives to the cut
+    /// cell's face (ν_w = τ_w y_P/U_P); the cut cell keeps its own ε or ω.
+    /// Wall models of immersed-boundary RANS sample the velocity at a
+    /// distance from the wall in the same way (Capizzano 2011; Tamaki,
+    /// Harada & Imamura 2017; Berger & Aftosmis 2012).
+    ///
+    /// Returns the number of faces set and the largest relative change of
+    /// y_P.
+    pub fn set_cut_walls(
+        &mut self,
+        mesh: &Mesh,
+        geo: &Geometry,
+        bodies: &crate::immersed::WallBodies,
+    ) -> (usize, f64) {
+        let (mut n, mut change) = (0, 0.0f64);
+        let nw = self.stat.faces.len();
+        let sample = bodies.sample();
+        let loc = sample.then(|| foehncraft_mesh::locate::Locator::new(mesh, geo));
+        let mut cells = vec![u32::MAX; nw];
+        let mut ys = vec![0.0; nw];
+        let ni = mesh.n_interior_faces();
+        let neighbours = |c: usize| -> Vec<usize> {
+            mesh.cell_face_iter(c)
+                .filter(|&(f, _)| f < ni)
+                .map(|(f, is_nb)| {
+                    if is_nb {
+                        mesh.owner[f] as usize
+                    } else {
+                        mesh.neighbour[f] as usize
+                    }
+                })
+                .collect()
+        };
+        for (i, &f) in self.stat.faces.iter().enumerate() {
+            let name = &mesh.boundaries[self.boundary[i]].name;
+            let c = mesh.owner[f as usize] as usize;
+            let xc = geo.cell_centroid[c];
+            let Some(d) = bodies.distance_to(name, xc) else {
+                continue;
+            };
+            let floor = 1e-3 * geo.cell_volume[c] / self.area[i];
+            let y = d.max(floor);
+            change = change.max((y - self.y[i]).abs() / y);
+            self.y[i] = y;
+            n += 1;
+            let Some(loc) = &loc else { continue };
+            // the point just above the cut cell along the inward normal
+            let nn = [-self.normal[0][i], -self.normal[1][i], -self.normal[2][i]];
+            let mut top = 0.0f64;
+            for (g, _) in mesh.cell_face_iter(c) {
+                for &p in mesh.face(g) {
+                    let x = mesh.points[p as usize];
+                    let h = (0..3).map(|k| (x[k] - xc[k]) * nn[k]).sum::<f64>();
+                    top = top.max(h);
+                }
+            }
+            let probe: [f64; 3] = std::array::from_fn(|k| xc[k] + nn[k] * (top + 1e-3 * (top + y)));
+            // in a face neighbour, or a neighbour of one
+            let mut found = None;
+            let first = neighbours(c);
+            for &q in &first {
+                if loc.contains(q, probe) {
+                    found = Some(q);
+                    break;
+                }
+            }
+            if found.is_none() {
+                'outer: for &q in &first {
+                    for r in neighbours(q) {
+                        if r != c && loc.contains(r, probe) {
+                            found = Some(r);
+                            break 'outer;
+                        }
+                    }
+                }
+            }
+            let Some(q) = found.filter(|&q| q < mesh.n_cells) else {
+                continue;
+            };
+            let Some(dq) = bodies.distance_to(name, geo.cell_centroid[q]) else {
+                continue;
+            };
+            if dq > y * (1.0 + 1e-9) {
+                cells[i] = q as u32;
+                ys[i] = dq;
+            }
+        }
+        if sample && cells.iter().any(|&q| q != u32::MAX) {
+            self.stat.sample = cells;
+            self.y_sample = ys;
+        }
+        (n, change)
+    }
+
     /// Number of wall faces.
     pub fn len(&self) -> usize {
         self.stat.faces.len()
@@ -163,5 +277,93 @@ mod tests {
         for (di, y) in d.iter().zip(ys) {
             assert!((di - y).abs() < 1e-14, "{di} {y}");
         }
+    }
+
+    /// The first-cell distance on a cylinder cut out of a box mesh (L13
+    /// stage 2c): with the exact distance every wall face of a cut or
+    /// merged cell takes the distance of the cell centroid to the circle,
+    /// |r_P − R| to round-off; the distance to the plane of each facet
+    /// differs from it, by the most on merged cells.
+    #[test]
+    fn cut_walls_take_the_exact_first_cell_distance() {
+        let (r, c) = (0.1234, [0.5, 0.5]);
+        let text = format!(
+            r#"
+case_format = "0.7"
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [1.0, 1.0, 0.05]
+cells = [40, 40, 1]
+[fluid]
+density = 1.0
+viscosity = 1e-5
+pressure_values = "gauge"
+[immersed]
+method = "cut"
+[[immersed.body]]
+name = "cyl"
+shape = "cylinder"
+centre = [{}, {}, 0.0]
+radius = {r}
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [1.0, 0.0, 0.0]
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymin]
+type = "symmetry"
+[boundary.ymax]
+type = "symmetry"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+[boundary.cyl]
+type = "wall"
+"#,
+            c[0], c[1]
+        );
+        let case = crate::case::FlowCase::from_toml(&text, std::path::Path::new(".")).unwrap();
+        let (mesh, geo, _) = crate::case::mesh_for(&case, None).unwrap();
+        let facet = Walls::new(&mesh, &geo, &case.boundary, true);
+        let mut exact = facet.clone();
+        let wb = crate::immersed::WallBodies::of(&case).unwrap().unwrap();
+        let (n, change) = exact.set_cut_walls(&mesh, &geo, &wb);
+        assert_eq!(n, facet.len());
+        assert!(n > 100, "{n} wall faces");
+        let mut per_cell: BTreeMap<u32, Vec<usize>> = BTreeMap::new();
+        let (mut worst, mut spread) = (0.0f64, 0.0f64);
+        for (i, &f) in exact.stat.faces.iter().enumerate() {
+            let p = mesh.owner[f as usize];
+            per_cell.entry(p).or_default().push(i);
+            let x = geo.cell_centroid[p as usize];
+            let rp = ((x[0] - c[0]).powi(2) + (x[1] - c[1]).powi(2)).sqrt();
+            let want = (rp - r).abs();
+            assert!(
+                (exact.y[i] - want).abs() <= 1e-12 * r,
+                "{} {want}",
+                exact.y[i]
+            );
+            worst = worst.max((facet.y[i] - want).abs() / want);
+        }
+        for faces in per_cell.values() {
+            let y: Vec<f64> = faces.iter().map(|&i| facet.y[i]).collect();
+            let lo = y.iter().copied().fold(f64::INFINITY, f64::min);
+            let hi = y.iter().copied().fold(0.0, f64::max);
+            spread = spread.max((hi - lo) / hi);
+            let e: Vec<f64> = faces.iter().map(|&i| exact.y[i]).collect();
+            assert!(e.iter().all(|&v| v == e[0]), "one y per cell: {e:?}");
+        }
+        // the facets put the wall a few per cent off the true distance
+        assert!(worst > 1e-3 && (change - worst).abs() < 0.5 * worst + 1e-9);
+        assert!(spread > 1e-3, "{spread}");
+        eprintln!(
+            "cut cylinder 40²: {n} wall faces, facet distance up to {:.2} % off, \
+             spread within a cell up to {:.2} %",
+            100.0 * worst,
+            100.0 * spread
+        );
     }
 }

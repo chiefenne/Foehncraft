@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 1.1.0 (b35bc269d4e1)), never typed in. The same as data: [grades.json](grades.json).
 
-**160 features: 49 verified, 108 partial, 3 unverified.**
+**166 features: 49 verified, 114 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -96,6 +96,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Energy | [Energy with a turbulence model (thermal wall function, Pr_t)](#energy-turbulent) | partial |
 | Energy | [Water and steam of IAPWS-IF97: states, saturation, transport properties and the if97 material form (SF7a)](#materials-if97-water-steam) | partial |
 | Energy | [One-dimensional water and steam tube circuits of a boiler: two-phase pressure drop, flow boiling, CHF margin and natural circulation (steam furnace SF7b)](#circuits-water-steam) | partial |
+| Energy | [Water and steam circuits behind the walls of a steady flow, coupled implicitly by a Robin condition per face (steam furnace SF7c)](#circuits-walls) | partial |
 | Conjugate heat transfer | [Solid regions, steady](#cht-steady) | verified |
 | Conjugate heat transfer | [Transient conjugate heat transfer](#cht-transient) | verified |
 | Conjugate heat transfer | [Thermal acceleration of solids (scaled ρ c_p, restored)](#cht-thermal-acceleration) | partial |
@@ -171,8 +172,13 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Flow models | [Species transport of an ideal-gas mixture with mixture properties (L2, steam furnace SF1)](#species-transport) | partial |
 | Flow models | [Gas-phase chemistry: mechanisms, stiff 0D reactor and chemical equilibrium (L2, steam furnace SF2a)](#chemistry-reactor) | partial |
 | Flow models | [Gas-phase chemistry in the cells of a transient laminar flow with heat release, the 1D premixed flame (L2, steam furnace SF2b)](#chemistry-flow) | partial |
+| Flow models | [Turbulent flames: eddy dissipation concept with the stiff integrator in the fine structures, eddy dissipation model as fallback, steady and transient RANS (L2, steam furnace SF3)](#chemistry-turbulent) | partial |
 | Immersed bodies | [Immersed bodies by Brinkman penalisation, primitive shapes (L13 stage 1)](#immersed-penalisation) | partial |
 | Immersed bodies | [Immersed bodies as cut cells, primitive shapes (L13 stage 2a, 2b)](#immersed-cut) | partial |
+| Immersed bodies | [Wall functions on cut bodies: exact first-cell distance, sampled wall function, y⁺ per body (L13 stage 2c)](#immersed-cut-wall-functions) | partial |
+| Immersed bodies | [Conjugate heat transfer through cut cells: a cut body kept as a solid region (L13 stage 2d)](#immersed-cut-cht) | partial |
+| Immersed bodies | [Boundary conditions on cut bodies: named STL patches, turning walls, inverted bodies (L13 stage 2e)](#immersed-cut-boundary-conditions) | partial |
+| Immersed bodies | [Near-body refinement of hexahedra with hanging-node faces (L13 stage 2f)](#immersed-refine) | partial |
 | Immersed bodies | [STL bodies, cut out of the mesh or penalised, with sharp edges and face points (L13 stage 2)](#immersed-stl) | partial |
 | Immersed bodies | [Density-field topology search with the Brinkman penalisation, iso-surface by marching tetrahedra (L13 stage 1)](#immersed-topology) | partial |
 | Structures | [Linear structural solver: Euler–Bernoulli and Timoshenko beams, static and modal analyses (L53, MS5 part 1)](#structure-beams) | partial |
@@ -1237,7 +1243,29 @@ Gaps:
 - supercritical water takes Gnielinski with bulk properties: no correction for the pseudo-critical region
 - steady only: no density-wave or Ledinegg instability check, no transients (SF18)
 - the drift velocity is scaled by the sine of the tube angle; horizontal tubes have no stratified-flow void model
-- not yet coupled to the 3D furnace walls (SF7c)
+- coupled to the 3D walls of steady flows by SF7c (feature circuits.walls)
+
+<a id="circuits-walls"></a>
+
+### Water and steam circuits behind the walls of a steady flow, coupled implicitly by a Robin condition per face (steam furnace SF7c)
+
+**partial** (a model without reference data; gaps written) · id `circuits.walls` · switch `[circuits], [[circuits.walls]] boundary, tube, start, end, wall_resistance, fouling` · decisions D350, D282, D160
+
+- exact: [`slab_cooled_by_a_tube_meets_the_heat_balance_march`](../../crates/foehncraft-flow/tests/water_walls.rs): a slab at 700 K on a water tube at 10 MPa: outlet 519.3815 K against 519.3816 K of an independent RK4 march of the heat balance with IF97 and Gnielinski (within 0.01 K), every face on the series resistance of slab and water side to 3e-4 away from the adiabatic ends, circuit energy closure 1e-10, ledger pair = coupling residual
+- consistency: [`slab_on_a_boiling_tube_converges`](../../crates/foehncraft-flow/tests/water_walls.rs): the same slab on a tube boiling at 7 MPa (Chen wall, nonlinear in q): converges, x_out > 0.05, the water at saturation over most of the tube, faces on the series resistance to 1e-3
+- contract (diagnostics): [`circuits_table_is_checked`](../../crates/foehncraft-flow/tests/water_walls.rs): CIR005 for an unknown tube or boundary, a boundary that is not a wall or has its own energy table, two tubes on one boundary, an axis of zero length, a negative resistance, relaxation outside (0, 1], every = 0, a missing circuit file, a transient case
+- consistency: [`circuit_wall_slab`](../../examples/cases/flow/circuit_wall_slab.toml): the slab on a water tube converges with the coupling residual below 1e-6 (CI catalogue case) (passes in CI (set linux-3), not yet in the manual) ([results](../gallery/circuits.md#circuit-walls))
+- consistency: [`circuit_evaporator_pass`](../../examples/cases/flow/circuit_evaporator_pass.toml): a convective evaporator pass whose two water walls share one drum loop: converges in 143 iterations, 8 circuit solves, coupling residual 2e-7, ledger pair 0.05 W of 220 kW; the hotter bank takes more heat and flow (passes in CI (set linux-3), not yet in the manual) ([results](../gallery/circuits.md#circuit-walls))
+- contract (diagnostics): [`tube_axis_must_span_the_wall`](../../crates/foehncraft-flow/tests/water_walls.rs): faces that do not project onto the tube axis between start and end are refused when the run maps them
+
+Gaps:
+
+- steady runs only: transient circuits with a transient gas side (drum level, swell and shrink) are SF18
+- not on ranks yet (refused): the segment heats need an exact sum across the ranks
+- no measured furnace or boiler wall data yet: the evaporator pass is our own design on convection only, without the radiation of the gas (SF4)
+- one tube per wall boundary: several tube groups on one wall need the boundary split in the mesh
+- the water side is the steady 1D circuit of SF7b with its gaps (no measured void or wall temperature, Bowring CHF built in)
+- at small heat a natural-circulation loop can also converge to a reversed-flow steady state; the start flows of the circuit file pick the branch
 
 ## Conjugate heat transfer
 
@@ -2301,7 +2329,7 @@ Gaps:
 
 - ECN Spray G (G1) since D348: the spray runs ahead early (liquid +23 %, vapour +19 % at 0.3 ms) and the liquid stays 8 to 10 % ahead from 0.6 ms (vapour on the measurement from 0.8 ms); the early lead is new with the fine children at the nozzle; cause open
 - ECN Spray G (G1): the Sauter mean diameter at 15 mm is 14.5 um against 7 to 10 um measured, 15 um in the plume core where the drops coalesce, 4 to 8 um at the edges; KH-ACT constants untuned
-- spray cases with KH-ACT need small fixed time steps since D348 (G1 1 us, Spray A 0.5 us; 2 us diverges): no time step that grows after the end of injection is set up
+- spray cases with KH-ACT need small time steps during the injection since D348 (G1 1 us, Spray A 0.5 us; 2 us diverges); G1 steps up to 2 us after the injection by a schedule (#347), not by an adaptive spray-limited step
 - a gas that diverges in some cells leaves its parcels spending max_substeps each, and their exchange records can fill the memory instead of stopping the run with a message (seen on the sector before the slip core, D309)
 - drop sizes not validated: the gallery spray has a Sauter mean diameter near 2 um, small next to measured diesel sprays; no collision or coalescence yet
 - the nozzle turbulence of the Huh-Gosman estimate takes the inlet loss K_c = 0.5 and the area ratio s = 0 as our own choices (the papers give no values)
@@ -2601,10 +2629,34 @@ Gaps:
 - species diffusion is Fickian with constant Lewis numbers per species (no mixture-averaged or multicomponent diffusion, no thermal diffusion); on 100 um cells Lewis 1 for every species gives 0.29 m/s for the GRI-Mech flame, the species Lewis numbers 0.33 m/s
 - the first steps after the start fields are out of mass balance by up to 6e-4 (BAL001 warning) while the flow adjusts to the expansion; 1e-7 later
 - the energy balance books the convected enthalpy with the fluid's c_p, not the mixture's: its imbalance shows about 26 % in a flame although the temperature equation uses the mixture c_p
-- transient only (CHM003 for steady runs), laminar only (turbulence-chemistry interaction is SF3), no sprays with chemistry
+- laminar flames transient only (CHM003 for steady laminar runs; turbulent flames are chemistry.turbulent, SF3), no sprays with chemistry
 - not on ranks: the variable density it needs (stage 7c) is not on ranks yet
 - GPU checked on one device only, the Tesla T4 (sm_75); one thread per cell with a dense Jacobian makes GRI-Mech 3.0 only 1.7x faster than 2 CPU cores (register spill; a block per cell or a sparse Jacobian would be needed); the flame cases themselves have not run with backend = "cuda"
 - the burning velocity oscillates by a few per cent as the flame crosses cells (period dx/(S_L - u_inlet)); the case averages over the second half of the run
+
+<a id="chemistry-turbulent"></a>
+
+### Turbulent flames: eddy dissipation concept with the stiff integrator in the fine structures, eddy dissipation model as fallback, steady and transient RANS (L2, steam furnace SF3)
+
+**partial** (a model without reference data; gaps written) · id `chemistry.turbulent` · switch `[chemistry] interaction = "edc" | "edm", [chemistry.edc], [chemistry.edm], update_every, relaxation` · decisions D349, D120
+
+- exact: [`fine_structures_follow_the_cascade`](../../crates/foehncraft-flow/src/chemistry/edc.rs): gamma_lambda = C_gamma (nu eps/k^2)^(1/4), gamma* = gamma_lambda^2 (2005) or ^3 (1981), tau* = C_tau (nu/eps)^(1/2), kappa = gamma*/(tau* (1 - gamma*)) to round-off; gamma* held at max_fine_fraction and counted
+- exact: [`edm_rates_are_mixing_limited_and_conserve_mass`](../../crates/foehncraft-flow/src/chemistry/edc.rs): eddy dissipation model rates of the Westbrook-Dryer mechanism: the fuel step equals A eps/k min(fuel, O2/1.5, B rho Y_P/sum W_P) to 1e-9, mass conserved to 1e-12, no products no burning, cold gas held by the Arrhenius cap, the CO/CO2 pair's net dissociation in burnt gas held to the mixing rate; Jones-Lindstedt (reversible) refused
+- exact: [`the_entry_gives_the_bits_of_the_cell_body`](../../crates/foehncraft-kernels/src/chemistry.rs): the PTX entry with a per-cell interval (the fine-structure residence time) gives bitwise the states and step counts of the cell body; cold cells untouched
+- consistency: [`jet_flame_edc_jl4`](../../examples/cases/flow/jet_flame_edc_jl4.toml): piloted CH4/air jet flame with the inlets of Sandia Flame D, steady k-epsilon (C_eps1 1.60), EDC with Jones-Lindstedt: bounded (peak 2289 K), elements closed to 3e-5, 95 % of the fuel's heating value released in 0.5 m, monitored axis temperature and heat release steady to 1 K and 1e-4 between iterations 1450 and 2500 (three runs) (passes in CI (set long), not yet in the manual)
+- consistency: [`jet_flame_edm_wd2`](../../examples/cases/flow/jet_flame_edm_wd2.toml): the same flame with the eddy dissipation model and Westbrook-Dryer (the CO oxidation and CO2 dissociation as a pair capped by mixing): axis peak 2313 K at x/D 63 (no dissociation in two global steps), 94 % of the fuel heating value released, peak CO 1.3 % (11 % before the pair rule); temperatures of iterations 2000 and 3000 within 3 K (passes in CI (set linux-3), not yet in the manual)
+- contract (diagnostics): [`chemistry_cases_are_checked`](../../crates/foehncraft-flow/src/chemistry/flow.rs): an interaction without a turbulence model, a turbulence model without an interaction (CHM003), the eddy dissipation model with reversible reactions, max_fine_fraction >= 1 and update_every = 0 (CHM001) are refused
+
+Gaps:
+
+- no comparison with measurements: the TNF data of Sandia Flame D are not in the repository (the Sandia archive could not be reached from the cloud); the literature with the same constants reports the shear-layer peak 500 K too high at x/D 15 and 450 K at x/D 30 (Saini et al. 2021), and the run's peaks (2272 and 2264 K) are of that kind
+- the bluff-body flame of the stage plan is not done
+- steady residuals level at about 3e-5 (EDC) and swing about 2e-4 (EDM, relaxation 0.2) while the monitored temperatures and heat release are steady: the cases do not require the residual tolerance
+- no OH images: the 4-step mechanism has no OH and the jet flame has not run with GRI-Mech 3.0
+- the jet inlet is uniform (49.6 m/s), not the fully developed pipe profile of the experiment; no radiation
+- no partially stirred reactor, local EDC constants (Parente et al. 2016) or flamelet tables
+- the energy balance books the convected enthalpy with the fluid's c_p: 17 to 19 % imbalance shown in the jet flames although the temperature equation uses the mixture
+- transient EDC and EDM ran only as a 30-step check on a coarser mesh (bounded, no case of their own in CI); not on ranks; GPU path with per-cell intervals checked through the CPU data-path test only
 
 ## Immersed bodies
 
@@ -2648,11 +2700,91 @@ Gaps:
 
 Gaps:
 
-- the body is seen through its node values: features thinner than a cell vanish; the refusal of thin solids (Q4, IMM for D189) is not built yet
+- the body is seen through its node values: features thinner than a cell vanish (a body kept as a solid region is refused below about two cells, IMM205; a body cut out is not checked)
 - Δp of the Re 20 cylinder stays about 1 % below the range at D/20 (D/40: C_D 5.595, C_L 0.0106, Δp 0.1171, all within 0.1 % of the range; SIMPLEC stalls at residual 1e-7 there); the lift depends on the merge threshold (0.1: 4 % low, 0.4: 0.4 % low, without face points); the default 0.3 is set on this case and the STL sphere array and kept by the maintainer after measuring again with face points and several faces per cell pair (2026-11-26): 0.4 puts the cylinder's lift into the range, 0.01047, and its drag 0.06 % above it, 5.593; on the 32³ sphere array 0.3 is closer, −1.9 against −2.3 %
-- wall functions with the exact first-cell distance (2c), conjugate heat transfer through cut cells (2d, refused), named surface patches (2e) and the near-body refinement (2f) are not built
+- conjugate heat transfer through cut cells (2d, refused), named surface patches (2e) and the near-body refinement (2f) are not built (wall functions on cut bodies: feature immersed.cut-wall-functions)
 - the other verification cases of the plan (cut-sphere Poisson MMS, annulus conduction, Taylor-Couette, inclined channel, Stokes sphere, Re 100 cylinder, turbulent plate) are not run yet
 - one rank only: the cut runs on the global mesh, `foehn run --ranks N` with a cut is not tested
+
+<a id="immersed-cut-wall-functions"></a>
+
+### Wall functions on cut bodies: exact first-cell distance, sampled wall function, y⁺ per body (L13 stage 2c)
+
+**partial** (gaps written) · id `immersed.cut-wall-functions` · switch `[immersed] method = "cut" with a turbulence model and wall functions; [immersed.cut] wall_sample` · decisions D108, D199, D229
+
+- exact: [`cut_walls_take_the_exact_first_cell_distance`](../../crates/foehncraft-flow/src/turbulence/wall.rs): a cylinder cut out of a 2D hex mesh: the wall distance of every cut and merged wall cell is the exact |r_P − R| to 1e-12 R, one distance per cell, where the distance to the facet plane is off by more than 1e-3 and differs between the faces of one cell
+- reference-data: [`cut_plate_wall_function_samples_one_layer_out`](../../crates/foehncraft-flow/tests/immersed.rs): a flat plate tilted by 2° against a hex mesh (75 × 115 cells), k-ε scalable: C_f of the sampled wall function −4.4 % from White's correlation over 0.8 < s < 1.15 with 9.9 % scatter; from the cut cell itself −3.9 % with 38 % scatter; fails beyond 8 % mean or above 0.6 of the unsampled scatter
+- reference-data: [`immersed_cut_plate_keps`](../../examples/cases/flow/immersed_cut_plate_keps.toml): the tilted plate on 150 × 130 cells, Re_L 6·10⁶: C_f +1.2 % at s = 0.7, +3.6 % at 0.97, +6.7 % at 1.15 from White's correlation (the same plate fitted to the mesh: +0.8, −1.4, −2.3 %); single faces scatter −16 to +12 % at s = 0.97 (without sampling −46 to +50 %) (passes in CI (set long), not yet in the manual) ([results](../gallery/immersed.md#cut-plate))
+- reference-data: [`immersed_cut_plate_fitted`](../../examples/cases/flow/immersed_cut_plate_fitted.toml): the reference of the cut plate: the same plate body-fitted on the same cells, C_f +0.8, −1.4, −2.3 % from White at s = 0.7, 0.97, 1.15 after a laminar start to s ≈ 0.2 (passes in CI (set long), not yet in the manual) ([results](../gallery/immersed.md#cut-plate))
+- contract (diagnostics): [`cut_plate_wall_function_samples_one_layer_out`](../../crates/foehncraft-flow/tests/immersed.rs): LIM011 lists the smallest, mean and largest y⁺ of every cut body; the y⁺ map is the y_plus column of the wall output
+
+Gaps:
+
+- the first layer of cut cells overproduces k (30 to 60 % above equilibrium in the first 2 mm of the plate) and its velocity is 10 to 20 % below the log law; single wall faces scatter about ±15 % in C_f even with sampling
+- near the leading edge the cut plate is turbulent at once (C_f 18 % above White at s = 0.3) while the fitted plate has a short laminar run; neither has a transition model
+- the sampled cell has to lie in the log layer: on a mesh with 2 mm first cells the sample sits at y/δ ≈ 0.25 and C_f comes out 17 % high (measured on 75 × 65 cells); refine the wall rows or set wall_sample = false
+- on planar bodies the exact distance equals the facet distance; its benefit is on curved and merged cells (unit test only, no curved turbulent case yet)
+- a uniform start velocity across a cut plate at high Re diverges in the first iteration (net inflow into the cut cells, SIMPLEC dc floor); the case starts with the velocity along the plate
+- low-Re treatments (resolved walls) use the exact distance but no sampling; one rank only
+
+<a id="immersed-cut-cht"></a>
+
+### Conjugate heat transfer through cut cells: a cut body kept as a solid region (L13 stage 2d)
+
+**partial** (gaps written) · id `immersed.cut-cht` · switch `[regions.<name>] kind = "solid", zones = ["<cut body>"] with [immersed] method = "cut"` · decisions D112, D160, D229
+
+- exact: [`sphere_cut_both_ways_fills_the_box`](../../crates/foehncraft-mesh/tests/cut.rs): a sphere cut both ways out of hexahedral, tetrahedral and polyhedral meshes (8, 16, 32 cells across): every cell closes, no bad face, fluid and solid volume add up to the box within 1e-10, the interface area of the solid equals the wall area of the fluid, every cut face has one twin, the solid volume converges at order above 1.6
+- exact: [`slab_cut_both_ways_is_exact`](../../crates/foehncraft-mesh/tests/cut.rs): a slab across a hexahedral mesh cut both ways: solid volume and interface area exact to round-off
+- exact: [`immersed_cut_cylinder_cht`](../../examples/cases/flow/immersed_cut_cylinder_cht.toml), [`cut_cylinder_cht_converges_at_second_order`](../../crates/foehncraft-flow/tests/immersed.rs): concentric-cylinder conduction, the solid cylinder cut both ways out of a box mesh: L2 temperature error 0.121, 0.0272, 0.00696 K (k_s/k_f = 9) and 0.122, 0.0276, 0.00712 K (900) on 20, 40, 80 cells across, orders 2.17 and 1.97 to 1.98 for every ratio (also 90); test band 1.85 to 2.3; the heat balance closes to 1e-9 of the source on every level (measured 1e-11 W), the source within 0.1 % of q π R² ([results](../gallery/immersed.md#cut-cht))
+- reference-data: [`immersed_cut_pin_cht`](../../examples/cases/flow/immersed_cut_pin_cht.toml): a heated aluminium pin (k 200) in the Schäfer–Turek channel at Re 20, Pr 1, cut both ways out of the 440 × 82 box mesh: converged, heat balance 8.6e-12 W (5e-13 of the flow); the interface wall gives C_D 5.588 (reference range 5.57 to 5.59) and C_L 0.0103 (0.0104 to 0.0110) (passes in CI (set long), not yet in the manual) ([results](../gallery/immersed.md#cut-cht))
+- contract (diagnostics): [`thin_cut_solids_are_refused`](../../crates/foehncraft-flow/tests/immersed.rs): IMM205 for a solid cut body thinner than about two cells (a pin 2.4 cells across), pointing to the thin wall of D189; REG001 for a solid cut body without [energy] (cut_settings_are_refused)
+
+Gaps:
+
+- on polyhedral meshes the solid side keeps a few flat three-face slivers the merge does not remove (non-planar cut faces); the poly mesh test does not check the solid merge or positive solid volumes
+- the heat transfer of the pin has no reference (no published Nusselt number of a heated pin in this confined channel); the verification is the concentric-cylinder solution
+- a `field` body (topology search) is not checked for thin parts; the thin-wall model of D189 is not available on a cut interface
+- the stiff energy solve of a solid with k_s ≫ k_f needs its own [solver.energy] tolerance and linear iterations (default settings stalled the pin at a 33 % heat imbalance)
+- rigid motion of the solid (stage 5) is not built; one rank only
+
+<a id="immersed-cut-boundary-conditions"></a>
+
+### Boundary conditions on cut bodies: named STL patches, turning walls, inverted bodies (L13 stage 2e)
+
+**partial** (a model without reference data; gaps written) · id `immersed.cut-boundary-conditions` · switch `[[immersed.body]] patches = "solids" | { <patch> = <tag> }, omega, invert; [boundary.<body>-<patch>]` · decisions D29, D55, D227
+
+- exact: [`immersed_cut_taylor_couette`](../../examples/cases/flow/immersed_cut_taylor_couette.toml), [`cut_taylor_couette_converges_with_the_torque`](../../crates/foehncraft-flow/tests/immersed.rs): Taylor-Couette flow (Re 50) with the turning inner cylinder and the inverted outer cylinder both cut out of a square box mesh: velocity L2 error 1.36e-2, 3.22e-3, 7.16e-4 on 44, 88, 176 cells across, orders 2.11 and 2.19; the torque about the axis +5.1, +0.97, +0.23 % (inner) and -0.73, -0.11, -0.036 % (outer) against 4 pi mu omega r1^2 r2^2 L / (r2^2 - r1^2); test: order above 1.8 on 44 and 88, inner torque within 1.5 %, outer within 0.5 % on 88 ([results](../gallery/immersed.md#cut-patches))
+- exact: [`immersed_cut_blown_cylinder`](../../examples/cases/flow/immersed_cut_blown_cylinder.toml), [`stl_patches_carry_their_own_conditions`](../../crates/foehncraft-flow/tests/immersed.rs): an STL cylinder in two ASCII solids (a slot from 45 to 75 degrees and the rest) cut out of the Schaefer-Turek box mesh: the slot patch area within 10 % of the exact arc (+1.6 % on 440 x 82 cells), slot and wall together within 1 % of the circumference, the slot mass flow 0.4 m/s times its area, the net mass flow below 1e-9 of the outflow (measured 7e-17 kg/s) ([results](../gallery/immersed.md#cut-patches))
+- exact: [`solids_and_attributes_tag_the_triangles`](../../crates/foehncraft-mesh/src/format/stl.rs): the triangles of an ASCII STL file take the index of their solid and its name, those of a binary file their 16-bit attribute
+- contract (diagnostics): [`patch_and_motion_settings_are_refused`](../../crates/foehncraft-flow/tests/immersed.rs): IMM101 for patches of a primitive body, `solids` of a binary file, attribute tags of an ASCII file, two patches with one tag, invert of an STL body, omega on a penalised body and a turning wall with a velocity of its own; IMM202 for omega on a body kept as a solid region
+
+Gaps:
+
+- a cut wall face is not split along a patch edge: the cells a patch edge crosses go whole to one patch (the slot area of the blown cylinder +1.6 %)
+- the patch of a face is the closest triangle to its centroid; the area-majority transfer of mesh-processing tools is not measured against it
+- omega turns the wall, not the body: exact for bodies of revolution about their axis; rigid motion of the body is stage 5 (L4)
+- a body kept as a solid region cannot turn or have patches; invert only for cylinder, sphere and box; one rank only
+
+<a id="immersed-refine"></a>
+
+### Near-body refinement of hexahedra with hanging-node faces (L13 stage 2f)
+
+**partial** (gaps written) · id `immersed.refine` · switch `[immersed.refine] levels, layers | distance` · decisions D57, D93, D229
+
+- exact: [`a_band_around_a_sphere_keeps_volume_and_area`](../../crates/foehncraft-mesh/tests/refine.rs): a band around a sphere refined twice in an 8^3 box mesh: every cell closed (validate, closure below 1e-13), no inverted face or negative volume, the cells of each input cell fill it to 1e-13, the boundary faces of every boundary add up to its area vector to 1e-12, 2:1 across faces and around every node, the same nodes and faces on a second run
+- exact: [`perturbed_hexahedra_are_refined_into_closed_cells`](../../crates/foehncraft-mesh/tests/refine.rs): the same checks on warped hexahedra (nodes moved by up to 20 %), three levels: the parts fill each input cell to 1e-12 (measured 2e-15)
+- exact: [`a_planar_mesh_is_refined_in_its_plane`](../../crates/foehncraft-mesh/tests/refine.rs): a planar mesh refined three times in its plane: every node on the two z planes, every cell with one face on each
+- exact: [`one_point_refined_three_times_is_balanced`](../../crates/foehncraft-mesh/tests/refine.rs): a point next to an input face refined three times: the 2:1 balance refines 20 more cells, across the face too
+- exact: [`immersed_refine_mms`](../../examples/cases/flow/immersed_refine_mms.toml), [`refined_mms_converges_at_second_order`](../../crates/foehncraft-flow/tests/immersed.rs): heat conduction with a manufactured solution on perturbed hexahedra refined twice near a circle (faces between levels on both sides): L2 error 5.54e-2, 1.46e-2, 3.76e-3 K on 16, 32, 64 input cells across, order 2.04 and 1.99 from the cell counts (1.93, 1.95 from the input width); test band 1.85 to 2.3; the same mesh hash on a second run ([results](../gallery/immersed.md#refine))
+- reference-data: [`immersed_refine_cylinder_re20`](../../examples/cases/flow/immersed_refine_cylinder_re20.toml), [`refined_cylinder_reaches_the_reference`](../../crates/foehncraft-flow/tests/immersed.rs): the Schaefer-Turek cylinder at Re 20 on the D/10 box mesh refined to D/40 within 0.08 m of the cylinder (19 140 cells): C_D 5.593, C_L 0.01063, dp 0.1171 Pa (uniform D/40 cut, 143 088 cells: 5.595, 0.0106, 0.1171); test: C_L in its range, C_D and dp within 0.2 % of theirs ([results](../gallery/immersed.md#refine))
+- contract (diagnostics): [`refine_settings_are_refused`](../../crates/foehncraft-flow/tests/immersed.rs): IMM101 for levels outside 1 to 6, a negative distance, layers below 1, layers and distance together; the mesh operation refuses a 3D mesh with a direction to keep (other_cells_are_kept_and_bad_settings_refused)
+
+Gaps:
+
+- only hexahedra are refined; tetrahedra, prisms, pyramids and polyhedra are kept whole (and may then meet cells two levels finer)
+- static: marked by the distance to the bodies only, before the run; no coarsening, no solution-driven marking, no repartitioning (L14 on this kernel)
+- the lift of the cylinder needs a fine band of about 0.8 D; with 0.2 D it is 5 % below the reference range
+- one rank only, like the cut; the GPU path is not checked on refined meshes
 
 <a id="immersed-stl"></a>
 
@@ -2674,7 +2806,7 @@ Gaps:
 - on polyhedral meshes the faces are not planar: the fan of a clipped face is not that of the input face, so the face apertures do not converge (4.6e-2; the cell-by-cell volumes converge at order 1.6 to 1.8, up to 1.9 times the total); the sphere array is −6.1 and −4.0 % on 17³ and 25³ polyhedra
 - the fallback cuts the whole mesh again per round (the turned box on 196 608 tetrahedra: three rounds, 16 s against 1.6 s with the exact crossings alone); a local re-cut is not built
 - the cut reaches only the totals and the drag of the sphere array: the other cases of the plan (cut-sphere Poisson MMS, Taylor-Couette, Re 100 cylinder) are not run with STL bodies
-- a surface feature thinner than a cell vanishes between the nodes; the thin-solid refusal (Q4) is not built
+- a surface feature thinner than a cell vanishes between the nodes; only a body kept as a solid region is refused when thin (IMM205)
 - one rank only
 
 <a id="immersed-topology"></a>

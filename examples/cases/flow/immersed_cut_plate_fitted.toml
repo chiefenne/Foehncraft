@@ -1,0 +1,71 @@
+# The reference of immersed_cut_plate_keps.toml: the same turbulent flat
+# plate from the inlet, standard k-ε with scalable wall functions, on the
+# same 150 × 130 box mesh, but the plate is the bottom of the mesh (y = 0,
+# body-fitted): every wall cell is 1 mm high, first-cell y⁺ about 95 at
+# x = 0.97 (L13 stage 2c, D229).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/immersed_cut_plate_fitted.toml
+#
+# The k residual stalls near 10⁻³ at the leading edge (the inlet corner).
+#
+# Result (2000 iterations, about 1.5 minutes on 4 cores): laminar to about
+# s = 0.2, then C_f against White −3.5 % at s = 0.3, +0.8 % at 0.7, −1.4 %
+# at 0.97, −2.3 % at 1.15. Gallery entry 357
+# (docs/gallery/immersed.md#cut-plate).
+
+case_format = "0.7"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+lower = [0.0, 0.0, 0.0]
+upper = [1.2, 1.0, 1.0]
+cells = [150, 130, 1]
+segments = { y = [ { to = 0.1, cells = 100, ratio = 1.0 }, { to = 1.0, cells = 30, ratio = 142.27 } ] }
+
+[fluid]
+density = 1.0
+viscosity = 2.0e-7
+pressure_values = "gauge"
+
+[turbulence]
+model = "k-epsilon"
+wall_treatment = "scalable"
+ambient = { k = 2.25e-7, epsilon = 2.53125e-6 }
+
+[initial]
+velocity = [1.0, 0.0, 0.0]
+k = 2.25e-7
+epsilon = 2.53125e-6
+
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [1.0, 0.0, 0.0]
+k = 2.25e-7
+epsilon = 2.53125e-6
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymin]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-7
+max_iterations = 2000
+log_every = 200
+
+[verification]
+require_convergence = false
+
+[output]
+vtkhdf = true
+wall_csv = true
+wall_probes = [ { name = "x097", boundary = "ymin", point = [0.97, 0.0, 0.5] } ]
+reference = { velocity = 1.0 }

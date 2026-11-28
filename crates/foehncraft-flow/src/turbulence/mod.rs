@@ -1402,6 +1402,8 @@ struct Var {
 struct WallDev {
     normal: Buf3,
     y: Buf,
+    /// The exact distance of the sample cell per wall face (cut-cell walls).
+    y_sample: Option<Buf>,
     ks: Buf,
     cs: Buf,
     prod_w: Buf,
@@ -1996,8 +1998,11 @@ impl Turbulence {
             zeta: zetas,
             faces,
         };
-        // the walls
-        let walls = Walls::new(mesh, geo, &case.boundary, eps);
+        // the walls, on cut bodies with the exact first-cell distance
+        let mut walls = Walls::new(mesh, geo, &case.boundary, eps);
+        if let Some(wb) = crate::immersed::WallBodies::of(case)? {
+            walls.set_cut_walls(mesh, geo, &wb);
+        }
         let var = |dev: &mut dyn FlowDevice, vk: VarKind| -> Result<Var> {
             let (points, a) = kinds(mesh, &case.boundary, treatment, vk, model);
             let lsq = crate::simplec::disc_with(mesh, geo, &points)?.lsq;
@@ -2267,6 +2272,11 @@ impl Turbulence {
                     z: up(dev, &walls.normal[2])?,
                 },
                 y: up(dev, &walls.y)?,
+                y_sample: if walls.stat.sample.is_empty() {
+                    None
+                } else {
+                    Some(up(dev, &walls.y_sample)?)
+                },
                 ks: up(dev, &walls.ks)?,
                 cs: up(dev, &walls.cs)?,
                 prod_w: dev.alloc(nw)?,
@@ -3025,6 +3035,7 @@ impl Turbulence {
         dev.wall_faces(&WallFaceOps {
             normal: wd.normal,
             y: wd.y,
+            y_sample: wd.y_sample,
             ks: wd.ks,
             u,
             ub,
@@ -3939,6 +3950,20 @@ impl Turbulence {
 
     /// Host copy of the state; `p`, `pb` are the solver's p̂ (cells and
     /// boundary faces).
+    /// k and the dissipation ε per cell (the eddy dissipation concept,
+    /// SF3): ε of the k-ε family, β* k ω of SST.
+    pub(crate) fn k_and_epsilon(&self, dev: &mut dyn FlowDevice) -> Result<(Vec<f64>, Vec<f64>)> {
+        let k = dev.download(self.k.phi)?;
+        let mut e = dev.download(self.w.phi)?;
+        if !self.eps {
+            let bs = self.section.sst_constants()?.beta_star;
+            for (e, k) in e.iter_mut().zip(&k) {
+                *e *= bs * k.max(0.0);
+            }
+        }
+        Ok((k, e))
+    }
+
     pub(crate) fn state(
         &self,
         dev: &mut dyn FlowDevice,

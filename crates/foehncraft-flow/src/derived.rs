@@ -1283,8 +1283,10 @@ fn wall_normal(case: &FlowCase, mesh: &Mesh, fl: &Solution, alpha: &[f64]) -> Ve
 
 /// The exact wall distance of every cell centroid (D48): the closest point
 /// on the faces of the wall boundaries of `case`, by the BVH search of
-/// D108.
+/// D108; for the walls of cut bodies the closest point on the true surface
+/// of the body, not on its facets (L13 stage 2c).
 pub fn wall_distance(case: &FlowCase, mesh: &Mesh, geo: &Geometry) -> Result<Vec<f64>> {
+    let bodies = crate::immersed::WallBodies::of(case)?;
     let walls: Vec<usize> = mesh
         .boundaries
         .iter()
@@ -1293,17 +1295,28 @@ pub fn wall_distance(case: &FlowCase, mesh: &Mesh, geo: &Geometry) -> Result<Vec
             matches!(
                 case.boundary.get(&p.name),
                 Some(BoundaryCondition::Wall { .. })
-            )
+            ) && !bodies.as_ref().is_some_and(|b| b.is_body(&p.name))
         })
         .map(|(i, _)| i)
         .collect();
-    let d = foehncraft_mesh::query::wall_distance(mesh, geo, &walls).ok_or_else(|| {
-        crate::diag::err(crate::diag::Diagnostic::new(
-            crate::diag::CASE_INCONSISTENT,
-            "derived field `wall-distance` needs at least one wall face in the mesh",
-        ))
-    })?;
-    Ok(d.into_iter().map(|c| c.distance).collect())
+    let faces = foehncraft_mesh::query::wall_distance(mesh, geo, &walls);
+    let mut d: Vec<f64> = match (&faces, &bodies) {
+        (Some(f), _) => f.iter().map(|c| c.distance).collect(),
+        (None, Some(_)) => vec![f64::INFINITY; mesh.n_cells],
+        (None, None) => {
+            return Err(crate::diag::err(crate::diag::Diagnostic::new(
+                crate::diag::CASE_INCONSISTENT,
+                "derived field `wall-distance` needs at least one wall face in the mesh",
+            )));
+        }
+    };
+    if let Some(b) = &bodies {
+        let e = b.distance(&geo.cell_centroid[..mesh.n_cells]);
+        for (x, y) in d.iter_mut().zip(e) {
+            *x = x.min(y);
+        }
+    }
+    Ok(d)
 }
 
 /// What [`from_restart`] wrote.

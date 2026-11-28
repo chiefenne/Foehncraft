@@ -55,13 +55,14 @@ FLOW = {
         "ranks_run_sliding_couette",
         "ranks_run_imprint_couette",
         "immersed_cylinder_re20", "immersed_topology_bend", "immersed_mms",
-        "immersed_cut_cylinder_re20",
+        "immersed_cut_cylinder_re20", "immersed_cut_cylinder_cht",
         "ranks_water_if97_channel",
         # moved from linux-3 to balance the sets (2026-11-26)
         "channel_heated_periodic", "spray_two_way",
     ],
     "linux-3": [
         "species_binary_diffusion", "species_coaxial_jet", "flame_methane_air_jl4",
+        "jet_flame_edm_wd2",
         "taylor_green_error", "adjoint_residual_cavity", "cylinder_potential", "cavity_re100_budget", "taylor_green_bdf2",
         "taylor_green_cn", "poiseuille_mixed", "cavity_re100_transient", "taylor_green_space",
         "cavity_re100_poly3d", "cavity_re100_tet3d", "pipe_wedge", "poiseuille_expression",
@@ -86,7 +87,7 @@ FLOW = {
         # two fluids (L3, MP1); evaporation (MP2)
         "vof_static_drop", "vof_stefan",
         "porous_darcy_block", "porous_schumann",         "motion_free_stream", "motion_piston_adiabatic", "motion_channel_ranks",
-        "steam_heated_duct", "steam_superheater_channel", "spray_multihole_device",
+        "steam_heated_duct", "steam_superheater_channel", "circuit_wall_slab", "circuit_evaporator_pass", "spray_multihole_device",
     ],
     "long": [
         # two fluids (L3, MP1); evaporation and film boiling (MP2)
@@ -96,11 +97,14 @@ FLOW = {
         "cht_heat_sink_turbulent", "cylinder_steady_diagnosis", "vd_cavity_large_dt",
         "cht_pulsating_channel_skin", "cht_heated_wall_frozen", "cht_pulsating_channel_warmup",
         "natural_convection_cavity_ra1e5", "natural_convection_plate", "plate_heated_laminar",
-        "flame_methane_air_gri30",
+        "flame_methane_air_gri30", "jet_flame_edc_jl4",
         "immersed_stokes_sphere", "immersed_cut_stl_sphere_array", "spray_saturation_steady",
         "spray_breakup", "spray_brno", "spray_chamber_ecn", "motion_piston_cooled_walls", "spray_g_g1",
         "spray_g_g1_grid_aligned", "spray_g_g1_grid_turned",
         "ranks_cylinder_species_statistics", "spray_a_distortion",
+        "immersed_cut_plate_keps", "immersed_cut_plate_fitted", "immersed_cut_pin_cht",
+        "immersed_cut_blown_cylinder", "immersed_cut_taylor_couette",
+        "immersed_refine_cylinder_re20", "immersed_refine_mms",
     ],
     "quick": [
         "cavity_re100_budget", "couette_hex", "couette_mixed", "couette_poly", "couette_tet",
@@ -108,7 +112,7 @@ FLOW = {
         "taylor_green_space", "channel_slip", "poiseuille_table", "pipe_wedge", "couette_derived",
         "couette_viscosity", "poiseuille_water", "pipe_gmsh_raw", "scalar_front_bdf2",
         "poiseuille_periodic", "taylor_couette_mrf", "taylor_couette_sliding",
-        "taylor_couette_imprint",
+        "taylor_couette_imprint", "immersed_cut_cylinder_cht",
     ],
 }
 LINUX = ("linux-1", "linux-2", "linux-3", "long")
@@ -125,6 +129,8 @@ ARGS = {
     F + "spray_g_g1_grid_aligned.toml": ["--set", "time.end_time=1e-4"],
     F + "spray_g_g1_grid_turned.toml": ["--set", "time.end_time=1e-4"],
     F + "spray_a_distortion.toml": ["--set", "time.end_time=1e-4"],
+    # the turbulent jet flame (SF3): 300 of its 1500 iterations, 3 minutes
+    F + "jet_flame_edc_jl4.toml": ["--set", "solver.max_iterations=300"],
     # film boiling (MP2): 1 s of boiling in the gallery, its first 0.04 s here
     F + "vof_film_boiling.toml": ["--set", "time.steps=200"],
 }

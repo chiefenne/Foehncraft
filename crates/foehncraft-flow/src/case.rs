@@ -906,6 +906,10 @@ pub struct FlowCase {
     /// Chemistry in the cells (stage SF2b): `[chemistry]`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chemistry: Option<crate::chemistry::flow::ChemistrySection>,
+    /// The water and steam circuit behind the walls (stage SF7c):
+    /// `[circuits]`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub circuits: Option<crate::water_walls::CircuitsSection>,
     /// The energy equation of the fluid (stage 7a1): `[energy]`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub energy: Option<crate::energy::EnergySection>,
@@ -1118,6 +1122,77 @@ pub fn apply_set(v: &mut toml::Table, set: &str) -> Result<()> {
 }
 
 impl FlowCase {
+    /// Copies from `from` what the reader set outside the keys of the case
+    /// file: the boundary sub-tables of the scalars, species and energy, the
+    /// fluid view of a conjugate case, the pressure convention, the source
+    /// path, the overrides and the reading notes. These fields are
+    /// `#[serde(skip)]`, so every change of a setting that goes through the
+    /// TOML of the case (a re-read, a `[[schedule]]` entry, `run.set` of the
+    /// live control port) drops them; before this was one place, each of
+    /// them kept its own list and the lists missed fields (an inlet of an
+    /// energy, scalar or species case then failed its validation).
+    ///
+    /// The pattern names every field, so a new field does not compile until
+    /// it is sorted into one of the two groups.
+    pub fn keep_reader_fields(&mut self, from: &FlowCase) {
+        let FlowCase {
+            // set by the reader, dropped by the round trip through TOML
+            notes,
+            boundary_scalar,
+            boundary_species,
+            boundary_energy,
+            fluid_view,
+            source,
+            overrides,
+            pressure_frame,
+            // keys of the case file: carried by the TOML itself
+            case_format: _,
+            mesh: _,
+            fluid: _,
+            materials: _,
+            regions: _,
+            interfaces: _,
+            constants: _,
+            tables: _,
+            flow: _,
+            initial: _,
+            pressure: _,
+            turbulence: _,
+            boundary: _,
+            scalars: _,
+            species: _,
+            chemistry: _,
+            energy: _,
+            gravity: _,
+            buoyancy: _,
+            immersed: _,
+            vof: _,
+            spray: _,
+            datums: _,
+            solver: _,
+            analytic: _,
+            verification: _,
+            run: _,
+            output: _,
+            time: _,
+            balance: _,
+            log: _,
+            schedule: _,
+            mrf: _,
+            sliding: _,
+            mesh_motion: _,
+            circuits: _,
+        } = from;
+        self.notes = notes.clone();
+        self.boundary_scalar = boundary_scalar.clone();
+        self.boundary_species = boundary_species.clone();
+        self.boundary_energy = boundary_energy.clone();
+        self.fluid_view = fluid_view.clone();
+        self.source = source.clone();
+        self.overrides = overrides.clone();
+        self.pressure_frame = pressure_frame.clone();
+    }
+
     /// Reads and validates a case file; relative paths are taken from its
     /// directory.
     pub fn from_file(path: &Path) -> Result<Self> {
@@ -1258,6 +1333,9 @@ impl FlowCase {
         c.spray.resolve_paths(dir);
         if let Some(ch) = c.chemistry.as_mut() {
             ch.resolve_paths(dir);
+        }
+        if let Some(w) = c.circuits.as_mut() {
+            w.resolve_paths(dir);
         }
         crate::datum::resolve_paths(&mut c.datums, dir);
         crate::immersed::resolve_paths(&mut c.immersed, dir);
@@ -1436,7 +1514,10 @@ impl FlowCase {
 
     /// The compiled boundary values (D53).
     pub fn compiled_boundaries(&self) -> Result<bc::Compiled> {
-        bc::compile_all(&self.boundary, &self.env()?, self.time.is_some())
+        let mut c = bc::compile_all(&self.boundary, &self.env()?, self.time.is_some())?;
+        // the walls of turning cut bodies (L13 stage 2e)
+        crate::immersed::moving_walls(self, &mut c)?;
+        Ok(c)
     }
 
     /// The uniform body force, when all three components are numbers.
@@ -1455,6 +1536,7 @@ impl FlowCase {
         }
         crate::species::validate(self)?;
         crate::chemistry::flow::validate(self)?;
+        crate::water_walls::validate(self)?;
         let (scalars, boundary_scalar) = crate::species::scalar_sections(self)?;
         crate::scalar::validate(
             &scalars,
@@ -1966,6 +2048,9 @@ pub struct Solve {
     /// run.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub spray_steady: Option<crate::spray_steady::SteadySummary>,
+    /// The water and steam circuit behind the walls (SF7c) at the end.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub circuits: Option<crate::water_walls::CircuitSummary>,
     /// Benchmark comparison.
     pub benchmark: Option<crate::monitor::BenchmarkResult>,
     /// Conservation ledger (D88, D89).
@@ -2473,6 +2558,14 @@ pub(crate) fn mesh_for(case: &FlowCase, level: Option<u32>) -> Result<(Mesh, Geo
     }
     let (mut mesh, source, _) = build_mesh(&sec)?;
     let mut desc = format!("{source}: {} cells", mesh.n_cells);
+    // near-body refinement (L13 stage 2f): before the cut
+    if case.immersed.refine.is_some() {
+        let (m, notes) = crate::immersed::refine_mesh(case, &mesh)?;
+        mesh = m;
+        for n in notes {
+            let _ = write!(desc, "; {}", n.message);
+        }
+    }
     // cut cells (L13 stage 2, D227): before the renumbering and the pairing
     if case.immersed.is_cut() {
         crate::immersed::check_case(case)?;
@@ -2920,7 +3013,12 @@ pub fn run_steered(
         {
             case = c.clone();
         }
-        let (mesh, geo, desc) = mesh_for(&case, *level)?;
+        // the mesh of the full case: after the first level `case` is the
+        // fluid view, whose regions no longer keep cut bodies as solids
+        let (mesh, geo, desc) = match &case.fluid_view {
+            Some(v) => mesh_for(&v.full_case, *level)?,
+            None => mesh_for(&case, *level)?,
+        };
         let mesh_hash = crate::engine::mesh_hash(&mesh);
         // conjugate heat transfer (stage 7d1): the flow runs on the fluid
         // view, the energy equation on the full mesh
@@ -3047,7 +3145,8 @@ pub fn run_steered(
             Some(o) => (&o.local.mesh, &o.geo),
             None => (&mesh, &geo),
         };
-        let disc = simplec::discretisation(smesh, sgeo, &arrays)?;
+        let mut disc = simplec::discretisation(smesh, sgeo, &arrays)?;
+        crate::immersed::wall_function_faces(&case, smesh, sgeo, &mut disc.0)?;
         let operators = crate::operators::report(
             &case,
             &mesh,
@@ -3219,7 +3318,34 @@ pub fn run_steered(
             &loc,
             case.run.restart.is_some(),
         )?;
+        // the water and steam circuit behind the walls (SF7c, D350): the
+        // start solve and its Robin conditions before the first iteration
+        let mut walls = match &case.fluid_view {
+            Some(v) => crate::water_walls::Walls::create(&case, &v.mesh, &v.geo, first)?,
+            None => crate::water_walls::Walls::create(&case, &mesh, &geo, first)?,
+        };
+        if let Some(w) = walls.as_mut() {
+            w.start(&mut fl)?;
+        }
         crate::spray::device_warnings(&case, &mut lg, &mut rep.warnings);
+        // steady turbulent flames (SF3): the reaction sources renewed every
+        // `update_every` outer iterations
+        let mut chem = crate::chemistry::flow::Chemistry::of(&case, &geo.cell_volume)?;
+        let mut chem_csv = match (&chem, &case.species) {
+            (Some(_), Some(sp)) => {
+                let names = crate::species::Resolved::of(sp)?.names;
+                let mut c = csv_preamble(
+                    "chemistry",
+                    name,
+                    None,
+                    crate::chemistry::flow::Chemistry::CSV_UNITS,
+                );
+                c.push_str(&crate::chemistry::flow::Chemistry::csv_head(&names));
+                c.push('\n');
+                Some(c)
+            }
+            _ => None,
+        };
         if steady_spray.is_some()
             && let Some(p) = crate::spray::write_devices(&case.spray, out)?
         {
@@ -3337,6 +3463,18 @@ pub fn run_steered(
                 let next = fl.iteration() + 1;
                 ss.before_iteration(&mut fl, &spray_env, next, first)?;
             }
+            if let Some(w) = walls.as_mut() {
+                let next = fl.iteration() + 1;
+                w.before_iteration(&mut fl, next)?;
+                for n in w.take_notes() {
+                    lg.warn(&n);
+                }
+            }
+            let next = fl.iteration() + 1;
+            let renewed = match chem.as_mut() {
+                Some(ch) => ch.before_iteration(&mut fl, next, first)?,
+                None => false,
+            };
             fl.keep_valid()?;
             res = match fl.iterate() {
                 Ok(r) => r,
@@ -3427,12 +3565,27 @@ pub fn run_steered(
                 lg.warn(&m);
             }
             let it = fl.iteration();
+            if renewed
+                && let (Some(ch), Some(c)) = (chem.as_ref(), chem_csv.as_mut())
+                && let Some(row) = ch.csv_row(it)
+            {
+                c.push_str(&row);
+                c.push('\n');
+            }
             let gas_done = res.max() < case.solver.tolerance;
             // the spray's source residual is part of the test (D260 (4))
             let mut done = gas_done
                 && steady_spray
                     .as_mut()
                     .is_none_or(|s| s.settled(it, gas_done));
+            // the coupling residual of the circuit behind the walls (SF7c)
+            if let Some(w) = walls.as_mut() {
+                let settled = w.settled(&mut fl, it, done)?;
+                done = done && settled;
+                for n in w.take_notes() {
+                    lg.warn(&n);
+                }
+            }
             // the topology search (L13 stage 1, D226): a design update
             // during the iterations; the run converges after the last one
             if let Some(t) = topo.as_mut()
@@ -3758,6 +3911,49 @@ pub fn run_steered(
             }
             spray_final = Some((sm, pass, heat));
         }
+        // the circuit behind the walls at the converged flow (SF7c): its
+        // coupling residual decides whether the run counts as converged
+        let mut circuit_final = None;
+        if let Some(w) = walls.as_mut() {
+            let (wm, wg) = match &case.fluid_view {
+                Some(v) => (&v.mesh, &v.geo),
+                None => (&mesh, &geo),
+            };
+            let (sm, acc) = w.finish(&mut fl, wm, wg, out, name, li == last)?;
+            for n in w.take_notes() {
+                lg.warn(&n);
+            }
+            let tol = case.circuits.as_ref().map_or(0.0, |c| c.tolerance);
+            if !sm.converged {
+                let d = diag::Diagnostic::new(
+                    diag::CIR_NOT_COUPLED,
+                    format!(
+                        "the coupling residual of the circuit behind the walls is {:.3e}, above \
+                         [circuits] tolerance {:.1e}: the circuit is not converged with the flow",
+                        sm.residual, tol
+                    ),
+                );
+                lg.warn(&format!("{}: {}", d.code, d.message));
+                rep.warnings.push(d);
+                converged = false;
+            }
+            if let Some(sol) = &w.solution() {
+                for cw in &sol.warnings {
+                    let code = match cw.code {
+                        "CIR003" => diag::CIR_RANGE,
+                        _ => diag::CIR_CHF,
+                    };
+                    let d = diag::Diagnostic::new(code, cw.message.clone());
+                    lg.warn(&format!("{}: {}", d.code, d.message));
+                    rep.warnings.push(d);
+                }
+            }
+            lg.frame(&crate::water_walls::frame(&sm, tol));
+            if li == last {
+                lg.note("circuit files written (circuit.csv, circuit/)");
+            }
+            circuit_final = Some((sm, acc));
+        }
         {
             let wall = ts.elapsed().as_secs_f64();
             let _ = secs;
@@ -3876,6 +4072,29 @@ pub fn run_steered(
             verification.push_kv("Force coefficients", format!("C_D {cd:.5}, C_L {cl:.5}"));
         }
         let immersed = crate::immersed::forces(&case, &mesh, &geo, &sol.u, &sol.phys)?;
+        // the steady turbulent flame (SF3)
+        let chemistry_summary = match chem.as_ref() {
+            Some(ch) => {
+                let s = ch.summary(&case, &boundaries)?;
+                lg.line(&format!(
+                    "chemistry {} ({}): heat release {:.4e} W",
+                    s.mechanism, s.interaction, s.heat_release
+                ));
+                if let Some(f) = &s.fine_structures {
+                    lg.line(&format!(
+                        "fine structures: {} cells, tau* {:.3e} … {:.3e} s, largest gamma* {:.3}, \
+                         {} cells at max_fine_fraction",
+                        f.cells, f.tau[0], f.tau[1], f.fraction_max, f.clipped
+                    ));
+                }
+                if let Some(d) = ch.finding() {
+                    lg.warn(&format!("{}: {}", d.code, d.message));
+                    rep.warnings.push(d);
+                }
+                Some(s)
+            }
+            None => None,
+        };
         let topology = match &topo {
             Some(t) => {
                 let surface = foehncraft_mesh::isosurface::extract(&mesh, &geo, &t.solid(), 0.5);
@@ -3963,6 +4182,9 @@ pub fn run_steered(
             steer.record.row(&balance::record_row(&bal));
         }
         std::fs::write(out.join(format!("balance{suffix}.csv")), &bcsv)?;
+        if let Some(c) = &chem_csv {
+            std::fs::write(out.join(format!("chemistry{suffix}.csv")), c)?;
+        }
         let mut summary = BalanceSummary {
             largest_mass_relative: bal.mass.relative.abs(),
             last: bal,
@@ -4038,9 +4260,16 @@ pub fn run_steered(
         if let Some(sm) = scalars.iter().find(|s| s.energy.is_some())
             && let Some(e) = &sm.energy
         {
-            summary
-                .last
-                .book(balance::thermal_account(e, &sm.boundaries));
+            let mut a = balance::thermal_account(e, &sm.boundaries);
+            // the conduction of the walls on a circuit: one side of the
+            // pair with the circuit's account (SF7c)
+            if circuit_final.is_some() {
+                crate::water_walls::Walls::pair_domain(&case, &mut a);
+            }
+            summary.last.book(a);
+        }
+        if let Some((_, acc)) = &circuit_final {
+            summary.last.book(acc.clone());
         }
         // the species and element accounts (SF1, D119)
         if let Some(sp) = crate::species::summary_on(&mut fl, &mesh, &geo, false, on.as_ref())? {
@@ -4100,6 +4329,7 @@ pub fn run_steered(
             datums: None,
             spray: None,
             spray_steady: spray_final.map(|x| x.0),
+            circuits: circuit_final.map(|x| x.0),
             benchmark,
             balance: Some(summary),
             remediation,
@@ -4112,7 +4342,7 @@ pub fn run_steered(
             statistics: None,
             density,
             immersed,
-            chemistry: None,
+            chemistry: chemistry_summary,
             topology,
         });
         if stopped {
@@ -4755,6 +4985,9 @@ pub(crate) fn boundary_summaries(
     // the torque of a wall about the axis of its rotor, or of the first
     // turning zone (D184)
     let rotors = crate::rotor::rotors(case, mesh);
+    // the walls of turning cut bodies: the torque about their axis (L13
+    // stage 2e)
+    let turning = crate::immersed::wall_rotations(case).unwrap_or_default();
     let offsets = case
         .pressure_frame
         .as_ref()
@@ -4765,13 +4998,17 @@ pub(crate) fn boundary_summaries(
         .map(|(b, p)| {
             let bc = &case.boundary[&p.name];
             let wall = matches!(bc, BoundaryCondition::Wall { .. });
-            let axis = (wall && !rotors.is_empty()).then(|| {
-                &rotors
-                    .iter()
-                    .find(|r| r.walls.contains(&b))
-                    .unwrap_or(&rotors[0])
-                    .turning
-            });
+            let body_axis = turning.get(&p.name).map(|r| (r.axis, r.origin));
+            let axis = (wall && !rotors.is_empty())
+                .then(|| {
+                    let t = &rotors
+                        .iter()
+                        .find(|r| r.walls.contains(&b))
+                        .unwrap_or(&rotors[0])
+                        .turning;
+                    (t.axis, t.origin)
+                })
+                .or(body_axis.filter(|_| wall));
             let (mut area, mut q, mut pa, mut torque) = (0.0, 0.0, 0.0, 0.0);
             let mut force = [0.0; 3];
             for f in p.range() {
@@ -4791,11 +5028,29 @@ pub(crate) fn boundary_summaries(
                 for i in 0..3 {
                     force[i] += ff[i];
                 }
-                if let Some(t) = axis {
-                    // the torque has the full stress (D184)
-                    let tr = wall_face_transposed(fl, geo, f, ni);
+                if let Some((ax, org)) = axis {
+                    // the torque has the full stress (D184); on the no-slip
+                    // wall of a turning cut body the transposed part is
+                    // that of the rigid motion, μ ω × S, exactly (the
+                    // gradient of a cut cell is not accurate enough for it,
+                    // L13 stage 2e)
+                    let tr = match turning.get(&p.name) {
+                        Some(r) => {
+                            let mu = fl.mu_eff_at(f);
+                            let c = cross(
+                                [
+                                    r.omega * r.axis[0],
+                                    r.omega * r.axis[1],
+                                    r.omega * r.axis[2],
+                                ],
+                                s,
+                            );
+                            [mu * c[0], mu * c[1], mu * c[2]]
+                        }
+                        None => wall_face_transposed(fl, geo, f, ni),
+                    };
                     let ff = [ff[0] + tr[0], ff[1] + tr[1], ff[2] + tr[2]];
-                    torque += dot(t.axis, cross(sub(geo.face_centroid[f], t.origin), ff));
+                    torque += dot(ax, cross(sub(geo.face_centroid[f], org), ff));
                 }
             }
             BoundarySummary {
@@ -5169,6 +5424,12 @@ pub(crate) fn write_fields(
             name: "phase_change_rate",
             values: a,
         });
+    }
+    // the fields of the reactions (SF3)
+    if let Some(r) = &fl.phys.reaction_fields {
+        for (name, values) in r.iter() {
+            fields.push(CellField { name, values });
+        }
     }
     let err: Vec<f64>;
     if let Some(a) = analytic {

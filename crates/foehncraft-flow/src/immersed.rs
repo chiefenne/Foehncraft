@@ -87,6 +87,10 @@ pub enum Shape {
     Field,
     /// A closed triangle surface from an STL file (`file`, `scale`).
     Stl,
+    /// A half-space: the solid lies behind the plane through `centre`
+    /// with the unit `normal` pointing into the fluid (an inclined wall
+    /// across the mesh, L13 stage 2c).
+    Plane,
 }
 
 /// One `[[immersed.body]]`.
@@ -108,6 +112,9 @@ pub struct BodySection {
     /// Axis of a cylinder (default z).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub axis: Option<[f64; 3]>,
+    /// Normal of a `plane` body, pointing out of the solid into the fluid.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub normal: Option<[f64; 3]>,
     /// Length of a cylinder, centred on `centre` (m); default endless.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub length: Option<f64>,
@@ -129,6 +136,46 @@ pub struct BodySection {
     /// file in millimetres).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scale: Option<f64>,
+    /// The fluid lies inside the shape and the solid outside it: a pipe or
+    /// the outer cylinder of a gap cut out of a box mesh (cylinder, sphere
+    /// and box; L13 stage 2e).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub invert: Option<bool>,
+    /// The body turns rigidly with this angular velocity (rad/s, right-hand
+    /// about `axis` through `centre`; a box turns about its middle when
+    /// `centre` is not given): its wall faces move with ω × (x − centre),
+    /// and the summary of each wall of the body gives the torque about the
+    /// axis. 0 gives the torque of a body at rest. Cut bodies only (L13
+    /// stage 2e).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub omega: Option<f64>,
+    /// Named surface patches of an `stl` body (L13 stage 2e): `"solids"`
+    /// takes the solids of an ASCII file, a table `{ <patch> = <tag> }` the
+    /// 16-bit attributes of a binary file. The wall faces of the cut become
+    /// one boundary per patch, `<body>-<patch>`, each with any condition of
+    /// `[boundary.<name>]`; faces of triangles of no listed tag stay in the
+    /// boundary `<body>`. A face takes the patch of the triangle closest to
+    /// its centroid.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub patches: Option<Patches>,
+}
+
+/// The named surface patches of an `stl` body.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(untagged)]
+pub enum Patches {
+    /// `"solids"`: one patch per solid of an ASCII file, named after it.
+    Solids(PatchSource),
+    /// The patches of a binary file: patch name to attribute value.
+    Tags(std::collections::BTreeMap<String, u16>),
+}
+
+/// Where the patches of an `stl` body come from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum PatchSource {
+    /// The solids of an ASCII STL file.
+    Solids,
 }
 
 /// How the bodies enter the flow.
@@ -181,6 +228,12 @@ pub struct CutSection {
     /// so that the clipped faces follow the body too (default true).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub face_point: Option<bool>,
+    /// The wall function of a cut cell takes its velocity from the cell one
+    /// layer out along the wall normal, whose distance does not depend on
+    /// how the cell was cut (L13 stage 2c, default true); false: from the
+    /// cut cell itself.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wall_sample: Option<bool>,
 }
 
 impl CutSection {
@@ -192,6 +245,11 @@ impl CutSection {
     /// Bent face chords (default true).
     pub fn face_point(&self) -> bool {
         self.face_point.unwrap_or(true)
+    }
+
+    /// Sampled wall functions on cut walls (default true).
+    pub fn wall_sample(&self) -> bool {
+        self.wall_sample.unwrap_or(true)
     }
 }
 
@@ -219,6 +277,138 @@ pub struct ImmersedSection {
     /// A density-field topology search (D226): `[immersed.topology]`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub topology: Option<crate::topology::TopologySection>,
+    /// Refinement of the hexahedra near the bodies before the cut (L13
+    /// stage 2f), `[immersed.refine]`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refine: Option<RefineSection>,
+}
+
+/// `[immersed.refine]`: the hexahedra of the mesh near the surfaces of the
+/// bodies are halved, up to `levels` times, into hexahedra with
+/// hanging-node faces (L13 stage 2f, D57); 2:1 balanced. In a planar mesh
+/// (one cell thick) the cells are halved in the plane only.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RefineSection {
+    /// Halvings of a cell next to a surface (1 to 6).
+    pub levels: u32,
+    /// Width of each level around the surfaces, in cells of that level
+    /// (default 4): a cell is halved while it comes closer to a surface
+    /// than `layers` times the size of its halves.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layers: Option<f64>,
+    /// Width (m) of the finest level around the surfaces, instead of
+    /// `layers`: a cell of level l is halved while it comes closer to a
+    /// surface than distance · 2^(levels − 1 − l), so every level is twice
+    /// as wide as the next finer one, the same in metres on any mesh (a
+    /// convergence study refines the same region).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub distance: Option<f64>,
+}
+
+/// Refines the hexahedra near the bodies (L13 stage 2f): a cell is halved
+/// while the distance of its centre to the nearest body surface, less its
+/// radius, is below the width of its level (`layers` times half its size,
+/// or from `distance`).
+pub fn refine_mesh(case: &crate::case::FlowCase, mesh: &Mesh) -> Result<(Mesh, Vec<Diagnostic>)> {
+    let Some(rs) = &case.immersed.refine else {
+        return Ok((mesh.clone(), Vec::new()));
+    };
+    if rs.layers.is_some() && rs.distance.is_some() {
+        return Err(bad(
+            "immersed.refine".into(),
+            "give `layers` or `distance`, not both".into(),
+        ));
+    }
+    if let Some(d) = rs.distance
+        && !(d.is_finite() && d > 0.0)
+    {
+        return Err(bad(
+            "immersed.refine.distance".into(),
+            format!("`distance` must be positive, not {d}"),
+        ));
+    }
+    let layers = rs.layers.unwrap_or(4.0);
+    if !(1..=foehncraft_mesh::refine::MAX_LEVELS).contains(&rs.levels) {
+        return Err(bad(
+            "immersed.refine.levels".into(),
+            format!(
+                "`levels` must be 1 to {}, not {}",
+                foehncraft_mesh::refine::MAX_LEVELS,
+                rs.levels
+            ),
+        ));
+    }
+    if !(layers.is_finite() && layers >= 1.0) {
+        return Err(bad(
+            "immersed.refine.layers".into(),
+            format!("`layers` must be at least 1, not {layers}"),
+        ));
+    }
+    let bs = bodies_of(case)?;
+    if bs.is_empty() {
+        return Err(bad(
+            "immersed.refine".into(),
+            "near-body refinement needs `[[immersed.body]]` bodies".into(),
+        ));
+    }
+    // a planar mesh: every node on one of two planes z = const
+    let (lo, hi) = mesh.bounding_box();
+    let tol = 1e-9 * norm(sub(hi, lo));
+    let planar = mesh
+        .points
+        .iter()
+        .all(|p| (p[2] - lo[2]).abs() <= tol || (p[2] - hi[2]).abs() <= tol);
+    let opt = foehncraft_mesh::refine::RefineOptions {
+        levels: rs.levels,
+        keep_direction: planar.then_some([0.0, 0.0, 1.0]),
+    };
+    let r = foehncraft_mesh::refine::refine(mesh, &opt, |c| {
+        let d = bs
+            .iter()
+            .map(|b| b.distance(c.centre).abs())
+            .fold(f64::INFINITY, f64::min);
+        let band = match rs.distance {
+            Some(w) => w * f64::powi(2.0, rs.levels as i32 - 1 - c.level as i32),
+            None => layers * 0.5 * c.size,
+        };
+        d - c.radius < band
+    })
+    .map_err(|e| {
+        bad(
+            "immersed.refine".into(),
+            format!("near-body refinement: {e}"),
+        )
+    })?;
+    let geo = foehncraft_mesh::Geometry::compute(&r.mesh);
+    let (q, _) = foehncraft_mesh::quality::QualityReport::compute(&r.mesh, &geo);
+    let rep = &r.report;
+    let levels: Vec<String> = rep
+        .per_level
+        .iter()
+        .enumerate()
+        .map(|(l, n)| format!("level {l}: {n}"))
+        .collect();
+    let note = Diagnostic::new(
+        diag::IMM_REFINE_REPORT,
+        format!(
+            "near-body refinement: {} cells into {} ({}; {} input cells refined, {} more by the \
+             2:1 balance, {} not hexahedra kept whole), {} faces between levels, {} faces with \
+             hanging nodes; max non-orthogonality {:.1}°, max skewness {:.3}, max closure {:.2e}",
+            rep.cells_in,
+            rep.cells_out,
+            levels.join(", "),
+            rep.refined,
+            rep.balance,
+            rep.not_hexahedra,
+            rep.hanging_faces,
+            rep.faces_with_hanging_nodes,
+            q.non_orthogonality.max,
+            q.skewness.max,
+            q.closure.max,
+        ),
+    );
+    Ok((r.mesh, vec![note]))
 }
 
 /// Resolves the STL files of the bodies against the case directory.
@@ -273,14 +463,43 @@ pub struct Body {
     /// Name.
     pub name: String,
     kind: Kind,
+    /// Fluid inside, solid outside (`invert`).
+    invert: bool,
+    /// Rigid rotation of the wall (`omega`): ω, the unit axis and a point on
+    /// it.
+    pub rotation: Option<Rotation>,
+    /// The surface patches of an STL body: the patch names (without the
+    /// body prefix) and, per triangle, its patch (None: the body itself).
+    patches: Option<(Vec<String>, Vec<Option<u32>>)>,
     /// The surface check of an STL body (IMM001 to IMM009).
     pub findings: Vec<foehncraft_mesh::surface::check::Finding>,
+}
+
+/// The rigid rotation of a cut body's wall (`omega`, L13 stage 2e).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Rotation {
+    /// Angular velocity (rad/s), right-hand about `axis`.
+    pub omega: f64,
+    /// Unit axis.
+    pub axis: [f64; 3],
+    /// A point on the axis (m).
+    pub origin: [f64; 3],
+}
+
+impl Rotation {
+    /// The wall velocity ω a × (x − o) at `x`.
+    pub fn velocity(&self, x: [f64; 3]) -> [f64; 3] {
+        let w = cross(self.axis, sub(x, self.origin));
+        [self.omega * w[0], self.omega * w[1], self.omega * w[2]]
+    }
 }
 
 /// An STL body: the surface and what its check found.
 #[derive(Debug, Clone)]
 struct StlBody {
     surface: std::sync::Arc<foehncraft_mesh::surface::Surface>,
+    /// The tag of every triangle and the solid names of an ASCII file.
+    tags: std::sync::Arc<(Vec<u32>, Vec<String>)>,
     /// Closed, oriented outward and free of self-intersections: its
     /// enclosed volume and area are exact references.
     clean: bool,
@@ -306,6 +525,10 @@ enum Kind {
     },
     Field(crate::expr::Value),
     Stl(StlBody),
+    Plane {
+        p: [f64; 3],
+        n: [f64; 3],
+    },
 }
 
 impl Body {
@@ -339,6 +562,12 @@ impl Body {
     /// The signed distance to the surface, negative inside (exact for the
     /// primitive shapes); for a `field` body the level ½ − χ.
     pub fn distance(&self, x: [f64; 3]) -> f64 {
+        let d = self.shape_distance(x);
+        if self.invert { -d } else { d }
+    }
+
+    /// The signed distance of the shape, before `invert`.
+    fn shape_distance(&self, x: [f64; 3]) -> f64 {
         match &self.kind {
             Kind::Cylinder { c, a, r2, half } => {
                 let d = sub(x, *c);
@@ -374,6 +603,7 @@ impl Body {
                 }
             }
             Kind::Stl(s) => s.surface.signed_distance(x),
+            Kind::Plane { p, n } => dot(sub(x, *p), *n),
         }
     }
 
@@ -405,7 +635,7 @@ impl Body {
                 }
                 Some(2.0 * std::f64::consts::PI * r * (hi[i] - lo[i]))
             }
-            Kind::Field(_) => None,
+            Kind::Field(_) | Kind::Plane { .. } => None,
             Kind::Stl(s) => {
                 let (a, b) = s.surface.bounding_box();
                 (s.clean && inside(a) && inside(b)).then_some(s.area)
@@ -417,6 +647,10 @@ impl Body {
     /// `field` body where χ ≥ ½).
     #[inline]
     pub fn inside(&self, x: [f64; 3]) -> bool {
+        if self.invert {
+            // the surface counts as inside both ways
+            return self.shape_distance(x) >= 0.0;
+        }
         match &self.kind {
             Kind::Cylinder { c, a, r2, half } => {
                 let d = sub(x, *c);
@@ -434,6 +668,7 @@ impl Body {
             Kind::Box { lo, hi } => (0..3).all(|i| x[i] >= lo[i] && x[i] <= hi[i]),
             Kind::Field(v) => v.at(x, 0.0) >= 0.5,
             Kind::Stl(s) => s.surface.inside(x),
+            Kind::Plane { p, n } => dot(sub(x, *p), *n) <= 0.0,
         }
     }
 
@@ -441,6 +676,16 @@ impl Body {
     /// simple to give: a sphere or box inside it, a cylinder along a
     /// coordinate axis that spans it or lies inside it. None otherwise.
     pub fn exact_volume(&self, lo: [f64; 3], hi: [f64; 3]) -> Option<f64> {
+        let v = self.shape_volume(lo, hi)?;
+        Some(if self.invert {
+            (0..3).map(|i| hi[i] - lo[i]).product::<f64>() - v
+        } else {
+            v
+        })
+    }
+
+    /// The volume of the shape inside the box, before `invert`.
+    fn shape_volume(&self, lo: [f64; 3], hi: [f64; 3]) -> Option<f64> {
         let inside = |p: [f64; 3]| (0..3).all(|i| p[i] >= lo[i] && p[i] <= hi[i]);
         match &self.kind {
             Kind::Sphere { c, r2 } => {
@@ -465,7 +710,7 @@ impl Body {
                 let l = (c[i] + half).min(hi[i]) - (c[i] - half).max(lo[i]);
                 Some(std::f64::consts::PI * r2 * l.max(0.0))
             }
-            Kind::Field(_) => None,
+            Kind::Field(_) | Kind::Plane { .. } => None,
             Kind::Stl(s) => {
                 let (a, b) = s.surface.bounding_box();
                 (s.clean && inside(a) && inside(b)).then_some(s.volume)
@@ -629,10 +874,194 @@ pub fn bodies_with(s: &ImmersedSection, env: &crate::expr::Env) -> Result<Vec<Bo
                 findings = f;
                 Kind::Stl(st)
             }
+            Shape::Plane => {
+                let p = need(b.centre, "centre")?;
+                let n = need(b.normal, "normal")?;
+                let l = dot(n, n).sqrt();
+                if !(l > 0.0 && l.is_finite()) {
+                    return Err(bad(
+                        format!("{key}.normal"),
+                        format!("immersed body {}: the normal has zero length", b.name),
+                    ));
+                }
+                Kind::Plane {
+                    p,
+                    n: [n[0] / l, n[1] / l, n[2] / l],
+                }
+            }
+        };
+        let invert = b.invert.unwrap_or(false);
+        if invert && !matches!(b.shape, Shape::Cylinder | Shape::Sphere | Shape::Box) {
+            return Err(bad(
+                format!("{key}.invert"),
+                format!(
+                    "immersed body {}: `invert` is for a cylinder, sphere or box (turn the \
+                     normal of a plane; an STL surface is inverted in its file)",
+                    b.name
+                ),
+            ));
+        }
+        let rotation = match b.omega {
+            None => None,
+            Some(w) => {
+                if !w.is_finite() {
+                    return Err(bad(
+                        format!("{key}.omega"),
+                        format!("immersed body {}: `omega` must be a number", b.name),
+                    ));
+                }
+                if !s.is_cut() {
+                    return Err(bad(
+                        format!("{key}.omega"),
+                        format!(
+                            "immersed body {}: `omega` moves the wall of a cut body \
+                             ([immersed] method = \"cut\")",
+                            b.name
+                        ),
+                    ));
+                }
+                let (axis, origin) = match &kind {
+                    Kind::Cylinder { c, a, .. } => (*a, *c),
+                    _ => {
+                        let a = b.axis.unwrap_or([0.0, 0.0, 1.0]);
+                        let n = dot(a, a).sqrt();
+                        if !(n > 0.0 && n.is_finite()) {
+                            return Err(bad(
+                                format!("{key}.axis"),
+                                format!("immersed body {}: the axis has zero length", b.name),
+                            ));
+                        }
+                        let o = match (&kind, b.centre) {
+                            (_, Some(c)) => c,
+                            (Kind::Box { lo, hi }, None) => {
+                                std::array::from_fn(|i| 0.5 * (lo[i] + hi[i]))
+                            }
+                            _ => need(None, "centre")?,
+                        };
+                        ([a[0] / n, a[1] / n, a[2] / n], o)
+                    }
+                };
+                Some(Rotation {
+                    omega: w,
+                    axis,
+                    origin,
+                })
+            }
+        };
+        let patches = match (&b.patches, &kind) {
+            (None, _) => None,
+            (Some(p), Kind::Stl(st)) => {
+                if !s.is_cut() {
+                    return Err(bad(
+                        format!("{key}.patches"),
+                        format!(
+                            "immersed body {}: surface patches are walls of a cut body \
+                             ([immersed] method = \"cut\")",
+                            b.name
+                        ),
+                    ));
+                }
+                let (tags, solids) = &*st.tags;
+                let (names, of_tag): (Vec<String>, Vec<Option<u32>>) = match p {
+                    Patches::Solids(PatchSource::Solids) => {
+                        if solids.is_empty() {
+                            return Err(bad(
+                                format!("{key}.patches"),
+                                format!(
+                                    "immersed body {}: patches = \"solids\" needs an ASCII STL \
+                                     file (a binary file tags its triangles: give \
+                                     patches = {{ <name> = <attribute> }})",
+                                    b.name
+                                ),
+                            ));
+                        }
+                        // one patch per distinct solid name, in file order
+                        let mut names: Vec<String> = Vec::new();
+                        let mut of_solid = Vec::with_capacity(solids.len());
+                        for (k, n) in solids.iter().enumerate() {
+                            let n = if n.is_empty() {
+                                format!("solid{}", k + 1)
+                            } else {
+                                n.replace(char::is_whitespace, "_")
+                            };
+                            let i = match names.iter().position(|m| *m == n) {
+                                Some(i) => i,
+                                None => {
+                                    names.push(n);
+                                    names.len() - 1
+                                }
+                            };
+                            of_solid.push(Some(i as u32));
+                        }
+                        (names, of_solid)
+                    }
+                    Patches::Tags(t) => {
+                        if !solids.is_empty() {
+                            return Err(bad(
+                                format!("{key}.patches"),
+                                format!(
+                                    "immersed body {}: attribute tags need a binary STL file \
+                                     (an ASCII file names its solids: give patches = \"solids\")",
+                                    b.name
+                                ),
+                            ));
+                        }
+                        let names: Vec<String> = t.keys().cloned().collect();
+                        let top = t.values().copied().max().unwrap_or(0) as usize;
+                        let mut of_tag = vec![None; top + 1];
+                        for (i, v) in t.values().enumerate() {
+                            if of_tag[*v as usize].is_some() {
+                                return Err(bad(
+                                    format!("{key}.patches"),
+                                    format!(
+                                        "immersed body {}: two patches with the attribute {v}",
+                                        b.name
+                                    ),
+                                ));
+                            }
+                            of_tag[*v as usize] = Some(i as u32);
+                        }
+                        (names, of_tag)
+                    }
+                };
+                for n in &names {
+                    if n.is_empty()
+                        || !n
+                            .chars()
+                            .all(|c| c.is_ascii_alphanumeric() || "_-".contains(c))
+                    {
+                        return Err(bad(
+                            format!("{key}.patches"),
+                            format!(
+                                "immersed body {}: the patch name `{n}` must be letters, digits, \
+                                 `_` or `-`",
+                                b.name
+                            ),
+                        ));
+                    }
+                }
+                let per_tri: Vec<Option<u32>> = tags
+                    .iter()
+                    .map(|&t| of_tag.get(t as usize).copied().flatten())
+                    .collect();
+                Some((names, per_tri))
+            }
+            (Some(_), _) => {
+                return Err(bad(
+                    format!("{key}.patches"),
+                    format!(
+                        "immersed body {}: `patches` belong to shape = \"stl\"",
+                        b.name
+                    ),
+                ));
+            }
         };
         out.push(Body {
             name: b.name.clone(),
             kind,
+            invert,
+            rotation,
+            patches,
             findings,
         });
     }
@@ -676,7 +1105,8 @@ fn stl_body(
     {
         return Ok(hit.clone());
     }
-    let surface = foehncraft_mesh::surface::Surface::read_stl(file, scale).map_err(|e| {
+    let (surface, tags, solids) = foehncraft_mesh::surface::Surface::read_stl_tagged(file, scale)
+        .map_err(|e| {
         diag::err(
             Diagnostic::new(
                 diag::CASE_FILE,
@@ -702,6 +1132,7 @@ fn stl_body(
     let out = (
         StlBody {
             surface: std::sync::Arc::new(surface),
+            tags: std::sync::Arc::new((tags, solids)),
             clean: report.clean(),
             volume: report.volume,
             area: report.area,
@@ -738,9 +1169,7 @@ pub fn check_case(case: &crate::case::FlowCase) -> Result<()> {
     }
     bodies_of(case)?;
     if case.immersed.is_cut() {
-        let what = if !case.regions.is_empty() {
-            Some("regions (conjugate heat transfer on cut cells is stage 2d)")
-        } else if case.immersed.topology.is_some() {
+        let what = if case.immersed.topology.is_some() {
             Some("a topology search (it runs on the penalised density field)")
         } else if !case.mrf.is_empty() || !case.sliding.is_empty() {
             Some("rotating zones")
@@ -1275,11 +1704,44 @@ fn scale3(a: [f64; 3], s: f64) -> [f64; 3] {
     [a[0] * s, a[1] * s, a[2] * s]
 }
 
+/// The solid region a cut body is kept as (L13 stage 2d, D229): the
+/// `[regions.<name>] kind = "solid"` whose `zones` name the body.
+pub fn solid_region_of<'a>(case: &'a crate::case::FlowCase, body: &str) -> Option<&'a str> {
+    case.regions
+        .iter()
+        .find(|(_, r)| {
+            r.kind == crate::materials::RegionKind::Solid && r.zones.iter().any(|z| z == body)
+        })
+        .map(|(n, _)| n.as_str())
+}
+
 /// The cut of `[immersed] method = "cut"` (L13 stage 2, D227): the mesh
 /// with the bodies cut out, their surfaces as wall boundaries named after
-/// the bodies, and the notes for the log (IMM203, IMM204).
+/// the bodies, and the notes for the log (IMM203, IMM204). A body that is
+/// a solid region keeps its inside as cells of a zone named by the body,
+/// joined to the fluid cells by interior faces (stage 2d, D229); thin ones
+/// are refused (IMM205).
 pub fn cut_mesh(case: &crate::case::FlowCase, mesh: &Mesh) -> Result<(Mesh, Vec<Diagnostic>)> {
     let bs = bodies_of(case)?;
+    let solid: Vec<bool> = bs
+        .iter()
+        .map(|b| solid_region_of(case, &b.name).is_some())
+        .collect();
+    for (b, &s) in bs.iter().zip(&solid) {
+        if s && case.energy.is_none() {
+            return Err(diag::err(
+                Diagnostic::new(
+                    diag::IMM_CUT_UNSUPPORTED,
+                    format!(
+                        "the cut body `{}` is a solid region, which needs the energy equation \
+                         ([energy])",
+                        b.name
+                    ),
+                )
+                .key("regions"),
+            ));
+        }
+    }
     let sec = case.immersed.cut.clone().unwrap_or_default();
     let (lo, hi) = mesh.bounding_box();
     let diag_len = norm(sub(hi, lo));
@@ -1294,7 +1756,7 @@ pub fn cut_mesh(case: &crate::case::FlowCase, mesh: &Mesh) -> Result<(Mesh, Vec<
         wall_point: sec.wall_point.unwrap_or(true),
         face_point: sec.face_point(),
     };
-    let c = foehncraft_mesh::cut::cut(mesh, &body, &names, &opt)
+    let c = foehncraft_mesh::cut::cut_both(mesh, &body, &names, &solid, &opt)
         .map_err(|e| diag::err(Diagnostic::new(diag::IMM_CUT, format!("cut cells: {e}"))))?;
     let r = &c.report;
     let mut notes = surface_notes(&bs);
@@ -1314,15 +1776,44 @@ pub fn cut_mesh(case: &crate::case::FlowCase, mesh: &Mesh) -> Result<(Mesh, Vec<
             r.cells_out
         ),
     ));
-    for (b, a) in bs.iter().zip(&r.wall_area) {
-        let mut line = format!("cut body {}: wall area {a:.6e} m²", b.name);
+    for (k, (b, a)) in bs.iter().zip(&r.wall_area).enumerate() {
+        let mut line = if solid[k] {
+            format!(
+                "cut body {} (solid region {}): interface area {a:.6e} m²",
+                b.name,
+                solid_region_of(case, &b.name).unwrap_or_default()
+            )
+        } else {
+            format!("cut body {}: wall area {a:.6e} m²", b.name)
+        };
         if let Some(e) = b.exact_area(lo, hi) {
             line.push_str(&format!(
                 ", exact {e:.6e} m² ({:+.3} %)",
                 100.0 * (a - e) / e
             ));
         }
+        if solid[k] {
+            line.push_str(&format!(", solid volume {:.6e} m³", r.solid_volume[k]));
+            if let Some(e) = b.exact_volume(lo, hi) {
+                let v = r.solid_volume[k];
+                line.push_str(&format!(
+                    ", exact {e:.6e} m³ ({:+.3} %)",
+                    100.0 * (v - e) / e
+                ));
+            }
+        }
         notes.push(Diagnostic::new(diag::IMM_CUT_REPORT, line));
+    }
+    if solid.iter().any(|&s| s) {
+        notes.push(Diagnostic::new(
+            diag::IMM_CUT_REPORT,
+            format!(
+                "cut cells both ways: {} solid cells, {} small ones merged, smallest kept \
+                 fraction {:.3}",
+                r.solid_cells, r.solid_merged, r.solid_min_fraction
+            ),
+        ));
+        thin_solids(&bs, &solid, &c, mesh)?;
     }
     if r.simplified > 0 {
         notes.push(Diagnostic::new(
@@ -1354,7 +1845,414 @@ pub fn cut_mesh(case: &crate::case::FlowCase, mesh: &Mesh) -> Result<(Mesh, Vec<
             ),
         ));
     }
-    Ok((c.mesh, notes))
+    let mut out = c.mesh;
+    // a boundary of the input mesh that lies inside the bodies is gone: it
+    // needs no condition (the box around an inverted cylinder, stage 2e);
+    // one the case gives a condition stays, empty
+    let walls: Vec<&str> = bs.iter().map(|b| b.name.as_str()).collect();
+    let keep = |p: &foehncraft_mesh::mesh::Boundary| {
+        p.len > 0 || walls.contains(&p.name.as_str()) || case.boundary.contains_key(&p.name)
+    };
+    let gone: Vec<String> = out
+        .boundaries
+        .iter()
+        .filter(|p| !keep(p))
+        .map(|p| p.name.clone())
+        .collect();
+    if !gone.is_empty() {
+        out.boundaries.retain(keep);
+        notes.push(Diagnostic::new(
+            diag::IMM_CUT_REPORT,
+            format!(
+                "cut cells: the boundaries {} lie inside the bodies and are left out",
+                gone.join(", ")
+            ),
+        ));
+    }
+    split_patches(&bs, &solid, &mut out, &mut notes)?;
+    Ok((out, notes))
+}
+
+/// The walls that turn with their cut body (`omega`, L13 stage 2e): the
+/// boundary names of the body and its patches with the rotation.
+pub fn wall_rotations(
+    case: &crate::case::FlowCase,
+) -> Result<std::collections::BTreeMap<String, Rotation>> {
+    let mut out = std::collections::BTreeMap::new();
+    if !case.immersed.is_cut() || case.immersed.body.iter().all(|b| b.omega.is_none()) {
+        return Ok(out);
+    }
+    for b in bodies_of(case)? {
+        let Some(r) = b.rotation else { continue };
+        if solid_region_of(case, &b.name).is_some() {
+            return Err(diag::err(
+                Diagnostic::new(
+                    diag::IMM_CUT_UNSUPPORTED,
+                    format!(
+                        "the cut body `{}` is a solid region: a turning solid is rigid motion \
+                         (stage 5), `omega` moves walls only",
+                        b.name
+                    ),
+                )
+                .key("immersed.body.omega"),
+            ));
+        }
+        for n in wall_names(&b) {
+            out.insert(n, r);
+        }
+    }
+    Ok(out)
+}
+
+/// Gives the walls of turning cut bodies their velocity ω × (x − o) in the
+/// compiled boundary values (L13 stage 2e); a wall of such a body with a
+/// `velocity` of its own is refused.
+pub fn moving_walls(case: &crate::case::FlowCase, c: &mut crate::bc::Compiled) -> Result<()> {
+    for (name, r) in wall_rotations(case)? {
+        let Some(crate::bc::BoundaryCondition::Wall { velocity, .. }) = case.boundary.get(&name)
+        else {
+            continue;
+        };
+        if velocity.iter().any(|v| v.number() != Some(0.0)) {
+            return Err(bad(
+                format!("boundary.{name}.velocity"),
+                format!(
+                    "the wall `{name}` turns with its body (`omega`): give its speed by \
+                     `omega` or by `velocity`, not both"
+                ),
+            ));
+        }
+        let [ax, ay, az] = r.axis;
+        let [ox, oy, oz] = r.origin;
+        let w = r.omega;
+        let e = |a: f64, u: &str, ou: f64, b: f64, v: &str, ov: f64| {
+            crate::expr::Scalar::Expr(format!(
+                "({w:?}) * (({a:?}) * ({u} - ({ou:?})) - ({b:?}) * ({v} - ({ov:?})))"
+            ))
+        };
+        let v = [
+            e(ay, "z", oz, az, "y", oy),
+            e(az, "x", ox, ax, "z", oz),
+            e(ax, "y", oy, ay, "x", ox),
+        ];
+        let vals = crate::expr::vector_value(
+            &v,
+            &case.env()?,
+            crate::expr::Vars::SPACE,
+            &format!("immersed.body.omega ({name})"),
+        )?;
+        c.entry(name).or_default().velocity = Some(vals);
+    }
+    Ok(())
+}
+
+/// The boundary of every name of a cut body's walls: the body itself and
+/// its surface patches `<body>-<patch>` (L13 stage 2e).
+pub fn wall_names(b: &Body) -> Vec<String> {
+    let mut v = vec![b.name.clone()];
+    if let Some((names, _)) = &b.patches {
+        v.extend(names.iter().map(|n| format!("{}-{n}", b.name)));
+    }
+    v
+}
+
+/// Splits the wall boundary of every STL body with `patches` into one
+/// boundary per patch (L13 stage 2e): a face takes the patch of the triangle
+/// closest to its centroid.
+fn split_patches(
+    bs: &[Body],
+    solid: &[bool],
+    m: &mut Mesh,
+    notes: &mut Vec<Diagnostic>,
+) -> Result<()> {
+    if !bs.iter().any(|b| b.patches.is_some()) {
+        return Ok(());
+    }
+    let geo = Geometry::compute(m);
+    for (b, &s) in bs.iter().zip(solid) {
+        let (Some((names, per_tri)), Some(surf)) = (&b.patches, b.surface()) else {
+            continue;
+        };
+        if s {
+            return Err(diag::err(
+                Diagnostic::new(
+                    diag::IMM_CUT_UNSUPPORTED,
+                    format!(
+                        "the cut body `{}` is a solid region: its surface is the region \
+                         interface, which has no patches",
+                        b.name
+                    ),
+                )
+                .key("immersed.body.patches"),
+            ));
+        }
+        let Some(range) = m.boundary(&b.name).map(|p| p.range()) else {
+            continue;
+        };
+        // part 0 is the body itself, part k + 1 patch k
+        let part: Vec<usize> = range
+            .clone()
+            .map(|f| {
+                surf.bvh()
+                    .closest(geo.face_centroid[f])
+                    .and_then(|c| per_tri.get(c.global_id as usize).copied().flatten())
+                    .map_or(0, |k| k as usize + 1)
+            })
+            .collect();
+        let all = wall_names(b);
+        let mut line = format!("cut body {}: surface patches", b.name);
+        for (k, n) in all.iter().enumerate() {
+            let a: f64 = range
+                .clone()
+                .zip(&part)
+                .filter(|(_, p)| **p == k)
+                .map(|(f, _)| norm(geo.face_area[f]))
+                .sum();
+            let nf = part.iter().filter(|p| **p == k).count();
+            if k > 0 || nf > 0 {
+                line.push_str(&format!(", {n} {nf} faces {a:.6e} m²"));
+            }
+        }
+        m.split_boundary(&b.name, &part, &all)
+            .map_err(|e| diag::err(Diagnostic::new(diag::IMM_CUT, format!("cut cells: {e}"))))?;
+        let _ = names;
+        notes.push(Diagnostic::new(diag::IMM_CUT_REPORT, line));
+    }
+    Ok(())
+}
+
+/// The refusal of thin solids (L13 stage 2d, owner decision Q4): a body kept
+/// as solid cells must be about two cells thick. Its depth is the largest
+/// distance of a solid cell centroid to the surface, the cell width the
+/// median over its cut cells of the uncut volume over the interface area
+/// in the cell (the width across the surface, in 2D and 3D alike); the body
+/// is refused when the depth is below one cell width (a slab thinner than
+/// two cells, a pin thinner than two cells across) or when small solid
+/// cells found no solid neighbour to merge into.
+fn thin_solids(
+    bs: &[Body],
+    solid: &[bool],
+    c: &foehncraft_mesh::cut::CutMesh,
+    input: &Mesh,
+) -> Result<()> {
+    let m = &c.mesh;
+    let geo = Geometry::compute(m);
+    let geo0 = Geometry::compute(input);
+    let thin = |name: &str, why: String| {
+        Err(diag::err(
+            Diagnostic::new(
+                diag::IMM_THIN_SOLID,
+                format!(
+                    "the cut body `{name}` is too thin for a solid region on this mesh: {why}; \
+                     refine the mesh in the body, or model it as a thin wall on a region \
+                     interface ([interfaces.<name>] thin_wall, D189)"
+                ),
+            )
+            .key("regions"),
+        ))
+    };
+    if c.report.solid_merge_failed > 0 {
+        let name = bs
+            .iter()
+            .zip(solid)
+            .find(|(_, s)| **s)
+            .map_or("", |(b, _)| b.name.as_str());
+        return thin(
+            name,
+            format!(
+                "{} small solid cells found no solid neighbour to merge into",
+                c.report.solid_merge_failed
+            ),
+        );
+    }
+    let nf = c.n_fluid;
+    for (b, _) in bs.iter().zip(solid).filter(|(_, s)| **s) {
+        // a `field` body has a level, not a distance
+        if matches!(b.kind, Kind::Field(_)) {
+            continue;
+        }
+        let Some(z) = m.zones.iter().position(|z| *z == b.name) else {
+            continue;
+        };
+        let cells: Vec<usize> = (nf..m.n_cells)
+            .filter(|&k| m.cell_zone[k] as usize == z)
+            .collect();
+        if cells.is_empty() {
+            return thin(&b.name, "no node of the mesh lies inside it".into());
+        }
+        let depth = cells
+            .iter()
+            .map(|&k| -b.distance(geo.cell_centroid[k]))
+            .fold(0.0f64, f64::max);
+        let mut widths: Vec<f64> = Vec::new();
+        for &k in &cells {
+            let a: f64 = m
+                .cell_face_iter(k)
+                .filter(|&(f, _)| {
+                    f < m.n_interior_faces() && {
+                        let o = if m.owner[f] as usize == k {
+                            m.neighbour[f]
+                        } else {
+                            m.owner[f]
+                        };
+                        (o as usize) < nf
+                    }
+                })
+                .map(|(f, _)| norm(geo.face_area[f]))
+                .sum();
+            if a > 0.0 {
+                let v: f64 = c.covers[k]
+                    .iter()
+                    .map(|&p| geo0.cell_volume[p as usize])
+                    .sum();
+                widths.push(v / a);
+            }
+        }
+        if widths.is_empty() {
+            continue;
+        }
+        widths.sort_by(f64::total_cmp);
+        let h = widths[widths.len() / 2];
+        if depth < h {
+            return thin(
+                &b.name,
+                format!(
+                    "its deepest solid cell lies {depth:.3e} m inside the surface, less than \
+                     one cell width ({h:.3e} m), so it is less than about two cells thick"
+                ),
+            );
+        }
+    }
+    Ok(())
+}
+
+/// The cut bodies whose whole surface is a wall, by the name of their
+/// wall boundary: the exact first-cell distance of the wall functions and
+/// the exact wall distance (L13 stage 2c, D229, D108).
+#[derive(Debug, Clone)]
+pub struct WallBodies {
+    bodies: Vec<Body>,
+    /// `[immersed.cut] wall_sample`.
+    sample: bool,
+    /// Wall boundary name → body.
+    by_boundary: std::collections::BTreeMap<String, usize>,
+}
+
+impl WallBodies {
+    /// The bodies of a cut case whose surfaces are walls (`None` without a
+    /// cut or without such a body).
+    pub fn of(case: &crate::case::FlowCase) -> Result<Option<Self>> {
+        if !case.immersed.is_cut() {
+            return Ok(None);
+        }
+        let bodies = bodies_of(case)?;
+        let mut by_boundary = std::collections::BTreeMap::new();
+        for (i, b) in bodies.iter().enumerate() {
+            // a `field` body has a level, not a distance: its wall faces
+            // keep the distance to the face
+            if matches!(b.kind, Kind::Field(_)) {
+                continue;
+            }
+            if let Some(r) = solid_region_of(case, &b.name) {
+                // a solid region: its surface is the interface wall of the
+                // fluid view (stage 2d)
+                by_boundary.insert(crate::cht::interface_name(r), i);
+            } else {
+                for n in wall_names(b) {
+                    if matches!(
+                        case.boundary.get(&n),
+                        Some(crate::bc::BoundaryCondition::Wall { .. })
+                    ) {
+                        by_boundary.insert(n, i);
+                    }
+                }
+            }
+        }
+        let sample = case
+            .immersed
+            .cut
+            .as_ref()
+            .is_none_or(CutSection::wall_sample);
+        Ok((!by_boundary.is_empty()).then_some(Self {
+            bodies,
+            sample,
+            by_boundary,
+        }))
+    }
+
+    /// The wall functions of the cut walls sample the cell one layer out
+    /// (`[immersed.cut] wall_sample`, default true).
+    pub fn sample(&self) -> bool {
+        self.sample
+    }
+
+    /// True if `boundary` is the wall of a cut body.
+    pub fn is_body(&self, boundary: &str) -> bool {
+        self.by_boundary.contains_key(boundary)
+    }
+
+    /// The exact distance of `x` to the surface of the body whose wall
+    /// boundary is `boundary` (closest point, D108).
+    pub fn distance_to(&self, boundary: &str, x: [f64; 3]) -> Option<f64> {
+        let &i = self.by_boundary.get(boundary)?;
+        Some(self.bodies[i].distance(x).abs())
+    }
+
+    /// The exact distance of every point to the nearest wall body.
+    pub fn distance(&self, points: &[[f64; 3]]) -> Vec<f64> {
+        use rayon::prelude::*;
+        points
+            .par_iter()
+            .map(|&x| {
+                self.by_boundary
+                    .values()
+                    .map(|&i| self.bodies[i].distance(x).abs())
+                    .fold(f64::INFINITY, f64::min)
+            })
+            .collect()
+    }
+}
+
+/// The momentum faces of the cut walls under a wall function (L13 stage
+/// 2c): the wall shear stress of the wall function, ν_w = τ_w y_P/U_P, is
+/// carried to the cut cell only when its wall faces take the exact y_P as
+/// the distance, μ_w |S| (u_w − u_P)/y_P, and no non-orthogonal
+/// correction: on the facets of a cut cell the correction k · ∇u_P picks up
+/// the steep wall-normal gradient of the cell (its centroid does not lie
+/// over the facet centroids) and moved the wall stress of single faces by
+/// up to ±50 % on the tilted plate. Laminar flows and the low-Re
+/// treatment keep the face gradient with its correction.
+pub fn wall_function_faces(
+    case: &crate::case::FlowCase,
+    mesh: &Mesh,
+    geo: &Geometry,
+    disc: &mut foehncraft_fv::disc::Discretisation,
+) -> Result<()> {
+    let t = &case.turbulence;
+    if t.is_laminar() || t.treatment() == crate::turbulence::WallTreatment::LowRe {
+        return Ok(());
+    }
+    let Some(wb) = WallBodies::of(case)? else {
+        return Ok(());
+    };
+    for p in &mesh.boundaries {
+        if !wb.is_body(&p.name) {
+            continue;
+        }
+        for f in p.range() {
+            let c = mesh.owner[f] as usize;
+            let Some(d) = wb.distance_to(&p.name, geo.cell_centroid[c]) else {
+                continue;
+            };
+            let a = norm(geo.face_area[f]);
+            let y = d.max(1e-3 * geo.cell_volume[c] / a);
+            disc.dgeo[f] = a / y;
+            disc.k.x[f] = 0.0;
+            disc.k.y[f] = 0.0;
+            disc.k.z[f] = 0.0;
+        }
+    }
+    Ok(())
 }
 
 fn norm(a: [f64; 3]) -> f64 {
@@ -1386,18 +2284,23 @@ mod tests {
             cut: None,
             permeability: Some(1e-8),
             samples: None,
+            refine: None,
             body: vec![BodySection {
                 name: "c".into(),
                 shape: Shape::Cylinder,
                 centre: Some([0.5, 0.5, 0.0]),
                 radius: Some(r),
                 axis: None,
+                normal: None,
                 length: None,
                 lower: None,
                 upper: None,
                 fraction: None,
                 file: None,
                 scale: None,
+                invert: None,
+                omega: None,
+                patches: None,
             }],
             topology: None,
         }

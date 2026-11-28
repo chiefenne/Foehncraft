@@ -118,7 +118,8 @@ impl Solver {
             hydrostatic: crate::buoyancy::hydrostatic(case),
         };
         let arrays = crate::bc::arrays(mesh, geo, &case.boundary, phys.rho, at)?;
-        let disc = crate::simplec::discretisation(mesh, geo, &arrays)?;
+        let mut disc = crate::simplec::discretisation(mesh, geo, &arrays)?;
+        crate::immersed::wall_function_faces(case, mesh, geo, &mut disc.0)?;
         let phys = crate::case::physics_on(case, &phys, mesh, geo)?;
         let mut fl = Flow::on(
             disc,
@@ -734,6 +735,10 @@ fn supported_solver(case: &FlowCase) -> Result<()> {
         ),
         (!case.immersed.is_empty(), "immersed bodies"),
         (case.chemistry.is_some(), "chemistry in the cells (SF2b)"),
+        (
+            case.circuits.is_some(),
+            "water and steam circuits behind the walls (SF7c)",
+        ),
         (
             case.energy.as_ref().is_some_and(|e| {
                 e.thermodynamic_pressure == crate::density::ThermodynamicPressure::ClosedVolume

@@ -774,6 +774,10 @@ impl Settings {
     }
 }
 
+/// The fields of a reacting flow written with the results (SF3): name and
+/// value per cell.
+pub type ReactionFields = std::sync::Arc<Vec<(String, Vec<f64>)>>;
+
 /// Physical inputs.
 #[derive(Debug, Clone)]
 pub struct Physics {
@@ -825,6 +829,10 @@ pub struct Physics {
     /// of the current step (m³/s, MP2): the volume account of the run
     /// checks the net boundary volume flow against it.
     pub vof_volume_made: Option<f64>,
+    /// The cell fields of the reactions (SF3: the heat release, the
+    /// fine-structure fraction and residence time of the eddy dissipation
+    /// concept), as last set, for the output.
+    pub reaction_fields: Option<ReactionFields>,
 }
 
 impl Physics {
@@ -846,6 +854,7 @@ impl Physics {
             vof_alpha: None,
             vof_phase_change: None,
             vof_volume_made: None,
+            reaction_fields: None,
         }
     }
 

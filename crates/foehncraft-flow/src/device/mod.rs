@@ -385,6 +385,9 @@ pub struct WallStatic {
     pub ptr: Vec<u32>,
     /// Wall-face slots of the cells (indices into `faces`), in face order.
     pub slots: Vec<u32>,
+    /// The sample cell of each wall face (cut-cell walls, L13 stage 2c),
+    /// `u32::MAX` for none; empty: no wall face samples.
+    pub sample: Vec<u32>,
 }
 
 /// Inputs and outputs of [`FlowDevice::sst_cells`].
@@ -632,6 +635,9 @@ pub struct WallFaceOps {
     pub normal: Buf3,
     /// y_P per wall face.
     pub y: Buf,
+    /// The exact distance of the sample cell per wall face (with the
+    /// `sample` of [`WallStatic`]); `None`: no sampling.
+    pub y_sample: Option<Buf>,
     /// k_s per wall face.
     pub ks: Buf,
     /// Cell velocity.

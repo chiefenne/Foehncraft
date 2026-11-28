@@ -1,0 +1,169 @@
+# A piloted turbulent methane jet flame with the geometry and inlet
+# conditions of Sandia Flame D (Barlow & Frank 1998): steady RANS with the
+# eddy dissipation concept (stage SF3) and the 4-step mechanism of Jones &
+# Lindstedt (1988). About 15 min on 4 cores.
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/jet_flame_edc_jl4.toml
+#
+# Burner (Barlow & Frank 1998, 27th Symp. (Int.) Combust., 1087-1095): a
+# main jet of 7.2 mm diameter, 25 % CH4 and 75 % air by volume at 294 K
+# and a bulk velocity of 49.6 m/s (Re 22 400); a pilot annulus from 7.7 to
+# 18.2 mm diameter of burnt lean methane and air (the equilibrium of phi =
+# 0.77, here at the published 1880 K) at 11.4 m/s; a coflow of air at
+# 0.9 m/s and 291 K. The pipe and pilot walls are 0.25 mm and 0.35 mm
+# thin lips. Axisymmetric: a wedge of 2 degrees about the x axis, y the
+# radius, 0.5 m (69 D) long and 80 mm wide.
+#
+# Turbulence: standard k-epsilon with C_eps1 = 1.60, the round-jet
+# correction of Pope (1978), the usual choice for this flame. The
+# fine-structure reactor of each cell integrates JL4 over its residence
+# time tau* = 0.4083 (nu/eps)^(1/2), the mean rate is rho kappa (Y* - Y),
+# kappa = gamma*/(tau* (1 - gamma*)), gamma* = (2.1377 (nu eps/k^2)^(1/4))^2
+# (Magnussen 2005). The start fields are a jet that spreads with x and a
+# hot burnt layer around the pilot, so that the flame lights.
+#
+# The measurements of the TNF workshop are not part of the case (the
+# archive could not be reached from the cloud; a gap): the run reports the
+# fields and the centre-line profiles, compared in the gallery with the
+# published flame length and peak temperature where known.
+
+case_format = "0.7"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [0.5, 0.08, 0.01]
+cells = [120, 54, 1]
+segments = { x = [ { to = 0.5, cells = 120, ratio = 8.0 } ], y = [ { to = 0.0036, cells = 12, ratio = 1.0 }, { to = 0.00385, cells = 1, ratio = 1.0 }, { to = 0.0091, cells = 10, ratio = 1.0 }, { to = 0.00945, cells = 1, ratio = 1.0 }, { to = 0.08, cells = 30, ratio = 12.0 } ] }
+split = [
+  { boundary = "xmin", axis = "y", at = 0.00945, name = "coflow" },
+  { boundary = "xmin", axis = "y", at = 0.0091, name = "pilot_lip" },
+  { boundary = "xmin", axis = "y", at = 0.00385, name = "pilot" },
+  { boundary = "xmin", axis = "y", at = 0.0036, name = "jet_lip" },
+]
+wedge = 2.0
+
+[materials.gas]
+kind = "gas"
+description = "the start values of an ideal gas with the molar mass of air; the mixture replaces c_p, k and mu"
+molar_mass = 0.0289647
+density = { form = "ideal-gas", source = "ideal gas, rho = p M / (R T)" }
+specific_heat = 1005.0
+conductivity = 0.0263
+viscosity = 1.85e-5
+
+[fluid]
+material = "gas"
+temperature = 291.0
+operating_pressure = 101325.0
+pressure_values = "gauge"
+
+[turbulence]
+model = "k-epsilon"
+[turbulence.constants]
+c_epsilon1 = 1.60
+
+# the hot layer of the start: burnt gas around the pilot radius over the
+# first 0.3 m
+[energy]
+initial = "291 + 1590*exp(-((y - 0.0065)/(0.004 + 0.06*x))^2)*0.5*(1 - tanh((x - 0.3)/0.03))"
+density = "variable"
+
+[species]
+names = ["CH4", "O2", "CO", "CO2", "H2O", "H2", "AR", "N2"]
+initial = { mass_fractions = { O2 = "0.2329 - 0.181*exp(-((y - 0.0065)/(0.004 + 0.06*x))^2)*0.5*(1 - tanh((x - 0.3)/0.03))", CO2 = "0.1175*exp(-((y - 0.0065)/(0.004 + 0.06*x))^2)*0.5*(1 - tanh((x - 0.3)/0.03))", H2O = "0.0965*exp(-((y - 0.0065)/(0.004 + 0.06*x))^2)*0.5*(1 - tanh((x - 0.3)/0.03))" } }
+diffusion = "schmidt"
+schmidt = 0.7
+turbulent_schmidt = 0.7
+
+[chemistry]
+mechanism = "jones-lindstedt-4"
+interaction = "edc"
+min_temperature = 500.0
+update_every = 1
+relaxation = 0.5
+
+# the potential flow of the inlets to start, with k and epsilon of a
+# spreading shear layer
+[initial]
+velocity = [0.9, 0.0, 0.0]
+potential_flow = true
+k = "0.01 + 30*exp(-((y - 0.0036)/(0.002 + 0.08*x))^2)/(1 + 30*x)"
+epsilon = "1 + 3e5*exp(-((y - 0.0036)/(0.002 + 0.08*x))^2)/(1 + 30*x)^3"
+
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [49.6, 0.0, 0.0]
+turbulence_intensity = 0.05
+turbulence_length_scale = 0.0005
+[boundary.xmin.energy]
+temperature = 294.0
+[boundary.xmin.species]
+mass_fractions = { CH4 = 0.1563, O2 = 0.1965 }
+
+[boundary.jet_lip]
+type = "wall"
+[boundary.jet_lip.energy]
+heat_flux = 0.0
+
+[boundary.pilot]
+type = "velocity-inlet"
+velocity = [11.4, 0.0, 0.0]
+turbulence_intensity = 0.05
+turbulence_length_scale = 0.0005
+[boundary.pilot.energy]
+temperature = 1880.0
+[boundary.pilot.species]
+mass_fractions = { O2 = 0.0515, CO = 0.00034, CO2 = 0.1175, H2O = 0.0965, H2 = 1.1e-5 }
+
+[boundary.pilot_lip]
+type = "wall"
+[boundary.pilot_lip.energy]
+heat_flux = 0.0
+
+[boundary.coflow]
+type = "velocity-inlet"
+velocity = [0.9, 0.0, 0.0]
+turbulence_intensity = 0.01
+turbulence_length_scale = 0.005
+[boundary.coflow.energy]
+temperature = 291.0
+[boundary.coflow.species]
+mass_fractions = { O2 = 0.2329 }
+
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+
+[boundary.ymax]
+type = "slip-wall"
+[boundary.ymax.energy]
+heat_flux = 0.0
+
+[boundary.zmin]
+type = "wedge"
+[boundary.zmax]
+type = "wedge"
+
+# the residuals level at about 3e-5 from iteration 1200 on; the axis
+# temperature and the heat release of iterations 1450, 1600 and 1900 agree
+# to 1 K and 1e-4 (steady in the monitored quantities)
+[solver]
+tolerance = 1e-6
+max_iterations = 1500
+log_every = 100
+
+[verification]
+require_convergence = false
+
+[solver.scalar]
+limiter = "mlp"
+
+[output]
+wall_csv = false
+lines = [
+  { name = "axis", from = [0.0, 0.0, 0.0], to = [0.5, 0.0, 0.0], points = 501 },
+  { name = "x15D", from = [0.108, 0.0, 0.0], to = [0.108, 0.04, 0.0], points = 201 },
+  { name = "x30D", from = [0.216, 0.0, 0.0], to = [0.216, 0.04, 0.0], points = 201 },
+  { name = "x45D", from = [0.324, 0.0, 0.0], to = [0.324, 0.04, 0.0], points = 201 },
+]

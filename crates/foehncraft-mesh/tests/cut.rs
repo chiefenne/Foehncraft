@@ -259,3 +259,103 @@ fn node_on_the_surface_is_snapped() {
         c.report
     );
 }
+
+/// L13 stage 2d: a sphere cut both ways out of hexahedral, tetrahedral and
+/// polyhedral meshes, with wall points and face points: the fluid and the
+/// solid cells fill the box exactly, every cell closes, the wall faces
+/// became interior faces between a fluid and a solid cell (no wall
+/// boundary left), the solid cells are in the zone named by the body, and
+/// the solid volume converges to the sphere's.
+#[test]
+fn sphere_cut_both_ways_fills_the_box() {
+    use foehncraft_mesh::cut::cut_both;
+    let r = 0.55;
+    for kind in [Kind::Hex, Kind::Tet, Kind::Poly] {
+        let mut es = Vec::new();
+        for n in [8, 16, 32] {
+            let m = box_mesh(kind, n);
+            let body = Sphere {
+                centre: [0.03, -0.02, 0.01],
+                radius: r,
+                exact: true,
+            };
+            let opt = CutOptions {
+                min_fraction: 0.3,
+                wall_point: true,
+                face_point: true,
+            };
+            let c = cut_both(&m, &body, &names(), &[true], &opt)
+                .unwrap_or_else(|e| panic!("{kind:?} n={n}: {e}"));
+            if let Err(e) = c.mesh.validate() {
+                panic!("{kind:?} n={n}: {e} (fluid cells {})", c.n_fluid);
+            }
+            let rep = &c.report;
+            assert!(rep.max_closure < 1e-12, "{kind:?} n={n}: {rep:?}");
+            assert_eq!(rep.bad_faces, 0, "{kind:?} n={n}: {rep:?}");
+            assert!(c.mesh.boundary("body").is_none(), "{kind:?} n={n}");
+            let g = Geometry::compute(&c.mesh);
+            // on polyhedra (non-planar faces) the solid side has flat
+            // slivers of three faces that find no solid neighbour (the
+            // flow refuses the body then): a gap of the polyhedral cut
+            if kind != Kind::Poly {
+                assert_eq!(rep.solid_merge_failed, 0, "{kind:?} n={n}: {rep:?}");
+                assert!(g.cell_volume.iter().all(|&v| v > 0.0));
+            }
+            // the cell volumes of non-planar faces (fans about the face
+            // centroid) differ from the divergence form by up to ~1e-9 of a
+            // cell, on the fluid side as well: the sum is the box to 1e-10
+            let total: f64 = g.cell_volume.iter().sum();
+            assert!((total - 8.0).abs() < 1e-10 * 8.0, "{kind:?} n={n}: {total}");
+            let zone = c.mesh.zones.iter().position(|z| z == "body").unwrap() as u32;
+            let nf = c.n_fluid;
+            assert!(c.mesh.cell_zone[..nf].iter().all(|&z| z != zone));
+            assert!(c.mesh.cell_zone[nf..].iter().all(|&z| z == zone));
+            assert_eq!(rep.solid_cells, c.mesh.n_cells - nf);
+            // interface faces: area equals the wall area of the fluid
+            let mut area = 0.0;
+            for f in 0..c.mesh.n_interior_faces() {
+                let (a, b) = (c.mesh.owner[f] as usize, c.mesh.neighbour[f] as usize);
+                if (a < nf) != (b < nf) {
+                    area += foehncraft_mesh::geometry::norm(g.face_area[f]);
+                }
+            }
+            assert!(
+                (area - rep.wall_area[0]).abs() < 1e-12 * area,
+                "{kind:?} n={n}: {area} {}",
+                rep.wall_area[0]
+            );
+            let vs = 4.0 / 3.0 * PI * r * r * r;
+            assert!((rep.solid_volume[0] + rep.fluid_volume - 8.0).abs() < 1e-10 * 8.0);
+            es.push((rep.solid_volume[0] - vs).abs() / vs);
+        }
+        for i in 1..es.len() {
+            let p = (es[i - 1] / es[i]).log2();
+            assert!(p > 1.6, "{kind:?}: solid volume order {p} ({es:?})");
+        }
+    }
+}
+
+/// A slab cut both ways: flat faces, so the solid volume is exact.
+#[test]
+fn slab_cut_both_ways_is_exact() {
+    use foehncraft_mesh::cut::cut_both;
+    let m = box_mesh(Kind::Hex, 16);
+    let opt = CutOptions {
+        min_fraction: 0.3,
+        ..Default::default()
+    };
+    let slab = Slab { x0: 0.03, w: 0.6 };
+    let c = cut_both(&m, &slab, &names(), &[true], &opt).unwrap();
+    c.mesh.validate().unwrap();
+    assert_eq!(c.report.solid_merge_failed, 0, "{:?}", c.report);
+    assert!(
+        (c.report.solid_volume[0] - 0.6 * 4.0).abs() < 1e-12,
+        "{:?}",
+        c.report
+    );
+    assert!(
+        (c.report.fluid_volume - 1.4 * 4.0).abs() < 1e-12,
+        "{:?}",
+        c.report
+    );
+}

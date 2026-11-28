@@ -377,11 +377,13 @@ fn cut_settings_are_refused() {
         )),
         "IMM201"
     );
+    // a body kept as a solid region needs the energy equation (the region
+    // check comes first: REG001)
     let regions = base.replace(
         "[immersed]",
-        "[regions.solid]\nmaterial = \"steel\"\n\n[immersed]",
+        "[regions.lower]\nkind = \"solid\"\nzones = [\"lower\"]\nmaterial = \"steel\"\n\n[immersed]",
     );
-    assert_eq!(refused(&regions), "IMM202");
+    assert_eq!(refused(&regions), "REG001");
 }
 
 /// K = F/(6π μ a U) of the sphere array (a = 0.2 m, μ = 1 Pa s, ρ = 1,
@@ -487,4 +489,367 @@ fn stl_body_settings_are_refused() {
     let _ = std::fs::remove_dir_all(&dir);
     assert_eq!(empty, "CASE006");
     assert_eq!(nan, "CASE006");
+}
+
+/// The tilted turbulent plate of `immersed_cut_plate_keps.toml` on cells
+/// twice as large (2 mm at the wall, 75 × 65), with and without the sample
+/// cell of the wall function (L13 stage 2c): the cut cells along the plate
+/// take every fraction, so their own velocities scatter the wall shear
+/// stress; the sampled wall function stays close to White's correlation
+/// and scatters much less. Returns the mean of C_f/C_f,White − 1 over
+/// 0.8 < s < 1.15 and the relative standard deviation of C_f there.
+fn cut_plate(sample: bool) -> (f64, f64) {
+    let text = text("immersed_cut_plate_keps.toml")
+        .replace("cells = [150, 130, 1]", "cells = [75, 115, 1]")
+        .replace(
+            "{ to = 1.0, cells = 30, ratio = 142.27 }",
+            "{ to = 1.0, cells = 15, ratio = 302.14 }",
+        )
+        .replace("max_iterations = 2000", "max_iterations = 1500")
+        .replace("vtkhdf = true", "vtkhdf = false")
+        .replace(
+            "method = \"cut\"\n",
+            &format!("method = \"cut\"\n[immersed.cut]\nwall_sample = {sample}\n"),
+        );
+    let case = parse(&text);
+    let name = format!("cutplate{sample}");
+    let dir = out(&name);
+    let rep = run(&case, &name, &dir, |_| {}).unwrap();
+    // the k residual stalls near 1e-3 at the leading edge (the inlet), the
+    // skin friction downstream is settled: judged by C_f, not by residuals
+    assert!(
+        rep.failures.iter().all(|f| f.contains("not converged")),
+        "{:?}",
+        rep.failures
+    );
+    // LIM011: the y+ range of the cut wall
+    let lim = foehncraft_flow::limitations::of_run(&case, &rep);
+    let y = lim
+        .iter()
+        .find(|l| l.code == diag::LIM_CUT_WALL)
+        .expect("LIM011");
+    assert!(
+        y.message.contains("`plate`") && y.message.contains("y⁺"),
+        "{}",
+        y.message
+    );
+    let csv = std::fs::read_to_string(dir.join("wall_plate.csv")).unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+    let mut lines = csv.lines().filter(|l| !l.starts_with('#'));
+    let head: Vec<&str> = lines.next().unwrap().split(',').collect();
+    let col = |n: &str| head.iter().position(|h| *h == n).unwrap();
+    let (cx, cu) = (col("x"), col("u_tau"));
+    let cos = 2f64.to_radians().cos();
+    let (mut rel, mut cf) = (Vec::new(), Vec::new());
+    for l in lines {
+        let v: Vec<f64> = l.split(',').map(|x| x.parse().unwrap()).collect();
+        let s = v[cx] / cos;
+        if !(0.8..1.15).contains(&s) {
+            continue;
+        }
+        let c = 2.0 * v[cu] * v[cu];
+        let white = 0.455 / (0.06 * s / 2e-7f64).ln().powi(2);
+        rel.push(c / white - 1.0);
+        cf.push(c);
+    }
+    let n = rel.len() as f64;
+    let mean = rel.iter().sum::<f64>() / n;
+    let m = cf.iter().sum::<f64>() / n;
+    let sd = (cf.iter().map(|c| (c - m) * (c - m)).sum::<f64>() / n).sqrt() / m;
+    (mean, sd)
+}
+
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn cut_plate_wall_function_samples_one_layer_out() {
+    let (mean_s, sd_s) = cut_plate(true);
+    let (mean_c, sd_c) = cut_plate(false);
+    eprintln!(
+        "tilted cut plate: sampled C_f {:+.1} % (scatter {:.1} %), cut cell itself {:+.1} % \
+         (scatter {:.1} %)",
+        100.0 * mean_s,
+        100.0 * sd_s,
+        100.0 * mean_c,
+        100.0 * sd_c
+    );
+    assert!(mean_s.abs() < 0.08, "{mean_s}");
+    assert!(sd_s < 0.6 * sd_c, "{sd_s} {sd_c}");
+}
+
+/// The concentric-cylinder case of L13 stage 2d with the conductivity of
+/// the solid `ks`, on `levels` (20, 40, 80 cells across).
+fn cut_cylinder_cht(ks: f64, extra: &str) -> String {
+    text("immersed_cut_cylinder_cht.toml")
+        .replace("ks = 90.0", &format!("ks = {ks:?}"))
+        .replace("conductivity = 90.0", &format!("conductivity = {ks:?}"))
+        .replace("[verification]\n", &format!("[verification]\n{extra}"))
+        .replace("[output]\n", "[output]\nvtkhdf = false\n")
+}
+
+/// A heated solid cylinder cut out of a box mesh and kept as a solid
+/// region (L13 stage 2d, D229): the cut cells of both sides share each cut
+/// face, the interface carries the series conductance, and the temperature
+/// converges at second order to the concentric-cylinder solution for the
+/// conductivity ratios 9 and 900 (measured 2.17 and 1.97 on both); the heat
+/// made in the solid leaves through the box walls to round-off (one flux
+/// per interface face, so the interface passes the flux unchanged).
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn cut_cylinder_cht_converges_at_second_order() {
+    // q π R² × depth
+    let power = 1000.0 * std::f64::consts::PI * 0.25 * 0.25 * 0.05;
+    for ks in [9.0, 900.0] {
+        let rep = run_case(
+            &parse(&cut_cylinder_cht(ks, "levels = [0, 1, 2]\n")),
+            &format!("cutcht{ks}"),
+        );
+        assert!(rep.failures.is_empty(), "{:?}", rep.failures);
+        let (_, orders) = &rep.scalar_orders[0];
+        let l2: Vec<f64> = rep
+            .solves
+            .iter()
+            .map(|s| s.scalars[0].l2.unwrap())
+            .collect();
+        eprintln!("cut cylinder CHT, k ratio {ks}: L2 {l2:?}, orders {orders:?}");
+        for o in orders {
+            assert!((1.85..=2.3).contains(o), "k ratio {ks}: orders {orders:?}");
+        }
+        assert!(l2[2] < 0.008, "k ratio {ks}: {l2:?}");
+        for s in &rep.solves {
+            let e = s.scalars[0].energy.as_ref().unwrap();
+            let imbalance = e.source + e.conduction + e.convection;
+            assert!(imbalance.abs() < 1e-9 * e.source, "{e:?}");
+        }
+        let e = rep.solves[2].scalars[0].energy.as_ref().unwrap();
+        // the solid volume of the cut: -0.01 % on 80 cells across
+        assert!(
+            (e.source / power - 1.0).abs() < 1e-3,
+            "{} {power}",
+            e.source
+        );
+    }
+}
+
+/// A body kept as a solid region must be about two cells thick (owner
+/// decision Q4): a pin of 2.4 cells across is refused with IMM205, which
+/// points to the thin wall of D189.
+#[test]
+fn thin_cut_solids_are_refused() {
+    let t = cut_cylinder_cht(90.0, "").replace("radius = 0.25", "radius = 0.06");
+    assert_eq!(refused(&t), "IMM205");
+}
+
+/// Taylor–Couette flow with both cylinders cut out of a plain box mesh
+/// (L13 stage 2e): the inner cylinder turns with `omega`, the outer one is
+/// an inverted body. The velocity converges at second order to the exact
+/// u_θ = A r + B / r, and the torque of the fluid on each cylinder to the
+/// exact 4π μ ω r1² r2² L / (r2² − r1²), equal and opposite.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn cut_taylor_couette_converges_with_the_torque() {
+    // two levels (44 and 88 cells across); the case file runs three
+    let t = text("immersed_cut_taylor_couette.toml")
+        .replace("levels = [0, 1, 2]", "levels = [0, 1]")
+        .replace("[output]\n", "[output]\nvtkhdf = false\n");
+    let rep = run_case(&parse(&t), "cuttc");
+    assert!(rep.failures.is_empty(), "{:?}", rep.failures);
+    let (r1, r2, w, mu, l) = (0.05f64, 0.10f64, 10.0, 5e-4, 0.01);
+    let exact = 4.0 * std::f64::consts::PI * mu * w * r1 * r1 * r2 * r2 * l / (r2 * r2 - r1 * r1);
+    let torque = |s: &foehncraft_flow::case::Solve, name: &str| {
+        s.boundaries
+            .iter()
+            .find(|b| b.name == name)
+            .and_then(|b| b.torque)
+            .unwrap()
+    };
+    let mut err = Vec::new();
+    for s in &rep.solves {
+        let (ti, to) = (torque(s, "inner"), torque(s, "outer"));
+        // the fluid holds the inner cylinder back and drags the outer one
+        err.push((-ti / exact - 1.0, to / exact - 1.0));
+    }
+    eprintln!(
+        "cut Taylor-Couette: velocity orders {:?}, torque errors (inner, outer) {err:?}",
+        rep.orders
+    );
+    // measured: order 2.11; torque +5.1 % and +0.97 % (inner), -0.73 % and
+    // -0.11 % (outer); 176 cells across: +0.23 %, -0.04 %
+    for o in &rep.orders {
+        assert!(*o > 1.8, "orders {:?}", rep.orders);
+    }
+    let (ei, eo) = err[1];
+    assert!(ei.abs() < 0.015 && eo.abs() < 0.005, "{err:?}");
+    assert!(err[1].0.abs() < 0.3 * err[0].0.abs(), "{err:?}");
+}
+
+/// The blown cylinder (L13 stage 2e) on a coarse mesh: the two solids of
+/// its ASCII STL file become the boundaries `cylinder-slot` and
+/// `cylinder-wall`, the slot covers its arc of the mantle, and the flow it
+/// blows in leaves through the outlet (the mass balance closes).
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn stl_patches_carry_their_own_conditions() {
+    let t = text("immersed_cut_blown_cylinder.toml")
+        .replace("cells = [440, 82, 1]", "cells = [220, 41, 1]")
+        .replace("[output]\n", "[output]\nvtkhdf = false\n")
+        .replace("wall_csv = true", "wall_csv = false");
+    let rep = run_case(&parse(&t), "blown");
+    assert!(rep.failures.is_empty(), "{:?}", rep.failures);
+    let s = &rep.solves[0];
+    let b = |n: &str| s.boundaries.iter().find(|b| b.name == n).unwrap();
+    // the arc from 45° to 75° of a cylinder of radius 0.05 m, 0.01 m deep
+    let arc = 0.05 * std::f64::consts::PI / 6.0 * 0.01;
+    let (slot, wall) = (b("cylinder-slot"), b("cylinder-wall"));
+    eprintln!(
+        "blown cylinder: slot {:.4e} m² (arc {arc:.4e}), wall {:.4e} m², slot flow {:.4e} kg/s",
+        slot.area, wall.area, slot.mass_flow
+    );
+    assert!((slot.area / arc - 1.0).abs() < 0.1, "{} {arc}", slot.area);
+    assert!(
+        ((slot.area + wall.area) / (2.0 * std::f64::consts::PI * 0.05 * 0.01) - 1.0).abs() < 0.01,
+        "{} {}",
+        slot.area,
+        wall.area
+    );
+    // into the domain: 0.4 m/s over the slot faces
+    assert!((-slot.mass_flow / (0.4 * slot.area) - 1.0).abs() < 1e-9);
+    let net: f64 = s.boundaries.iter().map(|b| b.mass_flow).sum();
+    assert!(net.abs() < 1e-9 * b("xmax").mass_flow, "net {net}");
+}
+
+#[test]
+fn patch_and_motion_settings_are_refused() {
+    let tc = text("immersed_cut_taylor_couette.toml");
+    // `invert` on an STL body, `patches` on a primitive, `omega` with a
+    // penalised body, `omega` and a wall velocity at once
+    let stl = text("immersed_cut_blown_cylinder.toml");
+    assert_eq!(
+        refused(&stl.replace(
+            "\npatches = \"solids\"\n",
+            "\npatches = \"solids\"\ninvert = true\n"
+        )),
+        "IMM101"
+    );
+    assert_eq!(
+        refused(&tc.replace(
+            "\ninvert = true\n",
+            "\ninvert = true\npatches = \"solids\"\n"
+        )),
+        "IMM101"
+    );
+    assert_eq!(
+        refused(
+            &tc.replace("method = \"cut\"", "permeability = 1e-8")
+                .replace(
+                    "[boundary.inner]\ntype = \"wall\"\n[boundary.outer]\ntype = \"wall\"\n",
+                    ""
+                )
+        ),
+        "IMM101"
+    );
+    assert_eq!(
+        refused(&tc.replace(
+            "[boundary.inner]\ntype = \"wall\"\n",
+            "[boundary.inner]\ntype = \"wall\"\nvelocity = [\"-10 * y\", \"10 * x\", 0.0]\n"
+        )),
+        "IMM101"
+    );
+    // a binary file has attribute tags, not solids
+    let bin = std::env::temp_dir().join(format!("foehncraft_bin_{}.stl", std::process::id()));
+    let tris =
+        foehncraft_mesh::format::stl::read(&cases().join("immersed_blown_cylinder.stl")).unwrap();
+    std::fs::write(&bin, foehncraft_mesh::format::stl::to_binary(&tris)).unwrap();
+    let b = stl.replace(
+        "file = \"immersed_blown_cylinder.stl\"",
+        &format!("file = {:?}", bin.display().to_string()),
+    );
+    assert_eq!(refused(&b), "IMM101");
+    // ... and two patches may not share a tag
+    assert_eq!(
+        refused(&b.replace(
+            "\npatches = \"solids\"\n",
+            "\npatches = { slot = 1, wall = 1 }\n"
+        )),
+        "IMM101"
+    );
+    let _ = std::fs::remove_file(&bin);
+    // an ASCII file has solids, not attribute tags
+    assert_eq!(
+        refused(&stl.replace(
+            "\npatches = \"solids\"\n",
+            "\npatches = { slot = 1, wall = 0 }\n"
+        )),
+        "IMM101"
+    );
+    // a body kept as a solid region neither turns nor has patches
+    assert_eq!(
+        refused(
+            &cut_cylinder_cht(90.0, "").replace("radius = 0.25\n", "radius = 0.25\nomega = 1.0\n")
+        ),
+        "IMM202"
+    );
+}
+
+/// Heat conduction across hanging-node faces (L13 stage 2f): the
+/// manufactured solution on a perturbed box mesh refined twice near a cut
+/// body of the fluid's own material converges at second order (measured
+/// 2.04 and 1.99 from the cell counts), the refined region the same in
+/// metres on every level.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn refined_mms_converges_at_second_order() {
+    let t = text("immersed_refine_mms.toml");
+    let rep = run_case(&parse(&t), "refmms");
+    assert!(rep.failures.is_empty(), "{:?}", rep.failures);
+    let (_, orders) = &rep.scalar_orders[0];
+    eprintln!("refined MMS: orders {orders:?}");
+    for o in orders {
+        assert!((1.85..2.3).contains(o), "{orders:?}");
+    }
+    for s in &rep.solves {
+        assert!(s.mesh.contains("near-body refinement"), "{}", s.mesh);
+        assert!(s.mesh.contains("2:1 balance"), "{}", s.mesh);
+    }
+    // the refinement is the same on every run
+    let again = run_case(&parse(&t), "refmms2");
+    for (a, b) in rep.solves.iter().zip(&again.solves) {
+        assert_eq!(a.mesh_hash, b.mesh_hash);
+    }
+}
+
+/// The Schäfer–Turek cylinder on a D/10 box mesh refined twice near the
+/// cylinder (L13 stage 2f): drag, lift and pressure difference in the
+/// reference ranges with a seventh of the cells of the uniform D/40 mesh.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn refined_cylinder_reaches_the_reference() {
+    let t = text("immersed_refine_cylinder_re20.toml")
+        .replace("[output]\n", "[output]\nvtkhdf = false\n");
+    let rep = run_case(&parse(&t), "refcyl");
+    // the case fails beyond 5 % of the range midpoint from any range
+    assert!(rep.failures.is_empty(), "{:?}", rep.failures);
+    let s = &rep.solves[0];
+    let b = s.benchmark.as_ref().unwrap();
+    let v: Vec<f64> = b.values.iter().map(|x| x.value).collect();
+    eprintln!("refined cylinder: {} cells, C_D, C_L, Δp {v:?}", s.cells);
+    assert!(s.cells < 25_000, "{}", s.cells);
+    // measured 5.593, 0.01063, 0.1171: C_L in its range, C_D 0.06 % above
+    // and Δp 0.08 % below theirs
+    assert!(b.values[0].deviation < 0.002, "C_D {}", v[0]);
+    assert_eq!(b.values[1].deviation, 0.0, "C_L {}", v[1]);
+    assert!(b.values[2].deviation < 0.002, "Δp {}", v[2]);
+}
+
+#[test]
+fn refine_settings_are_refused() {
+    let t = text("immersed_refine_mms.toml");
+    for (from, to) in [
+        ("levels = 2\n", "levels = 0\n"),
+        ("levels = 2\n", "levels = 7\n"),
+        ("distance = 0.0625\n", "distance = -1.0\n"),
+        ("distance = 0.0625\n", "distance = 0.0625\nlayers = 4\n"),
+        ("distance = 0.0625\n", "layers = 0.5\n"),
+    ] {
+        assert_eq!(refused(&t.replace(from, to)), "IMM101", "{to}");
+    }
 }
