@@ -45,6 +45,9 @@ DNF_PACKAGES="python3-numpy python3-matplotlib python3-h5py python3-gmsh"
 # Libraries the pip gmsh module loads on Linux (else: OSError libGLU.so.1).
 APT_GMSH_LIBS="libglu1-mesa libxcursor1 libxft2 libxinerama1 libgomp1"
 DNF_GMSH_LIBS="mesa-libGLU libXcursor libXft libXinerama libgomp"
+# Libraries the programs themselves need at run time (none for Foehncraft).
+APT_RUNTIME=""
+DNF_RUNTIME=""
 # ----------------------------------------------------------------------------
 
 VERSION=latest
@@ -281,6 +284,12 @@ sys_install() { # packages...
   fi
 }
 
+# shellcheck disable=SC2086
+case "$pkg_tool" in
+  apt) sys_install $APT_RUNTIME ;;
+  dnf) sys_install $DNF_RUNTIME ;;
+esac
+
 case "$PYTHON_MODE" in
   venv)
     need "$PYTHON_EXE"
@@ -412,11 +421,15 @@ run chmod -R a+rX "$DEST" "$PREFIX/modulefiles" "$PREFIX/use.sh"
 say "check: $CHECK"
 if [ "$DRY" = 0 ]; then
   # shellcheck disable=SC1091
-  ( . "$DEST/env.sh"; $CHECK ) || {
+  ( . "$DEST/env.sh"; $CHECK > /dev/null ) && say "check ok" || {
     echo "install-shared: '$CHECK' failed. If the message names GLIBC, this Linux is older than the" >&2
     echo "  release build supports: install with --build instead (docs/install.md)." >&2
     exit 1; }
-  if [ "$PYTHON_MODE" != none ] && case " $PIP_PACKAGES " in *" gmsh "*) true ;; *) false ;; esac; then
+  gmsh_py=0
+  case "$PYTHON_MODE: $PIP_PACKAGES $APT_PACKAGES " in
+    "venv:"*" gmsh "*|"system:"*" python3-gmsh "*) gmsh_py=1 ;;
+  esac
+  if [ "$gmsh_py" = 1 ]; then
     py="$PYTHON_EXE"; [ "$PYTHON_MODE" = venv ] && py="$DEST/venv/bin/python"
     "$py" -c 'import gmsh; gmsh.initialize(); print("gmsh", gmsh.__version__); gmsh.finalize()' \
       || say "Python gmsh does not import yet (see the messages above)"
