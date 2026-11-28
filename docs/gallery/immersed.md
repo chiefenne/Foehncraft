@@ -12,6 +12,7 @@ Part of the [Example gallery](../gallery.md): bodies in the flow without a body-
 | 322 | [STL bodies cut out of a mesh: sharp edges, face points and the Stokes sphere array](#stl-cut) | L13 stage 2 | `shape = "stl"` (`file`, `scale`), `[immersed.cut] face_point`, dual-contouring wall points on sharp edges, the per-cell fallback, STL cut benchmark against the exact moments |
 | 357 | [A turbulent plate tilted against the mesh: wall functions on cut cells](#cut-plate) | L13 stage 2c | `shape = "plane"` (`normal`), wall functions with the exact first-cell distance, `[immersed.cut] wall_sample`, y⁺ per body (LIM011) |
 | 359 | [A heated pin cut out of a box mesh: conjugate heat transfer through cut cells](#cut-cht) | L13 stage 2d | `[regions.<name>] zones = ["<body>"]` on a cut body, solid cut cells, the cut faces as region interface, thin solids refused (IMM205) |
+| MMM | [A cylinder that blows through a slot, and Taylor–Couette flow cut out of a box: conditions on cut bodies](#cut-patches) | L13 stage 2e | `patches` of an STL body (ASCII solids, binary attribute tags), `[boundary.<body>-<patch>]`, `omega` (turning wall, torque), `invert` |
 
 ---
 
@@ -854,3 +855,97 @@ python3 -m tools.plot.immersed_cut_cht docs/figures/gallery output/cut_pin outpu
 Recipe: [359](../recipes/immersed.md#cut-cht). Case files:
 `examples/cases/flow/immersed_cut_pin_cht.toml`,
 `examples/cases/flow/immersed_cut_cylinder_cht.toml`.
+
+---
+
+<a id="cut-patches"></a>
+## MMM. A cylinder that blows through a slot, and Taylor–Couette flow cut out of a box: conditions on cut bodies
+
+<img src="../figures/gallery/immersed_cut_patches.png" alt="Four panels. Top left: the speed in the first metre of a channel, blue at the walls and red in the middle, around a grey cylinder near the inlet; a short red arc on its upper rear side marks the blowing slot, from which a thin jet bends downstream, and the wake behind the cylinder is wide and blue. Top right: a zoom on the upper rear quarter of the cylinder, square cells coloured by speed ending at the curved wall, the wall drawn black and the slot part of it drawn red. Bottom left: the azimuthal velocity over the inner cylinder speed against the radius from 0.05 to 0.1 metres, red dots of every cell on the falling black exact curve. Bottom right: relative errors against the cells across the box on log axes: the velocity error falls parallel to a dashed second-order line, the torque errors of the inner and the outer cylinder fall below it." width="1400" height="900">
+
+The wall of a cut body is an ordinary boundary (D227), so it takes every
+condition of D29. L13 stage 2e gives it three things:
+
+- **Named surface patches.** `patches = "solids"` splits the wall of an STL
+  body by the solids of its ASCII file, `patches = { inlet = 1, … }` by the
+  16-bit attribute of the triangles of a binary file. Each patch becomes a
+  boundary `<body>-<patch>` with its own `[boundary.<body>-<patch>]`; every
+  cut face takes the patch of the triangle closest to its centroid, so a
+  patch edge is resolved to the cell size.
+- **A turning wall.** `omega` turns the wall of a body rigidly about its
+  axis: every face moves with ω × (x − centre), and the summary of every
+  wall of the body gives its torque about the axis (`omega = 0` for a body
+  at rest). The torque takes the transposed viscous stress of the rigid
+  motion, μ ω × S, exactly: from the gradient of the cut cells the torque
+  of the turning cylinder below stayed 2.8 % off on every mesh.
+- **Inverted bodies.** `invert = true` keeps the fluid inside a cylinder,
+  sphere or box and cuts away the rest: a pipe or the outer cylinder of a
+  gap in a box mesh. Mesh boundaries that end up inside the solid are left
+  out (they need no condition).
+
+**A cylinder that blows through a slot** (`immersed_cut_blown_cylinder.toml`,
+top): the Schäfer–Turek channel of [gallery 313](#cut-cylinder) (Re 20, the
+plain box mesh of 440 × 82 cells), the cylinder an STL file in two solids,
+`slot` (the mantle from 45° to 75°) and `wall`. The slot is a velocity inlet
+of 0.4 m/s normal to the surface, the rest a no-slip wall. The cut gives the
+slot 40 faces of 2.661·10⁻⁴ m² (+1.6 % on the exact arc: the cells at its
+two edges go whole to one patch), the wall 400 faces; the flow converges in
+1 572 iterations and the 1.064·10⁻⁴ kg/s blown in leave through the outlet
+with the channel flow to 7·10⁻¹⁷ kg/s. The jet bends with the flow and
+lifts the wake: C_D = 6.71 and C_L = −2.70 (the same cut cylinder without
+the slot: 5.59 and 0.010).
+
+**Taylor–Couette flow with both cylinders cut** (`immersed_cut_taylor_couette.toml`,
+bottom): the gap of `taylor_couette_mrf.toml` (r₁ = 0.05 m turning at
+10 rad/s, r₂ = 0.10 m at rest, Re = 50) in a square box mesh that knows
+neither cylinder: the inner one a body with `omega = 10`, the outer one a
+cylinder with `invert = true` and `omega = 0` (for its torque). Both walls
+cross the cells at every angle.
+
+| Cells across the box | 44 | 88 | 176 |
+|---|---|---|---|
+| Velocity L2 error (relative) | 1.36·10⁻² | 3.22·10⁻³ | 7.16·10⁻⁴ |
+| Order | | 2.11 | 2.19 |
+| Torque on the inner cylinder | +5.1 % | +0.97 % | +0.23 % |
+| Torque on the outer cylinder | −0.73 % | −0.11 % | −0.036 % |
+
+against the exact u_θ = A r + B / r and the exact torque
+4π μ ω r₁² r₂² L / (r₂² − r₁²) = 2.094·10⁻⁶ N m. The velocity is second
+order, the torques converge at second order and to each other (the angular
+momentum of the gap balances).
+
+**Benchmark with the computer-graphics methods (maintainer rule).** The
+patch of a cut face is a closest-point query on the triangle hierarchy of
+the surface (D108), the same query as the exact wall distance of
+[gallery 357](#cut-plate); the alternative of mesh-processing tools,
+transferring the triangle labels by the majority area of the clipped
+surface in each cell, gives the same faces wherever a cell sees one patch
+and differs only in the cells a patch edge crosses (not measured here: the
+two choices differ in a few faces per patch edge). Those cells hold one
+face per cell and body in 2D (the wall loop is one face), so the patch edge
+is resolved to the cell size either way; splitting the wall face of a cell
+along the patch edge would make it exact and is not built.
+
+**What is not here yet.** A wall face of a cut cell is not split along a
+patch edge (the slot area is 1.6 % off here). `omega` turns the wall, not the
+body: the cut stays where it is, which is exact for bodies of revolution
+about their axis; rigid motion of the body itself is stage 5 (L4). A body
+kept as a solid region (stage 2d) cannot turn or have patches. `invert` is
+for the primitive shapes; an STL surface is inverted in its file. One rank
+only.
+
+Reproduce (each run a few minutes on 4 cores):
+
+```sh
+cargo build --release -p foehncraft-cli
+target/release/foehn flow examples/cases/flow/immersed_cut_blown_cylinder.toml --out output/cut_blown
+target/release/foehn flow examples/cases/flow/immersed_cut_taylor_couette.toml --out output/cut_tc
+pip install matplotlib h5py numpy
+python3 -m tools.plot.immersed_cut_patches docs/figures/gallery output/cut_blown output/cut_tc
+```
+
+The STL file is written by `python3 -m tools.mesh.blown_cylinder_stl
+examples/cases/flow/immersed_blown_cylinder.stl`. Recipe:
+[MMM](../recipes/immersed.md#cut-patches). Case files:
+`examples/cases/flow/immersed_cut_blown_cylinder.toml`,
+`examples/cases/flow/immersed_cut_taylor_couette.toml`.

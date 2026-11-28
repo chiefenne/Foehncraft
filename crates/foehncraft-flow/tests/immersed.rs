@@ -638,3 +638,154 @@ fn thin_cut_solids_are_refused() {
     let t = cut_cylinder_cht(90.0, "").replace("radius = 0.25", "radius = 0.06");
     assert_eq!(refused(&t), "IMM205");
 }
+
+/// Taylor–Couette flow with both cylinders cut out of a plain box mesh
+/// (L13 stage 2e): the inner cylinder turns with `omega`, the outer one is
+/// an inverted body. The velocity converges at second order to the exact
+/// u_θ = A r + B / r, and the torque of the fluid on each cylinder to the
+/// exact 4π μ ω r1² r2² L / (r2² − r1²), equal and opposite.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn cut_taylor_couette_converges_with_the_torque() {
+    // two levels (44 and 88 cells across); the case file runs three
+    let t = text("immersed_cut_taylor_couette.toml")
+        .replace("levels = [0, 1, 2]", "levels = [0, 1]")
+        .replace("[output]\n", "[output]\nvtkhdf = false\n");
+    let rep = run_case(&parse(&t), "cuttc");
+    assert!(rep.failures.is_empty(), "{:?}", rep.failures);
+    let (r1, r2, w, mu, l) = (0.05f64, 0.10f64, 10.0, 5e-4, 0.01);
+    let exact = 4.0 * std::f64::consts::PI * mu * w * r1 * r1 * r2 * r2 * l / (r2 * r2 - r1 * r1);
+    let torque = |s: &foehncraft_flow::case::Solve, name: &str| {
+        s.boundaries
+            .iter()
+            .find(|b| b.name == name)
+            .and_then(|b| b.torque)
+            .unwrap()
+    };
+    let mut err = Vec::new();
+    for s in &rep.solves {
+        let (ti, to) = (torque(s, "inner"), torque(s, "outer"));
+        // the fluid holds the inner cylinder back and drags the outer one
+        err.push((-ti / exact - 1.0, to / exact - 1.0));
+    }
+    eprintln!(
+        "cut Taylor-Couette: velocity orders {:?}, torque errors (inner, outer) {err:?}",
+        rep.orders
+    );
+    // measured: order 2.11; torque +5.1 % and +0.97 % (inner), -0.73 % and
+    // -0.11 % (outer); 176 cells across: +0.23 %, -0.04 %
+    for o in &rep.orders {
+        assert!(*o > 1.8, "orders {:?}", rep.orders);
+    }
+    let (ei, eo) = err[1];
+    assert!(ei.abs() < 0.015 && eo.abs() < 0.005, "{err:?}");
+    assert!(err[1].0.abs() < 0.3 * err[0].0.abs(), "{err:?}");
+}
+
+/// The blown cylinder (L13 stage 2e) on a coarse mesh: the two solids of
+/// its ASCII STL file become the boundaries `cylinder-slot` and
+/// `cylinder-wall`, the slot covers its arc of the mantle, and the flow it
+/// blows in leaves through the outlet (the mass balance closes).
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn stl_patches_carry_their_own_conditions() {
+    let t = text("immersed_cut_blown_cylinder.toml")
+        .replace("cells = [440, 82, 1]", "cells = [220, 41, 1]")
+        .replace("[output]\n", "[output]\nvtkhdf = false\n")
+        .replace("wall_csv = true", "wall_csv = false");
+    let rep = run_case(&parse(&t), "blown");
+    assert!(rep.failures.is_empty(), "{:?}", rep.failures);
+    let s = &rep.solves[0];
+    let b = |n: &str| s.boundaries.iter().find(|b| b.name == n).unwrap();
+    // the arc from 45° to 75° of a cylinder of radius 0.05 m, 0.01 m deep
+    let arc = 0.05 * std::f64::consts::PI / 6.0 * 0.01;
+    let (slot, wall) = (b("cylinder-slot"), b("cylinder-wall"));
+    eprintln!(
+        "blown cylinder: slot {:.4e} m² (arc {arc:.4e}), wall {:.4e} m², slot flow {:.4e} kg/s",
+        slot.area, wall.area, slot.mass_flow
+    );
+    assert!((slot.area / arc - 1.0).abs() < 0.1, "{} {arc}", slot.area);
+    assert!(
+        ((slot.area + wall.area) / (2.0 * std::f64::consts::PI * 0.05 * 0.01) - 1.0).abs() < 0.01,
+        "{} {}",
+        slot.area,
+        wall.area
+    );
+    // into the domain: 0.4 m/s over the slot faces
+    assert!((-slot.mass_flow / (0.4 * slot.area) - 1.0).abs() < 1e-9);
+    let net: f64 = s.boundaries.iter().map(|b| b.mass_flow).sum();
+    assert!(net.abs() < 1e-9 * b("xmax").mass_flow, "net {net}");
+}
+
+#[test]
+fn patch_and_motion_settings_are_refused() {
+    let tc = text("immersed_cut_taylor_couette.toml");
+    // `invert` on an STL body, `patches` on a primitive, `omega` with a
+    // penalised body, `omega` and a wall velocity at once
+    let stl = text("immersed_cut_blown_cylinder.toml");
+    assert_eq!(
+        refused(&stl.replace(
+            "\npatches = \"solids\"\n",
+            "\npatches = \"solids\"\ninvert = true\n"
+        )),
+        "IMM101"
+    );
+    assert_eq!(
+        refused(&tc.replace(
+            "\ninvert = true\n",
+            "\ninvert = true\npatches = \"solids\"\n"
+        )),
+        "IMM101"
+    );
+    assert_eq!(
+        refused(
+            &tc.replace("method = \"cut\"", "permeability = 1e-8")
+                .replace(
+                    "[boundary.inner]\ntype = \"wall\"\n[boundary.outer]\ntype = \"wall\"\n",
+                    ""
+                )
+        ),
+        "IMM101"
+    );
+    assert_eq!(
+        refused(&tc.replace(
+            "[boundary.inner]\ntype = \"wall\"\n",
+            "[boundary.inner]\ntype = \"wall\"\nvelocity = [\"-10 * y\", \"10 * x\", 0.0]\n"
+        )),
+        "IMM101"
+    );
+    // a binary file has attribute tags, not solids
+    let bin = std::env::temp_dir().join(format!("foehncraft_bin_{}.stl", std::process::id()));
+    let tris =
+        foehncraft_mesh::format::stl::read(&cases().join("immersed_blown_cylinder.stl")).unwrap();
+    std::fs::write(&bin, foehncraft_mesh::format::stl::to_binary(&tris)).unwrap();
+    let b = stl.replace(
+        "file = \"immersed_blown_cylinder.stl\"",
+        &format!("file = {:?}", bin.display().to_string()),
+    );
+    assert_eq!(refused(&b), "IMM101");
+    // ... and two patches may not share a tag
+    assert_eq!(
+        refused(&b.replace(
+            "\npatches = \"solids\"\n",
+            "\npatches = { slot = 1, wall = 1 }\n"
+        )),
+        "IMM101"
+    );
+    let _ = std::fs::remove_file(&bin);
+    // an ASCII file has solids, not attribute tags
+    assert_eq!(
+        refused(&stl.replace(
+            "\npatches = \"solids\"\n",
+            "\npatches = { slot = 1, wall = 0 }\n"
+        )),
+        "IMM101"
+    );
+    // a body kept as a solid region neither turns nor has patches
+    assert_eq!(
+        refused(
+            &cut_cylinder_cht(90.0, "").replace("radius = 0.25\n", "radius = 0.25\nomega = 1.0\n")
+        ),
+        "IMM202"
+    );
+}

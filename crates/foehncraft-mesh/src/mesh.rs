@@ -569,6 +569,97 @@ impl Mesh {
         (lo, hi)
     }
 
+    /// Splits boundary `name` into the boundaries `names`: `part[k]` is the
+    /// index into `names` of the k-th face of the boundary. The faces of
+    /// the boundary are reordered in place (stable within each part), the
+    /// new boundaries take its place in `names` order, parts without faces
+    /// are left out. Cells, interior faces and the other boundaries are
+    /// unchanged (the named surface patches of an immersed body, L13 stage
+    /// 2e).
+    pub fn split_boundary(
+        &mut self,
+        name: &str,
+        part: &[usize],
+        names: &[String],
+    ) -> Result<(), String> {
+        let b = self
+            .boundaries
+            .iter()
+            .position(|p| p.name == name)
+            .ok_or_else(|| format!("no boundary named {name}"))?;
+        let r = self.boundaries[b].range();
+        if part.len() != r.len() {
+            return Err(format!(
+                "boundary {name}: {} parts for {} faces",
+                part.len(),
+                r.len()
+            ));
+        }
+        if let Some(&k) = part.iter().find(|&&k| k >= names.len()) {
+            return Err(format!("boundary {name}: part {k} without a name"));
+        }
+        for (i, n) in names.iter().enumerate() {
+            if names[..i].contains(n) || (n != name && self.boundary(n).is_some()) {
+                return Err(format!("boundary {n} exists already"));
+            }
+        }
+        // new face order of the range: by part, stable
+        let mut order: Vec<usize> = (0..r.len()).collect();
+        order.sort_by_key(|&k| part[k]);
+        let mut new_of_old: Vec<u32> = (0..self.n_faces() as u32).collect();
+        for (k, &o) in order.iter().enumerate() {
+            new_of_old[r.start + o] = (r.start + k) as u32;
+        }
+        let old_of = |f: usize| {
+            if r.contains(&f) {
+                r.start + order[f - r.start]
+            } else {
+                f
+            }
+        };
+        let mut face_ptr = Vec::with_capacity(self.face_ptr.len());
+        let mut face_nodes = Vec::with_capacity(self.face_nodes.len());
+        face_ptr.push(0u32);
+        for f in 0..self.n_faces() {
+            let o = old_of(f);
+            let (a, e) = (self.face_ptr[o] as usize, self.face_ptr[o + 1] as usize);
+            face_nodes.extend_from_slice(&self.face_nodes[a..e]);
+            face_ptr.push(face_nodes.len() as u32);
+        }
+        let owner: Vec<u32> = (0..self.n_faces()).map(|f| self.owner[old_of(f)]).collect();
+        let face_id = (0..self.face_id.len())
+            .map(|f| self.face_id[old_of(f)])
+            .collect();
+        if !self.face_flip.is_empty() {
+            self.face_flip = (0..self.n_faces())
+                .map(|f| self.face_flip[old_of(f)])
+                .collect();
+        }
+        for e in &mut self.cell_faces {
+            let (f, nb) = unpack_face(*e);
+            *e = pack_face(new_of_old[f], nb);
+        }
+        self.face_ptr = face_ptr;
+        self.face_nodes = face_nodes;
+        self.owner = owner;
+        self.face_id = face_id;
+        let mut parts = Vec::new();
+        let mut start = r.start;
+        for (i, n) in names.iter().enumerate() {
+            let len = part.iter().filter(|&&k| k == i).count();
+            if len > 0 {
+                parts.push(Boundary {
+                    name: n.clone(),
+                    start,
+                    len,
+                });
+            }
+            start += len;
+        }
+        self.boundaries.splice(b..=b, parts);
+        Ok(())
+    }
+
     /// Renames a boundary.
     pub fn rename_boundary(&mut self, old: &str, new: &str) -> Result<(), String> {
         if self.boundary(new).is_some() {

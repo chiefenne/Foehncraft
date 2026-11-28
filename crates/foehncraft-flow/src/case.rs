@@ -1514,7 +1514,10 @@ impl FlowCase {
 
     /// The compiled boundary values (D53).
     pub fn compiled_boundaries(&self) -> Result<bc::Compiled> {
-        bc::compile_all(&self.boundary, &self.env()?, self.time.is_some())
+        let mut c = bc::compile_all(&self.boundary, &self.env()?, self.time.is_some())?;
+        // the walls of turning cut bodies (L13 stage 2e)
+        crate::immersed::moving_walls(self, &mut c)?;
+        Ok(c)
     }
 
     /// The uniform body force, when all three components are numbers.
@@ -4973,6 +4976,9 @@ pub(crate) fn boundary_summaries(
     // the torque of a wall about the axis of its rotor, or of the first
     // turning zone (D184)
     let rotors = crate::rotor::rotors(case, mesh);
+    // the walls of turning cut bodies: the torque about their axis (L13
+    // stage 2e)
+    let turning = crate::immersed::wall_rotations(case).unwrap_or_default();
     let offsets = case
         .pressure_frame
         .as_ref()
@@ -4983,13 +4989,17 @@ pub(crate) fn boundary_summaries(
         .map(|(b, p)| {
             let bc = &case.boundary[&p.name];
             let wall = matches!(bc, BoundaryCondition::Wall { .. });
-            let axis = (wall && !rotors.is_empty()).then(|| {
-                &rotors
-                    .iter()
-                    .find(|r| r.walls.contains(&b))
-                    .unwrap_or(&rotors[0])
-                    .turning
-            });
+            let body_axis = turning.get(&p.name).map(|r| (r.axis, r.origin));
+            let axis = (wall && !rotors.is_empty())
+                .then(|| {
+                    let t = &rotors
+                        .iter()
+                        .find(|r| r.walls.contains(&b))
+                        .unwrap_or(&rotors[0])
+                        .turning;
+                    (t.axis, t.origin)
+                })
+                .or(body_axis.filter(|_| wall));
             let (mut area, mut q, mut pa, mut torque) = (0.0, 0.0, 0.0, 0.0);
             let mut force = [0.0; 3];
             for f in p.range() {
@@ -5009,11 +5019,29 @@ pub(crate) fn boundary_summaries(
                 for i in 0..3 {
                     force[i] += ff[i];
                 }
-                if let Some(t) = axis {
-                    // the torque has the full stress (D184)
-                    let tr = wall_face_transposed(fl, geo, f, ni);
+                if let Some((ax, org)) = axis {
+                    // the torque has the full stress (D184); on the no-slip
+                    // wall of a turning cut body the transposed part is
+                    // that of the rigid motion, μ ω × S, exactly (the
+                    // gradient of a cut cell is not accurate enough for it,
+                    // L13 stage 2e)
+                    let tr = match turning.get(&p.name) {
+                        Some(r) => {
+                            let mu = fl.mu_eff_at(f);
+                            let c = cross(
+                                [
+                                    r.omega * r.axis[0],
+                                    r.omega * r.axis[1],
+                                    r.omega * r.axis[2],
+                                ],
+                                s,
+                            );
+                            [mu * c[0], mu * c[1], mu * c[2]]
+                        }
+                        None => wall_face_transposed(fl, geo, f, ni),
+                    };
                     let ff = [ff[0] + tr[0], ff[1] + tr[1], ff[2] + tr[2]];
-                    torque += dot(t.axis, cross(sub(geo.face_centroid[f], t.origin), ff));
+                    torque += dot(ax, cross(sub(geo.face_centroid[f], org), ff));
                 }
             }
             BoundarySummary {

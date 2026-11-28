@@ -101,6 +101,24 @@ impl Surface {
         Ok(Surface::new(&tris))
     }
 
+    /// Reads an STL file as [`Self::read_stl`] and returns the tags of its
+    /// triangles too (the solids of an ASCII file, the attributes of a
+    /// binary one: [`crate::format::stl::Tagged`]).
+    pub fn read_stl_tagged(
+        path: &std::path::Path,
+        scale: f64,
+    ) -> Result<(Self, Vec<u32>, Vec<String>), String> {
+        let mut t = crate::format::stl::read_tagged(path)?;
+        if scale != 1.0 {
+            for tri in &mut t.triangles {
+                for p in tri.iter_mut() {
+                    *p = p.map(|x| x * scale);
+                }
+            }
+        }
+        Ok((Surface::new(&t.triangles), t.tags, t.solids))
+    }
+
     /// Number of triangles.
     pub fn len(&self) -> usize {
         self.triangles.len()

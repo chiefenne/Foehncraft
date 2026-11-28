@@ -482,6 +482,9 @@ pub fn start_alpha(case: &crate::case::FlowCase, mesh: &Mesh, geo: &Geometry) ->
                 fraction: r.fraction.clone(),
                 file: None,
                 scale: None,
+                invert: None,
+                omega: None,
+                patches: None,
             })
             .collect(),
         topology: None,

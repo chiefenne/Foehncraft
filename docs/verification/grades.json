@@ -1861,6 +1861,22 @@
    "range": {}
   },
   {
+   "id": "immersed.cut-boundary-conditions",
+   "title": "Boundary conditions on cut bodies: named STL patches, turning walls, inverted bodies (L13 stage 2e)",
+   "grade": "partial",
+   "why": [
+    "a model without reference data",
+    "gaps written"
+   ],
+   "gaps": [
+    "a cut wall face is not split along a patch edge: the cells a patch edge crosses go whole to one patch (the slot area of the blown cylinder +1.6 %)",
+    "the patch of a face is the closest triangle to its centroid; the area-majority transfer of mesh-processing tools is not measured against it",
+    "omega turns the wall, not the body: exact for bodies of revolution about their axis; rigid motion of the body is stage 5 (L4)",
+    "a body kept as a solid region cannot turn or have patches; invert only for cylinder, sphere and box; one rank only"
+   ],
+   "range": {}
+  },
+  {
    "id": "immersed.stl",
    "title": "STL bodies, cut out of the mesh or penalised, with sharp edges and face points (L13 stage 2)",
    "grade": "partial",
