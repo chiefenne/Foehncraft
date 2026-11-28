@@ -357,9 +357,14 @@ and the Stokes array of STL spheres, second order on hexahedra
 on cut bodies with the exact first-cell distance, sampled one layer out
 along the wall normal, y⁺ per body in LIM011, the half-space body `shape =
 "plane"`; the 2° plate against White's correlation and the body-fitted plate
-([gallery 357](../gallery/immersed.md#cut-plate)). Open: the force balance
-on tetrahedra, non-planar polyhedral faces, the thin-solid refusal, the k
-overproduction of the first cut layer, and 2d to 2f.
+([gallery 357](../gallery/immersed.md#cut-plate)). 2d (#359): conjugate
+heat transfer cut both ways (the solid part of each cut cell a cell of the
+solid region, shared cut faces as the D160 interface), thin solids refused
+with IMM205; concentric cylinders second order for k ratios 9 to 900 and a
+heated pin in the Schäfer–Turek channel ([gallery 359](../gallery/immersed.md#cut-cht)).
+Open: the force balance on tetrahedra, non-planar polyhedral faces (flat
+solid slivers on polyhedra), the k overproduction of the first cut layer,
+and 2e to 2f.
 
 ## 5. Stage 3 – Layered distance-field boundary (the L13 target, D230–D232)
 

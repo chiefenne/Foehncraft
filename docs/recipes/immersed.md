@@ -11,6 +11,7 @@ Part of the [Recipes](../recipes.md): put bodies into the flow without meshing t
 | 315 | [Cut a mesh exactly by an STL surface](#cut-moments) |
 | 322 | [Put an STL body into the flow](#stl-body) |
 | 357 | [Run a turbulent flow with wall functions on a cut body](#cut-wall-functions) |
+| 359 | [Keep a cut body as a solid region (conjugate heat transfer)](#cut-cht) |
 
 ---
 
@@ -204,7 +205,7 @@ type = "wall"
 
 **Resolution.** About 6 cells per radius give the drag of a sphere array within 2.3 %, 10 cells within 0.9 % (hexahedra, second order). A part of the surface thinner than a cell can vanish; put two or more cells across thin walls.
 
-**Limits.** Hexahedral meshes are the best checked; on tetrahedra the force balance of the wall is within 5 %, on polyhedra the cut is less accurate (the faces are not planar). Merged cells keep faces that do not lie in one plane apart, so two cells can share several faces (IMM203 counts them). Wall functions: [recipe 357](#cut-wall-functions). Conjugate heat transfer, other wall conditions per surface patch and near-body refinement follow (stages 2d to 2f). One rank only.
+**Limits.** Hexahedral meshes are the best checked; on tetrahedra the force balance of the wall is within 5 %, on polyhedra the cut is less accurate (the faces are not planar). Merged cells keep faces that do not lie in one plane apart, so two cells can share several faces (IMM203 counts them). Wall functions: [recipe 357](#cut-wall-functions), conjugate heat transfer: [recipe 359](#cut-cht). Other wall conditions per surface patch and near-body refinement follow (stages 2e and 2f). One rank only.
 
 ---
 
@@ -241,3 +242,58 @@ wall_treatment = "scalable"
 **Start the flow along the wall.** A uniform start velocity that points into a cut body at high Reynolds numbers can diverge in the first iteration (net inflow into the cut cells): start with the velocity along the body or from a coarser run.
 
 **Limits.** Resolved walls (low-Re treatments, ζ-f to the wall) take the exact distance but no sample. Single wall faces scatter about ±15 % in C_f even with sampling; integrated forces and the mean along the body are closer. One rank only.
+
+---
+
+<a id="cut-cht"></a>
+## 359. Keep a cut body as a solid region (conjugate heat transfer)
+
+**Name the body as the zone of a solid region.** The cut then keeps the inside of the body as the cells of that region; the cut faces become the region interface (D160), the flow sees the wall `interface-<region>`:
+
+```toml
+[immersed]
+method = "cut"
+
+[[immersed.body]]
+name = "pin"
+shape = "cylinder"          # any shape, an STL body too
+centre = [0.2, 0.2, 0.0]
+radius = 0.05
+
+[materials.aluminium]
+kind = "solid"
+density = 2700.0
+specific_heat = 900.0
+conductivity = 200.0
+
+[regions.pin]
+kind = "solid"
+zones = ["pin"]             # the body, not a mesh zone
+material = "aluminium"
+
+[energy]
+initial = 300.0
+
+[[energy.sources]]
+region = "pin"
+power_density = 2e5         # W/m³
+```
+
+The body needs no `[boundary.<body>]`: its wall is the interface. A body without a region is cut out as before (a wall); both kinds can be in one case. The energy equation is required (IMM202 otherwise).
+
+**Read the cut.** The log's mesh line gives, per solid body, the interface area and the solid volume against the exact ones (`cut body pin (solid region pin): interface area …, solid volume …`) and the solid cells, the small ones merged and the smallest kept fraction (`cut cells both ways`). The heat balance of the energy line closes to round-off when the energy solve has converged.
+
+**Converge the energy equation.** The solid with k_s ≫ k_f is stiff in one matrix with the fluid; give the energy solve its own tolerance and enough linear iterations:
+
+```toml
+[solver.energy]
+relaxation = 1.0
+tolerance = 1e-10
+max_iter = 300
+```
+
+Without it the pin of [gallery 359](../gallery/immersed.md#cut-cht) stalled with a heat imbalance of 33 %.
+
+**Two cells across, or a thin wall.** A solid body must be about two cells thick where it is thinnest; a thinner one is refused with IMM205. Refine the mesh in the body, or model the wall as a thin wall on a region interface (`[interfaces.<name>] thin_wall`, D189), which carries its conduction without cells.
+
+**Limits.** Hexahedra and tetrahedra are the best checked; on polyhedra a few flat solid slivers stay. Solids that move (stage 5) and the thin-wall model on a cut interface are not built. One rank only.

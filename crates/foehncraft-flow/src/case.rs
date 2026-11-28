@@ -3001,7 +3001,12 @@ pub fn run_steered(
         {
             case = c.clone();
         }
-        let (mesh, geo, desc) = mesh_for(&case, *level)?;
+        // the mesh of the full case: after the first level `case` is the
+        // fluid view, whose regions no longer keep cut bodies as solids
+        let (mesh, geo, desc) = match &case.fluid_view {
+            Some(v) => mesh_for(&v.full_case, *level)?,
+            None => mesh_for(&case, *level)?,
+        };
         let mesh_hash = crate::engine::mesh_hash(&mesh);
         // conjugate heat transfer (stage 7d1): the flow runs on the fluid
         // view, the energy equation on the full mesh

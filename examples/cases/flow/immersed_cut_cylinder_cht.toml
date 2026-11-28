@@ -1,0 +1,108 @@
+# A heated solid cylinder cut out of a box mesh and kept as a solid region:
+# conjugate heat transfer through cut cells both ways (L13 stage 2d, D229).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/immersed_cut_cylinder_cht.toml
+#
+# A cylinder of radius R = 0.25 m (`[[immersed.body]]` core) in a square
+# box of 1 m, filled with fluid at rest (walls all round). The cylinder is
+# not cut out: `[regions.core]` names the body as its zone, so the cut keeps
+# the inside of every cut cell as a cell of the solid region, and the wall
+# faces between the two parts become the region interface (D160) with the
+# series conductance of the energy equation (D117). The solid makes
+# q = 1000 W/m³; its conductivity is k_s = 90 W/(m K), the fluid's k_f = 1
+# (ratio 90; the test runs 9 and 900 too). The temperature is the
+# concentric-cylinder solution
+#
+#   r ≤ R:  T = T_R + q (R² − r²) / (4 k_s)
+#   r ≥ R:  T = T_R − q R² / (2 k_f) ln(r / R),
+#
+# held on the box walls, and `[energy] exact` is that solution: the run
+# reports the L2 error and, with `verification.levels`, the order.
+#
+# Result (20, 40, 80 cells across): see gallery entry "cut-cht".
+
+case_format = "0.7"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+lower = [0.0, 0.0, 0.0]
+upper = [1.0, 1.0, 0.05]
+cells = [20, 20, 1]
+
+[constants]
+R = 0.25
+q = 1000.0
+ks = 90.0
+kf = 1.0
+TR = 400.0
+
+[fluid]
+density = 1.0
+viscosity = 0.01
+specific_heat = 1000.0
+conductivity = 1.0
+
+[materials.core-solid]
+kind = "solid"
+density = 8000.0
+specific_heat = 500.0
+conductivity = 90.0
+
+[immersed]
+method = "cut"
+
+[[immersed.body]]
+name = "core"
+shape = "cylinder"
+centre = [0.5, 0.5, 0.0]
+radius = 0.25
+
+[regions.core]
+kind = "solid"
+zones = ["core"]
+material = "core-solid"
+
+[energy]
+initial = 390.0
+exact = "if(sqrt((x - 0.5)^2 + (y - 0.5)^2) < R, TR + q * (R^2 - (x - 0.5)^2 - (y - 0.5)^2) / (4 * ks), TR - q * R^2 / (2 * kf) * log(sqrt((x - 0.5)^2 + (y - 0.5)^2) / R))"
+
+[[energy.sources]]
+region = "core"
+power_density = 1000.0
+
+[boundary.xmin]
+type = "wall"
+[boundary.xmin.energy]
+temperature = "TR - q * R^2 / (2 * kf) * log(sqrt((x - 0.5)^2 + (y - 0.5)^2) / R)"
+[boundary.xmax]
+type = "wall"
+[boundary.xmax.energy]
+temperature = "TR - q * R^2 / (2 * kf) * log(sqrt((x - 0.5)^2 + (y - 0.5)^2) / R)"
+[boundary.ymin]
+type = "wall"
+[boundary.ymin.energy]
+temperature = "TR - q * R^2 / (2 * kf) * log(sqrt((x - 0.5)^2 + (y - 0.5)^2) / R)"
+[boundary.ymax]
+type = "wall"
+[boundary.ymax.energy]
+temperature = "TR - q * R^2 / (2 * kf) * log(sqrt((x - 0.5)^2 + (y - 0.5)^2) / R)"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-10
+max_iterations = 50
+
+[solver.energy]
+relaxation = 1.0
+tolerance = 1e-12
+max_iter = 1000
+
+[verification]
+scalar_max_error = 0.5
+
+[output]
+wall_csv = false

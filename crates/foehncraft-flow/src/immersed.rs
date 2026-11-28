@@ -777,9 +777,7 @@ pub fn check_case(case: &crate::case::FlowCase) -> Result<()> {
     }
     bodies_of(case)?;
     if case.immersed.is_cut() {
-        let what = if !case.regions.is_empty() {
-            Some("regions (conjugate heat transfer on cut cells is stage 2d)")
-        } else if case.immersed.topology.is_some() {
+        let what = if case.immersed.topology.is_some() {
             Some("a topology search (it runs on the penalised density field)")
         } else if !case.mrf.is_empty() || !case.sliding.is_empty() {
             Some("rotating zones")
@@ -1314,11 +1312,44 @@ fn scale3(a: [f64; 3], s: f64) -> [f64; 3] {
     [a[0] * s, a[1] * s, a[2] * s]
 }
 
+/// The solid region a cut body is kept as (L13 stage 2d, D229): the
+/// `[regions.<name>] kind = "solid"` whose `zones` name the body.
+pub fn solid_region_of<'a>(case: &'a crate::case::FlowCase, body: &str) -> Option<&'a str> {
+    case.regions
+        .iter()
+        .find(|(_, r)| {
+            r.kind == crate::materials::RegionKind::Solid && r.zones.iter().any(|z| z == body)
+        })
+        .map(|(n, _)| n.as_str())
+}
+
 /// The cut of `[immersed] method = "cut"` (L13 stage 2, D227): the mesh
 /// with the bodies cut out, their surfaces as wall boundaries named after
-/// the bodies, and the notes for the log (IMM203, IMM204).
+/// the bodies, and the notes for the log (IMM203, IMM204). A body that is
+/// a solid region keeps its inside as cells of a zone named by the body,
+/// joined to the fluid cells by interior faces (stage 2d, D229); thin ones
+/// are refused (IMM205).
 pub fn cut_mesh(case: &crate::case::FlowCase, mesh: &Mesh) -> Result<(Mesh, Vec<Diagnostic>)> {
     let bs = bodies_of(case)?;
+    let solid: Vec<bool> = bs
+        .iter()
+        .map(|b| solid_region_of(case, &b.name).is_some())
+        .collect();
+    for (b, &s) in bs.iter().zip(&solid) {
+        if s && case.energy.is_none() {
+            return Err(diag::err(
+                Diagnostic::new(
+                    diag::IMM_CUT_UNSUPPORTED,
+                    format!(
+                        "the cut body `{}` is a solid region, which needs the energy equation \
+                         ([energy])",
+                        b.name
+                    ),
+                )
+                .key("regions"),
+            ));
+        }
+    }
     let sec = case.immersed.cut.clone().unwrap_or_default();
     let (lo, hi) = mesh.bounding_box();
     let diag_len = norm(sub(hi, lo));
@@ -1333,7 +1364,7 @@ pub fn cut_mesh(case: &crate::case::FlowCase, mesh: &Mesh) -> Result<(Mesh, Vec<
         wall_point: sec.wall_point.unwrap_or(true),
         face_point: sec.face_point(),
     };
-    let c = foehncraft_mesh::cut::cut(mesh, &body, &names, &opt)
+    let c = foehncraft_mesh::cut::cut_both(mesh, &body, &names, &solid, &opt)
         .map_err(|e| diag::err(Diagnostic::new(diag::IMM_CUT, format!("cut cells: {e}"))))?;
     let r = &c.report;
     let mut notes = surface_notes(&bs);
@@ -1353,15 +1384,44 @@ pub fn cut_mesh(case: &crate::case::FlowCase, mesh: &Mesh) -> Result<(Mesh, Vec<
             r.cells_out
         ),
     ));
-    for (b, a) in bs.iter().zip(&r.wall_area) {
-        let mut line = format!("cut body {}: wall area {a:.6e} m²", b.name);
+    for (k, (b, a)) in bs.iter().zip(&r.wall_area).enumerate() {
+        let mut line = if solid[k] {
+            format!(
+                "cut body {} (solid region {}): interface area {a:.6e} m²",
+                b.name,
+                solid_region_of(case, &b.name).unwrap_or_default()
+            )
+        } else {
+            format!("cut body {}: wall area {a:.6e} m²", b.name)
+        };
         if let Some(e) = b.exact_area(lo, hi) {
             line.push_str(&format!(
                 ", exact {e:.6e} m² ({:+.3} %)",
                 100.0 * (a - e) / e
             ));
         }
+        if solid[k] {
+            line.push_str(&format!(", solid volume {:.6e} m³", r.solid_volume[k]));
+            if let Some(e) = b.exact_volume(lo, hi) {
+                let v = r.solid_volume[k];
+                line.push_str(&format!(
+                    ", exact {e:.6e} m³ ({:+.3} %)",
+                    100.0 * (v - e) / e
+                ));
+            }
+        }
         notes.push(Diagnostic::new(diag::IMM_CUT_REPORT, line));
+    }
+    if solid.iter().any(|&s| s) {
+        notes.push(Diagnostic::new(
+            diag::IMM_CUT_REPORT,
+            format!(
+                "cut cells both ways: {} solid cells, {} small ones merged, smallest kept \
+                 fraction {:.3}",
+                r.solid_cells, r.solid_merged, r.solid_min_fraction
+            ),
+        ));
+        thin_solids(&bs, &solid, &c, mesh)?;
     }
     if r.simplified > 0 {
         notes.push(Diagnostic::new(
@@ -1396,6 +1456,111 @@ pub fn cut_mesh(case: &crate::case::FlowCase, mesh: &Mesh) -> Result<(Mesh, Vec<
     Ok((c.mesh, notes))
 }
 
+/// The refusal of thin solids (L13 stage 2d, owner decision Q4): a body kept
+/// as solid cells must be about two cells thick. Its depth is the largest
+/// distance of a solid cell centroid to the surface, the cell width the
+/// median over its cut cells of the uncut volume over the interface area
+/// in the cell (the width across the surface, in 2D and 3D alike); the body
+/// is refused when the depth is below one cell width (a slab thinner than
+/// two cells, a pin thinner than two cells across) or when small solid
+/// cells found no solid neighbour to merge into.
+fn thin_solids(
+    bs: &[Body],
+    solid: &[bool],
+    c: &foehncraft_mesh::cut::CutMesh,
+    input: &Mesh,
+) -> Result<()> {
+    let m = &c.mesh;
+    let geo = Geometry::compute(m);
+    let geo0 = Geometry::compute(input);
+    let thin = |name: &str, why: String| {
+        Err(diag::err(
+            Diagnostic::new(
+                diag::IMM_THIN_SOLID,
+                format!(
+                    "the cut body `{name}` is too thin for a solid region on this mesh: {why}; \
+                     refine the mesh in the body, or model it as a thin wall on a region \
+                     interface ([interfaces.<name>] thin_wall, D189)"
+                ),
+            )
+            .key("regions"),
+        ))
+    };
+    if c.report.solid_merge_failed > 0 {
+        let name = bs
+            .iter()
+            .zip(solid)
+            .find(|(_, s)| **s)
+            .map_or("", |(b, _)| b.name.as_str());
+        return thin(
+            name,
+            format!(
+                "{} small solid cells found no solid neighbour to merge into",
+                c.report.solid_merge_failed
+            ),
+        );
+    }
+    let nf = c.n_fluid;
+    for (b, _) in bs.iter().zip(solid).filter(|(_, s)| **s) {
+        // a `field` body has a level, not a distance
+        if matches!(b.kind, Kind::Field(_)) {
+            continue;
+        }
+        let Some(z) = m.zones.iter().position(|z| *z == b.name) else {
+            continue;
+        };
+        let cells: Vec<usize> = (nf..m.n_cells)
+            .filter(|&k| m.cell_zone[k] as usize == z)
+            .collect();
+        if cells.is_empty() {
+            return thin(&b.name, "no node of the mesh lies inside it".into());
+        }
+        let depth = cells
+            .iter()
+            .map(|&k| -b.distance(geo.cell_centroid[k]))
+            .fold(0.0f64, f64::max);
+        let mut widths: Vec<f64> = Vec::new();
+        for &k in &cells {
+            let a: f64 = m
+                .cell_face_iter(k)
+                .filter(|&(f, _)| {
+                    f < m.n_interior_faces() && {
+                        let o = if m.owner[f] as usize == k {
+                            m.neighbour[f]
+                        } else {
+                            m.owner[f]
+                        };
+                        (o as usize) < nf
+                    }
+                })
+                .map(|(f, _)| norm(geo.face_area[f]))
+                .sum();
+            if a > 0.0 {
+                let v: f64 = c.covers[k]
+                    .iter()
+                    .map(|&p| geo0.cell_volume[p as usize])
+                    .sum();
+                widths.push(v / a);
+            }
+        }
+        if widths.is_empty() {
+            continue;
+        }
+        widths.sort_by(f64::total_cmp);
+        let h = widths[widths.len() / 2];
+        if depth < h {
+            return thin(
+                &b.name,
+                format!(
+                    "its deepest solid cell lies {depth:.3e} m inside the surface, less than \
+                     one cell width ({h:.3e} m), so it is less than about two cells thick"
+                ),
+            );
+        }
+    }
+    Ok(())
+}
+
 /// The cut bodies whose whole surface is a wall, by the name of their
 /// wall boundary: the exact first-cell distance of the wall functions and
 /// the exact wall distance (L13 stage 2c, D229, D108).
@@ -1420,12 +1585,17 @@ impl WallBodies {
         for (i, b) in bodies.iter().enumerate() {
             // a `field` body has a level, not a distance: its wall faces
             // keep the distance to the face
-            if !matches!(b.kind, Kind::Field(_))
-                && matches!(
-                    case.boundary.get(&b.name),
-                    Some(crate::bc::BoundaryCondition::Wall { .. })
-                )
-            {
+            if matches!(b.kind, Kind::Field(_)) {
+                continue;
+            }
+            if let Some(r) = solid_region_of(case, &b.name) {
+                // a solid region: its surface is the interface wall of the
+                // fluid view (stage 2d)
+                by_boundary.insert(crate::cht::interface_name(r), i);
+            } else if matches!(
+                case.boundary.get(&b.name),
+                Some(crate::bc::BoundaryCondition::Wall { .. })
+            ) {
                 by_boundary.insert(b.name.clone(), i);
             }
         }

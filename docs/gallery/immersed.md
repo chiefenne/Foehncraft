@@ -11,6 +11,7 @@ Part of the [Example gallery](../gallery.md): bodies in the flow without a body-
 | 315 | [Signed distance by three methods, and a sphere cut exactly out of a mesh](#sdf-benchmark-cut) | L13 stage 0 | signed-distance benchmark (ours, fast sweeping, heat method), `Surface::cut_moments` (volume fractions, apertures, wall pieces) |
 | 322 | [STL bodies cut out of a mesh: sharp edges, face points and the Stokes sphere array](#stl-cut) | L13 stage 2 | `shape = "stl"` (`file`, `scale`), `[immersed.cut] face_point`, dual-contouring wall points on sharp edges, the per-cell fallback, STL cut benchmark against the exact moments |
 | 357 | [A turbulent plate tilted against the mesh: wall functions on cut cells](#cut-plate) | L13 stage 2c | `shape = "plane"` (`normal`), wall functions with the exact first-cell distance, `[immersed.cut] wall_sample`, y⁺ per body (LIM011) |
+| 359 | [A heated pin cut out of a box mesh: conjugate heat transfer through cut cells](#cut-cht) | L13 stage 2d | `[regions.<name>] zones = ["<body>"]` on a cut body, solid cut cells, the cut faces as region interface, thin solids refused (IMM205) |
 
 ---
 
@@ -297,8 +298,8 @@ they are the default. On the cylinder the wall point moves the drag from
 0.3 % below the range into it. Cutting 33 000 polyhedra takes 1.7 s.
 
 **What is not here yet.** STL bodies followed in [gallery 322](#stl-cut), wall functions
-on cut bodies in [gallery 357](#cut-plate). Conjugate heat transfer through cut
-cells (2d, refused with IMM202), named surface patches with other conditions
+on cut bodies in [gallery 357](#cut-plate), conjugate heat transfer through cut
+cells in [gallery 359](#cut-cht). Named surface patches with other conditions
 (2e) and the near-body refinement (2f) follow. One rank only.
 
 Reproduce (about a minute and a half for the case, ten minutes for D/40):
@@ -630,9 +631,9 @@ cell-by-cell volumes now do). On tetrahedra the drag error grows from +1.7 %
 on 16³ to +4.8 % on 24³ and the wall carries G L³ to 5 % on 16³ (1.3 % on
 24³; the −1.8 % of #322 on 24³ ran with the cell-quality remediation on): the
 cut cells of tetrahedra need a closer look (features.toml). A feature thinner than a cell can vanish between the
-nodes. Wall functions on cut bodies followed in [gallery 357](#cut-plate);
-conjugate heat transfer through cut cells (2d), named surface patches (2e)
-and the near-body refinement (2f) follow. One rank only.
+nodes. Wall functions on cut bodies followed in [gallery 357](#cut-plate),
+conjugate heat transfer through cut cells in [gallery 359](#cut-cht); named
+surface patches (2e) and the near-body refinement (2f) follow. One rank only.
 
 Reproduce (about a minute for the case, two for the benchmark):
 
@@ -750,3 +751,106 @@ python3 -m tools.plot.immersed_cut_plate docs/figures/gallery output/cut_plate o
 Recipe: [357](../recipes/immersed.md#cut-wall-functions). Case files:
 `examples/cases/flow/immersed_cut_plate_keps.toml`,
 `examples/cases/flow/immersed_cut_plate_fitted.toml`.
+
+---
+
+<a id="cut-cht"></a>
+## 359. A heated pin cut out of a box mesh: conjugate heat transfer through cut cells
+
+<img src="../figures/gallery/immersed_cut_cht.png" alt="Four panels. Top left: the temperature in the first metre of a channel, blue at 300 kelvin, with a dark red round pin at 440 kelvin near the inlet and a warm wake, yellow and green, then cyan, drifting downstream along the centre of the pin. Top right: a zoom on the front of the pin, square fluid cells coloured from yellow to dark red, the dotted exact circle crossing them, and the cells on the circle split by short straight cut faces into a fluid part and a red pin part. Bottom left: the temperature against the radius for three conductivity ratios of the concentric-cylinder case, flat in the solid up to the interface at 0.25 metres, then falling with the logarithm of the radius; the dots of every cell lie on the exact lines. Bottom right: the L2 error of the temperature against the cells across the box on log axes, three nearly coincident straight lines from 0.12 to 0.007 parallel to the dashed second-order line." width="1400" height="900">
+
+A cut body can be a solid region of a conjugate run (L13 stage 2d, D229,
+D112): `[regions.<name>] kind = "solid"` names the body as its zone, and the
+cut keeps the inside of every cut cell as a cell of that region instead of
+throwing it away. The fluid and the solid part of a cut cell come from the
+same crossing points of the cell edges and the same cut faces, so every cut
+face has exactly one twin on the other side; the twins become interior
+faces between a fluid and a solid cell, the region interface of D160, with
+the series conductance of the energy equation (D117). The flow sees a no-slip
+wall `interface-<region>`, the energy equation one matrix over fluid and
+solid. Small solid pieces are merged into a solid neighbour as small fluid
+pieces into a fluid one.
+
+**A heated pin in a channel** (`immersed_cut_pin_cht.toml`, top): the
+channel of the Schäfer–Turek benchmark 2D-1 (Re = 20) on the plain box mesh
+of [gallery 313](#cut-cylinder) (440 × 82, h = D/20), the pin an aluminium
+heater (k = 200 W/(m K), 2·10⁵ W/m³, 15.7 W in the 1 cm slice) in a fluid of
+Pr = 1 entering at 300 K, adiabatic channel walls. The cut keeps 332 solid
+cells (12 small ones merged); the interface area is 0.012 % below the
+circumference, the solid volume 0.047 % below πR². The flow converges in
+1 627 iterations, the heat made in the pin leaves with the flow to
+8.6·10⁻¹² W (5·10⁻¹³ of the flow). The drag of the pin, now an interface
+wall, is C_D = 5.588 (reference range 5.57–5.59), C_L = 0.0103 (0.0104–0.0110),
+as for the cut cylinder of gallery 313. The pin is at 438 to 440 K.
+
+**Verification: concentric cylinders** (`immersed_cut_cylinder_cht.toml`,
+bottom). A solid cylinder of radius R = 0.25 m makes q = 1000 W/m³ in a box
+of fluid at rest whose walls hold the exact temperature
+
+    r ≤ R:  T = T_R + q (R² − r²) / (4 k_s)
+    r ≥ R:  T = T_R − q R² / (2 k_f) ln(r / R)
+
+so the solution has a kink at the interface that the cut cells have to
+carry: the interface is crossed by the cut, not by cell faces.
+
+| Conductivity ratio k_s / k_f | L2 error, 20 cells across | 40 | 80 | Order |
+|---|---|---|---|---|
+| 9 | 0.1210 K | 0.02717 K | 0.006960 K | 2.17, 1.98 |
+| 90 | 0.1223 K | 0.02754 K | 0.007105 K | 2.17, 1.97 |
+| 900 | 0.1225 K | 0.02758 K | 0.007117 K | 2.17, 1.97 |
+
+The temperature converges at second order for every ratio, and the heat
+balance closes to 10⁻¹¹ W on every mesh: the interface passes one flux per
+face, so the flux leaving the solid is the flux entering the fluid to
+round-off. The source on 80 cells across is 0.01 % below q π R² (the solid
+volume of the cut).
+
+**Thin solids are refused (owner decision Q4).** A body kept as solid cells
+must be about two cells thick: the cut measures the depth of the body (the
+largest distance of a solid cell centroid to the surface) against the width
+of its cut cells (their uncut volume over the interface area in them) and
+refuses the body with IMM205 when the depth is below one cell width, or when
+small solid pieces find no solid neighbour to merge into. IMM205 points to
+the thin wall of a region interface (`[interfaces.<name>] thin_wall`, D189),
+the right model for a wall a cell or less thick.
+
+**Benchmark with the computer-graphics methods (maintainer rule).** Cutting
+both ways is a mesh boolean in the sense of computer graphics: the
+intersection and the difference of every cell with the body. A two-pass
+cut (the fluid with the body, the solid with its complement) gives two sets
+of cut faces that meet only as well as two root finds agree and leaves gaps
+or overlaps where they do not; the boolean here takes one set of crossing
+points and bent chords for both sides, as exact mesh booleans do (one
+classification of the intersection points, Zhou et al. 2016, "Mesh arrangements
+for solid geometry", ACM Trans. Graph. 35(4)). The mesh tests check it as a boolean is
+checked: fluid and solid volumes add up to the box to 10⁻¹¹, every cell
+closes, every cut face has exactly one twin, the interface area of the
+solid equals the wall area of the fluid (sphere and slab on hexahedra,
+tetrahedra and polyhedra).
+
+**What is not here yet.** On polyhedral meshes the solid side keeps a few
+flat three-face slivers that the merge does not remove (the cut faces of
+the polyhedra are not planar), so the poly mesh test skips the merge check
+there. The heat transfer of the pin has no reference here (the
+concentric cylinders are the verification). A `field` body (the density of
+a topology search) is not checked for thin parts. Rigid motion of the solid
+(stage 5) and the thin-wall model on a cut interface are not built. One rank
+only.
+
+Reproduce (the pin: about 15 minutes on 4 cores; the cylinders: seconds):
+
+```sh
+cargo build --release -p foehncraft-cli
+target/release/foehn flow examples/cases/flow/immersed_cut_pin_cht.toml --out output/cut_pin
+for k in 9 90 900; do
+  target/release/foehn flow examples/cases/flow/immersed_cut_cylinder_cht.toml --out output/cut_cyl_$k \
+    --set "verification.levels=[0,1,2]" --set constants.ks=$k \
+    --set materials.core-solid.conductivity=$k
+done
+pip install matplotlib h5py numpy
+python3 -m tools.plot.immersed_cut_cht docs/figures/gallery output/cut_pin output/cut_cyl_9 output/cut_cyl_90 output/cut_cyl_900
+```
+
+Recipe: [359](../recipes/immersed.md#cut-cht). Case files:
+`examples/cases/flow/immersed_cut_pin_cht.toml`,
+`examples/cases/flow/immersed_cut_cylinder_cht.toml`.

@@ -32,6 +32,7 @@ instead.
 - [Long-lived branches and the one test program per crate](#stale-branches)
 - [Wall functions on cut cells](#cut-wall-functions)
 - [Natural circulation loops behind a coupled wall](#circuit-branches)
+- [Conjugate heat transfer on cut cells](#cut-cht)
 
 <a id="steady-runs"></a>
 ## Steady runs: budget and stopping
@@ -840,3 +841,28 @@ Found with the circuits behind the walls (SF7c, #356):
   a step of the water temperature, and the slab conducts across it (±0.2 %
   on the slab check). U and T_water are now linear between the segment
   midpoints. The heat of each face still goes to its own segment.
+
+<a id="cut-cht"></a>
+## Conjugate heat transfer on cut cells
+
+- **Cut both sides from one set of crossings.** Cutting the solid with the
+  complement of the body in a second pass gives cut faces that meet only
+  as well as two root finds agree. Take the solid rings from the same
+  crossing points and bent chords as the fluid, and match the fluid wall
+  faces of a cell to their solid twins by the node set (#359).
+- **Merged pieces can pinch.** On tetrahedra a union of small pieces
+  used one directed edge twice (two pieces touching along an edge only);
+  the union score now refuses non-manifold unions, the fluid cut did not
+  change.
+- **Polyhedral cut faces are not planar**, so the solid side of a poly
+  mesh keeps a few flat three-face slivers; the poly test does not check
+  the solid merge.
+- **The energy solve of a stiff solid needs its own settings.** With k_s /
+  k_f = 200 in one matrix the pin of the channel stalled at an energy
+  residual of 7·10⁻⁶ and a heat imbalance of 33 % with the default
+  `[solver.energy]`; relaxation 1, tolerance 10⁻¹⁰ and 300 linear
+  iterations closed it to 10⁻¹² W.
+- **A level sweep needs the full case for the mesh.** With regions the run
+  works on a fluid view of the case; the sweep built the meshes of levels
+  1 and 2 from that view and lost the solid zone (REG002). Build every
+  level's mesh from the full case.
