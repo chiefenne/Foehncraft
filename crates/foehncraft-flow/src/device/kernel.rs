@@ -11,10 +11,10 @@
 //! algorithms (output, restart) reach the host.
 
 use super::{
-    BoundaryArgs, Buf, Buf3, CurvatureOps, Eps2, FlowDevice, FluxArgs, KepsCellOps, Lsq, Mask,
-    MlpOps, MomentumFaceArgs, MomentumRowArgs, ScalarFaceArgs, ScalarRowArgs, ScalarTurbOps,
-    ScalarWallOps, Setup, SstCellOps, TurbFaceOps, TwoFluidBufs, TwoFluidOp, VertexStencil,
-    VofBufs, VofOp, WallCellOps, WallFaceOps, WallStatic, ZetaFCellOps,
+    BoilingBufs, BoilingOp, BoundaryArgs, Buf, Buf3, CurvatureOps, Eps2, FlowDevice, FluxArgs,
+    KepsCellOps, Lsq, Mask, MlpOps, MomentumFaceArgs, MomentumRowArgs, ScalarFaceArgs,
+    ScalarRowArgs, ScalarTurbOps, ScalarWallOps, Setup, SstCellOps, TurbFaceOps, TwoFluidBufs,
+    TwoFluidOp, VertexStencil, VofBufs, VofOp, WallCellOps, WallFaceOps, WallStatic, ZetaFCellOps,
 };
 use anyhow::{Result, ensure};
 use foehncraft_core::repro::{BLOCK, combine_block_sums};
@@ -164,6 +164,8 @@ pub struct KernelFlow<E: Exec> {
     body: Option<[Buf; 3]>,
     /// The inflow flags of the two-fluid face arrays (MP3).
     two_fluid_inflow: Raw<u32>,
+    /// The heated wall slots of the boiling (MP4).
+    boil_slots: Option<BoilSlots>,
 }
 
 /// The vertices a rank shares with other ranks (on their processor faces)
@@ -333,6 +335,7 @@ impl<E: Exec> KernelFlow<E> {
             vert_shared: Vec::new(),
             vof_open: Raw::EMPTY,
             two_fluid_inflow: Raw::EMPTY,
+            boil_slots: None,
             body: None,
             lsq_u,
             lsq_p,
@@ -553,6 +556,20 @@ fn check(outs: &[Buf], inputs: &[Buf]) -> Result<()> {
         );
     }
     Ok(())
+}
+
+/// The heated wall slots of the boiling (MP4): per slot the near-wall
+/// cell, area, wall distance and heat flux; the near-wall cells with the
+/// start of their slots.
+#[derive(Debug, Clone, Copy)]
+struct BoilSlots {
+    cell: Raw<u32>,
+    area: Buf,
+    y: Buf,
+    q: Buf,
+    wcell: Raw<u32>,
+    wptr: Raw<u32>,
+    n: usize,
 }
 
 impl<E: Exec> FlowDevice for KernelFlow<E> {
@@ -1442,6 +1459,7 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
         self.not_on_ranks("the two-fluid model")?;
         let one = [
             b.alpha, b.wall_y, b.nu_t, b.alpha_b, b.alpha_gf, b.alpha_lf, b.mu_eff, b.cell_h,
+            b.diam,
         ];
         let three = [b.ul, b.ug, b.wall_n, b.grad_alpha];
         let mut ins: Vec<Buf> = one
@@ -1503,6 +1521,7 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             off_g: o(b.off_g),
             off_l: o(b.off_l),
             td: o(b.td),
+            diam: o(b.diam),
         };
         let need = |x: bool, what: &str| -> Result<()> {
             ensure!(
@@ -1561,6 +1580,161 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
                 self.go::<e::TwoFluidFaces>(self.nf, &args)
             }
         }
+    }
+
+    fn boiling_slots(
+        &mut self,
+        cell: &[u32],
+        area: &[f64],
+        y: &[f64],
+        q: &[f64],
+        wcell: &[u32],
+        wptr: &[u32],
+    ) -> Result<()> {
+        self.not_on_ranks("wall boiling")?;
+        let n = cell.len();
+        ensure!(
+            area.len() == n && y.len() == n && q.len() == n && wptr.len() == wcell.len() + 1,
+            "flow device: inconsistent boiling slots"
+        );
+        ensure!(
+            cell.iter().chain(wcell).all(|&c| (c as usize) < self.nc)
+                && wptr.windows(2).all(|w| w[0] <= w[1])
+                && wptr.last().is_some_and(|&l| l as usize == n),
+            "flow device: boiling slots outside the mesh"
+        );
+        let mut put = |v: &[f64]| -> Result<Buf> {
+            let b = self.alloc(v.len())?;
+            self.upload(b, v)?;
+            Ok(b)
+        };
+        let (area, y, q) = (put(area)?, put(y)?, put(q)?);
+        self.boil_slots = Some(BoilSlots {
+            cell: self.x.alloc_u32(cell)?,
+            area,
+            y,
+            q,
+            wcell: self.x.alloc_u32(wcell)?,
+            wptr: self.x.alloc_u32(wptr)?,
+            n,
+        });
+        Ok(())
+    }
+
+    fn boiling(
+        &mut self,
+        op: BoilingOp,
+        b: &BoilingBufs,
+        kc: &foehncraft_kernels::boiling::Constants<f64>,
+        dt: f64,
+    ) -> Result<()> {
+        self.not_on_ranks("wall boiling")?;
+        let (ins, outs): (Vec<Buf>, Vec<Buf>) = match op {
+            BoilingOp::Wall => (
+                vec![b.t_l, b.t_g, b.tk, b.alpha],
+                vec![b.t_w, b.q_l, b.m_e, b.q_e, b.area, b.q_g],
+            ),
+            BoilingOp::WallCells => (
+                vec![b.q_l, b.m_e, b.q_g],
+                vec![b.q_wall, b.m_wall, b.q_wall_g],
+            ),
+            BoilingOp::Cells => (
+                [b.alpha, b.t_l, b.t_g, b.q_wall, b.m_wall, b.q_wall_g]
+                    .into_iter()
+                    .chain(b.ul.all())
+                    .chain(b.ug.all())
+                    .collect(),
+                vec![
+                    b.alpha_out,
+                    b.diam,
+                    b.gamma_i,
+                    b.gamma,
+                    b.h_l,
+                    b.h_g,
+                    b.su_l,
+                    b.sp_l,
+                    b.su_g,
+                    b.sp_g,
+                    b.cap_l,
+                    b.cap_g,
+                    b.src,
+                ],
+            ),
+        };
+        check(&outs, &ins)?;
+        let sl = self.boil_slots;
+        let args = e::BoilingArgs {
+            m: self.m,
+            k: *kc,
+            dt,
+            slot_cell: sl.map_or(Raw::EMPTY, |s| s.cell),
+            slot_area: sl.map_or(Raw::EMPTY, |s| self.r(s.area)),
+            slot_y: sl.map_or(Raw::EMPTY, |s| self.r(s.y)),
+            slot_q: sl.map_or(Raw::EMPTY, |s| self.r(s.q)),
+            t_l: self.r(b.t_l),
+            t_g: self.r(b.t_g),
+            tk: self.r(b.tk),
+            t_w: self.r(b.t_w),
+            q_l: self.r(b.q_l),
+            m_e: self.r(b.m_e),
+            q_e: self.r(b.q_e),
+            area: self.r(b.area),
+            q_g: self.r(b.q_g),
+            wcell: sl.map_or(Raw::EMPTY, |s| s.wcell),
+            wptr: sl.map_or(Raw::EMPTY, |s| s.wptr),
+            q_wall: self.r(b.q_wall),
+            m_wall: self.r(b.m_wall),
+            q_wall_g: self.r(b.q_wall_g),
+            alpha: self.r(b.alpha),
+            ul: self.r3(b.ul),
+            ug: self.r3(b.ug),
+            alpha_out: self.r(b.alpha_out),
+            diam: self.r(b.diam),
+            gamma_i: self.r(b.gamma_i),
+            gamma: self.r(b.gamma),
+            h_l: self.r(b.h_l),
+            h_g: self.r(b.h_g),
+            su_l: self.r(b.su_l),
+            sp_l: self.r(b.sp_l),
+            su_g: self.r(b.su_g),
+            sp_g: self.r(b.sp_g),
+            cap_l: self.r(b.cap_l),
+            cap_g: self.r(b.cap_g),
+            src: self.r(b.src),
+        };
+        match op {
+            BoilingOp::Wall | BoilingOp::WallCells => {
+                let Some(s) = sl else {
+                    return Ok(());
+                };
+                ensure!(
+                    args.t_w.len as usize >= s.n,
+                    "flow device: the boiling slot outputs need {} entries",
+                    s.n
+                );
+                if op == BoilingOp::Wall {
+                    self.go::<e::BoilingWall>(s.n, &args)
+                } else {
+                    self.go::<e::BoilingWallCells>(s.wcell.len as usize, &args)
+                }
+            }
+            BoilingOp::Cells => self.go::<e::BoilingCells>(self.nc, &args),
+        }
+    }
+
+    fn set_mass_source(&mut self, b: Option<Buf>) -> Result<()> {
+        self.m.mass_source = match b {
+            Some(b) => {
+                ensure!(
+                    self.r(b).len as usize >= self.nc,
+                    "flow device: a mass source of {} cells expected",
+                    self.nc
+                );
+                self.r(b)
+            }
+            None => Raw::EMPTY,
+        };
+        Ok(())
     }
 
     fn two_fluid_eliminate(&mut self, b: &super::EliminateBufs) -> Result<()> {

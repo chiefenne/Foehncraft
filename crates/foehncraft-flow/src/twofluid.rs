@@ -59,6 +59,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::time::Instant;
 
+#[path = "twofluid_boiling.rs"]
+pub mod boiling;
+pub use boiling::{BoilingSection, BoilingTotals};
+
 /// The lift model.
 #[derive(
     Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
@@ -159,6 +163,10 @@ pub struct TwoFluidSection {
     /// (default 0.5).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_courant: Option<f64>,
+    /// Boiling at heated walls with the energy equations of both phases
+    /// (MP4).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub boiling: Option<BoilingSection>,
 }
 
 impl TwoFluidSection {
@@ -275,7 +283,7 @@ pub fn validate(case: &crate::case::FlowCase) -> Result<()> {
         no.push("[vof]");
     }
     if case.energy.is_some() {
-        no.push("[energy] (wall boiling, MP4, adds it)");
+        no.push("[energy] (with boiling, the phase temperatures come from [two_fluid.boiling])");
     }
     if !case.scalars.is_empty() {
         no.push("passive scalars or species");
@@ -322,7 +330,7 @@ pub fn validate(case: &crate::case::FlowCase) -> Result<()> {
             ),
         )));
     }
-    Ok(())
+    boiling::validate(case)
 }
 
 /// The material arrays of one phase (copied into the device's material
@@ -381,6 +389,31 @@ pub struct Totals {
     /// The largest momentum residual of the gas in the last outer
     /// iteration.
     pub gas_residual: f64,
+    /// The boiling (MP4).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub boiling: Option<BoilingTotals>,
+}
+
+/// Units of `two_fluid.csv`.
+pub const CSV_UNITS: &str = "step -, time s, volume m3 (gas), volume_out m3 (net through the \
+    boundaries), clipped m3, substeps -, dispersion_iterations -, alpha_min alpha_max -, \
+    gas_residual -; with [two_fluid.boiling] (MP4): wall_heat W, wall_evaporation_heat W, \
+    wall_vapour_heat W (into the vapour at dry wall), wall_vapour kg/s, interface_vapour kg/s (net, negative: condensation), max_wall_temperature K, \
+    enthalpy_out W (out less in), energy_iterations_liquid energy_iterations_vapour -";
+
+/// The header of `two_fluid.csv` (`boiling`: with the columns of MP4).
+pub fn csv_head(boiling: bool) -> String {
+    let mut h = String::from(
+        "step,time,volume,volume_out,clipped,substeps,dispersion_iterations,alpha_min,alpha_max,\
+         gas_residual",
+    );
+    if boiling {
+        h.push_str(
+            ",wall_heat,wall_evaporation_heat,wall_vapour_heat,wall_vapour,interface_vapour,\
+             max_wall_temperature,enthalpy_out,energy_iterations_liquid,energy_iterations_vapour",
+        );
+    }
+    h
 }
 
 /// Iterations of the implicit dispersion of α at most (D354).
@@ -432,6 +465,8 @@ pub struct TwoFluid {
     alpha_n: Buf,
     delta: Buf,
     volume: Vec<f64>,
+    /// The boiling (MP4).
+    boil: Option<Box<boiling::Boil>>,
     /// The totals.
     pub totals: Totals,
     /// α_g per cell of the end of the last step (host).
@@ -472,7 +507,10 @@ impl TwoFluid {
             rho_g: g.density,
             mu_l: case.mu(),
             mu_g: g.viscosity,
-            sigma: t.surface_tension.unwrap_or(0.0),
+            sigma: t
+                .surface_tension
+                .or_else(|| t.boiling.as_ref().and_then(boiling::surface_tension))
+                .unwrap_or(0.0),
             d: g.diameter,
             g: case.gravity.as_ref().map(|g| g.vector).unwrap_or([0.0; 3]),
             lift: match t.lift {
@@ -496,6 +534,37 @@ impl TwoFluid {
                 .unwrap_or(if turbulent { 0.6 } else { 0.0 }),
             alpha_min: 1e-6,
         })
+    }
+
+    /// One row of `two_fluid.csv` after step `n` at `time`.
+    pub fn csv_row(&self, n: usize, time: f64) -> String {
+        let t = &self.totals;
+        let mut r = format!(
+            "{n},{time:e},{:e},{:e},{:e},{},{},{:e},{:e},{:e}",
+            t.volume,
+            t.volume_out,
+            t.clipped_volume,
+            t.substeps,
+            t.dispersion_iterations,
+            t.alpha_range[0],
+            t.alpha_range[1],
+            t.gas_residual
+        );
+        if let Some(b) = &t.boiling {
+            r.push_str(&format!(
+                ",{:e},{:e},{:e},{:e},{:e},{:e},{:e},{},{}",
+                b.wall_heat,
+                b.wall_evaporation_heat,
+                b.wall_vapour_heat,
+                b.wall_vapour,
+                b.interface_vapour,
+                b.max_wall_temperature,
+                b.enthalpy_out,
+                b.energy_iterations[0],
+                b.energy_iterations[1]
+            ));
+        }
+        r
     }
 
     /// The gas fraction of the cells and the material arrays of both phases
@@ -725,6 +794,7 @@ impl TwoFluid {
                     disp: Some(self.disp),
                     body_g: Some(self.gas.mat.body),
                     body_l: Some(self.liq.mat.body),
+                    diam: self.boil.as_ref().map(|b| b.diameter()),
                     ..Default::default()
                 },
                 &self.k,
@@ -897,13 +967,20 @@ impl TwoFluid {
         let q = dev.download(self.mv)?;
         let qb = &q[fl.disc.n_interior..];
         let big = 0.5 * qb.iter().map(|x| x.abs()).exact_sum();
+        // (the volume the phase change makes leaves too, MP4)
+        let made = match &self.boil {
+            Some(b) => -dev.download(b.source())?.into_iter().exact_sum(),
+            None => 0.0,
+        };
         fl.phys.two_fluid_volume = Some(if big > 0.0 {
-            qb.iter().copied().exact_sum() / big
+            (qb.iter().copied().exact_sum() - made) / big
         } else {
             0.0
         });
         fl.phys.vof_alpha = Some(std::sync::Arc::new(self.alpha_host.clone()));
         fl.phys.gas_velocity = Some(std::sync::Arc::new(self.gas_velocity.clone()));
+        boiling::download(fl, self)?;
+        self.totals.boiling = self.boil.as_ref().map(|b| b.totals.clone());
         Ok(())
     }
 }
@@ -1139,11 +1216,13 @@ pub fn attach(
         alpha_n: cell(dev)?,
         delta: cell(dev)?,
         volume,
+        boil: None,
         totals: Totals::default(),
         alpha_host: vec![a0; nc],
         gas_velocity: [Vec::new(), Vec::new(), Vec::new()],
     };
     let mut tf = Box::new(tf);
+    tf.boil = boiling::attach(fl, case, mesh, geo)?;
     tf.refresh_fractions(fl)?;
     // the start fluxes: ρ_k ū_k·S of both phases
     let d = fl.dev.material_bufs();
@@ -1194,6 +1273,7 @@ fn step_inner(
     let d = fl.dev.material_bufs();
     // 1. α_g of the new level, the face fractions, the old levels
     tf.advance(fl, dt)?;
+    boiling::phase_change(fl, tf, dt)?;
     tf.refresh_fractions(fl)?;
     tf.face_fractions(fl)?;
     for (ph, u) in [(tf.gas, tf.gas_f.u), (tf.liq, fl.f.u)] {
@@ -1271,6 +1351,10 @@ fn step_inner(
             dev.product(tf.flux, 1.0 / g.rho, g.alpha_f, gw.m)?;
             dev.lincomb(tf.mv, 1.0, tf.mv, 1.0, tf.flux)?;
             dev.net_outflow(tf.mv, w.defect)?;
+            if let Some(b) = &tf.boil {
+                // (less the volume the phase change makes, MP4)
+                dev.lincomb(w.defect, 1.0, w.defect, 1.0, b.source())?;
+            }
             dev.throughflow(tf.mv, w.through)?;
             let dd = dev.sum_sq(w.defect)?.sqrt();
             let tt = dev.sum_sq(w.through)?.sqrt();
@@ -1367,6 +1451,7 @@ fn step_inner(
     tf.swap(fl);
     r?;
     TwoFluid::finish_phase(fl, &l, &d)?;
+    boiling::energy(fl, tf, dt)?;
     tf.download(fl)?;
     let cfl = tr.courant(fl, dt)?;
     fl.timings.gradients += t.elapsed().as_secs_f64();

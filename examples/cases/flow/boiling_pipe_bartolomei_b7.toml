@@ -1,0 +1,93 @@
+# Subcooled boiling of water in a heated vertical tube against the measured
+# void of Bartolomei et al. (1982), case B-7 of Zou, Zhao & Zhang (INL
+# 2018, OSTI 1480427): p = 6.84 MPa, G = 961 kg/(m² s), q = 1.13 MW/m²,
+# T_in = 466 K (L3, stage MP4, D357 to D359).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/boiling_pipe_bartolomei_b7.toml --out output/boiling_pipe/b7
+#   python3 examples/studies/boiling_pipe/compare.py output/boiling_pipe
+#
+# Tube ID 12 mm, heated over its 1.5 m, on an axisymmetric wedge of 2°
+# with 12 equal cells of 0.5 mm across the radius (first-cell y⁺ about
+# 100, in the range of the wall functions of the heat flux partitioning,
+# and cells of at least half a bubble size, as MP3 found) and 300 along;
+# 2 s of flow (1.7 flow-throughs) with steps of 1 ms. The liquid has
+# constant properties: density, viscosity and
+# conductivity of IAPWS-IF97 at T_sat − 10 K, where the vapour forms, and
+# the mean specific heat (h′(T_sat) − h(T_in))/(T_sat − T_in), so that the
+# heat balance and the equilibrium quality are those of the real enthalpy.
+# The vapour is saturated steam at 6.84 MPa (T_sat 557.42 K, ρ 35.59
+# kg/m³, IAPWS-IF97). All closures at their defaults: Kurul & Podowski
+# partitioning, Lemmert–Chawla sites, Tolubinsky–Kostanchuk departure,
+# Cole frequency, Del Valle–Kenning quenching, bubbles of 0.1 mm at 13.5
+# K to 2 mm at −5 K subcooling, Ranz–Marshall condensation; k-ω SST.
+case_format = "0.7"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [1.5, 0.006, 0.001]
+cells = [300, 12, 1]
+wedge = 2.0
+
+[fluid]
+density = 761.73
+viscosity = 9.616e-5
+
+[gravity]
+vector = [-9.81, 0.0, 0.0]
+
+[turbulence]
+model = "k-omega-sst"
+
+[initial]
+velocity = [1.2616, 0.0, 0.0]
+turbulence_intensity = 0.05
+viscosity_ratio = 100.0
+
+[two_fluid]
+[two_fluid.gas]
+name = "steam"
+density = 35.5932
+viscosity = 1.882e-5
+diameter = 1.0e-3
+
+[two_fluid.boiling]
+pressure = 6.84e6
+liquid_specific_heat = 4773.3
+liquid_conductivity = 0.5897
+[two_fluid.boiling.inflow_temperature]
+xmin = 466.0
+[two_fluid.boiling.heat_flux]
+ymax = 1.13e6
+
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [1.2616, 0.0, 0.0]
+turbulence_intensity = 0.05
+viscosity_ratio = 100.0
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 6.84e6
+[boundary.ymax]
+type = "wall"
+[boundary.zmin]
+type = "wedge"
+[boundary.zmax]
+type = "wedge"
+
+[solver]
+algorithm = "piso"
+outer_iterations = 10
+outer_tolerance = 1.0e-5
+log_every = 100
+
+[time]
+scheme = "bdf1"
+time_step = 1.0e-3
+steps = 2000
+
+[output]
+fields_every = 500
+
+[verification]
+require_convergence = false

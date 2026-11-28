@@ -116,3 +116,72 @@ fn refusals() {
     );
     assert_eq!(refused(&vof), "TWF002");
 }
+
+/// The Bartolomei B-7 tube (MP4) cut to 0.3 m on a coarse mesh, with the
+/// liquid entering 15 K below saturation so that it boils at once.
+fn boiling_case() -> String {
+    std::fs::read_to_string(cases().join("boiling_pipe_bartolomei_b7.toml"))
+        .unwrap()
+        .replace("\r\n", "\n")
+        .replace("upper = [1.5, 0.006, 0.001]", "upper = [0.3, 0.006, 0.001]")
+        .replace("cells = [300, 12, 1]", "cells = [30, 12, 1]")
+        .replace("xmin = 466.0", "xmin = 542.4")
+        .replace("steps = 2000", "steps = 60")
+        .replace("fields_every = 500", "fields_every = 60")
+}
+
+/// Wall boiling (L3, stage MP4, D357 to D359): the heat the walls take is
+/// the prescribed flux, part of it makes vapour at the wall, the wall stays
+/// a few kelvin above saturation, and the run's volume account of both
+/// phases with the vapour made closes (the run's own check, RUN007).
+#[test]
+fn wall_boiling_heats_and_makes_vapour() {
+    let text = boiling_case();
+    let case = FlowCase::from_toml(&text, &cases()).unwrap();
+    let dir = out("boiling");
+    run(&case, "boiling", &dir, |_| {}).unwrap();
+    let (head, rows) = table(&dir.join("two_fluid.csv"));
+    let col = |n: &str| head.iter().position(|h| h == n).unwrap();
+    let last = rows.last().unwrap();
+    // the wall of the 2° wedge: r θ L
+    let area = 0.006 * 2.0_f64.to_radians() * 0.3;
+    let q = last[col("wall_heat")];
+    assert!(
+        (q - 1.13e6 * area).abs() < 1e-3 * 1.13e6 * area,
+        "wall heat {q} W against {} W",
+        1.13e6 * area
+    );
+    let qe = last[col("wall_evaporation_heat")];
+    assert!(qe > 0.0 && qe < q, "evaporation {qe} W of {q} W");
+    assert!(last[col("wall_vapour")] > 0.0);
+    let t_sat = 557.42;
+    let tw = last[col("max_wall_temperature")];
+    assert!(
+        tw > t_sat && tw < t_sat + 30.0,
+        "wall temperature {tw} K (T_sat {t_sat} K)"
+    );
+    assert!(last[col("volume")] > 0.0, "no vapour in the tube");
+    for n in ["energy_iterations_liquid", "energy_iterations_vapour"] {
+        assert!(last[col(n)] < 100.0, "{n} = {}", last[col(n)]);
+    }
+}
+
+#[test]
+fn boiling_refusals() {
+    let base = boiling_case();
+    // without k for the wall functions
+    let laminar = base.replace("model = \"k-omega-sst\"", "model = \"laminar\"");
+    assert_eq!(refused(&laminar), "TWF001");
+    // a heat flux on a boundary that is not a wall
+    let inlet = base.replace(
+        "[two_fluid.boiling.heat_flux]\nymax",
+        "[two_fluid.boiling.heat_flux]\nxmin",
+    );
+    assert_eq!(refused(&inlet), "TWF001");
+    // a vapour that is not saturated steam at the pressure
+    let light = base.replace("density = 35.5932", "density = 30.0");
+    assert_eq!(refused(&light), "TWF001");
+    // with [energy] as well
+    let energy = format!("{base}\n[energy]\ninitial = 500.0\n");
+    assert_eq!(refused(&energy), "TWF002");
+}

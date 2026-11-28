@@ -857,6 +857,60 @@ pub struct TwoFluidBufs {
     pub off_l: Option<Buf>,
     /// The dispersion conductance of the α equation per face.
     pub td: Option<Buf>,
+    /// The bubble diameter per cell (MP4; `None`: the constant d).
+    pub diam: Option<Buf>,
+}
+
+/// The boiling operations (L3, stage MP4): which body of
+/// `foehncraft_kernels::boiling` [`FlowDevice::boiling`] runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BoilingOp {
+    /// Per heated wall slot: the heat flux partitioning → `t_w`, `q_l`,
+    /// `m_e`, `q_e`, `area`, `q_g` from `t_l`, `t_g`, `tk`, `alpha` and the slots of
+    /// [`FlowDevice::boiling_slots`].
+    Wall,
+    /// Per near-wall cell: the sums of its slots per unit volume →
+    /// `q_wall`, `m_wall`, `q_wall_g`.
+    WallCells,
+    /// Per cell: the phase change and the energy sources → `alpha_out`,
+    /// `diam`, `gamma_i`, `gamma`, `h_l`, `h_g`, `su_l`, `sp_l`, `su_g`,
+    /// `sp_g`, `cap_l`, `cap_g`, `src` from `alpha`, `t_l`, `t_g`, `ul`,
+    /// `ug`, `q_wall`, `m_wall`, `q_wall_g`.
+    Cells,
+}
+
+/// The buffers of [`FlowDevice::boiling`] (all needed by their operation).
+#[derive(Debug, Clone, Copy)]
+#[allow(missing_docs)]
+pub struct BoilingBufs {
+    pub t_l: Buf,
+    pub t_g: Buf,
+    pub tk: Buf,
+    pub t_w: Buf,
+    pub q_l: Buf,
+    pub m_e: Buf,
+    pub q_e: Buf,
+    pub area: Buf,
+    pub q_g: Buf,
+    pub q_wall: Buf,
+    pub m_wall: Buf,
+    pub q_wall_g: Buf,
+    pub alpha: Buf,
+    pub ul: Buf3,
+    pub ug: Buf3,
+    pub alpha_out: Buf,
+    pub diam: Buf,
+    pub gamma_i: Buf,
+    pub gamma: Buf,
+    pub h_l: Buf,
+    pub h_g: Buf,
+    pub su_l: Buf,
+    pub sp_l: Buf,
+    pub su_g: Buf,
+    pub sp_g: Buf,
+    pub cap_l: Buf,
+    pub cap_g: Buf,
+    pub src: Buf,
 }
 
 /// The device buffers that the momentum, flux and pressure operations read
@@ -1097,6 +1151,30 @@ pub trait FlowDevice {
     /// V/a of the separate rows in, the phase coefficients D out, see
     /// `foehncraft_kernels::twofluid::eliminate_d`).
     fn two_fluid_eliminate(&mut self, b: &EliminateBufs) -> Result<()>;
+    /// The heated wall faces of the boiling (MP4): per slot its near-wall
+    /// cell, area (m²), cell-centre wall distance (m) and heat flux (W/m²);
+    /// the near-wall cells (ascending) with the start of their slots.
+    fn boiling_slots(
+        &mut self,
+        cell: &[u32],
+        area: &[f64],
+        y: &[f64],
+        q: &[f64],
+        wcell: &[u32],
+        wptr: &[u32],
+    ) -> Result<()>;
+    /// One boiling operation (MP4) with the constants `kc` and the step
+    /// `dt`.
+    fn boiling(
+        &mut self,
+        op: BoilingOp,
+        b: &BoilingBufs,
+        kc: &foehncraft_kernels::boiling::Constants<f64>,
+        dt: f64,
+    ) -> Result<()>;
+    /// The continuity source of the pressure rows per cell (m³/s, −the
+    /// volume made; MP4), `None`: none.
+    fn set_mass_source(&mut self, b: Option<Buf>) -> Result<()>;
     /// The material buffers of the device (MP3).
     fn material_bufs(&self) -> MaterialBufs;
     /// Corrected fluxes ṁ − c_f (p'_N − p'_P).

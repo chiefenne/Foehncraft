@@ -3524,6 +3524,8 @@ pub struct TwoFluidArgs {
     pub off_l: Raw<f64>,
     /// The dispersion conductance of the α equation per face (output).
     pub td: Raw<f64>,
+    /// The bubble diameter per cell (MP4; empty: the constant d).
+    pub diam: Raw<f64>,
 }
 
 /// The interphase forces of cell `c` ([`crate::twofluid::cell_forces`])
@@ -3548,6 +3550,7 @@ impl Entry for TwoFluidCells {
                 nu_t: a.nu_t.get(),
                 h: a.cell_h.get(),
                 grad_alpha: a.grad_alpha.v(),
+                diam: a.diam.get(),
             };
             let r = crate::twofluid::cell_forces(c, &inp, &a.k);
             *a.kv.out().add(c) = r.kv;
@@ -3679,11 +3682,194 @@ impl Entry for TwoFluidEliminate {
     }
 }
 
+/// Arguments of the boiling entries (L3 MP4, [`crate::boiling`]).
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct BoilingArgs {
+    /// Mesh.
+    pub m: Mesh,
+    /// The constants of the boiling.
+    pub k: crate::boiling::Constants<f64>,
+    /// The time step (s).
+    pub dt: f64,
+    /// The near-wall cell, area (m²), wall distance of the cell centre (m)
+    /// and heat flux (W/m²) per heated wall face (slot).
+    pub slot_cell: Raw<u32>,
+    /// See `slot_cell`.
+    pub slot_area: Raw<f64>,
+    /// See `slot_cell`.
+    pub slot_y: Raw<f64>,
+    /// See `slot_cell`.
+    pub slot_q: Raw<f64>,
+    /// Liquid and vapour temperatures per cell.
+    pub t_l: Raw<f64>,
+    /// See `t_l`.
+    pub t_g: Raw<f64>,
+    /// k of the liquid's turbulence per cell.
+    pub tk: Raw<f64>,
+    /// Outputs per slot: T_w, the liquid's wall heat (W), the vapour made
+    /// (kg/s), q_e (W/m²) and the bubble area fraction.
+    pub t_w: Raw<f64>,
+    /// See `t_w`.
+    pub q_l: Raw<f64>,
+    /// See `t_w`.
+    pub m_e: Raw<f64>,
+    /// See `t_w`.
+    pub q_e: Raw<f64>,
+    /// See `t_w`.
+    pub area: Raw<f64>,
+    /// The vapour's wall heat per slot (W, the dry part of the wall).
+    pub q_g: Raw<f64>,
+    /// The near-wall cells (ascending) and the start of their slots.
+    pub wcell: Raw<u32>,
+    /// See `wcell`.
+    pub wptr: Raw<u32>,
+    /// The liquid's wall heat (W/m³) and the wall vapour (kg/(m³ s)) per
+    /// cell (out of [`BoilingWallCells`], into [`BoilingCells`]).
+    pub q_wall: Raw<f64>,
+    /// See `q_wall`.
+    pub m_wall: Raw<f64>,
+    /// The vapour's wall heat per cell (W/m³).
+    pub q_wall_g: Raw<f64>,
+    /// α* per cell.
+    pub alpha: Raw<f64>,
+    /// Liquid and gas velocities.
+    pub ul: Raw3,
+    /// See `ul`.
+    pub ug: Raw3,
+    /// Outputs per cell: α_g of the new level, the bubble diameter, Γ_i,
+    /// Γ, H_l, H_g.
+    pub alpha_out: Raw<f64>,
+    /// See `alpha_out`.
+    pub diam: Raw<f64>,
+    /// See `alpha_out`.
+    pub gamma_i: Raw<f64>,
+    /// See `alpha_out`.
+    pub gamma: Raw<f64>,
+    /// See `alpha_out`.
+    pub h_l: Raw<f64>,
+    /// See `alpha_out`.
+    pub h_g: Raw<f64>,
+    /// S_u, S_p of the liquid and the vapour and both heat capacities
+    /// ([`crate::boiling::energy_sources`]).
+    pub su_l: Raw<f64>,
+    /// See `su_l`.
+    pub sp_l: Raw<f64>,
+    /// See `su_l`.
+    pub su_g: Raw<f64>,
+    /// See `su_l`.
+    pub sp_g: Raw<f64>,
+    /// See `su_l`.
+    pub cap_l: Raw<f64>,
+    /// See `su_l`.
+    pub cap_g: Raw<f64>,
+    /// The continuity source −V Γ (1/ρ_g − 1/ρ_l) per cell (m³/s).
+    pub src: Raw<f64>,
+}
+
+/// The heat flux partitioning of heated wall slot `i`
+/// ([`crate::boiling::wall_split`]).
+pub struct BoilingWall;
+impl Entry for BoilingWall {
+    type Args = BoilingArgs;
+    const NAME: &'static str = "boiling_wall";
+    #[inline(always)]
+    unsafe fn run(i: usize, a: &BoilingArgs) {
+        // SAFETY: guaranteed by the caller.
+        unsafe {
+            let c = a.slot_cell.read(i) as usize;
+            let w = crate::boiling::WallIn {
+                q_w: a.slot_q.read(i),
+                t_p: a.t_l.read(c),
+                k: a.tk.read(c),
+                y: a.slot_y.read(i),
+                alpha: a.alpha.read(c),
+                t_g: a.t_g.read(c),
+            };
+            let s = crate::boiling::wall_split(&a.k, &w);
+            let ar = a.slot_area.read(i);
+            *a.t_w.out().add(i) = s.t_w;
+            *a.q_l.out().add(i) = (s.q_c + s.q_q) * ar;
+            *a.m_e.out().add(i) = s.m_e * ar;
+            *a.q_e.out().add(i) = s.q_e;
+            *a.area.out().add(i) = s.area;
+            *a.q_g.out().add(i) = s.q_g * ar;
+        }
+    }
+}
+
+/// The wall heat and vapour of near-wall cell `j` per unit volume: the sum
+/// over its heated slots, written at the cell.
+pub struct BoilingWallCells;
+impl Entry for BoilingWallCells {
+    type Args = BoilingArgs;
+    const NAME: &'static str = "boiling_wall_cells";
+    #[inline(always)]
+    unsafe fn run(j: usize, a: &BoilingArgs) {
+        // SAFETY: guaranteed by the caller.
+        unsafe {
+            let c = a.wcell.read(j) as usize;
+            let (lo, hi) = (a.wptr.read(j) as usize, a.wptr.read(j + 1) as usize);
+            let mut q = 0.0;
+            let mut m = 0.0;
+            let mut qg = 0.0;
+            let mut s = lo;
+            while s < hi {
+                q += a.q_l.read(s);
+                m += a.m_e.read(s);
+                qg += a.q_g.read(s);
+                s += 1;
+            }
+            let v = a.m.volume.read(c);
+            *a.q_wall.out().add(c) = q / v;
+            *a.m_wall.out().add(c) = m / v;
+            *a.q_wall_g.out().add(c) = qg / v;
+        }
+    }
+}
+
+/// The phase change and the energy sources of cell `c`
+/// ([`crate::boiling::phase_change`], [`crate::boiling::energy_sources`]).
+pub struct BoilingCells;
+impl Entry for BoilingCells {
+    type Args = BoilingArgs;
+    const NAME: &'static str = "boiling_cells";
+    #[inline(always)]
+    unsafe fn run(c: usize, a: &BoilingArgs) {
+        // SAFETY: guaranteed by the caller.
+        unsafe {
+            let (ul, ug) = (a.ul.v().at(c), a.ug.v().at(c));
+            let r = [ug[0] - ul[0], ug[1] - ul[1], ug[2] - ul[2]];
+            let slip = foehncraft_core::Real::sqrt_of(r[0] * r[0] + r[1] * r[1] + r[2] * r[2]);
+            let (tl, tg) = (a.t_l.read(c), a.t_g.read(c));
+            let mw = a.m_wall.read(c);
+            let o = crate::boiling::phase_change(&a.k, a.alpha.read(c), tl, tg, slip, mw, a.dt);
+            let e =
+                crate::boiling::energy_sources(&a.k, &o, a.q_wall.read(c), a.q_wall_g.read(c), mw);
+            let v = a.m.volume.read(c);
+            *a.alpha_out.out().add(c) = o.alpha;
+            *a.diam.out().add(c) = o.d;
+            *a.gamma_i.out().add(c) = o.gamma_i;
+            *a.gamma.out().add(c) = o.gamma;
+            *a.h_l.out().add(c) = o.h_l;
+            *a.h_g.out().add(c) = o.h_g;
+            *a.su_l.out().add(c) = e[0];
+            *a.sp_l.out().add(c) = e[1];
+            *a.su_g.out().add(c) = e[2];
+            *a.sp_g.out().add(c) = e[3];
+            *a.cap_l.out().add(c) = e[4];
+            *a.cap_g.out().add(c) = e[5];
+            *a.src.out().add(c) = -v * o.gamma * (1.0 / a.k.rho_g - 1.0 / a.k.rho_l);
+        }
+    }
+}
+
 send_sync!(
     LinArgs,
     VofArgs,
     TwoFluidArgs,
     TwoFluidElimArgs,
+    BoilingArgs,
     VecArgs,
     PseudoArgs,
     BlockArgs,
@@ -3722,7 +3908,7 @@ send_sync!(
 );
 
 /// Names of all entries (the PTX module has `flow_<name>` for each).
-pub const NAMES: [&str; 69] = [
+pub const NAMES: [&str; 72] = [
     Lincomb::NAME,
     ScaledDifference::NAME,
     SquaresAdd::NAME,
@@ -3792,6 +3978,9 @@ pub const NAMES: [&str; 69] = [
     TwoFluidCells::NAME,
     TwoFluidFaces::NAME,
     TwoFluidEliminate::NAME,
+    BoilingWall::NAME,
+    BoilingWallCells::NAME,
+    BoilingCells::NAME,
 ];
 
 #[cfg(test)]
@@ -3841,6 +4030,7 @@ mod tests {
             size_of::<QuadGradArgs>(),
             size_of::<TwoFluidArgs>(),
             size_of::<TwoFluidElimArgs>(),
+            size_of::<BoilingArgs>(),
             size_of::<VofArgs>(),
         ];
         for s in sizes {
@@ -3917,7 +4107,7 @@ mod tests {
             unsafe { Product::run(i, &a) };
         }
         assert_eq!(z, [-4.0, -16.0, -36.0]);
-        assert_eq!(NAMES.len(), 69);
+        assert_eq!(NAMES.len(), 72);
         // the elliptic-blending helpers: out += |v|², out3 = s v
         let (vx, vy, vz) = ([1.0, 0.0], [2.0, -3.0], [2.0, 4.0]);
         let s = [0.5, -2.0];
