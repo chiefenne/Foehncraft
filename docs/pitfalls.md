@@ -893,7 +893,7 @@ Found with the circuits behind the walls (SF7c, #356):
   as the input cells shrink, and the order from the cell counts of a
   manufactured solution came out 2.3 to 2.4 on three levels (the share of
   fine cells changes). `distance` keeps the region in metres; the order is
-  then 2.04 and 1.99 (#FFF).
+  then 2.04 and 1.99 (#361).
 - **Merged cut cells may share several faces with a neighbour in every
   view of the mesh.** A refined mesh gave more merged cut cells, and the
   fluid view of a conjugate case refused two cells with two shared faces

@@ -13,7 +13,7 @@ Part of the [Recipes](../recipes.md): put bodies into the flow without meshing t
 | 357 | [Run a turbulent flow with wall functions on a cut body](#cut-wall-functions) |
 | 359 | [Keep a cut body as a solid region (conjugate heat transfer)](#cut-cht) |
 | 360 | [Give a cut body inlets, outlets and a turning wall](#cut-patches) |
-| FFF | [Refine the mesh near a body](#refine) |
+| 361 | [Refine the mesh near a body](#refine) |
 
 ---
 
@@ -351,7 +351,7 @@ The boundary summary of every wall of the body (`result.json`, the log) then has
 ---
 
 <a id="refine"></a>
-## FFF. Refine the mesh near a body
+## 361. Refine the mesh near a body
 
 **Start from a coarse box mesh and let the bodies refine it.** Add `[immersed.refine]` to a case with `[[immersed.body]]` bodies (cut or penalised):
 
@@ -380,6 +380,6 @@ radius = 0.05
 
 The hexahedra of the mesh near the surfaces are halved before the cut, 2:1 balanced, into hexahedra with hanging-node faces; a planar mesh (one cell thick) is refined in its plane. The log (IMM206) gives the cells per level, the faces between levels and the largest non-orthogonality and skewness.
 
-**Choose the widths.** Make the finest band wide enough for the flow features at the body: the lift of the Schäfer–Turek cylinder ([gallery FFF](../gallery/immersed.md#refine)) is 5 % below the reference range with the finest band 0.02 m (0.2 D) wide and inside it at 0.08 m (0.8 D); drag and pressure difference were within 0.2 % of their ranges already at 0.02 m. Use `distance` for a convergence study (`[verification] levels`): the refined region is then the same in metres on every level, while `layers` narrows it with the cells.
+**Choose the widths.** Make the finest band wide enough for the flow features at the body: the lift of the Schäfer–Turek cylinder ([gallery 361](../gallery/immersed.md#refine)) is 5 % below the reference range with the finest band 0.02 m (0.2 D) wide and inside it at 0.08 m (0.8 D); drag and pressure difference were within 0.2 % of their ranges already at 0.02 m. Use `distance` for a convergence study (`[verification] levels`): the refined region is then the same in metres on every level, while `layers` narrows it with the cells.
 
 **Limits.** Only hexahedra are refined; tetrahedra, prisms and polyhedra are kept whole. The refinement follows the distance to the bodies only, not the solution, and never coarsens. A mesh with periodic pairs is refined before the pairing. One rank only.

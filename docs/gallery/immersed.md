@@ -13,7 +13,7 @@ Part of the [Example gallery](../gallery.md): bodies in the flow without a body-
 | 357 | [A turbulent plate tilted against the mesh: wall functions on cut cells](#cut-plate) | L13 stage 2c | `shape = "plane"` (`normal`), wall functions with the exact first-cell distance, `[immersed.cut] wall_sample`, y⁺ per body (LIM011) |
 | 359 | [A heated pin cut out of a box mesh: conjugate heat transfer through cut cells](#cut-cht) | L13 stage 2d | `[regions.<name>] zones = ["<body>"]` on a cut body, solid cut cells, the cut faces as region interface, thin solids refused (IMM205) |
 | 360 | [A cylinder that blows through a slot, and Taylor–Couette flow cut out of a box: conditions on cut bodies](#cut-patches) | L13 stage 2e | `patches` of an STL body (ASCII solids, binary attribute tags), `[boundary.<body>-<patch>]`, `omega` (turning wall, torque), `invert` |
-| FFF | [A cylinder on a box mesh refined near it: hanging-node faces](#refine) | L13 stage 2f | `[immersed.refine]` (`levels`, `layers` or `distance`), refinement of hexahedra with hanging-node faces, 2:1 balance (IMM206) |
+| 361 | [A cylinder on a box mesh refined near it: hanging-node faces](#refine) | L13 stage 2f | `[immersed.refine]` (`levels`, `layers` or `distance`), refinement of hexahedra with hanging-node faces, 2:1 balance (IMM206) |
 
 ---
 
@@ -955,7 +955,7 @@ examples/cases/flow/immersed_blown_cylinder.stl`. Recipe:
 ---
 
 <a id="refine"></a>
-## FFF. A cylinder on a box mesh refined near it: hanging-node faces
+## 361. A cylinder on a box mesh refined near it: hanging-node faces
 
 <img src="../figures/gallery/immersed_refine.png" alt="Four panels. Top left: the speed around a grey cylinder in a channel, blue in the wake and red beside the cylinder, the cells outlined: large square cells far away, cells half and a quarter as wide in two bands around the cylinder. Top right: a close-up of a perturbed mesh with a dashed circular arc, the cells a quarter as wide along the arc and half as wide further out, coloured by the temperature error, pale near the arc and dark red in the coarse cells in the middle of the circle, with no jump where the cell size changes. Bottom left: the lift coefficient against the number of cells on a log axis: blue points for uniform meshes rise from 0.0078 to 0.0106, a red square for the refined mesh at about 19 000 cells lies inside the grey reference band. Bottom right: the temperature error against the width of the input cells on log axes, two falling lines parallel to a dashed second-order line, the refined one below." width="1400" height="900">
 
@@ -1052,6 +1052,6 @@ pip install matplotlib h5py numpy
 python3 -m tools.plot.immersed_refine docs/figures/gallery output/ref_cyl output/ref_mms1
 ```
 
-Recipe: [FFF](../recipes/immersed.md#refine). Case files:
+Recipe: [361](../recipes/immersed.md#refine). Case files:
 `examples/cases/flow/immersed_refine_cylinder_re20.toml`,
 `examples/cases/flow/immersed_refine_mms.toml`.
