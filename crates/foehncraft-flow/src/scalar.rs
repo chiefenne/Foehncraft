@@ -806,6 +806,19 @@ struct EnergyField {
     spray_heat: Option<Vec<(u32, f64, f64)>>,
     /// The heat release of a reacting flow per cell (SF2b, W/m³).
     reaction_heat: Option<Vec<f64>>,
+    /// The heat release of a steady turbulent flame (SF3) linear in the
+    /// species: q = A + Σ B_j Y_j per cell (W/m³), with Y_j the current
+    /// mass fractions of the species fields `phi` (replaces
+    /// `reaction_heat` in the energy rows).
+    reaction_linear: Option<ReactionLinear>,
+}
+
+/// The heat release q = A + Σ_j B_j Y_j of a steady turbulent flame (SF3).
+#[derive(Debug, Clone)]
+struct ReactionLinear {
+    a: Vec<f64>,
+    b: Vec<Vec<f64>>,
+    phi: Vec<Buf>,
 }
 
 /// The variable density of the fluid in the energy equation (stage 7c):
@@ -2632,6 +2645,26 @@ impl Scalars {
         }
         if let Some(e) = self.fields.iter_mut().find_map(|f| f.energy.as_deref_mut()) {
             e.reaction_heat = Some(heat);
+            e.reaction_linear = None;
+        }
+        Ok(())
+    }
+
+    /// Makes the heat release of the energy rows linear in the transported
+    /// species (SF3, steady): q = A + Σ_j B_j Y_j per cell (W/m³), taken
+    /// with the mass fractions of the fields at each refresh of the energy,
+    /// so that the energy gets the enthalpy of the conversion the implicit
+    /// species rows make (and not that of the state of the renewal).
+    pub(crate) fn set_reaction_heat_linear(&mut self, a: Vec<f64>, b: Vec<Vec<f64>>) -> Result<()> {
+        let idx: Vec<usize> = self
+            .species
+            .as_deref()
+            .map(|s| s.fields.clone())
+            .unwrap_or_default();
+        anyhow::ensure!(idx.len() == b.len(), "linear heat release per species");
+        let phi: Vec<Buf> = idx.iter().map(|&i| self.fields[i].phi).collect();
+        if let Some(e) = self.fields.iter_mut().find_map(|f| f.energy.as_deref_mut()) {
+            e.reaction_linear = Some(ReactionLinear { a, b, phi });
         }
         Ok(())
     }
@@ -3448,6 +3481,7 @@ impl Scalars {
             extra_heat: None,
             spray_heat: None,
             reaction_heat: None,
+            reaction_linear: None,
             var_rho: None,
             porous,
             mats,
@@ -3819,7 +3853,18 @@ fn refresh_energy(
             }
         }
         // the heat release of a reacting flow (SF2b)
-        if let Some(r) = &e.reaction_heat {
+        if let Some(l) = &e.reaction_linear {
+            // (SF3, steady) with the current mass fractions
+            for (h, a) in heat.iter_mut().zip(&l.a) {
+                *h += a;
+            }
+            for (b, &f) in l.b.iter().zip(&l.phi) {
+                let y = dev.download(f)?;
+                for ((h, b), y) in heat.iter_mut().zip(b).zip(&y) {
+                    *h += b * y;
+                }
+            }
+        } else if let Some(r) = &e.reaction_heat {
             for (h, q) in heat.iter_mut().zip(r) {
                 *h += q;
             }

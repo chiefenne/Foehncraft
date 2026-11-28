@@ -1737,10 +1737,30 @@
     "species diffusion is Fickian with constant Lewis numbers per species (no mixture-averaged or multicomponent diffusion, no thermal diffusion); on 100 um cells Lewis 1 for every species gives 0.29 m/s for the GRI-Mech flame, the species Lewis numbers 0.33 m/s",
     "the first steps after the start fields are out of mass balance by up to 6e-4 (BAL001 warning) while the flow adjusts to the expansion; 1e-7 later",
     "the energy balance books the convected enthalpy with the fluid's c_p, not the mixture's: its imbalance shows about 26 % in a flame although the temperature equation uses the mixture c_p",
-    "transient only (CHM003 for steady runs), laminar only (turbulence-chemistry interaction is SF3), no sprays with chemistry",
+    "laminar flames transient only (CHM003 for steady laminar runs; turbulent flames are chemistry.turbulent, SF3), no sprays with chemistry",
     "not on ranks: the variable density it needs (stage 7c) is not on ranks yet",
     "GPU checked on one device only, the Tesla T4 (sm_75); one thread per cell with a dense Jacobian makes GRI-Mech 3.0 only 1.7x faster than 2 CPU cores (register spill; a block per cell or a sparse Jacobian would be needed); the flame cases themselves have not run with backend = \"cuda\"",
     "the burning velocity oscillates by a few per cent as the flame crosses cells (period dx/(S_L - u_inlet)); the case averages over the second half of the run"
+   ],
+   "range": {}
+  },
+  {
+   "id": "chemistry.turbulent",
+   "title": "Turbulent flames: eddy dissipation concept with the stiff integrator in the fine structures, eddy dissipation model as fallback, steady and transient RANS (L2, steam furnace SF3)",
+   "grade": "partial",
+   "why": [
+    "a model without reference data",
+    "gaps written"
+   ],
+   "gaps": [
+    "no comparison with measurements: the TNF data of Sandia Flame D are not in the repository (the Sandia archive could not be reached from the cloud); the literature with the same constants reports the shear-layer peak 500 K too high at x/D 15 and 450 K at x/D 30 (Saini et al. 2021), and the run's peaks (2272 and 2264 K) are of that kind",
+    "the bluff-body flame of the stage plan is not done",
+    "steady EDC residuals level at about 3e-5 (monitored quantities steady); the eddy dissipation model converges to 1e-6",
+    "no OH images: the 4-step mechanism has no OH and the jet flame has not run with GRI-Mech 3.0",
+    "the jet inlet is uniform (49.6 m/s), not the fully developed pipe profile of the experiment; no radiation",
+    "no partially stirred reactor, local EDC constants (Parente et al. 2016) or flamelet tables",
+    "the energy balance books the convected enthalpy with the fluid's c_p: 17 to 19 % imbalance shown in the jet flames although the temperature equation uses the mixture",
+    "transient EDC and EDM are not run by a case of their own (the formulas are unit-tested); not on ranks; GPU path with per-cell intervals checked through the CPU data-path test only"
    ],
    "range": {}
   },

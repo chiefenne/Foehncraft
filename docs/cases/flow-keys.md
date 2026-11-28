@@ -558,8 +558,11 @@ iteration of each time step every cell is integrated as a constant-pressure
 reactor over the step, and the change of its mass fractions and its heat
 release become sources of the species and energy equations (Lie
 splitting). Needs `[species]` with exactly the species of the mechanism,
-`[energy]` with `density = "variable"`, a `[time]` table and a laminar
-flow; steady runs, turbulence models and sprays are refused (CHM003).
+`[energy]` with `density = "variable"`, and either a `[time]` table and a
+laminar flow, or a turbulence model with a turbulence–chemistry
+interaction (stage SF3, [recipe 351](../recipes/species.md#turbulent-flames)),
+steady or transient; a steady laminar case, a turbulence model without
+`interaction` and sprays are refused (CHM003).
 
 | Key | Meaning |
 |---|---|
@@ -569,11 +572,23 @@ flow; steady runs, turbulence models and sprays are refused (CHM003).
 | `chemistry.flame_speed.fuel`, `.inlet` | report the burning velocity S_c = −ṁ_F/(ρ_u Y_F,u A) of a premixed flame from the fuel the reactions consume; ρ_u, Y_F,u and A of the inlet |
 | `chemistry.flame_speed.average_from` | average over the part of the run after this fraction of the end time (default 0.5) |
 | `chemistry.flame_speed.range` | `[low, high]` (m/s): the run fails when the mean is outside, as a `[verification]` band |
+| `chemistry.interaction` | `"laminar"` (default: the cell's own rates), `"edc"` (eddy dissipation concept: the fine structures integrated over their residence time τ*, mean rate ρ κ (Y* − Y)) or `"edm"` (eddy dissipation model: each reaction at the mixing rate A ε/k, capped by its Arrhenius rate); `edc` and `edm` need a turbulence model (SF3, D349) |
+| `chemistry.edc.version` | `"2005"` (default: γ* = γ_λ², Magnussen 2005) or `"1981"` (γ* = γ_λ³) |
+| `chemistry.edc.c_gamma`, `.c_tau` | the constants of γ_λ = C_γ (ν ε/k²)^¼ and τ* = C_τ (ν/ε)^½ (defaults 2.1377 and 0.4083) |
+| `chemistry.edc.max_fine_fraction` | the guard on γ* (default 0.75, below 1); cells held at it are counted in the log and `chemistry.csv` |
+| `chemistry.edm.a`, `.b` | the constants of the eddy dissipation model (defaults 4.0 and 0.5) |
+| `chemistry.edm.kinetic_limit` | cap every reaction at its Arrhenius rate (default true); the mechanism must have reactions in one direction only (CHM001 otherwise) |
+| `chemistry.update_every` | steady runs: renew the reaction sources every N outer iterations (default 1) |
+| `chemistry.relaxation` | steady runs: relax the rate and its implicit part between renewals, in (0, 1] (default 1) |
 
 With `[run] backend = "cuda"` the cells are integrated on the GPU (PTX
 entry `chemistry_react`, the same body as the CPU threads). The log has a
-line per run with the flame speed; `chemistry.csv` has per step the heat
-release, the net production of every species and the integrator steps.
+line per run with the flame speed; `chemistry.csv` has per step (per
+renewal in a steady run) the heat release, the net production of every
+species, the integrator steps and, with `edc`, the failed cells (CHM004),
+the cells at the γ* guard and the range of τ*. With `interaction`, the
+fields have `heat_release_rate` (W/m³) and, with `edc`,
+`fine_structure_fraction` γ* and `fine_structure_time` τ* (s).
 
 **Interfaces** (conjugate cases, stage 7d2, [recipe 160](../recipes/energy.md#cht-contact)).
 `[interfaces.<name>]` puts a resistance into the faces between two regions:

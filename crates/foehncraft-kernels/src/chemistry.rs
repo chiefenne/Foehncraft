@@ -1214,7 +1214,8 @@ mod tests {
                 .all(|(x, y)| x.to_bits() == y.to_bits())
         );
         assert_eq!(st_body, st_rows);
-        // a longer interval burns further
-        assert!(rows[5 * nz] < rows[4 * nz] && rows[4 * nz] < rows[3 * nz]);
+        // the hot cells reacted over their own intervals, the cold ones not
+        assert!(st_rows[3].steps > 0 && rows[3 * nz] < start[3 * nz]);
+        assert_eq!(rows[nz..2 * nz], start[nz..2 * nz]);
     }
 }

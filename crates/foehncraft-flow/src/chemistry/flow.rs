@@ -40,16 +40,25 @@
 //!   rates of a cell are scaled down together when a species would become
 //!   negative within the step (also exact in the elements);
 //! - **steady**: every `update_every` outer iterations the sources are
-//!   renewed in value-plus-slope form, S_i = S_u,i + S_p,i Y_i with
-//!   S_p ≤ 0 on the diagonal of the species rows (EDC: S_u = κ Y*,
-//!   S_p = −κ; EDM: a net sink as S_p = S/Y at the iterate), relaxed with
-//!   `relaxation` between renewals; the heat release is held from the
-//!   renewal. The rows conserve the elements at the converged state (where
-//!   Y is the state of the renewal), and the ledger books S_u + S_p Y.
+//!   renewed from the state of the renewal in value-plus-slope form,
+//!   S_i = S_u,i + S_p,i Y_i with S_p ≤ 0 on the diagonal of the species
+//!   rows (EDC: S_u = κ Y*, S_p = −κ; EDM: a sink as S_p = S/Y at the
+//!   iterate, a production in S_u), relaxed with `relaxation` between
+//!   renewals. The heat release is linear in the same species,
+//!   q = −ρ Σ_j (h_j − h_N)(S_u,j + S_p,j Y_j) (h at the temperature of the
+//!   renewal, N the closure species), and is taken with the mass fractions
+//!   of each refresh of the energy: the energy gets the enthalpy of the
+//!   conversion the implicit rows actually make. (A heat held from the
+//!   renewal, κ Σ h (Y − Y*) of the renewal state, heats by the factor
+//!   (a_P + ρ V κ)/a_P more than the rows convert while the iterate moves,
+//!   and the flame ran away above its adiabatic temperature.) At the
+//!   converged state both are the rates of that state; the ledger books
+//!   S_u + S_p Y.
 //!
 //! Cells where the fine-structure reactor fails (too many steps, a step too
-//! small) get no source in that renewal and are counted (CHM004), as are the
-//! cells where γ* is held at its guard.
+//! small, a state out of range) keep the rates of their last renewal in a
+//! steady run and get no source in that step of a transient one; they are
+//! counted (CHM004), as are the cells where γ* is held at its guard.
 
 use super::edc::{EdcSection, EdmSection, Interaction};
 use super::mechanism::{Mechanism, bad};
@@ -369,8 +378,8 @@ pub struct Chemistry {
     edm: EdmSection,
     update_every: usize,
     relaxation: f64,
-    /// Steady: the sources held between renewals (S_u, S_p per
-    /// transported species, the heat release).
+    /// Steady: the rates and slopes held between renewals (R, S_p per
+    /// transported species and cell).
     held: Option<Held>,
     /// The reaction of the last step (a rejected step is overwritten by
     /// its repetition).
@@ -391,9 +400,8 @@ pub struct Chemistry {
 /// The sources of a steady run held between renewals.
 #[derive(Debug, Clone)]
 struct Held {
-    su: Vec<Vec<f64>>,
+    rate: Vec<Vec<f64>>,
     sp: Vec<Vec<f64>>,
-    heat: Vec<f64>,
 }
 
 /// One row of the reaction log.
@@ -501,11 +509,11 @@ impl Chemistry {
         it: usize,
         first: usize,
     ) -> Result<bool> {
-        if self.held.is_some() && (it.saturating_sub(first + 1)) % self.update_every != 0 {
-            return Ok(false);
+        let due = self.held.is_none() || (it.saturating_sub(first + 1)) % self.update_every == 0;
+        if due {
+            self.react_turbulent(fl, None, 0.0)?;
         }
-        self.react_turbulent(fl, None, 0.0)?;
-        Ok(true)
+        Ok(due)
     }
 
     /// Integrates every cell over `dt` from the current fields and sets
@@ -524,7 +532,8 @@ impl Chemistry {
                 diag::CHEMISTRY_FINE_STRUCTURES,
                 format!(
                     "the fine-structure reactor failed {} times over the run (cells × renewals); \
-                     those cells got no reaction source in that renewal",
+                     those cells kept the rates of their last renewal (steady) or got no \
+                     reaction source in that step (transient)",
                     self.failed
                 ),
             )
@@ -587,9 +596,16 @@ impl Chemistry {
         let map = &self.to_flow;
         let nz = n + 1;
         let mut state = vec![0.0; nc * nz];
+        // the mean state of each cell: the mass fractions clipped at zero
+        // and scaled to sum to 1 (an undershoot of the transport is no
+        // mixture of its own)
         for (c, z) in state.chunks_mut(nz).enumerate() {
             for (kk, &j) in map.iter().enumerate() {
                 z[kk] = y[j][c].max(0.0);
+            }
+            let sum = z[..n].iter().exact_sum();
+            if sum > 0.0 {
+                z[..n].iter_mut().for_each(|v| *v /= sum);
             }
             z[n] = t[c];
         }
@@ -613,6 +629,7 @@ impl Chemistry {
                     })
                     .collect();
                 let taus: Vec<f64> = fs.iter().map(|f| f.map_or(0.0, |f| f.tau)).collect();
+                let start = state.clone();
                 let mut stats = vec![kc::Stats::default(); nc];
                 let set = self.settings;
                 match self.gpu.as_mut() {
@@ -663,12 +680,22 @@ impl Chemistry {
                             };
                         }
                         let z = &state[c * nz..(c + 1) * nz];
-                        // Y* per species of the case, and Y* − Y
-                        let mut ys = vec![0.0; nflow];
+                        // a fine-structure state outside its range (a mass
+                        // fraction below −10⁻⁶, a temperature outside the
+                        // data of the species) counts as a failure
+                        if z[..n].iter().any(|v| !(*v >= -1e-6)) || !(z[n] > 200.0 && z[n] < 6000.0)
+                        {
+                            return CellOut {
+                                steps: s.steps,
+                                rejected: s.rejected,
+                                failed: true,
+                                ..CellOut::default()
+                            };
+                        }
+                        // Y* − Y per species of the case
                         let mut dy = vec![0.0; nflow];
                         for (kk, &j) in map.iter().enumerate() {
-                            ys[j] = z[kk];
-                            dy[j] = z[kk] - y[j][c].max(0.0);
+                            dy[j] = z[kk] - start[c * nz + kk];
                         }
                         let (su, sp, heat) = match dt {
                             // the exact increment of dY/dt = κ (Y* − Y) over
@@ -679,13 +706,17 @@ impl Chemistry {
                                 let dh: f64 = (0..nflow).map(|j| -h_of(j, c) * inc[j]).exact_sum();
                                 (inc.iter().map(|d| d / dt).collect(), Vec::new(), dh / dt)
                             }
+                            // R = κ (Y* − Y): Y* of the state of the
+                            // renewal held, −κ on the diagonal of every
+                            // species (the Picard form); the heat is that of
+                            // the fine-structure reaction of that state
                             None => {
                                 let dh: f64 = (0..nflow).map(|j| -h_of(j, c) * dy[j]).exact_sum();
-                                (
-                                    ys.iter().map(|v| f.kappa * v).collect(),
-                                    vec![-f.kappa; nflow],
-                                    f.kappa * dh,
-                                )
+                                let mut su = vec![0.0; nflow];
+                                for (kk, &j) in map.iter().enumerate() {
+                                    su[j] = f.kappa * z[kk];
+                                }
+                                (su, vec![-f.kappa; nflow], f.kappa * dh)
                             }
                         };
                         CellOut {
@@ -809,27 +840,62 @@ impl Chemistry {
             }
             heat[c] = rho[c] * o.heat;
         }
-        // steady: relaxed against the sources held
+        // steady: the rate at the state of the renewal, R = S_u + S_p Y, and
+        // the slope relaxed against those held, then split again at this
+        // state (S_u = R − S_p Y ≥ 0; a sink beyond goes on the diagonal):
+        // relaxing S_u itself would pull a cell back towards the fine
+        // structures of an older iterate
         if dt.is_none() {
-            if let Some(h) = self.held.as_ref() {
-                let a = self.relaxation;
-                let mix = |old: &[f64], new: &mut [f64]| {
-                    for (n, o) in new.iter_mut().zip(old) {
-                        *n = o + a * (*n - o);
+            let a = self.relaxation;
+            let mut rate = vec![vec![0.0; nc]; transported];
+            let mut slope = vec![vec![0.0; nc]; transported];
+            for j in 0..transported {
+                for c in 0..nc {
+                    let yc = y[j][c];
+                    let (mut r, mut p) = (su[j][c] + sp[j][c] * yc, sp[j][c]);
+                    if let Some(h) = self.held.as_ref() {
+                        if out[c].failed {
+                            // a cell whose reactor failed keeps its rates
+                            (r, p) = (h.rate[j][c], h.sp[j][c]);
+                        } else {
+                            r = h.rate[j][c] + a * (r - h.rate[j][c]);
+                            p = h.sp[j][c] + a * (p - h.sp[j][c]);
+                        }
                     }
-                };
-                for j in 0..transported {
-                    mix(&h.su[j], &mut su[j]);
-                    mix(&h.sp[j], &mut sp[j]);
+                    rate[j][c] = r;
+                    slope[j][c] = p;
+                    let u = r - p * yc;
+                    if u >= 0.0 {
+                        (su[j][c], sp[j][c]) = (u, p);
+                    } else {
+                        su[j][c] = 0.0;
+                        sp[j][c] = if yc > 1e-12 { r / yc } else { p };
+                    }
                 }
-                mix(&h.heat, &mut heat);
             }
-            self.held = Some(Held {
-                su: su.clone(),
-                sp: sp.clone(),
-                heat: heat.clone(),
-            });
+            self.held = Some(Held { rate, sp: slope });
         }
+        // steady: the heat release linear in the transported species,
+        // q = −ρ Σ_j (h_j − h_N)(S_u,j + S_p,j Y_j) with h at the temperature
+        // of the renewal and N the closure (which takes the rest), taken
+        // with the mass fractions of each refresh of the energy; reported
+        // here at the state of the renewal
+        let linear = dt.is_none().then(|| {
+            let mut a = vec![0.0; nc];
+            let mut b = vec![vec![0.0; nc]; transported];
+            for c in 0..nc {
+                let hn = h_of(transported, c);
+                let mut s = 0.0;
+                for j in 0..transported {
+                    let dh = -rho[c] * (h_of(j, c) - hn);
+                    s += dh * su[j][c];
+                    b[j][c] = dh * sp[j][c];
+                }
+                a[c] = s;
+                heat[c] = s + (0..transported).map(|j| b[j][c] * y[j][c]).sum::<f64>();
+            }
+            (a, b)
+        });
         // the net production at the state of the renewal, S_u + S_p Y; the
         // closure species takes the rest
         let mut production: Vec<f64> = (0..transported)
@@ -867,7 +933,11 @@ impl Chemistry {
         let sc = fl.scalars.as_mut().context("scalars")?;
         match dt {
             Some(_) => sc.set_reaction(fl.dev.as_mut(), su, heat),
-            None => sc.set_reaction_with(fl.dev.as_mut(), su, Some(sp), heat),
+            None => {
+                sc.set_reaction_with(fl.dev.as_mut(), su, Some(sp), heat)?;
+                let (a, b) = linear.context("linear heat")?;
+                sc.set_reaction_heat_linear(a, b)
+            }
         }
     }
 

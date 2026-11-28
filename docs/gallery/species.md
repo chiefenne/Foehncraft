@@ -1,12 +1,13 @@
 # Species and reacting flows
 
-Part of the [Example gallery](../gallery.md): mixtures of ideal gases whose species are carried by the flow, the first stage (SF1) of the [development path to an industrial steam furnace](../assessments/steam-furnace-development-path.md). Gas-phase chemistry (SF2) reacts in a reactor (SF2a) and in the cells of a laminar flow (SF2b); turbulent flames follow with SF3.
+Part of the [Example gallery](../gallery.md): mixtures of ideal gases whose species are carried by the flow, the first stage (SF1) of the [development path to an industrial steam furnace](../assessments/steam-furnace-development-path.md). Gas-phase chemistry (SF2) reacts in a reactor (SF2a) and in the cells of a laminar flow (SF2b); turbulent flames burn with the eddy dissipation concept or model (SF3).
 
 | # | Example | Stage | Feature |
 |---|---|---|---|
 | 278 | [A methane jet in a coflow of air, and binary diffusion against the exact solution](#species-transport) | SF1 | `[species]`, `names`, `closure`, `initial`, `diffusion`, `schmidt`, `lewis`, `turbulent_schmidt`, `properties`, `[boundary.<name>.species]`, fields `Y_<species>` |
 | 289 | [Methane ignites in a constant-pressure reactor and ends at its chemical equilibrium](#gas-chemistry) | SF2a | `foehn chemistry reactor`, `foehn chemistry equilibrium`, `[reactor]`, `mechanism` (`gri30`, `westbrook-dryer-2`, `jones-lindstedt-4`, YAML files), `[reactor.integrator]`, `[reactor.check]` |
 | 298 | [A laminar methane–air flame burns at the measured speed with GRI-Mech 3.0](#reacting-flow-cells) | SF2b | `[chemistry]`, `mechanism`, `min_temperature`, `[chemistry.integrator]`, `[chemistry.flame_speed]`, `chemistry.csv`, `[run] backend = "cuda"` |
+| 351 | [A piloted turbulent jet flame with the eddy dissipation concept and model](#turbulent-flames) | SF3 | `[chemistry] interaction` (`edc`, `edm`), `[chemistry.edc]`, `[chemistry.edm]`, `update_every`, `relaxation`, fields `heat_release_rate`, `fine_structure_fraction`, `fine_structure_time` |
 
 ---
 
@@ -263,3 +264,105 @@ each species, integrator steps per time step), `fields.vtkhdf` with every
 `Y_<species>`. [Recipe 298](../recipes/species.md#reacting-flow-cells),
 cases in the [catalogue](../cases/flow.md), images by
 `python3 -m tools.plot.flame_profiles`.
+
+---
+
+<a id="turbulent-flames"></a>
+## 351. A piloted turbulent jet flame with the eddy dissipation concept and model
+
+<img src="../figures/gallery/jet_flame_edc_fields.png" alt="Three panels of an axisymmetric jet flame from x/D 0 to 60, mirrored about its axis. Top, temperature: two thin hot layers start at the pilot lips at r/D about 0.6 and 1.3, widen downstream into a red band above 2200 K at r/D 1.3 to 2, close over the cold fuel core near x/D 40 and fill the whole jet with gas above 2200 K from x/D 50. Middle, CO mass fraction: a yellow core inside the flame, up to 0.15 on the axis around x/D 40, zero in the air outside. Bottom, heat release rate on a log scale: brightest at the pilot lips (about 2500 MW/m³), then a band 10 to 300 MW/m³ along the flame sheet that reaches the axis near x/D 55." width="1200" height="900">
+
+`jet_flame_edc_jl4.toml` is a piloted methane jet flame with the geometry
+and inlets of Sandia Flame D (Barlow & Frank 1998): a jet of 7.2 mm
+diameter of 25 % methane and 75 % air by volume at 294 K and 49.6 m/s
+(Re 22 400), a pilot annulus out to 18.2 mm of burnt lean gas at 1880 K
+and 11.4 m/s, and air at 0.9 m/s around it. The run is steady RANS on a
+2° wedge of 120 × 54 cells over 0.5 m (69 D), standard k–ε with
+C_ε1 = 1.60 (the round-jet correction of Pope 1978), and the eddy
+dissipation concept with the four-step mechanism of Jones & Lindstedt
+(1988). In every cell above 500 K the fine structures, the fraction
+γ* = (2.1377 (ν ε/k²)^¼)² of the mass in which the turbulence dissipates
+(Magnussen 2005), burn over their residence time τ* = 0.4083 (ν/ε)^½ as a
+constant-pressure reactor with the stiff integrator of SF2 (the same cell
+body as the laminar flames and the GPU entry), and the mean rate is
+ρ κ (Y* − Y) with κ = γ*/(τ* (1 − γ*)). The flame anchors at the pilot
+lips, where the heat release is highest, runs as a thin sheet outside the
+fuel core, closes over the cold core near x/D 40 and peaks at **2289 K on the
+axis at x/D 63**; CO reaches 15 % by mass in the rich core, where the fine
+structures turn methane into CO and H₂ faster than the oxygen can follow.
+
+<img src="../figures/gallery/jet_flame_edc_profiles.png" alt="Left: along the axis the temperature of the eddy dissipation concept rises slowly from 294 K to 700 K at x/D 30, steeply to 1500 K at x/D 40 and on to its peak of 2289 K at x/D 63; the dotted curve of the eddy dissipation model rises earlier and peaks at about 2000 K at x/D 53. Methane and oxygen fall to zero between x/D 30 and 40, CO peaks at 0.15 at x/D 39, water and CO2 rise behind it. Right: radial temperature at x/D 15, 30 and 45; the concept peaks at 2272, 2264 and 2259 K at r/D 1.35, 1.7 and 1.9, the model at 2223, 2207 and 2027 K slightly closer to the axis." width="1200" height="480">
+
+**Against the measurements.** The temperature of the reaction zone is the
+known weakness of the standard concept in this flame: with the same
+constants Saini et al. (2021, arXiv 2103.01450) found the peak in the
+shear layer about 500 K above the Raman measurements at x/D = 15 and
+450 K above at x/D = 30, and 150 K below at x/D = 45. The run behaves
+the same way: its shear-layer peaks of 2272 K at x/D = 15 and 2264 K at
+x/D = 30 are near the adiabatic temperature of the jet fuel, which the
+measured flame does not reach there (finite-rate effects and local
+extinction near the nozzle). The TNF data of the flame (Sandia, scalar
+data archive) are not part of this repository yet, so the run is not
+compared point by point: **this case is a demonstration**, not a
+validation, and the bands of the comparison are a gap. The
+`jet_flame_edm_wd2.toml` case burns the same flame with the eddy
+dissipation model and the two-step mechanism of Westbrook & Dryer
+(1981): each reaction at the mixing rate A ε/k (A = 4, B = 0.5, Magnussen
+& Hjertager 1977), capped by its Arrhenius rate. It peaks at 1999 K on
+the axis at x/D 53 and 2223 K in the shear layer at x/D 15, and its heat
+release in the domain is 81 % of the lower heating value of the fuel
+that flows in, against 95 % with the concept.
+
+**How it is built.** `interaction = "edc"` adds the fine structures to
+the cell body of SF2b: the integrator takes a residence time per cell
+(a new per-cell array of the kernel and its PTX entry). In a transient run
+each step takes the exact increment of dY/dt = κ (Y* − Y) over Δt,
+(1 − e^(−κΔt))(Y* − Y), one factor per cell, so every element is
+conserved. In a steady run the rates are renewed every `update_every`
+outer iterations; the rate at the current state and its implicit part
+are relaxed (`relaxation`), the sinks go on the diagonal of the species
+rows, and the heat release is linear in the species, q = A + Σ B_j Y_j,
+taken with the mass fractions of each refresh of the energy. That last
+point matters: a heat release held from the state of the renewal heats
+the cell by the factor (a_P + ρVκ)/a_P more than the implicit rows
+convert, and the first runs climbed above 4000 K. Relaxing the source
+κY* instead of the rate pulled cells back towards older fine structures
+and gave negative heat release in 14 % of the flame while it formed.
+
+**What the runs report.** 3655 cells react, τ* runs from 7.4 µs to
+0.87 ms, γ* is held at its guard of 0.75 in 456 cells (the lips of the
+pilot). The elements close to 3·10⁻⁵ of their inflow. The concept runs
+1500 iterations in about 15 minutes on 4 cores; its residuals level at
+about 3·10⁻⁵ from iteration 1200, while the axis temperature and the
+heat release of iterations 1450, 1600, 1900 and 2500 (two runs) agree to
+1 K and 10⁻⁴, so the case stops at 1500 and does not require the
+residual tolerance. The eddy dissipation model converges to 10⁻⁶ in 1133
+iterations, 1.5 minutes.
+
+**What this version does not do.** No partially stirred reactor, no
+local constants of the concept (Parente et al. 2016) and no flamelet
+tables: the follow-ups for the temperature of this flame. No OH in the
+images: the four-step mechanism has none, and the run with GRI-Mech 3.0
+has not been made. The inlet of the jet is a uniform 49.6 m/s, not the
+fully developed pipe profile of the experiment. No bluff-body flame yet.
+No radiation (the measured flame loses a few per cent of its heat by
+radiation). The energy balance books the convected enthalpy with the
+fluid's c_p, not the mixture's, so it shows an imbalance of 17 to 19 %
+(ENE007 note) although the temperature equation uses the mixture, as in
+gallery 298. Not on ranks (the variable density is not on ranks yet).
+
+**What is checked.** The fine-structure formulas and the eddy dissipation
+rates (mass conserved, mixing-limited) by unit tests; the kernel's
+per-cell residence time bitwise against the cell body; the refusals of
+an interaction without a turbulence model, a turbulence model without an
+interaction, the eddy dissipation model with reversible reactions and
+bad constants (CHM001, CHM003). Both flames run in the long CI set.
+
+Files: `output/<case>/chemistry.csv` (heat release, net production of
+each species, failed cells, cells at the guard and the range of τ* per
+renewal), `fields.vtkhdf` with `heat_release_rate`,
+`fine_structure_fraction`, `fine_structure_time` and every
+`Y_<species>`. [Recipe 351](../recipes/species.md#turbulent-flames),
+cases in the [catalogue](../cases/flow.md), images by
+`python3 -m tools.plot.jet_flame_fields`.
+
