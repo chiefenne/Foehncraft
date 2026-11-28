@@ -1,7 +1,7 @@
 # Reacting flow models after ECFM-3Z: survey and plan (D360 to D365)
 
-Status: survey 2026-11-28, decisions proposed, **no model coding before the
-maintainer's go**. Requested by the maintainer (2026-11-28): "what is the latest
+Status: survey 2026-11-28; D360 to D365 answered the same day (section 5);
+**no model coding before the maintainer's go**. Requested by the maintainer (2026-11-28): "what is the latest
 and greatest compared to the ECFM-3Z model", then "research and card me".
 
 Clean-room (D201): only published papers, public workshop summaries and the
@@ -275,11 +275,24 @@ Gaps the survey shows:
 | No. | Question | Options | Recommendation |
 |---|---|---|---|
 | D360 | Which model next after SF3 EDC | (a) non-adiabatic flamelet tables (FGM premixed + FPV/UFPV diffusion), one table kernel for furnace and sprays; (b) chemistry clustering first; (c) transported PDF (stochastic fields); (d) a flame-surface model of the ECFM type | (a): best accuracy per core hour on Spray A, the furnace plan asks for tables in the first version (D281), cell-local lookups are the easiest GPU kernel, and it needs no per-fuel flame-speed tuning. **Answered 2026-11-28 (maintainer, card 1): (a), flamelet tables (FGM/FPV); SF13 moves forward after SF3. Coding waits for a go** |
-| D361 | Finite-rate upgrades on SF3 | (a) PaSR and Parente local EDC constants as keys, plus cell clustering of the SF2 integrator; (b) only clustering; (c) none for now | (a): the furnace data show standard EDC 7.4 % vs PaSR 2.3–4.5 %, MILD 28 % → 9 %; clustering 10–13× is needed by EDC, PaSR, well-mixed and table generation alike |
-| D362 | Engine route | (a) reacting ECN Spray A (ID, lift-off, measured) with detailed chemistry per cell and with UFPV tables, side by side; (b) wait for SI engines; (c) none | (a): the open ECN data are the standard benchmark (D201), our non-reacting Spray A is merged, and the side-by-side reproduces the published ranking |
-| D363 | High-fidelity reference model | (a) Eulerian stochastic fields after the tables; (b) CMC; (c) not planned | (a): closes chemistry exactly, re-uses the SF2 integrator per field, and on Spray A is the reference; later stage, not sized for v1.x |
-| D364 | Hydrogen and ammonia in tables | (a) from the start: enthalpy cross-diffusion with the H radical, stretch as a table coordinate option, NO by its own transport equation; (b) later | (a): D281 asks for hydrogen blends to pure hydrogen; without it the table is 20 % fast on lean H₂ and adiabatic tables miss NO |
-| D365 | Table storage and ML | (a) dense tables with tensor-train compression later for GPU memory, ML tables only as a research option (D205–D212); (b) neural-network tables now | (a): compression has an error bound; ML is not production-ready in any source |
+| D361 | Finite-rate upgrades on SF3 | (a) PaSR and Parente local EDC constants as keys, plus cell clustering of the SF2 integrator; (b) only clustering; (c) none for now | (a): the furnace data show standard EDC 7.4 % vs PaSR 2.3–4.5 %, MILD 28 % → 9 %; clustering 10–13× is needed by EDC, PaSR, well-mixed and table generation alike. **Answered 2026-11-28 (maintainer, card 2): (a), PaSR and Parente local EDC constants as keys plus cell clustering of the SF2 integrator, as additions to SF3. Coding waits for a go** |
+| D362 | Engine route | (a) reacting ECN Spray A (ID, lift-off, measured) with detailed chemistry per cell and with UFPV tables, side by side; (b) wait for SI engines; (c) none | (a): the open ECN data are the standard benchmark (D201), our non-reacting Spray A is merged, and the side-by-side reproduces the published ranking. **Answered 2026-11-28 (maintainer, card 3): (a), reacting ECN Spray A with detailed chemistry per cell and UFPV tables side by side. Coding waits for a go** |
+| D363 | High-fidelity reference model | (a) Eulerian stochastic fields after the tables; (b) CMC; (c) not planned | (a): closes chemistry exactly, re-uses the SF2 integrator per field, and on Spray A is the reference; later stage, not sized for v1.x. **Answered 2026-11-28 (maintainer, in words: "Make both starting with fields"): both reference models are planned, Eulerian stochastic fields first, then CMC. Coding waits for a go** |
+| D364 | Hydrogen and ammonia in tables | (a) from the start: enthalpy cross-diffusion with the H radical, stretch as a table coordinate option, NO by its own transport equation; (b) later | (a): D281 asks for hydrogen blends to pure hydrogen; without it the table is 20 % fast on lean H₂ and adiabatic tables miss NO. **Answered 2026-11-28 (maintainer, card 5): (a), from the start. Coding waits for a go** |
+| D365 | Table storage and ML | (a) dense tables with tensor-train compression later for GPU memory, ML tables only as a research option (D205–D212); (b) neural-network tables now | (a): compression has an error bound; ML is not production-ready in any source. **Answered 2026-11-28 (maintainer, card 6): (a)** |
+
+All six answered on 2026-11-28. Order that follows from the answers (each
+stage still needs its own go):
+
+1. SF3 EDC (being built), then PaSR, Parente local EDC constants and cell
+   clustering of the SF2 integrator (D361).
+2. SF13 brought forward: 1D flamelet solver and table generator, then
+   non-adiabatic FGM/FPV/UFPV tables in flow cells, dense storage (D360, D365),
+   with the H-radical enthalpy cross-diffusion, an optional stretch coordinate
+   and an NO transport equation from the first version (D364).
+3. Reacting ECN Spray A: detailed chemistry per cell and UFPV side by side
+   against the measured ignition delay and lift-off (D362).
+4. Reference models: Eulerian stochastic fields, then CMC (D363).
 
 Rough sizing (agent time, not sized in detail): 1D flamelet solver plus table
 generator 1.5–2.5 h code (1–2 PRs); table lookup in flow cells with presumed
