@@ -3229,7 +3229,7 @@ pub fn run_steered(
             &loc,
             case.run.restart.is_some(),
         )?;
-        // the water and steam circuit behind the walls (SF7c, D349): the
+        // the water and steam circuit behind the walls (SF7c, D350): the
         // start solve and its Robin conditions before the first iteration
         let mut walls = match &case.fluid_view {
             Some(v) => crate::water_walls::Walls::create(&case, &v.mesh, &v.geo, first)?,

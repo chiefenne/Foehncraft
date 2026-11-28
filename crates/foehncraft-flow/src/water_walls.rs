@@ -1,5 +1,5 @@
 //! The water and steam circuits behind the walls of a steady flow (steam
-//! furnace stage SF7c, D349): the 1D tube circuits of SF7b
+//! furnace stage SF7c, D350): the 1D tube circuits of SF7b
 //! (`foehncraft-circuits`) coupled to the wall faces of the 3D energy
 //! equation.
 //!

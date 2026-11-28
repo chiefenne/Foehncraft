@@ -1,5 +1,5 @@
 # A convective evaporator pass of a boiler (steam furnace stage SF7c,
-# D349): hot flue gas rises between two water walls whose tubes belong to
+# D350): hot flue gas rises between two water walls whose tubes belong to
 # the drum loop of `../circuits/evaporator_pass_drum.toml`.
 #
 #   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/circuit_evaporator_pass.toml

@@ -99,7 +99,7 @@ scale (`fouling = 5e-5` m² K/W).
 **The coupling.** Every wall face is mapped to the segment of its tube by
 its height. The water side enters the 3D energy equation as a Robin
 condition q″ = U (T_water − T_b) on each face, inside the energy matrix
-(D349). U is the series of the wall, the scale and the inner heat transfer
+(D350). U is the series of the wall, the scale and the inner heat transfer
 coefficient of the segment (Gnielinski, Chen), with the ratio of the gas
 side to the inner area of the tubes. Every 20 outer iterations the heat of
 the faces is summed per segment and handed to the circuit. Its Newton

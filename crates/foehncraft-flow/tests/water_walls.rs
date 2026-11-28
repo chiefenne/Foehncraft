@@ -1,5 +1,5 @@
 //! The water and steam circuits behind the walls (steam furnace stage SF7c,
-//! D349): a slab cooled by a water tube against an independent march of
+//! D350): a slab cooled by a water tube against an independent march of
 //! the same heat balance, a boiling tube behind the slab (the nonlinear
 //! wall of flow boiling), the exchange pair of the ledger, and the checks
 //! of `[circuits]`.

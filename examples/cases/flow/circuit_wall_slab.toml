@@ -1,5 +1,5 @@
 # A conducting slab heated at the top and cooled by a water tube along its
-# bottom face (steam furnace stage SF7c, D349): the 1D water circuit of
+# bottom face (steam furnace stage SF7c, D350): the 1D water circuit of
 # `../circuits/wall_slab_tube.toml` behind a 3D wall, coupled implicitly.
 #
 #   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/circuit_wall_slab.toml

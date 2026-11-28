@@ -2828,7 +2828,7 @@ id = "circuits.walls"
 area = "Energy"
 title = "Water and steam circuits behind the walls of a steady flow, coupled implicitly by a Robin condition per face (steam furnace SF7c)"
 switch = "[circuits], [[circuits.walls]] boundary, tube, start, end, wall_resistance, fouling"
-decisions = ["D349", "D282", "D160"]
+decisions = ["D350", "D282", "D160"]
 model = true
 evidence = [
   { kind = "exact", test = "crates/foehncraft-flow/tests/water_walls.rs::slab_cooled_by_a_tube_meets_the_heat_balance_march", what = "a slab at 700 K on a water tube at 10 MPa: outlet 519.3815 K against 519.3816 K of an independent RK4 march of the heat balance with IF97 and Gnielinski (within 0.01 K), every face on the series resistance of slab and water side to 3e-4 away from the adiabatic ends, circuit energy closure 1e-10, ledger pair = coupling residual" },
