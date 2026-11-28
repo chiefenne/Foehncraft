@@ -1,6 +1,6 @@
 # Development: tests, CI and releases
 
-Part of the [Recipes](../recipes.md): MPI tests, checking a change the way CI does, releases, derivative checks of the kernels.
+Part of the [Recipes](../recipes.md): MPI tests, checking a change the way CI does, releases, derivative checks of the kernels, a shared install under /opt.
 
 | # | Recipe |
 |---|---|
@@ -9,6 +9,7 @@ Part of the [Recipes](../recipes.md): MPI tests, checking a change the way CI do
 | 6 | [Make a release (tag and GitHub release)](#release) |
 | 25 | [Check the derivatives of the kernels (adjoint readiness)](#adjoint-ready) |
 | 184 | [Check a turbulence model with a manufactured solution](#mms-turbulence) |
+| 350 | [Install for all users of a Linux machine, several versions side by side](#shared-install) |
 
 ---
 
@@ -211,5 +212,45 @@ flow selects it with `Model::flow`. The errors of the three levels give
 p = ln(e₁/e₂)/ln(h₁/h₂); a wrong constant in the model equations drops p
 to 0.2 to 0.7. The figure of gallery 184 comes from
 `python3 -m tools.plot.mms_turbulence docs/figures/gallery/mms_turbulence.png`.
+
+[↑ back to top](#development-tests-ci-and-releases)
+
+---
+
+<a id="shared-install"></a>
+## 350. Install for all users of a Linux machine, several versions side by side
+
+As root, the release programs with a Python venv per version under
+`/opt/Foehncraft/<version>/` (details: [Shared install on Linux](../install.md#shared-install-on-linux)):
+
+```
+curl -fsSLO https://raw.githubusercontent.com/chiefenne/Foehncraft/main/tools/install-shared.sh
+bash install-shared.sh --version 1.2.0 --with-source
+bash install-shared.sh --version 1.3.0 --with-source --no-current   # next to it, default stays 1.2.0
+bash install-shared.sh --list
+bash install-shared.sh --activate 1.3.0                              # new default
+ln -s /opt/Foehncraft/use.sh /etc/profile.d/foehncraft.sh            # default on at login
+```
+
+A source build for this machine instead (Debian 13; Rust goes to
+`/opt/Foehncraft/rust`, not into root's home):
+
+```
+apt install build-essential cmake git curl python3 python3-venv libglu1-mesa libxcursor1 libxft2 libxinerama1 libgomp1
+bash install-shared.sh --version 1.2.0 --build --install-rust --native
+```
+
+Users:
+
+```
+source /opt/Foehncraft/use.sh
+foehncraft-use              # the installed versions
+foehncraft-use 1.3.0        # this shell runs 1.3.0
+python3 $FOEHNCRAFT_SRC/examples/meshes/mixer.py --out output/mixer_mesh
+# or: module use /opt/Foehncraft/modulefiles; module load foehncraft/1.3.0
+```
+
+`--dry-run` prints every step without changing anything; `--python system`
+uses the distribution's `python3-*` packages instead of a venv.
 
 [↑ back to top](#development-tests-ci-and-releases)
