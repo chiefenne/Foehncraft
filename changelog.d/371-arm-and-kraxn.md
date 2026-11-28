@@ -1,0 +1,1 @@
+- **Linux ARM programs and Kraxn in each release.** Releases now carry a Linux aarch64 (64-bit ARM) build for glibc 2.28 or newer. Beside it they carry the `kraxn-*` files from MurmelCraft's latest release: Kraxn installs FoehnCraft, MurmelCraft and KoflCraft from a window or in text mode.
