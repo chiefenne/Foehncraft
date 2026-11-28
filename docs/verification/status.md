@@ -4,7 +4,7 @@
 
 Every feature a case file can switch on, with its grade, the evidence that checks it and the known gaps. The table of features is [features.toml](features.toml), written by hand and reviewed in pull requests; the grades are computed from it and from the last [verification manual](manual.md) (runs of Foehncraft 1.1.0 (b35bc269d4e1)), never typed in. The same as data: [grades.json](grades.json).
 
-**163 features: 49 verified, 111 partial, 3 unverified.**
+**164 features: 49 verified, 112 partial, 3 unverified.**
 
 ## How a grade is computed
 
@@ -176,6 +176,7 @@ A gap written into the table, or a failing case, lowers the grade at once; raisi
 | Immersed bodies | [Immersed bodies by Brinkman penalisation, primitive shapes (L13 stage 1)](#immersed-penalisation) | partial |
 | Immersed bodies | [Immersed bodies as cut cells, primitive shapes (L13 stage 2a, 2b)](#immersed-cut) | partial |
 | Immersed bodies | [Wall functions on cut bodies: exact first-cell distance, sampled wall function, y⁺ per body (L13 stage 2c)](#immersed-cut-wall-functions) | partial |
+| Immersed bodies | [Conjugate heat transfer through cut cells: a cut body kept as a solid region (L13 stage 2d)](#immersed-cut-cht) | partial |
 | Immersed bodies | [STL bodies, cut out of the mesh or penalised, with sharp edges and face points (L13 stage 2)](#immersed-stl) | partial |
 | Immersed bodies | [Density-field topology search with the Brinkman penalisation, iso-surface by marching tetrahedra (L13 stage 1)](#immersed-topology) | partial |
 | Structures | [Linear structural solver: Euler–Bernoulli and Timoshenko beams, static and modal analyses (L53, MS5 part 1)](#structure-beams) | partial |
@@ -2697,7 +2698,7 @@ Gaps:
 
 Gaps:
 
-- the body is seen through its node values: features thinner than a cell vanish; the refusal of thin solids (Q4, IMM for D189) is not built yet
+- the body is seen through its node values: features thinner than a cell vanish (a body kept as a solid region is refused below about two cells, IMM205; a body cut out is not checked)
 - Δp of the Re 20 cylinder stays about 1 % below the range at D/20 (D/40: C_D 5.595, C_L 0.0106, Δp 0.1171, all within 0.1 % of the range; SIMPLEC stalls at residual 1e-7 there); the lift depends on the merge threshold (0.1: 4 % low, 0.4: 0.4 % low, without face points); the default 0.3 is set on this case and the STL sphere array and kept by the maintainer after measuring again with face points and several faces per cell pair (2026-11-26): 0.4 puts the cylinder's lift into the range, 0.01047, and its drag 0.06 % above it, 5.593; on the 32³ sphere array 0.3 is closer, −1.9 against −2.3 %
 - conjugate heat transfer through cut cells (2d, refused), named surface patches (2e) and the near-body refinement (2f) are not built (wall functions on cut bodies: feature immersed.cut-wall-functions)
 - the other verification cases of the plan (cut-sphere Poisson MMS, annulus conduction, Taylor-Couette, inclined channel, Stokes sphere, Re 100 cylinder, turbulent plate) are not run yet
@@ -2724,6 +2725,26 @@ Gaps:
 - a uniform start velocity across a cut plate at high Re diverges in the first iteration (net inflow into the cut cells, SIMPLEC dc floor); the case starts with the velocity along the plate
 - low-Re treatments (resolved walls) use the exact distance but no sampling; one rank only
 
+<a id="immersed-cut-cht"></a>
+
+### Conjugate heat transfer through cut cells: a cut body kept as a solid region (L13 stage 2d)
+
+**partial** (gaps written) · id `immersed.cut-cht` · switch `[regions.<name>] kind = "solid", zones = ["<cut body>"] with [immersed] method = "cut"` · decisions D112, D160, D229
+
+- exact: [`sphere_cut_both_ways_fills_the_box`](../../crates/foehncraft-mesh/tests/cut.rs): a sphere cut both ways out of hexahedral, tetrahedral and polyhedral meshes (8, 16, 32 cells across): every cell closes, no bad face, fluid and solid volume add up to the box within 1e-10, the interface area of the solid equals the wall area of the fluid, every cut face has one twin, the solid volume converges at order above 1.6
+- exact: [`slab_cut_both_ways_is_exact`](../../crates/foehncraft-mesh/tests/cut.rs): a slab across a hexahedral mesh cut both ways: solid volume and interface area exact to round-off
+- exact: [`immersed_cut_cylinder_cht`](../../examples/cases/flow/immersed_cut_cylinder_cht.toml), [`cut_cylinder_cht_converges_at_second_order`](../../crates/foehncraft-flow/tests/immersed.rs): concentric-cylinder conduction, the solid cylinder cut both ways out of a box mesh: L2 temperature error 0.121, 0.0272, 0.00696 K (k_s/k_f = 9) and 0.122, 0.0276, 0.00712 K (900) on 20, 40, 80 cells across, orders 2.17 and 1.97 to 1.98 for every ratio (also 90); test band 1.85 to 2.3; the heat balance closes to 1e-9 of the source on every level (measured 1e-11 W), the source within 0.1 % of q π R² ([results](../gallery/immersed.md#cut-cht))
+- reference-data: [`immersed_cut_pin_cht`](../../examples/cases/flow/immersed_cut_pin_cht.toml): a heated aluminium pin (k 200) in the Schäfer–Turek channel at Re 20, Pr 1, cut both ways out of the 440 × 82 box mesh: converged, heat balance 8.6e-12 W (5e-13 of the flow); the interface wall gives C_D 5.588 (reference range 5.57 to 5.59) and C_L 0.0103 (0.0104 to 0.0110) (passes in CI (set long), not yet in the manual) ([results](../gallery/immersed.md#cut-cht))
+- contract (diagnostics): [`thin_cut_solids_are_refused`](../../crates/foehncraft-flow/tests/immersed.rs): IMM205 for a solid cut body thinner than about two cells (a pin 2.4 cells across), pointing to the thin wall of D189; REG001 for a solid cut body without [energy] (cut_settings_are_refused)
+
+Gaps:
+
+- on polyhedral meshes the solid side keeps a few flat three-face slivers the merge does not remove (non-planar cut faces); the poly mesh test does not check the solid merge or positive solid volumes
+- the heat transfer of the pin has no reference (no published Nusselt number of a heated pin in this confined channel); the verification is the concentric-cylinder solution
+- a `field` body (topology search) is not checked for thin parts; the thin-wall model of D189 is not available on a cut interface
+- the stiff energy solve of a solid with k_s ≫ k_f needs its own [solver.energy] tolerance and linear iterations (default settings stalled the pin at a 33 % heat imbalance)
+- rigid motion of the solid (stage 5) is not built; one rank only
+
 <a id="immersed-stl"></a>
 
 ### STL bodies, cut out of the mesh or penalised, with sharp edges and face points (L13 stage 2)
@@ -2744,7 +2765,7 @@ Gaps:
 - on polyhedral meshes the faces are not planar: the fan of a clipped face is not that of the input face, so the face apertures do not converge (4.6e-2; the cell-by-cell volumes converge at order 1.6 to 1.8, up to 1.9 times the total); the sphere array is −6.1 and −4.0 % on 17³ and 25³ polyhedra
 - the fallback cuts the whole mesh again per round (the turned box on 196 608 tetrahedra: three rounds, 16 s against 1.6 s with the exact crossings alone); a local re-cut is not built
 - the cut reaches only the totals and the drag of the sphere array: the other cases of the plan (cut-sphere Poisson MMS, Taylor-Couette, Re 100 cylinder) are not run with STL bodies
-- a surface feature thinner than a cell vanishes between the nodes; the thin-solid refusal (Q4) is not built
+- a surface feature thinner than a cell vanishes between the nodes; only a body kept as a solid region is refused when thin (IMM205)
 - one rank only
 
 <a id="immersed-topology"></a>
