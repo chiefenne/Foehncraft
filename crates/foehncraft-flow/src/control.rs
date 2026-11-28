@@ -213,9 +213,7 @@ pub fn with_setting(
     let old = show(flat.get(key));
     set(&mut v, key, Some(value));
     let mut case: FlowCase = v.try_into()?;
-    case.source = current.source.clone();
-    case.overrides = current.overrides.clone();
-    case.pressure_frame = current.pressure_frame.clone();
+    case.keep_reader_fields(current);
     case.validate()?;
     let mut flat = BTreeMap::new();
     flatten("", &toml::Value::try_from(&case)?, &mut flat);
@@ -274,7 +272,7 @@ pub fn reread(path: &Path, current: &FlowCase, fired: usize) -> Result<Reread> {
             not_applied.push(line);
         }
     }
-    // the scalar and energy sub-tables of the boundaries are kept outside
+    // the scalar, species and energy sub-tables of the boundaries are kept outside
     // the TOML of the case: a change of them is reported, not applied (the
     // boundary conditions belong to the case the run started with)
     for (name, changed) in [
@@ -286,21 +284,18 @@ pub fn reread(path: &Path, current: &FlowCase, fired: usize) -> Result<Reread> {
             "boundary scalar conditions",
             format!("{:?}", current.boundary_scalar) != format!("{:?}", new.boundary_scalar),
         ),
+        (
+            "boundary species compositions",
+            format!("{:?}", current.boundary_species) != format!("{:?}", new.boundary_species),
+        ),
     ] {
         if changed {
             not_applied.push(format!("{name}: changed in the file"));
         }
     }
     let mut case: FlowCase = merged.try_into()?;
-    case.source = current.source.clone();
-    case.overrides = current.overrides.clone();
-    case.notes = current.notes.clone();
-    case.pressure_frame = current.pressure_frame.clone();
-    // the fields the round trip through TOML drops (as in
-    // `schedule::apply_entry`)
-    case.boundary_scalar = current.boundary_scalar.clone();
-    case.boundary_energy = current.boundary_energy.clone();
-    case.fluid_view = current.fluid_view.clone();
+    // the fields the round trip through TOML drops
+    case.keep_reader_fields(current);
     case.validate()?;
     Ok(Reread {
         case,
