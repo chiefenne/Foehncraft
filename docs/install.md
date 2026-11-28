@@ -1,8 +1,11 @@
 # Install and update
 
-Foehncraft is built from source, also release 1.2.0 (tag `v1.2.0`). Release binaries for Linux, macOS and
-Windows with `SHA256SUMS.txt` and `foehn doctor` are planned (D203) but not
-part of a release yet. This page lists every tool to install on macOS,
+Every release since 1.2.0 has ready-to-run programs for Linux, macOS and
+Windows with `SHA256SUMS.txt` (README, "Download a release"); building from
+source, as on this page, gives the newest `main`, MPI and the GPU backend.
+For an install by an administrator under `/opt` that all users share, with
+several versions side by side, see [Shared install on Linux](#shared-install-on-linux).
+This page lists every tool to install on macOS,
 Linux and Windows, with the commands, so that a fresh machine gets to a
 working `foehn` in one pass. See also [Connect an assistant](agents.md) and
 [Troubleshooting](troubleshooting.md).
@@ -11,6 +14,7 @@ Contents: [What you need](#what-you-need) ·
 [macOS](#macos) · [Linux](#linux) · [Windows](#windows) ·
 [Build](#build) · [Python, Gmsh and the example scripts](#python-gmsh-and-the-example-scripts) ·
 [Optional: MPI and GPU](#optional-mpi-and-gpu) ·
+[Shared install on Linux](#shared-install-on-linux) ·
 [Check the installation](#check-the-installation) · [Update](#update)
 
 ## What you need
@@ -92,6 +96,10 @@ rustc --version
 
 (The Ubuntu commands are the ones checked on Ubuntu 24.04; the Fedora
 package names are the usual equivalents.)
+
+These commands install Rust for your own user (rustup puts it into
+`~/.cargo`). To install Foehncraft once for all users of a machine, as
+root, see [Shared install on Linux](#shared-install-on-linux).
 
 Continue with [Build](#build).
 
@@ -180,7 +188,9 @@ py -3.12 -m venv .venv
 .venv\Scripts\Activate.ps1
 ```
 
-Then install what the scripts use:
+Then install what the scripts use (inside the virtual environment; a
+`pip install` straight into the system Python stops on Debian 12 and newer,
+Ubuntu 23.04 and newer and Fedora with `externally-managed-environment`):
 
 ```
 pip install gmsh numpy matplotlib h5py      # mesh scripts, plots, fields
@@ -241,6 +251,181 @@ needs an NVIDIA driver at run time and no CUDA toolkit to build. The GPU
 kernels themselves need nightly Rust (see `gpu/ptx-kernels`); the Colab
 notebooks in `tools/` show a working setup.
 
+## Shared install on Linux
+
+For a machine (or a group of machines that mount the same folder) where an
+administrator installs Foehncraft once, as root, and every user runs it:
+the same idea as a commercial code under `/opt/<vendor>/<release>/`.
+Several versions stay installed side by side, and each user picks one.
+
+```
+/opt/Foehncraft/
+  1.2.0/bin/foehn            the program
+  1.2.0/venv/                Python with gmsh, numpy, matplotlib, h5py
+  1.2.0/src/                 the source tree of v1.2.0 (examples/, tools/), optional
+  1.2.0/env.sh, env.csh      switch this version on (bash/zsh, csh/tcsh)
+  1.3.0/...                  the next version, next to it
+  current -> 1.2.0           the default version
+  use.sh                     defines the command foehncraft-use (bash, zsh)
+  modulefiles/foehncraft/    module files (Environment Modules, Lmod)
+  rust/                      only for a build from source with --install-rust
+```
+
+Two things that go wrong when you follow the per-user steps as root:
+
+- **rustup installs Rust for one user** (into `~/.cargo` of whoever runs
+  it), so Rust installed as root is not found by other users. With the
+  release programs no Rust is needed; for a build from source see
+  [below](#build-from-source-into-opt).
+- **`pip install` into the system Python stops with
+  `error: externally-managed-environment`** on Debian 12 and 13, Ubuntu
+  23.04 and newer, and Fedora (PEP 668). Use a virtual environment per
+  version, or the distribution's packages, as below. Do not use
+  `--break-system-packages`: it can break tools of the system itself.
+
+### With the install script
+
+[`tools/install-shared.sh`](../tools/install-shared.sh) does every step
+below; `--dry-run` prints them without changing anything, `--help` lists
+the options. As root:
+
+```
+curl -fsSLO https://raw.githubusercontent.com/chiefenne/Foehncraft/main/tools/install-shared.sh
+bash install-shared.sh --dry-run                 # what it would do
+bash install-shared.sh                           # the latest release
+bash install-shared.sh --version 1.2.0 --with-source   # a given release, with examples/
+```
+
+What it does (latest release unless `--version`; prefix `/opt/Foehncraft`
+unless `--prefix`):
+
+1. downloads `foehncraft-<version>-linux-x86_64.tar.gz` and
+   `SHA256SUMS.txt` from the release, checks the checksum, puts `foehn`
+   into `<version>/bin/` (`--tarball FILE` installs a file you downloaded,
+   for a machine without internet);
+2. with `--with-source`, clones the tag into `<version>/src/` (the example
+   scripts and cases are there, not in the release archive);
+3. Python, `--python venv` (default): installs `python3-venv` and the
+   libraries the Gmsh module loads (`libglu1-mesa libxcursor1 libxft2
+   libxinerama1 libgomp1`, or the Fedora names) with apt or dnf, then
+   makes `<version>/venv` and installs `gmsh numpy matplotlib h5py` there
+   with pip; `--python system` installs the distribution packages instead
+   (no pip at all); `--python none` skips Python;
+4. writes `env.sh`, `env.csh`, the module file and `use.sh`, makes the new
+   version the default (`current`; `--no-current` keeps the old default),
+   makes everything readable for all users, and runs `foehn info`.
+
+`--no-system-deps` leaves apt and dnf alone and only prints what is
+missing. The release programs are built for x86-64 and need glibc 2.28 or
+newer (RHEL, Rocky and Alma 8 and 9, Debian 11 to 13, Ubuntu 20.04 and
+newer); v1.2.0 itself still needs glibc 2.39 (Debian 13, Ubuntu 24.04).
+On older systems, or on ARM, build from source.
+
+### Python for a shared install
+
+**A virtual environment per version** (default, `--python venv`): the
+system Python stays as it is, each Foehncraft version has the package
+versions it was installed with, and users need no pip. By hand:
+
+```
+apt install python3-venv libglu1-mesa libxcursor1 libxft2 libxinerama1 libgomp1
+python3 -m venv /opt/Foehncraft/1.2.0/venv
+/opt/Foehncraft/1.2.0/venv/bin/pip install gmsh numpy matplotlib h5py
+```
+
+`env.sh` puts `venv/bin` on `PATH`, so `python3` is then that Python, with
+the modules. Further packages that single scripts name (`scipy`, `pyvista`
+...): `/opt/Foehncraft/1.2.0/venv/bin/pip install scipy`.
+
+**The distribution's packages** (`--python system`), when pip is not
+allowed on the machine; the modules then belong to the system `python3`:
+
+```
+# Debian and Ubuntu
+apt install python3-numpy python3-matplotlib python3-h5py python3-gmsh
+# Fedora
+dnf install python3-numpy python3-matplotlib python3-h5py python3-gmsh
+```
+
+`apt show python3-gmsh` shows which Gmsh version the distribution has; it
+is usually older than the pip one. A Miniconda or Anaconda Python of a user
+does not matter for either way, as long as it is not first on `PATH` when
+the scripts run (`conda deactivate`).
+
+### Build from source into /opt
+
+For an older Linux, ARM, MPI (`--features mpi`) or programs tuned for one
+machine's CPU. The result has the same layout as above, so users switch
+versions the same way. Complete for Debian 13 (Ubuntu the same), as root:
+
+```
+apt install build-essential cmake git curl python3 python3-venv \
+            libglu1-mesa libxcursor1 libxft2 libxinerama1 libgomp1
+# for --features mpi also: libopenmpi-dev openmpi-bin libclang-dev
+
+curl -fsSLO https://raw.githubusercontent.com/chiefenne/Foehncraft/main/tools/install-shared.sh
+bash install-shared.sh --version 1.2.0 --build --install-rust --native
+```
+
+- `--build` clones the tag into `<version>/src/` and runs
+  `cargo install --locked --root /opt/Foehncraft/<version>` for `foehn`;
+  with `--python venv` it also installs the
+  [Python package](recipes/python.md#python-api) (`pip install ./python`,
+  which builds the Rust module) into the venv. The build files go to a
+  temporary folder that is removed at the end.
+- `--install-rust` installs Rust system-wide into `/opt/Foehncraft/rust`
+  (`RUSTUP_HOME` and `CARGO_HOME` there, readable for all), when no `cargo`
+  is on `PATH`. A later `--build` uses it again; update it with
+  `RUSTUP_HOME=/opt/Foehncraft/rust/rustup CARGO_HOME=/opt/Foehncraft/rust/cargo /opt/Foehncraft/rust/cargo/bin/rustup update stable`.
+  Users never need it: the programs do not need Rust to run.
+- `--native` optimises for the CPU of the build machine
+  (`-C target-cpu=native`); the programs may then stop with "illegal
+  instruction" on another CPU, so leave it out when the folder is shared by
+  different machines.
+- `--features mpi` builds the MPI version (`foehn run --ranks N`, see
+  [MPI](#optional-mpi-and-gpu)).
+
+Fedora, RHEL, Rocky and Alma: the same with
+`dnf install gcc gcc-c++ make cmake git curl python3 mesa-libGLU libXcursor libXft libXinerama libgomp`
+(and `openmpi-devel clang-devel` for MPI).
+
+### Several versions side by side
+
+Every version is a folder of its own; installing one never changes
+another. Users switch in their shell:
+
+```
+source /opt/Foehncraft/use.sh       # once per shell, or at login, see below
+foehncraft-use                      # list: 1.1.0, 1.2.0 (default) (active)
+foehncraft-use 1.1.0                # this shell now runs 1.1.0
+foehncraft-use default              # back to the default
+```
+
+With Environment Modules or Lmod:
+
+```
+module use /opt/Foehncraft/modulefiles
+module avail foehncraft
+module load foehncraft/1.1.0        # or: module load foehncraft (the default)
+module switch foehncraft/1.2.0
+```
+
+csh and tcsh: `source /opt/Foehncraft/1.1.0/env.csh`. In a script or a
+batch job, `source /opt/Foehncraft/1.1.0/env.sh` (or call
+`/opt/Foehncraft/1.1.0/bin/foehn` directly) fixes the version for that job.
+
+The administrator, as root:
+
+```
+ln -s /opt/Foehncraft/use.sh /etc/profile.d/foehncraft.sh   # default version on at every login
+bash install-shared.sh --list                                # installed versions
+bash install-shared.sh --activate 1.1.0                      # make 1.1.0 the default
+```
+
+A version is removed by deleting its folder and its module file
+(`/opt/Foehncraft/1.1.0`, `/opt/Foehncraft/modulefiles/foehncraft/1.1.0`);
+move the default to another version first if it pointed there.
+
 ## Check the installation
 
 ```
@@ -284,3 +469,6 @@ After an update:
 | `error: package ... requires rustc 1.89` | `rustup update stable`. |
 | `Unable to find libclang` | Only with `--features mpi`: install `libclang-dev` (Ubuntu) or `clang-devel` (Fedora). |
 | `OSError: libGLU.so.1` on `import gmsh` | The Linux libraries of the Gmsh section above. |
+| `error: externally-managed-environment` on `pip install` | pip into the system Python (PEP 668): use the virtual environment above, or for all users [a venv per version](#python-for-a-shared-install); never `--break-system-packages`. |
+| `rustc` or `cargo` not found for a user after installing Rust as root | rustup installs for one user only: install as that user, or see [Build from source into /opt](#build-from-source-into-opt). |
+| `version 'GLIBC_2.39' not found` when starting a release program | The Linux is older than that release's build: a newer release (glibc 2.28 from the next release on), or [build from source](#build-from-source-into-opt). |

@@ -168,13 +168,18 @@ Ready-to-run programs are attached to each
 | System | File | Then |
 |---|---|---|
 | macOS 11 or newer, Apple silicon and Intel | `foehncraft-<version>-macos-universal.tar.gz` | unpack, run `./foehn info` |
-| Linux x86-64 (glibc 2.39 or newer: Ubuntu 24.04, Debian 13, Fedora 40) | `foehncraft-<version>-linux-x86_64.tar.gz` | unpack, run `./foehn info` |
+| Linux x86-64 (glibc 2.28 or newer: RHEL/Rocky/Alma 8 and 9, Debian 11-13, Ubuntu 20.04 and newer; v1.2.0 needs 2.39) | `foehncraft-<version>-linux-x86_64.tar.gz` | unpack, run `./foehn info` |
 | Windows 10 or 11, x86-64 | `foehncraft-<version>-windows-x86_64.zip` | unpack, run `foehn.exe info` |
 
 Each one holds `foehn`, built with HDF5, METIS and BLAKE3 (no MPI and no GPU
 backend: for those, build from source as below). To call it by name, put the
 unpacked folder on your `PATH` or copy the programs into a folder that is
 on it, such as `~/.local/bin` or `~/.cargo/bin`.
+
+For one install under `/opt` that all users of a Linux machine share, with
+several versions side by side (`foehncraft-use 1.2.0`, `module load
+foehncraft/1.2.0`), see [Shared install on Linux](docs/install.md#shared-install-on-linux)
+and `tools/install-shared.sh`.
 
 The Mac programs are not signed with an Apple Developer ID, so macOS stops
 them the first time ("cannot be opened" or "cannot verify the developer").
