@@ -642,7 +642,10 @@ area contraction, plume direction and cone) and the distortion of the drops.
   Spray G hole (Magnotti 2017 reported KH-ACT little better than KH below
   7 kg/m³ and pointed to a smaller turbulence scale). KH-RT gives 7.4 µm
   and the same penetration, so the late lead is not from the breakup; its
-  cause is open, a recorded gap.
+  cause is open, a recorded gap. *Superseded by D348 (PR #344): the children
+  of every mechanism have the KH radius; the case as it is now (collisions,
+  1 µs) gives liquid +8 % and vapour −1 % at 1.2 ms, +23 % at 0.3 ms, and
+  14.5 µm at 15 mm (gallery 344).*
 - The drops' work on the gas turbulence (D330, V28.22 to V28.24): see
   section 5.10 and gallery 333.
 
@@ -654,9 +657,10 @@ temperature-dependent surface tension and viscosity (with the liquid
 property library); radial velocity of the children (they leave with the
 blob's velocity); GPU entry of the breakup kernel. For Spray G (G1): the cause
 of the late lead of the liquid and the vapour (the far-field cells, the
-gas density of the cooled plume with its vapour, the k-ε constants), the
-drop size of the KH-ACT children, a calibration of the constants against
-G1, and a run
+gas density of the cooled plume with its vapour, the k-ε constants; since
+D348 an early lead of +23 % at 0.3 ms and +8 % late), the drop size in the
+plume core (14.5 µm against 7 to 10 µm), a calibration of the constants
+against G1, a time step that grows after the end of injection, and a run
 whose gas diverges in some cells can fill the memory with the exchange
 records of parcels that spend `max_substeps` (cell crossings) instead of
 stopping with a message; short eddies no longer do (at most 32 per parcel

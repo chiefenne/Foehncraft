@@ -1497,8 +1497,9 @@
     "gaps written"
    ],
    "gaps": [
-    "ECN Spray G (G1): the liquid runs ahead of the measured penetration after 0.4 ms (33 % at 1.2 ms) and the vapour after 0.5 ms (21 % at 1.2 ms), with KH-ACT and KH-RT alike, so not from the breakup; cause open (candidates: the cells of the far field, the constant gas density, the k-eps constants) (D309)",
-    "KH-ACT drops on ECN Spray G (G1) are about twice the measured size at 15 mm (17 against 9 um; KH-RT 7.4 um): the children of the cavitation (R_CAV from C_a 0.65) and of the integral turbulence scale are large for the short Spray G hole; constants untuned",
+    "ECN Spray G (G1) since D348: the spray runs ahead early (liquid +23 %, vapour +19 % at 0.3 ms) and the liquid stays 8 to 10 % ahead from 0.6 ms (vapour on the measurement from 0.8 ms); the early lead is new with the fine children at the nozzle; cause open",
+    "ECN Spray G (G1): the Sauter mean diameter at 15 mm is 14.5 um against 7 to 10 um measured, 15 um in the plume core where the drops coalesce, 4 to 8 um at the edges; KH-ACT constants untuned",
+    "spray cases with KH-ACT need small fixed time steps since D348 (G1 1 us, Spray A 0.5 us; 2 us diverges): no time step that grows after the end of injection is set up",
     "a gas that diverges in some cells leaves its parcels spending max_substeps each, and their exchange records can fill the memory instead of stopping the run with a message (seen on the sector before the slip core, D309)",
     "drop sizes not validated: the gallery spray has a Sauter mean diameter near 2 um, small next to measured diesel sprays; no collision or coalescence yet",
     "the nozzle turbulence of the Huh-Gosman estimate takes the inlet loss K_c = 0.5 and the area ratio s = 0 as our own choices (the papers give no values)",

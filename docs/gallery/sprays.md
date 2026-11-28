@@ -26,6 +26,7 @@ Part of the [Example gallery](../gallery.md): droplets as Lagrangian parcels in 
 | 341 | [A five-hole nozzle described by its device](#spray-device) | ID1, D340 to D342 | `[[spray.device]]` (mount, axis, reference, clocking), `[[device.hole]]`, `[[device.pattern]]`, `[[injector]] device`, `hole`, `hole = "all"`, `offset`, SPR010, tool `spray.devices` |
 | 343 | [Spray G under its injector tip](#spray-device-surface) | ID2, ID3, D343 to D345 | `[[spray.device]] geometry` (`standard-gasoline`, `standard-diesel`, `stl`), `file`, `scale`, `stl_origin`, `stl_axis`, `stl_reference`, `glyph_length`, `spray/devices.vtu`, `series.json` `static`, `result.json` `spray.devices`, tool `spray.place` |
 | 338 | [Grid orientation in ECN Spray G](#spray-g-grid) | D337 | `[mesh.generate] grid_angle`: the same G1 case on a grid with its lines along the plume and at 45° to it; liquid lead at 1.2 ms 27 % and 20 %, vapour 17 % and 9 % |
+| 344 | [KH-ACT children of the right size in ECN Spray G](#spray-child-size) | D348 | the children of every KH-ACT mechanism have the KH radius B₀Λ (Som and Aggarwal 2010, eq. 1); G1 at 1 µs: liquid +8 % and vapour −1 % at 1.2 ms (was +25 % and +17 %), D32 at 15 mm 14.5 µm (was 18) |
 
 ---
 
@@ -1132,7 +1133,10 @@ stays an ideal gas (D317).
 
 *Since #335 the case also lets the drops collide; the run and the numbers
 of this entry are without collisions, the case as it is now is
-[gallery 335](#spray-collisions).*
+[gallery 335](#spray-collisions). Since #344 the KH-ACT children have the
+KH radius (D348) and the case runs at 1 µs: see
+[gallery 344](#spray-child-size). The paragraph on the drop size below
+describes the model before #344.*
 
 `spray_g_g1.toml` is condition G1 of Spray G of the Engine Combustion
 Network: iso-octane at 363 K and 20 MPa from the 8-hole Spray G injector
@@ -1234,6 +1238,11 @@ Files: `spray.csv`, `spray/parcels_<step>.vtkhdf`, `fields_<step>.vtkhdf`.
 ## 326. Flattened drops in ECN Spray A: the Corrected Distortion model
 
 <img src="../figures/gallery/spray_a_distortion.png" alt="Three panels. Left: the n-dodecane vapour mass fraction near the symmetry plane of ECN Spray A at 0.6 ms, 0 to 30 mm from the nozzle and 8 mm on each side of the axis, the dynamic drag above the axis and the Corrected Distortion model below it; a narrow white cone of droplets from the nozzle ends at the liquid length, 8.8 mm above and 7.0 mm below, both short of the measured 11.2 mm drawn as a dashed line; the vapour, up to 30 percent near the liquid tip, spreads into a cloud about 4 mm wide that reaches 25 mm. Middle: over 0.6 ms the liquid lengths of both runs rise to about 10 mm by 0.1 ms and then stay between 6 and 11 mm, the Corrected Distortion one lower and more ragged, below the measured 10.4 and 11.2 mm; the vapour penetration of both runs rises together to 27 mm. Right: the drag and the Sherwood number of a drop over those of a solid sphere against its distortion from -1 to 1 at Reynolds numbers 20, 100 and 500: the drag rises from 0.65 to 0.8 for a prolate drop to 1.6 to 1.8 for a flat one, the Sherwood number from about 1.05 to 2.2 to 4, while the dynamic drag of the standard model rises to 3.6." width="1600" height="520">
+
+*The runs of this entry were made before #344 (D348: the KH-ACT children
+have the KH radius). With the new children the case diverges at 2 µs and
+now runs at 0.5 µs; it has not been rerun to 0.6 ms
+([gallery 344](#spray-child-size)).*
 
 The KH-ACT breakup of gallery 318 makes every drop a TAB oscillator: its
 distortion y flattens it across the flow (y > 0) or stretches it along
@@ -1443,6 +1452,10 @@ Files: `spray.csv` (column `gas_turbulence_w`, W per step),
 ## 335. Colliding drops in ECN Spray G
 
 <img src="../figures/gallery/spray_g_g1_collisions.png" alt="Left: side view of one plume of the Spray G injector at 0.6 ms with the drops colliding, the injector tip at the left and its axis horizontal. Above the axis the iso-octane vapour mass fraction on the plane of the plume: a band leaving the tip at about 33 degrees, dark red in its core, ending in a rounded head about 31 mm along the axis and 21 mm from it, the rest of the plane blue. Below the axis the projected liquid volume of all eight plumes in grey shades with a red outline at 0.2e-3 cubic millimetres per square millimetre ending at about 32 mm. Right top: liquid penetration over 1.2 ms; the thick red computed curve lies on the black measured points up to 0.4 ms and then rises to 49 mm at 1.2 ms, the thin orange curve without collisions above it to 52 mm, the measured points bending over to 39 mm. Right middle: vapour penetration; the thick blue curve with collisions lies on the measured points to 0.6 ms and reaches 49 mm at 1.2 ms against 42 mm measured, the thin cyan curve without collisions above it, 51 mm. Right bottom: the gas velocity on the injector axis 15 mm from the tip; the measured points and both computed curves fall to about minus 7 to minus 8 metres per second at 0.3 ms and return to zero at 1.2 ms. A dotted line marks the end of injection at 0.78 ms." width="1200" height="840">
+
+*Since #344 the KH-ACT children have the KH radius (D348) and G1 runs at
+1 µs; the numbers of the case as it is now are in
+[gallery 344](#spray-child-size).*
 
 The case of [gallery 323](#spray-g), ECN Spray G condition G1, now with the
 drops of the spray colliding (`[spray.collision] model = "ntc"`, D331).
@@ -1664,6 +1677,10 @@ Files: `spray/devices.vtu`, `series.json` (`static`), `result.json`
 
 <img src="../figures/gallery/spray_g_grid.png" alt="Left: the iso-octane vapour mass fraction on the plane of the plume of ECN Spray G at 0.6 ms with the cell edges drawn, above with the cell lines along the plume and across it, below with the lines turned 45° to it; in both a band leaves the tip at about 33 degrees from the horizontal injector axis, dark red in its core, and ends in a rounded head about 30 mm along the axis. Right: the liquid and the vapour penetration over 1.2 ms against the measured points; the two curves agree to 0.4 ms, then the curve of the grid along the plume runs higher, ending at 49.5 and 49.0 mm, the curve of the turned grid at 46.5 and 45.8 mm, the measured points at 38.9 and 42.0 mm." width="1200" height="720">
 
+*The runs of this entry were made before #344 (D348, KH-ACT children of
+the KH radius, [gallery 344](#spray-child-size)); the two cases now run at
+1 µs like G1 and have not been rerun.*
+
 The case of [gallery 335](#spray-collisions), ECN Spray G condition G1, run
 twice on a grid whose lines are turned against the plume, to see how much
 of the late liquid lead comes from the grid orientation. The plume leaves
@@ -1714,3 +1731,80 @@ turned grid of this kind is for hexahedral sectors and boxes only. 30 to
 Files: `spray.csv`, `spray/parcels_<step>.vtkhdf`, `fields_<step>.vtkhdf`.
 [Recipe 338](../recipes/sprays.md#spray-g-grid),
 [case rows](../cases/flow.md#lagrangian-sprays).
+
+---
+
+<a id="spray-child-size"></a>
+## 344. KH-ACT children of the right size in ECN Spray G
+
+<img src="../figures/gallery/spray_g_child_size.png" alt="Left: side view of one plume of ECN Spray G at 0.6 ms, the iso-octane vapour mass fraction on the plane of the plume above the injector axis (a band at about 33 degrees, dark red in its core, ending about 32 mm along the axis) and the projected liquid volume of the eight plumes below it in grey with a red outline. Right top: liquid penetration over 1.2 ms; the thick red curve of the case with the corrected children rises faster than the measured points to 0.3 ms (25 against 20 mm), then runs a few millimetres above them and ends at 42 mm against 39 mm measured; the thin orange curve with the old children starts on the points and ends at 47 mm. Right middle: vapour penetration; the thick blue curve is ahead up to 0.5 ms and lies on the measured points from 0.8 ms, ending at 41.5 against 42 mm, while the thin curve of the old children ends at 47 mm. Right bottom: gas velocity on the injector axis 15 mm from the tip; both runs fall to about minus 6.5 to minus 7.5 metres per second and return to zero by 1.2 ms, the corrected run reaching minus 7.6 later than the measurement and the old one earlier." width="1200" height="840">
+
+KH-ACT (D307, gallery 318) lets the nozzle turbulence and the cavitation
+strip the injected blobs as well as the Kelvin-Helmholtz waves. As first
+built, the children of turbulence and cavitation stripping had the length
+scale of their mechanism: the integral scale L_T of the nozzle turbulence or
+the cavity radius R_CAV = r_hole (1 − C_a)^½, 49 µm on Spray G. Som and
+Aggarwal (2010) give a single size for all children, r_c = B₀Λ_KH (their
+eq. 1); L_T and R_CAV only pick the mechanism (eq. 18) and set how fast the
+blob loses radius (eq. 19). Magnotti's thesis (Georgia Tech 2017, eqs. 1.12,
+1.24, 1.25) reads the same. Since #344 every child has the KH radius (D348).
+
+**Why it showed on Spray G.** 15 mm from the tip the ECN's phase-Doppler
+data (GM, plume 1, a radial and a transverse line through the plume centre)
+give a Sauter mean diameter of 7 to 10 µm during injection, flat across the
+plume; G1 gave 18 µm. Sampling our parcels the way the instrument does
+(1 mm boxes on the line through the plume centre, flux-weighted) changes
+our number by less than 1 µm, so the gap was the model, not the metric.
+
+**What changes on G1.** The same case (k-ε, collisions, 0.6 mm cells), with
+the time step at 1 µs (below):
+
+| liquid (mm) | 0.3 ms | 0.6 ms | 0.8 ms | 1.0 ms | 1.2 ms |
+|---|---|---|---|---|---|
+| measured | 20.4 | 29.3 | 33.8 | 36.7 | 38.9 |
+| children of L_T or R_CAV, 1 µs (thin) | 19.7 (−3 %) | 31.1 (+6 %) | 37.2 (+10 %) | 42.7 (+16 %) | 47.3 (+22 %) |
+| children of B₀Λ (D348), 1 µs | 25.1 (+23 %) | 32.2 (+10 %) | 36.7 (+9 %) | 39.8 (+8 %) | 42.1 (+8 %) |
+| **vapour (mm)** | | | | | |
+| measured | 20.5 | 29.4 | 34.4 | 38.3 | 42.0 |
+| children of L_T or R_CAV, 1 µs | 19.5 | 30.4 | 36.7 | 42.8 | 47.4 (+13 %) |
+| children of B₀Λ (D348), 1 µs | 24.3 (+19 %) | 31.9 (+9 %) | 36.7 (+7 %) | 38.9 (+2 %) | 41.5 (−1 %) |
+
+The Sauter mean diameter at 15 mm (0.2 to 1.0 ms, the line through the
+plume centre) falls from 17.8 to 14.5 µm: 4 to 8 µm at the edges of the
+plume, 15 µm in its core, where the drops coalesce (1.2 million
+coalescences by 1.2 ms). The late lead of the liquid falls from +22 % to
++8 % and the vapour lands on the measurement. New is an early lead: at 0.2
+to 0.3 ms the spray is 20 to 23 % ahead, because the fine drops at the
+nozzle give their momentum to the gas sooner. The gas on the injector axis
+15 mm from the tip reaches the measured −7.6 m/s about 0.2 ms later than
+the PIV.
+
+**The time step.** With drops of a few µm right at the nozzle the gas and
+the drops are tightly coupled: at 2 µs the passes of the coupling
+oscillate and G1 diverges near 0.1 ms, at 1 µs every step converges
+(Courant number about 0.3). With the old children 2 µs and 1 µs differ by
+1 to 3 % in penetration, so the comparison above is the child size, not
+the step. Published set-ups use 0.5 µs or a variable step capped there
+(Bestel et al., Fuel 2024: at most 0.5 µs; ECN1 Spray A, PoliMi: 0.5 µs,
+the liquid penetration still changing down to it). The Spray A case of
+[gallery 326](#spray-a-distortion) diverges at 2 and 1 µs with the new
+children and runs at 0.5 µs; its numbers there are from before #344 and
+were not rerun. The breakup case of [gallery 318](#spray-breakup) moves
+from 50.6 to 50.3 mm (correlation 51.1 mm) and from 2 to 1.7 µm.
+
+**What is checked.** The kernel: every mechanism sheds children of the KH
+radius, the radius stops at it, nothing acts without KH children smaller
+than the blob, C_T,CAV scales the rate. A blob stripped by the turbulence
+alone sheds children smaller than 2 L_T₀ (the smallest the old rule
+allowed) and still loses exactly C_T,CAV ∫√k dt of radius. G1 and
+spray_breakup as above.
+
+**What this version does not do.** The early lead and the drop size in the
+plume core (14.5 against 7 to 10 µm) are open gaps. The KH-ACT constants
+are the defaults of the papers. The time step is fixed; a step that grows
+after the end of injection is not set up. G1 takes about 30 minutes on
+4 threads at 1 µs.
+
+Files: `spray.csv`, `spray/parcels_<step>.vtkhdf`, `fields_<step>.vtkhdf`.
+[Recipe 344](../recipes/sprays.md#spray-child-size),
+[case row](../cases/flow.md#lagrangian-sprays).
