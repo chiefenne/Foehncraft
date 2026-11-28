@@ -153,7 +153,7 @@ yet.
 | 3D Eulerian two-fluid flow boiling (wall boiling) | SF10 | L3 core, SF7a |
 | Soot model and soot radiation | SF11 | SF3, R1c, R1f |
 | Thermal stress of tubes | SF12 | L36 |
-| Flamelet or progress-variable tables (non-adiabatic) | SF13 | SF2 |
+| Flamelet or progress-variable tables (non-adiabatic); survey of 2026-11-28 in [reacting-flow-models-survey.md](reacting-flow-models-survey.md) | SF13 | SF2 |
 | Resolved bubbles (VOF with phase change) | SF14 | L3 VOF |
 
 ## 5. Decisions for the maintainer (cards, one at a time)
