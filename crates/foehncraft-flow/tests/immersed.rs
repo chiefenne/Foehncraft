@@ -520,6 +520,17 @@ fn cut_plate(sample: bool) -> (f64, f64) {
         "{:?}",
         rep.failures
     );
+    // LIM011: the y+ range of the cut wall
+    let lim = foehncraft_flow::limitations::of_run(&case, &rep);
+    let y = lim
+        .iter()
+        .find(|l| l.code == diag::LIM_CUT_WALL)
+        .expect("LIM011");
+    assert!(
+        y.message.contains("`plate`") && y.message.contains("y⁺"),
+        "{}",
+        y.message
+    );
     let csv = std::fs::read_to_string(dir.join("wall_plate.csv")).unwrap();
     let _ = std::fs::remove_dir_all(&dir);
     let mut lines = csv.lines().filter(|l| !l.starts_with('#'));

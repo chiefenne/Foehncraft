@@ -10,6 +10,7 @@ Part of the [Recipes](../recipes.md): put bodies into the flow without meshing t
 | 310 | [Check an STL surface before it becomes a body](#surface-check) |
 | 315 | [Cut a mesh exactly by an STL surface](#cut-moments) |
 | 322 | [Put an STL body into the flow](#stl-body) |
+| 357 | [Run a turbulent flow with wall functions on a cut body](#cut-wall-functions) |
 
 ---
 
@@ -203,4 +204,40 @@ type = "wall"
 
 **Resolution.** About 6 cells per radius give the drag of a sphere array within 2.3 %, 10 cells within 0.9 % (hexahedra, second order). A part of the surface thinner than a cell can vanish; put two or more cells across thin walls.
 
-**Limits.** Hexahedral meshes are the best checked; on tetrahedra the force balance of the wall is within 5 %, on polyhedra the cut is less accurate (the faces are not planar). Merged cells keep faces that do not lie in one plane apart, so two cells can share several faces (IMM203 counts them). Wall functions, conjugate heat transfer, other wall conditions per surface patch and near-body refinement follow (stages 2c to 2f). One rank only.
+**Limits.** Hexahedral meshes are the best checked; on tetrahedra the force balance of the wall is within 5 %, on polyhedra the cut is less accurate (the faces are not planar). Merged cells keep faces that do not lie in one plane apart, so two cells can share several faces (IMM203 counts them). Wall functions: [recipe 357](#cut-wall-functions). Conjugate heat transfer, other wall conditions per surface patch and near-body refinement follow (stages 2d to 2f). One rank only.
+
+---
+
+<a id="cut-wall-functions"></a>
+## 357. Run a turbulent flow with wall functions on a cut body
+
+**Nothing extra to set.** A cut body (`method = "cut"`) in a turbulent case with wall functions (any k-ε treatment but the low-Re ones, SST with its automatic wall treatment) gets them on its wall: every cut or merged wall cell takes the exact distance of its centroid to the body, and its wall function takes the velocity from the cell one layer out along the wall normal.
+
+```toml
+[immersed]
+method = "cut"
+
+[immersed.cut]
+# wall_sample = true        # sample one layer out (default); false: the cut cell itself
+
+[[immersed.body]]
+name = "plate"
+shape = "plane"             # a half-space: an inclined wall across the mesh
+centre = [0.0, 0.02, 0.0]   # a point on the plane
+normal = [-0.0349, 0.9994, 0.0]   # out of the solid into the fluid
+
+[boundary.plate]
+type = "wall"
+
+[turbulence]
+model = "k-epsilon"
+wall_treatment = "scalable"
+```
+
+**Read the y⁺ of the body.** LIM011 in the log and in `result.json` gives the smallest, mean and largest first-cell y⁺ of every cut body; `[output] wall_csv = true` writes the `y_plus` of every wall face (`wall_<body>.csv`), the y⁺ map. The y⁺ of a cut wall spreads more than on a fitted wall (a plate crossing cell rows: 30 to 140 where the fitted plate has 100), because the cut cells have every height between a fifth and one and a half cells.
+
+**Mesh for the sample.** The sampled cell has to lie in the log layer: keep the first two or three cell rows near the body below y/δ ≈ 0.15. With 2 mm cells on a plate with a 16 mm boundary layer the skin friction came out 17 % high; with 1 mm cells within 7 % ([gallery 357](../gallery/immersed.md#cut-plate)). Where the mesh is too coarse for that, `wall_sample = false` takes the cut cell itself: the mean is then right but single faces scatter by ±40 % or more.
+
+**Start the flow along the wall.** A uniform start velocity that points into a cut body at high Reynolds numbers can diverge in the first iteration (net inflow into the cut cells): start with the velocity along the body or from a coarser run.
+
+**Limits.** Resolved walls (low-Re treatments, ζ-f to the wall) take the exact distance but no sample. Single wall faces scatter about ±15 % in C_f even with sampling; integrated forces and the mean along the body are closer. One rank only.

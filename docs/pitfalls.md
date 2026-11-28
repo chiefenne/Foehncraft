@@ -30,6 +30,7 @@ instead.
 - [Cut cells: check what the solver takes, cell by cell](#cut-cells)
 - [Sprays on a sector of an injector](#spray-sectors)
 - [Long-lived branches and the one test program per crate](#stale-branches)
+- [Wall functions on cut cells](#cut-wall-functions)
 
 <a id="steady-runs"></a>
 ## Steady runs: budget and stopping
@@ -793,3 +794,23 @@ Found with the start-up bound of the turbulence (#334):
   largest k on a line; after 16 steps two cells of the ring agreed to the
   last digits and a change in the last digit moved the "peak" by 0.02 m.
   Locate a patch by the centroid of the field above its least value.
+
+<a id="cut-wall-functions"></a>
+## Wall functions on cut cells
+
+- **A cut wall cell's own velocity is not a wall-function input.** Its
+  centroid distance runs from a fifth to one and a half cells with the cut
+  fraction, and its velocity does not follow the log law (10 to 40 % low in
+  the first rows of a tilted plate), so the skin friction of single faces
+  scattered ±45 %. Sample one layer out along the wall normal (the default)
+  and give the cut wall faces the exact A / y_P without a non-orthogonal
+  correction, or the momentum equation sees a different wall stress than
+  the wall function computed (#357).
+- **The sample has to sit in the log layer.** On a plate with 2 mm first
+  cells the sample landed at y/δ ≈ 0.25, in the wake, and C_f came out 17 %
+  high; a test case on too coarse a mesh measures the mesh, not the method.
+- **A uniform start velocity across a cut body diverges at high Re.** A
+  start along x across a 2° plate at ν = 2·10⁻⁷ pushed net inflow into the
+  cut cells and the pressure CG broke down in iteration 1 (the SIMPLEC
+  coefficient floor); the laminar case and a plate along the mesh were
+  fine. Start with the velocity along the body.
