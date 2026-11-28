@@ -1562,6 +1562,7 @@ impl Spray {
                 t1,
                 coalescence: col.coalescence,
                 post: col.outcomes == crate::config::CollisionOutcomes::Post,
+                cell: col.cell,
             };
             let brk = kept.brk.clone();
             let t = crate::collision::collide(
