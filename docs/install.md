@@ -152,7 +152,7 @@ On all three systems, in a terminal (PowerShell on Windows):
 ```
 git clone https://github.com/chiefenne/Foehncraft.git
 cd Foehncraft
-git checkout v1.2.0          # optional: the release instead of main
+git checkout v1.3.0          # optional: the release instead of main
 cargo build --release --locked -p foehncraft-cli
 target/release/foehn info
 ```
