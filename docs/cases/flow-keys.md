@@ -577,7 +577,7 @@ steady or transient; a steady laminar case, a turbulence model without
 | `chemistry.edc.c_gamma`, `.c_tau` | the constants of γ_λ = C_γ (ν ε/k²)^¼ and τ* = C_τ (ν/ε)^½ (defaults 2.1377 and 0.4083) |
 | `chemistry.edc.max_fine_fraction` | the guard on γ* (default 0.75, below 1); cells held at it are counted in the log and `chemistry.csv` |
 | `chemistry.edm.a`, `.b` | the constants of the eddy dissipation model (defaults 4.0 and 0.5) |
-| `chemistry.edm.kinetic_limit` | cap every reaction at its Arrhenius rate (default true); the mechanism must have reactions in one direction only (CHM001 otherwise) |
+| `chemistry.edm.kinetic_limit` | cap every reaction at its Arrhenius rate (default true; a reaction and its exact reverse are then capped as a pair, their net rate by the mixing rate); the mechanism must have reactions in one direction only (CHM001 otherwise) |
 | `chemistry.update_every` | steady runs: renew the reaction sources every N outer iterations (default 1) |
 | `chemistry.relaxation` | steady runs: relax the rate and its implicit part between renewals, in (0, 1] (default 1) |
 

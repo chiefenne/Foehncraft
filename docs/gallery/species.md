@@ -291,7 +291,7 @@ fuel core, closes over the cold core near x/D 40 and peaks at **2289 K on the
 axis at x/D 63**; CO reaches 15 % by mass in the rich core, where the fine
 structures turn methane into CO and H₂ faster than the oxygen can follow.
 
-<img src="../figures/gallery/jet_flame_edc_profiles.png" alt="Left: along the axis the temperature of the eddy dissipation concept rises slowly from 294 K to 700 K at x/D 30, steeply to 1500 K at x/D 40 and on to its peak of 2289 K at x/D 63; the dotted curve of the eddy dissipation model rises earlier and peaks at about 2000 K at x/D 53. Methane and oxygen fall to zero between x/D 30 and 40, CO peaks at 0.15 at x/D 39, water and CO2 rise behind it. Right: radial temperature at x/D 15, 30 and 45; the concept peaks at 2272, 2264 and 2259 K at r/D 1.35, 1.7 and 1.9, the model at 2223, 2207 and 2027 K slightly closer to the axis." width="1200" height="480">
+<img src="../figures/gallery/jet_flame_edc_profiles.png" alt="Left: along the axis the temperature of the eddy dissipation concept rises slowly from 294 K to 700 K at x/D 30, steeply to 1500 K at x/D 40 and on to its peak of 2289 K at x/D 63; the dotted curve of the eddy dissipation model rises earlier, from x/D 33, and peaks at 2313 K at x/D 63. Methane and oxygen fall to zero between x/D 30 and 40, CO peaks at 0.15 at x/D 39, water and CO2 rise behind it. Right: radial temperature at x/D 15, 30 and 45; the concept peaks at 2272, 2264 and 2259 K at r/D 1.35, 1.7 and 1.9, the model at 2268, 2266 and 2257 K slightly closer to the axis, and at x/D 45 it is 2000 K on the axis against 1650 K." width="1200" height="480">
 
 **Against the measurements.** The temperature of the reaction zone is the
 known weakness of the standard concept in this flame: with the same
@@ -308,10 +308,16 @@ validation, and the bands of the comparison are a gap. The
 `jet_flame_edm_wd2.toml` case burns the same flame with the eddy
 dissipation model and the two-step mechanism of Westbrook & Dryer
 (1981): each reaction at the mixing rate A ε/k (A = 4, B = 0.5, Magnussen
-& Hjertager 1977), capped by its Arrhenius rate. It peaks at 1999 K on
-the axis at x/D 53 and 2223 K in the shear layer at x/D 15, and its heat
-release in the domain is 81 % of the lower heating value of the fuel
-that flows in, against 95 % with the concept.
+& Hjertager 1977), capped by its Arrhenius rate; the CO oxidation and
+the CO₂ dissociation of that mechanism are a pair whose net rate the
+mixing caps. It peaks at 2313 K on the axis at x/D 63 and 2268 K in the
+shear layer at x/D 15: above the equilibrium flame temperature, because
+two global steps that end in CO₂ and water do not dissociate. Its heat
+release in the domain is 94 % of the lower heating value of the fuel
+that flows in, as with the concept (95 %). Limiting the two steps of the
+pair each on its own let the fast dissociation undo the mixing-limited
+oxidation: the first run kept 11 % CO in the flame, and a transient
+start released heat with the wrong sign.
 
 **How it is built.** `interaction = "edc"` adds the fine structures to
 the cell body of SF2b: the integrator takes a residence time per cell
@@ -334,10 +340,17 @@ and gave negative heat release in 14 % of the flame while it formed.
 pilot). The elements close to 3·10⁻⁵ of their inflow. The concept runs
 1500 iterations in about 15 minutes on 4 cores; its residuals level at
 about 3·10⁻⁵ from iteration 1200, while the axis temperature and the
-heat release of iterations 1450, 1600, 1900 and 2500 (two runs) agree to
+heat release of iterations 1450, 1600, 1900 and 2500 (three runs) agree to
 1 K and 10⁻⁴, so the case stops at 1500 and does not require the
-residual tolerance. The eddy dissipation model converges to 10⁻⁶ in 1133
-iterations, 1.5 minutes.
+residual tolerance. The eddy dissipation model runs with `relaxation =
+0.2`; its residuals swing about 2·10⁻⁴ from iteration 1500 on, and the
+temperatures of iterations 2000 and 3000 agree to 3 K, the heat release
+to 2·10⁻³, so it stops at 2000 iterations (2.5 minutes). Transient runs of
+both, 30 steps of 2 µs on a coarser mesh, run and stay bounded; with
+Westbrook & Dryer the hot pilot gas first dissociates towards the
+balance of that mechanism's own kinetics (its 0D reactor from the pilot
+state at 1880 K loses 25 K in 1 ms), which shows as a negative heat
+release in the first steps.
 
 **What this version does not do.** No partially stirred reactor, no
 local constants of the concept (Parente et al. 2016) and no flamelet

@@ -1755,12 +1755,12 @@
    "gaps": [
     "no comparison with measurements: the TNF data of Sandia Flame D are not in the repository (the Sandia archive could not be reached from the cloud); the literature with the same constants reports the shear-layer peak 500 K too high at x/D 15 and 450 K at x/D 30 (Saini et al. 2021), and the run's peaks (2272 and 2264 K) are of that kind",
     "the bluff-body flame of the stage plan is not done",
-    "steady EDC residuals level at about 3e-5 (monitored quantities steady); the eddy dissipation model converges to 1e-6",
+    "steady residuals level at about 3e-5 (EDC) and swing about 2e-4 (EDM, relaxation 0.2) while the monitored temperatures and heat release are steady: the cases do not require the residual tolerance",
     "no OH images: the 4-step mechanism has no OH and the jet flame has not run with GRI-Mech 3.0",
     "the jet inlet is uniform (49.6 m/s), not the fully developed pipe profile of the experiment; no radiation",
     "no partially stirred reactor, local EDC constants (Parente et al. 2016) or flamelet tables",
     "the energy balance books the convected enthalpy with the fluid's c_p: 17 to 19 % imbalance shown in the jet flames although the temperature equation uses the mixture",
-    "transient EDC and EDM are not run by a case of their own (the formulas are unit-tested); not on ranks; GPU path with per-cell intervals checked through the CPU data-path test only"
+    "transient EDC and EDM ran only as a 30-step check on a coarser mesh (bounded, no case of their own in CI); not on ranks; GPU path with per-cell intervals checked through the CPU data-path test only"
    ],
    "range": {}
   },

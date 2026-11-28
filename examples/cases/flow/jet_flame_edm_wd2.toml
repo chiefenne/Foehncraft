@@ -5,13 +5,15 @@
 # at the mixing rate A (eps/k) min(the smallest reactant [R]/nu'_R,
 # B rho sum Y_P / sum nu''_P W_P), A = 4, B = 0.5, capped by its Arrhenius
 # rate (`kinetic_limit`). Steady RANS, k-epsilon with C_eps1 = 1.60.
+# About 2.5 min on 4 cores.
 #
 #   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/jet_flame_edm_wd2.toml
 #
 # The eddy dissipation model needs reactions in one direction: the
 # mechanism of Westbrook & Dryer has its CO2 dissociation as a reaction of
-# its own. No H2 in this mechanism: the pilot carries CO, CO2, H2O and the
-# rest of the air.
+# its own, and the model caps the net rate of the CO/CO2 pair by mixing.
+# No H2 in this mechanism: the pilot carries CO, CO2, H2O and the rest of
+# the air.
 
 case_format = "0.7"
 
@@ -67,7 +69,7 @@ mechanism = "westbrook-dryer-2"
 interaction = "edm"
 min_temperature = 500.0
 update_every = 1
-relaxation = 0.5
+relaxation = 0.2
 
 # the potential flow of the inlets to start, with k and epsilon of a
 # spreading shear layer
@@ -131,9 +133,11 @@ type = "wedge"
 [boundary.zmax]
 type = "wedge"
 
+# the residuals swing about 2e-4 from iteration 1500 on; the temperatures
+# of iterations 2000 and 3000 agree to 3 K, the heat release to 2e-3
 [solver]
 tolerance = 1e-6
-max_iterations = 1500
+max_iterations = 2000
 log_every = 100
 
 [verification]

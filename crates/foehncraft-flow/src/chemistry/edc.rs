@@ -53,7 +53,13 @@
 //! A = 4, B = 0.5. With `kinetic_limit` the rate is the smaller of q_mix,j
 //! and the rate of the mechanism q_kin,j (the kinetics hold the reactions
 //! back where the gas is cold, as at the nozzle); without it, a reaction
-//! runs wherever its reactants and products meet.
+//! runs wherever its reactants and products meet. A reaction and its exact
+//! reverse (the CO oxidation and the CO₂ dissociation of Westbrook & Dryer)
+//! are taken as a pair: the mixing rate caps their net kinetic rate in its
+//! direction. Limiting each of the two alone lets a fast dissociation undo
+//! a mixing-limited oxidation, and a jet flame then kept CO at the level of
+//! CO₂ and released heat with the wrong sign where its hot pilot gas met
+//! slow mixing.
 
 use super::mechanism::bad;
 use anyhow::Result;
@@ -284,43 +290,105 @@ pub fn edm_rates(
     if !(eps_over_k > 0.0) || !(t > 0.0) {
         return;
     }
-    for (j, r) in prog.reactions.iter().enumerate() {
-        let terms = &prog.terms[r.terms[0] as usize..r.terms[1] as usize];
-        // the mixing rate: reactants, then the product term
+    let nr = prog.reactions.len();
+    let terms_of = |j: usize| {
+        let r = &prog.reactions[j];
+        &prog.terms[r.terms[0] as usize..r.terms[1] as usize]
+    };
+    // the mixing rate of reaction j in its own direction (reactants, then
+    // the product term), or with `back` in the opposite one
+    let mixing = |j: usize, back: bool| {
         let mut lim = f64::INFINITY;
         let (mut yp, mut wp) = (0.0, 0.0);
-        for s in terms {
+        for s in terms_of(j) {
             let k = s.species as usize;
-            if s.reactant > 0.0 {
-                lim = lim.min(c[k].max(0.0) / s.reactant);
+            let (nr_, np_) = if back {
+                (s.product, s.reactant)
+            } else {
+                (s.reactant, s.product)
+            };
+            if nr_ > 0.0 {
+                lim = lim.min(c[k].max(0.0) / nr_);
             }
-            if s.product > 0.0 {
+            if np_ > 0.0 {
                 yp += y[k].max(0.0);
-                wp += s.product * prog.species[k].molar_mass;
+                wp += np_ * prog.species[k].molar_mass;
             }
         }
         if wp > 0.0 {
             lim = lim.min(e.b * rho * yp / wp);
         }
-        if !lim.is_finite() {
-            continue;
+        if lim.is_finite() {
+            e.a * eps_over_k * lim
+        } else {
+            0.0
         }
-        let mut q = e.a * eps_over_k * lim;
-        if e.kinetic_limit {
-            // the reaction alone: its production rates, divided by the net
-            // coefficient of one of its species
-            let one = kc::Program {
-                reactions: &prog.reactions[j..j + 1],
-                ..*prog
-            };
-            kc::rates(&one, t, c, w1, None, None, rw);
-            let kin = terms
-                .iter()
-                .find(|s| s.product != s.reactant)
-                .map_or(0.0, |s| w1[s.species as usize] / (s.product - s.reactant));
-            q = q.min(kin.max(0.0));
-        }
-        for s in terms {
+    };
+    // the rate of the mechanism of reaction j alone (mol/(m³ s)): its
+    // production rates, divided by the net coefficient of one of its species
+    let mut kinetic = |j: usize| {
+        let one = kc::Program {
+            reactions: &prog.reactions[j..j + 1],
+            ..*prog
+        };
+        kc::rates(&one, t, c, w1, None, None, rw);
+        terms_of(j)
+            .iter()
+            .find(|s| s.product != s.reactant)
+            .map_or(0.0, |s| w1[s.species as usize] / (s.product - s.reactant))
+            .max(0.0)
+    };
+    // a reaction and its exact reverse (the CO₂ dissociation of
+    // Westbrook & Dryer) form a pair: with the kinetic limit the mixing
+    // rate caps their net rate, in the direction of the kinetics, so that
+    // the pair keeps the equilibrium of its kinetics where mixing is fast
+    // and a mixing-limited forward step is not undone by an unlimited
+    // reverse one
+    let reverse_of = |j: usize| {
+        (0..nr).find(|&i| {
+            i != j && {
+                let (a, b) = (terms_of(j), terms_of(i));
+                let net = |t: &[kc::Term]| -> Vec<(u32, f64, f64)> {
+                    let mut v: Vec<(u32, f64, f64)> = t
+                        .iter()
+                        .filter(|s| s.reactant != 0.0 || s.product != 0.0)
+                        .map(|s| (s.species, s.reactant, s.product))
+                        .collect();
+                    v.sort_by_key(|x| x.0);
+                    v
+                };
+                let (na, nb) = (net(a), net(b));
+                na.len() == nb.len()
+                    && na
+                        .iter()
+                        .zip(&nb)
+                        .all(|(x, z)| x.0 == z.0 && x.1 == z.2 && x.2 == z.1)
+            }
+        })
+    };
+    for j in 0..nr {
+        let pair = if e.kinetic_limit { reverse_of(j) } else { None };
+        let q = match pair {
+            // the pair is done with its first reaction
+            Some(i) if i < j => continue,
+            Some(i) => {
+                let net = kinetic(j) - kinetic(i);
+                if net >= 0.0 {
+                    net.min(mixing(j, false))
+                } else {
+                    -(-net).min(mixing(j, true))
+                }
+            }
+            None => {
+                let q = mixing(j, false);
+                if e.kinetic_limit {
+                    q.min(kinetic(j))
+                } else {
+                    q
+                }
+            }
+        };
+        for s in terms_of(j) {
             wdot[s.species as usize] += (s.product - s.reactant) * q;
         }
     }
@@ -365,8 +433,8 @@ mod tests {
 
     /// The eddy dissipation model of the two-step mechanism: the fuel
     /// step is limited by the scarcer of fuel and oxygen, the products
-    /// hold it back where there are none, and every rate conserves the
-    /// elements and the mass.
+    /// hold it back where there are none, the CO/CO₂ pair is capped by
+    /// mixing as a pair, and every rate conserves the mass.
     #[test]
     fn edm_rates_are_mixing_limited_and_conserve_mass() {
         let m = Mechanism::load("westbrook-dryer-2", None).unwrap();
@@ -420,6 +488,23 @@ mod tests {
         let kin = EdmSection::default();
         edm_rates(&prog, &kin, p, 300.0, &y, 50.0, &mut w, &mut work);
         assert!(-w[ix("CH4")] < 1e-12 * q1);
+        // the CO oxidation and the CO₂ dissociation are a pair: in burnt
+        // gas without CO and with slow mixing the net dissociation is held
+        // to the mixing rate of CO₂ towards CO and O₂ (its products, O₂,
+        // are there), not to its Arrhenius rate alone
+        let mut burnt = vec![0.0; n];
+        burnt[ix("O2")] = 0.05;
+        burnt[ix("CO2")] = 0.12;
+        burnt[ix("H2O")] = 0.10;
+        burnt[ix("N2")] = 1.0 - 0.27;
+        let slow = 1.0;
+        edm_rates(&prog, &kin, p, 2000.0, &burnt, slow, &mut w, &mut work);
+        let (rho_b, _) = kc::concentrations(prog.species, p, 2000.0, &burnt, &mut c);
+        let wo2 = prog.species[ix("O2")].molar_mass;
+        let cap = 4.0 * slow * c[ix("CO2")].min(0.5 * rho_b * burnt[ix("O2")] / (wco + 0.5 * wo2));
+        assert!(w[ix("CO")] > 0.0 && w[ix("CO")] <= cap * (1.0 + 1e-12));
+        let mass: f64 = (0..n).map(|k| prog.species[k].molar_mass * w[k]).sum();
+        assert!(mass.abs() < 1e-12 * cap * wco);
         // reversible reactions are refused
         let jl = Mechanism::load("jones-lindstedt-4", None).unwrap();
         assert!(kin.check(&jl.program(), "jones-lindstedt-4").is_err());
