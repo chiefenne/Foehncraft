@@ -150,7 +150,7 @@ pub struct KernelFlow<E: Exec> {
     /// ρⁿ⁻¹, allocated by the first `set_variable_density`.
     variable: Option<[Buf; 3]>,
     /// The wall arrays of the turbulence models: faces, cells, ptr, slots.
-    wall: Option<[Raw<u32>; 4]>,
+    wall: Option<[Raw<u32>; 5]>,
     /// The stencils of the quadratic fits (D236): cells, ptr, idx.
     quad: Vec<[Raw<u32>; 3]>,
     /// The vertex stencils of the MLP limiter.
@@ -1616,7 +1616,17 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
                 self.x.alloc_u32(v)
             }
         };
-        let arrays = [up(&w.faces)?, up(&w.cells)?, up(&w.ptr)?, up(&w.slots)?];
+        ensure!(
+            w.sample.is_empty() || w.sample.len() == w.faces.len(),
+            "flow device: inconsistent wall sample cells"
+        );
+        let arrays = [
+            up(&w.faces)?,
+            up(&w.cells)?,
+            up(&w.ptr)?,
+            up(&w.slots)?,
+            up(&w.sample)?,
+        ];
         self.wall = Some(arrays);
         Ok(())
     }
@@ -2144,10 +2154,18 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
     }
 
     fn wall_faces(&mut self, a: &WallFaceOps) -> Result<()> {
-        let Some([faces, ..]) = self.wall else {
+        let Some([faces, _, _, _, sample]) = self.wall else {
             anyhow::bail!("flow device: wall_faces before wall_setup");
         };
         let mut ins = vec![a.y, a.ks, a.k, a.cs];
+        if let Some(y) = a.y_sample {
+            ins.push(y);
+        }
+        let sample = if a.y_sample.is_some() {
+            sample
+        } else {
+            Raw::EMPTY
+        };
         ins.extend(a.normal.all());
         ins.extend(a.u.all());
         ins.extend(a.ub.all());
@@ -2207,6 +2225,8 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             n_zeta: a.n_zeta,
             grad_u: a.non_eq.map_or(Default::default(), |(gu, _)| self.rg(&gu)),
             grad_p: a.non_eq.map_or(Default::default(), |(_, gp)| self.r3(gp)),
+            sample,
+            y_sample: a.y_sample.map_or(Raw::EMPTY, |b| self.r(b)),
         };
         self.go::<e::WallFaces>(faces.len as usize, &args)
     }
@@ -2238,7 +2258,7 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
     }
 
     fn wall_cells(&mut self, a: &WallCellOps) -> Result<()> {
-        let Some([_, cells, ptr, slots]) = self.wall else {
+        let Some([_, cells, ptr, slots, _]) = self.wall else {
             anyhow::bail!("flow device: wall_cells before wall_setup");
         };
         check(

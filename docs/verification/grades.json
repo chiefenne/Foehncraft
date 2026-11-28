@@ -1821,9 +1821,26 @@
    "gaps": [
     "the body is seen through its node values: features thinner than a cell vanish; the refusal of thin solids (Q4, IMM for D189) is not built yet",
     "Δp of the Re 20 cylinder stays about 1 % below the range at D/20 (D/40: C_D 5.595, C_L 0.0106, Δp 0.1171, all within 0.1 % of the range; SIMPLEC stalls at residual 1e-7 there); the lift depends on the merge threshold (0.1: 4 % low, 0.4: 0.4 % low, without face points); the default 0.3 is set on this case and the STL sphere array and kept by the maintainer after measuring again with face points and several faces per cell pair (2026-11-26): 0.4 puts the cylinder's lift into the range, 0.01047, and its drag 0.06 % above it, 5.593; on the 32³ sphere array 0.3 is closer, −1.9 against −2.3 %",
-    "wall functions with the exact first-cell distance (2c), conjugate heat transfer through cut cells (2d, refused), named surface patches (2e) and the near-body refinement (2f) are not built",
+    "conjugate heat transfer through cut cells (2d, refused), named surface patches (2e) and the near-body refinement (2f) are not built (wall functions on cut bodies: feature immersed.cut-wall-functions)",
     "the other verification cases of the plan (cut-sphere Poisson MMS, annulus conduction, Taylor-Couette, inclined channel, Stokes sphere, Re 100 cylinder, turbulent plate) are not run yet",
     "one rank only: the cut runs on the global mesh, `foehn run --ranks N` with a cut is not tested"
+   ],
+   "range": {}
+  },
+  {
+   "id": "immersed.cut-wall-functions",
+   "title": "Wall functions on cut bodies: exact first-cell distance, sampled wall function, y⁺ per body (L13 stage 2c)",
+   "grade": "partial",
+   "why": [
+    "gaps written"
+   ],
+   "gaps": [
+    "the first layer of cut cells overproduces k (30 to 60 % above equilibrium in the first 2 mm of the plate) and its velocity is 10 to 20 % below the log law; single wall faces scatter about ±15 % in C_f even with sampling",
+    "near the leading edge the cut plate is turbulent at once (C_f 18 % above White at s = 0.3) while the fitted plate has a short laminar run; neither has a transition model",
+    "the sampled cell has to lie in the log layer: on a mesh with 2 mm first cells the sample sits at y/δ ≈ 0.25 and C_f comes out 17 % high (measured on 75 × 65 cells); refine the wall rows or set wall_sample = false",
+    "on planar bodies the exact distance equals the facet distance; its benefit is on curved and merged cells (unit test only, no curved turbulent case yet)",
+    "a uniform start velocity across a cut plate at high Re diverges in the first iteration (net inflow into the cut cells, SIMPLEC dc floor); the case starts with the velocity along the plate",
+    "low-Re treatments (resolved walls) use the exact distance but no sampling; one rank only"
    ],
    "range": {}
   },

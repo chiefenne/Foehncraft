@@ -475,6 +475,7 @@ pub fn start_alpha(case: &crate::case::FlowCase, mesh: &Mesh, geo: &Geometry) ->
                 centre: r.centre,
                 radius: r.radius,
                 axis: r.axis,
+                normal: None,
                 length: r.length,
                 lower: r.lower,
                 upper: r.upper,

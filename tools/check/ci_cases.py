@@ -100,6 +100,7 @@ FLOW = {
         "spray_breakup", "spray_brno", "spray_chamber_ecn", "motion_piston_cooled_walls", "spray_g_g1",
         "spray_g_g1_grid_aligned", "spray_g_g1_grid_turned",
         "ranks_cylinder_species_statistics", "spray_a_distortion",
+        "immersed_cut_plate_keps", "immersed_cut_plate_fitted",
     ],
     "quick": [
         "cavity_re100_budget", "couette_hex", "couette_mixed", "couette_poly", "couette_tet",

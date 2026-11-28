@@ -87,6 +87,10 @@ pub enum Shape {
     Field,
     /// A closed triangle surface from an STL file (`file`, `scale`).
     Stl,
+    /// A half-space: the solid lies behind the plane through `centre`
+    /// with the unit `normal` pointing into the fluid (an inclined wall
+    /// across the mesh, L13 stage 2c).
+    Plane,
 }
 
 /// One `[[immersed.body]]`.
@@ -108,6 +112,9 @@ pub struct BodySection {
     /// Axis of a cylinder (default z).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub axis: Option<[f64; 3]>,
+    /// Normal of a `plane` body, pointing out of the solid into the fluid.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub normal: Option<[f64; 3]>,
     /// Length of a cylinder, centred on `centre` (m); default endless.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub length: Option<f64>,
@@ -181,6 +188,12 @@ pub struct CutSection {
     /// so that the clipped faces follow the body too (default true).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub face_point: Option<bool>,
+    /// The wall function of a cut cell takes its velocity from the cell one
+    /// layer out along the wall normal, whose distance does not depend on
+    /// how the cell was cut (L13 stage 2c, default true); false: from the
+    /// cut cell itself.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wall_sample: Option<bool>,
 }
 
 impl CutSection {
@@ -192,6 +205,11 @@ impl CutSection {
     /// Bent face chords (default true).
     pub fn face_point(&self) -> bool {
         self.face_point.unwrap_or(true)
+    }
+
+    /// Sampled wall functions on cut walls (default true).
+    pub fn wall_sample(&self) -> bool {
+        self.wall_sample.unwrap_or(true)
     }
 }
 
@@ -306,6 +324,10 @@ enum Kind {
     },
     Field(crate::expr::Value),
     Stl(StlBody),
+    Plane {
+        p: [f64; 3],
+        n: [f64; 3],
+    },
 }
 
 impl Body {
@@ -374,6 +396,7 @@ impl Body {
                 }
             }
             Kind::Stl(s) => s.surface.signed_distance(x),
+            Kind::Plane { p, n } => dot(sub(x, *p), *n),
         }
     }
 
@@ -405,7 +428,7 @@ impl Body {
                 }
                 Some(2.0 * std::f64::consts::PI * r * (hi[i] - lo[i]))
             }
-            Kind::Field(_) => None,
+            Kind::Field(_) | Kind::Plane { .. } => None,
             Kind::Stl(s) => {
                 let (a, b) = s.surface.bounding_box();
                 (s.clean && inside(a) && inside(b)).then_some(s.area)
@@ -434,6 +457,7 @@ impl Body {
             Kind::Box { lo, hi } => (0..3).all(|i| x[i] >= lo[i] && x[i] <= hi[i]),
             Kind::Field(v) => v.at(x, 0.0) >= 0.5,
             Kind::Stl(s) => s.surface.inside(x),
+            Kind::Plane { p, n } => dot(sub(x, *p), *n) <= 0.0,
         }
     }
 
@@ -465,7 +489,7 @@ impl Body {
                 let l = (c[i] + half).min(hi[i]) - (c[i] - half).max(lo[i]);
                 Some(std::f64::consts::PI * r2 * l.max(0.0))
             }
-            Kind::Field(_) => None,
+            Kind::Field(_) | Kind::Plane { .. } => None,
             Kind::Stl(s) => {
                 let (a, b) = s.surface.bounding_box();
                 (s.clean && inside(a) && inside(b)).then_some(s.volume)
@@ -628,6 +652,21 @@ pub fn bodies_with(s: &ImmersedSection, env: &crate::expr::Env) -> Result<Vec<Bo
                 let (st, f) = stl_body(b, &key)?;
                 findings = f;
                 Kind::Stl(st)
+            }
+            Shape::Plane => {
+                let p = need(b.centre, "centre")?;
+                let n = need(b.normal, "normal")?;
+                let l = dot(n, n).sqrt();
+                if !(l > 0.0 && l.is_finite()) {
+                    return Err(bad(
+                        format!("{key}.normal"),
+                        format!("immersed body {}: the normal has zero length", b.name),
+                    ));
+                }
+                Kind::Plane {
+                    p,
+                    n: [n[0] / l, n[1] / l, n[2] / l],
+                }
             }
         };
         out.push(Body {
@@ -1357,6 +1396,126 @@ pub fn cut_mesh(case: &crate::case::FlowCase, mesh: &Mesh) -> Result<(Mesh, Vec<
     Ok((c.mesh, notes))
 }
 
+/// The cut bodies whose whole surface is a wall, by the name of their
+/// wall boundary: the exact first-cell distance of the wall functions and
+/// the exact wall distance (L13 stage 2c, D229, D108).
+#[derive(Debug, Clone)]
+pub struct WallBodies {
+    bodies: Vec<Body>,
+    /// `[immersed.cut] wall_sample`.
+    sample: bool,
+    /// Wall boundary name → body.
+    by_boundary: std::collections::BTreeMap<String, usize>,
+}
+
+impl WallBodies {
+    /// The bodies of a cut case whose surfaces are walls (`None` without a
+    /// cut or without such a body).
+    pub fn of(case: &crate::case::FlowCase) -> Result<Option<Self>> {
+        if !case.immersed.is_cut() {
+            return Ok(None);
+        }
+        let bodies = bodies_of(case)?;
+        let mut by_boundary = std::collections::BTreeMap::new();
+        for (i, b) in bodies.iter().enumerate() {
+            // a `field` body has a level, not a distance: its wall faces
+            // keep the distance to the face
+            if !matches!(b.kind, Kind::Field(_))
+                && matches!(
+                    case.boundary.get(&b.name),
+                    Some(crate::bc::BoundaryCondition::Wall { .. })
+                )
+            {
+                by_boundary.insert(b.name.clone(), i);
+            }
+        }
+        let sample = case
+            .immersed
+            .cut
+            .as_ref()
+            .is_none_or(CutSection::wall_sample);
+        Ok((!by_boundary.is_empty()).then_some(Self {
+            bodies,
+            sample,
+            by_boundary,
+        }))
+    }
+
+    /// The wall functions of the cut walls sample the cell one layer out
+    /// (`[immersed.cut] wall_sample`, default true).
+    pub fn sample(&self) -> bool {
+        self.sample
+    }
+
+    /// True if `boundary` is the wall of a cut body.
+    pub fn is_body(&self, boundary: &str) -> bool {
+        self.by_boundary.contains_key(boundary)
+    }
+
+    /// The exact distance of `x` to the surface of the body whose wall
+    /// boundary is `boundary` (closest point, D108).
+    pub fn distance_to(&self, boundary: &str, x: [f64; 3]) -> Option<f64> {
+        let &i = self.by_boundary.get(boundary)?;
+        Some(self.bodies[i].distance(x).abs())
+    }
+
+    /// The exact distance of every point to the nearest wall body.
+    pub fn distance(&self, points: &[[f64; 3]]) -> Vec<f64> {
+        use rayon::prelude::*;
+        points
+            .par_iter()
+            .map(|&x| {
+                self.by_boundary
+                    .values()
+                    .map(|&i| self.bodies[i].distance(x).abs())
+                    .fold(f64::INFINITY, f64::min)
+            })
+            .collect()
+    }
+}
+
+/// The momentum faces of the cut walls under a wall function (L13 stage
+/// 2c): the wall shear stress of the wall function, ν_w = τ_w y_P/U_P, is
+/// carried to the cut cell only when its wall faces take the exact y_P as
+/// the distance, μ_w |S| (u_w − u_P)/y_P, and no non-orthogonal
+/// correction: on the facets of a cut cell the correction k · ∇u_P picks up
+/// the steep wall-normal gradient of the cell (its centroid does not lie
+/// over the facet centroids) and moved the wall stress of single faces by
+/// up to ±50 % on the tilted plate. Laminar flows and the low-Re
+/// treatment keep the face gradient with its correction.
+pub fn wall_function_faces(
+    case: &crate::case::FlowCase,
+    mesh: &Mesh,
+    geo: &Geometry,
+    disc: &mut foehncraft_fv::disc::Discretisation,
+) -> Result<()> {
+    let t = &case.turbulence;
+    if t.is_laminar() || t.treatment() == crate::turbulence::WallTreatment::LowRe {
+        return Ok(());
+    }
+    let Some(wb) = WallBodies::of(case)? else {
+        return Ok(());
+    };
+    for p in &mesh.boundaries {
+        if !wb.is_body(&p.name) {
+            continue;
+        }
+        for f in p.range() {
+            let c = mesh.owner[f] as usize;
+            let Some(d) = wb.distance_to(&p.name, geo.cell_centroid[c]) else {
+                continue;
+            };
+            let a = norm(geo.face_area[f]);
+            let y = d.max(1e-3 * geo.cell_volume[c] / a);
+            disc.dgeo[f] = a / y;
+            disc.k.x[f] = 0.0;
+            disc.k.y[f] = 0.0;
+            disc.k.z[f] = 0.0;
+        }
+    }
+    Ok(())
+}
+
 fn norm(a: [f64; 3]) -> f64 {
     dot(a, a).sqrt()
 }
@@ -1392,6 +1551,7 @@ mod tests {
                 centre: Some([0.5, 0.5, 0.0]),
                 radius: Some(r),
                 axis: None,
+                normal: None,
                 length: None,
                 lower: None,
                 upper: None,

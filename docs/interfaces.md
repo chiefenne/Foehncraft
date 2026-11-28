@@ -266,6 +266,7 @@ and `message`:
 | `LIM008` | an operator of a feature in use is not exact on N of M cells | the operator check (D236): `MESH005` with `turbulence.curvature_correction`, `MESH006` with `turbulence.qcr` |
 | `LIM009` | the solids carry the cycle-mean state (or its history with `solid = "transient"`), the swing over a cycle only as an estimate | `[energy.cycle]` (D204) |
 | `LIM010` | the flow was held during the march (frozen flow) | `[energy.frozen_flow]` (D118): the run reports the frozen steps and refreshes |
+| `LIM011` | wall functions on cut cells: the first-cell y⁺ varies with the cut fraction | `[immersed] method = "cut"` with wall functions (D229): smallest, mean and largest y⁺ of every body |
 
 Limitations change neither `status` nor the exit code (D199 Q1, Q2): a
 run with limitations is `finished` with exit code 0. The human text says
@@ -518,6 +519,7 @@ A code keeps its meaning; a retired code stays in the table.
 | `LIM008` | note | An operator a feature in use needs is not exact on some cells (MESH005, MESH006, D236): the feature does not converge with the mesh there. |
 | `LIM009` | note | A cycle-averaged conjugate run (D204): the solids carry the steady temperatures of the cycle-mean heat transfer (with `solid = "transient"` a history under it, marched in large steps), and each fluid phase ran with the wall temperatures held: the swing of the wall temperature over a cycle is in the result only as the estimate of `skin` or from `resolved_cycles`. |
 | `LIM010` | note | A frozen-flow run (D118): the flow was held during the march, so its history is that of the settled flow at the temperatures of the last freeze or refresh; exact for a flow that does not depend on the temperature. |
+| `LIM011` | note | Wall functions on the walls of cut bodies (L13 stage 2c, D229): the first-cell distance is the exact distance of each cut or merged cell to the body, so the first-cell y⁺ varies with the cut fraction from cell to cell along the wall; the message gives the smallest, mean and largest y⁺ of every body (the map is the `y_plus` of the wall output). |
 | `TOOL001` | error | A tool id that the registry does not have (with the nearest id as a hint); `foehn commands` lists them. |
 | `TOOL002` | error | A tool input that does not match the input schema of the tool (unknown field, wrong type, missing field). |
 | `TOOL003` | warning | The journal of tool calls (D197) could not be written: the calls run, but the journal misses them. |

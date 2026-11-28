@@ -118,7 +118,8 @@ impl Solver {
             hydrostatic: crate::buoyancy::hydrostatic(case),
         };
         let arrays = crate::bc::arrays(mesh, geo, &case.boundary, phys.rho, at)?;
-        let disc = crate::simplec::discretisation(mesh, geo, &arrays)?;
+        let mut disc = crate::simplec::discretisation(mesh, geo, &arrays)?;
+        crate::immersed::wall_function_faces(case, mesh, geo, &mut disc.0)?;
         let phys = crate::case::physics_on(case, &phys, mesh, geo)?;
         let mut fl = Flow::on(
             disc,

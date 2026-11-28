@@ -10,6 +10,7 @@ Part of the [Example gallery](../gallery.md): bodies in the flow without a body-
 | 310 | [A dirty STL body: surface check, winding number and signed distance](#dirty-stl-winding) | L13 stage 0 | `mesh.surface`, IMM001 to IMM009, `foehncraft_mesh::surface` (winding number, signed distance, crossings) |
 | 315 | [Signed distance by three methods, and a sphere cut exactly out of a mesh](#sdf-benchmark-cut) | L13 stage 0 | signed-distance benchmark (ours, fast sweeping, heat method), `Surface::cut_moments` (volume fractions, apertures, wall pieces) |
 | 322 | [STL bodies cut out of a mesh: sharp edges, face points and the Stokes sphere array](#stl-cut) | L13 stage 2 | `shape = "stl"` (`file`, `scale`), `[immersed.cut] face_point`, dual-contouring wall points on sharp edges, the per-cell fallback, STL cut benchmark against the exact moments |
+| 357 | [A turbulent plate tilted against the mesh: wall functions on cut cells](#cut-plate) | L13 stage 2c | `shape = "plane"` (`normal`), wall functions with the exact first-cell distance, `[immersed.cut] wall_sample`, y⁺ per body (LIM011) |
 
 ---
 
@@ -295,8 +296,8 @@ hexahedra, tetrahedra and polyhedra; exact crossings with the wall point are
 they are the default. On the cylinder the wall point moves the drag from
 0.3 % below the range into it. Cutting 33 000 polyhedra takes 1.7 s.
 
-**What is not here yet.** STL bodies followed in [gallery 322](#stl-cut). Wall functions
-with the exact first-cell distance (2c), conjugate heat transfer through cut
+**What is not here yet.** STL bodies followed in [gallery 322](#stl-cut), wall functions
+on cut bodies in [gallery 357](#cut-plate). Conjugate heat transfer through cut
 cells (2d, refused with IMM202), named surface patches with other conditions
 (2e) and the near-body refinement (2f) follow. One rank only.
 
@@ -629,9 +630,9 @@ cell-by-cell volumes now do). On tetrahedra the drag error grows from +1.7 %
 on 16³ to +4.8 % on 24³ and the wall carries G L³ to 5 % on 16³ (1.3 % on
 24³; the −1.8 % of #322 on 24³ ran with the cell-quality remediation on): the
 cut cells of tetrahedra need a closer look (features.toml). A feature thinner than a cell can vanish between the
-nodes. Wall functions with the exact first-cell distance (2c), conjugate
-heat transfer through cut cells (2d), named surface patches (2e) and the
-near-body refinement (2f) follow. One rank only.
+nodes. Wall functions on cut bodies followed in [gallery 357](#cut-plate);
+conjugate heat transfer through cut cells (2d), named surface patches (2e)
+and the near-body refinement (2f) follow. One rank only.
 
 Reproduce (about a minute for the case, two for the benchmark):
 
@@ -651,3 +652,101 @@ The tetrahedral and polyhedral runs take `--set 'mesh.generate.type="tet"'`
 (or `"poly"`) and are added to the `fields` call. Recipe:
 [322](../recipes/immersed.md#stl-body). Case file:
 `examples/cases/flow/immersed_cut_stl_sphere_array.toml`.
+
+---
+
+<a id="cut-plate"></a>
+## 357. A turbulent plate tilted against the mesh: wall functions on cut cells
+
+<img src="../figures/gallery/immersed_cut_plate.png" alt="Three panels of a turbulent flat plate tilted by 2 degrees and cut out of a box mesh. Left: the speed near the trailing part of the plate, rows of square cells above a grey plate whose dashed edge rises across the cell rows, the first cells along the plate cut to different heights, slow (green and cyan) next to the wall and red in the free stream. Middle: the skin friction of every wall face along the plate; the black correlation of White falls from 5 to 2.8 thousandths, the blue body-fitted line follows it after a short laminar start, the red dots of the sampled cut cells stay close to it, the orange dots of the unsampled cut cells scatter about twice as wide. Right: the first-cell y plus of every wall face of the cut plate, coloured from blue to red, a band from about 30 to 140 that repeats every few centimetres as the plate crosses a cell row, against the smooth blue line of the body-fitted plate near 100." width="1500" height="520">
+
+`immersed_cut_plate_keps.toml` is a turbulent flat plate (k-ε, scalable
+wall functions, the free stream of the TMR plate of
+[gallery 71](turbulence.md#k-epsilon), Re = 5·10⁶ per metre) that the mesh does not
+know: the plate is the half-space below a plane rising at 2° (`shape =
+"plane"`, `normal`), cut out of a 150 × 130 box mesh with 1 mm cells near
+the wall (L13 stage 2c, D229). The plate crosses one cell row every 28.6 mm,
+so the wall cells take every cut fraction between 0.3 (smaller ones are
+merged into their neighbour) and 1, and their centroids every distance from
+the wall between a fifth and one and a half cells. This is the hard case for
+a wall function: on a body-fitted mesh all first cells along the plate have
+the same height.
+
+Three things make the wall functions of a cut body work:
+
+- **The exact first-cell distance (D108).** The distance y_P of a cut or
+  merged wall cell is the distance of its centroid to the body itself
+  (closest point on the plane, cylinder, sphere, box or STL triangles, the
+  same signed distance the cut uses), one value per cell, not the distance
+  to the plane of each wall facet. On a cylinder cut out of a 2D mesh the
+  facet distance is off by more than 10⁻³ R and differs between the facets
+  of one cell; the exact distance is |r_P − R| to 10⁻¹² R (unit test). The
+  wall distance of the turbulence models (`derived` `wall-distance`, SST,
+  ζ-f) takes the same exact distance.
+- **The sampled wall function** (`[immersed.cut] wall_sample = true`, the
+  default). A cut cell's own velocity depends on how it was cut: a sliver
+  of fluid next to the wall and a nearly whole cell both see the same
+  outer flow. The wall function of each cut wall face takes its velocity,
+  k and distance from the cell one layer out along the wall normal (the
+  first cell whose centroid lies further from the body than the wall
+  cell), whose distance does not depend on the cut, and solves the same
+  log law there; the wall shear stress and the log-law production of k in
+  the wall cell use that u_τ (Capizzano 2011, Tamaki, Harada & Imamura
+  2017, Berger & Aftosmis 2012 sample the same way).
+- **No non-orthogonal correction on the cut wall faces.** The wall
+  diffusion of a cut face takes A / y_P with the exact distance, so the
+  wall shear stress the momentum equation sees is the one the wall
+  function computed.
+
+| s along the plate (m) | 0.3 | 0.5 | 0.7 | 0.97 | 1.15 |
+|---|---|---|---|---|---|
+| White, c_f × 10³ (turbulent from the edge) | 3.496 | 3.203 | 3.030 | 2.875 | 2.798 |
+| body-fitted plate, same cells | −3.5 % | +6.1 % | +0.8 % | −1.4 % | −2.3 % |
+| cut, sampled (default), mean | +18.2 % | +7.5 % | +1.2 % | +3.6 % | +6.7 % |
+| cut, sampled, single faces | +13 … +22 % | +4 … +13 % | −4 … +6 % | −16 … +12 % | −15 … +20 % |
+| cut, wall cell itself (`wall_sample = false`), single faces | −26 … +58 % | −25 … +40 % | −25 … +25 % | −46 … +50 % | −44 … +6 % |
+
+Sampling narrows the scatter of the skin friction of single faces to
+between a tenth and a third of the unsampled one; the mean is within 7 % of White's correlation from s = 0.5 on.
+LIM011 in the log and in `result.json` gives the y⁺ range of every cut body
+(here 4 to 148, mean 83), the map is the `y_plus` column of `wall_plate.csv`
+(right panel). A coarser test of the same plate (75 × 115 cells,
+`cut_plate_wall_function_samples_one_layer_out`) gives −4.4 % with 9.9 %
+scatter sampled and −3.9 % with 38 % scatter unsampled over 0.8 < s < 1.15.
+
+**Benchmark with the computer-graphics methods (maintainer rule).** The wall
+distance can be taken as the distance to the plane of the cell's wall
+facets (what a mesh-only code has), or as the exact closest point on the
+body through its bounding-volume hierarchy (the STL bodies) or its closed
+form (the primitives). The closest point costs one BVH query per wall cell
+and is exact; the facet plane is exact only on planar bodies and differs
+between the facets of a curved cell. The heat method and fast sweeping
+distances of [gallery 315](#sdf-benchmark-cut) are first order near the
+surface and not used here.
+
+**What is not here yet.** The first layer of cut cells makes about 30 to
+60 % more k than the equilibrium in the first 2 mm and its velocity is 10 to
+20 % below the log law; near the leading edge the cut plate is turbulent at
+once (+18 % at s = 0.3) while the fitted plate has a short laminar run. The
+sample has to lie in the log layer: with 2 mm first cells (75 × 65) it sits
+at y/δ ≈ 0.25 and C_f comes out 17 % high. A uniform start along x pushes
+fluid into the cut cells and diverges in the first iteration, so the case
+starts with the velocity along the plate. The k residual stalls near
+2·10⁻³ at the leading edge (the inlet corner) for both the cut and the
+fitted plate. Resolved walls (low-Re treatments) take the exact distance
+but no sample. One rank only.
+
+Reproduce (about a minute per run on 4 cores):
+
+```sh
+cargo build --release -p foehncraft-cli
+target/release/foehn flow examples/cases/flow/immersed_cut_plate_keps.toml --out output/cut_plate
+target/release/foehn flow examples/cases/flow/immersed_cut_plate_keps.toml --out output/cut_plate_cell --set immersed.cut.wall_sample=false
+target/release/foehn flow examples/cases/flow/immersed_cut_plate_fitted.toml --out output/cut_plate_fit
+pip install matplotlib h5py numpy
+python3 -m tools.plot.immersed_cut_plate docs/figures/gallery output/cut_plate output/cut_plate_fit output/cut_plate_cell
+```
+
+Recipe: [357](../recipes/immersed.md#cut-wall-functions). Case files:
+`examples/cases/flow/immersed_cut_plate_keps.toml`,
+`examples/cases/flow/immersed_cut_plate_fitted.toml`.
