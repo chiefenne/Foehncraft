@@ -939,8 +939,18 @@ pub(crate) fn conditions(
         Vars::NONE
     });
     let mut out = BTreeMap::new();
+    let coupled = crate::water_walls::boundaries(case);
     for (name, bc) in &case.boundary {
         let key = format!("boundary.{name}.energy");
+        if coupled.contains(&name.as_str()) {
+            // the water side of a circuit (SF7c): h and T_amb per face from
+            // the first circuit solve on; adiabatic until then
+            out.insert(
+                name.clone(),
+                Condition::Convection(expr::Value::Number(0.0), expr::Value::Number(0.0)),
+            );
+            continue;
+        }
         let c = match case.boundary_energy.get(name) {
             None => Condition::ZeroGradient,
             Some(t) => {
@@ -1211,10 +1221,15 @@ pub fn setup_findings(case: &crate::case::FlowCase) -> Vec<crate::bc::Finding> {
     if case.energy.is_none() {
         return Vec::new();
     }
+    let coupled = crate::water_walls::boundaries(case);
     let walls: Vec<&str> = case
         .boundary
         .iter()
-        .filter(|(b, bc)| side(bc) == Side::Wall && !case.boundary_energy.contains_key(*b))
+        .filter(|(b, bc)| {
+            side(bc) == Side::Wall
+                && !case.boundary_energy.contains_key(*b)
+                && !coupled.contains(&b.as_str())
+        })
         .map(|(b, _)| b.as_str())
         .collect();
     if walls.is_empty() {

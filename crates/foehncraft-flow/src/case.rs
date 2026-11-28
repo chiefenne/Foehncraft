@@ -906,6 +906,10 @@ pub struct FlowCase {
     /// Chemistry in the cells (stage SF2b): `[chemistry]`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chemistry: Option<crate::chemistry::flow::ChemistrySection>,
+    /// The water and steam circuit behind the walls (stage SF7c):
+    /// `[circuits]`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub circuits: Option<crate::water_walls::CircuitsSection>,
     /// The energy equation of the fluid (stage 7a1): `[energy]`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub energy: Option<crate::energy::EnergySection>,
@@ -1177,6 +1181,7 @@ impl FlowCase {
             mrf: _,
             sliding: _,
             mesh_motion: _,
+            circuits: _,
         } = from;
         self.notes = notes.clone();
         self.boundary_scalar = boundary_scalar.clone();
@@ -1328,6 +1333,9 @@ impl FlowCase {
         c.spray.resolve_paths(dir);
         if let Some(ch) = c.chemistry.as_mut() {
             ch.resolve_paths(dir);
+        }
+        if let Some(w) = c.circuits.as_mut() {
+            w.resolve_paths(dir);
         }
         crate::datum::resolve_paths(&mut c.datums, dir);
         crate::immersed::resolve_paths(&mut c.immersed, dir);
@@ -1525,6 +1533,7 @@ impl FlowCase {
         }
         crate::species::validate(self)?;
         crate::chemistry::flow::validate(self)?;
+        crate::water_walls::validate(self)?;
         let (scalars, boundary_scalar) = crate::species::scalar_sections(self)?;
         crate::scalar::validate(
             &scalars,
@@ -2035,6 +2044,9 @@ pub struct Solve {
     /// run.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub spray_steady: Option<crate::spray_steady::SteadySummary>,
+    /// The water and steam circuit behind the walls (SF7c) at the end.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub circuits: Option<crate::water_walls::CircuitSummary>,
     /// Benchmark comparison.
     pub benchmark: Option<crate::monitor::BenchmarkResult>,
     /// Conservation ledger (D88, D89).
@@ -3288,6 +3300,15 @@ pub fn run_steered(
             &loc,
             case.run.restart.is_some(),
         )?;
+        // the water and steam circuit behind the walls (SF7c, D350): the
+        // start solve and its Robin conditions before the first iteration
+        let mut walls = match &case.fluid_view {
+            Some(v) => crate::water_walls::Walls::create(&case, &v.mesh, &v.geo, first)?,
+            None => crate::water_walls::Walls::create(&case, &mesh, &geo, first)?,
+        };
+        if let Some(w) = walls.as_mut() {
+            w.start(&mut fl)?;
+        }
         crate::spray::device_warnings(&case, &mut lg, &mut rep.warnings);
         if steady_spray.is_some()
             && let Some(p) = crate::spray::write_devices(&case.spray, out)?
@@ -3406,6 +3427,13 @@ pub fn run_steered(
                 let next = fl.iteration() + 1;
                 ss.before_iteration(&mut fl, &spray_env, next, first)?;
             }
+            if let Some(w) = walls.as_mut() {
+                let next = fl.iteration() + 1;
+                w.before_iteration(&mut fl, next)?;
+                for n in w.take_notes() {
+                    lg.warn(&n);
+                }
+            }
             fl.keep_valid()?;
             res = match fl.iterate() {
                 Ok(r) => r,
@@ -3502,6 +3530,14 @@ pub fn run_steered(
                 && steady_spray
                     .as_mut()
                     .is_none_or(|s| s.settled(it, gas_done));
+            // the coupling residual of the circuit behind the walls (SF7c)
+            if let Some(w) = walls.as_mut() {
+                let settled = w.settled(&mut fl, it, done)?;
+                done = done && settled;
+                for n in w.take_notes() {
+                    lg.warn(&n);
+                }
+            }
             // the topology search (L13 stage 1, D226): a design update
             // during the iterations; the run converges after the last one
             if let Some(t) = topo.as_mut()
@@ -3827,6 +3863,49 @@ pub fn run_steered(
             }
             spray_final = Some((sm, pass, heat));
         }
+        // the circuit behind the walls at the converged flow (SF7c): its
+        // coupling residual decides whether the run counts as converged
+        let mut circuit_final = None;
+        if let Some(w) = walls.as_mut() {
+            let (wm, wg) = match &case.fluid_view {
+                Some(v) => (&v.mesh, &v.geo),
+                None => (&mesh, &geo),
+            };
+            let (sm, acc) = w.finish(&mut fl, wm, wg, out, name, li == last)?;
+            for n in w.take_notes() {
+                lg.warn(&n);
+            }
+            let tol = case.circuits.as_ref().map_or(0.0, |c| c.tolerance);
+            if !sm.converged {
+                let d = diag::Diagnostic::new(
+                    diag::CIR_NOT_COUPLED,
+                    format!(
+                        "the coupling residual of the circuit behind the walls is {:.3e}, above \
+                         [circuits] tolerance {:.1e}: the circuit is not converged with the flow",
+                        sm.residual, tol
+                    ),
+                );
+                lg.warn(&format!("{}: {}", d.code, d.message));
+                rep.warnings.push(d);
+                converged = false;
+            }
+            if let Some(sol) = &w.solution() {
+                for cw in &sol.warnings {
+                    let code = match cw.code {
+                        "CIR003" => diag::CIR_RANGE,
+                        _ => diag::CIR_CHF,
+                    };
+                    let d = diag::Diagnostic::new(code, cw.message.clone());
+                    lg.warn(&format!("{}: {}", d.code, d.message));
+                    rep.warnings.push(d);
+                }
+            }
+            lg.frame(&crate::water_walls::frame(&sm, tol));
+            if li == last {
+                lg.note("circuit files written (circuit.csv, circuit/)");
+            }
+            circuit_final = Some((sm, acc));
+        }
         {
             let wall = ts.elapsed().as_secs_f64();
             let _ = secs;
@@ -4107,9 +4186,16 @@ pub fn run_steered(
         if let Some(sm) = scalars.iter().find(|s| s.energy.is_some())
             && let Some(e) = &sm.energy
         {
-            summary
-                .last
-                .book(balance::thermal_account(e, &sm.boundaries));
+            let mut a = balance::thermal_account(e, &sm.boundaries);
+            // the conduction of the walls on a circuit: one side of the
+            // pair with the circuit's account (SF7c)
+            if circuit_final.is_some() {
+                crate::water_walls::Walls::pair_domain(&case, &mut a);
+            }
+            summary.last.book(a);
+        }
+        if let Some((_, acc)) = &circuit_final {
+            summary.last.book(acc.clone());
         }
         // the species and element accounts (SF1, D119)
         if let Some(sp) = crate::species::summary_on(&mut fl, &mesh, &geo, false, on.as_ref())? {
@@ -4169,6 +4255,7 @@ pub fn run_steered(
             datums: None,
             spray: None,
             spray_steady: spray_final.map(|x| x.0),
+            circuits: circuit_final.map(|x| x.0),
             benchmark,
             balance: Some(summary),
             remediation,

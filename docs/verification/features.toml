@@ -2820,5 +2820,29 @@ gaps = [
   "supercritical water takes Gnielinski with bulk properties: no correction for the pseudo-critical region",
   "steady only: no density-wave or Ledinegg instability check, no transients (SF18)",
   "the drift velocity is scaled by the sine of the tube angle; horizontal tubes have no stratified-flow void model",
-  "not yet coupled to the 3D furnace walls (SF7c)",
+  "coupled to the 3D walls of steady flows by SF7c (feature circuits.walls)",
+]
+
+[[feature]]
+id = "circuits.walls"
+area = "Energy"
+title = "Water and steam circuits behind the walls of a steady flow, coupled implicitly by a Robin condition per face (steam furnace SF7c)"
+switch = "[circuits], [[circuits.walls]] boundary, tube, start, end, wall_resistance, fouling"
+decisions = ["D350", "D282", "D160"]
+model = true
+evidence = [
+  { kind = "exact", test = "crates/foehncraft-flow/tests/water_walls.rs::slab_cooled_by_a_tube_meets_the_heat_balance_march", what = "a slab at 700 K on a water tube at 10 MPa: outlet 519.3815 K against 519.3816 K of an independent RK4 march of the heat balance with IF97 and Gnielinski (within 0.01 K), every face on the series resistance of slab and water side to 3e-4 away from the adiabatic ends, circuit energy closure 1e-10, ledger pair = coupling residual" },
+  { kind = "consistency", test = "crates/foehncraft-flow/tests/water_walls.rs::slab_on_a_boiling_tube_converges", what = "the same slab on a tube boiling at 7 MPa (Chen wall, nonlinear in q): converges, x_out > 0.05, the water at saturation over most of the tube, faces on the series resistance to 1e-3" },
+  { kind = "contract", property = "diagnostics", test = "crates/foehncraft-flow/tests/water_walls.rs::circuits_table_is_checked", what = "CIR005 for an unknown tube or boundary, a boundary that is not a wall or has its own energy table, two tubes on one boundary, an axis of zero length, a negative resistance, relaxation outside (0, 1], every = 0, a missing circuit file, a transient case" },
+  { kind = "consistency", case = "circuit_wall_slab", what = "the slab on a water tube converges with the coupling residual below 1e-6 (CI catalogue case)", doc = "docs/gallery/circuits.md#circuit-walls" },
+  { kind = "consistency", case = "circuit_evaporator_pass", what = "a convective evaporator pass whose two water walls share one drum loop: converges in 143 iterations, 8 circuit solves, coupling residual 2e-7, ledger pair 0.05 W of 220 kW; the hotter bank takes more heat and flow", doc = "docs/gallery/circuits.md#circuit-walls" },
+  { kind = "contract", property = "diagnostics", test = "crates/foehncraft-flow/tests/water_walls.rs::tube_axis_must_span_the_wall", what = "faces that do not project onto the tube axis between start and end are refused when the run maps them" },
+]
+gaps = [
+  "steady runs only: transient circuits with a transient gas side (drum level, swell and shrink) are SF18",
+  "not on ranks yet (refused): the segment heats need an exact sum across the ranks",
+  "no measured furnace or boiler wall data yet: the evaporator pass is our own design on convection only, without the radiation of the gas (SF4)",
+  "one tube per wall boundary: several tube groups on one wall need the boundary split in the mesh",
+  "the water side is the steady 1D circuit of SF7b with its gaps (no measured void or wall temperature, Bowring CHF built in)",
+  "at small heat a natural-circulation loop can also converge to a reversed-flow steady state; the start flows of the circuit file pick the branch",
 ]

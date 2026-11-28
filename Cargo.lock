@@ -432,6 +432,7 @@ dependencies = [
  "anyhow",
  "blake3",
  "foehncraft-bench",
+ "foehncraft-circuits",
  "foehncraft-core",
  "foehncraft-fv",
  "foehncraft-kernels",

@@ -1,0 +1,76 @@
+# A conducting slab heated at the top and cooled by a water tube along its
+# bottom face (steam furnace stage SF7c, D350): the 1D water circuit of
+# `../circuits/wall_slab_tube.toml` behind a 3D wall, coupled implicitly.
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/circuit_wall_slab.toml
+#
+# The slab is 2 m long, 50 mm thick and 50 mm wide (k = 50 W/(m K), a
+# steel-like layer at rest), its top face is held at 700 K. Its bottom face
+# `ymin` is the wall of one tube of 20 mm bore that runs along x from x = 0
+# to x = 2 m: water at 10 MPa enters at 450 K with 0.05 kg/s. Each of the
+# 40 segments of the tube takes the faces above it; the water side enters
+# the slab as q″ = U (T_water − T_b) with 1/U = φ/h_in, φ = A_face/A_inner
+# = 0.05/(π 0.02) for the segment's share of the tube. The water warms by
+# about 90 K along the tube, so the heat flux falls from the inlet to the
+# outlet; `tests/water_walls.rs` checks the outlet temperature against an
+# independent march of the same heat balance with the IF97 states and
+# Gnielinski, and every face's heat flux against the series resistance of
+# the slab and the water side.
+
+case_format = "0.7"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [2.0, 0.05, 0.05]
+cells = [80, 5, 1]
+
+[fluid]
+density = 1000.0
+viscosity = 1.0
+specific_heat = 500.0
+conductivity = 50.0                  # the slab at rest (no inflow)
+
+[energy]
+initial = "700.0 - 2000.0 * (0.05 - y)" # 600 K at the tube, 700 K at the top
+
+[boundary.xmin]
+type = "wall"
+[boundary.xmax]
+type = "wall"
+[boundary.ymin]
+type = "wall"                        # the tube wall: set by the circuit
+[boundary.ymax]
+type = "wall"
+[boundary.ymax.energy]
+temperature = 700.0
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[circuits]
+file = "../circuits/wall_slab_tube.toml"
+every = 5
+tolerance = 1e-6
+
+[[circuits.walls]]
+boundary = "ymin"
+tube = "tube"
+start = [0.0, 0.0, 0.025]
+end = [2.0, 0.0, 0.025]
+
+[solver]
+tolerance = 1e-10
+max_iterations = 400
+
+[solver.energy]
+relaxation = 1.0
+tolerance = 1e-12
+max_iter = 500
+
+[output]
+wall_csv = false
+
+[verification]
+require_convergence = true
