@@ -299,7 +299,7 @@ bash install-shared.sh --version 1.2.0 --with-source   # a given release, with e
 What it does (latest release unless `--version`; prefix `/opt/Foehncraft`
 unless `--prefix`):
 
-1. downloads `foehncraft-<version>-linux-x86_64.tar.gz` and
+1. downloads `foehncraft-<version>-linux-<x86_64|aarch64>.tar.gz` (for this machine) and
    `SHA256SUMS.txt` from the release, checks the checksum, puts `foehn`
    into `<version>/bin/` (`--tarball FILE` installs a file you downloaded,
    for a machine without internet);
@@ -316,10 +316,10 @@ unless `--prefix`):
    makes everything readable for all users, and runs `foehn info`.
 
 `--no-system-deps` leaves apt and dnf alone and only prints what is
-missing. The release programs are built for x86-64 and need glibc 2.28 or
-newer (RHEL, Rocky and Alma 8 and 9, Debian 11 to 13, Ubuntu 20.04 and
+missing. The release programs are built for x86-64 and, from the next release on,
+aarch64 (64-bit ARM), and need glibc 2.28 or newer (RHEL, Rocky and Alma 8 and 9, Debian 11 to 13, Ubuntu 20.04 and
 newer); v1.2.0 itself still needs glibc 2.39 (Debian 13, Ubuntu 24.04).
-On older systems, or on ARM, build from source.
+On older systems, or on ARM with an older release, build from source.
 
 ### Python for a shared install
 
