@@ -877,7 +877,7 @@ Found with the circuits behind the walls (SF7c, #356):
   gradient of the cut cells it came out 2.8 % off on every mesh of the
   Taylor–Couette case while the outer wall converged. On a no-slip wall in
   rigid motion the transposed part is that of the rigid motion, μ ω × S;
-  with it the inner torque converges at second order (#MMM).
+  with it the inner torque converges at second order (#360).
 - **A boundary inside the solid has no faces.** The box around an inverted
   cylinder lost all its faces in the cut and still asked for a condition
   (BC001); the cut now leaves such boundaries out.

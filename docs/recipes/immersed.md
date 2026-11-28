@@ -12,7 +12,7 @@ Part of the [Recipes](../recipes.md): put bodies into the flow without meshing t
 | 322 | [Put an STL body into the flow](#stl-body) |
 | 357 | [Run a turbulent flow with wall functions on a cut body](#cut-wall-functions) |
 | 359 | [Keep a cut body as a solid region (conjugate heat transfer)](#cut-cht) |
-| MMM | [Give a cut body inlets, outlets and a turning wall](#cut-patches) |
+| 360 | [Give a cut body inlets, outlets and a turning wall](#cut-patches) |
 
 ---
 
@@ -302,7 +302,7 @@ Without it the pin of [gallery 359](../gallery/immersed.md#cut-cht) stalled with
 ---
 
 <a id="cut-patches"></a>
-## MMM. Give a cut body inlets, outlets and a turning wall
+## 360. Give a cut body inlets, outlets and a turning wall
 
 **Name the patches in the STL file.** Write the surface as an ASCII STL file with one `solid <name>` per patch (most CAD tools export the faces of a part as named solids), or tag the triangles of a binary file with their 16-bit attribute. Then:
 

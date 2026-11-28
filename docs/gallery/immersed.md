@@ -12,7 +12,7 @@ Part of the [Example gallery](../gallery.md): bodies in the flow without a body-
 | 322 | [STL bodies cut out of a mesh: sharp edges, face points and the Stokes sphere array](#stl-cut) | L13 stage 2 | `shape = "stl"` (`file`, `scale`), `[immersed.cut] face_point`, dual-contouring wall points on sharp edges, the per-cell fallback, STL cut benchmark against the exact moments |
 | 357 | [A turbulent plate tilted against the mesh: wall functions on cut cells](#cut-plate) | L13 stage 2c | `shape = "plane"` (`normal`), wall functions with the exact first-cell distance, `[immersed.cut] wall_sample`, y⁺ per body (LIM011) |
 | 359 | [A heated pin cut out of a box mesh: conjugate heat transfer through cut cells](#cut-cht) | L13 stage 2d | `[regions.<name>] zones = ["<body>"]` on a cut body, solid cut cells, the cut faces as region interface, thin solids refused (IMM205) |
-| MMM | [A cylinder that blows through a slot, and Taylor–Couette flow cut out of a box: conditions on cut bodies](#cut-patches) | L13 stage 2e | `patches` of an STL body (ASCII solids, binary attribute tags), `[boundary.<body>-<patch>]`, `omega` (turning wall, torque), `invert` |
+| 360 | [A cylinder that blows through a slot, and Taylor–Couette flow cut out of a box: conditions on cut bodies](#cut-patches) | L13 stage 2e | `patches` of an STL body (ASCII solids, binary attribute tags), `[boundary.<body>-<patch>]`, `omega` (turning wall, torque), `invert` |
 
 ---
 
@@ -859,7 +859,7 @@ Recipe: [359](../recipes/immersed.md#cut-cht). Case files:
 ---
 
 <a id="cut-patches"></a>
-## MMM. A cylinder that blows through a slot, and Taylor–Couette flow cut out of a box: conditions on cut bodies
+## 360. A cylinder that blows through a slot, and Taylor–Couette flow cut out of a box: conditions on cut bodies
 
 <img src="../figures/gallery/immersed_cut_patches.png" alt="Four panels. Top left: the speed in the first metre of a channel, blue at the walls and red in the middle, around a grey cylinder near the inlet; a short red arc on its upper rear side marks the blowing slot, from which a thin jet bends downstream, and the wake behind the cylinder is wide and blue. Top right: a zoom on the upper rear quarter of the cylinder, square cells coloured by speed ending at the curved wall, the wall drawn black and the slot part of it drawn red. Bottom left: the azimuthal velocity over the inner cylinder speed against the radius from 0.05 to 0.1 metres, red dots of every cell on the falling black exact curve. Bottom right: relative errors against the cells across the box on log axes: the velocity error falls parallel to a dashed second-order line, the torque errors of the inner and the outer cylinder fall below it." width="1400" height="900">
 
@@ -947,6 +947,6 @@ python3 -m tools.plot.immersed_cut_patches docs/figures/gallery output/cut_blown
 
 The STL file is written by `python3 -m tools.mesh.blown_cylinder_stl
 examples/cases/flow/immersed_blown_cylinder.stl`. Recipe:
-[MMM](../recipes/immersed.md#cut-patches). Case files:
+[360](../recipes/immersed.md#cut-patches). Case files:
 `examples/cases/flow/immersed_cut_blown_cylinder.toml`,
 `examples/cases/flow/immersed_cut_taylor_couette.toml`.
